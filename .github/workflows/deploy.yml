@@ -3,59 +3,90 @@ name: Deploy to production
 on:
   push:
     branches: [main]
-  workflow_dispatch:        # ปุ่ม "Run workflow" ใน GitHub UI กดเองได้
+  workflow_dispatch:
 
 concurrency:
   group: deploy-production
-  cancel-in-progress: false # ถ้ามี deploy ค้างอยู่ ให้รอจบก่อน ไม่ตัดกลางคัน
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
-      - name: Deploy via SSH
+      - name: ⬇️  Checkout
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 Install deps (full, on GitHub runner — 7GB RAM)
+        run: npm install --no-audit --no-fund
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+      - name: 🔨 Build Next.js (on GitHub runner — no OOM)
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+      - name: 📦 Package build artifact
+        run: |
+          tar czf /tmp/deploy.tar.gz \
+            .next \
+            public \
+            package.json \
+            next.config.js \
+            scripts \
+            src
+          ls -lh /tmp/deploy.tar.gz
+
+      - name: 📤 Copy artifact to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "/tmp/deploy.tar.gz"
+          target: "/tmp/"
+          strip_components: 1
+
+      - name: 🚀 Apply on server + restart
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          script_stop: true   # ถ้า command ใดล้มเหลว → fail ทันที
-          command_timeout: 20m
+          script_stop: true
+          command_timeout: 8m
           script: |
             set -e
-
-            echo "==> 💾 ensure swap >= 2G (กัน OOM ตอน build บน 1GB droplet)"
-            CURRENT_SWAP_KB=$(awk '/SwapTotal/ {print $2}' /proc/meminfo)
-            if [ "${CURRENT_SWAP_KB:-0}" -lt 2000000 ]; then
-              echo "    swap = ${CURRENT_SWAP_KB} kB → ขยายเป็น 2G"
-              swapoff /swapfile 2>/dev/null || true
-              rm -f /swapfile
-              fallocate -l 2G /swapfile
-              chmod 600 /swapfile
-              mkswap /swapfile
-              swapon /swapfile
-              grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
-            else
-              echo "    swap = ${CURRENT_SWAP_KB} kB ✓"
-            fi
-
-            echo "==> 🧹 kill stale build processes (ถ้ามี)"
-            pkill -f "next build"   2>/dev/null || true
-            pkill -f "next-server"  2>/dev/null || true
-            sleep 2
-
-            echo "==> ⬇️  pull latest code"
             cd /var/www/reserva
-            sudo -u www-data git fetch origin
-            sudo -u www-data git reset --hard origin/main
 
-            echo "==> 📦 install deps (production-friendly, no audit/fund)"
-            npm ci --no-audit --no-fund --prefer-offline || npm install --no-audit --no-fund
+            echo "==> 📂 backup current .next (rollback safety)"
+            rm -rf .next.bak
+            [ -d .next ] && mv .next .next.bak || true
 
-            echo "==> 🔨 build (จำกัด memory ให้พอกับ 1GB RAM + 2G swap)"
-            export NODE_OPTIONS="--max-old-space-size=512"
-            export NEXT_TELEMETRY_DISABLED=1
-            npm run build
+            echo "==> 📦 extract new build"
+            tar xzf /tmp/deploy.tar.gz
+            rm -f /tmp/deploy.tar.gz
+
+            echo "==> 📋 sync package.json hash to detect dep changes"
+            NEW_HASH=$(sha256sum package.json | cut -d' ' -f1)
+            OLD_HASH=$(cat .last-deps-hash 2>/dev/null || echo "")
+
+            if [ "$NEW_HASH" != "$OLD_HASH" ] || [ ! -d node_modules ]; then
+              echo "    deps changed → installing production deps only"
+              export NODE_OPTIONS="--max-old-space-size=512"
+              npm install --omit=dev --no-audit --no-fund
+              echo "$NEW_HASH" > .last-deps-hash
+            else
+              echo "    deps unchanged → skipping install"
+            fi
 
             echo "==> 🔐 chown"
             chown -R www-data:www-data /var/www/reserva
@@ -66,8 +97,13 @@ jobs:
 
             if systemctl is-active --quiet reserva; then
               echo "✅ deployed at $(date '+%Y-%m-%d %H:%M:%S')"
+              rm -rf .next.bak
             else
-              echo "❌ reserva failed to start"
+              echo "❌ reserva failed → rolling back"
+              rm -rf .next
+              [ -d .next.bak ] && mv .next.bak .next || true
+              chown -R www-data:www-data /var/www/reserva
+              systemctl restart reserva
               journalctl -u reserva -n 30 --no-pager
               exit 1
             fi
