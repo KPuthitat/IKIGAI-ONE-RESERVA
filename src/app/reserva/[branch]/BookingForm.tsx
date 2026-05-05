@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { Branch } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
+import { useLang } from "@/lib/LangProvider";
 
 type TableOption = {
   id: number;
@@ -13,24 +14,30 @@ type TableOption = {
   fitScore: number;
 };
 
-const SOURCES = [
-  { value: "Instagram", label: "Instagram" },
-  { value: "Facebook", label: "Facebook" },
-  { value: "TikTok", label: "TikTok" },
-  { value: "Google Maps", label: "Google" },
-  { value: "เพื่อนแนะนำ", label: "เพื่อนแนะนำ" },
-  { value: "ผ่านมาเห็น", label: "ผ่านมาเห็น" },
-  { value: "อื่นๆ", label: "อื่นๆ" }
+// Source values (เก็บใน DB ใช้ key คงที่) + i18n key สำหรับ display
+const SOURCE_DEFS: Array<{ value: string; key: string }> = [
+  { value: "Instagram", key: "booking.source.Instagram" },
+  { value: "Facebook", key: "booking.source.Facebook" },
+  { value: "TikTok", key: "booking.source.TikTok" },
+  { value: "Google Maps", key: "booking.source.GoogleMaps" },
+  { value: "เพื่อนแนะนำ", key: "booking.source.friend" },
+  { value: "ผ่านมาเห็น", key: "booking.source.passing" },
+  { value: "อื่นๆ", key: "booking.source.other" }
 ];
 
-const ORIGINS = [
-  { value: "sriracha", label: "ศรีราชา" },
-  { value: "chonburi", label: "ชลบุรี (อื่นๆ)" },
-  { value: "other_province", label: "ต่างจังหวัด" }
+const ORIGIN_DEFS: Array<{ value: string; key: string }> = [
+  { value: "sriracha", key: "booking.origin.sriracha" },
+  { value: "chonburi", key: "booking.origin.chonburi" },
+  { value: "other_province", key: "booking.origin.other_province" }
 ];
 
 export default function BookingForm({ branch }: { branch: Branch }) {
   const router = useRouter();
+  const { t, formatDate } = useLang();
+
+  const SOURCES = SOURCE_DEFS.map((s) => ({ value: s.value, label: t(s.key) }));
+  const ORIGINS = ORIGIN_DEFS.map((o) => ({ value: o.value, label: t(o.key) }));
+
   const today = useMemo(() => {
     const d = new Date(Date.now() + 7 * 60 * 60 * 1000);
     return d.toISOString().slice(0, 10);
@@ -42,7 +49,7 @@ export default function BookingForm({ branch }: { branch: Branch }) {
     party_size: 2,
     booking_date: today,
     booking_time: "18:00",
-    sources: [] as string[],            // multi-select
+    sources: [] as string[],
     customer_origin: "",
     is_member: null as 0 | 1 | null,
     notes: "",
@@ -71,7 +78,7 @@ export default function BookingForm({ branch }: { branch: Branch }) {
     e.preventDefault();
     setError(null);
     if (!form.customer_name.trim() || !form.customer_phone.trim()) {
-      setError("กรุณากรอกชื่อและเบอร์โทรศัพท์");
+      setError(t("booking.error.missingNamePhone"));
       return;
     }
     setSubmitting(true);
@@ -87,16 +94,16 @@ export default function BookingForm({ branch }: { branch: Branch }) {
         })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "ขออภัย เกิดข้อผิดพลาด");
+      if (!res.ok) throw new Error(data.error || t("common.error"));
       if (data.suggestions.length === 0) {
-        setError("ขออภัย ช่วงเวลานี้ไม่มีโต๊ะว่างสำหรับ " + form.party_size + " ที่นั่ง กรุณาเลือกเวลาอื่น");
+        setError(t("booking.error.noTable", { n: form.party_size }));
         return;
       }
       setSuggestions(data.suggestions);
       setChosenTable("auto");
       setStep("choose");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
+      setError(err instanceof Error ? err.message : t("common.error"));
     } finally {
       setSubmitting(false);
     }
@@ -113,17 +120,16 @@ export default function BookingForm({ branch }: { branch: Branch }) {
         body: JSON.stringify({
           branch_slug: branch.slug,
           ...form,
-          // ส่ง sources เป็น JSON string เก็บใน column source
           source: form.sources.length > 0 ? JSON.stringify(form.sources) : "",
           table_id: tableId
         })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "เกิดข้อผิดพลาด");
+      if (!res.ok) throw new Error(data.error || t("common.error"));
       setResultId(data.id);
       setStep("done");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
+      setError(err instanceof Error ? err.message : t("common.error"));
     } finally {
       setSubmitting(false);
     }
@@ -133,27 +139,30 @@ export default function BookingForm({ branch }: { branch: Branch }) {
     return (
       <div className="card text-center">
         <div className="text-5xl mb-3">✅</div>
-        <h2 className="text-xl font-bold mb-2 text-slate-800">จองโต๊ะสำเร็จ!</h2>
-        <p className="text-slate-600 mb-1">หมายเลขการจอง <span className="font-bold">#{resultId}</span></p>
+        <h2 className="text-xl font-bold mb-2 text-slate-800">{t("booking.success.title")}</h2>
+        <p className="text-slate-600 mb-1">
+          <span dangerouslySetInnerHTML={{
+            __html: t("booking.success.bookingId", { id: `<span class="font-bold">${resultId}</span>` })
+          }} />
+        </p>
         <p className="text-slate-600 mb-6">
-          {form.customer_name} · {form.party_size} ที่นั่ง<br />
-          วันที่ {form.booking_date} เวลา {form.booking_time}
+          {t("booking.success.summary", { name: form.customer_name, n: form.party_size })}<br />
+          {t("booking.success.dateTime", { date: formatDate(form.booking_date), time: form.booking_time })}
         </p>
         <p className="text-sm text-slate-500 mb-4">
-          ทางร้านจะส่งแจ้งเตือนผ่าน LINE ก่อนถึงเวลานัด<br />
-          กรุณา add LINE Official Account ของร้านเพื่อรับการแจ้งเตือน
+          {t("booking.success.lineNotice")}
         </p>
 
         {form.is_member === 0 && (
           <div className="bg-brand/5 border border-brand/30 rounded-xl p-4 mb-4 text-left">
-            <div className="font-bold text-brand mb-1">🎟️ สมัครสมาชิกฟรี</div>
-            <div className="text-sm text-slate-600">
-              สะสมแต้ม รับสิทธิพิเศษ และส่วนลดทุกครั้งที่มา ทักทีมงานในร้านได้เลย
-            </div>
+            <div className="font-bold text-brand mb-1">{t("booking.success.memberCta.title")}</div>
+            <div className="text-sm text-slate-600">{t("booking.success.memberCta.body")}</div>
           </div>
         )}
 
-        <button onClick={() => router.push("/reserva")} className="btn-secondary w-full">เลือกสาขาอื่น</button>
+        <button onClick={() => router.push("/reserva")} className="btn-secondary w-full">
+          {t("booking.success.backToBranch")}
+        </button>
       </div>
     );
   }
@@ -161,10 +170,8 @@ export default function BookingForm({ branch }: { branch: Branch }) {
   if (step === "choose") {
     return (
       <div className="card">
-        <h2 className="text-lg font-bold mb-3 text-slate-800">เลือกโต๊ะที่ต้องการ</h2>
-        <p className="text-sm text-slate-500 mb-4">
-          ระบบเลือกโต๊ะที่ขนาดใกล้เคียงกับจำนวนคนของคุณที่สุด
-        </p>
+        <h2 className="text-lg font-bold mb-3 text-slate-800">{t("booking.choose.title")}</h2>
+        <p className="text-sm text-slate-500 mb-4">{t("booking.choose.subtitle")}</p>
 
         <label className="border-[1.5px] border-brand bg-brand/5 rounded-xl p-3.5 mb-2 flex items-center cursor-pointer">
           <input
@@ -173,9 +180,9 @@ export default function BookingForm({ branch }: { branch: Branch }) {
             onChange={() => setChosenTable("auto")}
           />
           <div>
-            <div className="font-bold">ให้ระบบเลือกให้อัตโนมัติ (แนะนำ)</div>
+            <div className="font-bold">{t("booking.choose.auto")}</div>
             <div className="text-sm text-slate-500">
-              โต๊ะ {suggestions[0].label} · {suggestions[0].capacity} ที่นั่ง
+              {t("booking.choose.tableX", { label: suggestions[0].label })} · {t("booking.choose.seats", { n: suggestions[0].capacity })}
             </div>
           </div>
         </label>
@@ -188,9 +195,9 @@ export default function BookingForm({ branch }: { branch: Branch }) {
               onChange={() => setChosenTable(s.id)}
             />
             <div>
-              <div className="font-bold">โต๊ะ {s.label}</div>
+              <div className="font-bold">{t("booking.choose.tableX", { label: s.label })}</div>
               <div className="text-sm text-slate-500">
-                {s.capacity} ที่นั่ง {s.shape === "round" ? "(โต๊ะกลม)" : ""}
+                {t("booking.choose.seats", { n: s.capacity })} {s.shape === "round" ? t("booking.choose.round") : ""}
               </div>
             </div>
           </label>
@@ -199,13 +206,13 @@ export default function BookingForm({ branch }: { branch: Branch }) {
         {error && <div className="text-red-600 text-sm mt-2">{error}</div>}
 
         <div className="grid grid-cols-2 gap-2 mt-4">
-          <button onClick={() => setStep("form")} className="btn-secondary">ย้อนกลับ</button>
+          <button onClick={() => setStep("form")} className="btn-secondary">{t("common.back")}</button>
           <button
             onClick={confirmBooking}
             disabled={submitting || chosenTable === null}
             className="btn-primary"
           >
-            {submitting ? "กำลังบันทึก..." : "ยืนยันการจอง"}
+            {submitting ? t("booking.cta.confirming") : t("booking.cta.confirm")}
           </button>
         </div>
       </div>
@@ -216,7 +223,7 @@ export default function BookingForm({ branch }: { branch: Branch }) {
     <form onSubmit={findTables} className="space-y-4">
       <div className="card space-y-4">
         <div>
-          <label className="label">ชื่อ-นามสกุล *</label>
+          <label className="label">{t("booking.field.name")} *</label>
           <input
             className="input" required
             autoComplete="name"
@@ -226,11 +233,11 @@ export default function BookingForm({ branch }: { branch: Branch }) {
         </div>
 
         <div>
-          <label className="label">เบอร์โทรศัพท์ *</label>
+          <label className="label">{t("booking.field.phone")} *</label>
           <input
             className="input" required type="tel"
             inputMode="tel" autoComplete="tel"
-            placeholder="08X-XXX-XXXX"
+            placeholder={t("booking.field.phonePlaceholder")}
             value={form.customer_phone}
             onChange={(e) => setForm({ ...form, customer_phone: e.target.value })}
           />
@@ -238,7 +245,7 @@ export default function BookingForm({ branch }: { branch: Branch }) {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="label">วันที่ *</label>
+            <label className="label">{t("booking.field.date")} *</label>
             <input
               type="date" className="input" required min={today}
               value={form.booking_date}
@@ -246,19 +253,21 @@ export default function BookingForm({ branch }: { branch: Branch }) {
             />
           </div>
           <div>
-            <label className="label">เวลา *</label>
+            <label className="label">{t("booking.field.time")} *</label>
             <select
               className="input" required
               value={form.booking_time}
               onChange={(e) => setForm({ ...form, booking_time: e.target.value })}
             >
-              {slots.map((s) => <option key={s} value={s}>{s} น.</option>)}
+              {slots.map((s) => (
+                <option key={s} value={s}>{t("booking.field.timeUnit", { time: s })}</option>
+              ))}
             </select>
           </div>
         </div>
 
         <div>
-          <label className="label">จำนวนที่นั่ง *</label>
+          <label className="label">{t("booking.field.partySize")} *</label>
           <PartySizePicker
             value={form.party_size}
             onChange={(n) => setForm({ ...form, party_size: n })}
@@ -266,25 +275,25 @@ export default function BookingForm({ branch }: { branch: Branch }) {
         </div>
 
         <div>
-          <label className="label">หมายเหตุ (ถ้ามี)</label>
+          <label className="label">{t("booking.field.notes")}</label>
           <textarea
             className="input" rows={2}
-            placeholder="เช่น ขอโต๊ะริมหน้าต่าง, มีเด็ก ฯลฯ"
+            placeholder={t("booking.field.notesPlaceholder")}
             value={form.notes}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
           />
         </div>
       </div>
 
-      {/* ── คำถามเพิ่มเติม (ไม่บังคับ) ── */}
+      {/* คำถามเพิ่มเติม */}
       <div className="bg-white/60 rounded-2xl p-5 space-y-4 border border-slate-200">
         <div className="text-center">
-          <div className="text-sm font-bold text-slate-700">ช่วยตอบเพิ่มเติม</div>
-          <div className="text-xs text-slate-500">3 คำถามสั้นๆ เพื่อพัฒนาบริการ (ไม่บังคับ)</div>
+          <div className="text-sm font-bold text-slate-700">{t("booking.helpUs.title")}</div>
+          <div className="text-xs text-slate-500">{t("booking.helpUs.subtitle")}</div>
         </div>
 
         <div>
-          <div className="text-xs font-semibold text-slate-500 mb-2">เดินทางมาจาก</div>
+          <div className="text-xs font-semibold text-slate-500 mb-2">{t("booking.field.origin")}</div>
           <ChipGroup
             options={ORIGINS}
             value={form.customer_origin}
@@ -293,7 +302,7 @@ export default function BookingForm({ branch }: { branch: Branch }) {
         </div>
 
         <div>
-          <div className="text-xs font-semibold text-slate-500 mb-2">รู้จักร้านจาก (เลือกได้หลายข้อ)</div>
+          <div className="text-xs font-semibold text-slate-500 mb-2">{t("booking.field.source")}</div>
           <MultiChipGroup
             options={SOURCES}
             values={form.sources}
@@ -302,11 +311,11 @@ export default function BookingForm({ branch }: { branch: Branch }) {
         </div>
 
         <div>
-          <div className="text-xs font-semibold text-slate-500 mb-2">เคยเป็นสมาชิกร้านมั้ย</div>
+          <div className="text-xs font-semibold text-slate-500 mb-2">{t("booking.field.member")}</div>
           <ChipGroup
             options={[
-              { value: "1", label: "เคยแล้ว" },
-              { value: "0", label: "ยังไม่เคย" }
+              { value: "1", label: t("booking.member.yes") },
+              { value: "0", label: t("booking.member.no") }
             ]}
             value={form.is_member === null ? "" : String(form.is_member)}
             onChange={(v) =>
@@ -315,7 +324,7 @@ export default function BookingForm({ branch }: { branch: Branch }) {
           />
           {form.is_member === 0 && (
             <div className="mt-2 text-xs text-slate-500 bg-brand/5 border border-brand/20 rounded-lg p-2.5">
-              ทีมงานจะแนะนำสมัครสมาชิกฟรีให้ตอนถึงร้าน
+              {t("booking.member.hint")}
             </div>
           )}
         </div>
@@ -324,17 +333,14 @@ export default function BookingForm({ branch }: { branch: Branch }) {
       {error && <div className="text-red-600 text-sm text-center">{error}</div>}
 
       <button disabled={submitting} className="btn-primary w-full text-base py-3.5">
-        {submitting ? "กำลังค้นหาโต๊ะว่าง..." : "ค้นหาโต๊ะว่าง"}
+        {submitting ? t("booking.cta.searching") : t("booking.cta.findTable")}
       </button>
     </form>
   );
 }
 
-// ── ChipGroup (single select) ──
 function ChipGroup({
-  options,
-  value,
-  onChange
+  options, value, onChange
 }: {
   options: Array<{ value: string; label: string }>;
   value: string;
@@ -354,20 +360,15 @@ function ChipGroup({
                 ? "bg-brand text-white border-brand shadow-sm"
                 : "bg-white text-slate-600 border-slate-200 hover:border-brand/60 active:scale-95"
             }`}
-          >
-            {o.label}
-          </button>
+          >{o.label}</button>
         );
       })}
     </div>
   );
 }
 
-// ── MultiChipGroup (multi select) ──
 function MultiChipGroup({
-  options,
-  values,
-  onChange
+  options, values, onChange
 }: {
   options: Array<{ value: string; label: string }>;
   values: string[];
@@ -401,14 +402,9 @@ function MultiChipGroup({
   );
 }
 
-// ── Stepper for party size (more thumb-friendly than typing) ──
 function PartySizePicker({
-  value,
-  onChange
-}: {
-  value: number;
-  onChange: (n: number) => void;
-}) {
+  value, onChange
+}: { value: number; onChange: (n: number) => void }) {
   return (
     <div className="flex items-center gap-3">
       <button
@@ -420,8 +416,7 @@ function PartySizePicker({
       <input
         type="number"
         inputMode="numeric"
-        min={1}
-        max={50}
+        min={1} max={50}
         value={value}
         onChange={(e) => onChange(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
         className="input text-center text-xl font-bold flex-1 min-w-0"
