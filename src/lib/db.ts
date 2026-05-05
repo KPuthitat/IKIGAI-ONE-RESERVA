@@ -49,6 +49,22 @@ function runMigrations(db: Database.Database): void {
   if (!ucols.some((c) => c.name === "pin_hash")) {
     db.exec("ALTER TABLE users ADD COLUMN pin_hash TEXT");
   }
+
+  // time_entries_audit — เผื่อกรณี schema.sql ยังไม่ถูกรันบน server เก่า
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS time_entries_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entry_id INTEGER,
+      entry_user_id INTEGER NOT NULL,
+      entry_type TEXT NOT NULL,
+      entry_ts TEXT NOT NULL,
+      action TEXT NOT NULL CHECK (action IN ('delete','edit','create')),
+      admin_id INTEGER NOT NULL REFERENCES users(id),
+      reason TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_time_audit_created ON time_entries_audit(created_at);
+  `);
 }
 
 export type Branch = {

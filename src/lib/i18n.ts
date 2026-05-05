@@ -350,6 +350,29 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.comingSoon.body": "ฟีเจอร์นี้ยังไม่ได้ port มา — ใช้ Legacy ไปก่อน",
     "admin.persona.comingSoon.openLegacy": "เปิด Legacy →",
 
+    // admin/persona/timesheets — แก้/ลบ time entries (Phase 1B v3)
+    "admin.persona.timesheets.title": "บันทึกเวลาเข้า-ออก",
+    "admin.persona.timesheets.subtitle": "ดูและแก้ไขเวลาเข้า-ออกของพนักงาน (มี audit log)",
+    "admin.persona.timesheets.fromDate": "วันที่เริ่ม",
+    "admin.persona.timesheets.toDate": "วันที่สิ้นสุด",
+    "admin.persona.timesheets.user": "พนักงาน",
+    "admin.persona.timesheets.allUsers": "ทุกคน",
+    "admin.persona.timesheets.applyFilter": "กรอง",
+    "admin.persona.timesheets.entriesTitle": "รายการ",
+    "admin.persona.timesheets.empty": "ไม่มีรายการในช่วงเวลานี้",
+    "admin.persona.timesheets.col.user": "พนักงาน",
+    "admin.persona.timesheets.col.type": "ประเภท",
+    "admin.persona.timesheets.col.ts": "วัน-เวลา",
+    "admin.persona.timesheets.delete": "ลบ",
+    "admin.persona.timesheets.deleting": "กำลังลบ...",
+    "admin.persona.timesheets.confirmDelete": "ยืนยันลบ {type} ของ {user} เมื่อ {ts} ?",
+    "admin.persona.timesheets.reasonPrompt": "เหตุผลในการลบ (ไม่บังคับ):",
+    "admin.persona.timesheets.deleteFailed": "ลบไม่สำเร็จ",
+    "admin.persona.timesheets.auditTitle": "ประวัติการแก้ไข (10 ล่าสุด)",
+    "admin.persona.timesheets.audit.delete": "ลบ",
+    "admin.persona.timesheets.audit.edit": "แก้ไข",
+    "admin.persona.timesheets.audit.create": "เพิ่ม",
+
     // /clock — public mobile clock-in (Phase 1B)
     "clock.title": "ลงเวลา",
     "clock.subtitle": "ใส่รหัส PIN 4 หลัก",
@@ -368,7 +391,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     "clock.networkError": "เครือข่ายผิดพลาด ลองอีกครั้ง",
     "clock.tooManyAttempts": "ลองหลายครั้งเกินไป รอ {n} วินาที",
     "clock.recordError": "บันทึกเวลาไม่สำเร็จ ลองใหม่",
-    "clock.now": "ตอนนี้ {time}"
+    "clock.now": "ตอนนี้ {time}",
+    "clock.short.in": "เข้า",
+    "clock.short.out": "ออก"
   },
   en: {
     // Common
@@ -707,6 +732,29 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.comingSoon.body": "This feature isn't ported yet — please use Legacy in the meantime",
     "admin.persona.comingSoon.openLegacy": "Open Legacy →",
 
+    // admin/persona/timesheets
+    "admin.persona.timesheets.title": "Time Entries",
+    "admin.persona.timesheets.subtitle": "View and correct staff clock-in/out records (with audit log)",
+    "admin.persona.timesheets.fromDate": "From",
+    "admin.persona.timesheets.toDate": "To",
+    "admin.persona.timesheets.user": "Staff",
+    "admin.persona.timesheets.allUsers": "All",
+    "admin.persona.timesheets.applyFilter": "Apply",
+    "admin.persona.timesheets.entriesTitle": "Entries",
+    "admin.persona.timesheets.empty": "No entries in this range",
+    "admin.persona.timesheets.col.user": "Staff",
+    "admin.persona.timesheets.col.type": "Type",
+    "admin.persona.timesheets.col.ts": "When",
+    "admin.persona.timesheets.delete": "Delete",
+    "admin.persona.timesheets.deleting": "Deleting...",
+    "admin.persona.timesheets.confirmDelete": "Delete {type} entry for {user} at {ts}?",
+    "admin.persona.timesheets.reasonPrompt": "Reason for deletion (optional):",
+    "admin.persona.timesheets.deleteFailed": "Failed to delete",
+    "admin.persona.timesheets.auditTitle": "Recent corrections (last 10)",
+    "admin.persona.timesheets.audit.delete": "deleted",
+    "admin.persona.timesheets.audit.edit": "edited",
+    "admin.persona.timesheets.audit.create": "added",
+
     // /clock
     "clock.title": "Clock In/Out",
     "clock.subtitle": "Enter your 4-digit PIN",
@@ -725,7 +773,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     "clock.networkError": "Network error, try again",
     "clock.tooManyAttempts": "Too many attempts, wait {n} seconds",
     "clock.recordError": "Failed to record, try again",
-    "clock.now": "Now {time}"
+    "clock.now": "Now {time}",
+    "clock.short.in": "In",
+    "clock.short.out": "Out"
   }
 };
 

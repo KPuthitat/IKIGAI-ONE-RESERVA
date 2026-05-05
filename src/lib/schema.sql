@@ -104,3 +104,17 @@ CREATE TABLE IF NOT EXISTS time_entries (
   note TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_time_entries_user_ts ON time_entries(user_id, ts);
+
+-- Audit log สำหรับ admin แก้/ลบ time entries (ต้อง trace ได้ว่าใครทำอะไรเมื่อไหร่)
+CREATE TABLE IF NOT EXISTS time_entries_audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entry_id INTEGER,                    -- id เดิม (จะ NULL ไม่ได้แม้ entry ถูกลบ → snapshot ไว้แล้ว)
+  entry_user_id INTEGER NOT NULL,      -- เจ้าของ entry เดิม
+  entry_type TEXT NOT NULL,            -- 'in' | 'out'
+  entry_ts TEXT NOT NULL,              -- timestamp เดิม
+  action TEXT NOT NULL CHECK (action IN ('delete','edit','create')),
+  admin_id INTEGER NOT NULL REFERENCES users(id),
+  reason TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_time_audit_created ON time_entries_audit(created_at);
