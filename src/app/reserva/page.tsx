@@ -46,7 +46,7 @@ export default function CustomerReservaPage() {
         )}
 
         {others.length > 0 && (
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="space-y-3">
             {others.map((b) => (
               <Link
                 key={b.id}
