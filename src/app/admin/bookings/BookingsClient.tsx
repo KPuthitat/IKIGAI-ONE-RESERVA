@@ -22,6 +22,14 @@ function originLabel(o: string): string {
   } as Record<string, string>)[o] ?? o;
 }
 
+function formatSource(s: string | null): string {
+  if (!s) return "";
+  if (s.startsWith("[")) {
+    try { return (JSON.parse(s) as string[]).join(", "); } catch { return s; }
+  }
+  return s;
+}
+
 export default function BookingsClient({
   bookings,
   tables,
@@ -84,7 +92,7 @@ export default function BookingsClient({
               </div>
               <div className="text-sm text-slate-500 flex flex-wrap gap-x-2">
                 <a href={`tel:${b.customer_phone}`} className="text-brand">{b.customer_phone}</a>
-                {b.source && <span>· รู้จักจาก {b.source}</span>}
+                {b.source && <span>· รู้จักจาก {formatSource(b.source)}</span>}
                 {b.customer_origin && <span>· มาจาก {originLabel(b.customer_origin)}</span>}
               </div>
               {b.notes && <div className="text-sm text-slate-600 mt-1">📝 {b.notes}</div>}

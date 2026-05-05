@@ -34,6 +34,14 @@ function runMigrations(db: Database.Database): void {
   if (!names.has("is_member")) {
     db.exec("ALTER TABLE bookings ADD COLUMN is_member INTEGER");
   }
+  // แปลง source string เก่า → JSON array (idempotent)
+  db.exec(`
+    UPDATE bookings
+    SET source = json_array(source)
+    WHERE source IS NOT NULL
+      AND source != ''
+      AND substr(source, 1, 1) != '['
+  `);
 }
 
 export type Branch = {

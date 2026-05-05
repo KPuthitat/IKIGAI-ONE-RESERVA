@@ -23,6 +23,20 @@ function escapeCsvField(v: unknown): string {
   return s;
 }
 
+function formatSource(s: string | null): string {
+  if (!s) return "";
+  // อาจเก็บเป็น JSON array ["A","B"] หรือ legacy single string
+  if (s.startsWith("[")) {
+    try {
+      const arr = JSON.parse(s) as string[];
+      return arr.join("; ");
+    } catch {
+      return s;
+    }
+  }
+  return s;
+}
+
 export function exportBookingsCsv(opts: {
   branchId?: number;
   fromDate?: string;
@@ -65,7 +79,12 @@ export function exportBookingsCsv(opts: {
   ];
   const csv = [
     "﻿" + headers.join(","),    // BOM for Excel UTF-8
-    ...rows.map((r) => headers.map((h) => escapeCsvField(r[h as keyof ExportRow])).join(","))
+    ...rows.map((r) => headers.map((h) => {
+      let v: unknown = r[h as keyof ExportRow];
+      if (h === "source") v = formatSource(v as string | null);
+      if (h === "is_member") v = v === 1 ? "yes" : v === 0 ? "no" : "";
+      return escapeCsvField(v);
+    }).join(","))
   ].join("\n");
   return csv;
 }

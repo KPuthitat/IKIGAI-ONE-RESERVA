@@ -37,13 +37,15 @@ export default function DashboardPage() {
     GROUP BY booking_date ORDER BY booking_date ASC
   `).all(branch.id, today, today) as Array<{ booking_date: string; bookings: number; guests: number; no_shows: number }>;
 
-  // Top sources (30 วัน)
+  // Top sources (30 วัน) — source ถูกเก็บเป็น JSON array, ใช้ json_each แตกออก
   const topSources = db.prepare(`
-    SELECT COALESCE(source, '(ไม่ระบุ)') AS source, COUNT(*) AS n
-    FROM bookings
-    WHERE branch_id = ? AND booking_date >= date(?, '-29 days')
-    GROUP BY source ORDER BY n DESC LIMIT 5
+    SELECT je.value AS source, COUNT(*) AS n
+    FROM bookings b, json_each(COALESCE(NULLIF(b.source, ''), '[]')) je
+    WHERE b.branch_id = ? AND b.booking_date >= date(?, '-29 days')
+    GROUP BY je.value ORDER BY n DESC LIMIT 8
   `).all(branch.id, today) as Array<{ source: string; n: number }>;
+
+  const sourceTotal = topSources.reduce((s, x) => s + x.n, 0);
 
   // ลูกค้ามาจากไหน (30 วัน)
   const originStats = db.prepare(`
@@ -131,17 +133,26 @@ export default function DashboardPage() {
           <BarChart data={weekStats.map((d) => ({ label: d.booking_date.slice(5), value: d.bookings, sub: `${d.guests} แขก` }))} />
         </section>
         <section className="card">
-          <h2 className="font-semibold mb-3">รู้จักร้านจากไหน (30 วัน)</h2>
+          <h2 className="font-semibold mb-1">รู้จักร้านจากไหน (30 วัน)</h2>
+          <p className="text-xs text-slate-500 mb-3">ลูกค้าตอบหลายข้อได้ — รวมการเลือกทั้งหมด</p>
           {topSources.length === 0 ? (
             <div className="text-slate-500 text-sm">ยังไม่มีข้อมูล</div>
           ) : (
             <ul className="space-y-2">
-              {topSources.map((s) => (
-                <li key={s.source} className="flex justify-between text-sm">
-                  <span>{s.source}</span>
-                  <span className="text-slate-500">{s.n} ครั้ง</span>
-                </li>
-              ))}
+              {topSources.map((s) => {
+                const pct = sourceTotal > 0 ? Math.round((s.n / sourceTotal) * 100) : 0;
+                return (
+                  <li key={s.source} className="text-sm">
+                    <div className="flex justify-between mb-0.5">
+                      <span>{s.source}</span>
+                      <span className="text-slate-500">{s.n} · {pct}%</span>
+                    </div>
+                    <div className="bg-slate-100 rounded h-1.5 overflow-hidden">
+                      <div className="bg-brand h-full" style={{ width: `${pct}%` }} />
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

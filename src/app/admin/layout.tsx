@@ -24,9 +24,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen bg-slate-100">
       <header className="bg-ink-gradient text-white shadow-lg">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4 flex-wrap">
-          <Link href="/admin" className="brand-wordmark text-white text-lg">
-            IKIGAI ONE <span className="text-white/60 font-normal text-sm tracking-normal">· RESERVA</span>
-          </Link>
+          <div className="flex items-baseline gap-1.5">
+            <Link href="/" className="text-white/60 hover:text-white text-xs tracking-[1px] font-bold transition-colors">
+              IKIGAI ONE
+            </Link>
+            <span className="text-white/30 text-xs">/</span>
+            <Link href="/admin" className="brand-wordmark text-white text-lg">RESERVA</Link>
+          </div>
           <div className="hidden sm:block h-6 w-px bg-white/20" />
           <BranchSwitcher
             branches={user.branches}

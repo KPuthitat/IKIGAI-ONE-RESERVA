@@ -14,13 +14,13 @@ type TableOption = {
 };
 
 const SOURCES = [
-  { value: "Instagram", label: "Instagram", emoji: "📷" },
-  { value: "Facebook", label: "Facebook", emoji: "👍" },
-  { value: "TikTok", label: "TikTok", emoji: "🎵" },
-  { value: "Google Maps", label: "Google", emoji: "🔍" },
-  { value: "เพื่อนแนะนำ", label: "เพื่อนแนะนำ", emoji: "👥" },
-  { value: "ผ่านมาเห็น", label: "ผ่านมาเห็น", emoji: "👀" },
-  { value: "อื่นๆ", label: "อื่นๆ", emoji: "✨" }
+  { value: "Instagram", label: "Instagram" },
+  { value: "Facebook", label: "Facebook" },
+  { value: "TikTok", label: "TikTok" },
+  { value: "Google Maps", label: "Google" },
+  { value: "เพื่อนแนะนำ", label: "เพื่อนแนะนำ" },
+  { value: "ผ่านมาเห็น", label: "ผ่านมาเห็น" },
+  { value: "อื่นๆ", label: "อื่นๆ" }
 ];
 
 const ORIGINS = [
@@ -42,7 +42,7 @@ export default function BookingForm({ branch }: { branch: Branch }) {
     party_size: 2,
     booking_date: today,
     booking_time: "18:00",
-    source: "",
+    sources: [] as string[],            // multi-select
     customer_origin: "",
     is_member: null as 0 | 1 | null,
     notes: "",
@@ -113,6 +113,8 @@ export default function BookingForm({ branch }: { branch: Branch }) {
         body: JSON.stringify({
           branch_slug: branch.slug,
           ...form,
+          // ส่ง sources เป็น JSON string เก็บใน column source
+          source: form.sources.length > 0 ? JSON.stringify(form.sources) : "",
           table_id: tableId
         })
       });
@@ -151,7 +153,7 @@ export default function BookingForm({ branch }: { branch: Branch }) {
           </div>
         )}
 
-        <button onClick={() => router.push("/")} className="btn-secondary w-full">กลับหน้าแรก</button>
+        <button onClick={() => router.push("/book")} className="btn-secondary w-full">เลือกสาขาอื่น</button>
       </div>
     );
   }
@@ -234,7 +236,7 @@ export default function BookingForm({ branch }: { branch: Branch }) {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="label">วันที่ *</label>
             <input
@@ -282,7 +284,7 @@ export default function BookingForm({ branch }: { branch: Branch }) {
         </div>
 
         <div>
-          <div className="text-xs font-semibold text-slate-500 mb-2">🌍 เดินทางมาจาก</div>
+          <div className="text-xs font-semibold text-slate-500 mb-2">เดินทางมาจาก</div>
           <ChipGroup
             options={ORIGINS}
             value={form.customer_origin}
@@ -291,16 +293,16 @@ export default function BookingForm({ branch }: { branch: Branch }) {
         </div>
 
         <div>
-          <div className="text-xs font-semibold text-slate-500 mb-2">💬 รู้จักร้านจาก</div>
-          <ChipGroup
+          <div className="text-xs font-semibold text-slate-500 mb-2">รู้จักร้านจาก (เลือกได้หลายข้อ)</div>
+          <MultiChipGroup
             options={SOURCES}
-            value={form.source}
-            onChange={(v) => setForm({ ...form, source: v ?? "" })}
+            values={form.sources}
+            onChange={(vs) => setForm({ ...form, sources: vs })}
           />
         </div>
 
         <div>
-          <div className="text-xs font-semibold text-slate-500 mb-2">🎟️ เคยเป็นสมาชิกร้านมั้ย</div>
+          <div className="text-xs font-semibold text-slate-500 mb-2">เคยเป็นสมาชิกร้านมั้ย</div>
           <ChipGroup
             options={[
               { value: "1", label: "เคยแล้ว" },
@@ -313,7 +315,7 @@ export default function BookingForm({ branch }: { branch: Branch }) {
           />
           {form.is_member === 0 && (
             <div className="mt-2 text-xs text-slate-500 bg-brand/5 border border-brand/20 rounded-lg p-2.5">
-              💡 ทีมงานจะแนะนำสมัครสมาชิกฟรีให้ตอนถึงร้าน
+              ทีมงานจะแนะนำสมัครสมาชิกฟรีให้ตอนถึงร้าน
             </div>
           )}
         </div>
@@ -328,13 +330,13 @@ export default function BookingForm({ branch }: { branch: Branch }) {
   );
 }
 
-// ── ChipGroup component ──
+// ── ChipGroup (single select) ──
 function ChipGroup({
   options,
   value,
   onChange
 }: {
-  options: Array<{ value: string; label: string; emoji?: string }>;
+  options: Array<{ value: string; label: string }>;
   value: string;
   onChange: (v: string | null) => void;
 }) {
@@ -353,7 +355,44 @@ function ChipGroup({
                 : "bg-white text-slate-600 border-slate-200 hover:border-brand/60 active:scale-95"
             }`}
           >
-            {o.emoji && <span className="mr-1">{o.emoji}</span>}
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── MultiChipGroup (multi select) ──
+function MultiChipGroup({
+  options,
+  values,
+  onChange
+}: {
+  options: Array<{ value: string; label: string }>;
+  values: string[];
+  onChange: (vs: string[]) => void;
+}) {
+  function toggle(v: string) {
+    if (values.includes(v)) onChange(values.filter((x) => x !== v));
+    else onChange([...values, v]);
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => {
+        const selected = values.includes(o.value);
+        return (
+          <button
+            type="button"
+            key={o.value}
+            onClick={() => toggle(o.value)}
+            className={`px-3.5 py-2 rounded-full text-sm border-[1.5px] transition min-h-[40px] ${
+              selected
+                ? "bg-brand text-white border-brand shadow-sm"
+                : "bg-white text-slate-600 border-slate-200 hover:border-brand/60 active:scale-95"
+            }`}
+          >
+            {selected && <span className="mr-1">✓</span>}
             {o.label}
           </button>
         );
