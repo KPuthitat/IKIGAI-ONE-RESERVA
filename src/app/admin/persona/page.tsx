@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
-import { getEmployeeStats, getPendingCounts } from "@/lib/payroll-data";
 
 export const dynamic = "force-dynamic";
 
@@ -13,14 +12,9 @@ export default function AdminPersonaDashboard() {
   requireAdmin();
   const lang = getLang();
 
-  const empStats = (() => {
-    try { return getEmployeeStats(); }
-    catch { return { pt: 0, ft: 0, ptActive: 0, ftActive: 0 }; }
-  })();
-  const pending = (() => {
-    try { return getPendingCounts(); }
-    catch { return { leave: 0, corrections: 0 }; }
-  })();
+  // Stats = placeholder ตอนนี้ (ระบบยังไม่ได้ port ข้อมูลมา) — ค่อยเปิดทีหลัง
+  const empStats = { pt: 0, ft: 0, ptActive: 0, ftActive: 0 };
+  const pending = { leave: 0, corrections: 0 };
 
   return (
     <div className="space-y-6">
