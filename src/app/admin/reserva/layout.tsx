@@ -1,24 +1,26 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import BranchSwitcher from "./BranchSwitcher";
 
 export const dynamic = "force-dynamic";
 
 export default function ReservaAdminLayout({ children }: { children: React.ReactNode }) {
   const user = requireAdmin();
+  const lang = getLang();
 
   const navItems = [
-    { href: "/admin/reserva", label: "ภาพรวม" },
-    { href: "/admin/reserva/bookings", label: "การจอง" },
-    { href: "/admin/reserva/floor-plan", label: "ผังโต๊ะ", adminOnly: true },
-    { href: "/admin/reserva/staff", label: "พนักงาน", adminOnly: true },
-    { href: "/admin/reserva/settings", label: "ตั้งค่า", adminOnly: true },
-    { href: "/admin/reserva/export", label: "Export", adminOnly: true }
+    { href: "/admin/reserva", label: t(lang, "admin.nav.overview") },
+    { href: "/admin/reserva/bookings", label: t(lang, "admin.nav.bookings") },
+    { href: "/admin/reserva/floor-plan", label: t(lang, "admin.nav.floorPlan"), adminOnly: true },
+    { href: "/admin/reserva/staff", label: t(lang, "admin.nav.users"), adminOnly: true },
+    { href: "/admin/reserva/settings", label: t(lang, "admin.nav.settings"), adminOnly: true },
+    { href: "/admin/reserva/export", label: t(lang, "admin.nav.export"), adminOnly: true }
   ];
 
   return (
     <div>
-      {/* Sub-nav สำหรับ RESERVA module — branch switcher + page nav */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 mb-4 p-3 flex items-center gap-3 flex-wrap">
         <BranchSwitcher branches={user.branches} activeBranchId={user.activeBranchId} />
         <nav className="flex gap-1 ml-auto flex-wrap">

@@ -3,24 +3,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Booking } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
+import { useLang } from "@/lib/LangProvider";
 
 type Row = Booking & { table_label: string | null };
-
-const STATUS_LABEL: Record<Row["status"], string> = {
-  confirmed: "รอลูกค้า",
-  seated: "นั่งแล้ว",
-  no_show: "ไม่มา",
-  cancelled: "ยกเลิก",
-  completed: "เสร็จสิ้น"
-};
-
-function originLabel(o: string): string {
-  return ({
-    sriracha: "ศรีราชา",
-    chonburi: "ชลบุรี",
-    other_province: "ต่างจังหวัด"
-  } as Record<string, string>)[o] ?? o;
-}
 
 function formatSource(s: string | null): string {
   if (!s) return "";
@@ -40,6 +25,7 @@ export default function BookingsClient({
   canEdit: boolean;
 }) {
   const router = useRouter();
+  const { t } = useLang();
   const [busyId, setBusyId] = useState<number | null>(null);
 
   async function setStatus(id: number, status: Row["status"]) {
@@ -50,7 +36,7 @@ export default function BookingsClient({
       body: JSON.stringify({ status })
     });
     setBusyId(null);
-    if (!res.ok) alert("เกิดข้อผิดพลาด");
+    if (!res.ok) alert(t("admin.bookings.errorGeneric"));
     router.refresh();
   }
 
@@ -64,13 +50,13 @@ export default function BookingsClient({
     setBusyId(null);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      alert(j.error || "เกิดข้อผิดพลาด");
+      alert(j.error || t("admin.bookings.errorGeneric"));
     }
     router.refresh();
   }
 
   if (bookings.length === 0) {
-    return <div className="card text-slate-500 text-center py-10">ยังไม่มีการจองในวันนี้</div>;
+    return <div className="card text-slate-500 text-center py-10">{t("admin.dashboard.noBookings")}</div>;
   }
 
   return (
@@ -82,27 +68,35 @@ export default function BookingsClient({
             <div className="flex-1 min-w-[200px]">
               <div className="font-medium flex items-center gap-2 flex-wrap">
                 {b.customer_name}
-                <span className="text-slate-500 font-normal">· {b.party_size} ที่นั่ง</span>
+                <span className="text-slate-500 font-normal">{t("admin.bookings.partySize", { n: b.party_size })}</span>
                 {b.is_member === 1 && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">สมาชิก</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">
+                    {t("admin.bookings.member.is")}
+                  </span>
                 )}
                 {b.is_member === 0 && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">ยังไม่ใช่สมาชิก</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">
+                    {t("admin.bookings.member.not")}
+                  </span>
                 )}
               </div>
               <div className="text-sm text-slate-500 flex flex-wrap gap-x-2">
                 <a href={`tel:${b.customer_phone}`} className="text-brand">{b.customer_phone}</a>
-                {b.source && <span>· รู้จักจาก {formatSource(b.source)}</span>}
-                {b.customer_origin && <span>· มาจาก {originLabel(b.customer_origin)}</span>}
+                {b.source && (
+                  <span>{t("admin.bookings.knownFrom", { source: formatSource(b.source) })}</span>
+                )}
+                {b.customer_origin && (
+                  <span>{t("admin.bookings.from", { origin: t(`booking.origin.${b.customer_origin}`) })}</span>
+                )}
               </div>
               {b.notes && <div className="text-sm text-slate-600 mt-1">📝 {b.notes}</div>}
             </div>
             <div className="text-sm">
               <span className={`px-2 py-1 rounded text-xs status-${b.status}`}>
-                {STATUS_LABEL[b.status]}
+                {t(`status.${b.status}`)}
               </span>
               <div className="mt-1 text-slate-600">
-                โต๊ะ:{" "}
+                {t("admin.bookings.tableLabel")}{" "}
                 {canEdit ? (
                   <select
                     className="text-sm border rounded px-1"
@@ -110,9 +104,9 @@ export default function BookingsClient({
                     onChange={(e) => assignTable(b.id, e.target.value ? Number(e.target.value) : null)}
                     disabled={busyId === b.id || b.status === "cancelled"}
                   >
-                    <option value="">— ไม่กำหนด —</option>
-                    {tables.map((t) => (
-                      <option key={t.id} value={t.id}>{t.label} ({t.capacity})</option>
+                    <option value="">{t("admin.bookings.tableNone")}</option>
+                    {tables.map((tab) => (
+                      <option key={tab.id} value={tab.id}>{tab.label} ({tab.capacity})</option>
                     ))}
                   </select>
                 ) : (b.table_label ?? "—")}
@@ -127,14 +121,14 @@ export default function BookingsClient({
                   onClick={() => setStatus(b.id, "seated")}
                   disabled={busyId === b.id}
                   className="btn-success"
-                >✓ ลูกค้ามาแล้ว · ให้นั่ง</button>
+                >{t("admin.bookings.btn.markSeated")}</button>
               )}
               {b.status === "seated" && (
                 <button
                   onClick={() => setStatus(b.id, "completed")}
                   disabled={busyId === b.id}
                   className="btn-secondary"
-                >ปิดบิล / ลูกค้าออก</button>
+                >{t("admin.bookings.btn.markCompleted")}</button>
               )}
               {b.status === "confirmed" && (
                 <>
@@ -142,16 +136,16 @@ export default function BookingsClient({
                     onClick={() => setStatus(b.id, "no_show")}
                     disabled={busyId === b.id}
                     className="btn-secondary text-amber-700"
-                  >ลูกค้าไม่มา</button>
+                  >{t("admin.bookings.btn.markNoShow")}</button>
                   <button
                     onClick={() => {
-                      if (confirm("ยืนยันการยกเลิก? โต๊ะจะถูกปล่อยให้รับจองอื่นได้")) {
+                      if (confirm(t("admin.bookings.confirmCancel"))) {
                         setStatus(b.id, "cancelled");
                       }
                     }}
                     disabled={busyId === b.id}
                     className="btn-danger"
-                  >ยกเลิก</button>
+                  >{t("admin.bookings.btn.cancel")}</button>
                 </>
               )}
             </div>

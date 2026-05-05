@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Branch, User } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
+import { useLang } from "@/lib/LangProvider";
 
 type UserWithBranches = User & { branch_ids: number[] };
 
@@ -10,6 +11,7 @@ export default function StaffClient({
   users, branches
 }: { users: UserWithBranches[]; branches: Branch[] }) {
   const router = useRouter();
+  const { t } = useLang();
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({
     username: "", password: "", display_name: "",
@@ -31,7 +33,7 @@ export default function StaffClient({
     setBusy(false);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      setErr(j.error || "สร้างไม่สำเร็จ");
+      setErr(j.error || t("admin.users.createFailed"));
       return;
     }
     setForm({ ...form, username: "", password: "", display_name: "" });
@@ -40,22 +42,22 @@ export default function StaffClient({
   }
 
   async function deleteUser(id: number, name: string) {
-    if (!confirm(`ลบบัญชี ${name}?`)) return;
+    if (!confirm(t("admin.users.confirmDelete", { name }))) return;
     const res = await fetch(apiUrl(`/api/admin/staff/${id}`), { method: "DELETE" });
-    if (!res.ok) { alert("ลบไม่สำเร็จ"); return; }
+    if (!res.ok) { alert(t("admin.users.deleteFailed")); return; }
     router.refresh();
   }
 
   async function resetPassword(id: number) {
-    const np = prompt("ใส่รหัสผ่านใหม่ (อย่างน้อย 6 ตัว):");
+    const np = prompt(t("admin.users.promptNewPassword"));
     if (!np || np.length < 6) return;
     const res = await fetch(apiUrl(`/api/admin/staff/${id}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: np })
     });
-    if (!res.ok) { alert("เปลี่ยนรหัสผ่านไม่สำเร็จ"); return; }
-    alert("เปลี่ยนรหัสผ่านเรียบร้อย");
+    if (!res.ok) { alert(t("admin.users.changePasswordFailed")); return; }
+    alert(t("admin.users.changePasswordOk"));
   }
 
   async function updateBranches(id: number, branchIds: number[]) {
@@ -64,21 +66,21 @@ export default function StaffClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ branch_ids: branchIds })
     });
-    if (!res.ok) { alert("อัปเดตสาขาไม่สำเร็จ"); return; }
+    if (!res.ok) { alert(t("admin.users.updateBranchesFailed")); return; }
     router.refresh();
   }
 
   return (
     <div className="space-y-4">
       <button onClick={() => setCreating(!creating)} className="btn-primary">
-        {creating ? "ยกเลิก" : "+ เพิ่มพนักงาน"}
+        {creating ? t("admin.users.cancel") : t("admin.users.addUser")}
       </button>
 
       {creating && (
         <form onSubmit={createUser} className="card space-y-3">
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <label className="label">ชื่อผู้ใช้ (สำหรับ login)</label>
+              <label className="label">{t("admin.users.field.username")}</label>
               <input
                 className="input" required minLength={3}
                 value={form.username}
@@ -86,7 +88,7 @@ export default function StaffClient({
               />
             </div>
             <div>
-              <label className="label">ชื่อแสดง</label>
+              <label className="label">{t("admin.users.field.displayName")}</label>
               <input
                 className="input" required
                 value={form.display_name}
@@ -94,7 +96,7 @@ export default function StaffClient({
               />
             </div>
             <div>
-              <label className="label">รหัสผ่าน</label>
+              <label className="label">{t("admin.users.field.password")}</label>
               <input
                 type="password" className="input" required minLength={6}
                 value={form.password}
@@ -102,18 +104,18 @@ export default function StaffClient({
               />
             </div>
             <div>
-              <label className="label">บทบาท</label>
+              <label className="label">{t("admin.users.field.role")}</label>
               <select
                 className="input" value={form.role}
                 onChange={(e) => setForm({ ...form, role: e.target.value as "admin" | "staff" })}
               >
-                <option value="staff">staff (ดูการจอง + กดสถานะ)</option>
-                <option value="admin">admin (จัดการได้ทุกอย่าง)</option>
+                <option value="staff">{t("admin.users.role.staffDesc")}</option>
+                <option value="admin">{t("admin.users.role.adminDesc")}</option>
               </select>
             </div>
           </div>
           <div>
-            <label className="label">สาขาที่เข้าได้</label>
+            <label className="label">{t("admin.users.field.branches")}</label>
             <div className="flex flex-wrap gap-3">
               {branches.map((b) => (
                 <label key={b.id} className="flex items-center gap-1 text-sm">
@@ -132,7 +134,9 @@ export default function StaffClient({
             </div>
           </div>
           {err && <div className="text-red-600 text-sm">{err}</div>}
-          <button className="btn-primary" disabled={busy}>{busy ? "กำลังบันทึก..." : "สร้างบัญชี"}</button>
+          <button className="btn-primary" disabled={busy}>
+            {busy ? t("common.saving") : t("admin.users.create")}
+          </button>
         </form>
       )}
 
@@ -140,10 +144,10 @@ export default function StaffClient({
         <table className="w-full text-sm">
           <thead className="text-left text-slate-500">
             <tr>
-              <th className="py-2">ชื่อแสดง</th>
-              <th>username</th>
-              <th>บทบาท</th>
-              <th>สาขา</th>
+              <th className="py-2">{t("admin.users.col.displayName")}</th>
+              <th>{t("admin.users.col.username")}</th>
+              <th>{t("admin.users.col.role")}</th>
+              <th>{t("admin.users.col.branches")}</th>
               <th></th>
             </tr>
           </thead>
@@ -175,8 +179,12 @@ export default function StaffClient({
                   </div>
                 </td>
                 <td className="text-right whitespace-nowrap">
-                  <button onClick={() => resetPassword(u.id)} className="text-xs text-brand mr-2">เปลี่ยนรหัส</button>
-                  <button onClick={() => deleteUser(u.id, u.display_name)} className="text-xs text-red-600">ลบ</button>
+                  <button onClick={() => resetPassword(u.id)} className="text-xs text-brand mr-2">
+                    {t("admin.users.changePassword")}
+                  </button>
+                  <button onClick={() => deleteUser(u.id, u.display_name)} className="text-xs text-red-600">
+                    {t("admin.users.delete")}
+                  </button>
                 </td>
               </tr>
             ))}

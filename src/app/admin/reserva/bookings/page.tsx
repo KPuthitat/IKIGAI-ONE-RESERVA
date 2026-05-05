@@ -1,6 +1,8 @@
 import { requireUser } from "@/lib/auth";
 import { getDb, type Branch, type Booking } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import BookingsClient from "./BookingsClient";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +11,8 @@ type Row = Booking & { table_label: string | null };
 
 export default function BookingsPage({ searchParams }: { searchParams: { date?: string } }) {
   const user = requireUser();
-  if (!user.activeBranchId) return <div className="card">ยังไม่ได้รับสิทธิ์เข้าสาขา</div>;
+  const lang = getLang();
+  if (!user.activeBranchId) return <div className="card">{t(lang, "admin.noBranchAccess")}</div>;
   const db = getDb();
   const branch = db.prepare("SELECT * FROM branches WHERE id = ?").get(user.activeBranchId) as Branch;
   const date = searchParams.date || todayBkk();
@@ -29,13 +32,13 @@ export default function BookingsPage({ searchParams }: { searchParams: { date?: 
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <h1 className="text-2xl font-bold">การจอง</h1>
+          <h1 className="text-2xl font-bold">{t(lang, "admin.bookings.title")}</h1>
           <p className="text-sm text-slate-500">{branch.name}</p>
         </div>
         <form className="ml-auto flex items-center gap-2">
-          <label className="text-sm">วันที่</label>
+          <label className="text-sm">{t(lang, "admin.bookings.dateLabel")}</label>
           <input type="date" name="date" defaultValue={date} className="input w-auto" />
-          <button className="btn-secondary">ดู</button>
+          <button className="btn-secondary">{t(lang, "admin.bookings.viewBtn")}</button>
         </form>
       </div>
       <BookingsClient

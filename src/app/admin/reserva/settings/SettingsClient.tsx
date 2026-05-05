@@ -3,9 +3,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Branch } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
+import { useLang } from "@/lib/LangProvider";
 
 export default function SettingsClient({ branch }: { branch: Branch }) {
   const router = useRouter();
+  const { t } = useLang();
   const [form, setForm] = useState({
     open_time: branch.open_time,
     close_time: branch.close_time,
@@ -27,7 +29,7 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
     try {
       JSON.parse(form.staff_line_user_ids);
     } catch {
-      setErr("staff_line_user_ids ต้องเป็น JSON array เช่น [\"U1234...\",\"U5678...\"]");
+      setErr(t("admin.settings.invalidJson"));
       return;
     }
     setBusy(true);
@@ -39,7 +41,7 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
     setBusy(false);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      setErr(j.error || "บันทึกไม่สำเร็จ");
+      setErr(j.error || t("admin.settings.saveFailed"));
       return;
     }
     setOk(true);
@@ -48,74 +50,68 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
 
   return (
     <form onSubmit={save} className="card space-y-4 max-w-2xl">
-      <h2 className="font-semibold">เวลาเปิด-ปิด</h2>
+      <h2 className="font-semibold">{t("admin.settings.openCloseSection")}</h2>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="label">เปิด</label>
+          <label className="label">{t("admin.settings.field.openTime")}</label>
           <input type="time" className="input" value={form.open_time}
             onChange={(e) => setForm({ ...form, open_time: e.target.value })} />
         </div>
         <div>
-          <label className="label">ปิด</label>
+          <label className="label">{t("admin.settings.field.closeTime")}</label>
           <input type="time" className="input" value={form.close_time}
             onChange={(e) => setForm({ ...form, close_time: e.target.value })} />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="label">ช่วงเวลาจอง (นาที)</label>
+          <label className="label">{t("admin.settings.field.slotMinutes")}</label>
           <input type="number" min={15} max={120} step={15} className="input"
             value={form.slot_minutes}
             onChange={(e) => setForm({ ...form, slot_minutes: Number(e.target.value) })} />
         </div>
         <div>
-          <label className="label">ระยะเวลาต่อโต๊ะ (นาที)</label>
+          <label className="label">{t("admin.settings.field.duration")}</label>
           <input type="number" min={30} max={240} step={15} className="input"
             value={form.default_duration_minutes}
             onChange={(e) => setForm({ ...form, default_duration_minutes: Number(e.target.value) })} />
         </div>
       </div>
 
-      <h2 className="font-semibold pt-3 border-t border-slate-100">การแจ้งเตือน</h2>
+      <h2 className="font-semibold pt-3 border-t border-slate-100">{t("admin.settings.notifSection")}</h2>
       <div>
-        <label className="label">แจ้งเตือนล่วงหน้าก่อนถึงเวลาจอง (นาที)</label>
+        <label className="label">{t("admin.settings.field.reminderBefore")}</label>
         <input type="number" min={15} max={240} step={15} className="input"
           value={form.reminder_minutes_before}
           onChange={(e) => setForm({ ...form, reminder_minutes_before: Number(e.target.value) })} />
       </div>
 
-      <h2 className="font-semibold pt-3 border-t border-slate-100">LINE Messaging API</h2>
-      <p className="text-sm text-slate-500">
-        สร้าง LINE Official Account → Provider/Channel ที่{" "}
-        <a className="text-brand underline" href="https://developers.line.biz/console/" target="_blank" rel="noreferrer">
-          LINE Developers Console
-        </a> แล้วคัดลอก Channel Secret + Channel Access Token มาใส่ที่นี่
-      </p>
+      <h2 className="font-semibold pt-3 border-t border-slate-100">{t("admin.settings.lineSection")}</h2>
+      <p className="text-sm text-slate-500">{t("admin.settings.lineDesc")}</p>
       <div>
-        <label className="label">Channel Access Token (long-lived)</label>
+        <label className="label">{t("admin.settings.field.channelToken")}</label>
         <input className="input font-mono text-xs" value={form.line_channel_token}
-          onChange={(e) => setForm({ ...form, line_channel_token: e.target.value })}
-          placeholder="ใส่ token ยาวจาก LINE Developers" />
+          onChange={(e) => setForm({ ...form, line_channel_token: e.target.value })} />
       </div>
       <div>
-        <label className="label">Channel Secret</label>
+        <label className="label">{t("admin.settings.field.channelSecret")}</label>
         <input className="input font-mono text-xs" value={form.line_channel_secret}
           onChange={(e) => setForm({ ...form, line_channel_secret: e.target.value })} />
       </div>
       <div>
-        <label className="label">LINE userId พนักงานที่จะรับแจ้งเตือน (JSON array)</label>
+        <label className="label">{t("admin.settings.field.staffLineIds")}</label>
         <textarea className="input font-mono text-xs" rows={3}
           value={form.staff_line_user_ids}
           onChange={(e) => setForm({ ...form, staff_line_user_ids: e.target.value })}
           placeholder='["U1234abcd...","U5678efgh..."]' />
-        <p className="text-xs text-slate-500 mt-1">
-          ดู userId ได้จาก webhook log หรือใช้ LINE Developers ตอบกลับ profile API
-        </p>
+        <p className="text-xs text-slate-500 mt-1">{t("admin.settings.staffLineIdsHint")}</p>
       </div>
 
       {err && <div className="text-red-600 text-sm">{err}</div>}
-      {ok && <div className="text-emerald-600 text-sm">บันทึกเรียบร้อย</div>}
-      <button className="btn-primary" disabled={busy}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button>
+      {ok && <div className="text-emerald-600 text-sm">{t("admin.settings.saved")}</div>}
+      <button className="btn-primary" disabled={busy}>
+        {busy ? t("admin.settings.saving") : t("admin.settings.save")}
+      </button>
     </form>
   );
 }

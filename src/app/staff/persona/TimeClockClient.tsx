@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { useLang } from "@/lib/LangProvider";
 
 type TimeEntry = { id: number; type: "in" | "out"; ts: string };
 
@@ -16,12 +17,13 @@ export default function TimeClockClient({
   entries: TimeEntry[];
 }) {
   const router = useRouter();
+  const { t, formatDateLong } = useLang();
   const [now, setNow] = useState(new Date());
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
   }, []);
 
   async function clock() {
@@ -33,17 +35,14 @@ export default function TimeClockClient({
       body: JSON.stringify({ type: isCurrentlyIn ? "out" : "in" })
     });
     setBusy(false);
-    if (!res.ok) alert("เกิดข้อผิดพลาด");
+    if (!res.ok) alert(t("staff.persona.errorClock"));
     router.refresh();
   }
 
   const bkk = new Date(now.getTime() + 7 * 60 * 60 * 1000);
   const timeStr = bkk.toISOString().slice(11, 19);
-  const dateStr = bkk.toLocaleDateString("th-TH-u-ca-buddhist", {
-    weekday: "long", day: "numeric", month: "long", year: "numeric"
-  });
+  const dateStr = formatDateLong(bkk);
 
-  // group entries by Bangkok local date
   const byDay: Record<string, TimeEntry[]> = {};
   for (const e of entries) {
     const d = new Date(new Date(e.ts).getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -62,7 +61,7 @@ export default function TimeClockClient({
           <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${
             isCurrentlyIn ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"
           }`}>
-            {isCurrentlyIn ? "● กำลังทำงาน" : "○ ยังไม่เข้างาน / ออกแล้ว"}
+            {isCurrentlyIn ? t("staff.persona.workingNow") : t("staff.persona.notWorking")}
           </span>
         </div>
         <p className="text-xs text-slate-400 mt-2">{userName}</p>
@@ -76,14 +75,14 @@ export default function TimeClockClient({
               : "bg-emerald-500 hover:bg-emerald-600 text-white shadow-[0_4px_16px_rgba(16,185,129,.4)]"
           }`}
         >
-          {busy ? "..." : isCurrentlyIn ? "ลงเวลาออกงาน" : "ลงเวลาเข้างาน"}
+          {busy ? "..." : isCurrentlyIn ? t("staff.persona.clockOut") : t("staff.persona.clockIn")}
         </button>
       </div>
 
       <div className="card">
-        <h2 className="font-semibold mb-3">ประวัติ 7 วันล่าสุด</h2>
+        <h2 className="font-semibold mb-3">{t("staff.persona.history7")}</h2>
         {days.length === 0 ? (
-          <div className="text-slate-500 text-sm text-center py-4">ยังไม่มีประวัติ</div>
+          <div className="text-slate-500 text-sm text-center py-4">{t("staff.persona.noHistory")}</div>
         ) : (
           <div className="space-y-3">
             {days.map((d) => {
@@ -92,9 +91,11 @@ export default function TimeClockClient({
               return (
                 <div key={d} className="border-b border-slate-100 pb-2 last:border-b-0">
                   <div className="flex justify-between items-center text-sm">
-                    <span className="font-medium">{formatThaiDate(d)}</span>
+                    <span className="font-medium">{formatDateLong(d)}</span>
                     <span className="text-slate-500 text-xs">
-                      {totalMins > 0 ? `รวม ${Math.floor(totalMins / 60)}ชม. ${totalMins % 60}น.` : ""}
+                      {totalMins > 0
+                        ? t("staff.persona.totalHM", { h: Math.floor(totalMins / 60), m: totalMins % 60 })
+                        : ""}
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1.5 mt-1">
@@ -105,7 +106,8 @@ export default function TimeClockClient({
                           e.type === "in" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
                         }`}
                       >
-                        {e.type === "in" ? "เข้า" : "ออก"} {new Date(new Date(e.ts).getTime() + 7 * 60 * 60 * 1000).toISOString().slice(11, 16)}
+                        {e.type === "in" ? t("staff.persona.entry.in") : t("staff.persona.entry.out")}{" "}
+                        {new Date(new Date(e.ts).getTime() + 7 * 60 * 60 * 1000).toISOString().slice(11, 16)}
                       </span>
                     ))}
                   </div>
@@ -120,7 +122,6 @@ export default function TimeClockClient({
 }
 
 function computeTotalMinutes(entries: TimeEntry[]): number {
-  // entries เรียงจากใหม่ → เก่า, reverse ให้เก่า → ใหม่ แล้ว pair in-out
   const sorted = entries.slice().sort((a, b) => a.ts.localeCompare(b.ts));
   let total = 0;
   let lastIn: number | null = null;
@@ -132,10 +133,4 @@ function computeTotalMinutes(entries: TimeEntry[]): number {
     }
   }
   return Math.max(0, total);
-}
-
-function formatThaiDate(yyyymmdd: string): string {
-  const [y, m, d] = yyyymmdd.split("-").map(Number);
-  const months = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
-  return `${d} ${months[m - 1]} ${y + 543}`;
 }

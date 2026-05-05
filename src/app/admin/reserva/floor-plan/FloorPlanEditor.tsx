@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TableRow } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
+import { useLang } from "@/lib/LangProvider";
 
 const CANVAS_W = 900;
 const CANVAS_H = 600;
@@ -13,6 +14,7 @@ export default function FloorPlanEditor({
   branchId, initialTables
 }: { branchId: number; initialTables: TableRow[] }) {
   const router = useRouter();
+  const { t } = useLang();
   const [tables, setTables] = useState<Draft[]>(initialTables);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -79,7 +81,7 @@ export default function FloorPlanEditor({
 
   function deleteSelected() {
     if (selectedId === null) return;
-    if (!confirm("ลบโต๊ะนี้? (ถ้าเคยมีการจองที่ผูกกับโต๊ะนี้จะไม่หาย แค่หลุดความสัมพันธ์)")) return;
+    if (!confirm(t("admin.floorplan.confirmDelete"))) return;
     setTables((prev) => prev.map((t) =>
       t.id === selectedId ? { ...t, _deleted: true, _dirty: true } : t
     ));
@@ -105,7 +107,7 @@ export default function FloorPlanEditor({
     setSaving(false);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      alert(j.error || "บันทึกไม่สำเร็จ");
+      alert(j.error || t("admin.floorplan.saveFailed"));
       return;
     }
     router.refresh();
@@ -178,7 +180,7 @@ export default function FloorPlanEditor({
                   x={t.x + t.width / 2} y={t.y + t.height / 2 + 14}
                   textAnchor="middle" fill="white" fontSize="11"
                   pointerEvents="none"
-                >{t.capacity} ที่</text>
+                >{t.capacity}</text>
               </g>
             );
           })}
@@ -187,26 +189,26 @@ export default function FloorPlanEditor({
 
       <aside className="space-y-3">
         <div className="card">
-          <button onClick={addTable} className="btn-primary w-full">+ เพิ่มโต๊ะ</button>
+          <button onClick={addTable} className="btn-primary w-full">{t("admin.floorplan.addTable")}</button>
           <button
             onClick={save}
-            disabled={saving || !tables.some((t) => t._dirty)}
+            disabled={saving || !tables.some((tbl) => tbl._dirty)}
             className="btn-success w-full mt-2"
-          >{saving ? "กำลังบันทึก..." : "บันทึกผัง"}</button>
+          >{saving ? t("admin.settings.saving") : t("admin.floorplan.savePlan")}</button>
         </div>
 
         {selected ? (
           <div className="card space-y-3">
-            <h3 className="font-semibold">แก้ไขโต๊ะ</h3>
+            <h3 className="font-semibold">{t("admin.floorplan.editTable")}</h3>
             <div>
-              <label className="label">ชื่อ/หมายเลข</label>
+              <label className="label">{t("admin.floorplan.field.label")}</label>
               <input
                 className="input" value={selected.label}
                 onChange={(e) => updateSelected({ label: e.target.value })}
               />
             </div>
             <div>
-              <label className="label">จำนวนที่นั่ง</label>
+              <label className="label">{t("admin.floorplan.field.capacity")}</label>
               <input
                 type="number" min={1} max={20} className="input"
                 value={selected.capacity}
@@ -214,18 +216,18 @@ export default function FloorPlanEditor({
               />
             </div>
             <div>
-              <label className="label">รูปร่าง</label>
+              <label className="label">{t("admin.floorplan.field.shape")}</label>
               <select
                 className="input" value={selected.shape}
                 onChange={(e) => updateSelected({ shape: e.target.value as "rect" | "round" })}
               >
-                <option value="rect">สี่เหลี่ยม</option>
-                <option value="round">วงกลม</option>
+                <option value="rect">{t("admin.floorplan.shape.rect")}</option>
+                <option value="round">{t("admin.floorplan.shape.round")}</option>
               </select>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="label">กว้าง</label>
+                <label className="label">{t("admin.floorplan.field.width")}</label>
                 <input
                   type="number" min={40} max={300} step={10} className="input"
                   value={selected.width}
@@ -233,7 +235,7 @@ export default function FloorPlanEditor({
                 />
               </div>
               <div>
-                <label className="label">สูง</label>
+                <label className="label">{t("admin.floorplan.field.height")}</label>
                 <input
                   type="number" min={40} max={300} step={10} className="input"
                   value={selected.height}
@@ -246,13 +248,13 @@ export default function FloorPlanEditor({
                 type="checkbox" checked={selected.active === 1}
                 onChange={(e) => updateSelected({ active: e.target.checked ? 1 : 0 })}
               />
-              <span className="text-sm">ใช้งาน (เปิดให้จอง)</span>
+              <span className="text-sm">{t("admin.floorplan.active")}</span>
             </label>
-            <button onClick={deleteSelected} className="btn-danger w-full">ลบโต๊ะนี้</button>
+            <button onClick={deleteSelected} className="btn-danger w-full">{t("admin.floorplan.deleteTable")}</button>
           </div>
         ) : (
           <div className="card text-sm text-slate-500">
-            คลิกที่โต๊ะเพื่อแก้ไข หรือกด <b>+ เพิ่มโต๊ะ</b>
+            {t("admin.floorplan.tip")}
           </div>
         )}
       </aside>

@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getDb, type Branch, type Booking } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
+import { getLang } from "@/lib/lang-server";
+import { t, formatDate, type Lang } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +12,10 @@ export const metadata: Metadata = { title: "RESERVA · Admin" };
 
 export default function ReservaDashboardPage() {
   const user = requireUser();
+  const lang = getLang();
+
   if (!user.activeBranchId) {
-    return <div className="card">บัญชีของคุณยังไม่ได้รับสิทธิ์เข้าสาขาใดๆ ติดต่อแอดมิน</div>;
+    return <div className="card">{t(lang, "admin.notAssignedBranch")}</div>;
   }
   const db = getDb();
   const branch = db.prepare("SELECT * FROM branches WHERE id = ?").get(user.activeBranchId) as Branch;
@@ -48,7 +52,7 @@ export default function ReservaDashboardPage() {
   const sourceTotal = topSources.reduce((s, x) => s + x.n, 0);
 
   const originStats = db.prepare(`
-    SELECT COALESCE(customer_origin, '(ไม่ระบุ)') AS origin, COUNT(*) AS n
+    SELECT COALESCE(customer_origin, '__unknown__') AS origin, COUNT(*) AS n
     FROM bookings
     WHERE branch_id = ? AND booking_date >= date(?, '-29 days')
     GROUP BY customer_origin ORDER BY n DESC
@@ -67,30 +71,40 @@ export default function ReservaDashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">{branch.name}</h1>
-        <p className="text-slate-500 text-sm">ภาพรวมวันนี้ · {today}</p>
+        <p className="text-slate-500 text-sm">
+          {t(lang, "admin.dashboard.overviewToday", { date: formatDate(today, lang) })}
+        </p>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <Stat label="จองทั้งหมด" value={counts.total} />
-        <Stat label="รอลูกค้ามา" value={counts.confirmed} tone="blue" />
-        <Stat label="นั่งแล้ว" value={counts.seated} tone="green" />
-        <Stat label="ไม่มา" value={counts.no_show} tone="amber" />
-        <Stat label="ยกเลิก" value={counts.cancelled} tone="slate" />
-        <Stat label="แขกรวม" value={counts.guests} />
+        <Stat label={t(lang, "admin.dashboard.stat.total")} value={counts.total} />
+        <Stat label={t(lang, "admin.dashboard.stat.confirmed")} value={counts.confirmed} tone="blue" />
+        <Stat label={t(lang, "admin.dashboard.stat.seated")} value={counts.seated} tone="green" />
+        <Stat label={t(lang, "admin.dashboard.stat.noShow")} value={counts.no_show} tone="amber" />
+        <Stat label={t(lang, "admin.dashboard.stat.cancelled")} value={counts.cancelled} tone="slate" />
+        <Stat label={t(lang, "admin.dashboard.stat.guests")} value={counts.guests} />
       </div>
 
       <section className="card">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold">การจองวันนี้</h2>
-          <Link href="/admin/reserva/bookings" className="text-brand text-sm hover:underline">ดูทั้งหมด →</Link>
+          <h2 className="font-semibold">{t(lang, "admin.dashboard.bookingsToday")}</h2>
+          <Link href="/admin/reserva/bookings" className="text-brand text-sm hover:underline">
+            {t(lang, "admin.dashboard.viewAll")}
+          </Link>
         </div>
         {todays.length === 0 ? (
-          <div className="text-slate-500 text-sm">ยังไม่มีการจองในวันนี้</div>
+          <div className="text-slate-500 text-sm">{t(lang, "admin.dashboard.noBookings")}</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-slate-500">
-                <tr><th className="py-2">เวลา</th><th>ลูกค้า</th><th>คน</th><th>โต๊ะ</th><th>สถานะ</th></tr>
+                <tr>
+                  <th className="py-2">{t(lang, "admin.dashboard.col.time")}</th>
+                  <th>{t(lang, "admin.dashboard.col.customer")}</th>
+                  <th>{t(lang, "admin.dashboard.col.party")}</th>
+                  <th>{t(lang, "admin.dashboard.col.table")}</th>
+                  <th>{t(lang, "admin.dashboard.col.status")}</th>
+                </tr>
               </thead>
               <tbody>
                 {todays.map((b) => (
@@ -103,7 +117,7 @@ export default function ReservaDashboardPage() {
                         ? (db.prepare("SELECT label FROM tables WHERE id = ?").get(b.table_id) as { label: string } | undefined)?.label ?? "—"
                         : "—"}
                     </td>
-                    <td><span className={`px-2 py-0.5 rounded text-xs status-${b.status}`}>{statusLabel(b.status)}</span></td>
+                    <td><span className={`px-2 py-0.5 rounded text-xs status-${b.status}`}>{t(lang, `status.${b.status}`)}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -114,14 +128,21 @@ export default function ReservaDashboardPage() {
 
       <div className="grid md:grid-cols-2 gap-4">
         <section className="card">
-          <h2 className="font-semibold mb-3">7 วันที่ผ่านมา</h2>
-          <BarChart data={weekStats.map((d) => ({ label: d.booking_date.slice(5), value: d.bookings, sub: `${d.guests} แขก` }))} />
+          <h2 className="font-semibold mb-3">{t(lang, "admin.dashboard.last7days")}</h2>
+          <BarChart
+            data={weekStats.map((d) => ({
+              label: d.booking_date.slice(5),
+              value: d.bookings,
+              sub: t(lang, "admin.dashboard.dayUnit", { n: d.bookings, guests: d.guests })
+            }))}
+            lang={lang}
+          />
         </section>
         <section className="card">
-          <h2 className="font-semibold mb-1">รู้จักร้านจากไหน (30 วัน)</h2>
-          <p className="text-xs text-slate-500 mb-3">ลูกค้าตอบหลายข้อได้ — รวมการเลือกทั้งหมด</p>
+          <h2 className="font-semibold mb-1">{t(lang, "admin.dashboard.sourceTitle")}</h2>
+          <p className="text-xs text-slate-500 mb-3">{t(lang, "admin.dashboard.sourceNote")}</p>
           {topSources.length === 0 ? (
-            <div className="text-slate-500 text-sm">ยังไม่มีข้อมูล</div>
+            <div className="text-slate-500 text-sm">{t(lang, "common.dataNotAvailable")}</div>
           ) : (
             <ul className="space-y-2">
               {topSources.map((s) => {
@@ -129,7 +150,7 @@ export default function ReservaDashboardPage() {
                 return (
                   <li key={s.source} className="text-sm">
                     <div className="flex justify-between mb-0.5">
-                      <span>{s.source}</span>
+                      <span>{sourceLabel(lang, s.source)}</span>
                       <span className="text-slate-500">{s.n} · {pct}%</span>
                     </div>
                     <div className="bg-slate-100 rounded h-1.5 overflow-hidden">
@@ -143,15 +164,17 @@ export default function ReservaDashboardPage() {
         </section>
 
         <section className="card">
-          <h2 className="font-semibold mb-3">ลูกค้าเดินทางมาจาก (30 วัน)</h2>
+          <h2 className="font-semibold mb-3">{t(lang, "admin.dashboard.originTitle")}</h2>
           {originStats.length === 0 ? (
-            <div className="text-slate-500 text-sm">ยังไม่มีข้อมูล</div>
+            <div className="text-slate-500 text-sm">{t(lang, "common.dataNotAvailable")}</div>
           ) : (
             <ul className="space-y-2">
               {originStats.map((o) => (
                 <li key={o.origin} className="flex justify-between text-sm">
-                  <span>{originLabel(o.origin)}</span>
-                  <span className="text-slate-500">{o.n} ครั้ง</span>
+                  <span>{originLabel(lang, o.origin)}</span>
+                  <span className="text-slate-500">
+                    {t(lang, "admin.dashboard.timesUnit", { n: o.n })}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -159,15 +182,24 @@ export default function ReservaDashboardPage() {
         </section>
 
         <section className="card">
-          <h2 className="font-semibold mb-3">สมาชิก vs ไม่ใช่สมาชิก (30 วัน)</h2>
+          <h2 className="font-semibold mb-3">{t(lang, "admin.dashboard.memberTitle")}</h2>
           <div className="grid grid-cols-3 gap-2 text-center">
-            <div><div className="text-2xl font-bold text-emerald-600">{memberStats.members ?? 0}</div><div className="text-xs text-slate-500">เป็นสมาชิก</div></div>
-            <div><div className="text-2xl font-bold text-amber-600">{memberStats.non_members ?? 0}</div><div className="text-xs text-slate-500">ยังไม่เคย</div></div>
-            <div><div className="text-2xl font-bold text-slate-400">{memberStats.unknown ?? 0}</div><div className="text-xs text-slate-500">ไม่ระบุ</div></div>
+            <div>
+              <div className="text-2xl font-bold text-emerald-600">{memberStats.members ?? 0}</div>
+              <div className="text-xs text-slate-500">{t(lang, "admin.dashboard.member.is")}</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-amber-600">{memberStats.non_members ?? 0}</div>
+              <div className="text-xs text-slate-500">{t(lang, "admin.dashboard.member.not")}</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-slate-400">{memberStats.unknown ?? 0}</div>
+              <div className="text-xs text-slate-500">{t(lang, "admin.dashboard.member.unknown")}</div>
+            </div>
           </div>
           {(memberStats.non_members ?? 0) > 0 && (
             <p className="text-xs text-slate-500 mt-3 border-t border-slate-100 pt-3">
-              💡 มี {memberStats.non_members} คนที่ยังไม่ได้เป็นสมาชิก — ทีมงานควรชวนตอนถึงร้าน
+              {t(lang, "admin.dashboard.member.hint", { n: memberStats.non_members })}
             </p>
           )}
         </section>
@@ -176,31 +208,56 @@ export default function ReservaDashboardPage() {
   );
 }
 
-function originLabel(o: string): string {
-  return ({ sriracha: "ศรีราชา", chonburi: "ชลบุรี (อื่นๆ)", other_province: "ต่างจังหวัด" } as Record<string, string>)[o] ?? o;
+function originLabel(lang: Lang, o: string): string {
+  if (o === "__unknown__" || !o) return t(lang, "admin.dashboard.member.unknown");
+  const key = `booking.origin.${o}`;
+  return t(lang, key);
+}
+
+function sourceLabel(lang: Lang, s: string): string {
+  // Map known values to translation keys
+  const map: Record<string, string> = {
+    "Instagram": "booking.source.Instagram",
+    "Facebook": "booking.source.Facebook",
+    "TikTok": "booking.source.TikTok",
+    "Google Maps": "booking.source.GoogleMaps",
+    "เพื่อนแนะนำ": "booking.source.friend",
+    "ผ่านมาเห็น": "booking.source.passing",
+    "อื่นๆ": "booking.source.other"
+  };
+  return map[s] ? t(lang, map[s]) : s;
 }
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {
-  const toneClass = tone === "blue" ? "text-blue-600" : tone === "green" ? "text-emerald-600" : tone === "amber" ? "text-amber-600" : tone === "slate" ? "text-slate-500" : "text-slate-900";
-  return <div className="card text-center"><div className={`text-2xl font-bold ${toneClass}`}>{value}</div><div className="text-xs text-slate-500">{label}</div></div>;
+  const toneClass = tone === "blue" ? "text-blue-600"
+    : tone === "green" ? "text-emerald-600"
+    : tone === "amber" ? "text-amber-600"
+    : tone === "slate" ? "text-slate-500"
+    : "text-slate-900";
+  return (
+    <div className="card text-center">
+      <div className={`text-2xl font-bold ${toneClass}`}>{value}</div>
+      <div className="text-xs text-slate-500">{label}</div>
+    </div>
+  );
 }
 
-function BarChart({ data }: { data: Array<{ label: string; value: number; sub?: string }> }) {
+function BarChart({
+  data, lang
+}: { data: Array<{ label: string; value: number; sub?: string }>; lang: Lang }) {
   const max = Math.max(1, ...data.map((d) => d.value));
-  if (data.length === 0) return <div className="text-slate-500 text-sm">ยังไม่มีข้อมูล</div>;
+  if (data.length === 0) return <div className="text-slate-500 text-sm">{t(lang, "common.dataNotAvailable")}</div>;
   return (
     <div className="space-y-2">
       {data.map((d) => (
         <div key={d.label} className="flex items-center text-xs gap-2">
           <span className="w-12 text-slate-500">{d.label}</span>
-          <div className="flex-1 bg-slate-100 rounded h-5 overflow-hidden"><div className="bg-brand h-full" style={{ width: `${(d.value / max) * 100}%` }} /></div>
-          <span className="w-20 text-right text-slate-600">{d.value} จอง {d.sub ? `· ${d.sub}` : ""}</span>
+          <div className="flex-1 bg-slate-100 rounded h-5 overflow-hidden">
+            <div className="bg-brand h-full" style={{ width: `${(d.value / max) * 100}%` }} />
+          </div>
+          <span className="w-32 text-right text-slate-600">{d.sub}</span>
         </div>
       ))}
     </div>
   );
-}
-
-function statusLabel(s: string): string {
-  return ({ confirmed: "รอลูกค้า", seated: "นั่งแล้ว", no_show: "ไม่มา", cancelled: "ยกเลิก", completed: "เสร็จสิ้น" } as Record<string, string>)[s] ?? s;
 }
