@@ -29,12 +29,15 @@ export async function POST(req: Request) {
 
   const actualRole = payrollUser.role === "admin" ? "admin" : "staff";
 
-  // 2) ถ้าผู้ใช้เลือก ADMIN tab แต่ไม่ใช่ admin จริง — ปฏิเสธ
-  if (requestedRole === "admin" && actualRole !== "admin") {
-    return NextResponse.json(
-      { error: "บัญชีนี้ไม่มีสิทธิ์เข้าฝั่งผู้ดูแล" },
-      { status: 403 }
-    );
+  // 2) Role ต้องตรงกับ tab ที่เลือกทั้งสองทาง
+  //    - เลือก ADMIN แต่ไม่ใช่ admin → ปฏิเสธ
+  //    - เลือก STAFF แต่เป็น admin → ปฏิเสธ (กัน admin มาใช้แท็บพนักงาน
+  //      แล้วบังเอิญเข้าระบบฝั่งแอดมิน)
+  if (requestedRole && requestedRole !== actualRole) {
+    const msg = requestedRole === "admin"
+      ? "บัญชีนี้ไม่มีสิทธิ์เข้าฝั่งผู้ดูแล"
+      : "บัญชีผู้ดูแล กรุณาเลือกแท็บ ADMIN";
+    return NextResponse.json({ error: msg }, { status: 403 });
   }
 
   // 3) sync user → local users (สำหรับ FK ใน sessions)

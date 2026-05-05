@@ -23,14 +23,18 @@ export default function StaffPersonaPage() {
     ORDER BY ts DESC LIMIT 100
   `).all(user.id) as TimeEntry[];
 
+  // เลือก entries ของวันนี้ตาม Bangkok local
   const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const todayEntries = entries.filter((e) =>
     new Date(new Date(e.ts).getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10) === todayBkk
   );
-  const inCount = todayEntries.filter((e) => e.type === "in").length;
-  const outCount = todayEntries.filter((e) => e.type === "out").length;
-  const todayDone = inCount >= 1 && outCount >= 1;
-  const isCurrentlyIn = inCount === 1 && outCount === 0;
+
+  // ส่งเฉพาะ ts ของ in/out แรก ไปให้ client คำนวณ nextAction + 5-min window เอง
+  // (ง่ายต่อการ re-evaluate ทุกวินาทีตามนาฬิกาที่วิ่งอยู่)
+  const inSorted = todayEntries.filter((e) => e.type === "in").sort((a, b) => a.ts.localeCompare(b.ts));
+  const outSorted = todayEntries.filter((e) => e.type === "out").sort((a, b) => a.ts.localeCompare(b.ts));
+  const firstInTs = inSorted[0]?.ts ?? null;
+  const firstOutTs = outSorted[0]?.ts ?? null;
 
   // ตรวจว่า user มี PIN หรือยัง
   const userRow = db.prepare("SELECT pin_hash FROM users WHERE id = ?").get(user.id) as
@@ -48,8 +52,8 @@ export default function StaffPersonaPage() {
       <TimeClockClient
         userName={user.display_name}
         hasPin={hasPin}
-        isCurrentlyIn={isCurrentlyIn}
-        todayDone={todayDone}
+        firstInTs={firstInTs}
+        firstOutTs={firstOutTs}
         entries={entries}
       />
     </div>

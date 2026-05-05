@@ -307,7 +307,12 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.tooManyAttempts": "ลองหลายครั้งเกินไป รอ {n} วินาที",
     "staff.persona.todayDone": "เสร็จแล้ววันนี้",
     "staff.persona.success.in": "บันทึกเวลาเข้างานเรียบร้อย",
-    "staff.persona.success.out": "บันทึกเวลาออกงานเรียบร้อย ขอบคุณค่ะ",
+    "staff.persona.success.out": "บันทึกเวลาออกงานเรียบร้อย",
+    "staff.persona.correctable": "* แก้ไขเวลาได้ภายใน 5 นาทีหลังกด — เกินจากนี้ติดต่อหัวหน้างาน",
+    "staff.persona.replace.bodyIn": "คุณบันทึกเวลาเข้าไว้แล้วเมื่อ {existing}\nต้องการเปลี่ยนเป็นเวลาปัจจุบัน {proposed} ไหม?",
+    "staff.persona.replace.bodyOut": "คุณบันทึกเวลาออกไว้แล้วเมื่อ {existing}\nต้องการเปลี่ยนเป็นเวลาปัจจุบัน {proposed} ไหม?",
+    "staff.persona.replace.keep": "ใช้เวลาเดิม {time}",
+    "staff.persona.replace.use": "เปลี่ยนเป็น {time}",
 
     // Staff RESERVA
     "staff.reserva.backToModules": "← กลับ module",
@@ -689,7 +694,12 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.tooManyAttempts": "Too many attempts, wait {n} seconds",
     "staff.persona.todayDone": "Done for today",
     "staff.persona.success.in": "Clocked in successfully",
-    "staff.persona.success.out": "Clocked out — have a good rest!",
+    "staff.persona.success.out": "Clocked out successfully",
+    "staff.persona.correctable": "* You can correct the time within 5 min — beyond that, contact supervisor",
+    "staff.persona.replace.bodyIn": "You clocked in at {existing}\nUse current time {proposed} instead?",
+    "staff.persona.replace.bodyOut": "You clocked out at {existing}\nUse current time {proposed} instead?",
+    "staff.persona.replace.keep": "Keep {time}",
+    "staff.persona.replace.use": "Use {time}",
 
     // Staff RESERVA
     "staff.reserva.backToModules": "← Back to modules",
