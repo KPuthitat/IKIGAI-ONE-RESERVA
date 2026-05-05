@@ -56,7 +56,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "already_done_today" }, { status: 409 });
   }
 
-  db.prepare("INSERT INTO time_entries (user_id, type) VALUES (?, ?)").run(user.id, nextAction);
+  // เก็บเป็น ISO string (with 'Z') ไม่ใช้ DEFAULT CURRENT_TIMESTAMP เพราะ
+  // SQLite ส่งคืน "YYYY-MM-DD HH:MM:SS" ไม่มี TZ marker → JS Date parse ผิด
+  // ถ้า server TZ != UTC (เช่น droplet ที่ตั้ง Asia/Bangkok)
+  const nowIso = new Date().toISOString();
+  db.prepare("INSERT INTO time_entries (user_id, type, ts) VALUES (?, ?, ?)")
+    .run(user.id, nextAction, nowIso);
 
   return NextResponse.json({ ok: true, action: nextAction });
 }

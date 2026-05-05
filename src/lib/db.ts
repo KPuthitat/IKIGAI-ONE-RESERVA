@@ -65,6 +65,27 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_time_audit_created ON time_entries_audit(created_at);
   `);
+
+  // Normalize timestamps → ISO with milliseconds (matches new Date().toISOString())
+  // SQLite CURRENT_TIMESTAMP returns "YYYY-MM-DD HH:MM:SS" (UTC, no marker)
+  // → JS Date parses as LOCAL time = off by N hours if server TZ != UTC
+  // Fix once: convert all existing rows to ISO. New inserts use new Date().toISOString().
+  // Format: "2026-05-05T17:09:00.000Z" (24 chars) — string-comparable with new inserts
+  db.exec(`
+    UPDATE time_entries
+    SET ts = REPLACE(ts, ' ', 'T') || '.000Z'
+    WHERE ts NOT LIKE '%T%' AND length(ts) = 19;
+  `);
+  db.exec(`
+    UPDATE time_entries_audit
+    SET entry_ts = REPLACE(entry_ts, ' ', 'T') || '.000Z'
+    WHERE entry_ts NOT LIKE '%T%' AND length(entry_ts) = 19;
+  `);
+  db.exec(`
+    UPDATE time_entries_audit
+    SET created_at = REPLACE(created_at, ' ', 'T') || '.000Z'
+    WHERE created_at NOT LIKE '%T%' AND length(created_at) = 19;
+  `);
 }
 
 export type Branch = {

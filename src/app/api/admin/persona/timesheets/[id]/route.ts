@@ -30,12 +30,14 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
   if (!entry) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   // snapshot → audit ก่อนลบ (idempotent transaction)
+  // ใช้ ISO format สำหรับ created_at เช่นกัน (consistent กับ time_entries.ts)
+  const nowIso = new Date().toISOString();
   const tx = db.transaction(() => {
     db.prepare(`
       INSERT INTO time_entries_audit
-        (entry_id, entry_user_id, entry_type, entry_ts, action, admin_id, reason)
-      VALUES (?, ?, ?, ?, 'delete', ?, ?)
-    `).run(entry.id, entry.user_id, entry.type, entry.ts, user.id, parsed.data.reason ?? null);
+        (entry_id, entry_user_id, entry_type, entry_ts, action, admin_id, reason, created_at)
+      VALUES (?, ?, ?, ?, 'delete', ?, ?, ?)
+    `).run(entry.id, entry.user_id, entry.type, entry.ts, user.id, parsed.data.reason ?? null, nowIso);
     db.prepare("DELETE FROM time_entries WHERE id = ?").run(id);
   });
   tx();
