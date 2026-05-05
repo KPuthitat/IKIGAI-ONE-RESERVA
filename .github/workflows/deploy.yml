@@ -1,0 +1,49 @@
+name: Deploy to production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # ปุ่ม "Run workflow" ใน GitHub UI กดเองได้
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false # ถ้ามี deploy ค้างอยู่ ให้รอจบก่อน ไม่ตัดกลางคัน
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script_stop: true   # ถ้า command ใดล้มเหลว → fail ทันที
+          command_timeout: 10m
+          script: |
+            set -e
+            echo "==> ⬇️  pull latest code"
+            cd /var/www/reserva
+            sudo -u www-data git pull --ff-only
+
+            echo "==> 📦 install deps"
+            npm install
+
+            echo "==> 🔨 build"
+            npm run build
+
+            echo "==> 🔐 chown"
+            chown -R www-data:www-data /var/www/reserva
+
+            echo "==> 🔁 restart service"
+            systemctl restart reserva
+            sleep 3
+
+            if systemctl is-active --quiet reserva; then
+              echo "✅ deployed at $(date '+%Y-%m-%d %H:%M:%S')"
+            else
+              echo "❌ reserva failed to start"
+              journalctl -u reserva -n 30 --no-pager
+              exit 1
+            fi
