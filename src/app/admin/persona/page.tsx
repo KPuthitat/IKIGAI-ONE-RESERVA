@@ -3,33 +3,71 @@ import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { getEmployeeStats, getPendingCounts } from "@/lib/payroll-data";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "PERSONA · Admin" };
 
-export default function AdminPersonaPage() {
+export default function AdminPersonaDashboard() {
   requireAdmin();
   const lang = getLang();
+
+  const empStats = (() => {
+    try { return getEmployeeStats(); }
+    catch { return { pt: 0, ft: 0, ptActive: 0, ftActive: 0 }; }
+  })();
+  const pending = (() => {
+    try { return getPendingCounts(); }
+    catch { return { leave: 0, corrections: 0 }; }
+  })();
+
   return (
-    <div className="fixed inset-0 bg-white flex flex-col z-40">
-      <div className="bg-ink-gradient text-white px-4 py-2 flex items-center gap-2.5 text-xs flex-shrink-0">
-        <Link href="/admin" className="text-white/70 hover:text-white transition-colors">
-          ← {t(lang, "role.adminShort")}
-        </Link>
-        <span className="text-white/30">|</span>
-        <span className="brand-wordmark text-white text-sm">IKIGAI OS</span>
-        <span className="text-white/40">•</span>
-        <span className="text-white/85 font-light tracking-[1px] text-sm">PERSONA</span>
-        <span className="text-white/40">/</span>
-        <span className="text-white/60 tracking-[1px]">admin</span>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">{t(lang, "admin.persona.dashboard.title")}</h1>
+        <p className="text-sm text-slate-500">{t(lang, "admin.persona.dashboard.subtitle")}</p>
       </div>
 
-      <iframe
-        src="/payroll/portal"
-        className="flex-1 w-full border-0 block bg-white"
-        title="PERSONA"
-      />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Link href="/admin/persona/employees?tab=pt" className="card hover:shadow-md transition block">
+          <div className="text-xs text-slate-500">{t(lang, "admin.persona.stat.pt")}</div>
+          <div className="text-3xl font-bold text-slate-800 mt-1">{empStats.pt}</div>
+          <div className="text-xs text-emerald-600 mt-1">
+            {t(lang, "admin.persona.stat.activeBadge", { n: empStats.ptActive })}
+          </div>
+        </Link>
+
+        <Link href="/admin/persona/employees?tab=ft" className="card hover:shadow-md transition block">
+          <div className="text-xs text-slate-500">{t(lang, "admin.persona.stat.ft")}</div>
+          <div className="text-3xl font-bold text-slate-800 mt-1">{empStats.ft}</div>
+          <div className="text-xs text-emerald-600 mt-1">
+            {t(lang, "admin.persona.stat.activeBadge", { n: empStats.ftActive })}
+          </div>
+        </Link>
+
+        <Link href="/admin/persona/leave" className="card hover:shadow-md transition block">
+          <div className="text-xs text-slate-500">{t(lang, "admin.persona.stat.pendingLeave")}</div>
+          <div className={`text-3xl font-bold mt-1 ${pending.leave > 0 ? "text-amber-600" : "text-slate-300"}`}>
+            {pending.leave}
+          </div>
+        </Link>
+
+        <Link href="/admin/persona/timesheets" className="card hover:shadow-md transition block">
+          <div className="text-xs text-slate-500">{t(lang, "admin.persona.stat.pendingCorrection")}</div>
+          <div className={`text-3xl font-bold mt-1 ${pending.corrections > 0 ? "text-amber-600" : "text-slate-300"}`}>
+            {pending.corrections}
+          </div>
+        </Link>
+      </div>
+
+      <div className="card">
+        <h2 className="font-semibold mb-3">{t(lang, "admin.persona.legacy.title")}</h2>
+        <p className="text-sm text-slate-600 mb-4">{t(lang, "admin.persona.legacy.note")}</p>
+        <Link href="/admin/persona/legacy" className="btn-secondary inline-flex">
+          {t(lang, "admin.persona.comingSoon.openLegacy")}
+        </Link>
+      </div>
     </div>
   );
 }
