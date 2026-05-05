@@ -11,7 +11,7 @@ export default function LoginForm({
   error: initialError
 }: { next?: string; error?: string }) {
   const router = useRouter();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [role, setRole] = useState<Role>("staff");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -65,8 +65,12 @@ export default function LoginForm({
         >ADMIN</button>
       </div>
 
-      <div className="text-white/80 text-base font-normal mb-5 text-center">
-        {t("login.forRole", { role: role === "admin" ? t("role.admin") : t("role.staff") })}
+      <div
+        className={`text-white/80 text-lg font-light mb-5 text-center ${
+          lang === "en" ? "uppercase tracking-[2px]" : ""
+        }`}
+      >
+        {t("login.forRole", { role: role === "admin" ? t("role.adminShort") : t("role.staffShort") })}
       </div>
 
       <form onSubmit={submit} className="card w-full max-w-sm">
