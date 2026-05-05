@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getDb, type Branch, type Booking } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import BookingsClient from "../../admin/reserva/bookings/BookingsClient";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "RESERVA · การจอง" };
 
 type Row = Booking & { table_label: string | null };
 

@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import LoginForm from "./LoginForm";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "เข้าระบบ" };
 
 export default function LoginPage({
   searchParams

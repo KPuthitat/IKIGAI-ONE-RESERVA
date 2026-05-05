@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "PERSONA · Admin" };
 
 // /admin/persona — embed Payroll Express ใน iframe
 // URL bar คงเป็น /admin/persona ตลอด · ใส้ในเป็น Payroll backend (Express :3000)

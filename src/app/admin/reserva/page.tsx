@@ -1,9 +1,12 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getDb, type Branch, type Booking } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "RESERVA · Admin" };
 
 export default function ReservaDashboardPage() {
   const user = requireUser();

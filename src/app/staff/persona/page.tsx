@@ -1,9 +1,12 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import TimeClockClient from "./TimeClockClient";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "PERSONA · ลงเวลา" };
 
 type TimeEntry = { id: number; type: "in" | "out"; ts: string };
 

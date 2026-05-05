@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "IKIGAI OS RESERVA",
-  description: "ระบบจองโต๊ะ NAMA PASTA SRIRACHA / HYPOPLARAEMIA"
+  title: {
+    default: "IKIGAI OS",
+    template: "%s · IKIGAI OS"
+  },
+  description: "ระบบจัดการธุรกิจ"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

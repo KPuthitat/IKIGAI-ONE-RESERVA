@@ -1,5 +1,8 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
+
+export const metadata: Metadata = { title: "Admin" };
 
 // /admin — หน้าหลักแอดมิน เลือก module ที่จะเข้า
 export default function AdminHomePage() {

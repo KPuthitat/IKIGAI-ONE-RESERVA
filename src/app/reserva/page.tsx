@@ -1,7 +1,10 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { getDb, type Branch } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "จองโต๊ะ · RESERVA" };
 
 // /reserva — หน้าจองของลูกค้า เน้น NAMA เป็นหลัก
 export default function CustomerReservaPage() {
