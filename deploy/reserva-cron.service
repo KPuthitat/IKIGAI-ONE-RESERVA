@@ -1,0 +1,20 @@
+# Cron service ที่รัน reminder + cleanup ครั้งเดียว แล้วจบ
+# ติดตั้งคู่กับ reserva-cron.timer (รันทุก 5 นาที)
+#
+#   sudo cp deploy/reserva-cron.service /etc/systemd/system/
+#   sudo cp deploy/reserva-cron.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now reserva-cron.timer
+
+[Unit]
+Description=IKIGAI ONE RESERVA — reminder + cleanup
+After=network.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/reserva
+EnvironmentFile=/var/www/reserva/.env
+ExecStart=/usr/bin/npm run cron:run
+ReadWritePaths=/var/www/reserva/data

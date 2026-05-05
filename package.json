@@ -1,0 +1,34 @@
+{
+  "name": "ikigai-one-reserva",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:init": "node --import tsx scripts/init-db.ts",
+    "db:seed": "node --import tsx scripts/seed.ts",
+    "cron:run": "node --import tsx scripts/cron.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "bcryptjs": "^2.4.3",
+    "next": "14.2.15",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}
