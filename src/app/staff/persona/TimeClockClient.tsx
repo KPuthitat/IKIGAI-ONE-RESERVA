@@ -72,7 +72,13 @@ export default function TimeClockClient({
               </div>
             </div>
           ) : (
-            <ClockAction action={nextAction} onSuccess={() => router.refresh()} />
+            // key={nextAction + entries.length} → บังคับ remount เมื่อ state เปลี่ยน
+            // กัน ClockAction ค้างใน phase "success" หลัง router.refresh()
+            <ClockAction
+              key={`${nextAction}-${entries.length}`}
+              action={nextAction}
+              onSuccess={() => router.refresh()}
+            />
           )}
         </div>
       </div>
@@ -153,6 +159,8 @@ function ClockAction({
   const [phase, setPhase] = useState<Phase>("idle");
   const [pin, setPin] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Server-authoritative action จาก response — เผื่อ client prop เป็น stale
+  const [actualAction, setActualAction] = useState<"in" | "out">(action);
 
   async function submitPin(currentPin: string) {
     setPhase("saving");
@@ -178,6 +186,10 @@ function ClockAction({
         setPin("");
         setTimeout(() => setPhase("pin"), 2500);
         return;
+      }
+      // ใช้ action จริงจาก server (กัน mismatch กรณี client prop stale)
+      if (data.action === "in" || data.action === "out") {
+        setActualAction(data.action);
       }
       setPhase("success");
       setTimeout(onSuccess, 1500);
@@ -220,7 +232,7 @@ function ClockAction({
       <div className="bg-emerald-50 border border-emerald-200 rounded-2xl py-6">
         <div className="text-4xl mb-2">✅</div>
         <div className="text-emerald-800 font-bold">
-          {action === "in" ? t("staff.persona.success.in") : t("staff.persona.success.out")}
+          {actualAction === "in" ? t("staff.persona.success.in") : t("staff.persona.success.out")}
         </div>
       </div>
     );
