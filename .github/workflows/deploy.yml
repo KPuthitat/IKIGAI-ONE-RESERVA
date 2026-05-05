@@ -15,47 +15,49 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: ⬇️  Checkout
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🟢 Setup Node 20
+      - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          # NOTE: ไม่ใช้ cache: 'npm' เพราะ project ไม่มี package-lock.json
+          # → setup-node action จะ fail ทันที 26s (เคยเจอ run #14)
 
-      - name: 📦 Install deps (full, on GitHub runner — 7GB RAM)
+      - name: Install dependencies (on GitHub runner, 7GB RAM)
         run: npm install --no-audit --no-fund
         env:
           NEXT_TELEMETRY_DISABLED: 1
 
-      - name: 🔨 Build Next.js (on GitHub runner — no OOM)
+      - name: Build Next.js (on GitHub runner — no OOM)
         run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: 1
 
-      - name: 📦 Package build artifact
+      - name: Package build artifact
         run: |
-          tar czf /tmp/deploy.tar.gz \
+          # tarball ต้องอยู่ใน workspace — appleboy/scp-action จะหาจาก
+          # GITHUB_WORKSPACE ก่อน ถ้าใช้ absolute path /tmp/ จะ fail (run #13)
+          tar czf deploy.tar.gz \
             .next \
             public \
             package.json \
             next.config.js \
             scripts \
             src
-          ls -lh /tmp/deploy.tar.gz
+          ls -lh deploy.tar.gz
 
-      - name: 📤 Copy artifact to server
+      - name: Copy artifact to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          source: "/tmp/deploy.tar.gz"
+          source: "deploy.tar.gz"
           target: "/tmp/"
-          strip_components: 1
 
-      - name: 🚀 Apply on server + restart
+      - name: Apply on server + restart
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -67,39 +69,39 @@ jobs:
             set -e
             cd /var/www/reserva
 
-            echo "==> 📂 backup current .next (rollback safety)"
+            echo "==> backup current .next (rollback safety)"
             rm -rf .next.bak
             [ -d .next ] && mv .next .next.bak || true
 
-            echo "==> 📦 extract new build"
+            echo "==> extract new build"
             tar xzf /tmp/deploy.tar.gz
             rm -f /tmp/deploy.tar.gz
 
-            echo "==> 📋 sync package.json hash to detect dep changes"
+            echo "==> check if package.json changed"
             NEW_HASH=$(sha256sum package.json | cut -d' ' -f1)
             OLD_HASH=$(cat .last-deps-hash 2>/dev/null || echo "")
 
             if [ "$NEW_HASH" != "$OLD_HASH" ] || [ ! -d node_modules ]; then
-              echo "    deps changed → installing production deps only"
+              echo "    deps changed -> installing production deps only"
               export NODE_OPTIONS="--max-old-space-size=512"
               npm install --omit=dev --no-audit --no-fund
               echo "$NEW_HASH" > .last-deps-hash
             else
-              echo "    deps unchanged → skipping install"
+              echo "    deps unchanged -> skipping install"
             fi
 
-            echo "==> 🔐 chown"
+            echo "==> chown"
             chown -R www-data:www-data /var/www/reserva
 
-            echo "==> 🔁 restart service"
+            echo "==> restart service"
             systemctl restart reserva
             sleep 3
 
             if systemctl is-active --quiet reserva; then
-              echo "✅ deployed at $(date '+%Y-%m-%d %H:%M:%S')"
+              echo "deployed at $(date '+%Y-%m-%d %H:%M:%S')"
               rm -rf .next.bak
             else
-              echo "❌ reserva failed → rolling back"
+              echo "reserva failed -> rolling back"
               rm -rf .next
               [ -d .next.bak ] && mv .next.bak .next || true
               chown -R www-data:www-data /var/www/reserva
