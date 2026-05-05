@@ -11,7 +11,7 @@ export default function LogoutButton() {
         router.push("/admin/login");
         router.refresh();
       }}
-      className="text-sm text-red-600 hover:text-red-700 ml-2"
+      className="text-sm text-white/70 hover:text-white ml-2"
     >ออกจากระบบ</button>
   );
 }

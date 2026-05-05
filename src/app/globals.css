@@ -3,22 +3,42 @@
 @tailwind utilities;
 
 :root {
-  font-family: ui-sans-serif, system-ui, "Sarabun", "Noto Sans Thai", sans-serif;
+  font-family: "LINE Seed Sans TH", "LINE Seed Sans", ui-sans-serif, system-ui,
+    sans-serif;
 }
 
 html, body { height: 100%; }
-body { @apply bg-slate-50 text-slate-900; }
+body {
+  @apply bg-slate-50 text-slate-800;
+  font-family: "LINE Seed Sans TH", "LINE Seed Sans", ui-sans-serif, system-ui,
+    sans-serif;
+}
 
-.btn { @apply inline-flex items-center justify-center px-4 py-2 rounded-md font-medium transition disabled:opacity-50 disabled:cursor-not-allowed; }
-.btn-primary { @apply btn bg-brand text-white hover:bg-brand-dark; }
-.btn-secondary { @apply btn bg-white border border-slate-300 hover:bg-slate-100; }
-.btn-danger { @apply btn bg-red-600 text-white hover:bg-red-700; }
-.btn-success { @apply btn bg-emerald-600 text-white hover:bg-emerald-700; }
+/* ── Buttons (rounded 10px, bold weight, no easing — matches payroll) ── */
+.btn {
+  @apply inline-flex items-center justify-center px-5 py-2.5 rounded-[10px]
+         font-bold transition-opacity disabled:opacity-50 disabled:cursor-not-allowed;
+}
+.btn-primary { @apply btn bg-brand text-white shadow-[0_2px_8px_rgba(233,69,96,.4)] hover:opacity-90 active:opacity-80; }
+.btn-secondary { @apply btn bg-white border-[1.5px] border-slate-200 text-slate-700 hover:bg-slate-50; }
+.btn-danger { @apply btn bg-red-600 text-white hover:opacity-90; }
+.btn-success { @apply btn bg-emerald-600 text-white hover:opacity-90; }
 
-.input { @apply block w-full rounded-md border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand; }
-.label { @apply block text-sm font-medium text-slate-700 mb-1; }
-.card { @apply bg-white rounded-lg shadow-sm border border-slate-200 p-4; }
+/* ── Inputs (matches payroll: f8fafc bg, e2e8f0 border, brand focus) ── */
+.input {
+  @apply block w-full rounded-[10px] border-[1.5px] border-slate-200
+         bg-slate-50 px-3.5 py-3 text-slate-800
+         focus:outline-none focus:border-brand focus:bg-white transition-colors;
+}
+.label { @apply block text-[13px] font-semibold text-slate-500 mb-1.5; }
+.card { @apply bg-white rounded-2xl shadow-card p-6; }
 
+/* ── Brand wordmark used in headers ── */
+.brand-wordmark {
+  @apply font-bold tracking-[2px] leading-none;
+}
+
+/* ── Status pills ── */
 .status-confirmed { @apply bg-blue-100 text-blue-700; }
 .status-seated    { @apply bg-emerald-100 text-emerald-700; }
 .status-no_show   { @apply bg-amber-100 text-amber-700; }

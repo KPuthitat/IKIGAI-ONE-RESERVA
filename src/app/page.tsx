@@ -6,29 +6,34 @@ export const dynamic = "force-dynamic";
 export default function HomePage() {
   const branches = getDb().prepare("SELECT * FROM branches ORDER BY name").all() as Branch[];
   return (
-    <main className="min-h-screen p-6 flex flex-col items-center justify-center">
+    <main className="min-h-screen bg-ink-gradient flex flex-col items-center justify-center p-6">
       <div className="max-w-2xl w-full">
-        <h1 className="text-3xl font-bold mb-2 text-center">IKIGAI ONE RESERVA</h1>
-        <p className="text-slate-600 text-center mb-8">เลือกสาขาที่ต้องการจองโต๊ะ</p>
+        <div className="text-center mb-8">
+          <div className="brand-wordmark text-white text-[42px]">IKIGAI ONE</div>
+          <div className="text-white/50 text-[13px] tracking-[1px] mt-1">RESERVA</div>
+          <p className="text-white/70 mt-4">เลือกสาขาที่ต้องการจองโต๊ะ</p>
+        </div>
 
         <div className="grid sm:grid-cols-2 gap-4">
           {branches.map((b) => (
             <Link
               key={b.id}
               href={`/book/${b.slug}`}
-              className="card hover:border-brand hover:shadow-md transition group"
+              className="card hover:shadow-2xl transition group block"
             >
-              <h2 className="text-xl font-semibold group-hover:text-brand">{b.name}</h2>
+              <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand transition-colors">
+                {b.name}
+              </h2>
               <p className="text-slate-500 text-sm mt-1">
                 เปิด {b.open_time} – {b.close_time} น.
               </p>
-              <p className="mt-3 text-brand font-medium">จองโต๊ะ →</p>
+              <p className="mt-3 text-brand font-bold">จองโต๊ะ →</p>
             </Link>
           ))}
         </div>
 
         <div className="text-center mt-10">
-          <Link href="/admin" className="text-sm text-slate-500 hover:text-brand">
+          <Link href="/admin" className="text-[13px] text-white/50 hover:text-white tracking-wide">
             สำหรับพนักงาน · เข้าระบบจัดการ
           </Link>
         </div>

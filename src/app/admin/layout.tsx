@@ -21,28 +21,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-slate-200">
+    <div className="min-h-screen bg-slate-100">
+      <header className="bg-ink-gradient text-white shadow-lg">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4 flex-wrap">
-          <Link href="/admin" className="font-bold text-brand">RESERVA</Link>
+          <Link href="/admin" className="brand-wordmark text-white text-lg">
+            IKIGAI ONE <span className="text-white/60 font-normal text-sm tracking-normal">· RESERVA</span>
+          </Link>
+          <div className="hidden sm:block h-6 w-px bg-white/20" />
           <BranchSwitcher
             branches={user.branches}
             activeBranchId={user.activeBranchId}
           />
-          <nav className="flex gap-1 ml-auto flex-wrap">
+          <nav className="flex gap-1 ml-auto flex-wrap items-center">
             {navItems
               .filter((n) => !n.adminOnly || user.role === "admin")
               .map((n) => (
                 <Link
                   key={n.href}
                   href={n.href}
-                  className="px-3 py-1.5 rounded-md text-sm hover:bg-slate-100"
+                  className="px-3 py-1.5 rounded-md text-sm text-white/80 hover:text-white hover:bg-white/10 transition-colors"
                 >
                   {n.label}
                 </Link>
               ))}
-            <span className="ml-3 text-sm text-slate-500 self-center">
-              {user.display_name} ({user.role === "admin" ? "แอดมิน" : "พนักงาน"})
+            <span className="ml-3 text-xs text-white/60 self-center">
+              {user.display_name} · {user.role === "admin" ? "แอดมิน" : "พนักงาน"}
             </span>
             <LogoutButton />
           </nav>
