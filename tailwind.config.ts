@@ -1,6 +1,6 @@
 import type { Config } from "tailwindcss";
 
-// IKIGAI ONE — CI palette matching the Payroll app
+// IKIGAI OS — CI palette matching the Payroll app
 const config: Config = {
   content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
   theme: {

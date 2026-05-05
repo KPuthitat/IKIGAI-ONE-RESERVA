@@ -1,4 +1,4 @@
-# IKIGAI ONE RESERVA — systemd unit
+# IKIGAI OS RESERVA — systemd unit
 #
 # ติดตั้ง:
 #   sudo cp deploy/reserva.service /etc/systemd/system/reserva.service
@@ -11,7 +11,7 @@
 #   sudo journalctl -u reserva -f          # ดู log แบบ realtime
 
 [Unit]
-Description=IKIGAI ONE RESERVA (Next.js)
+Description=IKIGAI OS RESERVA (Next.js)
 After=network.target
 
 [Service]

@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-// IKIGAI ONE Portal — รวมทางเข้าทุก module ในที่เดียว
+// IKIGAI OS Portal — รวมทางเข้าทุก module ในที่เดียว
 // /reserva/        → portal นี้ (สำหรับเจ้าของ + พนักงาน)
 // /reserva/admin   → RESERVA module (จัดการการจองโต๊ะ)
 // /payroll/login   → PERSONA module (ระบบบริหารงานบุคคล) — Express app แยก
@@ -10,7 +10,7 @@ export default function PortalPage() {
   return (
     <main className="min-h-screen bg-ink-gradient flex flex-col items-center justify-center p-6">
       <div className="text-center mb-8">
-        <div className="brand-wordmark text-white text-[42px]">IKIGAI ONE</div>
+        <div className="brand-wordmark text-white text-[42px]">IKIGAI OS</div>
         <div className="text-white/50 text-[13px] tracking-[1px] mt-1">
           ระบบจัดการธุรกิจ
         </div>

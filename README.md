@@ -1,4 +1,4 @@
-# IKIGAI ONE RESERVA
+# IKIGAI OS RESERVA
 
 ระบบจองโต๊ะร้านอาหาร 2 สาขา (NAMA PASTA SRIRACHA / HYPOPLARAEMIA)
 
@@ -34,7 +34,7 @@ npm --version
 ## 2) ติดตั้งโปรเจกต์
 
 ```powershell
-cd "C:\Users\ikiga\OneDrive\Clinic Desktop\IKIGAI ONE\IKIGAI ONE RESERVA"
+cd "C:\Users\ikiga\OneDrive\Clinic Desktop\IKIGAI OS\IKIGAI OS RESERVA"
 npm install
 copy .env.example .env
 ```
@@ -91,7 +91,7 @@ LINE Notify ปิดบริการตั้งแต่ 31 มี.ค. 2025
 
 1. เปิด Task Scheduler → Create Task
 2. Trigger: รายซ้ำทุก 5 นาที
-3. Action: `cmd.exe /c "cd /d C:\Users\ikiga\OneDrive\Clinic Desktop\IKIGAI ONE\IKIGAI ONE RESERVA && npm run cron:run"`
+3. Action: `cmd.exe /c "cd /d C:\Users\ikiga\OneDrive\Clinic Desktop\IKIGAI OS\IKIGAI OS RESERVA && npm run cron:run"`
 4. Run whether user is logged on or not
 
 ### วิธี B — เรียก HTTP endpoint (ใช้ตอน deploy บน server)

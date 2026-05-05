@@ -14,7 +14,7 @@ export default function BookPage({ params }: { params: { branch: string } }) {
         <div className="max-w-2xl mx-auto text-center">
           <Link href="/book" className="inline-block hover:opacity-80 transition-opacity">
             <div className="brand-wordmark text-white text-xl">
-              IKIGAI ONE <span className="text-white/60 font-normal text-sm tracking-normal">· RESERVA</span>
+              IKIGAI OS <span className="text-white/60 font-normal text-sm tracking-normal">· RESERVA</span>
             </div>
           </Link>
         </div>

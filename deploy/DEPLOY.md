@@ -24,7 +24,7 @@ sudo apt install -y nodejs build-essential
 
 ```bash
 rsync -avz --exclude node_modules --exclude .next --exclude data \
-  "/c/Users/ikiga/OneDrive/Clinic Desktop/IKIGAI ONE/IKIGAI ONE RESERVA/" \
+  "/c/Users/ikiga/OneDrive/Clinic Desktop/IKIGAI OS/IKIGAI OS RESERVA/" \
   user@ikigaimedihealth.com:/var/www/reserva/
 ```
 
@@ -129,7 +129,7 @@ sudo bash deploy/deploy.sh
 ### ผ่าน rsync จากเครื่อง Windows
 ```bash
 rsync -avz --exclude node_modules --exclude .next --exclude data \
-  "/c/Users/ikiga/OneDrive/Clinic Desktop/IKIGAI ONE/IKIGAI ONE RESERVA/" \
+  "/c/Users/ikiga/OneDrive/Clinic Desktop/IKIGAI OS/IKIGAI OS RESERVA/" \
   user@ikigaimedihealth.com:/var/www/reserva/
 ssh user@ikigaimedihealth.com 'cd /var/www/reserva && sudo bash deploy/deploy.sh'
 ```

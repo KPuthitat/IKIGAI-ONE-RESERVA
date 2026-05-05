@@ -26,7 +26,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4 flex-wrap">
           <div className="flex items-baseline gap-1.5">
             <Link href="/" className="text-white/60 hover:text-white text-xs tracking-[1px] font-bold transition-colors">
-              IKIGAI ONE
+              IKIGAI OS
             </Link>
             <span className="text-white/30 text-xs">/</span>
             <Link href="/admin" className="brand-wordmark text-white text-lg">RESERVA</Link>

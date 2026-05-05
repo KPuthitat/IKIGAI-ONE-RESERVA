@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "IKIGAI ONE RESERVA",
+  title: "IKIGAI OS RESERVA",
   description: "ระบบจองโต๊ะ NAMA PASTA SRIRACHA / HYPOPLARAEMIA"
 };
 

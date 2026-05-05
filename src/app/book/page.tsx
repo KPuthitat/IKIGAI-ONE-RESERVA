@@ -10,7 +10,7 @@ export default function BookHomePage() {
     <main className="min-h-screen bg-ink-gradient flex flex-col items-center justify-center p-6">
       <div className="max-w-2xl w-full">
         <div className="text-center mb-8">
-          <div className="brand-wordmark text-white text-[42px]">IKIGAI ONE</div>
+          <div className="brand-wordmark text-white text-[42px]">IKIGAI OS</div>
           <div className="text-white/50 text-[13px] tracking-[1px] mt-1">RESERVA</div>
           <p className="text-white/70 mt-4">เลือกสาขาที่ต้องการจองโต๊ะ</p>
         </div>

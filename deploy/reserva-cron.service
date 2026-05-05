@@ -7,7 +7,7 @@
 #   sudo systemctl enable --now reserva-cron.timer
 
 [Unit]
-Description=IKIGAI ONE RESERVA — reminder + cleanup
+Description=IKIGAI OS RESERVA — reminder + cleanup
 After=network.target
 
 [Service]
