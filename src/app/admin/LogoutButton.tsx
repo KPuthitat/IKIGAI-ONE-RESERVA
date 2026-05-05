@@ -8,10 +8,10 @@ export default function LogoutButton() {
     <button
       onClick={async () => {
         await fetch(apiUrl("/api/logout"), { method: "POST" });
-        router.push("/admin/login");
+        router.push("/login");
         router.refresh();
       }}
-      className="text-sm text-white/70 hover:text-white ml-2"
+      className="text-sm text-white/70 hover:text-white"
     >ออกจากระบบ</button>
   );
 }

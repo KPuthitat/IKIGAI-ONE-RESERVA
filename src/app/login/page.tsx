@@ -1,0 +1,17 @@
+import LoginForm from "./LoginForm";
+
+export const dynamic = "force-dynamic";
+
+export default function LoginPage({
+  searchParams
+}: { searchParams: { next?: string; error?: string } }) {
+  return (
+    <main className="min-h-screen bg-ink-gradient flex flex-col items-center justify-center p-6">
+      <div className="text-center mb-8">
+        <div className="brand-wordmark text-white text-[42px]">IKIGAI OS</div>
+      </div>
+
+      <LoginForm next={searchParams.next} error={searchParams.error} />
+    </main>
+  );
+}

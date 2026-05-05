@@ -2,13 +2,13 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import crypto from "node:crypto";
 import { getDb, type User, type Branch } from "./db";
-import { BASE_PATH } from "./url";
 export { hashPassword, verifyPassword } from "./password";
 
+// Shared cookie name — Payroll Express ก็จะอ่าน cookie ตัวนี้ด้วย (SSO bridge)
 const SESSION_COOKIE = "reserva_session";
 const SESSION_DAYS = 14;
-// Cookie scope: ผูกกับ basePath (ถ้ามี) เพื่อไม่ส่ง cookie ของ /reserva ไป /payroll
-const COOKIE_PATH = BASE_PATH || "/";
+// Cookie scope ที่ root / เพื่อให้ Payroll (Express) อ่านเจอ
+const COOKIE_PATH = "/";
 
 export type SessionUser = User & { branches: Branch[]; activeBranchId: number | null };
 
@@ -38,6 +38,7 @@ export function getSessionUser(): SessionUser | null {
   const id = cookies().get(SESSION_COOKIE)?.value;
   if (!id) return null;
   const db = getDb();
+  // ใช้ local users table (mirror จาก Payroll ตอน login)
   const row = db.prepare(`
     SELECT u.*, s.expires_at, s.active_branch_id
     FROM sessions s JOIN users u ON s.user_id = u.id
@@ -53,11 +54,32 @@ export function getSessionUser(): SessionUser | null {
     WHERE ub.user_id = ? ORDER BY b.name
   `).all(row.id) as Branch[];
 
-  // ถ้า session ยังไม่มี active branch ใช้ตัวแรก
   let activeBranchId = row.active_branch_id;
   if (!activeBranchId && branches.length > 0) activeBranchId = branches[0].id;
 
   return { ...row, branches, activeBranchId };
+}
+
+/** Sync user จาก Payroll → local users table (เรียกตอน login สำเร็จ) */
+export function syncUserFromPayroll(payrollUser: {
+  id: number;
+  username: string;
+  password_hash: string;
+  display_name: string;
+  role: string;
+}): void {
+  const db = getDb();
+  const role = payrollUser.role === "admin" ? "admin" : "staff";
+  const exists = db.prepare("SELECT id FROM users WHERE id = ?").get(payrollUser.id);
+  if (exists) {
+    db.prepare(
+      "UPDATE users SET username=?, password_hash=?, display_name=?, role=? WHERE id=?"
+    ).run(payrollUser.username, payrollUser.password_hash, payrollUser.display_name, role, payrollUser.id);
+  } else {
+    db.prepare(
+      "INSERT INTO users (id, username, password_hash, display_name, role) VALUES (?,?,?,?,?)"
+    ).run(payrollUser.id, payrollUser.username, payrollUser.password_hash, payrollUser.display_name, role);
+  }
 }
 
 export function setActiveBranch(branchId: number): void {
@@ -68,14 +90,18 @@ export function setActiveBranch(branchId: number): void {
 
 export function requireUser(): SessionUser {
   const u = getSessionUser();
-  if (!u) redirect("/admin/login");
+  if (!u) redirect("/login");
   return u;
 }
 
 export function requireAdmin(): SessionUser {
   const u = requireUser();
-  if (u.role !== "admin") redirect("/admin?error=forbidden");
+  if (u.role !== "admin") redirect("/staff?error=forbidden");
   return u;
+}
+
+export function requireStaffOrAdmin(): SessionUser {
+  return requireUser();
 }
 
 export function userHasBranch(user: SessionUser, branchId: number): boolean {

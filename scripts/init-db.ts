@@ -10,7 +10,6 @@ if (fs.existsSync(".env")) {
   }
 }
 import { getDb } from "../src/lib/db";
-import { hashPassword } from "../src/lib/password";
 
 const db = getDb();
 
@@ -49,19 +48,11 @@ for (const br of branches) {
   }
 }
 
-console.log("→ Creating default admin (admin / admin1234) ...");
-const adminExists = db.prepare("SELECT id FROM users WHERE username = ?").get("admin");
-if (!adminExists) {
-  const result = db.prepare(
-    "INSERT INTO users (username, password_hash, display_name, role) VALUES (?,?,?,?)"
-  ).run("admin", hashPassword("admin1234"), "ผู้ดูแลระบบ", "admin");
-  const userId = result.lastInsertRowid as number;
-  for (const br of branches) {
-    db.prepare("INSERT INTO user_branches (user_id, branch_id) VALUES (?, ?)").run(userId, br.id);
-  }
-  console.log("  admin created. Please change password after first login.");
-} else {
-  console.log("  admin already exists, skipped.");
-}
+console.log("→ Users: ใช้ Payroll DB เป็น single source of truth");
+console.log("  ผู้ใช้จะถูก sync จาก Payroll → local users ตอน login ครั้งแรก");
+console.log("  ใช้ admin / ikigai2026 (default ของ Payroll) เพื่อเข้าครั้งแรก");
+
+// หมายเหตุ: ถ้ามี user สังเคราะห์ admin/admin1234 เดิมที่ id=1 ใน local DB
+// เมื่อ admin ของ Payroll (id=1) login ครั้งแรก ระบบจะ UPSERT ทับด้วยค่าจริงให้เอง
 
 console.log("✓ Done. DB ready at", process.env.DATABASE_PATH || "./data/reserva.db");

@@ -1,58 +1,32 @@
 import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
-import BranchSwitcher from "./BranchSwitcher";
 import LogoutButton from "./LogoutButton";
 
 export const dynamic = "force-dynamic";
 
+// Admin top-level layout — ใช้สำหรับ /admin (module picker), /admin/persona, etc.
+// /admin/reserva/* มี nested layout ของตัวเองเพิ่ม nav items ของ module
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  // หน้าที่ต้องการ auth จะเรียก requireUser() ใน page เอง (จะ redirect ไป login)
-  // ถ้ายังไม่มี session ก็ render children ตรงๆ (เช่นหน้า login)
   const user = getSessionUser();
-  if (!user) return <>{children}</>;
-
-  const navItems = [
-    { href: "/admin", label: "ภาพรวม" },
-    { href: "/admin/bookings", label: "การจอง" },
-    { href: "/admin/floor-plan", label: "ผังโต๊ะ", adminOnly: true },
-    { href: "/admin/staff", label: "พนักงาน", adminOnly: true },
-    { href: "/admin/settings", label: "ตั้งค่า", adminOnly: true },
-    { href: "/admin/export", label: "Export", adminOnly: true }
-  ];
+  if (!user) return <>{children}</>;     // หน้าที่ไม่ต้องล็อกอินจะ render ได้ตรงๆ
 
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="bg-ink-gradient text-white shadow-lg">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4 flex-wrap">
           <div className="flex items-baseline gap-1.5">
-            <Link href="/" className="text-white/60 hover:text-white text-xs tracking-[1px] font-bold transition-colors">
+            <Link href="/admin" className="brand-wordmark text-white text-lg">
               IKIGAI OS
             </Link>
-            <span className="text-white/30 text-xs">/</span>
-            <Link href="/admin" className="brand-wordmark text-white text-lg">RESERVA</Link>
+            <span className="text-white/40 text-xs">/</span>
+            <span className="text-white/80 text-xs tracking-[1px] font-bold">ADMIN</span>
           </div>
-          <div className="hidden sm:block h-6 w-px bg-white/20" />
-          <BranchSwitcher
-            branches={user.branches}
-            activeBranchId={user.activeBranchId}
-          />
-          <nav className="flex gap-1 ml-auto flex-wrap items-center">
-            {navItems
-              .filter((n) => !n.adminOnly || user.role === "admin")
-              .map((n) => (
-                <Link
-                  key={n.href}
-                  href={n.href}
-                  className="px-3 py-1.5 rounded-md text-sm text-white/80 hover:text-white hover:bg-white/10 transition-colors"
-                >
-                  {n.label}
-                </Link>
-              ))}
-            <span className="ml-3 text-xs text-white/60 self-center">
-              {user.display_name} · {user.role === "admin" ? "แอดมิน" : "พนักงาน"}
+          <div className="ml-auto flex items-center gap-3 flex-wrap">
+            <span className="text-xs text-white/60">
+              {user.display_name} · ผู้ดูแล
             </span>
             <LogoutButton />
-          </nav>
+          </div>
         </div>
       </header>
       <main className="max-w-6xl mx-auto p-4">{children}</main>

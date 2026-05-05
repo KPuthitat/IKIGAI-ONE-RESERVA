@@ -12,7 +12,7 @@ export default function BookPage({ params }: { params: { branch: string } }) {
     <main className="min-h-screen bg-slate-100">
       <div className="bg-ink-gradient text-white py-6 px-6">
         <div className="max-w-2xl mx-auto text-center">
-          <Link href="/book" className="inline-block hover:opacity-80 transition-opacity">
+          <Link href="/reserva" className="inline-block hover:opacity-80 transition-opacity">
             <div className="brand-wordmark text-white text-xl">
               IKIGAI OS <span className="text-white/60 font-normal text-sm tracking-normal">· RESERVA</span>
             </div>
@@ -20,7 +20,7 @@ export default function BookPage({ params }: { params: { branch: string } }) {
         </div>
       </div>
       <div className="max-w-2xl mx-auto p-4 sm:p-6">
-        <Link href="/book" className="text-sm text-slate-500 hover:text-brand inline-flex items-center gap-1 mb-3">
+        <Link href="/reserva" className="text-sm text-slate-500 hover:text-brand inline-flex items-center gap-1 mb-3">
           ← เลือกสาขาอื่น
         </Link>
         <header className="mb-6">

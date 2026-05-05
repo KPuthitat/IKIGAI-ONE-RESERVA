@@ -8,7 +8,7 @@ export default function BranchSwitcher({
 }: { branches: Branch[]; activeBranchId: number | null }) {
   const router = useRouter();
   if (branches.length <= 1) {
-    return <span className="text-sm text-white/80">{branches[0]?.name ?? "—"}</span>;
+    return <span className="text-sm text-slate-600 ml-1">{branches[0]?.name ?? "—"}</span>;
   }
   return (
     <select
@@ -22,10 +22,10 @@ export default function BranchSwitcher({
         });
         router.refresh();
       }}
-      className="bg-white/10 border border-white/20 text-white rounded-md px-2 py-1 text-sm focus:outline-none focus:border-white/50"
+      className="border border-slate-300 bg-white rounded-md px-2 py-1 text-sm focus:outline-none focus:border-brand"
     >
       {branches.map((b) => (
-        <option key={b.id} value={b.id} className="text-slate-800">{b.name}</option>
+        <option key={b.id} value={b.id}>{b.name}</option>
       ))}
     </select>
   );

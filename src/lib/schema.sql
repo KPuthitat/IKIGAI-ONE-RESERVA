@@ -93,3 +93,13 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Time clock entries (PERSONA module — staff ลงเวลาเข้า/ออกงาน)
+CREATE TABLE IF NOT EXISTS time_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('in','out')),
+  ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  note TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_time_entries_user_ts ON time_entries(user_id, ts);

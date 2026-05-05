@@ -153,7 +153,7 @@ export default function BookingForm({ branch }: { branch: Branch }) {
           </div>
         )}
 
-        <button onClick={() => router.push("/book")} className="btn-secondary w-full">เลือกสาขาอื่น</button>
+        <button onClick={() => router.push("/reserva")} className="btn-secondary w-full">เลือกสาขาอื่น</button>
       </div>
     );
   }
