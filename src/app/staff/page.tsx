@@ -45,10 +45,6 @@ export default function StaffHomePage({
           <p className="mt-4 text-brand font-bold text-sm">เปิด →</p>
         </Link>
       </div>
-
-      <div className="text-center text-xs text-slate-400 mt-8">
-        ทางลัด: <a href="/persona" className="hover:text-brand">ikigaimedihealth.com/persona</a> ลงเวลาตรง
-      </div>
     </div>
   );
 }

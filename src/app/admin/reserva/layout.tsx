@@ -18,11 +18,8 @@ export default function ReservaAdminLayout({ children }: { children: React.React
 
   return (
     <div>
-      {/* Sub-header สำหรับ RESERVA module */}
+      {/* Sub-nav สำหรับ RESERVA module — branch switcher + page nav */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 mb-4 p-3 flex items-center gap-3 flex-wrap">
-        <Link href="/admin" className="text-xs text-slate-500 hover:text-brand">← module</Link>
-        <span className="text-slate-300">·</span>
-        <span className="font-bold text-brand tracking-[1px] text-sm">RESERVA</span>
         <BranchSwitcher branches={user.branches} activeBranchId={user.activeBranchId} />
         <nav className="flex gap-1 ml-auto flex-wrap">
           {navItems
