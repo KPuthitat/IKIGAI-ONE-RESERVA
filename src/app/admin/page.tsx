@@ -45,6 +45,24 @@ export default function DashboardPage() {
     GROUP BY source ORDER BY n DESC LIMIT 5
   `).all(branch.id, today) as Array<{ source: string; n: number }>;
 
+  // ลูกค้ามาจากไหน (30 วัน)
+  const originStats = db.prepare(`
+    SELECT COALESCE(customer_origin, '(ไม่ระบุ)') AS origin, COUNT(*) AS n
+    FROM bookings
+    WHERE branch_id = ? AND booking_date >= date(?, '-29 days')
+    GROUP BY customer_origin ORDER BY n DESC
+  `).all(branch.id, today) as Array<{ origin: string; n: number }>;
+
+  // สมาชิก / ไม่เป็นสมาชิก (30 วัน)
+  const memberStats = db.prepare(`
+    SELECT
+      SUM(CASE WHEN is_member = 1 THEN 1 ELSE 0 END) AS members,
+      SUM(CASE WHEN is_member = 0 THEN 1 ELSE 0 END) AS non_members,
+      SUM(CASE WHEN is_member IS NULL THEN 1 ELSE 0 END) AS unknown
+    FROM bookings
+    WHERE branch_id = ? AND booking_date >= date(?, '-29 days')
+  `).get(branch.id, today) as { members: number; non_members: number; unknown: number };
+
   return (
     <div className="space-y-6">
       <div>
@@ -113,7 +131,7 @@ export default function DashboardPage() {
           <BarChart data={weekStats.map((d) => ({ label: d.booking_date.slice(5), value: d.bookings, sub: `${d.guests} แขก` }))} />
         </section>
         <section className="card">
-          <h2 className="font-semibold mb-3">ลูกค้ามาจากไหน (30 วัน)</h2>
+          <h2 className="font-semibold mb-3">รู้จักร้านจากไหน (30 วัน)</h2>
           {topSources.length === 0 ? (
             <div className="text-slate-500 text-sm">ยังไม่มีข้อมูล</div>
           ) : (
@@ -127,9 +145,56 @@ export default function DashboardPage() {
             </ul>
           )}
         </section>
+
+        <section className="card">
+          <h2 className="font-semibold mb-3">ลูกค้าเดินทางมาจาก (30 วัน)</h2>
+          {originStats.length === 0 ? (
+            <div className="text-slate-500 text-sm">ยังไม่มีข้อมูล</div>
+          ) : (
+            <ul className="space-y-2">
+              {originStats.map((o) => (
+                <li key={o.origin} className="flex justify-between text-sm">
+                  <span>{originLabel(o.origin)}</span>
+                  <span className="text-slate-500">{o.n} ครั้ง</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="card">
+          <h2 className="font-semibold mb-3">สมาชิก vs ไม่ใช่สมาชิก (30 วัน)</h2>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <div className="text-2xl font-bold text-emerald-600">{memberStats.members ?? 0}</div>
+              <div className="text-xs text-slate-500">เป็นสมาชิก</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-amber-600">{memberStats.non_members ?? 0}</div>
+              <div className="text-xs text-slate-500">ยังไม่เคย</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-slate-400">{memberStats.unknown ?? 0}</div>
+              <div className="text-xs text-slate-500">ไม่ระบุ</div>
+            </div>
+          </div>
+          {(memberStats.non_members ?? 0) > 0 && (
+            <p className="text-xs text-slate-500 mt-3 border-t border-slate-100 pt-3">
+              💡 มี {memberStats.non_members} คนที่ยังไม่ได้เป็นสมาชิก — ทีมงานควรชวนตอนถึงร้าน
+            </p>
+          )}
+        </section>
       </div>
     </div>
   );
+}
+
+function originLabel(o: string): string {
+  return ({
+    sriracha: "ศรีราชา",
+    chonburi: "ชลบุรี (อื่นๆ)",
+    other_province: "ต่างจังหวัด"
+  } as Record<string, string>)[o] ?? o;
 }
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {

@@ -12,6 +12,8 @@ const Body = z.object({
   booking_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   booking_time: z.string().regex(/^\d{2}:\d{2}$/),
   source: z.string().max(50).optional().default(""),
+  customer_origin: z.string().max(50).optional().default(""),
+  is_member: z.union([z.literal(0), z.literal(1)]).nullable().optional(),
   notes: z.string().max(500).optional().default(""),
   table_id: z.number().int().nullable().optional(),
   line_user_id: z.string().max(64).optional().default("")
@@ -51,8 +53,9 @@ export async function POST(req: Request) {
   const result = db.prepare(`
     INSERT INTO bookings (
       branch_id, table_id, customer_name, customer_phone, party_size,
-      source, booking_date, booking_time, duration_minutes, notes, line_user_id, status
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'confirmed')
+      source, customer_origin, is_member,
+      booking_date, booking_time, duration_minutes, notes, line_user_id, status
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'confirmed')
   `).run(
     branch.id,
     data.table_id ?? null,
@@ -60,6 +63,8 @@ export async function POST(req: Request) {
     data.customer_phone,
     data.party_size,
     data.source || null,
+    data.customer_origin || null,
+    data.is_member ?? null,
     data.booking_date,
     data.booking_time,
     branch.default_duration_minutes,

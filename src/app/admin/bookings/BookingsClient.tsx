@@ -14,6 +14,14 @@ const STATUS_LABEL: Record<Row["status"], string> = {
   completed: "เสร็จสิ้น"
 };
 
+function originLabel(o: string): string {
+  return ({
+    sriracha: "ศรีราชา",
+    chonburi: "ชลบุรี",
+    other_province: "ต่างจังหวัด"
+  } as Record<string, string>)[o] ?? o;
+}
+
 export default function BookingsClient({
   bookings,
   tables,
@@ -64,10 +72,20 @@ export default function BookingsClient({
           <div className="flex flex-wrap items-start gap-3">
             <div className="text-2xl font-bold w-20">{b.booking_time}</div>
             <div className="flex-1 min-w-[200px]">
-              <div className="font-medium">{b.customer_name} · {b.party_size} ที่นั่ง</div>
-              <div className="text-sm text-slate-500">
+              <div className="font-medium flex items-center gap-2 flex-wrap">
+                {b.customer_name}
+                <span className="text-slate-500 font-normal">· {b.party_size} ที่นั่ง</span>
+                {b.is_member === 1 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">สมาชิก</span>
+                )}
+                {b.is_member === 0 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">ยังไม่ใช่สมาชิก</span>
+                )}
+              </div>
+              <div className="text-sm text-slate-500 flex flex-wrap gap-x-2">
                 <a href={`tel:${b.customer_phone}`} className="text-brand">{b.customer_phone}</a>
-                {b.source && <span> · มาจาก {b.source}</span>}
+                {b.source && <span>· รู้จักจาก {b.source}</span>}
+                {b.customer_origin && <span>· มาจาก {originLabel(b.customer_origin)}</span>}
               </div>
               {b.notes && <div className="text-sm text-slate-600 mt-1">📝 {b.notes}</div>}
             </div>

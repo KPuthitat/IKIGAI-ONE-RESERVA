@@ -13,7 +13,21 @@ type TableOption = {
   fitScore: number;
 };
 
-const SOURCES = ["Instagram", "Facebook", "TikTok", "Google Maps", "เพื่อนแนะนำ", "ผ่านมาเห็น", "อื่นๆ"];
+const SOURCES = [
+  { value: "Instagram", label: "Instagram", emoji: "📷" },
+  { value: "Facebook", label: "Facebook", emoji: "👍" },
+  { value: "TikTok", label: "TikTok", emoji: "🎵" },
+  { value: "Google Maps", label: "Google", emoji: "🔍" },
+  { value: "เพื่อนแนะนำ", label: "เพื่อนแนะนำ", emoji: "👥" },
+  { value: "ผ่านมาเห็น", label: "ผ่านมาเห็น", emoji: "👀" },
+  { value: "อื่นๆ", label: "อื่นๆ", emoji: "✨" }
+];
+
+const ORIGINS = [
+  { value: "sriracha", label: "ศรีราชา" },
+  { value: "chonburi", label: "ชลบุรี (อื่นๆ)" },
+  { value: "other_province", label: "ต่างจังหวัด" }
+];
 
 export default function BookingForm({ branch }: { branch: Branch }) {
   const router = useRouter();
@@ -29,6 +43,8 @@ export default function BookingForm({ branch }: { branch: Branch }) {
     booking_date: today,
     booking_time: "18:00",
     source: "",
+    customer_origin: "",
+    is_member: null as 0 | 1 | null,
     notes: "",
     line_user_id: ""
   });
@@ -115,8 +131,8 @@ export default function BookingForm({ branch }: { branch: Branch }) {
     return (
       <div className="card text-center">
         <div className="text-5xl mb-3">✅</div>
-        <h2 className="text-xl font-semibold mb-2">จองโต๊ะสำเร็จ!</h2>
-        <p className="text-slate-600 mb-1">หมายเลขการจอง #{resultId}</p>
+        <h2 className="text-xl font-bold mb-2 text-slate-800">จองโต๊ะสำเร็จ!</h2>
+        <p className="text-slate-600 mb-1">หมายเลขการจอง <span className="font-bold">#{resultId}</span></p>
         <p className="text-slate-600 mb-6">
           {form.customer_name} · {form.party_size} ที่นั่ง<br />
           วันที่ {form.booking_date} เวลา {form.booking_time}
@@ -125,7 +141,17 @@ export default function BookingForm({ branch }: { branch: Branch }) {
           ทางร้านจะส่งแจ้งเตือนผ่าน LINE ก่อนถึงเวลานัด<br />
           กรุณา add LINE Official Account ของร้านเพื่อรับการแจ้งเตือน
         </p>
-        <button onClick={() => router.push("/")} className="btn-secondary">กลับหน้าแรก</button>
+
+        {form.is_member === 0 && (
+          <div className="bg-brand/5 border border-brand/30 rounded-xl p-4 mb-4 text-left">
+            <div className="font-bold text-brand mb-1">🎟️ สมัครสมาชิกฟรี</div>
+            <div className="text-sm text-slate-600">
+              สะสมแต้ม รับสิทธิพิเศษ และส่วนลดทุกครั้งที่มา ทักทีมงานในร้านได้เลย
+            </div>
+          </div>
+        )}
+
+        <button onClick={() => router.push("/")} className="btn-secondary w-full">กลับหน้าแรก</button>
       </div>
     );
   }
@@ -133,19 +159,19 @@ export default function BookingForm({ branch }: { branch: Branch }) {
   if (step === "choose") {
     return (
       <div className="card">
-        <h2 className="text-lg font-semibold mb-3">เลือกโต๊ะที่ต้องการ</h2>
+        <h2 className="text-lg font-bold mb-3 text-slate-800">เลือกโต๊ะที่ต้องการ</h2>
         <p className="text-sm text-slate-500 mb-4">
           ระบบเลือกโต๊ะที่ขนาดใกล้เคียงกับจำนวนคนของคุณที่สุด
         </p>
 
-        <label className="border border-brand bg-brand/5 rounded-md p-3 mb-2 flex items-center cursor-pointer">
+        <label className="border-[1.5px] border-brand bg-brand/5 rounded-xl p-3.5 mb-2 flex items-center cursor-pointer">
           <input
-            type="radio" name="table" className="mr-3"
+            type="radio" name="table" className="mr-3 w-5 h-5"
             checked={chosenTable === "auto"}
             onChange={() => setChosenTable("auto")}
           />
           <div>
-            <div className="font-medium">ให้ระบบเลือกให้อัตโนมัติ (แนะนำ)</div>
+            <div className="font-bold">ให้ระบบเลือกให้อัตโนมัติ (แนะนำ)</div>
             <div className="text-sm text-slate-500">
               โต๊ะ {suggestions[0].label} · {suggestions[0].capacity} ที่นั่ง
             </div>
@@ -153,14 +179,14 @@ export default function BookingForm({ branch }: { branch: Branch }) {
         </label>
 
         {suggestions.map((s) => (
-          <label key={s.id} className="border border-slate-200 rounded-md p-3 mb-2 flex items-center cursor-pointer hover:border-brand">
+          <label key={s.id} className="border-[1.5px] border-slate-200 rounded-xl p-3.5 mb-2 flex items-center cursor-pointer hover:border-brand">
             <input
-              type="radio" name="table" className="mr-3"
+              type="radio" name="table" className="mr-3 w-5 h-5"
               checked={chosenTable === s.id}
               onChange={() => setChosenTable(s.id)}
             />
             <div>
-              <div className="font-medium">โต๊ะ {s.label}</div>
+              <div className="font-bold">โต๊ะ {s.label}</div>
               <div className="text-sm text-slate-500">
                 {s.capacity} ที่นั่ง {s.shape === "round" ? "(โต๊ะกลม)" : ""}
               </div>
@@ -170,12 +196,12 @@ export default function BookingForm({ branch }: { branch: Branch }) {
 
         {error && <div className="text-red-600 text-sm mt-2">{error}</div>}
 
-        <div className="flex gap-2 mt-4">
-          <button onClick={() => setStep("form")} className="btn-secondary flex-1">ย้อนกลับ</button>
+        <div className="grid grid-cols-2 gap-2 mt-4">
+          <button onClick={() => setStep("form")} className="btn-secondary">ย้อนกลับ</button>
           <button
             onClick={confirmBooking}
             disabled={submitting || chosenTable === null}
-            className="btn-primary flex-1"
+            className="btn-primary"
           >
             {submitting ? "กำลังบันทึก..." : "ยืนยันการจอง"}
           </button>
@@ -185,83 +211,187 @@ export default function BookingForm({ branch }: { branch: Branch }) {
   }
 
   return (
-    <form onSubmit={findTables} className="card space-y-4">
-      <div>
-        <label className="label">ชื่อ-นามสกุล *</label>
-        <input
-          className="input" required
-          value={form.customer_name}
-          onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
-        />
-      </div>
-
-      <div>
-        <label className="label">เบอร์โทรศัพท์ *</label>
-        <input
-          className="input" required type="tel" pattern="[0-9\-\s]+"
-          placeholder="08X-XXX-XXXX"
-          value={form.customer_phone}
-          onChange={(e) => setForm({ ...form, customer_phone: e.target.value })}
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
+    <form onSubmit={findTables} className="space-y-4">
+      <div className="card space-y-4">
         <div>
-          <label className="label">วันที่ *</label>
+          <label className="label">ชื่อ-นามสกุล *</label>
           <input
-            type="date" className="input" required min={today}
-            value={form.booking_date}
-            onChange={(e) => setForm({ ...form, booking_date: e.target.value })}
+            className="input" required
+            autoComplete="name"
+            value={form.customer_name}
+            onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
           />
         </div>
+
         <div>
-          <label className="label">เวลา *</label>
-          <select
-            className="input" required
-            value={form.booking_time}
-            onChange={(e) => setForm({ ...form, booking_time: e.target.value })}
-          >
-            {slots.map((s) => <option key={s} value={s}>{s} น.</option>)}
-          </select>
+          <label className="label">เบอร์โทรศัพท์ *</label>
+          <input
+            className="input" required type="tel"
+            inputMode="tel" autoComplete="tel"
+            placeholder="08X-XXX-XXXX"
+            value={form.customer_phone}
+            onChange={(e) => setForm({ ...form, customer_phone: e.target.value })}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">วันที่ *</label>
+            <input
+              type="date" className="input" required min={today}
+              value={form.booking_date}
+              onChange={(e) => setForm({ ...form, booking_date: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="label">เวลา *</label>
+            <select
+              className="input" required
+              value={form.booking_time}
+              onChange={(e) => setForm({ ...form, booking_time: e.target.value })}
+            >
+              {slots.map((s) => <option key={s} value={s}>{s} น.</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="label">จำนวนที่นั่ง *</label>
+          <PartySizePicker
+            value={form.party_size}
+            onChange={(n) => setForm({ ...form, party_size: n })}
+          />
+        </div>
+
+        <div>
+          <label className="label">หมายเหตุ (ถ้ามี)</label>
+          <textarea
+            className="input" rows={2}
+            placeholder="เช่น ขอโต๊ะริมหน้าต่าง, มีเด็ก ฯลฯ"
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          />
         </div>
       </div>
 
-      <div>
-        <label className="label">จำนวนที่นั่ง *</label>
-        <input
-          type="number" className="input" required min={1} max={20}
-          value={form.party_size}
-          onChange={(e) => setForm({ ...form, party_size: Number(e.target.value) })}
-        />
+      {/* ── คำถามเพิ่มเติม (ไม่บังคับ) ── */}
+      <div className="bg-white/60 rounded-2xl p-5 space-y-4 border border-slate-200">
+        <div className="text-center">
+          <div className="text-sm font-bold text-slate-700">ช่วยตอบเพิ่มเติม</div>
+          <div className="text-xs text-slate-500">3 คำถามสั้นๆ เพื่อพัฒนาบริการ (ไม่บังคับ)</div>
+        </div>
+
+        <div>
+          <div className="text-xs font-semibold text-slate-500 mb-2">🌍 เดินทางมาจาก</div>
+          <ChipGroup
+            options={ORIGINS}
+            value={form.customer_origin}
+            onChange={(v) => setForm({ ...form, customer_origin: v ?? "" })}
+          />
+        </div>
+
+        <div>
+          <div className="text-xs font-semibold text-slate-500 mb-2">💬 รู้จักร้านจาก</div>
+          <ChipGroup
+            options={SOURCES}
+            value={form.source}
+            onChange={(v) => setForm({ ...form, source: v ?? "" })}
+          />
+        </div>
+
+        <div>
+          <div className="text-xs font-semibold text-slate-500 mb-2">🎟️ เคยเป็นสมาชิกร้านมั้ย</div>
+          <ChipGroup
+            options={[
+              { value: "1", label: "เคยแล้ว" },
+              { value: "0", label: "ยังไม่เคย" }
+            ]}
+            value={form.is_member === null ? "" : String(form.is_member)}
+            onChange={(v) =>
+              setForm({ ...form, is_member: v === null ? null : (Number(v) as 0 | 1) })
+            }
+          />
+          {form.is_member === 0 && (
+            <div className="mt-2 text-xs text-slate-500 bg-brand/5 border border-brand/20 rounded-lg p-2.5">
+              💡 ทีมงานจะแนะนำสมัครสมาชิกฟรีให้ตอนถึงร้าน
+            </div>
+          )}
+        </div>
       </div>
 
-      <div>
-        <label className="label">รู้จักร้านจากที่ไหน?</label>
-        <select
-          className="input"
-          value={form.source}
-          onChange={(e) => setForm({ ...form, source: e.target.value })}
-        >
-          <option value="">— เลือก —</option>
-          {SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>
+      {error && <div className="text-red-600 text-sm text-center">{error}</div>}
 
-      <div>
-        <label className="label">หมายเหตุ (ถ้ามี)</label>
-        <textarea
-          className="input" rows={2}
-          placeholder="เช่น ขอโต๊ะริมหน้าต่าง, มีเด็ก ฯลฯ"
-          value={form.notes}
-          onChange={(e) => setForm({ ...form, notes: e.target.value })}
-        />
-      </div>
-
-      {error && <div className="text-red-600 text-sm">{error}</div>}
-
-      <button disabled={submitting} className="btn-primary w-full">
+      <button disabled={submitting} className="btn-primary w-full text-base py-3.5">
         {submitting ? "กำลังค้นหาโต๊ะว่าง..." : "ค้นหาโต๊ะว่าง"}
       </button>
     </form>
+  );
+}
+
+// ── ChipGroup component ──
+function ChipGroup({
+  options,
+  value,
+  onChange
+}: {
+  options: Array<{ value: string; label: string; emoji?: string }>;
+  value: string;
+  onChange: (v: string | null) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => {
+        const selected = value === o.value;
+        return (
+          <button
+            type="button"
+            key={o.value}
+            onClick={() => onChange(selected ? null : o.value)}
+            className={`px-3.5 py-2 rounded-full text-sm border-[1.5px] transition min-h-[40px] ${
+              selected
+                ? "bg-brand text-white border-brand shadow-sm"
+                : "bg-white text-slate-600 border-slate-200 hover:border-brand/60 active:scale-95"
+            }`}
+          >
+            {o.emoji && <span className="mr-1">{o.emoji}</span>}
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Stepper for party size (more thumb-friendly than typing) ──
+function PartySizePicker({
+  value,
+  onChange
+}: {
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(1, value - 1))}
+        className="w-12 h-12 rounded-xl border-[1.5px] border-slate-200 bg-white text-2xl font-bold text-slate-600 hover:border-brand active:scale-95 disabled:opacity-50"
+        disabled={value <= 1}
+      >−</button>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={50}
+        value={value}
+        onChange={(e) => onChange(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+        className="input text-center text-xl font-bold flex-1 min-w-0"
+      />
+      <button
+        type="button"
+        onClick={() => onChange(Math.min(50, value + 1))}
+        className="w-12 h-12 rounded-xl border-[1.5px] border-slate-200 bg-white text-2xl font-bold text-slate-600 hover:border-brand active:scale-95"
+      >+</button>
+    </div>
   );
 }

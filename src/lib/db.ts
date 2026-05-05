@@ -19,8 +19,21 @@ export function getDb(): Database.Database {
     const schema = fs.readFileSync(schemaPath, "utf8");
     db.exec(schema);
   }
+  runMigrations(db);
   _db = db;
   return db;
+}
+
+// migrations เผื่อ schema เปลี่ยนทีหลัง — ทำงานทุกครั้งแบบ idempotent
+function runMigrations(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(bookings)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("customer_origin")) {
+    db.exec("ALTER TABLE bookings ADD COLUMN customer_origin TEXT");
+  }
+  if (!names.has("is_member")) {
+    db.exec("ALTER TABLE bookings ADD COLUMN is_member INTEGER");
+  }
 }
 
 export type Branch = {
@@ -68,6 +81,8 @@ export type Booking = {
   customer_phone: string;
   party_size: number;
   source: string | null;
+  customer_origin: string | null;     // sriracha | chonburi | other_province | null
+  is_member: number | null;           // 1 / 0 / null
   booking_date: string;
   booking_time: string;
   duration_minutes: number;

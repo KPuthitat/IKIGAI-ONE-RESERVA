@@ -8,6 +8,8 @@ export type ExportRow = {
   customer_phone: string;
   party_size: number;
   source: string | null;
+  customer_origin: string | null;
+  is_member: number | null;
   status: string;
   table_label: string | null;
   notes: string | null;
@@ -43,6 +45,8 @@ export function exportBookingsCsv(opts: {
       b.customer_phone,
       b.party_size,
       b.source,
+      b.customer_origin,
+      b.is_member,
       b.status,
       t.label AS table_label,
       b.notes,
@@ -56,7 +60,8 @@ export function exportBookingsCsv(opts: {
 
   const headers = [
     "branch","booking_date","booking_time","customer_name","customer_phone",
-    "party_size","source","status","table_label","notes","created_at"
+    "party_size","source","customer_origin","is_member",
+    "status","table_label","notes","created_at"
   ];
   const csv = [
     "﻿" + headers.join(","),    // BOM for Excel UTF-8

@@ -54,7 +54,9 @@ CREATE TABLE IF NOT EXISTS bookings (
   customer_name TEXT NOT NULL,
   customer_phone TEXT NOT NULL,
   party_size INTEGER NOT NULL CHECK (party_size > 0),
-  source TEXT,                        -- ลูกค้ามาจากไหน เช่น Instagram, Facebook, walk-in friend
+  source TEXT,                        -- รู้จักร้านจากไหน เช่น Instagram, Facebook, friend
+  customer_origin TEXT,               -- มาจากไหน sriracha | chonburi | other_province
+  is_member INTEGER,                  -- 1 = สมาชิกแล้ว, 0 = ยังไม่เคย, NULL = ไม่ตอบ
   booking_date TEXT NOT NULL,         -- YYYY-MM-DD (โซนเวลาไทย)
   booking_time TEXT NOT NULL,         -- HH:MM
   duration_minutes INTEGER NOT NULL DEFAULT 90,
