@@ -42,30 +42,30 @@ export default function LoginForm({
 
   return (
     <>
-      {/* role selector — แยก 2 ปุ่มชัดเจน ไม่อยู่ในกรอบเดียว */}
-      <div className="flex gap-3 mb-5 w-full max-w-sm">
+      {/* role selector — pill segmented แบบเดิม */}
+      <div className="flex gap-0 bg-white/[.08] border border-white/[.15] rounded-xl p-1 mb-4 w-full max-w-sm">
         <button
           type="button"
           onClick={() => setRole("staff")}
-          className={`flex-1 py-3.5 rounded-xl text-base font-bold tracking-[1.5px] transition-all ${
+          className={`flex-1 py-3 rounded-[9px] text-base font-bold tracking-[1.5px] transition-all ${
             role === "staff"
-              ? "bg-brand text-white shadow-[0_4px_16px_rgba(233,69,96,.4)]"
-              : "bg-white/10 text-white/60 hover:bg-white/15"
+              ? "bg-brand text-white shadow-[0_2px_8px_rgba(233,69,96,.4)]"
+              : "text-white/50"
           }`}
         >STAFF</button>
         <button
           type="button"
           onClick={() => setRole("admin")}
-          className={`flex-1 py-3.5 rounded-xl text-base font-bold tracking-[1.5px] transition-all ${
+          className={`flex-1 py-3 rounded-[9px] text-base font-bold tracking-[1.5px] transition-all ${
             role === "admin"
-              ? "bg-brand text-white shadow-[0_4px_16px_rgba(233,69,96,.4)]"
-              : "bg-white/10 text-white/60 hover:bg-white/15"
+              ? "bg-brand text-white shadow-[0_2px_8px_rgba(233,69,96,.4)]"
+              : "text-white/50"
           }`}
         >ADMIN</button>
       </div>
 
-      {/* role label — ตัวใหญ่ ไม่อยู่ในกรอบ */}
-      <div className="text-white text-xl font-bold mb-5 text-center">
+      {/* role label — บางลง ไม่ bold */}
+      <div className="text-white/80 text-base font-normal mb-5 text-center">
         สำหรับ{role === "admin" ? "ผู้ดูแลระบบ" : "พนักงาน"}
       </div>
 
