@@ -10,7 +10,7 @@ export default function BookPage({ params }: { params: { branch: string } }) {
   return (
     <main className="min-h-screen bg-slate-100">
       <div className="bg-ink-gradient text-white py-6 px-6">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-2xl mx-auto text-center">
           <div className="brand-wordmark text-white text-xl">
             IKIGAI ONE <span className="text-white/60 font-normal text-sm tracking-normal">· RESERVA</span>
           </div>
