@@ -293,6 +293,21 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.entry.in": "เข้า",
     "staff.persona.entry.out": "ออก",
     "staff.persona.errorClock": "เกิดข้อผิดพลาด",
+    "staff.persona.setupPin.title": "ตั้งรหัส PIN ก่อนเริ่มใช้งาน",
+    "staff.persona.setupPin.subtitle": "ใช้ PIN 4 หลักสำหรับยืนยันการลงเวลาเข้า/ออก",
+    "staff.persona.setupPin.enter": "ใส่ PIN ใหม่",
+    "staff.persona.setupPin.confirm": "ยืนยัน PIN อีกครั้ง",
+    "staff.persona.setupPin.save": "บันทึก PIN",
+    "staff.persona.setupPin.mismatch": "PIN ไม่ตรงกัน",
+    "staff.persona.setupPin.success": "ตั้ง PIN เรียบร้อย",
+    "staff.persona.pinPrompt.in": "ใส่ PIN เพื่อยืนยันการเข้างาน",
+    "staff.persona.pinPrompt.out": "ใส่ PIN เพื่อยืนยันการออกงาน",
+    "staff.persona.pinWrong": "PIN ไม่ถูกต้อง",
+    "staff.persona.alreadyDoneToday": "บันทึกเวลาเข้า/ออกครบแล้ววันนี้\nหากต้องการแก้ไข ติดต่อหัวหน้างาน",
+    "staff.persona.tooManyAttempts": "ลองหลายครั้งเกินไป รอ {n} วินาที",
+    "staff.persona.todayDone": "เสร็จแล้ววันนี้",
+    "staff.persona.success.in": "บันทึกเวลาเข้างานเรียบร้อย",
+    "staff.persona.success.out": "บันทึกเวลาออกงานเรียบร้อย ขอบคุณค่ะ",
 
     // Staff RESERVA
     "staff.reserva.backToModules": "← กลับ module",
@@ -333,7 +348,27 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.legacy.note": "ฟีเจอร์ที่ยังไม่ได้ย้ายมา — ใช้ระบบเดิมไปก่อน ระหว่างที่ port มาทีละโมดูล",
     "admin.persona.comingSoon.title": "🚧 กำลังพัฒนา",
     "admin.persona.comingSoon.body": "ฟีเจอร์นี้ยังไม่ได้ port มา — ใช้ Legacy ไปก่อน",
-    "admin.persona.comingSoon.openLegacy": "เปิด Legacy →"
+    "admin.persona.comingSoon.openLegacy": "เปิด Legacy →",
+
+    // /clock — public mobile clock-in (Phase 1B)
+    "clock.title": "ลงเวลา",
+    "clock.subtitle": "ใส่รหัส PIN 4 หลัก",
+    "clock.invalid": "PIN ไม่ถูกต้อง",
+    "clock.ambiguous": "พบ PIN ซ้ำ ติดต่อหัวหน้างาน",
+    "clock.inactive": "บัญชีถูกระงับ ติดต่อหัวหน้างาน",
+    "clock.welcome": "สวัสดี {name}",
+    "clock.alreadyDone": "บันทึกเวลาเข้า/ออกครบแล้ววันนี้\nหากต้องการแก้ไข ติดต่อหัวหน้างาน",
+    "clock.actionIn": "ลงเวลาเข้างาน",
+    "clock.actionOut": "ลงเวลาออกงาน",
+    "clock.confirm": "ยืนยัน",
+    "clock.cancel": "ยกเลิก",
+    "clock.success.in": "บันทึกเวลาเข้างานเรียบร้อย",
+    "clock.success.out": "บันทึกเวลาออกงานเรียบร้อย ขอบคุณค่ะ",
+    "clock.lastIn": "เข้างาน {time}",
+    "clock.networkError": "เครือข่ายผิดพลาด ลองอีกครั้ง",
+    "clock.tooManyAttempts": "ลองหลายครั้งเกินไป รอ {n} วินาที",
+    "clock.recordError": "บันทึกเวลาไม่สำเร็จ ลองใหม่",
+    "clock.now": "ตอนนี้ {time}"
   },
   en: {
     // Common
@@ -615,6 +650,21 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.entry.in": "In",
     "staff.persona.entry.out": "Out",
     "staff.persona.errorClock": "An error occurred",
+    "staff.persona.setupPin.title": "Set up your PIN",
+    "staff.persona.setupPin.subtitle": "4-digit PIN to confirm clock in/out",
+    "staff.persona.setupPin.enter": "New PIN",
+    "staff.persona.setupPin.confirm": "Confirm PIN",
+    "staff.persona.setupPin.save": "Save PIN",
+    "staff.persona.setupPin.mismatch": "PINs don't match",
+    "staff.persona.setupPin.success": "PIN saved",
+    "staff.persona.pinPrompt.in": "Enter PIN to clock in",
+    "staff.persona.pinPrompt.out": "Enter PIN to clock out",
+    "staff.persona.pinWrong": "Wrong PIN",
+    "staff.persona.alreadyDoneToday": "You've clocked in and out for today.\nContact supervisor if you need to fix it.",
+    "staff.persona.tooManyAttempts": "Too many attempts, wait {n} seconds",
+    "staff.persona.todayDone": "Done for today",
+    "staff.persona.success.in": "Clocked in successfully",
+    "staff.persona.success.out": "Clocked out — have a good rest!",
 
     // Staff RESERVA
     "staff.reserva.backToModules": "← Back to modules",
@@ -655,7 +705,27 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.legacy.note": "Features not yet migrated — use legacy until each module is ported",
     "admin.persona.comingSoon.title": "🚧 Coming soon",
     "admin.persona.comingSoon.body": "This feature isn't ported yet — please use Legacy in the meantime",
-    "admin.persona.comingSoon.openLegacy": "Open Legacy →"
+    "admin.persona.comingSoon.openLegacy": "Open Legacy →",
+
+    // /clock
+    "clock.title": "Clock In/Out",
+    "clock.subtitle": "Enter your 4-digit PIN",
+    "clock.invalid": "Invalid PIN",
+    "clock.ambiguous": "Duplicate PIN found, contact supervisor",
+    "clock.inactive": "Account suspended, contact supervisor",
+    "clock.welcome": "Hello {name}",
+    "clock.alreadyDone": "You've clocked in and out for today.\nContact your supervisor if you need to fix it.",
+    "clock.actionIn": "Clock in",
+    "clock.actionOut": "Clock out",
+    "clock.confirm": "Confirm",
+    "clock.cancel": "Cancel",
+    "clock.success.in": "Clocked in successfully",
+    "clock.success.out": "Clocked out — have a good rest!",
+    "clock.lastIn": "Clocked in at {time}",
+    "clock.networkError": "Network error, try again",
+    "clock.tooManyAttempts": "Too many attempts, wait {n} seconds",
+    "clock.recordError": "Failed to record, try again",
+    "clock.now": "Now {time}"
   }
 };
 

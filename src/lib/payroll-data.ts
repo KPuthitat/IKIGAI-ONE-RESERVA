@@ -1,5 +1,6 @@
-// Read-only data access สำหรับ Payroll DB (PERSONA module)
-// อ่าน users สำหรับ SSO อยู่แล้วใน payroll-db.ts — ไฟล์นี้สำหรับฟีเจอร์ HR
+// Data access สำหรับ Payroll DB (PERSONA module)
+// อ่าน users สำหรับ SSO อยู่แล้วใน payroll-db.ts (readonly) — ไฟล์นี้รองรับ write
+// สำหรับฟีเจอร์ HR ใหม่ (clock_entries, ฯลฯ)
 import Database from "better-sqlite3";
 import fs from "node:fs";
 
@@ -15,7 +16,23 @@ export function getPayrollDb(): Database.Database {
       `Payroll DB not found at ${PAYROLL_DB_PATH} — set PAYROLL_DB_PATH ใน .env`
     );
   }
-  _db = new Database(PAYROLL_DB_PATH, { readonly: true, fileMustExist: true });
+  _db = new Database(PAYROLL_DB_PATH, { fileMustExist: true });
+  _db.pragma("journal_mode = WAL");
+  _db.pragma("foreign_keys = ON");
+  // ensure clock_entries table — for Phase 1B mobile clock-in
+  _db.exec(`
+    CREATE TABLE IF NOT EXISTS clock_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('in','out')),
+      ts TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      ip TEXT,
+      ua TEXT,
+      branch_id INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_clock_entries_emp_ts
+      ON clock_entries(employee_id, ts);
+  `);
   return _db;
 }
 
@@ -165,3 +182,94 @@ export function getPendingCounts(): { leave: number; corrections: number } {
 export const TAX_TYPE_LABELS: Record<string, string> = {
   PND: "ภ.ง.ด. (PND)"
 };
+
+// === Clock entries (Phase 1B — mobile clock-in with PIN) ===
+
+export type ClockEntry = {
+  id: number;
+  employee_id: number;
+  type: "in" | "out";
+  ts: string;
+  ip: string | null;
+  ua: string | null;
+  branch_id: number | null;
+};
+
+export type ClockResult =
+  | { kind: "ok"; employee: { id: number; code: string; name: string }; nextAction: "in" | "out" | "done"; lastIn?: string; lastOut?: string }
+  | { kind: "invalid_pin" }
+  | { kind: "ambiguous_pin" }
+  | { kind: "inactive" };
+
+/** Bangkok local date string YYYY-MM-DD ของ timestamp */
+function bkkDate(d: Date | string): string {
+  const dt = typeof d === "string" ? new Date(d) : d;
+  return new Date(dt.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * หาพนักงานจาก PIN — เปรียบเทียบ bcrypt ทุก active employee
+ * คืน:
+ *  - ok: เจอคนเดียว — มีข้อมูลพนักงาน + next action
+ *  - invalid_pin: ไม่เจอเลย
+ *  - ambiguous_pin: เจอมากกว่า 1 คน (ต้อง enforce uniqueness ตอน admin set)
+ *  - inactive: เจอแต่ is_active = 0
+ */
+export function lookupByPin(pin: string): ClockResult {
+  if (!/^\d{4}$/.test(pin)) return { kind: "invalid_pin" };
+  const db = getPayrollDb();
+  const employees = db.prepare(
+    "SELECT id, code, name, is_active, pin_hash FROM employees WHERE pin_hash IS NOT NULL AND pin_hash != ''"
+  ).all() as Array<{ id: number; code: string; name: string; is_active: number; pin_hash: string }>;
+
+  // ใช้ bcryptjs (โหลดแบบ lazy เพราะใช้ในที่เดียว)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const bcrypt = require("bcryptjs") as typeof import("bcryptjs");
+
+  const matches = employees.filter((e) => {
+    try { return bcrypt.compareSync(pin, e.pin_hash); }
+    catch { return false; }
+  });
+
+  if (matches.length === 0) return { kind: "invalid_pin" };
+  if (matches.length > 1) return { kind: "ambiguous_pin" };
+
+  const emp = matches[0];
+  if (!emp.is_active) return { kind: "inactive" };
+
+  // หา clock entries ของพนักงานวันนี้
+  const today = bkkDate(new Date());
+  const todayStartIso = new Date(`${today}T00:00:00+07:00`).toISOString();
+  const todayEndIso = new Date(`${today}T23:59:59+07:00`).toISOString();
+  const entries = db.prepare(`
+    SELECT type, ts FROM clock_entries
+    WHERE employee_id = ? AND ts >= ? AND ts <= ?
+    ORDER BY ts ASC
+  `).all(emp.id, todayStartIso, todayEndIso) as Array<{ type: "in" | "out"; ts: string }>;
+
+  const lastIn = entries.find((e) => e.type === "in")?.ts;
+  const lastOut = entries.find((e) => e.type === "out")?.ts;
+
+  let nextAction: "in" | "out" | "done";
+  if (!lastIn) nextAction = "in";
+  else if (!lastOut) nextAction = "out";
+  else nextAction = "done";
+
+  return { kind: "ok", employee: { id: emp.id, code: emp.code, name: emp.name }, nextAction, lastIn, lastOut };
+}
+
+/** บันทึก clock entry หลัง verify แล้ว — return ใหม่ entry id */
+export function recordClock(opts: {
+  employee_id: number;
+  type: "in" | "out";
+  ip?: string | null;
+  ua?: string | null;
+  branch_id?: number | null;
+}): number {
+  const db = getPayrollDb();
+  const r = db.prepare(`
+    INSERT INTO clock_entries (employee_id, type, ip, ua, branch_id)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(opts.employee_id, opts.type, opts.ip ?? null, opts.ua ?? null, opts.branch_id ?? null);
+  return r.lastInsertRowid as number;
+}

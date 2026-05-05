@@ -26,12 +26,13 @@ export function getDb(): Database.Database {
 
 // migrations เผื่อ schema เปลี่ยนทีหลัง — ทำงานทุกครั้งแบบ idempotent
 function runMigrations(db: Database.Database): void {
-  const cols = db.prepare("PRAGMA table_info(bookings)").all() as Array<{ name: string }>;
-  const names = new Set(cols.map((c) => c.name));
-  if (!names.has("customer_origin")) {
+  // bookings columns
+  const bcols = db.prepare("PRAGMA table_info(bookings)").all() as Array<{ name: string }>;
+  const bnames = new Set(bcols.map((c) => c.name));
+  if (!bnames.has("customer_origin")) {
     db.exec("ALTER TABLE bookings ADD COLUMN customer_origin TEXT");
   }
-  if (!names.has("is_member")) {
+  if (!bnames.has("is_member")) {
     db.exec("ALTER TABLE bookings ADD COLUMN is_member INTEGER");
   }
   // แปลง source string เก่า → JSON array (idempotent)
@@ -42,6 +43,12 @@ function runMigrations(db: Database.Database): void {
       AND source != ''
       AND substr(source, 1, 1) != '['
   `);
+
+  // users.pin_hash — สำหรับ time clock 4-digit PIN
+  const ucols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  if (!ucols.some((c) => c.name === "pin_hash")) {
+    db.exec("ALTER TABLE users ADD COLUMN pin_hash TEXT");
+  }
 }
 
 export type Branch = {

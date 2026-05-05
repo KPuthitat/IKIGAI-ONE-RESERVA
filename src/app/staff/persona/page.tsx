@@ -27,8 +27,15 @@ export default function StaffPersonaPage() {
   const todayEntries = entries.filter((e) =>
     new Date(new Date(e.ts).getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10) === todayBkk
   );
-  const lastTodayEntry = todayEntries[0];
-  const isCurrentlyIn = lastTodayEntry?.type === "in";
+  const inCount = todayEntries.filter((e) => e.type === "in").length;
+  const outCount = todayEntries.filter((e) => e.type === "out").length;
+  const todayDone = inCount >= 1 && outCount >= 1;
+  const isCurrentlyIn = inCount === 1 && outCount === 0;
+
+  // ตรวจว่า user มี PIN หรือยัง
+  const userRow = db.prepare("SELECT pin_hash FROM users WHERE id = ?").get(user.id) as
+    | { pin_hash: string | null } | undefined;
+  const hasPin = Boolean(userRow?.pin_hash);
 
   return (
     <div className="space-y-4">
@@ -40,7 +47,9 @@ export default function StaffPersonaPage() {
       </div>
       <TimeClockClient
         userName={user.display_name}
+        hasPin={hasPin}
         isCurrentlyIn={isCurrentlyIn}
+        todayDone={todayDone}
         entries={entries}
       />
     </div>

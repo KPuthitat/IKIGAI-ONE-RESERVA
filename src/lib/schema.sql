@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   display_name TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('admin','staff')),
+  pin_hash TEXT,                       -- bcrypt 4-digit PIN for time clock
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
