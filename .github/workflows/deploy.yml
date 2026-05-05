@@ -20,17 +20,41 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script_stop: true   # ถ้า command ใดล้มเหลว → fail ทันที
-          command_timeout: 10m
+          command_timeout: 20m
           script: |
             set -e
+
+            echo "==> 💾 ensure swap >= 2G (กัน OOM ตอน build บน 1GB droplet)"
+            CURRENT_SWAP_KB=$(awk '/SwapTotal/ {print $2}' /proc/meminfo)
+            if [ "${CURRENT_SWAP_KB:-0}" -lt 2000000 ]; then
+              echo "    swap = ${CURRENT_SWAP_KB} kB → ขยายเป็น 2G"
+              swapoff /swapfile 2>/dev/null || true
+              rm -f /swapfile
+              fallocate -l 2G /swapfile
+              chmod 600 /swapfile
+              mkswap /swapfile
+              swapon /swapfile
+              grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
+            else
+              echo "    swap = ${CURRENT_SWAP_KB} kB ✓"
+            fi
+
+            echo "==> 🧹 kill stale build processes (ถ้ามี)"
+            pkill -f "next build"   2>/dev/null || true
+            pkill -f "next-server"  2>/dev/null || true
+            sleep 2
+
             echo "==> ⬇️  pull latest code"
             cd /var/www/reserva
-            sudo -u www-data git pull --ff-only
+            sudo -u www-data git fetch origin
+            sudo -u www-data git reset --hard origin/main
 
-            echo "==> 📦 install deps"
-            npm install
+            echo "==> 📦 install deps (production-friendly, no audit/fund)"
+            npm ci --no-audit --no-fund --prefer-offline || npm install --no-audit --no-fund
 
-            echo "==> 🔨 build"
+            echo "==> 🔨 build (จำกัด memory ให้พอกับ 1GB RAM + 2G swap)"
+            export NODE_OPTIONS="--max-old-space-size=512"
+            export NEXT_TELEMETRY_DISABLED=1
             npm run build
 
             echo "==> 🔐 chown"
