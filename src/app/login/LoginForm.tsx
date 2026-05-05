@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { useLang } from "@/lib/LangProvider";
 
 type Role = "admin" | "staff";
 
@@ -10,6 +11,7 @@ export default function LoginForm({
   error: initialError
 }: { next?: string; error?: string }) {
   const router = useRouter();
+  const { t } = useLang();
   const [role, setRole] = useState<Role>("staff");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -28,10 +30,9 @@ export default function LoginForm({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setErr(data.error || "เข้าระบบไม่สำเร็จ");
+        setErr(data.error || t("login.error.generic"));
         return;
       }
-      // ถ้ามี ?next= ให้ไปที่นั้น (ใช้กับ Nginx auth_request redirect)
       const dest = next || (data.role === "admin" ? "/admin" : "/staff");
       router.push(dest);
       router.refresh();
@@ -42,7 +43,7 @@ export default function LoginForm({
 
   return (
     <>
-      {/* role selector — pill segmented แบบเดิม */}
+      {/* role selector — pill segmented */}
       <div className="flex gap-0 bg-white/[.08] border border-white/[.15] rounded-xl p-1 mb-4 w-full max-w-sm">
         <button
           type="button"
@@ -64,15 +65,13 @@ export default function LoginForm({
         >ADMIN</button>
       </div>
 
-      {/* role label — บางลง ไม่ bold */}
       <div className="text-white/80 text-base font-normal mb-5 text-center">
-        สำหรับ{role === "admin" ? "ผู้ดูแลระบบ" : "พนักงาน"}
+        {t("login.forRole", { role: role === "admin" ? t("role.admin") : t("role.staff") })}
       </div>
 
       <form onSubmit={submit} className="card w-full max-w-sm">
-
         <div className="mb-4">
-          <label className="label">ชื่อผู้ใช้</label>
+          <label className="label">{t("login.username")}</label>
           <input
             className="input" required autoComplete="username"
             value={username}
@@ -81,7 +80,7 @@ export default function LoginForm({
         </div>
 
         <div className="mb-4">
-          <label className="label">รหัสผ่าน</label>
+          <label className="label">{t("login.password")}</label>
           <input
             type="password" className="input" required autoComplete="current-password"
             value={password}
@@ -94,7 +93,7 @@ export default function LoginForm({
         )}
 
         <button className="btn-primary w-full" disabled={busy}>
-          {busy ? "กำลังเข้าระบบ..." : "เข้าระบบ"}
+          {busy ? t("login.submitting") : t("login.submit")}
         </button>
       </form>
     </>

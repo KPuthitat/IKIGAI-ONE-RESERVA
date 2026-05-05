@@ -1,9 +1,11 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { useLang } from "@/lib/LangProvider";
 
 export default function LogoutButton() {
   const router = useRouter();
+  const { t } = useLang();
   return (
     <button
       onClick={async () => {
@@ -12,6 +14,6 @@ export default function LogoutButton() {
         router.refresh();
       }}
       className="text-sm text-white/70 hover:text-white"
-    >ออกจากระบบ</button>
+    >{t("nav.logout")}</button>
   );
 }

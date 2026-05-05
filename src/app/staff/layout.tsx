@@ -1,6 +1,7 @@
 import { getSessionUser } from "@/lib/auth";
 import LogoutButton from "../admin/LogoutButton";
 import HeaderBrand from "../HeaderBrand";
+import LangToggle from "../LangToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           <HeaderBrand role="staff" />
           <div className="ml-auto flex items-center gap-3 flex-wrap">
             <span className="text-xs text-white/60">{user.display_name}</span>
+            <LangToggle variant="dark" />
             <LogoutButton />
           </div>
         </div>

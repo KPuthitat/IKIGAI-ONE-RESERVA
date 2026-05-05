@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import LoginForm from "./LoginForm";
+import LangToggle from "../LangToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,10 @@ export default function LoginPage({
       </div>
 
       <LoginForm next={searchParams.next} error={searchParams.error} />
+
+      <div className="mt-8">
+        <LangToggle variant="dark" />
+      </div>
     </main>
   );
 }
