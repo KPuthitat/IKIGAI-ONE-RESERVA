@@ -63,12 +63,18 @@ export default function LeaveAdminClient({
   const [busyId, setBusyId] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
-  function decide(id: number, decision: "approved" | "rejected") {
+  function decide(id: number, decision: "approved" | "rejected" | "revision_requested") {
     const promptMsg = decision === "approved"
       ? t("admin.persona.leave.notePromptApprove")
-      : t("admin.persona.leave.notePromptReject");
+      : decision === "rejected"
+        ? t("admin.persona.leave.notePromptReject")
+        : t("admin.persona.leave.notePromptRevision");
     const note = prompt(promptMsg);
     if (note === null) return;
+    if (decision === "revision_requested" && !note.trim()) {
+      alert(t("admin.persona.leave.revisionNoteRequired"));
+      return;
+    }
     setBusyId(id);
     fetch(apiUrl(`/api/admin/persona/leave/${id}/decide`), {
       method: "POST",
@@ -127,19 +133,16 @@ export default function LeaveAdminClient({
         }} />
       )}
 
-      {/* Requests list */}
-      <div className="card">
-        <h2 className="font-semibold text-slate-800 mb-3">
-          {t("admin.persona.leave.listTitle")} ({requests.length})
-        </h2>
-        {requests.length === 0 ? (
-          <p className="text-slate-500 text-sm py-6 text-center">
-            {t("admin.persona.leave.empty")}
-          </p>
-        ) : (
-          <ul className="space-y-3">
-            {requests.map((r) => (
-              <li key={r.id} className="border border-slate-200 rounded-lg p-3 hover:bg-slate-50 transition">
+      {/* Requests list — แยก 2 กรอบ: special vs normal */}
+      {(() => {
+        const specialReqs = requests.filter((r) => r.is_special_request === 1);
+        const normalReqs = requests.filter((r) => r.is_special_request !== 1);
+        const renderItem = (r: LeaveAdminRow) => (
+              <li key={r.id} className={`border rounded-lg p-3 hover:bg-slate-50 transition ${
+                r.is_special_request === 1
+                  ? "border-violet-300 bg-violet-50/30"
+                  : "border-slate-200"
+              }`}>
                 <div className="flex flex-wrap justify-between items-start gap-2 mb-1">
                   <div className="flex-1 min-w-[200px]">
                     <div className="font-medium text-slate-800">
@@ -219,6 +222,14 @@ export default function LeaveAdminClient({
                       <button
                         type="button"
                         disabled={pending || busyId === r.id}
+                        onClick={() => decide(r.id, "revision_requested")}
+                        className="px-3 py-1.5 rounded text-xs font-medium bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-50"
+                      >
+                        {t("admin.persona.leave.requestRevision")}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pending || busyId === r.id}
                         onClick={() => decide(r.id, "rejected")}
                         className="px-3 py-1.5 rounded text-xs font-medium bg-rose-500 hover:bg-rose-600 text-white disabled:opacity-50"
                       >
@@ -228,10 +239,35 @@ export default function LeaveAdminClient({
                   )}
                 </div>
               </li>
-            ))}
-          </ul>
-        )}
-      </div>
+        );
+        return (
+          <>
+            {specialReqs.length > 0 && (
+              <div className="card border-2 border-violet-300">
+                <h2 className="font-semibold text-violet-800 mb-3 flex items-center gap-2">
+                  <span>{t("admin.persona.leave.specialSectionTitle")}</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-violet-200 text-violet-800">
+                    {specialReqs.length}
+                  </span>
+                </h2>
+                <ul className="space-y-3">{specialReqs.map(renderItem)}</ul>
+              </div>
+            )}
+            <div className="card">
+              <h2 className="font-semibold text-slate-800 mb-3">
+                {t("admin.persona.leave.normalSectionTitle")} ({normalReqs.length})
+              </h2>
+              {normalReqs.length === 0 ? (
+                <p className="text-slate-500 text-sm py-6 text-center">
+                  {t("admin.persona.leave.empty")}
+                </p>
+              ) : (
+                <ul className="space-y-3">{normalReqs.map(renderItem)}</ul>
+              )}
+            </div>
+          </>
+        );
+      })()}
     </>
   );
 }
@@ -389,7 +425,8 @@ function StatusBadge({ status }: { status: LeaveStatus }) {
     pending: "bg-amber-100 text-amber-700",
     approved: "bg-emerald-100 text-emerald-700",
     rejected: "bg-rose-100 text-rose-700",
-    cancelled: "bg-slate-100 text-slate-500"
+    cancelled: "bg-slate-100 text-slate-500",
+    revision_requested: "bg-orange-100 text-orange-700"
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded font-medium ${cls[status]}`}>

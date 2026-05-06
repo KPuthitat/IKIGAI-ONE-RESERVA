@@ -102,21 +102,21 @@ export async function POST(req: Request) {
     }
   }
 
-  // Phase 1C v6: ตรวจ weekly_off_day + เสาร์-อาทิตย์ + วันหยุดนักขัตฤกษ์
-  if (type === "personal" || type === "annual") {
-    const we = detectWeekendExtension(
-      userRow.weekly_off_day,
-      date_from, date_to,
-      getPublicHolidaySet()
+  // Phase 1C v7: ตรวจ weekly_off_day + เสาร์-อาทิตย์ + วันหยุดนักขัตฤกษ์
+  // Hard block weekly_off_day ใช้กับการลา *ทุกประเภท* (รวม sick) เพราะหยุดอยู่แล้ว
+  const we = detectWeekendExtension(
+    userRow.weekly_off_day,
+    date_from, date_to,
+    getPublicHolidaySet()
+  );
+  if (we.fallsOnUserOffDay) {
+    return NextResponse.json(
+      { error: "leave_on_weekly_off_day_not_allowed", weekendInfo: we },
+      { status: 400 }
     );
-    // HARD block — ลาตรงวันหยุดประจำสัปดาห์ ไม่จำเป็นต้องลา (special-track ก็ไม่ผ่าน)
-    if (we.fallsOnUserOffDay) {
-      return NextResponse.json(
-        { error: "leave_on_weekly_off_day_not_allowed", weekendInfo: we },
-        { status: 400 }
-      );
-    }
-    // Soft (special-track override) — เสาร์/อาทิตย์ + วันหยุดนักขัตฤกษ์
+  }
+  // Soft (special-track) — เสาร์/อาทิตย์ + วันหยุดนักขัตฤกษ์ — เฉพาะ personal/annual
+  if (type === "personal" || type === "annual") {
     if ((we.hasWeekendLeave || we.fallsOnPublicHoliday) && !isSpecial) {
       return NextResponse.json(
         { error: "weekend_extension_use_special_track", weekendInfo: we },

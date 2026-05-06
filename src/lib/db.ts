@@ -208,6 +208,12 @@ function runMigrations(db: Database.Database): void {
       name_en TEXT NOT NULL
     );
   `);
+  // Phase 1C v7: is_workday flag — สำหรับวันหยุดที่ธุรกิจถือเป็นวันทำงานปกติ
+  // (เช่น วันแรงงาน — ร้านอาหารยังเปิด ให้พนักงานหยุดวันอื่นทดแทน)
+  const phcols = db.prepare("PRAGMA table_info(public_holidays)").all() as Array<{ name: string }>;
+  if (!phcols.some((c) => c.name === "is_workday")) {
+    db.exec("ALTER TABLE public_holidays ADD COLUMN is_workday INTEGER NOT NULL DEFAULT 0");
+  }
   // Seed 2026 Thai public holidays (วันหยุดตามประเพณี — แอดมินสามารถปรับวันลูนาร์ได้)
   const seedHoliday = db.prepare(`
     INSERT INTO public_holidays (date, name_th, name_en) VALUES (?, ?, ?)
@@ -236,18 +242,65 @@ function runMigrations(db: Database.Database): void {
   ];
   for (const h of holidays2026) seedHoliday.run(...h);
 
+  // Phase 1C v7: ธุรกิจบริการ — วันแรงงานนับเป็นวันทำงานปกติ
+  db.prepare("UPDATE public_holidays SET is_workday = 1 WHERE date = '2026-05-01'").run();
+
+  // Phase 1C v7: migrate CHECK constraints to include 'revision_requested'
+  // SQLite ไม่อนุญาต ALTER CHECK → ต้อง recreate table
+  const lrSql = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='leave_requests'"
+  ).get() as { sql: string } | undefined;
+  if (lrSql && !lrSql.sql.includes("'revision_requested'")) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE leave_requests_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type TEXT NOT NULL,
+        date_from TEXT NOT NULL,
+        date_to TEXT NOT NULL,
+        days REAL NOT NULL,
+        hours REAL,
+        reason TEXT,
+        evidence_filename TEXT,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN
+          ('pending','approved','rejected','cancelled','revision_requested')),
+        decided_by INTEGER REFERENCES users(id),
+        decided_at TEXT,
+        decision_note TEXT,
+        created_by INTEGER REFERENCES users(id),
+        is_special_request INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO leave_requests_new
+        (id, user_id, type, date_from, date_to, days, hours, reason,
+         evidence_filename, status, decided_by, decided_at, decision_note,
+         created_by, is_special_request, created_at)
+      SELECT id, user_id, type, date_from, date_to, days, hours, reason,
+             evidence_filename, status, decided_by, decided_at, decision_note,
+             created_by, COALESCE(is_special_request, 0), created_at
+      FROM leave_requests;
+      DROP TABLE leave_requests;
+      ALTER TABLE leave_requests_new RENAME TO leave_requests;
+      CREATE INDEX IF NOT EXISTS idx_leave_user_status ON leave_requests(user_id, status);
+      CREATE INDEX IF NOT EXISTS idx_leave_status_created ON leave_requests(status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_leave_dates ON leave_requests(date_from, date_to);
+      COMMIT;
+    `);
+  }
+
   // Phase 1C v5: resignation_requests
   db.exec(`
     CREATE TABLE IF NOT EXISTS resignation_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      proposed_last_day TEXT NOT NULL,           -- staff เลือก
-      computed_min_last_day TEXT NOT NULL,        -- ระบบคำนวณตามกติกา (เดือนถัดไป)
+      proposed_last_day TEXT NOT NULL,
+      computed_min_last_day TEXT NOT NULL,
       reason TEXT NOT NULL,
       evidence_filename TEXT,
       is_special_request INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending','approved','rejected','cancelled')),
+        CHECK (status IN ('pending','approved','rejected','cancelled','revision_requested')),
       decided_by INTEGER REFERENCES users(id),
       decided_at TEXT,
       decision_note TEXT,
@@ -256,6 +309,37 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_resignation_user ON resignation_requests(user_id);
     CREATE INDEX IF NOT EXISTS idx_resignation_status ON resignation_requests(status, created_at);
   `);
+
+  // Phase 1C v7: same migration for resignation_requests
+  const rrSql = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='resignation_requests'"
+  ).get() as { sql: string } | undefined;
+  if (rrSql && !rrSql.sql.includes("'revision_requested'")) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE resignation_requests_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        proposed_last_day TEXT NOT NULL,
+        computed_min_last_day TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        evidence_filename TEXT,
+        is_special_request INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN
+          ('pending','approved','rejected','cancelled','revision_requested')),
+        decided_by INTEGER REFERENCES users(id),
+        decided_at TEXT,
+        decision_note TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO resignation_requests_new SELECT * FROM resignation_requests;
+      DROP TABLE resignation_requests;
+      ALTER TABLE resignation_requests_new RENAME TO resignation_requests;
+      CREATE INDEX IF NOT EXISTS idx_resignation_user ON resignation_requests(user_id);
+      CREATE INDEX IF NOT EXISTS idx_resignation_status ON resignation_requests(status, created_at);
+      COMMIT;
+    `);
+  }
 }
 
 export type Branch = {

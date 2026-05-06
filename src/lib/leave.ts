@@ -210,11 +210,16 @@ export function getAttachmentPath(filename: string): string | null {
 // ── Phase 1C v3: หยุดยาว + วันหยุดราชการ ─────────────────────────────
 
 export function getAllPublicHolidays(): PublicHoliday[] {
-  return getDb().prepare("SELECT date, name_th, name_en FROM public_holidays ORDER BY date").all() as PublicHoliday[];
+  return getDb().prepare(
+    "SELECT date, name_th, name_en, is_workday FROM public_holidays ORDER BY date"
+  ).all() as PublicHoliday[];
 }
 
+/** วันหยุดที่ "ถือเป็นวันหยุดจริง" (สำหรับใช้ตรวจกฎ) — ไม่รวมวันที่ธุรกิจถือเป็นวันทำงาน เช่น Labor Day */
 export function getPublicHolidaySet(): Set<string> {
-  return new Set(getAllPublicHolidays().map((h) => h.date));
+  return new Set(
+    getAllPublicHolidays().filter((h) => !h.is_workday).map((h) => h.date)
+  );
 }
 
 function addDays(dateStr: string, n: number): string {
@@ -236,9 +241,10 @@ export type StretchInfo = {
   totalConsecutive: number;     // รวม leave + prepended + appended
 };
 
-/** วิเคราะห์ "หยุดต่อเนื่อง" — leave + วันหยุดราชการที่ติดกัน */
+/** วิเคราะห์ "หยุดต่อเนื่อง" — leave + วันหยุดราชการที่ติดกัน
+ * NOTE: ไม่รวม is_workday=1 (เช่น Labor Day ที่ธุรกิจถือเป็นวันทำงาน) */
 export function computeStretch(dateFrom: string, dateTo: string): StretchInfo {
-  const holidaysList = getAllPublicHolidays();
+  const holidaysList = getAllPublicHolidays().filter((h) => !h.is_workday);
   const byDate = new Map(holidaysList.map((h) => [h.date, h]));
 
   const leaveDays = daysBetweenInclusive(dateFrom, dateTo);

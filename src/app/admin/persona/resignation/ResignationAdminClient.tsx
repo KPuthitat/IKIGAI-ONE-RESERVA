@@ -74,12 +74,18 @@ export default function ResignationAdminClient({
     }
   }
 
-  function decide(id: number, decision: "approved" | "rejected") {
+  function decide(id: number, decision: "approved" | "rejected" | "revision_requested") {
     const promptMsg = decision === "approved"
       ? t("admin.persona.resignation.notePromptApprove")
-      : t("admin.persona.resignation.notePromptReject");
+      : decision === "rejected"
+        ? t("admin.persona.resignation.notePromptReject")
+        : t("admin.persona.resignation.notePromptRevision");
     const note = prompt(promptMsg);
     if (note === null) return;
+    if (decision === "revision_requested" && !note.trim()) {
+      alert(t("admin.persona.resignation.revisionNoteRequired"));
+      return;
+    }
     setBusyId(id);
     fetch(apiUrl(`/api/admin/persona/resignation/${id}/decide`), {
       method: "POST",
@@ -250,7 +256,7 @@ export default function ResignationAdminClient({
                       )}
                     </div>
                     {r.status === "pending" && (
-                      <div className="flex gap-1.5">
+                      <div className="flex gap-1.5 flex-wrap">
                         <button
                           type="button"
                           disabled={pending || busyId === r.id}
@@ -258,6 +264,14 @@ export default function ResignationAdminClient({
                           className="px-3 py-1.5 rounded text-xs font-medium bg-emerald-500 hover:bg-emerald-600 text-white disabled:opacity-50"
                         >
                           {t("admin.persona.leave.approve")}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={pending || busyId === r.id}
+                          onClick={() => decide(r.id, "revision_requested")}
+                          className="px-3 py-1.5 rounded text-xs font-medium bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-50"
+                        >
+                          {t("admin.persona.leave.requestRevision")}
                         </button>
                         <button
                           type="button"

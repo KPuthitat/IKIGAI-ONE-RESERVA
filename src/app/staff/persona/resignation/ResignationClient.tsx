@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 
-export type ResignationStatus = "pending" | "approved" | "rejected" | "cancelled";
+export type ResignationStatus = "pending" | "approved" | "rejected" | "cancelled" | "revision_requested";
 
 export type ResignationRow = {
   id: number;
@@ -294,7 +294,8 @@ function StatusBadge({ status }: { status: ResignationStatus }) {
     pending: "bg-amber-100 text-amber-700",
     approved: "bg-emerald-100 text-emerald-700",
     rejected: "bg-rose-100 text-rose-700",
-    cancelled: "bg-slate-100 text-slate-500"
+    cancelled: "bg-slate-100 text-slate-500",
+    revision_requested: "bg-orange-100 text-orange-700"
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded font-medium ${cls[status]}`}>

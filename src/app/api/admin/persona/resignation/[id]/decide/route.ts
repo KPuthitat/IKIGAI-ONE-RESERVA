@@ -4,7 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 const Body = z.object({
-  decision: z.enum(["approved", "rejected"]),
+  decision: z.enum(["approved", "rejected", "revision_requested"]),
   note: z.string().max(500).optional()
 });
 

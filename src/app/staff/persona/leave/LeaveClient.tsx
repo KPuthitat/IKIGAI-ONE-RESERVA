@@ -7,7 +7,7 @@ import { useLang } from "@/lib/LangProvider";
 import type { LeaveType, QuotaInfo, PublicHoliday } from "@/lib/leave-types";
 
 export type { LeaveType };
-export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
+export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled" | "revision_requested";
 
 export type LeaveRow = {
   id: number;
@@ -142,7 +142,8 @@ export default function LeaveClient({
   );
   const annualNeedsYos = type === "annual" && (yearsOfService == null || yearsOfService < 1);
 
-  // Phase 1C v6: weekend / weekly_off_day / public holiday detection
+  // Phase 1C v7: weekly_off_day check ใช้กับ "ทุกประเภทการลา" (รวม sick)
+  // เสาร์/อาทิตย์ + วันหยุดนักขัตฤกษ์ ใช้เฉพาะ personal/annual
   const weekendDates: string[] = useMemo(() => {
     if (!isLongLeaveType) return [];
     const out: string[] = [];
@@ -155,7 +156,7 @@ export default function LeaveClient({
     return out;
   }, [isLongLeaveType, from, to]);
   const onUserOffDay: string[] = useMemo(() => {
-    if (!isLongLeaveType || weeklyOffDay == null) return [];
+    if (weeklyOffDay == null) return [];
     const out: string[] = [];
     const start = new Date(`${from}T00:00:00Z`);
     const end = new Date(`${to}T00:00:00Z`);
@@ -163,7 +164,8 @@ export default function LeaveClient({
       if (d.getUTCDay() === weeklyOffDay) out.push(d.toISOString().slice(0, 10));
     }
     return out;
-  }, [isLongLeaveType, from, to, weeklyOffDay]);
+  }, [from, to, weeklyOffDay]);
+  // วันหยุดนักขัตฤกษ์ในช่วงลา (ไม่นับ is_workday=1 เช่น Labor Day)
   const onPublicHoliday: string[] = useMemo(() => {
     if (!isLongLeaveType) return [];
     const out: string[] = [];
@@ -171,13 +173,26 @@ export default function LeaveClient({
     const end = new Date(`${to}T00:00:00Z`);
     for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
       const ds = d.toISOString().slice(0, 10);
-      if (holidayMap.has(ds)) out.push(ds);
+      const h = holidayMap.get(ds);
+      if (h && !h.is_workday) out.push(ds);
     }
     return out;
   }, [isLongLeaveType, from, to, holidayMap]);
+  // Labor Day (is_workday=1) ที่ตรงในช่วงลา — แสดง note ทุกครั้ง
+  const onWorkdayHoliday: PublicHoliday[] = useMemo(() => {
+    const out: PublicHoliday[] = [];
+    const start = new Date(`${from}T00:00:00Z`);
+    const end = new Date(`${to}T00:00:00Z`);
+    for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const ds = d.toISOString().slice(0, 10);
+      const h = holidayMap.get(ds);
+      if (h && h.is_workday) out.push(h);
+    }
+    return out;
+  }, [from, to, holidayMap]);
 
-  // HARD BLOCK — ลาตรงวันหยุดประจำสัปดาห์ของตัวเอง (ติ๊ก special-track ก็ไม่ผ่าน)
-  const hardBlockedByOffDay = isLongLeaveType && onUserOffDay.length > 0;
+  // HARD BLOCK — ทุกประเภทการลา ถ้าตรงวันหยุดประจำสัปดาห์ (Phase 1C v7 #2)
+  const hardBlockedByOffDay = onUserOffDay.length > 0;
 
   // Special-track required (override ได้)
   const specialTrackRequired: boolean = Boolean(!hardBlockedByOffDay && isLongLeaveType && stretch && (
@@ -366,6 +381,34 @@ export default function LeaveClient({
               </div>
             )}
 
+            {/* HARD BLOCK warning — ทุกประเภทการลา ถ้าตรงวันหยุดประจำสัปดาห์ */}
+            {hardBlockedByOffDay && !isLongLeaveType && (
+              <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm">
+                <div className="text-rose-700 font-medium">
+                  ✗ {t("staff.persona.leave.stretch.weeklyOffDayBlocked", { n: onUserOffDay.length })}
+                </div>
+                <div className="pt-1.5 text-xs font-medium text-rose-700">
+                  {t("staff.persona.leave.stretch.statusBlockedOffDay")}
+                </div>
+              </div>
+            )}
+
+            {/* Labor Day note — แสดงเมื่อช่วงลาตรงกับ is_workday=1 holiday (any type) */}
+            {onWorkdayHoliday.length > 0 && (
+              <div className="rounded-lg border border-sky-300 bg-sky-50 p-3 text-xs space-y-1">
+                {onWorkdayHoliday.map((h) => (
+                  <div key={h.date}>
+                    <span className="font-medium text-slate-800">
+                      {formatDate(h.date)} — {lang === "en" ? h.name_en : h.name_th}
+                    </span>
+                    <p className="text-sky-800 mt-0.5">
+                      {t("staff.persona.leave.laborDayNote")}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Stretch preview (เฉพาะ personal/annual) — แสดงเสมอเพื่อแจ้งเตือน */}
             {isLongLeaveType && stretch && (
               <div className={`rounded-lg border p-3 text-sm space-y-1.5 ${
@@ -473,7 +516,7 @@ export default function LeaveClient({
                 className="input file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-slate-200 file:text-slate-700"
                 required={evidenceRequired}
               />
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-slate-500 mt-1 whitespace-pre-line">
                 {t(`staff.persona.leave.evidence.hint.${type}` as any)}
               </p>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -601,7 +644,8 @@ function StatusBadge({ status }: { status: LeaveStatus }) {
     pending: "bg-amber-100 text-amber-700",
     approved: "bg-emerald-100 text-emerald-700",
     rejected: "bg-rose-100 text-rose-700",
-    cancelled: "bg-slate-100 text-slate-500"
+    cancelled: "bg-slate-100 text-slate-500",
+    revision_requested: "bg-orange-100 text-orange-700"
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded font-medium ${cls[status]}`}>

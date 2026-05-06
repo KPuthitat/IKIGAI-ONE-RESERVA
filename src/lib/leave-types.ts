@@ -19,7 +19,12 @@ export type LeaveTypeRow = {
   sort_order: number;
 };
 
-export type PublicHoliday = { date: string; name_th: string; name_en: string };
+export type PublicHoliday = {
+  date: string;
+  name_th: string;
+  name_en: string;
+  is_workday: number;  // 1 = ธุรกิจถือเป็นวันทำงาน (เช่น Labor Day สำหรับร้านอาหาร)
+};
 
 export type QuotaInfo = {
   type: LeaveType;
