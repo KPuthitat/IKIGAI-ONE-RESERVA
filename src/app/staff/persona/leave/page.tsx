@@ -33,12 +33,13 @@ export default function StaffLeavePage() {
   const quotas: QuotaInfo[] = eligibleTypes.map((t) => getQuotaInfo(user.id, t));
 
   const requests = db.prepare(`
-    SELECT id, type, date_from, date_to, days, hours, reason,
-           evidence_filename, status, decided_by, decided_at, decision_note,
-           created_by, created_at
-    FROM leave_requests
-    WHERE user_id = ?
-    ORDER BY created_at DESC
+    SELECT r.id, r.type, r.date_from, r.date_to, r.days, r.hours, r.reason,
+           r.evidence_filename, r.status, r.decided_by, r.decided_at, r.decision_note,
+           r.created_by, r.created_at, r.replaces_id, r.is_special_request,
+           (SELECT id FROM leave_requests WHERE replaces_id = r.id ORDER BY id DESC LIMIT 1) AS resubmitted_as_id
+    FROM leave_requests r
+    WHERE r.user_id = ?
+    ORDER BY r.created_at DESC
     LIMIT 50
   `).all(user.id) as LeaveRow[];
 

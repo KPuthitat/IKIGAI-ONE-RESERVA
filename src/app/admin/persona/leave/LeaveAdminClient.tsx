@@ -41,6 +41,9 @@ export type LeaveAdminRow = {
   advanceDays: number | null;
   // Special-track flag (Phase 1C v4)
   is_special_request?: number;
+  // v9: revision tracking
+  replaces_id?: number | null;
+  resubmitted_as_id?: number | null;
 };
 
 type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "revision_requested" | "all" | "special";
@@ -168,6 +171,16 @@ export default function LeaveAdminClient({
                       {r.is_special_request === 1 && (
                         <span className="text-xs px-2 py-0.5 rounded font-medium bg-violet-100 text-violet-700 border border-violet-300">
                           {t("admin.persona.leave.specialBadge")}
+                        </span>
+                      )}
+                      {r.resubmitted_as_id && (
+                        <span className="text-xs px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">
+                          {t("staff.persona.leave.resubmittedAs", { id: r.resubmitted_as_id })}
+                        </span>
+                      )}
+                      {r.replaces_id && (
+                        <span className="text-xs px-2 py-0.5 rounded font-medium bg-sky-100 text-sky-700">
+                          {t("staff.persona.leave.editedFrom", { id: r.replaces_id })}
                         </span>
                       )}
                       <span className="text-xs text-slate-400">

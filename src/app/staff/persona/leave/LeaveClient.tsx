@@ -25,6 +25,8 @@ export type LeaveRow = {
   created_by: number | null;
   created_at: string;
   is_special_request?: number;
+  replaces_id?: number | null;          // คำขอเดิมที่ถูกแก้
+  resubmitted_as_id?: number | null;    // ถูกแก้ไปเป็น request ไหน
 };
 
 // Map: which leave types require attached evidence?
@@ -118,6 +120,8 @@ export default function LeaveClient({
   const [isSpecial, setIsSpecial] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Phase 1C v9 — ลิงก์คำขอใหม่กลับไปที่ revision_requested เดิม
+  const [revisingId, setRevisingId] = useState<number | null>(null);
 
   const fullDays = daysBetween(from, to);
   const evidenceRequired = TYPES_REQUIRE_EVIDENCE.has(type);
@@ -216,6 +220,7 @@ export default function LeaveClient({
     setFile(null);
     setIsSpecial(false);
     setErr(null);
+    setRevisingId(null);
   }
 
   function startRevise(r: LeaveRow) {
@@ -234,8 +239,8 @@ export default function LeaveClient({
     setFile(null);
     setIsSpecial(false);
     setErr(null);
+    setRevisingId(r.id);   // ← ลิงก์ใหม่กลับเดิม
     setFormOpen(true);
-    // scroll up to form
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -266,6 +271,7 @@ export default function LeaveClient({
       fd.append("reason", reason);
       if (file) fd.append("file", file);
       if (isSpecial) fd.append("is_special_request", "1");
+      if (revisingId != null) fd.append("replaces_id", String(revisingId));
 
       const res = await fetch(apiUrl("/api/persona/leave"), { method: "POST", body: fd });
       const data = await res.json().catch(() => ({}));
@@ -624,6 +630,16 @@ export default function LeaveClient({
                           {t("staff.persona.leave.specialBadge")}
                         </span>
                       )}
+                      {r.resubmitted_as_id && (
+                        <span className="text-xs px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">
+                          {t("staff.persona.leave.resubmittedAs", { id: r.resubmitted_as_id })}
+                        </span>
+                      )}
+                      {r.replaces_id && (
+                        <span className="text-xs px-2 py-0.5 rounded font-medium bg-sky-100 text-sky-700">
+                          {t("staff.persona.leave.editedFrom", { id: r.replaces_id })}
+                        </span>
+                      )}
                     </div>
                     <div className="text-sm text-slate-600 mt-0.5">
                       {r.date_from === r.date_to
@@ -654,7 +670,7 @@ export default function LeaveClient({
                     )}
                   </div>
                   <div className="flex flex-col gap-1 items-end">
-                    {r.status === "revision_requested" && (
+                    {r.status === "revision_requested" && !r.resubmitted_as_id && (
                       <button
                         type="button"
                         disabled={pending}
@@ -664,7 +680,7 @@ export default function LeaveClient({
                         {t("staff.persona.leave.editAndResubmit")}
                       </button>
                     )}
-                    {(r.status === "pending" || r.status === "revision_requested") && (
+                    {(r.status === "pending" || (r.status === "revision_requested" && !r.resubmitted_as_id)) && (
                       <button
                         type="button"
                         disabled={pending}

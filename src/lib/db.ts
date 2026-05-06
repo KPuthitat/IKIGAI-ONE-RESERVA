@@ -122,6 +122,8 @@ function runMigrations(db: Database.Database): void {
   if (!lnames.has("created_by")) db.exec("ALTER TABLE leave_requests ADD COLUMN created_by INTEGER REFERENCES users(id)");
   // Phase 1C v4: special-track flag (ต้องอนุมัติพิเศษโดยผู้บริหาร)
   if (!lnames.has("is_special_request")) db.exec("ALTER TABLE leave_requests ADD COLUMN is_special_request INTEGER NOT NULL DEFAULT 0");
+  // Phase 1C v9: replaces_id — ลิงก์คำขอใหม่ที่แก้แล้วกลับไปยังคำขอเดิม
+  if (!lnames.has("replaces_id")) db.exec("ALTER TABLE leave_requests ADD COLUMN replaces_id INTEGER");
 
   // leave_types catalog (กฎเกณฑ์การลา)
   db.exec(`
@@ -309,6 +311,12 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_resignation_user ON resignation_requests(user_id);
     CREATE INDEX IF NOT EXISTS idx_resignation_status ON resignation_requests(status, created_at);
   `);
+
+  // Phase 1C v9: replaces_id for resignation_requests
+  const rrcols = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;
+  if (!rrcols.some((c) => c.name === "replaces_id")) {
+    db.exec("ALTER TABLE resignation_requests ADD COLUMN replaces_id INTEGER");
+  }
 
   // Phase 1C v7: same migration for resignation_requests
   const rrSql = db.prepare(

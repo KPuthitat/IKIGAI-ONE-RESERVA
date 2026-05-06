@@ -35,7 +35,8 @@ export default function AdminLeavePage({
   const rawRequests = db.prepare(`
     SELECT r.id, r.user_id, r.type, r.date_from, r.date_to, r.days, r.hours, r.reason,
            r.evidence_filename, r.status, r.decided_by, r.decided_at, r.decision_note,
-           r.created_by, r.created_at, r.is_special_request,
+           r.created_by, r.created_at, r.is_special_request, r.replaces_id,
+           (SELECT id FROM leave_requests WHERE replaces_id = r.id ORDER BY id DESC LIMIT 1) AS resubmitted_as_id,
            u.username, u.display_name,
            du.display_name AS decided_by_name,
            cu.display_name AS created_by_name

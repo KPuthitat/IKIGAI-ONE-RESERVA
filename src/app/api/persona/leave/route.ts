@@ -31,6 +31,8 @@ export async function POST(req: Request) {
   const hoursStr = String(form.get("hours") || "");
   const reason = String(form.get("reason") || "").trim().slice(0, 500);
   const isSpecial = String(form.get("is_special_request") || "") === "1";
+  const replacesIdStr = String(form.get("replaces_id") || "");
+  const replacesId = replacesIdStr ? Number(replacesIdStr) : null;
   const file = form.get("file");
 
   // Reason mandatory (Phase 1C v4 #5)
@@ -140,15 +142,26 @@ export async function POST(req: Request) {
   }
 
   const db = getDb();
+
+  // Validate replaces_id (ถ้ามี) — ต้องเป็น request เดิมของ user ที่ status = revision_requested
+  if (replacesId != null) {
+    const orig = db.prepare(
+      "SELECT user_id, status FROM leave_requests WHERE id = ?"
+    ).get(replacesId) as { user_id: number; status: string } | undefined;
+    if (!orig || orig.user_id !== user.id || orig.status !== "revision_requested") {
+      return NextResponse.json({ error: "invalid_replaces_id" }, { status: 400 });
+    }
+  }
+
   const nowIso = new Date().toISOString();
   const result = db.prepare(`
     INSERT INTO leave_requests
       (user_id, type, date_from, date_to, days, hours, reason, evidence_filename,
-       status, created_by, is_special_request, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+       status, created_by, is_special_request, replaces_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
   `).run(
     user.id, type, date_from, date_to, days, hours, reason,
-    evidenceFilename, user.id, isSpecial ? 1 : 0, nowIso
+    evidenceFilename, user.id, isSpecial ? 1 : 0, replacesId, nowIso
   );
 
   return NextResponse.json({ ok: true, id: result.lastInsertRowid });
