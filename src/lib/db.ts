@@ -354,6 +354,19 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_resignation_status ON resignation_requests(status, created_at);
   `);
 
+  // RESERVA: branch status / opening date / weekly closed days
+  const bcols2 = db.prepare("PRAGMA table_info(branches)").all() as Array<{ name: string }>;
+  const bnames2 = new Set(bcols2.map((c) => c.name));
+  if (!bnames2.has("status")) {
+    db.exec("ALTER TABLE branches ADD COLUMN status TEXT NOT NULL DEFAULT 'open'");
+  }
+  if (!bnames2.has("opens_on")) {
+    db.exec("ALTER TABLE branches ADD COLUMN opens_on TEXT");
+  }
+  if (!bnames2.has("closed_weekdays")) {
+    db.exec("ALTER TABLE branches ADD COLUMN closed_weekdays TEXT"); // JSON array '[1,2]'
+  }
+
   // Phase 1C v9: replaces_id for resignation_requests
   const rrcols = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;
   if (!rrcols.some((c) => c.name === "replaces_id")) {
@@ -446,6 +459,9 @@ export type Branch = {
   line_channel_secret: string | null;
   line_channel_token: string | null;
   staff_line_user_ids: string | null;
+  status: "open" | "coming_soon";
+  opens_on: string | null;          // YYYY-MM-DD เมื่อ status = coming_soon
+  closed_weekdays: string | null;   // JSON array of 0-6, e.g., '[1]' = ปิดทุกจันทร์
 };
 
 export type User = {

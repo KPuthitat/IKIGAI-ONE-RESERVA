@@ -2,18 +2,33 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
-import { t } from "@/lib/i18n";
+import { t, type Lang } from "@/lib/i18n";
 import LangToggle from "../LangToggle";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "จองโต๊ะ · RESERVA" };
 
+const DAY_NAMES_TH = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+const DAY_NAMES_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function parseClosedWeekdays(json: string | null): number[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json);
+    if (Array.isArray(arr)) return arr.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+  } catch {}
+  return [];
+}
+
+function formatClosedDays(closed: number[], lang: Lang): string {
+  const names = lang === "en" ? DAY_NAMES_EN : DAY_NAMES_TH;
+  return closed.map((d) => names[d]).join(lang === "en" ? ", " : " · ");
+}
+
 export default function CustomerReservaPage() {
   const lang = getLang();
   const branches = getDb().prepare("SELECT * FROM branches ORDER BY name").all() as Branch[];
-  const nama = branches.find((b) => b.slug === "nama-sriracha");
-  const others = branches.filter((b) => b.slug !== "nama-sriracha");
 
   return (
     <main className="min-h-screen bg-ink-gradient flex flex-col items-center justify-center p-6">
@@ -26,41 +41,55 @@ export default function CustomerReservaPage() {
           <p className="text-white/70 mt-4">{t(lang, "customer.reserva.subtitle")}</p>
         </div>
 
-        {/* NAMA primary */}
-        {nama && (
-          <Link
-            href={`/reserva/${nama.slug}`}
-            className="card hover:shadow-2xl transition group block mb-3"
-          >
-            <div className="text-[11px] tracking-[2px] text-brand font-bold mb-1">
-              {t(lang, "customer.reserva.featured")}
-            </div>
-            <h2 className="text-2xl font-bold text-slate-800 group-hover:text-brand transition-colors">
-              {nama.name}
-            </h2>
-            <p className="text-slate-500 text-sm mt-1">
-              {t(lang, "customer.reserva.openHours", { open: nama.open_time, close: nama.close_time })}
-            </p>
-            <p className="mt-4 text-brand font-bold">{t(lang, "customer.reserva.bookCta")}</p>
-          </Link>
-        )}
+        <div className="space-y-3">
+          {branches.map((b) => {
+            const closed = parseClosedWeekdays(b.closed_weekdays);
+            const isComingSoon = b.status === "coming_soon";
+            const card = (
+              <div className="card hover:shadow-2xl transition group block relative">
+                {isComingSoon && (
+                  <div className="absolute top-3 right-3 text-[10px] tracking-[1px] font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                    {t(lang, "customer.reserva.comingSoonBadge")}
+                  </div>
+                )}
+                <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand transition-colors pr-24">
+                  {b.name}
+                </h2>
+                {isComingSoon ? (
+                  <p className="text-slate-500 text-sm mt-2">
+                    {b.opens_on
+                      ? t(lang, "customer.reserva.opensOn", { date: b.opens_on })
+                      : t(lang, "customer.reserva.opensSoon")}
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-slate-500 text-sm mt-1">
+                      {t(lang, "customer.reserva.openHours", { open: b.open_time, close: b.close_time })}
+                    </p>
+                    {closed.length > 0 ? (
+                      <p className="text-rose-600 text-xs mt-1">
+                        {t(lang, "customer.reserva.closedOn", { days: formatClosedDays(closed, lang) })}
+                      </p>
+                    ) : (
+                      <p className="text-emerald-700 text-xs mt-1">
+                        {t(lang, "customer.reserva.openDaily")}
+                      </p>
+                    )}
+                    <p className="mt-3 text-brand font-bold text-sm">{t(lang, "customer.reserva.bookCta")}</p>
+                  </>
+                )}
+              </div>
+            );
 
-        {others.length > 0 && (
-          <div className="space-y-3">
-            {others.map((b) => (
-              <Link
-                key={b.id}
-                href={`/reserva/${b.slug}`}
-                className="bg-white/[.06] hover:bg-white/[.1] border border-white/[.12] rounded-2xl p-5 transition block"
-              >
-                <h3 className="text-white font-bold">{b.name}</h3>
-                <p className="text-white/60 text-xs mt-1">
-                  {t(lang, "customer.reserva.openHours", { open: b.open_time, close: b.close_time })}
-                </p>
+            return isComingSoon ? (
+              <div key={b.id} className="opacity-75 cursor-not-allowed">{card}</div>
+            ) : (
+              <Link key={b.id} href={`/reserva/${b.slug}`} className="block">
+                {card}
               </Link>
-            ))}
-          </div>
-        )}
+            );
+          })}
+        </div>
 
         <div className="flex justify-center mt-8">
           <LangToggle variant="dark" />

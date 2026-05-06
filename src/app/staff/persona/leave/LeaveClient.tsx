@@ -363,8 +363,8 @@ export default function LeaveClient({
               </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="min-w-0">
                 <label className="label">{t("staff.persona.leave.from")}</label>
                 <input
                   type="date" className="input" value={from} min={todayBkkStr()}
@@ -374,7 +374,7 @@ export default function LeaveClient({
                   }} required
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="label">{t("staff.persona.leave.to")}</label>
                 <input
                   type="date" className="input" value={to} min={from}
