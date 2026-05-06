@@ -216,36 +216,78 @@ function runMigrations(db: Database.Database): void {
   if (!phcols.some((c) => c.name === "is_workday")) {
     db.exec("ALTER TABLE public_holidays ADD COLUMN is_workday INTEGER NOT NULL DEFAULT 0");
   }
-  // Seed 2026 Thai public holidays (วันหยุดตามประเพณี — แอดมินสามารถปรับวันลูนาร์ได้)
+  // Seed Thai public holidays — ON CONFLICT DO NOTHING เพื่อไม่ทับค่าที่แอดมินแก้
+  // วันลูนาร์เป็นค่าประมาณ — แอดมินปรับผ่าน /admin/persona/holidays ได้
   const seedHoliday = db.prepare(`
     INSERT INTO public_holidays (date, name_th, name_en) VALUES (?, ?, ?)
-    ON CONFLICT(date) DO UPDATE SET name_th = excluded.name_th, name_en = excluded.name_en
+    ON CONFLICT(date) DO NOTHING
   `);
-  const holidays2026: Array<[string, string, string]> = [
-    ["2026-01-01", "วันขึ้นปีใหม่", "New Year's Day"],
-    ["2026-03-03", "วันมาฆบูชา", "Makha Bucha Day"],
-    ["2026-04-06", "วันจักรี", "Chakri Memorial Day"],
-    ["2026-04-13", "วันสงกรานต์", "Songkran Day"],
-    ["2026-04-14", "วันสงกรานต์", "Songkran Day"],
-    ["2026-04-15", "วันสงกรานต์", "Songkran Day"],
-    ["2026-05-01", "วันแรงงานแห่งชาติ", "National Labour Day"],
-    ["2026-05-04", "วันฉัตรมงคล", "Coronation Day"],
-    ["2026-05-31", "วันวิสาขบูชา", "Visakha Bucha Day"],
-    ["2026-06-03", "วันเฉลิมพระชนมพรรษาสมเด็จพระบรมราชินี", "Queen's Birthday"],
-    ["2026-07-28", "วันเฉลิมพระชนมพรรษา ร.10", "King's Birthday"],
-    ["2026-07-30", "วันอาสาฬหบูชา", "Asalha Bucha Day"],
-    ["2026-07-31", "วันเข้าพรรษา", "Buddhist Lent Day"],
-    ["2026-08-12", "วันเฉลิมพระชนมพรรษาสมเด็จพระบรมราชชนนีพันปีหลวง / วันแม่", "Mother's Day"],
-    ["2026-10-13", "วันคล้ายวันสวรรคต ร.9", "King Bhumibol Memorial Day"],
-    ["2026-10-23", "วันปิยมหาราช", "Chulalongkorn Day"],
-    ["2026-12-05", "วันคล้ายวันพระบรมราชสมภพ ร.9 / วันชาติ", "King Bhumibol's Birthday / National Day"],
-    ["2026-12-10", "วันรัฐธรรมนูญ", "Constitution Day"],
-    ["2026-12-31", "วันสิ้นปี", "New Year's Eve"]
-  ];
-  for (const h of holidays2026) seedHoliday.run(...h);
 
-  // Phase 1C v7: ธุรกิจบริการ — วันแรงงานนับเป็นวันทำงานปกติ
-  db.prepare("UPDATE public_holidays SET is_workday = 1 WHERE date = '2026-05-01'").run();
+  // วันหยุดตามวันที่คงที่ (ไม่ใช้ลูนาร์)
+  const FIXED: Array<[number, number, string, string]> = [
+    [1, 1,  "วันขึ้นปีใหม่", "New Year's Day"],
+    [4, 6,  "วันจักรี", "Chakri Memorial Day"],
+    [4, 13, "วันสงกรานต์", "Songkran Day"],
+    [4, 14, "วันสงกรานต์", "Songkran Day"],
+    [4, 15, "วันสงกรานต์", "Songkran Day"],
+    [5, 1,  "วันแรงงานแห่งชาติ", "National Labour Day"],
+    [5, 4,  "วันฉัตรมงคล", "Coronation Day"],
+    [6, 3,  "วันเฉลิมพระชนมพรรษาสมเด็จพระบรมราชินี", "Queen's Birthday"],
+    [7, 28, "วันเฉลิมพระชนมพรรษา ร.10", "King's Birthday"],
+    [8, 12, "วันเฉลิมพระชนมพรรษาสมเด็จพระบรมราชชนนีพันปีหลวง / วันแม่", "Mother's Day"],
+    [10, 13, "วันคล้ายวันสวรรคต ร.9", "King Bhumibol Memorial Day"],
+    [10, 23, "วันปิยมหาราช", "Chulalongkorn Day"],
+    [12, 5,  "วันคล้ายวันพระบรมราชสมภพ ร.9 / วันชาติ", "King Bhumibol's Birthday / National Day"],
+    [12, 10, "วันรัฐธรรมนูญ", "Constitution Day"],
+    [12, 31, "วันสิ้นปี", "New Year's Eve"]
+  ];
+
+  // วันลูนาร์ — ระบุปีต่อปี (ค่าประมาณตามปฏิทินจันทรคติ — แอดมินแก้ได้)
+  // วันมาฆบูชา / วิสาขบูชา / อาสาฬหบูชา + เข้าพรรษา (อาสาฬหบูชา + 1)
+  const LUNAR: Record<string, Array<[string, string, string]>> = {
+    "2026": [
+      ["2026-03-03", "วันมาฆบูชา", "Makha Bucha Day"],
+      ["2026-05-31", "วันวิสาขบูชา", "Visakha Bucha Day"],
+      ["2026-07-30", "วันอาสาฬหบูชา", "Asalha Bucha Day"],
+      ["2026-07-31", "วันเข้าพรรษา", "Buddhist Lent Day"]
+    ],
+    "2027": [
+      ["2027-02-21", "วันมาฆบูชา", "Makha Bucha Day"],
+      ["2027-05-20", "วันวิสาขบูชา", "Visakha Bucha Day"],
+      ["2027-07-18", "วันอาสาฬหบูชา", "Asalha Bucha Day"],
+      ["2027-07-19", "วันเข้าพรรษา", "Buddhist Lent Day"]
+    ],
+    "2028": [
+      ["2028-02-10", "วันมาฆบูชา", "Makha Bucha Day"],
+      ["2028-05-08", "วันวิสาขบูชา", "Visakha Bucha Day"],
+      ["2028-07-06", "วันอาสาฬหบูชา", "Asalha Bucha Day"],
+      ["2028-07-07", "วันเข้าพรรษา", "Buddhist Lent Day"]
+    ],
+    "2029": [
+      ["2029-02-28", "วันมาฆบูชา", "Makha Bucha Day"],
+      ["2029-05-27", "วันวิสาขบูชา", "Visakha Bucha Day"],
+      ["2029-07-25", "วันอาสาฬหบูชา", "Asalha Bucha Day"],
+      ["2029-07-26", "วันเข้าพรรษา", "Buddhist Lent Day"]
+    ],
+    "2030": [
+      ["2030-02-17", "วันมาฆบูชา", "Makha Bucha Day"],
+      ["2030-05-16", "วันวิสาขบูชา", "Visakha Bucha Day"],
+      ["2030-07-14", "วันอาสาฬหบูชา", "Asalha Bucha Day"],
+      ["2030-07-15", "วันเข้าพรรษา", "Buddhist Lent Day"]
+    ]
+  };
+
+  // Seed 5 years (2026-2030)
+  for (let year = 2026; year <= 2030; year++) {
+    const yStr = String(year);
+    for (const [mm, dd, th, en] of FIXED) {
+      const date = `${yStr}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+      seedHoliday.run(date, th, en);
+    }
+    for (const [date, th, en] of LUNAR[yStr] || []) {
+      seedHoliday.run(date, th, en);
+    }
+  }
 
   // Phase 1C v7: migrate CHECK constraints to include 'revision_requested'
   // SQLite ไม่อนุญาต ALTER CHECK → ต้อง recreate table
