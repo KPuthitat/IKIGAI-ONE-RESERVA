@@ -209,14 +209,9 @@ function HolidayModal({
             onChange={(e) => setIsWorkday(e.target.checked)}
             className="mt-0.5"
           />
-          <div>
-            <div className="font-medium text-slate-700">
-              {t("admin.persona.holidays.isWorkdayLabel")}
-            </div>
-            <div className="text-xs text-slate-500">
-              {t("admin.persona.holidays.isWorkdayHint")}
-            </div>
-          </div>
+          <span className="text-slate-700">
+            {t("admin.persona.holidays.isWorkdayLabel")}
+          </span>
         </label>
 
         {err && <div className="text-rose-600 text-sm">{err}</div>}
