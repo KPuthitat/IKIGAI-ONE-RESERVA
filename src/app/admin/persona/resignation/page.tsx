@@ -32,7 +32,7 @@ export default function AdminResignationPage({
   const requests = db.prepare(`
     SELECT r.id, r.user_id, r.proposed_last_day, r.computed_min_last_day,
            r.reason, r.evidence_filename, r.is_special_request,
-           r.status, r.decided_by, r.decided_at, r.decision_note, r.created_at,
+           r.status, r.decided_by, r.decided_at, r.decision_note, r.created_at, r.ref_no,
            u.username, u.display_name, u.hire_date,
            du.display_name AS decided_by_name
     FROM resignation_requests r

@@ -35,8 +35,10 @@ export default function StaffLeavePage() {
   const requests = db.prepare(`
     SELECT r.id, r.type, r.date_from, r.date_to, r.days, r.hours, r.reason,
            r.evidence_filename, r.status, r.decided_by, r.decided_at, r.decision_note,
-           r.created_by, r.created_at, r.replaces_id, r.is_special_request,
-           (SELECT id FROM leave_requests WHERE replaces_id = r.id ORDER BY id DESC LIMIT 1) AS resubmitted_as_id
+           r.created_by, r.created_at, r.replaces_id, r.is_special_request, r.ref_no,
+           (SELECT ref_no FROM leave_requests WHERE id = r.replaces_id) AS replaces_ref_no,
+           (SELECT id FROM leave_requests WHERE replaces_id = r.id ORDER BY id DESC LIMIT 1) AS resubmitted_as_id,
+           (SELECT ref_no FROM leave_requests WHERE replaces_id = r.id ORDER BY id DESC LIMIT 1) AS resubmitted_as_ref_no
     FROM leave_requests r
     WHERE r.user_id = ?
     ORDER BY r.created_at DESC

@@ -3,7 +3,8 @@ import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
   ALL_LEAVE_TYPES, getEligibleLeaveTypesForUser, saveLeaveAttachment,
-  analyzeLongLeave, detectWeekendExtension, getPublicHolidaySet, type LeaveType
+  analyzeLongLeave, detectWeekendExtension, getPublicHolidaySet, generateRefNo,
+  type LeaveType
 } from "@/lib/leave";
 
 // POST /api/persona/leave — staff submit (multipart/form-data)
@@ -154,15 +155,16 @@ export async function POST(req: Request) {
   }
 
   const nowIso = new Date().toISOString();
+  const refNo = generateRefNo("leave_requests");
   const result = db.prepare(`
     INSERT INTO leave_requests
       (user_id, type, date_from, date_to, days, hours, reason, evidence_filename,
-       status, created_by, is_special_request, replaces_id, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+       status, created_by, is_special_request, replaces_id, ref_no, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
   `).run(
     user.id, type, date_from, date_to, days, hours, reason,
-    evidenceFilename, user.id, isSpecial ? 1 : 0, replacesId, nowIso
+    evidenceFilename, user.id, isSpecial ? 1 : 0, replacesId, refNo, nowIso
   );
 
-  return NextResponse.json({ ok: true, id: result.lastInsertRowid });
+  return NextResponse.json({ ok: true, id: result.lastInsertRowid, ref_no: refNo });
 }

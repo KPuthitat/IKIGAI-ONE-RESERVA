@@ -25,6 +25,7 @@ export type ResignationAdminRow = {
   display_name: string;
   hire_date: string | null;
   decided_by_name: string | null;
+  ref_no?: string | null;
 };
 
 export type StaffUnlockOption = {
@@ -221,6 +222,9 @@ export default function ResignationAdminClient({
                 <li key={r.id} className="border border-slate-200 rounded-lg p-3 hover:bg-slate-50 transition">
                   <div className="flex flex-wrap justify-between items-start gap-2 mb-1">
                     <div className="flex-1 min-w-[200px]">
+                      {r.ref_no && (
+                        <div className="text-xs text-slate-400 font-mono mb-0.5">#{r.ref_no}</div>
+                      )}
                       <div className="font-medium text-slate-800">
                         {r.display_name}
                         <span className="text-xs text-slate-400 ml-1.5">@{r.username}</span>

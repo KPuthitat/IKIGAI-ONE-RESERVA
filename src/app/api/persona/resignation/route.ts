@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { computeMinLastWorkingDay, saveLeaveAttachment } from "@/lib/leave";
+import { computeMinLastWorkingDay, saveLeaveAttachment, generateRefNo } from "@/lib/leave";
 
 // POST /api/persona/resignation — staff submit
 // กฎ: ต้องลาออกล่วงหน้าอย่างน้อย 1 รอบเงินเดือน (= สิ้นเดือนถัดจากเดือนที่ยื่น)
@@ -71,15 +71,14 @@ export async function POST(req: Request) {
   }
 
   const nowIso = new Date().toISOString();
-  // Transaction: insert + consume unlock (ป้องกันยื่นซ้ำหลังถูกอนุมัติ/ปฏิเสธ)
+  const refNo = generateRefNo("resignation_requests");
   const tx = db.transaction(() => {
     const r = db.prepare(`
       INSERT INTO resignation_requests
         (user_id, proposed_last_day, computed_min_last_day, reason, evidence_filename,
-         is_special_request, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
-    `).run(user.id, proposed, minLastDay, reason, evidenceFilename, isSpecial ? 1 : 0, nowIso);
-    // consume unlock — ส่งได้ครั้งเดียวต่อการเปิดสิทธิ์
+         is_special_request, status, ref_no, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    `).run(user.id, proposed, minLastDay, reason, evidenceFilename, isSpecial ? 1 : 0, refNo, nowIso);
     db.prepare(
       "UPDATE users SET resignation_unlocked_at = NULL, resignation_unlocked_by = NULL WHERE id = ?"
     ).run(user.id);
@@ -87,5 +86,5 @@ export async function POST(req: Request) {
   });
   const newId = tx();
 
-  return NextResponse.json({ ok: true, id: newId });
+  return NextResponse.json({ ok: true, id: newId, ref_no: refNo });
 }

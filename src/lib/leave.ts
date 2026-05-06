@@ -92,6 +92,20 @@ export function getQuotaInfo(userId: number, type: LeaveTypeRow): QuotaInfo {
   };
 }
 
+/** สร้างเลขอ้างอิงรูปแบบ [Prefix]YYYYMM + 2-digit sequence ต่อเดือน (Bangkok)
+ *  Leave = "L", Resignation = "R" — ดูเดือนนึงมีคำขอเท่าไหร่ได้ทันที */
+export function generateRefNo(table: "leave_requests" | "resignation_requests"): string {
+  const prefix = table === "leave_requests" ? "L" : "R";
+  const bkkMonth = new Date(Date.now() + 7 * 60 * 60 * 1000)
+    .toISOString().slice(0, 7).replace("-", "");
+  const pattern = `${prefix}${bkkMonth}%`;
+  const row = getDb().prepare(
+    `SELECT COUNT(*) AS n FROM ${table} WHERE ref_no LIKE ?`
+  ).get(pattern) as { n: number };
+  const seq = String(row.n + 1).padStart(2, "0");
+  return `${prefix}${bkkMonth}${seq}`;
+}
+
 /** Format ชั่วโมงเป็น "X วัน Y ชม." (ปัดเศษให้เป็นจำนวนเต็ม) */
 export function formatRemainingHours(hours: number): { days: number; hours: number; totalHours: number } {
   const totalH = Math.round(hours * 2) / 2;

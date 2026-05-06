@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { ALL_LEAVE_TYPES, saveLeaveAttachment, type LeaveType } from "@/lib/leave";
+import { ALL_LEAVE_TYPES, saveLeaveAttachment, generateRefNo, type LeaveType } from "@/lib/leave";
 
 // POST /api/admin/persona/leave/create — admin บันทึกการลาให้พนักงาน
 // (ใช้สำหรับลาก่อนเริ่มใช้ระบบ หรือกรณีพิเศษ — auto-approved)
@@ -57,17 +57,18 @@ export async function POST(req: Request) {
 
   const db = getDb();
   const nowIso = new Date().toISOString();
+  const refNo = generateRefNo("leave_requests");
   const result = db.prepare(`
     INSERT INTO leave_requests
       (user_id, type, date_from, date_to, days, hours, reason,
        evidence_filename, status, decided_by, decided_at, decision_note,
-       created_by, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?, ?, ?)
+       created_by, ref_no, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?, ?, ?, ?)
   `).run(
     target_user_id, type, date_from, date_to, days, hours, reason || null,
     evidenceFilename, user.id, nowIso, note || "ลงโดยผู้ดูแล (backdated)",
-    user.id, nowIso
+    user.id, refNo, nowIso
   );
 
-  return NextResponse.json({ ok: true, id: result.lastInsertRowid });
+  return NextResponse.json({ ok: true, id: result.lastInsertRowid, ref_no: refNo });
 }

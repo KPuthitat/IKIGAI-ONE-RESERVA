@@ -318,6 +318,48 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE resignation_requests ADD COLUMN replaces_id INTEGER");
   }
 
+  // Phase 1C v10: ref_no — เลขอ้างอิง [Prefix]YYYYMM + 2-digit seq ต่อเดือน
+  // Leave = "L", Resignation = "R"
+  if (!lnames.has("ref_no")) db.exec("ALTER TABLE leave_requests ADD COLUMN ref_no TEXT");
+  if (!rrcols.some((c) => c.name === "ref_no")) {
+    db.exec("ALTER TABLE resignation_requests ADD COLUMN ref_no TEXT");
+  }
+  // Backfill — รองรับทั้ง NULL (fresh upgrade) และ legacy format (YYYYMMDD##)
+  function backfillRefNo(
+    table: "leave_requests" | "resignation_requests",
+    prefix: "L" | "R",
+    indexName: string
+  ): void {
+    // detect: any row missing ref_no OR not matching prefix → re-seq ทั้งหมด
+    const needs = (db.prepare(
+      `SELECT COUNT(*) AS n FROM ${table}
+       WHERE ref_no IS NULL OR substr(ref_no, 1, 1) != ?`
+    ).get(prefix) as { n: number }).n;
+    if (needs === 0) return;
+
+    // drop unique index ก่อน (เพราะจะ rewrite ค่าทั้งหมด อาจชนกันชั่วคราว)
+    db.exec(`DROP INDEX IF EXISTS ${indexName}`);
+    db.prepare(`UPDATE ${table} SET ref_no = NULL`).run();
+
+    const rows = db.prepare(
+      `SELECT id, created_at FROM ${table} ORDER BY created_at, id`
+    ).all() as Array<{ id: number; created_at: string }>;
+    const monthlySeq: Record<string, number> = {};
+    const upd = db.prepare(`UPDATE ${table} SET ref_no = ? WHERE id = ?`);
+    for (const r of rows) {
+      const ts = new Date(r.created_at).getTime();
+      // Bangkok YYYYMM
+      const bkkMonth = new Date(ts + 7 * 60 * 60 * 1000).toISOString().slice(0, 7).replace("-", "");
+      monthlySeq[bkkMonth] = (monthlySeq[bkkMonth] || 0) + 1;
+      const seq = String(monthlySeq[bkkMonth]).padStart(2, "0");
+      upd.run(`${prefix}${bkkMonth}${seq}`, r.id);
+    }
+  }
+  backfillRefNo("leave_requests", "L", "idx_leave_ref_no");
+  backfillRefNo("resignation_requests", "R", "idx_resignation_ref_no");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_leave_ref_no ON leave_requests(ref_no)");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_resignation_ref_no ON resignation_requests(ref_no)");
+
   // Phase 1C v7: same migration for resignation_requests
   const rrSql = db.prepare(
     "SELECT sql FROM sqlite_master WHERE type='table' AND name='resignation_requests'"

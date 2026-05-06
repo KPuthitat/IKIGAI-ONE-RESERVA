@@ -19,7 +19,7 @@ export default function StaffResignationPage() {
 
   const requests = db.prepare(`
     SELECT id, proposed_last_day, computed_min_last_day, reason, evidence_filename,
-           is_special_request, status, decided_by, decided_at, decision_note, created_at
+           is_special_request, status, decided_by, decided_at, decision_note, created_at, ref_no
     FROM resignation_requests
     WHERE user_id = ?
     ORDER BY created_at DESC

@@ -44,6 +44,10 @@ export type LeaveAdminRow = {
   // v9: revision tracking
   replaces_id?: number | null;
   resubmitted_as_id?: number | null;
+  // v10: ref_no
+  ref_no?: string | null;
+  replaces_ref_no?: string | null;
+  resubmitted_as_ref_no?: string | null;
 };
 
 type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "revision_requested" | "all" | "special";
@@ -159,6 +163,9 @@ export default function LeaveAdminClient({
               }`}>
                 <div className="flex flex-wrap justify-between items-start gap-2 mb-1">
                   <div className="flex-1 min-w-[200px]">
+                    {r.ref_no && (
+                      <div className="text-xs text-slate-400 font-mono mb-0.5">#{r.ref_no}</div>
+                    )}
                     <div className="font-medium text-slate-800">
                       {r.display_name}
                       <span className="text-xs text-slate-400 ml-1.5">@{r.username}</span>
@@ -173,14 +180,14 @@ export default function LeaveAdminClient({
                           {t("admin.persona.leave.specialBadge")}
                         </span>
                       )}
-                      {r.resubmitted_as_id && (
+                      {(r.resubmitted_as_ref_no || r.resubmitted_as_id) && (
                         <span className="text-xs px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">
-                          {t("staff.persona.leave.resubmittedAs", { id: r.resubmitted_as_id })}
+                          {t("staff.persona.leave.resubmittedAs", { id: r.resubmitted_as_ref_no ?? r.resubmitted_as_id })}
                         </span>
                       )}
-                      {r.replaces_id && (
+                      {(r.replaces_ref_no || r.replaces_id) && (
                         <span className="text-xs px-2 py-0.5 rounded font-medium bg-sky-100 text-sky-700">
-                          {t("staff.persona.leave.editedFrom", { id: r.replaces_id })}
+                          {t("staff.persona.leave.editedFrom", { id: r.replaces_ref_no ?? r.replaces_id })}
                         </span>
                       )}
                       <span className="text-xs text-slate-400">

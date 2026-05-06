@@ -25,8 +25,11 @@ export type LeaveRow = {
   created_by: number | null;
   created_at: string;
   is_special_request?: number;
-  replaces_id?: number | null;          // คำขอเดิมที่ถูกแก้
-  resubmitted_as_id?: number | null;    // ถูกแก้ไปเป็น request ไหน
+  replaces_id?: number | null;
+  resubmitted_as_id?: number | null;
+  ref_no?: string | null;                  // เลขอ้างอิง YYYYMMDDxx
+  replaces_ref_no?: string | null;          // ref ของคำขอที่ถูกแก้
+  resubmitted_as_ref_no?: string | null;    // ref ของคำขอใหม่ที่แก้ไปแล้ว
 };
 
 // Map: which leave types require attached evidence?
@@ -620,6 +623,9 @@ export default function LeaveClient({
               <li key={r.id} className="border-b last:border-0 border-slate-100 pb-3">
                 <div className="flex justify-between items-start gap-2">
                   <div className="flex-1">
+                    {r.ref_no && (
+                      <div className="text-xs text-slate-400 font-mono mb-0.5">#{r.ref_no}</div>
+                    )}
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-slate-800">
                         {t(`leave.type.${r.type}` as any)}
@@ -630,14 +636,14 @@ export default function LeaveClient({
                           {t("staff.persona.leave.specialBadge")}
                         </span>
                       )}
-                      {r.resubmitted_as_id && (
+                      {(r.resubmitted_as_ref_no || r.resubmitted_as_id) && (
                         <span className="text-xs px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">
-                          {t("staff.persona.leave.resubmittedAs", { id: r.resubmitted_as_id })}
+                          {t("staff.persona.leave.resubmittedAs", { id: r.resubmitted_as_ref_no ?? r.resubmitted_as_id })}
                         </span>
                       )}
-                      {r.replaces_id && (
+                      {(r.replaces_ref_no || r.replaces_id) && (
                         <span className="text-xs px-2 py-0.5 rounded font-medium bg-sky-100 text-sky-700">
-                          {t("staff.persona.leave.editedFrom", { id: r.replaces_id })}
+                          {t("staff.persona.leave.editedFrom", { id: r.replaces_ref_no ?? r.replaces_id })}
                         </span>
                       )}
                     </div>

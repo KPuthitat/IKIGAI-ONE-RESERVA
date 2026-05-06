@@ -19,6 +19,7 @@ export type ResignationRow = {
   decided_at: string | null;
   decision_note: string | null;
   created_at: string;
+  ref_no?: string | null;
 };
 
 export default function ResignationClient({
@@ -241,6 +242,9 @@ export default function ResignationClient({
               <li key={r.id} className="border-b last:border-0 border-slate-100 pb-3">
                 <div className="flex justify-between items-start gap-2">
                   <div className="flex-1">
+                    {r.ref_no && (
+                      <div className="text-xs text-slate-400 font-mono mb-0.5">#{r.ref_no}</div>
+                    )}
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-slate-800">
                         {t("staff.persona.resignation.lastDayLabel")}: {formatDate(r.proposed_last_day)}
