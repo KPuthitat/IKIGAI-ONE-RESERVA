@@ -68,7 +68,10 @@ export default function BookingForm({ branch }: { branch: Branch }) {
     const [ch, cm] = branch.close_time.split(":").map(Number);
     const start = oh * 60 + om;
     const end = ch * 60 + cm;
-    for (let m = start; m + branch.default_duration_minutes <= end; m += branch.slot_minutes) {
+    // ปิดรับจอง 30 นาทีก่อนเวลาปิดทำการ — ลูกค้าต้องนั่งครบ duration และ
+    // ออกก่อนปิดร้านอย่างน้อย 30 นาที
+    const BOOKING_CUTOFF_BEFORE_CLOSE = 30;
+    for (let m = start; m + branch.default_duration_minutes + BOOKING_CUTOFF_BEFORE_CLOSE <= end; m += branch.slot_minutes) {
       out.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
     }
     return out;

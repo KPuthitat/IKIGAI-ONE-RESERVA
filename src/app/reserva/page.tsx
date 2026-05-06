@@ -28,7 +28,13 @@ function formatClosedDays(closed: number[], lang: Lang): string {
 
 export default function CustomerReservaPage() {
   const lang = getLang();
-  const branches = getDb().prepare("SELECT * FROM branches ORDER BY name").all() as Branch[];
+  // NAMA PASTA SRIRACHA แสดงเป็นสาขาแรก ตามด้วยสาขาอื่นเรียงตามชื่อ
+  const branches = getDb().prepare(`
+    SELECT * FROM branches
+    ORDER BY
+      CASE WHEN slug = 'nama-sriracha' THEN 0 ELSE 1 END,
+      name
+  `).all() as Branch[];
 
   return (
     <main className="min-h-screen bg-ink-gradient flex flex-col items-center justify-center p-6">

@@ -86,11 +86,11 @@ export const dict: Record<Lang, Record<string, string>> = {
     "ascenda.comingSoonTitle": "กำลังพัฒนา",
     "ascenda.comingSoonBody": "โมดูลนี้จะรวมหลักสูตรอบรม ระบบติดตามเป้าหมาย/สมรรถนะ และเส้นทางการพัฒนาของพนักงาน — เปิดใช้งานเร็วๆ นี้",
     "portal.openBackend": "เข้าหลังบ้าน →",
-    "portal.openModule": "เปิด →",
+    "portal.openModule": "เข้าสู่ระบบ →",
 
     // Customer reserva landing
     "customer.reserva.title": "RESERVA",
-    "customer.reserva.subtitle": "จองโต๊ะร้านอาหาร",
+    "customer.reserva.subtitle": "ระบบจองโต๊ะร้านอาหาร",
     "customer.reserva.featured": "FEATURED",
     "customer.reserva.openHours": "เปิดบริการ {open} – {close} น.",
     "customer.reserva.bookCta": "จองโต๊ะ →",
@@ -745,7 +745,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "ascenda.comingSoonTitle": "Coming soon",
     "ascenda.comingSoonBody": "This module will combine training courses, goal/competency tracking, and personalized development paths — launching soon.",
     "portal.openBackend": "Open backend →",
-    "portal.openModule": "Open →",
+    "portal.openModule": "Enter →",
 
     // Customer reserva landing
     "customer.reserva.title": "RESERVA",
