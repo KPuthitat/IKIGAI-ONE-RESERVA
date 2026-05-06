@@ -104,36 +104,43 @@ export function formatRemainingHours(hours: number): { days: number; hours: numb
 
 export type WeekendExtensionInfo = {
   weekendDates: string[];          // วัน Sat/Sun ในช่วงลา
-  onWeeklyOffDay: string[];         // วันที่ตรงกับ weekly_off_day ของพนักงาน
+  onWeeklyOffDay: string[];         // วันที่ตรงกับ weekly_off_day ของพนักงาน (HARD block)
+  onPublicHoliday: string[];        // วันที่ตรงกับวันหยุดนักขัตฤกษ์ (special-track)
   hasWeekendLeave: boolean;
   fallsOnUserOffDay: boolean;
+  fallsOnPublicHoliday: boolean;
 };
 
 /**
  * ตรวจการลาที่อาจมีเจตนา "ขยายวันหยุด"
- * - เสาร์/อาทิตย์ในช่วงลา → suspicious (ร้านเปิด ต้องการคนทำงาน)
- * - ตรงกับ weekly_off_day ของพนักงาน → ไม่จำเป็น (วันหยุดอยู่แล้ว)
+ * - เสาร์/อาทิตย์ + วันหยุดนักขัตฤกษ์ → ขอความร่วมมือให้ลาวันอื่น (special-track)
+ * - ตรงกับ weekly_off_day → HARD block (วันหยุดอยู่แล้ว ไม่ต้องลา)
  */
 export function detectWeekendExtension(
   weeklyOffDay: number | null,
   dateFrom: string,
-  dateTo: string
+  dateTo: string,
+  publicHolidayDates: Set<string>
 ): WeekendExtensionInfo {
   const weekendDates: string[] = [];
   const onWeeklyOffDay: string[] = [];
+  const onPublicHoliday: string[] = [];
   const start = new Date(`${dateFrom}T00:00:00Z`);
   const end = new Date(`${dateTo}T00:00:00Z`);
   for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-    const dow = d.getUTCDay(); // 0=Sun, 6=Sat
+    const dow = d.getUTCDay();
     const ds = d.toISOString().slice(0, 10);
     if (dow === 0 || dow === 6) weekendDates.push(ds);
     if (weeklyOffDay != null && dow === weeklyOffDay) onWeeklyOffDay.push(ds);
+    if (publicHolidayDates.has(ds)) onPublicHoliday.push(ds);
   }
   return {
     weekendDates,
     onWeeklyOffDay,
+    onPublicHoliday,
     hasWeekendLeave: weekendDates.length > 0,
-    fallsOnUserOffDay: onWeeklyOffDay.length > 0
+    fallsOnUserOffDay: onWeeklyOffDay.length > 0,
+    fallsOnPublicHoliday: onPublicHoliday.length > 0
   };
 }
 

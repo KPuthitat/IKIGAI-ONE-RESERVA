@@ -48,6 +48,21 @@ export default function AdminResignationPage({
   `).all() as Array<{ status: string; n: number }>;
   const countMap = Object.fromEntries(counts.map(c => [c.status, c.n])) as Record<string, number>;
 
+  // staff list สำหรับ unlock dropdown
+  const staffList = db.prepare(`
+    SELECT u.id, u.username, u.display_name,
+           u.resignation_unlocked_at,
+           uu.display_name AS unlocked_by_name
+    FROM users u
+    LEFT JOIN users uu ON u.resignation_unlocked_by = uu.id
+    WHERE u.role = 'staff'
+    ORDER BY u.display_name
+  `).all() as Array<{
+    id: number; username: string; display_name: string;
+    resignation_unlocked_at: string | null;
+    unlocked_by_name: string | null;
+  }>;
+
   return (
     <div className="space-y-4">
       <div>
@@ -62,6 +77,7 @@ export default function AdminResignationPage({
         currentStatus={status}
         countMap={countMap}
         requests={requests}
+        staffList={staffList}
       />
     </div>
   );

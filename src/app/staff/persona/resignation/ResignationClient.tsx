@@ -25,12 +25,14 @@ export default function ResignationClient({
   requests,
   todayBkk,
   minLastDay,
-  hasPending
+  hasPending,
+  isUnlocked
 }: {
   requests: ResignationRow[];
   todayBkk: string;
   minLastDay: string;
   hasPending: boolean;
+  isUnlocked: boolean;
 }) {
   const router = useRouter();
   const { t, formatDate } = useLang();
@@ -95,7 +97,7 @@ export default function ResignationClient({
 
   return (
     <>
-      {/* กติกา */}
+      {/* กฏระเบียบการลาออก */}
       <div className="card border-l-4 border-amber-400 bg-amber-50">
         <h2 className="font-semibold text-slate-800 mb-2">
           {t("staff.persona.resignation.rulesTitle")}
@@ -108,19 +110,43 @@ export default function ResignationClient({
               minLastDay: formatDate(minLastDay)
             })
           }} />
+          <li>{t("staff.persona.resignation.rule.adminGate")}</li>
           <li>{t("staff.persona.resignation.rule.specialTrack")}</li>
         </ul>
       </div>
 
-      {/* Form */}
-      <div className="card">
-        <h2 className="font-semibold text-slate-800 mb-3">
-          {hasPending
-            ? t("staff.persona.resignation.alreadyPending")
-            : t("staff.persona.resignation.formTitle")}
-        </h2>
+      {/* Locked state — ยังไม่ได้รับการเปิดสิทธิ์ */}
+      {!isUnlocked && !hasPending && (
+        <div className="card border-2 border-slate-300 bg-slate-50 text-center py-8">
+          <div className="text-5xl mb-3 opacity-50">🔒</div>
+          <h3 className="font-semibold text-slate-700 mb-2">
+            {t("staff.persona.resignation.lockedTitle")}
+          </h3>
+          <p className="text-sm text-slate-500 max-w-md mx-auto">
+            {t("staff.persona.resignation.lockedBody")}
+          </p>
+        </div>
+      )}
 
-        {!hasPending && (
+      {/* Pending message */}
+      {hasPending && (
+        <div className="card border-2 border-amber-300 bg-amber-50 text-center py-6">
+          <div className="text-4xl mb-2">⏳</div>
+          <h3 className="font-semibold text-slate-800">
+            {t("staff.persona.resignation.alreadyPending")}
+          </h3>
+        </div>
+      )}
+
+      {/* Form — แสดงเมื่อ unlocked + ไม่มี pending */}
+      {isUnlocked && !hasPending && (
+        <div className="card">
+          <h2 className="font-semibold text-slate-800 mb-3">
+            {t("staff.persona.resignation.formTitle")}
+          </h2>
+          <div className="bg-emerald-50 border-l-4 border-emerald-400 px-3 py-2 mb-4 text-sm text-emerald-800">
+            {t("staff.persona.resignation.unlockedNote")}
+          </div>
           <form onSubmit={submit} className="space-y-3">
             <div>
               <label className="label">
@@ -201,8 +227,8 @@ export default function ResignationClient({
               {busy ? t("common.submitting") : t("staff.persona.resignation.submit")}
             </button>
           </form>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* History */}
       {requests.length > 0 && (

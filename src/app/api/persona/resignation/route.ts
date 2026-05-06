@@ -43,8 +43,16 @@ export async function POST(req: Request) {
     );
   }
 
-  // กันยื่นซ้ำ pending
+  // Phase 1C v6 — ต้องได้รับการเปิดสิทธิ์จาก admin ก่อน
   const db = getDb();
+  const userRow = db.prepare(
+    "SELECT resignation_unlocked_at FROM users WHERE id = ?"
+  ).get(user.id) as { resignation_unlocked_at: string | null } | undefined;
+  if (!userRow?.resignation_unlocked_at) {
+    return NextResponse.json({ error: "must_be_unlocked_by_admin" }, { status: 403 });
+  }
+
+  // กันยื่นซ้ำ pending
   const existing = db.prepare(
     "SELECT id FROM resignation_requests WHERE user_id = ? AND status = 'pending'"
   ).get(user.id);
@@ -63,12 +71,21 @@ export async function POST(req: Request) {
   }
 
   const nowIso = new Date().toISOString();
-  const result = db.prepare(`
-    INSERT INTO resignation_requests
-      (user_id, proposed_last_day, computed_min_last_day, reason, evidence_filename,
-       is_special_request, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
-  `).run(user.id, proposed, minLastDay, reason, evidenceFilename, isSpecial ? 1 : 0, nowIso);
+  // Transaction: insert + consume unlock (ป้องกันยื่นซ้ำหลังถูกอนุมัติ/ปฏิเสธ)
+  const tx = db.transaction(() => {
+    const r = db.prepare(`
+      INSERT INTO resignation_requests
+        (user_id, proposed_last_day, computed_min_last_day, reason, evidence_filename,
+         is_special_request, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+    `).run(user.id, proposed, minLastDay, reason, evidenceFilename, isSpecial ? 1 : 0, nowIso);
+    // consume unlock — ส่งได้ครั้งเดียวต่อการเปิดสิทธิ์
+    db.prepare(
+      "UPDATE users SET resignation_unlocked_at = NULL, resignation_unlocked_by = NULL WHERE id = ?"
+    ).run(user.id);
+    return r.lastInsertRowid;
+  });
+  const newId = tx();
 
-  return NextResponse.json({ ok: true, id: result.lastInsertRowid });
+  return NextResponse.json({ ok: true, id: newId });
 }

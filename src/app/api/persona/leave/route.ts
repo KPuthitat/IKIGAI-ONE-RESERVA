@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
   ALL_LEAVE_TYPES, getEligibleLeaveTypesForUser, saveLeaveAttachment,
-  analyzeLongLeave, detectWeekendExtension, type LeaveType
+  analyzeLongLeave, detectWeekendExtension, getPublicHolidaySet, type LeaveType
 } from "@/lib/leave";
 
 // POST /api/persona/leave — staff submit (multipart/form-data)
@@ -102,12 +102,22 @@ export async function POST(req: Request) {
     }
   }
 
-  // Phase 1C v5: เจตนาขยายวันหยุด (เสาร์-อาทิตย์ + weekly_off_day)
-  // ใช้กับการลาทุกประเภท ยกเว้น sick/pt_emergency/maternity/sterilization/ordination/military
-  // (ลาฉุกเฉินจริงๆ ไม่ควรถูกบล็อก เพราะอาจจำเป็น)
+  // Phase 1C v6: ตรวจ weekly_off_day + เสาร์-อาทิตย์ + วันหยุดนักขัตฤกษ์
   if (type === "personal" || type === "annual") {
-    const we = detectWeekendExtension(userRow.weekly_off_day, date_from, date_to);
-    if ((we.hasWeekendLeave || we.fallsOnUserOffDay) && !isSpecial) {
+    const we = detectWeekendExtension(
+      userRow.weekly_off_day,
+      date_from, date_to,
+      getPublicHolidaySet()
+    );
+    // HARD block — ลาตรงวันหยุดประจำสัปดาห์ ไม่จำเป็นต้องลา (special-track ก็ไม่ผ่าน)
+    if (we.fallsOnUserOffDay) {
+      return NextResponse.json(
+        { error: "leave_on_weekly_off_day_not_allowed", weekendInfo: we },
+        { status: 400 }
+      );
+    }
+    // Soft (special-track override) — เสาร์/อาทิตย์ + วันหยุดนักขัตฤกษ์
+    if ((we.hasWeekendLeave || we.fallsOnPublicHoliday) && !isSpecial) {
       return NextResponse.json(
         { error: "weekend_extension_use_special_track", weekendInfo: we },
         { status: 400 }

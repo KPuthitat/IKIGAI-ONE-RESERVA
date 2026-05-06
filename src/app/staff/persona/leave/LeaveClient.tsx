@@ -142,7 +142,7 @@ export default function LeaveClient({
   );
   const annualNeedsYos = type === "annual" && (yearsOfService == null || yearsOfService < 1);
 
-  // Phase 1C v5: weekend extension detection (เสาร์/อาทิตย์ + วันหยุดประจำสัปดาห์)
+  // Phase 1C v6: weekend / weekly_off_day / public holiday detection
   const weekendDates: string[] = useMemo(() => {
     if (!isLongLeaveType) return [];
     const out: string[] = [];
@@ -164,16 +164,29 @@ export default function LeaveClient({
     }
     return out;
   }, [isLongLeaveType, from, to, weeklyOffDay]);
+  const onPublicHoliday: string[] = useMemo(() => {
+    if (!isLongLeaveType) return [];
+    const out: string[] = [];
+    const start = new Date(`${from}T00:00:00Z`);
+    const end = new Date(`${to}T00:00:00Z`);
+    for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const ds = d.toISOString().slice(0, 10);
+      if (holidayMap.has(ds)) out.push(ds);
+    }
+    return out;
+  }, [isLongLeaveType, from, to, holidayMap]);
 
-  // Special-track required ในกรณีไหนบ้าง?
-  // wrap Boolean() เพื่อบังคับ type เป็น boolean (ไม่ใช่ boolean | null)
-  const specialTrackRequired: boolean = Boolean(isLongLeaveType && stretch && (
+  // HARD BLOCK — ลาตรงวันหยุดประจำสัปดาห์ของตัวเอง (ติ๊ก special-track ก็ไม่ผ่าน)
+  const hardBlockedByOffDay = isLongLeaveType && onUserOffDay.length > 0;
+
+  // Special-track required (override ได้)
+  const specialTrackRequired: boolean = Boolean(!hardBlockedByOffDay && isLongLeaveType && stretch && (
     stretch.totalConsecutive > 3 ||
     longLeaveCount >= 2 ||
     advanceDays < 7 ||
     annualNeedsYos ||
-    weekendDates.length > 0 ||      // เสาร์/อาทิตย์
-    onUserOffDay.length > 0          // ตรงกับ weekly_off_day
+    weekendDates.length > 0 ||           // เสาร์/อาทิตย์
+    onPublicHoliday.length > 0           // วันหยุดนักขัตฤกษ์
   ));
 
   function reset() {
@@ -196,6 +209,7 @@ export default function LeaveClient({
     if (from < todayBkkStr()) { setErr(t("staff.persona.leave.err.past_date_not_allowed")); return; }
     if (evidenceRequired && !file) { setErr(t("staff.persona.leave.err.evidenceRequired")); return; }
     if (fullDayBlockedByFraction) { setErr(t("staff.persona.leave.err.fractionalQuota")); return; }
+    if (hardBlockedByOffDay) { setErr(t("staff.persona.leave.err.leave_on_weekly_off_day_not_allowed")); return; }
     if (specialTrackRequired && !isSpecial) {
       setErr(t("staff.persona.leave.err.exceeds_rules_use_special_track"));
       return;
@@ -355,7 +369,7 @@ export default function LeaveClient({
             {/* Stretch preview (เฉพาะ personal/annual) — แสดงเสมอเพื่อแจ้งเตือน */}
             {isLongLeaveType && stretch && (
               <div className={`rounded-lg border p-3 text-sm space-y-1.5 ${
-                annualNeedsYos
+                hardBlockedByOffDay || annualNeedsYos
                   ? "border-rose-300 bg-rose-50"
                   : specialTrackRequired
                     ? "border-amber-300 bg-amber-50"
@@ -390,16 +404,21 @@ export default function LeaveClient({
                     {advanceDays >= 7 ? "✓" : "⚠"}{" "}
                     {t("staff.persona.leave.stretch.advanceCheck", { n: advanceDays })}
                   </li>
-                  {/* Phase 1C v5 #10 — เสาร์/อาทิตย์ */}
+                  {/* Phase 1C v6 — เสาร์/อาทิตย์ + วันหยุดนักขัตฤกษ์ (special track) */}
                   {weekendDates.length > 0 && (
                     <li className="text-amber-700">
                       ⚠ {t("staff.persona.leave.stretch.weekendWarning", { n: weekendDates.length })}
                     </li>
                   )}
-                  {/* ตรงกับวันหยุดประจำสัปดาห์ของ user */}
-                  {onUserOffDay.length > 0 && (
+                  {onPublicHoliday.length > 0 && (
                     <li className="text-amber-700">
-                      ⚠ {t("staff.persona.leave.stretch.weeklyOffDayWarning", { n: onUserOffDay.length })}
+                      ⚠ {t("staff.persona.leave.stretch.publicHolidayWarning", { n: onPublicHoliday.length })}
+                    </li>
+                  )}
+                  {/* HARD BLOCK — ตรงกับวันหยุดประจำสัปดาห์ของ user (ติ๊ก special ก็ไม่ผ่าน) */}
+                  {onUserOffDay.length > 0 && (
+                    <li className="text-rose-700 font-medium">
+                      ✗ {t("staff.persona.leave.stretch.weeklyOffDayBlocked", { n: onUserOffDay.length })}
                     </li>
                   )}
                   {annualNeedsYos && (
@@ -411,11 +430,13 @@ export default function LeaveClient({
                   )}
                 </ul>
                 <div className="pt-1.5 text-xs font-medium border-t border-slate-200/50 mt-2">
-                  {annualNeedsYos
-                    ? <span className="text-rose-700">{t("staff.persona.leave.stretch.statusBlocked")}</span>
-                    : specialTrackRequired
-                      ? <span className="text-amber-700">{t("staff.persona.leave.stretch.statusSpecialApproval")}</span>
-                      : <span className="text-emerald-700">{t("staff.persona.leave.stretch.statusSelfService")}</span>}
+                  {hardBlockedByOffDay
+                    ? <span className="text-rose-700">{t("staff.persona.leave.stretch.statusBlockedOffDay")}</span>
+                    : annualNeedsYos
+                      ? <span className="text-rose-700">{t("staff.persona.leave.stretch.statusBlocked")}</span>
+                      : specialTrackRequired
+                        ? <span className="text-amber-700">{t("staff.persona.leave.stretch.statusSpecialApproval")}</span>
+                        : <span className="text-emerald-700">{t("staff.persona.leave.stretch.statusSelfService")}</span>}
                 </div>
               </div>
             )}
@@ -491,7 +512,7 @@ export default function LeaveClient({
               </button>
               <button
                 className="btn-primary flex-1"
-                disabled={busy || fullDayBlockedByFraction || (specialTrackRequired && !isSpecial)}
+                disabled={busy || hardBlockedByOffDay || annualNeedsYos || fullDayBlockedByFraction || (specialTrackRequired && !isSpecial)}
               >
                 {busy ? t("common.submitting") : t("staff.persona.leave.submit")}
               </button>

@@ -12,6 +12,11 @@ export default function StaffResignationPage() {
   const user = requireUser();
   const db = getDb();
 
+  const userRow = db.prepare(
+    "SELECT resignation_unlocked_at FROM users WHERE id = ?"
+  ).get(user.id) as { resignation_unlocked_at: string | null } | undefined;
+  const isUnlocked = Boolean(userRow?.resignation_unlocked_at);
+
   const requests = db.prepare(`
     SELECT id, proposed_last_day, computed_min_last_day, reason, evidence_filename,
            is_special_request, status, decided_by, decided_at, decision_note, created_at
@@ -23,7 +28,6 @@ export default function StaffResignationPage() {
 
   const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const minLastDay = computeMinLastWorkingDay(todayBkk);
-
   const hasPending = requests.some((r) => r.status === "pending");
 
   return (
@@ -32,6 +36,7 @@ export default function StaffResignationPage() {
       todayBkk={todayBkk}
       minLastDay={minLastDay}
       hasPending={hasPending}
+      isUnlocked={isUnlocked}
     />
   );
 }

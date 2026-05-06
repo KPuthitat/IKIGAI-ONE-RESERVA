@@ -26,22 +26,53 @@ export type ResignationAdminRow = {
   decided_by_name: string | null;
 };
 
+export type StaffUnlockOption = {
+  id: number;
+  username: string;
+  display_name: string;
+  resignation_unlocked_at: string | null;
+  unlocked_by_name: string | null;
+};
+
 type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "all";
 const FILTERS: StatusFilter[] = ["pending", "approved", "rejected", "cancelled", "all"];
 
 export default function ResignationAdminClient({
   currentStatus,
   countMap,
-  requests
+  requests,
+  staffList
 }: {
   currentStatus: StatusFilter;
   countMap: Record<string, number>;
   requests: ResignationAdminRow[];
+  staffList: StaffUnlockOption[];
 }) {
   const router = useRouter();
   const { t, formatDate } = useLang();
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [unlockUserId, setUnlockUserId] = useState<number | "">(staffList[0]?.id ?? "");
+  const [unlockBusy, setUnlockBusy] = useState(false);
+
+  const unlockedUsers = staffList.filter((u) => u.resignation_unlocked_at);
+
+  async function toggleUnlock(userId: number, action: "unlock" | "lock") {
+    if (action === "lock" && !confirm(t("admin.persona.resignation.confirmLock"))) return;
+    setUnlockBusy(true);
+    try {
+      const res = await fetch(apiUrl("/api/admin/persona/resignation/unlock"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, action })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok) startTransition(() => router.refresh());
+      else alert(data.error ?? t("common.error"));
+    } finally {
+      setUnlockBusy(false);
+    }
+  }
 
   function decide(id: number, decision: "approved" | "rejected") {
     const promptMsg = decision === "approved"
@@ -66,6 +97,72 @@ export default function ResignationAdminClient({
 
   return (
     <>
+      {/* Unlock card — admin เปิดสิทธิ์ลาออกให้พนักงาน */}
+      <div className="card border-l-4 border-amber-400 bg-amber-50">
+        <h2 className="font-semibold text-slate-800 mb-2">
+          {t("admin.persona.resignation.unlockTitle")}
+        </h2>
+        <p className="text-sm text-slate-600 mb-3">
+          {t("admin.persona.resignation.unlockDescription")}
+        </p>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex-1 min-w-[200px]">
+            <label className="label">{t("admin.persona.leave.staff")}</label>
+            <select
+              className="input"
+              value={unlockUserId}
+              onChange={(e) => setUnlockUserId(Number(e.target.value))}
+            >
+              {staffList.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.display_name} (@{u.username})
+                  {u.resignation_unlocked_at ? ` — ${t("admin.persona.resignation.alreadyUnlocked")}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            disabled={!unlockUserId || unlockBusy}
+            onClick={() => unlockUserId && toggleUnlock(Number(unlockUserId), "unlock")}
+            className="btn-primary"
+          >
+            {t("admin.persona.resignation.unlockButton")}
+          </button>
+        </div>
+
+        {unlockedUsers.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-amber-300">
+            <p className="text-xs font-medium text-slate-600 mb-2">
+              {t("admin.persona.resignation.currentlyUnlocked")} ({unlockedUsers.length})
+            </p>
+            <ul className="space-y-1.5">
+              {unlockedUsers.map((u) => (
+                <li key={u.id} className="flex items-center justify-between text-sm bg-white rounded px-3 py-1.5 border border-amber-200">
+                  <span>
+                    <span className="font-medium">{u.display_name}</span>
+                    <span className="text-xs text-slate-400 ml-1">@{u.username}</span>
+                    {u.resignation_unlocked_at && (
+                      <span className="text-xs text-slate-500 ml-2">
+                        {formatDate(u.resignation_unlocked_at.slice(0, 10))}
+                      </span>
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={unlockBusy}
+                    onClick={() => toggleUnlock(u.id, "lock")}
+                    className="text-xs text-rose-600 hover:underline"
+                  >
+                    {t("admin.persona.resignation.lockButton")}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
       <div className="card flex flex-wrap items-center gap-2">
         {FILTERS.map((f) => {
           const active = currentStatus === f;
