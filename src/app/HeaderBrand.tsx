@@ -22,20 +22,20 @@ export default function HeaderBrand({ role }: { role: "admin" | "staff" }) {
   const moduleName = moduleEntry?.[1];
 
   return (
-    <div className="flex items-baseline gap-1 whitespace-nowrap">
-      <Link href={`/${role}`} className="brand-wordmark text-white text-lg">
+    <div className="flex items-baseline gap-1 whitespace-nowrap text-base">
+      <Link href={`/${role}`} className="brand-wordmark text-white">
         IKIGAI OS
       </Link>
       {moduleName && (
         <>
-          <span className="text-white/40 text-xs px-0.5">•</span>
-          <span className="text-white/85 text-base font-light tracking-[0.5px]">
+          <span className="text-white/40 px-0.5">•</span>
+          <span className="text-white/85 font-light tracking-[0.5px]">
             {moduleName}
           </span>
         </>
       )}
-      <span className="text-white/40 text-xs ml-2">/</span>
-      <span className="text-white/60 text-xs font-light tracking-[1.5px] uppercase">
+      <span className="text-white/40 ml-2">/</span>
+      <span className="text-white/60 font-light tracking-[1.5px] uppercase">
         {role}
       </span>
     </div>
