@@ -1,23 +1,15 @@
-// Helpers สำหรับระบบลา (PERSONA Phase 1C v2)
+// Server-side helpers สำหรับระบบลา (PERSONA Phase 1C)
+// ไฟล์นี้ใช้ node:fs/node:path → import ได้เฉพาะ server (route.ts / page.tsx)
+// ห้าม import จาก "use client" component → ใช้ ./leave-types แทน
 import { getDb } from "./db";
 import fs from "node:fs";
 import path from "node:path";
+import {
+  ALL_LEAVE_TYPES, type LeaveType, type LeaveTypeRow, type PublicHoliday, type QuotaInfo
+} from "./leave-types";
 
-export const ALL_LEAVE_TYPES = [
-  "sick", "personal", "annual", "pt_emergency",
-  "maternity", "sterilization", "ordination", "pilgrimage", "military"
-] as const;
-
-export type LeaveType = typeof ALL_LEAVE_TYPES[number];
-
-export type LeaveTypeRow = {
-  code: LeaveType;
-  default_quota_days: number | null;
-  gender_eligibility: "all" | "male" | "female";
-  employment_eligibility: "all" | "pt" | "ft";
-  requires_pre_approval: number;
-  sort_order: number;
-};
+export { ALL_LEAVE_TYPES };
+export type { LeaveType, LeaveTypeRow, PublicHoliday, QuotaInfo };
 
 export function getAllLeaveTypes(): LeaveTypeRow[] {
   return getDb().prepare(
@@ -72,13 +64,6 @@ export function getLeaveDaysUsedThisYear(userId: number, type: LeaveType): numbe
   return Number(row.total) || 0;
 }
 
-export type QuotaInfo = {
-  type: LeaveType;
-  quota: number | null;     // null = unlimited
-  used: number;
-  remaining: number | null; // null = unlimited
-};
-
 export function getQuotaInfo(userId: number, type: LeaveTypeRow): QuotaInfo {
   const used = getLeaveDaysUsedThisYear(userId, type.code);
   const quota = type.default_quota_days;
@@ -132,8 +117,6 @@ export function getAttachmentPath(filename: string): string | null {
 }
 
 // ── Phase 1C v3: หยุดยาว + วันหยุดราชการ ─────────────────────────────
-
-export type PublicHoliday = { date: string; name_th: string; name_en: string };
 
 export function getAllPublicHolidays(): PublicHoliday[] {
   return getDb().prepare("SELECT date, name_th, name_en FROM public_holidays ORDER BY date").all() as PublicHoliday[];

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
-import { ALL_LEAVE_TYPES, type LeaveType } from "@/lib/leave";
+import { ALL_LEAVE_TYPES, type LeaveType } from "@/lib/leave-types";
 import type { LeaveStatus } from "@/app/staff/persona/leave/LeaveClient";
 
 export type StaffOption = {

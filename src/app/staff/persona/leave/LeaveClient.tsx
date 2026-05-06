@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
-import type { LeaveType, QuotaInfo, PublicHoliday } from "@/lib/leave";
+import type { LeaveType, QuotaInfo, PublicHoliday } from "@/lib/leave-types";
 
 export type { LeaveType };
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
