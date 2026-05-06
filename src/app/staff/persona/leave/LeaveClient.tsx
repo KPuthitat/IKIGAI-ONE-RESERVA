@@ -1,13 +1,39 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
-import type { LeaveType, QuotaInfo } from "@/lib/leave";
+import type { LeaveType, QuotaInfo, PublicHoliday } from "@/lib/leave";
 
 export type { LeaveType };
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
+
+// Client-side stretch calculation (mirror ของ computeStretch ใน lib/leave.ts)
+function addDays(dateStr: string, n: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function clientComputeStretch(from: string, to: string, holidayMap: Map<string, PublicHoliday>) {
+  const fMs = new Date(`${from}T00:00:00Z`).getTime();
+  const tMs = new Date(`${to}T00:00:00Z`).getTime();
+  const leaveDays = Math.max(1, Math.floor((tMs - fMs) / 86400000) + 1);
+
+  const prepended: PublicHoliday[] = [];
+  let cur = addDays(from, -1);
+  while (holidayMap.has(cur)) {
+    prepended.unshift(holidayMap.get(cur)!);
+    cur = addDays(cur, -1);
+  }
+  const appended: PublicHoliday[] = [];
+  cur = addDays(to, 1);
+  while (holidayMap.has(cur)) {
+    appended.push(holidayMap.get(cur)!);
+    cur = addDays(cur, 1);
+  }
+  return { leaveDays, prepended, appended, totalConsecutive: leaveDays + prepended.length + appended.length };
+}
 
 export type LeaveRow = {
   id: number;
@@ -39,18 +65,29 @@ export default function LeaveClient({
   eligibleTypes,
   quotas,
   requests,
+  holidays,
+  yearsOfService,
+  longLeaveCount,
   userGenderSet,
   userEmploymentSet
 }: {
   eligibleTypes: LeaveType[];
   quotas: QuotaInfo[];
   requests: LeaveRow[];
+  holidays: PublicHoliday[];
+  yearsOfService: number | null;
+  longLeaveCount: number;
   userGenderSet: boolean;
   userEmploymentSet: boolean;
 }) {
   const router = useRouter();
-  const { t, formatDate } = useLang();
+  const { t, formatDate, lang } = useLang();
   const [pending, startTransition] = useTransition();
+
+  const holidayMap = useMemo(
+    () => new Map(holidays.map((h) => [h.date, h])),
+    [holidays]
+  );
 
   const [formOpen, setFormOpen] = useState(false);
   const tomorrow = new Date(Date.now() + 86400_000 + 7 * 60 * 60 * 1000)
@@ -69,6 +106,22 @@ export default function LeaveClient({
   // คำนวณ days: ถ้า partial-day → days = hours/8, else วันเต็มจำนวน
   const fullDays = daysBetween(from, to);
   const computedDays = usePartial && from === to ? +(hours / 8).toFixed(2) : fullDays;
+
+  // Real-time stretch analysis (เฉพาะลากิจ/ลาพักร้อน)
+  const isLongLeaveType = type === "personal" || type === "annual";
+  const stretch = useMemo(
+    () => isLongLeaveType ? clientComputeStretch(from, to, holidayMap) : null,
+    [isLongLeaveType, from, to, holidayMap]
+  );
+  const todayBkk = todayBkkStr();
+  const advanceDays = Math.floor(
+    (new Date(`${from}T00:00:00Z`).getTime() - new Date(`${todayBkk}T00:00:00Z`).getTime()) / 86400000
+  );
+  const annualNeedsYos = type === "annual" && (yearsOfService == null || yearsOfService < 1);
+  const exceedsMax = stretch ? stretch.totalConsecutive > 5 : false;
+  const withinAll = stretch
+    ? stretch.totalConsecutive <= 3 && longLeaveCount < 2 && advanceDays >= 7
+    : false;
 
   function reset() {
     setType(eligibleTypes[0] ?? "sick");
@@ -241,6 +294,61 @@ export default function LeaveClient({
                 : t("staff.persona.leave.totalDays", { n: computedDays })}
             </div>
 
+            {/* Long-leave stretch preview (personal/annual เท่านั้น) */}
+            {isLongLeaveType && stretch && (stretch.prepended.length > 0 || stretch.appended.length > 0 || stretch.totalConsecutive > 1) && (
+              <div className={`rounded-lg border p-3 text-sm space-y-1.5 ${
+                exceedsMax || annualNeedsYos
+                  ? "border-rose-300 bg-rose-50"
+                  : withinAll
+                    ? "border-emerald-300 bg-emerald-50"
+                    : "border-amber-300 bg-amber-50"
+              }`}>
+                <div className="font-medium text-slate-800">
+                  {t("staff.persona.leave.stretch.title", { n: stretch.totalConsecutive })}
+                </div>
+                {stretch.prepended.length + stretch.appended.length > 0 && (
+                  <div className="text-xs text-slate-600">
+                    {t("staff.persona.leave.stretch.includesHolidays")}:
+                    <ul className="list-disc list-inside mt-0.5">
+                      {[...stretch.prepended, ...stretch.appended].map((h) => (
+                        <li key={h.date}>
+                          {formatDate(h.date)} — {lang === "en" ? h.name_en : h.name_th}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <ul className="text-xs space-y-0.5 pt-1">
+                  <li className={exceedsMax ? "text-rose-700 font-medium" : stretch.totalConsecutive <= 3 ? "text-emerald-700" : "text-amber-700"}>
+                    {stretch.totalConsecutive <= 3 ? "✓" : exceedsMax ? "✗" : "⚠"}{" "}
+                    {t("staff.persona.leave.stretch.consecutiveCheck", { n: stretch.totalConsecutive })}
+                  </li>
+                  <li className={longLeaveCount < 2 ? "text-emerald-700" : "text-amber-700"}>
+                    {longLeaveCount < 2 ? "✓" : "⚠"}{" "}
+                    {t("staff.persona.leave.stretch.usageCheck", { used: longLeaveCount })}
+                  </li>
+                  <li className={advanceDays >= 7 ? "text-emerald-700" : "text-amber-700"}>
+                    {advanceDays >= 7 ? "✓" : "⚠"}{" "}
+                    {t("staff.persona.leave.stretch.advanceCheck", { n: advanceDays })}
+                  </li>
+                  {annualNeedsYos && (
+                    <li className="text-rose-700 font-medium">
+                      ✗ {t("staff.persona.leave.stretch.annualYosFail", {
+                        yos: yearsOfService != null ? yearsOfService.toFixed(1) : "—"
+                      })}
+                    </li>
+                  )}
+                </ul>
+                <div className="pt-1.5 text-xs font-medium">
+                  {exceedsMax || annualNeedsYos
+                    ? <span className="text-rose-700">{t("staff.persona.leave.stretch.statusBlocked")}</span>
+                    : withinAll
+                      ? <span className="text-emerald-700">{t("staff.persona.leave.stretch.statusSelfService")}</span>
+                      : <span className="text-amber-700">{t("staff.persona.leave.stretch.statusSpecialApproval")}</span>}
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="label">{t("staff.persona.leave.reason")}</label>
               <textarea
@@ -275,7 +383,7 @@ export default function LeaveClient({
                 className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
                 {t("common.cancel")}
               </button>
-              <button className="btn-primary flex-1" disabled={busy}>
+              <button className="btn-primary flex-1" disabled={busy || (isLongLeaveType && (exceedsMax || annualNeedsYos))}>
                 {busy ? t("common.submitting") : t("staff.persona.leave.submit")}
               </button>
             </div>

@@ -360,6 +360,17 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.leave.err.date_range_invalid": "วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่ม",
     "staff.persona.leave.err.invalid_days": "จำนวนวันไม่ถูกต้อง",
     "staff.persona.leave.err.invalid_hours": "จำนวนชั่วโมงไม่ถูกต้อง",
+    "staff.persona.leave.err.exceeds_max_consecutive": "หยุดต่อเนื่องเกิน 5 วัน — ติดต่อหัวหน้างาน",
+    "staff.persona.leave.err.annual_requires_one_year": "ลาพักร้อนต้องมีอายุงานครบ 1 ปี",
+    "staff.persona.leave.stretch.title": "หยุดต่อเนื่อง {n} วัน",
+    "staff.persona.leave.stretch.includesHolidays": "ติดวันหยุดราชการ",
+    "staff.persona.leave.stretch.consecutiveCheck": "หยุดต่อเนื่อง {n} วัน (เกณฑ์ ≤ 3)",
+    "staff.persona.leave.stretch.usageCheck": "ใช้สิทธิ์หยุดยาวไปแล้ว {used} จาก 2 ครั้ง/ปี",
+    "staff.persona.leave.stretch.advanceCheck": "ขอล่วงหน้า {n} วัน (เกณฑ์ ≥ 7)",
+    "staff.persona.leave.stretch.annualYosFail": "ลาพักร้อนต้องอายุงานครบ 1 ปี (ปัจจุบัน {yos} ปี)",
+    "staff.persona.leave.stretch.statusSelfService": "✓ อยู่ในเกณฑ์ทั่วไป — ส่งคำขอได้",
+    "staff.persona.leave.stretch.statusSpecialApproval": "⚠ เกินเกณฑ์ทั่วไป — ต้องอนุมัติพิเศษ (ยังส่งได้)",
+    "staff.persona.leave.stretch.statusBlocked": "✗ ไม่สามารถส่งคำขอได้",
 
     // Leave types (8 ประเภทตาม กม. แรงงานไทย)
     "leave.type.sick": "ลาป่วย",
@@ -404,6 +415,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.leave.evidenceOptional": "หลักฐาน (ถ้ามี)",
     "admin.persona.leave.recordApprove": "บันทึก + อนุมัติ",
     "admin.persona.leave.err.selectUser": "กรุณาเลือกพนักงาน",
+    "admin.persona.leave.stretchBadge": "หยุดยาว {n} วัน",
+    "admin.persona.leave.shortNotice": "ล่วงหน้า {n} วัน (< 7)",
 
     // Common
     "common.submitting": "กำลังส่ง...",
@@ -841,6 +854,17 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.leave.err.date_range_invalid": "End date must not be before start date",
     "staff.persona.leave.err.invalid_days": "Invalid days",
     "staff.persona.leave.err.invalid_hours": "Invalid hours",
+    "staff.persona.leave.err.exceeds_max_consecutive": "Consecutive break exceeds 5 days — contact supervisor",
+    "staff.persona.leave.err.annual_requires_one_year": "Annual leave requires ≥ 1 year of service",
+    "staff.persona.leave.stretch.title": "{n} consecutive days off",
+    "staff.persona.leave.stretch.includesHolidays": "Adjacent public holidays",
+    "staff.persona.leave.stretch.consecutiveCheck": "{n} days consecutive (limit ≤ 3)",
+    "staff.persona.leave.stretch.usageCheck": "Long-leave used: {used} of 2/year",
+    "staff.persona.leave.stretch.advanceCheck": "Advance notice: {n} days (limit ≥ 7)",
+    "staff.persona.leave.stretch.annualYosFail": "Annual leave requires ≥ 1 year service (currently {yos} yr)",
+    "staff.persona.leave.stretch.statusSelfService": "✓ Within standard rules — ok to submit",
+    "staff.persona.leave.stretch.statusSpecialApproval": "⚠ Beyond standard rules — needs special approval (still submittable)",
+    "staff.persona.leave.stretch.statusBlocked": "✗ Cannot submit",
 
     // Leave types
     "leave.type.sick": "Sick leave",
@@ -885,6 +909,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.leave.evidenceOptional": "Document (optional)",
     "admin.persona.leave.recordApprove": "Record + approve",
     "admin.persona.leave.err.selectUser": "Please select a staff member",
+    "admin.persona.leave.stretchBadge": "Long break {n}d",
+    "admin.persona.leave.shortNotice": "Short notice ({n}d)",
 
     // Common
     "common.submitting": "Submitting...",

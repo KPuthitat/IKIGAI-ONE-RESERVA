@@ -35,6 +35,10 @@ export type LeaveAdminRow = {
   display_name: string;
   decided_by_name: string | null;
   created_by_name: string | null;
+  // stretch info (เฉพาะ personal/annual)
+  stretchTotal: number | null;
+  stretchHolidayCount: number | null;
+  advanceDays: number | null;
 };
 
 type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "all";
@@ -150,6 +154,22 @@ export default function LeaveAdminClient({
                           ? t("admin.persona.leave.hoursShort", { h: r.hours })
                           : t("admin.persona.leave.daysShort", { n: r.days })}
                       </span>
+                      {r.stretchTotal != null && r.stretchHolidayCount != null && r.stretchHolidayCount > 0 && (
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                          r.stretchTotal > 5
+                            ? "bg-rose-100 text-rose-700"
+                            : r.stretchTotal > 3
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-emerald-50 text-emerald-700"
+                        }`}>
+                          {t("admin.persona.leave.stretchBadge", { n: r.stretchTotal })}
+                        </span>
+                      )}
+                      {r.advanceDays != null && r.advanceDays < 7 && r.advanceDays >= 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded font-medium bg-amber-100 text-amber-700">
+                          {t("admin.persona.leave.shortNotice", { n: r.advanceDays })}
+                        </span>
+                      )}
                     </div>
                     <div className="text-sm text-slate-600 mt-1">
                       {r.date_from === r.date_to

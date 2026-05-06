@@ -170,6 +170,44 @@ function runMigrations(db: Database.Database): void {
       PRIMARY KEY (user_id, type)
     );
   `);
+
+  // Phase 1C v3: hire_date + public_holidays
+  if (!unames.has("hire_date")) db.exec("ALTER TABLE users ADD COLUMN hire_date TEXT");
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS public_holidays (
+      date TEXT PRIMARY KEY,
+      name_th TEXT NOT NULL,
+      name_en TEXT NOT NULL
+    );
+  `);
+  // Seed 2026 Thai public holidays (วันหยุดตามประเพณี — แอดมินสามารถปรับวันลูนาร์ได้)
+  const seedHoliday = db.prepare(`
+    INSERT INTO public_holidays (date, name_th, name_en) VALUES (?, ?, ?)
+    ON CONFLICT(date) DO UPDATE SET name_th = excluded.name_th, name_en = excluded.name_en
+  `);
+  const holidays2026: Array<[string, string, string]> = [
+    ["2026-01-01", "วันขึ้นปีใหม่", "New Year's Day"],
+    ["2026-03-03", "วันมาฆบูชา", "Makha Bucha Day"],
+    ["2026-04-06", "วันจักรี", "Chakri Memorial Day"],
+    ["2026-04-13", "วันสงกรานต์", "Songkran Day"],
+    ["2026-04-14", "วันสงกรานต์", "Songkran Day"],
+    ["2026-04-15", "วันสงกรานต์", "Songkran Day"],
+    ["2026-05-01", "วันแรงงานแห่งชาติ", "National Labour Day"],
+    ["2026-05-04", "วันฉัตรมงคล", "Coronation Day"],
+    ["2026-05-31", "วันวิสาขบูชา", "Visakha Bucha Day"],
+    ["2026-06-03", "วันเฉลิมพระชนมพรรษาสมเด็จพระบรมราชินี", "Queen's Birthday"],
+    ["2026-07-28", "วันเฉลิมพระชนมพรรษา ร.10", "King's Birthday"],
+    ["2026-07-30", "วันอาสาฬหบูชา", "Asalha Bucha Day"],
+    ["2026-07-31", "วันเข้าพรรษา", "Buddhist Lent Day"],
+    ["2026-08-12", "วันเฉลิมพระชนมพรรษาสมเด็จพระบรมราชชนนีพันปีหลวง / วันแม่", "Mother's Day"],
+    ["2026-10-13", "วันคล้ายวันสวรรคต ร.9", "King Bhumibol Memorial Day"],
+    ["2026-10-23", "วันปิยมหาราช", "Chulalongkorn Day"],
+    ["2026-12-05", "วันคล้ายวันพระบรมราชสมภพ ร.9 / วันชาติ", "King Bhumibol's Birthday / National Day"],
+    ["2026-12-10", "วันรัฐธรรมนูญ", "Constitution Day"],
+    ["2026-12-31", "วันสิ้นปี", "New Year's Eve"]
+  ];
+  for (const h of holidays2026) seedHoliday.run(...h);
 }
 
 export type Branch = {

@@ -2,6 +2,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { computeStretch } from "@/lib/leave";
 import LeaveAdminClient, { type LeaveAdminRow, type StaffOption } from "./LeaveAdminClient";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export default function AdminLeavePage({
     params.push(status);
   }
 
-  const requests = db.prepare(`
+  const rawRequests = db.prepare(`
     SELECT r.id, r.user_id, r.type, r.date_from, r.date_to, r.days, r.hours, r.reason,
            r.evidence_filename, r.status, r.decided_by, r.decided_at, r.decision_note,
            r.created_by, r.created_at,
@@ -43,7 +44,27 @@ export default function AdminLeavePage({
     ${whereClause}
     ORDER BY r.created_at DESC
     LIMIT 200
-  `).all(...params) as LeaveAdminRow[];
+  `).all(...params) as Omit<LeaveAdminRow, "stretchTotal" | "stretchHolidayCount" | "advanceDays">[];
+
+  // เพิ่ม stretch info เฉพาะ personal/annual
+  const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const todayMs = new Date(`${todayBkk}T00:00:00Z`).getTime();
+  const requests: LeaveAdminRow[] = rawRequests.map((r) => {
+    if (r.type === "personal" || r.type === "annual") {
+      const s = computeStretch(r.date_from, r.date_to);
+      const fromMs = new Date(`${r.date_from}T00:00:00Z`).getTime();
+      const advanceDaysAtCreation = Math.floor(
+        (fromMs - new Date(`${r.created_at.slice(0, 10)}T00:00:00Z`).getTime()) / 86400000
+      );
+      return {
+        ...r,
+        stretchTotal: s.totalConsecutive,
+        stretchHolidayCount: s.prepended.length + s.appended.length,
+        advanceDays: advanceDaysAtCreation
+      };
+    }
+    return { ...r, stretchTotal: null, stretchHolidayCount: null, advanceDays: null };
+  });
 
   const counts = db.prepare(`
     SELECT status, COUNT(*) AS n FROM leave_requests GROUP BY status

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { ALL_LEAVE_TYPES, getEligibleLeaveTypesForUser, saveLeaveAttachment, type LeaveType } from "@/lib/leave";
+import { ALL_LEAVE_TYPES, getEligibleLeaveTypesForUser, saveLeaveAttachment, analyzeLongLeave, type LeaveType } from "@/lib/leave";
 
 // POST /api/persona/leave — staff submit (multipart/form-data with mandatory file)
 export async function POST(req: Request) {
@@ -51,11 +51,28 @@ export async function POST(req: Request) {
 
   // Eligibility check (gender/employment/pre-approval)
   const userRow = getDb().prepare(
-    "SELECT id, gender, employment_type FROM users WHERE id = ?"
-  ).get(user.id) as { id: number; gender: string | null; employment_type: string | null };
+    "SELECT id, gender, employment_type, hire_date FROM users WHERE id = ?"
+  ).get(user.id) as { id: number; gender: string | null; employment_type: string | null; hire_date: string | null };
   const eligible = getEligibleLeaveTypesForUser(userRow);
   if (!eligible.some((t) => t.code === type)) {
     return NextResponse.json({ error: "type_not_eligible" }, { status: 403 });
+  }
+
+  // Long-leave / consecutive-stretch validation (เฉพาะ personal & annual)
+  if (type === "personal" || type === "annual") {
+    const analysis = analyzeLongLeave({
+      userId: user.id,
+      type: type as LeaveType,
+      dateFrom: date_from,
+      dateTo: date_to,
+      hireDate: userRow.hire_date
+    });
+    if (analysis.status === "blocked") {
+      return NextResponse.json(
+        { error: analysis.blockReason ?? "blocked", analysis },
+        { status: 400 }
+      );
+    }
   }
 
   // Save attachment
