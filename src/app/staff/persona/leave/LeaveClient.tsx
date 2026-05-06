@@ -638,12 +638,12 @@ export default function LeaveClient({
                       )}
                       {(r.resubmitted_as_ref_no || r.resubmitted_as_id) && (
                         <span className="text-xs px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">
-                          {t("staff.persona.leave.resubmittedAs", { id: r.resubmitted_as_ref_no ?? r.resubmitted_as_id })}
+                          {t("staff.persona.leave.resubmittedAs", { id: r.resubmitted_as_ref_no ?? r.resubmitted_as_id ?? "" })}
                         </span>
                       )}
                       {(r.replaces_ref_no || r.replaces_id) && (
                         <span className="text-xs px-2 py-0.5 rounded font-medium bg-sky-100 text-sky-700">
-                          {t("staff.persona.leave.editedFrom", { id: r.replaces_ref_no ?? r.replaces_id })}
+                          {t("staff.persona.leave.editedFrom", { id: r.replaces_ref_no ?? r.replaces_id ?? "" })}
                         </span>
                       )}
                     </div>
