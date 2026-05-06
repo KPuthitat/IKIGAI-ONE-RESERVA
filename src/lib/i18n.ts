@@ -102,7 +102,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "customer.reserva.closedOn": "ปิดทุก {days}",
     "customer.reserva.openDaily": "เปิดทุกวัน",
     "customer.reserva.todayClosed": "วันนี้ปิดร้าน",
-    "customer.reserva.todayLunchBreak": "วันนี้พักกลางวัน {start}-{end}",
+    "customer.reserva.todayLunchBreak": "วันนี้พักกลางวัน {start}-{end} น.",
     "customer.reserva.todaySpecialOpenAllDay": "วันนี้เปิดเต็มวัน (วันพิเศษ ไม่พักกลางวัน)",
 
     // Booking form
