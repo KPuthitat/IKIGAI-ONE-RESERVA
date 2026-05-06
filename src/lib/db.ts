@@ -92,8 +92,7 @@ function runMigrations(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS leave_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      type TEXT NOT NULL CHECK (type IN
-        ('sick','personal','annual','maternity','ordination','sterilization','pilgrimage','military')),
+      type TEXT NOT NULL,
       date_from TEXT NOT NULL,
       date_to TEXT NOT NULL,
       days REAL NOT NULL,
@@ -108,6 +107,68 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_leave_user_status ON leave_requests(user_id, status);
     CREATE INDEX IF NOT EXISTS idx_leave_status_created ON leave_requests(status, created_at);
     CREATE INDEX IF NOT EXISTS idx_leave_dates ON leave_requests(date_from, date_to);
+  `);
+
+  // Phase 1C v2 migrations — extend users + leave_requests
+  const ucols2 = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  const unames = new Set(ucols2.map((c) => c.name));
+  if (!unames.has("gender")) db.exec("ALTER TABLE users ADD COLUMN gender TEXT"); // 'male'|'female'|null
+  if (!unames.has("employment_type")) db.exec("ALTER TABLE users ADD COLUMN employment_type TEXT"); // 'pt'|'ft'|null
+
+  const lrcols = db.prepare("PRAGMA table_info(leave_requests)").all() as Array<{ name: string }>;
+  const lnames = new Set(lrcols.map((c) => c.name));
+  if (!lnames.has("hours")) db.exec("ALTER TABLE leave_requests ADD COLUMN hours REAL"); // null = full day(s)
+  if (!lnames.has("evidence_filename")) db.exec("ALTER TABLE leave_requests ADD COLUMN evidence_filename TEXT");
+  if (!lnames.has("created_by")) db.exec("ALTER TABLE leave_requests ADD COLUMN created_by INTEGER REFERENCES users(id)");
+
+  // leave_types catalog (กฎเกณฑ์การลา)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS leave_types (
+      code TEXT PRIMARY KEY,
+      default_quota_days REAL,
+      gender_eligibility TEXT NOT NULL DEFAULT 'all' CHECK (gender_eligibility IN ('all','male','female')),
+      employment_eligibility TEXT NOT NULL DEFAULT 'all' CHECK (employment_eligibility IN ('all','pt','ft')),
+      requires_pre_approval INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  // seed/update — idempotent
+  const seedLeaveType = db.prepare(`
+    INSERT INTO leave_types (code, default_quota_days, gender_eligibility, employment_eligibility, requires_pre_approval, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(code) DO UPDATE SET
+      default_quota_days = excluded.default_quota_days,
+      gender_eligibility = excluded.gender_eligibility,
+      employment_eligibility = excluded.employment_eligibility,
+      requires_pre_approval = excluded.requires_pre_approval,
+      sort_order = excluded.sort_order
+  `);
+  // [code, quota_days, gender, employment, pre_approval, sort]
+  const types: Array<[string, number | null, string, string, number, number]> = [
+    ["sick",          30,   "all",    "all", 0, 1],
+    ["personal",      3,    "all",    "all", 0, 2],
+    ["annual",        6,    "all",    "all", 0, 3],
+    ["pt_emergency",  null, "all",    "pt",  0, 4],
+    ["maternity",     98,   "female", "all", 1, 5],
+    ["sterilization", null, "all",    "all", 1, 6],
+    ["ordination",    90,   "male",   "all", 0, 7],
+    ["pilgrimage",    null, "all",    "all", 0, 8],
+    ["military",      60,   "male",   "all", 0, 9]
+  ];
+  for (const t of types) seedLeaveType.run(...t);
+
+  // leave_unlocks — admin pre-approves ก่อนพนักงานขอลาประเภทพิเศษ (maternity, sterilization)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS leave_unlocks (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      unlocked_by INTEGER NOT NULL REFERENCES users(id),
+      unlocked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      evidence_filename TEXT,
+      expected_date TEXT,
+      notes TEXT,
+      PRIMARY KEY (user_id, type)
+    );
   `);
 }
 

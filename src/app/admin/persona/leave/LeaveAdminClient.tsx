@@ -5,7 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
-import type { LeaveType, LeaveStatus } from "@/app/staff/persona/leave/LeaveClient";
+import { ALL_LEAVE_TYPES, type LeaveType } from "@/lib/leave";
+import type { LeaveStatus } from "@/app/staff/persona/leave/LeaveClient";
+
+export type StaffOption = {
+  id: number;
+  username: string;
+  display_name: string;
+  role: string;
+};
 
 export type LeaveAdminRow = {
   id: number;
@@ -14,43 +22,47 @@ export type LeaveAdminRow = {
   date_from: string;
   date_to: string;
   days: number;
+  hours: number | null;
   reason: string | null;
+  evidence_filename: string | null;
   status: LeaveStatus;
   decided_by: number | null;
   decided_at: string | null;
   decision_note: string | null;
+  created_by: number | null;
   created_at: string;
   username: string;
   display_name: string;
   decided_by_name: string | null;
+  created_by_name: string | null;
 };
 
 type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "all";
-
 const FILTERS: StatusFilter[] = ["pending", "approved", "rejected", "cancelled", "all"];
 
 export default function LeaveAdminClient({
   currentStatus,
   countMap,
-  requests
+  requests,
+  staffList
 }: {
   currentStatus: StatusFilter;
   countMap: Record<string, number>;
   requests: LeaveAdminRow[];
+  staffList: StaffOption[];
 }) {
   const router = useRouter();
   const { t, formatDate } = useLang();
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   function decide(id: number, decision: "approved" | "rejected") {
     const promptMsg = decision === "approved"
       ? t("admin.persona.leave.notePromptApprove")
       : t("admin.persona.leave.notePromptReject");
     const note = prompt(promptMsg);
-    // user pressed cancel
     if (note === null) return;
-
     setBusyId(id);
     fetch(apiUrl(`/api/admin/persona/leave/${id}/decide`), {
       method: "POST",
@@ -59,11 +71,8 @@ export default function LeaveAdminClient({
     })
       .then((r) => r.json())
       .then((j) => {
-        if (j?.ok) {
-          startTransition(() => router.refresh());
-        } else {
-          alert(j?.error ?? t("common.error"));
-        }
+        if (j?.ok) startTransition(() => router.refresh());
+        else alert(j?.error ?? t("common.error"));
       })
       .catch(() => alert(t("common.error")))
       .finally(() => setBusyId(null));
@@ -71,8 +80,8 @@ export default function LeaveAdminClient({
 
   return (
     <>
-      {/* Filter pills */}
-      <div className="card flex flex-wrap gap-2">
+      {/* Filter pills + Create button */}
+      <div className="card flex flex-wrap items-center gap-2">
         {FILTERS.map((f) => {
           const active = currentStatus === f;
           const n = f === "all"
@@ -95,7 +104,22 @@ export default function LeaveAdminClient({
             </Link>
           );
         })}
+        <button
+          type="button"
+          onClick={() => setCreateOpen((o) => !o)}
+          className="ml-auto px-3 py-1.5 rounded-md text-sm font-medium bg-brand text-white hover:opacity-90"
+        >
+          {createOpen ? t("common.cancel") : `+ ${t("admin.persona.leave.createForStaff")}`}
+        </button>
       </div>
+
+      {/* Create-on-behalf form (collapsible) */}
+      {createOpen && (
+        <CreateForm staffList={staffList} onDone={() => {
+          setCreateOpen(false);
+          startTransition(() => router.refresh());
+        }} />
+      )}
 
       {/* Requests list */}
       <div className="card">
@@ -109,10 +133,7 @@ export default function LeaveAdminClient({
         ) : (
           <ul className="space-y-3">
             {requests.map((r) => (
-              <li
-                key={r.id}
-                className="border border-slate-200 rounded-lg p-3 hover:bg-slate-50 transition"
-              >
+              <li key={r.id} className="border border-slate-200 rounded-lg p-3 hover:bg-slate-50 transition">
                 <div className="flex flex-wrap justify-between items-start gap-2 mb-1">
                   <div className="flex-1 min-w-[200px]">
                     <div className="font-medium text-slate-800">
@@ -125,7 +146,9 @@ export default function LeaveAdminClient({
                       </span>
                       <StatusBadge status={r.status} />
                       <span className="text-xs text-slate-400">
-                        {t("admin.persona.leave.daysShort", { n: r.days })}
+                        {r.hours
+                          ? t("admin.persona.leave.hoursShort", { h: r.hours })
+                          : t("admin.persona.leave.daysShort", { n: r.days })}
                       </span>
                     </div>
                     <div className="text-sm text-slate-600 mt-1">
@@ -135,6 +158,20 @@ export default function LeaveAdminClient({
                     </div>
                     {r.reason && (
                       <div className="text-xs text-slate-500 mt-1.5 italic">"{r.reason}"</div>
+                    )}
+                    {r.evidence_filename && (
+                      <a
+                        href={apiUrl(`/api/persona/leave/${r.id}/attachment`)}
+                        target="_blank" rel="noopener"
+                        className="inline-block text-xs text-brand hover:underline mt-1.5"
+                      >
+                        {t("admin.persona.leave.viewEvidence")}
+                      </a>
+                    )}
+                    {r.created_by && r.created_by !== r.user_id && r.created_by_name && (
+                      <div className="text-xs text-slate-500 mt-1">
+                        {t("admin.persona.leave.recordedBy", { name: r.created_by_name })}
+                      </div>
                     )}
                     {r.decision_note && r.decided_by_name && (
                       <div className="text-xs text-slate-600 mt-1.5 bg-slate-100 px-2 py-1 rounded">
@@ -169,6 +206,153 @@ export default function LeaveAdminClient({
         )}
       </div>
     </>
+  );
+}
+
+function CreateForm({ staffList, onDone }: { staffList: StaffOption[]; onDone: () => void }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const today = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const [userId, setUserId] = useState<number | "">(staffList[0]?.id ?? "");
+  const [type, setType] = useState<LeaveType>("sick");
+  const [from, setFrom] = useState(today);
+  const [to, setTo] = useState(today);
+  const [usePartial, setUsePartial] = useState(false);
+  const [hours, setHours] = useState(3);
+  const [reason, setReason] = useState("");
+  const [note, setNote] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+
+  const fullDays = Math.max(1, Math.floor(
+    (new Date(`${to}T00:00:00Z`).getTime() - new Date(`${from}T00:00:00Z`).getTime()) / 86400000
+  ) + 1);
+  const computedDays = usePartial && from === to ? +(hours / 8).toFixed(2) : fullDays;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    if (!userId) { setErr(t("admin.persona.leave.err.selectUser")); return; }
+    if (from > to) { setErr(t("staff.persona.leave.err.dateRange")); return; }
+
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("user_id", String(userId));
+      fd.append("type", type);
+      fd.append("date_from", from);
+      fd.append("date_to", to);
+      fd.append("days", String(computedDays));
+      if (usePartial && from === to) fd.append("hours", String(hours));
+      fd.append("reason", reason);
+      fd.append("note", note);
+      if (file) fd.append("file", file);
+
+      const res = await fetch(apiUrl("/api/admin/persona/leave/create"), { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErr(data.error || t("common.error"));
+        return;
+      }
+      onDone();
+    } catch {
+      setErr(t("common.error"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="card space-y-3">
+      <h2 className="font-semibold text-slate-800">
+        {t("admin.persona.leave.createForStaff")}
+      </h2>
+      <p className="text-sm text-slate-500">
+        {t("admin.persona.leave.createSubtitle")}
+      </p>
+
+      <div>
+        <label className="label">{t("admin.persona.leave.staff")}</label>
+        <select className="input" value={userId} onChange={(e) => setUserId(Number(e.target.value))}>
+          {staffList.map((u) => (
+            <option key={u.id} value={u.id}>{u.display_name} (@{u.username})</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="label">{t("staff.persona.leave.type")}</label>
+        <select className="input" value={type} onChange={(e) => setType(e.target.value as LeaveType)}>
+          {ALL_LEAVE_TYPES.map((tp) => (
+            <option key={tp} value={tp}>{t(`leave.type.${tp}` as any)}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label">{t("staff.persona.leave.from")}</label>
+          <input type="date" className="input" value={from}
+            onChange={(e) => { setFrom(e.target.value); if (e.target.value > to) setTo(e.target.value); }}
+            required />
+        </div>
+        <div>
+          <label className="label">{t("staff.persona.leave.to")}</label>
+          <input type="date" className="input" value={to} min={from}
+            onChange={(e) => setTo(e.target.value)} required />
+        </div>
+      </div>
+
+      {from === to && (
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={usePartial} onChange={(e) => setUsePartial(e.target.checked)} />
+            {t("staff.persona.leave.partialDay")}
+          </label>
+          {usePartial && (
+            <div>
+              <label className="label">{t("staff.persona.leave.hoursLabel")}</label>
+              <input type="number" min={1} max={8} step={0.5} className="input" value={hours}
+                onChange={(e) => setHours(Number(e.target.value))} />
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="text-sm text-slate-500">
+        {usePartial && from === to
+          ? t("staff.persona.leave.totalHours", { h: hours })
+          : t("staff.persona.leave.totalDays", { n: computedDays })}
+      </div>
+
+      <div>
+        <label className="label">{t("staff.persona.leave.reason")}</label>
+        <textarea className="input min-h-[60px]" value={reason}
+          onChange={(e) => setReason(e.target.value)} maxLength={500} />
+      </div>
+
+      <div>
+        <label className="label">{t("admin.persona.leave.adminNoteLabel")}</label>
+        <input className="input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500}
+          placeholder={t("admin.persona.leave.adminNotePlaceholder")} />
+      </div>
+
+      <div>
+        <label className="label">{t("admin.persona.leave.evidenceOptional")}</label>
+        <input
+          type="file" accept="image/*,application/pdf"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          className="input file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-slate-200 file:text-slate-700"
+        />
+      </div>
+
+      {err && <div className="text-rose-600 text-sm">{err}</div>}
+
+      <button className="btn-primary w-full" disabled={busy}>
+        {busy ? t("common.submitting") : t("admin.persona.leave.recordApprove")}
+      </button>
+    </form>
   );
 }
 

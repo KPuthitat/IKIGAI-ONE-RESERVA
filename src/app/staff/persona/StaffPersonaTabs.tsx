@@ -22,7 +22,7 @@ export default function StaffPersonaTabs({
             : "text-slate-600 hover:bg-slate-50"
         }`}
       >
-        ⏰ {labels.clock}
+        {labels.clock}
       </Link>
       <Link
         href="/staff/persona/leave"
@@ -32,7 +32,7 @@ export default function StaffPersonaTabs({
             : "text-slate-600 hover:bg-slate-50"
         }`}
       >
-        🌴 {labels.leave}
+        {labels.leave}
       </Link>
     </div>
   );
