@@ -100,27 +100,27 @@ export default function TimesheetsClient({
   return (
     <>
       {/* Filters */}
-      <form className="card flex flex-wrap items-end gap-3" method="get">
-        <div>
+      <form className="card grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end gap-3" method="get">
+        <div className="min-w-0">
           <label className="block text-xs text-slate-500 mb-1">
             {t(lang, "admin.persona.timesheets.fromDate")}
           </label>
-          <input type="date" name="from" defaultValue={from} className="input w-auto" />
+          <input type="date" name="from" defaultValue={from} className="input" />
         </div>
-        <div>
+        <div className="min-w-0">
           <label className="block text-xs text-slate-500 mb-1">
             {t(lang, "admin.persona.timesheets.toDate")}
           </label>
-          <input type="date" name="to" defaultValue={to} className="input w-auto" />
+          <input type="date" name="to" defaultValue={to} className="input" />
         </div>
-        <div>
+        <div className="min-w-0 sm:col-span-2 lg:col-span-1">
           <label className="block text-xs text-slate-500 mb-1">
             {t(lang, "admin.persona.timesheets.user")}
           </label>
           <select
             name="user_id"
             defaultValue={userIdFilter ? String(userIdFilter) : ""}
-            className="input w-auto"
+            className="input"
           >
             <option value="">
               {t(lang, "admin.persona.timesheets.allUsers")}
@@ -132,7 +132,7 @@ export default function TimesheetsClient({
             ))}
           </select>
         </div>
-        <button className="btn-primary" type="submit">
+        <button className="btn-primary sm:col-span-2 lg:col-span-1" type="submit">
           {t(lang, "admin.persona.timesheets.applyFilter")}
         </button>
       </form>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { Branch } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
@@ -62,21 +62,66 @@ export default function BookingForm({ branch }: { branch: Branch }) {
   const [error, setError] = useState<string | null>(null);
   const [resultId, setResultId] = useState<number | null>(null);
 
-  // ครัวปิด 30 นาทีก่อนร้านปิด — เป็น last slot ที่จองได้
+  // ครัวปิด 30 นาทีก่อนร้านปิด — เวลาจองสุดท้าย
   const KITCHEN_CLOSE_OFFSET = 30;
+  const NEAR_CLOSE_THRESHOLD = 30;  // ภายใน 30 นาทีก่อนครัวปิด → แจ้งเตือน
+  const TODAY_BOOKING_BUFFER = 30;   // จองขั้นต่ำ 30 นาทีล่วงหน้าจาก "ตอนนี้"
 
-  const slots = useMemo(() => {
-    const out: string[] = [];
+  // คำนวณ min/max เวลาในรูปแบบ HH:MM (Bangkok local)
+  const timeBounds = useMemo(() => {
     const [oh, om] = branch.open_time.split(":").map(Number);
     const [ch, cm] = branch.close_time.split(":").map(Number);
-    const start = oh * 60 + om;
-    const end = ch * 60 + cm;
-    const lastBookable = end - KITCHEN_CLOSE_OFFSET;  // = เวลาครัวปิด
-    for (let m = start; m <= lastBookable; m += branch.slot_minutes) {
-      out.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
+    const openMin = oh * 60 + om;
+    const closeMin = ch * 60 + cm;
+    const kitchenCloseMin = closeMin - KITCHEN_CLOSE_OFFSET;
+
+    // เวลาตอนนี้ (Bangkok)
+    const bkkNow = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    const nowMin = bkkNow.getUTCHours() * 60 + bkkNow.getUTCMinutes();
+    const todayBkk = bkkNow.toISOString().slice(0, 10);
+
+    return { openMin, closeMin, kitchenCloseMin, nowMin, todayBkk };
+  }, [branch.open_time, branch.close_time]);
+
+  // ปัดเศษขึ้นไป multiple ของ 5 นาที
+  function ceilToFive(m: number): number { return Math.ceil(m / 5) * 5; }
+  function fmtHHMM(m: number): string {
+    const clamped = Math.max(0, Math.min(23 * 60 + 59, m));
+    return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}`;
+  }
+
+  // min/max ตาม booking_date ที่เลือก
+  const { minTimeStr, maxTimeStr } = useMemo(() => {
+    let minM = timeBounds.openMin;
+    if (form.booking_date === timeBounds.todayBkk) {
+      // ถ้าเป็นวันนี้ → min = max(open_time, now+30min ปัดขึ้นเลข 5)
+      minM = Math.max(minM, ceilToFive(timeBounds.nowMin + TODAY_BOOKING_BUFFER));
     }
-    return out;
-  }, [branch]);
+    minM = Math.min(minM, timeBounds.kitchenCloseMin);
+    return {
+      minTimeStr: fmtHHMM(minM),
+      maxTimeStr: fmtHHMM(timeBounds.kitchenCloseMin)
+    };
+  }, [form.booking_date, timeBounds]);
+
+  // ถ้าผู้ใช้เปลี่ยนวันที่ทำให้เวลาที่เคยเลือกอยู่นอกช่วง → clamp
+  useEffect(() => {
+    if (!form.booking_time) return;
+    if (form.booking_time < minTimeStr) {
+      setForm((f) => ({ ...f, booking_time: minTimeStr }));
+    } else if (form.booking_time > maxTimeStr) {
+      setForm((f) => ({ ...f, booking_time: maxTimeStr }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minTimeStr, maxTimeStr]);
+
+  // แจ้งเตือนเมื่อใกล้เวลาครัวปิด (ภายใน 30 นาที)
+  const isNearKitchenClose = useMemo(() => {
+    if (!form.booking_time) return false;
+    const [h, m] = form.booking_time.split(":").map(Number);
+    const sel = h * 60 + m;
+    return sel >= timeBounds.kitchenCloseMin - NEAR_CLOSE_THRESHOLD;
+  }, [form.booking_time, timeBounds.kitchenCloseMin]);
 
 
   async function findTables(e: React.FormEvent) {
@@ -259,17 +304,19 @@ export default function BookingForm({ branch }: { branch: Branch }) {
           </div>
           <div>
             <label className="label">{t("booking.field.time")} *</label>
-            <select
-              className="input" required
+            <input
+              type="time" step={300}
+              className="input"
+              required
               value={form.booking_time}
+              min={minTimeStr}
+              max={maxTimeStr}
               onChange={(e) => setForm({ ...form, booking_time: e.target.value })}
-            >
-              {slots.map((s) => (
-                <option key={s} value={s}>{t("booking.field.timeUnit", { time: s })}</option>
-              ))}
-            </select>
-            {/* แจ้งเตือนเมื่อเลือก slot สุดท้าย = ใกล้เวลาครัวปิด */}
-            {slots.length > 0 && form.booking_time === slots[slots.length - 1] && (
+            />
+            <p className="text-[11px] text-slate-400 mt-1">
+              {t("booking.timeHint", { open: minTimeStr, close: maxTimeStr })}
+            </p>
+            {isNearKitchenClose && (
               <div className="mt-1.5 text-xs px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-900">
                 ⚠ {t("booking.kitchenCloseWarn")}
               </div>

@@ -29,6 +29,22 @@ body {
   @apply block w-full rounded-[10px] border-[1.5px] border-slate-200
          bg-slate-50 px-3.5 py-3 text-slate-800
          focus:outline-none focus:border-brand focus:bg-white transition-colors;
+  /* font-size 16px+ ป้องกัน iOS zoom-in ตอน focus + กันล้น grid cell */
+  font-size: 16px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+/* Native date/time picker บน iOS Safari ใช้ -webkit-min-content ทำให้กว้างเกิน
+   reset เป็น appearance:none แล้วกำหนด width ให้ชัดเจน */
+.input[type="date"],
+.input[type="time"],
+.input[type="datetime-local"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  /* iOS เพิ่ม inner padding รอบ icon — ลด px ลง */
+  padding-right: 0.5rem;
 }
 .label { @apply block text-[13px] font-semibold text-slate-500 mb-1.5; }
 .card { @apply bg-white rounded-2xl shadow-card p-6; }
