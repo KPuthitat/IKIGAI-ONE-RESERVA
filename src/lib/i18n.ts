@@ -101,6 +101,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     "customer.reserva.opensOn": "เปิดให้บริการ {date}",
     "customer.reserva.closedOn": "ปิดทุก {days}",
     "customer.reserva.openDaily": "เปิดทุกวัน",
+    "customer.reserva.todayClosed": "วันนี้ปิดร้าน",
+    "customer.reserva.todayLunchBreak": "วันนี้พักกลางวัน {start}-{end}",
+    "customer.reserva.todaySpecialOpenAllDay": "วันนี้เปิดเต็มวัน (วันพิเศษ ไม่พักกลางวัน)",
 
     // Booking form
     "booking.field.name": "ชื่อ-นามสกุล",
@@ -137,6 +140,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "booking.cta.searching": "กำลังค้นหาโต๊ะว่าง...",
     "booking.error.missingNamePhone": "กรุณากรอกชื่อและเบอร์โทรศัพท์",
     "booking.error.noTable": "ขออภัย ช่วงเวลานี้ไม่มีโต๊ะว่างสำหรับ {n} ที่นั่ง กรุณาเลือกเวลาอื่น",
+    "booking.error.pastTime": "เวลาที่เลือกผ่านมาแล้ว — กรุณาเลือกเวลาอื่น",
+    "booking.specialOpenDayInfo": "วันนี้เปิดเต็มวัน (วันพิเศษ ไม่พักกลางวัน)",
     "booking.choose.title": "เลือกโต๊ะที่ต้องการ",
     "booking.choose.subtitle": "ระบบเลือกโต๊ะที่ขนาดใกล้เคียงกับจำนวนคนของคุณที่สุด",
     "booking.choose.auto": "ให้ระบบเลือกให้อัตโนมัติ (แนะนำ)",
@@ -776,6 +781,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     "customer.reserva.opensOn": "Opens on {date}",
     "customer.reserva.closedOn": "Closed every {days}",
     "customer.reserva.openDaily": "Open daily",
+    "customer.reserva.todayClosed": "Closed today",
+    "customer.reserva.todayLunchBreak": "Lunch break today {start}-{end}",
+    "customer.reserva.todaySpecialOpenAllDay": "Open all day today (special — no lunch break)",
 
     // Booking form
     "booking.field.name": "Full name",
@@ -812,6 +820,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "booking.cta.searching": "Searching tables...",
     "booking.error.missingNamePhone": "Please enter your name and phone",
     "booking.error.noTable": "Sorry, no tables available for {n} guests at this time. Please pick another time.",
+    "booking.error.pastTime": "Selected time has passed — please pick another time",
+    "booking.specialOpenDayInfo": "Special all-day opening (no lunch break)",
     "booking.choose.title": "Choose your table",
     "booking.choose.subtitle": "We've selected the closest match to your party size",
     "booking.choose.auto": "Auto-select for me (recommended)",

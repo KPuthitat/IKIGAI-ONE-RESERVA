@@ -9,7 +9,10 @@ export const dynamic = "force-dynamic";
 export default function ExportPage() {
   requireAdmin();
   const lang = getLang();
-  const branches = getDb().prepare("SELECT * FROM branches ORDER BY name").all() as Branch[];
+  const branches = getDb().prepare(`
+    SELECT * FROM branches
+    ORDER BY CASE WHEN slug = 'nama-sriracha' THEN 0 ELSE 1 END, name
+  `).all() as Branch[];
   return (
     <div className="space-y-3">
       <div>

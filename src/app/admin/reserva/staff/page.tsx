@@ -12,7 +12,10 @@ export default function StaffPage() {
   requireAdmin();
   const lang = getLang();
   const db = getDb();
-  const branches = db.prepare("SELECT * FROM branches ORDER BY name").all() as Branch[];
+  const branches = db.prepare(`
+    SELECT * FROM branches
+    ORDER BY CASE WHEN slug = 'nama-sriracha' THEN 0 ELSE 1 END, name
+  `).all() as Branch[];
   const users = db.prepare("SELECT * FROM users ORDER BY created_at DESC").all() as User[];
   const userBranches = db.prepare(
     "SELECT user_id, branch_id FROM user_branches"

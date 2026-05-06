@@ -12,13 +12,16 @@ export const metadata: Metadata = { title: "จองโต๊ะ · RESERVA" };
 const DAY_NAMES_TH = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
 const DAY_NAMES_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-function parseClosedWeekdays(json: string | null): number[] {
+function parseJsonArr<T>(json: string | null): T[] {
   if (!json) return [];
   try {
     const arr = JSON.parse(json);
-    if (Array.isArray(arr)) return arr.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
-  } catch {}
-  return [];
+    return Array.isArray(arr) ? arr as T[] : [];
+  } catch { return []; }
+}
+
+function parseClosedWeekdays(json: string | null): number[] {
+  return parseJsonArr<number>(json).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
 }
 
 function formatClosedDays(closed: number[], lang: Lang): string {
@@ -26,8 +29,40 @@ function formatClosedDays(closed: number[], lang: Lang): string {
   return closed.map((d) => names[d]).join(lang === "en" ? ", " : " · ");
 }
 
+type TodayStatus =
+  | { kind: "closed" }
+  | { kind: "specialOpenAllDay"; lunchStart: string; lunchEnd: string }
+  | { kind: "lunchBreak"; lunchStart: string; lunchEnd: string }
+  | { kind: "openAllDay" };
+
+function computeTodayStatus(b: Branch, todayBkk: string): TodayStatus {
+  // Check closed_weekdays
+  const closedDays = parseClosedWeekdays(b.closed_weekdays);
+  const dow = new Date(`${todayBkk}T00:00:00Z`).getUTCDay();
+  if (closedDays.includes(dow)) return { kind: "closed" };
+
+  // Check lunch break
+  if (!b.lunch_break_start || !b.lunch_break_end) return { kind: "openAllDay" };
+  const lunchWeekdays = parseJsonArr<number>(b.lunch_break_weekdays);
+  const noLunchDates = parseJsonArr<string>(b.no_lunch_break_dates);
+  if (!lunchWeekdays.includes(dow)) return { kind: "openAllDay" };
+  if (noLunchDates.includes(todayBkk)) {
+    return {
+      kind: "specialOpenAllDay",
+      lunchStart: b.lunch_break_start,
+      lunchEnd: b.lunch_break_end
+    };
+  }
+  return {
+    kind: "lunchBreak",
+    lunchStart: b.lunch_break_start,
+    lunchEnd: b.lunch_break_end
+  };
+}
+
 export default function CustomerReservaPage() {
   const lang = getLang();
+  const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
   // NAMA PASTA SRIRACHA แสดงเป็นสาขาแรก ตามด้วยสาขาอื่นเรียงตามชื่อ
   const branches = getDb().prepare(`
     SELECT * FROM branches
@@ -81,6 +116,34 @@ export default function CustomerReservaPage() {
                         {t(lang, "customer.reserva.openDaily")}
                       </p>
                     )}
+                    {/* Today's status — lunch break / special / closed today */}
+                    {(() => {
+                      const status = computeTodayStatus(b, todayBkk);
+                      if (status.kind === "closed") {
+                        return (
+                          <p className="text-rose-600 text-xs mt-1 font-medium">
+                            ✗ {t(lang, "customer.reserva.todayClosed")}
+                          </p>
+                        );
+                      }
+                      if (status.kind === "specialOpenAllDay") {
+                        return (
+                          <p className="text-emerald-700 text-xs mt-1 font-medium">
+                            ★ {t(lang, "customer.reserva.todaySpecialOpenAllDay")}
+                          </p>
+                        );
+                      }
+                      if (status.kind === "lunchBreak") {
+                        return (
+                          <p className="text-amber-700 text-xs mt-1">
+                            {t(lang, "customer.reserva.todayLunchBreak", {
+                              start: status.lunchStart, end: status.lunchEnd
+                            })}
+                          </p>
+                        );
+                      }
+                      return null; // openAllDay → already covered by openDaily / hours
+                    })()}
                     <p className="mt-3 text-brand font-bold text-sm">{t(lang, "customer.reserva.bookCta")}</p>
                   </>
                 )}

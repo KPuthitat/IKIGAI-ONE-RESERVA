@@ -159,12 +159,35 @@ export default function BookingForm({ branch }: { branch: Branch }) {
     return { start: minToHHMM(lunchBreak.start), end: minToHHMM(lunchBreak.end) };
   }, [lunchBreak]);
 
+  // วันที่เลือกเป็น "วันพิเศษ" (อยู่ใน no_lunch_break_dates) AND วันธรรมดามักมีพัก
+  const isSpecialOpenDay = useMemo(() => {
+    const noLunchDates = parseJsonArr<string>(branch.no_lunch_break_dates);
+    if (!noLunchDates.includes(form.booking_date)) return false;
+    // เป็นวันพิเศษเฉพาะถ้าวันนั้นโดยทั่วไปมีพัก (วัน-of-week อยู่ใน lunch_break_weekdays)
+    const applyOnWeekdays = parseJsonArr<number>(branch.lunch_break_weekdays);
+    if (applyOnWeekdays.length === 0) return false;
+    const dow = new Date(`${form.booking_date}T00:00:00Z`).getUTCDay();
+    return applyOnWeekdays.includes(dow);
+  }, [branch.no_lunch_break_dates, branch.lunch_break_weekdays, form.booking_date]);
+
+  // เวลาที่เลือกผ่านมาแล้วหรือไม่ (สำหรับวันนี้)
+  const isPastTime = useMemo(() => {
+    if (form.booking_date !== timeBounds.todayBkk) return false;
+    const sel = hhmmToMin(form.booking_time);
+    if (sel == null) return false;
+    return sel <= timeBounds.nowMin;
+  }, [form.booking_date, form.booking_time, timeBounds]);
+
 
   async function findTables(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (!form.customer_name.trim() || !form.customer_phone.trim()) {
       setError(t("booking.error.missingNamePhone"));
+      return;
+    }
+    if (isPastTime) {
+      setError(t("booking.error.pastTime"));
       return;
     }
     setSubmitting(true);
@@ -358,7 +381,17 @@ export default function BookingForm({ branch }: { branch: Branch }) {
                 {t("booking.lunchBreakInfo", { start: lunchBreakLabel.start, end: lunchBreakLabel.end })}
               </p>
             )}
-            {isNearKitchenClose && (
+            {isSpecialOpenDay && (
+              <p className="text-[11px] text-emerald-700 mt-0.5">
+                ✓ {t("booking.specialOpenDayInfo")}
+              </p>
+            )}
+            {isPastTime && (
+              <div className="mt-1.5 text-xs px-3 py-2 rounded-lg border border-rose-300 bg-rose-50 text-rose-700 font-medium">
+                ✗ {t("booking.error.pastTime")}
+              </div>
+            )}
+            {!isPastTime && isNearKitchenClose && (
               <div className="mt-1.5 text-xs px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-900">
                 ⚠ {t("booking.kitchenCloseWarn")}
               </div>
@@ -432,7 +465,7 @@ export default function BookingForm({ branch }: { branch: Branch }) {
 
       {error && <div className="text-red-600 text-sm text-center">{error}</div>}
 
-      <button disabled={submitting} className="btn-primary w-full text-base py-3.5">
+      <button disabled={submitting || isPastTime} className="btn-primary w-full text-base py-3.5">
         {submitting ? t("booking.cta.searching") : t("booking.cta.findTable")}
       </button>
     </form>
