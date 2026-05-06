@@ -62,20 +62,22 @@ export default function BookingForm({ branch }: { branch: Branch }) {
   const [error, setError] = useState<string | null>(null);
   const [resultId, setResultId] = useState<number | null>(null);
 
+  // ครัวปิด 30 นาทีก่อนร้านปิด — เป็น last slot ที่จองได้
+  const KITCHEN_CLOSE_OFFSET = 30;
+
   const slots = useMemo(() => {
     const out: string[] = [];
     const [oh, om] = branch.open_time.split(":").map(Number);
     const [ch, cm] = branch.close_time.split(":").map(Number);
     const start = oh * 60 + om;
     const end = ch * 60 + cm;
-    // ปิดรับจอง 30 นาทีก่อนเวลาปิดทำการ — ลูกค้าต้องนั่งครบ duration และ
-    // ออกก่อนปิดร้านอย่างน้อย 30 นาที
-    const BOOKING_CUTOFF_BEFORE_CLOSE = 30;
-    for (let m = start; m + branch.default_duration_minutes + BOOKING_CUTOFF_BEFORE_CLOSE <= end; m += branch.slot_minutes) {
+    const lastBookable = end - KITCHEN_CLOSE_OFFSET;  // = เวลาครัวปิด
+    for (let m = start; m <= lastBookable; m += branch.slot_minutes) {
       out.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
     }
     return out;
   }, [branch]);
+
 
   async function findTables(e: React.FormEvent) {
     e.preventDefault();
@@ -266,6 +268,12 @@ export default function BookingForm({ branch }: { branch: Branch }) {
                 <option key={s} value={s}>{t("booking.field.timeUnit", { time: s })}</option>
               ))}
             </select>
+            {/* แจ้งเตือนเมื่อเลือก slot สุดท้าย = ใกล้เวลาครัวปิด */}
+            {slots.length > 0 && form.booking_time === slots[slots.length - 1] && (
+              <div className="mt-1.5 text-xs px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-900">
+                ⚠ {t("booking.kitchenCloseWarn")}
+              </div>
+            )}
           </div>
         </div>
 
