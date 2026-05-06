@@ -15,7 +15,12 @@ const Patch = z.object({
   // Branch status (Phase 1F.2)
   status: z.enum(["open", "coming_soon"]).optional(),
   opens_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  closed_weekdays: z.string().max(50).nullable().optional()  // JSON array string
+  closed_weekdays: z.string().max(50).nullable().optional(),  // JSON array string
+  // Lunch break (Phase 1F.3)
+  lunch_break_start: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+  lunch_break_end: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+  lunch_break_weekdays: z.string().max(50).nullable().optional(),
+  no_lunch_break_dates: z.string().max(2000).nullable().optional()
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {

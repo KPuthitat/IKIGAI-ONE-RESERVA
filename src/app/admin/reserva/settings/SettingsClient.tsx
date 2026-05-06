@@ -15,6 +15,14 @@ function parseWeekdays(json: string | null): number[] {
   } catch {}
   return [];
 }
+function parseDates(json: string | null): string[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json);
+    if (Array.isArray(arr)) return arr.filter((s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s));
+  } catch {}
+  return [];
+}
 
 export default function SettingsClient({ branch }: { branch: Branch }) {
   const router = useRouter();
@@ -30,8 +38,14 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
     staff_line_user_ids: branch.staff_line_user_ids ?? "[]",
     status: branch.status ?? "open",
     opens_on: branch.opens_on ?? "",
-    closed_weekdays: parseWeekdays(branch.closed_weekdays)   // number[]
+    closed_weekdays: parseWeekdays(branch.closed_weekdays),
+    // Lunch break
+    lunch_break_start: branch.lunch_break_start ?? "",
+    lunch_break_end: branch.lunch_break_end ?? "",
+    lunch_break_weekdays: parseWeekdays(branch.lunch_break_weekdays),
+    no_lunch_break_dates: parseDates(branch.no_lunch_break_dates)
   });
+  const [newSpecialDate, setNewSpecialDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
@@ -47,10 +61,17 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
       return;
     }
     setBusy(true);
+    const hasLunch = Boolean(form.lunch_break_start && form.lunch_break_end);
     const payload = {
       ...form,
       opens_on: form.status === "coming_soon" && form.opens_on ? form.opens_on : null,
-      closed_weekdays: form.closed_weekdays.length > 0 ? JSON.stringify(form.closed_weekdays) : null
+      closed_weekdays: form.closed_weekdays.length > 0 ? JSON.stringify(form.closed_weekdays) : null,
+      lunch_break_start: hasLunch ? form.lunch_break_start : null,
+      lunch_break_end: hasLunch ? form.lunch_break_end : null,
+      lunch_break_weekdays: hasLunch && form.lunch_break_weekdays.length > 0
+        ? JSON.stringify(form.lunch_break_weekdays) : null,
+      no_lunch_break_dates: form.no_lunch_break_dates.length > 0
+        ? JSON.stringify(form.no_lunch_break_dates) : null
     };
     const res = await fetch(apiUrl(`/api/admin/branch/${branch.id}`), {
       method: "PATCH",
@@ -73,6 +94,29 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
       closed_weekdays: f.closed_weekdays.includes(d)
         ? f.closed_weekdays.filter((x) => x !== d)
         : [...f.closed_weekdays, d].sort((a, b) => a - b)
+    }));
+  }
+  function toggleLunchDay(d: number) {
+    setForm((f) => ({
+      ...f,
+      lunch_break_weekdays: f.lunch_break_weekdays.includes(d)
+        ? f.lunch_break_weekdays.filter((x) => x !== d)
+        : [...f.lunch_break_weekdays, d].sort((a, b) => a - b)
+    }));
+  }
+  function addSpecialDate() {
+    if (!newSpecialDate || !/^\d{4}-\d{2}-\d{2}$/.test(newSpecialDate)) return;
+    if (form.no_lunch_break_dates.includes(newSpecialDate)) return;
+    setForm((f) => ({
+      ...f,
+      no_lunch_break_dates: [...f.no_lunch_break_dates, newSpecialDate].sort()
+    }));
+    setNewSpecialDate("");
+  }
+  function removeSpecialDate(d: string) {
+    setForm((f) => ({
+      ...f,
+      no_lunch_break_dates: f.no_lunch_break_dates.filter((x) => x !== d)
     }));
   }
 
@@ -120,17 +164,78 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
       </div>
 
       <h2 className="font-semibold pt-3 border-t border-slate-100">{t("admin.settings.openCloseSection")}</h2>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="min-w-0">
           <label className="label">{t("admin.settings.field.openTime")}</label>
           <input type="time" className="input" value={form.open_time}
             onChange={(e) => setForm({ ...form, open_time: e.target.value })} />
         </div>
-        <div>
+        <div className="min-w-0">
           <label className="label">{t("admin.settings.field.closeTime")}</label>
           <input type="time" className="input" value={form.close_time}
             onChange={(e) => setForm({ ...form, close_time: e.target.value })} />
         </div>
+      </div>
+
+      {/* Lunch break section */}
+      <h2 className="font-semibold pt-3 border-t border-slate-100">{t("admin.settings.lunchBreakSection")}</h2>
+      <p className="text-sm text-slate-500">{t("admin.settings.lunchBreakDesc")}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="min-w-0">
+          <label className="label">{t("admin.settings.field.lunchBreakStart")}</label>
+          <input type="time" className="input" value={form.lunch_break_start}
+            onChange={(e) => setForm({ ...form, lunch_break_start: e.target.value })} />
+        </div>
+        <div className="min-w-0">
+          <label className="label">{t("admin.settings.field.lunchBreakEnd")}</label>
+          <input type="time" className="input" value={form.lunch_break_end}
+            onChange={(e) => setForm({ ...form, lunch_break_end: e.target.value })} />
+        </div>
+      </div>
+      <div>
+        <label className="label">{t("admin.settings.field.lunchBreakWeekdays")}</label>
+        <div className="flex gap-1.5 flex-wrap">
+          {DAY_LABELS_TH.map((label, i) => {
+            const active = form.lunch_break_weekdays.includes(i);
+            return (
+              <button key={i} type="button" onClick={() => toggleLunchDay(i)}
+                className={`w-10 h-10 rounded-lg border-2 text-sm font-medium transition ${
+                  active ? "bg-amber-500 border-amber-500 text-white"
+                         : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                }`}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-slate-500 mt-1">{t("admin.settings.lunchBreakWeekdaysHint")}</p>
+      </div>
+      <div>
+        <label className="label">{t("admin.settings.field.specialOpenDates")}</label>
+        <div className="flex gap-2 flex-wrap items-center mb-2">
+          <input type="date" className="input flex-1 min-w-0"
+            value={newSpecialDate}
+            onChange={(e) => setNewSpecialDate(e.target.value)} />
+          <button type="button" onClick={addSpecialDate}
+            disabled={!newSpecialDate}
+            className="px-3 py-2 rounded-lg bg-brand text-white text-sm font-medium disabled:opacity-50">
+            + {t("admin.settings.addSpecialDate")}
+          </button>
+        </div>
+        {form.no_lunch_break_dates.length > 0 ? (
+          <ul className="flex flex-wrap gap-1.5">
+            {form.no_lunch_break_dates.map((d) => (
+              <li key={d} className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1">
+                {d}
+                <button type="button" onClick={() => removeSpecialDate(d)}
+                  className="text-emerald-700 hover:text-emerald-900 font-bold">×</button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-slate-400">{t("admin.settings.noSpecialDates")}</p>
+        )}
+        <p className="text-xs text-slate-500 mt-1">{t("admin.settings.specialOpenDatesHint")}</p>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>

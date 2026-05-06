@@ -366,6 +366,20 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("closed_weekdays")) {
     db.exec("ALTER TABLE branches ADD COLUMN closed_weekdays TEXT"); // JSON array '[1,2]'
   }
+  // RESERVA: lunch break (พักกลางวัน) — applies on lunch_break_weekdays
+  if (!bnames2.has("lunch_break_start")) {
+    db.exec("ALTER TABLE branches ADD COLUMN lunch_break_start TEXT"); // 'HH:MM'
+  }
+  if (!bnames2.has("lunch_break_end")) {
+    db.exec("ALTER TABLE branches ADD COLUMN lunch_break_end TEXT");
+  }
+  if (!bnames2.has("lunch_break_weekdays")) {
+    db.exec("ALTER TABLE branches ADD COLUMN lunch_break_weekdays TEXT"); // '[1,2,3,4,5]' = Mon-Fri
+  }
+  // วันพิเศษที่เปิดเต็มวัน (override lunch break) เช่น วันธรรมดาที่จัดงานพิเศษ
+  if (!bnames2.has("no_lunch_break_dates")) {
+    db.exec("ALTER TABLE branches ADD COLUMN no_lunch_break_dates TEXT"); // '["2026-12-31"]'
+  }
 
   // Phase 1C v9: replaces_id for resignation_requests
   const rrcols = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;
@@ -462,6 +476,10 @@ export type Branch = {
   status: "open" | "coming_soon";
   opens_on: string | null;          // YYYY-MM-DD เมื่อ status = coming_soon
   closed_weekdays: string | null;   // JSON array of 0-6, e.g., '[1]' = ปิดทุกจันทร์
+  lunch_break_start: string | null; // HH:MM
+  lunch_break_end: string | null;   // HH:MM
+  lunch_break_weekdays: string | null;  // JSON array of 0-6
+  no_lunch_break_dates: string | null;  // JSON array of YYYY-MM-DD
 };
 
 export type User = {

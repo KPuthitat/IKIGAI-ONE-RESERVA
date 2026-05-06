@@ -117,7 +117,12 @@ export default function LeaveClient({
   const [from, setFrom] = useState(tomorrow);
   const [to, setTo] = useState(tomorrow);
   const [usePartial, setUsePartial] = useState(false);
-  const [hours, setHours] = useState<number>(3);
+  // Phase 1F.4: ลาเป็นชั่วโมง — ระบุเวลาเริ่ม-สิ้นสุด แล้วระบบคำนวณ hours
+  const [partialStart, setPartialStart] = useState<string>("09:00");
+  const [partialEnd, setPartialEnd] = useState<string>("12:00");
+  // Lunch break ของพนักงาน (เพื่อหักออกจากชั่วโมงลา) — มาตรฐาน 12:00-13:00
+  const STAFF_LUNCH_START = 12 * 60;
+  const STAFF_LUNCH_END = 13 * 60;
   const [reason, setReason] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [isSpecial, setIsSpecial] = useState(false);
@@ -128,6 +133,23 @@ export default function LeaveClient({
 
   const fullDays = daysBetween(from, to);
   const evidenceRequired = TYPES_REQUIRE_EVIDENCE.has(type);
+
+  // คำนวณชั่วโมงลา (จากช่วงเวลา) − หักช่วงพักกลางวันที่ทับกัน
+  const hours = useMemo(() => {
+    if (!usePartial || from !== to) return 0;
+    const [sh, sm] = partialStart.split(":").map(Number);
+    const [eh, em] = partialEnd.split(":").map(Number);
+    if (isNaN(sh) || isNaN(eh)) return 0;
+    const startM = sh * 60 + sm;
+    const endM = eh * 60 + em;
+    if (endM <= startM) return 0;
+    let totalMin = endM - startM;
+    // หัก overlap กับ lunch break
+    const overlapStart = Math.max(startM, STAFF_LUNCH_START);
+    const overlapEnd = Math.min(endM, STAFF_LUNCH_END);
+    if (overlapEnd > overlapStart) totalMin -= (overlapEnd - overlapStart);
+    return Math.max(0, +(totalMin / 60).toFixed(1));
+  }, [usePartial, from, to, partialStart, partialEnd]);
 
   // Quota check — ถ้าเหลือไม่เต็มวัน ห้ามขอเต็มวัน (Phase 1C v4 #7)
   const matchedQuota = quotas.find((q) => q.type === type);
@@ -218,7 +240,8 @@ export default function LeaveClient({
     setFrom(tomorrow);
     setTo(tomorrow);
     setUsePartial(false);
-    setHours(3);
+    setPartialStart("09:00");
+    setPartialEnd("12:00");
     setReason("");
     setFile(null);
     setIsSpecial(false);
@@ -234,7 +257,9 @@ export default function LeaveClient({
     setTo(r.date_to);
     if (r.hours && r.date_from === r.date_to) {
       setUsePartial(true);
-      setHours(r.hours);
+      // ไม่มี start/end เก็บไว้ — ใช้ default
+      setPartialStart("09:00");
+      setPartialEnd("12:00");
     } else {
       setUsePartial(false);
     }
@@ -242,7 +267,7 @@ export default function LeaveClient({
     setFile(null);
     setIsSpecial(false);
     setErr(null);
-    setRevisingId(r.id);   // ← ลิงก์ใหม่กลับเดิม
+    setRevisingId(r.id);
     setFormOpen(true);
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -390,14 +415,22 @@ export default function LeaveClient({
                   {t("staff.persona.leave.partialDay")}
                 </label>
                 {usePartial && (
-                  <div>
-                    <label className="label">{t("staff.persona.leave.hoursLabel")}</label>
-                    <input
-                      type="number" min={1} max={8} step={1}
-                      className="input"
-                      value={hours}
-                      onChange={(e) => setHours(Number(e.target.value))}
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="min-w-0">
+                      <label className="label">{t("staff.persona.leave.partialStart")}</label>
+                      <input type="time" step={300} className="input"
+                        value={partialStart}
+                        onChange={(e) => setPartialStart(e.target.value)} />
+                    </div>
+                    <div className="min-w-0">
+                      <label className="label">{t("staff.persona.leave.partialEnd")}</label>
+                      <input type="time" step={300} className="input"
+                        value={partialEnd}
+                        onChange={(e) => setPartialEnd(e.target.value)} />
+                    </div>
+                    <p className="sm:col-span-2 text-xs text-slate-500">
+                      {t("staff.persona.leave.partialLunchHint")}
+                    </p>
                   </div>
                 )}
               </div>
