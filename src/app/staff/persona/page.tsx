@@ -1,9 +1,6 @@
-import Link from "next/link";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { getLang } from "@/lib/lang-server";
-import { t } from "@/lib/i18n";
 import TimeClockClient from "./TimeClockClient";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +11,6 @@ type TimeEntry = { id: number; type: "in" | "out"; ts: string };
 
 export default function StaffPersonaPage() {
   const user = requireUser();
-  const lang = getLang();
   const db = getDb();
 
   const entries = db.prepare(`
@@ -42,20 +38,12 @@ export default function StaffPersonaPage() {
   const hasPin = Boolean(userRow?.pin_hash);
 
   return (
-    <div className="space-y-4">
-      <div>
-        <Link href="/staff" className="text-sm text-slate-500 hover:text-brand">
-          {t(lang, "staff.persona.backToModules")}
-        </Link>
-        <h1 className="text-2xl font-bold text-slate-800 mt-2">{t(lang, "staff.persona.title")}</h1>
-      </div>
-      <TimeClockClient
-        userName={user.display_name}
-        hasPin={hasPin}
-        firstInTs={firstInTs}
-        firstOutTs={firstOutTs}
-        entries={entries}
-      />
-    </div>
+    <TimeClockClient
+      userName={user.display_name}
+      hasPin={hasPin}
+      firstInTs={firstInTs}
+      firstOutTs={firstOutTs}
+      entries={entries}
+    />
   );
 }

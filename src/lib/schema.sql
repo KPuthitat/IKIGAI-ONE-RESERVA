@@ -118,3 +118,26 @@ CREATE TABLE IF NOT EXISTS time_entries_audit (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_time_audit_created ON time_entries_audit(created_at);
+
+-- Leave requests (PERSONA — Phase 1C)
+-- 8 ประเภทตาม กม. แรงงานไทย: sick / personal / annual / maternity /
+--                              ordination / sterilization / pilgrimage / military
+CREATE TABLE IF NOT EXISTS leave_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN
+    ('sick','personal','annual','maternity','ordination','sterilization','pilgrimage','military')),
+  date_from TEXT NOT NULL,    -- YYYY-MM-DD (Bangkok local)
+  date_to TEXT NOT NULL,      -- YYYY-MM-DD (inclusive)
+  days REAL NOT NULL,         -- รองรับครึ่งวัน (0.5 = ครึ่งวัน, 1 = เต็มวัน)
+  reason TEXT,                -- เหตุผลที่ staff ระบุ
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN
+    ('pending','approved','rejected','cancelled')),
+  decided_by INTEGER REFERENCES users(id),  -- admin ที่อนุมัติ/ปฏิเสธ
+  decided_at TEXT,
+  decision_note TEXT,         -- comment จาก admin
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_leave_user_status ON leave_requests(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_leave_status_created ON leave_requests(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_leave_dates ON leave_requests(date_from, date_to);

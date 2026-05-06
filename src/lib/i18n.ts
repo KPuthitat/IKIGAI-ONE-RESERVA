@@ -314,6 +314,66 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.replace.keep": "ใช้เวลาเดิม {time}",
     "staff.persona.replace.use": "เปลี่ยนเป็น {time}",
 
+    // PERSONA module-level (sub-nav + module title)
+    "staff.persona.moduleTitle": "PERSONA",
+    "staff.persona.tab.clock": "ลงเวลา",
+    "staff.persona.tab.leave": "การลา",
+
+    // Staff PERSONA — Leave (Phase 1C)
+    "staff.persona.leave.formTitle": "ส่งคำขอลา",
+    "staff.persona.leave.type": "ประเภทการลา",
+    "staff.persona.leave.from": "ตั้งแต่วันที่",
+    "staff.persona.leave.to": "ถึงวันที่",
+    "staff.persona.leave.halfDay": "ลาครึ่งวัน",
+    "staff.persona.leave.totalDays": "รวม {n} วัน",
+    "staff.persona.leave.daysShort": "{n} วัน",
+    "staff.persona.leave.reason": "เหตุผล",
+    "staff.persona.leave.reasonPlaceholder": "ระบุรายละเอียดสั้นๆ (ไม่บังคับ)",
+    "staff.persona.leave.submit": "ส่งคำขอ",
+    "staff.persona.leave.submitOk": "ส่งคำขอลาเรียบร้อย รอหัวหน้างานอนุมัติ",
+    "staff.persona.leave.historyTitle": "คำขอลาของฉัน",
+    "staff.persona.leave.empty": "ยังไม่มีคำขอลา",
+    "staff.persona.leave.cancel": "ยกเลิก",
+    "staff.persona.leave.confirmCancel": "ยืนยันยกเลิกคำขอลานี้?",
+    "staff.persona.leave.adminNote": "หมายเหตุจากผู้อนุมัติ",
+    "staff.persona.leave.err.dateRange": "วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่ม",
+    "staff.persona.leave.err.pastDate": "ไม่สามารถลาย้อนหลังได้ — ติดต่อหัวหน้างานหากจำเป็น",
+
+    // Leave types (8 ประเภทตาม กม. แรงงานไทย)
+    "leave.type.sick": "ลาป่วย",
+    "leave.type.personal": "ลากิจ",
+    "leave.type.annual": "ลาพักร้อน",
+    "leave.type.maternity": "ลาคลอด",
+    "leave.type.ordination": "ลาอุปสมบท",
+    "leave.type.sterilization": "ลาทำหมัน",
+    "leave.type.pilgrimage": "ลาประกอบศาสนกิจ",
+    "leave.type.military": "ลาเกณฑ์ทหาร",
+
+    // Leave statuses
+    "leave.status.pending": "รออนุมัติ",
+    "leave.status.approved": "อนุมัติแล้ว",
+    "leave.status.rejected": "ปฏิเสธ",
+    "leave.status.cancelled": "ยกเลิก",
+
+    // Admin PERSONA — Leave
+    "admin.persona.leave.title": "การลาของพนักงาน",
+    "admin.persona.leave.subtitle": "ตรวจคำขอลา · อนุมัติหรือปฏิเสธพร้อมเหตุผล",
+    "admin.persona.leave.listTitle": "รายการคำขอ",
+    "admin.persona.leave.empty": "ไม่มีรายการตามตัวกรองนี้",
+    "admin.persona.leave.daysShort": "{n} วัน",
+    "admin.persona.leave.approve": "อนุมัติ",
+    "admin.persona.leave.reject": "ปฏิเสธ",
+    "admin.persona.leave.notePromptApprove": "หมายเหตุการอนุมัติ (ไม่บังคับ):",
+    "admin.persona.leave.notePromptReject": "เหตุผลการปฏิเสธ (ไม่บังคับ):",
+    "admin.persona.leave.filter.pending": "รออนุมัติ",
+    "admin.persona.leave.filter.approved": "อนุมัติ",
+    "admin.persona.leave.filter.rejected": "ปฏิเสธ",
+    "admin.persona.leave.filter.cancelled": "ยกเลิก",
+    "admin.persona.leave.filter.all": "ทั้งหมด",
+
+    // Common
+    "common.submitting": "กำลังส่ง...",
+
     // Staff RESERVA
     "staff.reserva.backToModules": "← กลับ module",
     "staff.reserva.title": "การจองของลูกค้า",
@@ -700,6 +760,66 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.replace.bodyOut": "You clocked out at {existing}\nUse current time {proposed} instead?",
     "staff.persona.replace.keep": "Keep {time}",
     "staff.persona.replace.use": "Use {time}",
+
+    // PERSONA module-level
+    "staff.persona.moduleTitle": "PERSONA",
+    "staff.persona.tab.clock": "Time clock",
+    "staff.persona.tab.leave": "Leave",
+
+    // Staff PERSONA — Leave
+    "staff.persona.leave.formTitle": "Submit leave request",
+    "staff.persona.leave.type": "Leave type",
+    "staff.persona.leave.from": "From",
+    "staff.persona.leave.to": "To",
+    "staff.persona.leave.halfDay": "Half day",
+    "staff.persona.leave.totalDays": "Total {n} days",
+    "staff.persona.leave.daysShort": "{n}d",
+    "staff.persona.leave.reason": "Reason",
+    "staff.persona.leave.reasonPlaceholder": "Brief details (optional)",
+    "staff.persona.leave.submit": "Submit request",
+    "staff.persona.leave.submitOk": "Request submitted, awaiting approval",
+    "staff.persona.leave.historyTitle": "My requests",
+    "staff.persona.leave.empty": "No leave requests yet",
+    "staff.persona.leave.cancel": "Cancel",
+    "staff.persona.leave.confirmCancel": "Cancel this leave request?",
+    "staff.persona.leave.adminNote": "Approver's note",
+    "staff.persona.leave.err.dateRange": "End date must not be before start date",
+    "staff.persona.leave.err.pastDate": "Cannot request past dates — contact supervisor if needed",
+
+    // Leave types
+    "leave.type.sick": "Sick leave",
+    "leave.type.personal": "Personal leave",
+    "leave.type.annual": "Annual leave",
+    "leave.type.maternity": "Maternity leave",
+    "leave.type.ordination": "Ordination leave",
+    "leave.type.sterilization": "Sterilization leave",
+    "leave.type.pilgrimage": "Religious pilgrimage",
+    "leave.type.military": "Military service",
+
+    // Leave statuses
+    "leave.status.pending": "Pending",
+    "leave.status.approved": "Approved",
+    "leave.status.rejected": "Rejected",
+    "leave.status.cancelled": "Cancelled",
+
+    // Admin PERSONA — Leave
+    "admin.persona.leave.title": "Staff leave requests",
+    "admin.persona.leave.subtitle": "Review and approve/reject requests with notes",
+    "admin.persona.leave.listTitle": "Requests",
+    "admin.persona.leave.empty": "No requests match this filter",
+    "admin.persona.leave.daysShort": "{n}d",
+    "admin.persona.leave.approve": "Approve",
+    "admin.persona.leave.reject": "Reject",
+    "admin.persona.leave.notePromptApprove": "Approval note (optional):",
+    "admin.persona.leave.notePromptReject": "Rejection reason (optional):",
+    "admin.persona.leave.filter.pending": "Pending",
+    "admin.persona.leave.filter.approved": "Approved",
+    "admin.persona.leave.filter.rejected": "Rejected",
+    "admin.persona.leave.filter.cancelled": "Cancelled",
+    "admin.persona.leave.filter.all": "All",
+
+    // Common
+    "common.submitting": "Submitting...",
 
     // Staff RESERVA
     "staff.reserva.backToModules": "← Back to modules",

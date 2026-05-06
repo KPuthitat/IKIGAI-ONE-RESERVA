@@ -86,6 +86,29 @@ function runMigrations(db: Database.Database): void {
     SET created_at = REPLACE(created_at, ' ', 'T') || '.000Z'
     WHERE created_at NOT LIKE '%T%' AND length(created_at) = 19;
   `);
+
+  // leave_requests — เผื่อกรณี schema.sql ยังไม่ถูกรันบน server เก่า
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS leave_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT NOT NULL CHECK (type IN
+        ('sick','personal','annual','maternity','ordination','sterilization','pilgrimage','military')),
+      date_from TEXT NOT NULL,
+      date_to TEXT NOT NULL,
+      days REAL NOT NULL,
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN
+        ('pending','approved','rejected','cancelled')),
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT,
+      decision_note TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_leave_user_status ON leave_requests(user_id, status);
+    CREATE INDEX IF NOT EXISTS idx_leave_status_created ON leave_requests(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_leave_dates ON leave_requests(date_from, date_to);
+  `);
 }
 
 export type Branch = {
