@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import type { ResignationStatus } from "@/app/staff/persona/resignation/ResignationClient";
+import { DecisionModal } from "@/app/admin/persona/leave/LeaveAdminClient";
 
 export type ResignationAdminRow = {
   id: number;
@@ -74,31 +75,41 @@ export default function ResignationAdminClient({
     }
   }
 
-  function decide(id: number, decision: "approved" | "rejected" | "revision_requested") {
-    const promptMsg = decision === "approved"
-      ? t("admin.persona.resignation.notePromptApprove")
-      : decision === "rejected"
-        ? t("admin.persona.resignation.notePromptReject")
-        : t("admin.persona.resignation.notePromptRevision");
-    const note = prompt(promptMsg);
-    if (note === null) return;
-    if (decision === "revision_requested" && !note.trim()) {
+  type DecideTarget = { id: number; decision: "approved" | "rejected" | "revision_requested" };
+  const [decideTarget, setDecideTarget] = useState<DecideTarget | null>(null);
+  const [decideNote, setDecideNote] = useState("");
+
+  function decide(id: number, decision: DecideTarget["decision"]) {
+    setDecideTarget({ id, decision });
+    setDecideNote("");
+  }
+
+  async function confirmDecide() {
+    if (!decideTarget) return;
+    const { id, decision } = decideTarget;
+    if (decision === "revision_requested" && !decideNote.trim()) {
       alert(t("admin.persona.resignation.revisionNoteRequired"));
       return;
     }
     setBusyId(id);
-    fetch(apiUrl(`/api/admin/persona/resignation/${id}/decide`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision, note: note || undefined })
-    })
-      .then((r) => r.json())
-      .then((j) => {
-        if (j?.ok) startTransition(() => router.refresh());
-        else alert(j?.error ?? t("common.error"));
-      })
-      .catch(() => alert(t("common.error")))
-      .finally(() => setBusyId(null));
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/resignation/${id}/decide`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, note: decideNote.trim() || undefined })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j?.ok) {
+        setDecideTarget(null);
+        startTransition(() => router.refresh());
+      } else {
+        alert(j?.error ?? t("common.error"));
+      }
+    } catch {
+      alert(t("common.error"));
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -299,6 +310,19 @@ export default function ResignationAdminClient({
           </ul>
         )}
       </div>
+
+      {decideTarget && (
+        <DecisionModal
+          decision={decideTarget.decision}
+          note={decideNote}
+          onChange={setDecideNote}
+          onConfirm={confirmDecide}
+          onCancel={() => setDecideTarget(null)}
+          busy={busyId === decideTarget.id}
+          translate={t}
+          nsPrompt="admin.persona.resignation"
+        />
+      )}
     </>
   );
 }

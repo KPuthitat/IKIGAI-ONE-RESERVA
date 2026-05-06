@@ -19,7 +19,10 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
 
   if (!row) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (row.user_id !== user.id) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  if (row.status !== "pending") return NextResponse.json({ error: "already_decided" }, { status: 409 });
+  // อนุญาตยกเลิกได้ทั้ง pending + revision_requested
+  if (row.status !== "pending" && row.status !== "revision_requested") {
+    return NextResponse.json({ error: "already_decided" }, { status: 409 });
+  }
 
   db.prepare("UPDATE resignation_requests SET status = 'cancelled' WHERE id = ?").run(id);
   return NextResponse.json({ ok: true });

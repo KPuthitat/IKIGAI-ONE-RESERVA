@@ -102,14 +102,18 @@ export async function POST(req: Request) {
     }
   }
 
-  // Phase 1C v7: ตรวจ weekly_off_day + เสาร์-อาทิตย์ + วันหยุดนักขัตฤกษ์
-  // Hard block weekly_off_day ใช้กับการลา *ทุกประเภท* (รวม sick) เพราะหยุดอยู่แล้ว
+  // Phase 1C v8: ตรวจ weekly_off_day + เสาร์-อาทิตย์ + วันหยุดนักขัตฤกษ์
   const we = detectWeekendExtension(
     userRow.weekly_off_day,
     date_from, date_to,
     getPublicHolidaySet()
   );
-  if (we.fallsOnUserOffDay) {
+  // หัก off-day จากวันลาทั้งหมด — ถ้าเหลือ 0 = เลือกเฉพาะ off-day → block
+  const totalDaysInRange = Math.max(1, Math.floor(
+    (new Date(`${date_to}T00:00:00Z`).getTime() - new Date(`${date_from}T00:00:00Z`).getTime()) / 86400000
+  ) + 1);
+  const adjustedDays = Math.max(0, totalDaysInRange - we.onWeeklyOffDay.length);
+  if (we.fallsOnUserOffDay && adjustedDays === 0) {
     return NextResponse.json(
       { error: "leave_on_weekly_off_day_not_allowed", weekendInfo: we },
       { status: 400 }

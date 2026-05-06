@@ -43,8 +43,8 @@ export type LeaveAdminRow = {
   is_special_request?: number;
 };
 
-type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "all" | "special";
-const FILTERS: StatusFilter[] = ["pending", "special", "approved", "rejected", "cancelled", "all"];
+type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "revision_requested" | "all" | "special";
+const FILTERS: StatusFilter[] = ["pending", "special", "revision_requested", "approved", "rejected", "cancelled", "all"];
 
 export default function LeaveAdminClient({
   currentStatus,
@@ -63,31 +63,42 @@ export default function LeaveAdminClient({
   const [busyId, setBusyId] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
-  function decide(id: number, decision: "approved" | "rejected" | "revision_requested") {
-    const promptMsg = decision === "approved"
-      ? t("admin.persona.leave.notePromptApprove")
-      : decision === "rejected"
-        ? t("admin.persona.leave.notePromptReject")
-        : t("admin.persona.leave.notePromptRevision");
-    const note = prompt(promptMsg);
-    if (note === null) return;
-    if (decision === "revision_requested" && !note.trim()) {
+  // Custom modal state (Phase 1C v8 — แทน browser prompt)
+  type DecideTarget = { id: number; decision: "approved" | "rejected" | "revision_requested" };
+  const [decideTarget, setDecideTarget] = useState<DecideTarget | null>(null);
+  const [decideNote, setDecideNote] = useState("");
+
+  function decide(id: number, decision: DecideTarget["decision"]) {
+    setDecideTarget({ id, decision });
+    setDecideNote("");
+  }
+
+  async function confirmDecide() {
+    if (!decideTarget) return;
+    const { id, decision } = decideTarget;
+    if (decision === "revision_requested" && !decideNote.trim()) {
       alert(t("admin.persona.leave.revisionNoteRequired"));
       return;
     }
     setBusyId(id);
-    fetch(apiUrl(`/api/admin/persona/leave/${id}/decide`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision, note: note || undefined })
-    })
-      .then((r) => r.json())
-      .then((j) => {
-        if (j?.ok) startTransition(() => router.refresh());
-        else alert(j?.error ?? t("common.error"));
-      })
-      .catch(() => alert(t("common.error")))
-      .finally(() => setBusyId(null));
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/leave/${id}/decide`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, note: decideNote.trim() || undefined })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j?.ok) {
+        setDecideTarget(null);
+        startTransition(() => router.refresh());
+      } else {
+        alert(j?.error ?? t("common.error"));
+      }
+    } catch {
+      alert(t("common.error"));
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -268,9 +279,87 @@ export default function LeaveAdminClient({
           </>
         );
       })()}
+
+      {/* Decision modal — replaces browser prompt */}
+      {decideTarget && (
+        <DecisionModal
+          decision={decideTarget.decision}
+          note={decideNote}
+          onChange={setDecideNote}
+          onConfirm={confirmDecide}
+          onCancel={() => setDecideTarget(null)}
+          busy={busyId === decideTarget.id}
+          translate={t}
+          nsPrompt="admin.persona.leave"
+        />
+      )}
     </>
   );
 }
+
+function DecisionModal({
+  decision, note, onChange, onConfirm, onCancel, busy, translate, nsPrompt
+}: {
+  decision: "approved" | "rejected" | "revision_requested";
+  note: string;
+  onChange: (v: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+  busy: boolean;
+  translate: (key: string) => string;
+  nsPrompt: string; // "admin.persona.leave" หรือ "admin.persona.resignation"
+}) {
+  const promptKey =
+    decision === "approved" ? `${nsPrompt}.notePromptApprove` :
+    decision === "rejected" ? `${nsPrompt}.notePromptReject` :
+    `${nsPrompt}.notePromptRevision`;
+  const buttonClass =
+    decision === "approved" ? "bg-emerald-500 hover:bg-emerald-600" :
+    decision === "rejected" ? "bg-rose-500 hover:bg-rose-600" :
+    "bg-orange-500 hover:bg-orange-600";
+  const buttonLabel =
+    decision === "approved" ? translate("admin.persona.leave.approve") :
+    decision === "rejected" ? translate("admin.persona.leave.reject") :
+    translate("admin.persona.leave.requestRevision");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="font-semibold text-slate-800">{translate(promptKey)}</h3>
+        <textarea
+          className="input min-h-[100px]"
+          value={note}
+          onChange={(e) => onChange(e.target.value)}
+          maxLength={500}
+          autoFocus
+        />
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium"
+          >
+            {translate("common.cancel")}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className={`flex-1 py-2.5 rounded-lg text-white text-sm font-bold ${buttonClass} disabled:opacity-50`}
+          >
+            {busy ? translate("common.submitting") : buttonLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export { DecisionModal };
 
 function CreateForm({ staffList, onDone }: { staffList: StaffOption[]; onDone: () => void }) {
   const { t } = useLang();

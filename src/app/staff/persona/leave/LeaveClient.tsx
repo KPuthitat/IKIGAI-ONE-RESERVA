@@ -120,7 +120,6 @@ export default function LeaveClient({
   const [err, setErr] = useState<string | null>(null);
 
   const fullDays = daysBetween(from, to);
-  const computedDays = usePartial && from === to ? +(hours / 8).toFixed(2) : fullDays;
   const evidenceRequired = TYPES_REQUIRE_EVIDENCE.has(type);
 
   // Quota check — ถ้าเหลือไม่เต็มวัน ห้ามขอเต็มวัน (Phase 1C v4 #7)
@@ -191,15 +190,18 @@ export default function LeaveClient({
     return out;
   }, [from, to, holidayMap]);
 
-  // HARD BLOCK — ทุกประเภทการลา ถ้าตรงวันหยุดประจำสัปดาห์ (Phase 1C v7 #2)
-  const hardBlockedByOffDay = onUserOffDay.length > 0;
+  // Phase 1C v8: หัก off-day อัตโนมัติ → ไม่นับเป็นวันลา
+  // hard block เฉพาะกรณีที่ทุกวันที่เลือก = off-day ทั้งหมด (เช่น เลือกวันเดียวที่เป็น off-day)
+  const adjustedFullDays = Math.max(0, fullDays - onUserOffDay.length);
+  const hardBlockedByOffDay = onUserOffDay.length > 0 && adjustedFullDays === 0;
+  const hasOffDayDeduction = onUserOffDay.length > 0 && adjustedFullDays > 0;
+  const computedDays = usePartial && from === to ? +(hours / 8).toFixed(2) : adjustedFullDays;
 
-  // Special-track required (override ได้)
-  const specialTrackRequired: boolean = Boolean(!hardBlockedByOffDay && isLongLeaveType && stretch && (
+  // Special-track required (override ได้) — Phase 1C v8: off-day ไม่ block แล้ว
+  const specialTrackRequired: boolean = Boolean(!hardBlockedByOffDay && !annualNeedsYos && isLongLeaveType && stretch && (
     stretch.totalConsecutive > 3 ||
     longLeaveCount >= 2 ||
     advanceDays < 7 ||
-    annualNeedsYos ||
     weekendDates.length > 0 ||           // เสาร์/อาทิตย์
     onPublicHoliday.length > 0           // วันหยุดนักขัตฤกษ์
   ));
@@ -214,6 +216,29 @@ export default function LeaveClient({
     setFile(null);
     setIsSpecial(false);
     setErr(null);
+  }
+
+  function startRevise(r: LeaveRow) {
+    if (eligibleTypes.includes(r.type)) {
+      setType(r.type);
+    }
+    setFrom(r.date_from);
+    setTo(r.date_to);
+    if (r.hours && r.date_from === r.date_to) {
+      setUsePartial(true);
+      setHours(r.hours);
+    } else {
+      setUsePartial(false);
+    }
+    setReason(r.reason || "");
+    setFile(null);
+    setIsSpecial(false);
+    setErr(null);
+    setFormOpen(true);
+    // scroll up to form
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }
 
   async function submit(e: React.FormEvent) {
@@ -381,15 +406,19 @@ export default function LeaveClient({
               </div>
             )}
 
-            {/* HARD BLOCK warning — ทุกประเภทการลา ถ้าตรงวันหยุดประจำสัปดาห์ */}
+            {/* HARD BLOCK — เลือกแค่วันที่เป็น off-day ทั้งหมด */}
             {hardBlockedByOffDay && !isLongLeaveType && (
               <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm">
                 <div className="text-rose-700 font-medium">
-                  ✗ {t("staff.persona.leave.stretch.weeklyOffDayBlocked", { n: onUserOffDay.length })}
+                  {t("staff.persona.leave.stretch.weeklyOffDayBlocked")}
                 </div>
-                <div className="pt-1.5 text-xs font-medium text-rose-700">
-                  {t("staff.persona.leave.stretch.statusBlockedOffDay")}
-                </div>
+              </div>
+            )}
+
+            {/* INFO — มี off-day ในช่วงลา แต่ยังมีวันอื่นที่ต้องลา */}
+            {hasOffDayDeduction && !isLongLeaveType && (
+              <div className="rounded-lg border border-sky-300 bg-sky-50 p-3 text-sm text-sky-800">
+                {t("staff.persona.leave.stretch.weeklyOffDayInfo", { n: onUserOffDay.length })}
               </div>
             )}
 
@@ -458,10 +487,15 @@ export default function LeaveClient({
                       ⚠ {t("staff.persona.leave.stretch.publicHolidayWarning", { n: onPublicHoliday.length })}
                     </li>
                   )}
-                  {/* HARD BLOCK — ตรงกับวันหยุดประจำสัปดาห์ของ user (ติ๊ก special ก็ไม่ผ่าน) */}
-                  {onUserOffDay.length > 0 && (
+                  {/* Off-day: hard block ถ้าเลือกแค่ off-day, info ถ้ามีวันอื่นด้วย */}
+                  {hardBlockedByOffDay && (
                     <li className="text-rose-700 font-medium">
-                      ✗ {t("staff.persona.leave.stretch.weeklyOffDayBlocked", { n: onUserOffDay.length })}
+                      {t("staff.persona.leave.stretch.weeklyOffDayBlocked")}
+                    </li>
+                  )}
+                  {hasOffDayDeduction && (
+                    <li className="text-sky-700">
+                      {t("staff.persona.leave.stretch.weeklyOffDayInfo", { n: onUserOffDay.length })}
                     </li>
                   )}
                   {annualNeedsYos && (
@@ -472,15 +506,16 @@ export default function LeaveClient({
                     </li>
                   )}
                 </ul>
-                <div className="pt-1.5 text-xs font-medium border-t border-slate-200/50 mt-2">
-                  {hardBlockedByOffDay
-                    ? <span className="text-rose-700">{t("staff.persona.leave.stretch.statusBlockedOffDay")}</span>
-                    : annualNeedsYos
+                {/* Status banner — แสดงเฉพาะเมื่อต้อง action จริง (ไม่ซ้ำกับ ✗ ที่อยู่ในรายการแล้ว) */}
+                {(annualNeedsYos || specialTrackRequired || (!hardBlockedByOffDay && stretch.totalConsecutive > 1)) && (
+                  <div className="pt-1.5 text-xs font-medium border-t border-slate-200/50 mt-2">
+                    {annualNeedsYos
                       ? <span className="text-rose-700">{t("staff.persona.leave.stretch.statusBlocked")}</span>
                       : specialTrackRequired
                         ? <span className="text-amber-700">{t("staff.persona.leave.stretch.statusSpecialApproval")}</span>
                         : <span className="text-emerald-700">{t("staff.persona.leave.stretch.statusSelfService")}</span>}
-                </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -618,16 +653,28 @@ export default function LeaveClient({
                       </div>
                     )}
                   </div>
-                  {r.status === "pending" && (
-                    <button
-                      type="button"
-                      disabled={pending}
-                      onClick={() => cancelRequest(r.id)}
-                      className="text-xs text-rose-600 hover:underline"
-                    >
-                      {t("staff.persona.leave.cancel")}
-                    </button>
-                  )}
+                  <div className="flex flex-col gap-1 items-end">
+                    {r.status === "revision_requested" && (
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => startRevise(r)}
+                        className="text-xs px-2 py-1 rounded bg-orange-500 hover:bg-orange-600 text-white"
+                      >
+                        {t("staff.persona.leave.editAndResubmit")}
+                      </button>
+                    )}
+                    {(r.status === "pending" || r.status === "revision_requested") && (
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => cancelRequest(r.id)}
+                        className="text-xs text-rose-600 hover:underline"
+                      >
+                        {t("staff.persona.leave.cancel")}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </li>
             ))}

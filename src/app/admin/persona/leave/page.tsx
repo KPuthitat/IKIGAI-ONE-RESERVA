@@ -7,7 +7,7 @@ import LeaveAdminClient, { type LeaveAdminRow, type StaffOption } from "./LeaveA
 
 export const dynamic = "force-dynamic";
 
-type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "all" | "special";
+type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "revision_requested" | "all" | "special";
 
 export default function AdminLeavePage({
   searchParams
@@ -19,7 +19,7 @@ export default function AdminLeavePage({
   const db = getDb();
 
   const status: StatusFilter =
-    ["pending", "approved", "rejected", "cancelled", "all", "special"].includes(searchParams.status ?? "")
+    ["pending", "approved", "rejected", "cancelled", "revision_requested", "all", "special"].includes(searchParams.status ?? "")
       ? (searchParams.status as StatusFilter)
       : "pending";
 
