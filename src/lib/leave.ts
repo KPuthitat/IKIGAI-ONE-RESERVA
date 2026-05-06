@@ -94,10 +94,65 @@ export function getQuotaInfo(userId: number, type: LeaveTypeRow): QuotaInfo {
 
 /** Format ชั่วโมงเป็น "X วัน Y ชม." (ปัดเศษให้เป็นจำนวนเต็ม) */
 export function formatRemainingHours(hours: number): { days: number; hours: number; totalHours: number } {
-  const totalH = Math.round(hours * 2) / 2; // ปัดครึ่งชั่วโมง
+  const totalH = Math.round(hours * 2) / 2;
   const fullDays = Math.floor(totalH / 8);
   const restH = Math.round(totalH - fullDays * 8);
   return { days: fullDays, hours: restH, totalHours: totalH };
+}
+
+// ── Phase 1C v5: Weekend / weekly off-day extension intent detection ────
+
+export type WeekendExtensionInfo = {
+  weekendDates: string[];          // วัน Sat/Sun ในช่วงลา
+  onWeeklyOffDay: string[];         // วันที่ตรงกับ weekly_off_day ของพนักงาน
+  hasWeekendLeave: boolean;
+  fallsOnUserOffDay: boolean;
+};
+
+/**
+ * ตรวจการลาที่อาจมีเจตนา "ขยายวันหยุด"
+ * - เสาร์/อาทิตย์ในช่วงลา → suspicious (ร้านเปิด ต้องการคนทำงาน)
+ * - ตรงกับ weekly_off_day ของพนักงาน → ไม่จำเป็น (วันหยุดอยู่แล้ว)
+ */
+export function detectWeekendExtension(
+  weeklyOffDay: number | null,
+  dateFrom: string,
+  dateTo: string
+): WeekendExtensionInfo {
+  const weekendDates: string[] = [];
+  const onWeeklyOffDay: string[] = [];
+  const start = new Date(`${dateFrom}T00:00:00Z`);
+  const end = new Date(`${dateTo}T00:00:00Z`);
+  for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    const dow = d.getUTCDay(); // 0=Sun, 6=Sat
+    const ds = d.toISOString().slice(0, 10);
+    if (dow === 0 || dow === 6) weekendDates.push(ds);
+    if (weeklyOffDay != null && dow === weeklyOffDay) onWeeklyOffDay.push(ds);
+  }
+  return {
+    weekendDates,
+    onWeeklyOffDay,
+    hasWeekendLeave: weekendDates.length > 0,
+    fallsOnUserOffDay: onWeeklyOffDay.length > 0
+  };
+}
+
+// ── Phase 1C v5: Resignation logic ─────────────────────────────────────
+
+/**
+ * คำนวณวันสุดท้ายขั้นต่ำที่ต้องทำงาน = วันสุดท้ายของเดือนถัดจากเดือนที่ยื่น
+ * ตัวอย่าง: ยื่น 11 เม.ย. → ทำงานถึง 31 พ.ค.
+ */
+export function computeMinLastWorkingDay(submissionDateStr: string): string {
+  const [y, m] = submissionDateStr.split("-").map(Number);
+  // เดือนถัดไป (ใส่ +1) แล้วเอาวันสุดท้ายของเดือนนั้น
+  // วันสุดท้าย = วันแรกของเดือน +2 ลบ 1 วัน
+  const targetMonthIdx = (m - 1) + 2; // 0-based + 2 months
+  const targetYear = y + Math.floor(targetMonthIdx / 12);
+  const finalMonthIdx = targetMonthIdx % 12;
+  const firstOfNextNext = new Date(Date.UTC(targetYear, finalMonthIdx, 1));
+  firstOfNextNext.setUTCDate(firstOfNextNext.getUTCDate() - 1);
+  return firstOfNextNext.toISOString().slice(0, 10);
 }
 
 // ── File upload helpers ──────────────────────────────────────────────

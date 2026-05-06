@@ -23,9 +23,10 @@ export default function StaffLeavePage() {
   const db = getDb();
 
   const userMeta = db.prepare(
-    "SELECT id, gender, employment_type, hire_date FROM users WHERE id = ?"
+    "SELECT id, gender, employment_type, hire_date, weekly_off_day FROM users WHERE id = ?"
   ).get(user.id) as {
-    id: number; gender: string | null; employment_type: string | null; hire_date: string | null;
+    id: number; gender: string | null; employment_type: string | null;
+    hire_date: string | null; weekly_off_day: number | null;
   };
 
   const eligibleTypes: LeaveTypeRow[] = getEligibleLeaveTypesForUser(userMeta);
@@ -53,6 +54,7 @@ export default function StaffLeavePage() {
       holidays={holidays}
       yearsOfService={yearsOfService}
       longLeaveCount={longLeaveCount}
+      weeklyOffDay={userMeta.weekly_off_day}
       userGenderSet={Boolean(userMeta.gender)}
       userEmploymentSet={Boolean(userMeta.employment_type)}
     />

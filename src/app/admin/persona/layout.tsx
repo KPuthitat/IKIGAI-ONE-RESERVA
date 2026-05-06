@@ -18,6 +18,7 @@ export default function PersonaLayout({ children }: { children: React.ReactNode 
     { href: "/admin/persona/payroll", label: t(lang, "admin.persona.nav.payroll") },
     { href: "/admin/persona/service-charge", label: t(lang, "admin.persona.nav.svc") },
     { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
+    { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
     { href: "/admin/persona/reports", label: t(lang, "admin.persona.nav.reports") },
     { href: "/admin/persona/settings", label: t(lang, "admin.persona.nav.settings") }
   ];

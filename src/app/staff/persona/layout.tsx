@@ -24,7 +24,8 @@ export default function StaffPersonaLayout({ children }: { children: React.React
       <StaffPersonaTabs
         labels={{
           clock: t(lang, "staff.persona.tab.clock"),
-          leave: t(lang, "staff.persona.tab.leave")
+          leave: t(lang, "staff.persona.tab.leave"),
+          resignation: t(lang, "staff.persona.tab.resignation")
         }}
       />
       {children}

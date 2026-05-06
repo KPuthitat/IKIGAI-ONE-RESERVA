@@ -6,34 +6,23 @@ import { usePathname } from "next/navigation";
 export default function StaffPersonaTabs({
   labels
 }: {
-  labels: { clock: string; leave: string };
+  labels: { clock: string; leave: string; resignation: string };
 }) {
   const pathname = usePathname();
   const isLeave = pathname?.startsWith("/staff/persona/leave");
-  const isClock = !isLeave;
+  const isResignation = pathname?.startsWith("/staff/persona/resignation");
+  const isClock = !isLeave && !isResignation;
+
+  const cls = (active: boolean) =>
+    `flex-1 text-center py-2 rounded-lg text-sm font-medium transition ${
+      active ? "bg-brand text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
+    }`;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-1.5 flex gap-1">
-      <Link
-        href="/staff/persona"
-        className={`flex-1 text-center py-2 rounded-lg text-sm font-medium transition ${
-          isClock
-            ? "bg-brand text-white shadow-sm"
-            : "text-slate-600 hover:bg-slate-50"
-        }`}
-      >
-        {labels.clock}
-      </Link>
-      <Link
-        href="/staff/persona/leave"
-        className={`flex-1 text-center py-2 rounded-lg text-sm font-medium transition ${
-          isLeave
-            ? "bg-brand text-white shadow-sm"
-            : "text-slate-600 hover:bg-slate-50"
-        }`}
-      >
-        {labels.leave}
-      </Link>
+      <Link href="/staff/persona" className={cls(isClock)}>{labels.clock}</Link>
+      <Link href="/staff/persona/leave" className={cls(isLeave)}>{labels.leave}</Link>
+      <Link href="/staff/persona/resignation" className={cls(isResignation)}>{labels.resignation}</Link>
     </div>
   );
 }

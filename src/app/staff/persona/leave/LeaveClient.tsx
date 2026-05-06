@@ -81,6 +81,7 @@ export default function LeaveClient({
   holidays,
   yearsOfService,
   longLeaveCount,
+  weeklyOffDay,
   userGenderSet,
   userEmploymentSet
 }: {
@@ -90,6 +91,7 @@ export default function LeaveClient({
   holidays: PublicHoliday[];
   yearsOfService: number | null;
   longLeaveCount: number;
+  weeklyOffDay: number | null;
   userGenderSet: boolean;
   userEmploymentSet: boolean;
 }) {
@@ -140,13 +142,37 @@ export default function LeaveClient({
   );
   const annualNeedsYos = type === "annual" && (yearsOfService == null || yearsOfService < 1);
 
+  // Phase 1C v5: weekend extension detection (เสาร์/อาทิตย์ + วันหยุดประจำสัปดาห์)
+  const weekendDates: string[] = useMemo(() => {
+    if (!isLongLeaveType) return [];
+    const out: string[] = [];
+    const start = new Date(`${from}T00:00:00Z`);
+    const end = new Date(`${to}T00:00:00Z`);
+    for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const dow = d.getUTCDay();
+      if (dow === 0 || dow === 6) out.push(d.toISOString().slice(0, 10));
+    }
+    return out;
+  }, [isLongLeaveType, from, to]);
+  const onUserOffDay: string[] = useMemo(() => {
+    if (!isLongLeaveType || weeklyOffDay == null) return [];
+    const out: string[] = [];
+    const start = new Date(`${from}T00:00:00Z`);
+    const end = new Date(`${to}T00:00:00Z`);
+    for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      if (d.getUTCDay() === weeklyOffDay) out.push(d.toISOString().slice(0, 10));
+    }
+    return out;
+  }, [isLongLeaveType, from, to, weeklyOffDay]);
+
   // Special-track required ในกรณีไหนบ้าง?
   const specialTrackRequired = isLongLeaveType && stretch && (
     stretch.totalConsecutive > 3 ||
-    stretch.totalConsecutive > 5 ||
     longLeaveCount >= 2 ||
     advanceDays < 7 ||
-    annualNeedsYos
+    annualNeedsYos ||
+    weekendDates.length > 0 ||      // เสาร์/อาทิตย์
+    onUserOffDay.length > 0          // ตรงกับ weekly_off_day
   );
 
   function reset() {
@@ -325,14 +351,14 @@ export default function LeaveClient({
               </div>
             )}
 
-            {/* Stretch preview (เฉพาะ personal/annual) */}
-            {isLongLeaveType && stretch && (stretch.prepended.length > 0 || stretch.appended.length > 0 || stretch.totalConsecutive > 1) && (
+            {/* Stretch preview (เฉพาะ personal/annual) — แสดงเสมอเพื่อแจ้งเตือน */}
+            {isLongLeaveType && stretch && (
               <div className={`rounded-lg border p-3 text-sm space-y-1.5 ${
                 annualNeedsYos
                   ? "border-rose-300 bg-rose-50"
-                  : stretch.totalConsecutive <= 3 && longLeaveCount < 2 && advanceDays >= 7
-                    ? "border-emerald-300 bg-emerald-50"
-                    : "border-amber-300 bg-amber-50"
+                  : specialTrackRequired
+                    ? "border-amber-300 bg-amber-50"
+                    : "border-emerald-300 bg-emerald-50"
               }`}>
                 <div className="font-medium text-slate-800">
                   {t("staff.persona.leave.stretch.title", { n: stretch.totalConsecutive })}
@@ -358,10 +384,21 @@ export default function LeaveClient({
                     {longLeaveCount < 2 ? "✓" : "⚠"}{" "}
                     {t("staff.persona.leave.stretch.usageCheck", { used: longLeaveCount })}
                   </li>
-                  {/* Phase 1C v4 #12 — ลากิจล่วงหน้า < 7 วัน ไม่ขึ้นเตือนปกติ ต้องใช้ track พิเศษ */}
-                  {advanceDays < 7 && (
+                  {/* Phase 1C v5 #12 — ลากิจ < 7 วัน แสดงเตือนเสมอ (ไม่ silent) */}
+                  <li className={advanceDays >= 7 ? "text-emerald-700" : "text-amber-700"}>
+                    {advanceDays >= 7 ? "✓" : "⚠"}{" "}
+                    {t("staff.persona.leave.stretch.advanceCheck", { n: advanceDays })}
+                  </li>
+                  {/* Phase 1C v5 #10 — เสาร์/อาทิตย์ */}
+                  {weekendDates.length > 0 && (
                     <li className="text-amber-700">
-                      ⚠ {t("staff.persona.leave.stretch.advanceCheck", { n: advanceDays })}
+                      ⚠ {t("staff.persona.leave.stretch.weekendWarning", { n: weekendDates.length })}
+                    </li>
+                  )}
+                  {/* ตรงกับวันหยุดประจำสัปดาห์ของ user */}
+                  {onUserOffDay.length > 0 && (
+                    <li className="text-amber-700">
+                      ⚠ {t("staff.persona.leave.stretch.weeklyOffDayWarning", { n: onUserOffDay.length })}
                     </li>
                   )}
                   {annualNeedsYos && (
@@ -372,6 +409,13 @@ export default function LeaveClient({
                     </li>
                   )}
                 </ul>
+                <div className="pt-1.5 text-xs font-medium border-t border-slate-200/50 mt-2">
+                  {annualNeedsYos
+                    ? <span className="text-rose-700">{t("staff.persona.leave.stretch.statusBlocked")}</span>
+                    : specialTrackRequired
+                      ? <span className="text-amber-700">{t("staff.persona.leave.stretch.statusSpecialApproval")}</span>
+                      : <span className="text-emerald-700">{t("staff.persona.leave.stretch.statusSelfService")}</span>}
+                </div>
               </div>
             )}
 

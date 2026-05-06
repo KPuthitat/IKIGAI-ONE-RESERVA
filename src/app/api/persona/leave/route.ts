@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
   ALL_LEAVE_TYPES, getEligibleLeaveTypesForUser, saveLeaveAttachment,
-  analyzeLongLeave, type LeaveType
+  analyzeLongLeave, detectWeekendExtension, type LeaveType
 } from "@/lib/leave";
 
 // POST /api/persona/leave — staff submit (multipart/form-data)
@@ -64,8 +64,11 @@ export async function POST(req: Request) {
 
   // Eligibility check
   const userRow = getDb().prepare(
-    "SELECT id, gender, employment_type, hire_date FROM users WHERE id = ?"
-  ).get(user.id) as { id: number; gender: string | null; employment_type: string | null; hire_date: string | null };
+    "SELECT id, gender, employment_type, hire_date, weekly_off_day FROM users WHERE id = ?"
+  ).get(user.id) as {
+    id: number; gender: string | null; employment_type: string | null;
+    hire_date: string | null; weekly_off_day: number | null;
+  };
   const eligible = getEligibleLeaveTypesForUser(userRow);
   const matchedType = eligible.find((t) => t.code === type);
   if (!matchedType) {
@@ -79,7 +82,6 @@ export async function POST(req: Request) {
   }
 
   // Long-leave / consecutive-stretch check (เฉพาะ personal & annual)
-  // ไม่ block ถ้าเลือก is_special_request (track พิเศษ)
   if (type === "personal" || type === "annual") {
     const analysis = analyzeLongLeave({
       userId: user.id,
@@ -88,7 +90,6 @@ export async function POST(req: Request) {
       dateTo: date_to,
       hireDate: userRow.hire_date
     });
-    // Standard rules check (ตามเงื่อนไข 3 ข้อ + อายุงาน)
     const inStandardRules =
       analysis.status === "self_service" &&
       (analysis.meetsAnnualEligibility !== false);
@@ -96,6 +97,19 @@ export async function POST(req: Request) {
     if (!inStandardRules && !isSpecial) {
       return NextResponse.json(
         { error: "exceeds_rules_use_special_track", analysis },
+        { status: 400 }
+      );
+    }
+  }
+
+  // Phase 1C v5: เจตนาขยายวันหยุด (เสาร์-อาทิตย์ + weekly_off_day)
+  // ใช้กับการลาทุกประเภท ยกเว้น sick/pt_emergency/maternity/sterilization/ordination/military
+  // (ลาฉุกเฉินจริงๆ ไม่ควรถูกบล็อก เพราะอาจจำเป็น)
+  if (type === "personal" || type === "annual") {
+    const we = detectWeekendExtension(userRow.weekly_off_day, date_from, date_to);
+    if ((we.hasWeekendLeave || we.fallsOnUserOffDay) && !isSpecial) {
+      return NextResponse.json(
+        { error: "weekend_extension_use_special_track", weekendInfo: we },
         { status: 400 }
       );
     }

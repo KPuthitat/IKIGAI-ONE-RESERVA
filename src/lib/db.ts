@@ -195,6 +195,8 @@ function runMigrations(db: Database.Database): void {
 
   // Phase 1C v3: hire_date + public_holidays
   if (!unames.has("hire_date")) db.exec("ALTER TABLE users ADD COLUMN hire_date TEXT");
+  // Phase 1C v5: weekly_off_day (0=Sun, 1=Mon, ..., 6=Sat, NULL=ยังไม่ตั้ง)
+  if (!unames.has("weekly_off_day")) db.exec("ALTER TABLE users ADD COLUMN weekly_off_day INTEGER");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS public_holidays (
@@ -230,6 +232,27 @@ function runMigrations(db: Database.Database): void {
     ["2026-12-31", "วันสิ้นปี", "New Year's Eve"]
   ];
   for (const h of holidays2026) seedHoliday.run(...h);
+
+  // Phase 1C v5: resignation_requests
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS resignation_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      proposed_last_day TEXT NOT NULL,           -- staff เลือก
+      computed_min_last_day TEXT NOT NULL,        -- ระบบคำนวณตามกติกา (เดือนถัดไป)
+      reason TEXT NOT NULL,
+      evidence_filename TEXT,
+      is_special_request INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','approved','rejected','cancelled')),
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT,
+      decision_note TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_resignation_user ON resignation_requests(user_id);
+    CREATE INDEX IF NOT EXISTS idx_resignation_status ON resignation_requests(status, created_at);
+  `);
 }
 
 export type Branch = {
