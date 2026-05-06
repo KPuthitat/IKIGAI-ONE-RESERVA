@@ -166,14 +166,15 @@ export default function LeaveClient({
   }, [isLongLeaveType, from, to, weeklyOffDay]);
 
   // Special-track required ในกรณีไหนบ้าง?
-  const specialTrackRequired = isLongLeaveType && stretch && (
+  // wrap Boolean() เพื่อบังคับ type เป็น boolean (ไม่ใช่ boolean | null)
+  const specialTrackRequired: boolean = Boolean(isLongLeaveType && stretch && (
     stretch.totalConsecutive > 3 ||
     longLeaveCount >= 2 ||
     advanceDays < 7 ||
     annualNeedsYos ||
     weekendDates.length > 0 ||      // เสาร์/อาทิตย์
     onUserOffDay.length > 0          // ตรงกับ weekly_off_day
-  );
+  ));
 
   function reset() {
     setType(eligibleTypes[0] ?? "sick");
