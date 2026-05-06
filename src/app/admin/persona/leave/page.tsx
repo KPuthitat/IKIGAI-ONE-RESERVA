@@ -7,7 +7,7 @@ import LeaveAdminClient, { type LeaveAdminRow, type StaffOption } from "./LeaveA
 
 export const dynamic = "force-dynamic";
 
-type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "all";
+type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "all" | "special";
 
 export default function AdminLeavePage({
   searchParams
@@ -19,13 +19,15 @@ export default function AdminLeavePage({
   const db = getDb();
 
   const status: StatusFilter =
-    ["pending", "approved", "rejected", "cancelled", "all"].includes(searchParams.status ?? "")
+    ["pending", "approved", "rejected", "cancelled", "all", "special"].includes(searchParams.status ?? "")
       ? (searchParams.status as StatusFilter)
       : "pending";
 
   const params: Array<string | number> = [];
   let whereClause = "";
-  if (status !== "all") {
+  if (status === "special") {
+    whereClause = "WHERE r.is_special_request = 1 AND r.status = 'pending'";
+  } else if (status !== "all") {
     whereClause = "WHERE r.status = ?";
     params.push(status);
   }
@@ -33,7 +35,7 @@ export default function AdminLeavePage({
   const rawRequests = db.prepare(`
     SELECT r.id, r.user_id, r.type, r.date_from, r.date_to, r.days, r.hours, r.reason,
            r.evidence_filename, r.status, r.decided_by, r.decided_at, r.decision_note,
-           r.created_by, r.created_at,
+           r.created_by, r.created_at, r.is_special_request,
            u.username, u.display_name,
            du.display_name AS decided_by_name,
            cu.display_name AS created_by_name
@@ -70,6 +72,10 @@ export default function AdminLeavePage({
     SELECT status, COUNT(*) AS n FROM leave_requests GROUP BY status
   `).all() as Array<{ status: string; n: number }>;
   const countMap = Object.fromEntries(counts.map(c => [c.status, c.n])) as Record<string, number>;
+  const specialCount = (db.prepare(
+    "SELECT COUNT(*) AS n FROM leave_requests WHERE is_special_request = 1 AND status = 'pending'"
+  ).get() as { n: number }).n;
+  countMap.special = specialCount;
 
   // staff list สำหรับ "ลงวันลาให้พนักงาน"
   const staffList = db.prepare(`

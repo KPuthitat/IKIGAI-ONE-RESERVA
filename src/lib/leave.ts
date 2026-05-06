@@ -51,24 +51,53 @@ export function getEligibleLeaveTypesForUser(user: {
   });
 }
 
-/** วันที่ใช้ไปแล้วในปีนี้ของ type นี้ (รวม pending + approved) */
-export function getLeaveDaysUsedThisYear(userId: number, type: LeaveType): number {
+/** ชั่วโมงที่ใช้ไปแล้วในปีนี้ — แปลง days → hours (1 day = 8h) */
+export function getLeaveHoursUsedThisYear(userId: number, type: LeaveType): number {
   const year = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 4);
   const row = getDb().prepare(`
-    SELECT COALESCE(SUM(days), 0) AS total
+    SELECT COALESCE(SUM(
+      CASE WHEN hours IS NOT NULL THEN hours ELSE days * 8 END
+    ), 0) AS total_hours
     FROM leave_requests
     WHERE user_id = ? AND type = ?
       AND status IN ('pending','approved')
       AND substr(date_from, 1, 4) = ?
-  `).get(userId, type, year) as { total: number };
-  return Number(row.total) || 0;
+  `).get(userId, type, year) as { total_hours: number };
+  return Number(row.total_hours) || 0;
 }
 
+/** Quota override ของ user (ถ้ามี) มิฉะนั้นคืน default จาก leave_types */
+export function getEffectiveQuotaDays(userId: number, type: LeaveTypeRow): number | null {
+  const row = getDb().prepare(
+    "SELECT quota_days FROM user_leave_quotas WHERE user_id = ? AND type = ?"
+  ).get(userId, type.code) as { quota_days: number } | undefined;
+  if (row) return row.quota_days;
+  return type.default_quota_days;
+}
+
+/** สิทธิ์คงเหลือ — แสดงเป็น "X วัน Y ชั่วโมง" (1 วัน = 8 ชม.) */
 export function getQuotaInfo(userId: number, type: LeaveTypeRow): QuotaInfo {
-  const used = getLeaveDaysUsedThisYear(userId, type.code);
-  const quota = type.default_quota_days;
-  const remaining = quota == null ? null : Math.max(0, quota - used);
-  return { type: type.code, quota, used, remaining };
+  const usedHours = getLeaveHoursUsedThisYear(userId, type.code);
+  const quotaDays = getEffectiveQuotaDays(userId, type);
+  if (quotaDays == null) {
+    return { type: type.code, quota: null, used: +(usedHours / 8).toFixed(2), remaining: null };
+  }
+  const quotaHours = quotaDays * 8;
+  const remainingHours = Math.max(0, quotaHours - usedHours);
+  return {
+    type: type.code,
+    quota: quotaDays,
+    used: +(usedHours / 8).toFixed(2),
+    remaining: +(remainingHours / 8).toFixed(4)  // ใช้ทศนิยม 4 ตัว ป้องกัน rounding
+  };
+}
+
+/** Format ชั่วโมงเป็น "X วัน Y ชม." (ปัดเศษให้เป็นจำนวนเต็ม) */
+export function formatRemainingHours(hours: number): { days: number; hours: number; totalHours: number } {
+  const totalH = Math.round(hours * 2) / 2; // ปัดครึ่งชั่วโมง
+  const fullDays = Math.floor(totalH / 8);
+  const restH = Math.round(totalH - fullDays * 8);
+  return { days: fullDays, hours: restH, totalHours: totalH };
 }
 
 // ── File upload helpers ──────────────────────────────────────────────
@@ -79,7 +108,7 @@ const ALLOWED_TYPES = new Set([
   "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif",
   "application/pdf"
 ]);
-const MAX_BYTES = 5 * 1024 * 1024; // 5MB
+const MAX_BYTES = 3 * 1024 * 1024; // 3MB (Phase 1C v4 — ลดลงเพื่อประหยัด disk)
 
 export async function saveLeaveAttachment(
   userId: number,

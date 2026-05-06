@@ -1,9 +1,10 @@
 // Client-safe constants & types สำหรับระบบลา
 // (แยกจาก leave.ts เพราะ leave.ts ใช้ node:fs/node:path → bundle ฝั่ง client ไม่ได้)
 
+// pilgrimage ถูกลบออกตามคำขอผู้ใช้ (Phase 1C v4)
 export const ALL_LEAVE_TYPES = [
   "sick", "personal", "annual", "pt_emergency",
-  "maternity", "sterilization", "ordination", "pilgrimage", "military"
+  "maternity", "sterilization", "ordination", "military"
 ] as const;
 
 export type LeaveType = typeof ALL_LEAVE_TYPES[number];
@@ -14,6 +15,7 @@ export type LeaveTypeRow = {
   gender_eligibility: "all" | "male" | "female";
   employment_eligibility: "all" | "pt" | "ft";
   requires_pre_approval: number;
+  requires_evidence: number;  // 1 = ต้องแนบหลักฐาน, 0 = ไม่บังคับ
   sort_order: number;
 };
 

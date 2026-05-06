@@ -120,6 +120,8 @@ function runMigrations(db: Database.Database): void {
   if (!lnames.has("hours")) db.exec("ALTER TABLE leave_requests ADD COLUMN hours REAL"); // null = full day(s)
   if (!lnames.has("evidence_filename")) db.exec("ALTER TABLE leave_requests ADD COLUMN evidence_filename TEXT");
   if (!lnames.has("created_by")) db.exec("ALTER TABLE leave_requests ADD COLUMN created_by INTEGER REFERENCES users(id)");
+  // Phase 1C v4: special-track flag (ต้องอนุมัติพิเศษโดยผู้บริหาร)
+  if (!lnames.has("is_special_request")) db.exec("ALTER TABLE leave_requests ADD COLUMN is_special_request INTEGER NOT NULL DEFAULT 0");
 
   // leave_types catalog (กฎเกณฑ์การลา)
   db.exec(`
@@ -132,30 +134,50 @@ function runMigrations(db: Database.Database): void {
       sort_order INTEGER NOT NULL DEFAULT 0
     );
   `);
-  // seed/update — idempotent
+  // Phase 1C v4: เพิ่มคอลัมน์ requires_evidence (DEFAULT 1 — ต้องแนบหลักฐาน)
+  const ltcols = db.prepare("PRAGMA table_info(leave_types)").all() as Array<{ name: string }>;
+  if (!ltcols.some((c) => c.name === "requires_evidence")) {
+    db.exec("ALTER TABLE leave_types ADD COLUMN requires_evidence INTEGER NOT NULL DEFAULT 1");
+  }
+
+  // seed/update — idempotent (รวมการลบ pilgrimage)
+  db.prepare("DELETE FROM leave_types WHERE code = 'pilgrimage'").run();
   const seedLeaveType = db.prepare(`
-    INSERT INTO leave_types (code, default_quota_days, gender_eligibility, employment_eligibility, requires_pre_approval, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO leave_types (code, default_quota_days, gender_eligibility, employment_eligibility, requires_pre_approval, requires_evidence, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(code) DO UPDATE SET
       default_quota_days = excluded.default_quota_days,
       gender_eligibility = excluded.gender_eligibility,
       employment_eligibility = excluded.employment_eligibility,
       requires_pre_approval = excluded.requires_pre_approval,
+      requires_evidence = excluded.requires_evidence,
       sort_order = excluded.sort_order
   `);
-  // [code, quota_days, gender, employment, pre_approval, sort]
-  const types: Array<[string, number | null, string, string, number, number]> = [
-    ["sick",          30,   "all",    "all", 0, 1],
-    ["personal",      3,    "all",    "all", 0, 2],
-    ["annual",        6,    "all",    "all", 0, 3],
-    ["pt_emergency",  null, "all",    "pt",  0, 4],
-    ["maternity",     98,   "female", "all", 1, 5],
-    ["sterilization", null, "all",    "all", 1, 6],
-    ["ordination",    90,   "male",   "all", 0, 7],
-    ["pilgrimage",    null, "all",    "all", 0, 8],
-    ["military",      60,   "male",   "all", 0, 9]
+  // [code, quota_days, gender, employment, pre_approval, requires_evidence, sort]
+  const types: Array<[string, number | null, string, string, number, number, number]> = [
+    ["sick",          30,   "all",    "all", 0, 1, 1],   // ต้องแนบหลักฐานเสมอ
+    ["personal",      3,    "all",    "all", 0, 0, 2],   // ไม่บังคับแนบ
+    ["annual",        6,    "all",    "all", 0, 0, 3],   // ไม่บังคับแนบ
+    ["pt_emergency",  null, "all",    "pt",  0, 1, 4],
+    ["maternity",     98,   "female", "all", 1, 1, 5],
+    ["sterilization", null, "all",    "all", 1, 1, 6],
+    ["ordination",    90,   "male",   "all", 0, 1, 7],
+    ["military",      60,   "male",   "all", 0, 1, 8]
   ];
   for (const t of types) seedLeaveType.run(...t);
+
+  // user_leave_quotas — admin override quota รายคน (Phase 1C v4)
+  // ถ้าไม่มี row → ใช้ default จาก leave_types
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_leave_quotas (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      quota_days REAL NOT NULL,
+      updated_by INTEGER REFERENCES users(id),
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, type)
+    );
+  `);
 
   // leave_unlocks — admin pre-approves ก่อนพนักงานขอลาประเภทพิเศษ (maternity, sterilization)
   db.exec(`

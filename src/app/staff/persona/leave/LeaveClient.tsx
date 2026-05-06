@@ -9,32 +9,6 @@ import type { LeaveType, QuotaInfo, PublicHoliday } from "@/lib/leave-types";
 export type { LeaveType };
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
 
-// Client-side stretch calculation (mirror ของ computeStretch ใน lib/leave.ts)
-function addDays(dateStr: string, n: number): string {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-function clientComputeStretch(from: string, to: string, holidayMap: Map<string, PublicHoliday>) {
-  const fMs = new Date(`${from}T00:00:00Z`).getTime();
-  const tMs = new Date(`${to}T00:00:00Z`).getTime();
-  const leaveDays = Math.max(1, Math.floor((tMs - fMs) / 86400000) + 1);
-
-  const prepended: PublicHoliday[] = [];
-  let cur = addDays(from, -1);
-  while (holidayMap.has(cur)) {
-    prepended.unshift(holidayMap.get(cur)!);
-    cur = addDays(cur, -1);
-  }
-  const appended: PublicHoliday[] = [];
-  cur = addDays(to, 1);
-  while (holidayMap.has(cur)) {
-    appended.push(holidayMap.get(cur)!);
-    cur = addDays(cur, 1);
-  }
-  return { leaveDays, prepended, appended, totalConsecutive: leaveDays + prepended.length + appended.length };
-}
-
 export type LeaveRow = {
   id: number;
   type: LeaveType;
@@ -50,7 +24,46 @@ export type LeaveRow = {
   decision_note: string | null;
   created_by: number | null;
   created_at: string;
+  is_special_request?: number;
 };
+
+// Map: which leave types require attached evidence?
+// (mirror ของ leave_types.requires_evidence — keep in sync กับ db.ts seed)
+const TYPES_REQUIRE_EVIDENCE = new Set<LeaveType>([
+  "sick", "pt_emergency", "maternity", "sterilization", "ordination", "military"
+]);
+
+// Format ชั่วโมงเป็น "X วัน Y ชม." หรือ "X วัน" หรือ "Y ชม." (ไม่ใช้ทศนิยม)
+function fmtRemaining(remainingDaysDecimal: number, t: (k: any) => string): string {
+  const totalH = Math.round(remainingDaysDecimal * 8 * 2) / 2;
+  const fullDays = Math.floor(totalH / 8);
+  const restH = Math.round(totalH - fullDays * 8);
+  if (fullDays > 0 && restH > 0) {
+    return t("staff.persona.leave.daysAndHours")
+      .replace("{d}", String(fullDays))
+      .replace("{h}", String(restH));
+  }
+  if (fullDays > 0) return t("staff.persona.leave.daysOnly").replace("{d}", String(fullDays));
+  return t("staff.persona.leave.hoursOnly").replace("{h}", String(restH));
+}
+
+function clientComputeStretch(from: string, to: string, holidayMap: Map<string, PublicHoliday>) {
+  const fMs = new Date(`${from}T00:00:00Z`).getTime();
+  const tMs = new Date(`${to}T00:00:00Z`).getTime();
+  const leaveDays = Math.max(1, Math.floor((tMs - fMs) / 86400000) + 1);
+  const addDays = (d: string, n: number) => {
+    const x = new Date(`${d}T00:00:00Z`);
+    x.setUTCDate(x.getUTCDate() + n);
+    return x.toISOString().slice(0, 10);
+  };
+  const prepended: PublicHoliday[] = [];
+  let cur = addDays(from, -1);
+  while (holidayMap.has(cur)) { prepended.unshift(holidayMap.get(cur)!); cur = addDays(cur, -1); }
+  const appended: PublicHoliday[] = [];
+  cur = addDays(to, 1);
+  while (holidayMap.has(cur)) { appended.push(holidayMap.get(cur)!); cur = addDays(cur, 1); }
+  return { leaveDays, prepended, appended, totalConsecutive: leaveDays + prepended.length + appended.length };
+}
 
 function todayBkkStr(): string {
   return new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -100,28 +113,41 @@ export default function LeaveClient({
   const [hours, setHours] = useState<number>(3);
   const [reason, setReason] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [isSpecial, setIsSpecial] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // คำนวณ days: ถ้า partial-day → days = hours/8, else วันเต็มจำนวน
   const fullDays = daysBetween(from, to);
   const computedDays = usePartial && from === to ? +(hours / 8).toFixed(2) : fullDays;
+  const evidenceRequired = TYPES_REQUIRE_EVIDENCE.has(type);
 
-  // Real-time stretch analysis (เฉพาะลากิจ/ลาพักร้อน)
+  // Quota check — ถ้าเหลือไม่เต็มวัน ห้ามขอเต็มวัน (Phase 1C v4 #7)
+  const matchedQuota = quotas.find((q) => q.type === type);
+  const isFullDayRequest = !(usePartial && from === to);
+  const remainingHoursInQuota = matchedQuota?.remaining != null ? matchedQuota.remaining * 8 : null;
+  const remainingHasFraction =
+    remainingHoursInQuota != null && remainingHoursInQuota > 0 && remainingHoursInQuota < 8;
+  const fullDayBlockedByFraction = isFullDayRequest && remainingHasFraction;
+
+  // Stretch analysis (เฉพาะ personal/annual)
   const isLongLeaveType = type === "personal" || type === "annual";
   const stretch = useMemo(
     () => isLongLeaveType ? clientComputeStretch(from, to, holidayMap) : null,
     [isLongLeaveType, from, to, holidayMap]
   );
-  const todayBkk = todayBkkStr();
   const advanceDays = Math.floor(
-    (new Date(`${from}T00:00:00Z`).getTime() - new Date(`${todayBkk}T00:00:00Z`).getTime()) / 86400000
+    (new Date(`${from}T00:00:00Z`).getTime() - new Date(`${todayBkkStr()}T00:00:00Z`).getTime()) / 86400000
   );
   const annualNeedsYos = type === "annual" && (yearsOfService == null || yearsOfService < 1);
-  const exceedsMax = stretch ? stretch.totalConsecutive > 5 : false;
-  const withinAll = stretch
-    ? stretch.totalConsecutive <= 3 && longLeaveCount < 2 && advanceDays >= 7
-    : false;
+
+  // Special-track required ในกรณีไหนบ้าง?
+  const specialTrackRequired = isLongLeaveType && stretch && (
+    stretch.totalConsecutive > 3 ||
+    stretch.totalConsecutive > 5 ||
+    longLeaveCount >= 2 ||
+    advanceDays < 7 ||
+    annualNeedsYos
+  );
 
   function reset() {
     setType(eligibleTypes[0] ?? "sick");
@@ -131,14 +157,22 @@ export default function LeaveClient({
     setHours(3);
     setReason("");
     setFile(null);
+    setIsSpecial(false);
     setErr(null);
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    if (!reason.trim()) { setErr(t("staff.persona.leave.err.reason_required")); return; }
     if (from > to) { setErr(t("staff.persona.leave.err.dateRange")); return; }
-    if (!file) { setErr(t("staff.persona.leave.err.evidenceRequired")); return; }
+    if (from < todayBkkStr()) { setErr(t("staff.persona.leave.err.past_date_not_allowed")); return; }
+    if (evidenceRequired && !file) { setErr(t("staff.persona.leave.err.evidenceRequired")); return; }
+    if (fullDayBlockedByFraction) { setErr(t("staff.persona.leave.err.fractionalQuota")); return; }
+    if (specialTrackRequired && !isSpecial) {
+      setErr(t("staff.persona.leave.err.exceeds_rules_use_special_track"));
+      return;
+    }
 
     setBusy(true);
     try {
@@ -149,13 +183,15 @@ export default function LeaveClient({
       fd.append("days", String(computedDays));
       if (usePartial && from === to) fd.append("hours", String(hours));
       fd.append("reason", reason);
-      fd.append("file", file);
+      if (file) fd.append("file", file);
+      if (isSpecial) fd.append("is_special_request", "1");
 
       const res = await fetch(apiUrl("/api/persona/leave"), { method: "POST", body: fd });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const errKey = `staff.persona.leave.err.${data.error}`;
-        setErr(t(errKey as any) === errKey ? (data.error || t("common.error")) : t(errKey as any));
+        const translated = t(errKey as any);
+        setErr(translated === errKey ? (data.error || t("common.error")) : translated);
         return;
       }
       reset();
@@ -171,9 +207,8 @@ export default function LeaveClient({
   async function cancelRequest(id: number) {
     if (!confirm(t("staff.persona.leave.confirmCancel"))) return;
     const res = await fetch(apiUrl(`/api/persona/leave/${id}`), { method: "DELETE" });
-    if (res.ok) {
-      startTransition(() => router.refresh());
-    } else {
+    if (res.ok) startTransition(() => router.refresh());
+    else {
       const j = await res.json().catch(() => ({}));
       alert(j.error || t("common.error"));
     }
@@ -181,16 +216,13 @@ export default function LeaveClient({
 
   return (
     <>
-      {/* Profile-not-set warning */}
       {(!userGenderSet || !userEmploymentSet) && (
         <div className="card border-l-4 border-amber-400 bg-amber-50">
-          <p className="text-sm text-amber-900">
-            {t("staff.persona.leave.profileIncomplete")}
-          </p>
+          <p className="text-sm text-amber-900">{t("staff.persona.leave.profileIncomplete")}</p>
         </div>
       )}
 
-      {/* Quota overview */}
+      {/* Quota overview — แสดง "X วัน Y ชม." */}
       <div className="card">
         <h2 className="font-semibold text-slate-800 mb-3">
           {t("staff.persona.leave.quotaTitle")}
@@ -205,8 +237,8 @@ export default function LeaveClient({
                 <span className="text-slate-500">
                   {q.quota == null
                     ? t("staff.persona.leave.unlimited")
-                    : t("staff.persona.leave.remainingQuota", {
-                        remaining: q.remaining ?? 0,
+                    : t("staff.persona.leave.remainingOf", {
+                        remaining: fmtRemaining(q.remaining ?? 0, t),
                         quota: q.quota
                       })}
                 </span>
@@ -216,7 +248,7 @@ export default function LeaveClient({
         )}
       </div>
 
-      {/* New request — collapsible */}
+      {/* Form — collapsible */}
       <div className="card">
         <button
           type="button"
@@ -234,11 +266,7 @@ export default function LeaveClient({
           <form onSubmit={submit} className="space-y-3 mt-4">
             <div>
               <label className="label">{t("staff.persona.leave.type")}</label>
-              <select
-                className="input"
-                value={type}
-                onChange={(e) => setType(e.target.value as LeaveType)}
-              >
+              <select className="input" value={type} onChange={(e) => setType(e.target.value as LeaveType)}>
                 {eligibleTypes.map((tp) => (
                   <option key={tp} value={tp}>{t(`leave.type.${tp}` as any)}</option>
                 ))}
@@ -268,17 +296,14 @@ export default function LeaveClient({
             {from === to && (
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox" checked={usePartial}
-                    onChange={(e) => setUsePartial(e.target.checked)}
-                  />
+                  <input type="checkbox" checked={usePartial} onChange={(e) => setUsePartial(e.target.checked)} />
                   {t("staff.persona.leave.partialDay")}
                 </label>
                 {usePartial && (
                   <div>
                     <label className="label">{t("staff.persona.leave.hoursLabel")}</label>
                     <input
-                      type="number" min={1} max={8} step={0.5}
+                      type="number" min={1} max={8} step={1}
                       className="input"
                       value={hours}
                       onChange={(e) => setHours(Number(e.target.value))}
@@ -294,12 +319,18 @@ export default function LeaveClient({
                 : t("staff.persona.leave.totalDays", { n: computedDays })}
             </div>
 
-            {/* Long-leave stretch preview (personal/annual เท่านั้น) */}
+            {fullDayBlockedByFraction && (
+              <div className="text-rose-600 text-sm border border-rose-200 bg-rose-50 rounded p-2">
+                {t("staff.persona.leave.err.fractionalQuota")}
+              </div>
+            )}
+
+            {/* Stretch preview (เฉพาะ personal/annual) */}
             {isLongLeaveType && stretch && (stretch.prepended.length > 0 || stretch.appended.length > 0 || stretch.totalConsecutive > 1) && (
               <div className={`rounded-lg border p-3 text-sm space-y-1.5 ${
-                exceedsMax || annualNeedsYos
+                annualNeedsYos
                   ? "border-rose-300 bg-rose-50"
-                  : withinAll
+                  : stretch.totalConsecutive <= 3 && longLeaveCount < 2 && advanceDays >= 7
                     ? "border-emerald-300 bg-emerald-50"
                     : "border-amber-300 bg-amber-50"
               }`}>
@@ -319,18 +350,20 @@ export default function LeaveClient({
                   </div>
                 )}
                 <ul className="text-xs space-y-0.5 pt-1">
-                  <li className={exceedsMax ? "text-rose-700 font-medium" : stretch.totalConsecutive <= 3 ? "text-emerald-700" : "text-amber-700"}>
-                    {stretch.totalConsecutive <= 3 ? "✓" : exceedsMax ? "✗" : "⚠"}{" "}
+                  <li className={stretch.totalConsecutive <= 3 ? "text-emerald-700" : "text-amber-700"}>
+                    {stretch.totalConsecutive <= 3 ? "✓" : "⚠"}{" "}
                     {t("staff.persona.leave.stretch.consecutiveCheck", { n: stretch.totalConsecutive })}
                   </li>
                   <li className={longLeaveCount < 2 ? "text-emerald-700" : "text-amber-700"}>
                     {longLeaveCount < 2 ? "✓" : "⚠"}{" "}
                     {t("staff.persona.leave.stretch.usageCheck", { used: longLeaveCount })}
                   </li>
-                  <li className={advanceDays >= 7 ? "text-emerald-700" : "text-amber-700"}>
-                    {advanceDays >= 7 ? "✓" : "⚠"}{" "}
-                    {t("staff.persona.leave.stretch.advanceCheck", { n: advanceDays })}
-                  </li>
+                  {/* Phase 1C v4 #12 — ลากิจล่วงหน้า < 7 วัน ไม่ขึ้นเตือนปกติ ต้องใช้ track พิเศษ */}
+                  {advanceDays < 7 && (
+                    <li className="text-amber-700">
+                      ⚠ {t("staff.persona.leave.stretch.advanceCheck", { n: advanceDays })}
+                    </li>
+                  )}
                   {annualNeedsYos && (
                     <li className="text-rose-700 font-medium">
                       ✗ {t("staff.persona.leave.stretch.annualYosFail", {
@@ -339,42 +372,70 @@ export default function LeaveClient({
                     </li>
                   )}
                 </ul>
-                <div className="pt-1.5 text-xs font-medium">
-                  {exceedsMax || annualNeedsYos
-                    ? <span className="text-rose-700">{t("staff.persona.leave.stretch.statusBlocked")}</span>
-                    : withinAll
-                      ? <span className="text-emerald-700">{t("staff.persona.leave.stretch.statusSelfService")}</span>
-                      : <span className="text-amber-700">{t("staff.persona.leave.stretch.statusSpecialApproval")}</span>}
-                </div>
               </div>
             )}
 
+            {/* Reason mandatory (Phase 1C v4 #5) */}
             <div>
-              <label className="label">{t("staff.persona.leave.reason")}</label>
+              <label className="label">
+                {t("staff.persona.leave.reason")}
+                <span className="text-rose-500 ml-1">*</span>
+              </label>
               <textarea
                 className="input min-h-[80px]"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder={t("staff.persona.leave.reasonPlaceholder")}
+                placeholder={t(`staff.persona.leave.reasonPlaceholder.${type}` as any) === `staff.persona.leave.reasonPlaceholder.${type}`
+                  ? t("staff.persona.leave.reasonPlaceholder")
+                  : t(`staff.persona.leave.reasonPlaceholder.${type}` as any)}
                 maxLength={500}
+                required
               />
             </div>
 
+            {/* Evidence — required ตามประเภท */}
             <div>
               <label className="label">
                 {t("staff.persona.leave.evidence")}
-                <span className="text-rose-500 ml-1">*</span>
+                {evidenceRequired
+                  ? <span className="text-rose-500 ml-1">*</span>
+                  : <span className="text-slate-400 ml-1 text-xs">{t("staff.persona.leave.optional")}</span>}
               </label>
               <input
                 type="file" accept="image/*,application/pdf"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 className="input file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-slate-200 file:text-slate-700"
-                required
+                required={evidenceRequired}
               />
               <p className="text-xs text-slate-500 mt-1">
-                {t("staff.persona.leave.evidenceHint")}
+                {t(`staff.persona.leave.evidence.hint.${type}` as any)}
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {t("staff.persona.leave.evidenceFormat")}
               </p>
             </div>
+
+            {/* Special track checkbox — แสดงเฉพาะกรณีต้องใช้ */}
+            {specialTrackRequired && (
+              <div className="border-2 border-amber-400 bg-amber-50 rounded-lg p-3">
+                <label className="flex items-start gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isSpecial}
+                    onChange={(e) => setIsSpecial(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <div className="font-medium text-amber-900">
+                      {t("staff.persona.leave.specialTrack.title")}
+                    </div>
+                    <div className="text-xs text-amber-800 mt-1">
+                      {t("staff.persona.leave.specialTrack.description")}
+                    </div>
+                  </div>
+                </label>
+              </div>
+            )}
 
             {err && <div className="text-rose-600 text-sm">{err}</div>}
 
@@ -383,7 +444,10 @@ export default function LeaveClient({
                 className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
                 {t("common.cancel")}
               </button>
-              <button className="btn-primary flex-1" disabled={busy || (isLongLeaveType && (exceedsMax || annualNeedsYos))}>
+              <button
+                className="btn-primary flex-1"
+                disabled={busy || fullDayBlockedByFraction || (specialTrackRequired && !isSpecial)}
+              >
                 {busy ? t("common.submitting") : t("staff.persona.leave.submit")}
               </button>
             </div>
@@ -411,6 +475,11 @@ export default function LeaveClient({
                         {t(`leave.type.${r.type}` as any)}
                       </span>
                       <StatusBadge status={r.status} />
+                      {r.is_special_request === 1 && (
+                        <span className="text-xs px-2 py-0.5 rounded font-medium bg-violet-100 text-violet-700">
+                          {t("staff.persona.leave.specialBadge")}
+                        </span>
+                      )}
                     </div>
                     <div className="text-sm text-slate-600 mt-0.5">
                       {r.date_from === r.date_to
@@ -436,9 +505,7 @@ export default function LeaveClient({
                     )}
                     {r.decision_note && (
                       <div className="text-xs text-slate-600 mt-1 bg-slate-50 px-2 py-1 rounded">
-                        <span className="font-medium">
-                          {t("staff.persona.leave.adminNote")}:
-                        </span> {r.decision_note}
+                        <span className="font-medium">{t("staff.persona.leave.adminNote")}:</span> {r.decision_note}
                       </div>
                     )}
                   </div>

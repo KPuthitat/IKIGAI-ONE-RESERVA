@@ -39,10 +39,12 @@ export type LeaveAdminRow = {
   stretchTotal: number | null;
   stretchHolidayCount: number | null;
   advanceDays: number | null;
+  // Special-track flag (Phase 1C v4)
+  is_special_request?: number;
 };
 
-type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "all";
-const FILTERS: StatusFilter[] = ["pending", "approved", "rejected", "cancelled", "all"];
+type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "all" | "special";
+const FILTERS: StatusFilter[] = ["pending", "special", "approved", "rejected", "cancelled", "all"];
 
 export default function LeaveAdminClient({
   currentStatus,
@@ -149,6 +151,11 @@ export default function LeaveAdminClient({
                         {t(`leave.type.${r.type}` as any)}
                       </span>
                       <StatusBadge status={r.status} />
+                      {r.is_special_request === 1 && (
+                        <span className="text-xs px-2 py-0.5 rounded font-medium bg-violet-100 text-violet-700 border border-violet-300">
+                          {t("admin.persona.leave.specialBadge")}
+                        </span>
+                      )}
                       <span className="text-xs text-slate-400">
                         {r.hours
                           ? t("admin.persona.leave.hoursShort", { h: r.hours })

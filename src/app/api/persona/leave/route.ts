@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { ALL_LEAVE_TYPES, getEligibleLeaveTypesForUser, saveLeaveAttachment, analyzeLongLeave, type LeaveType } from "@/lib/leave";
+import {
+  ALL_LEAVE_TYPES, getEligibleLeaveTypesForUser, saveLeaveAttachment,
+  analyzeLongLeave, type LeaveType
+} from "@/lib/leave";
 
-// POST /api/persona/leave — staff submit (multipart/form-data with mandatory file)
+// POST /api/persona/leave — staff submit (multipart/form-data)
+// Phase 1C v4 changes:
+// - reason mandatory (ทุกประเภท)
+// - block past dates (ไม่อนุญาตลงย้อนหลัง)
+// - evidence required ตาม leave_types.requires_evidence (personal/annual = optional)
+// - is_special_request flag → bypass soft rules + escalate
 export async function POST(req: Request) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
@@ -21,21 +29,30 @@ export async function POST(req: Request) {
   const date_to = String(form.get("date_to") || "");
   const daysStr = String(form.get("days") || "");
   const hoursStr = String(form.get("hours") || "");
-  const reason = String(form.get("reason") || "").slice(0, 500);
+  const reason = String(form.get("reason") || "").trim().slice(0, 500);
+  const isSpecial = String(form.get("is_special_request") || "") === "1";
   const file = form.get("file");
 
-  // Validate type
+  // Reason mandatory (Phase 1C v4 #5)
+  if (!reason) {
+    return NextResponse.json({ error: "reason_required" }, { status: 400 });
+  }
   if (!ALL_LEAVE_TYPES.includes(type as LeaveType)) {
     return NextResponse.json({ error: "invalid_type" }, { status: 400 });
   }
-  // Validate dates
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date_from) || !/^\d{4}-\d{2}-\d{2}$/.test(date_to)) {
     return NextResponse.json({ error: "invalid_date" }, { status: 400 });
   }
   if (date_from > date_to) {
     return NextResponse.json({ error: "date_range_invalid" }, { status: 400 });
   }
-  // Validate days/hours
+
+  // Block past dates (Phase 1C v4 #9 — staff ลาย้อนหลังไม่ได้)
+  const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (date_from < todayBkk) {
+    return NextResponse.json({ error: "past_date_not_allowed" }, { status: 400 });
+  }
+
   const days = Number(daysStr);
   const hours = hoursStr ? Number(hoursStr) : null;
   if (!isFinite(days) || days <= 0 || days > 365) {
@@ -44,21 +61,25 @@ export async function POST(req: Request) {
   if (hours != null && (!isFinite(hours) || hours <= 0 || hours > 24)) {
     return NextResponse.json({ error: "invalid_hours" }, { status: 400 });
   }
-  // Mandatory file
-  if (!(file instanceof File) || file.size === 0) {
-    return NextResponse.json({ error: "evidence_required" }, { status: 400 });
-  }
 
-  // Eligibility check (gender/employment/pre-approval)
+  // Eligibility check
   const userRow = getDb().prepare(
     "SELECT id, gender, employment_type, hire_date FROM users WHERE id = ?"
   ).get(user.id) as { id: number; gender: string | null; employment_type: string | null; hire_date: string | null };
   const eligible = getEligibleLeaveTypesForUser(userRow);
-  if (!eligible.some((t) => t.code === type)) {
+  const matchedType = eligible.find((t) => t.code === type);
+  if (!matchedType) {
     return NextResponse.json({ error: "type_not_eligible" }, { status: 403 });
   }
 
-  // Long-leave / consecutive-stretch validation (เฉพาะ personal & annual)
+  // Evidence required check (per type)
+  const hasFile = file instanceof File && file.size > 0;
+  if (matchedType.requires_evidence && !hasFile) {
+    return NextResponse.json({ error: "evidence_required" }, { status: 400 });
+  }
+
+  // Long-leave / consecutive-stretch check (เฉพาะ personal & annual)
+  // ไม่ block ถ้าเลือก is_special_request (track พิเศษ)
   if (type === "personal" || type === "annual") {
     const analysis = analyzeLongLeave({
       userId: user.id,
@@ -67,29 +88,39 @@ export async function POST(req: Request) {
       dateTo: date_to,
       hireDate: userRow.hire_date
     });
-    if (analysis.status === "blocked") {
+    // Standard rules check (ตามเงื่อนไข 3 ข้อ + อายุงาน)
+    const inStandardRules =
+      analysis.status === "self_service" &&
+      (analysis.meetsAnnualEligibility !== false);
+
+    if (!inStandardRules && !isSpecial) {
       return NextResponse.json(
-        { error: analysis.blockReason ?? "blocked", analysis },
+        { error: "exceeds_rules_use_special_track", analysis },
         { status: 400 }
       );
     }
   }
 
-  // Save attachment
-  const saved = await saveLeaveAttachment(user.id, file);
-  if (!saved.ok) {
-    return NextResponse.json({ error: saved.error }, { status: 400 });
+  // Save attachment ถ้ามี (และผ่าน validation)
+  let evidenceFilename: string | null = null;
+  if (hasFile) {
+    const saved = await saveLeaveAttachment(user.id, file as File);
+    if (!saved.ok) {
+      return NextResponse.json({ error: saved.error }, { status: 400 });
+    }
+    evidenceFilename = saved.filename;
   }
 
   const db = getDb();
   const nowIso = new Date().toISOString();
   const result = db.prepare(`
     INSERT INTO leave_requests
-      (user_id, type, date_from, date_to, days, hours, reason, evidence_filename, status, created_by, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+      (user_id, type, date_from, date_to, days, hours, reason, evidence_filename,
+       status, created_by, is_special_request, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
   `).run(
-    user.id, type, date_from, date_to, days, hours, reason || null,
-    saved.filename, user.id, nowIso
+    user.id, type, date_from, date_to, days, hours, reason,
+    evidenceFilename, user.id, isSpecial ? 1 : 0, nowIso
   );
 
   return NextResponse.json({ ok: true, id: result.lastInsertRowid });
