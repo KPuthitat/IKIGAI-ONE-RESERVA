@@ -11,7 +11,8 @@ const Body = z.object({
   gender: z.enum(["male", "female"]).nullable().optional(),
   employment_type: z.enum(["pt", "ft"]).nullable().optional(),
   hire_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  weekly_off_day: z.number().int().min(0).max(6).nullable().optional(),
+  // Multi-day weekly off — array of digits 0..6 (0=Sunday). Empty array = unset.
+  weekly_off_days: z.array(z.number().int().min(0).max(6)).max(7).nullable().optional(),
   // Phase 1D — Payroll fields
   employee_code: z.string().max(40).nullable().optional(),
   national_id: z.string().max(20).nullable().optional(),
@@ -64,7 +65,23 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("gender");
   addField("employment_type");
   addField("hire_date");
-  addField("weekly_off_day");
+  // Weekly off — store as CSV "1,2" in weekly_off_days, mirror first day into
+  // legacy weekly_off_day for backward compat with old reads
+  if ("weekly_off_days" in data) {
+    const arr = data.weekly_off_days;
+    if (arr === null || arr === undefined || arr.length === 0) {
+      fields.push("weekly_off_days = ?");
+      vals.push(null);
+      fields.push("weekly_off_day = ?");
+      vals.push(null);
+    } else {
+      const sorted = [...new Set(arr)].sort((a, b) => a - b);
+      fields.push("weekly_off_days = ?");
+      vals.push(sorted.join(","));
+      fields.push("weekly_off_day = ?");
+      vals.push(sorted[0]);
+    }
+  }
   // Payroll
   addField("employee_code");
   addField("national_id");

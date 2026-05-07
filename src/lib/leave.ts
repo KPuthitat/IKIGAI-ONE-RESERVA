@@ -125,17 +125,34 @@ export type WeekendExtensionInfo = {
   fallsOnPublicHoliday: boolean;
 };
 
+/** Parse a CSV like "1,2" into a Set<number> of weekday digits (0..6).
+ *  Accepts a single int (legacy) too so callers can pass weekly_off_day fallback. */
+export function parseWeeklyOffSet(input: string | number | null | undefined): Set<number> {
+  if (input == null) return new Set();
+  if (typeof input === "number") return new Set([input]);
+  const out = new Set<number>();
+  for (const tok of input.split(",")) {
+    const n = Number(tok.trim());
+    if (Number.isInteger(n) && n >= 0 && n <= 6) out.add(n);
+  }
+  return out;
+}
+
 /**
  * ตรวจการลาที่อาจมีเจตนา "ขยายวันหยุด"
  * - เสาร์/อาทิตย์ + วันหยุดนักขัตฤกษ์ → ขอความร่วมมือให้ลาวันอื่น (special-track)
- * - ตรงกับ weekly_off_day → HARD block (วันหยุดอยู่แล้ว ไม่ต้องลา)
+ * - ตรงกับ weekly_off_days → HARD block (วันหยุดอยู่แล้ว ไม่ต้องลา)
+ *
+ * Accepts either a CSV string ("1,2"), a single number (legacy weekly_off_day),
+ * or null (= no rest-day set).
  */
 export function detectWeekendExtension(
-  weeklyOffDay: number | null,
+  weeklyOff: string | number | null,
   dateFrom: string,
   dateTo: string,
   publicHolidayDates: Set<string>
 ): WeekendExtensionInfo {
+  const offSet = parseWeeklyOffSet(weeklyOff);
   const weekendDates: string[] = [];
   const onWeeklyOffDay: string[] = [];
   const onPublicHoliday: string[] = [];
@@ -145,7 +162,7 @@ export function detectWeekendExtension(
     const dow = d.getUTCDay();
     const ds = d.toISOString().slice(0, 10);
     if (dow === 0 || dow === 6) weekendDates.push(ds);
-    if (weeklyOffDay != null && dow === weeklyOffDay) onWeeklyOffDay.push(ds);
+    if (offSet.has(dow)) onWeeklyOffDay.push(ds);
     if (publicHolidayDates.has(ds)) onPublicHoliday.push(ds);
   }
   return {

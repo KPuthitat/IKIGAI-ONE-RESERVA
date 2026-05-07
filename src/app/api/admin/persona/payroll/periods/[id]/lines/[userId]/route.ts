@@ -3,7 +3,8 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
-  computeLineFromMinutes, type EmployeePayrollSnapshot, type PayrollSettings
+  computeLineFromMinutes, computeSso, computeWht,
+  type EmployeePayrollSnapshot, type PayrollSettings
 } from "@/lib/payroll-compute";
 
 // PATCH /api/admin/persona/payroll/periods/[id]/lines/[userId]
@@ -176,26 +177,59 @@ export async function PATCH(
       periodId, userId
     );
   } else {
-    // Mode (b) — money-only override (keeps sso/tax as snapshot)
+    // Mode (b) — money-only override
+    // Recompute SSO/WHT based on the new gross + the employee's CURRENT
+    // tax mode (not the line snapshot). This way, if admin types a base_pay
+    // directly (e.g., 10,000 ฿), the system still applies SSO 5% / WHT 3%
+    // automatically so net_pay reflects reality.
+    const settings = db.prepare(`
+      SELECT ot_mode, ot_flat_per_15min,
+             break_threshold_minutes, break_deduction_minutes,
+             long_shift_threshold_minutes, long_shift_break_minutes,
+             sso_rate, sso_cap, pt_default_hourly_rate, wht_rate
+      FROM payroll_settings WHERE id = 1
+    `).get() as PayrollSettings;
+
+    const fresh = db.prepare(`
+      SELECT salary_tax_mode FROM users WHERE id = ?
+    `).get(userId) as { salary_tax_mode: "sso" | "wht" | null } | undefined;
+    const taxMode = fresh?.salary_tax_mode ?? line.salary_tax_mode_snapshot ?? "sso";
+
     const basePay = d.base_pay ?? line.base_pay;
     const otPay = d.ot_pay ?? line.ot_pay;
     const svcCharge = d.service_charge ?? line.service_charge;
     const otherAdd = d.other_additions ?? line.other_additions;
     const otherDed = d.other_deductions ?? line.other_deductions;
     const gross = basePay + otPay + svcCharge + otherAdd;
-    const net = gross - line.sso_amount - line.tax_amount - otherDed;
+
+    let ssoAmount = 0;
+    let taxAmount = 0;
+    if (gross > 0) {
+      if (taxMode === "wht") {
+        taxAmount = computeWht(gross, settings);
+      } else {
+        ssoAmount = computeSso(gross, period.cycle, settings);
+      }
+    }
+    const net = gross - ssoAmount - taxAmount - otherDed;
+
     db.prepare(`
       UPDATE payroll_lines
       SET base_pay = ?, ot_pay = ?, service_charge = ?,
           other_additions = ?, other_deductions = ?,
-          gross_pay = ?, net_pay = ?,
+          gross_pay = ?, sso_amount = ?, tax_amount = ?, net_pay = ?,
+          salary_tax_mode_snapshot = ?,
           notes = COALESCE(?, notes),
           overridden = 1,
           updated_at = CURRENT_TIMESTAMP
       WHERE period_id = ? AND user_id = ?
     `).run(
       basePay, otPay, svcCharge, otherAdd, otherDed,
-      Math.round(gross * 100) / 100, Math.round(net * 100) / 100,
+      Math.round(gross * 100) / 100,
+      Math.round(ssoAmount * 100) / 100,
+      Math.round(taxAmount * 100) / 100,
+      Math.round(net * 100) / 100,
+      taxMode,
       d.notes ?? null,
       periodId, userId
     );

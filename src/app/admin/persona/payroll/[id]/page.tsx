@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -75,10 +75,12 @@ export default function PeriodDetailPage({
     unlocked_by_name: string | null;
   }>;
 
-  // Has the superadmin PIN been set? (used to enable/disable the unlock UI)
-  const pinSet = !!(db.prepare(`
-    SELECT superadmin_pin_hash FROM payroll_settings WHERE id = 1
-  `).get() as { superadmin_pin_hash: string | null } | undefined)?.superadmin_pin_hash;
+  // Has the current admin set their PIN? (same PIN used everywhere — no
+  // separate "superadmin" PIN). Used to enable/disable the unlock UI.
+  const sessionUser = getSessionUser();
+  const pinSet = sessionUser ? !!(db.prepare(`
+    SELECT pin_hash FROM users WHERE id = ?
+  `).get(sessionUser.id) as { pin_hash: string | null } | undefined)?.pin_hash : false;
 
   // Stale-snapshot check — count lines whose snapshot disagrees with the
   // user's CURRENT salary_tax_mode / rates (ignoring overridden lines, since
@@ -110,7 +112,7 @@ export default function PeriodDetailPage({
         lines={lines}
         addableStaff={addableStaff}
         unlockHistory={unlockHistory}
-        superadminPinSet={pinSet}
+        userPinSet={pinSet}
         staleSnapshotCount={staleCount}
       />
     </div>

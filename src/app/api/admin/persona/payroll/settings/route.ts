@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import bcrypt from "bcryptjs";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
@@ -15,10 +14,7 @@ const Body = z.object({
   sso_rate: z.number().min(0).max(1),         // 0.05 = 5%
   sso_cap: z.number().min(0).max(100000),
   pt_default_hourly_rate: z.number().min(0).max(10000),
-  wht_rate: z.number().min(0).max(1),         // 0.03 = 3%
-  // Optional: set/clear the superadmin PIN used to unlock paid periods.
-  // Send a 4-12 digit string to set, empty string to clear, omit to keep.
-  superadmin_pin: z.string().regex(/^\d{4,12}$/).or(z.literal("")).optional()
+  wht_rate: z.number().min(0).max(1)          // 0.03 = 3%
 });
 
 export async function PATCH(req: Request) {
@@ -57,16 +53,6 @@ export async function PATCH(req: Request) {
     d.wht_rate,
     user.id
   );
-
-  // Update superadmin PIN if provided (separate update so we can hash it)
-  if (d.superadmin_pin !== undefined) {
-    if (d.superadmin_pin === "") {
-      db.prepare(`UPDATE payroll_settings SET superadmin_pin_hash = NULL WHERE id = 1`).run();
-    } else {
-      const hash = bcrypt.hashSync(d.superadmin_pin, 10);
-      db.prepare(`UPDATE payroll_settings SET superadmin_pin_hash = ? WHERE id = 1`).run(hash);
-    }
-  }
 
   return NextResponse.json({ ok: true });
 }

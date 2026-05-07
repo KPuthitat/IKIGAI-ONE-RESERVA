@@ -198,7 +198,18 @@ function runMigrations(db: Database.Database): void {
   // Phase 1C v3: hire_date + public_holidays
   if (!unames.has("hire_date")) db.exec("ALTER TABLE users ADD COLUMN hire_date TEXT");
   // Phase 1C v5: weekly_off_day (0=Sun, 1=Mon, ..., 6=Sat, NULL=ยังไม่ตั้ง)
+  // (deprecated — kept for backward compat; readers should use weekly_off_days)
   if (!unames.has("weekly_off_day")) db.exec("ALTER TABLE users ADD COLUMN weekly_off_day INTEGER");
+  // Phase C v6: weekly_off_days (CSV of digits, e.g. "1,2" = Mon+Tue) — supports multi-day
+  if (!unames.has("weekly_off_days")) {
+    db.exec("ALTER TABLE users ADD COLUMN weekly_off_days TEXT");
+    // Migrate legacy single-day value into the new CSV column
+    db.exec(`
+      UPDATE users
+      SET weekly_off_days = CAST(weekly_off_day AS TEXT)
+      WHERE weekly_off_day IS NOT NULL AND weekly_off_days IS NULL
+    `);
+  }
   // Phase 1C v6: resignation unlock (admin เปิดสิทธิ์ให้ staff ส่งคำขอลาออก)
   if (!unames.has("resignation_unlocked_at")) db.exec("ALTER TABLE users ADD COLUMN resignation_unlocked_at TEXT");
   if (!unames.has("resignation_unlocked_by")) db.exec("ALTER TABLE users ADD COLUMN resignation_unlocked_by INTEGER REFERENCES users(id)");

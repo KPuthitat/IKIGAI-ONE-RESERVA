@@ -34,7 +34,6 @@ type DataSource = "auto" | "manual";
 
 type ForceOpenContext = {
   sp: SuggestedPeriod;
-  ds: DataSource;
 };
 
 // Compute weekly periods whose pay_date falls inside the given calendar month.
@@ -203,7 +202,7 @@ export default function PayPeriodPicker({
                 busyKey={busyKey}
                 cardKey={key}
                 onCreate={(ds) => createPeriod(sp, ds)}
-                onForceOpen={(ds) => setForceOpen({ sp, ds })}
+                onForceOpen={() => setForceOpen({ sp })}
                 onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
                 today={today}
                 accentClass="hover:border-emerald-500/60"
@@ -242,7 +241,7 @@ export default function PayPeriodPicker({
                   busyKey={busyKey}
                   cardKey={key}
                   onCreate={(ds) => createPeriod(sp, ds)}
-                  onForceOpen={(ds) => setForceOpen({ sp, ds })}
+                  onForceOpen={() => setForceOpen({ sp })}
                   onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
                   accentClass="hover:border-emerald-400/60"
                   today={today}
@@ -282,7 +281,7 @@ export default function PayPeriodPicker({
                   busyKey={busyKey}
                   cardKey={key}
                   onCreate={(ds) => createPeriod(sp, ds)}
-                  onForceOpen={(ds) => setForceOpen({ sp, ds })}
+                  onForceOpen={() => setForceOpen({ sp })}
                   onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
                   accentClass="hover:border-violet-400/60"
                   today={today}
@@ -299,8 +298,8 @@ export default function PayPeriodPicker({
           lang={lang}
           context={forceOpen}
           onCancel={() => setForceOpen(null)}
-          onConfirm={async (pin, reason) => {
-            const r = await createPeriod(forceOpen.sp, forceOpen.ds, { pin, reason });
+          onConfirm={async (ds, pin, reason) => {
+            const r = await createPeriod(forceOpen.sp, ds, { pin, reason });
             if (r.ok) setForceOpen(null);
             return r;
           }}
@@ -318,8 +317,9 @@ function ForceOpenModal({
   lang: Lang;
   context: ForceOpenContext;
   onCancel: () => void;
-  onConfirm: (pin: string, reason: string) => Promise<{ ok: boolean; error?: string }>;
+  onConfirm: (ds: DataSource, pin: string, reason: string) => Promise<{ ok: boolean; error?: string }>;
 }) {
+  const [dataSource, setDataSource] = useState<DataSource>("auto");
   const [pin, setPin] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -336,7 +336,7 @@ function ForceOpenModal({
     }
     setBusy(true);
     setErr(null);
-    const r = await onConfirm(pin, reason.trim());
+    const r = await onConfirm(dataSource, pin, reason.trim());
     if (!r.ok) {
       setErr(r.error ?? t(lang, "common.error"));
       setBusy(false);
@@ -345,7 +345,7 @@ function ForceOpenModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-4"
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
         <div>
           <h3 className="font-semibold text-slate-800 text-lg">
@@ -354,6 +354,38 @@ function ForceOpenModal({
           <p className="text-sm text-slate-600 mt-1">
             {t(lang, "admin.persona.payroll.confirmForceOpenBody")}
           </p>
+        </div>
+        {/* Data-source choice — replaces the 2-button card */}
+        <div>
+          <label className="label">{t(lang, "admin.persona.payroll.field.dataSource")}</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className={`border rounded-lg p-3 cursor-pointer transition ${
+              dataSource === "auto"
+                ? "border-brand bg-rose-50/40 ring-1 ring-brand/30"
+                : "border-slate-200 hover:bg-slate-50"
+            }`}>
+              <div className="flex items-center gap-2">
+                <input type="radio" checked={dataSource === "auto"}
+                  onChange={() => setDataSource("auto")} />
+                <span className="text-sm font-medium">
+                  {t(lang, "admin.persona.payroll.hub.createAuto")}
+                </span>
+              </div>
+            </label>
+            <label className={`border rounded-lg p-3 cursor-pointer transition ${
+              dataSource === "manual"
+                ? "border-brand bg-rose-50/40 ring-1 ring-brand/30"
+                : "border-slate-200 hover:bg-slate-50"
+            }`}>
+              <div className="flex items-center gap-2">
+                <input type="radio" checked={dataSource === "manual"}
+                  onChange={() => setDataSource("manual")} />
+                <span className="text-sm font-medium">
+                  {t(lang, "admin.persona.payroll.hub.createManual")}
+                </span>
+              </div>
+            </label>
+          </div>
         </div>
         <div>
           <label className="label">{t(lang, "admin.persona.payroll.field.userPin")}</label>
@@ -429,7 +461,7 @@ function PeriodCard({
   cardKey: string;
   onCreate: (ds: DataSource) => void;
   onOpen: (id: number) => void;
-  onForceOpen: (ds: DataSource) => void;
+  onForceOpen: () => void;
   accentClass: string;
   today: string;       // YYYY-MM-DD (Bangkok)
 }) {
@@ -505,27 +537,18 @@ function PeriodCard({
             {t(lang, "admin.persona.payroll.hub.openPeriod")} →
           </button>
         ) : isFuture ? (
-          <div className="space-y-1">
-            <div className="text-center text-xs text-slate-500 italic mb-1">
+          <div className="text-center py-2">
+            <div className="text-xs text-slate-500 italic mb-1.5">
               {t(lang, "admin.persona.payroll.hub.notReachedYet")}
             </div>
             <button
               type="button"
-              onClick={() => onForceOpen("auto")}
+              onClick={() => onForceOpen()}
               disabled={busyAuto || busyManual}
-              className="w-full py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold disabled:opacity-50"
+              className="text-xs text-amber-700 hover:text-amber-800 hover:underline disabled:opacity-50"
               title={t(lang, "admin.persona.payroll.hub.forceOpenHint")}
             >
-              {busyAuto ? "…" : t(lang, "admin.persona.payroll.hub.forceOpenAuto")}
-            </button>
-            <button
-              type="button"
-              onClick={() => onForceOpen("manual")}
-              disabled={busyAuto || busyManual}
-              className="w-full py-1.5 rounded-md bg-white border border-amber-300 hover:bg-amber-50 text-xs font-medium text-amber-700 disabled:opacity-50"
-              title={t(lang, "admin.persona.payroll.hub.forceOpenHint")}
-            >
-              {busyManual ? "…" : t(lang, "admin.persona.payroll.hub.forceOpenManual")}
+              {(busyAuto || busyManual) ? "…" : t(lang, "admin.persona.payroll.hub.forceOpenLink")}
             </button>
           </div>
         ) : (

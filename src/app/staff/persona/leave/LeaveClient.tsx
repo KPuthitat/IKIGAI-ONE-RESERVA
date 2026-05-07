@@ -87,7 +87,7 @@ export default function LeaveClient({
   holidays,
   yearsOfService,
   longLeaveCount,
-  weeklyOffDay,
+  weeklyOffDays,
   userGenderSet,
   userEmploymentSet
 }: {
@@ -97,10 +97,20 @@ export default function LeaveClient({
   holidays: PublicHoliday[];
   yearsOfService: number | null;
   longLeaveCount: number;
-  weeklyOffDay: number | null;
+  weeklyOffDays: string | null;       // CSV "1,2" of weekday digits
   userGenderSet: boolean;
   userEmploymentSet: boolean;
 }) {
+  // Parse CSV → Set once
+  const weeklyOffSet = useMemo(() => {
+    const s = new Set<number>();
+    if (!weeklyOffDays) return s;
+    for (const tok of weeklyOffDays.split(",")) {
+      const n = Number(tok.trim());
+      if (Number.isInteger(n) && n >= 0 && n <= 6) s.add(n);
+    }
+    return s;
+  }, [weeklyOffDays]);
   const router = useRouter();
   const { t, formatDate, lang } = useLang();
   const [pending, startTransition] = useTransition();
@@ -186,15 +196,15 @@ export default function LeaveClient({
     return out;
   }, [isLongLeaveType, from, to]);
   const onUserOffDay: string[] = useMemo(() => {
-    if (weeklyOffDay == null) return [];
+    if (weeklyOffSet.size === 0) return [];
     const out: string[] = [];
     const start = new Date(`${from}T00:00:00Z`);
     const end = new Date(`${to}T00:00:00Z`);
     for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-      if (d.getUTCDay() === weeklyOffDay) out.push(d.toISOString().slice(0, 10));
+      if (weeklyOffSet.has(d.getUTCDay())) out.push(d.toISOString().slice(0, 10));
     }
     return out;
-  }, [from, to, weeklyOffDay]);
+  }, [from, to, weeklyOffSet]);
   // วันหยุดนักขัตฤกษ์ในช่วงลา (ไม่นับ is_workday=1 เช่น Labor Day)
   const onPublicHoliday: string[] = useMemo(() => {
     if (!isLongLeaveType) return [];

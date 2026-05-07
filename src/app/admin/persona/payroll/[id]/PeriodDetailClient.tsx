@@ -96,14 +96,14 @@ export type UnlockEntry = {
 };
 
 export default function PeriodDetailClient({
-  lang, period, lines, addableStaff, unlockHistory, superadminPinSet, staleSnapshotCount
+  lang, period, lines, addableStaff, unlockHistory, userPinSet, staleSnapshotCount
 }: {
   lang: Lang;
   period: PeriodDetail;
   lines: PayrollLineRow[];
   addableStaff: AddableStaff[];
   unlockHistory: UnlockEntry[];
-  superadminPinSet: boolean;
+  userPinSet: boolean;
   staleSnapshotCount: number;
 }) {
   const router = useRouter();
@@ -196,7 +196,7 @@ export default function PeriodDetailClient({
       } else {
         const errKey =
           j?.error === "pin_invalid" ? "admin.persona.payroll.err.pinInvalid" :
-          j?.error === "pin_not_set" ? "admin.persona.payroll.err.pinNotSet" :
+          j?.error === "user_pin_not_set" ? "admin.persona.payroll.err.userPinNotSet" :
           j?.error === "pin_required" ? "admin.persona.payroll.err.pinRequired" :
           j?.error === "reason_required" ? "admin.persona.payroll.err.reasonRequired" :
           "common.error";
@@ -336,8 +336,8 @@ export default function PeriodDetailClient({
               <button
                 type="button"
                 onClick={() => setUnpayOpen(true)}
-                disabled={busy !== null || !superadminPinSet}
-                title={!superadminPinSet ? t(lang, "admin.persona.payroll.err.pinNotSet") : undefined}
+                disabled={busy !== null || !userPinSet}
+                title={!userPinSet ? t(lang, "admin.persona.payroll.err.userPinNotSet") : undefined}
                 className="text-sm px-3 py-1.5 rounded-md text-rose-700 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {t(lang, "admin.persona.payroll.action.unpay")}
@@ -828,7 +828,7 @@ function UnpayModal({
           </p>
         </div>
         <div>
-          <label className="label">{t(lang, "admin.persona.payroll.field.superadminPin")}</label>
+          <label className="label">{t(lang, "admin.persona.payroll.field.userPin")}</label>
           <input type="password" inputMode="numeric" autoComplete="off"
             className="input tracking-widest text-center text-lg"
             value={pin} maxLength={12}

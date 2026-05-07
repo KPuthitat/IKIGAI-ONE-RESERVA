@@ -16,8 +16,18 @@ type StaffUser = {
   id: number;
   display_name: string;
   employment_type: string | null;
-  weekly_off_day: number | null;
+  weekly_off_days: string | null;       // CSV "1,2"
 };
+
+function parseOffSet(csv: string | null): Set<number> {
+  const s = new Set<number>();
+  if (!csv) return s;
+  for (const tok of csv.split(",")) {
+    const n = Number(tok.trim());
+    if (Number.isInteger(n) && n >= 0 && n <= 6) s.add(n);
+  }
+  return s;
+}
 
 type ApprovedLeave = {
   user_id: number;
@@ -76,7 +86,7 @@ export default function AttendanceReportPage({
 
   // Staff users (only those with employment_type set get attendance tracking)
   let staffSql = `
-    SELECT id, display_name, employment_type, weekly_off_day
+    SELECT id, display_name, employment_type, weekly_off_days
     FROM users
     WHERE role = 'staff' AND employment_type IS NOT NULL
   `;
@@ -140,6 +150,7 @@ export default function AttendanceReportPage({
     const counts: Counts = { worked: 0, leave: 0, off: 0, holiday: 0, absent: 0, future: 0 };
     const userLeaves = leaveByUser.get(u.id) ?? new Set();
     const userWorked = workedByUser.get(u.id) ?? new Set();
+    const offSet = parseOffSet(u.weekly_off_days);
 
     for (const d of days) {
       // Future dates → don't penalize as absent
@@ -148,7 +159,7 @@ export default function AttendanceReportPage({
       // 1. holiday
       if (holidaySet.has(d)) { counts.holiday++; continue; }
       // 2. weekly off
-      if (u.weekly_off_day !== null && dayOfWeek(d) === u.weekly_off_day) {
+      if (offSet.size > 0 && offSet.has(dayOfWeek(d))) {
         counts.off++; continue;
       }
       // 3. leave (approved)

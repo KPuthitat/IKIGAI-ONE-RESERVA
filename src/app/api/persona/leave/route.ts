@@ -67,10 +67,10 @@ export async function POST(req: Request) {
 
   // Eligibility check
   const userRow = getDb().prepare(
-    "SELECT id, gender, employment_type, hire_date, weekly_off_day FROM users WHERE id = ?"
+    "SELECT id, gender, employment_type, hire_date, weekly_off_days FROM users WHERE id = ?"
   ).get(user.id) as {
     id: number; gender: string | null; employment_type: string | null;
-    hire_date: string | null; weekly_off_day: number | null;
+    hire_date: string | null; weekly_off_days: string | null;
   };
   const eligible = getEligibleLeaveTypesForUser(userRow);
   const matchedType = eligible.find((t) => t.code === type);
@@ -105,9 +105,9 @@ export async function POST(req: Request) {
     }
   }
 
-  // Phase 1C v8: ตรวจ weekly_off_day + เสาร์-อาทิตย์ + วันหยุดนักขัตฤกษ์
+  // Phase 1C v8: ตรวจ weekly_off_days + เสาร์-อาทิตย์ + วันหยุดนักขัตฤกษ์
   const we = detectWeekendExtension(
-    userRow.weekly_off_day,
+    userRow.weekly_off_days,
     date_from, date_to,
     getPublicHolidaySet()
   );

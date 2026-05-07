@@ -95,9 +95,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   if (d.action === "unpay") {
-    // Superadmin unlock: paid → finalized. Requires the superadmin PIN
-    // (set in payroll_settings) plus a non-empty reason. The unlock event
-    // is logged in payroll_period_unlocks for audit.
+    // Unlock: paid → finalized. Requires the admin's own PIN (users.pin_hash)
+    // plus a non-empty reason. The unlock event is logged in
+    // payroll_period_unlocks for audit. Same PIN used everywhere — no
+    // separate "superadmin PIN".
     if (period.status !== "paid") {
       return NextResponse.json({ error: "must_be_paid_to_unpay" }, { status: 400 });
     }
@@ -106,13 +107,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (!pin) return NextResponse.json({ error: "pin_required" }, { status: 400 });
     if (!reason) return NextResponse.json({ error: "reason_required" }, { status: 400 });
 
-    const settings = db.prepare(`
-      SELECT superadmin_pin_hash FROM payroll_settings WHERE id = 1
-    `).get() as { superadmin_pin_hash: string | null };
-    if (!settings?.superadmin_pin_hash) {
-      return NextResponse.json({ error: "pin_not_set" }, { status: 400 });
+    const userRow = db.prepare(`
+      SELECT pin_hash FROM users WHERE id = ?
+    `).get(user.id) as { pin_hash: string | null } | undefined;
+    if (!userRow?.pin_hash) {
+      return NextResponse.json({ error: "user_pin_not_set" }, { status: 400 });
     }
-    if (!bcrypt.compareSync(pin, settings.superadmin_pin_hash)) {
+    if (!bcrypt.compareSync(pin, userRow.pin_hash)) {
       return NextResponse.json({ error: "pin_invalid" }, { status: 401 });
     }
 

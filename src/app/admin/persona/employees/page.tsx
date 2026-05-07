@@ -13,7 +13,7 @@ export default function AdminEmployeesPage() {
 
   const employees = db.prepare(`
     SELECT id, username, display_name, role,
-           gender, employment_type, hire_date, weekly_off_day,
+           gender, employment_type, hire_date, weekly_off_days,
            employee_code, national_id, bank_name, bank_account,
            tax_id, sso_id, hourly_rate, monthly_salary, pay_cycle,
            salary_tax_mode,

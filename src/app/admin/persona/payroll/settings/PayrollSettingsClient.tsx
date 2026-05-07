@@ -35,8 +35,6 @@ export default function PayrollSettingsClient({
   const [ssoCap, setSsoCap] = useState(String(initial.sso_cap));
   const [ptDefault, setPtDefault] = useState(String(initial.pt_default_hourly_rate));
   const [whtRatePct, setWhtRatePct] = useState(String(initial.wht_rate * 100));
-  const [superadminPin, setSuperadminPin] = useState("");
-  const [clearPin, setClearPin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -57,21 +55,12 @@ export default function PayrollSettingsClient({
           sso_rate: Number(ssoRatePct) / 100,
           sso_cap: Number(ssoCap),
           pt_default_hourly_rate: Number(ptDefault),
-          wht_rate: Number(whtRatePct) / 100,
-          // Only send pin if admin is setting/clearing it (omit otherwise)
-          ...(clearPin
-            ? { superadmin_pin: "" }
-            : superadminPin.trim().length >= 4
-              ? { superadmin_pin: superadminPin.trim() }
-              : {})
+          wht_rate: Number(whtRatePct) / 100
         })
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) {
         setMsg({ kind: "ok", text: t(lang, "common.saved") });
-        // Clear pin input after save (don't keep typed pin in memory)
-        setSuperadminPin("");
-        setClearPin(false);
         startTransition(() => router.refresh());
       } else {
         setMsg({ kind: "err", text: j?.error ?? t(lang, "common.error") });
@@ -290,51 +279,6 @@ export default function PayrollSettingsClient({
             </span>
           </div>
         </div>
-      </div>
-
-      {/* Superadmin PIN — for unlocking paid periods */}
-      <div className="card space-y-3">
-        <div>
-          <h2 className="font-semibold text-slate-800">
-            {t(lang, "admin.persona.payroll.settings.superadminPinTitle")}
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {t(lang, "admin.persona.payroll.settings.superadminPinDesc")}
-          </p>
-        </div>
-        <div>
-          <label className="label">
-            {t(lang, "admin.persona.payroll.settings.superadminPinNew")}
-          </label>
-          <input
-            type="password"
-            inputMode="numeric"
-            autoComplete="new-password"
-            className="input tracking-widest text-center text-lg max-w-[200px]"
-            value={superadminPin}
-            maxLength={12}
-            onChange={(e) => {
-              setSuperadminPin(e.target.value.replace(/\D/g, ""));
-              setClearPin(false);
-            }}
-            placeholder="••••"
-            disabled={clearPin}
-          />
-          <p className="text-xs text-slate-500 mt-1">
-            {t(lang, "admin.persona.payroll.settings.superadminPinHint")}
-          </p>
-        </div>
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <input
-            type="checkbox"
-            checked={clearPin}
-            onChange={(e) => {
-              setClearPin(e.target.checked);
-              if (e.target.checked) setSuperadminPin("");
-            }}
-          />
-          {t(lang, "admin.persona.payroll.settings.superadminPinClear")}
-        </label>
       </div>
 
       {/* Save */}
