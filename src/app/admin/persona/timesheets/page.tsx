@@ -52,7 +52,8 @@ export default function TimesheetsPage({
     FROM users u
     WHERE u.id IN (SELECT DISTINCT user_id FROM time_entries)
        OR u.pin_hash IS NOT NULL
-    ORDER BY u.display_name
+    ORDER BY CASE WHEN u.employment_type = 'ft' THEN 0 WHEN u.employment_type = 'pt' THEN 1 ELSE 2 END,
+             u.display_name
   `).all() as UserOption[];
 
   // audit log ล่าสุด (10 รายการ)

@@ -44,7 +44,8 @@ export default function PeriodDetailPage({
            overridden, notes
     FROM payroll_lines
     WHERE period_id = ?
-    ORDER BY employment_type DESC, display_name
+    ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
+             display_name
   `).all(id) as PayrollLineRow[];
 
   return (

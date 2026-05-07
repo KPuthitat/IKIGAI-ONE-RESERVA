@@ -39,7 +39,7 @@ export default function ResignationClient({
   const router = useRouter();
   const { t, formatDate } = useLang();
   const [pending, startTransition] = useTransition();
-  const { confirm, ConfirmDialog } = useConfirm();
+  const { confirm, alert, ConfirmDialog } = useConfirm();
 
   const [proposed, setProposed] = useState(minLastDay);
   const [reason, setReason] = useState("");
@@ -101,7 +101,12 @@ export default function ResignationClient({
     if (res.ok) startTransition(() => router.refresh());
     else {
       const j = await res.json().catch(() => ({}));
-      window.alert(j.error || t("common.error"));
+      alert({
+        title: t("common.error"),
+        body: <p>{j.error || t("common.error")}</p>,
+        variant: "danger",
+        okLabel: t("common.confirm")
+      });
     }
   }
 

@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/url";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
 import { formatLongDate, formatMonthDay } from "@/lib/time";
+import MonthPicker from "@/app/components/MonthPicker";
 
 // One row per (cycle, target, period_start, period_end) that already exists in DB
 export type ExistingPeriod = {
@@ -57,11 +58,11 @@ function monthlyPeriodFor(yearMonth: string): { start: string; end: string; pay:
   const [y, m] = yearMonth.split("-").map(Number);
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const end = `${yearMonth}-${String(lastDay).padStart(2, "0")}`;
-  return {
-    start: `${yearMonth}-01`,
-    end,
-    pay: end
-  };
+  // Pay date = 5th of the following month (per company policy)
+  const nextY = m === 12 ? y + 1 : y;
+  const nextM = m === 12 ? 1 : m + 1;
+  const pay = `${nextY}-${String(nextM).padStart(2, "0")}-05`;
+  return { start: `${yearMonth}-01`, end, pay };
 }
 
 function todayMonth(): string {
@@ -141,12 +142,7 @@ export default function PayPeriodPicker({
             {t(lang, "admin.persona.payroll.hub.payPeriodsDesc")}
           </p>
         </div>
-        <input
-          type="month"
-          className="input text-sm max-w-[160px]"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-        />
+        <MonthPicker value={month} onChange={setMonth} lang={lang} />
       </div>
 
       {errMsg && (

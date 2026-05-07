@@ -80,7 +80,7 @@ export default function QuotaReportPage({
     staffSql += " AND id = ?";
     staffParams.push(userIdFilter);
   }
-  staffSql += " ORDER BY display_name";
+  staffSql += " ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END, display_name";
   const staff = db.prepare(staffSql).all(...staffParams) as StaffUser[];
 
   // Leave types catalog
@@ -140,7 +140,9 @@ export default function QuotaReportPage({
 
   // Staff list for dropdown (full list, not just filtered)
   const staffList = db.prepare(`
-    SELECT id, display_name FROM users WHERE role = 'staff' ORDER BY display_name
+    SELECT id, display_name FROM users WHERE role = 'staff'
+    ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
+             display_name
   `).all() as StaffOpt[];
 
   // Year options — current ± 1

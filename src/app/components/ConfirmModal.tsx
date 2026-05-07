@@ -19,6 +19,8 @@ export type ConfirmDialogProps = {
   inputLabel?: string;
   inputPlaceholder?: string;
   inputDefaultValue?: string;
+  /** If true, show only the confirm button (no cancel) — for alerts. */
+  alertOnly?: boolean;
   /** Called with the input value (or "" if withInput is false) on confirm. */
   onConfirm: (value: string) => void | Promise<void>;
   onCancel: () => void;
@@ -35,6 +37,7 @@ const VARIANT_CLASSES: Record<ConfirmVariant, string> = {
 export default function ConfirmModal({
   open, title, body, confirmLabel, cancelLabel, variant = "default",
   withInput = false, inputLabel, inputPlaceholder, inputDefaultValue = "",
+  alertOnly = false,
   onConfirm, onCancel, busy = false
 }: ConfirmDialogProps) {
   const [value, setValue] = useState(inputDefaultValue);
@@ -83,12 +86,14 @@ export default function ConfirmModal({
         )}
 
         <div className="flex gap-2 pt-1">
-          <button
-            type="button" onClick={onCancel} disabled={busy}
-            className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium disabled:opacity-50"
-          >
-            {cancelLabel}
-          </button>
+          {!alertOnly && (
+            <button
+              type="button" onClick={onCancel} disabled={busy}
+              className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium disabled:opacity-50"
+            >
+              {cancelLabel}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onConfirm(value)}

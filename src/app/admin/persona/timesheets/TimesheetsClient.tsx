@@ -68,7 +68,7 @@ export default function TimesheetsClient({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const { confirm, ConfirmDialog } = useConfirm();
+  const { confirm, alert, ConfirmDialog } = useConfirm();
 
   async function deleteEntry(entry: TimeEntryRow): Promise<void> {
     const body = t(lang, "admin.persona.timesheets.confirmDelete")
@@ -99,10 +99,20 @@ export default function TimesheetsClient({
         if (j?.ok) {
           startTransition(() => router.refresh());
         } else {
-          window.alert(`${t(lang, "admin.persona.timesheets.deleteFailed")}: ${j?.error ?? "unknown"}`);
+          alert({
+            title: t(lang, "common.error"),
+            body: <p>{`${t(lang, "admin.persona.timesheets.deleteFailed")}: ${j?.error ?? "unknown"}`}</p>,
+            variant: "danger",
+            okLabel: t(lang, "common.confirm")
+          });
         }
       })
-      .catch(() => window.alert(t(lang, "admin.persona.timesheets.deleteFailed")))
+      .catch(() => alert({
+        title: t(lang, "common.error"),
+        body: <p>{t(lang, "admin.persona.timesheets.deleteFailed")}</p>,
+        variant: "danger",
+        okLabel: t(lang, "common.confirm")
+      }))
       .finally(() => setDeletingId(null));
   }
 

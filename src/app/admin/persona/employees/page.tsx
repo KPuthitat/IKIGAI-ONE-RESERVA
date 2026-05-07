@@ -20,7 +20,9 @@ export default function AdminEmployeesPage() {
            CASE WHEN pin_hash IS NULL THEN 0 ELSE 1 END AS has_pin,
            CASE WHEN resignation_unlocked_at IS NULL THEN 0 ELSE 1 END AS resign_unlocked
     FROM users
-    ORDER BY role DESC, display_name ASC
+    ORDER BY role DESC,
+             CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
+             display_name ASC
   `).all() as EmployeeRow[];
 
   return (

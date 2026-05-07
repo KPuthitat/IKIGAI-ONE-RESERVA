@@ -21,7 +21,7 @@ export default function StaffClient({
   });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const { confirm, ConfirmDialog } = useConfirm();
+  const { confirm, alert, ConfirmDialog } = useConfirm();
 
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
@@ -53,7 +53,10 @@ export default function StaffClient({
     });
     if (ok === null) return;
     const res = await fetch(apiUrl(`/api/admin/staff/${id}`), { method: "DELETE" });
-    if (!res.ok) { window.alert(t("admin.users.deleteFailed")); return; }
+    if (!res.ok) {
+      alert({ title: t("common.error"), body: <p>{t("admin.users.deleteFailed")}</p>, variant: "danger", okLabel: t("common.confirm") });
+      return;
+    }
     router.refresh();
   }
 
@@ -69,7 +72,7 @@ export default function StaffClient({
     });
     if (np === null) return;
     if (np.length < 6) {
-      window.alert(t("admin.users.passwordTooShort"));
+      alert({ title: t("common.error"), body: <p>{t("admin.users.passwordTooShort")}</p>, variant: "warning", okLabel: t("common.confirm") });
       return;
     }
     const res = await fetch(apiUrl(`/api/admin/staff/${id}`), {
@@ -77,8 +80,11 @@ export default function StaffClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: np })
     });
-    if (!res.ok) { window.alert(t("admin.users.changePasswordFailed")); return; }
-    window.alert(t("admin.users.changePasswordOk"));
+    if (!res.ok) {
+      alert({ title: t("common.error"), body: <p>{t("admin.users.changePasswordFailed")}</p>, variant: "danger", okLabel: t("common.confirm") });
+      return;
+    }
+    alert({ title: t("common.saved"), body: <p>{t("admin.users.changePasswordOk")}</p>, variant: "info", okLabel: t("common.confirm") });
   }
 
   async function updateBranches(id: number, branchIds: number[]) {
@@ -87,7 +93,10 @@ export default function StaffClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ branch_ids: branchIds })
     });
-    if (!res.ok) { window.alert(t("admin.users.updateBranchesFailed")); return; }
+    if (!res.ok) {
+      alert({ title: t("common.error"), body: <p>{t("admin.users.updateBranchesFailed")}</p>, variant: "danger", okLabel: t("common.confirm") });
+      return;
+    }
     router.refresh();
   }
 

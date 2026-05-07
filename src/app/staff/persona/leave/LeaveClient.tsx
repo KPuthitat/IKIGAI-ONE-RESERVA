@@ -104,7 +104,7 @@ export default function LeaveClient({
   const router = useRouter();
   const { t, formatDate, lang } = useLang();
   const [pending, startTransition] = useTransition();
-  const { confirm, ConfirmDialog } = useConfirm();
+  const { confirm, alert, ConfirmDialog } = useConfirm();
 
   const holidayMap = useMemo(
     () => new Map(holidays.map((h) => [h.date, h])),
@@ -334,7 +334,12 @@ export default function LeaveClient({
     if (res.ok) startTransition(() => router.refresh());
     else {
       const j = await res.json().catch(() => ({}));
-      window.alert(j.error || t("common.error"));
+      alert({
+        title: t("common.error"),
+        body: <p>{j.error || t("common.error")}</p>,
+        variant: "danger",
+        okLabel: t("common.confirm")
+      });
     }
   }
 

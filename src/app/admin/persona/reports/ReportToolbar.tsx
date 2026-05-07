@@ -4,6 +4,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useTransition } from "react";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import MonthPicker from "@/app/components/MonthPicker";
 
 // Trigger browser download — client only
 function downloadCsv(filename: string, csv: string): void {
@@ -56,12 +57,10 @@ export default function ReportToolbar({
         <label className="block text-xs text-slate-500 mb-1">
           {t(lang, "admin.persona.reports.filter.month")}
         </label>
-        <input
-          type="month"
+        <MonthPicker
           value={month}
-          onChange={(e) => setParam("month", e.target.value)}
-          className="input text-sm"
-          disabled={pending}
+          onChange={(v) => setParam("month", v)}
+          lang={lang}
         />
       </div>
       <div>

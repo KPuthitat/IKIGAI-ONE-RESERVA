@@ -28,7 +28,7 @@ export default function BookingsClient({
   const router = useRouter();
   const { t } = useLang();
   const [busyId, setBusyId] = useState<number | null>(null);
-  const { confirm, ConfirmDialog } = useConfirm();
+  const { confirm, alert, ConfirmDialog } = useConfirm();
 
   async function setStatus(id: number, status: Row["status"]) {
     setBusyId(id);
@@ -38,7 +38,12 @@ export default function BookingsClient({
       body: JSON.stringify({ status })
     });
     setBusyId(null);
-    if (!res.ok) window.alert(t("admin.bookings.errorGeneric"));
+    if (!res.ok) alert({
+      title: t("common.error"),
+      body: <p>{t("admin.bookings.errorGeneric")}</p>,
+      variant: "danger",
+      okLabel: t("common.confirm")
+    });
     router.refresh();
   }
 

@@ -84,12 +84,16 @@ export default function LeaveReportPage({
     JOIN users u ON r.user_id = u.id
     WHERE r.status = 'approved'
       AND r.date_from >= ? AND r.date_from <= ? ${userClause}
-    ORDER BY r.date_from, u.display_name
+    ORDER BY r.date_from,
+             CASE WHEN u.employment_type = 'ft' THEN 0 WHEN u.employment_type = 'pt' THEN 1 ELSE 2 END,
+             u.display_name
   `).all(...params) as LeaveRow[];
 
   // Staff dropdown
   const staffList = db.prepare(`
-    SELECT id, display_name FROM users WHERE role = 'staff' ORDER BY display_name
+    SELECT id, display_name FROM users WHERE role = 'staff'
+    ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
+             display_name
   `).all() as StaffOpt[];
 
   // Aggregations

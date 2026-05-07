@@ -578,7 +578,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     FROM users
     WHERE role = 'staff' AND employment_type IS NOT NULL
       AND ${staffWhere}
-    ORDER BY display_name
+    ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
+             display_name
   `;
   const staff = db.prepare(staffSql).all() as EmployeePayrollSnapshot[];
 

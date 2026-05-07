@@ -76,6 +76,9 @@ function defaultPayDate(periodEnd: string, cycle: "weekly" | "monthly"): string 
     } while (d.getUTCDay() !== 1);
     return d.toISOString().slice(0, 10);
   }
-  // monthly: pay on last day of month (= period_end if it's the last day)
-  return periodEnd;
+  // Monthly: pay on the 5th of the following month (per company policy)
+  const [y, m] = periodEnd.split("-").map(Number);
+  const nextY = m === 12 ? y + 1 : y;
+  const nextM = m === 12 ? 1 : m + 1;
+  return `${nextY}-${String(nextM).padStart(2, "0")}-05`;
 }

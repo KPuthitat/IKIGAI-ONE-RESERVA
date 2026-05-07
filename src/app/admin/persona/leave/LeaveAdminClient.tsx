@@ -7,6 +7,7 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { ALL_LEAVE_TYPES, type LeaveType } from "@/lib/leave-types";
 import type { LeaveStatus } from "@/app/staff/persona/leave/LeaveClient";
+import { useConfirm } from "@/app/components/useConfirm";
 
 export type StaffOption = {
   id: number;
@@ -69,6 +70,7 @@ export default function LeaveAdminClient({
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const { alert, ConfirmDialog } = useConfirm();
 
   // Custom modal state (Phase 1C v8 — แทน browser prompt)
   type DecideTarget = { id: number; decision: "approved" | "rejected" | "revision_requested" };
@@ -84,7 +86,12 @@ export default function LeaveAdminClient({
     if (!decideTarget) return;
     const { id, decision } = decideTarget;
     if (decision === "revision_requested" && !decideNote.trim()) {
-      alert(t("admin.persona.leave.revisionNoteRequired"));
+      alert({
+        title: t("common.error"),
+        body: <p>{t("admin.persona.leave.revisionNoteRequired")}</p>,
+        variant: "warning",
+        okLabel: t("common.confirm")
+      });
       return;
     }
     setBusyId(id);
@@ -99,10 +106,20 @@ export default function LeaveAdminClient({
         setDecideTarget(null);
         startTransition(() => router.refresh());
       } else {
-        alert(j?.error ?? t("common.error"));
+        alert({
+          title: t("common.error"),
+          body: <p>{j?.error ?? t("common.error")}</p>,
+          variant: "danger",
+          okLabel: t("common.confirm")
+        });
       }
     } catch {
-      alert(t("common.error"));
+      alert({
+        title: t("common.error"),
+        body: <p>{t("common.error")}</p>,
+        variant: "danger",
+        okLabel: t("common.confirm")
+      });
     } finally {
       setBusyId(null);
     }
@@ -313,6 +330,7 @@ export default function LeaveAdminClient({
           nsPrompt="admin.persona.leave"
         />
       )}
+      {ConfirmDialog}
     </>
   );
 }

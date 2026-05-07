@@ -232,7 +232,7 @@ export default function PeriodDetailClient({
               <button type="button" onClick={() => setConfirmPay(true)}
                 disabled={busy !== null}
                 className="text-sm px-4 py-1.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white font-medium">
-                {busy === "mark_paid" ? "..." : "💵 " + t(lang, "admin.persona.payroll.action.markPaid")}
+                {busy === "mark_paid" ? "..." : t(lang, "admin.persona.payroll.action.markPaid")}
               </button>
             </>
           )}

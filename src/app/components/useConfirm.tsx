@@ -23,10 +23,19 @@ export type ConfirmOptions = {
   inputLabel?: string;
   inputPlaceholder?: string;
   inputDefaultValue?: string;
+  alertOnly?: boolean;
+};
+
+export type AlertOptions = {
+  title: string;
+  body?: ReactNode;
+  okLabel?: string;
+  variant?: "default" | "danger" | "warning" | "info";
 };
 
 export function useConfirm(): {
   confirm: (opts: ConfirmOptions) => Promise<string | null>;
+  alert: (opts: AlertOptions) => Promise<void>;
   ConfirmDialog: React.ReactNode;
 } {
   const [state, setState] = useState<{
@@ -37,6 +46,22 @@ export function useConfirm(): {
   const confirm = useCallback((options: ConfirmOptions): Promise<string | null> => {
     return new Promise<string | null>((resolve) => {
       setState({ options, resolver: resolve });
+    });
+  }, []);
+
+  const alert = useCallback((options: AlertOptions): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      setState({
+        options: {
+          title: options.title,
+          body: options.body,
+          confirmLabel: options.okLabel ?? "OK",
+          cancelLabel: "",
+          variant: options.variant ?? "info",
+          alertOnly: true
+        },
+        resolver: () => resolve()
+      });
     });
   }, []);
 
@@ -52,6 +77,7 @@ export function useConfirm(): {
       inputLabel={state.options.inputLabel}
       inputPlaceholder={state.options.inputPlaceholder}
       inputDefaultValue={state.options.inputDefaultValue}
+      alertOnly={state.options.alertOnly}
       onConfirm={(val) => {
         state.resolver(val);
         setState(null);
@@ -63,5 +89,5 @@ export function useConfirm(): {
     />
   ) : null;
 
-  return { confirm, ConfirmDialog };
+  return { confirm, alert, ConfirmDialog };
 }

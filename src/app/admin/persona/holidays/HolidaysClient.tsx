@@ -28,7 +28,7 @@ export default function HolidaysClient({
   const [pending, startTransition] = useTransition();
   const [editTarget, setEditTarget] = useState<HolidayRow | null>(null);
   const [showAdd, setShowAdd] = useState(false);
-  const { confirm, ConfirmDialog } = useConfirm();
+  const { confirm, alert, ConfirmDialog } = useConfirm();
 
   async function deleteHoliday(date: string) {
     const ok = await confirm({
@@ -43,7 +43,12 @@ export default function HolidaysClient({
     if (res.ok) startTransition(() => router.refresh());
     else {
       const j = await res.json().catch(() => ({}));
-      window.alert(j.error ?? t("common.error"));
+      alert({
+        title: t("common.error"),
+        body: <p>{j.error ?? t("common.error")}</p>,
+        variant: "danger",
+        okLabel: t("common.confirm")
+      });
     }
   }
 

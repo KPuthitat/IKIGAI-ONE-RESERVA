@@ -57,7 +57,7 @@ export default function ResignationAdminClient({
   const [busyId, setBusyId] = useState<number | null>(null);
   const [unlockUserId, setUnlockUserId] = useState<number | "">(staffList[0]?.id ?? "");
   const [unlockBusy, setUnlockBusy] = useState(false);
-  const { confirm, ConfirmDialog } = useConfirm();
+  const { confirm, alert, ConfirmDialog } = useConfirm();
 
   const unlockedUsers = staffList.filter((u) => u.resignation_unlocked_at);
 
@@ -81,7 +81,12 @@ export default function ResignationAdminClient({
       });
       const data = await res.json().catch(() => ({}));
       if (data.ok) startTransition(() => router.refresh());
-      else window.alert(data.error ?? t("common.error"));
+      else alert({
+        title: t("common.error"),
+        body: <p>{data.error ?? t("common.error")}</p>,
+        variant: "danger",
+        okLabel: t("common.confirm")
+      });
     } finally {
       setUnlockBusy(false);
     }
@@ -100,7 +105,12 @@ export default function ResignationAdminClient({
     if (!decideTarget) return;
     const { id, decision } = decideTarget;
     if (decision === "revision_requested" && !decideNote.trim()) {
-      alert(t("admin.persona.resignation.revisionNoteRequired"));
+      alert({
+        title: t("common.error"),
+        body: <p>{t("admin.persona.resignation.revisionNoteRequired")}</p>,
+        variant: "warning",
+        okLabel: t("common.confirm")
+      });
       return;
     }
     setBusyId(id);
@@ -115,10 +125,20 @@ export default function ResignationAdminClient({
         setDecideTarget(null);
         startTransition(() => router.refresh());
       } else {
-        alert(j?.error ?? t("common.error"));
+        alert({
+          title: t("common.error"),
+          body: <p>{j?.error ?? t("common.error")}</p>,
+          variant: "danger",
+          okLabel: t("common.confirm")
+        });
       }
     } catch {
-      alert(t("common.error"));
+      alert({
+        title: t("common.error"),
+        body: <p>{t("common.error")}</p>,
+        variant: "danger",
+        okLabel: t("common.confirm")
+      });
     } finally {
       setBusyId(null);
     }

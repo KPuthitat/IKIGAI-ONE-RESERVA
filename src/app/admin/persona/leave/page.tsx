@@ -85,7 +85,8 @@ export default function AdminLeavePage({
     SELECT id, username, display_name, role
     FROM users
     WHERE role = 'staff'
-    ORDER BY display_name
+    ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
+             display_name
   `).all() as StaffOption[];
 
   return (

@@ -56,7 +56,8 @@ export default function AdminResignationPage({
     FROM users u
     LEFT JOIN users uu ON u.resignation_unlocked_by = uu.id
     WHERE u.role = 'staff'
-    ORDER BY u.display_name
+    ORDER BY CASE WHEN u.employment_type = 'ft' THEN 0 WHEN u.employment_type = 'pt' THEN 1 ELSE 2 END,
+             u.display_name
   `).all() as Array<{
     id: number; username: string; display_name: string;
     resignation_unlocked_at: string | null;

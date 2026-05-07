@@ -138,13 +138,18 @@ export default function HoursReportPage({
   `).all(...params) as Entry[];
 
   const summaries = aggregateByUser(entries);
-  const summaryRows = Array.from(summaries.values()).sort(
-    (a, b) => a.display_name.localeCompare(b.display_name, "th")
-  );
+  const summaryRows = Array.from(summaries.values()).sort((a, b) => {
+    const orderA = a.employment_type === "ft" ? 0 : a.employment_type === "pt" ? 1 : 2;
+    const orderB = b.employment_type === "ft" ? 0 : b.employment_type === "pt" ? 1 : 2;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.display_name.localeCompare(b.display_name, "th");
+  });
 
   // Staff list for dropdown
   const staffList = db.prepare(`
-    SELECT id, display_name FROM users WHERE role = 'staff' ORDER BY display_name
+    SELECT id, display_name FROM users WHERE role = 'staff'
+    ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
+             display_name
   `).all() as StaffOpt[];
 
   // Aggregations
