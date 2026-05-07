@@ -233,23 +233,29 @@ export function branchLunchAppliesOn(branch: Branch, bkkDate: string): boolean {
 }
 
 /** Push a clock-in confirmation card to a staff member, fire-and-forget.
- *  Logs success/failure to notification_log. Silent on missing line_user_id
- *  or missing channel token (just records 'skipped'). */
+ *
+ * Channel split:
+ *   - The LINE token comes from the PLATFORM OA (IKIGAI OS) — staff-facing
+ *     notifications go through one shared OA across all restaurants.
+ *   - The branch is only used to source today's lunch-break window + branch
+ *     name shown on the card body. (You can still clock in at any branch.)
+ *
+ * Silent no-op if the platform OA isn't configured yet, or if the staff
+ * hasn't bound their LINE userId. Never throws — clock-in must not be
+ * blocked or rolled back by a LINE API hiccup.
+ */
 export async function pushClockInCard(args: {
   userId: number;
   displayName: string;
   branch: Branch;
+  platformChannelToken: string;   // from messaging_channels (IKIGAI OS)
   clockInIsoTs: string;
 }): Promise<void> {
   const db = getDb();
   const u = db.prepare("SELECT line_user_id FROM users WHERE id = ?").get(args.userId) as
     | { line_user_id: string | null } | undefined;
 
-  if (!args.branch.line_channel_token || !u?.line_user_id) {
-    // No-op: not configured for this user. We don't insert into
-    // notification_log because it's keyed to bookings (booking_id NOT NULL).
-    return;
-  }
+  if (!u?.line_user_id) return;
 
   const bkkDate = new Date(new Date(args.clockInIsoTs).getTime() + 7 * 60 * 60 * 1000)
     .toISOString().slice(0, 10);
@@ -264,12 +270,10 @@ export async function pushClockInCard(args: {
     hasLunchToday
   });
 
-  await sendLinePush(args.branch.line_channel_token, {
+  await sendLinePush(args.platformChannelToken, {
     to: u.line_user_id,
     messages: [flex]
   });
-  // Note: we intentionally don't await error logging here — clock-in must
-  // never be blocked or rolled back by a LINE API hiccup.
 }
 
 export async function notifyCustomer(

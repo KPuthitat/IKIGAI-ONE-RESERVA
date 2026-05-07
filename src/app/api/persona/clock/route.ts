@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { pushClockInCard } from "@/lib/line";
+import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
 
 const Body = z.object({
   pin: z.string().regex(/^\d{4}$/),
@@ -132,18 +133,24 @@ export async function POST(req: Request) {
     .run(user.id, action, nowIso);
 
   // ── Fire-and-forget: ส่ง LINE flex card ยืนยันเฉพาะตอนเข้างาน ──
-  // ใช้ active branch ของ session เพื่อหา channel token + เวลาพักกลางวัน.
-  // ผิดพลาดอะไรก็ไม่ block response ของ clock-in.
+  // Channel: IKIGAI OS (platform-level OA, shared across all branches).
+  // Branch context: ใช้แค่ดึงเวลาพักกลางวัน + ชื่อสาขามาแสดงในการ์ด.
+  // ถ้าระบบยังไม่ได้ตั้ง platform OA หรือพนักงานยังไม่ได้ bind LINE userId
+  // → เงียบ ไม่ error ไม่ block response ของ clock-in.
   if (action === "in" && user.activeBranchId) {
-    const branch = db.prepare("SELECT * FROM branches WHERE id = ?")
-      .get(user.activeBranchId) as Branch | undefined;
-    if (branch) {
-      void pushClockInCard({
-        userId: user.id,
-        displayName: user.display_name,
-        branch,
-        clockInIsoTs: nowIso
-      }).catch(() => { /* swallow — never block clock-in */ });
+    const platform = getPlatformChannel();
+    if (isChannelReady(platform)) {
+      const branch = db.prepare("SELECT * FROM branches WHERE id = ?")
+        .get(user.activeBranchId) as Branch | undefined;
+      if (branch) {
+        void pushClockInCard({
+          userId: user.id,
+          displayName: user.display_name,
+          branch,
+          platformChannelToken: platform!.channel_token!,
+          clockInIsoTs: nowIso
+        }).catch(() => { /* swallow — never block clock-in */ });
+      }
     }
   }
 

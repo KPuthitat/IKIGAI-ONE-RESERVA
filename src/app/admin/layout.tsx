@@ -28,7 +28,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/admin", label: t(lang, "sidebar.modulePicker") },
         { href: "/admin/persona", label: "PERSONA" },
-        { href: "/admin/reserva", label: "RESERVA" }
+        { href: "/admin/reserva", label: "RESERVA" },
+        { href: "/admin/messaging", label: t(lang, "sidebar.messaging") }
       ]
     },
     {

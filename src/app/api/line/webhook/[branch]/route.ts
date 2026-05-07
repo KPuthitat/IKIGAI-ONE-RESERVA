@@ -1,17 +1,26 @@
 /**
- * LINE Messaging API Webhook
- * URL ที่ตั้งใน LINE Developers Console:
- *   https://your-domain.example.com/api/line/webhook/<branch_slug>
+ * LINE Messaging API Webhook (multi-channel router)
  *
- * รองรับ:
- *   - follow: เก็บ userId ของลูกค้าไว้ในตารางชั่วคราวเพื่อ map กับ booking ภายหลัง (ตาม phone หรือ name)
- *   - message: รองรับ "ยกเลิก #xxx" เพื่อให้ลูกค้ายกเลิกการจองผ่าน LINE
+ * URL pattern in LINE Developers Console:
+ *   https://your-domain.example.com/api/line/webhook/<code>
+ *
+ * <code> resolution order:
+ *   1. messaging_channels.code  (preferred — used by IKIGAI OS platform OA
+ *      and any future per-restaurant RESERVA OAs that have been migrated)
+ *   2. branches.slug             (legacy — original RESERVA per-branch OA
+ *      whose token/secret still live on the branches row)
+ *
+ * Behaviors per channel scope:
+ *   - 'platform' (IKIGAI OS): only the staff-facing commands ("id", "help"),
+ *     no booking commands.
+ *   - 'reserva' / branch-slug: full RESERVA flow ("ยกเลิก #xxx", "id", "help").
  */
 
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { getDb, type Branch, type Booking } from "@/lib/db";
 import { sendLinePush } from "@/lib/line";
+import { getChannelByCode } from "@/lib/messaging-channels";
 
 type LineEvent = {
   type: string;
@@ -20,6 +29,49 @@ type LineEvent = {
   replyToken?: string;
 };
 
+type ResolvedChannel = {
+  scope: "platform" | "reserva" | "legacy-branch";
+  label: string;
+  channel_secret: string;
+  channel_token: string;
+  branch: Branch | null;          // populated when scope is 'reserva' or 'legacy-branch'
+};
+
+/** Resolve the URL <code> param to a channel. Returns null if unknown / unconfigured. */
+function resolveChannel(code: string): ResolvedChannel | null {
+  const db = getDb();
+
+  // 1) New table (preferred)
+  const row = getChannelByCode(code);
+  if (row && row.channel_secret && row.channel_token) {
+    let branch: Branch | null = null;
+    if (row.branch_id != null) {
+      branch = (db.prepare("SELECT * FROM branches WHERE id = ?").get(row.branch_id) as Branch | undefined) ?? null;
+    }
+    return {
+      scope: row.scope,
+      label: row.label,
+      channel_secret: row.channel_secret,
+      channel_token: row.channel_token,
+      branch
+    };
+  }
+
+  // 2) Legacy: code matches a branch slug whose token/secret still live on branches
+  const branch = db.prepare("SELECT * FROM branches WHERE slug = ?").get(code) as Branch | undefined;
+  if (branch?.line_channel_secret && branch.line_channel_token) {
+    return {
+      scope: "legacy-branch",
+      label: branch.name,
+      channel_secret: branch.line_channel_secret,
+      channel_token: branch.line_channel_token,
+      branch
+    };
+  }
+
+  return null;
+}
+
 function verifySignature(secret: string, body: string, signature: string | null): boolean {
   if (!signature) return false;
   const hash = crypto.createHmac("sha256", secret).update(body).digest("base64");
@@ -27,75 +79,82 @@ function verifySignature(secret: string, body: string, signature: string | null)
 }
 
 export async function POST(req: Request, { params }: { params: { branch: string } }) {
-  const db = getDb();
-  const branch = db.prepare("SELECT * FROM branches WHERE slug = ?").get(params.branch) as Branch | undefined;
-  if (!branch) return NextResponse.json({ error: "no branch" }, { status: 404 });
-  if (!branch.line_channel_secret || !branch.line_channel_token) {
-    return NextResponse.json({ error: "LINE not configured for this branch" }, { status: 400 });
+  // The route param is named [branch] for backward-compat with old URLs;
+  // semantically it's now a channel code.
+  const channel = resolveChannel(params.branch);
+  if (!channel) {
+    return NextResponse.json({ error: "channel_not_configured", code: params.branch }, { status: 404 });
   }
 
   const raw = await req.text();
   const signature = req.headers.get("x-line-signature");
-  if (!verifySignature(branch.line_channel_secret, raw, signature)) {
+  if (!verifySignature(channel.channel_secret, raw, signature)) {
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
+  const db = getDb();
   const json = JSON.parse(raw) as { events: LineEvent[] };
   for (const ev of json.events ?? []) {
     const userId = ev.source?.userId;
     if (!userId) continue;
 
     if (ev.type === "follow") {
-      // ลูกค้ากด add OA — link userId กับ booking ที่เพิ่ง create และยังไม่มี line_user_id (best-effort)
-      // เก็บ userId ไว้รอ map ภายหลัง
-      console.log("[line] new follower for branch", branch.slug, userId);
+      console.log(`[line:${channel.scope}] new follower for ${channel.label}: ${userId}`);
       continue;
     }
 
     if (ev.type === "message" && ev.message?.type === "text") {
       const text = (ev.message.text ?? "").trim();
-      const cancelMatch = text.match(/ยกเลิก\s*#?\s*(\d+)/i);
-      if (cancelMatch) {
-        const id = Number(cancelMatch[1]);
-        const b = db.prepare("SELECT * FROM bookings WHERE id = ? AND branch_id = ?")
-          .get(id, branch.id) as Booking | undefined;
-        if (b && b.status === "confirmed") {
-          db.prepare(
-            "UPDATE bookings SET status='cancelled', cancelled_at=?, updated_at=? WHERE id = ?"
-          ).run(new Date().toISOString(), new Date().toISOString(), id);
-          await sendLinePush(branch.line_channel_token, {
-            to: userId,
-            messages: [{ type: "text", text: `ยกเลิกการจอง #${id} เรียบร้อยค่ะ ขอบคุณที่แจ้งล่วงหน้า 🙏` }]
-          });
-        } else {
-          await sendLinePush(branch.line_channel_token, {
-            to: userId,
-            messages: [{ type: "text", text: `ไม่พบการจอง #${id} หรือสถานะไม่อนุญาตให้ยกเลิก` }]
-          });
+
+      // RESERVA-only: cancel a booking by ref
+      if (channel.scope !== "platform" && channel.branch) {
+        const cancelMatch = text.match(/ยกเลิก\s*#?\s*(\d+)/i);
+        if (cancelMatch) {
+          const id = Number(cancelMatch[1]);
+          const b = db.prepare("SELECT * FROM bookings WHERE id = ? AND branch_id = ?")
+            .get(id, channel.branch.id) as Booking | undefined;
+          if (b && b.status === "confirmed") {
+            db.prepare(
+              "UPDATE bookings SET status='cancelled', cancelled_at=?, updated_at=? WHERE id = ?"
+            ).run(new Date().toISOString(), new Date().toISOString(), id);
+            await sendLinePush(channel.channel_token, {
+              to: userId,
+              messages: [{ type: "text", text: `ยกเลิกการจอง #${id} เรียบร้อยค่ะ ขอบคุณที่แจ้งล่วงหน้า 🙏` }]
+            });
+          } else {
+            await sendLinePush(channel.channel_token, {
+              to: userId,
+              messages: [{ type: "text", text: `ไม่พบการจอง #${id} หรือสถานะไม่อนุญาตให้ยกเลิก` }]
+            });
+          }
+          continue;
         }
-        continue;
       }
 
-      // "id" / "ไอดี" — สะท้อน userId กลับ ใช้สำหรับ admin มา bind ในหน้าพนักงาน
+      // Universal: echo userId — used for binding staff (PERSONA) or
+      // mapping a customer's LINE id to their booking later (RESERVA).
       if (/^\s*(id|ไอดี|myid|line\s*id)\s*$/i.test(text)) {
-        await sendLinePush(branch.line_channel_token, {
+        const tail = channel.scope === "platform"
+          ? "แคปหน้าจอแล้วส่งให้แอดมินตั้งในระบบนะคะ — หลังจากนั้นจะได้รับการ์ดยืนยันการเข้างานทุกครั้ง"
+          : "แคปหน้าจอแล้วส่งให้แอดมินตั้งในระบบนะคะ";
+        await sendLinePush(channel.channel_token, {
           to: userId,
           messages: [{
             type: "text",
-            text: `LINE User ID ของคุณ:\n${userId}\n\nแคปหน้าจอแล้วส่งให้แอดมินตั้งในระบบนะคะ — หลังจากนั้นจะได้รับการ์ดยืนยันการเข้างานทุกครั้ง`
+            text: `LINE User ID ของคุณ:\n${userId}\n\n${tail}`
           }]
         });
         continue;
       }
 
-      // คำสั่งช่วยเหลือ
+      // Help text — different per scope
       if (/help|ช่วย|สั่ง|cmd/i.test(text)) {
-        await sendLinePush(branch.line_channel_token, {
+        const helpText = channel.scope === "platform"
+          ? "วิธีใช้:\n- พิมพ์ 'id' เพื่อดู LINE User ID ของคุณ (พนักงานใช้สำหรับ bind ในระบบ)"
+          : "วิธีใช้:\n- พิมพ์ 'ยกเลิก #หมายเลขจอง' เพื่อยกเลิก\n- พิมพ์ 'id' เพื่อดู LINE User ID ของคุณ\n- จองโต๊ะใหม่ที่ลิงก์ของร้าน";
+        await sendLinePush(channel.channel_token, {
           to: userId,
-          messages: [{
-            type: "text",
-            text: "วิธีใช้:\n- พิมพ์ 'ยกเลิก #หมายเลขจอง' เพื่อยกเลิก\n- พิมพ์ 'id' เพื่อดู LINE User ID ของคุณ (สำหรับพนักงาน)\n- จองโต๊ะใหม่ที่ลิงก์ของร้าน"
-          }]
+          messages: [{ type: "text", text: helpText }]
         });
       }
     }

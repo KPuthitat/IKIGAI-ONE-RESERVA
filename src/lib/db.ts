@@ -551,6 +551,27 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE payroll_period_unlocks ADD COLUMN action TEXT NOT NULL DEFAULT 'unlock'");
   }
 
+  // ── Phase C v8 — messaging_channels (multi-channel LINE OA) ─────────
+  // Platform channels (scope='platform') = OA ที่ใช้ทุก module ของ IKIGAI ONE
+  //   ตัวอย่าง: code='ikigai-os' ใช้กับ PERSONA (clock-in card) + ASCENDA
+  // Per-branch channels (scope='reserva') = OA ของแต่ละร้าน — เก็บไว้สำหรับ
+  //   อนาคต ตอนนี้ RESERVA ยังอ่านจาก branches.line_channel_token เป็นหลัก
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS messaging_channels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      scope TEXT NOT NULL CHECK (scope IN ('platform','reserva')),
+      code TEXT UNIQUE NOT NULL,                  -- slug used in webhook URL
+      label TEXT NOT NULL,                        -- 'IKIGAI OS', 'NAMA PASTA SRIRACHA'
+      branch_id INTEGER REFERENCES branches(id),  -- NULL when scope='platform'
+      channel_secret TEXT,
+      channel_token TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_by INTEGER REFERENCES users(id)
+    );
+    INSERT OR IGNORE INTO messaging_channels (scope, code, label)
+      VALUES ('platform', 'ikigai-os', 'IKIGAI OS');
+  `);
+
   // ── One-time payroll data wipe (per user request to start fresh) ──
   // Tracked via PRAGMA user_version so it runs exactly once per database.
   const userVer = db.pragma("user_version", { simple: true }) as number;
