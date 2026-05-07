@@ -143,11 +143,18 @@ export async function POST(req: Request) {
       const branch = db.prepare("SELECT * FROM branches WHERE id = ?")
         .get(user.activeBranchId) as Branch | undefined;
       if (branch) {
+        // Build the PERSONA deep link from the request — works on any host
+        // (production or local) without depending on a possibly-stale env var.
+        const proto = req.headers.get("x-forwarded-proto") ?? "https";
+        const host = req.headers.get("host") ?? "ikigaimedihealth.com";
+        const personaUrl = `${proto}://${host}/staff/persona`;
+
         void pushClockInCard({
           userId: user.id,
           displayName: user.display_name,
           branch,
           platformChannelToken: platform!.channel_token!,
+          personaUrl,
           clockInIsoTs: nowIso
         }).catch(() => { /* swallow — never block clock-in */ });
       }

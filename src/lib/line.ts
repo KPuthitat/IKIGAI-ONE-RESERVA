@@ -100,7 +100,18 @@ export type ClockInCardArgs = {
   lunchStart: string | null;   // 'HH:MM'
   lunchEnd: string | null;     // 'HH:MM'
   hasLunchToday: boolean;      // false → ข้ามแสดงพักกลางวัน
+  personaUrl: string;          // deep link the action button opens
 };
+
+// IKIGAI OS CI palette — keep in sync with tailwind.config.ts
+const COLOR_INK_900 = "#0f3460";
+const COLOR_INK_700 = "#1a1a2e";
+const COLOR_BRAND = "#e94560";
+const COLOR_BRAND_LIGHT = "#ff6b85";
+const COLOR_TEXT_DARK = "#1a1a2e";
+const COLOR_TEXT_MUTED = "#94a3b8";
+const COLOR_LABEL = "#64748b";
+const COLOR_DIVIDER = "#e2e8f0";
 
 function hhmmFromIso(iso: string): string {
   // Convert UTC ISO → Bangkok HH:MM
@@ -137,7 +148,12 @@ function computeClockOut(clockInHHMM: string, args: ClockInCardArgs): string {
   return addMinutesHHMM(clockInHHMM, total);
 }
 
-/** Build a LINE Flex bubble confirming a successful clock-in. */
+/** Build a LINE Flex bubble confirming a successful clock-in.
+ *
+ * Visual: IKIGAI OS CI palette — ink navy header with brand red-pink accent.
+ * The LINE app renders text in LINE Seed Sans TH on Thai devices by default;
+ * Flex Messages have no `font` property so we just rely on the system default.
+ */
 export function personaClockInFlex(args: ClockInCardArgs): LineFlexMessage {
   const inHHMM = hhmmFromIso(args.clockInIsoTs);
   const outHHMM = computeClockOut(inHHMM, args);
@@ -146,63 +162,102 @@ export function personaClockInFlex(args: ClockInCardArgs): LineFlexMessage {
       .toISOString().slice(0, 10)
   );
 
-  // Lunch row — only if branch has lunch break today
-  const lunchRow = (args.hasLunchToday && args.lunchStart && args.lunchEnd) ? {
-    type: "box", layout: "horizontal", spacing: "sm", contents: [
-      { type: "text", text: "พักกลางวัน", size: "sm", color: "#888888", flex: 4 },
-      { type: "text", text: `${args.lunchStart} – ${args.lunchEnd}`, size: "sm", color: "#222222", flex: 5, weight: "bold", align: "end" }
-    ]
-  } : null;
+  // ── Time-rows (label : value, label muted, value bold) ──
+  function timeRow(label: string, value: string) {
+    return {
+      type: "box", layout: "horizontal", spacing: "sm",
+      contents: [
+        { type: "text", text: label, size: "sm", color: COLOR_LABEL, flex: 4 },
+        { type: "text", text: value, size: "sm", color: COLOR_TEXT_DARK, flex: 5, weight: "bold", align: "end" }
+      ]
+    };
+  }
 
-  const bodyRows = [
-    {
-      type: "box", layout: "horizontal", spacing: "sm", contents: [
-        { type: "text", text: "เวลาเข้างาน", size: "sm", color: "#888888", flex: 4 },
-        { type: "text", text: inHHMM, size: "sm", color: "#222222", flex: 5, weight: "bold", align: "end" }
-      ]
-    },
-    ...(lunchRow ? [lunchRow] : []),
-    {
-      type: "box", layout: "horizontal", spacing: "sm", contents: [
-        { type: "text", text: "เวลาเลิกงาน", size: "sm", color: "#888888", flex: 4 },
-        { type: "text", text: outHHMM, size: "sm", color: "#222222", flex: 5, weight: "bold", align: "end" }
-      ]
-    }
-  ];
+  const bodyRows: unknown[] = [timeRow("เวลาเข้างาน", inHHMM)];
+  if (args.hasLunchToday && args.lunchStart && args.lunchEnd) {
+    bodyRows.push(timeRow("พักกลางวัน", `${args.lunchStart} – ${args.lunchEnd}`));
+  }
+  bodyRows.push(timeRow("เวลาเลิกงาน", outHHMM));
 
   const bubble = {
     type: "bubble",
     size: "kilo",
+    // ── Header: ink navy with IKIGAI OS / PERSONA branding bar ──
     header: {
-      type: "box", layout: "vertical", spacing: "xs",
-      backgroundColor: "#10b981",
-      paddingAll: "16px",
+      type: "box", layout: "vertical",
+      backgroundColor: COLOR_INK_700,
+      paddingAll: "20px",
+      paddingTop: "18px",
+      paddingBottom: "18px",
       contents: [
-        { type: "text", text: "✓ บันทึกเวลาเข้างานเรียบร้อย", color: "#ffffff", weight: "bold", size: "md" },
-        { type: "text", text: todayStr, color: "#d1fae5", size: "xs" }
+        // Brand bar: "IKIGAI OS" left + "PERSONA" right
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            {
+              type: "text", text: "IKIGAI OS",
+              color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1
+            },
+            {
+              type: "text", text: "PERSONA",
+              color: "#cbd5e1", size: "xxs", align: "end", flex: 1
+            }
+          ]
+        },
+        // Title row: bold + checkmark in brand color
+        {
+          type: "box", layout: "baseline", spacing: "sm", margin: "md",
+          contents: [
+            { type: "text", text: "✓", color: COLOR_BRAND_LIGHT, size: "lg", weight: "bold", flex: 0 },
+            { type: "text", text: "บันทึกเวลาเข้างาน", color: "#ffffff", size: "lg", weight: "bold" }
+          ]
+        },
+        { type: "text", text: todayStr, color: COLOR_TEXT_MUTED, size: "xs", margin: "xs" }
       ]
     },
+    // ── Body: name + branch + time table ──
     body: {
       type: "box", layout: "vertical", spacing: "md",
-      paddingAll: "16px",
+      paddingAll: "20px",
       contents: [
-        { type: "text", text: args.displayName, weight: "bold", size: "lg", color: "#222222", wrap: true },
-        { type: "text", text: args.branchName, size: "xs", color: "#888888" },
-        { type: "separator", margin: "md" },
+        { type: "text", text: args.displayName, weight: "bold", size: "lg", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "text", text: args.branchName, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs" },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
         { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: bodyRows }
       ]
     },
+    // ── Footer: brand-colored CTA button to PERSONA ──
     footer: {
-      type: "box", layout: "vertical", paddingAll: "12px",
+      type: "box", layout: "vertical",
+      paddingAll: "16px", paddingTop: "0px",
       contents: [
-        { type: "text", text: "ขอให้มีวันทำงานที่ดีนะคะ ✨", size: "xs", color: "#888888", align: "center", wrap: true }
+        {
+          type: "button",
+          style: "primary",
+          color: COLOR_BRAND,
+          height: "sm",
+          action: {
+            type: "uri",
+            label: "เปิดระบบ PERSONA",
+            uri: args.personaUrl
+          }
+        }
       ]
+    },
+    // Subtle bottom-edge accent matching ink-900 (a thin band visible below
+    // the footer button on most devices).
+    styles: {
+      header: { backgroundColor: COLOR_INK_700 },
+      body: { backgroundColor: "#ffffff" },
+      footer: { backgroundColor: "#ffffff", separator: true, separatorColor: COLOR_DIVIDER }
     }
   };
+  // Suppress unused-var warnings for palette tokens not used in this card
+  void COLOR_INK_900;
 
   return {
     type: "flex",
-    altText: `เข้างานเรียบร้อย ${inHHMM} · เลิก ${outHHMM}`,
+    altText: `บันทึกเวลาเข้างาน ${inHHMM} · เลิก ${outHHMM}`,
     contents: bubble
   };
 }
@@ -249,6 +304,7 @@ export async function pushClockInCard(args: {
   displayName: string;
   branch: Branch;
   platformChannelToken: string;   // from messaging_channels (IKIGAI OS)
+  personaUrl: string;             // CTA button target (e.g., '/staff/persona')
   clockInIsoTs: string;
 }): Promise<void> {
   const db = getDb();
@@ -267,7 +323,8 @@ export async function pushClockInCard(args: {
     branchName: args.branch.name,
     lunchStart: args.branch.lunch_break_start,
     lunchEnd: args.branch.lunch_break_end,
-    hasLunchToday
+    hasLunchToday,
+    personaUrl: args.personaUrl
   });
 
   await sendLinePush(args.platformChannelToken, {
