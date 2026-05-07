@@ -4,6 +4,7 @@ import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
 import LangToggle from "../LangToggle";
+import Footer from "../Footer";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,8 @@ export default function CustomerReservaPage() {
   `).all() as Branch[];
 
   return (
-    <main className="min-h-screen bg-ink-gradient flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen flex flex-col bg-ink-gradient">
+      <main className="flex-1 flex flex-col items-center justify-center p-6">
       <div className="max-w-2xl w-full">
         <div className="text-center mb-8">
           <div className="brand-wordmark text-white text-[42px]">IKIGAI OS</div>
@@ -165,5 +167,7 @@ export default function CustomerReservaPage() {
         </div>
       </div>
     </main>
+      <Footer />
+    </div>
   );
 }

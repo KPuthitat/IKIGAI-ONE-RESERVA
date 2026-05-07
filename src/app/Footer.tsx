@@ -29,7 +29,7 @@ export default function Footer() {
   const lastUpdate = formatBuildTime(BUILD_TIME);
 
   return (
-    <footer className="bg-ink-gradient text-white/80 mt-auto">
+    <footer className="bg-ink-gradient text-white/80 border-t border-white/10 mt-auto">
       <div className="max-w-6xl mx-auto px-4 py-3
         flex flex-col gap-2 text-xs
         sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:gap-3">
