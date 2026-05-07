@@ -23,6 +23,15 @@ function escapeCsvField(v: unknown): string {
   return s;
 }
 
+// ── Generic CSV helpers (used by /admin/persona/reports/*) ──────────────
+export type CsvCell = string | number | null | undefined;
+
+export function rowsToCsv(headers: string[], rows: CsvCell[][]): string {
+  const lines = [headers.map(escapeCsvField).join(",")];
+  for (const r of rows) lines.push(r.map(escapeCsvField).join(","));
+  return lines.join("\r\n");
+}
+
 function formatSource(s: string | null): string {
   if (!s) return "";
   // อาจเก็บเป็น JSON array ["A","B"] หรือ legacy single string
