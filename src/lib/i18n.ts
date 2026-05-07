@@ -959,7 +959,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.payroll.detail.onHoliday": "วันพิเศษ ×1.5",
     "admin.persona.payroll.detail.unpairedShort": "ไม่จับคู่",
     "admin.persona.payroll.detail.dataSourceAuto": "นำเข้าข้อมูลจากการลงเวลา",
-    "admin.persona.payroll.detail.dataSourceManual": "กรอกด้วยมือ",
+    "admin.persona.payroll.detail.dataSourceManual": "กรอกรายละเอียดเองทั้งหมด",
     "admin.persona.payroll.detail.paidNotice": "ทำจ่ายเมื่อ {ts}",
     "admin.persona.payroll.detail.modeHours": "กรอกชั่วโมง/วัน",
     "admin.persona.payroll.detail.modeAmount": "กรอกจำนวนเงินตรงๆ",
