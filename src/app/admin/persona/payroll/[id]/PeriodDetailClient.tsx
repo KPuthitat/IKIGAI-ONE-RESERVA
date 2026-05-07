@@ -158,10 +158,14 @@ export default function PeriodDetailClient({
     { gross: 0, sso: 0, tax: 0, net: 0, ot: 0, ptCount: 0, ftCount: 0, ssoCount: 0, whtCount: 0, holidayMin: 0 }
   );
 
+  const otFlatPer15 = period.ot_flat_per_15min_snapshot ?? 0;
   const otModeBadge =
     period.ot_mode_snapshot === "flat"
-      ? `${t(lang, "admin.persona.payroll.detail.otFlat")} ${period.ot_flat_per_15min_snapshot ?? 0} ฿/15m`
-      : t(lang, "admin.persona.payroll.detail.otLegal");
+      ? t(lang, "admin.persona.payroll.otFlatLabel", {
+          baht: String(otFlatPer15),
+          perHour: String(otFlatPer15 * 4)
+        })
+      : t(lang, "admin.persona.payroll.otLegalLabel");
 
   return (
     <>
