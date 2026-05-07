@@ -12,20 +12,24 @@ export type PeriodDetail = {
   id: number;
   cycle: "weekly" | "monthly";
   target: "pt" | "ft" | "all";
+  data_source: "auto" | "manual";
   period_start: string;
   period_end: string;
   pay_date: string;
-  status: "draft" | "finalized" | "cancelled";
+  status: "draft" | "finalized" | "paid" | "cancelled";
   ot_mode_snapshot: "flat" | "legal" | null;
   ot_flat_per_15min_snapshot: number | null;
   computed_by: number | null;
   computed_at: string | null;
   finalized_by: number | null;
   finalized_at: string | null;
+  paid_by: number | null;
+  paid_at: string | null;
   notes: string | null;
   created_at: string;
   computed_by_name: string | null;
   finalized_by_name: string | null;
+  paid_by_name: string | null;
 };
 
 export type PayrollLineRow = {
@@ -86,11 +90,13 @@ export default function PeriodDetailClient({
   const [editLine, setEditLine] = useState<PayrollLineRow | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmFinalize, setConfirmFinalize] = useState(false);
+  const [confirmPay, setConfirmPay] = useState(false);
 
   const isDraft = period.status === "draft";
   const isFinalized = period.status === "finalized";
+  const isPaid = period.status === "paid";
 
-  async function performAction(action: "recompute" | "finalize" | "unfinalize"): Promise<void> {
+  async function performAction(action: "recompute" | "finalize" | "unfinalize" | "mark_paid"): Promise<void> {
     setBusy(action);
     setMsg(null);
     try {
@@ -194,12 +200,14 @@ export default function PeriodDetailClient({
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {isDraft && period.data_source === "auto" && (
+            <button type="button" onClick={() => performAction("recompute")}
+              disabled={busy !== null} className="btn-secondary text-sm">
+              {busy === "recompute" ? "..." : "↻ " + t(lang, "admin.persona.payroll.action.recompute")}
+            </button>
+          )}
           {isDraft && (
             <>
-              <button type="button" onClick={() => performAction("recompute")}
-                disabled={busy !== null} className="btn-secondary text-sm">
-                {busy === "recompute" ? "..." : "↻ " + t(lang, "admin.persona.payroll.action.recompute")}
-              </button>
               <button type="button" onClick={() => setConfirmFinalize(true)}
                 disabled={busy !== null} className="btn-primary text-sm">
                 {busy === "finalize" ? "..." : "✓ " + t(lang, "admin.persona.payroll.action.finalize")}
@@ -212,10 +220,22 @@ export default function PeriodDetailClient({
             </>
           )}
           {isFinalized && (
-            <button type="button" onClick={() => performAction("unfinalize")}
-              disabled={busy !== null} className="btn-secondary text-sm">
-              {busy === "unfinalize" ? "..." : "↺ " + t(lang, "admin.persona.payroll.action.unfinalize")}
-            </button>
+            <>
+              <button type="button" onClick={() => performAction("unfinalize")}
+                disabled={busy !== null} className="btn-secondary text-sm">
+                {busy === "unfinalize" ? "..." : "↺ " + t(lang, "admin.persona.payroll.action.unfinalize")}
+              </button>
+              <button type="button" onClick={() => setConfirmPay(true)}
+                disabled={busy !== null}
+                className="text-sm px-4 py-1.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white font-medium">
+                {busy === "mark_paid" ? "..." : "💵 " + t(lang, "admin.persona.payroll.action.markPaid")}
+              </button>
+            </>
+          )}
+          {isPaid && (
+            <span className="text-sm text-sky-700 font-medium px-3 py-1.5 rounded-md bg-sky-50 border border-sky-200">
+              ✓ {t(lang, "admin.persona.payroll.action.alreadyPaid")}
+            </span>
           )}
         </div>
       </div>
@@ -229,12 +249,33 @@ export default function PeriodDetailClient({
       {/* Status badge + warnings */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className={`text-xs px-2 py-1 rounded font-medium ${
-          isFinalized ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+          isPaid ? "bg-sky-100 text-sky-700" :
+          isFinalized ? "bg-emerald-100 text-emerald-700" :
+          "bg-amber-100 text-amber-700"
         }`}>
-          {isFinalized
+          {isPaid
+            ? t(lang, "admin.persona.payroll.status.paid")
+            : isFinalized
             ? t(lang, "admin.persona.payroll.status.finalized")
             : t(lang, "admin.persona.payroll.status.draft")}
         </span>
+        <span className={`text-xs px-2 py-1 rounded font-medium ${
+          period.data_source === "auto"
+            ? "bg-violet-50 text-violet-700 border border-violet-200"
+            : "bg-amber-50 text-amber-700 border border-amber-200"
+        }`}>
+          {period.data_source === "auto"
+            ? t(lang, "admin.persona.payroll.detail.dataSourceAuto")
+            : t(lang, "admin.persona.payroll.detail.dataSourceManual")}
+        </span>
+        {isPaid && period.paid_at && (
+          <span className="text-xs text-slate-500">
+            {t(lang, "admin.persona.payroll.detail.paidNotice", {
+              ts: new Date(period.paid_at).toLocaleString("en-GB", { timeZone: "Asia/Bangkok" })
+            })}
+            {period.paid_by_name && ` (${period.paid_by_name})`}
+          </span>
+        )}
         {isFinalized && (
           <span className="text-xs text-slate-500">
             {t(lang, "admin.persona.payroll.detail.finalizedNotice")}
@@ -456,6 +497,21 @@ export default function PeriodDetailClient({
         }}
         onCancel={() => setConfirmFinalize(false)}
       />
+
+      <ConfirmModal
+        open={confirmPay}
+        title={t(lang, "admin.persona.payroll.confirmPayTitle")}
+        body={<p>{t(lang, "admin.persona.payroll.confirmPay")}</p>}
+        confirmLabel={t(lang, "admin.persona.payroll.action.markPaid")}
+        cancelLabel={t(lang, "common.cancel")}
+        variant="info"
+        busy={busy === "mark_paid"}
+        onConfirm={async () => {
+          await performAction("mark_paid");
+          setConfirmPay(false);
+        }}
+        onCancel={() => setConfirmPay(false)}
+      />
     </>
   );
 }
@@ -487,11 +543,24 @@ function LineEditModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  // Two tabs: by hours (recompute pay) or by amount (override pay directly).
+  const [mode, setMode] = useState<"hours" | "amount">("hours");
+
+  // Hours-based fields (minutes shown as hours for UX)
+  const minToHours = (m: number) => (m / 60).toFixed(2).replace(/\.?0+$/, "");
+  const [regHrs, setRegHrs] = useState(minToHours(line.regular_minutes));
+  const [otHrs, setOtHrs] = useState(minToHours(line.ot_minutes));
+  const [holidayHrs, setHolidayHrs] = useState(minToHours(line.holiday_minutes));
+  const [leaveDays, setLeaveDays] = useState(String(line.leave_days || 0));
+  const [daysWorked, setDaysWorked] = useState(String(line.days_worked || 0));
+
+  // Amount-based fields
   const [basePay, setBasePay] = useState(String(line.base_pay));
   const [otPay, setOtPay] = useState(String(line.ot_pay));
   const [svc, setSvc] = useState(String(line.service_charge));
   const [otherAdd, setOtherAdd] = useState(String(line.other_additions));
   const [otherDed, setOtherDed] = useState(String(line.other_deductions));
+
   const [notes, setNotes] = useState(line.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -500,17 +569,30 @@ function LineEditModal({
     setBusy(true);
     setErr(null);
     try {
+      const body = mode === "hours"
+        ? {
+            regular_minutes: Math.round(Number(regHrs) * 60),
+            ot_minutes: Math.round(Number(otHrs) * 60),
+            holiday_minutes: Math.round(Number(holidayHrs) * 60),
+            leave_days: Number(leaveDays),
+            days_worked: Number(daysWorked),
+            service_charge: Number(svc),
+            other_additions: Number(otherAdd),
+            other_deductions: Number(otherDed),
+            notes
+          }
+        : {
+            base_pay: Number(basePay),
+            ot_pay: Number(otPay),
+            service_charge: Number(svc),
+            other_additions: Number(otherAdd),
+            other_deductions: Number(otherDed),
+            notes
+          };
       const res = await fetch(apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          base_pay: Number(basePay),
-          ot_pay: Number(otPay),
-          service_charge: Number(svc),
-          other_additions: Number(otherAdd),
-          other_deductions: Number(otherDed),
-          notes
-        })
+        body: JSON.stringify(body)
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) onSaved();
@@ -524,21 +606,84 @@ function LineEditModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
         <div>
           <h3 className="font-semibold text-slate-800">{t(lang, "admin.persona.payroll.detail.editLine")}</h3>
           <p className="text-sm text-slate-500">{line.display_name}</p>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label">{t(lang, "admin.persona.payroll.col.basePay")}</label>
-            <input type="number" step="0.01" className="input" value={basePay} onChange={(e) => setBasePay(e.target.value)} />
-          </div>
-          <div>
-            <label className="label">{t(lang, "admin.persona.payroll.col.otPay")}</label>
-            <input type="number" step="0.01" className="input" value={otPay} onChange={(e) => setOtPay(e.target.value)} />
-          </div>
+
+        {/* Mode toggle */}
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={() => setMode("hours")}
+            className={`px-3 py-2 rounded-lg border text-sm font-medium transition ${
+              mode === "hours" ? "border-brand bg-rose-50/40 text-brand ring-1 ring-brand/30"
+              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}>
+            {t(lang, "admin.persona.payroll.detail.modeHours")}
+          </button>
+          <button type="button" onClick={() => setMode("amount")}
+            className={`px-3 py-2 rounded-lg border text-sm font-medium transition ${
+              mode === "amount" ? "border-brand bg-rose-50/40 text-brand ring-1 ring-brand/30"
+              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}>
+            {t(lang, "admin.persona.payroll.detail.modeAmount")}
+          </button>
+        </div>
+
+        {mode === "hours" ? (
+          <>
+            <p className="text-xs text-slate-500">
+              {t(lang, "admin.persona.payroll.detail.modeHoursHint")}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">{t(lang, "admin.persona.payroll.col.regularHrs")}</label>
+                <input type="number" step="0.25" min="0" className="input"
+                  value={regHrs} onChange={(e) => setRegHrs(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">{t(lang, "admin.persona.payroll.col.otHrs")}</label>
+                <input type="number" step="0.25" min="0" className="input"
+                  value={otHrs} onChange={(e) => setOtHrs(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">{t(lang, "admin.persona.payroll.detail.holidayHrs")}</label>
+                <input type="number" step="0.25" min="0" className="input"
+                  value={holidayHrs} onChange={(e) => setHolidayHrs(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">{t(lang, "admin.persona.payroll.detail.daysWorked")}</label>
+                <input type="number" step="1" min="0" className="input"
+                  value={daysWorked} onChange={(e) => setDaysWorked(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">{t(lang, "admin.persona.payroll.detail.leaveDays")}</label>
+                <input type="number" step="0.5" min="0" className="input"
+                  value={leaveDays} onChange={(e) => setLeaveDays(e.target.value)} />
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-slate-500">
+              {t(lang, "admin.persona.payroll.detail.modeAmountHint")}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">{t(lang, "admin.persona.payroll.col.basePay")}</label>
+                <input type="number" step="0.01" className="input" value={basePay} onChange={(e) => setBasePay(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">{t(lang, "admin.persona.payroll.col.otPay")}</label>
+                <input type="number" step="0.01" className="input" value={otPay} onChange={(e) => setOtPay(e.target.value)} />
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Common fields shown in both modes */}
+        <div className="grid grid-cols-3 gap-3 pt-2 border-t border-slate-100">
           <div>
             <label className="label">{t(lang, "admin.persona.payroll.col.svc")}</label>
             <input type="number" step="0.01" className="input" value={svc} onChange={(e) => setSvc(e.target.value)} />

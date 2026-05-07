@@ -594,13 +594,78 @@ function runMigrations(db: Database.Database): void {
   }
 
   // Phase 1D v3 — payroll_periods.target ('pt' | 'ft' | 'all')
-  // 'pt' = พาร์ทไทม์เท่านั้น (รายชั่วโมง)
-  // 'ft' = ฟูลไทม์เท่านั้น (เงินเดือน, รายสัปดาห์ หรือรายเดือนตาม pay_cycle)
+  // 'pt' = พนักงานพาร์ทไทม์เท่านั้น (รายชั่วโมง)
+  // 'ft' = พนักงานประจำเท่านั้น (เงินเดือน, รายสัปดาห์ หรือรายเดือนตาม pay_cycle)
   // 'all' = legacy / mixed — เก็บไว้เพื่อ backward compat ของ row เก่า
   const ppCols = db.prepare("PRAGMA table_info(payroll_periods)").all() as Array<{ name: string }>;
   const ppNames = new Set(ppCols.map((c) => c.name));
   if (!ppNames.has("target")) {
     db.exec("ALTER TABLE payroll_periods ADD COLUMN target TEXT NOT NULL DEFAULT 'all'");
+  }
+
+  // Phase 1D v4 — paid status + data_source
+  if (!ppNames.has("paid_at")) {
+    db.exec("ALTER TABLE payroll_periods ADD COLUMN paid_at TEXT");
+  }
+  if (!ppNames.has("paid_by")) {
+    db.exec("ALTER TABLE payroll_periods ADD COLUMN paid_by INTEGER REFERENCES users(id)");
+  }
+  // 'auto'   = compute regular/OT minutes from time_entries + leave_requests
+  // 'manual' = create empty rows; admin types hours/days manually
+  if (!ppNames.has("data_source")) {
+    db.exec("ALTER TABLE payroll_periods ADD COLUMN data_source TEXT NOT NULL DEFAULT 'auto'");
+  }
+  // Recreate payroll_periods if status CHECK doesn't include 'paid' (SQLite has no ALTER CHECK)
+  const ppSql = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='payroll_periods'"
+  ).get() as { sql: string } | undefined;
+  if (ppSql && !ppSql.sql.includes("'paid'")) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE payroll_periods_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cycle TEXT NOT NULL CHECK (cycle IN ('weekly','monthly')),
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        pay_date TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft'
+          CHECK (status IN ('draft','finalized','cancelled','paid')),
+        ot_mode_snapshot TEXT,
+        ot_flat_per_15min_snapshot REAL,
+        computed_by INTEGER REFERENCES users(id),
+        computed_at TEXT,
+        finalized_by INTEGER REFERENCES users(id),
+        finalized_at TEXT,
+        notes TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        target TEXT NOT NULL DEFAULT 'all',
+        paid_at TEXT,
+        paid_by INTEGER REFERENCES users(id),
+        data_source TEXT NOT NULL DEFAULT 'auto',
+        UNIQUE (cycle, period_start, period_end)
+      );
+      INSERT INTO payroll_periods_new
+        (id, cycle, period_start, period_end, pay_date, status,
+         ot_mode_snapshot, ot_flat_per_15min_snapshot,
+         computed_by, computed_at, finalized_by, finalized_at,
+         notes, created_by, created_at, target, paid_at, paid_by, data_source)
+      SELECT id, cycle, period_start, period_end, pay_date, status,
+             ot_mode_snapshot, ot_flat_per_15min_snapshot,
+             computed_by, computed_at, finalized_by, finalized_at,
+             notes, created_by, created_at,
+             COALESCE(target, 'all'),
+             paid_at, paid_by,
+             COALESCE(data_source, 'auto')
+      FROM payroll_periods;
+      DROP TABLE payroll_periods;
+      ALTER TABLE payroll_periods_new RENAME TO payroll_periods;
+      CREATE INDEX IF NOT EXISTS idx_payroll_periods_dates
+        ON payroll_periods(period_start, period_end);
+      CREATE INDEX IF NOT EXISTS idx_payroll_periods_status
+        ON payroll_periods(status, period_end);
+      COMMIT;
+    `);
   }
 }
 

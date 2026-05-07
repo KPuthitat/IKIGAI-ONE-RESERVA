@@ -8,6 +8,7 @@ import { computePayrollPeriod } from "@/lib/payroll-compute";
 const Body = z.object({
   cycle: z.enum(["weekly", "monthly"]),
   target: z.enum(["pt", "ft", "all"]).default("all"),
+  data_source: z.enum(["auto", "manual"]).default("auto"),
   period_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   period_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   pay_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -43,9 +44,12 @@ export async function POST(req: Request) {
 
   const result = db.prepare(`
     INSERT INTO payroll_periods
-      (cycle, target, period_start, period_end, pay_date, notes, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(d.cycle, d.target, d.period_start, d.period_end, payDate, d.notes ?? null, user.id);
+      (cycle, target, data_source, period_start, period_end, pay_date, notes, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    d.cycle, d.target, d.data_source,
+    d.period_start, d.period_end, payDate, d.notes ?? null, user.id
+  );
   const periodId = result.lastInsertRowid as number;
 
   // Compute immediately

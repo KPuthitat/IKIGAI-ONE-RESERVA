@@ -15,7 +15,7 @@ export type ExistingPeriod = {
   period_start: string;
   period_end: string;
   pay_date: string;
-  status: "draft" | "finalized" | "cancelled";
+  status: "draft" | "finalized" | "paid" | "cancelled";
   total_gross: number | null;
   total_net: number | null;
   line_count: number;
@@ -28,6 +28,8 @@ type SuggestedPeriod = {
   cycle: "weekly" | "monthly";
   target: "pt" | "ft";
 };
+
+type DataSource = "auto" | "manual";
 
 // Compute weekly periods whose pay_date falls inside the given calendar month.
 // (Pay date determines which month the period belongs to — for tax docs.)
@@ -92,8 +94,8 @@ export default function PayPeriodPicker({
   const weeklyDates = useMemo(() => weeklyPayDatesInMonth(month), [month]);
   const monthlyDates = useMemo(() => monthlyPeriodFor(month), [month]);
 
-  async function createPeriod(p: SuggestedPeriod): Promise<void> {
-    const key = `${p.cycle}|${p.target}|${p.start}|${p.end}`;
+  async function createPeriod(p: SuggestedPeriod, dataSource: DataSource): Promise<void> {
+    const key = `${p.cycle}|${p.target}|${p.start}|${p.end}|${dataSource}`;
     setBusyKey(key);
     setErrMsg(null);
     try {
@@ -103,6 +105,7 @@ export default function PayPeriodPicker({
         body: JSON.stringify({
           cycle: p.cycle,
           target: p.target,
+          data_source: dataSource,
           period_start: p.start,
           period_end: p.end,
           pay_date: p.pay
@@ -180,8 +183,9 @@ export default function PayPeriodPicker({
                   pay={p.pay}
                   cycleLabel={t(lang, "admin.persona.payroll.hub.weeklyShort")}
                   existing={ex}
-                  busy={busyKey === key}
-                  onCreate={() => createPeriod(sp)}
+                  busyKey={busyKey}
+                  cardKey={key}
+                  onCreate={(ds) => createPeriod(sp, ds)}
                   onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
                   accentClass="hover:border-violet-400/60"
                 />
@@ -255,8 +259,9 @@ export default function PayPeriodPicker({
                   pay={monthlyDates.pay}
                   cycleLabel={t(lang, "admin.persona.payroll.hub.monthlyShort")}
                   existing={ex}
-                  busy={busyKey === key}
-                  onCreate={() => createPeriod(sp)}
+                  busyKey={busyKey}
+                  cardKey={key}
+                  onCreate={(ds) => createPeriod(sp, ds)}
                   onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
                   accentClass="hover:border-emerald-400/60"
                 />
@@ -270,7 +275,7 @@ export default function PayPeriodPicker({
 }
 
 function PeriodCard({
-  lang, start, end, pay, cycleLabel, existing, busy, onCreate, onOpen, accentClass
+  lang, start, end, pay, cycleLabel, existing, busyKey, cardKey, onCreate, onOpen, accentClass
 }: {
   lang: Lang;
   start: string;
@@ -278,22 +283,41 @@ function PeriodCard({
   pay: string;
   cycleLabel: string;
   existing: ExistingPeriod | undefined;
-  busy: boolean;
-  onCreate: () => void;
+  busyKey: string | null;
+  cardKey: string;
+  onCreate: (ds: DataSource) => void;
   onOpen: (id: number) => void;
   accentClass: string;
 }) {
   const isExisting = !!existing;
+  const isPaid = existing?.status === "paid";
   const isFinalized = existing?.status === "finalized";
+  const busyAuto = busyKey === `${cardKey}|auto`;
+  const busyManual = busyKey === `${cardKey}|manual`;
+
+  let statusLabel = "";
+  let statusCls = "";
+  if (isPaid) {
+    statusLabel = t(lang, "admin.persona.payroll.status.paid");
+    statusCls = "bg-sky-100 text-sky-700";
+  } else if (isFinalized) {
+    statusLabel = t(lang, "admin.persona.payroll.status.finalized");
+    statusCls = "bg-emerald-100 text-emerald-700";
+  } else if (isExisting) {
+    statusLabel = t(lang, "admin.persona.payroll.status.draft");
+    statusCls = "bg-amber-100 text-amber-700";
+  }
+
+  const cardBgCls = isPaid
+    ? "bg-sky-50/60 border-sky-200"
+    : isFinalized
+    ? "bg-emerald-50/60 border-emerald-200"
+    : isExisting
+    ? "bg-amber-50/60 border-amber-200"
+    : `bg-white border-slate-200 ${accentClass}`;
 
   return (
-    <div className={`rounded-lg border p-3 transition ${
-      isFinalized
-        ? "bg-emerald-50/60 border-emerald-200"
-        : isExisting
-        ? "bg-amber-50/60 border-amber-200"
-        : `bg-white border-slate-200 ${accentClass}`
-    }`}>
+    <div className={`rounded-lg border p-3 transition ${cardBgCls}`}>
       <div className="text-xs text-slate-500">{cycleLabel}</div>
       <div className="font-medium text-slate-800 mt-0.5 leading-tight">
         {formatMonthDay(start, lang)} – {formatMonthDay(end, lang)}
@@ -304,12 +328,8 @@ function PeriodCard({
       </div>
       {isExisting && (
         <div className="text-xs mt-2">
-          <span className={`inline-block px-1.5 py-0.5 rounded font-medium ${
-            isFinalized ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-          }`}>
-            {isFinalized
-              ? t(lang, "admin.persona.payroll.status.finalized")
-              : t(lang, "admin.persona.payroll.status.draft")}
+          <span className={`inline-block px-1.5 py-0.5 rounded font-medium ${statusCls}`}>
+            {statusLabel}
           </span>
           {existing.line_count > 0 && (
             <span className="ml-2 text-slate-500">
@@ -331,14 +351,26 @@ function PeriodCard({
             {t(lang, "admin.persona.payroll.hub.openPeriod")} →
           </button>
         ) : (
-          <button
-            type="button"
-            onClick={onCreate}
-            disabled={busy}
-            className="w-full py-1.5 rounded-md bg-brand hover:opacity-90 text-white text-xs font-bold disabled:opacity-50"
-          >
-            {busy ? "…" : t(lang, "admin.persona.payroll.hub.createComputeBtn")}
-          </button>
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={() => onCreate("auto")}
+              disabled={busyAuto || busyManual}
+              className="w-full py-1.5 rounded-md bg-brand hover:opacity-90 text-white text-xs font-bold disabled:opacity-50"
+              title={t(lang, "admin.persona.payroll.hub.dataSourceAutoHint")}
+            >
+              {busyAuto ? "…" : t(lang, "admin.persona.payroll.hub.createAuto")}
+            </button>
+            <button
+              type="button"
+              onClick={() => onCreate("manual")}
+              disabled={busyAuto || busyManual}
+              className="w-full py-1.5 rounded-md bg-white border border-slate-300 hover:bg-slate-50 text-xs font-medium text-slate-700 disabled:opacity-50"
+              title={t(lang, "admin.persona.payroll.hub.dataSourceManualHint")}
+            >
+              {busyManual ? "…" : t(lang, "admin.persona.payroll.hub.createManual")}
+            </button>
+          </div>
         )}
       </div>
     </div>

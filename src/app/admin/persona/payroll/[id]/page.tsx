@@ -22,12 +22,13 @@ export default function PeriodDetailPage({
   if (!Number.isInteger(id) || id <= 0) notFound();
 
   const period = db.prepare(`
-    SELECT id, cycle, target, period_start, period_end, pay_date, status,
+    SELECT id, cycle, target, data_source, period_start, period_end, pay_date, status,
            ot_mode_snapshot, ot_flat_per_15min_snapshot,
-           computed_by, computed_at, finalized_by, finalized_at,
+           computed_by, computed_at, finalized_by, finalized_at, paid_by, paid_at,
            notes, created_at,
            (SELECT display_name FROM users WHERE id = computed_by) AS computed_by_name,
-           (SELECT display_name FROM users WHERE id = finalized_by) AS finalized_by_name
+           (SELECT display_name FROM users WHERE id = finalized_by) AS finalized_by_name,
+           (SELECT display_name FROM users WHERE id = paid_by) AS paid_by_name
     FROM payroll_periods WHERE id = ?
   `).get(id) as PeriodDetail | undefined;
 

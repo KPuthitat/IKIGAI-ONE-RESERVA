@@ -399,6 +399,120 @@ function round2(x: number): number {
   return Math.round(x * 100) / 100;
 }
 
+/**
+ * Recompute pay components from manually-entered minute totals.
+ * Used when an admin edits a payroll line's hours/days directly (no shift data).
+ *
+ * holiday_minutes is the subset of (regular + ot) minutes that fell on holidays.
+ * It is split proportionally between regular and ot — same multiplier (1.5×)
+ * as the auto-computed flow.
+ */
+export function computeLineFromMinutes(args: {
+  employee: EmployeePayrollSnapshot;
+  regularMinutes: number;
+  otMinutes: number;
+  holidayMinutes: number;
+  leaveDays: number;
+  daysWorked: number;
+  unpaired: number;
+  cycle: "weekly" | "monthly";
+  periodEnd: string;
+  settings: PayrollSettings;
+  serviceCharge?: number;
+  otherAdditions?: number;
+  otherDeductions?: number;
+}): ComputedLine {
+  const {
+    employee: e, regularMinutes, otMinutes, holidayMinutes, leaveDays,
+    daysWorked, unpaired, cycle, periodEnd, settings,
+    serviceCharge = 0, otherAdditions = 0, otherDeductions = 0
+  } = args;
+
+  const ptRate = e.hourly_rate ?? settings.pt_default_hourly_rate;
+  const ftHourlyEquivalent = e.monthly_salary ? e.monthly_salary / 30 / 8 : 0;
+  const effectiveHourlyRate =
+    e.employment_type === "pt" ? ptRate :
+    e.employment_type === "ft" ? ftHourlyEquivalent : 0;
+
+  // Split holiday_minutes proportionally across regular + OT
+  const totalMin = regularMinutes + otMinutes;
+  const regHolidayMin = totalMin > 0
+    ? Math.min(regularMinutes, Math.round(holidayMinutes * regularMinutes / totalMin))
+    : 0;
+  const otHolidayMin = Math.max(0, Math.min(otMinutes, holidayMinutes - regHolidayMin));
+  const regNormalMin = regularMinutes - regHolidayMin;
+  const otNormalMin = otMinutes - otHolidayMin;
+
+  // Base pay
+  let basePay = 0;
+  if (e.employment_type === "pt") {
+    basePay = (regNormalMin / 60) * ptRate
+           + (regHolidayMin / 60) * ptRate * PT_HOLIDAY_MULTIPLIER;
+  } else if (e.employment_type === "ft" && e.monthly_salary) {
+    if (cycle === "monthly" && e.pay_cycle === "monthly") {
+      basePay = e.monthly_salary;
+    } else if (cycle === "weekly" && e.pay_cycle === "weekly") {
+      const mondays = countMondaysInMonth(periodEnd) || 4;
+      basePay = e.monthly_salary / mondays;
+    }
+  }
+
+  // OT pay — PT gets holiday premium, FT does not (per company rule)
+  let otPay = 0;
+  if (e.employment_type === "pt") {
+    otPay = computeOtPay(otNormalMin, ptRate, settings, 1)
+          + computeOtPay(otHolidayMin, ptRate, settings, PT_HOLIDAY_MULTIPLIER);
+  } else if (e.employment_type === "ft") {
+    otPay = computeOtPay(otMinutes, ftHourlyEquivalent, settings, 1);
+  }
+
+  const grossPay = basePay + otPay + serviceCharge + otherAdditions;
+
+  const taxMode = e.salary_tax_mode ?? "sso";
+  let ssoAmount = 0;
+  let taxAmount = 0;
+  if (grossPay > 0) {
+    if (taxMode === "wht") {
+      taxAmount = computeWht(grossPay, settings);
+    } else {
+      ssoAmount = computeSso(grossPay, cycle, settings);
+      taxAmount = computePeriodTax(grossPay, ssoAmount, cycle);
+    }
+  }
+
+  const netPay = grossPay - ssoAmount - taxAmount - otherDeductions;
+  // Suppress unused-var warning for effectiveHourlyRate (kept for future use)
+  void effectiveHourlyRate;
+
+  return {
+    user_id: e.user_id,
+    employee_code: e.employee_code,
+    display_name: e.display_name,
+    employment_type: e.employment_type,
+    pay_cycle_snapshot: e.pay_cycle,
+    hourly_rate_snapshot: e.hourly_rate,
+    monthly_salary_snapshot: e.monthly_salary,
+    salary_tax_mode_snapshot: taxMode,
+    shift_minutes: regularMinutes + otMinutes,
+    break_deducted_minutes: 0,                 // unknown in manual mode
+    regular_minutes: regularMinutes,
+    ot_minutes: otMinutes,
+    holiday_minutes: holidayMinutes,
+    days_worked: daysWorked,
+    leave_days: leaveDays,
+    unpaired_clockins: unpaired,
+    base_pay: round2(basePay),
+    ot_pay: round2(otPay),
+    service_charge: round2(serviceCharge),
+    other_additions: round2(otherAdditions),
+    gross_pay: round2(grossPay),
+    sso_amount: round2(ssoAmount),
+    tax_amount: round2(taxAmount),
+    other_deductions: round2(otherDeductions),
+    net_pay: round2(netPay)
+  };
+}
+
 // ── DB orchestration ────────────────────────────────────────────────
 
 /**
@@ -410,11 +524,12 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   skipped: number;
 } {
   const period = db.prepare(`
-    SELECT id, cycle, target, period_start, period_end, status
+    SELECT id, cycle, target, data_source, period_start, period_end, status
     FROM payroll_periods WHERE id = ?
   `).get(periodId) as {
     id: number; cycle: "weekly" | "monthly";
     target: "pt" | "ft" | "all";
+    data_source: "auto" | "manual";
     period_start: string; period_end: string; status: string;
   } | undefined;
   if (!period) throw new Error("period_not_found");
@@ -540,9 +655,14 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     let computed = 0;
     let skipped = 0;
     for (const emp of staff) {
-      const userEntries = entriesByUser.get(emp.user_id) ?? [];
+      // In manual mode, do NOT pull time_entries / leaves — admin will fill in
+      const userEntries = period.data_source === "manual"
+        ? []
+        : entriesByUser.get(emp.user_id) ?? [];
       const { shifts, unpaired } = pairShifts(userEntries);
-      const leaveDays = leaveDaysByUser.get(emp.user_id) ?? 0;
+      const leaveDays = period.data_source === "manual"
+        ? 0
+        : leaveDaysByUser.get(emp.user_id) ?? 0;
 
       const line = computeLineForEmployee({
         employee: emp,

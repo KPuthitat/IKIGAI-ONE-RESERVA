@@ -8,7 +8,7 @@ import { computePayrollPeriod } from "@/lib/payroll-compute";
 // DELETE /api/admin/persona/payroll/periods/[id] — delete (only if draft)
 
 const PatchBody = z.object({
-  action: z.enum(["recompute", "finalize", "unfinalize", "update_notes"]),
+  action: z.enum(["recompute", "finalize", "unfinalize", "mark_paid", "update_notes"]),
   notes: z.string().max(500).optional(),
   pay_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
 });
@@ -68,6 +68,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       SET status = 'draft', finalized_by = NULL, finalized_at = NULL
       WHERE id = ?
     `).run(id);
+    return NextResponse.json({ ok: true });
+  }
+
+  if (d.action === "mark_paid") {
+    // Only finalized periods can be marked paid; once paid, locked permanently.
+    if (period.status !== "finalized") {
+      return NextResponse.json({ error: "must_be_finalized_to_pay" }, { status: 400 });
+    }
+    db.prepare(`
+      UPDATE payroll_periods
+      SET status = 'paid', paid_by = ?, paid_at = ?
+      WHERE id = ?
+    `).run(user.id, new Date().toISOString(), id);
     return NextResponse.json({ ok: true });
   }
 
