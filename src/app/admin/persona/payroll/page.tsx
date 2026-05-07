@@ -144,7 +144,7 @@ export default function PayrollHubPage() {
               {settings && (
                 <>
                   <span className="mx-2 text-slate-300">|</span>
-                  {t(lang, "admin.persona.payroll.hub.ptDefaultRate")}: <span className="font-medium text-slate-700">{settings.pt_default_hourly_rate} ฿/ชม.</span>
+                  {t(lang, "admin.persona.payroll.hub.ptDefaultRate")}: <span className="font-medium text-slate-700">{settings.pt_default_hourly_rate} {t(lang, "admin.persona.employees.bahtPerHour")}</span>
                 </>
               )}
             </div>

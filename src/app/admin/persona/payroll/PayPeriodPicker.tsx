@@ -71,6 +71,12 @@ function todayMonth(): string {
   return bkk.toISOString().slice(0, 7);
 }
 
+function todayBkk(): string {
+  const now = new Date();
+  const bkk = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  return bkk.toISOString().slice(0, 10);
+}
+
 export default function PayPeriodPicker({
   lang, existing
 }: {
@@ -130,6 +136,7 @@ export default function PayPeriodPicker({
   }
 
   const monthLabel = formatMonthDay(`${month}-15`, lang).split(" ").slice(1).join(" "); // just the month-name
+  const today = todayBkk();
 
   return (
     <div className="card border-l-4 border-brand bg-rose-50/30 space-y-4">
@@ -176,6 +183,7 @@ export default function PayPeriodPicker({
                 cardKey={key}
                 onCreate={(ds) => createPeriod(sp, ds)}
                 onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
+                today={today}
                 accentClass="hover:border-emerald-500/60"
               />
             );
@@ -288,7 +296,7 @@ function Section({
 }
 
 function PeriodCard({
-  lang, start, end, pay, cycleLabel, existing, busyKey, cardKey, onCreate, onOpen, accentClass
+  lang, start, end, pay, cycleLabel, existing, busyKey, cardKey, onCreate, onOpen, accentClass, today
 }: {
   lang: Lang;
   start: string;
@@ -301,10 +309,14 @@ function PeriodCard({
   onCreate: (ds: DataSource) => void;
   onOpen: (id: number) => void;
   accentClass: string;
+  today: string;       // YYYY-MM-DD (Bangkok)
 }) {
   const isExisting = !!existing;
   const isPaid = existing?.status === "paid";
   const isFinalized = existing?.status === "finalized";
+  // Future pay-date — period hasn't arrived yet. Display in muted style;
+  // disable the create buttons (admin shouldn't create payroll for the future).
+  const isFuture = !isExisting && pay > today;
   const busyAuto = busyKey === `${cardKey}|auto`;
   const busyManual = busyKey === `${cardKey}|manual`;
 
@@ -327,6 +339,8 @@ function PeriodCard({
     ? "bg-emerald-50/60 border-emerald-200"
     : isExisting
     ? "bg-amber-50/60 border-amber-200"
+    : isFuture
+    ? "bg-slate-50/40 border-slate-200 opacity-60"
     : `bg-white border-slate-200 ${accentClass}`;
 
   // Show the actually-stored pay_date for existing periods (so the card never
@@ -368,6 +382,10 @@ function PeriodCard({
           >
             {t(lang, "admin.persona.payroll.hub.openPeriod")} →
           </button>
+        ) : isFuture ? (
+          <div className="text-center py-2 text-xs text-slate-500 italic">
+            {t(lang, "admin.persona.payroll.hub.notReachedYet")}
+          </div>
         ) : (
           <div className="space-y-1">
             <button

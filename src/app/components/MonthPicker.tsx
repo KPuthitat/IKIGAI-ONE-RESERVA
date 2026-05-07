@@ -61,11 +61,14 @@ export default function MonthPicker({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="input text-sm text-left flex items-center justify-between gap-2 min-w-[180px]"
+        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white hover:border-brand/50 hover:bg-slate-50 text-sm font-medium text-slate-700 whitespace-nowrap shadow-sm transition"
       >
-        <span>{monthDisplay} {yearDisplay}</span>
         <svg viewBox="0 0 24 24" className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
           <path strokeLinecap="round" d="M8 7V3m8 4V3M3 11h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z" />
+        </svg>
+        <span>{monthDisplay} {yearDisplay}</span>
+        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-slate-400 flex-shrink-0 ml-1" fill="none" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" d="M19 9l-7 7-7-7" />
         </svg>
       </button>
 

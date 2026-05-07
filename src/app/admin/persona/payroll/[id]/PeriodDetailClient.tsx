@@ -574,12 +574,10 @@ export default function PeriodDetailClient({
                 {t(lang, "admin.persona.payroll.detail.transferSso")}
               </div>
               <div className="text-2xl font-bold mt-1 text-sky-700">
-                {fmtMoney(totals.sso * 2)} ฿
+                {fmtMoney(totals.sso)} ฿
               </div>
               <div className="text-xs text-slate-500 mt-1">
                 {t(lang, "admin.persona.payroll.detail.transferSsoHint", {
-                  emp: fmtMoney(totals.sso),
-                  comp: fmtMoney(totals.sso),
                   count: String(totals.ssoCount)
                 })}
               </div>
@@ -600,9 +598,6 @@ export default function PeriodDetailClient({
               </div>
             </div>
           </div>
-          <p className="text-xs text-slate-400 mt-3">
-            {t(lang, "admin.persona.payroll.detail.transferNote")}
-          </p>
         </div>
       )}
 

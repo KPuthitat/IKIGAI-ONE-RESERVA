@@ -349,8 +349,9 @@ export function computeLineForEmployee(args: {
   const grossPay = basePay + otPay + serviceCharge + otherAdditions;
 
   // Tax & SSO based on employee's salary_tax_mode
-  // 'sso' = ในระบบ → SSO 5% (cap) + PIT progressive
-  // 'wht' = นอกระบบ → WHT 3% flat, no SSO, no PIT
+  // 'sso' = ในระบบ → SSO 5% (cap) only — PIT is not withheld monthly
+  //                  (handled annually between employee & Revenue Dept)
+  // 'wht' = นอกระบบ → WHT 3% flat on gross, no SSO
   const taxMode = e.salary_tax_mode ?? "sso";
   let ssoAmount = 0;
   let taxAmount = 0;
@@ -359,7 +360,6 @@ export function computeLineForEmployee(args: {
       taxAmount = computeWht(grossPay, settings);
     } else {
       ssoAmount = computeSso(grossPay, cycle, settings);
-      taxAmount = computePeriodTax(grossPay, ssoAmount, cycle);
     }
   }
 
@@ -476,7 +476,6 @@ export function computeLineFromMinutes(args: {
       taxAmount = computeWht(grossPay, settings);
     } else {
       ssoAmount = computeSso(grossPay, cycle, settings);
-      taxAmount = computePeriodTax(grossPay, ssoAmount, cycle);
     }
   }
 
