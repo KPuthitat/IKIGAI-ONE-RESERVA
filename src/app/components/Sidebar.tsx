@@ -26,6 +26,13 @@ export type SidebarSection = {
   items: SidebarItem[];
   /** Optional content rendered above the items (e.g., BranchSwitcher). */
   topSlot?: React.ReactNode;
+  /**
+   * If set, only render this section when the current pathname starts with
+   * this prefix (or equals it). Use this to scope nav items to a specific
+   * module — e.g. PERSONA items only show when in /admin/persona/*.
+   * Omit to always render the section.
+   */
+  pathPrefix?: string;
 };
 
 const STORAGE_KEY = "sidebar-open";
@@ -76,6 +83,11 @@ export default function Sidebar({
     return pathname.startsWith(href + "/") || pathname === href;
   }
 
+  // Filter sections by current pathname (sections without pathPrefix always show)
+  const visibleSections = sections.filter((s) =>
+    !s.pathPrefix || pathname === s.pathPrefix || pathname.startsWith(s.pathPrefix + "/")
+  );
+
   return (
     <>
       {/* Toggle button — fixed top-left, always visible */}
@@ -119,7 +131,7 @@ export default function Sidebar({
         </div>
 
         <nav className="p-3 space-y-5">
-          {sections.map((s, i) => (
+          {visibleSections.map((s, i) => (
             <div key={i}>
               {s.label && (
                 <div className="text-[10px] font-bold tracking-[1.5px] text-white/40 uppercase px-2 mb-1.5">

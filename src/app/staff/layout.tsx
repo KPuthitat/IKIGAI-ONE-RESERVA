@@ -15,15 +15,19 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   if (!user) return <>{children}</>;
   const lang = getLang();
 
+  // Sections scoped to each module via pathPrefix.
   const sections: SidebarSection[] = [
     {
       label: t(lang, "sidebar.section.modules"),
       items: [
-        { href: "/staff", label: t(lang, "sidebar.modulePicker") }
+        { href: "/staff", label: t(lang, "sidebar.modulePicker") },
+        { href: "/staff/persona", label: "PERSONA" },
+        { href: "/staff/reserva", label: "RESERVA" }
       ]
     },
     {
       label: "PERSONA",
+      pathPrefix: "/staff/persona",
       items: [
         { href: "/staff/persona", label: t(lang, "staff.nav.timeClock") },
         { href: "/staff/persona/leave", label: t(lang, "staff.nav.leave") },
@@ -32,6 +36,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
     },
     {
       label: "RESERVA",
+      pathPrefix: "/staff/reserva",
       items: [
         { href: "/staff/reserva", label: t(lang, "staff.nav.bookings") }
       ]

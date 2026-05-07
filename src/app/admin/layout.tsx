@@ -19,15 +19,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (!user) return <>{children}</>;
   const lang = getLang();
 
+  // Sections are scoped to each module via pathPrefix — only the section
+  // matching the current path is shown. The "Modules" section is always
+  // visible so admin can switch back to the picker.
   const sections: SidebarSection[] = [
     {
       label: t(lang, "sidebar.section.modules"),
       items: [
-        { href: "/admin", label: t(lang, "sidebar.modulePicker") }
+        { href: "/admin", label: t(lang, "sidebar.modulePicker") },
+        { href: "/admin/persona", label: "PERSONA" },
+        { href: "/admin/reserva", label: "RESERVA" }
       ]
     },
     {
       label: "PERSONA",
+      pathPrefix: "/admin/persona",
       items: [
         { href: "/admin/persona", label: t(lang, "admin.persona.nav.dashboard") },
         { href: "/admin/persona/employees", label: t(lang, "admin.persona.nav.employees") },
@@ -44,6 +50,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     },
     {
       label: "RESERVA",
+      pathPrefix: "/admin/reserva",
       items: [
         { href: "/admin/reserva", label: t(lang, "admin.nav.overview") },
         { href: "/admin/reserva/bookings", label: t(lang, "admin.nav.bookings") },
