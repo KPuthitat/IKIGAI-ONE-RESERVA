@@ -222,6 +222,7 @@ export default function PayPeriodPicker({
                   onCreate={(ds) => createPeriod(sp, ds)}
                   onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
                   accentClass="hover:border-emerald-400/60"
+                  today={today}
                 />
               );
             })}
@@ -260,6 +261,7 @@ export default function PayPeriodPicker({
                   onCreate={(ds) => createPeriod(sp, ds)}
                   onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
                   accentClass="hover:border-violet-400/60"
+                  today={today}
                 />
               );
             })}
