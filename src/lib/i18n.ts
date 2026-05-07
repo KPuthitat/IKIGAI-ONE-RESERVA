@@ -886,7 +886,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.payroll.col.status": "สถานะ",
     "admin.persona.payroll.col.regularHrs": "ชม.ปกติ",
     "admin.persona.payroll.col.otHrs": "ชม. ล่วงเวลา",
-    "admin.persona.payroll.col.basePay": "ค่าแรง",
+    "admin.persona.payroll.col.basePay": "ค่าตอบแทน",
     "admin.persona.payroll.col.otPay": "ค่าล่วงเวลา",
     "admin.persona.payroll.col.ot": "ค่าล่วงเวลา",
     "admin.persona.payroll.col.sso": "ประกันสังคม",

@@ -99,7 +99,10 @@ export async function PATCH(
     d.days_worked !== undefined;
 
   if (timeFieldsProvided) {
-    // Mode (a) — recompute pay using minute totals + rate snapshot
+    // Mode (a) — recompute pay using minute totals + CURRENT user data
+    // (not the original snapshot). This way, if admin updates the employee's
+    // tax_mode / hourly_rate / monthly_salary on the employees page, the
+    // line edit picks up the latest values automatically.
     const settings = db.prepare(`
       SELECT ot_mode, ot_flat_per_15min,
              break_threshold_minutes, break_deduction_minutes,
@@ -108,15 +111,26 @@ export async function PATCH(
       FROM payroll_settings WHERE id = 1
     `).get() as PayrollSettings;
 
+    const fresh = db.prepare(`
+      SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
+      FROM users WHERE id = ?
+    `).get(userId) as {
+      employment_type: "pt" | "ft" | null;
+      hourly_rate: number | null;
+      monthly_salary: number | null;
+      pay_cycle: "weekly" | "monthly" | null;
+      salary_tax_mode: "sso" | "wht" | null;
+    } | undefined;
+
     const employee: EmployeePayrollSnapshot = {
       user_id: line.user_id,
       display_name: line.display_name,
-      employment_type: line.employment_type,
+      employment_type: fresh?.employment_type ?? line.employment_type,
       employee_code: line.employee_code,
-      hourly_rate: line.hourly_rate_snapshot,
-      monthly_salary: line.monthly_salary_snapshot,
-      pay_cycle: line.pay_cycle_snapshot,
-      salary_tax_mode: line.salary_tax_mode_snapshot
+      hourly_rate: fresh?.hourly_rate ?? line.hourly_rate_snapshot,
+      monthly_salary: fresh?.monthly_salary ?? line.monthly_salary_snapshot,
+      pay_cycle: fresh?.pay_cycle ?? line.pay_cycle_snapshot,
+      salary_tax_mode: fresh?.salary_tax_mode ?? line.salary_tax_mode_snapshot
     };
 
     const computed = computeLineFromMinutes({
@@ -142,6 +156,9 @@ export async function PATCH(
           base_pay = ?, ot_pay = ?, service_charge = ?,
           other_additions = ?, other_deductions = ?,
           gross_pay = ?, sso_amount = ?, tax_amount = ?, net_pay = ?,
+          salary_tax_mode_snapshot = ?,
+          hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
+          pay_cycle_snapshot = ?,
           notes = COALESCE(?, notes),
           overridden = 1,
           updated_at = CURRENT_TIMESTAMP
@@ -152,6 +169,9 @@ export async function PATCH(
       computed.base_pay, computed.ot_pay, computed.service_charge,
       computed.other_additions, computed.other_deductions,
       computed.gross_pay, computed.sso_amount, computed.tax_amount, computed.net_pay,
+      computed.salary_tax_mode_snapshot,
+      computed.hourly_rate_snapshot, computed.monthly_salary_snapshot,
+      computed.pay_cycle_snapshot,
       d.notes ?? null,
       periodId, userId
     );
