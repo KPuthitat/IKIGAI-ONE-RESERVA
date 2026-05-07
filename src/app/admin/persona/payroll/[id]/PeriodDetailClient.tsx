@@ -108,7 +108,13 @@ export default function PeriodDetailClient({
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) {
-        setMsg({ kind: "ok", text: t(lang, `admin.persona.payroll.action.${action}Done` as any) });
+        // Map snake_case action → camelCase i18n suffix (mark_paid → markPaidDone)
+        const doneKey =
+          action === "mark_paid" ? "admin.persona.payroll.action.markPaidDone" :
+          action === "recompute" ? "admin.persona.payroll.action.recomputeDone" :
+          action === "finalize" ? "admin.persona.payroll.action.finalizeDone" :
+          "admin.persona.payroll.action.unfinalizeDone";
+        setMsg({ kind: "ok", text: t(lang, doneKey as any) });
         startTransition(() => router.refresh());
       } else {
         setMsg({ kind: "err", text: j?.error ?? t(lang, "common.error") });
@@ -394,18 +400,17 @@ export default function PeriodDetailClient({
                   <td className="py-2 pr-3 text-right whitespace-nowrap">
                     <Link
                       href={`/admin/persona/payroll/${period.id}/payslip/${l.user_id}`}
-                      className="text-xs text-slate-600 hover:underline"
+                      target="_blank"
+                      rel="noopener"
+                      className="inline-block text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium"
                     >
-                      {t(lang, "admin.persona.payroll.detail.viewPayslip")}
+                      {t(lang, "admin.persona.payroll.detail.viewPayslip")} ↗
                     </Link>
                     {isDraft && (
-                      <>
-                        <span className="text-slate-300 mx-1">·</span>
-                        <button type="button" onClick={() => setEditLine(l)}
-                          className="text-xs text-brand hover:underline">
-                          {t(lang, "common.edit")}
-                        </button>
-                      </>
+                      <button type="button" onClick={() => setEditLine(l)}
+                        className="ml-1 text-xs px-2 py-1 rounded text-brand hover:bg-rose-50">
+                        {t(lang, "common.edit")}
+                      </button>
                     )}
                   </td>
                 </tr>
