@@ -129,6 +129,24 @@ export default function PayrollHubPage() {
         </Link>
       </div>
 
+      {/* Monthly summary link */}
+      <Link
+        href="/admin/persona/payroll/summary"
+        className="card border-l-4 border-emerald-400 bg-emerald-50/40 hover:shadow-md transition block"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-bold text-slate-800">
+              {t(lang, "admin.persona.payroll.hub.summaryTitle")}
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              {t(lang, "admin.persona.payroll.hub.summaryDesc")}
+            </p>
+          </div>
+          <span className="text-brand text-sm whitespace-nowrap">→</span>
+        </div>
+      </Link>
+
       {/* Settings link (compact) */}
       <Link
         href="/admin/persona/payroll/settings"
