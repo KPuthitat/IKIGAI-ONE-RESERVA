@@ -592,6 +592,16 @@ function runMigrations(db: Database.Database): void {
   if (!plNames.has("holiday_minutes")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN holiday_minutes INTEGER NOT NULL DEFAULT 0");
   }
+
+  // Phase 1D v3 — payroll_periods.target ('pt' | 'ft' | 'all')
+  // 'pt' = พาร์ทไทม์เท่านั้น (รายชั่วโมง)
+  // 'ft' = ฟูลไทม์เท่านั้น (เงินเดือน, รายสัปดาห์ หรือรายเดือนตาม pay_cycle)
+  // 'all' = legacy / mixed — เก็บไว้เพื่อ backward compat ของ row เก่า
+  const ppCols = db.prepare("PRAGMA table_info(payroll_periods)").all() as Array<{ name: string }>;
+  const ppNames = new Set(ppCols.map((c) => c.name));
+  if (!ppNames.has("target")) {
+    db.exec("ALTER TABLE payroll_periods ADD COLUMN target TEXT NOT NULL DEFAULT 'all'");
+  }
 }
 
 export type Branch = {

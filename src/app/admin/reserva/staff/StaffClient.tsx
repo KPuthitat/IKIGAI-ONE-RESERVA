@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import type { Branch, User } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type UserWithBranches = User & { branch_ids: number[] };
 
@@ -20,6 +21,7 @@ export default function StaffClient({
   });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
@@ -42,22 +44,41 @@ export default function StaffClient({
   }
 
   async function deleteUser(id: number, name: string) {
-    if (!confirm(t("admin.users.confirmDelete", { name }))) return;
+    const ok = await confirm({
+      title: t("admin.users.confirmDeleteTitle"),
+      body: <p>{t("admin.users.confirmDelete", { name })}</p>,
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+      variant: "danger"
+    });
+    if (ok === null) return;
     const res = await fetch(apiUrl(`/api/admin/staff/${id}`), { method: "DELETE" });
-    if (!res.ok) { alert(t("admin.users.deleteFailed")); return; }
+    if (!res.ok) { window.alert(t("admin.users.deleteFailed")); return; }
     router.refresh();
   }
 
   async function resetPassword(id: number) {
-    const np = prompt(t("admin.users.promptNewPassword"));
-    if (!np || np.length < 6) return;
+    const np = await confirm({
+      title: t("admin.users.promptNewPasswordTitle"),
+      body: <p className="text-xs text-slate-500">{t("admin.users.promptNewPasswordHint")}</p>,
+      confirmLabel: t("common.save"),
+      cancelLabel: t("common.cancel"),
+      withInput: true,
+      inputLabel: t("admin.users.promptNewPassword"),
+      inputPlaceholder: t("admin.users.passwordPlaceholder")
+    });
+    if (np === null) return;
+    if (np.length < 6) {
+      window.alert(t("admin.users.passwordTooShort"));
+      return;
+    }
     const res = await fetch(apiUrl(`/api/admin/staff/${id}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: np })
     });
-    if (!res.ok) { alert(t("admin.users.changePasswordFailed")); return; }
-    alert(t("admin.users.changePasswordOk"));
+    if (!res.ok) { window.alert(t("admin.users.changePasswordFailed")); return; }
+    window.alert(t("admin.users.changePasswordOk"));
   }
 
   async function updateBranches(id: number, branchIds: number[]) {
@@ -66,7 +87,7 @@ export default function StaffClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ branch_ids: branchIds })
     });
-    if (!res.ok) { alert(t("admin.users.updateBranchesFailed")); return; }
+    if (!res.ok) { window.alert(t("admin.users.updateBranchesFailed")); return; }
     router.refresh();
   }
 
@@ -191,6 +212,7 @@ export default function StaffClient({
           </tbody>
         </table>
       </div>
+      {ConfirmDialog}
     </div>
   );
 }

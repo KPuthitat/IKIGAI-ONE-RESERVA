@@ -7,6 +7,7 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import type { ResignationStatus } from "@/app/staff/persona/resignation/ResignationClient";
 import { DecisionModal } from "@/app/admin/persona/leave/LeaveAdminClient";
+import { useConfirm } from "@/app/components/useConfirm";
 
 export type ResignationAdminRow = {
   id: number;
@@ -56,11 +57,21 @@ export default function ResignationAdminClient({
   const [busyId, setBusyId] = useState<number | null>(null);
   const [unlockUserId, setUnlockUserId] = useState<number | "">(staffList[0]?.id ?? "");
   const [unlockBusy, setUnlockBusy] = useState(false);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const unlockedUsers = staffList.filter((u) => u.resignation_unlocked_at);
 
   async function toggleUnlock(userId: number, action: "unlock" | "lock") {
-    if (action === "lock" && !confirm(t("admin.persona.resignation.confirmLock"))) return;
+    if (action === "lock") {
+      const ok = await confirm({
+        title: t("admin.persona.resignation.confirmLockTitle"),
+        body: <p>{t("admin.persona.resignation.confirmLock")}</p>,
+        confirmLabel: t("common.confirm"),
+        cancelLabel: t("common.cancel"),
+        variant: "warning"
+      });
+      if (ok === null) return;
+    }
     setUnlockBusy(true);
     try {
       const res = await fetch(apiUrl("/api/admin/persona/resignation/unlock"), {
@@ -70,7 +81,7 @@ export default function ResignationAdminClient({
       });
       const data = await res.json().catch(() => ({}));
       if (data.ok) startTransition(() => router.refresh());
-      else alert(data.error ?? t("common.error"));
+      else window.alert(data.error ?? t("common.error"));
     } finally {
       setUnlockBusy(false);
     }
@@ -327,6 +338,7 @@ export default function ResignationAdminClient({
           nsPrompt="admin.persona.resignation"
         />
       )}
+      {ConfirmDialog}
     </>
   );
 }

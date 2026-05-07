@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import { formatLongDate } from "@/lib/time";
 import ConfirmModal from "@/app/components/ConfirmModal";
 
 export type PeriodDetail = {
   id: number;
   cycle: "weekly" | "monthly";
+  target: "pt" | "ft" | "all";
   period_start: string;
   period_end: string;
   pay_date: string;
@@ -58,12 +60,7 @@ export type PayrollLineRow = {
 };
 
 function formatBkkDate(d: string, lang: Lang): string {
-  if (!d) return "";
-  if (lang === "th") {
-    const [y, m, dd] = d.split("-");
-    return `${dd}/${m}/${String(Number(y) + 543).slice(2)}`;
-  }
-  return d;
+  return formatLongDate(d, lang);
 }
 
 function fmtMin(min: number): string {
@@ -165,10 +162,20 @@ export default function PeriodDetailClient({
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">
-            {period.cycle === "weekly"
+          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2 flex-wrap">
+            <span>{period.cycle === "weekly"
               ? t(lang, "admin.persona.payroll.hub.weeklyTitle")
-              : t(lang, "admin.persona.payroll.hub.monthlyTitle")}
+              : t(lang, "admin.persona.payroll.hub.monthlyTitle")}</span>
+            {period.target === "pt" && (
+              <span className="text-sm font-medium px-2 py-0.5 rounded bg-violet-100 text-violet-700">
+                {t(lang, "admin.persona.employees.employment.pt")}
+              </span>
+            )}
+            {period.target === "ft" && (
+              <span className="text-sm font-medium px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                {t(lang, "admin.persona.employees.employment.ft")}
+              </span>
+            )}
           </h1>
           <p className="text-sm text-slate-600 mt-1">
             {formatBkkDate(period.period_start, lang)} – {formatBkkDate(period.period_end, lang)}
@@ -354,6 +361,61 @@ export default function PeriodDetailClient({
           </table>
         )}
       </div>
+
+      {/* ── Transfer / remittance summary ─────────────────────── */}
+      {lines.length > 0 && (
+        <div className="card">
+          <h2 className="font-semibold text-slate-700 mb-3">
+            {t(lang, "admin.persona.payroll.detail.transferTitle")}
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
+              <div className="text-xs text-slate-500">
+                {t(lang, "admin.persona.payroll.detail.transferToStaff")}
+              </div>
+              <div className="text-2xl font-bold mt-1 text-emerald-700">
+                {fmtMoney(totals.net)} ฿
+              </div>
+              <div className="text-xs text-slate-500 mt-1">
+                {t(lang, "admin.persona.payroll.detail.transferToStaffHint", { n: lines.length })}
+              </div>
+            </div>
+            <div className="rounded-lg border border-sky-200 bg-sky-50/50 p-4">
+              <div className="text-xs text-slate-500">
+                {t(lang, "admin.persona.payroll.detail.transferSso")}
+              </div>
+              <div className="text-2xl font-bold mt-1 text-sky-700">
+                {fmtMoney(totals.sso * 2)} ฿
+              </div>
+              <div className="text-xs text-slate-500 mt-1">
+                {t(lang, "admin.persona.payroll.detail.transferSsoHint", {
+                  emp: fmtMoney(totals.sso),
+                  comp: fmtMoney(totals.sso),
+                  count: String(totals.ssoCount)
+                })}
+              </div>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
+              <div className="text-xs text-slate-500">
+                {t(lang, "admin.persona.payroll.detail.transferTax")}
+              </div>
+              <div className="text-2xl font-bold mt-1 text-amber-700">
+                {fmtMoney(totals.tax)} ฿
+              </div>
+              <div className="text-xs text-slate-500 mt-1">
+                {totals.whtCount > 0
+                  ? t(lang, "admin.persona.payroll.detail.transferTaxHintMixed", {
+                      sso: String(totals.ssoCount), wht: String(totals.whtCount)
+                    })
+                  : t(lang, "admin.persona.payroll.detail.transferTaxHintAll")}
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-slate-400 mt-3">
+            {t(lang, "admin.persona.payroll.detail.transferNote")}
+          </p>
+        </div>
+      )}
 
       {editLine && isDraft && (
         <LineEditModal

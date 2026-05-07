@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import type { TableRow } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { useConfirm } from "@/app/components/useConfirm";
 
 const CANVAS_W = 900;
 const CANVAS_H = 600;
@@ -15,6 +16,7 @@ export default function FloorPlanEditor({
 }: { branchId: number; initialTables: TableRow[] }) {
   const router = useRouter();
   const { t } = useLang();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [tables, setTables] = useState<Draft[]>(initialTables);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -79,11 +81,18 @@ export default function FloorPlanEditor({
     ));
   }
 
-  function deleteSelected() {
+  async function deleteSelected() {
     if (selectedId === null) return;
-    if (!confirm(t("admin.floorplan.confirmDelete"))) return;
-    setTables((prev) => prev.map((t) =>
-      t.id === selectedId ? { ...t, _deleted: true, _dirty: true } : t
+    const ok = await confirm({
+      title: t("admin.floorplan.confirmDeleteTitle"),
+      body: <p>{t("admin.floorplan.confirmDelete")}</p>,
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+      variant: "danger"
+    });
+    if (ok === null) return;
+    setTables((prev) => prev.map((tab) =>
+      tab.id === selectedId ? { ...tab, _deleted: true, _dirty: true } : tab
     ));
     setSelectedId(null);
   }
@@ -258,6 +267,7 @@ export default function FloorPlanEditor({
           </div>
         )}
       </aside>
+      {ConfirmDialog}
     </div>
   );
 }

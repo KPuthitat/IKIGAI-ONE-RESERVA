@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { useConfirm } from "@/app/components/useConfirm";
 
 export type ResignationStatus = "pending" | "approved" | "rejected" | "cancelled" | "revision_requested";
 
@@ -38,6 +39,7 @@ export default function ResignationClient({
   const router = useRouter();
   const { t, formatDate } = useLang();
   const [pending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const [proposed, setProposed] = useState(minLastDay);
   const [reason, setReason] = useState("");
@@ -87,12 +89,19 @@ export default function ResignationClient({
   }
 
   async function cancelRequest(id: number) {
-    if (!confirm(t("staff.persona.resignation.confirmCancel"))) return;
+    const ok = await confirm({
+      title: t("staff.persona.resignation.confirmCancelTitle"),
+      body: <p>{t("staff.persona.resignation.confirmCancel")}</p>,
+      confirmLabel: t("common.confirm"),
+      cancelLabel: t("common.back"),
+      variant: "warning"
+    });
+    if (ok === null) return;
     const res = await fetch(apiUrl(`/api/persona/resignation/${id}`), { method: "DELETE" });
     if (res.ok) startTransition(() => router.refresh());
     else {
       const j = await res.json().catch(() => ({}));
-      alert(j.error || t("common.error"));
+      window.alert(j.error || t("common.error"));
     }
   }
 
@@ -288,6 +297,7 @@ export default function ResignationClient({
           </ul>
         </div>
       )}
+      {ConfirmDialog}
     </>
   );
 }

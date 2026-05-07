@@ -7,6 +7,7 @@ import { computePayrollPeriod } from "@/lib/payroll-compute";
 // POST /api/admin/persona/payroll/periods — create a new period (and compute immediately)
 const Body = z.object({
   cycle: z.enum(["weekly", "monthly"]),
+  target: z.enum(["pt", "ft", "all"]).default("all"),
   period_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   period_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   pay_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -31,20 +32,20 @@ export async function POST(req: Request) {
   const payDate = d.pay_date ?? defaultPayDate(d.period_end, d.cycle);
 
   const db = getDb();
-  // Check for duplicate (unique constraint on cycle + period_start + period_end)
+  // Check for duplicate (cycle + target + dates uniquely identifies a period)
   const dup = db.prepare(`
     SELECT id FROM payroll_periods
-    WHERE cycle = ? AND period_start = ? AND period_end = ?
-  `).get(d.cycle, d.period_start, d.period_end);
+    WHERE cycle = ? AND target = ? AND period_start = ? AND period_end = ?
+  `).get(d.cycle, d.target, d.period_start, d.period_end);
   if (dup) {
     return NextResponse.json({ error: "duplicate_period" }, { status: 409 });
   }
 
   const result = db.prepare(`
     INSERT INTO payroll_periods
-      (cycle, period_start, period_end, pay_date, notes, created_by)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(d.cycle, d.period_start, d.period_end, payDate, d.notes ?? null, user.id);
+      (cycle, target, period_start, period_end, pay_date, notes, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(d.cycle, d.target, d.period_start, d.period_end, payDate, d.notes ?? null, user.id);
   const periodId = result.lastInsertRowid as number;
 
   // Compute immediately

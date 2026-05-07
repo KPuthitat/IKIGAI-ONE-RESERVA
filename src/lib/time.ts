@@ -50,3 +50,38 @@ export function overlaps(
 ): boolean {
   return aStart < bStart + bDur && bStart < aStart + aDur;
 }
+
+// ── Date display helpers ──────────────────────────────────────────────
+// Full Thai month names (no abbreviations).
+const TH_MONTHS_FULL = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+];
+const EN_MONTHS_FULL = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
+
+/**
+ * Format a YYYY-MM-DD string in Thai or English with FULL month name.
+ *  - TH: "5 พฤษภาคม 2569" (Buddhist year)
+ *  - EN: "5 May 2026"
+ */
+export function formatLongDate(d: string, lang: "th" | "en"): string {
+  if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return d || "";
+  const [y, m, dd] = d.split("-").map(Number);
+  if (lang === "th") {
+    return `${dd} ${TH_MONTHS_FULL[m - 1]} ${y + 543}`;
+  }
+  return `${dd} ${EN_MONTHS_FULL[m - 1]} ${y}`;
+}
+
+/** "5 พฤษภาคม" / "5 May" — month + day only */
+export function formatMonthDay(d: string, lang: "th" | "en"): string {
+  if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return d || "";
+  const [, m, dd] = d.split("-").map(Number);
+  if (lang === "th") {
+    return `${dd} ${TH_MONTHS_FULL[m - 1]}`;
+  }
+  return `${dd} ${EN_MONTHS_FULL[m - 1]}`;
+}

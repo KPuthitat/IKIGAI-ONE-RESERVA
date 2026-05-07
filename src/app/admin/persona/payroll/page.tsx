@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
+import { formatLongDate } from "@/lib/time";
 import PayPeriodPicker, { type ExistingPeriod } from "./PayPeriodPicker";
 
 export const dynamic = "force-dynamic";
@@ -18,12 +19,7 @@ type Settings = {
 };
 
 function formatBkkDate(d: string, lang: Lang): string {
-  if (!d) return "";
-  if (lang === "th") {
-    const [y, m, dd] = d.split("-");
-    return `${dd}/${m}/${String(Number(y) + 543).slice(2)}`;
-  }
-  return d;
+  return formatLongDate(d, lang);
 }
 
 function statusBadge(s: string, lang: Lang): { cls: string; label: string } {
@@ -68,7 +64,7 @@ export default function PayrollHubPage() {
 
   // All existing periods (used by picker to mark "already created")
   const existing = db.prepare(`
-    SELECT p.id, p.cycle, p.period_start, p.period_end, p.pay_date, p.status,
+    SELECT p.id, p.cycle, p.target, p.period_start, p.period_end, p.pay_date, p.status,
            (SELECT SUM(gross_pay) FROM payroll_lines WHERE period_id = p.id) AS total_gross,
            (SELECT SUM(net_pay)   FROM payroll_lines WHERE period_id = p.id) AS total_net,
            (SELECT COUNT(*)       FROM payroll_lines WHERE period_id = p.id) AS line_count
@@ -187,12 +183,25 @@ export default function PayrollHubPage() {
               <tbody>
                 {recent.map((p) => {
                   const badge = statusBadge(p.status, lang);
+                  const targetLabel =
+                    p.target === "pt" ? t(lang, "admin.persona.employees.employment.pt") :
+                    p.target === "ft" ? t(lang, "admin.persona.employees.employment.ft") :
+                    t(lang, "admin.persona.payroll.hub.targetAll");
+                  const targetCls =
+                    p.target === "pt" ? "bg-violet-100 text-violet-700" :
+                    p.target === "ft" ? "bg-emerald-100 text-emerald-700" :
+                    "bg-slate-100 text-slate-700";
                   return (
                     <tr key={p.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                      <td className="py-2 pr-3">
-                        {p.cycle === "weekly"
-                          ? <span className="text-xs px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">{t(lang, "admin.persona.payroll.hub.weeklyShort")}</span>
-                          : <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">{t(lang, "admin.persona.payroll.hub.monthlyShort")}</span>}
+                      <td className="py-2 pr-3 whitespace-nowrap">
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${targetCls}`}>
+                          {targetLabel}
+                        </span>
+                        <span className="ml-1 text-xs text-slate-500">
+                          · {p.cycle === "weekly"
+                              ? t(lang, "admin.persona.payroll.hub.weeklyShort")
+                              : t(lang, "admin.persona.payroll.hub.monthlyShort")}
+                        </span>
                       </td>
                       <td className="py-2 pr-3 text-slate-700">
                         {formatBkkDate(p.period_start, lang)} – {formatBkkDate(p.period_end, lang)}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Booking } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type Row = Booking & { table_label: string | null };
 
@@ -27,6 +28,7 @@ export default function BookingsClient({
   const router = useRouter();
   const { t } = useLang();
   const [busyId, setBusyId] = useState<number | null>(null);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   async function setStatus(id: number, status: Row["status"]) {
     setBusyId(id);
@@ -36,8 +38,20 @@ export default function BookingsClient({
       body: JSON.stringify({ status })
     });
     setBusyId(null);
-    if (!res.ok) alert(t("admin.bookings.errorGeneric"));
+    if (!res.ok) window.alert(t("admin.bookings.errorGeneric"));
     router.refresh();
+  }
+
+  async function cancelBooking(id: number) {
+    const ok = await confirm({
+      title: t("admin.bookings.confirmCancelTitle"),
+      body: <p>{t("admin.bookings.confirmCancel")}</p>,
+      confirmLabel: t("common.confirm"),
+      cancelLabel: t("common.back"),
+      variant: "danger"
+    });
+    if (ok === null) return;
+    setStatus(id, "cancelled");
   }
 
   async function assignTable(id: number, tableId: number | null) {
@@ -60,6 +74,7 @@ export default function BookingsClient({
   }
 
   return (
+    <>
     <div className="space-y-3">
       {bookings.map((b) => (
         <div key={b.id} className={`card ${b.status === "cancelled" ? "opacity-60" : ""}`}>
@@ -138,11 +153,7 @@ export default function BookingsClient({
                     className="btn-secondary text-amber-700"
                   >{t("admin.bookings.btn.markNoShow")}</button>
                   <button
-                    onClick={() => {
-                      if (confirm(t("admin.bookings.confirmCancel"))) {
-                        setStatus(b.id, "cancelled");
-                      }
-                    }}
+                    onClick={() => cancelBooking(b.id)}
                     disabled={busyId === b.id}
                     className="btn-danger"
                   >{t("admin.bookings.btn.cancel")}</button>
@@ -153,5 +164,7 @@ export default function BookingsClient({
         </div>
       ))}
     </div>
+    {ConfirmDialog}
+    </>
   );
 }

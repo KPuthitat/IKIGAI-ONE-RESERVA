@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import type { LeaveType, QuotaInfo, PublicHoliday } from "@/lib/leave-types";
+import { useConfirm } from "@/app/components/useConfirm";
 
 export type { LeaveType };
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled" | "revision_requested";
@@ -103,6 +104,7 @@ export default function LeaveClient({
   const router = useRouter();
   const { t, formatDate, lang } = useLang();
   const [pending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const holidayMap = useMemo(
     () => new Map(holidays.map((h) => [h.date, h])),
@@ -320,12 +322,19 @@ export default function LeaveClient({
   }
 
   async function cancelRequest(id: number) {
-    if (!confirm(t("staff.persona.leave.confirmCancel"))) return;
+    const ok = await confirm({
+      title: t("staff.persona.leave.confirmCancelTitle"),
+      body: <p>{t("staff.persona.leave.confirmCancel")}</p>,
+      confirmLabel: t("common.confirm"),
+      cancelLabel: t("common.back"),
+      variant: "warning"
+    });
+    if (ok === null) return;
     const res = await fetch(apiUrl(`/api/persona/leave/${id}`), { method: "DELETE" });
     if (res.ok) startTransition(() => router.refresh());
     else {
       const j = await res.json().catch(() => ({}));
-      alert(j.error || t("common.error"));
+      window.alert(j.error || t("common.error"));
     }
   }
 
@@ -736,6 +745,7 @@ export default function LeaveClient({
           </ul>
         )}
       </div>
+      {ConfirmDialog}
     </>
   );
 }

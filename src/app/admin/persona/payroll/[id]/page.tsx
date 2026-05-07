@@ -22,7 +22,7 @@ export default function PeriodDetailPage({
   if (!Number.isInteger(id) || id <= 0) notFound();
 
   const period = db.prepare(`
-    SELECT id, cycle, period_start, period_end, pay_date, status,
+    SELECT id, cycle, target, period_start, period_end, pay_date, status,
            ot_mode_snapshot, ot_flat_per_15min_snapshot,
            computed_by, computed_at, finalized_by, finalized_at,
            notes, created_at,

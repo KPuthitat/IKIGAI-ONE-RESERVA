@@ -410,10 +410,11 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   skipped: number;
 } {
   const period = db.prepare(`
-    SELECT id, cycle, period_start, period_end, status
+    SELECT id, cycle, target, period_start, period_end, status
     FROM payroll_periods WHERE id = ?
   `).get(periodId) as {
     id: number; cycle: "weekly" | "monthly";
+    target: "pt" | "ft" | "all";
     period_start: string; period_end: string; status: string;
   } | undefined;
   if (!period) throw new Error("period_not_found");
@@ -437,28 +438,33 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   `).all(period.period_start, period.period_end) as Array<{ date: string }>;
   const holidaySet = new Set(holidays.map((h) => h.date));
 
-  // All staff with employment_type — eligible for payroll
-  // For weekly cycle: include all PT + FT-weekly
-  // For monthly cycle: include only FT-monthly (PT are paid weekly)
-  let staffSql: string;
+  // Eligible staff depend on (cycle, target):
+  //   weekly + 'pt'  → PT only
+  //   weekly + 'ft'  → FT-weekly only
+  //   weekly + 'all' → PT + FT-weekly (legacy/backward compat)
+  //   monthly + 'ft' → FT-monthly only
+  //   monthly + 'all' → FT-monthly only (PT never on monthly cycle)
+  let staffWhere: string;
   if (period.cycle === "weekly") {
-    staffSql = `
-      SELECT id AS user_id, display_name, employment_type, employee_code,
-             hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
-      FROM users
-      WHERE role = 'staff' AND employment_type IS NOT NULL
-        AND (employment_type = 'pt' OR (employment_type = 'ft' AND pay_cycle = 'weekly'))
-      ORDER BY display_name
-    `;
+    if (period.target === "pt") {
+      staffWhere = "employment_type = 'pt'";
+    } else if (period.target === "ft") {
+      staffWhere = "employment_type = 'ft' AND pay_cycle = 'weekly'";
+    } else {
+      staffWhere = "(employment_type = 'pt' OR (employment_type = 'ft' AND pay_cycle = 'weekly'))";
+    }
   } else {
-    staffSql = `
-      SELECT id AS user_id, display_name, employment_type, employee_code,
-             hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
-      FROM users
-      WHERE role = 'staff' AND employment_type = 'ft' AND pay_cycle = 'monthly'
-      ORDER BY display_name
-    `;
+    // monthly — only FT-monthly regardless of target
+    staffWhere = "employment_type = 'ft' AND pay_cycle = 'monthly'";
   }
+  const staffSql = `
+    SELECT id AS user_id, display_name, employment_type, employee_code,
+           hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
+    FROM users
+    WHERE role = 'staff' AND employment_type IS NOT NULL
+      AND ${staffWhere}
+    ORDER BY display_name
+  `;
   const staff = db.prepare(staffSql).all() as EmployeePayrollSnapshot[];
 
   // All time entries in range

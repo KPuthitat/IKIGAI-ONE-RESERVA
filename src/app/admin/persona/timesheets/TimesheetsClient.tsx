@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import { useConfirm } from "@/app/components/useConfirm";
 
 export type TimeEntryRow = {
   id: number;
@@ -67,15 +68,25 @@ export default function TimesheetsClient({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const { confirm, ConfirmDialog } = useConfirm();
 
-  function deleteEntry(entry: TimeEntryRow) {
-    const confirmMsg = t(lang, "admin.persona.timesheets.confirmDelete")
+  async function deleteEntry(entry: TimeEntryRow): Promise<void> {
+    const body = t(lang, "admin.persona.timesheets.confirmDelete")
       .replace("{user}", entry.display_name)
       .replace("{ts}", formatBkk(entry.ts, lang))
       .replace("{type}", t(lang, `clock.short.${entry.type}` as any));
-    if (!confirm(confirmMsg)) return;
 
-    const reason = prompt(t(lang, "admin.persona.timesheets.reasonPrompt")) ?? "";
+    const reason = await confirm({
+      title: t(lang, "admin.persona.timesheets.confirmDeleteTitle"),
+      body: <p>{body}</p>,
+      confirmLabel: t(lang, "common.delete"),
+      cancelLabel: t(lang, "common.cancel"),
+      variant: "danger",
+      withInput: true,
+      inputLabel: t(lang, "admin.persona.timesheets.reasonPrompt"),
+      inputPlaceholder: t(lang, "common.optional")
+    });
+    if (reason === null) return;
 
     setDeletingId(entry.id);
     fetch(`/api/admin/persona/timesheets/${entry.id}`, {
@@ -88,10 +99,10 @@ export default function TimesheetsClient({
         if (j?.ok) {
           startTransition(() => router.refresh());
         } else {
-          alert(`${t(lang, "admin.persona.timesheets.deleteFailed")}: ${j?.error ?? "unknown"}`);
+          window.alert(`${t(lang, "admin.persona.timesheets.deleteFailed")}: ${j?.error ?? "unknown"}`);
         }
       })
-      .catch(() => alert(t(lang, "admin.persona.timesheets.deleteFailed")))
+      .catch(() => window.alert(t(lang, "admin.persona.timesheets.deleteFailed")))
       .finally(() => setDeletingId(null));
   }
 
@@ -227,6 +238,7 @@ export default function TimesheetsClient({
           </ul>
         </div>
       )}
+      {ConfirmDialog}
     </>
   );
 }

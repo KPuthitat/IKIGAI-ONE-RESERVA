@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { useConfirm } from "@/app/components/useConfirm";
 
 export type HolidayRow = {
   date: string;
@@ -27,14 +28,22 @@ export default function HolidaysClient({
   const [pending, startTransition] = useTransition();
   const [editTarget, setEditTarget] = useState<HolidayRow | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   async function deleteHoliday(date: string) {
-    if (!confirm(t("admin.persona.holidays.confirmDelete"))) return;
+    const ok = await confirm({
+      title: t("admin.persona.holidays.confirmDeleteTitle"),
+      body: <p>{t("admin.persona.holidays.confirmDelete")}</p>,
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+      variant: "danger"
+    });
+    if (ok === null) return;
     const res = await fetch(apiUrl(`/api/admin/persona/holidays/${date}`), { method: "DELETE" });
     if (res.ok) startTransition(() => router.refresh());
     else {
       const j = await res.json().catch(() => ({}));
-      alert(j.error ?? t("common.error"));
+      window.alert(j.error ?? t("common.error"));
     }
   }
 
@@ -135,6 +144,7 @@ export default function HolidaysClient({
           }}
         />
       )}
+      {ConfirmDialog}
     </>
   );
 }
