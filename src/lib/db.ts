@@ -474,6 +474,12 @@ function runMigrations(db: Database.Database): void {
   if (!unames3.has("hourly_rate"))    db.exec("ALTER TABLE users ADD COLUMN hourly_rate REAL");
   if (!unames3.has("monthly_salary")) db.exec("ALTER TABLE users ADD COLUMN monthly_salary REAL");
   if (!unames3.has("pay_cycle"))      db.exec("ALTER TABLE users ADD COLUMN pay_cycle TEXT");
+  // Phase 1D v2 — salary_tax_mode
+  // 'sso' = ในระบบ (หักประกันสังคม 5% เพดาน sso_cap)
+  // 'wht' = นอกระบบ (หักภาษี ณ ที่จ่าย 3% ไม่หักประกันสังคม)
+  if (!unames3.has("salary_tax_mode")) {
+    db.exec("ALTER TABLE users ADD COLUMN salary_tax_mode TEXT NOT NULL DEFAULT 'sso'");
+  }
 
   // payroll_settings — singleton (id always = 1)
   // OT modes:
@@ -489,13 +495,21 @@ function runMigrations(db: Database.Database): void {
       long_shift_threshold_minutes INTEGER NOT NULL DEFAULT 480,
       long_shift_break_minutes INTEGER NOT NULL DEFAULT 60,
       sso_rate REAL NOT NULL DEFAULT 0.05,
-      sso_cap REAL NOT NULL DEFAULT 750,
+      sso_cap REAL NOT NULL DEFAULT 875,
       pt_default_hourly_rate REAL NOT NULL DEFAULT 50,
+      wht_rate REAL NOT NULL DEFAULT 0.03,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_by INTEGER REFERENCES users(id)
     );
     INSERT OR IGNORE INTO payroll_settings (id) VALUES (1);
   `);
+  // Phase 1D v2 — bump existing rows + add new columns if upgrading
+  const psCols = db.prepare("PRAGMA table_info(payroll_settings)").all() as Array<{ name: string }>;
+  if (!psCols.some((c) => c.name === "wht_rate")) {
+    db.exec("ALTER TABLE payroll_settings ADD COLUMN wht_rate REAL NOT NULL DEFAULT 0.03");
+  }
+  // Bump SSO cap from old default 750 → 875 (Thai SSO ceiling adjustment)
+  db.exec("UPDATE payroll_settings SET sso_cap = 875 WHERE sso_cap = 750");
 
   // ── Phase 1D / C2 — Payroll periods + lines ────────────────────────
   // payroll_periods = หนึ่งรอบจ่าย (รายสัปดาห์ จันทร์-อาทิตย์ หรือ รายเดือน)
@@ -536,6 +550,8 @@ function runMigrations(db: Database.Database): void {
       pay_cycle_snapshot TEXT,                     -- 'weekly' | 'monthly' | NULL
       hourly_rate_snapshot REAL,
       monthly_salary_snapshot REAL,
+      salary_tax_mode_snapshot TEXT,               -- 'sso' | 'wht' (Phase 1D v2)
+      holiday_minutes INTEGER NOT NULL DEFAULT 0,  -- minutes worked on public_holidays (PT premium)
       -- time/work data (minutes)
       shift_minutes INTEGER NOT NULL DEFAULT 0,    -- ก่อนหักพัก
       break_deducted_minutes INTEGER NOT NULL DEFAULT 0,
@@ -566,6 +582,16 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_payroll_lines_user
       ON payroll_lines(user_id);
   `);
+
+  // Phase 1D v2 — add new columns to existing payroll_lines if upgrading
+  const plCols = db.prepare("PRAGMA table_info(payroll_lines)").all() as Array<{ name: string }>;
+  const plNames = new Set(plCols.map((c) => c.name));
+  if (!plNames.has("salary_tax_mode_snapshot")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN salary_tax_mode_snapshot TEXT");
+  }
+  if (!plNames.has("holiday_minutes")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN holiday_minutes INTEGER NOT NULL DEFAULT 0");
+  }
 }
 
 export type Branch = {

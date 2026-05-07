@@ -4,8 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
-import { todayBkk } from "@/lib/time";
-import CreatePeriodForm from "./CreatePeriodForm";
+import PayPeriodPicker, { type ExistingPeriod } from "./PayPeriodPicker";
 
 export const dynamic = "force-dynamic";
 
@@ -16,17 +15,6 @@ type Settings = {
   ot_mode: "flat" | "legal";
   ot_flat_per_15min: number;
   pt_default_hourly_rate: number;
-};
-type PeriodRow = {
-  id: number;
-  cycle: "weekly" | "monthly";
-  period_start: string;
-  period_end: string;
-  pay_date: string;
-  status: "draft" | "finalized" | "cancelled";
-  total_gross: number | null;
-  total_net: number | null;
-  line_count: number;
 };
 
 function formatBkkDate(d: string, lang: Lang): string {
@@ -78,16 +66,18 @@ export default function PayrollHubPage() {
     FROM payroll_settings WHERE id = 1
   `).get() as Settings | undefined;
 
-  // Recent periods (last 12)
-  const periods = db.prepare(`
+  // All existing periods (used by picker to mark "already created")
+  const existing = db.prepare(`
     SELECT p.id, p.cycle, p.period_start, p.period_end, p.pay_date, p.status,
            (SELECT SUM(gross_pay) FROM payroll_lines WHERE period_id = p.id) AS total_gross,
            (SELECT SUM(net_pay)   FROM payroll_lines WHERE period_id = p.id) AS total_net,
            (SELECT COUNT(*)       FROM payroll_lines WHERE period_id = p.id) AS line_count
     FROM payroll_periods p
     ORDER BY p.period_end DESC, p.id DESC
-    LIMIT 12
-  `).all() as PeriodRow[];
+  `).all() as ExistingPeriod[];
+
+  // Recent periods table (last 12)
+  const recent = existing.slice(0, 12);
 
   const otModeLabel = settings?.ot_mode === "flat"
     ? t(lang, "admin.persona.payroll.otFlatLabel", {
@@ -95,11 +85,6 @@ export default function PayrollHubPage() {
         perHour: String(settings.ot_flat_per_15min * 4)
       })
     : t(lang, "admin.persona.payroll.otLegalLabel");
-
-  // Suggest defaults: previous Mon-Sun for weekly, previous month for monthly
-  const today = todayBkk();
-  const weekDefaults = computeLastWeekRange(today);
-  const monthDefaults = computeLastMonthRange(today);
 
   return (
     <div className="space-y-4">
@@ -172,19 +157,15 @@ export default function PayrollHubPage() {
         </div>
       </Link>
 
-      {/* Create new period */}
-      <CreatePeriodForm
-        lang={lang}
-        weekDefaults={weekDefaults}
-        monthDefaults={monthDefaults}
-      />
+      {/* Pay period picker — auto-listed by month based on pay_date */}
+      <PayPeriodPicker lang={lang} existing={existing} />
 
-      {/* Periods list */}
+      {/* Recent periods table */}
       <div className="card">
         <h2 className="font-semibold text-slate-700 mb-3">
           {t(lang, "admin.persona.payroll.hub.recentPeriods")}
         </h2>
-        {periods.length === 0 ? (
+        {recent.length === 0 ? (
           <p className="text-sm text-slate-400 py-6 text-center">
             {t(lang, "admin.persona.payroll.hub.noPeriods")}
           </p>
@@ -204,14 +185,14 @@ export default function PayrollHubPage() {
                 </tr>
               </thead>
               <tbody>
-                {periods.map((p) => {
+                {recent.map((p) => {
                   const badge = statusBadge(p.status, lang);
                   return (
                     <tr key={p.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                       <td className="py-2 pr-3">
                         {p.cycle === "weekly"
-                          ? <span className="text-xs px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">{t(lang, "admin.persona.employees.cycleWeekly")}</span>
-                          : <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">{t(lang, "admin.persona.employees.cycleMonthly")}</span>}
+                          ? <span className="text-xs px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">{t(lang, "admin.persona.payroll.hub.weeklyShort")}</span>
+                          : <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">{t(lang, "admin.persona.payroll.hub.monthlyShort")}</span>}
                       </td>
                       <td className="py-2 pr-3 text-slate-700">
                         {formatBkkDate(p.period_start, lang)} – {formatBkkDate(p.period_end, lang)}
@@ -264,33 +245,4 @@ export default function PayrollHubPage() {
       </div>
     </div>
   );
-}
-
-// ── Helpers for default suggestions ─────────────────────────────────
-
-function computeLastWeekRange(today: string): { start: string; end: string; pay: string } {
-  // Find most recent Sunday (which ends a Mon-Sun week)
-  const d = new Date(`${today}T00:00:00Z`);
-  const dow = d.getUTCDay(); // 0 = Sun
-  // Go back to most recent Sunday (or today if Sunday)
-  const daysBack = dow === 0 ? 0 : dow;
-  const sunday = new Date(d.getTime() - daysBack * 86400000);
-  const monday = new Date(sunday.getTime() - 6 * 86400000);
-  const nextMonday = new Date(sunday.getTime() + 1 * 86400000);
-  return {
-    start: monday.toISOString().slice(0, 10),
-    end: sunday.toISOString().slice(0, 10),
-    pay: nextMonday.toISOString().slice(0, 10)
-  };
-}
-
-function computeLastMonthRange(today: string): { start: string; end: string; pay: string } {
-  const [y, m] = today.split("-").map(Number);
-  // Previous month
-  const py = m === 1 ? y - 1 : y;
-  const pm = m === 1 ? 12 : m - 1;
-  const lastDay = new Date(Date.UTC(py, pm, 0)).getUTCDate();
-  const start = `${py}-${String(pm).padStart(2, "0")}-01`;
-  const end = `${py}-${String(pm).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-  return { start, end, pay: end };
 }

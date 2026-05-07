@@ -23,6 +23,7 @@ export type EmployeeRow = {
   hourly_rate: number | null;
   monthly_salary: number | null;
   pay_cycle: "weekly" | "monthly" | null;
+  salary_tax_mode: "sso" | "wht" | null;
   has_pin: number;
   resign_unlocked: number;
 };
@@ -52,14 +53,26 @@ export default function EmployeesClient({ employees }: { employees: EmployeeRow[
   }
   function formatPayRate(u: EmployeeRow) {
     if (u.role === "admin") return <span className="text-slate-300">—</span>;
+    const taxBadge = u.salary_tax_mode === "wht" ? (
+      <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700"
+        title={t("admin.persona.employees.taxMode.whtShort")}>
+        {t("admin.persona.employees.taxMode.whtTag")}
+      </span>
+    ) : null;
     if (u.employment_type === "pt") {
       const r = u.hourly_rate;
-      if (r == null) return <span className="text-amber-600 text-xs">{t("admin.persona.employees.payRateUnset")}</span>;
-      return <span><span className="font-medium">{r.toFixed(0)}</span> <span className="text-xs text-slate-500">{t("admin.persona.employees.bahtPerHour")}</span></span>;
+      if (r == null) return <span className="text-amber-600 text-xs">{t("admin.persona.employees.payRateUnset")}{taxBadge}</span>;
+      return (
+        <span>
+          <span className="font-medium">{r.toFixed(0)}</span>{" "}
+          <span className="text-xs text-slate-500">{t("admin.persona.employees.bahtPerHour")}</span>
+          {taxBadge}
+        </span>
+      );
     }
     if (u.employment_type === "ft") {
       const s = u.monthly_salary;
-      if (s == null) return <span className="text-amber-600 text-xs">{t("admin.persona.employees.payRateUnset")}</span>;
+      if (s == null) return <span className="text-amber-600 text-xs">{t("admin.persona.employees.payRateUnset")}{taxBadge}</span>;
       const cycleLabel = u.pay_cycle === "weekly"
         ? t("admin.persona.employees.cycleWeekly")
         : t("admin.persona.employees.cycleMonthly");
@@ -67,6 +80,7 @@ export default function EmployeesClient({ employees }: { employees: EmployeeRow[
         <span>
           <span className="font-medium">{s.toLocaleString()}</span>
           <span className="text-xs text-slate-500"> /{cycleLabel}</span>
+          {taxBadge}
         </span>
       );
     }
@@ -183,6 +197,7 @@ function EditModal({
     employee.monthly_salary == null ? "" : String(employee.monthly_salary)
   );
   const [payCycle, setPayCycle] = useState<"weekly" | "monthly" | "">(employee.pay_cycle ?? "");
+  const [taxMode, setTaxMode] = useState<"sso" | "wht">(employee.salary_tax_mode ?? "sso");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -203,7 +218,8 @@ function EditModal({
         bank_account: bankAccount.trim() || null,
         hourly_rate: hourlyRate.trim() === "" ? null : Number(hourlyRate),
         monthly_salary: monthlySalary.trim() === "" ? null : Number(monthlySalary),
-        pay_cycle: payCycle || null
+        pay_cycle: payCycle || null,
+        salary_tax_mode: taxMode
       };
       const res = await fetch(apiUrl(`/api/admin/persona/employees/${employee.id}`), {
         method: "PATCH",
@@ -385,6 +401,47 @@ function EditModal({
                   {t("admin.persona.employees.payRateNeedsType")}
                 </p>
               )}
+            </div>
+
+            {/* Tax mode (in-system SSO vs out-of-system WHT) */}
+            <div className="border-t border-slate-200 pt-4">
+              <h4 className="text-sm font-semibold text-slate-700 mb-2">
+                {t("admin.persona.employees.section.taxMode")}
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <label className={`border rounded-lg p-3 cursor-pointer transition ${
+                  taxMode === "sso"
+                    ? "border-emerald-400 bg-emerald-50/40 ring-1 ring-emerald-300/50"
+                    : "border-slate-200 hover:bg-slate-50"
+                }`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <input type="radio" checked={taxMode === "sso"}
+                      onChange={() => setTaxMode("sso")} />
+                    <span className="font-medium text-slate-800 text-sm">
+                      {t("admin.persona.employees.taxMode.sso")}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    {t("admin.persona.employees.taxMode.ssoDesc")}
+                  </p>
+                </label>
+                <label className={`border rounded-lg p-3 cursor-pointer transition ${
+                  taxMode === "wht"
+                    ? "border-amber-400 bg-amber-50/40 ring-1 ring-amber-300/50"
+                    : "border-slate-200 hover:bg-slate-50"
+                }`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <input type="radio" checked={taxMode === "wht"}
+                      onChange={() => setTaxMode("wht")} />
+                    <span className="font-medium text-slate-800 text-sm">
+                      {t("admin.persona.employees.taxMode.wht")}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    {t("admin.persona.employees.taxMode.whtDesc")}
+                  </p>
+                </label>
+              </div>
             </div>
           </>
         )}

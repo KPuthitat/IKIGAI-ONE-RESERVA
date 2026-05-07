@@ -20,7 +20,7 @@ export default function PayrollSettingsPage() {
       ot_mode, ot_flat_per_15min,
       break_threshold_minutes, break_deduction_minutes,
       long_shift_threshold_minutes, long_shift_break_minutes,
-      sso_rate, sso_cap, pt_default_hourly_rate
+      sso_rate, sso_cap, pt_default_hourly_rate, wht_rate
     FROM payroll_settings WHERE id = 1
   `).get() as PayrollSettings;
 

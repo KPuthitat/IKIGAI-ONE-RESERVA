@@ -16,6 +16,7 @@ export type PayrollSettings = {
   sso_rate: number;
   sso_cap: number;
   pt_default_hourly_rate: number;
+  wht_rate: number;
 };
 
 export default function PayrollSettingsClient({
@@ -33,6 +34,7 @@ export default function PayrollSettingsClient({
   const [ssoRatePct, setSsoRatePct] = useState(String(initial.sso_rate * 100));
   const [ssoCap, setSsoCap] = useState(String(initial.sso_cap));
   const [ptDefault, setPtDefault] = useState(String(initial.pt_default_hourly_rate));
+  const [whtRatePct, setWhtRatePct] = useState(String(initial.wht_rate * 100));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -52,7 +54,8 @@ export default function PayrollSettingsClient({
           long_shift_break_minutes: Number(longDed),
           sso_rate: Number(ssoRatePct) / 100,
           sso_cap: Number(ssoCap),
-          pt_default_hourly_rate: Number(ptDefault)
+          pt_default_hourly_rate: Number(ptDefault),
+          wht_rate: Number(whtRatePct) / 100
         })
       });
       const j = await res.json().catch(() => ({}));
@@ -232,6 +235,26 @@ export default function PayrollSettingsClient({
                 value={ssoCap} onChange={(e) => setSsoCap(e.target.value)} />
               <span className="text-sm text-slate-500">บาท / เดือน</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* WHT (out-of-system) */}
+      <div className="card space-y-3">
+        <div>
+          <h2 className="font-semibold text-slate-800">
+            {t(lang, "admin.persona.payroll.settings.whtTitle")}
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {t(lang, "admin.persona.payroll.settings.whtDesc")}
+          </p>
+        </div>
+        <div>
+          <label className="label">{t(lang, "admin.persona.payroll.settings.whtRate")}</label>
+          <div className="flex items-center gap-2">
+            <input type="number" step="0.1" min="0" max="100" className="input max-w-[100px]"
+              value={whtRatePct} onChange={(e) => setWhtRatePct(e.target.value)} />
+            <span className="text-sm text-slate-500">%</span>
           </div>
         </div>
       </div>

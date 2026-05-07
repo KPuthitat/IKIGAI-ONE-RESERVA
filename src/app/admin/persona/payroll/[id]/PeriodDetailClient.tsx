@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import ConfirmModal from "@/app/components/ConfirmModal";
 
 export type PeriodDetail = {
   id: number;
@@ -34,6 +35,8 @@ export type PayrollLineRow = {
   pay_cycle_snapshot: "weekly" | "monthly" | null;
   hourly_rate_snapshot: number | null;
   monthly_salary_snapshot: number | null;
+  salary_tax_mode_snapshot: "sso" | "wht" | null;
+  holiday_minutes: number;
   shift_minutes: number;
   break_deducted_minutes: number;
   regular_minutes: number;
@@ -84,6 +87,8 @@ export default function PeriodDetailClient({
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [editLine, setEditLine] = useState<PayrollLineRow | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmFinalize, setConfirmFinalize] = useState(false);
 
   const isDraft = period.status === "draft";
   const isFinalized = period.status === "finalized";
@@ -112,7 +117,6 @@ export default function PeriodDetailClient({
   }
 
   async function deletePeriod(): Promise<void> {
-    if (!confirm(t(lang, "admin.persona.payroll.confirmDelete"))) return;
     setBusy("delete");
     try {
       const res = await fetch(apiUrl(`/api/admin/persona/payroll/periods/${period.id}`), {
@@ -120,12 +124,15 @@ export default function PeriodDetailClient({
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) {
+        setConfirmDelete(false);
         startTransition(() => router.push("/admin/persona/payroll"));
       } else {
+        setConfirmDelete(false);
         setMsg({ kind: "err", text: j?.error ?? t(lang, "common.error") });
         setBusy(null);
       }
     } catch {
+      setConfirmDelete(false);
       setMsg({ kind: "err", text: t(lang, "common.error") });
       setBusy(null);
     }
@@ -140,9 +147,12 @@ export default function PeriodDetailClient({
       net: acc.net + l.net_pay,
       ot: acc.ot + l.ot_pay,
       ptCount: acc.ptCount + (l.employment_type === "pt" ? 1 : 0),
-      ftCount: acc.ftCount + (l.employment_type === "ft" ? 1 : 0)
+      ftCount: acc.ftCount + (l.employment_type === "ft" ? 1 : 0),
+      ssoCount: acc.ssoCount + (l.salary_tax_mode_snapshot === "sso" ? 1 : 0),
+      whtCount: acc.whtCount + (l.salary_tax_mode_snapshot === "wht" ? 1 : 0),
+      holidayMin: acc.holidayMin + l.holiday_minutes
     }),
-    { gross: 0, sso: 0, tax: 0, net: 0, ot: 0, ptCount: 0, ftCount: 0 }
+    { gross: 0, sso: 0, tax: 0, net: 0, ot: 0, ptCount: 0, ftCount: 0, ssoCount: 0, whtCount: 0, holidayMin: 0 }
   );
 
   const otModeBadge =
@@ -183,11 +193,11 @@ export default function PeriodDetailClient({
                 disabled={busy !== null} className="btn-secondary text-sm">
                 {busy === "recompute" ? "..." : "↻ " + t(lang, "admin.persona.payroll.action.recompute")}
               </button>
-              <button type="button" onClick={() => performAction("finalize")}
+              <button type="button" onClick={() => setConfirmFinalize(true)}
                 disabled={busy !== null} className="btn-primary text-sm">
                 {busy === "finalize" ? "..." : "✓ " + t(lang, "admin.persona.payroll.action.finalize")}
               </button>
-              <button type="button" onClick={deletePeriod}
+              <button type="button" onClick={() => setConfirmDelete(true)}
                 disabled={busy !== null}
                 className="text-sm px-3 py-1.5 rounded-md text-rose-700 hover:bg-rose-50">
                 {busy === "delete" ? "..." : t(lang, "common.delete")}
@@ -229,14 +239,15 @@ export default function PeriodDetailClient({
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <SummaryCard label={t(lang, "admin.persona.payroll.col.staff")}
           value={`${lines.length}`}
-          sub={`PT ${totals.ptCount} · FT ${totals.ftCount}`} />
+          sub={`${t(lang, "admin.persona.employees.employment.pt")} ${totals.ptCount} · ${t(lang, "admin.persona.employees.employment.ft")} ${totals.ftCount}`} />
         <SummaryCard label={t(lang, "admin.persona.payroll.col.gross")}
           value={fmtMoney(totals.gross)} />
         <SummaryCard label={t(lang, "admin.persona.payroll.col.ot")}
-          value={fmtMoney(totals.ot)} accent="amber" />
+          value={fmtMoney(totals.ot)} accent="amber"
+          sub={totals.holidayMin > 0 ? `${t(lang, "admin.persona.payroll.detail.holidayMinutes")}: ${fmtMin(totals.holidayMin)}` : undefined} />
         <SummaryCard label={t(lang, "admin.persona.payroll.col.deductions")}
           value={fmtMoney(totals.sso + totals.tax)}
-          sub={`SSO ${fmtMoney(totals.sso)} · Tax ${fmtMoney(totals.tax)}`}
+          sub={`${t(lang, "admin.persona.payroll.col.sso")} ${fmtMoney(totals.sso)} · ${t(lang, "admin.persona.payroll.col.tax")} ${fmtMoney(totals.tax)}`}
           accent="rose" />
         <SummaryCard label={t(lang, "admin.persona.payroll.col.net")}
           value={fmtMoney(totals.net)} accent="emerald" />
@@ -268,16 +279,42 @@ export default function PeriodDetailClient({
               {lines.map((l) => (
                 <tr key={l.id} className={`border-b border-slate-100 last:border-0 ${l.overridden ? "bg-sky-50/40" : ""}`}>
                   <td className="py-2 pr-3">
-                    <div className="font-medium text-slate-800">{l.display_name}</div>
+                    <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
+                      <span>{l.display_name}</span>
+                      {l.employment_type === "pt" && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
+                          {t(lang, "admin.persona.employees.employment.pt")}
+                        </span>
+                      )}
+                      {l.employment_type === "ft" && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                          {t(lang, "admin.persona.employees.employment.ft")}
+                        </span>
+                      )}
+                      {l.salary_tax_mode_snapshot === "wht" && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700"
+                          title={t(lang, "admin.persona.employees.taxMode.wht")}>
+                          {t(lang, "admin.persona.employees.taxMode.whtTag")}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-slate-400">
                       {l.employment_type === "pt" && l.hourly_rate_snapshot != null && (
-                        <span>{l.hourly_rate_snapshot.toFixed(0)} ฿/ชม.</span>
+                        <span>{l.hourly_rate_snapshot.toFixed(0)} {t(lang, "admin.persona.employees.bahtPerHour")}</span>
                       )}
                       {l.employment_type === "ft" && l.monthly_salary_snapshot != null && (
-                        <span>{l.monthly_salary_snapshot.toLocaleString()} ฿ /{l.pay_cycle_snapshot}</span>
+                        <span>
+                          {l.monthly_salary_snapshot.toLocaleString()} ฿ /
+                          {l.pay_cycle_snapshot === "weekly"
+                            ? t(lang, "admin.persona.employees.cycleWeekly")
+                            : t(lang, "admin.persona.employees.cycleMonthly")}
+                        </span>
+                      )}
+                      {l.holiday_minutes > 0 && (
+                        <span className="ml-2 text-rose-600">★ {fmtMin(l.holiday_minutes)} {t(lang, "admin.persona.payroll.detail.onHoliday")}</span>
                       )}
                       {l.unpaired_clockins > 0 && (
-                        <span className="ml-2 text-amber-700">⚠ {l.unpaired_clockins} unpaired</span>
+                        <span className="ml-2 text-amber-700">⚠ {l.unpaired_clockins} {t(lang, "admin.persona.payroll.detail.unpairedShort")}</span>
                       )}
                       {l.overridden === 1 && (
                         <span className="ml-2 text-sky-700">★ {t(lang, "admin.persona.payroll.detail.overridden")}</span>
@@ -330,6 +367,33 @@ export default function PeriodDetailClient({
           }}
         />
       )}
+
+      <ConfirmModal
+        open={confirmDelete}
+        title={t(lang, "admin.persona.payroll.confirmDeleteTitle")}
+        body={<p>{t(lang, "admin.persona.payroll.confirmDelete")}</p>}
+        confirmLabel={t(lang, "common.delete")}
+        cancelLabel={t(lang, "common.cancel")}
+        variant="danger"
+        busy={busy === "delete"}
+        onConfirm={() => deletePeriod()}
+        onCancel={() => setConfirmDelete(false)}
+      />
+
+      <ConfirmModal
+        open={confirmFinalize}
+        title={t(lang, "admin.persona.payroll.confirmFinalizeTitle")}
+        body={<p>{t(lang, "admin.persona.payroll.confirmFinalize")}</p>}
+        confirmLabel={t(lang, "admin.persona.payroll.action.finalize")}
+        cancelLabel={t(lang, "common.cancel")}
+        variant="default"
+        busy={busy === "finalize"}
+        onConfirm={async () => {
+          await performAction("finalize");
+          setConfirmFinalize(false);
+        }}
+        onCancel={() => setConfirmFinalize(false)}
+      />
     </>
   );
 }

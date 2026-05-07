@@ -36,6 +36,7 @@ export type PayrollSettings = {
   sso_rate: number;
   sso_cap: number;
   pt_default_hourly_rate: number;
+  wht_rate: number;
 };
 
 export type EmployeePayrollSnapshot = {
@@ -46,7 +47,11 @@ export type EmployeePayrollSnapshot = {
   hourly_rate: number | null;
   monthly_salary: number | null;
   pay_cycle: "weekly" | "monthly" | null;
+  salary_tax_mode: "sso" | "wht" | null;
 };
+
+// PT premium multiplier on public holidays (per company rule)
+const PT_HOLIDAY_MULTIPLIER = 1.5;
 
 export type ComputedLine = {
   user_id: number;
@@ -57,11 +62,13 @@ export type ComputedLine = {
   pay_cycle_snapshot: "weekly" | "monthly" | null;
   hourly_rate_snapshot: number | null;
   monthly_salary_snapshot: number | null;
+  salary_tax_mode_snapshot: "sso" | "wht" | null;
   // time
   shift_minutes: number;
   break_deducted_minutes: number;
   regular_minutes: number;
   ot_minutes: number;
+  holiday_minutes: number;
   days_worked: number;
   leave_days: number;
   unpaired_clockins: number;
@@ -162,24 +169,25 @@ export function splitRegularOt(workedMinutes: number): {
 // ── OT pay ──────────────────────────────────────────────────────────
 
 export function computeOtPay(
-  otMinutes: number, hourlyRate: number, settings: PayrollSettings
+  otMinutes: number, hourlyRate: number, settings: PayrollSettings,
+  multiplier = 1
 ): number {
   if (otMinutes <= 0) return 0;
   if (settings.ot_mode === "flat") {
     // ทุกๆ 15 นาที = ot_flat_per_15min — round DOWN to nearest 15-min block
     // (ลูกจ้างไม่ได้รับ partial block — กฎของร้าน)
     const blocks = Math.floor(otMinutes / 15);
-    return blocks * settings.ot_flat_per_15min;
+    return blocks * settings.ot_flat_per_15min * multiplier;
   }
   // legal: 1.5x hourly_rate, prorated by minutes
-  return (otMinutes / 60) * hourlyRate * 1.5;
+  return (otMinutes / 60) * hourlyRate * 1.5 * multiplier;
 }
 
-// ── SSO (Social Security) ───────────────────────────────────────────
+// ── SSO (Social Security) — for "in-system" employees ──────────────
 
 /**
- * SSO is a monthly concept (cap 750/month). For weekly periods we
- * pro-rate the cap by period length.
+ * SSO is a monthly concept (cap 875/month per current Thai SSO ceiling).
+ * For weekly periods we pro-rate the cap by period length.
  */
 export function computeSso(
   periodGross: number,
@@ -190,6 +198,17 @@ export function computeSso(
   const cap = cycle === "weekly" ? settings.sso_cap / 4 : settings.sso_cap;
   const raw = periodGross * settings.sso_rate;
   return Math.min(raw, cap);
+}
+
+// ── WHT (Withholding Tax) — for "out-of-system" employees ──────────
+
+/**
+ * Withholding tax for staff who are not in the SSO system.
+ * Default rate 3% — flat on gross.
+ */
+export function computeWht(periodGross: number, settings: PayrollSettings): number {
+  if (periodGross <= 0) return 0;
+  return periodGross * settings.wht_rate;
 }
 
 // ── Thai PIT (Personal Income Tax) ──────────────────────────────────
@@ -251,14 +270,26 @@ export function computeLineForEmployee(args: {
   cycle: "weekly" | "monthly";
   periodEnd: string;          // YYYY-MM-DD (used for FT-weekly division)
   settings: PayrollSettings;
+  holidaySet: Set<string>;    // YYYY-MM-DD dates that count as PT premium days
 }): ComputedLine {
-  const { employee: e, shifts, unpaired, leaveDays, cycle, periodEnd, settings } = args;
+  const { employee: e, shifts, unpaired, leaveDays, cycle, periodEnd, settings, holidaySet } = args;
 
-  // Aggregate shift minutes
+  // Determine effective hourly rate (used for legal OT mode + display)
+  const ptRate = e.hourly_rate ?? settings.pt_default_hourly_rate;
+  const ftHourlyEquivalent = e.monthly_salary ? e.monthly_salary / 30 / 8 : 0;
+  const effectiveHourlyRate =
+    e.employment_type === "pt" ? ptRate :
+    e.employment_type === "ft" ? ftHourlyEquivalent : 0;
+
+  // Aggregate shift minutes — and per-shift PT pay (with holiday premium)
   let shiftMin = 0;
   let regularMin = 0;
   let otMin = 0;
+  let holidayMin = 0;
   let breakDeducted = 0;
+  let ptBasePay = 0;
+  let ptOtPay = 0;
+  let ftOtPay = 0;        // FT also gets OT but no holiday premium
   const daysSet = new Set<string>();
 
   for (const s of shifts) {
@@ -268,21 +299,31 @@ export function computeLineForEmployee(args: {
     const split = splitRegularOt(workedMinutes);
     regularMin += split.regular;
     otMin += split.ot;
-    daysSet.add(bkkDate(s.startTs));
-  }
 
-  // Determine effective hourly rate (used for legal OT mode + display)
-  const ptRate = e.hourly_rate ?? settings.pt_default_hourly_rate;
-  const ftHourlyEquivalent = e.monthly_salary ? e.monthly_salary / 30 / 8 : 0;
-  const effectiveHourlyRate =
-    e.employment_type === "pt" ? ptRate :
-    e.employment_type === "ft" ? ftHourlyEquivalent : 0;
+    const shiftDate = bkkDate(s.startTs);
+    daysSet.add(shiftDate);
+    const isHoliday = holidaySet.has(shiftDate);
+
+    if (isHoliday) {
+      holidayMin += workedMinutes;
+    }
+
+    // Per-shift pay computation
+    if (e.employment_type === "pt") {
+      // PT: holiday premium 1.5x on both base + OT
+      const mult = isHoliday ? PT_HOLIDAY_MULTIPLIER : 1;
+      ptBasePay += (split.regular / 60) * ptRate * mult;
+      ptOtPay += computeOtPay(split.ot, ptRate, settings, mult);
+    } else if (e.employment_type === "ft") {
+      // FT: OT only (base is salary). No holiday premium per company rule.
+      ftOtPay += computeOtPay(split.ot, ftHourlyEquivalent, settings, 1);
+    }
+  }
 
   // Base pay
   let basePay = 0;
   if (e.employment_type === "pt") {
-    // PT: paid by hours actually worked (regular only — OT paid separately)
-    basePay = (regularMin / 60) * ptRate;
+    basePay = ptBasePay;
   } else if (e.employment_type === "ft") {
     // FT: salary regardless of clock — but only included in matching cycle
     if (e.pay_cycle === cycle && e.monthly_salary) {
@@ -290,7 +331,7 @@ export function computeLineForEmployee(args: {
         basePay = e.monthly_salary;
       } else {
         // weekly: divide salary by # of Mondays in the calendar month
-        // containing periodEnd
+        // containing periodEnd (= number of weekly pay-dates in that month)
         const mondays = countMondaysInMonth(periodEnd) || 4;
         basePay = e.monthly_salary / mondays;
       }
@@ -298,8 +339,8 @@ export function computeLineForEmployee(args: {
     // Else: this employee has a different pay_cycle than this period — exclude
   }
 
-  // OT pay
-  const otPay = computeOtPay(otMin, effectiveHourlyRate, settings);
+  // Total OT pay
+  const otPay = e.employment_type === "pt" ? ptOtPay : ftOtPay;
 
   // Service charge — Phase C4 (filled later)
   const serviceCharge = 0;
@@ -307,11 +348,20 @@ export function computeLineForEmployee(args: {
 
   const grossPay = basePay + otPay + serviceCharge + otherAdditions;
 
-  // SSO
-  const ssoAmount = grossPay > 0 ? computeSso(grossPay, cycle, settings) : 0;
-
-  // Tax
-  const taxAmount = grossPay > 0 ? computePeriodTax(grossPay, ssoAmount, cycle) : 0;
+  // Tax & SSO based on employee's salary_tax_mode
+  // 'sso' = ในระบบ → SSO 5% (cap) + PIT progressive
+  // 'wht' = นอกระบบ → WHT 3% flat, no SSO, no PIT
+  const taxMode = e.salary_tax_mode ?? "sso";
+  let ssoAmount = 0;
+  let taxAmount = 0;
+  if (grossPay > 0) {
+    if (taxMode === "wht") {
+      taxAmount = computeWht(grossPay, settings);
+    } else {
+      ssoAmount = computeSso(grossPay, cycle, settings);
+      taxAmount = computePeriodTax(grossPay, ssoAmount, cycle);
+    }
+  }
 
   const otherDeductions = 0;
   const netPay = grossPay - ssoAmount - taxAmount - otherDeductions;
@@ -324,10 +374,12 @@ export function computeLineForEmployee(args: {
     pay_cycle_snapshot: e.pay_cycle,
     hourly_rate_snapshot: e.hourly_rate,
     monthly_salary_snapshot: e.monthly_salary,
+    salary_tax_mode_snapshot: taxMode,
     shift_minutes: Math.round(shiftMin),
     break_deducted_minutes: Math.round(breakDeducted),
     regular_minutes: Math.round(regularMin),
     ot_minutes: Math.round(otMin),
+    holiday_minutes: Math.round(holidayMin),
     days_worked: daysSet.size,
     leave_days: leaveDays,
     unpaired_clockins: unpaired,
@@ -371,12 +423,19 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     SELECT ot_mode, ot_flat_per_15min,
            break_threshold_minutes, break_deduction_minutes,
            long_shift_threshold_minutes, long_shift_break_minutes,
-           sso_rate, sso_cap, pt_default_hourly_rate
+           sso_rate, sso_cap, pt_default_hourly_rate, wht_rate
     FROM payroll_settings WHERE id = 1
   `).get() as PayrollSettings;
 
   const fromIso = new Date(`${period.period_start}T00:00:00+07:00`).toISOString();
   const toIso = new Date(`${period.period_end}T23:59:59+07:00`).toISOString();
+
+  // Public holidays in period — for PT premium 1.5x
+  const holidays = db.prepare(`
+    SELECT date FROM public_holidays
+    WHERE date >= ? AND date <= ?
+  `).all(period.period_start, period.period_end) as Array<{ date: string }>;
+  const holidaySet = new Set(holidays.map((h) => h.date));
 
   // All staff with employment_type — eligible for payroll
   // For weekly cycle: include all PT + FT-weekly
@@ -385,7 +444,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   if (period.cycle === "weekly") {
     staffSql = `
       SELECT id AS user_id, display_name, employment_type, employee_code,
-             hourly_rate, monthly_salary, pay_cycle
+             hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
       FROM users
       WHERE role = 'staff' AND employment_type IS NOT NULL
         AND (employment_type = 'pt' OR (employment_type = 'ft' AND pay_cycle = 'weekly'))
@@ -394,7 +453,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   } else {
     staffSql = `
       SELECT id AS user_id, display_name, employment_type, employee_code,
-             hourly_rate, monthly_salary, pay_cycle
+             hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
       FROM users
       WHERE role = 'staff' AND employment_type = 'ft' AND pay_cycle = 'monthly'
       ORDER BY display_name
@@ -463,11 +522,13 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
       INSERT INTO payroll_lines (
         period_id, user_id, employee_code, display_name, employment_type,
         pay_cycle_snapshot, hourly_rate_snapshot, monthly_salary_snapshot,
+        salary_tax_mode_snapshot,
         shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
+        holiday_minutes,
         days_worked, leave_days, unpaired_clockins,
         base_pay, ot_pay, service_charge, other_additions, gross_pay,
         sso_amount, tax_amount, other_deductions, net_pay
-      ) VALUES (?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?, ?,?,?,?,?, ?,?,?,?)
+      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?, ?,?,?,?,?, ?,?,?,?)
     `);
 
     let computed = 0;
@@ -484,22 +545,17 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         leaveDays,
         cycle: period.cycle,
         periodEnd: period.period_end,
-        settings
+        settings,
+        holidaySet
       });
-
-      // Skip employees with zero base + zero ot (nothing to pay)
-      // BUT include them anyway so admin can see they had no activity
-      // → only skip if employment_type is FT but mismatched cycle
-      if (line.gross_pay === 0 && line.shift_minutes === 0) {
-        // For PT with no clock-ins this period, still include but with 0 pay
-        // (so admin can see them in the list)
-      }
 
       insertLine.run(
         periodId, line.user_id,
         line.employee_code, line.display_name, line.employment_type,
         line.pay_cycle_snapshot, line.hourly_rate_snapshot, line.monthly_salary_snapshot,
+        line.salary_tax_mode_snapshot,
         line.shift_minutes, line.break_deducted_minutes, line.regular_minutes, line.ot_minutes,
+        line.holiday_minutes,
         line.days_worked, line.leave_days, line.unpaired_clockins,
         line.base_pay, line.ot_pay, line.service_charge, line.other_additions, line.gross_pay,
         line.sso_amount, line.tax_amount, line.other_deductions, line.net_pay

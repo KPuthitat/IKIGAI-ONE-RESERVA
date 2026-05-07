@@ -20,7 +20,8 @@ const Body = z.object({
   sso_id: z.string().max(20).nullable().optional(),
   hourly_rate: z.number().min(0).nullable().optional(),
   monthly_salary: z.number().min(0).nullable().optional(),
-  pay_cycle: z.enum(["weekly", "monthly"]).nullable().optional()
+  pay_cycle: z.enum(["weekly", "monthly"]).nullable().optional(),
+  salary_tax_mode: z.enum(["sso", "wht"]).optional()
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -71,6 +72,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("hourly_rate");
   addField("monthly_salary");
   addField("pay_cycle");
+  addField("salary_tax_mode");
 
   if (fields.length === 0) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });

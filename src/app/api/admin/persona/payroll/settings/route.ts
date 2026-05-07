@@ -13,7 +13,8 @@ const Body = z.object({
   long_shift_break_minutes: z.number().int().min(0).max(1440),
   sso_rate: z.number().min(0).max(1),         // 0.05 = 5%
   sso_cap: z.number().min(0).max(100000),
-  pt_default_hourly_rate: z.number().min(0).max(10000)
+  pt_default_hourly_rate: z.number().min(0).max(10000),
+  wht_rate: z.number().min(0).max(1)          // 0.03 = 3%
 });
 
 export async function PATCH(req: Request) {
@@ -39,6 +40,7 @@ export async function PATCH(req: Request) {
         sso_rate = ?,
         sso_cap = ?,
         pt_default_hourly_rate = ?,
+        wht_rate = ?,
         updated_at = CURRENT_TIMESTAMP,
         updated_by = ?
     WHERE id = 1
@@ -48,6 +50,7 @@ export async function PATCH(req: Request) {
     d.long_shift_threshold_minutes, d.long_shift_break_minutes,
     d.sso_rate, d.sso_cap,
     d.pt_default_hourly_rate,
+    d.wht_rate,
     user.id
   );
 
