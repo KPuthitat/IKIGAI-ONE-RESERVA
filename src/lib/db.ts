@@ -508,8 +508,25 @@ function runMigrations(db: Database.Database): void {
   if (!psCols.some((c) => c.name === "wht_rate")) {
     db.exec("ALTER TABLE payroll_settings ADD COLUMN wht_rate REAL NOT NULL DEFAULT 0.03");
   }
+  // Phase 1D v6 — superadmin PIN (bcrypt-hashed) for unlocking paid periods
+  if (!psCols.some((c) => c.name === "superadmin_pin_hash")) {
+    db.exec("ALTER TABLE payroll_settings ADD COLUMN superadmin_pin_hash TEXT");
+  }
   // Bump SSO cap from old default 750 → 875 (Thai SSO ceiling adjustment)
   db.exec("UPDATE payroll_settings SET sso_cap = 875 WHERE sso_cap = 750");
+
+  // Audit log of payroll-period unlocks (paid → finalized via superadmin PIN)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payroll_period_unlocks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_id INTEGER NOT NULL REFERENCES payroll_periods(id) ON DELETE CASCADE,
+      unlocked_by INTEGER REFERENCES users(id),
+      reason TEXT NOT NULL,
+      unlocked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_payroll_period_unlocks_period
+      ON payroll_period_unlocks(period_id);
+  `);
 
   // ── Phase 1D / C2 — Payroll periods + lines ────────────────────────
   // payroll_periods = หนึ่งรอบจ่าย (รายสัปดาห์ จันทร์-อาทิตย์ หรือ รายเดือน)

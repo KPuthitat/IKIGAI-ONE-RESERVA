@@ -81,9 +81,29 @@ function fmtMoney(v: number): string {
   return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+export type AddableStaff = {
+  id: number;
+  display_name: string;
+  employment_type: "pt" | "ft";
+};
+
+export type UnlockEntry = {
+  id: number;
+  reason: string;
+  unlocked_at: string;
+  unlocked_by_name: string | null;
+};
+
 export default function PeriodDetailClient({
-  lang, period, lines
-}: { lang: Lang; period: PeriodDetail; lines: PayrollLineRow[] }) {
+  lang, period, lines, addableStaff, unlockHistory, superadminPinSet
+}: {
+  lang: Lang;
+  period: PeriodDetail;
+  lines: PayrollLineRow[];
+  addableStaff: AddableStaff[];
+  unlockHistory: UnlockEntry[];
+  superadminPinSet: boolean;
+}) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [busy, setBusy] = useState<string | null>(null);
@@ -92,6 +112,11 @@ export default function PeriodDetailClient({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmFinalize, setConfirmFinalize] = useState(false);
   const [confirmPay, setConfirmPay] = useState(false);
+  const [unpayOpen, setUnpayOpen] = useState(false);
+  const [addStaffOpen, setAddStaffOpen] = useState(false);
+  // Mark-paid date — defaults to today (BKK), admin can backdate
+  const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const [paidAt, setPaidAt] = useState(todayBkk);
 
   const isDraft = period.status === "draft";
   const isFinalized = period.status === "finalized";
@@ -101,10 +126,12 @@ export default function PeriodDetailClient({
     setBusy(action);
     setMsg(null);
     try {
+      const body: Record<string, unknown> = { action };
+      if (action === "mark_paid") body.paid_at = paidAt;
       const res = await fetch(apiUrl(`/api/admin/persona/payroll/periods/${period.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action })
+        body: JSON.stringify(body)
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) {
@@ -118,6 +145,60 @@ export default function PeriodDetailClient({
         startTransition(() => router.refresh());
       } else {
         setMsg({ kind: "err", text: j?.error ?? t(lang, "common.error") });
+      }
+    } catch {
+      setMsg({ kind: "err", text: t(lang, "common.error") });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function addEmployee(targetUserId: number): Promise<void> {
+    setBusy("add_emp");
+    setMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/payroll/periods/${period.id}/lines`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: targetUserId })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j?.ok) {
+        setAddStaffOpen(false);
+        setMsg({ kind: "ok", text: t(lang, "admin.persona.payroll.action.addEmployeeDone") });
+        startTransition(() => router.refresh());
+      } else {
+        setMsg({ kind: "err", text: j?.error ?? t(lang, "common.error") });
+      }
+    } catch {
+      setMsg({ kind: "err", text: t(lang, "common.error") });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function performUnpay(pin: string, reason: string): Promise<void> {
+    setBusy("unpay");
+    setMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/payroll/periods/${period.id}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "unpay", pin, reason })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j?.ok) {
+        setUnpayOpen(false);
+        setMsg({ kind: "ok", text: t(lang, "admin.persona.payroll.action.unpayDone") });
+        startTransition(() => router.refresh());
+      } else {
+        const errKey =
+          j?.error === "pin_invalid" ? "admin.persona.payroll.err.pinInvalid" :
+          j?.error === "pin_not_set" ? "admin.persona.payroll.err.pinNotSet" :
+          j?.error === "pin_required" ? "admin.persona.payroll.err.pinRequired" :
+          j?.error === "reason_required" ? "admin.persona.payroll.err.reasonRequired" :
+          "common.error";
+        setMsg({ kind: "err", text: t(lang, errKey as any) });
       }
     } catch {
       setMsg({ kind: "err", text: t(lang, "common.error") });
@@ -253,9 +334,20 @@ export default function PeriodDetailClient({
             </a>
           )}
           {isPaid && (
-            <span className="text-sm text-sky-700 font-medium px-3 py-1.5 rounded-md bg-sky-50 border border-sky-200">
-              ✓ {t(lang, "admin.persona.payroll.action.alreadyPaid")}
-            </span>
+            <>
+              <span className="text-sm text-sky-700 font-medium px-3 py-1.5 rounded-md bg-sky-50 border border-sky-200">
+                ✓ {t(lang, "admin.persona.payroll.action.alreadyPaid")}
+              </span>
+              <button
+                type="button"
+                onClick={() => setUnpayOpen(true)}
+                disabled={busy !== null || !superadminPinSet}
+                title={!superadminPinSet ? t(lang, "admin.persona.payroll.err.pinNotSet") : undefined}
+                className="text-sm px-3 py-1.5 rounded-md text-rose-700 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {t(lang, "admin.persona.payroll.action.unpay")}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -323,6 +415,18 @@ export default function PeriodDetailClient({
 
       {/* Lines table */}
       <div className="card overflow-x-auto">
+        {/* Add-employee button — only when draft + there are eligible staff not yet in period */}
+        {isDraft && addableStaff.length > 0 && (
+          <div className="mb-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setAddStaffOpen(true)}
+              className="text-sm px-3 py-1.5 rounded-md bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+            >
+              + {t(lang, "admin.persona.payroll.action.addEmployee")}
+            </button>
+          </div>
+        )}
         {lines.length === 0 ? (
           <p className="text-sm text-slate-400 py-6 text-center">
             {t(lang, "admin.persona.payroll.detail.noLines")}
@@ -529,7 +633,26 @@ export default function PeriodDetailClient({
       <ConfirmModal
         open={confirmPay}
         title={t(lang, "admin.persona.payroll.confirmPayTitle")}
-        body={<p>{t(lang, "admin.persona.payroll.confirmPay")}</p>}
+        body={
+          <div className="space-y-3">
+            <p>{t(lang, "admin.persona.payroll.confirmPay")}</p>
+            <div>
+              <label className="label">
+                {t(lang, "admin.persona.payroll.field.actualPaidDate")}
+              </label>
+              <input
+                type="date"
+                className="input"
+                value={paidAt}
+                max={todayBkk}
+                onChange={(e) => setPaidAt(e.target.value)}
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                {t(lang, "admin.persona.payroll.field.actualPaidDateHint")}
+              </p>
+            </div>
+          </div>
+        }
         confirmLabel={t(lang, "admin.persona.payroll.action.markPaid")}
         cancelLabel={t(lang, "common.cancel")}
         variant="info"
@@ -540,7 +663,174 @@ export default function PeriodDetailClient({
         }}
         onCancel={() => setConfirmPay(false)}
       />
+
+      {/* Add-employee picker modal */}
+      <AddStaffModal
+        open={addStaffOpen}
+        lang={lang}
+        addableStaff={addableStaff}
+        busy={busy === "add_emp"}
+        onConfirm={(uid) => addEmployee(uid)}
+        onCancel={() => setAddStaffOpen(false)}
+      />
+
+      {/* Superadmin unpay modal */}
+      <UnpayModal
+        open={unpayOpen}
+        lang={lang}
+        busy={busy === "unpay"}
+        onConfirm={(pin, reason) => performUnpay(pin, reason)}
+        onCancel={() => setUnpayOpen(false)}
+      />
+
+      {/* Unlock history (shown when there are past unlocks) */}
+      {unlockHistory.length > 0 && (
+        <div className="card border-l-4 border-amber-300 bg-amber-50/40">
+          <h2 className="font-semibold text-slate-800 mb-2">
+            {t(lang, "admin.persona.payroll.detail.unlockHistoryTitle")}
+          </h2>
+          <ul className="space-y-2">
+            {unlockHistory.map((u) => (
+              <li key={u.id} className="text-sm border-b border-amber-200 last:border-0 pb-2 last:pb-0">
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>{u.unlocked_by_name ?? "—"}</span>
+                  <span>{new Date(u.unlocked_at).toLocaleString("en-GB", { timeZone: "Asia/Bangkok" })}</span>
+                </div>
+                <div className="text-slate-700 mt-0.5">{u.reason}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </>
+  );
+}
+
+// ── AddStaff modal ────────────────────────────────────────────────────
+
+function AddStaffModal({
+  open, lang, addableStaff, busy, onConfirm, onCancel
+}: {
+  open: boolean;
+  lang: Lang;
+  addableStaff: AddableStaff[];
+  busy: boolean;
+  onConfirm: (userId: number) => void;
+  onCancel: () => void;
+}) {
+  const [pickedId, setPickedId] = useState<number | "">("");
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-semibold text-slate-800 text-lg">
+          {t(lang, "admin.persona.payroll.action.addEmployee")}
+        </h3>
+        <p className="text-sm text-slate-600">
+          {t(lang, "admin.persona.payroll.detail.addEmployeeBody")}
+        </p>
+        {addableStaff.length === 0 ? (
+          <p className="text-sm text-slate-400 italic">
+            {t(lang, "admin.persona.payroll.detail.noAddableStaff")}
+          </p>
+        ) : (
+          <div>
+            <label className="label">{t(lang, "admin.persona.payroll.col.staff")}</label>
+            <select
+              className="input"
+              value={pickedId}
+              onChange={(e) => setPickedId(e.target.value === "" ? "" : Number(e.target.value))}
+            >
+              <option value="">— {t(lang, "common.choose")} —</option>
+              {addableStaff.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.display_name} · {s.employment_type === "ft"
+                    ? t(lang, "admin.persona.employees.employment.ft")
+                    : t(lang, "admin.persona.employees.employment.pt")}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div className="flex gap-2 pt-1">
+          <button type="button" onClick={onCancel} disabled={busy}
+            className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium disabled:opacity-50">
+            {t(lang, "common.cancel")}
+          </button>
+          <button type="button"
+            onClick={() => typeof pickedId === "number" && onConfirm(pickedId)}
+            disabled={busy || pickedId === ""}
+            className="flex-1 py-2.5 rounded-lg bg-brand text-white text-sm font-bold hover:opacity-90 disabled:opacity-50">
+            {busy ? "…" : t(lang, "common.confirm")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Superadmin unpay modal ────────────────────────────────────────────
+
+function UnpayModal({
+  open, lang, busy, onConfirm, onCancel
+}: {
+  open: boolean;
+  lang: Lang;
+  busy: boolean;
+  onConfirm: (pin: string, reason: string) => void;
+  onCancel: () => void;
+}) {
+  const [pin, setPin] = useState("");
+  const [reason, setReason] = useState("");
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}>
+        <div>
+          <h3 className="font-semibold text-slate-800 text-lg">
+            {t(lang, "admin.persona.payroll.confirmUnpayTitle")}
+          </h3>
+          <p className="text-sm text-slate-600 mt-1">
+            {t(lang, "admin.persona.payroll.confirmUnpayBody")}
+          </p>
+        </div>
+        <div>
+          <label className="label">{t(lang, "admin.persona.payroll.field.superadminPin")}</label>
+          <input type="password" inputMode="numeric" autoComplete="off"
+            className="input tracking-widest text-center text-lg"
+            value={pin} maxLength={12}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+            placeholder="••••" />
+        </div>
+        <div>
+          <label className="label">{t(lang, "admin.persona.payroll.field.unpayReason")}</label>
+          <textarea
+            className="input min-h-[88px]"
+            value={reason}
+            maxLength={500}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder={t(lang, "admin.persona.payroll.field.unpayReasonPlaceholder")}
+          />
+        </div>
+        <p className="text-xs text-amber-700">
+          {t(lang, "admin.persona.payroll.field.unpayWarning")}
+        </p>
+        <div className="flex gap-2 pt-1">
+          <button type="button" onClick={onCancel} disabled={busy}
+            className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium disabled:opacity-50">
+            {t(lang, "common.cancel")}
+          </button>
+          <button type="button"
+            onClick={() => onConfirm(pin, reason)}
+            disabled={busy || pin.length < 4 || reason.trim().length === 0}
+            className="flex-1 py-2.5 rounded-lg bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 disabled:opacity-50">
+            {busy ? "…" : t(lang, "admin.persona.payroll.action.unpay")}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -1,16 +1,20 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { computePayrollPeriod } from "@/lib/payroll-compute";
 
-// PATCH /api/admin/persona/payroll/periods/[id] — recompute, finalize, or update notes
+// PATCH /api/admin/persona/payroll/periods/[id] — recompute, finalize, mark paid, unpay, update notes
 // DELETE /api/admin/persona/payroll/periods/[id] — delete (only if draft)
 
 const PatchBody = z.object({
-  action: z.enum(["recompute", "finalize", "unfinalize", "mark_paid", "update_notes"]),
+  action: z.enum(["recompute", "finalize", "unfinalize", "mark_paid", "unpay", "update_notes"]),
   notes: z.string().max(500).optional(),
-  pay_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+  pay_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  paid_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),  // backdated paid date
+  pin: z.string().optional(),                                    // for unpay
+  reason: z.string().max(500).optional()                         // for unpay
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -72,15 +76,55 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   if (d.action === "mark_paid") {
-    // Only finalized periods can be marked paid; once paid, locked permanently.
+    // Only finalized periods can be marked paid; once paid, locked unless
+    // a superadmin unlocks via PIN.
     if (period.status !== "finalized") {
       return NextResponse.json({ error: "must_be_finalized_to_pay" }, { status: 400 });
     }
+    // Allow backdating: admin may specify paid_at to record historical
+    // payments. Default = now (UTC ISO).
+    const paidAtIso = d.paid_at
+      ? new Date(`${d.paid_at}T12:00:00+07:00`).toISOString()
+      : new Date().toISOString();
     db.prepare(`
       UPDATE payroll_periods
       SET status = 'paid', paid_by = ?, paid_at = ?
       WHERE id = ?
-    `).run(user.id, new Date().toISOString(), id);
+    `).run(user.id, paidAtIso, id);
+    return NextResponse.json({ ok: true });
+  }
+
+  if (d.action === "unpay") {
+    // Superadmin unlock: paid → finalized. Requires the superadmin PIN
+    // (set in payroll_settings) plus a non-empty reason. The unlock event
+    // is logged in payroll_period_unlocks for audit.
+    if (period.status !== "paid") {
+      return NextResponse.json({ error: "must_be_paid_to_unpay" }, { status: 400 });
+    }
+    const pin = (d.pin ?? "").trim();
+    const reason = (d.reason ?? "").trim();
+    if (!pin) return NextResponse.json({ error: "pin_required" }, { status: 400 });
+    if (!reason) return NextResponse.json({ error: "reason_required" }, { status: 400 });
+
+    const settings = db.prepare(`
+      SELECT superadmin_pin_hash FROM payroll_settings WHERE id = 1
+    `).get() as { superadmin_pin_hash: string | null };
+    if (!settings?.superadmin_pin_hash) {
+      return NextResponse.json({ error: "pin_not_set" }, { status: 400 });
+    }
+    if (!bcrypt.compareSync(pin, settings.superadmin_pin_hash)) {
+      return NextResponse.json({ error: "pin_invalid" }, { status: 401 });
+    }
+
+    db.prepare(`
+      UPDATE payroll_periods
+      SET status = 'finalized', paid_by = NULL, paid_at = NULL
+      WHERE id = ?
+    `).run(id);
+    db.prepare(`
+      INSERT INTO payroll_period_unlocks (period_id, unlocked_by, reason)
+      VALUES (?, ?, ?)
+    `).run(id, user.id, reason);
     return NextResponse.json({ ok: true });
   }
 

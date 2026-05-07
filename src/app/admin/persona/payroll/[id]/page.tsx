@@ -37,6 +37,7 @@ export default function PeriodDetailPage({
   const lines = db.prepare(`
     SELECT id, user_id, employee_code, display_name, employment_type,
            pay_cycle_snapshot, hourly_rate_snapshot, monthly_salary_snapshot,
+           salary_tax_mode_snapshot, holiday_minutes,
            shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
            days_worked, leave_days, unpaired_clockins,
            base_pay, ot_pay, service_charge, other_additions, gross_pay,
@@ -48,6 +49,32 @@ export default function PeriodDetailPage({
              display_name
   `).all(id) as PayrollLineRow[];
 
+  // Staff list for "Add employee" picker — exclude those already in the period
+  const addableStaff = db.prepare(`
+    SELECT id, display_name, employment_type
+    FROM users
+    WHERE role = 'staff' AND employment_type IS NOT NULL
+      AND id NOT IN (SELECT user_id FROM payroll_lines WHERE period_id = ?)
+    ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
+             display_name
+  `).all(id) as Array<{ id: number; display_name: string; employment_type: "pt" | "ft" }>;
+
+  // Unlock-history: who unlocked this period (paid → finalized) and why
+  const unlockHistory = db.prepare(`
+    SELECT pu.id, pu.reason, pu.unlocked_at, u.display_name AS unlocked_by_name
+    FROM payroll_period_unlocks pu
+    LEFT JOIN users u ON pu.unlocked_by = u.id
+    WHERE pu.period_id = ?
+    ORDER BY pu.unlocked_at DESC
+  `).all(id) as Array<{
+    id: number; reason: string; unlocked_at: string; unlocked_by_name: string | null;
+  }>;
+
+  // Has the superadmin PIN been set? (used to enable/disable the unlock UI)
+  const pinSet = !!(db.prepare(`
+    SELECT superadmin_pin_hash FROM payroll_settings WHERE id = 1
+  `).get() as { superadmin_pin_hash: string | null } | undefined)?.superadmin_pin_hash;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -55,7 +82,14 @@ export default function PeriodDetailPage({
           ← {t(lang, "admin.persona.payroll.backToHub")}
         </Link>
       </div>
-      <PeriodDetailClient lang={lang} period={period} lines={lines} />
+      <PeriodDetailClient
+        lang={lang}
+        period={period}
+        lines={lines}
+        addableStaff={addableStaff}
+        unlockHistory={unlockHistory}
+        superadminPinSet={pinSet}
+      />
     </div>
   );
 }
