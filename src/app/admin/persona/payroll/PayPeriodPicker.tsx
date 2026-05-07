@@ -230,8 +230,9 @@ export default function PayPeriodPicker({
                     pay={p.pay}
                     cycleLabel={t(lang, "admin.persona.payroll.hub.weeklyShort")}
                     existing={ex}
-                    busy={busyKey === key}
-                    onCreate={() => createPeriod(sp)}
+                    busyKey={busyKey}
+                    cardKey={key}
+                    onCreate={(ds) => createPeriod(sp, ds)}
                     onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
                     accentClass="hover:border-emerald-400/60"
                   />
