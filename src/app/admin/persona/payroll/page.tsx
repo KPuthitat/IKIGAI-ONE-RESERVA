@@ -3,7 +3,9 @@ import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
-import { t } from "@/lib/i18n";
+import { t, type Lang } from "@/lib/i18n";
+import { todayBkk } from "@/lib/time";
+import CreatePeriodForm from "./CreatePeriodForm";
 
 export const dynamic = "force-dynamic";
 
@@ -15,13 +17,45 @@ type Settings = {
   ot_flat_per_15min: number;
   pt_default_hourly_rate: number;
 };
+type PeriodRow = {
+  id: number;
+  cycle: "weekly" | "monthly";
+  period_start: string;
+  period_end: string;
+  pay_date: string;
+  status: "draft" | "finalized" | "cancelled";
+  total_gross: number | null;
+  total_net: number | null;
+  line_count: number;
+};
+
+function formatBkkDate(d: string, lang: Lang): string {
+  if (!d) return "";
+  if (lang === "th") {
+    const [y, m, dd] = d.split("-");
+    return `${dd}/${m}/${String(Number(y) + 543).slice(2)}`;
+  }
+  return d;
+}
+
+function statusBadge(s: string, lang: Lang): { cls: string; label: string } {
+  if (s === "draft") return {
+    cls: "bg-amber-100 text-amber-700",
+    label: t(lang, "admin.persona.payroll.status.draft")
+  };
+  if (s === "finalized") return {
+    cls: "bg-emerald-100 text-emerald-700",
+    label: t(lang, "admin.persona.payroll.status.finalized")
+  };
+  return { cls: "bg-slate-100 text-slate-500", label: s };
+}
 
 export default function PayrollHubPage() {
   requireAdmin();
   const lang = getLang();
   const db = getDb();
 
-  // Setup completeness — count staff missing salary info
+  // Setup completeness
   const ptMissing = (db.prepare(`
     SELECT COUNT(*) AS n FROM users
     WHERE role = 'staff' AND employment_type = 'pt'
@@ -44,12 +78,28 @@ export default function PayrollHubPage() {
     FROM payroll_settings WHERE id = 1
   `).get() as Settings | undefined;
 
+  // Recent periods (last 12)
+  const periods = db.prepare(`
+    SELECT p.id, p.cycle, p.period_start, p.period_end, p.pay_date, p.status,
+           (SELECT SUM(gross_pay) FROM payroll_lines WHERE period_id = p.id) AS total_gross,
+           (SELECT SUM(net_pay)   FROM payroll_lines WHERE period_id = p.id) AS total_net,
+           (SELECT COUNT(*)       FROM payroll_lines WHERE period_id = p.id) AS line_count
+    FROM payroll_periods p
+    ORDER BY p.period_end DESC, p.id DESC
+    LIMIT 12
+  `).all() as PeriodRow[];
+
   const otModeLabel = settings?.ot_mode === "flat"
     ? t(lang, "admin.persona.payroll.otFlatLabel", {
         baht: String(settings.ot_flat_per_15min),
         perHour: String(settings.ot_flat_per_15min * 4)
       })
     : t(lang, "admin.persona.payroll.otLegalLabel");
+
+  // Suggest defaults: previous Mon-Sun for weekly, previous month for monthly
+  const today = todayBkk();
+  const weekDefaults = computeLastWeekRange(today);
+  const monthDefaults = computeLastMonthRange(today);
 
   return (
     <div className="space-y-4">
@@ -98,42 +148,102 @@ export default function PayrollHubPage() {
         </Link>
       </div>
 
-      {/* Settings link */}
+      {/* Settings link (compact) */}
       <Link
         href="/admin/persona/payroll/settings"
         className="card border-l-4 border-sky-300 bg-sky-50 hover:shadow-md transition block"
       >
-        <h2 className="font-bold text-slate-800">
-          {t(lang, "admin.persona.payroll.hub.settingsTitle")}
-        </h2>
-        <p className="text-sm text-slate-600 mt-1">
-          {t(lang, "admin.persona.payroll.hub.settingsDesc")}
-        </p>
-        <div className="text-xs text-slate-500 mt-2">
-          {t(lang, "admin.persona.payroll.hub.currentOtMode")}: <span className="font-medium text-slate-700">{otModeLabel}</span>
-          {settings && (
-            <>
-              <span className="mx-2 text-slate-300">|</span>
-              {t(lang, "admin.persona.payroll.hub.ptDefaultRate")}: <span className="font-medium text-slate-700">{settings.pt_default_hourly_rate} ฿/ชม.</span>
-            </>
-          )}
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-bold text-slate-800">
+              {t(lang, "admin.persona.payroll.hub.settingsTitle")}
+            </h2>
+            <div className="text-xs text-slate-500 mt-1">
+              {t(lang, "admin.persona.payroll.hub.currentOtMode")}: <span className="font-medium text-slate-700">{otModeLabel}</span>
+              {settings && (
+                <>
+                  <span className="mx-2 text-slate-300">|</span>
+                  {t(lang, "admin.persona.payroll.hub.ptDefaultRate")}: <span className="font-medium text-slate-700">{settings.pt_default_hourly_rate} ฿/ชม.</span>
+                </>
+              )}
+            </div>
+          </div>
+          <span className="text-brand text-sm">→</span>
         </div>
       </Link>
 
-      {/* C2 placeholder — payroll run (coming next deploy) */}
-      <div className="card border-l-4 border-amber-300 bg-amber-50">
-        <h2 className="font-bold text-slate-800">
-          {t(lang, "admin.persona.payroll.hub.runTitle")}
+      {/* Create new period */}
+      <CreatePeriodForm
+        lang={lang}
+        weekDefaults={weekDefaults}
+        monthDefaults={monthDefaults}
+      />
+
+      {/* Periods list */}
+      <div className="card">
+        <h2 className="font-semibold text-slate-700 mb-3">
+          {t(lang, "admin.persona.payroll.hub.recentPeriods")}
         </h2>
-        <p className="text-sm text-slate-600 mt-1">
-          {t(lang, "admin.persona.payroll.hub.runDescPending")}
-        </p>
-        <p className="text-xs text-amber-700 mt-2">
-          🚧 {t(lang, "admin.persona.payroll.hub.phase2Note")}
-        </p>
+        {periods.length === 0 ? (
+          <p className="text-sm text-slate-400 py-6 text-center">
+            {t(lang, "admin.persona.payroll.hub.noPeriods")}
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
+                  <th className="py-2 pr-3">{t(lang, "admin.persona.payroll.col.cycle")}</th>
+                  <th className="py-2 pr-3">{t(lang, "admin.persona.payroll.col.period")}</th>
+                  <th className="py-2 pr-3">{t(lang, "admin.persona.payroll.col.payDate")}</th>
+                  <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.staff")}</th>
+                  <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.gross")}</th>
+                  <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.net")}</th>
+                  <th className="py-2 pr-3">{t(lang, "admin.persona.payroll.col.status")}</th>
+                  <th className="py-2 pr-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {periods.map((p) => {
+                  const badge = statusBadge(p.status, lang);
+                  return (
+                    <tr key={p.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                      <td className="py-2 pr-3">
+                        {p.cycle === "weekly"
+                          ? <span className="text-xs px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">{t(lang, "admin.persona.employees.cycleWeekly")}</span>
+                          : <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">{t(lang, "admin.persona.employees.cycleMonthly")}</span>}
+                      </td>
+                      <td className="py-2 pr-3 text-slate-700">
+                        {formatBkkDate(p.period_start, lang)} – {formatBkkDate(p.period_end, lang)}
+                      </td>
+                      <td className="py-2 pr-3 text-slate-700">{formatBkkDate(p.pay_date, lang)}</td>
+                      <td className="py-2 pr-3 text-right text-slate-600">{p.line_count}</td>
+                      <td className="py-2 pr-3 text-right">
+                        {p.total_gross != null ? p.total_gross.toLocaleString() : "—"}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-medium">
+                        {p.total_net != null ? p.total_net.toLocaleString() : "—"}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${badge.cls}`}>
+                          {badge.label}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        <Link href={`/admin/persona/payroll/${p.id}`} className="text-xs text-brand hover:underline">
+                          {t(lang, "admin.persona.payroll.hub.openPeriod")} →
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* C3/C4 future */}
+      {/* Future phases */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="card opacity-60">
           <h3 className="font-medium text-slate-700">
@@ -154,4 +264,33 @@ export default function PayrollHubPage() {
       </div>
     </div>
   );
+}
+
+// ── Helpers for default suggestions ─────────────────────────────────
+
+function computeLastWeekRange(today: string): { start: string; end: string; pay: string } {
+  // Find most recent Sunday (which ends a Mon-Sun week)
+  const d = new Date(`${today}T00:00:00Z`);
+  const dow = d.getUTCDay(); // 0 = Sun
+  // Go back to most recent Sunday (or today if Sunday)
+  const daysBack = dow === 0 ? 0 : dow;
+  const sunday = new Date(d.getTime() - daysBack * 86400000);
+  const monday = new Date(sunday.getTime() - 6 * 86400000);
+  const nextMonday = new Date(sunday.getTime() + 1 * 86400000);
+  return {
+    start: monday.toISOString().slice(0, 10),
+    end: sunday.toISOString().slice(0, 10),
+    pay: nextMonday.toISOString().slice(0, 10)
+  };
+}
+
+function computeLastMonthRange(today: string): { start: string; end: string; pay: string } {
+  const [y, m] = today.split("-").map(Number);
+  // Previous month
+  const py = m === 1 ? y - 1 : y;
+  const pm = m === 1 ? 12 : m - 1;
+  const lastDay = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+  const start = `${py}-${String(pm).padStart(2, "0")}-01`;
+  const end = `${py}-${String(pm).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  return { start, end, pay: end };
 }

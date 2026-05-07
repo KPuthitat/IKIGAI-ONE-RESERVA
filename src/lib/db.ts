@@ -496,6 +496,76 @@ function runMigrations(db: Database.Database): void {
     );
     INSERT OR IGNORE INTO payroll_settings (id) VALUES (1);
   `);
+
+  // ── Phase 1D / C2 — Payroll periods + lines ────────────────────────
+  // payroll_periods = หนึ่งรอบจ่าย (รายสัปดาห์ จันทร์-อาทิตย์ หรือ รายเดือน)
+  // payroll_lines   = หนึ่งบรรทัด ต่อ พนักงาน ต่อ รอบ — snapshot ของการคำนวณ
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payroll_periods (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cycle TEXT NOT NULL CHECK (cycle IN ('weekly','monthly')),
+      period_start TEXT NOT NULL,                  -- YYYY-MM-DD inclusive (Bangkok)
+      period_end TEXT NOT NULL,                    -- YYYY-MM-DD inclusive
+      pay_date TEXT NOT NULL,                      -- YYYY-MM-DD วันที่จ่ายจริง
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft','finalized','cancelled')),
+      ot_mode_snapshot TEXT,                       -- snapshot ตอนคำนวณครั้งแรก
+      ot_flat_per_15min_snapshot REAL,
+      computed_by INTEGER REFERENCES users(id),
+      computed_at TEXT,
+      finalized_by INTEGER REFERENCES users(id),
+      finalized_at TEXT,
+      notes TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (cycle, period_start, period_end)
+    );
+    CREATE INDEX IF NOT EXISTS idx_payroll_periods_dates
+      ON payroll_periods(period_start, period_end);
+    CREATE INDEX IF NOT EXISTS idx_payroll_periods_status
+      ON payroll_periods(status, period_end);
+
+    CREATE TABLE IF NOT EXISTS payroll_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_id INTEGER NOT NULL REFERENCES payroll_periods(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      -- snapshot of employee at compute time
+      employee_code TEXT,
+      display_name TEXT NOT NULL,
+      employment_type TEXT,                        -- 'pt' | 'ft' | NULL
+      pay_cycle_snapshot TEXT,                     -- 'weekly' | 'monthly' | NULL
+      hourly_rate_snapshot REAL,
+      monthly_salary_snapshot REAL,
+      -- time/work data (minutes)
+      shift_minutes INTEGER NOT NULL DEFAULT 0,    -- ก่อนหักพัก
+      break_deducted_minutes INTEGER NOT NULL DEFAULT 0,
+      regular_minutes INTEGER NOT NULL DEFAULT 0,
+      ot_minutes INTEGER NOT NULL DEFAULT 0,
+      days_worked INTEGER NOT NULL DEFAULT 0,
+      leave_days REAL NOT NULL DEFAULT 0,
+      unpaired_clockins INTEGER NOT NULL DEFAULT 0,
+      -- pay components (THB)
+      base_pay REAL NOT NULL DEFAULT 0,
+      ot_pay REAL NOT NULL DEFAULT 0,
+      service_charge REAL NOT NULL DEFAULT 0,
+      other_additions REAL NOT NULL DEFAULT 0,
+      gross_pay REAL NOT NULL DEFAULT 0,
+      sso_amount REAL NOT NULL DEFAULT 0,
+      tax_amount REAL NOT NULL DEFAULT 0,
+      other_deductions REAL NOT NULL DEFAULT 0,
+      net_pay REAL NOT NULL DEFAULT 0,
+      -- manual override (admin can adjust + add note)
+      overridden INTEGER NOT NULL DEFAULT 0,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (period_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_payroll_lines_period
+      ON payroll_lines(period_id);
+    CREATE INDEX IF NOT EXISTS idx_payroll_lines_user
+      ON payroll_lines(user_id);
+  `);
 }
 
 export type Branch = {
