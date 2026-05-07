@@ -8,11 +8,14 @@ cd "$(dirname "$0")/.."
 echo "→ Pulling latest code (ถ้าเป็น git repo)"
 if [ -d .git ]; then git pull --ff-only; fi
 
-echo "→ Installing dependencies"
-npm ci --omit=dev || npm install --omit=dev
+echo "→ Installing ALL dependencies (need devDeps for build: tailwindcss/postcss/typescript)"
+npm install --no-audit --no-fund
 
-echo "→ Building Next.js"
-npm run build
+echo "→ Building Next.js (with low-RAM safeguard for 1GB VPS)"
+NODE_OPTIONS="--max-old-space-size=768" npm run build
+
+echo "→ Pruning devDependencies after build (keep node_modules slim)"
+npm prune --omit=dev
 
 echo "→ Ensuring data dir exists"
 mkdir -p data
