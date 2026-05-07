@@ -459,6 +459,43 @@ function runMigrations(db: Database.Database): void {
       COMMIT;
     `);
   }
+
+  // ── Phase 1D — Payroll fields on users ─────────────────────────────
+  // PT = paid by hour (hourly_rate), FT = paid monthly (monthly_salary).
+  // pay_cycle = 'weekly' (จันทร์) | 'monthly' (สิ้นเดือน). Default null = ยังไม่ตั้ง.
+  const ucols3 = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  const unames3 = new Set(ucols3.map((c) => c.name));
+  if (!unames3.has("employee_code")) db.exec("ALTER TABLE users ADD COLUMN employee_code TEXT");
+  if (!unames3.has("national_id"))   db.exec("ALTER TABLE users ADD COLUMN national_id TEXT");
+  if (!unames3.has("bank_name"))     db.exec("ALTER TABLE users ADD COLUMN bank_name TEXT");
+  if (!unames3.has("bank_account"))  db.exec("ALTER TABLE users ADD COLUMN bank_account TEXT");
+  if (!unames3.has("tax_id"))        db.exec("ALTER TABLE users ADD COLUMN tax_id TEXT");
+  if (!unames3.has("sso_id"))        db.exec("ALTER TABLE users ADD COLUMN sso_id TEXT");
+  if (!unames3.has("hourly_rate"))    db.exec("ALTER TABLE users ADD COLUMN hourly_rate REAL");
+  if (!unames3.has("monthly_salary")) db.exec("ALTER TABLE users ADD COLUMN monthly_salary REAL");
+  if (!unames3.has("pay_cycle"))      db.exec("ALTER TABLE users ADD COLUMN pay_cycle TEXT");
+
+  // payroll_settings — singleton (id always = 1)
+  // OT modes:
+  //  'flat'  = ใช้เรทพิเศษของร้าน (default 25 บาท / 15 นาที = 100/ชม.)
+  //  'legal' = ใช้กฎหมายแรงงานไทย (1.5x ของค่าจ้างต่อชั่วโมงในวันทำงานปกติ)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payroll_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      ot_mode TEXT NOT NULL DEFAULT 'flat' CHECK (ot_mode IN ('flat','legal')),
+      ot_flat_per_15min REAL NOT NULL DEFAULT 25,
+      break_threshold_minutes INTEGER NOT NULL DEFAULT 300,
+      break_deduction_minutes INTEGER NOT NULL DEFAULT 30,
+      long_shift_threshold_minutes INTEGER NOT NULL DEFAULT 480,
+      long_shift_break_minutes INTEGER NOT NULL DEFAULT 60,
+      sso_rate REAL NOT NULL DEFAULT 0.05,
+      sso_cap REAL NOT NULL DEFAULT 750,
+      pt_default_hourly_rate REAL NOT NULL DEFAULT 50,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_by INTEGER REFERENCES users(id)
+    );
+    INSERT OR IGNORE INTO payroll_settings (id) VALUES (1);
+  `);
 }
 
 export type Branch = {

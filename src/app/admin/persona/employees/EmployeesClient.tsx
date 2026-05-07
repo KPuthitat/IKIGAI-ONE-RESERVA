@@ -14,6 +14,15 @@ export type EmployeeRow = {
   employment_type: "pt" | "ft" | null;
   hire_date: string | null;
   weekly_off_day: number | null;
+  employee_code: string | null;
+  national_id: string | null;
+  bank_name: string | null;
+  bank_account: string | null;
+  tax_id: string | null;
+  sso_id: string | null;
+  hourly_rate: number | null;
+  monthly_salary: number | null;
+  pay_cycle: "weekly" | "monthly" | null;
   has_pin: number;
   resign_unlocked: number;
 };
@@ -41,6 +50,28 @@ export default function EmployeesClient({ employees }: { employees: EmployeeRow[
     if (d == null) return "—";
     return dayNames[d];
   }
+  function formatPayRate(u: EmployeeRow) {
+    if (u.role === "admin") return <span className="text-slate-300">—</span>;
+    if (u.employment_type === "pt") {
+      const r = u.hourly_rate;
+      if (r == null) return <span className="text-amber-600 text-xs">{t("admin.persona.employees.payRateUnset")}</span>;
+      return <span><span className="font-medium">{r.toFixed(0)}</span> <span className="text-xs text-slate-500">{t("admin.persona.employees.bahtPerHour")}</span></span>;
+    }
+    if (u.employment_type === "ft") {
+      const s = u.monthly_salary;
+      if (s == null) return <span className="text-amber-600 text-xs">{t("admin.persona.employees.payRateUnset")}</span>;
+      const cycleLabel = u.pay_cycle === "weekly"
+        ? t("admin.persona.employees.cycleWeekly")
+        : t("admin.persona.employees.cycleMonthly");
+      return (
+        <span>
+          <span className="font-medium">{s.toLocaleString()}</span>
+          <span className="text-xs text-slate-500"> /{cycleLabel}</span>
+        </span>
+      );
+    }
+    return <span className="text-slate-300">—</span>;
+  }
 
   return (
     <>
@@ -54,6 +85,7 @@ export default function EmployeesClient({ employees }: { employees: EmployeeRow[
               <th className="py-2 pr-3">{t("admin.persona.employees.col.employment")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.weeklyOff")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.hireDate")}</th>
+              <th className="py-2 pr-3">{t("admin.persona.employees.col.payRate")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.pin")}</th>
               <th className="py-2 pr-3 w-20"></th>
             </tr>
@@ -85,6 +117,7 @@ export default function EmployeesClient({ employees }: { employees: EmployeeRow[
                   <td className="py-2 pr-3 text-slate-700">
                     {u.hire_date ? formatDate(u.hire_date) : "—"}
                   </td>
+                  <td className="py-2 pr-3 text-slate-700">{formatPayRate(u)}</td>
                   <td className="py-2 pr-3">
                     {u.has_pin
                       ? <span className="text-emerald-600">✓</span>
@@ -136,6 +169,20 @@ function EditModal({
   const [weeklyOffDay, setWeeklyOffDay] = useState<string>(
     employee.weekly_off_day == null ? "" : String(employee.weekly_off_day)
   );
+  // Phase 1D — Payroll fields
+  const [employeeCode, setEmployeeCode] = useState<string>(employee.employee_code ?? "");
+  const [nationalId, setNationalId] = useState<string>(employee.national_id ?? "");
+  const [taxId, setTaxId] = useState<string>(employee.tax_id ?? "");
+  const [ssoId, setSsoId] = useState<string>(employee.sso_id ?? "");
+  const [bankName, setBankName] = useState<string>(employee.bank_name ?? "");
+  const [bankAccount, setBankAccount] = useState<string>(employee.bank_account ?? "");
+  const [hourlyRate, setHourlyRate] = useState<string>(
+    employee.hourly_rate == null ? "" : String(employee.hourly_rate)
+  );
+  const [monthlySalary, setMonthlySalary] = useState<string>(
+    employee.monthly_salary == null ? "" : String(employee.monthly_salary)
+  );
+  const [payCycle, setPayCycle] = useState<"weekly" | "monthly" | "">(employee.pay_cycle ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -147,7 +194,16 @@ function EditModal({
         gender: gender || null,
         employment_type: employmentType || null,
         hire_date: hireDate || null,
-        weekly_off_day: weeklyOffDay === "" ? null : Number(weeklyOffDay)
+        weekly_off_day: weeklyOffDay === "" ? null : Number(weeklyOffDay),
+        employee_code: employeeCode.trim() || null,
+        national_id: nationalId.trim() || null,
+        tax_id: taxId.trim() || null,
+        sso_id: ssoId.trim() || null,
+        bank_name: bankName.trim() || null,
+        bank_account: bankAccount.trim() || null,
+        hourly_rate: hourlyRate.trim() === "" ? null : Number(hourlyRate),
+        monthly_salary: monthlySalary.trim() === "" ? null : Number(monthlySalary),
+        pay_cycle: payCycle || null
       };
       const res = await fetch(apiUrl(`/api/admin/persona/employees/${employee.id}`), {
         method: "PATCH",
@@ -170,7 +226,7 @@ function EditModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-4"
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div>
@@ -225,6 +281,113 @@ function EditModal({
             {t("admin.persona.employees.hireDateHint")}
           </p>
         </div>
+
+        {/* ── Payroll section (Phase 1D) ───────────────────────────── */}
+        {employee.role === "staff" && (
+          <>
+            <div className="border-t border-slate-200 pt-4">
+              <h4 className="text-sm font-semibold text-slate-700 mb-2">
+                {t("admin.persona.employees.section.identity")}
+              </h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">{t("admin.persona.employees.field.employeeCode")}</label>
+                  <input className="input" type="text" value={employeeCode}
+                    onChange={(e) => setEmployeeCode(e.target.value)}
+                    placeholder="e.g. NM001" />
+                </div>
+                <div>
+                  <label className="label">{t("admin.persona.employees.field.nationalId")}</label>
+                  <input className="input" type="text" value={nationalId}
+                    onChange={(e) => setNationalId(e.target.value)}
+                    inputMode="numeric" maxLength={13} placeholder="13 digits" />
+                </div>
+                <div>
+                  <label className="label">{t("admin.persona.employees.field.taxId")}</label>
+                  <input className="input" type="text" value={taxId}
+                    onChange={(e) => setTaxId(e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">{t("admin.persona.employees.field.ssoId")}</label>
+                  <input className="input" type="text" value={ssoId}
+                    onChange={(e) => setSsoId(e.target.value)} />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 pt-4">
+              <h4 className="text-sm font-semibold text-slate-700 mb-2">
+                {t("admin.persona.employees.section.bank")}
+              </h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">{t("admin.persona.employees.field.bankName")}</label>
+                  <input className="input" type="text" value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    placeholder="KTB / SCB / BBL ..." />
+                </div>
+                <div>
+                  <label className="label">{t("admin.persona.employees.field.bankAccount")}</label>
+                  <input className="input" type="text" value={bankAccount}
+                    onChange={(e) => setBankAccount(e.target.value)} />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 pt-4">
+              <h4 className="text-sm font-semibold text-slate-700 mb-2">
+                {t("admin.persona.employees.section.payRate")}
+              </h4>
+              {employmentType === "pt" && (
+                <div>
+                  <label className="label">{t("admin.persona.employees.field.hourlyRate")}</label>
+                  <div className="flex items-center gap-2">
+                    <input className="input" type="number" step="1" min="0"
+                      value={hourlyRate}
+                      onChange={(e) => setHourlyRate(e.target.value)}
+                      placeholder="50" />
+                    <span className="text-sm text-slate-500 whitespace-nowrap">
+                      {t("admin.persona.employees.bahtPerHour")}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {t("admin.persona.employees.hourlyRateHint")}
+                  </p>
+                </div>
+              )}
+              {employmentType === "ft" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">{t("admin.persona.employees.field.monthlySalary")}</label>
+                    <div className="flex items-center gap-2">
+                      <input className="input" type="number" step="1" min="0"
+                        value={monthlySalary}
+                        onChange={(e) => setMonthlySalary(e.target.value)} />
+                      <span className="text-sm text-slate-500">บาท</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="label">{t("admin.persona.employees.field.payCycle")}</label>
+                    <select className="input" value={payCycle}
+                      onChange={(e) => setPayCycle(e.target.value as "weekly" | "monthly" | "")}>
+                      <option value="">— {t("admin.persona.employees.unset")} —</option>
+                      <option value="weekly">{t("admin.persona.employees.cycleWeekly")}</option>
+                      <option value="monthly">{t("admin.persona.employees.cycleMonthly")}</option>
+                    </select>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {t("admin.persona.employees.payCycleHint")}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {employmentType === "" && (
+                <p className="text-xs text-amber-700">
+                  {t("admin.persona.employees.payRateNeedsType")}
+                </p>
+              )}
+            </div>
+          </>
+        )}
 
         {err && <div className="text-rose-600 text-sm">{err}</div>}
 

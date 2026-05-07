@@ -3,13 +3,24 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
-// PATCH /api/admin/persona/employees/[id] — admin update profile fields
+// PATCH /api/admin/persona/employees/[id] — admin update profile + payroll fields
 // Note: ไม่อนุญาตเปลี่ยน role/username/password_hash/display_name (sync จาก Payroll)
 const Body = z.object({
+  // Profile
   gender: z.enum(["male", "female"]).nullable().optional(),
   employment_type: z.enum(["pt", "ft"]).nullable().optional(),
   hire_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  weekly_off_day: z.number().int().min(0).max(6).nullable().optional()
+  weekly_off_day: z.number().int().min(0).max(6).nullable().optional(),
+  // Phase 1D — Payroll fields
+  employee_code: z.string().max(40).nullable().optional(),
+  national_id: z.string().max(20).nullable().optional(),
+  bank_name: z.string().max(40).nullable().optional(),
+  bank_account: z.string().max(40).nullable().optional(),
+  tax_id: z.string().max(20).nullable().optional(),
+  sso_id: z.string().max(20).nullable().optional(),
+  hourly_rate: z.number().min(0).nullable().optional(),
+  monthly_salary: z.number().min(0).nullable().optional(),
+  pay_cycle: z.enum(["weekly", "monthly"]).nullable().optional()
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -34,22 +45,33 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // Build dynamic UPDATE — only provided fields
   const fields: string[] = [];
   const vals: Array<string | number | null> = [];
-  if ("gender" in parsed.data) {
-    fields.push("gender = ?");
-    vals.push(parsed.data.gender ?? null);
+  const data = parsed.data;
+
+  // Helper to add a field if it was provided in the body
+  function addField<K extends keyof typeof data>(key: K): void {
+    if (key in data) {
+      fields.push(`${String(key)} = ?`);
+      const v = data[key];
+      vals.push(v === undefined ? null : (v as string | number | null));
+    }
   }
-  if ("employment_type" in parsed.data) {
-    fields.push("employment_type = ?");
-    vals.push(parsed.data.employment_type ?? null);
-  }
-  if ("hire_date" in parsed.data) {
-    fields.push("hire_date = ?");
-    vals.push(parsed.data.hire_date ?? null);
-  }
-  if ("weekly_off_day" in parsed.data) {
-    fields.push("weekly_off_day = ?");
-    vals.push(parsed.data.weekly_off_day ?? null);
-  }
+
+  // Profile
+  addField("gender");
+  addField("employment_type");
+  addField("hire_date");
+  addField("weekly_off_day");
+  // Payroll
+  addField("employee_code");
+  addField("national_id");
+  addField("bank_name");
+  addField("bank_account");
+  addField("tax_id");
+  addField("sso_id");
+  addField("hourly_rate");
+  addField("monthly_salary");
+  addField("pay_cycle");
+
   if (fields.length === 0) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });
   }

@@ -14,6 +14,8 @@ export default function AdminEmployeesPage() {
   const employees = db.prepare(`
     SELECT id, username, display_name, role,
            gender, employment_type, hire_date, weekly_off_day,
+           employee_code, national_id, bank_name, bank_account,
+           tax_id, sso_id, hourly_rate, monthly_salary, pay_cycle,
            CASE WHEN pin_hash IS NULL THEN 0 ELSE 1 END AS has_pin,
            CASE WHEN resignation_unlocked_at IS NULL THEN 0 ELSE 1 END AS resign_unlocked
     FROM users
