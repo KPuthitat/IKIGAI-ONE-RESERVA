@@ -17,6 +17,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     // Common
     "common.loading": "กำลังโหลด...",
     "common.error": "เกิดข้อผิดพลาด",
+    "footer.version": "เวอร์ชัน {v}",
+    "footer.poweredBy": "Powered by",
+    "footer.allRightsReserved": "สงวนลิขสิทธิ์",
     "common.confirm": "ยืนยัน",
     "common.cancel": "ยกเลิก",
     "common.back": "ย้อนกลับ",
@@ -713,6 +716,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     // Common
     "common.loading": "Loading...",
     "common.error": "An error occurred",
+    "footer.version": "Version {v}",
+    "footer.poweredBy": "Powered by",
+    "footer.allRightsReserved": "All Rights Reserved",
     "common.confirm": "Confirm",
     "common.cancel": "Cancel",
     "common.back": "Back",
