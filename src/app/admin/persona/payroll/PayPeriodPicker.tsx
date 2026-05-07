@@ -149,17 +149,85 @@ export default function PayPeriodPicker({
         <div className="text-rose-600 text-sm">✗ {errMsg}</div>
       )}
 
-      {/* ── Part-time group ─────────────────────────────────── */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <h3 className="text-sm font-semibold text-slate-800">
-            <span className="inline-block w-2 h-2 rounded-full bg-violet-500 mr-2 align-middle"></span>
-            {t(lang, "admin.persona.employees.employment.pt")}
-          </h3>
-          <span className="text-xs text-slate-500">
-            {t(lang, "admin.persona.payroll.hub.ptGroupDesc", { month: monthLabel })}
-          </span>
+      {/* Three flat sections — เงินเดือน → เลือกเดือน → เลือกรอบจ่าย */}
+
+      {/* 1. ประจำรายเดือน — Full-time monthly (top priority) */}
+      <Section
+        lang={lang}
+        title={t(lang, "admin.persona.payroll.hub.cat.ftMonthly")}
+        desc={t(lang, "admin.persona.payroll.hub.cat.ftMonthlyDesc", { month: monthLabel })}
+        dotColor="bg-emerald-600"
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {(() => {
+            const sp: SuggestedPeriod = { ...monthlyDates, cycle: "monthly", target: "ft" };
+            const key = `monthly|ft|${monthlyDates.start}|${monthlyDates.end}`;
+            const ex = existingByKey.get(key);
+            return (
+              <PeriodCard
+                key={key}
+                lang={lang}
+                start={monthlyDates.start}
+                end={monthlyDates.end}
+                pay={monthlyDates.pay}
+                cycleLabel={t(lang, "admin.persona.payroll.hub.cat.ftMonthly")}
+                existing={ex}
+                busyKey={busyKey}
+                cardKey={key}
+                onCreate={(ds) => createPeriod(sp, ds)}
+                onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
+                accentClass="hover:border-emerald-500/60"
+              />
+            );
+          })()}
         </div>
+      </Section>
+
+      {/* 2. ประจำรายสัปดาห์ — Full-time weekly */}
+      <Section
+        lang={lang}
+        title={t(lang, "admin.persona.payroll.hub.cat.ftWeekly")}
+        desc={t(lang, "admin.persona.payroll.hub.cat.ftWeeklyDesc", { month: monthLabel })}
+        dotColor="bg-emerald-400"
+      >
+        {weeklyDates.length === 0 ? (
+          <p className="text-xs text-slate-500 italic px-3">
+            {t(lang, "admin.persona.payroll.hub.noMondays")}
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {weeklyDates.map((p) => {
+              const sp: SuggestedPeriod = { ...p, cycle: "weekly", target: "ft" };
+              const key = `weekly|ft|${p.start}|${p.end}`;
+              const ex = existingByKey.get(key);
+              return (
+                <PeriodCard
+                  key={key}
+                  lang={lang}
+                  start={p.start}
+                  end={p.end}
+                  pay={p.pay}
+                  cycleLabel={t(lang, "admin.persona.payroll.hub.cat.ftWeekly")}
+                  existing={ex}
+                  busyKey={busyKey}
+                  cardKey={key}
+                  onCreate={(ds) => createPeriod(sp, ds)}
+                  onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
+                  accentClass="hover:border-emerald-400/60"
+                />
+              );
+            })}
+          </div>
+        )}
+      </Section>
+
+      {/* 3. พาร์ทไทม์ — Part-time (weekly only) */}
+      <Section
+        lang={lang}
+        title={t(lang, "admin.persona.payroll.hub.cat.pt")}
+        desc={t(lang, "admin.persona.payroll.hub.cat.ptDesc", { month: monthLabel })}
+        dotColor="bg-violet-500"
+      >
         {weeklyDates.length === 0 ? (
           <p className="text-xs text-slate-500 italic px-3">
             {t(lang, "admin.persona.payroll.hub.noMondays")}
@@ -177,7 +245,7 @@ export default function PayPeriodPicker({
                   start={p.start}
                   end={p.end}
                   pay={p.pay}
-                  cycleLabel={t(lang, "admin.persona.payroll.hub.weeklyShort")}
+                  cycleLabel={t(lang, "admin.persona.payroll.hub.cat.pt")}
                   existing={ex}
                   busyKey={busyKey}
                   cardKey={key}
@@ -189,84 +257,32 @@ export default function PayPeriodPicker({
             })}
           </div>
         )}
-      </div>
+      </Section>
+    </div>
+  );
+}
 
-      {/* ── Full-time group ─────────────────────────────────── */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <h3 className="text-sm font-semibold text-slate-800">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-2 align-middle"></span>
-            {t(lang, "admin.persona.employees.employment.ft")}
-          </h3>
-          <span className="text-xs text-slate-500">
-            {t(lang, "admin.persona.payroll.hub.ftGroupDesc", { month: monthLabel })}
-          </span>
-        </div>
-        {/* FT-weekly subgroup */}
-        <div className="mb-3">
-          <div className="text-xs font-medium text-slate-500 mb-1.5 px-1">
-            ▸ {t(lang, "admin.persona.payroll.hub.weeklySub")}
-          </div>
-          {weeklyDates.length === 0 ? (
-            <p className="text-xs text-slate-500 italic px-3">
-              {t(lang, "admin.persona.payroll.hub.noMondays")}
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {weeklyDates.map((p) => {
-                const sp: SuggestedPeriod = { ...p, cycle: "weekly", target: "ft" };
-                const key = `weekly|ft|${p.start}|${p.end}`;
-                const ex = existingByKey.get(key);
-                return (
-                  <PeriodCard
-                    key={key}
-                    lang={lang}
-                    start={p.start}
-                    end={p.end}
-                    pay={p.pay}
-                    cycleLabel={t(lang, "admin.persona.payroll.hub.weeklyShort")}
-                    existing={ex}
-                    busyKey={busyKey}
-                    cardKey={key}
-                    onCreate={(ds) => createPeriod(sp, ds)}
-                    onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
-                    accentClass="hover:border-emerald-400/60"
-                  />
-                );
-              })}
-            </div>
-          )}
-        </div>
-        {/* FT-monthly subgroup */}
-        <div>
-          <div className="text-xs font-medium text-slate-500 mb-1.5 px-1">
-            ▸ {t(lang, "admin.persona.payroll.hub.monthlySub")}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {(() => {
-              const sp: SuggestedPeriod = { ...monthlyDates, cycle: "monthly", target: "ft" };
-              const key = `monthly|ft|${monthlyDates.start}|${monthlyDates.end}`;
-              const ex = existingByKey.get(key);
-              return (
-                <PeriodCard
-                  key={key}
-                  lang={lang}
-                  start={monthlyDates.start}
-                  end={monthlyDates.end}
-                  pay={monthlyDates.pay}
-                  cycleLabel={t(lang, "admin.persona.payroll.hub.monthlyShort")}
-                  existing={ex}
-                  busyKey={busyKey}
-                  cardKey={key}
-                  onCreate={(ds) => createPeriod(sp, ds)}
-                  onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
-                  accentClass="hover:border-emerald-400/60"
-                />
-              );
-            })()}
-          </div>
-        </div>
+// ── Section wrapper for category headings ───────────────────────────
+
+function Section({
+  lang: _lang, title, desc, dotColor, children
+}: {
+  lang: Lang;
+  title: string;
+  desc: string;
+  dotColor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline gap-2 mb-2 flex-wrap">
+        <h3 className="text-sm font-semibold text-slate-800 whitespace-nowrap">
+          <span className={`inline-block w-2 h-2 rounded-full ${dotColor} mr-2 align-middle`}></span>
+          {title}
+        </h3>
+        <span className="text-xs text-slate-500">{desc}</span>
       </div>
+      {children}
     </div>
   );
 }

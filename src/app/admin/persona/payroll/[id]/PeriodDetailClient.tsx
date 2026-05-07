@@ -84,7 +84,7 @@ function fmtMoney(v: number): string {
 export type AddableStaff = {
   id: number;
   display_name: string;
-  employment_type: "pt" | "ft";
+  employment_type: "pt" | "ft" | null;
 };
 
 export type UnlockEntry = {
@@ -95,7 +95,7 @@ export type UnlockEntry = {
 };
 
 export default function PeriodDetailClient({
-  lang, period, lines, addableStaff, unlockHistory, superadminPinSet
+  lang, period, lines, addableStaff, unlockHistory, superadminPinSet, staleSnapshotCount
 }: {
   lang: Lang;
   period: PeriodDetail;
@@ -103,6 +103,7 @@ export default function PeriodDetailClient({
   addableStaff: AddableStaff[];
   unlockHistory: UnlockEntry[];
   superadminPinSet: boolean;
+  staleSnapshotCount: number;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -260,24 +261,17 @@ export default function PeriodDetailClient({
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2 flex-wrap">
-            <span>{period.cycle === "weekly"
-              ? t(lang, "admin.persona.payroll.hub.weeklyTitle")
-              : t(lang, "admin.persona.payroll.hub.monthlyTitle")}</span>
-            {period.target === "pt" && (
-              <span className="text-sm font-medium px-2 py-0.5 rounded bg-violet-100 text-violet-700">
-                {t(lang, "admin.persona.employees.employment.pt")}
-              </span>
-            )}
-            {period.target === "ft" && (
-              <span className="text-sm font-medium px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">
-                {t(lang, "admin.persona.employees.employment.ft")}
-              </span>
-            )}
+          <h1 className="text-2xl font-bold text-slate-800 whitespace-nowrap">
+            {period.cycle === "monthly"
+              ? t(lang, "admin.persona.payroll.hub.cat.ftMonthly")
+              : period.target === "pt"
+              ? t(lang, "admin.persona.payroll.hub.cat.pt")
+              : t(lang, "admin.persona.payroll.hub.cat.ftWeekly")}
           </h1>
-          <p className="text-sm text-slate-600 mt-1">
+          <p className="text-sm text-slate-600 mt-1 whitespace-nowrap">
             {formatBkkDate(period.period_start, lang)} – {formatBkkDate(period.period_end, lang)}
-            <span className="text-slate-400 mx-2">|</span>
+          </p>
+          <p className="text-sm text-slate-600 mt-0.5 whitespace-nowrap">
             {t(lang, "admin.persona.payroll.col.payDate")}: <span className="font-medium">{formatBkkDate(period.pay_date, lang)}</span>
           </p>
           {period.computed_at && (
@@ -413,15 +407,37 @@ export default function PeriodDetailClient({
           value={fmtMoney(totals.net)} accent="emerald" />
       </div>
 
+      {/* Stale-snapshot banner — admin changed employee data after compute */}
+      {isDraft && staleSnapshotCount > 0 && (
+        <div className="card border-l-4 border-amber-400 bg-amber-50/60 flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-semibold text-amber-900">
+              {t(lang, "admin.persona.payroll.detail.staleBannerTitle")}
+            </h3>
+            <p className="text-sm text-amber-800 mt-1">
+              {t(lang, "admin.persona.payroll.detail.staleBannerBody", { n: String(staleSnapshotCount) })}
+            </p>
+          </div>
+          <button type="button"
+            onClick={() => performAction("recompute")}
+            disabled={busy !== null}
+            className="btn-secondary text-sm whitespace-nowrap">
+            {busy === "recompute" ? "..." : "↻ " + t(lang, "admin.persona.payroll.action.recompute")}
+          </button>
+        </div>
+      )}
+
       {/* Lines table */}
       <div className="card overflow-x-auto">
-        {/* Add-employee button — only when draft + there are eligible staff not yet in period */}
-        {isDraft && addableStaff.length > 0 && (
+        {/* Add-employee button — always visible when draft (modal handles
+            the empty state gracefully if everyone is already added). */}
+        {isDraft && (
           <div className="mb-3 flex justify-end">
             <button
               type="button"
               onClick={() => setAddStaffOpen(true)}
-              className="text-sm px-3 py-1.5 rounded-md bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+              disabled={busy !== null}
+              className="text-sm px-3 py-1.5 rounded-md bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 whitespace-nowrap disabled:opacity-50"
             >
               + {t(lang, "admin.persona.payroll.action.addEmployee")}
             </button>
@@ -743,13 +759,17 @@ function AddStaffModal({
               onChange={(e) => setPickedId(e.target.value === "" ? "" : Number(e.target.value))}
             >
               <option value="">— {t(lang, "common.choose")} —</option>
-              {addableStaff.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.display_name} · {s.employment_type === "ft"
-                    ? t(lang, "admin.persona.employees.employment.ft")
-                    : t(lang, "admin.persona.employees.employment.pt")}
-                </option>
-              ))}
+              {addableStaff.map((s) => {
+                const empLabel =
+                  s.employment_type === "ft" ? t(lang, "admin.persona.employees.employment.ft") :
+                  s.employment_type === "pt" ? t(lang, "admin.persona.employees.employment.pt") :
+                  t(lang, "admin.persona.employees.unset");
+                return (
+                  <option key={s.id} value={s.id}>
+                    {s.display_name} · {empLabel}
+                  </option>
+                );
+              })}
             </select>
           </div>
         )}

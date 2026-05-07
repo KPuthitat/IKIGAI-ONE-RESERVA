@@ -49,15 +49,17 @@ export default function PeriodDetailPage({
              display_name
   `).all(id) as PayrollLineRow[];
 
-  // Staff list for "Add employee" picker — exclude those already in the period
+  // Staff list for "Add employee" picker — exclude those already in the period.
+  // Includes all staff users (even those without employment_type set) so admin
+  // can add anyone (e.g. contractors) — the line starts at zero anyway.
   const addableStaff = db.prepare(`
     SELECT id, display_name, employment_type
     FROM users
-    WHERE role = 'staff' AND employment_type IS NOT NULL
+    WHERE role = 'staff'
       AND id NOT IN (SELECT user_id FROM payroll_lines WHERE period_id = ?)
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
-  `).all(id) as Array<{ id: number; display_name: string; employment_type: "pt" | "ft" }>;
+  `).all(id) as Array<{ id: number; display_name: string; employment_type: "pt" | "ft" | null }>;
 
   // Unlock-history: who unlocked this period (paid → finalized) and why
   const unlockHistory = db.prepare(`
@@ -75,6 +77,23 @@ export default function PeriodDetailPage({
     SELECT superadmin_pin_hash FROM payroll_settings WHERE id = 1
   `).get() as { superadmin_pin_hash: string | null } | undefined)?.superadmin_pin_hash;
 
+  // Stale-snapshot check — count lines whose snapshot disagrees with the
+  // user's CURRENT salary_tax_mode / rates (ignoring overridden lines, since
+  // admin manually picked those values).
+  const staleCount = (db.prepare(`
+    SELECT COUNT(*) AS n
+    FROM payroll_lines pl
+    JOIN users u ON pl.user_id = u.id
+    WHERE pl.period_id = ?
+      AND pl.overridden = 0
+      AND (
+        COALESCE(pl.salary_tax_mode_snapshot, '') != COALESCE(u.salary_tax_mode, '')
+        OR COALESCE(pl.hourly_rate_snapshot, -1) != COALESCE(u.hourly_rate, -1)
+        OR COALESCE(pl.monthly_salary_snapshot, -1) != COALESCE(u.monthly_salary, -1)
+        OR COALESCE(pl.pay_cycle_snapshot, '') != COALESCE(u.pay_cycle, '')
+      )
+  `).get(id) as { n: number }).n;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -89,6 +108,7 @@ export default function PeriodDetailPage({
         addableStaff={addableStaff}
         unlockHistory={unlockHistory}
         superadminPinSet={pinSet}
+        staleSnapshotCount={staleCount}
       />
     </div>
   );

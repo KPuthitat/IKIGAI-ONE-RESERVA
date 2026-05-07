@@ -183,24 +183,22 @@ export default function PayrollHubPage() {
               <tbody>
                 {recent.map((p) => {
                   const badge = statusBadge(p.status, lang);
-                  const targetLabel =
-                    p.target === "pt" ? t(lang, "admin.persona.employees.employment.pt") :
-                    p.target === "ft" ? t(lang, "admin.persona.employees.employment.ft") :
+                  // Combined category label (single short string)
+                  const catLabel =
+                    p.cycle === "monthly" ? t(lang, "admin.persona.payroll.hub.cat.ftMonthly") :
+                    p.target === "pt" ? t(lang, "admin.persona.payroll.hub.cat.pt") :
+                    p.target === "ft" ? t(lang, "admin.persona.payroll.hub.cat.ftWeekly") :
                     t(lang, "admin.persona.payroll.hub.targetAll");
-                  const targetCls =
+                  const catCls =
+                    p.cycle === "monthly" ? "bg-emerald-100 text-emerald-700" :
                     p.target === "pt" ? "bg-violet-100 text-violet-700" :
-                    p.target === "ft" ? "bg-emerald-100 text-emerald-700" :
+                    p.target === "ft" ? "bg-emerald-50 text-emerald-700" :
                     "bg-slate-100 text-slate-700";
                   return (
                     <tr key={p.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                       <td className="py-2 pr-3 whitespace-nowrap">
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${targetCls}`}>
-                          {targetLabel}
-                        </span>
-                        <span className="ml-1 text-xs text-slate-500">
-                          · {p.cycle === "weekly"
-                              ? t(lang, "admin.persona.payroll.hub.weeklyShort")
-                              : t(lang, "admin.persona.payroll.hub.monthlyShort")}
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${catCls}`}>
+                          {catLabel}
                         </span>
                       </td>
                       <td className="py-2 pr-3 text-slate-700">

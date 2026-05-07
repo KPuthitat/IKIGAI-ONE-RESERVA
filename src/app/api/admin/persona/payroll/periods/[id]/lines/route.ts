@@ -43,7 +43,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "must_be_draft" }, { status: 400 });
   }
 
-  // Make sure target user exists and is staff
+  // Target must be a staff user (employment_type can be null — e.g. contractor)
   const target = db.prepare(`
     SELECT id, display_name, employment_type, employee_code,
            hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
