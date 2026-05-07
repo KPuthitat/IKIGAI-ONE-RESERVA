@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { Lang } from "@/lib/i18n";
@@ -236,6 +237,15 @@ export default function PeriodDetailClient({
               </button>
             </>
           )}
+          {(isFinalized || isPaid) && (
+            <a
+              href={apiUrl(`/api/admin/persona/payroll/periods/${period.id}/bank-csv`)}
+              className="text-sm px-3 py-1.5 rounded-md bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+              download
+            >
+              {t(lang, "admin.persona.payroll.action.downloadBankCsv")}
+            </a>
+          )}
           {isPaid && (
             <span className="text-sm text-sky-700 font-medium px-3 py-1.5 rounded-md bg-sky-50 border border-sky-200">
               ✓ {t(lang, "admin.persona.payroll.action.alreadyPaid")}
@@ -324,7 +334,7 @@ export default function PeriodDetailClient({
                 <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.sso")}</th>
                 <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.tax")}</th>
                 <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.net")}</th>
-                {isDraft && <th className="py-2 pr-3"></th>}
+                <th className="py-2 pr-3"></th>
               </tr>
             </thead>
             <tbody>
@@ -381,14 +391,23 @@ export default function PeriodDetailClient({
                   <td className="py-2 pr-3 text-right text-slate-500">{fmtMoney(l.sso_amount)}</td>
                   <td className="py-2 pr-3 text-right text-slate-500">{fmtMoney(l.tax_amount)}</td>
                   <td className="py-2 pr-3 text-right font-bold text-emerald-700">{fmtMoney(l.net_pay)}</td>
-                  {isDraft && (
-                    <td className="py-2 pr-3 text-right">
-                      <button type="button" onClick={() => setEditLine(l)}
-                        className="text-xs text-brand hover:underline">
-                        {t(lang, "common.edit")}
-                      </button>
-                    </td>
-                  )}
+                  <td className="py-2 pr-3 text-right whitespace-nowrap">
+                    <Link
+                      href={`/admin/persona/payroll/${period.id}/payslip/${l.user_id}`}
+                      className="text-xs text-slate-600 hover:underline"
+                    >
+                      {t(lang, "admin.persona.payroll.detail.viewPayslip")}
+                    </Link>
+                    {isDraft && (
+                      <>
+                        <span className="text-slate-300 mx-1">·</span>
+                        <button type="button" onClick={() => setEditLine(l)}
+                          className="text-xs text-brand hover:underline">
+                          {t(lang, "common.edit")}
+                        </button>
+                      </>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -400,7 +419,7 @@ export default function PeriodDetailClient({
                 <td className="py-2 pr-3 text-right text-slate-500">{fmtMoney(totals.sso)}</td>
                 <td className="py-2 pr-3 text-right text-slate-500">{fmtMoney(totals.tax)}</td>
                 <td className="py-2 pr-3 text-right text-emerald-700">{fmtMoney(totals.net)}</td>
-                {isDraft && <td></td>}
+                <td></td>
               </tr>
             </tfoot>
           </table>

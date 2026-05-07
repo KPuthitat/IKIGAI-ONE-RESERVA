@@ -60,3 +60,23 @@ body {
 .status-no_show   { @apply bg-amber-100 text-amber-700; }
 .status-cancelled { @apply bg-slate-200 text-slate-600 line-through; }
 .status-completed { @apply bg-purple-100 text-purple-700; }
+
+/* ── Print rules ──
+   When printing a payslip page, hide the app chrome (sidebar/header/footer)
+   so only the .payslip element remains on the paper. */
+@media print {
+  /* Hide everything except the payslip and its ancestors */
+  body * { visibility: hidden; }
+  .payslip, .payslip * { visibility: visible; }
+  .payslip {
+    position: absolute;
+    inset: 0;
+    margin: 0 auto;
+  }
+  /* Reset page bg + remove shadows */
+  body { background: white !important; }
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+}
