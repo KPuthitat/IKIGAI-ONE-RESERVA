@@ -691,6 +691,11 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.employees.taxMode.whtDesc": "หักภาษี ณ ที่จ่าย 3% ของรายรับรวม ไม่หักประกันสังคม",
     "admin.persona.employees.taxMode.whtShort": "หักภาษี ณ ที่จ่าย 3%",
     "admin.persona.employees.taxMode.whtTag": "นอกระบบ",
+    "admin.persona.employees.section.pin": "PIN 4 หลัก",
+    "admin.persona.employees.pinHint": "ใช้สำหรับลงเวลาเข้า-ออกงาน (พนักงาน) และเปิดทำเงินเดือนล่วงหน้า (ผู้ดูแล)",
+    "admin.persona.employees.pinAlreadySet": "ตั้งไว้แล้ว",
+    "admin.persona.employees.field.newPin": "PIN ใหม่",
+    "admin.persona.employees.clearPin": "ลบ PIN ที่ตั้งไว้",
 
     // Public holidays admin
     "admin.persona.holidays.title": "ปฏิทินวันหยุดราชการ",
@@ -1747,6 +1752,11 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.employees.taxMode.whtDesc": "Withhold 3% on gross — no Social Security",
     "admin.persona.employees.taxMode.whtShort": "WHT 3%",
     "admin.persona.employees.taxMode.whtTag": "outside",
+    "admin.persona.employees.section.pin": "4-digit PIN",
+    "admin.persona.employees.pinHint": "Used for time clock (staff) and payroll force-open (admin)",
+    "admin.persona.employees.pinAlreadySet": "already set",
+    "admin.persona.employees.field.newPin": "New PIN",
+    "admin.persona.employees.clearPin": "Clear PIN",
 
     // Public holidays admin
     "admin.persona.holidays.title": "Public holidays",

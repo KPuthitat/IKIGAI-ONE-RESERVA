@@ -198,6 +198,9 @@ function EditModal({
   );
   const [payCycle, setPayCycle] = useState<"weekly" | "monthly" | "">(employee.pay_cycle ?? "");
   const [taxMode, setTaxMode] = useState<"sso" | "wht">(employee.salary_tax_mode ?? "sso");
+  // PIN — 4 digits. Empty = leave unchanged. "clear" toggles → send "" to API.
+  const [pin, setPin] = useState("");
+  const [clearPin, setClearPin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -221,6 +224,12 @@ function EditModal({
         pay_cycle: payCycle || null,
         salary_tax_mode: taxMode
       };
+      // PIN — only include if admin is setting/clearing it
+      if (clearPin) {
+        body.pin = "";
+      } else if (pin.length === 4) {
+        body.pin = pin;
+      }
       const res = await fetch(apiUrl(`/api/admin/persona/employees/${employee.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -445,6 +454,56 @@ function EditModal({
             </div>
           </>
         )}
+
+        {/* PIN — 4-digit numeric, used by time clock (staff) + payroll force-open (admin).
+            Available for any role so admins can set their own PIN. */}
+        <div className="border-t border-slate-200 pt-4">
+          <h4 className="text-sm font-semibold text-slate-700 mb-2">
+            {t("admin.persona.employees.section.pin")}
+          </h4>
+          <p className="text-xs text-slate-500 mb-2">
+            {t("admin.persona.employees.pinHint")}
+            {employee.has_pin === 1 && (
+              <span className="ml-1 text-emerald-700 font-medium">
+                · {t("admin.persona.employees.pinAlreadySet")}
+              </span>
+            )}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">{t("admin.persona.employees.field.newPin")}</label>
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="new-password"
+                className="input tracking-widest text-center text-lg"
+                value={pin}
+                maxLength={4}
+                onChange={(e) => {
+                  setPin(e.target.value.replace(/\D/g, "").slice(0, 4));
+                  setClearPin(false);
+                }}
+                placeholder="••••"
+                disabled={clearPin}
+              />
+            </div>
+            <div className="flex items-end">
+              {employee.has_pin === 1 && (
+                <label className="flex items-center gap-2 text-sm text-slate-600 pb-2">
+                  <input
+                    type="checkbox"
+                    checked={clearPin}
+                    onChange={(e) => {
+                      setClearPin(e.target.checked);
+                      if (e.target.checked) setPin("");
+                    }}
+                  />
+                  {t("admin.persona.employees.clearPin")}
+                </label>
+              )}
+            </div>
+          </div>
+        </div>
 
         {err && <div className="text-rose-600 text-sm">{err}</div>}
 

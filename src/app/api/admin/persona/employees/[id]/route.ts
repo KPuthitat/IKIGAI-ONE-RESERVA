@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
@@ -21,7 +22,9 @@ const Body = z.object({
   hourly_rate: z.number().min(0).nullable().optional(),
   monthly_salary: z.number().min(0).nullable().optional(),
   pay_cycle: z.enum(["weekly", "monthly"]).nullable().optional(),
-  salary_tax_mode: z.enum(["sso", "wht"]).optional()
+  salary_tax_mode: z.enum(["sso", "wht"]).optional(),
+  // PIN — 4 digits to set, "" to clear, omit to keep
+  pin: z.string().regex(/^\d{4}$/).or(z.literal("")).optional()
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -74,11 +77,22 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("pay_cycle");
   addField("salary_tax_mode");
 
-  if (fields.length === 0) {
+  // PIN handled separately because we need to bcrypt-hash before storing
+  if (data.pin !== undefined) {
+    if (data.pin === "") {
+      db.prepare("UPDATE users SET pin_hash = NULL WHERE id = ?").run(id);
+    } else {
+      const hash = bcrypt.hashSync(data.pin, 10);
+      db.prepare("UPDATE users SET pin_hash = ? WHERE id = ?").run(hash, id);
+    }
+  }
+
+  if (fields.length === 0 && data.pin === undefined) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });
   }
-  vals.push(id);
-
-  db.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`).run(...vals);
+  if (fields.length > 0) {
+    vals.push(id);
+    db.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`).run(...vals);
+  }
   return NextResponse.json({ ok: true });
 }
