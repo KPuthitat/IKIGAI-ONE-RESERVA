@@ -24,6 +24,8 @@ const Body = z.object({
   monthly_salary: z.number().min(0).nullable().optional(),
   pay_cycle: z.enum(["weekly", "monthly"]).nullable().optional(),
   salary_tax_mode: z.enum(["sso", "wht"]).optional(),
+  // LINE userId (33-char string starting with 'U'). Empty / null = unbind.
+  line_user_id: z.string().max(64).nullable().optional(),
   // PIN — 4 digits to set, "" to clear, omit to keep
   pin: z.string().regex(/^\d{4}$/).or(z.literal("")).optional()
 });
@@ -93,6 +95,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("monthly_salary");
   addField("pay_cycle");
   addField("salary_tax_mode");
+  addField("line_user_id");
 
   // PIN handled separately because we need to bcrypt-hash before storing
   if (data.pin !== undefined) {

@@ -694,6 +694,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.employees.section.pin": "PIN 4 หลัก",
     "admin.persona.employees.pinHint": "ใช้สำหรับลงเวลาเข้า-ออกงาน (พนักงาน) และเปิดทำเงินเดือนล่วงหน้า (ผู้ดูแล)",
     "admin.persona.employees.pinAlreadySet": "ตั้งไว้แล้ว",
+    "admin.persona.employees.section.line": "LINE Messaging",
+    "admin.persona.employees.lineHint": "วาง LINE User ID ของพนักงาน (ขึ้นต้นด้วย U) เพื่อให้ระบบส่งการ์ดยืนยันการเข้างานทุกครั้ง — ดูได้จาก LINE OA dashboard หรือจาก webhook log เมื่อพนักงานทักเข้ามาในร้าน",
     "admin.persona.employees.field.newPin": "PIN ใหม่",
     "admin.persona.employees.clearPin": "ลบ PIN ที่ตั้งไว้",
 
@@ -1768,6 +1770,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.employees.section.pin": "4-digit PIN",
     "admin.persona.employees.pinHint": "Used for time clock (staff) and payroll force-open (admin)",
     "admin.persona.employees.pinAlreadySet": "already set",
+    "admin.persona.employees.section.line": "LINE Messaging",
+    "admin.persona.employees.lineHint": "Paste the staff's LINE User ID (starts with 'U') so the system can push a clock-in confirmation card — find it in the LINE OA dashboard or in webhook logs when the staff messages your channel",
     "admin.persona.employees.field.newPin": "New PIN",
     "admin.persona.employees.clearPin": "Clear PIN",
 

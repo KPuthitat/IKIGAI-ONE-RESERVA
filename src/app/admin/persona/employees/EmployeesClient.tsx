@@ -24,6 +24,7 @@ export type EmployeeRow = {
   monthly_salary: number | null;
   pay_cycle: "weekly" | "monthly" | null;
   salary_tax_mode: "sso" | "wht" | null;
+  line_user_id: string | null;
   has_pin: number;
   resign_unlocked: number;
 };
@@ -214,6 +215,7 @@ function EditModal({
   );
   const [payCycle, setPayCycle] = useState<"weekly" | "monthly" | "">(employee.pay_cycle ?? "");
   const [taxMode, setTaxMode] = useState<"sso" | "wht">(employee.salary_tax_mode ?? "sso");
+  const [lineUserId, setLineUserId] = useState<string>(employee.line_user_id ?? "");
   // PIN — 4 digits. Empty = leave unchanged. "clear" toggles → send "" to API.
   const [pin, setPin] = useState("");
   const [clearPin, setClearPin] = useState(false);
@@ -238,7 +240,8 @@ function EditModal({
         hourly_rate: hourlyRate.trim() === "" ? null : Number(hourlyRate),
         monthly_salary: monthlySalary.trim() === "" ? null : Number(monthlySalary),
         pay_cycle: payCycle || null,
-        salary_tax_mode: taxMode
+        salary_tax_mode: taxMode,
+        line_user_id: lineUserId.trim() || null
       };
       // PIN — only include if admin is setting/clearing it
       if (clearPin) {
@@ -493,6 +496,26 @@ function EditModal({
             </div>
           </>
         )}
+
+        {/* LINE binding — staff's userId, used to push the clock-in confirmation card */}
+        <div className="border-t border-slate-200 pt-4">
+          <h4 className="text-sm font-semibold text-slate-700 mb-2">
+            {t("admin.persona.employees.section.line")}
+          </h4>
+          <p className="text-xs text-slate-500 mb-2">
+            {t("admin.persona.employees.lineHint")}
+          </p>
+          <input
+            type="text"
+            className="input font-mono text-xs"
+            value={lineUserId}
+            maxLength={64}
+            onChange={(e) => setLineUserId(e.target.value)}
+            placeholder="U1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
 
         {/* PIN — 4-digit numeric, used by time clock (staff) + payroll force-open (admin).
             Available for any role so admins can set their own PIN. */}

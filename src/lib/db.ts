@@ -210,6 +210,10 @@ function runMigrations(db: Database.Database): void {
       WHERE weekly_off_day IS NOT NULL AND weekly_off_days IS NULL
     `);
   }
+  // Phase C v7: per-staff LINE userId (for sending Flex messages on clock-in etc.)
+  // Bound manually by admin in the employees edit modal — admin gets the userId
+  // from LINE OA dashboard or from the webhook log when staff messages the OA.
+  if (!unames.has("line_user_id")) db.exec("ALTER TABLE users ADD COLUMN line_user_id TEXT");
   // Phase 1C v6: resignation unlock (admin เปิดสิทธิ์ให้ staff ส่งคำขอลาออก)
   if (!unames.has("resignation_unlocked_at")) db.exec("ALTER TABLE users ADD COLUMN resignation_unlocked_at TEXT");
   if (!unames.has("resignation_unlocked_by")) db.exec("ALTER TABLE users ADD COLUMN resignation_unlocked_by INTEGER REFERENCES users(id)");

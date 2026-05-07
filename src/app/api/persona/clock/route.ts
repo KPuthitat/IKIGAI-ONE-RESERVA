@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { getSessionUser } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, type Branch } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
+import { pushClockInCard } from "@/lib/line";
 
 const Body = z.object({
   pin: z.string().regex(/^\d{4}$/),
@@ -129,6 +130,22 @@ export async function POST(req: Request) {
   // ไม่มี existing → INSERT ใหม่ตามปกติ
   db.prepare("INSERT INTO time_entries (user_id, type, ts) VALUES (?, ?, ?)")
     .run(user.id, action, nowIso);
+
+  // ── Fire-and-forget: ส่ง LINE flex card ยืนยันเฉพาะตอนเข้างาน ──
+  // ใช้ active branch ของ session เพื่อหา channel token + เวลาพักกลางวัน.
+  // ผิดพลาดอะไรก็ไม่ block response ของ clock-in.
+  if (action === "in" && user.activeBranchId) {
+    const branch = db.prepare("SELECT * FROM branches WHERE id = ?")
+      .get(user.activeBranchId) as Branch | undefined;
+    if (branch) {
+      void pushClockInCard({
+        userId: user.id,
+        displayName: user.display_name,
+        branch,
+        clockInIsoTs: nowIso
+      }).catch(() => { /* swallow — never block clock-in */ });
+    }
+  }
 
   return NextResponse.json({ ok: true, action });
 }

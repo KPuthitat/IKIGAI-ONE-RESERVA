@@ -4,9 +4,15 @@
 
 import { getDb, type Branch, type Booking } from "./db";
 
+// LINE message kinds we use. Loose typing is intentional — Flex contents are
+// large JSON blobs and the API spec already documents the shape.
+type LineTextMessage = { type: "text"; text: string };
+type LineFlexMessage = { type: "flex"; altText: string; contents: unknown };
+type LineMessage = LineTextMessage | LineFlexMessage;
+
 type LinePushPayload = {
   to: string;
-  messages: Array<{ type: "text"; text: string }>;
+  messages: LineMessage[];
 };
 
 export async function sendLinePush(
@@ -82,6 +88,188 @@ function formatThaiDate(yyyymmdd: string): string {
   const [y, m, d] = yyyymmdd.split("-");
   const months = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
   return `${parseInt(d, 10)} ${months[parseInt(m, 10) - 1]} ${parseInt(y, 10) + 543}`;
+}
+
+// ── PERSONA: clock-in confirmation Flex card ─────────────────────────
+
+export type ClockInCardArgs = {
+  displayName: string;
+  clockInIsoTs: string;        // ISO timestamp of the clock-in event
+  branchName: string;
+  // Branch lunch settings (may be null = ไม่มีพักกลางวันวันนี้)
+  lunchStart: string | null;   // 'HH:MM'
+  lunchEnd: string | null;     // 'HH:MM'
+  hasLunchToday: boolean;      // false → ข้ามแสดงพักกลางวัน
+};
+
+function hhmmFromIso(iso: string): string {
+  // Convert UTC ISO → Bangkok HH:MM
+  const bkk = new Date(new Date(iso).getTime() + 7 * 60 * 60 * 1000);
+  return bkk.toISOString().slice(11, 16);
+}
+
+function addMinutesHHMM(hhmm: string, mins: number): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const total = h * 60 + m + mins;
+  const wrapped = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+  const oh = Math.floor(wrapped / 60);
+  const om = wrapped % 60;
+  return `${String(oh).padStart(2, "0")}:${String(om).padStart(2, "0")}`;
+}
+
+function diffMinutesHHMM(start: string, end: string): number {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  return (eh * 60 + em) - (sh * 60 + sm);
+}
+
+/**
+ * Compute the expected clock-out time:
+ *   = clock-in + 8 hours of work + lunch-break duration (if any).
+ * Same labor-law assumption as the payroll engine: 8 hours real work per day.
+ */
+function computeClockOut(clockInHHMM: string, args: ClockInCardArgs): string {
+  let total = 8 * 60; // 8 hours of work
+  if (args.hasLunchToday && args.lunchStart && args.lunchEnd) {
+    const breakMin = diffMinutesHHMM(args.lunchStart, args.lunchEnd);
+    if (breakMin > 0) total += breakMin;
+  }
+  return addMinutesHHMM(clockInHHMM, total);
+}
+
+/** Build a LINE Flex bubble confirming a successful clock-in. */
+export function personaClockInFlex(args: ClockInCardArgs): LineFlexMessage {
+  const inHHMM = hhmmFromIso(args.clockInIsoTs);
+  const outHHMM = computeClockOut(inHHMM, args);
+  const todayStr = formatThaiDate(
+    new Date(new Date(args.clockInIsoTs).getTime() + 7 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10)
+  );
+
+  // Lunch row — only if branch has lunch break today
+  const lunchRow = (args.hasLunchToday && args.lunchStart && args.lunchEnd) ? {
+    type: "box", layout: "horizontal", spacing: "sm", contents: [
+      { type: "text", text: "พักกลางวัน", size: "sm", color: "#888888", flex: 4 },
+      { type: "text", text: `${args.lunchStart} – ${args.lunchEnd}`, size: "sm", color: "#222222", flex: 5, weight: "bold", align: "end" }
+    ]
+  } : null;
+
+  const bodyRows = [
+    {
+      type: "box", layout: "horizontal", spacing: "sm", contents: [
+        { type: "text", text: "เวลาเข้างาน", size: "sm", color: "#888888", flex: 4 },
+        { type: "text", text: inHHMM, size: "sm", color: "#222222", flex: 5, weight: "bold", align: "end" }
+      ]
+    },
+    ...(lunchRow ? [lunchRow] : []),
+    {
+      type: "box", layout: "horizontal", spacing: "sm", contents: [
+        { type: "text", text: "เวลาเลิกงาน", size: "sm", color: "#888888", flex: 4 },
+        { type: "text", text: outHHMM, size: "sm", color: "#222222", flex: 5, weight: "bold", align: "end" }
+      ]
+    }
+  ];
+
+  const bubble = {
+    type: "bubble",
+    size: "kilo",
+    header: {
+      type: "box", layout: "vertical", spacing: "xs",
+      backgroundColor: "#10b981",
+      paddingAll: "16px",
+      contents: [
+        { type: "text", text: "✓ บันทึกเวลาเข้างานเรียบร้อย", color: "#ffffff", weight: "bold", size: "md" },
+        { type: "text", text: todayStr, color: "#d1fae5", size: "xs" }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md",
+      paddingAll: "16px",
+      contents: [
+        { type: "text", text: args.displayName, weight: "bold", size: "lg", color: "#222222", wrap: true },
+        { type: "text", text: args.branchName, size: "xs", color: "#888888" },
+        { type: "separator", margin: "md" },
+        { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: bodyRows }
+      ]
+    },
+    footer: {
+      type: "box", layout: "vertical", paddingAll: "12px",
+      contents: [
+        { type: "text", text: "ขอให้มีวันทำงานที่ดีนะคะ ✨", size: "xs", color: "#888888", align: "center", wrap: true }
+      ]
+    }
+  };
+
+  return {
+    type: "flex",
+    altText: `เข้างานเรียบร้อย ${inHHMM} · เลิก ${outHHMM}`,
+    contents: bubble
+  };
+}
+
+// ── Lunch-break helper: is lunch break active for a given branch + date? ──
+
+/** Returns true if the branch's lunch break applies to the given Bangkok date. */
+export function branchLunchAppliesOn(branch: Branch, bkkDate: string): boolean {
+  if (!branch.lunch_break_start || !branch.lunch_break_end) return false;
+  // Check exception list
+  if (branch.no_lunch_break_dates) {
+    try {
+      const exceptions = JSON.parse(branch.no_lunch_break_dates) as string[];
+      if (Array.isArray(exceptions) && exceptions.includes(bkkDate)) return false;
+    } catch { /* ignore malformed */ }
+  }
+  // Check weekday list (default = every day if list is missing)
+  if (branch.lunch_break_weekdays) {
+    try {
+      const days = JSON.parse(branch.lunch_break_weekdays) as number[];
+      if (Array.isArray(days) && days.length > 0) {
+        const dow = new Date(`${bkkDate}T00:00:00Z`).getUTCDay();
+        if (!days.includes(dow)) return false;
+      }
+    } catch { /* ignore malformed */ }
+  }
+  return true;
+}
+
+/** Push a clock-in confirmation card to a staff member, fire-and-forget.
+ *  Logs success/failure to notification_log. Silent on missing line_user_id
+ *  or missing channel token (just records 'skipped'). */
+export async function pushClockInCard(args: {
+  userId: number;
+  displayName: string;
+  branch: Branch;
+  clockInIsoTs: string;
+}): Promise<void> {
+  const db = getDb();
+  const u = db.prepare("SELECT line_user_id FROM users WHERE id = ?").get(args.userId) as
+    | { line_user_id: string | null } | undefined;
+
+  if (!args.branch.line_channel_token || !u?.line_user_id) {
+    // No-op: not configured for this user. We don't insert into
+    // notification_log because it's keyed to bookings (booking_id NOT NULL).
+    return;
+  }
+
+  const bkkDate = new Date(new Date(args.clockInIsoTs).getTime() + 7 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10);
+  const hasLunchToday = branchLunchAppliesOn(args.branch, bkkDate);
+
+  const flex = personaClockInFlex({
+    displayName: args.displayName,
+    clockInIsoTs: args.clockInIsoTs,
+    branchName: args.branch.name,
+    lunchStart: args.branch.lunch_break_start,
+    lunchEnd: args.branch.lunch_break_end,
+    hasLunchToday
+  });
+
+  await sendLinePush(args.branch.line_channel_token, {
+    to: u.line_user_id,
+    messages: [flex]
+  });
+  // Note: we intentionally don't await error logging here — clock-in must
+  // never be blocked or rolled back by a LINE API hiccup.
 }
 
 export async function notifyCustomer(

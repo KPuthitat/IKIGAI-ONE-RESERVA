@@ -76,13 +76,25 @@ export async function POST(req: Request, { params }: { params: { branch: string 
         continue;
       }
 
+      // "id" / "ไอดี" — สะท้อน userId กลับ ใช้สำหรับ admin มา bind ในหน้าพนักงาน
+      if (/^\s*(id|ไอดี|myid|line\s*id)\s*$/i.test(text)) {
+        await sendLinePush(branch.line_channel_token, {
+          to: userId,
+          messages: [{
+            type: "text",
+            text: `LINE User ID ของคุณ:\n${userId}\n\nแคปหน้าจอแล้วส่งให้แอดมินตั้งในระบบนะคะ — หลังจากนั้นจะได้รับการ์ดยืนยันการเข้างานทุกครั้ง`
+          }]
+        });
+        continue;
+      }
+
       // คำสั่งช่วยเหลือ
       if (/help|ช่วย|สั่ง|cmd/i.test(text)) {
         await sendLinePush(branch.line_channel_token, {
           to: userId,
           messages: [{
             type: "text",
-            text: "วิธีใช้:\n- พิมพ์ 'ยกเลิก #หมายเลขจอง' เพื่อยกเลิก\n- จองโต๊ะใหม่ที่ลิงก์ของร้าน"
+            text: "วิธีใช้:\n- พิมพ์ 'ยกเลิก #หมายเลขจอง' เพื่อยกเลิก\n- พิมพ์ 'id' เพื่อดู LINE User ID ของคุณ (สำหรับพนักงาน)\n- จองโต๊ะใหม่ที่ลิงก์ของร้าน"
           }]
         });
       }
