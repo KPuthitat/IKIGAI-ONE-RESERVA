@@ -26,13 +26,12 @@ export default function MessagingClient({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  // Webhook URL hint — copied from the host the admin is browsing on, plus
-  // the well-known channel code. Prefix /reserva because Next.js is mounted
-  // there in production. (When running locally without a basePath the prefix
-  // simply doesn't show up, which is fine for ops use.)
+  // Webhook URL — Next.js is mounted at the domain root after Deploy V2
+  // (Nginx forwards / → port 3010, no /reserva prefix). Build the URL from
+  // the current origin so it adapts to any host the admin is browsing on.
   const webhookUrl = typeof window !== "undefined"
-    ? `${window.location.origin}/reserva/api/line/webhook/${platform.code}`
-    : `https://your-domain/reserva/api/line/webhook/${platform.code}`;
+    ? `${window.location.origin}/api/line/webhook/${platform.code}`
+    : `https://your-domain/api/line/webhook/${platform.code}`;
 
   async function save(): Promise<void> {
     setBusy(true);
