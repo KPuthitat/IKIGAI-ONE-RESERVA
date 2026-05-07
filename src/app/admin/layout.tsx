@@ -28,8 +28,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/admin", label: t(lang, "sidebar.modulePicker") },
         { href: "/admin/persona", label: "PERSONA" },
-        { href: "/admin/reserva", label: "RESERVA" },
-        { href: "/admin/messaging", label: t(lang, "sidebar.messaging") }
+        { href: "/admin/reserva", label: "RESERVA" }
       ]
     },
     {
@@ -45,6 +44,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
         { href: "/admin/persona/holidays", label: t(lang, "admin.persona.nav.holidays") },
         { href: "/admin/persona/reports", label: t(lang, "admin.persona.nav.reports") },
+        { href: "/admin/persona/messaging", label: t(lang, "admin.persona.nav.messaging") },
         { href: "/admin/persona/settings", label: t(lang, "admin.persona.nav.settings") },
         { href: "/admin/persona/legacy", label: t(lang, "admin.persona.nav.legacy"), legacy: true }
       ]
