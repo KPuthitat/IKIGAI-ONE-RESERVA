@@ -313,6 +313,11 @@ function PeriodCard({
     ? "bg-amber-50/60 border-amber-200"
     : `bg-white border-slate-200 ${accentClass}`;
 
+  // Show the actually-stored pay_date for existing periods (so the card never
+  // disagrees with what's inside on the detail page). Fall back to the
+  // suggested default for unsaved cards.
+  const displayedPay = existing?.pay_date ?? pay;
+
   return (
     <div className={`rounded-lg border p-3 transition ${cardBgCls}`}>
       <div className="text-xs text-slate-500">{cycleLabel}</div>
@@ -321,7 +326,7 @@ function PeriodCard({
       </div>
       <div className="text-xs text-slate-500 mt-1">
         {t(lang, "admin.persona.payroll.col.payDate")}:{" "}
-        <span className="font-medium text-slate-700">{formatLongDate(pay, lang)}</span>
+        <span className="font-medium text-slate-700">{formatLongDate(displayedPay, lang)}</span>
       </div>
       {isExisting && (
         <div className="text-xs mt-2">

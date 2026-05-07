@@ -615,6 +615,25 @@ function runMigrations(db: Database.Database): void {
   if (!ppNames.has("data_source")) {
     db.exec("ALTER TABLE payroll_periods ADD COLUMN data_source TEXT NOT NULL DEFAULT 'auto'");
   }
+  // Phase 1D v5 — pay_date for monthly periods is now "5th of NEXT month".
+  // Backfill existing DRAFT monthly periods that still use period_end as pay_date
+  // (the old default was period_end). Finalized/paid periods are left untouched.
+  db.exec(`
+    UPDATE payroll_periods
+    SET pay_date = printf(
+      '%04d-%02d-05',
+      CASE WHEN CAST(substr(period_end, 6, 2) AS INTEGER) = 12
+           THEN CAST(substr(period_end, 1, 4) AS INTEGER) + 1
+           ELSE CAST(substr(period_end, 1, 4) AS INTEGER)
+      END,
+      CASE WHEN CAST(substr(period_end, 6, 2) AS INTEGER) = 12
+           THEN 1
+           ELSE CAST(substr(period_end, 6, 2) AS INTEGER) + 1
+      END
+    )
+    WHERE cycle = 'monthly' AND status = 'draft' AND pay_date = period_end;
+  `);
+
   // Recreate payroll_periods if status CHECK doesn't include 'paid' (SQLite has no ALTER CHECK)
   const ppSql = db.prepare(
     "SELECT sql FROM sqlite_master WHERE type='table' AND name='payroll_periods'"
