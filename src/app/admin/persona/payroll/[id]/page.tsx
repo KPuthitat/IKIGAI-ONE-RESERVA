@@ -61,15 +61,18 @@ export default function PeriodDetailPage({
              display_name
   `).all(id) as Array<{ id: number; display_name: string; employment_type: "pt" | "ft" | null }>;
 
-  // Unlock-history: who unlocked this period (paid → finalized) and why
+  // Audit history for this period — both 'unlock' (paid→finalized) and
+  // 'force_open' (created early) events. Newest first.
   const unlockHistory = db.prepare(`
-    SELECT pu.id, pu.reason, pu.unlocked_at, u.display_name AS unlocked_by_name
+    SELECT pu.id, pu.reason, pu.unlocked_at, pu.action,
+           u.display_name AS unlocked_by_name
     FROM payroll_period_unlocks pu
     LEFT JOIN users u ON pu.unlocked_by = u.id
     WHERE pu.period_id = ?
     ORDER BY pu.unlocked_at DESC
   `).all(id) as Array<{
-    id: number; reason: string; unlocked_at: string; unlocked_by_name: string | null;
+    id: number; reason: string; unlocked_at: string; action: string;
+    unlocked_by_name: string | null;
   }>;
 
   // Has the superadmin PIN been set? (used to enable/disable the unlock UI)

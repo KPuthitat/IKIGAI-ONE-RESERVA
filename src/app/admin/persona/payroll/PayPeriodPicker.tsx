@@ -32,6 +32,11 @@ type SuggestedPeriod = {
 
 type DataSource = "auto" | "manual";
 
+type ForceOpenContext = {
+  sp: SuggestedPeriod;
+  ds: DataSource;
+};
+
 // Compute weekly periods whose pay_date falls inside the given calendar month.
 // (Pay date determines which month the period belongs to — for tax docs.)
 function weeklyPayDatesInMonth(yearMonth: string): Array<{ start: string; end: string; pay: string }> {
@@ -88,6 +93,7 @@ export default function PayPeriodPicker({
   const [month, setMonth] = useState<string>(todayMonth());
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [forceOpen, setForceOpen] = useState<ForceOpenContext | null>(null);
 
   // Lookup map: key = "cycle|target|start|end"
   const existingByKey = useMemo(() => {
@@ -101,7 +107,11 @@ export default function PayPeriodPicker({
   const weeklyDates = useMemo(() => weeklyPayDatesInMonth(month), [month]);
   const monthlyDates = useMemo(() => monthlyPeriodFor(month), [month]);
 
-  async function createPeriod(p: SuggestedPeriod, dataSource: DataSource): Promise<void> {
+  async function createPeriod(
+    p: SuggestedPeriod,
+    dataSource: DataSource,
+    forceOpenParams?: { pin: string; reason: string }
+  ): Promise<{ ok: boolean; error?: string }> {
     const key = `${p.cycle}|${p.target}|${p.start}|${p.end}|${dataSource}`;
     setBusyKey(key);
     setErrMsg(null);
@@ -115,21 +125,32 @@ export default function PayPeriodPicker({
           data_source: dataSource,
           period_start: p.start,
           period_end: p.end,
-          pay_date: p.pay
+          pay_date: p.pay,
+          ...(forceOpenParams ? {
+            force_open_pin: forceOpenParams.pin,
+            force_open_reason: forceOpenParams.reason
+          } : {})
         })
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok && j.period_id) {
         startTransition(() => router.push(`/admin/persona/payroll/${j.period_id}`));
+        return { ok: true };
       } else {
         const errKey =
           j?.error === "duplicate_period" ? "admin.persona.payroll.err.duplicate" :
           j?.error === "invalid_range" ? "admin.persona.payroll.err.invalidRange" :
+          j?.error === "future_pin_required" ? "admin.persona.payroll.err.pinRequired" :
+          j?.error === "future_reason_required" ? "admin.persona.payroll.err.reasonRequired" :
+          j?.error === "pin_invalid" ? "admin.persona.payroll.err.pinInvalid" :
+          j?.error === "user_pin_not_set" ? "admin.persona.payroll.err.userPinNotSet" :
           "common.error";
-        setErrMsg(t(lang, errKey as any));
+        if (!forceOpenParams) setErrMsg(t(lang, errKey as any));
+        return { ok: false, error: t(lang, errKey as any) };
       }
     } catch {
-      setErrMsg(t(lang, "common.error"));
+      if (!forceOpenParams) setErrMsg(t(lang, "common.error"));
+      return { ok: false, error: t(lang, "common.error") };
     } finally {
       setBusyKey(null);
     }
@@ -182,6 +203,7 @@ export default function PayPeriodPicker({
                 busyKey={busyKey}
                 cardKey={key}
                 onCreate={(ds) => createPeriod(sp, ds)}
+                onForceOpen={(ds) => setForceOpen({ sp, ds })}
                 onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
                 today={today}
                 accentClass="hover:border-emerald-500/60"
@@ -220,6 +242,7 @@ export default function PayPeriodPicker({
                   busyKey={busyKey}
                   cardKey={key}
                   onCreate={(ds) => createPeriod(sp, ds)}
+                  onForceOpen={(ds) => setForceOpen({ sp, ds })}
                   onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
                   accentClass="hover:border-emerald-400/60"
                   today={today}
@@ -259,6 +282,7 @@ export default function PayPeriodPicker({
                   busyKey={busyKey}
                   cardKey={key}
                   onCreate={(ds) => createPeriod(sp, ds)}
+                  onForceOpen={(ds) => setForceOpen({ sp, ds })}
                   onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
                   accentClass="hover:border-violet-400/60"
                   today={today}
@@ -268,6 +292,100 @@ export default function PayPeriodPicker({
           </div>
         )}
       </Section>
+
+      {/* Force-open modal for future periods */}
+      {forceOpen && (
+        <ForceOpenModal
+          lang={lang}
+          context={forceOpen}
+          onCancel={() => setForceOpen(null)}
+          onConfirm={async (pin, reason) => {
+            const r = await createPeriod(forceOpen.sp, forceOpen.ds, { pin, reason });
+            if (r.ok) setForceOpen(null);
+            return r;
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Force-open modal — admin's PIN + reason for opening a future period ──
+
+function ForceOpenModal({
+  lang, context: _ctx, onCancel, onConfirm
+}: {
+  lang: Lang;
+  context: ForceOpenContext;
+  onCancel: () => void;
+  onConfirm: (pin: string, reason: string) => Promise<{ ok: boolean; error?: string }>;
+}) {
+  const [pin, setPin] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit(): Promise<void> {
+    if (pin.length < 4) {
+      setErr(t(lang, "admin.persona.payroll.err.pinRequired"));
+      return;
+    }
+    if (!reason.trim()) {
+      setErr(t(lang, "admin.persona.payroll.err.reasonRequired"));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const r = await onConfirm(pin, reason.trim());
+    if (!r.ok) {
+      setErr(r.error ?? t(lang, "common.error"));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}>
+        <div>
+          <h3 className="font-semibold text-slate-800 text-lg">
+            {t(lang, "admin.persona.payroll.confirmForceOpenTitle")}
+          </h3>
+          <p className="text-sm text-slate-600 mt-1">
+            {t(lang, "admin.persona.payroll.confirmForceOpenBody")}
+          </p>
+        </div>
+        <div>
+          <label className="label">{t(lang, "admin.persona.payroll.field.userPin")}</label>
+          <input type="password" inputMode="numeric" autoComplete="off"
+            className="input tracking-widest text-center text-lg"
+            value={pin} maxLength={12}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+            placeholder="••••" />
+        </div>
+        <div>
+          <label className="label">{t(lang, "admin.persona.payroll.field.forceOpenReason")}</label>
+          <textarea
+            className="input min-h-[80px]"
+            value={reason}
+            maxLength={500}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder={t(lang, "admin.persona.payroll.field.forceOpenReasonPlaceholder")}
+          />
+        </div>
+        {err && <p className="text-rose-600 text-sm">✗ {err}</p>}
+        <div className="flex gap-2 pt-1">
+          <button type="button" onClick={onCancel} disabled={busy}
+            className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium disabled:opacity-50">
+            {t(lang, "common.cancel")}
+          </button>
+          <button type="button" onClick={submit}
+            disabled={busy || pin.length < 4 || reason.trim().length === 0}
+            className="flex-1 py-2.5 rounded-lg bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-50">
+            {busy ? "…" : t(lang, "common.confirm")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -298,7 +416,8 @@ function Section({
 }
 
 function PeriodCard({
-  lang, start, end, pay, cycleLabel, existing, busyKey, cardKey, onCreate, onOpen, accentClass, today
+  lang, start, end, pay, cycleLabel, existing, busyKey, cardKey,
+  onCreate, onOpen, onForceOpen, accentClass, today
 }: {
   lang: Lang;
   start: string;
@@ -310,6 +429,7 @@ function PeriodCard({
   cardKey: string;
   onCreate: (ds: DataSource) => void;
   onOpen: (id: number) => void;
+  onForceOpen: (ds: DataSource) => void;
   accentClass: string;
   today: string;       // YYYY-MM-DD (Bangkok)
 }) {
@@ -385,8 +505,28 @@ function PeriodCard({
             {t(lang, "admin.persona.payroll.hub.openPeriod")} →
           </button>
         ) : isFuture ? (
-          <div className="text-center py-2 text-xs text-slate-500 italic">
-            {t(lang, "admin.persona.payroll.hub.notReachedYet")}
+          <div className="space-y-1">
+            <div className="text-center text-xs text-slate-500 italic mb-1">
+              {t(lang, "admin.persona.payroll.hub.notReachedYet")}
+            </div>
+            <button
+              type="button"
+              onClick={() => onForceOpen("auto")}
+              disabled={busyAuto || busyManual}
+              className="w-full py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold disabled:opacity-50"
+              title={t(lang, "admin.persona.payroll.hub.forceOpenHint")}
+            >
+              {busyAuto ? "…" : t(lang, "admin.persona.payroll.hub.forceOpenAuto")}
+            </button>
+            <button
+              type="button"
+              onClick={() => onForceOpen("manual")}
+              disabled={busyAuto || busyManual}
+              className="w-full py-1.5 rounded-md bg-white border border-amber-300 hover:bg-amber-50 text-xs font-medium text-amber-700 disabled:opacity-50"
+              title={t(lang, "admin.persona.payroll.hub.forceOpenHint")}
+            >
+              {busyManual ? "…" : t(lang, "admin.persona.payroll.hub.forceOpenManual")}
+            </button>
           </div>
         ) : (
           <div className="space-y-1">

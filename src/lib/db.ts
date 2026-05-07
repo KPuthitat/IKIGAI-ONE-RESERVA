@@ -515,7 +515,10 @@ function runMigrations(db: Database.Database): void {
   // Bump SSO cap from old default 750 → 875 (Thai SSO ceiling adjustment)
   db.exec("UPDATE payroll_settings SET sso_cap = 875 WHERE sso_cap = 750");
 
-  // Audit log of payroll-period unlocks (paid → finalized via superadmin PIN)
+  // Audit log of payroll-period events that require a PIN:
+  //   - 'unlock'     paid → finalized (superadmin PIN)
+  //   - 'force_open' create a period whose pay_date is still in the future
+  //                  (the user's own PIN)
   db.exec(`
     CREATE TABLE IF NOT EXISTS payroll_period_unlocks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -527,6 +530,23 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_payroll_period_unlocks_period
       ON payroll_period_unlocks(period_id);
   `);
+  // Add action column for distinguishing event types (default 'unlock' for old rows)
+  const puCols = db.prepare("PRAGMA table_info(payroll_period_unlocks)").all() as Array<{ name: string }>;
+  if (!puCols.some((c) => c.name === "action")) {
+    db.exec("ALTER TABLE payroll_period_unlocks ADD COLUMN action TEXT NOT NULL DEFAULT 'unlock'");
+  }
+
+  // ── One-time payroll data wipe (per user request to start fresh) ──
+  // Tracked via PRAGMA user_version so it runs exactly once per database.
+  const userVer = db.pragma("user_version", { simple: true }) as number;
+  if (userVer < 1) {
+    db.exec(`
+      DELETE FROM payroll_period_unlocks;
+      DELETE FROM payroll_lines;
+      DELETE FROM payroll_periods;
+    `);
+    db.pragma("user_version = 1");
+  }
 
   // ── Phase 1D / C2 — Payroll periods + lines ────────────────────────
   // payroll_periods = หนึ่งรอบจ่าย (รายสัปดาห์ จันทร์-อาทิตย์ หรือ รายเดือน)

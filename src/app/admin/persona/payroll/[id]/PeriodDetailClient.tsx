@@ -92,6 +92,7 @@ export type UnlockEntry = {
   reason: string;
   unlocked_at: string;
   unlocked_by_name: string | null;
+  action: string;  // 'unlock' | 'force_open'
 };
 
 export default function PeriodDetailClient({
@@ -694,22 +695,37 @@ export default function PeriodDetailClient({
         onCancel={() => setUnpayOpen(false)}
       />
 
-      {/* Unlock history (shown when there are past unlocks) */}
+      {/* Audit history — shown when there are unlock/force-open events */}
       {unlockHistory.length > 0 && (
         <div className="card border-l-4 border-amber-300 bg-amber-50/40">
           <h2 className="font-semibold text-slate-800 mb-2">
             {t(lang, "admin.persona.payroll.detail.unlockHistoryTitle")}
           </h2>
           <ul className="space-y-2">
-            {unlockHistory.map((u) => (
-              <li key={u.id} className="text-sm border-b border-amber-200 last:border-0 pb-2 last:pb-0">
-                <div className="flex justify-between text-xs text-slate-500">
-                  <span>{u.unlocked_by_name ?? "—"}</span>
-                  <span>{new Date(u.unlocked_at).toLocaleString("en-GB", { timeZone: "Asia/Bangkok" })}</span>
-                </div>
-                <div className="text-slate-700 mt-0.5">{u.reason}</div>
-              </li>
-            ))}
+            {unlockHistory.map((u) => {
+              const actionLabel =
+                u.action === "force_open"
+                  ? t(lang, "admin.persona.payroll.detail.actionForceOpen")
+                  : t(lang, "admin.persona.payroll.detail.actionUnlock");
+              const actionCls =
+                u.action === "force_open"
+                  ? "bg-amber-200 text-amber-800"
+                  : "bg-rose-200 text-rose-800";
+              return (
+                <li key={u.id} className="text-sm border-b border-amber-200 last:border-0 pb-2 last:pb-0">
+                  <div className="flex justify-between items-center text-xs text-slate-500 gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${actionCls}`}>
+                        {actionLabel}
+                      </span>
+                      <span>{u.unlocked_by_name ?? "—"}</span>
+                    </div>
+                    <span>{new Date(u.unlocked_at).toLocaleString("en-GB", { timeZone: "Asia/Bangkok" })}</span>
+                  </div>
+                  <div className="text-slate-700 mt-0.5">{u.reason}</div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { computePayrollPeriod } from "@/lib/payroll-compute";
@@ -12,8 +13,17 @@ const Body = z.object({
   period_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   period_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   pay_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  notes: z.string().max(500).optional()
+  notes: z.string().max(500).optional(),
+  // For periods whose pay_date is still in the future, the admin must
+  // supply their own 4-digit PIN (verified against users.pin_hash) plus
+  // a reason. Both are saved to payroll_period_unlocks for audit.
+  force_open_pin: z.string().regex(/^\d{4,12}$/).optional(),
+  force_open_reason: z.string().max(500).optional()
 });
+
+function todayBkk(): string {
+  return new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
 
 export async function POST(req: Request) {
   const user = getSessionUser();
@@ -33,6 +43,27 @@ export async function POST(req: Request) {
   const payDate = d.pay_date ?? defaultPayDate(d.period_end, d.cycle);
 
   const db = getDb();
+
+  // Future-period gate: if pay_date is in the future, require the user's
+  // own PIN + a reason. Verify against users.pin_hash and log to audit.
+  const isFuture = payDate > todayBkk();
+  if (isFuture) {
+    if (!d.force_open_pin) {
+      return NextResponse.json({ error: "future_pin_required" }, { status: 400 });
+    }
+    if (!d.force_open_reason || !d.force_open_reason.trim()) {
+      return NextResponse.json({ error: "future_reason_required" }, { status: 400 });
+    }
+    const me = db.prepare(`SELECT pin_hash FROM users WHERE id = ?`).get(user.id) as
+      { pin_hash: string | null } | undefined;
+    if (!me?.pin_hash) {
+      return NextResponse.json({ error: "user_pin_not_set" }, { status: 400 });
+    }
+    if (!bcrypt.compareSync(d.force_open_pin, me.pin_hash)) {
+      return NextResponse.json({ error: "pin_invalid" }, { status: 401 });
+    }
+  }
+
   // Check for duplicate (cycle + target + dates uniquely identifies a period)
   const dup = db.prepare(`
     SELECT id FROM payroll_periods
@@ -51,6 +82,14 @@ export async function POST(req: Request) {
     d.period_start, d.period_end, payDate, d.notes ?? null, user.id
   );
   const periodId = result.lastInsertRowid as number;
+
+  // Log the force-open event so admins can audit who opened the period early
+  if (isFuture) {
+    db.prepare(`
+      INSERT INTO payroll_period_unlocks (period_id, unlocked_by, reason, action)
+      VALUES (?, ?, ?, 'force_open')
+    `).run(periodId, user.id, (d.force_open_reason ?? "").trim());
+  }
 
   // Compute immediately
   try {
