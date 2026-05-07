@@ -64,7 +64,6 @@ export default function Footer() {
 
         {/* Right — powered by */}
         <div className="flex items-center justify-center sm:justify-end gap-1 text-white/60">
-          <span className="text-emerald-400">⚡</span>
           <span>{t(lang, "footer.poweredBy")}</span>
           <a
             href="https://ikigaimedihealth.com"
