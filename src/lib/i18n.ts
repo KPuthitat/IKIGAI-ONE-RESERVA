@@ -27,6 +27,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "common.save": "บันทึก",
     "common.saved": "บันทึกแล้ว",
     "common.saving": "กำลังบันทึก...",
+    "sidebar.section.modules": "เมนูหลัก",
+    "sidebar.modulePicker": "หน้ารวม Module",
     "common.delete": "ลบ",
     "common.edit": "แก้ไข",
     "common.add": "เพิ่ม",
@@ -335,6 +337,11 @@ export const dict: Record<Lang, Record<string, string>> = {
     // Staff PERSONA (time clock)
     "staff.persona.title": "PERSONA — ลงเวลาทำงาน",
     "staff.persona.backToModules": "← กลับ module",
+    // Staff sidebar nav
+    "staff.nav.timeClock": "ลงเวลาทำงาน",
+    "staff.nav.leave": "ขอลา",
+    "staff.nav.resignation": "ลาออก",
+    "staff.nav.bookings": "การจองของลูกค้า",
     "staff.persona.workingNow": "● กำลังทำงาน",
     "staff.persona.notWorking": "○ ยังไม่เข้างาน / ออกแล้ว",
     "staff.persona.clockOut": "ลงเวลาออกงาน",
@@ -981,6 +988,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "common.save": "Save",
     "common.saved": "Saved",
     "common.saving": "Saving...",
+    "sidebar.section.modules": "Main",
+    "sidebar.modulePicker": "Module picker",
     "common.delete": "Delete",
     "common.edit": "Edit",
     "common.add": "Add",
@@ -1288,6 +1297,11 @@ export const dict: Record<Lang, Record<string, string>> = {
 
     // Staff PERSONA
     "staff.persona.title": "PERSONA — Time clock",
+    // Staff sidebar nav
+    "staff.nav.timeClock": "Clock in / out",
+    "staff.nav.leave": "Leave requests",
+    "staff.nav.resignation": "Resignation",
+    "staff.nav.bookings": "Customer bookings",
     "staff.persona.backToModules": "← Back to modules",
     "staff.persona.workingNow": "● Currently working",
     "staff.persona.notWorking": "○ Not yet / clocked out",
