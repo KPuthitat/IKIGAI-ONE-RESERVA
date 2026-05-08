@@ -260,21 +260,18 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
           onChange={(e) => setForm({ ...form, reminder_minutes_before: Number(e.target.value) })} />
       </div>
 
-      <h2 className="font-semibold pt-3 border-t border-slate-100">{t("admin.settings.lineSection")}</h2>
-      <p className="text-sm text-slate-500">{t("admin.settings.lineDesc")}</p>
-      <div>
-        <label className="label">{t("admin.settings.field.channelToken")}</label>
-        <input className="input font-mono text-xs" value={form.line_channel_token}
-          onChange={(e) => setForm({ ...form, line_channel_token: e.target.value })} />
-      </div>
-      <div>
-        <label className="label">{t("admin.settings.field.channelSecret")}</label>
-        <input className="input font-mono text-xs" value={form.line_channel_secret}
-          onChange={(e) => setForm({ ...form, line_channel_secret: e.target.value })} />
-      </div>
+      {/* Staff LINE user IDs — list of staff who receive the new-booking
+          Flex card. Channel token/secret are managed at the dedicated
+          /admin/reserva/messaging page. */}
+      <h2 className="font-semibold pt-3 border-t border-slate-100">
+        {t("admin.settings.staffLineSection")}
+      </h2>
+      <p className="text-sm text-slate-500">
+        {t("admin.settings.staffLineDesc")}
+      </p>
       <div>
         <label className="label">{t("admin.settings.field.staffLineIds")}</label>
-        <textarea className="input font-mono text-xs" rows={3}
+        <textarea className="input text-xs" rows={3}
           value={form.staff_line_user_ids}
           onChange={(e) => setForm({ ...form, staff_line_user_ids: e.target.value })}
           placeholder='["U1234abcd...","U5678efgh..."]' />

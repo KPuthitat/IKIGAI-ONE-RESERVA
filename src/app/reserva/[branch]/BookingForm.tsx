@@ -47,15 +47,29 @@ const ORIGIN_DEFS: Array<{ value: string; key: string }> = [
   { value: "other_province", key: "booking.origin.other_province" }
 ];
 
+export type BookingFormMode = "customer" | "walkin" | "phone";
+
 export default function BookingForm({
-  branch, liffId
-}: { branch: Branch; liffId: string | null }) {
+  branch, liffId, mode = "customer", onSuccess
+}: {
+  branch: Branch;
+  liffId: string | null;
+  mode?: BookingFormMode;
+  /** Admin modes call this after a successful save instead of showing
+   *  the customer "done" screen. The admin caller then closes the modal
+   *  and refreshes the bookings list. */
+  onSuccess?: (bookingId: number) => void;
+}) {
   const router = useRouter();
   const { t, formatDate, lang } = useLang();
 
+  // LIFF only applies to the customer-facing flow. Admin walk-in / phone
+  // bookings are entered by staff who don't need a LINE userId.
+  const liffActive = mode === "customer" && !!liffId;
+
   // Track LIFF connection status — drives the badge shown above the form
   const [liffStatus, setLiffStatus] = useState<"idle" | "init" | "ready" | "guest" | "error">(
-    liffId ? "init" : "idle"
+    liffActive ? "init" : "idle"
   );
   const [liffSdkReady, setLiffSdkReady] = useState(false);
 
@@ -67,12 +81,37 @@ export default function BookingForm({
     return d.toISOString().slice(0, 10);
   }, []);
 
+  // Default starting values vary by mode:
+  //   walk-in : customer is here right now → time = now (rounded to 5 min),
+  //             status will become 'seated' on save, name pre-filled with
+  //             the placeholder so staff can submit in seconds.
+  //   phone   : customer is calling about a future slot → time = branch open,
+  //             name pre-filled with "ลูกค้าจองทางโทรศัพท์".
+  //   customer: classic public booking flow.
+  const initialName = useMemo(() => {
+    if (mode === "walkin") return t("admin.bookings.walkinDefaultName");
+    if (mode === "phone") return t("admin.bookings.phoneDefaultName");
+    return "";
+  }, [mode, t]);
+  const initialTime = useMemo(() => {
+    if (mode === "walkin") {
+      const bkk = new Date(Date.now() + 7 * 60 * 60 * 1000);
+      const totalMin = bkk.getUTCHours() * 60 + bkk.getUTCMinutes();
+      const snapped = Math.round(totalMin / 5) * 5;
+      const h = Math.floor(snapped / 60), m = snapped % 60;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+    return branch.open_time && /^\d{2}:\d{2}$/.test(branch.open_time)
+      ? branch.open_time
+      : "18:00";
+  }, [mode, branch.open_time]);
+
   const [form, setForm] = useState({
-    customer_name: "",
+    customer_name: initialName,
     customer_phone: "",
     party_size: 2,
     booking_date: today,
-    booking_time: "18:00",
+    booking_time: initialTime,
     sources: [] as string[],
     customer_origin: "",
     is_member: null as 0 | 1 | null,
@@ -93,7 +132,7 @@ export default function BookingForm({
   //    No-op if liffId is not configured (admin hasn't set it yet) or the
   //    SDK is unavailable (page opened in regular browser, network issue).
   useEffect(() => {
-    if (!liffId || !liffSdkReady) return;
+    if (!liffActive || !liffSdkReady) return;
     const liff = typeof window !== "undefined" ? window.liff : undefined;
     if (!liff) { setLiffStatus("error"); return; }
 
@@ -124,7 +163,7 @@ export default function BookingForm({
       }
     })();
     return () => { cancelled = true; };
-  }, [liffId, liffSdkReady]);
+  }, [liffActive, liffId, liffSdkReady]);
 
   // ครัวปิด 30 นาทีก่อนร้านปิด — เวลาจองสุดท้าย
   const KITCHEN_CLOSE_OFFSET = 30;
@@ -287,20 +326,60 @@ export default function BookingForm({
     setError(null);
     try {
       const tableId = chosenTable === "auto" ? suggestions[0].id : chosenTable;
-      const res = await fetch(apiUrl("/api/bookings"), {
+      // Admin modes hit a different endpoint that accepts booking_channel
+      // and lets staff skip the past-time guard for walk-ins.
+      const isAdmin = mode === "walkin" || mode === "phone";
+      const url = isAdmin ? "/api/admin/reserva/bookings" : "/api/bookings";
+      const body: Record<string, unknown> = isAdmin
+        ? {
+            customer_name: form.customer_name.trim() || (
+              mode === "walkin"
+                ? t("admin.bookings.walkinDefaultName")
+                : t("admin.bookings.phoneDefaultName")
+            ),
+            customer_phone: form.customer_phone.trim(),
+            party_size: form.party_size,
+            booking_date: form.booking_date,
+            booking_time: form.booking_time,
+            source: form.sources.length > 0 ? JSON.stringify(form.sources) : "",
+            customer_origin: form.customer_origin || "",
+            is_member: form.is_member,
+            notes: form.notes,
+            table_id: tableId,
+            booking_channel: mode
+          }
+        : {
+            branch_slug: branch.slug,
+            ...form,
+            source: form.sources.length > 0 ? JSON.stringify(form.sources) : "",
+            table_id: tableId,
+            lang   // customer flow: tag booking with current UI lang so the
+                   // LINE Flex card renders in the same language
+          };
+      const res = await fetch(apiUrl(url), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          branch_slug: branch.slug,
-          ...form,
-          source: form.sources.length > 0 ? JSON.stringify(form.sources) : "",
-          table_id: tableId,
-          lang   // captures current UI language so the LINE Flex card can
-                 // be rendered in the same language the customer was using
-        })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t("common.error"));
+      if (!res.ok) {
+        // Admin endpoint returns short error codes; translate them to plain
+        // Thai/EN sentences. Customer endpoint already returns localized
+        // messages, so passing data.error through is fine for that path.
+        const codeMap: Record<string, string> = {
+          table_unavailable: t("admin.bookings.err.tableUnavailable"),
+          no_past_booking: t("admin.bookings.err.noPast"),
+          no_active_branch: t("admin.notAssignedBranch"),
+          branch_not_found: t("common.error")
+        };
+        throw new Error(codeMap[data.error] || data.error || t("common.error"));
+      }
+      // Admin caller (modal) handles its own follow-up — close + refresh.
+      // Customer flow shows the success card.
+      if (isAdmin && onSuccess) {
+        onSuccess(data.id);
+        return;
+      }
       setResultId(data.id);
       setStep("done");
     } catch (err: unknown) {
@@ -396,10 +475,9 @@ export default function BookingForm({
 
   return (
     <form onSubmit={findTables} className="space-y-4">
-      {/* Load LIFF SDK only when a liffId is configured for this branch.
-          afterInteractive runs once the page is interactive; the useEffect
-          above waits on liffSdkReady before calling liff.init(). */}
-      {liffId && (
+      {/* Load LIFF SDK only on the customer-facing flow when a liffId is
+          configured. Admin walk-in / phone bookings skip this entirely. */}
+      {liffActive && (
         <Script
           src="https://static.line-scdn.net/liff/edge/2/sdk.js"
           strategy="afterInteractive"
@@ -407,8 +485,8 @@ export default function BookingForm({
         />
       )}
 
-      {/* LIFF status badge — only shown when LIFF is configured */}
-      {liffId && (
+      {/* LIFF status badge — only shown when LIFF is active */}
+      {liffActive && (
         <div className="text-xs">
           {liffStatus === "init" && (
             <span className="inline-flex items-center gap-1.5 text-slate-500">
@@ -433,19 +511,34 @@ export default function BookingForm({
 
       <div className="card space-y-4">
         <div>
-          <label className="label">{t("booking.field.name")} *</label>
+          <label className="label">
+            {t("booking.field.name")}
+            {mode !== "walkin" && " *"}
+          </label>
           <input
-            className="input" required
+            className="input"
+            required={mode !== "walkin"}
             autoComplete="name"
             value={form.customer_name}
             onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
+            placeholder={mode === "walkin" ? t("admin.bookings.walkinDefaultName") : ""}
           />
+          {mode === "walkin" && (
+            <p className="text-[11px] text-slate-400 mt-1">
+              {t("admin.bookings.walkinNameHint")}
+            </p>
+          )}
         </div>
 
         <div>
-          <label className="label">{t("booking.field.phone")} *</label>
+          <label className="label">
+            {t("booking.field.phone")}
+            {mode !== "walkin" && " *"}
+          </label>
           <input
-            className="input" required type="tel"
+            className="input"
+            required={mode !== "walkin"}
+            type="tel"
             inputMode="tel" autoComplete="tel"
             placeholder={t("booking.field.phonePlaceholder")}
             value={form.customer_phone}

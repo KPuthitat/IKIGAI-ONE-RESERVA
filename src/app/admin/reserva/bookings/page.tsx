@@ -47,8 +47,7 @@ export default function BookingsPage({ searchParams }: { searchParams: { date?: 
           id: row.id, label: row.label, capacity: row.capacity
         }))}
         canEdit={true}
-        branchOpenTime={branch.open_time}
-        branchCloseTime={branch.close_time}
+        branch={branch}
       />
     </div>
   );
