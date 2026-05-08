@@ -35,6 +35,12 @@ function runMigrations(db: Database.Database): void {
   if (!bnames.has("is_member")) {
     db.exec("ALTER TABLE bookings ADD COLUMN is_member INTEGER");
   }
+  // Customer's selected UI language at booking time — used to localize the
+  // LINE Flex confirmation/reminder cards. NULL = legacy or unknown → default
+  // to Thai when rendering.
+  if (!bnames.has("lang")) {
+    db.exec("ALTER TABLE bookings ADD COLUMN lang TEXT");
+  }
   // แปลง source string เก่า → JSON array (idempotent)
   db.exec(`
     UPDATE bookings
@@ -869,6 +875,7 @@ export type Booking = {
   source: string | null;
   customer_origin: string | null;     // sriracha | chonburi | other_province | null
   is_member: number | null;           // 1 / 0 / null
+  lang: string | null;                // 'th' | 'en' | null (= legacy / unknown)
   booking_date: string;
   booking_time: string;
   duration_minutes: number;

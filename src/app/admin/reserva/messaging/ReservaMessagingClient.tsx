@@ -144,7 +144,7 @@ function ChannelCard({
           <input
             type="text"
             readOnly
-            className="input font-mono text-sm flex-1"
+            className="input text-sm flex-1"
             value={webhookUrl}
             onFocus={(e) => e.currentTarget.select()}
           />

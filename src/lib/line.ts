@@ -44,10 +44,71 @@ export async function sendLinePush(
 // notifyStaff at the bottom of this file are still the entry points used
 // by the API routes + cron job.)
 
+type Lang = "th" | "en";
+
 function formatThaiDate(yyyymmdd: string): string {
   const [y, m, d] = yyyymmdd.split("-");
   const months = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
   return `${parseInt(d, 10)} ${months[parseInt(m, 10) - 1]} ${parseInt(y, 10) + 543}`;
+}
+
+function formatEnglishDate(yyyymmdd: string): string {
+  const [y, m, d] = yyyymmdd.split("-");
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${parseInt(d, 10)} ${months[parseInt(m, 10) - 1]} ${parseInt(y, 10)}`;
+}
+
+function localDate(yyyymmdd: string, lang: Lang): string {
+  return lang === "en" ? formatEnglishDate(yyyymmdd) : formatThaiDate(yyyymmdd);
+}
+
+// Tiny inline i18n for Flex card strings — keeps the dictionary local to the
+// file so we don't pull the whole UI translation set just for a few labels.
+const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
+  th: {
+    confirmTitle: "ยืนยันการจองโต๊ะ",
+    reminderTitle: "แจ้งเตือนการจองโต๊ะ",
+    labelName: "ชื่อผู้จอง",
+    labelPartySize: "จำนวน",
+    labelDate: "วันที่",
+    labelTime: "เวลา",
+    labelRef: "เลขที่จอง",
+    labelPhone: "เบอร์โทร",
+    labelTable: "โต๊ะ",
+    labelSource: "ที่มา",
+    labelNotes: "หมายเหตุ",
+    seatsUnit: "ที่นั่ง",
+    tableNotAssigned: "ยังไม่ได้กำหนด",
+    btnViewRestaurant: "ดูข้อมูลร้าน",
+    btnOpenAdmin: "เปิดในระบบ",
+    cancelHint: 'พิมพ์ "ยกเลิก #{ref}" ในแชทนี้เพื่อยกเลิกการจอง',
+    staffNewBooking: "มีการจองใหม่",
+    staffReminder: "ใกล้ถึงเวลาจอง"
+  },
+  en: {
+    confirmTitle: "Reservation Confirmed",
+    reminderTitle: "Reservation Reminder",
+    labelName: "Booked by",
+    labelPartySize: "Guests",
+    labelDate: "Date",
+    labelTime: "Time",
+    labelRef: "Booking ref",
+    labelPhone: "Phone",
+    labelTable: "Table",
+    labelSource: "Source",
+    labelNotes: "Notes",
+    seatsUnit: "guests",
+    tableNotAssigned: "not assigned",
+    btnViewRestaurant: "View restaurant",
+    btnOpenAdmin: "Open in admin",
+    cancelHint: 'Reply "cancel #{ref}" in this chat to cancel',
+    staffNewBooking: "New reservation",
+    staffReminder: "Reservation coming up"
+  }
+};
+
+function fx(lang: Lang, key: keyof (typeof FLEX_STRINGS)["th"]): string {
+  return FLEX_STRINGS[lang][key] ?? FLEX_STRINGS.th[key];
 }
 
 // ── PERSONA: clock-in confirmation Flex card ─────────────────────────
@@ -235,6 +296,7 @@ export type CustomerBookingCardArgs = {
   notes: string | null;
   publicBaseUrl: string;        // e.g., 'https://ikigaimedihealth.com'
   kind: "created" | "reminder";
+  lang: Lang;                   // language to render the card in
 };
 
 export type StaffBookingCardArgs = {
@@ -250,6 +312,7 @@ export type StaffBookingCardArgs = {
   source: string | null;
   publicBaseUrl: string;
   kind: "created" | "reminder";
+  lang: Lang;                   // language for the staff alert (defaults to th in caller)
 };
 
 /** Two-column kv row helper used by both booking cards. */
@@ -271,16 +334,16 @@ function kvRow(label: string, value: string, opts?: { valueColor?: string; value
 /** Build a customer-facing Flex card for a new / upcoming booking. */
 export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMessage {
   const isReminder = args.kind === "reminder";
-  const titleText = isReminder ? "แจ้งเตือนการจองโต๊ะ" : "ยืนยันการจองโต๊ะ";
+  const titleText = isReminder ? fx(args.lang, "reminderTitle") : fx(args.lang, "confirmTitle");
   const iconText = isReminder ? "🔔" : "✓";
-  const dateStr = formatThaiDate(args.bookingDate);
+  const dateStr = localDate(args.bookingDate, args.lang);
 
   const bodyRows = [
-    kvRow("ชื่อผู้จอง", args.customerName),
-    kvRow("จำนวน", `${args.partySize} ที่นั่ง`),
-    kvRow("วันที่", dateStr),
-    kvRow("เวลา", args.bookingTime),
-    kvRow("เลขที่จอง", `#${args.bookingId}`, { valueColor: COLOR_BRAND, valueWeight: "bold" })
+    kvRow(fx(args.lang, "labelName"), args.customerName),
+    kvRow(fx(args.lang, "labelPartySize"), `${args.partySize} ${fx(args.lang, "seatsUnit")}`),
+    kvRow(fx(args.lang, "labelDate"), dateStr),
+    kvRow(fx(args.lang, "labelTime"), args.bookingTime),
+    kvRow(fx(args.lang, "labelRef"), `#${args.bookingId}`, { valueColor: COLOR_BRAND, valueWeight: "bold" })
   ];
 
   const bubble = {
@@ -318,7 +381,7 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
         {
           type: "text",
-          text: `พิมพ์ "ยกเลิก #${args.bookingId}" ในแชทนี้เพื่อยกเลิกการจอง`,
+          text: fx(args.lang, "cancelHint").replace("{ref}", String(args.bookingId)),
           size: "xxs", color: COLOR_TEXT_MUTED, wrap: true, margin: "sm"
         }
       ]
@@ -334,7 +397,7 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
           height: "sm",
           action: {
             type: "uri",
-            label: "ดูข้อมูลร้าน",
+            label: fx(args.lang, "btnViewRestaurant"),
             uri: `${args.publicBaseUrl}/reserva/${args.branchSlug}`
           }
         }
@@ -357,19 +420,22 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
 /** Build a staff-facing Flex card alerting them to a booking. */
 export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
   const isReminder = args.kind === "reminder";
-  const titleText = isReminder ? "ใกล้ถึงเวลาจอง" : "มีการจองใหม่";
+  const titleText = isReminder ? fx(args.lang, "staffReminder") : fx(args.lang, "staffNewBooking");
   const iconText = isReminder ? "🔔" : "🆕";
-  const dateStr = formatThaiDate(args.bookingDate);
+  const dateStr = localDate(args.bookingDate, args.lang);
 
   const bodyRows = [
-    kvRow("ลูกค้า", args.customerName),
-    kvRow("เบอร์โทร", args.customerPhone),
-    kvRow("จำนวน", `${args.partySize} ที่นั่ง`),
-    kvRow(isReminder ? "เวลา" : "วันที่", isReminder ? args.bookingTime : `${dateStr} ${args.bookingTime}`),
-    kvRow("โต๊ะ", args.tableLabel ?? "ยังไม่ได้กำหนด",
+    kvRow(fx(args.lang, "labelName"), args.customerName),
+    kvRow(fx(args.lang, "labelPhone"), args.customerPhone),
+    kvRow(fx(args.lang, "labelPartySize"), `${args.partySize} ${fx(args.lang, "seatsUnit")}`),
+    kvRow(
+      isReminder ? fx(args.lang, "labelTime") : fx(args.lang, "labelDate"),
+      isReminder ? args.bookingTime : `${dateStr} ${args.bookingTime}`
+    ),
+    kvRow(fx(args.lang, "labelTable"), args.tableLabel ?? fx(args.lang, "tableNotAssigned"),
       args.tableLabel ? undefined : { valueColor: "#dc2626", valueWeight: "bold" }),
-    ...(args.source ? [kvRow("ที่มา", args.source)] : []),
-    kvRow("เลขที่จอง", `#${args.bookingId}`, { valueColor: COLOR_BRAND, valueWeight: "bold" })
+    ...(args.source ? [kvRow(fx(args.lang, "labelSource"), args.source)] : []),
+    kvRow(fx(args.lang, "labelRef"), `#${args.bookingId}`, { valueColor: COLOR_BRAND, valueWeight: "bold" })
   ];
 
   const bubble = {
@@ -405,7 +471,7 @@ export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
         { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: bodyRows },
         ...(args.notes ? [
           { type: "separator", margin: "md", color: COLOR_DIVIDER },
-          { type: "text", text: "หมายเหตุ", size: "xs", color: COLOR_LABEL, margin: "sm" },
+          { type: "text", text: fx(args.lang, "labelNotes"), size: "xs", color: COLOR_LABEL, margin: "sm" },
           { type: "text", text: args.notes, size: "sm", color: COLOR_TEXT_DARK, wrap: true, margin: "xs" }
         ] : [])
       ]
@@ -421,7 +487,7 @@ export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
           height: "sm",
           action: {
             type: "uri",
-            label: "เปิดในระบบ",
+            label: fx(args.lang, "btnOpenAdmin"),
             uri: `${args.publicBaseUrl}/admin/reserva/bookings`
           }
         }
@@ -543,6 +609,10 @@ export async function notifyCustomer(
       !token ? "no channel token" : "no line_user_id");
     return;
   }
+  // Resolve the language to render the card in: customer's selection at
+  // booking time (booking.lang), falling back to Thai. The 'en' literal is
+  // defensive — anything else stored becomes Thai too.
+  const cardLang: Lang = booking.lang === "en" ? "en" : "th";
   const flex = customerBookingFlex({
     branchName: branch.name,
     branchSlug: branch.slug,
@@ -553,7 +623,8 @@ export async function notifyCustomer(
     bookingTime: booking.booking_time,
     notes: booking.notes,
     publicBaseUrl: getPublicBaseUrl(),
-    kind: type
+    kind: type,
+    lang: cardLang
   });
   const res = await sendLinePush(token, {
     to: booking.line_user_id,
@@ -578,6 +649,8 @@ export async function notifyStaff(
     return;
   }
   if (staffIds.length === 0) return;
+  // Staff cards default to Thai (the team's working language). If we add a
+  // per-staff language preference later we can plumb it through here.
   const flex = staffBookingFlex({
     branchName: branch.name,
     bookingId: booking.id,
@@ -590,7 +663,8 @@ export async function notifyStaff(
     notes: booking.notes,
     source: booking.source,
     publicBaseUrl: getPublicBaseUrl(),
-    kind: type
+    kind: type,
+    lang: "th"
   });
   for (const uid of staffIds) {
     const res = await sendLinePush(token, {

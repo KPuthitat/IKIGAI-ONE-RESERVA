@@ -51,7 +51,7 @@ export default function BookingForm({
   branch, liffId
 }: { branch: Branch; liffId: string | null }) {
   const router = useRouter();
-  const { t, formatDate } = useLang();
+  const { t, formatDate, lang } = useLang();
 
   // Track LIFF connection status — drives the badge shown above the form
   const [liffStatus, setLiffStatus] = useState<"idle" | "init" | "ready" | "guest" | "error">(
@@ -294,7 +294,9 @@ export default function BookingForm({
           branch_slug: branch.slug,
           ...form,
           source: form.sources.length > 0 ? JSON.stringify(form.sources) : "",
-          table_id: tableId
+          table_id: tableId,
+          lang   // captures current UI language so the LINE Flex card can
+                 // be rendered in the same language the customer was using
         })
       });
       const data = await res.json();
