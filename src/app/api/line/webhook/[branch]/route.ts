@@ -78,6 +78,27 @@ function verifySignature(secret: string, body: string, signature: string | null)
   return hash === signature;
 }
 
+/** GET — health check for the webhook URL.
+ *
+ * LINE itself sends POST, so opening the URL in a browser would otherwise
+ * 405. This handler lets admins sanity-check from any browser that the URL
+ * is reachable and that credentials are saved on our side, without
+ * exposing any secret values. Returns 200 even when not configured so the
+ * page renders something readable. */
+export function GET(_req: Request, { params }: { params: { branch: string } }) {
+  const channel = resolveChannel(params.branch);
+  return NextResponse.json({
+    ok: true,
+    code: params.branch,
+    configured: !!channel,
+    scope: channel?.scope ?? null,
+    label: channel?.label ?? null,
+    hint: channel
+      ? "URL is reachable. LINE will call this endpoint via POST with x-line-signature."
+      : "Channel not configured yet — paste the access token + secret in the admin page."
+  });
+}
+
 export async function POST(req: Request, { params }: { params: { branch: string } }) {
   // The route param is named [branch] for backward-compat with old URLs;
   // semantically it's now a channel code.
