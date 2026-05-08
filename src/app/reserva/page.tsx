@@ -64,12 +64,10 @@ function computeTodayStatus(b: Branch, todayBkk: string): TodayStatus {
 export default function CustomerReservaPage() {
   const lang = getLang();
   const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  // NAMA PASTA SRIRACHA แสดงเป็นสาขาแรก ตามด้วยสาขาอื่นเรียงตามชื่อ
+  // ลำดับการแสดง: flagship ขึ้นก่อน (NAMA = display_order 1)
   const branches = getDb().prepare(`
     SELECT * FROM branches
-    ORDER BY
-      CASE WHEN slug = 'nama-sriracha' THEN 0 ELSE 1 END,
-      name
+    ORDER BY display_order, name
   `).all() as Branch[];
 
   return (

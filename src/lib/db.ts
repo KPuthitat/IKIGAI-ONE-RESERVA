@@ -395,6 +395,13 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("no_lunch_break_dates")) {
     db.exec("ALTER TABLE branches ADD COLUMN no_lunch_break_dates TEXT"); // '["2026-12-31"]'
   }
+  // Display order — lower number = appears first in lists. NAMA is the
+  // company flagship and should always come first; everything else falls
+  // back to alphabetical via the secondary ORDER BY name.
+  if (!bnames2.has("display_order")) {
+    db.exec("ALTER TABLE branches ADD COLUMN display_order INTEGER NOT NULL DEFAULT 100");
+    db.exec("UPDATE branches SET display_order = 1 WHERE slug = 'nama-sriracha'");
+  }
 
   // Phase 1C v9: replaces_id for resignation_requests
   const rrcols = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;
@@ -818,6 +825,7 @@ export type Branch = {
   lunch_break_end: string | null;   // HH:MM
   lunch_break_weekdays: string | null;  // JSON array of 0-6
   no_lunch_break_dates: string | null;  // JSON array of YYYY-MM-DD
+  display_order: number;            // sort key, lower = first (NAMA = 1)
 };
 
 export type User = {

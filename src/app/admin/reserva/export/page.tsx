@@ -11,7 +11,7 @@ export default function ExportPage() {
   const lang = getLang();
   const branches = getDb().prepare(`
     SELECT * FROM branches
-    ORDER BY CASE WHEN slug = 'nama-sriracha' THEN 0 ELSE 1 END, name
+    ORDER BY display_order, name
   `).all() as Branch[];
   return (
     <div className="space-y-3">

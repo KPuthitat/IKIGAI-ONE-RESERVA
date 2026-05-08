@@ -44,11 +44,17 @@ export function getChannelByCode(code: string): MessagingChannel | null {
   return row ?? null;
 }
 
-/** All RESERVA per-branch channels, ordered by branch label. */
+/** All RESERVA per-branch channels, ordered by branch.display_order then label.
+ *  NAMA (display_order=1) ends up first; new branches default to 100 and
+ *  fall through to alphabetical-by-label. */
 export function listReservaChannels(): MessagingChannel[] {
-  return getDb().prepare(
-    "SELECT * FROM messaging_channels WHERE scope = 'reserva' ORDER BY label"
-  ).all() as MessagingChannel[];
+  return getDb().prepare(`
+    SELECT mc.*
+    FROM messaging_channels mc
+    LEFT JOIN branches b ON b.id = mc.branch_id
+    WHERE mc.scope = 'reserva'
+    ORDER BY COALESCE(b.display_order, 100), mc.label
+  `).all() as MessagingChannel[];
 }
 
 /** Partial-update credentials on any channel by code (platform or reserva).

@@ -14,7 +14,7 @@ export default function StaffPage() {
   const db = getDb();
   const branches = db.prepare(`
     SELECT * FROM branches
-    ORDER BY CASE WHEN slug = 'nama-sriracha' THEN 0 ELSE 1 END, name
+    ORDER BY display_order, name
   `).all() as Branch[];
   const users = db.prepare("SELECT * FROM users ORDER BY created_at DESC").all() as User[];
   const userBranches = db.prepare(

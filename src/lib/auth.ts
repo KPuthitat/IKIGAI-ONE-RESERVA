@@ -49,13 +49,12 @@ export function getSessionUser(): SessionUser | null {
     db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
     return null;
   }
-  // NAMA PASTA SRIRACHA แสดงเป็นสาขาแรกในทุกที่ที่ใช้ user.branches
+  // ลำดับการแสดงสาขา — flagship (NAMA = display_order 1) ขึ้นก่อนเสมอ
+  // ตามด้วยอัลฟาเบติก (display_order default = 100 สำหรับสาขาอื่น)
   const branches = db.prepare(`
     SELECT b.* FROM user_branches ub JOIN branches b ON ub.branch_id = b.id
     WHERE ub.user_id = ?
-    ORDER BY
-      CASE WHEN b.slug = 'nama-sriracha' THEN 0 ELSE 1 END,
-      b.name
+    ORDER BY b.display_order, b.name
   `).all(row.id) as Branch[];
 
   let activeBranchId = row.active_branch_id;
