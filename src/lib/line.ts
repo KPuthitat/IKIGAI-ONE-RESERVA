@@ -38,51 +38,10 @@ export async function sendLinePush(
   }
 }
 
-export function customerReminderMessage(b: Booking, branchName: string): string {
-  return [
-    `🍽️ แจ้งเตือนการจองโต๊ะ`,
-    `ร้าน: ${branchName}`,
-    `ชื่อ: ${b.customer_name}`,
-    `จำนวน: ${b.party_size} ที่นั่ง`,
-    `วันที่: ${formatThaiDate(b.booking_date)} เวลา ${b.booking_time}`,
-    "",
-    `ทีมงานพร้อมต้อนรับคุณค่ะ 🙏`,
-    `หากต้องการยกเลิก กรุณาแจ้งล่วงหน้าผ่าน LINE นี้`
-  ].join("\n");
-}
-
-export function customerConfirmedMessage(b: Booking, branchName: string): string {
-  return [
-    `✅ ยืนยันการจองโต๊ะ`,
-    `ร้าน: ${branchName}`,
-    `ชื่อ: ${b.customer_name}`,
-    `จำนวน: ${b.party_size} ที่นั่ง`,
-    `วันที่: ${formatThaiDate(b.booking_date)} เวลา ${b.booking_time}`,
-    "",
-    `เราจะส่งแจ้งเตือนอีกครั้งก่อนถึงเวลาจองค่ะ`
-  ].join("\n");
-}
-
-export function staffReminderMessage(b: Booking, tableLabel: string | null): string {
-  return [
-    `🔔 มีจองโต๊ะใกล้ถึงเวลา`,
-    `ลูกค้า: ${b.customer_name} (${b.customer_phone})`,
-    `จำนวน: ${b.party_size} ที่นั่ง`,
-    `เวลา: ${b.booking_time}`,
-    `โต๊ะ: ${tableLabel ?? "ยังไม่ได้กำหนด"}`,
-    b.notes ? `หมายเหตุ: ${b.notes}` : ""
-  ].filter(Boolean).join("\n");
-}
-
-export function staffNewBookingMessage(b: Booking): string {
-  return [
-    `🆕 มีการจองใหม่`,
-    `ลูกค้า: ${b.customer_name} (${b.customer_phone})`,
-    `จำนวน: ${b.party_size} ที่นั่ง`,
-    `วันที่: ${formatThaiDate(b.booking_date)} ${b.booking_time}`,
-    b.source ? `ที่มา: ${b.source}` : ""
-  ].filter(Boolean).join("\n");
-}
+// (Legacy text builders for booking events were replaced by Flex cards —
+// see customerBookingFlex / staffBookingFlex below. notifyCustomer and
+// notifyStaff at the bottom of this file are still the entry points used
+// by the API routes + cron job.)
 
 function formatThaiDate(yyyymmdd: string): string {
   const [y, m, d] = yyyymmdd.split("-");
@@ -262,6 +221,235 @@ export function personaClockInFlex(args: ClockInCardArgs): LineFlexMessage {
   };
 }
 
+// ── RESERVA: booking confirmation / reminder Flex cards ─────────────
+
+export type CustomerBookingCardArgs = {
+  branchName: string;
+  branchSlug: string;          // for the "open restaurant" button URL
+  bookingId: number;
+  customerName: string;
+  partySize: number;
+  bookingDate: string;          // YYYY-MM-DD
+  bookingTime: string;          // HH:MM
+  notes: string | null;
+  publicBaseUrl: string;        // e.g., 'https://ikigaimedihealth.com'
+  kind: "created" | "reminder";
+};
+
+export type StaffBookingCardArgs = {
+  branchName: string;
+  bookingId: number;
+  customerName: string;
+  customerPhone: string;
+  partySize: number;
+  bookingDate: string;          // YYYY-MM-DD
+  bookingTime: string;          // HH:MM
+  tableLabel: string | null;
+  notes: string | null;
+  source: string | null;
+  publicBaseUrl: string;
+  kind: "created" | "reminder";
+};
+
+/** Two-column kv row helper used by both booking cards. */
+function kvRow(label: string, value: string, opts?: { valueColor?: string; valueWeight?: "regular" | "bold" }) {
+  return {
+    type: "box", layout: "horizontal", spacing: "sm",
+    contents: [
+      { type: "text", text: label, size: "sm", color: COLOR_LABEL, flex: 4 },
+      {
+        type: "text", text: value, size: "sm",
+        color: opts?.valueColor ?? COLOR_TEXT_DARK,
+        weight: opts?.valueWeight ?? "bold",
+        flex: 6, align: "end", wrap: true
+      }
+    ]
+  };
+}
+
+/** Build a customer-facing Flex card for a new / upcoming booking. */
+export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMessage {
+  const isReminder = args.kind === "reminder";
+  const titleText = isReminder ? "แจ้งเตือนการจองโต๊ะ" : "ยืนยันการจองโต๊ะ";
+  const iconText = isReminder ? "🔔" : "✓";
+  const dateStr = formatThaiDate(args.bookingDate);
+
+  const bodyRows = [
+    kvRow("ชื่อผู้จอง", args.customerName),
+    kvRow("จำนวน", `${args.partySize} ที่นั่ง`),
+    kvRow("วันที่", dateStr),
+    kvRow("เวลา", args.bookingTime),
+    kvRow("เลขที่จอง", `#${args.bookingId}`, { valueColor: COLOR_BRAND, valueWeight: "bold" })
+  ];
+
+  const bubble = {
+    type: "bubble",
+    size: "kilo",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: COLOR_INK_700,
+      paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "RESERVA", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", spacing: "sm", margin: "md",
+          contents: [
+            { type: "text", text: iconText, color: COLOR_BRAND_LIGHT, size: "lg", weight: "bold", flex: 0 },
+            { type: "text", text: titleText, color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md",
+      paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "lg", color: COLOR_TEXT_DARK, wrap: true },
+        ...(args.notes ? [{ type: "text", text: args.notes, size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "xs" }] : []),
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: bodyRows },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        {
+          type: "text",
+          text: `พิมพ์ "ยกเลิก #${args.bookingId}" ในแชทนี้เพื่อยกเลิกการจอง`,
+          size: "xxs", color: COLOR_TEXT_MUTED, wrap: true, margin: "sm"
+        }
+      ]
+    },
+    footer: {
+      type: "box", layout: "vertical",
+      paddingAll: "16px", paddingTop: "0px",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          color: COLOR_BRAND,
+          height: "sm",
+          action: {
+            type: "uri",
+            label: "ดูข้อมูลร้าน",
+            uri: `${args.publicBaseUrl}/reserva/${args.branchSlug}`
+          }
+        }
+      ]
+    },
+    styles: {
+      header: { backgroundColor: COLOR_INK_700 },
+      body: { backgroundColor: "#ffffff" },
+      footer: { backgroundColor: "#ffffff", separator: true, separatorColor: COLOR_DIVIDER }
+    }
+  };
+
+  return {
+    type: "flex",
+    altText: `${titleText} ${args.branchName} · ${dateStr} ${args.bookingTime}`,
+    contents: bubble
+  };
+}
+
+/** Build a staff-facing Flex card alerting them to a booking. */
+export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
+  const isReminder = args.kind === "reminder";
+  const titleText = isReminder ? "ใกล้ถึงเวลาจอง" : "มีการจองใหม่";
+  const iconText = isReminder ? "🔔" : "🆕";
+  const dateStr = formatThaiDate(args.bookingDate);
+
+  const bodyRows = [
+    kvRow("ลูกค้า", args.customerName),
+    kvRow("เบอร์โทร", args.customerPhone),
+    kvRow("จำนวน", `${args.partySize} ที่นั่ง`),
+    kvRow(isReminder ? "เวลา" : "วันที่", isReminder ? args.bookingTime : `${dateStr} ${args.bookingTime}`),
+    kvRow("โต๊ะ", args.tableLabel ?? "ยังไม่ได้กำหนด",
+      args.tableLabel ? undefined : { valueColor: "#dc2626", valueWeight: "bold" }),
+    ...(args.source ? [kvRow("ที่มา", args.source)] : []),
+    kvRow("เลขที่จอง", `#${args.bookingId}`, { valueColor: COLOR_BRAND, valueWeight: "bold" })
+  ];
+
+  const bubble = {
+    type: "bubble",
+    size: "kilo",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: COLOR_INK_700,
+      paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "RESERVA · STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", spacing: "sm", margin: "md",
+          contents: [
+            { type: "text", text: iconText, color: COLOR_BRAND_LIGHT, size: "lg", weight: "bold", flex: 0 },
+            { type: "text", text: titleText, color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md",
+      paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: bodyRows },
+        ...(args.notes ? [
+          { type: "separator", margin: "md", color: COLOR_DIVIDER },
+          { type: "text", text: "หมายเหตุ", size: "xs", color: COLOR_LABEL, margin: "sm" },
+          { type: "text", text: args.notes, size: "sm", color: COLOR_TEXT_DARK, wrap: true, margin: "xs" }
+        ] : [])
+      ]
+    },
+    footer: {
+      type: "box", layout: "vertical",
+      paddingAll: "16px", paddingTop: "0px",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          color: COLOR_BRAND,
+          height: "sm",
+          action: {
+            type: "uri",
+            label: "เปิดในระบบ",
+            uri: `${args.publicBaseUrl}/admin/reserva/bookings`
+          }
+        }
+      ]
+    },
+    styles: {
+      header: { backgroundColor: COLOR_INK_700 },
+      body: { backgroundColor: "#ffffff" },
+      footer: { backgroundColor: "#ffffff", separator: true, separatorColor: COLOR_DIVIDER }
+    }
+  };
+
+  return {
+    type: "flex",
+    altText: `${iconText} ${titleText} · ${args.customerName} · ${args.bookingTime}`,
+    contents: bubble
+  };
+}
+
+/** Resolve the public base URL used to build deep links inside Flex cards.
+ *  Reads PUBLIC_BASE_URL env (preferred), falls back to a hardcoded prod
+ *  hostname. Used by notifyCustomer / notifyStaff which run in both API
+ *  request and cron contexts (cron has no request headers). */
+function getPublicBaseUrl(): string {
+  const fromEnv = process.env.PUBLIC_BASE_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/+$/, "");  // strip trailing slash
+  return "https://ikigaimedihealth.com";
+}
+
 // ── Lunch-break helper: is lunch break active for a given branch + date? ──
 
 /** Returns true if the branch's lunch break applies to the given Bangkok date. */
@@ -344,12 +532,21 @@ export async function notifyCustomer(
       !branch.line_channel_token ? "no channel token" : "no line_user_id");
     return;
   }
-  const text = type === "created"
-    ? customerConfirmedMessage(booking, branch.name)
-    : customerReminderMessage(booking, branch.name);
+  const flex = customerBookingFlex({
+    branchName: branch.name,
+    branchSlug: branch.slug,
+    bookingId: booking.id,
+    customerName: booking.customer_name,
+    partySize: booking.party_size,
+    bookingDate: booking.booking_date,
+    bookingTime: booking.booking_time,
+    notes: booking.notes,
+    publicBaseUrl: getPublicBaseUrl(),
+    kind: type
+  });
   const res = await sendLinePush(branch.line_channel_token, {
     to: booking.line_user_id,
-    messages: [{ type: "text", text }]
+    messages: [flex]
   });
   db.prepare(
     "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
@@ -369,12 +566,23 @@ export async function notifyStaff(
     return;
   }
   if (staffIds.length === 0) return;
-  const text = type === "created"
-    ? staffNewBookingMessage(booking)
-    : staffReminderMessage(booking, tableLabel);
+  const flex = staffBookingFlex({
+    branchName: branch.name,
+    bookingId: booking.id,
+    customerName: booking.customer_name,
+    customerPhone: booking.customer_phone,
+    partySize: booking.party_size,
+    bookingDate: booking.booking_date,
+    bookingTime: booking.booking_time,
+    tableLabel,
+    notes: booking.notes,
+    source: booking.source,
+    publicBaseUrl: getPublicBaseUrl(),
+    kind: type
+  });
   for (const uid of staffIds) {
     const res = await sendLinePush(branch.line_channel_token, {
-      to: uid, messages: [{ type: "text", text }]
+      to: uid, messages: [flex]
     });
     db.prepare(
       "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
