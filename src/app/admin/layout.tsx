@@ -55,6 +55,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/admin/reserva", label: t(lang, "admin.nav.overview") },
         { href: "/admin/reserva/bookings", label: t(lang, "admin.nav.bookings") },
+        { href: "/admin/reserva/timetable", label: t(lang, "admin.reserva.nav.timetable") },
         { href: "/admin/reserva/scan", label: t(lang, "admin.reserva.nav.scan") },
         { href: "/admin/reserva/zones", label: t(lang, "admin.reserva.nav.zones") },
         { href: "/admin/reserva/floor-plan", label: t(lang, "admin.nav.floorPlan") },

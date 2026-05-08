@@ -41,6 +41,10 @@ export default function BookingsPage({ searchParams }: { searchParams: { date?: 
           <button className="btn-secondary">{t(lang, "admin.bookings.viewBtn")}</button>
         </form>
       </div>
+      <a href={`/admin/reserva/timetable?date=${date}`}
+        className="inline-flex items-center gap-1 text-sm text-brand hover:underline">
+        {t(lang, "admin.reserva.timetable.gridView")} →
+      </a>
       <BookingsClient
         bookings={bookings}
         tables={allTables.map((row) => ({

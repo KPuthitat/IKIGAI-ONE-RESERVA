@@ -50,7 +50,8 @@ const ORIGIN_DEFS: Array<{ value: string; key: string }> = [
 export type BookingFormMode = "customer" | "walkin" | "phone";
 
 export default function BookingForm({
-  branch, liffId, mode = "customer", onSuccess
+  branch, liffId, mode = "customer", onSuccess,
+  initialTableId, initialBookingTime, initialBookingDate
 }: {
   branch: Branch;
   liffId: string | null;
@@ -59,6 +60,12 @@ export default function BookingForm({
    *  the customer "done" screen. The admin caller then closes the modal
    *  and refreshes the bookings list. */
   onSuccess?: (bookingId: number) => void;
+  /** Pre-fill table when staff click an empty cell in the timetable grid */
+  initialTableId?: number | null;
+  /** Pre-fill HH:MM when opening from a specific time slot */
+  initialBookingTime?: string;
+  /** Pre-fill YYYY-MM-DD when not today (e.g., timetable showing future date) */
+  initialBookingDate?: string;
 }) {
   const router = useRouter();
   const { t, formatDate, lang } = useLang();
@@ -110,8 +117,14 @@ export default function BookingForm({
     customer_name: initialName,
     customer_phone: "",
     party_size: 2,
-    booking_date: today,
-    booking_time: initialTime,
+    // Caller-provided overrides win — admin clicking on a future-day
+    // timetable cell wants that exact date/time, not today/now defaults
+    booking_date: initialBookingDate && /^\d{4}-\d{2}-\d{2}$/.test(initialBookingDate)
+      ? initialBookingDate
+      : today,
+    booking_time: initialBookingTime && /^\d{2}:\d{2}$/.test(initialBookingTime)
+      ? initialBookingTime
+      : initialTime,
     sources: [] as string[],
     customer_origin: "",
     is_member: null as 0 | 1 | null,
@@ -120,7 +133,11 @@ export default function BookingForm({
   });
   const [step, setStep] = useState<"form" | "choose" | "done">("form");
   const [suggestions, setSuggestions] = useState<TableOption[]>([]);
-  const [chosenTable, setChosenTable] = useState<number | "auto" | null>(null);
+  // Pre-select the table when caller passed an initial id — saves the
+  // staff a click since they already chose the cell in the timetable.
+  const [chosenTable, setChosenTable] = useState<number | "auto" | null>(
+    initialTableId ?? null
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultId, setResultId] = useState<number | null>(null);
