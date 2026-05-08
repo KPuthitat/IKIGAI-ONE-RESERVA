@@ -140,7 +140,7 @@ export async function POST(req: Request, { params }: { params: { branch: string 
             ).run(new Date().toISOString(), new Date().toISOString(), id);
             await sendLinePush(channel.channel_token, {
               to: userId,
-              messages: [{ type: "text", text: `ยกเลิกการจอง #${id} เรียบร้อยค่ะ ขอบคุณที่แจ้งล่วงหน้า 🙏` }]
+              messages: [{ type: "text", text: `ยกเลิกการจอง #${id} เรียบร้อย ขอบคุณที่แจ้งล่วงหน้า` }]
             });
           } else {
             await sendLinePush(channel.channel_token, {
@@ -156,8 +156,8 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       // mapping a customer's LINE id to their booking later (RESERVA).
       if (/^\s*(id|ไอดี|myid|line\s*id)\s*$/i.test(text)) {
         const tail = channel.scope === "platform"
-          ? "แคปหน้าจอแล้วส่งให้แอดมินตั้งในระบบนะคะ — หลังจากนั้นจะได้รับการ์ดยืนยันการเข้างานทุกครั้ง"
-          : "แคปหน้าจอแล้วส่งให้แอดมินตั้งในระบบนะคะ";
+          ? "กรุณาบันทึกหน้าจอและส่งให้แอดมินเพื่อตั้งค่าในระบบ — หลังจากนั้นจะได้รับการ์ดยืนยันการเข้างานทุกครั้ง"
+          : "กรุณาบันทึกหน้าจอและส่งให้แอดมินเพื่อตั้งค่าในระบบ";
         await sendLinePush(channel.channel_token, {
           to: userId,
           messages: [{
