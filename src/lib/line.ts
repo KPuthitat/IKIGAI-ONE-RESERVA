@@ -81,6 +81,7 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     tableNotAssigned: "ยังไม่ได้กำหนด",
     btnViewRestaurant: "ดูข้อมูลร้าน",
     btnEditBooking: "ปรับเปลี่ยน / ยกเลิกการจอง",
+    btnMenu: "เมนูอาหาร",
     btnOpenAdmin: "เปิดในระบบ",
     cancelHint: 'หรือพิมพ์ "ยกเลิก #{ref}" ในแชทนี้เพื่อยกเลิก (ก่อนถึงเวลาจอง 2 ชั่วโมง)',
     qrCaption: "ให้พนักงานสแกนคิวอาร์โค้ดเมื่อถึงร้าน เพื่อยืนยันการจอง",
@@ -103,6 +104,7 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     tableNotAssigned: "not assigned",
     btnViewRestaurant: "View restaurant",
     btnEditBooking: "Modify / cancel booking",
+    btnMenu: "Menu",
     btnOpenAdmin: "Open in admin",
     cancelHint: 'Or reply "cancel #{ref}" in this chat (up to 2 hours before booking time)',
     qrCaption: "Show this QR to staff on arrival to confirm your booking",
@@ -302,9 +304,10 @@ export type CustomerBookingCardArgs = {
   publicBaseUrl: string;        // e.g., 'https://ikigaimedihealth.com'
   kind: "created" | "reminder";
   lang: Lang;
-  /** Optional second CTA configured per branch (e.g. 'เมนูอาหาร' → menu URL) */
-  extraButtonLabel?: string | null;
-  extraButtonUrl?: string | null;
+  /** Optional menu URL — when set, an "เมนูอาหาร / Menu" button is added.
+   *  Label is hardcoded per language so it changes when the customer
+   *  flips language toggle; admin only configures the link. */
+  menuUrl?: string | null;
 };
 
 export type StaffBookingCardArgs = {
@@ -455,17 +458,17 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
             uri: `${args.publicBaseUrl}/reserva/edit/${refDisplay}`
           }
         },
-        // Optional secondary CTA — admin-configured per branch (e.g. menu
-        // PDF link, Google Maps directions, etc.). Hidden when the branch
-        // hasn't filled in both label + url.
-        ...(args.extraButtonLabel && args.extraButtonUrl ? [{
+        // Optional menu CTA — admin only configures the URL per branch.
+        // Label comes from FLEX_STRINGS so it follows the customer's
+        // language toggle automatically.
+        ...(args.menuUrl ? [{
           type: "button",
           style: "secondary",
           height: "sm",
           action: {
             type: "uri",
-            label: args.extraButtonLabel,
-            uri: args.extraButtonUrl
+            label: fx(args.lang, "btnMenu"),
+            uri: args.menuUrl
           }
         }] : [])
       ]
@@ -694,8 +697,7 @@ export async function notifyCustomer(
     publicBaseUrl: getPublicBaseUrl(),
     kind: type,
     lang: cardLang,
-    extraButtonLabel: branch.extra_button_label,
-    extraButtonUrl: branch.extra_button_url
+    menuUrl: branch.extra_button_url
   });
   const res = await sendLinePush(token, {
     to: booking.line_user_id,

@@ -44,8 +44,8 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
     lunch_break_end: branch.lunch_break_end ?? "",
     lunch_break_weekdays: parseWeekdays(branch.lunch_break_weekdays),
     no_lunch_break_dates: parseDates(branch.no_lunch_break_dates),
-    // Customer Flex extra CTA
-    extra_button_label: branch.extra_button_label ?? "",
+    // Customer Flex 'Menu' CTA — admin only sets the URL; the label is
+    // hardcoded per language in the Flex builder.
     extra_button_url: branch.extra_button_url ?? ""
   });
   const [newSpecialDate, setNewSpecialDate] = useState("");
@@ -75,7 +75,6 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
         ? JSON.stringify(form.lunch_break_weekdays) : null,
       no_lunch_break_dates: form.no_lunch_break_dates.length > 0
         ? JSON.stringify(form.no_lunch_break_dates) : null,
-      extra_button_label: form.extra_button_label.trim() || null,
       extra_button_url: form.extra_button_url.trim() || null
     };
     const res = await fetch(apiUrl(`/api/admin/branch/${branch.id}`), {
@@ -283,30 +282,26 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
         <p className="text-xs text-slate-500 mt-1">{t("admin.settings.staffLineIdsHint")}</p>
       </div>
 
-      {/* Optional second CTA on the customer's LINE Flex card. Both label
-          and URL must be set for the button to appear. */}
+      {/* Optional 'เมนูอาหาร / Menu' button on the customer's LINE Flex
+          card. Label is fixed per language so it changes when customers
+          flip the language toggle; admin only configures the URL.
+          Leave blank to hide the button entirely. */}
       <h2 className="font-semibold pt-3 border-t border-slate-100">
-        {t("admin.settings.extraBtnSection")}
+        {t("admin.settings.menuBtnSection")}
       </h2>
       <p className="text-sm text-slate-500">
-        {t("admin.settings.extraBtnDesc")}
+        {t("admin.settings.menuBtnDesc")}
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="label">{t("admin.settings.field.extraBtnLabel")}</label>
-          <input className="input"
-            value={form.extra_button_label} maxLength={40}
-            onChange={(e) => setForm({ ...form, extra_button_label: e.target.value })}
-            placeholder={t("admin.settings.extraBtnLabelPlaceholder")} />
-        </div>
-        <div>
-          <label className="label">{t("admin.settings.field.extraBtnUrl")}</label>
-          <input className="input"
-            type="url"
-            value={form.extra_button_url} maxLength={500}
-            onChange={(e) => setForm({ ...form, extra_button_url: e.target.value })}
-            placeholder="https://..." />
-        </div>
+      <div>
+        <label className="label">{t("admin.settings.field.menuBtnUrl")}</label>
+        <input className="input"
+          type="url"
+          value={form.extra_button_url} maxLength={500}
+          onChange={(e) => setForm({ ...form, extra_button_url: e.target.value })}
+          placeholder="https://drive.google.com/..." />
+        <p className="text-xs text-slate-500 mt-1">
+          {t("admin.settings.menuBtnHint")}
+        </p>
       </div>
 
       {err && <div className="text-red-600 text-sm">{err}</div>}

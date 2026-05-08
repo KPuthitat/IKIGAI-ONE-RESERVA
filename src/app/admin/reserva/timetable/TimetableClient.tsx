@@ -15,7 +15,7 @@
 // Click empty cell → walk-in modal pre-filled with table id + cell time.
 // Click booking overlay → open /r/<ref> in new tab.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Branch, Booking, TableRow, Zone } from "@/lib/db";
@@ -23,9 +23,19 @@ import { useLang } from "@/lib/LangProvider";
 import BookingForm from "@/app/reserva/[branch]/BookingForm";
 
 const SLOT_MINUTES = 30;
-const SLOT_PX = 60;
-const ROW_PX = 44;
 const LABEL_COL_PX = 110;
+
+// Zoom presets for cell width × row height. Lets staff trade off
+// glance-ability ('wide' shows more text per cell) vs at-a-glance scope
+// ('compact' fits more hours on a small laptop screen). Stored in
+// localStorage so the choice persists across reloads.
+type Zoom = "compact" | "normal" | "wide";
+const ZOOM_PRESETS: Record<Zoom, { slotPx: number; rowPx: number }> = {
+  compact: { slotPx: 48, rowPx: 36 },
+  normal:  { slotPx: 64, rowPx: 44 },
+  wide:    { slotPx: 88, rowPx: 56 }
+};
+const ZOOM_STORAGE_KEY = "reserva.timetable.zoom";
 
 type Props = {
   branch: Branch;
@@ -39,6 +49,25 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
   const router = useRouter();
   const { t } = useLang();
   const [walkin, setWalkin] = useState<{ tableId: number; time: string } | null>(null);
+
+  // Zoom state — start with whatever the user picked last time, default
+  // to 'normal'. Persisted in localStorage on each change.
+  const [zoom, setZoom] = useState<Zoom>("normal");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(ZOOM_STORAGE_KEY);
+    if (saved === "compact" || saved === "normal" || saved === "wide") {
+      setZoom(saved);
+    }
+  }, []);
+  function changeZoom(z: Zoom): void {
+    setZoom(z);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(ZOOM_STORAGE_KEY, z);
+    }
+  }
+  const SLOT_PX = ZOOM_PRESETS[zoom].slotPx;
+  const ROW_PX = ZOOM_PRESETS[zoom].rowPx;
 
   const [openMin, closeMin] = useMemo(() => {
     const parse = (s: string | null | undefined, fallback: number) => {
@@ -126,7 +155,28 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
   const gridCols = `${LABEL_COL_PX}px repeat(${slotCount}, ${SLOT_PX}px)`;
 
   return (
-    <div className="card !p-0 overflow-x-auto">
+    <div className="space-y-2">
+      {/* Zoom toggle — lets staff trade compact (more hours visible) for
+          wide (more text per cell). Persists per-user via localStorage. */}
+      <div className="flex items-center gap-1 text-xs text-slate-500">
+        <span className="mr-1">{t("admin.reserva.timetable.zoom")}:</span>
+        {(["compact", "normal", "wide"] as const).map((z) => (
+          <button
+            key={z}
+            type="button"
+            onClick={() => changeZoom(z)}
+            className={`px-2.5 py-1 rounded-md transition ${
+              zoom === z
+                ? "bg-brand text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            {t(`admin.reserva.timetable.zoom.${z}`)}
+          </button>
+        ))}
+      </div>
+
+      <div className="card !p-0 overflow-x-auto">
       {unassigned.length > 0 && (
         <div className="px-3 py-2 bg-amber-50 border-b border-amber-200 text-xs">
           <div className="font-semibold text-amber-800 mb-1">
@@ -155,7 +205,7 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
           </div>
           {slots.map((s) => (
             <div key={s.index}
-              className="text-[11px] text-slate-500 text-center py-1"
+              className="text-xs text-slate-500 text-center py-1 flex items-center justify-center"
               style={{ height: ROW_PX }}>
               {s.label}
             </div>
@@ -179,6 +229,7 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
                 slots={slots}
                 gridCols={gridCols}
                 bookings={bookingsByTable.get(tbl.id) ?? []}
+                rowPx={ROW_PX}
                 onEmptyCellClick={onEmptyCellClick}
                 bookingPlacement={bookingPlacement}
                 bookingTone={bookingTone}
@@ -204,17 +255,20 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
           onSaved={() => { setWalkin(null); router.refresh(); }}
         />
       )}
+      </div>
     </div>
   );
 }
 
 function TableRowComponent({
-  table, slots, gridCols, bookings, onEmptyCellClick, bookingPlacement, bookingTone
+  table, slots, gridCols, bookings, rowPx,
+  onEmptyCellClick, bookingPlacement, bookingTone
 }: {
   table: TableRow;
   slots: Array<{ index: number; minutes: number; label: string }>;
   gridCols: string;
   bookings: Booking[];
+  rowPx: number;
   onEmptyCellClick: (tableId: number, slotMinutes: number) => void;
   bookingPlacement: (b: Booking) => { left: number; width: number } | null;
   bookingTone: (b: Booking) => string;
@@ -225,10 +279,10 @@ function TableRowComponent({
       {/* Sticky table label */}
       <div
         className="sticky left-0 z-10 bg-white border-r border-slate-200 px-2 py-1 text-sm font-medium text-slate-700 flex items-center justify-between"
-        style={{ height: ROW_PX }}
+        style={{ height: rowPx }}
       >
         <span>{table.label}</span>
-        <span className="text-[10px] text-slate-400">{table.capacity}</span>
+        <span className="text-xs text-slate-400">{table.capacity}</span>
       </div>
 
       {/* Empty time-slot cells */}
@@ -238,7 +292,7 @@ function TableRowComponent({
           type="button"
           onClick={() => onEmptyCellClick(table.id, s.minutes)}
           className="border-r border-slate-100 hover:bg-emerald-50 transition relative"
-          style={{ height: ROW_PX }}
+          style={{ height: rowPx }}
           title={`+ ${s.label} · ${table.label}`}
         >
           <span className="sr-only">+ {table.label} {s.label}</span>
@@ -254,12 +308,12 @@ function TableRowComponent({
             key={b.id}
             href={`/r/${b.ref_no ?? b.id}`}
             target="_blank"
-            className={`absolute rounded border ${bookingTone(b)} px-1.5 py-0.5 text-[11px] leading-tight overflow-hidden hover:brightness-95 z-[5]`}
+            className={`absolute rounded border ${bookingTone(b)} px-1.5 py-0.5 text-xs leading-tight overflow-hidden hover:brightness-95 z-[5]`}
             style={{
               left: place.left + 2,
               width: place.width - 4,
               top: 2,
-              height: ROW_PX - 4
+              height: rowPx - 4
             }}
             title={`${b.customer_name} · ${b.party_size} ที่นั่ง · ${b.booking_time}`}
           >
