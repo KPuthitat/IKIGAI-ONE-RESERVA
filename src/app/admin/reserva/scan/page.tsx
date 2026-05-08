@@ -11,7 +11,7 @@ import ScannerClient from "./ScannerClient";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "สแกน QR · RESERVA" };
+export const metadata: Metadata = { title: "สแกนคิวอาร์โค้ด · RESERVA" };
 
 export default function ScanPage() {
   requireUser();

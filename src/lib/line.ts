@@ -83,7 +83,7 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     btnEditBooking: "ปรับเปลี่ยน / ยกเลิกการจอง",
     btnOpenAdmin: "เปิดในระบบ",
     cancelHint: 'หรือพิมพ์ "ยกเลิก #{ref}" ในแชทนี้เพื่อยกเลิก (ก่อนถึงเวลาจอง 2 ชั่วโมง)',
-    qrCaption: "ให้พนักงานสแกนเมื่อถึงร้าน เพื่อยืนยันการจอง",
+    qrCaption: "ให้พนักงานสแกนคิวอาร์โค้ดเมื่อถึงร้าน เพื่อยืนยันการจอง",
     staffNewBooking: "มีการจองใหม่",
     staffReminder: "ใกล้ถึงเวลาจอง"
   },
