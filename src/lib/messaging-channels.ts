@@ -44,6 +44,50 @@ export function getChannelByCode(code: string): MessagingChannel | null {
   return row ?? null;
 }
 
+/** All RESERVA per-branch channels, ordered by branch label. */
+export function listReservaChannels(): MessagingChannel[] {
+  return getDb().prepare(
+    "SELECT * FROM messaging_channels WHERE scope = 'reserva' ORDER BY label"
+  ).all() as MessagingChannel[];
+}
+
+/** Partial-update credentials on any channel by code (platform or reserva).
+ *  Same three-state semantics as setPlatformChannel:
+ *    undefined = leave alone, "" = clear, non-empty = set. */
+export function setChannelCreds(args: {
+  code: string;
+  channel_token?: string | undefined;
+  channel_secret?: string | undefined;
+  updated_by: number | null;
+}): { ok: true } | { ok: false; error: "not_found" } {
+  const db = getDb();
+  const exists = db.prepare("SELECT 1 FROM messaging_channels WHERE code = ?").get(args.code);
+  if (!exists) return { ok: false, error: "not_found" };
+
+  const sets: string[] = [];
+  const vals: Array<string | number | null> = [];
+
+  if (args.channel_token !== undefined) {
+    sets.push("channel_token = ?");
+    const v = args.channel_token.trim();
+    vals.push(v === "" ? null : v);
+  }
+  if (args.channel_secret !== undefined) {
+    sets.push("channel_secret = ?");
+    const v = args.channel_secret.trim();
+    vals.push(v === "" ? null : v);
+  }
+  if (sets.length === 0) return { ok: true };
+
+  sets.push("updated_at = CURRENT_TIMESTAMP");
+  sets.push("updated_by = ?");
+  vals.push(args.updated_by);
+  vals.push(args.code);
+
+  db.prepare(`UPDATE messaging_channels SET ${sets.join(", ")} WHERE code = ?`).run(...vals);
+  return { ok: true };
+}
+
 /** True if a channel has both secret + token filled in (= ready to send). */
 export function isChannelReady(c: MessagingChannel | null): boolean {
   return !!(c && c.channel_secret && c.channel_token);

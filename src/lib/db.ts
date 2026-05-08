@@ -572,6 +572,44 @@ function runMigrations(db: Database.Database): void {
       VALUES ('platform', 'ikigai-os', 'IKIGAI OS');
   `);
 
+  // Auto-seed one row per branch (code = branch.slug, scope='reserva') so
+  // the admin UI always has something to render. Idempotent — INSERT OR
+  // IGNORE on the unique 'code' column.
+  db.exec(`
+    INSERT OR IGNORE INTO messaging_channels (scope, code, label, branch_id)
+    SELECT 'reserva', slug, name, id FROM branches
+  `);
+
+  // Migrate any legacy per-branch creds (branches.line_channel_token/secret)
+  // into the new messaging_channels rows. Only fills empty slots — never
+  // overwrites a value already entered through the new admin UI.
+  db.exec(`
+    UPDATE messaging_channels
+    SET channel_token = (
+      SELECT b.line_channel_token FROM branches b
+      WHERE b.id = messaging_channels.branch_id
+    )
+    WHERE scope = 'reserva'
+      AND channel_token IS NULL
+      AND EXISTS (
+        SELECT 1 FROM branches b
+        WHERE b.id = messaging_channels.branch_id
+          AND b.line_channel_token IS NOT NULL
+      );
+    UPDATE messaging_channels
+    SET channel_secret = (
+      SELECT b.line_channel_secret FROM branches b
+      WHERE b.id = messaging_channels.branch_id
+    )
+    WHERE scope = 'reserva'
+      AND channel_secret IS NULL
+      AND EXISTS (
+        SELECT 1 FROM branches b
+        WHERE b.id = messaging_channels.branch_id
+          AND b.line_channel_secret IS NOT NULL
+      );
+  `);
+
   // ── One-time payroll data wipe (per user request to start fresh) ──
   // Tracked via PRAGMA user_version so it runs exactly once per database.
   const userVer = db.pragma("user_version", { simple: true }) as number;

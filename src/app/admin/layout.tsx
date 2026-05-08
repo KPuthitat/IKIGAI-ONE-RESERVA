@@ -57,6 +57,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/reserva/bookings", label: t(lang, "admin.nav.bookings") },
         { href: "/admin/reserva/floor-plan", label: t(lang, "admin.nav.floorPlan") },
         { href: "/admin/reserva/staff", label: t(lang, "admin.nav.users") },
+        { href: "/admin/reserva/messaging", label: t(lang, "admin.reserva.nav.messaging") },
         { href: "/admin/reserva/settings", label: t(lang, "admin.nav.settings") },
         { href: "/admin/reserva/export", label: t(lang, "admin.nav.export") }
       ]

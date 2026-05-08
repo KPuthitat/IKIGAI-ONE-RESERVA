@@ -3,6 +3,7 @@
 // Free tier: 200 push messages/เดือน ต่อ channel (เพียงพอกับ ~120 bookings × 2 reminders)
 
 import { getDb, type Branch, type Booking } from "./db";
+import { getChannelByCode } from "./messaging-channels";
 
 // LINE message kinds we use. Loose typing is intentional — Flex contents are
 // large JSON blobs and the API spec already documents the shape.
@@ -521,15 +522,25 @@ export async function pushClockInCard(args: {
   });
 }
 
+/** Resolve the LINE channel token for a branch, preferring messaging_channels
+ *  (new) and falling back to the legacy branches.line_channel_token column.
+ *  Returns null if neither has a value. */
+function resolveBranchToken(branch: Branch): string | null {
+  const ch = getChannelByCode(branch.slug);
+  if (ch?.channel_token) return ch.channel_token;
+  return branch.line_channel_token ?? null;
+}
+
 export async function notifyCustomer(
   branch: Branch, booking: Booking, type: "created" | "reminder"
 ): Promise<void> {
   const db = getDb();
-  if (!branch.line_channel_token || !booking.line_user_id) {
+  const token = resolveBranchToken(branch);
+  if (!token || !booking.line_user_id) {
     db.prepare(
       "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
     ).run(booking.id, type, "customer", "skipped",
-      !branch.line_channel_token ? "no channel token" : "no line_user_id");
+      !token ? "no channel token" : "no line_user_id");
     return;
   }
   const flex = customerBookingFlex({
@@ -544,7 +555,7 @@ export async function notifyCustomer(
     publicBaseUrl: getPublicBaseUrl(),
     kind: type
   });
-  const res = await sendLinePush(branch.line_channel_token, {
+  const res = await sendLinePush(token, {
     to: booking.line_user_id,
     messages: [flex]
   });
@@ -558,7 +569,8 @@ export async function notifyStaff(
   type: "created" | "reminder"
 ): Promise<void> {
   const db = getDb();
-  if (!branch.line_channel_token || !branch.staff_line_user_ids) return;
+  const token = resolveBranchToken(branch);
+  if (!token || !branch.staff_line_user_ids) return;
   let staffIds: string[] = [];
   try {
     staffIds = JSON.parse(branch.staff_line_user_ids);
@@ -581,7 +593,7 @@ export async function notifyStaff(
     kind: type
   });
   for (const uid of staffIds) {
-    const res = await sendLinePush(branch.line_channel_token, {
+    const res = await sendLinePush(token, {
       to: uid, messages: [flex]
     });
     db.prepare(
