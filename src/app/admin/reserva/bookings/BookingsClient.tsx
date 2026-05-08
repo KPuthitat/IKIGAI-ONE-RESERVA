@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Booking, Branch } from "@/lib/db";
@@ -86,8 +87,9 @@ export default function BookingsClient({
   return (
     <>
     <div className="space-y-3">
-      {/* Quick-add buttons — walk-in for customers in front of you,
-          phone for someone calling to reserve a future slot. */}
+      {/* Quick-add buttons + scan QR. Walk-in = customer is here now;
+          Phone = future booking from a phone call; Scan = open camera
+          to read a customer's confirmation QR. */}
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={() => setAddModalOpen("walkin")}
           className="btn-primary text-sm">
@@ -97,6 +99,10 @@ export default function BookingsClient({
           className="btn-secondary text-sm">
           + {t("admin.bookings.addPhone")}
         </button>
+        <Link href="/admin/reserva/scan"
+          className="ml-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">
+          📷 {t("admin.bookings.scanBtn")}
+        </Link>
       </div>
       {bookings.map((b) => (
         <div key={b.id} className={`card ${b.status === "cancelled" ? "opacity-60" : ""}`}>

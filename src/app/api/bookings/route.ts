@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getDb, type Branch, type Booking } from "@/lib/db";
 import { isTableFree } from "@/lib/table-allocator";
 import { notifyCustomer, notifyStaff } from "@/lib/line";
+import { generateBookingRef } from "@/lib/reserva-ref";
 
 const Body = z.object({
   branch_slug: z.string(),
@@ -51,13 +52,14 @@ export async function POST(req: Request) {
     }
   }
 
+  const ref = generateBookingRef(data.booking_date);
   const result = db.prepare(`
     INSERT INTO bookings (
       branch_id, table_id, customer_name, customer_phone, party_size,
       source, customer_origin, is_member,
       booking_date, booking_time, duration_minutes, notes, line_user_id, lang,
-      booking_channel, status
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'online', 'confirmed')
+      booking_channel, ref_no, status
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'online', ?, 'confirmed')
   `).run(
     branch.id,
     data.table_id ?? null,
@@ -72,7 +74,8 @@ export async function POST(req: Request) {
     branch.default_duration_minutes,
     data.notes || null,
     data.line_user_id || null,
-    data.lang ?? null
+    data.lang ?? null,
+    ref
   );
   const id = result.lastInsertRowid as number;
 

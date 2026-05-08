@@ -51,6 +51,32 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE bookings ADD COLUMN booking_channel TEXT");
   }
 
+  // Public-facing booking reference: 'R' + YYYYMM + 4-digit sequence per
+  // calendar month. Customers see it on the LINE Flex card; staff scan
+  // the QR (which encodes this ref) to find the booking instantly.
+  // Examples: R2026050001, R2026050234.
+  if (!bnames.has("ref_no")) {
+    db.exec("ALTER TABLE bookings ADD COLUMN ref_no TEXT");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_bookings_ref_no ON bookings(ref_no)");
+    // Backfill existing rows. Sequence is deterministic via row id ordered
+    // ascending within each YYYY-MM bucket — preserves history.
+    db.exec(`
+      WITH numbered AS (
+        SELECT id, booking_date,
+          ROW_NUMBER() OVER (
+            PARTITION BY substr(booking_date, 1, 7)
+            ORDER BY id
+          ) AS seq
+        FROM bookings
+        WHERE ref_no IS NULL
+      )
+      UPDATE bookings
+      SET ref_no = 'R' || substr(booking_date, 1, 4) || substr(booking_date, 6, 2)
+                  || printf('%04d', (SELECT seq FROM numbered WHERE numbered.id = bookings.id))
+      WHERE ref_no IS NULL;
+    `);
+  }
+
   // Zones — group tables by physical area (floor 1 / floor 2 / outdoor / VIP).
   // Per-branch. Used for grouping in the timetable view, restricting
   // availability by time-of-day (Sprint 3), and customer photo galleries
@@ -443,6 +469,15 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("display_order")) {
     db.exec("ALTER TABLE branches ADD COLUMN display_order INTEGER NOT NULL DEFAULT 100");
     db.exec("UPDATE branches SET display_order = 1 WHERE slug = 'nama-sriracha'");
+  }
+  // Optional second CTA on the customer LINE Flex card. Branch admin can
+  // set a label + URL for things like 'เมนูอาหาร' (Google Drive PDF) or
+  // 'ทาง Google Maps'. Both must be set for the button to render.
+  if (!bnames2.has("extra_button_label")) {
+    db.exec("ALTER TABLE branches ADD COLUMN extra_button_label TEXT");
+  }
+  if (!bnames2.has("extra_button_url")) {
+    db.exec("ALTER TABLE branches ADD COLUMN extra_button_url TEXT");
   }
 
   // Phase 1C v9: replaces_id for resignation_requests
@@ -876,6 +911,8 @@ export type Branch = {
   lunch_break_weekdays: string | null;  // JSON array of 0-6
   no_lunch_break_dates: string | null;  // JSON array of YYYY-MM-DD
   display_order: number;            // sort key, lower = first (NAMA = 1)
+  extra_button_label: string | null;   // Customer Flex card secondary CTA label
+  extra_button_url: string | null;     // Customer Flex card secondary CTA URL
 };
 
 export type User = {
@@ -926,6 +963,7 @@ export type Booking = {
   is_member: number | null;           // 1 / 0 / null
   lang: string | null;                // 'th' | 'en' | null (= legacy / unknown)
   booking_channel: string | null;     // 'online' | 'phone' | 'walkin' | null (= legacy)
+  ref_no: string | null;              // 'R20260500001' — public reference shown on QR / Flex
   booking_date: string;
   booking_time: string;
   duration_minutes: number;

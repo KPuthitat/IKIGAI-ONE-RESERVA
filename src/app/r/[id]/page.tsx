@@ -15,6 +15,7 @@ import { getDb, type Booking } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
+import { isBookingRef } from "@/lib/reserva-ref";
 import MarkSeatedButton from "./MarkSeatedButton";
 
 export const dynamic = "force-dynamic";
@@ -36,17 +37,30 @@ export default function ShortLinkPage({ params }: { params: { id: string } }) {
     redirect(`/login?next=${encodeURIComponent(`/r/${params.id}`)}`);
   }
 
-  const id = Number(params.id);
-  if (!Number.isInteger(id) || id <= 0) notFound();
-
+  // The URL param can be either the new R-format ref ('R20260500001') or
+  // a legacy numeric id ('123'). Look up by whichever the value matches.
+  const raw = decodeURIComponent(params.id ?? "");
   const db = getDb();
-  const booking = db.prepare(`
-    SELECT b.*, t.label AS table_label, br.name AS branch_name
-    FROM bookings b
-    LEFT JOIN tables t ON b.table_id = t.id
-    LEFT JOIN branches br ON b.branch_id = br.id
-    WHERE b.id = ?
-  `).get(id) as BookingRow | undefined;
+  let booking: BookingRow | undefined;
+  if (isBookingRef(raw)) {
+    booking = db.prepare(`
+      SELECT b.*, t.label AS table_label, br.name AS branch_name
+      FROM bookings b
+      LEFT JOIN tables t ON b.table_id = t.id
+      LEFT JOIN branches br ON b.branch_id = br.id
+      WHERE b.ref_no = ?
+    `).get(raw) as BookingRow | undefined;
+  } else {
+    const id = Number(raw);
+    if (!Number.isInteger(id) || id <= 0) notFound();
+    booking = db.prepare(`
+      SELECT b.*, t.label AS table_label, br.name AS branch_name
+      FROM bookings b
+      LEFT JOIN tables t ON b.table_id = t.id
+      LEFT JOIN branches br ON b.branch_id = br.id
+      WHERE b.id = ?
+    `).get(id) as BookingRow | undefined;
+  }
   if (!booking) notFound();
 
   // Status pill colors
@@ -68,7 +82,7 @@ export default function ShortLinkPage({ params }: { params: { id: string } }) {
             <span className="text-slate-300">RESERVA</span>
           </div>
           <h1 className="text-lg font-bold mt-1">
-            {t(lang, "shortlink.title")} #{booking.id}
+            {t(lang, "shortlink.title")} #{booking.ref_no ?? booking.id}
           </h1>
           <p className="text-xs text-slate-300 mt-0.5">{booking.branch_name}</p>
         </div>

@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDb, type Branch, type Booking } from "@/lib/db";
 import { isTableFree } from "@/lib/table-allocator";
 import { notifyStaff, notifyCustomer } from "@/lib/line";
+import { generateBookingRef } from "@/lib/reserva-ref";
 
 // POST /api/admin/reserva/bookings
 //
@@ -73,13 +74,14 @@ export async function POST(req: Request) {
   const initialStatus = data.booking_channel === "walkin" ? "seated" : "confirmed";
   const seatedAt = data.booking_channel === "walkin" ? new Date().toISOString() : null;
 
+  const ref = generateBookingRef(data.booking_date);
   const result = db.prepare(`
     INSERT INTO bookings (
       branch_id, table_id, customer_name, customer_phone, party_size,
       source, customer_origin, is_member,
       booking_date, booking_time, duration_minutes, notes,
-      booking_channel, status, created_by, seated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      booking_channel, ref_no, status, created_by, seated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     branch.id,
     data.table_id ?? null,
@@ -94,6 +96,7 @@ export async function POST(req: Request) {
     branch.default_duration_minutes,
     data.notes || null,
     data.booking_channel,
+    ref,
     initialStatus,
     user.id,
     seatedAt

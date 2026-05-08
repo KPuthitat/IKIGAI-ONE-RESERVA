@@ -20,7 +20,12 @@ const Patch = z.object({
   lunch_break_start: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
   lunch_break_end: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
   lunch_break_weekdays: z.string().max(50).nullable().optional(),
-  no_lunch_break_dates: z.string().max(2000).nullable().optional()
+  no_lunch_break_dates: z.string().max(2000).nullable().optional(),
+  // Optional second CTA on customer Flex card. URL format is enforced
+  // by the input type="url" in the admin UI; the server just stores the
+  // value (or null when cleared).
+  extra_button_label: z.string().max(40).nullable().optional(),
+  extra_button_url: z.string().max(500).nullable().optional()
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
