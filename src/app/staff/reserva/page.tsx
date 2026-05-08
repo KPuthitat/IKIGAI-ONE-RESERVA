@@ -61,6 +61,7 @@ export default function StaffReservaPage({ searchParams }: { searchParams: { dat
         bookings={bookings}
         tables={allTables as Array<{ id: number; label: string; capacity: number }>}
         canEdit={true}
+        branch={branch}
       />
     </div>
   );
