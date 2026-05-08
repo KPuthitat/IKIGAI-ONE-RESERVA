@@ -137,7 +137,7 @@ function ChannelCard({
           <input
             type="text"
             readOnly
-            className="input font-mono text-xs flex-1"
+            className="input font-mono text-sm flex-1"
             value={webhookUrl}
             onFocus={(e) => e.currentTarget.select()}
           />
@@ -165,7 +165,7 @@ function ChannelCard({
           type="password"
           autoComplete="off"
           spellCheck={false}
-          className="input font-mono text-xs"
+          className="input text-sm"
           value={token}
           onChange={(e) => { setToken(e.target.value); setClearAll(false); }}
           placeholder={channel.has_token
@@ -189,7 +189,7 @@ function ChannelCard({
           type="password"
           autoComplete="off"
           spellCheck={false}
-          className="input font-mono text-xs"
+          className="input text-sm"
           value={secret}
           onChange={(e) => { setSecret(e.target.value); setClearAll(false); }}
           placeholder={channel.has_secret

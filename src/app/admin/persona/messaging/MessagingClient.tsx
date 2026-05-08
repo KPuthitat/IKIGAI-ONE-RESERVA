@@ -113,7 +113,7 @@ export default function MessagingClient({
             <input
               type="text"
               readOnly
-              className="input font-mono text-xs flex-1"
+              className="input font-mono text-sm flex-1"
               value={webhookUrl}
               onFocus={(e) => e.currentTarget.select()}
             />
@@ -144,7 +144,7 @@ export default function MessagingClient({
             type="password"
             autoComplete="off"
             spellCheck={false}
-            className="input font-mono text-xs"
+            className="input text-sm"
             value={token}
             onChange={(e) => { setToken(e.target.value); setClearAll(false); }}
             placeholder={platform.has_token
@@ -168,7 +168,7 @@ export default function MessagingClient({
             type="password"
             autoComplete="off"
             spellCheck={false}
-            className="input font-mono text-xs"
+            className="input text-sm"
             value={secret}
             onChange={(e) => { setSecret(e.target.value); setClearAll(false); }}
             placeholder={platform.has_secret
