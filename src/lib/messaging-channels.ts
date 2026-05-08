@@ -22,6 +22,7 @@ export type MessagingChannel = {
   branch_id: number | null;
   channel_secret: string | null;
   channel_token: string | null;
+  liff_id: string | null;            // LIFF app ID for the booking page (RESERVA only)
   updated_at: string;
   updated_by: number | null;
 };
@@ -64,6 +65,7 @@ export function setChannelCreds(args: {
   code: string;
   channel_token?: string | undefined;
   channel_secret?: string | undefined;
+  liff_id?: string | undefined;
   updated_by: number | null;
 }): { ok: true } | { ok: false; error: "not_found" } {
   const db = getDb();
@@ -81,6 +83,11 @@ export function setChannelCreds(args: {
   if (args.channel_secret !== undefined) {
     sets.push("channel_secret = ?");
     const v = args.channel_secret.trim();
+    vals.push(v === "" ? null : v);
+  }
+  if (args.liff_id !== undefined) {
+    sets.push("liff_id = ?");
+    const v = args.liff_id.trim();
     vals.push(v === "" ? null : v);
   }
   if (sets.length === 0) return { ok: true };

@@ -10,7 +10,8 @@ import { setChannelCreds } from "@/lib/messaging-channels";
 //   non-empty → set
 const Body = z.object({
   channel_token: z.string().max(500).optional(),
-  channel_secret: z.string().max(200).optional()
+  channel_secret: z.string().max(200).optional(),
+  liff_id: z.string().max(64).optional()
 });
 
 export async function PATCH(req: Request, { params }: { params: { code: string } }) {
@@ -26,7 +27,7 @@ export async function PATCH(req: Request, { params }: { params: { code: string }
     return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
   }
   const d = parsed.data;
-  if (d.channel_token === undefined && d.channel_secret === undefined) {
+  if (d.channel_token === undefined && d.channel_secret === undefined && d.liff_id === undefined) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });
   }
 
@@ -34,6 +35,7 @@ export async function PATCH(req: Request, { params }: { params: { code: string }
     code,
     channel_token: d.channel_token,
     channel_secret: d.channel_secret,
+    liff_id: d.liff_id,
     updated_by: user.id
   });
   if (!r.ok) {

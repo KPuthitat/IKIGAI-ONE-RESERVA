@@ -578,6 +578,14 @@ function runMigrations(db: Database.Database): void {
     INSERT OR IGNORE INTO messaging_channels (scope, code, label)
       VALUES ('platform', 'ikigai-os', 'IKIGAI OS');
   `);
+  // Phase C v9 — LIFF ID per channel (RESERVA needs it on the booking page
+  // to auto-capture the customer's LINE userId when they tap the Rich Menu).
+  // Lives on messaging_channels even though the LIFF app is created under a
+  // separate LINE Login channel — the Bot link feature pairs them.
+  const mcCols = db.prepare("PRAGMA table_info(messaging_channels)").all() as Array<{ name: string }>;
+  if (!mcCols.some((c) => c.name === "liff_id")) {
+    db.exec("ALTER TABLE messaging_channels ADD COLUMN liff_id TEXT");
+  }
 
   // Auto-seed one row per branch (code = branch.slug, scope='reserva') so
   // the admin UI always has something to render. Idempotent — INSERT OR

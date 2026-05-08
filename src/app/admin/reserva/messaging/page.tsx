@@ -18,6 +18,7 @@ export default function ReservaMessagingPage() {
     label: c.label,
     has_token: !!c.channel_token,
     has_secret: !!c.channel_secret,
+    liff_id: c.liff_id,
     updated_at: c.updated_at
   }));
 

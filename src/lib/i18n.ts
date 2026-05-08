@@ -143,6 +143,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     "customer.reserva.todaySpecialOpenAllDay": "วันนี้เปิดเต็มวัน (วันพิเศษ ไม่พักกลางวัน)",
 
     // Booking form
+    "booking.liff.connecting": "กำลังเชื่อมต่อ LINE...",
+    "booking.liff.connected": "เชื่อมต่อ LINE แล้ว — รับการแจ้งเตือนยืนยันการจองทาง LINE",
+    "booking.liff.guest": "ไม่ได้เปิดผ่าน LINE app — จองได้ปกติ แต่จะไม่ได้รับการแจ้งเตือนทาง LINE",
     "booking.field.name": "ชื่อ-นามสกุล",
     "booking.field.phone": "เบอร์โทรศัพท์",
     "booking.field.phonePlaceholder": "08X-XXX-XXXX",
@@ -222,6 +225,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.reserva.messaging.howto.step3": "LINE Developers Console → channel เดียวกัน → Messaging API → กด Issue Channel access token (long-lived) → คัดลอก",
     "admin.reserva.messaging.howto.step4": "วาง token + secret ในการ์ดของสาขาด้านบน แล้วบันทึก",
     "admin.reserva.messaging.howto.step5": "OA Manager → Response settings → Bot mode + Webhook ON + Auto-response OFF → Save → กลับ Developers Console กด Verify",
+    "admin.reserva.messaging.liffId": "LIFF ID",
+    "admin.reserva.messaging.liffIdHint": "ID จาก LIFF app ใต้ LINE Login channel — ลูกค้าที่เปิดหน้าจองผ่านลิงก์ LIFF จะถูกเก็บ userId อัตโนมัติเพื่อรับการ์ดยืนยัน",
     "admin.notAssignedBranch": "บัญชีของคุณยังไม่ได้รับสิทธิ์เข้าสาขาใดๆ ติดต่อแอดมิน",
     "admin.noBranchAccess": "ยังไม่ได้รับสิทธิ์เข้าสาขา",
 
@@ -1260,6 +1265,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     "customer.reserva.todaySpecialOpenAllDay": "Open all day today (special — no lunch break)",
 
     // Booking form
+    "booking.liff.connecting": "Connecting to LINE...",
+    "booking.liff.connected": "Connected to LINE — you'll receive booking confirmation via LINE",
+    "booking.liff.guest": "Not opened from LINE app — booking still works, but no LINE notifications",
     "booking.field.name": "Full name",
     "booking.field.phone": "Phone number",
     "booking.field.phonePlaceholder": "08X-XXX-XXXX",
@@ -1339,6 +1347,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.reserva.messaging.howto.step3": "LINE Developers Console → same channel → Messaging API → click Issue Channel access token (long-lived) → copy",
     "admin.reserva.messaging.howto.step4": "Paste token + secret into the matching card above and Save",
     "admin.reserva.messaging.howto.step5": "OA Manager → Response settings → Bot mode + Webhook ON + Auto-response OFF → Save → back to Developers Console, click Verify",
+    "admin.reserva.messaging.liffId": "LIFF ID",
+    "admin.reserva.messaging.liffIdHint": "ID of the LIFF app under your LINE Login channel — customers opening the booking page via the LIFF link get their userId captured automatically so they can receive the confirmation card.",
     "admin.notAssignedBranch": "Your account has no branch access yet — contact admin",
     "admin.noBranchAccess": "No branch access",
 

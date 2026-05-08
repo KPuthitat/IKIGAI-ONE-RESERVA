@@ -11,6 +11,7 @@ export type ReservaChannelInitial = {
   label: string;
   has_token: boolean;
   has_secret: boolean;
+  liff_id: string | null;
   updated_at: string;
 };
 
@@ -53,6 +54,7 @@ function ChannelCard({
   const [, startTransition] = useTransition();
   const [token, setToken] = useState("");
   const [secret, setSecret] = useState("");
+  const [liffId, setLiffId] = useState(channel.liff_id ?? "");
   const [clearAll, setClearAll] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -75,6 +77,11 @@ function ChannelCard({
         if (token.trim()) body.channel_token = token.trim();
         if (secret.trim()) body.channel_secret = secret.trim();
       }
+      // LIFF ID — always send (it's a plain text input that may be cleared)
+      // Only diff against existing value to know if it changed.
+      const liffTrimmed = liffId.trim();
+      const liffChanged = liffTrimmed !== (channel.liff_id ?? "");
+      if (liffChanged) body.liff_id = liffTrimmed;
       if (Object.keys(body).length === 0) {
         setMsg({ kind: "err", text: t(lang, "admin.messaging.err.noChange") });
         setBusy(false);
@@ -197,6 +204,30 @@ function ChannelCard({
             : t(lang, "admin.messaging.secretPlaceholder")}
           disabled={clearAll}
         />
+      </div>
+
+      {/* LIFF ID — used by the booking page to auto-capture customer LINE userId */}
+      <div>
+        <label className="label">
+          {t(lang, "admin.reserva.messaging.liffId")}
+          {channel.liff_id && (
+            <span className="ml-2 text-[10px] text-emerald-700 font-medium">
+              · {t(lang, "admin.messaging.alreadySet")}
+            </span>
+          )}
+        </label>
+        <input
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          className="input text-sm"
+          value={liffId}
+          onChange={(e) => setLiffId(e.target.value)}
+          placeholder="2010019217-xxxxxxxx"
+        />
+        <p className="text-xs text-slate-500 mt-1">
+          {t(lang, "admin.reserva.messaging.liffIdHint")}
+        </p>
       </div>
 
       {/* Clear toggle */}

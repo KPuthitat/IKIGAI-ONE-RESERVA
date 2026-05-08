@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { getChannelByCode } from "@/lib/messaging-channels";
 import LangToggle from "../../LangToggle";
 import Footer from "../../Footer";
 import BookingForm from "./BookingForm";
@@ -13,6 +14,11 @@ export default function BookPage({ params }: { params: { branch: string } }) {
   const lang = getLang();
   const branch = getDb().prepare("SELECT * FROM branches WHERE slug = ?").get(params.branch) as Branch | undefined;
   if (!branch) notFound();
+  // LIFF ID for this branch's booking page (if admin has set it). When
+  // present, BookingForm loads the LIFF SDK and auto-captures the customer's
+  // LINE userId so they can receive the booking-confirmation Flex card.
+  const channel = getChannelByCode(branch.slug);
+  const liffId = channel?.liff_id ?? null;
   return (
     <div className="min-h-screen flex flex-col bg-slate-100">
       <main className="flex-1">
@@ -36,7 +42,7 @@ export default function BookPage({ params }: { params: { branch: string } }) {
               {t(lang, "customer.reserva.formIntro", { open: branch.open_time, close: branch.close_time })}
             </p>
           </header>
-          <BookingForm branch={branch} />
+          <BookingForm branch={branch} liffId={liffId} />
         </div>
       </main>
       <Footer />

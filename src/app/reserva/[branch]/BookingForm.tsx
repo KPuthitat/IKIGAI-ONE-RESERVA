@@ -1,10 +1,26 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import Script from "next/script";
 import { useRouter } from "next/navigation";
 import type { Branch } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+
+// LIFF SDK — types only. The SDK itself is loaded as an external <Script>
+// tag below, then attaches to window.liff at runtime.
+type LiffProfile = { userId: string; displayName: string; pictureUrl?: string };
+type LiffSDK = {
+  init: (cfg: { liffId: string }) => Promise<void>;
+  ready: Promise<void>;
+  isInClient: () => boolean;
+  isLoggedIn: () => boolean;
+  login: (cfg?: { redirectUri?: string }) => void;
+  getProfile: () => Promise<LiffProfile>;
+};
+declare global {
+  interface Window { liff?: LiffSDK }
+}
 
 type TableOption = {
   id: number;
@@ -31,9 +47,17 @@ const ORIGIN_DEFS: Array<{ value: string; key: string }> = [
   { value: "other_province", key: "booking.origin.other_province" }
 ];
 
-export default function BookingForm({ branch }: { branch: Branch }) {
+export default function BookingForm({
+  branch, liffId
+}: { branch: Branch; liffId: string | null }) {
   const router = useRouter();
   const { t, formatDate } = useLang();
+
+  // Track LIFF connection status — drives the badge shown above the form
+  const [liffStatus, setLiffStatus] = useState<"idle" | "init" | "ready" | "guest" | "error">(
+    liffId ? "init" : "idle"
+  );
+  const [liffSdkReady, setLiffSdkReady] = useState(false);
 
   const SOURCES = SOURCE_DEFS.map((s) => ({ value: s.value, label: t(s.key) }));
   const ORIGINS = ORIGIN_DEFS.map((o) => ({ value: o.value, label: t(o.key) }));
@@ -61,6 +85,46 @@ export default function BookingForm({ branch }: { branch: Branch }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultId, setResultId] = useState<number | null>(null);
+
+  // ── LIFF init — captures the customer's LINE userId + display name when
+  //    the booking page is opened via the OA's Rich Menu (LIFF link). With
+  //    Bot link feature 'Aggressive', the userId returned is valid in the
+  //    Messaging API channel's namespace, so we can push notifications back.
+  //    No-op if liffId is not configured (admin hasn't set it yet) or the
+  //    SDK is unavailable (page opened in regular browser, network issue).
+  useEffect(() => {
+    if (!liffId || !liffSdkReady) return;
+    const liff = typeof window !== "undefined" ? window.liff : undefined;
+    if (!liff) { setLiffStatus("error"); return; }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await liff.init({ liffId });
+        if (cancelled) return;
+        if (!liff.isLoggedIn()) {
+          // In LINE app: login is silent. In external browser: redirects to
+          // LINE login page then back. With 'Aggressive' bot link, the user
+          // is also asked to add the OA as a friend.
+          liff.login();
+          return;
+        }
+        const profile = await liff.getProfile();
+        if (cancelled) return;
+        setForm((f) => ({
+          ...f,
+          line_user_id: profile.userId,
+          // Pre-fill name only if the field is still empty so we don't
+          // overwrite a manual edit
+          customer_name: f.customer_name || profile.displayName
+        }));
+        setLiffStatus("ready");
+      } catch {
+        if (!cancelled) setLiffStatus("error");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [liffId, liffSdkReady]);
 
   // ครัวปิด 30 นาทีก่อนร้านปิด — เวลาจองสุดท้าย
   const KITCHEN_CLOSE_OFFSET = 30;
@@ -330,6 +394,41 @@ export default function BookingForm({ branch }: { branch: Branch }) {
 
   return (
     <form onSubmit={findTables} className="space-y-4">
+      {/* Load LIFF SDK only when a liffId is configured for this branch.
+          afterInteractive runs once the page is interactive; the useEffect
+          above waits on liffSdkReady before calling liff.init(). */}
+      {liffId && (
+        <Script
+          src="https://static.line-scdn.net/liff/edge/2/sdk.js"
+          strategy="afterInteractive"
+          onLoad={() => setLiffSdkReady(true)}
+        />
+      )}
+
+      {/* LIFF status badge — only shown when LIFF is configured */}
+      {liffId && (
+        <div className="text-xs">
+          {liffStatus === "init" && (
+            <span className="inline-flex items-center gap-1.5 text-slate-500">
+              <span className="w-2 h-2 rounded-full bg-slate-300 animate-pulse"></span>
+              {t("booking.liff.connecting")}
+            </span>
+          )}
+          {liffStatus === "ready" && (
+            <span className="inline-flex items-center gap-1.5 text-emerald-700">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              {t("booking.liff.connected")}
+            </span>
+          )}
+          {(liffStatus === "guest" || liffStatus === "error") && (
+            <span className="inline-flex items-center gap-1.5 text-amber-700">
+              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+              {t("booking.liff.guest")}
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="card space-y-4">
         <div>
           <label className="label">{t("booking.field.name")} *</label>
