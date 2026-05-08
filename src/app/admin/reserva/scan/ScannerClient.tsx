@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
-import { isBookingRef } from "@/lib/reserva-ref";
+import { isBookingRef } from "@/lib/booking-ref";
 
 type Status = "idle" | "starting" | "scanning" | "error";
 
