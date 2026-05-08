@@ -41,6 +41,42 @@ function runMigrations(db: Database.Database): void {
   if (!bnames.has("lang")) {
     db.exec("ALTER TABLE bookings ADD COLUMN lang TEXT");
   }
+  // Booking channel — distinct from the marketing 'source' column. Tells us
+  // how the booking *came in* so we can split monthly stats:
+  //   'online' = customer self-served via the booking form (default)
+  //   'phone'  = staff entered a future booking from a phone call
+  //   'walkin' = staff entered a customer who walked in just now
+  //   NULL     = legacy row from before this column existed (treat as online)
+  if (!bnames.has("booking_channel")) {
+    db.exec("ALTER TABLE bookings ADD COLUMN booking_channel TEXT");
+  }
+
+  // Zones — group tables by physical area (floor 1 / floor 2 / outdoor / VIP).
+  // Per-branch. Used for grouping in the timetable view, restricting
+  // availability by time-of-day (Sprint 3), and customer photo galleries
+  // (Sprint 4). Tables without a zone (zone_id NULL) appear in a "ไม่ระบุโซน"
+  // bucket — useful during migration of existing branches.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS zones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,                      -- 'ชั้น 1' / 'Outdoor' / 'VIP'
+      description TEXT,                        -- shown to customers later
+      display_order INTEGER NOT NULL DEFAULT 100,
+      active INTEGER NOT NULL DEFAULT 1,
+      availability_rules TEXT,                 -- JSON, populated in Sprint 3
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (branch_id, name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_zones_branch ON zones(branch_id);
+  `);
+
+  // tables.zone_id — links each table to a zone (nullable for legacy rows)
+  const tcols = db.prepare("PRAGMA table_info(tables)").all() as Array<{ name: string }>;
+  if (!tcols.some((c) => c.name === "zone_id")) {
+    db.exec("ALTER TABLE tables ADD COLUMN zone_id INTEGER REFERENCES zones(id) ON DELETE SET NULL");
+  }
   // แปลง source string เก่า → JSON array (idempotent)
   db.exec(`
     UPDATE bookings
@@ -853,6 +889,7 @@ export type User = {
 export type TableRow = {
   id: number;
   branch_id: number;
+  zone_id: number | null;
   label: string;
   capacity: number;
   shape: "rect" | "round";
@@ -861,6 +898,18 @@ export type TableRow = {
   width: number;
   height: number;
   active: number;
+};
+
+export type Zone = {
+  id: number;
+  branch_id: number;
+  name: string;
+  description: string | null;
+  display_order: number;
+  active: number;
+  availability_rules: string | null;   // JSON (Sprint 3); null = always open within branch hours
+  created_at: string;
+  updated_at: string;
 };
 
 export type BookingStatus = "confirmed" | "seated" | "no_show" | "cancelled" | "completed";
@@ -876,6 +925,7 @@ export type Booking = {
   customer_origin: string | null;     // sriracha | chonburi | other_province | null
   is_member: number | null;           // 1 / 0 / null
   lang: string | null;                // 'th' | 'en' | null (= legacy / unknown)
+  booking_channel: string | null;     // 'online' | 'phone' | 'walkin' | null (= legacy)
   booking_date: string;
   booking_time: string;
   duration_minutes: number;

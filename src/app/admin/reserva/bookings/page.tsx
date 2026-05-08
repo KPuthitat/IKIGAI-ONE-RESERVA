@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { getDb, type Branch, type Booking } from "@/lib/db";
+import { getDb, type Branch, type Booking, type TableRow } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -26,7 +26,7 @@ export default function BookingsPage({ searchParams }: { searchParams: { date?: 
 
   const allTables = db.prepare(
     "SELECT * FROM tables WHERE branch_id = ? AND active = 1 ORDER BY label"
-  ).all(branch.id);
+  ).all(branch.id) as TableRow[];
 
   return (
     <div className="space-y-4">
@@ -43,8 +43,12 @@ export default function BookingsPage({ searchParams }: { searchParams: { date?: 
       </div>
       <BookingsClient
         bookings={bookings}
-        tables={allTables as Array<{ id: number; label: string; capacity: number }>}
+        tables={allTables.map((row) => ({
+          id: row.id, label: row.label, capacity: row.capacity
+        }))}
         canEdit={true}
+        branchOpenTime={branch.open_time}
+        branchCloseTime={branch.close_time}
       />
     </div>
   );

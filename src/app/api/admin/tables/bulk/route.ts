@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 
 const TableInput = z.object({
   id: z.number().int().nullable(),
+  zone_id: z.number().int().nullable().optional(),
   label: z.string().min(1).max(20),
   capacity: z.number().int().min(1).max(50),
   shape: z.enum(["rect", "round"]),
@@ -37,11 +38,11 @@ export async function POST(req: Request) {
 
   const txn = db.transaction(() => {
     const insert = db.prepare(`
-      INSERT INTO tables (branch_id, label, capacity, shape, x, y, width, height, active)
-      VALUES (?,?,?,?,?,?,?,?,?)
+      INSERT INTO tables (branch_id, zone_id, label, capacity, shape, x, y, width, height, active)
+      VALUES (?,?,?,?,?,?,?,?,?,?)
     `);
     const update = db.prepare(`
-      UPDATE tables SET label=?, capacity=?, shape=?, x=?, y=?, width=?, height=?, active=?
+      UPDATE tables SET zone_id=?, label=?, capacity=?, shape=?, x=?, y=?, width=?, height=?, active=?
       WHERE id=? AND branch_id=?
     `);
     const del = db.prepare("DELETE FROM tables WHERE id=? AND branch_id=?");
@@ -52,9 +53,9 @@ export async function POST(req: Request) {
         unlinkBookings.run(t.id);
         del.run(t.id, branchId);
       } else if (t.id === null) {
-        insert.run(branchId, t.label, t.capacity, t.shape, t.x, t.y, t.width, t.height, t.active);
+        insert.run(branchId, t.zone_id ?? null, t.label, t.capacity, t.shape, t.x, t.y, t.width, t.height, t.active);
       } else {
-        update.run(t.label, t.capacity, t.shape, t.x, t.y, t.width, t.height, t.active, t.id, branchId);
+        update.run(t.zone_id ?? null, t.label, t.capacity, t.shape, t.x, t.y, t.width, t.height, t.active, t.id, branchId);
       }
     }
   });

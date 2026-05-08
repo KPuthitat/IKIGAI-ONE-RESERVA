@@ -67,6 +67,25 @@ export default function ReservaDashboardPage() {
     WHERE branch_id = ? AND booking_date >= date(?, '-29 days')
   `).get(branch.id, today) as { members: number; non_members: number; unknown: number };
 
+  // Channel breakdown for the current calendar month — counts only bookings
+  // that actually used a table (status confirmed/seated/completed; cancelled
+  // and no_show are excluded so the % reflects real customer flow).
+  const monthStart = today.slice(0, 7) + "-01";
+  const channelStats = db.prepare(`
+    SELECT
+      COALESCE(booking_channel, 'online') AS channel,
+      COUNT(*) AS n
+    FROM bookings
+    WHERE branch_id = ?
+      AND booking_date >= ?
+      AND booking_date <= ?
+      AND status IN ('confirmed','seated','completed')
+    GROUP BY COALESCE(booking_channel, 'online')
+  `).all(branch.id, monthStart, today) as Array<{ channel: string; n: number }>;
+  const channelTotal = channelStats.reduce((s, c) => s + c.n, 0);
+  const channelMap = new Map(channelStats.map((c) => [c.channel, c.n]));
+  const monthLabel = formatDate(monthStart, lang).replace(/^\d+\s*/, ""); // strip day → "พ.ค. 2569"
+
   return (
     <div className="space-y-6">
       <div>
@@ -122,6 +141,46 @@ export default function ReservaDashboardPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </section>
+
+      {/* Channel mix this month — % of customers who came in via online
+          booking, phone, or walk-in. Excludes cancelled / no-show. */}
+      <section className="card">
+        <div className="flex items-baseline justify-between gap-3 flex-wrap mb-3">
+          <h2 className="font-semibold">
+            {t(lang, "admin.dashboard.channelTitle")}
+          </h2>
+          <span className="text-xs text-slate-500">
+            {monthLabel} · {t(lang, "admin.dashboard.channelTotal", { n: channelTotal })}
+          </span>
+        </div>
+        {channelTotal === 0 ? (
+          <div className="text-slate-500 text-sm">{t(lang, "common.dataNotAvailable")}</div>
+        ) : (
+          <div className="space-y-2">
+            {(["online", "phone", "walkin"] as const).map((ch) => {
+              const n = channelMap.get(ch) ?? 0;
+              const pct = channelTotal > 0 ? Math.round((n / channelTotal) * 100) : 0;
+              const tone =
+                ch === "online" ? "bg-brand" :
+                ch === "phone"  ? "bg-sky-500" :
+                                  "bg-emerald-500";
+              return (
+                <div key={ch} className="text-sm">
+                  <div className="flex justify-between mb-0.5">
+                    <span>{t(lang, `admin.dashboard.channel.${ch}`)}</span>
+                    <span className="text-slate-500 tabular-nums">
+                      {n} · {pct}%
+                    </span>
+                  </div>
+                  <div className="bg-slate-100 rounded h-1.5 overflow-hidden">
+                    <div className={`${tone} h-full`} style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>

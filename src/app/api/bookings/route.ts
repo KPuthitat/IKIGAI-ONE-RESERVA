@@ -55,8 +55,9 @@ export async function POST(req: Request) {
     INSERT INTO bookings (
       branch_id, table_id, customer_name, customer_phone, party_size,
       source, customer_origin, is_member,
-      booking_date, booking_time, duration_minutes, notes, line_user_id, lang, status
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'confirmed')
+      booking_date, booking_time, duration_minutes, notes, line_user_id, lang,
+      booking_channel, status
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'online', 'confirmed')
   `).run(
     branch.id,
     data.table_id ?? null,
