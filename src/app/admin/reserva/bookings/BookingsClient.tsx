@@ -5,7 +5,7 @@ import type { Booking, Branch } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { useConfirm } from "@/app/components/useConfirm";
-import BookingForm, { type BookingFormMode } from "@/app/reserva/[branch]/BookingForm";
+import BookingForm from "@/app/reserva/[branch]/BookingForm";
 
 type Row = Booking & { table_label: string | null };
 
