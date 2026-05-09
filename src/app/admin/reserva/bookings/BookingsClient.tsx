@@ -267,7 +267,9 @@ export default function BookingsClient({
   );
 }
 
-// ── Quick-add buttons (walk-in / phone / line) + scan QR shortcut ─────
+// ── "เพิ่มการจอง" section — quick-add buttons (walk-in / phone / line)
+//    + scan QR shortcut. Labeled section so admin sees a clear visual
+//    grouping for the actions, distinct from the listings below.
 function AddBookingButtons({
   setAddModalOpen,
   t
@@ -276,24 +278,29 @@ function AddBookingButtons({
   t: (k: string, vars?: Record<string, string | number>) => string;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
-      <button type="button" onClick={() => setAddModalOpen("walkin")}
-        className="btn-primary text-sm">
-        + {t("admin.bookings.addWalkin")}
-      </button>
-      <button type="button" onClick={() => setAddModalOpen("phone")}
-        className="btn-secondary text-sm">
-        + {t("admin.bookings.addPhone")}
-      </button>
-      <button type="button" onClick={() => setAddModalOpen("line")}
-        className="btn-secondary text-sm">
-        + {t("admin.bookings.addLine")}
-      </button>
-      <Link href="/admin/reserva/scan"
-        className="ml-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">
-        {t("admin.bookings.scanBtn")}
-      </Link>
-    </div>
+    <section className="space-y-2">
+      <h2 className="text-sm font-bold text-slate-700">
+        {t("admin.bookings.addSection")}
+      </h2>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => setAddModalOpen("walkin")}
+          className="btn-primary text-sm">
+          + {t("admin.bookings.addWalkin")}
+        </button>
+        <button type="button" onClick={() => setAddModalOpen("phone")}
+          className="btn-secondary text-sm">
+          + {t("admin.bookings.addPhone")}
+        </button>
+        <button type="button" onClick={() => setAddModalOpen("line")}
+          className="btn-secondary text-sm">
+          + {t("admin.bookings.addLine")}
+        </button>
+        <Link href="/admin/reserva/scan"
+          className="ml-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">
+          {t("admin.bookings.scanBtn")}
+        </Link>
+      </div>
+    </section>
   );
 }
 
@@ -662,26 +669,41 @@ function ClaimLinkModal({ refNo, onClose }: { refNo: string; onClose: () => void
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+// Full month names in both Thai and English. The Thai variant uses
+// unabbreviated names (พฤษภาคม, not พ.ค.) so the section headers read
+// formal — short forms can feel like a quick draft on a customer-facing
+// admin tool. Buddhist year (พ.ศ.) for Thai, common-era for English.
 function formatDateHeader(yyyymmdd: string, lang: "th" | "en"): string {
-  // "วันเสาร์ที่ 16 พ.ค. 2569" / "Saturday, 16 May 2026"
   const d = new Date(`${yyyymmdd}T00:00:00Z`);
   const dow = d.getUTCDay();
   if (lang === "en") {
-    const dows = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const dows = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const months = [
+      "January","February","March","April","May","June",
+      "July","August","September","October","November","December"
+    ];
     return `${dows[dow]} · ${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
   }
   const dowsTh = ["อาทิตย์","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์"];
-  const monthsTh = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  const monthsTh = [
+    "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
+    "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"
+  ];
   return `${dowsTh[dow]} · ${d.getUTCDate()} ${monthsTh[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}`;
 }
 
 function formatDateThaiShort(yyyymmdd: string, lang: "th" | "en"): string {
   const d = new Date(`${yyyymmdd}T00:00:00Z`);
   if (lang === "en") {
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const months = [
+      "January","February","March","April","May","June",
+      "July","August","September","October","November","December"
+    ];
     return `${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
   }
-  const monthsTh = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  const monthsTh = [
+    "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
+    "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"
+  ];
   return `${d.getUTCDate()} ${monthsTh[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}`;
 }

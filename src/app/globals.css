@@ -14,6 +14,14 @@ body {
     sans-serif;
 }
 
+/* Form elements don't inherit body font by default in any browser —
+   they use system-ui. Force inheritance so LINE Seed Sans TH applies
+   everywhere. Without this, Thai text in <input>/<textarea> renders
+   with wider vowel marks (e.g., "ลิงก์" looks like "ลิงท์"). */
+input, textarea, select, button {
+  font-family: inherit;
+}
+
 /* ── Buttons (rounded 10px, bold weight, no easing — matches payroll) ── */
 .btn {
   @apply inline-flex items-center justify-center px-5 py-2.5 rounded-[10px]
