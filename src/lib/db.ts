@@ -526,6 +526,13 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("extra_button_url")) {
     db.exec("ALTER TABLE branches ADD COLUMN extra_button_url TEXT");
   }
+  // Fallback contact phone — shown to the customer in the "request received,
+  // awaiting confirmation" LINE message so they have a way to follow up if
+  // admin doesn't get to their pending booking. Optional; if unset the
+  // pending message just omits the phone line.
+  if (!bnames2.has("contact_phone")) {
+    db.exec("ALTER TABLE branches ADD COLUMN contact_phone TEXT");
+  }
 
   // Phase 1C v9: replaces_id for resignation_requests
   const rrcols = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;
@@ -960,6 +967,7 @@ export type Branch = {
   display_order: number;            // sort key, lower = first (NAMA = 1)
   extra_button_label: string | null;   // Customer Flex card secondary CTA label
   extra_button_url: string | null;     // Customer Flex card secondary CTA URL
+  contact_phone: string | null;        // Fallback phone shown in pending-confirmation LINE message
 };
 
 export type User = {

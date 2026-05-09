@@ -25,7 +25,11 @@ const Patch = z.object({
   // by the input type="url" in the admin UI; the server just stores the
   // value (or null when cleared).
   extra_button_label: z.string().max(40).nullable().optional(),
-  extra_button_url: z.string().max(500).nullable().optional()
+  extra_button_url: z.string().max(500).nullable().optional(),
+  // Fallback phone shown in the pending-confirmation LINE message so the
+  // customer has a way to reach the restaurant if admin doesn't get to
+  // their booking quickly.
+  contact_phone: z.string().max(40).nullable().optional()
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {

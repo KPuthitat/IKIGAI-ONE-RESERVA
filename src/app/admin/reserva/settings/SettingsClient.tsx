@@ -46,7 +46,9 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
     no_lunch_break_dates: parseDates(branch.no_lunch_break_dates),
     // Customer Flex 'Menu' CTA — admin only sets the URL; the label is
     // hardcoded per language in the Flex builder.
-    extra_button_url: branch.extra_button_url ?? ""
+    extra_button_url: branch.extra_button_url ?? "",
+    // Fallback phone for the pending-confirmation LINE message.
+    contact_phone: branch.contact_phone ?? ""
   });
   const [newSpecialDate, setNewSpecialDate] = useState("");
   const [busy, setBusy] = useState(false);
@@ -75,7 +77,8 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
         ? JSON.stringify(form.lunch_break_weekdays) : null,
       no_lunch_break_dates: form.no_lunch_break_dates.length > 0
         ? JSON.stringify(form.no_lunch_break_dates) : null,
-      extra_button_url: form.extra_button_url.trim() || null
+      extra_button_url: form.extra_button_url.trim() || null,
+      contact_phone: form.contact_phone.trim() || null
     };
     const res = await fetch(apiUrl(`/api/admin/branch/${branch.id}`), {
       method: "PATCH",
@@ -280,6 +283,30 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
           onChange={(e) => setForm({ ...form, staff_line_user_ids: e.target.value })}
           placeholder='["U1234abcd...","U5678efgh..."]' />
         <p className="text-xs text-slate-500 mt-1">{t("admin.settings.staffLineIdsHint")}</p>
+      </div>
+
+      {/* Fallback phone for the customer's pending-confirmation LINE
+          message. Shown so the customer can call the restaurant if their
+          booking doesn't get confirmed in a reasonable timeframe. The
+          message omits the line entirely when this is blank. */}
+      <h2 className="font-semibold pt-3 border-t border-slate-100">
+        {t("admin.settings.contactPhoneSection")}
+      </h2>
+      <p className="text-sm text-slate-500">
+        {t("admin.settings.contactPhoneDesc")}
+      </p>
+      <div>
+        <label className="label">{t("admin.settings.field.contactPhone")}</label>
+        <input className="input"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          value={form.contact_phone} maxLength={40}
+          onChange={(e) => setForm({ ...form, contact_phone: e.target.value })}
+          placeholder="038-xxx-xxxx" />
+        <p className="text-xs text-slate-500 mt-1">
+          {t("admin.settings.contactPhoneHint")}
+        </p>
       </div>
 
       {/* Optional 'เมนูอาหาร / Menu' button on the customer's LINE Flex

@@ -696,9 +696,19 @@ export async function notifyCustomerPending(
   const lang: Lang = booking.lang === "en" ? "en" : "th";
   const dateStr = localDate(booking.booking_date, lang);
   const ref = booking.ref_no ?? String(booking.id);
+  // Contact phone shown only when admin set one; otherwise generic "call
+  // the restaurant" wording. Keeps the message useful even on branches
+  // that haven't configured contact_phone yet.
+  const phoneTail = branch.contact_phone
+    ? (lang === "en"
+        ? ` Call ${branch.contact_phone} if you need to follow up.`
+        : ` หากไม่ได้รับการยืนยัน กรุณาโทร ${branch.contact_phone}`)
+    : (lang === "en"
+        ? " If you don't hear back, please call the restaurant."
+        : " หากไม่ได้รับการยืนยัน กรุณาโทรติดต่อร้าน");
   const text = lang === "en"
-    ? `Booking request received #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} guests\n\nWe'll confirm by LINE shortly with your table and a QR code. If you don't hear back, please call the restaurant.`
-    : `ได้รับคำขอจอง #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} ที่นั่ง\n\nทางร้านจะส่งยืนยันการจองพร้อมคิวอาร์โค้ดทาง LINE เร็วๆ นี้ หากไม่ได้รับการยืนยัน กรุณาโทรติดต่อร้าน`;
+    ? `Booking request received #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} guests\n\nWe'll confirm by LINE shortly with your table and a QR code.${phoneTail}`
+    : `ได้รับคำขอจอง #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} ที่นั่ง\n\nทางร้านจะส่งยืนยันการจองพร้อมคิวอาร์โค้ดทาง LINE เร็วๆ นี้${phoneTail}`;
   const res = await sendLinePush(token, {
     to: booking.line_user_id,
     messages: [{ type: "text", text }]
