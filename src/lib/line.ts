@@ -473,7 +473,7 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
           action: {
             type: "uri",
             label: fx(args.lang, "btnEditBooking"),
-            uri: `${args.publicBaseUrl}/reserva/edit/${refDisplay}`
+            uri: `${args.publicBaseUrl}/reserva/${args.branchSlug}/edit/${refDisplay}`
           }
         },
         // Optional menu CTA — admin only configures the URL per branch.
