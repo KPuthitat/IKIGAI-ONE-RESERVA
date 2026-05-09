@@ -79,10 +79,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/admin/reserva", label: t(lang, "admin.nav.overview") },
         {
-          href: "/admin/reserva/bookings",
-          label: t(lang, "admin.nav.bookings"),
+          href: "/admin/reserva/pending",
+          label: t(lang, "admin.nav.pendingReview"),
           badge: pendingCount > 0 ? pendingCount : undefined
         },
+        { href: "/admin/reserva/bookings", label: t(lang, "admin.nav.bookings") },
         { href: "/admin/reserva/timetable", label: t(lang, "admin.reserva.nav.timetable") },
         { href: "/admin/reserva/scan", label: t(lang, "admin.reserva.nav.scan") },
         { href: "/admin/reserva/zones", label: t(lang, "admin.reserva.nav.zones") },

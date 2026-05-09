@@ -260,6 +260,8 @@ export default function BookingsClient({
     {claimModalRef && (
       <ClaimLinkModal
         refNo={claimModalRef}
+        branchSlug={branch.slug}
+        branchName={branch.name}
         onClose={() => setClaimModalRef(null)}
       />
     )}
@@ -559,17 +561,31 @@ function AddBookingModal({
 
 // ── Claim-link modal — shown after +จองผ่านไลน์ saves a booking with no
 //    LINE userId. Gives admin a one-tap link to paste into the LINE OA chat.
-function ClaimLinkModal({ refNo, onClose }: { refNo: string; onClose: () => void }) {
+//    The link path is /reserva/<branch>/claim/<ref> so it falls under the
+//    LIFF endpoint URL (LIFF only inits on URLs under its registered prefix).
+function ClaimLinkModal({
+  refNo,
+  branchSlug,
+  branchName,
+  onClose
+}: {
+  refNo: string;
+  branchSlug: string;
+  branchName: string;
+  onClose: () => void;
+}) {
   const { t } = useLang();
   const [copied, setCopied] = useState<"" | "link" | "msg">("");
 
   function buildUrl(): string {
-    if (typeof window === "undefined") return `/r/${refNo}/claim`;
-    return `${window.location.origin}/r/${refNo}/claim`;
+    const path = `/reserva/${branchSlug}/claim/${refNo}`;
+    if (typeof window === "undefined") return path;
+    return `${window.location.origin}${path}`;
   }
   function buildMessage(): string {
     return t("admin.bookings.claimLink.messageTemplate", {
       ref: refNo,
+      branch: branchName,
       url: buildUrl()
     });
   }
@@ -669,10 +685,9 @@ function ClaimLinkModal({ refNo, onClose }: { refNo: string; onClose: () => void
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
-// Full month names in both Thai and English. The Thai variant uses
-// unabbreviated names (พฤษภาคม, not พ.ค.) so the section headers read
-// formal — short forms can feel like a quick draft on a customer-facing
-// admin tool. Buddhist year (พ.ศ.) for Thai, common-era for English.
+// Full date headers: "วันเสาร์ที่ 9 พฤษภาคม 2569" / "Saturday, 9 May 2026"
+// Thai uses the formal "วัน...ที่" construct (not "เสาร์ ·"). Buddhist
+// year (พ.ศ.) for Thai, common-era for English.
 function formatDateHeader(yyyymmdd: string, lang: "th" | "en"): string {
   const d = new Date(`${yyyymmdd}T00:00:00Z`);
   const dow = d.getUTCDay();
@@ -682,14 +697,14 @@ function formatDateHeader(yyyymmdd: string, lang: "th" | "en"): string {
       "January","February","March","April","May","June",
       "July","August","September","October","November","December"
     ];
-    return `${dows[dow]} · ${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+    return `${dows[dow]}, ${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
   }
   const dowsTh = ["อาทิตย์","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์"];
   const monthsTh = [
     "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
     "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"
   ];
-  return `${dowsTh[dow]} · ${d.getUTCDate()} ${monthsTh[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}`;
+  return `วัน${dowsTh[dow]}ที่ ${d.getUTCDate()} ${monthsTh[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}`;
 }
 
 function formatDateThaiShort(yyyymmdd: string, lang: "th" | "en"): string {

@@ -36,14 +36,10 @@ export default function BookingsPage({ searchParams }: { searchParams: { from?: 
     ? searchParams.from
     : todayBkk();
 
-  // Pending bookings always show at top regardless of date — admin needs
-  // to see and confirm them ASAP. Sort oldest-first so FIFO.
-  const pendingBookings = db.prepare(`
-    SELECT b.*, t.label AS table_label
-    FROM bookings b LEFT JOIN tables t ON b.table_id = t.id
-    WHERE b.branch_id = ? AND b.status = 'pending_review'
-    ORDER BY b.created_at ASC
-  `).all(branch.id) as Row[];
+  // Pending review bookings live on a dedicated /admin/reserva/pending page —
+  // they're not shown here. We still pass an empty array to BookingsClient
+  // so its existing prop API stays the same.
+  const pendingBookings: Row[] = [];
 
   // Confirmed/seated/no-show/completed/cancelled bookings from `fromDate`
   // forward, grouped client-side by booking_date with a date header per

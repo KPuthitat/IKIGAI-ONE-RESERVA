@@ -39,12 +39,9 @@ export default function StaffReservaPage({ searchParams }: { searchParams: { fro
     ? searchParams.from
     : todayBkk();
 
-  const pendingBookings = db.prepare(`
-    SELECT b.*, t.label AS table_label
-    FROM bookings b LEFT JOIN tables t ON b.table_id = t.id
-    WHERE b.branch_id = ? AND b.status = 'pending_review'
-    ORDER BY b.created_at ASC
-  `).all(branch.id) as Row[];
+  // Pending review is admin-only (handled at /admin/reserva/pending) — staff
+  // shouldn't be approving customer requests, just reading the day's lineup.
+  const pendingBookings: Row[] = [];
 
   const horizonDate = new Date(`${fromDate}T00:00:00Z`);
   horizonDate.setUTCDate(horizonDate.getUTCDate() + 60);
