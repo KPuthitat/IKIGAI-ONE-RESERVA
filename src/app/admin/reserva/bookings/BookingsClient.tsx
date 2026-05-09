@@ -667,42 +667,6 @@ function ClaimLinkModal({
           {t("admin.bookings.claimLink.savedHint")}
         </div>
 
-        {/* Visual mockup of how the booking will look on the customer's
-            claim page once they tap the link. Mirrors the actual layout
-            (dark header + white body + brand confirm button) so admin
-            knows what they're sending. Not a live LINE Flex preview —
-            just a styled summary. */}
-        <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
-          <div className="bg-ink-gradient text-white px-4 py-3">
-            <div className="flex items-baseline justify-between text-[10px] tracking-wider">
-              <span className="text-brand-light font-bold">IKIGAI OS</span>
-              <span className="text-slate-300">RESERVA</span>
-            </div>
-            <div className="text-sm font-bold mt-1">
-              {t("claim.title")} #{refNo}
-            </div>
-            <div className="text-[10px] text-slate-300 mt-0.5">{branchName}</div>
-          </div>
-          <div className="bg-white px-4 py-3 space-y-1 text-xs text-slate-600">
-            <div className="text-[10px] uppercase tracking-wider text-slate-400">
-              {t("admin.bookings.claimLink.previewSummary")}
-            </div>
-          </div>
-          <div className="bg-white px-4 pb-3">
-            <button
-              type="button"
-              disabled
-              className="w-full bg-brand text-white rounded-lg py-2 font-bold text-sm opacity-90"
-              tabIndex={-1}
-            >
-              {t("claim.cta.confirm")}
-            </button>
-            <p className="text-[10px] text-slate-400 mt-1.5 text-center italic">
-              {t("admin.bookings.claimLink.previewNote")}
-            </p>
-          </div>
-        </div>
-
         <div>
           <label className="text-xs font-semibold text-slate-500">
             {t("admin.bookings.claimLink.linkLabel")}

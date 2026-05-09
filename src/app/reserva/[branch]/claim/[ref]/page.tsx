@@ -26,7 +26,11 @@ import ClaimClient from "./ClaimClient";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "รับ QR Code · IKIGAI OS RESERVA"
+  // Shown in browser tab AND as the link preview title in LINE chat
+  // when admin pastes the claim URL. Customer should see this and know
+  // exactly what tapping the link will do — "ยืนยันและรับคิวอาร์โค้ด"
+  // is more action-oriented than "รับ QR Code" alone.
+  title: "ยืนยันและรับคิวอาร์โค้ด · IKIGAI OS RESERVA"
 };
 
 export default function ClaimPage({
