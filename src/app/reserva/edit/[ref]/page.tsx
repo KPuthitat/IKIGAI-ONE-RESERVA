@@ -7,7 +7,6 @@
 // restaurant directly.
 
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getDb, type Booking, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
@@ -31,25 +30,37 @@ const EDIT_CUTOFF_MINUTES = 60;
 
 type Row = Booking & { branch_name: string; branch_open_time: string; branch_close_time: string };
 
+// Server logs every hit so we can see what URL/ref the customer
+// actually clicks. Helpful when 404s are reported and we don't know
+// whether the URL was malformed, the booking didn't exist, or the
+// route wasn't found at all (the latter would never reach this code).
+function logHit(rawRef: string, found: boolean): void {
+  try {
+    console.log(`[edit-page] ref=${JSON.stringify(rawRef)} found=${found}`);
+  } catch { /* ignore */ }
+}
+
 export default function EditBookingPage({ params }: { params: { ref: string } }) {
   const lang = getLang();
-  const raw = decodeURIComponent(params.ref ?? "");
+  const raw = decodeURIComponent(params.ref ?? "").trim();
 
   // The Flex card builds its URL with `bookingRef ?? String(bookingId)` —
   // so legacy bookings without ref_no would land here with a numeric id
   // like "/reserva/edit/42". Accept both formats so the button never
   // 404s on the customer. Look up by ref_no when the param is in the
-  // R-format, fall back to numeric id otherwise.
+  // R-format, fall back to numeric id otherwise. Case-insensitive on
+  // the R-prefix in case LINE or some shortener lower-cases the URL.
   const db = getDb();
   let booking: Row | undefined;
-  if (isBookingRef(raw)) {
+  const upperRaw = raw.toUpperCase();
+  if (isBookingRef(upperRaw)) {
     booking = db.prepare(`
       SELECT b.*, br.name AS branch_name,
              br.open_time AS branch_open_time, br.close_time AS branch_close_time
       FROM bookings b
       LEFT JOIN branches br ON b.branch_id = br.id
       WHERE b.ref_no = ?
-    `).get(raw) as Row | undefined;
+    `).get(upperRaw) as Row | undefined;
   } else {
     const numericId = Number(raw);
     if (Number.isInteger(numericId) && numericId > 0) {
@@ -62,7 +73,35 @@ export default function EditBookingPage({ params }: { params: { ref: string } })
       `).get(numericId) as Row | undefined;
     }
   }
-  if (!booking) notFound();
+  logHit(raw, !!booking);
+
+  // No booking → render a friendly error page instead of the bare
+  // Next.js 404. Lets the customer understand what happened and gives
+  // us (admin) a clear screen to look at when debugging.
+  if (!booking) {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-100">
+        <main className="flex-1 flex items-center justify-center p-6">
+          <div className="max-w-md w-full card text-center">
+            <div className="text-3xl font-bold text-slate-300 mb-2">?</div>
+            <h1 className="text-lg font-bold text-slate-800">
+              {t(lang, "edit.err.notFoundTitle")}
+            </h1>
+            <p className="text-sm text-slate-600 mt-2">
+              {t(lang, "edit.err.notFoundBody")}
+            </p>
+            <p className="text-xs text-slate-400 mt-3 font-mono break-all">
+              ref: {raw || "(empty)"}
+            </p>
+            <Link href="/reserva" className="btn-secondary inline-block mt-4">
+              {t(lang, "common.back")}
+            </Link>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   // Compute minutes until booking_time (Bangkok). Compare against the
   // 2-hour cutoff to decide whether the form is editable.
