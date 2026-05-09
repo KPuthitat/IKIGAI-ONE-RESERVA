@@ -145,6 +145,9 @@ export default function BookingForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultId, setResultId] = useState<number | null>(null);
+  // Public-facing ref ('R20260500047') captured from the API response.
+  // Falls back to the numeric id if the API doesn't return a ref (legacy).
+  const [resultRef, setResultRef] = useState<string | null>(null);
 
   // ── LIFF init — captures the customer's LINE userId + display name when
   //    the booking page is opened via the OA's Rich Menu (LIFF link). With
@@ -390,6 +393,7 @@ export default function BookingForm({
         throw new Error(data.error || t("common.error"));
       }
       setResultId(data.id);
+      setResultRef(data.ref ?? null);
       setStep("done");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t("common.error"));
@@ -472,6 +476,7 @@ export default function BookingForm({
         return;
       }
       setResultId(data.id);
+      setResultRef(data.ref ?? null);
       setStep("done");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t("common.error"));
@@ -493,7 +498,13 @@ export default function BookingForm({
         </h2>
         <p className="text-slate-600 mb-1">
           <span dangerouslySetInnerHTML={{
-            __html: t("booking.success.bookingId", { id: `<span class="font-bold">${resultId}</span>` })
+            __html: t("booking.success.bookingId", {
+              // Prefer the public-facing ref (R20260500047) — that's what
+              // shows up in the LINE message + on /r/<ref>. Numeric id is
+              // an internal detail; only fall back to it for legacy rows
+              // that don't have a ref_no for some reason.
+              id: `<span class="font-bold">${resultRef ?? `#${resultId}`}</span>`
+            })
           }} />
         </p>
         <p className="text-slate-600 mb-6">
