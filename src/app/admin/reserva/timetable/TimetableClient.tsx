@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 import type { Branch, Booking, TableRow, Zone } from "@/lib/db";
 import { useLang } from "@/lib/LangProvider";
 import BookingForm from "@/app/reserva/[branch]/BookingForm";
+import BookingActionsModal from "./BookingActionsModal";
 
 const SLOT_MINUTES = 30;
 const LABEL_COL_PX = 110;
@@ -49,6 +50,9 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
   const router = useRouter();
   const { t } = useLang();
   const [walkin, setWalkin] = useState<{ tableId: number; time: string } | null>(null);
+  // Click-to-edit on a booking overlay opens this modal (status actions,
+  // table reassignment, cancel-with-reason). null = closed.
+  const [editing, setEditing] = useState<Booking | null>(null);
 
   // Zoom state — start with whatever the user picked last time, default
   // to 'normal'. Persisted in localStorage on each change.
@@ -231,6 +235,7 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
                 bookings={bookingsByTable.get(tbl.id) ?? []}
                 rowPx={ROW_PX}
                 onEmptyCellClick={onEmptyCellClick}
+                onEdit={(b) => setEditing(b)}
                 bookingPlacement={bookingPlacement}
                 bookingTone={bookingTone}
               />
@@ -255,14 +260,55 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
           onSaved={() => { setWalkin(null); router.refresh(); }}
         />
       )}
+      {editing && (
+        <BookingActionsModal
+          booking={editing}
+          // Tables free at the editing booking's slot — used by the
+          // reassign dropdown. Computed client-side from the bookings
+          // already in scope; cheap because both lists are small.
+          availableTableIds={tables
+            .filter((tbl) => isOverlapFree(bookings, editing.id, tbl.id, editing))
+            .map((tbl) => tbl.id)}
+          tables={tables.map((tbl) => ({
+            id: tbl.id, label: tbl.label, capacity: tbl.capacity
+          }))}
+          onClose={() => setEditing(null)}
+        />
+      )}
       </div>
     </div>
   );
 }
 
+// True if `tableId` has no other booking in the same date overlapping
+// with `target`'s time window. Considers existing in-scope bookings only
+// (single date in this view), excludes the target booking itself, and
+// ignores cancelled/completed bookings since they don't hold the table.
+function isOverlapFree(
+  all: Booking[], excludeId: number, tableId: number, target: Booking
+): boolean {
+  const targetStart = timeToMin(target.booking_time);
+  const targetEnd = targetStart + (target.duration_minutes || 90);
+  for (const b of all) {
+    if (b.id === excludeId) continue;
+    if (b.table_id !== tableId) continue;
+    if (b.status === "cancelled" || b.status === "completed") continue;
+    const start = timeToMin(b.booking_time);
+    const end = start + (b.duration_minutes || 90);
+    // Overlap if [start, end) intersects [targetStart, targetEnd)
+    if (start < targetEnd && end > targetStart) return false;
+  }
+  return true;
+}
+
+function timeToMin(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+
 function TableRowComponent({
   table, slots, gridCols, bookings, rowPx,
-  onEmptyCellClick, bookingPlacement, bookingTone
+  onEmptyCellClick, onEdit, bookingPlacement, bookingTone
 }: {
   table: TableRow;
   slots: Array<{ index: number; minutes: number; label: string }>;
@@ -270,6 +316,7 @@ function TableRowComponent({
   bookings: Booking[];
   rowPx: number;
   onEmptyCellClick: (tableId: number, slotMinutes: number) => void;
+  onEdit: (b: Booking) => void;
   bookingPlacement: (b: Booking) => { left: number; width: number } | null;
   bookingTone: (b: Booking) => string;
 }) {
@@ -299,16 +346,18 @@ function TableRowComponent({
         </button>
       ))}
 
-      {/* Booking overlays — absolute-positioned over the empty cells */}
+      {/* Booking overlays — absolute-positioned over the empty cells.
+          Click opens BookingActionsModal so admin can change status,
+          reassign table, or cancel without leaving the timetable. */}
       {bookings.map((b) => {
         const place = bookingPlacement(b);
         if (!place) return null;
         return (
-          <Link
+          <button
+            type="button"
             key={b.id}
-            href={`/r/${b.ref_no ?? b.id}`}
-            target="_blank"
-            className={`absolute rounded border ${bookingTone(b)} px-1.5 py-0.5 text-xs leading-tight overflow-hidden hover:brightness-95 z-[5]`}
+            onClick={() => onEdit(b)}
+            className={`absolute rounded border ${bookingTone(b)} px-1.5 py-0.5 text-xs leading-tight overflow-hidden text-left hover:brightness-95 active:scale-[0.98] transition z-[5]`}
             style={{
               left: place.left + 2,
               width: place.width - 4,
@@ -321,7 +370,7 @@ function TableRowComponent({
             <div className="opacity-80 truncate">
               {b.party_size} · {b.booking_time}
             </div>
-          </Link>
+          </button>
         );
       })}
     </div>

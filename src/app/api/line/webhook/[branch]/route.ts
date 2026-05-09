@@ -156,7 +156,7 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       // mapping a customer's LINE id to their booking later (RESERVA).
       if (/^\s*(id|ไอดี|myid|line\s*id)\s*$/i.test(text)) {
         const tail = channel.scope === "platform"
-          ? "กรุณาบันทึกหน้าจอและส่งให้แอดมินเพื่อตั้งค่าในระบบ — หลังจากนั้นจะได้รับการ์ดยืนยันการเข้างานทุกครั้ง"
+          ? "กรุณาบันทึกหน้าจอและส่งให้แอดมินเพื่อตั้งค่าในระบบ — หลังจากนั้นจะได้รับข้อความยืนยันการเข้างานทุกครั้ง"
           : "กรุณาบันทึกหน้าจอและส่งให้แอดมินเพื่อตั้งค่าในระบบ";
         await sendLinePush(channel.channel_token, {
           to: userId,

@@ -21,7 +21,9 @@ import { isTableFree } from "@/lib/table-allocator";
 import { isBookingRef } from "@/lib/reserva-ref";
 import { notifyStaff } from "@/lib/line";
 
-const EDIT_CUTOFF_MINUTES = 120;
+// Match the page-side constant. See /reserva/edit/[ref]/page.tsx for
+// why we settled on 60 min.
+const EDIT_CUTOFF_MINUTES = 60;
 
 const Body = z.union([
   z.object({ action: z.literal("cancel") }),

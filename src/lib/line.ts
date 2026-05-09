@@ -91,7 +91,7 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     cancelledTitle: "การจองถูกยกเลิก",
     labelReason: "เหตุผล",
     noReasonGiven: "ทางร้านไม่ได้ระบุเหตุผล — โปรดติดต่อร้านโดยตรง",
-    btnCallRestaurant: "โทรหาร้าน",
+    btnCallRestaurant: "ติดต่อเรา",
     noContactPhoneHint: "หากต้องการสอบถามเพิ่มเติม กรุณาติดต่อร้านผ่านแชท LINE นี้"
   },
   en: {
@@ -120,7 +120,7 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     cancelledTitle: "Booking cancelled",
     labelReason: "Reason",
     noReasonGiven: "No reason given — please contact the restaurant directly",
-    btnCallRestaurant: "Call",
+    btnCallRestaurant: "Contact us",
     noContactPhoneHint: "For questions, please reply in this LINE chat"
   }
 };

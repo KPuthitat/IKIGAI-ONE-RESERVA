@@ -132,9 +132,9 @@ export async function POST(req: Request) {
   db.prepare("INSERT INTO time_entries (user_id, type, ts) VALUES (?, ?, ?)")
     .run(user.id, action, nowIso);
 
-  // ── Fire-and-forget: ส่ง LINE flex card ยืนยันเฉพาะตอนเข้างาน ──
+  // ── Fire-and-forget: ส่ง LINE flex confirmation message on clock-in ──
   // Channel: IKIGAI OS (platform-level OA, shared across all branches).
-  // Branch context: ใช้แค่ดึงเวลาพักกลางวัน + ชื่อสาขามาแสดงในการ์ด.
+  // Branch context: ใช้แค่ดึงเวลาพักกลางวัน + ชื่อสาขามาแสดงในข้อความ.
   // ถ้าระบบยังไม่ได้ตั้ง platform OA หรือพนักงานยังไม่ได้ bind LINE userId
   // → เงียบ ไม่ error ไม่ block response ของ clock-in.
   if (action === "in" && user.activeBranchId) {

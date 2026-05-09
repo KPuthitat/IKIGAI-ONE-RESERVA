@@ -2,16 +2,27 @@
 
 import { useState } from "react";
 import { useLang } from "@/lib/LangProvider";
+import { t as tStatic, type Lang } from "@/lib/i18n";
 
 // Reason picker shown when admin cancels a booking. The selected reason
 // (preset or custom free text) is passed to the parent's onConfirm
 // callback, which forwards it to the cancel API. Server pushes a Flex
-// card to the customer with this exact reason in the body.
+// message to the customer with this exact reason.
 //
 // Three preset options:
 //   no_table     "ไม่มีโต๊ะว่างในเวลาที่จอง"
 //   temp_closed  "ร้านปิดทำการชั่วคราว"
 //   other        free-text input shown only when this is selected
+//
+// Localization split:
+//   - The CHROME of the modal (title, subtitle, hint, buttons) follows the
+//     admin's UI language — that's what the admin reads while triaging.
+//   - The PRESET RADIO LABELS follow the customer's booking language so
+//     the admin sees the exact text the customer will read in the LINE
+//     cancellation message. (If they don't match, admin gets surprised by
+//     the Thai-vs-English flip when comparing the two screens.)
+//   - The RESOLVED REASON STRING sent to the API is in the customer's
+//     language for the same reason. Custom text is whatever admin types.
 
 type PresetKey = "no_table" | "temp_closed" | "other";
 
@@ -23,11 +34,15 @@ const PRESET_KEYS: Array<{ value: PresetKey; labelKey: string }> = [
 
 export default function CancelReasonModal({
   bookingRef,
+  customerLang,
   busy,
   onClose,
   onConfirm
 }: {
   bookingRef: string | null;
+  /** Customer's booking language captured at submit time. Falls back to
+   *  Thai when null/unknown. */
+  customerLang: Lang | null;
   busy: boolean;
   onClose: () => void;
   /** Resolves with the final reason string the parent should send to the
@@ -36,6 +51,7 @@ export default function CancelReasonModal({
   onConfirm: (reason: string) => void;
 }) {
   const { t } = useLang();
+  const cLang: Lang = customerLang === "en" ? "en" : "th";
   const [picked, setPicked] = useState<PresetKey | "">("");
   const [customText, setCustomText] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -55,13 +71,19 @@ export default function CancelReasonModal({
       }
       finalReason = trimmed;
     } else {
-      // Resolve the preset key into the same Thai label customers will see
-      // — passing the localized string straight through means the Flex
-      // card body matches the admin UI 1:1.
-      finalReason = t(`admin.bookings.cancelReason.${picked}`);
+      // Use the customer's booking language so the cancellation message
+      // they read matches the rest of their LINE thread.
+      finalReason = tStatic(cLang, `admin.bookings.cancelReason.${picked}`);
     }
     onConfirm(finalReason);
   }
+
+  // Banner shown whenever customerLang differs from admin's UI lang —
+  // helps admin understand why the radio labels look "different" from the
+  // rest of the app chrome.
+  const adminLangShown = t("admin.bookings.cancelReason.langBanner", {
+    lang: cLang === "en" ? "EN" : "TH"
+  });
 
   return (
     <div
@@ -91,9 +113,15 @@ export default function CancelReasonModal({
           >×</button>
         </div>
 
+        <div className="rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs p-2.5">
+          {adminLangShown}
+        </div>
+
         <div className="space-y-2">
           {PRESET_KEYS.map((p) => {
             const selected = picked === p.value;
+            // Preset labels rendered in customer's lang (see comment at top).
+            const presetLabel = tStatic(cLang, p.labelKey);
             return (
               <label
                 key={p.value}
@@ -110,7 +138,7 @@ export default function CancelReasonModal({
                     checked={selected}
                     onChange={() => setPicked(p.value)}
                   />
-                  <div className="font-medium text-slate-800">{t(p.labelKey)}</div>
+                  <div className="font-medium text-slate-800">{presetLabel}</div>
                 </div>
                 {selected && p.value === "other" && (
                   <textarea
@@ -118,7 +146,7 @@ export default function CancelReasonModal({
                     rows={3}
                     maxLength={500}
                     autoFocus
-                    placeholder={t("admin.bookings.cancelReason.customPlaceholder")}
+                    placeholder={tStatic(cLang, "admin.bookings.cancelReason.customPlaceholder")}
                     value={customText}
                     onChange={(e) => setCustomText(e.target.value)}
                   />

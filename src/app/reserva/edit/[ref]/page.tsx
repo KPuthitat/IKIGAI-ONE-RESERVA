@@ -22,7 +22,12 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "ปรับเปลี่ยนการจอง · RESERVA" };
 
-const EDIT_CUTOFF_MINUTES = 120;   // can change up to 2 hours before booking time
+// Customer can edit up to 60 min before the booking time. Beyond that
+// the form locks to a read-only banner asking them to call the restaurant
+// directly. Was 120 min — relaxed to 60 to give more legitimate
+// last-minute change room. The 60-min floor still protects the kitchen
+// from same-time-slot churn.
+const EDIT_CUTOFF_MINUTES = 60;
 
 type Row = Booking & { branch_name: string; branch_open_time: string; branch_close_time: string };
 

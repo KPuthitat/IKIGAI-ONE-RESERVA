@@ -292,6 +292,7 @@ export default function BookingsClient({
     {cancelTarget && (
       <CancelReasonModal
         bookingRef={cancelTarget.ref_no}
+        customerLang={cancelTarget.lang === "en" ? "en" : "th"}
         busy={busyId === cancelTarget.id}
         onClose={() => setCancelTarget(null)}
         onConfirm={submitCancel}

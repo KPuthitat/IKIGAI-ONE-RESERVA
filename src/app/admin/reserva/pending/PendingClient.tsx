@@ -8,7 +8,10 @@ import { useLang } from "@/lib/LangProvider";
 import { useConfirm } from "@/app/components/useConfirm";
 import CancelReasonModal from "../bookings/CancelReasonModal";
 
-type Row = Booking & { table_label: string | null };
+type Row = Booking & {
+  table_label: string | null;
+  available_table_ids: number[];
+};
 
 const AUTO_REFRESH_MS = 30_000;
 
@@ -184,7 +187,10 @@ export default function PendingClient({
               >
                 <option value="">{t("admin.bookings.tableNone")}</option>
                 {tables
-                  .filter((tab) => tab.capacity >= b.party_size)
+                  .filter((tab) =>
+                    tab.capacity >= b.party_size &&
+                    b.available_table_ids.includes(tab.id)
+                  )
                   .map((tab) => (
                     <option key={tab.id} value={tab.id}>
                       {tab.label} ({tab.capacity})
@@ -213,6 +219,7 @@ export default function PendingClient({
       {cancelTarget && (
         <CancelReasonModal
           bookingRef={cancelTarget.ref_no}
+          customerLang={cancelTarget.lang === "en" ? "en" : "th"}
           busy={busyId === cancelTarget.id}
           onClose={() => setCancelTarget(null)}
           onConfirm={submitCancel}
