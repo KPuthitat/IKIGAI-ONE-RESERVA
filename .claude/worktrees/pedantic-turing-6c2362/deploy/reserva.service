@@ -1,0 +1,45 @@
+# IKIGAI OS RESERVA — systemd unit
+#
+# ติดตั้ง:
+#   sudo cp deploy/reserva.service /etc/systemd/system/reserva.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now reserva
+#
+# คำสั่งที่ใช้บ่อย:
+#   sudo systemctl status reserva
+#   sudo systemctl restart reserva
+#   sudo journalctl -u reserva -f          # ดู log แบบ realtime
+
+[Unit]
+Description=IKIGAI OS RESERVA (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+# ปรับ User/WorkingDirectory ตาม path จริงบนเซิร์ฟเวอร์
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/reserva
+Environment=NODE_ENV=production
+Environment=PORT=3010
+Environment=HOSTNAME=127.0.0.1
+EnvironmentFile=/var/www/reserva/.env
+
+# ใช้ next start ของ Next.js
+ExecStart=/usr/bin/npm start
+
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# อนุญาตเขียนไฟล์ DB
+ReadWritePaths=/var/www/reserva/data
+
+[Install]
+WantedBy=multi-user.target
