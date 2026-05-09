@@ -48,7 +48,9 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
     // hardcoded per language in the Flex builder.
     extra_button_url: branch.extra_button_url ?? "",
     // Fallback phone for the pending-confirmation LINE message.
-    contact_phone: branch.contact_phone ?? ""
+    contact_phone: branch.contact_phone ?? "",
+    // LINE group ID for staff notifications (preferred over per-user push).
+    staff_group_id: branch.staff_group_id ?? ""
   });
   const [newSpecialDate, setNewSpecialDate] = useState("");
   const [busy, setBusy] = useState(false);
@@ -78,7 +80,8 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
       no_lunch_break_dates: form.no_lunch_break_dates.length > 0
         ? JSON.stringify(form.no_lunch_break_dates) : null,
       extra_button_url: form.extra_button_url.trim() || null,
-      contact_phone: form.contact_phone.trim() || null
+      contact_phone: form.contact_phone.trim() || null,
+      staff_group_id: form.staff_group_id.trim() || null
     };
     const res = await fetch(apiUrl(`/api/admin/branch/${branch.id}`), {
       method: "PATCH",
@@ -267,9 +270,33 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
           onChange={(e) => setForm({ ...form, reminder_minutes_before: Number(e.target.value) })} />
       </div>
 
-      {/* Staff LINE user IDs — list of staff who receive the new-booking
-          Flex card. Channel token/secret are managed at the dedicated
-          /admin/reserva/messaging page. */}
+      {/* Staff LINE group — preferred channel for staff notifications.
+          When set, notifyStaff() pushes once into the group instead of
+          looping over individual user IDs. Cheaper (1 msg per booking
+          regardless of group size) and easier to maintain (admin doesn't
+          need to update userId list when staff change). */}
+      <h2 className="font-semibold pt-3 border-t border-slate-100">
+        {t("admin.settings.staffGroupSection")}
+      </h2>
+      <p className="text-sm text-slate-500">
+        {t("admin.settings.staffGroupDesc")}
+      </p>
+      <div>
+        <label className="label">{t("admin.settings.field.staffGroupId")}</label>
+        <input className="input text-xs"
+          type="text"
+          autoComplete="off"
+          value={form.staff_group_id} maxLength={100}
+          onChange={(e) => setForm({ ...form, staff_group_id: e.target.value.trim() })}
+          placeholder="Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+        <p className="text-xs text-slate-500 mt-1 whitespace-pre-line">
+          {t("admin.settings.staffGroupIdHint")}
+        </p>
+      </div>
+
+      {/* Staff LINE user IDs — legacy fallback. Used only when staff_group_id
+          is empty. We keep the field for backward compat with branches that
+          haven't migrated to a group yet. */}
       <h2 className="font-semibold pt-3 border-t border-slate-100">
         {t("admin.settings.staffLineSection")}
       </h2>

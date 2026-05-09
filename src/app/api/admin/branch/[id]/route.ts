@@ -29,7 +29,11 @@ const Patch = z.object({
   // Fallback phone shown in the pending-confirmation LINE message so the
   // customer has a way to reach the restaurant if admin doesn't get to
   // their booking quickly.
-  contact_phone: z.string().max(40).nullable().optional()
+  contact_phone: z.string().max(40).nullable().optional(),
+  // LINE group ID for staff notifications — captured from the webhook
+  // when the OA is invited into a group. Push to this ID reaches all
+  // members of the group with a single message.
+  staff_group_id: z.string().max(100).nullable().optional()
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {

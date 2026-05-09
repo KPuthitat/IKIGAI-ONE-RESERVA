@@ -541,6 +541,16 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("contact_phone")) {
     db.exec("ALTER TABLE branches ADD COLUMN contact_phone TEXT");
   }
+  // LINE group ID for staff notifications — when set, notifyStaff()
+  // pushes to this single group instead of looping over staff_line_user_ids.
+  // Format: 'C' followed by ~32 hex chars (LINE's group ID format).
+  // Captured by the webhook on a `join` event when admin invites the OA
+  // into the group; the bot replies with the ID so admin can copy it
+  // into /admin/reserva/settings. Cheaper too — 1 push reaches all
+  // group members instead of N pushes for N staff.
+  if (!bnames2.has("staff_group_id")) {
+    db.exec("ALTER TABLE branches ADD COLUMN staff_group_id TEXT");
+  }
 
   // Phase 1C v9: replaces_id for resignation_requests
   const rrcols = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;
@@ -976,6 +986,7 @@ export type Branch = {
   extra_button_label: string | null;   // Customer Flex card secondary CTA label
   extra_button_url: string | null;     // Customer Flex card secondary CTA URL
   contact_phone: string | null;        // Fallback phone shown in pending-confirmation LINE message
+  staff_group_id: string | null;       // LINE group ID for staff notifications (preferred over staff_line_user_ids when set)
 };
 
 export type User = {

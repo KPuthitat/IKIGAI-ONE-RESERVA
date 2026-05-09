@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS branches (
   line_channel_secret TEXT,
   line_channel_token TEXT,
   staff_line_user_ids TEXT,            -- JSON array: ["U1234...","U5678..."] รับแจ้งเตือนพนักงาน
+  staff_group_id TEXT,                 -- LINE group ID — preferred over staff_line_user_ids when set
   contact_phone TEXT,                  -- Fallback phone shown in pending-confirmation LINE message
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

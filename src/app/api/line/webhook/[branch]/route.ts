@@ -24,7 +24,12 @@ import { getChannelByCode } from "@/lib/messaging-channels";
 
 type LineEvent = {
   type: string;
-  source?: { userId?: string };
+  source?: {
+    type?: "user" | "group" | "room";
+    userId?: string;
+    groupId?: string;
+    roomId?: string;
+  };
   message?: { type: string; text?: string };
   replyToken?: string;
 };
@@ -116,6 +121,31 @@ export async function POST(req: Request, { params }: { params: { branch: string 
   const db = getDb();
   const json = JSON.parse(raw) as { events: LineEvent[] };
   for (const ev of json.events ?? []) {
+    // Group/room events have source.groupId / source.roomId instead of userId.
+    // Handle those before the userId early-exit so admin gets the groupId
+    // to paste into settings.
+    if (ev.type === "join" && ev.source?.type === "group") {
+      const groupId = ev.source.groupId;
+      if (!groupId) continue;
+      console.log(`[line:${channel.scope}] OA joined group ${groupId} for ${channel.label}`);
+      // Reply in the group with the ID so admin (who's in the group) can
+      // copy it. Push to group (1 msg) — counts toward LINE quota but
+      // happens once per group ever.
+      const reply = `เพิ่ม OA เข้ากลุ่มเรียบร้อย\n\nGroup ID:\n${groupId}\n\nกรุณาคัดลอก Group ID ด้านบนนี้ไปใส่ในหน้าตั้งค่าของระบบ\n(/admin/reserva/settings → "กลุ่ม LINE พนักงาน")\n\nหลังจากตั้งค่าแล้ว ระบบจะส่งการแจ้งเตือนการจองใหม่เข้ากลุ่มนี้แทนการส่งหาพนักงานรายคน`;
+      await sendLinePush(channel.channel_token, {
+        to: groupId,
+        messages: [{ type: "text", text: reply }]
+      });
+      continue;
+    }
+    if (ev.type === "leave") {
+      // OA was kicked from the group. Just log; don't auto-clear the
+      // staff_group_id setting (admin should fix manually if intentional).
+      const groupId = ev.source?.groupId;
+      console.log(`[line:${channel.scope}] OA left group ${groupId} for ${channel.label}`);
+      continue;
+    }
+
     const userId = ev.source?.userId;
     if (!userId) continue;
 

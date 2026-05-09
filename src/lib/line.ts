@@ -955,15 +955,9 @@ export async function notifyStaff(
 ): Promise<void> {
   const db = getDb();
   const token = resolveBranchToken(branch);
-  if (!token || !branch.staff_line_user_ids) return;
-  let staffIds: string[] = [];
-  try {
-    staffIds = JSON.parse(branch.staff_line_user_ids);
-  } catch {
-    return;
-  }
-  if (staffIds.length === 0) return;
-  // Staff cards default to Thai (the team's working language). If we add a
+  if (!token) return;
+
+  // Staff cards default to Thai (the team's working language). If we add
   // per-staff language preference later we can plumb it through here.
   const flex = staffBookingFlex({
     branchName: branch.name,
@@ -981,12 +975,39 @@ export async function notifyStaff(
     kind: type,
     lang: "th"
   });
+
+  const logSent = (target: string, ok: boolean, err: string | null) => {
+    db.prepare(
+      "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
+    ).run(booking.id, type, "staff", ok ? "sent" : "failed", err ?? `target=${target}`);
+  };
+
+  // Preferred path — push once to the staff group. 1 message reaches all
+  // members + counts as 1 against the LINE quota regardless of group
+  // size, so this scales much better than per-user push.
+  if (branch.staff_group_id) {
+    const res = await sendLinePush(token, {
+      to: branch.staff_group_id,
+      messages: [flex]
+    });
+    logSent("group", res.ok, res.error ?? null);
+    return;
+  }
+
+  // Fallback — legacy per-user push for branches that haven't moved to
+  // the group flow yet. Each user costs 1 push.
+  if (!branch.staff_line_user_ids) return;
+  let staffIds: string[] = [];
+  try {
+    staffIds = JSON.parse(branch.staff_line_user_ids);
+  } catch {
+    return;
+  }
+  if (staffIds.length === 0) return;
   for (const uid of staffIds) {
     const res = await sendLinePush(token, {
       to: uid, messages: [flex]
     });
-    db.prepare(
-      "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
-    ).run(booking.id, type, "staff", res.ok ? "sent" : "failed", res.error ?? null);
+    logSent("user", res.ok, res.error ?? null);
   }
 }
