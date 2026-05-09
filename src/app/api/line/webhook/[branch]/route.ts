@@ -18,7 +18,7 @@
 
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
-import { getDb, type Branch, type Booking } from "@/lib/db";
+import { getDb, type Branch } from "@/lib/db";
 import { sendLinePush } from "@/lib/line";
 import { getChannelByCode } from "@/lib/messaging-channels";
 
@@ -127,27 +127,29 @@ export async function POST(req: Request, { params }: { params: { branch: string 
     if (ev.type === "message" && ev.message?.type === "text") {
       const text = (ev.message.text ?? "").trim();
 
-      // RESERVA-only: cancel a booking by ref
+      // RESERVA: legacy "ยกเลิก #X" path — DISABLED. Self-serve
+      // cancellation by typing in chat was unreliable (regex didn't
+      // accept the R-prefixed ref format etc.) so we steered everyone
+      // to the tel: button on the Flex card. We still detect the
+      // pattern here so customers who type out of habit get a polite
+      // redirect to call instead of silence.
       if (channel.scope !== "platform" && channel.branch) {
-        const cancelMatch = text.match(/ยกเลิก\s*#?\s*(\d+)/i);
+        const cancelMatch = text.match(/ยกเลิก\s*#?\s*[A-Z0-9]+/i);
         if (cancelMatch) {
-          const id = Number(cancelMatch[1]);
-          const b = db.prepare("SELECT * FROM bookings WHERE id = ? AND branch_id = ?")
-            .get(id, channel.branch.id) as Booking | undefined;
-          if (b && b.status === "confirmed") {
-            db.prepare(
-              "UPDATE bookings SET status='cancelled', cancelled_at=?, updated_at=? WHERE id = ?"
-            ).run(new Date().toISOString(), new Date().toISOString(), id);
-            await sendLinePush(channel.channel_token, {
-              to: userId,
-              messages: [{ type: "text", text: `ยกเลิกการจอง #${id} เรียบร้อย ขอบคุณที่แจ้งล่วงหน้า` }]
-            });
-          } else {
-            await sendLinePush(channel.channel_token, {
-              to: userId,
-              messages: [{ type: "text", text: `ไม่พบการจอง #${id} หรือสถานะไม่อนุญาตให้ยกเลิก` }]
-            });
-          }
+          // Read the branch's contact phone (if configured) so we can
+          // tell the customer exactly which number to call. Falls back
+          // to a generic "please call the restaurant" line.
+          const branchRow = db.prepare(
+            "SELECT contact_phone FROM branches WHERE id = ?"
+          ).get(channel.branch.id) as { contact_phone: string | null } | undefined;
+          const phone = branchRow?.contact_phone?.trim();
+          const reply = phone
+            ? `ขออภัย การยกเลิกผ่านแชทไม่รองรับแล้ว กรุณาโทรติดต่อร้านที่ ${phone} เพื่อยกเลิกการจอง`
+            : "ขออภัย การยกเลิกผ่านแชทไม่รองรับแล้ว กรุณาติดต่อร้านโดยตรงเพื่อยกเลิกการจอง";
+          await sendLinePush(channel.channel_token, {
+            to: userId,
+            messages: [{ type: "text", text: reply }]
+          });
           continue;
         }
       }

@@ -87,6 +87,7 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     tableNotAssigned: "ยังไม่ได้กำหนด",
     btnViewRestaurant: "ดูข้อมูลร้าน",
     btnEditBooking: "ปรับเปลี่ยน / ยกเลิกการจอง",
+    btnCancelCall: "ยกเลิกการจอง",
     btnMenu: "เมนูอาหาร",
     btnOpenAdmin: "เปิดในระบบ",
     cancelHint: 'หรือพิมพ์ "ยกเลิก #{ref}" ในแชทนี้เพื่อยกเลิก (ก่อนถึงเวลาจอง 2 ชั่วโมง)',
@@ -116,6 +117,7 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     tableNotAssigned: "not assigned",
     btnViewRestaurant: "View restaurant",
     btnEditBooking: "Modify / cancel booking",
+    btnCancelCall: "Cancel booking",
     btnMenu: "Menu",
     btnOpenAdmin: "Open in admin",
     cancelHint: 'Or reply "cancel #{ref}" in this chat (up to 2 hours before booking time)',
@@ -452,13 +454,11 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
               size: "xxs", color: COLOR_TEXT_MUTED, wrap: true, align: "center"
             }
           ]
-        },
-        { type: "separator", margin: "md", color: COLOR_DIVIDER },
-        {
-          type: "text",
-          text: fx(args.lang, "cancelHint").replace("{ref}", refDisplay),
-          size: "xxs", color: COLOR_TEXT_MUTED, wrap: true, margin: "sm"
         }
+        // The chat-cancel hint ("หรือพิมพ์ ยกเลิก #ref...") was removed
+        // — both that path and the URL-edit path proved unreliable in
+        // production. Customers cancel by tapping the tel: button in
+        // the footer to talk to admin directly.
       ]
     },
     footer: {
@@ -470,6 +470,11 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
         // to modify or cancel just dial in directly. tel: number is
         // stripped of non-digits so dashed/spaced numbers from settings
         // still dial cleanly.
+        // Tap to call the restaurant. Label says "ยกเลิกการจอง" because
+        // that's the most common reason a customer reaches out after
+        // booking — and admin handles the cancellation policy on the
+        // call (e.g. the 2-hour-advance rule). Opening the dialer with
+        // the contact phone pre-loaded.
         ...(args.contactPhone ? [{
           type: "button",
           style: "primary",
@@ -477,7 +482,7 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
           height: "sm",
           action: {
             type: "uri",
-            label: `${fx(args.lang, "btnCallRestaurant")} ${args.contactPhone}`,
+            label: fx(args.lang, "btnCancelCall"),
             uri: `tel:${args.contactPhone.replace(/[^\d+]/g, "")}`
           }
         }] : []),
