@@ -5,6 +5,19 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# ── Auto-backup DB before any change ──
+# เก็บ snapshot ของ SQLite ไว้ใน data/backups/ ก่อน pull/build/migrate
+# เผื่อ migration ใหม่ทำลายข้อมูล จะ restore ได้ทันที
+# เก็บไว้ 14 ไฟล์ล่าสุด (~2 สัปดาห์ของการ deploy รายวัน)
+if [ -f data/reserva.db ]; then
+  mkdir -p data/backups
+  TS=$(date +%Y%m%d-%H%M%S)
+  cp data/reserva.db "data/backups/reserva.db.$TS"
+  echo "→ Backed up DB to data/backups/reserva.db.$TS"
+  # ลบ backup เก่าเก็บแค่ 14 ไฟล์ล่าสุด
+  ls -1t data/backups/reserva.db.* 2>/dev/null | tail -n +15 | xargs -r rm -f
+fi
+
 echo "→ Pulling latest code (ถ้าเป็น git repo)"
 if [ -d .git ]; then git pull --ff-only; fi
 
