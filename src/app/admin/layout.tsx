@@ -1,4 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
+import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import LogoutButton from "./LogoutButton";
@@ -18,6 +19,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const user = getSessionUser();
   if (!user) return <>{children}</>;
   const lang = getLang();
+
+  // Count of pending_review bookings on the active branch — surfaces as a
+  // red badge next to the "การจอง" sidebar entry so admin notices new
+  // customer requests without polling. Counts only today + future (past
+  // pending bookings shouldn't pull attention; they were missed already).
+  let pendingCount = 0;
+  if (user.activeBranchId) {
+    try {
+      const db = getDb();
+      const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const row = db.prepare(
+        `SELECT COUNT(*) AS n FROM bookings
+         WHERE branch_id = ? AND status = 'pending_review' AND booking_date >= ?`
+      ).get(user.activeBranchId, todayBkk) as { n: number } | undefined;
+      pendingCount = row?.n ?? 0;
+    } catch {
+      // schema not migrated yet (fresh deploy) → just show 0
+      pendingCount = 0;
+    }
+  }
 
   // Sections are scoped to each module via pathPrefix — only the section
   // matching the current path is shown. The "Modules" section is always
@@ -54,7 +75,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       pathPrefix: "/admin/reserva",
       items: [
         { href: "/admin/reserva", label: t(lang, "admin.nav.overview") },
-        { href: "/admin/reserva/bookings", label: t(lang, "admin.nav.bookings") },
+        {
+          href: "/admin/reserva/bookings",
+          label: t(lang, "admin.nav.bookings"),
+          badge: pendingCount > 0 ? pendingCount : undefined
+        },
         { href: "/admin/reserva/timetable", label: t(lang, "admin.reserva.nav.timetable") },
         { href: "/admin/reserva/scan", label: t(lang, "admin.reserva.nav.scan") },
         { href: "/admin/reserva/zones", label: t(lang, "admin.reserva.nav.zones") },

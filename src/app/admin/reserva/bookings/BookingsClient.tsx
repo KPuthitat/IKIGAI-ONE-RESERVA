@@ -36,6 +36,12 @@ export default function BookingsClient({
   // Channel of the active add-booking modal — null = closed.
   const [addModalOpen, setAddModalOpen] = useState<null | "walkin" | "phone" | "line">(null);
 
+  // After a successful +จองผ่านไลน์ save WITHOUT a known LINE userId, we
+  // pop a second modal that gives admin a claim link to paste in the LINE
+  // chat. Customer taps the link → LIFF login → server captures userId →
+  // Flex card auto-pushed. ref is used to build the URL.
+  const [claimModalRef, setClaimModalRef] = useState<string | null>(null);
+
   // Per-row table picker state for the pending-review section. Keyed by
   // booking id so the admin can be reviewing several pending bookings at
   // once and each remembers its own pick.
@@ -330,7 +336,22 @@ export default function BookingsClient({
         mode={addModalOpen}
         branch={branch}
         onClose={() => setAddModalOpen(null)}
-        onSaved={() => { setAddModalOpen(null); router.refresh(); }}
+        onSaved={(result) => {
+          setAddModalOpen(null);
+          // For +จองผ่านไลน์ without a userId on file → pop the claim-link
+          // modal so admin can copy + paste into the LINE chat. Otherwise
+          // (walkin / phone / line w/ userId) just refresh and we're done.
+          if (result?.mode === "line" && result.ref && !result.hasLineUserId) {
+            setClaimModalRef(result.ref);
+          }
+          router.refresh();
+        }}
+      />
+    )}
+    {claimModalRef && (
+      <ClaimLinkModal
+        refNo={claimModalRef}
+        onClose={() => setClaimModalRef(null)}
       />
     )}
     </>
@@ -382,7 +403,12 @@ function AddBookingModal({
   mode: "walkin" | "phone" | "line";
   branch: Branch;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (result?: {
+    id: number;
+    ref: string | null;
+    mode: "customer" | "walkin" | "phone" | "line";
+    hasLineUserId: boolean;
+  }) => void;
 }) {
   const { t } = useLang();
   const titleKey =
@@ -424,8 +450,123 @@ function AddBookingModal({
           branch={branch}
           liffId={null}
           mode={mode}
-          onSuccess={() => onSaved()}
+          onSuccess={(result) => onSaved(result)}
         />
+      </div>
+    </div>
+  );
+}
+
+// ── Claim-link modal — shown after +จองผ่านไลน์ saves a booking with no
+//    LINE userId. Gives admin a one-tap link to paste into the LINE OA
+//    chat. Customer taps → silent LIFF login → booking gets claimed →
+//    Flex card auto-pushed to their LINE.
+function ClaimLinkModal({ refNo, onClose }: { refNo: string; onClose: () => void }) {
+  const { t } = useLang();
+  const [copied, setCopied] = useState<"" | "link" | "msg">("");
+
+  // Build absolute URL — we read window.location.origin at click time so
+  // the same UI works on dev (localhost) and prod (ikigaimedihealth.com).
+  function buildUrl(): string {
+    if (typeof window === "undefined") return `/r/${refNo}/claim`;
+    return `${window.location.origin}/r/${refNo}/claim`;
+  }
+  function buildMessage(): string {
+    return t("admin.bookings.claimLink.messageTemplate", {
+      ref: refNo,
+      url: buildUrl()
+    });
+  }
+
+  async function copyToClipboard(text: string, kind: "link" | "msg") {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(kind);
+      setTimeout(() => setCopied(""), 2000);
+    } catch {
+      // ignore — older browser fallback could be added if needed
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 my-8 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-bold text-slate-800 text-lg">
+              {t("admin.bookings.claimLink.title")}
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              {t("admin.bookings.claimLink.subtitle", { ref: refNo })}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t("common.close")}
+            className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2"
+          >×</button>
+        </div>
+
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+          {t("admin.bookings.claimLink.savedHint")}
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-slate-500">
+            {t("admin.bookings.claimLink.linkLabel")}
+          </label>
+          <div className="mt-1 flex gap-2">
+            <input
+              type="text"
+              readOnly
+              value={buildUrl()}
+              className="input font-mono text-xs flex-1"
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            <button
+              type="button"
+              onClick={() => copyToClipboard(buildUrl(), "link")}
+              className="btn-secondary text-sm whitespace-nowrap"
+            >
+              {copied === "link"
+                ? t("admin.bookings.claimLink.copied")
+                : t("admin.bookings.claimLink.copyBtn")}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-slate-500">
+            {t("admin.bookings.claimLink.messageLabel")}
+          </label>
+          <textarea
+            readOnly
+            value={buildMessage()}
+            rows={5}
+            className="input font-mono text-xs mt-1 w-full"
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          <button
+            type="button"
+            onClick={() => copyToClipboard(buildMessage(), "msg")}
+            className="btn-primary text-sm w-full mt-2"
+          >
+            {copied === "msg"
+              ? t("admin.bookings.claimLink.copied")
+              : t("admin.bookings.claimLink.copyMessageBtn")}
+          </button>
+        </div>
+
+        <div className="text-xs text-slate-500 border-t border-slate-100 pt-3">
+          {t("admin.bookings.claimLink.howItWorks")}
+        </div>
       </div>
     </div>
   );

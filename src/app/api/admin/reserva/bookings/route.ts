@@ -140,5 +140,11 @@ export async function POST(req: Request) {
       : Promise.resolve()
   ]).catch((e) => console.error("notify error", e));
 
-  return NextResponse.json({ id, status: initialStatus });
+  return NextResponse.json({
+    id,
+    ref: booking.ref_no,
+    status: initialStatus,
+    booking_channel: data.booking_channel,
+    has_line_user_id: !!booking.line_user_id
+  });
 }

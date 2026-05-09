@@ -58,8 +58,16 @@ export default function BookingForm({
   mode?: BookingFormMode;
   /** Admin modes call this after a successful save instead of showing
    *  the customer "done" screen. The admin caller then closes the modal
-   *  and refreshes the bookings list. */
-  onSuccess?: (bookingId: number) => void;
+   *  and refreshes the bookings list. For mode='line' the result includes
+   *  enough info to render a "send this claim link to the customer" modal:
+   *    { id, ref, hasLineUserId }
+   *  hasLineUserId=false signals admin should share the claim URL. */
+  onSuccess?: (result: {
+    id: number;
+    ref: string | null;
+    mode: BookingFormMode;
+    hasLineUserId: boolean;
+  }) => void;
   /** Pre-fill table when staff click an empty cell in the timetable grid */
   initialTableId?: number | null;
   /** Pre-fill HH:MM when opening from a specific time slot */
@@ -454,9 +462,16 @@ export default function BookingForm({
         throw new Error(codeMap[data.error] || data.error || t("common.error"));
       }
       // Admin caller (modal) handles its own follow-up — close + refresh.
-      // Customer flow shows the success card.
+      // For 'line' mode the parent uses ref + hasLineUserId to decide
+      // whether to show a claim-link modal. Customer flow shows the
+      // success card directly.
       if (isAdmin && onSuccess) {
-        onSuccess(data.id);
+        onSuccess({
+          id: data.id,
+          ref: data.ref ?? null,
+          mode,
+          hasLineUserId: data.has_line_user_id ?? !!form.line_user_id
+        });
         return;
       }
       setResultId(data.id);

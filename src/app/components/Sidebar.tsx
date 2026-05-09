@@ -18,6 +18,12 @@ export type SidebarItem = {
   label: string;
   /** Renders the row with the "danger/legacy" amber styling. */
   legacy?: boolean;
+  /**
+   * Optional count badge rendered on the right of the row (e.g. "3" for
+   * pending bookings awaiting review). Omitted or 0 → no badge.
+   * Use `"!"` for a non-numeric attention dot.
+   */
+  badge?: number | string;
 };
 
 export type SidebarSection = {
@@ -149,13 +155,20 @@ export default function Sidebar({
                     : item.legacy
                     ? "text-amber-200/80 hover:bg-amber-400/10 hover:text-amber-200"
                     : "text-white/75 hover:bg-white/10 hover:text-white";
+                  const showBadge = item.badge !== undefined &&
+                    item.badge !== 0 && item.badge !== "0" && item.badge !== "";
                   return (
                     <li key={item.href}>
                       <Link
                         href={item.href}
-                        className={`block px-3 py-2 rounded-md text-sm transition-colors ${baseCls}`}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${baseCls}`}
                       >
-                        {item.label}
+                        <span className="flex-1 truncate">{item.label}</span>
+                        {showBadge && (
+                          <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-brand text-white text-[11px] font-bold leading-none">
+                            {item.badge}
+                          </span>
+                        )}
                       </Link>
                     </li>
                   );
