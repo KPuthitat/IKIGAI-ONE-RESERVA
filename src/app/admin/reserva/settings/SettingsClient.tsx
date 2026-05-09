@@ -33,9 +33,6 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
     slot_minutes: branch.slot_minutes,
     default_duration_minutes: branch.default_duration_minutes,
     reminder_minutes_before: branch.reminder_minutes_before,
-    line_channel_secret: branch.line_channel_secret ?? "",
-    line_channel_token: branch.line_channel_token ?? "",
-    staff_line_user_ids: branch.staff_line_user_ids ?? "[]",
     status: branch.status ?? "open",
     opens_on: branch.opens_on ?? "",
     closed_weekdays: parseWeekdays(branch.closed_weekdays),
@@ -44,13 +41,6 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
     lunch_break_end: branch.lunch_break_end ?? "",
     lunch_break_weekdays: parseWeekdays(branch.lunch_break_weekdays),
     no_lunch_break_dates: parseDates(branch.no_lunch_break_dates),
-    // Customer Flex 'Menu' CTA — admin only sets the URL; the label is
-    // hardcoded per language in the Flex builder.
-    extra_button_url: branch.extra_button_url ?? "",
-    // Fallback phone for the pending-confirmation LINE message.
-    contact_phone: branch.contact_phone ?? "",
-    // LINE group ID for staff notifications (preferred over per-user push).
-    staff_group_id: branch.staff_group_id ?? ""
   });
   const [newSpecialDate, setNewSpecialDate] = useState("");
   const [busy, setBusy] = useState(false);
@@ -61,12 +51,6 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
     e.preventDefault();
     setErr(null);
     setOk(false);
-    try {
-      JSON.parse(form.staff_line_user_ids);
-    } catch {
-      setErr(t("admin.settings.invalidJson"));
-      return;
-    }
     setBusy(true);
     const hasLunch = Boolean(form.lunch_break_start && form.lunch_break_end);
     const payload = {
@@ -78,10 +62,7 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
       lunch_break_weekdays: hasLunch && form.lunch_break_weekdays.length > 0
         ? JSON.stringify(form.lunch_break_weekdays) : null,
       no_lunch_break_dates: form.no_lunch_break_dates.length > 0
-        ? JSON.stringify(form.no_lunch_break_dates) : null,
-      extra_button_url: form.extra_button_url.trim() || null,
-      contact_phone: form.contact_phone.trim() || null,
-      staff_group_id: form.staff_group_id.trim() || null
+        ? JSON.stringify(form.no_lunch_break_dates) : null
     };
     const res = await fetch(apiUrl(`/api/admin/branch/${branch.id}`), {
       method: "PATCH",
@@ -270,92 +251,13 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
           onChange={(e) => setForm({ ...form, reminder_minutes_before: Number(e.target.value) })} />
       </div>
 
-      {/* Staff LINE group — preferred channel for staff notifications.
-          When set, notifyStaff() pushes once into the group instead of
-          looping over individual user IDs. Cheaper (1 msg per booking
-          regardless of group size) and easier to maintain (admin doesn't
-          need to update userId list when staff change). */}
-      <h2 className="font-semibold pt-3 border-t border-slate-100">
-        {t("admin.settings.staffGroupSection")}
-      </h2>
-      <p className="text-sm text-slate-500">
-        {t("admin.settings.staffGroupDesc")}
-      </p>
-      <div>
-        <label className="label">{t("admin.settings.field.staffGroupId")}</label>
-        <input className="input text-xs"
-          type="text"
-          autoComplete="off"
-          value={form.staff_group_id} maxLength={100}
-          onChange={(e) => setForm({ ...form, staff_group_id: e.target.value.trim() })}
-          placeholder="Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
-        <p className="text-xs text-slate-500 mt-1 whitespace-pre-line">
-          {t("admin.settings.staffGroupIdHint")}
-        </p>
-      </div>
-
-      {/* Staff LINE user IDs — legacy fallback. Used only when staff_group_id
-          is empty. We keep the field for backward compat with branches that
-          haven't migrated to a group yet. */}
-      <h2 className="font-semibold pt-3 border-t border-slate-100">
-        {t("admin.settings.staffLineSection")}
-      </h2>
-      <p className="text-sm text-slate-500">
-        {t("admin.settings.staffLineDesc")}
-      </p>
-      <div>
-        <label className="label">{t("admin.settings.field.staffLineIds")}</label>
-        <textarea className="input text-xs" rows={3}
-          value={form.staff_line_user_ids}
-          onChange={(e) => setForm({ ...form, staff_line_user_ids: e.target.value })}
-          placeholder='["U1234abcd...","U5678efgh..."]' />
-        <p className="text-xs text-slate-500 mt-1">{t("admin.settings.staffLineIdsHint")}</p>
-      </div>
-
-      {/* Fallback phone for the customer's pending-confirmation LINE
-          message. Shown so the customer can call the restaurant if their
-          booking doesn't get confirmed in a reasonable timeframe. The
-          message omits the line entirely when this is blank. */}
-      <h2 className="font-semibold pt-3 border-t border-slate-100">
-        {t("admin.settings.contactPhoneSection")}
-      </h2>
-      <p className="text-sm text-slate-500">
-        {t("admin.settings.contactPhoneDesc")}
-      </p>
-      <div>
-        <label className="label">{t("admin.settings.field.contactPhone")}</label>
-        <input className="input"
-          type="tel"
-          inputMode="tel"
-          autoComplete="tel"
-          value={form.contact_phone} maxLength={40}
-          onChange={(e) => setForm({ ...form, contact_phone: e.target.value })}
-          placeholder="038-xxx-xxxx" />
-        <p className="text-xs text-slate-500 mt-1">
-          {t("admin.settings.contactPhoneHint")}
-        </p>
-      </div>
-
-      {/* Optional 'เมนูอาหาร / Menu' button on the customer's LINE Flex
-          card. Label is fixed per language so it changes when customers
-          flip the language toggle; admin only configures the URL.
-          Leave blank to hide the button entirely. */}
-      <h2 className="font-semibold pt-3 border-t border-slate-100">
-        {t("admin.settings.menuBtnSection")}
-      </h2>
-      <p className="text-sm text-slate-500">
-        {t("admin.settings.menuBtnDesc")}
-      </p>
-      <div>
-        <label className="label">{t("admin.settings.field.menuBtnUrl")}</label>
-        <input className="input"
-          type="url"
-          value={form.extra_button_url} maxLength={500}
-          onChange={(e) => setForm({ ...form, extra_button_url: e.target.value })}
-          placeholder="https://drive.google.com/..." />
-        <p className="text-xs text-slate-500 mt-1">
-          {t("admin.settings.menuBtnHint")}
-        </p>
+      {/* All LINE-OA-related settings (staff group, staff user IDs,
+          contact phone, Flex menu button URL) are managed at
+          /admin/reserva/messaging — they used to live here but consolidating
+          them under "การแจ้งเตือน LINE" keeps the admin UI tidy.
+          Pointer below in case admin lands here looking for them. */}
+      <div className="rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs p-3 mt-3">
+        {t("admin.settings.lineMovedNotice")}
       </div>
 
       {err && <div className="text-red-600 text-sm">{err}</div>}

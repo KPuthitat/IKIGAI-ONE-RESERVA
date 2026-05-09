@@ -9,10 +9,17 @@ import { t } from "@/lib/i18n";
 export type ReservaChannelInitial = {
   code: string;
   label: string;
+  branch_id: number | null;
   has_token: boolean;
   has_secret: boolean;
   liff_id: string | null;
   updated_at: string;
+  // Branch-level LINE notification settings (consolidated here so admin
+  // doesn't need to hop between /settings and /messaging).
+  staff_group_id: string | null;
+  staff_line_user_ids: string | null;     // JSON array
+  extra_button_url: string | null;        // Menu link on Flex card
+  contact_phone: string | null;           // tel: button on Flex card
 };
 
 export default function ReservaMessagingClient({
@@ -52,10 +59,25 @@ function ChannelCard({
 }: { lang: Lang; channel: ReservaChannelInitial }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
+
+  // Channel credentials state (token / secret / liff_id). Token + secret
+  // use a "type-to-replace, leave-blank-to-keep" pattern because they're
+  // sensitive values we don't echo back.
   const [token, setToken] = useState("");
   const [secret, setSecret] = useState("");
   const [liffId, setLiffId] = useState(channel.liff_id ?? "");
   const [clearAll, setClearAll] = useState(false);
+
+  // Branch-level notification state. These come back from the server as
+  // plain strings so we can edit and re-send. Null becomes "" for input
+  // compatibility; saved as null when blank.
+  const [staffGroupId, setStaffGroupId] = useState(channel.staff_group_id ?? "");
+  const [staffLineUserIds, setStaffLineUserIds] = useState(
+    channel.staff_line_user_ids ?? "[]"
+  );
+  const [extraButtonUrl, setExtraButtonUrl] = useState(channel.extra_button_url ?? "");
+  const [contactPhone, setContactPhone] = useState(channel.contact_phone ?? "");
+
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -69,38 +91,73 @@ function ChannelCard({
     setBusy(true);
     setMsg(null);
     try {
-      const body: Record<string, string> = {};
+      // ── 1. Channel credentials ─────────────────────────────────────
+      const channelBody: Record<string, string> = {};
       if (clearAll) {
-        body.channel_token = "";
-        body.channel_secret = "";
+        channelBody.channel_token = "";
+        channelBody.channel_secret = "";
       } else {
-        if (token.trim()) body.channel_token = token.trim();
-        if (secret.trim()) body.channel_secret = secret.trim();
+        if (token.trim()) channelBody.channel_token = token.trim();
+        if (secret.trim()) channelBody.channel_secret = secret.trim();
       }
-      // LIFF ID — always send (it's a plain text input that may be cleared)
-      // Only diff against existing value to know if it changed.
       const liffTrimmed = liffId.trim();
       const liffChanged = liffTrimmed !== (channel.liff_id ?? "");
-      if (liffChanged) body.liff_id = liffTrimmed;
-      if (Object.keys(body).length === 0) {
+      if (liffChanged) channelBody.liff_id = liffTrimmed;
+
+      // ── 2. Branch-level notification fields ────────────────────────
+      // Validate JSON shape on the user-IDs textarea before sending.
+      try { JSON.parse(staffLineUserIds); }
+      catch {
+        setMsg({ kind: "err", text: t(lang, "admin.settings.invalidJson") });
+        setBusy(false);
+        return;
+      }
+      const branchBody: Record<string, string | null> = {};
+      const branchPairs: Array<[keyof typeof channel, string | null, string]> = [
+        ["staff_group_id", staffGroupId.trim() || null, channel.staff_group_id ?? ""],
+        ["staff_line_user_ids", staffLineUserIds.trim() || null, channel.staff_line_user_ids ?? ""],
+        ["extra_button_url", extraButtonUrl.trim() || null, channel.extra_button_url ?? ""],
+        ["contact_phone", contactPhone.trim() || null, channel.contact_phone ?? ""]
+      ];
+      for (const [key, newVal, oldVal] of branchPairs) {
+        if ((newVal ?? "") !== oldVal) branchBody[key] = newVal;
+      }
+
+      const noChannelChange = Object.keys(channelBody).length === 0;
+      const noBranchChange = Object.keys(branchBody).length === 0;
+      if (noChannelChange && noBranchChange) {
         setMsg({ kind: "err", text: t(lang, "admin.messaging.err.noChange") });
         setBusy(false);
         return;
       }
-      const res = await fetch(
-        apiUrl(`/api/admin/messaging/channel/${channel.code}`),
-        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
-      );
-      const j = await res.json().catch(() => ({}));
-      if (j?.ok) {
-        setMsg({ kind: "ok", text: t(lang, "common.saved") });
-        setToken("");
-        setSecret("");
-        setClearAll(false);
-        startTransition(() => router.refresh());
-      } else {
-        setMsg({ kind: "err", text: j?.error ?? t(lang, "common.error") });
+
+      // Fire both updates in parallel; messaging endpoint owns channel
+      // credentials, branch endpoint owns notification preferences.
+      const tasks: Promise<Response>[] = [];
+      if (!noChannelChange) {
+        tasks.push(fetch(
+          apiUrl(`/api/admin/messaging/channel/${channel.code}`),
+          { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(channelBody) }
+        ));
       }
+      if (!noBranchChange && channel.branch_id != null) {
+        tasks.push(fetch(
+          apiUrl(`/api/admin/branch/${channel.branch_id}`),
+          { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(branchBody) }
+        ));
+      }
+      const responses = await Promise.all(tasks);
+      const allOk = responses.every((r) => r.ok);
+      if (!allOk) {
+        setMsg({ kind: "err", text: t(lang, "common.error") });
+        setBusy(false);
+        return;
+      }
+      setMsg({ kind: "ok", text: t(lang, "common.saved") });
+      setToken("");
+      setSecret("");
+      setClearAll(false);
+      startTransition(() => router.refresh());
     } catch {
       setMsg({ kind: "err", text: t(lang, "common.error") });
     } finally {
@@ -116,7 +173,7 @@ function ChannelCard({
   }
 
   return (
-    <div className="card space-y-4">
+    <div className="card space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -134,6 +191,9 @@ function ChannelCard({
           </p>
         </div>
       </div>
+
+      {/* ───────── Channel credentials section ───────── */}
+      <SectionTitle>{t(lang, "admin.reserva.messaging.section.channel")}</SectionTitle>
 
       {/* Webhook URL */}
       <div>
@@ -206,7 +266,7 @@ function ChannelCard({
         />
       </div>
 
-      {/* LIFF ID — used by the booking page to auto-capture customer LINE userId */}
+      {/* LIFF ID */}
       <div>
         <label className="label">
           {t(lang, "admin.reserva.messaging.liffId")}
@@ -245,7 +305,64 @@ function ChannelCard({
         </label>
       )}
 
-      <div className="flex items-center justify-between gap-3 pt-1">
+      {/* ───────── Notifications section ───────── */}
+      <SectionTitle>{t(lang, "admin.reserva.messaging.section.notifications")}</SectionTitle>
+
+      {/* Staff LINE group */}
+      <div>
+        <label className="label">{t(lang, "admin.settings.field.staffGroupId")}</label>
+        <input className="input text-xs"
+          type="text"
+          autoComplete="off"
+          value={staffGroupId} maxLength={100}
+          onChange={(e) => setStaffGroupId(e.target.value.trim())}
+          placeholder="Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+        <p className="text-xs text-slate-500 mt-1 whitespace-pre-line">
+          {t(lang, "admin.settings.staffGroupIdHint")}
+        </p>
+      </div>
+
+      {/* Staff LINE user IDs (legacy fallback) */}
+      <div>
+        <label className="label">{t(lang, "admin.settings.field.staffLineIds")}</label>
+        <textarea className="input text-xs" rows={3}
+          value={staffLineUserIds}
+          onChange={(e) => setStaffLineUserIds(e.target.value)}
+          placeholder='["U1234abcd...","U5678efgh..."]' />
+        <p className="text-xs text-slate-500 mt-1">
+          {t(lang, "admin.settings.staffLineIdsHint")}
+        </p>
+      </div>
+
+      {/* Contact phone */}
+      <div>
+        <label className="label">{t(lang, "admin.settings.field.contactPhone")}</label>
+        <input className="input"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          value={contactPhone} maxLength={40}
+          onChange={(e) => setContactPhone(e.target.value)}
+          placeholder="038-xxx-xxxx" />
+        <p className="text-xs text-slate-500 mt-1">
+          {t(lang, "admin.settings.contactPhoneHint")}
+        </p>
+      </div>
+
+      {/* Menu button URL */}
+      <div>
+        <label className="label">{t(lang, "admin.settings.field.menuBtnUrl")}</label>
+        <input className="input"
+          type="url"
+          value={extraButtonUrl} maxLength={500}
+          onChange={(e) => setExtraButtonUrl(e.target.value)}
+          placeholder="https://drive.google.com/..." />
+        <p className="text-xs text-slate-500 mt-1">
+          {t(lang, "admin.settings.menuBtnHint")}
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-100">
         {msg && (
           <span className={`text-sm ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
             {msg.kind === "ok" ? "✓ " : "✗ "}{msg.text}
@@ -256,6 +373,16 @@ function ChannelCard({
           {busy ? t(lang, "common.submitting") : t(lang, "common.save")}
         </button>
       </div>
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="pt-2 -mx-1 px-1 border-t border-slate-100">
+      <h3 className="text-xs font-bold text-slate-700 tracking-wider uppercase pt-3 pb-1">
+        {children}
+      </h3>
     </div>
   );
 }
