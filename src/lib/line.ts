@@ -322,6 +322,10 @@ export type CustomerBookingCardArgs = {
   publicBaseUrl: string;        // e.g., 'https://ikigaimedihealth.com'
   kind: "created" | "reminder";
   lang: Lang;
+  /** Restaurant contact phone (branches.contact_phone). Used for the
+   *  "ติดต่อเรา" tel: button on the Flex card so customers can call to
+   *  modify or cancel a booking. When null, the button is hidden. */
+  contactPhone?: string | null;
   /** Optional menu URL — when set, an "เมนูอาหาร / Menu" button is added.
    *  Label is hardcoded per language so it changes when the customer
    *  flips language toggle; admin only configures the link. */
@@ -462,23 +466,22 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
       paddingAll: "16px", paddingTop: "0px",
       spacing: "sm",
       contents: [
-        // Primary CTA — edit / cancel page. Customer can change date,
-        // time, party size up to 2 hours before booking_time; the page
-        // itself enforces the cutoff.
-        {
+        // Primary CTA — tap to call the restaurant. Customers who need
+        // to modify or cancel just dial in directly. tel: number is
+        // stripped of non-digits so dashed/spaced numbers from settings
+        // still dial cleanly.
+        ...(args.contactPhone ? [{
           type: "button",
           style: "primary",
           color: COLOR_BRAND,
           height: "sm",
           action: {
             type: "uri",
-            label: fx(args.lang, "btnEditBooking"),
-            uri: `${args.publicBaseUrl}/reserva/${args.branchSlug}/edit/${refDisplay}`
+            label: `${fx(args.lang, "btnCallRestaurant")} ${args.contactPhone}`,
+            uri: `tel:${args.contactPhone.replace(/[^\d+]/g, "")}`
           }
-        },
+        }] : []),
         // Optional menu CTA — admin only configures the URL per branch.
-        // Label comes from FLEX_STRINGS so it follows the customer's
-        // language toggle automatically.
         ...(args.menuUrl ? [{
           type: "button",
           style: "secondary",
@@ -488,6 +491,15 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
             label: fx(args.lang, "btnMenu"),
             uri: args.menuUrl
           }
+        }] : []),
+        // Fallback — when neither phone nor menu is configured, LINE
+        // requires footer.contents to be non-empty if footer is set,
+        // so we drop in a static info text instead. Tells the customer
+        // to reply in this same chat for changes.
+        ...(!args.contactPhone && !args.menuUrl ? [{
+          type: "text",
+          text: fx(args.lang, "noContactPhoneHint"),
+          size: "xxs", color: COLOR_TEXT_MUTED, wrap: true, align: "center"
         }] : [])
       ]
     },
@@ -920,6 +932,7 @@ export async function notifyCustomer(
     publicBaseUrl: getPublicBaseUrl(),
     kind: type,
     lang: cardLang,
+    contactPhone: branch.contact_phone,
     menuUrl: branch.extra_button_url
   });
   const res = await sendLinePush(token, {
