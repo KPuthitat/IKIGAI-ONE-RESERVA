@@ -6,6 +6,7 @@ import type { Booking } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { useConfirm } from "@/app/components/useConfirm";
+import CancelReasonModal from "../bookings/CancelReasonModal";
 
 type Row = Booking & { table_label: string | null };
 
@@ -21,14 +22,18 @@ export default function PendingClient({
   const router = useRouter();
   const { t, lang } = useLang();
   const [busyId, setBusyId] = useState<number | null>(null);
-  const { confirm, alert, ConfirmDialog } = useConfirm();
+  const { alert, ConfirmDialog } = useConfirm();
 
   // Per-row table picker state. Allow each pending booking to remember its
   // own pick while admin is reviewing several at once.
   const [tablePick, setTablePick] = useState<Record<number, number | "">>({});
   const [lastRefresh, setLastRefresh] = useState<Date>(() => new Date());
 
+  // Cancel-with-reason modal target.
+  const [cancelTarget, setCancelTarget] = useState<Row | null>(null);
+
   useEffect(() => {
+    if (cancelTarget !== null) return;
     const tick = () => {
       if (document.hidden) return;
       router.refresh();
@@ -36,7 +41,7 @@ export default function PendingClient({
     };
     const id = setInterval(tick, AUTO_REFRESH_MS);
     return () => clearInterval(id);
-  }, [router]);
+  }, [router, cancelTarget]);
 
   async function confirmAndNotify(id: number) {
     const tableId = tablePick[id];
@@ -72,22 +77,21 @@ export default function PendingClient({
     router.refresh();
   }
 
-  async function cancelBooking(id: number) {
-    const ok = await confirm({
-      title: t("admin.bookings.confirmCancelTitle"),
-      body: <p>{t("admin.bookings.confirmCancel")}</p>,
-      confirmLabel: t("common.confirm"),
-      cancelLabel: t("common.back"),
-      variant: "danger"
-    });
-    if (ok === null) return;
+  function openCancelReason(b: Row) {
+    setCancelTarget(b);
+  }
+
+  async function submitCancel(reason: string) {
+    if (!cancelTarget) return;
+    const id = cancelTarget.id;
     setBusyId(id);
     const res = await fetch(apiUrl(`/api/admin/bookings/${id}/status`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "cancelled" })
+      body: JSON.stringify({ status: "cancelled", cancel_reason: reason })
     });
     setBusyId(null);
+    setCancelTarget(null);
     if (!res.ok) {
       alert({
         title: t("common.error"),
@@ -195,7 +199,7 @@ export default function PendingClient({
                 {t("admin.bookings.pending.confirmAndNotify")}
               </button>
               <button
-                onClick={() => cancelBooking(b.id)}
+                onClick={() => openCancelReason(b)}
                 disabled={busyId === b.id}
                 className="btn-secondary text-sm text-rose-700"
               >
@@ -206,6 +210,14 @@ export default function PendingClient({
         ))}
       </div>
       {ConfirmDialog}
+      {cancelTarget && (
+        <CancelReasonModal
+          bookingRef={cancelTarget.ref_no}
+          busy={busyId === cancelTarget.id}
+          onClose={() => setCancelTarget(null)}
+          onConfirm={submitCancel}
+        />
+      )}
     </>
   );
 }

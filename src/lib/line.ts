@@ -84,10 +84,15 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     btnMenu: "เมนูอาหาร",
     btnOpenAdmin: "เปิดในระบบ",
     cancelHint: 'หรือพิมพ์ "ยกเลิก #{ref}" ในแชทนี้เพื่อยกเลิก (ก่อนถึงเวลาจอง 2 ชั่วโมง)',
-    qrCaption: "ให้พนักงานสแกนคิวอาร์โค้ดเมื่อถึงร้าน เพื่อยืนยันการจอง",
+    qrCaption: "ให้พนักงานสแกนคิวอาร์โค้ดเมื่อถึงร้าน\nเพื่อยืนยันการจอง",
     staffNewBooking: "มีการจองใหม่",
     staffReminder: "ใกล้ถึงเวลาจอง",
-    staffPendingReview: "มีคำขอจองรอตรวจสอบ"
+    staffPendingReview: "มีคำขอจองรอตรวจสอบ",
+    cancelledTitle: "การจองถูกยกเลิก",
+    labelReason: "เหตุผล",
+    noReasonGiven: "ทางร้านไม่ได้ระบุเหตุผล — โปรดติดต่อร้านโดยตรง",
+    btnCallRestaurant: "โทรหาร้าน",
+    noContactPhoneHint: "หากต้องการสอบถามเพิ่มเติม กรุณาติดต่อร้านผ่านแชท LINE นี้"
   },
   en: {
     confirmTitle: "Reservation Confirmed",
@@ -108,10 +113,15 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     btnMenu: "Menu",
     btnOpenAdmin: "Open in admin",
     cancelHint: 'Or reply "cancel #{ref}" in this chat (up to 2 hours before booking time)',
-    qrCaption: "Show this QR to staff on arrival to confirm your booking",
+    qrCaption: "Show this QR to staff on arrival\nto confirm your booking",
     staffNewBooking: "New reservation",
     staffReminder: "Reservation coming up",
-    staffPendingReview: "New request awaiting review"
+    staffPendingReview: "New request awaiting review",
+    cancelledTitle: "Booking cancelled",
+    labelReason: "Reason",
+    noReasonGiven: "No reason given — please contact the restaurant directly",
+    btnCallRestaurant: "Call",
+    noContactPhoneHint: "For questions, please reply in this LINE chat"
   }
 };
 
@@ -489,6 +499,164 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
   };
 }
 
+/** Build a customer-facing Flex card announcing the booking was cancelled
+ *  by admin. Includes the reason (preset key or admin-typed free text)
+ *  and a tel: button so the customer can call the restaurant in one tap.
+ *
+ *  Skipped silently if the branch has no contact_phone configured AND the
+ *  reason is empty — there's nothing meaningful left to show. */
+export type CancelledBookingCardArgs = {
+  branchName: string;
+  bookingRef: string | null;
+  bookingId: number;
+  bookingDate: string;
+  bookingTime: string;
+  partySize: number;
+  reason: string | null;          // free text or one of the preset reasons
+  contactPhone: string | null;    // for the tel: button (null = no button)
+  lang: Lang;
+};
+
+export function cancelledBookingFlex(args: CancelledBookingCardArgs): LineFlexMessage {
+  const dateStr = localDate(args.bookingDate, args.lang);
+  const refDisplay = args.bookingRef ?? String(args.bookingId);
+  const titleText = fx(args.lang, "cancelledTitle");
+  const reasonLabel = fx(args.lang, "labelReason");
+  const noReason = fx(args.lang, "noReasonGiven");
+
+  const bodyRows = [
+    kvRow(fx(args.lang, "labelDate"), dateStr),
+    kvRow(fx(args.lang, "labelTime"), args.bookingTime),
+    kvRow(fx(args.lang, "labelPartySize"), `${args.partySize} ${fx(args.lang, "seatsUnit")}`),
+    kvRow(fx(args.lang, "labelRef"), `#${refDisplay}`, { valueColor: COLOR_TEXT_MUTED })
+  ];
+
+  const bubble = {
+    type: "bubble",
+    size: "kilo",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: COLOR_INK_700,
+      paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "RESERVA", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", spacing: "sm", margin: "md",
+          contents: [
+            { type: "text", text: "✕", color: "#fca5a5", size: "lg", weight: "bold", flex: 0 },
+            { type: "text", text: titleText, color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md",
+      paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "lg", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: bodyRows },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        // Reason block — emphasized so the customer reads it. Falls back
+        // to a polite "no reason given" label if admin cancelled without
+        // picking one (preset and free-text both pass through verbatim).
+        {
+          type: "box", layout: "vertical", spacing: "xs", margin: "md",
+          contents: [
+            { type: "text", text: reasonLabel, size: "xs", color: COLOR_LABEL },
+            {
+              type: "text",
+              text: args.reason?.trim() || noReason,
+              size: "sm", color: COLOR_TEXT_DARK, wrap: true, weight: "bold"
+            }
+          ]
+        }
+      ]
+    },
+    footer: {
+      type: "box", layout: "vertical",
+      paddingAll: "16px", paddingTop: "0px",
+      spacing: "sm",
+      contents: args.contactPhone
+        ? [
+            // tel: URI scheme triggers the dialer on mobile when the user
+            // taps the button — works in LINE in-app browser too.
+            {
+              type: "button",
+              style: "primary",
+              color: COLOR_BRAND,
+              height: "sm",
+              action: {
+                type: "uri",
+                label: `${fx(args.lang, "btnCallRestaurant")} ${args.contactPhone}`,
+                uri: `tel:${args.contactPhone.replace(/[^\d+]/g, "")}`
+              }
+            }
+          ]
+        : [
+            // No phone configured — show a static info text instead of
+            // an empty footer (looks cleaner in chat preview).
+            {
+              type: "text",
+              text: fx(args.lang, "noContactPhoneHint"),
+              size: "xxs", color: COLOR_TEXT_MUTED, wrap: true, align: "center"
+            }
+          ]
+    },
+    styles: {
+      header: { backgroundColor: COLOR_INK_700 },
+      body: { backgroundColor: "#ffffff" },
+      footer: { backgroundColor: "#ffffff", separator: true, separatorColor: COLOR_DIVIDER }
+    }
+  };
+
+  return {
+    type: "flex",
+    altText: `${titleText} ${args.branchName} · ${dateStr} ${args.bookingTime}`,
+    contents: bubble
+  };
+}
+
+/** Push the cancellation Flex card to the customer. Fire-and-forget. */
+export async function notifyCustomerCancelled(
+  branch: Branch, booking: Booking
+): Promise<void> {
+  const db = getDb();
+  const token = resolveBranchToken(branch);
+  if (!token || !booking.line_user_id) {
+    db.prepare(
+      "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
+    ).run(booking.id, "cancelled", "customer", "skipped",
+      !token ? "no channel token" : "no line_user_id");
+    return;
+  }
+  const lang: Lang = booking.lang === "en" ? "en" : "th";
+  const flex = cancelledBookingFlex({
+    branchName: branch.name,
+    bookingRef: booking.ref_no,
+    bookingId: booking.id,
+    bookingDate: booking.booking_date,
+    bookingTime: booking.booking_time,
+    partySize: booking.party_size,
+    reason: booking.cancel_reason,
+    contactPhone: branch.contact_phone,
+    lang
+  });
+  const res = await sendLinePush(token, {
+    to: booking.line_user_id,
+    messages: [flex]
+  });
+  db.prepare(
+    "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
+  ).run(booking.id, "cancelled", "customer", res.ok ? "sent" : "failed", res.error ?? null);
+}
+
 /** Build a staff-facing Flex card alerting them to a booking. */
 export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
   const isReminder = args.kind === "reminder";
@@ -696,19 +864,18 @@ export async function notifyCustomerPending(
   const lang: Lang = booking.lang === "en" ? "en" : "th";
   const dateStr = localDate(booking.booking_date, lang);
   const ref = booking.ref_no ?? String(booking.id);
-  // Contact phone shown only when admin set one; otherwise generic "call
-  // the restaurant" wording. Keeps the message useful even on branches
-  // that haven't configured contact_phone yet.
+  // Tail line varies by whether admin configured a contact phone for the
+  // branch. With phone: customer can call directly. Without: generic.
   const phoneTail = branch.contact_phone
     ? (lang === "en"
-        ? ` Call ${branch.contact_phone} if you need to follow up.`
-        : ` หากไม่ได้รับการยืนยัน กรุณาโทร ${branch.contact_phone}`)
+        ? `If you don't receive it, please contact ${branch.contact_phone}`
+        : `หากไม่ได้รับการยืนยัน กรุณาติดต่อได้ที่หมายเลข ${branch.contact_phone}`)
     : (lang === "en"
-        ? " If you don't hear back, please call the restaurant."
-        : " หากไม่ได้รับการยืนยัน กรุณาโทรติดต่อร้าน");
+        ? "If you don't receive it, please call the restaurant"
+        : "หากไม่ได้รับการยืนยัน กรุณาโทรติดต่อร้าน");
   const text = lang === "en"
-    ? `Booking request received #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} guests\n\nWe'll confirm by LINE shortly with your table and a QR code.${phoneTail}`
-    : `ได้รับคำขอจอง #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} ที่นั่ง\n\nทางร้านจะส่งยืนยันการจองพร้อมคิวอาร์โค้ดทาง LINE เร็วๆ นี้${phoneTail}`;
+    ? `Booking request received #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} guests\n\nAdmin will send your booking confirmation via LINE during business hours.\n${phoneTail}`
+    : `ได้รับคำขอจอง #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} ที่นั่ง\n\nแอดมินจะส่งข้อความยืนยันการจองให้ทางไลน์ภายในเวลาทำการ\n${phoneTail}`;
   const res = await sendLinePush(token, {
     to: booking.line_user_id,
     messages: [{ type: "text", text }]

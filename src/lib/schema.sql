@@ -75,7 +75,8 @@ CREATE TABLE IF NOT EXISTS bookings (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   seated_at TEXT,
-  cancelled_at TEXT
+  cancelled_at TEXT,
+  cancel_reason TEXT                  -- admin-supplied reason shown to customer
 );
 
 CREATE INDEX IF NOT EXISTS idx_bookings_branch_date ON bookings(branch_id, booking_date);

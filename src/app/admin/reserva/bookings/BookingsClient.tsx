@@ -7,6 +7,7 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { useConfirm } from "@/app/components/useConfirm";
 import BookingForm from "@/app/reserva/[branch]/BookingForm";
+import CancelReasonModal from "./CancelReasonModal";
 
 type Row = Booking & { table_label: string | null };
 
@@ -42,13 +43,18 @@ export default function BookingsClient({
   const router = useRouter();
   const { t, lang } = useLang();
   const [busyId, setBusyId] = useState<number | null>(null);
-  const { confirm, alert, ConfirmDialog } = useConfirm();
+  const { alert, ConfirmDialog } = useConfirm();
   // Channel of the active add-booking modal — null = closed.
   const [addModalOpen, setAddModalOpen] = useState<null | "walkin" | "phone" | "line">(null);
 
   // After +จองผ่านไลน์ saves WITHOUT a known LINE userId, pop a second
   // modal that gives admin a claim link to paste in the LINE chat.
   const [claimModalRef, setClaimModalRef] = useState<string | null>(null);
+
+  // Cancel-with-reason modal — admin picks a preset or custom reason; the
+  // server pushes a Flex card with that reason + tel: button to the
+  // customer's LINE. Null = closed.
+  const [cancelTarget, setCancelTarget] = useState<Row | null>(null);
 
   // Per-row table picker for the pending-review section.
   const [pendingTablePick, setPendingTablePick] = useState<Record<number, number | "">>({});
@@ -63,7 +69,7 @@ export default function BookingsClient({
   // they switch back). Also pauses while a modal is open so the form
   // doesn't get re-rendered out from under the user.
   useEffect(() => {
-    const modalOpen = addModalOpen !== null || claimModalRef !== null;
+    const modalOpen = addModalOpen !== null || claimModalRef !== null || cancelTarget !== null;
     if (modalOpen) return;
     const tick = () => {
       if (document.hidden) return;
@@ -72,7 +78,7 @@ export default function BookingsClient({
     };
     const id = setInterval(tick, AUTO_REFRESH_MS);
     return () => clearInterval(id);
-  }, [router, addModalOpen, claimModalRef]);
+  }, [router, addModalOpen, claimModalRef, cancelTarget]);
 
   async function setStatus(id: number, status: Row["status"]) {
     setBusyId(id);
@@ -91,16 +97,34 @@ export default function BookingsClient({
     router.refresh();
   }
 
-  async function cancelBooking(id: number) {
-    const ok = await confirm({
-      title: t("admin.bookings.confirmCancelTitle"),
-      body: <p>{t("admin.bookings.confirmCancel")}</p>,
-      confirmLabel: t("common.confirm"),
-      cancelLabel: t("common.back"),
-      variant: "danger"
+  // Open the reason picker rather than cancelling immediately. Admin
+  // selects a preset or types a custom reason; submitCancel below fires
+  // the actual API call.
+  function cancelBooking(b: Row) {
+    setCancelTarget(b);
+  }
+
+  async function submitCancel(reason: string) {
+    if (!cancelTarget) return;
+    const id = cancelTarget.id;
+    setBusyId(id);
+    const res = await fetch(apiUrl(`/api/admin/bookings/${id}/status`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "cancelled", cancel_reason: reason })
     });
-    if (ok === null) return;
-    setStatus(id, "cancelled");
+    setBusyId(null);
+    setCancelTarget(null);
+    if (!res.ok) {
+      alert({
+        title: t("common.error"),
+        body: <p>{t("admin.bookings.errorGeneric")}</p>,
+        variant: "danger",
+        okLabel: t("common.confirm")
+      });
+      return;
+    }
+    router.refresh();
   }
 
   async function assignTable(id: number, tableId: number | null) {
@@ -203,7 +227,7 @@ export default function BookingsClient({
               pendingTablePick={pendingTablePick}
               setPendingTablePick={setPendingTablePick}
               onConfirm={() => confirmAndNotify(b.id)}
-              onCancel={() => cancelBooking(b.id)}
+              onCancel={() => cancelBooking(b)}
               t={t}
             />
           ))}
@@ -263,6 +287,14 @@ export default function BookingsClient({
         branchSlug={branch.slug}
         branchName={branch.name}
         onClose={() => setClaimModalRef(null)}
+      />
+    )}
+    {cancelTarget && (
+      <CancelReasonModal
+        bookingRef={cancelTarget.ref_no}
+        busy={busyId === cancelTarget.id}
+        onClose={() => setCancelTarget(null)}
+        onConfirm={submitCancel}
       />
     )}
     </>
@@ -403,7 +435,7 @@ function DateGroup({
   canEdit: boolean;
   onAssignTable: (id: number, tableId: number | null) => void;
   onSetStatus: (id: number, status: Row["status"]) => void;
-  onCancel: (id: number) => void;
+  onCancel: (b: Row) => void;
   t: (k: string, vars?: Record<string, string | number>) => string;
   lang: "th" | "en";
 }) {
@@ -492,7 +524,7 @@ function DateGroup({
                     className="btn-secondary text-amber-700"
                   >{t("admin.bookings.btn.markNoShow")}</button>
                   <button
-                    onClick={() => onCancel(b.id)}
+                    onClick={() => onCancel(b)}
                     disabled={busyId === b.id}
                     className="btn-danger"
                   >{t("admin.bookings.btn.cancel")}</button>

@@ -54,6 +54,14 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE bookings ADD COLUMN booking_channel TEXT");
   }
 
+  // Cancellation reason — admin-supplied note shown to customer in the
+  // cancel Flex card. Free text (one of the preset reasons or a custom
+  // message). NULL when admin cancels without picking a reason (e.g. on
+  // the customer-side edit page).
+  if (!bnames.has("cancel_reason")) {
+    db.exec("ALTER TABLE bookings ADD COLUMN cancel_reason TEXT");
+  }
+
   // Two-step booking workflow (added 2026-05-09):
   // Customer submits without picking a table → status='pending_review'.
   // Admin assigns a table + clicks "Confirm and notify" → status='confirmed'
@@ -1036,4 +1044,5 @@ export type Booking = {
   updated_at: string;
   seated_at: string | null;
   cancelled_at: string | null;
+  cancel_reason: string | null;       // shown to customer in cancellation Flex card
 };
