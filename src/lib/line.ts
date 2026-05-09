@@ -698,7 +698,7 @@ export async function notifyCustomerPending(
   const ref = booking.ref_no ?? String(booking.id);
   const text = lang === "en"
     ? `Booking request received #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} guests\n\nWe'll confirm by LINE shortly with your table and a QR code. If you don't hear back, please call the restaurant.`
-    : `ได้รับคำขอจอง #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} ที่นั่ง\n\nทางร้านจะส่งการ์ดยืนยันพร้อมคิวอาร์โค้ดทาง LINE เร็วๆ นี้ หากไม่ได้รับการยืนยัน กรุณาโทรติดต่อร้าน`;
+    : `ได้รับคำขอจอง #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} ที่นั่ง\n\nทางร้านจะส่งยืนยันการจองพร้อมคิวอาร์โค้ดทาง LINE เร็วๆ นี้ หากไม่ได้รับการยืนยัน กรุณาโทรติดต่อร้าน`;
   const res = await sendLinePush(token, {
     to: booking.line_user_id,
     messages: [{ type: "text", text }]

@@ -298,7 +298,11 @@ function AddBookingButtons({
           + {t("admin.bookings.addLine")}
         </button>
         <Link href="/admin/reserva/scan"
-          className="ml-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">
+          className="ml-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border-[1.5px] border-brand text-brand font-semibold text-sm bg-brand/5 hover:bg-brand/10 active:scale-95 transition-all">
+          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round"
+              d="M4 7V5a1 1 0 011-1h2M4 17v2a1 1 0 001 1h2M20 7V5a1 1 0 00-1-1h-2M20 17v2a1 1 0 01-1 1h-2M7 12h10" />
+          </svg>
           {t("admin.bookings.scanBtn")}
         </Link>
       </div>
@@ -639,7 +643,7 @@ function ClaimLinkModal({
               type="text"
               readOnly
               value={buildUrl()}
-              className="input font-mono text-xs flex-1"
+              className="input text-xs flex-1"
               onFocus={(e) => e.currentTarget.select()}
             />
             <button
@@ -662,7 +666,7 @@ function ClaimLinkModal({
             readOnly
             value={buildMessage()}
             rows={5}
-            className="input font-mono text-xs mt-1 w-full"
+            className="input text-sm mt-1 w-full"
             onFocus={(e) => e.currentTarget.select()}
           />
           <button
