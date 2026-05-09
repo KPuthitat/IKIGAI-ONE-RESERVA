@@ -57,10 +57,9 @@ export async function POST(req: Request) {
 
   // Stale-booking cleanup — same logic also runs on every admin page load
   // via autoExpireStaleBookings(), so behaviour is consistent whether the
-  // external cron is configured or not.
-  const expired = autoExpireStaleBookings();
-  const autoNoShow = expired.no_show_count;
-  const autoCancelledPending = expired.cancelled_pending_count;
+  // external cron is configured or not. Only confirmed bookings auto-flip
+  // to no_show; pending_review stays in admin's queue for manual review.
+  const { no_show_count: autoNoShow } = autoExpireStaleBookings();
 
   // retention cleanup
   const purged = purgeOldBookings();
@@ -69,7 +68,6 @@ export async function POST(req: Request) {
     ok: true,
     reminders_sent: remindersSent,
     auto_no_show: autoNoShow,
-    auto_cancelled_pending: autoCancelledPending,
     purged_old_bookings: purged
   });
 }
