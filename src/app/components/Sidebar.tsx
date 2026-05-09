@@ -96,11 +96,18 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Toggle button — fixed top-left, always visible */}
+      {/* Toggle button. Closed → hamburger at top-left of viewport so
+          it's reachable. Open → close (✕) snaps inside the sidebar's
+          top-right corner so it doesn't overlap the brand text or the
+          page content beneath. */}
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="fixed top-3 left-3 z-50 w-9 h-9 rounded-lg bg-white/95 border border-slate-200 shadow-md text-slate-700 hover:bg-slate-50 flex items-center justify-center"
+        className={`fixed top-3 z-50 w-9 h-9 rounded-lg shadow-md flex items-center justify-center transition-[left] duration-200 ease-out ${
+          open
+            ? "left-52 bg-white/10 border border-white/20 text-white hover:bg-white/20"
+            : "left-3 bg-white/95 border border-slate-200 text-slate-700 hover:bg-slate-50"
+        }`}
         aria-label="Toggle sidebar"
       >
         <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2">

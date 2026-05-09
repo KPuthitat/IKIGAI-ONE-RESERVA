@@ -47,8 +47,14 @@ export async function sendLinePush(
 type Lang = "th" | "en";
 
 function formatThaiDate(yyyymmdd: string): string {
+  // Full Thai month names (no abbreviations) so the Flex card reads
+  // formally — short forms like "พ.ค." can feel like a quick draft on
+  // a customer-facing booking confirmation.
   const [y, m, d] = yyyymmdd.split("-");
-  const months = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  const months = [
+    "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
+    "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"
+  ];
   return `${parseInt(d, 10)} ${months[parseInt(m, 10) - 1]} ${parseInt(y, 10) + 543}`;
 }
 
