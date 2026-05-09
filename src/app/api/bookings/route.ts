@@ -1,9 +1,20 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb, type Branch, type Booking } from "@/lib/db";
-import { isTableFree } from "@/lib/table-allocator";
-import { notifyCustomer, notifyStaff } from "@/lib/line";
+import { notifyCustomerPending, notifyStaff } from "@/lib/line";
 import { generateBookingRef } from "@/lib/reserva-ref";
+
+// Customer-facing booking endpoint.
+//
+// Two-step workflow (changed 2026-05-09): the customer submits without a
+// table — status becomes 'pending_review'. Admin reviews in the back office,
+// assigns a table, then clicks "Confirm and notify" which pushes the Flex
+// confirmation card with QR. This endpoint therefore:
+//   1. accepts no table_id (server forces null)
+//   2. creates the row with status='pending_review'
+//   3. sends a plain-text "ได้รับคำขอจอง — รอการยืนยัน" message back to
+//      the customer (no Flex card yet)
+//   4. notifies staff that a new pending review needs attention
 
 const Body = z.object({
   branch_slug: z.string(),
@@ -12,11 +23,10 @@ const Body = z.object({
   party_size: z.number().int().min(1).max(50),
   booking_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   booking_time: z.string().regex(/^\d{2}:\d{2}$/),
-  source: z.string().max(50).optional().default(""),
+  source: z.string().max(200).optional().default(""),
   customer_origin: z.string().max(50).optional().default(""),
   is_member: z.union([z.literal(0), z.literal(1)]).nullable().optional(),
   notes: z.string().max(500).optional().default(""),
-  table_id: z.number().int().nullable().optional(),
   line_user_id: z.string().max(64).optional().default(""),
   lang: z.enum(["th", "en"]).optional()
 });
@@ -38,19 +48,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "ไม่สามารถจองย้อนหลังได้" }, { status: 400 });
   }
 
-  // ตรวจว่าโต๊ะที่เลือกยังว่างอยู่ไหม (race condition)
-  if (data.table_id) {
-    const free = isTableFree({
-      branchId: branch.id,
-      tableId: data.table_id,
-      date: data.booking_date,
-      time: data.booking_time,
-      durationMinutes: branch.default_duration_minutes
-    });
-    if (!free) {
-      return NextResponse.json({ error: "ขออภัย โต๊ะนี้ถูกจองไปแล้ว กรุณาเลือกใหม่" }, { status: 409 });
-    }
-  }
+  // No table_id race-condition check needed — admin picks the table later
+  // when confirming. The only remaining guard is the past-date one above.
 
   const ref = generateBookingRef(data.booking_date);
   const result = db.prepare(`
@@ -59,10 +58,10 @@ export async function POST(req: Request) {
       source, customer_origin, is_member,
       booking_date, booking_time, duration_minutes, notes, line_user_id, lang,
       booking_channel, ref_no, status
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'online', ?, 'confirmed')
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'online', ?, 'pending_review')
   `).run(
     branch.id,
-    data.table_id ?? null,
+    null,                                    // table_id always null at this stage
     data.customer_name,
     data.customer_phone,
     data.party_size,
@@ -80,15 +79,14 @@ export async function POST(req: Request) {
   const id = result.lastInsertRowid as number;
 
   const booking = db.prepare("SELECT * FROM bookings WHERE id = ?").get(id) as Booking;
-  const tableLabel = booking.table_id
-    ? (db.prepare("SELECT label FROM tables WHERE id = ?").get(booking.table_id) as { label: string } | undefined)?.label ?? null
-    : null;
 
-  // Notify (fire-and-forget; ไม่ block response)
+  // Notify (fire-and-forget; ไม่ block response). Customer gets a plain
+  // text acknowledgement only — the Flex card is sent later when admin
+  // confirms. Staff get a card so they know to review.
   Promise.all([
-    notifyCustomer(branch, booking, "created"),
-    notifyStaff(branch, booking, tableLabel, "created")
+    notifyCustomerPending(branch, booking),
+    notifyStaff(branch, booking, null, "pending_review")
   ]).catch((e) => console.error("notify error", e));
 
-  return NextResponse.json({ id, status: "confirmed" });
+  return NextResponse.json({ id, ref, status: "pending_review" });
 }

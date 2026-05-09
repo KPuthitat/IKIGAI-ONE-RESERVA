@@ -46,9 +46,56 @@ function runMigrations(db: Database.Database): void {
   //   'online' = customer self-served via the booking form (default)
   //   'phone'  = staff entered a future booking from a phone call
   //   'walkin' = staff entered a customer who walked in just now
+  //   'line'   = staff entered a booking from a direct LINE chat (not
+  //              through the public form). Customer may have a line_user_id
+  //              attached so the confirm Flex card can be pushed back.
   //   NULL     = legacy row from before this column existed (treat as online)
   if (!bnames.has("booking_channel")) {
     db.exec("ALTER TABLE bookings ADD COLUMN booking_channel TEXT");
+  }
+
+  // Two-step booking workflow (added 2026-05-09):
+  // Customer submits without picking a table → status='pending_review'.
+  // Admin assigns a table + clicks "Confirm and notify" → status='confirmed'
+  // and the customer Flex card is pushed at that moment. The original
+  // CHECK constraint did not include 'pending_review', so we rebuild the
+  // table to extend it. This is idempotent — only fires when the existing
+  // CHECK is missing 'pending_review'.
+  const ddl = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='bookings'"
+  ).get() as { sql: string } | undefined;
+  if (ddl && !/'pending_review'/.test(ddl.sql)) {
+    const colInfos = db.prepare("PRAGMA table_info(bookings)").all() as Array<{ name: string }>;
+    const colList = colInfos.map((c) => `"${c.name}"`).join(", ");
+
+    // Replace the status CHECK clause with one that includes pending_review,
+    // then rename the CREATE TABLE target so we can copy data into it.
+    const newDdl = ddl.sql
+      .replace(
+        /CHECK\s*\(\s*status\s+IN\s*\([^)]+\)\s*\)/,
+        "CHECK (status IN ('pending_review','confirmed','seated','no_show','cancelled','completed'))"
+      )
+      .replace(
+        /CREATE TABLE\s+(?:IF NOT EXISTS\s+)?["`]?bookings["`]?\b/i,
+        "CREATE TABLE bookings_new"
+      );
+
+    db.exec("BEGIN");
+    try {
+      db.exec(newDdl);
+      db.exec(`INSERT INTO bookings_new (${colList}) SELECT ${colList} FROM bookings`);
+      db.exec("DROP TABLE bookings");
+      db.exec("ALTER TABLE bookings_new RENAME TO bookings");
+      // Indexes are dropped along with the original table — recreate them.
+      db.exec("CREATE INDEX IF NOT EXISTS idx_bookings_branch_date ON bookings(branch_id, booking_date)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_bookings_table ON bookings(table_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_bookings_ref_no ON bookings(ref_no)");
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
   }
 
   // Public-facing booking reference: 'R' + YYYYMM + 4-digit sequence per
@@ -949,7 +996,13 @@ export type Zone = {
   updated_at: string;
 };
 
-export type BookingStatus = "confirmed" | "seated" | "no_show" | "cancelled" | "completed";
+export type BookingStatus =
+  | "pending_review"   // customer submitted but admin hasn't picked a table / confirmed yet
+  | "confirmed"
+  | "seated"
+  | "no_show"
+  | "cancelled"
+  | "completed";
 
 export type Booking = {
   id: number;

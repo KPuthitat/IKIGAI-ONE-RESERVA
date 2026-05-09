@@ -61,8 +61,13 @@ CREATE TABLE IF NOT EXISTS bookings (
   booking_date TEXT NOT NULL,         -- YYYY-MM-DD (โซนเวลาไทย)
   booking_time TEXT NOT NULL,         -- HH:MM
   duration_minutes INTEGER NOT NULL DEFAULT 90,
+  -- pending_review = customer submitted via the public form without a table;
+  -- admin must assign a table + click "Confirm and notify" to push the
+  -- Flex confirmation card. Walk-in / phone / staff-entered bookings can
+  -- skip this state by going straight to 'confirmed' (or 'seated' for
+  -- walk-ins who are already at the table).
   status TEXT NOT NULL DEFAULT 'confirmed'
-    CHECK (status IN ('confirmed','seated','no_show','cancelled','completed')),
+    CHECK (status IN ('pending_review','confirmed','seated','no_show','cancelled','completed')),
   notes TEXT,
   line_user_id TEXT,
   created_by INTEGER REFERENCES users(id),

@@ -34,7 +34,12 @@ export default function BookingsClient({
   const [busyId, setBusyId] = useState<number | null>(null);
   const { confirm, alert, ConfirmDialog } = useConfirm();
   // Channel of the active add-booking modal — null = closed.
-  const [addModalOpen, setAddModalOpen] = useState<null | "walkin" | "phone">(null);
+  const [addModalOpen, setAddModalOpen] = useState<null | "walkin" | "phone" | "line">(null);
+
+  // Per-row table picker state for the pending-review section. Keyed by
+  // booking id so the admin can be reviewing several pending bookings at
+  // once and each remembers its own pick.
+  const [pendingTablePick, setPendingTablePick] = useState<Record<number, number | "">>({});
 
   async function setStatus(id: number, status: Row["status"]) {
     setBusyId(id);
@@ -80,31 +85,155 @@ export default function BookingsClient({
     router.refresh();
   }
 
+  // Promote a pending_review booking to confirmed and push the Flex card.
+  // This is the core of the two-step customer flow: customer submits without
+  // a table, admin picks a table here, then this fires off the confirmation.
+  async function confirmAndNotify(id: number) {
+    const tableId = pendingTablePick[id];
+    if (!tableId || tableId === "") {
+      alert({
+        title: t("common.error"),
+        body: <p>{t("admin.bookings.pending.noTablePicked")}</p>,
+        variant: "danger",
+        okLabel: t("common.confirm")
+      });
+      return;
+    }
+    setBusyId(id);
+    const res = await fetch(apiUrl(`/api/admin/bookings/${id}/confirm`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table_id: tableId })
+    });
+    setBusyId(null);
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      const codeMap: Record<string, string> = {
+        table_unavailable: t("admin.bookings.err.tableUnavailable")
+      };
+      alert({
+        title: t("common.error"),
+        body: <p>{codeMap[j.error] || t("admin.bookings.errorGeneric")}</p>,
+        variant: "danger",
+        okLabel: t("common.confirm")
+      });
+      return;
+    }
+    router.refresh();
+  }
+
+  // Split into pending (top, prominent) and the rest (timeline). Pending
+  // ones are sorted by submitted time so admin can FIFO through them.
+  const pending = bookings.filter((b) => b.status === "pending_review");
+  const others = bookings.filter((b) => b.status !== "pending_review");
+
   if (bookings.length === 0) {
-    return <div className="card text-slate-500 text-center py-10">{t("admin.dashboard.noBookings")}</div>;
+    return (
+      <>
+        <div className="space-y-3">
+          <AddBookingButtons setAddModalOpen={setAddModalOpen} t={t} />
+          <div className="card text-slate-500 text-center py-10">
+            {t("admin.dashboard.noBookings")}
+          </div>
+        </div>
+        {addModalOpen && (
+          <AddBookingModal
+            mode={addModalOpen}
+            branch={branch}
+            onClose={() => setAddModalOpen(null)}
+            onSaved={() => { setAddModalOpen(null); router.refresh(); }}
+          />
+        )}
+      </>
+    );
   }
 
   return (
     <>
     <div className="space-y-3">
-      {/* Quick-add buttons + scan QR. Walk-in = customer is here now;
-          Phone = future booking from a phone call; Scan = open camera
-          to read a customer's confirmation QR. */}
-      <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => setAddModalOpen("walkin")}
-          className="btn-primary text-sm">
-          + {t("admin.bookings.addWalkin")}
-        </button>
-        <button type="button" onClick={() => setAddModalOpen("phone")}
-          className="btn-secondary text-sm">
-          + {t("admin.bookings.addPhone")}
-        </button>
-        <Link href="/admin/reserva/scan"
-          className="ml-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">
-          📷 {t("admin.bookings.scanBtn")}
-        </Link>
-      </div>
-      {bookings.map((b) => (
+      <AddBookingButtons setAddModalOpen={setAddModalOpen} t={t} />
+
+      {/* Pending review section — customer-submitted bookings waiting for
+          admin to pick a table and confirm. Visually distinct (amber tint)
+          so they don't get lost in the timeline of confirmed bookings. */}
+      {pending.length > 0 && (
+        <div className="rounded-2xl border-[1.5px] border-amber-300 bg-amber-50/50 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">⏳</span>
+            <h2 className="font-bold text-amber-900">
+              {t("admin.bookings.pending.title", { n: pending.length })}
+            </h2>
+          </div>
+          <p className="text-xs text-amber-800/80">
+            {t("admin.bookings.pending.hint")}
+          </p>
+          {pending.map((b) => (
+            <div key={b.id} className="card border-amber-200">
+              <div className="flex flex-wrap items-start gap-3">
+                <div className="text-2xl font-bold w-20">{b.booking_time}</div>
+                <div className="flex-1 min-w-[200px]">
+                  <div className="font-medium flex items-center gap-2 flex-wrap">
+                    {b.customer_name}
+                    <span className="text-slate-500 font-normal">{t("admin.bookings.partySize", { n: b.party_size })}</span>
+                  </div>
+                  <div className="text-sm text-slate-500 flex flex-wrap gap-x-2">
+                    <a href={`tel:${b.customer_phone}`} className="text-brand">{b.customer_phone}</a>
+                    {b.ref_no && <span className="text-slate-400">#{b.ref_no}</span>}
+                    {b.source && (
+                      <span>{t("admin.bookings.knownFrom", { source: formatSource(b.source) })}</span>
+                    )}
+                  </div>
+                  {b.notes && <div className="text-sm text-slate-600 mt-1">{t("admin.bookings.notesLabel")}: {b.notes}</div>}
+                </div>
+              </div>
+              {canEdit && (
+                <div className="flex flex-wrap items-center gap-2 mt-3 border-t border-slate-100 pt-3">
+                  <label className="text-sm text-slate-600">
+                    {t("admin.bookings.pending.assignTable")}:
+                  </label>
+                  <select
+                    className="text-sm border rounded px-2 py-1.5"
+                    value={pendingTablePick[b.id] ?? ""}
+                    onChange={(e) =>
+                      setPendingTablePick((prev) => ({
+                        ...prev,
+                        [b.id]: e.target.value ? Number(e.target.value) : ""
+                      }))
+                    }
+                    disabled={busyId === b.id}
+                  >
+                    <option value="">{t("admin.bookings.tableNone")}</option>
+                    {tables
+                      .filter((tab) => tab.capacity >= b.party_size)
+                      .map((tab) => (
+                        <option key={tab.id} value={tab.id}>
+                          {tab.label} ({tab.capacity})
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    onClick={() => confirmAndNotify(b.id)}
+                    disabled={busyId === b.id || !pendingTablePick[b.id]}
+                    className="btn-primary text-sm ml-auto"
+                  >
+                    {t("admin.bookings.pending.confirmAndNotify")}
+                  </button>
+                  <button
+                    onClick={() => cancelBooking(b.id)}
+                    disabled={busyId === b.id}
+                    className="btn-secondary text-sm text-rose-700"
+                  >
+                    {t("admin.bookings.btn.cancel")}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Confirmed / seated / completed timeline */}
+      {others.map((b) => (
         <div key={b.id} className={`card ${b.status === "cancelled" ? "opacity-60" : ""}`}>
           <div className="flex flex-wrap items-start gap-3">
             <div className="text-2xl font-bold w-20">{b.booking_time}</div>
@@ -132,7 +261,7 @@ export default function BookingsClient({
                   <span>{t("admin.bookings.from", { origin: t(`booking.origin.${b.customer_origin}`) })}</span>
                 )}
               </div>
-              {b.notes && <div className="text-sm text-slate-600 mt-1">📝 {b.notes}</div>}
+              {b.notes && <div className="text-sm text-slate-600 mt-1">{t("admin.bookings.notesLabel")}: {b.notes}</div>}
             </div>
             <div className="text-sm">
               <span className={`px-2 py-1 rounded text-xs status-${b.status}`}>
@@ -205,7 +334,41 @@ export default function BookingsClient({
   );
 }
 
-// ── Walk-in / Phone booking modal ─────────────────────────────────────
+// ── Quick-add buttons (walk-in / phone / line) + scan QR shortcut ─────
+// Walk-in = customer is here now; Phone = future booking from a phone call;
+// Line = staff manually adding a booking that came via direct LINE chat
+// (didn't go through the public form). Scan = open camera to read a
+// customer's confirmation QR from the LINE Flex card.
+function AddBookingButtons({
+  setAddModalOpen,
+  t
+}: {
+  setAddModalOpen: (m: "walkin" | "phone" | "line") => void;
+  t: (k: string, vars?: Record<string, string | number>) => string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <button type="button" onClick={() => setAddModalOpen("walkin")}
+        className="btn-primary text-sm">
+        + {t("admin.bookings.addWalkin")}
+      </button>
+      <button type="button" onClick={() => setAddModalOpen("phone")}
+        className="btn-secondary text-sm">
+        + {t("admin.bookings.addPhone")}
+      </button>
+      <button type="button" onClick={() => setAddModalOpen("line")}
+        className="btn-secondary text-sm">
+        + {t("admin.bookings.addLine")}
+      </button>
+      <Link href="/admin/reserva/scan"
+        className="ml-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">
+        {t("admin.bookings.scanBtn")}
+      </Link>
+    </div>
+  );
+}
+
+// ── Walk-in / Phone / Line booking modal ───────────────────────────────
 // Wraps the same BookingForm component that customers use online, with a
 // `mode` prop that switches submit endpoint and adjusts defaults. This
 // guarantees the staff form looks and selects exactly like the customer
@@ -213,14 +376,20 @@ export default function BookingsClient({
 function AddBookingModal({
   mode, branch, onClose, onSaved
 }: {
-  mode: "walkin" | "phone";
+  mode: "walkin" | "phone" | "line";
   branch: Branch;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { t } = useLang();
-  const titleKey = mode === "walkin" ? "admin.bookings.modal.walkinTitle" : "admin.bookings.modal.phoneTitle";
-  const subtitleKey = mode === "walkin" ? "admin.bookings.modal.walkinSubtitle" : "admin.bookings.modal.phoneSubtitle";
+  const titleKey =
+    mode === "walkin" ? "admin.bookings.modal.walkinTitle"
+    : mode === "phone" ? "admin.bookings.modal.phoneTitle"
+    : "admin.bookings.modal.lineTitle";
+  const subtitleKey =
+    mode === "walkin" ? "admin.bookings.modal.walkinSubtitle"
+    : mode === "phone" ? "admin.bookings.modal.phoneSubtitle"
+    : "admin.bookings.modal.lineSubtitle";
 
   return (
     <div
@@ -244,7 +413,7 @@ function AddBookingModal({
           >×</button>
         </div>
 
-        {/* Reuse the customer-facing BookingForm so both flows share the
+        {/* Reuse the customer-facing BookingForm so all flows share the
             exact same input layout, chip groups, party-size picker, time
             pickers, and validation. The mode prop adjusts defaults +
             submit endpoint. liffId=null because admin doesn't need LIFF. */}

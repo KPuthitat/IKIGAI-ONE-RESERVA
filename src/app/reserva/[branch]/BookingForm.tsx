@@ -47,7 +47,7 @@ const ORIGIN_DEFS: Array<{ value: string; key: string }> = [
   { value: "other_province", key: "booking.origin.other_province" }
 ];
 
-export type BookingFormMode = "customer" | "walkin" | "phone";
+export type BookingFormMode = "customer" | "walkin" | "phone" | "line";
 
 export default function BookingForm({
   branch, liffId, mode = "customer", onSuccess,
@@ -94,10 +94,15 @@ export default function BookingForm({
   //             the placeholder so staff can submit in seconds.
   //   phone   : customer is calling about a future slot → time = branch open,
   //             name pre-filled with "ลูกค้าจองทางโทรศัพท์".
+  //   line    : customer messaged via LINE chat directly → time = branch open,
+  //             name pre-filled with "ลูกค้าจองผ่าน LINE", staff can paste
+  //             the customer's LINE userId so the confirm Flex card pushes
+  //             back to them.
   //   customer: classic public booking flow.
   const initialName = useMemo(() => {
     if (mode === "walkin") return t("admin.bookings.walkinDefaultName");
     if (mode === "phone") return t("admin.bookings.phoneDefaultName");
+    if (mode === "line") return t("admin.bookings.lineDefaultName");
     return "";
   }, [mode, t]);
   const initialTime = useMemo(() => {
@@ -299,7 +304,15 @@ export default function BookingForm({
   }, [form.booking_date, form.booking_time, timeBounds]);
 
 
-  async function findTables(e: React.FormEvent) {
+  // Two-step booking flow (changed 2026-05-09):
+  //   Customer mode → submit directly to /api/bookings without choosing
+  //     a table. Backend creates the row as status='pending_review' and
+  //     pushes a plain-text "request received" message; the Flex card
+  //     with QR comes later when admin clicks "Confirm and notify".
+  //   Admin modes (walkin / phone / line) → still go through the table
+  //     suggester so staff can pick a table immediately. Walk-in stays
+  //     'seated', phone/line with table = 'confirmed', no table = pending.
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (!form.customer_name.trim() || !form.customer_phone.trim()) {
@@ -310,6 +323,12 @@ export default function BookingForm({
       setError(t("booking.error.pastTime"));
       return;
     }
+    if (mode === "customer") {
+      // Skip the table picker — submit directly with table_id=null.
+      await submitPendingRequest();
+      return;
+    }
+    // Admin path — fetch suggestions and let staff pick a table.
     setSubmitting(true);
     try {
       const res = await fetch(apiUrl("/api/bookings/suggest"), {
@@ -338,22 +357,60 @@ export default function BookingForm({
     }
   }
 
+  async function submitPendingRequest() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const body = {
+        branch_slug: branch.slug,
+        customer_name: form.customer_name,
+        customer_phone: form.customer_phone,
+        party_size: form.party_size,
+        booking_date: form.booking_date,
+        booking_time: form.booking_time,
+        source: form.sources.length > 0 ? JSON.stringify(form.sources) : "",
+        customer_origin: form.customer_origin,
+        is_member: form.is_member,
+        notes: form.notes,
+        line_user_id: form.line_user_id,
+        lang
+      };
+      const res = await fetch(apiUrl("/api/bookings"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || t("common.error"));
+      }
+      setResultId(data.id);
+      setStep("done");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t("common.error"));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function confirmBooking() {
     setSubmitting(true);
     setError(null);
     try {
       const tableId = chosenTable === "auto" ? suggestions[0].id : chosenTable;
-      // Admin modes hit a different endpoint that accepts booking_channel
-      // and lets staff skip the past-time guard for walk-ins.
-      const isAdmin = mode === "walkin" || mode === "phone";
+      // All admin modes (walkin / phone / line) hit the admin endpoint and
+      // pass booking_channel. Customer mode bypasses this function entirely
+      // (handleSubmit goes straight to submitPendingRequest).
+      const isAdmin = mode !== "customer";
       const url = isAdmin ? "/api/admin/reserva/bookings" : "/api/bookings";
+      const adminDefaultName =
+        mode === "walkin" ? t("admin.bookings.walkinDefaultName")
+        : mode === "phone" ? t("admin.bookings.phoneDefaultName")
+        : mode === "line" ? t("admin.bookings.lineDefaultName")
+        : "";
       const body: Record<string, unknown> = isAdmin
         ? {
-            customer_name: form.customer_name.trim() || (
-              mode === "walkin"
-                ? t("admin.bookings.walkinDefaultName")
-                : t("admin.bookings.phoneDefaultName")
-            ),
+            customer_name: form.customer_name.trim() || adminDefaultName,
             customer_phone: form.customer_phone.trim(),
             party_size: form.party_size,
             booking_date: form.booking_date,
@@ -363,7 +420,12 @@ export default function BookingForm({
             is_member: form.is_member,
             notes: form.notes,
             table_id: tableId,
-            booking_channel: mode
+            booking_channel: mode,
+            // 'line' mode: staff may have pasted the customer's LINE userId
+            // from chat — pass it through so the confirm Flex card can be
+            // pushed when admin confirms (or immediately if a table was
+            // picked here).
+            line_user_id: form.line_user_id || ""
           }
         : {
             branch_slug: branch.slug,
@@ -407,10 +469,16 @@ export default function BookingForm({
   }
 
   if (step === "done" && resultId) {
+    // Customer flow ends in 'pending review' — admin still needs to assign
+    // a table and confirm. Headline + sub-copy reflect that we're not done
+    // yet; the Flex card with QR will arrive on LINE once admin confirms.
+    const isCustomerPending = mode === "customer";
     return (
       <div className="card text-center">
-        <div className="text-5xl mb-3">✅</div>
-        <h2 className="text-xl font-bold mb-2 text-slate-800">{t("booking.success.title")}</h2>
+        <div className="text-5xl mb-3">{isCustomerPending ? "⏳" : "✓"}</div>
+        <h2 className="text-xl font-bold mb-2 text-slate-800">
+          {isCustomerPending ? t("booking.pending.title") : t("booking.success.title")}
+        </h2>
         <p className="text-slate-600 mb-1">
           <span dangerouslySetInnerHTML={{
             __html: t("booking.success.bookingId", { id: `<span class="font-bold">${resultId}</span>` })
@@ -421,7 +489,7 @@ export default function BookingForm({
           {t("booking.success.dateTime", { date: formatDate(form.booking_date), time: form.booking_time })}
         </p>
         <p className="text-sm text-slate-500 mb-4">
-          {t("booking.success.lineNotice")}
+          {isCustomerPending ? t("booking.pending.lineNotice") : t("booking.success.lineNotice")}
         </p>
 
         {form.is_member === 0 && (
@@ -491,7 +559,7 @@ export default function BookingForm({
   }
 
   return (
-    <form onSubmit={findTables} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
       {/* Load LIFF SDK only on the customer-facing flow when a liffId is
           configured. Admin walk-in / phone bookings skip this entirely. */}
       {liffActive && (
@@ -627,6 +695,27 @@ export default function BookingForm({
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
           />
         </div>
+
+        {/* LINE userId — only shown when staff is creating a booking from a
+            direct LINE chat. If pasted, the confirm Flex card pushes back to
+            the customer's LINE account when admin confirms. Optional — leave
+            blank if you don't have it (booking is still saved, no Flex card). */}
+        {mode === "line" && (
+          <div>
+            <label className="label">{t("admin.bookings.lineUserIdLabel")}</label>
+            <input
+              className="input font-mono text-sm"
+              type="text"
+              autoComplete="off"
+              placeholder="U1234567890abcdef..."
+              value={form.line_user_id}
+              onChange={(e) => setForm({ ...form, line_user_id: e.target.value.trim() })}
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              {t("admin.bookings.lineUserIdHint")}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* คำถามเพิ่มเติม */}
@@ -677,7 +766,9 @@ export default function BookingForm({
       {error && <div className="text-red-600 text-sm text-center">{error}</div>}
 
       <button disabled={submitting || isPastTime} className="btn-primary w-full text-base py-3.5">
-        {submitting ? t("booking.cta.searching") : t("booking.cta.findTable")}
+        {submitting
+          ? (mode === "customer" ? t("booking.cta.submitting") : t("booking.cta.searching"))
+          : (mode === "customer" ? t("booking.cta.submitRequest") : t("booking.cta.findTable"))}
       </button>
     </form>
   );

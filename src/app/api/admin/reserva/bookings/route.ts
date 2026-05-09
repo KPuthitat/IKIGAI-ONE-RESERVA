@@ -8,14 +8,20 @@ import { generateBookingRef } from "@/lib/reserva-ref";
 
 // POST /api/admin/reserva/bookings
 //
-// Staff-side booking creation: walk-in (customer is here right now) or
-// phone (staff entered a future booking from a phone call). Same fields
-// as the customer endpoint /api/bookings, plus an explicit booking_channel
-// of 'walkin' | 'phone' to track origin in monthly stats.
+// Staff-side booking creation. Three channels:
+//   walkin — customer is already at the restaurant. Default status='seated'
+//            (table is theirs right now). Past-date is allowed.
+//   phone  — customer called. Default status='confirmed' if a table is
+//            picked, 'pending_review' if not. Future-only.
+//   line   — customer messaged via the LINE OA chat directly (didn't go
+//            through the public form). Same status rules as 'phone'. If
+//            staff pasted the customer's LINE userId, the confirmation
+//            Flex card is pushed back to that user when the booking is
+//            confirmed (either immediately or later via the confirm
+//            endpoint).
 //
-// 'walkin' bookings default to status='seated' (customer is already at
-// the table). 'phone' bookings default to status='confirmed' (future
-// reservation, just like online).
+// Same fields as the customer endpoint /api/bookings, plus an explicit
+// booking_channel value.
 
 const Body = z.object({
   customer_name: z.string().trim().min(1).max(100),
@@ -28,7 +34,8 @@ const Body = z.object({
   is_member: z.union([z.literal(0), z.literal(1)]).nullable().optional(),
   notes: z.string().max(500).optional().default(""),
   table_id: z.number().int().nullable().optional(),
-  booking_channel: z.enum(["walkin", "phone"])
+  line_user_id: z.string().max(64).optional().default(""),
+  booking_channel: z.enum(["walkin", "phone", "line"])
 });
 
 export async function POST(req: Request) {
@@ -49,8 +56,8 @@ export async function POST(req: Request) {
   if (!branch) return NextResponse.json({ error: "branch_not_found" }, { status: 404 });
 
   // Walk-ins skip the past-date guard since they're happening right now.
-  // Phone bookings still need to be present-or-future.
-  if (data.booking_channel === "phone") {
+  // Phone / line bookings still need to be present-or-future.
+  if (data.booking_channel !== "walkin") {
     const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
     if (data.booking_date < todayBkk) {
       return NextResponse.json({ error: "no_past_booking" }, { status: 400 });
@@ -71,7 +78,18 @@ export async function POST(req: Request) {
     }
   }
 
-  const initialStatus = data.booking_channel === "walkin" ? "seated" : "confirmed";
+  // Initial status decision tree:
+  //   walk-in: always 'seated' (customer is at the table now)
+  //   phone / line with table: 'confirmed' (full confirmation, push Flex)
+  //   phone / line without table: 'pending_review' (admin will assign + confirm later)
+  let initialStatus: "seated" | "confirmed" | "pending_review";
+  if (data.booking_channel === "walkin") {
+    initialStatus = "seated";
+  } else if (data.table_id) {
+    initialStatus = "confirmed";
+  } else {
+    initialStatus = "pending_review";
+  }
   const seatedAt = data.booking_channel === "walkin" ? new Date().toISOString() : null;
 
   const ref = generateBookingRef(data.booking_date);
@@ -80,8 +98,8 @@ export async function POST(req: Request) {
       branch_id, table_id, customer_name, customer_phone, party_size,
       source, customer_origin, is_member,
       booking_date, booking_time, duration_minutes, notes,
-      booking_channel, ref_no, status, created_by, seated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      booking_channel, ref_no, status, created_by, seated_at, line_user_id
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     branch.id,
     data.table_id ?? null,
@@ -99,7 +117,8 @@ export async function POST(req: Request) {
     ref,
     initialStatus,
     user.id,
-    seatedAt
+    seatedAt,
+    data.line_user_id || null
   );
   const id = result.lastInsertRowid as number;
 
@@ -108,15 +127,17 @@ export async function POST(req: Request) {
     ? (db.prepare("SELECT label FROM tables WHERE id = ?").get(booking.table_id) as { label: string } | undefined)?.label ?? null
     : null;
 
-  // Only push the staff alert (other staff on duty want to know). The
-  // customer wasn't online when this was entered, so we don't have a
-  // line_user_id to push the customer card to — notifyCustomer would
-  // short-circuit anyway. Skip it explicitly to avoid log noise.
+  // Notification policy:
+  //   - Always notify staff (so others on duty see the new booking)
+  //   - Notify customer with the Flex card ONLY if status is confirmed/seated
+  //     AND a line_user_id is on file. Pending review skips the customer
+  //     card — they'll get it when admin clicks Confirm.
+  const staffKind = initialStatus === "pending_review" ? "pending_review" : "created";
   Promise.all([
-    notifyStaff(branch, booking, tableLabel, "created"),
-    // Send to customer too IF a line_user_id was somehow provided (rare —
-    // e.g., admin pasted a known regular's userId). Cheap to attempt.
-    booking.line_user_id ? notifyCustomer(branch, booking, "created") : Promise.resolve()
+    notifyStaff(branch, booking, tableLabel, staffKind),
+    initialStatus !== "pending_review" && booking.line_user_id
+      ? notifyCustomer(branch, booking, "created")
+      : Promise.resolve()
   ]).catch((e) => console.error("notify error", e));
 
   return NextResponse.json({ id, status: initialStatus });

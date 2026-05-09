@@ -86,7 +86,8 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     cancelHint: 'หรือพิมพ์ "ยกเลิก #{ref}" ในแชทนี้เพื่อยกเลิก (ก่อนถึงเวลาจอง 2 ชั่วโมง)',
     qrCaption: "ให้พนักงานสแกนคิวอาร์โค้ดเมื่อถึงร้าน เพื่อยืนยันการจอง",
     staffNewBooking: "มีการจองใหม่",
-    staffReminder: "ใกล้ถึงเวลาจอง"
+    staffReminder: "ใกล้ถึงเวลาจอง",
+    staffPendingReview: "มีคำขอจองรอตรวจสอบ"
   },
   en: {
     confirmTitle: "Reservation Confirmed",
@@ -109,7 +110,8 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     cancelHint: 'Or reply "cancel #{ref}" in this chat (up to 2 hours before booking time)',
     qrCaption: "Show this QR to staff on arrival to confirm your booking",
     staffNewBooking: "New reservation",
-    staffReminder: "Reservation coming up"
+    staffReminder: "Reservation coming up",
+    staffPendingReview: "New request awaiting review"
   }
 };
 
@@ -323,7 +325,7 @@ export type StaffBookingCardArgs = {
   notes: string | null;
   source: string | null;
   publicBaseUrl: string;
-  kind: "created" | "reminder";
+  kind: "created" | "reminder" | "pending_review";
   lang: Lang;                   // language for the staff alert (defaults to th in caller)
 };
 
@@ -490,8 +492,13 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
 /** Build a staff-facing Flex card alerting them to a booking. */
 export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
   const isReminder = args.kind === "reminder";
-  const titleText = isReminder ? fx(args.lang, "staffReminder") : fx(args.lang, "staffNewBooking");
-  const iconText = isReminder ? "🔔" : "🆕";
+  const isPending = args.kind === "pending_review";
+  const titleText = isReminder
+    ? fx(args.lang, "staffReminder")
+    : isPending
+      ? fx(args.lang, "staffPendingReview")
+      : fx(args.lang, "staffNewBooking");
+  const iconText = isReminder ? "🔔" : isPending ? "⏳" : "🆕";
   const dateStr = localDate(args.bookingDate, args.lang);
 
   const bodyRows = [
@@ -668,6 +675,39 @@ function resolveBranchToken(branch: Branch): string | null {
   return branch.line_channel_token ?? null;
 }
 
+/** Send a plain-text acknowledgement to the customer that their booking
+ *  request was received and is awaiting admin confirmation. Used in the
+ *  two-step customer flow — no Flex card or QR is sent at this stage,
+ *  because the table hasn't been assigned yet. The full Flex card with
+ *  QR is pushed later by `notifyCustomer(..., "created")` when admin
+ *  clicks "Confirm and notify". */
+export async function notifyCustomerPending(
+  branch: Branch, booking: Booking
+): Promise<void> {
+  const db = getDb();
+  const token = resolveBranchToken(branch);
+  if (!token || !booking.line_user_id) {
+    db.prepare(
+      "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
+    ).run(booking.id, "pending_review", "customer", "skipped",
+      !token ? "no channel token" : "no line_user_id");
+    return;
+  }
+  const lang: Lang = booking.lang === "en" ? "en" : "th";
+  const dateStr = localDate(booking.booking_date, lang);
+  const ref = booking.ref_no ?? String(booking.id);
+  const text = lang === "en"
+    ? `Booking request received #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} guests\n\nWe'll confirm by LINE shortly with your table and a QR code. If you don't hear back, please call the restaurant.`
+    : `ได้รับคำขอจอง #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} ที่นั่ง\n\nทางร้านจะส่งการ์ดยืนยันพร้อมคิวอาร์โค้ดทาง LINE เร็วๆ นี้ หากไม่ได้รับการยืนยัน กรุณาโทรติดต่อร้าน`;
+  const res = await sendLinePush(token, {
+    to: booking.line_user_id,
+    messages: [{ type: "text", text }]
+  });
+  db.prepare(
+    "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
+  ).run(booking.id, "pending_review", "customer", res.ok ? "sent" : "failed", res.error ?? null);
+}
+
 export async function notifyCustomer(
   branch: Branch, booking: Booking, type: "created" | "reminder"
 ): Promise<void> {
@@ -710,7 +750,7 @@ export async function notifyCustomer(
 
 export async function notifyStaff(
   branch: Branch, booking: Booking, tableLabel: string | null,
-  type: "created" | "reminder"
+  type: "created" | "reminder" | "pending_review"
 ): Promise<void> {
   const db = getDb();
   const token = resolveBranchToken(branch);
