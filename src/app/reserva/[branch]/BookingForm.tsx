@@ -314,9 +314,15 @@ export default function BookingForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!form.customer_name.trim() || !form.customer_phone.trim()) {
-      setError(t("booking.error.missingNamePhone"));
-      return;
+    // Walk-in is the "customer is here right now" path — staff might be
+    // too busy at peak hours to ask for name + phone. Skip the require
+    // check; the API path also accepts empty strings for walkin and the
+    // BookingForm prefills the name with "ลูกค้าวอล์คอิน" anyway.
+    if (mode !== "walkin") {
+      if (!form.customer_name.trim() || !form.customer_phone.trim()) {
+        setError(t("booking.error.missingNamePhone"));
+        return;
+      }
     }
     if (isPastTime) {
       setError(t("booking.error.pastTime"));
@@ -702,72 +708,65 @@ export default function BookingForm({
           />
         </div>
 
-        {/* LINE userId — only shown when staff is creating a booking from a
-            direct LINE chat. If pasted, the confirm Flex card pushes back to
-            the customer's LINE account when admin confirms. Optional — leave
-            blank if you don't have it (booking is still saved, no Flex card). */}
-        {mode === "line" && (
-          <div>
-            <label className="label">{t("admin.bookings.lineUserIdLabel")}</label>
-            <input
-              className="input font-mono text-sm"
-              type="text"
-              autoComplete="off"
-              placeholder="U1234567890abcdef..."
-              value={form.line_user_id}
-              onChange={(e) => setForm({ ...form, line_user_id: e.target.value.trim() })}
-            />
-            <p className="text-xs text-slate-500 mt-1">
-              {t("admin.bookings.lineUserIdHint")}
-            </p>
+        {/* LINE userId field intentionally NOT shown for mode='line'.
+            The new flow always uses the claim link — admin saves the
+            booking, gets a /reserva/<branch>/claim/<ref> URL, sends it
+            to the customer in the LINE chat, customer taps the link to
+            log in (silent LIFF) → userId is captured server-side and
+            the booking confirmation is pushed back. Asking admin to
+            paste the userId here would defeat the simplification. */}
+      </div>
+
+      {/* Marketing chips — origin / source / member.
+          Hidden for mode='line' because the customer fills them on the
+          claim page after tapping the link admin sent. Keeping them here
+          would force admin to either guess or ask, which defeats the
+          point of the claim flow. */}
+      {mode !== "line" && (
+        <div className="bg-white/60 rounded-2xl p-5 space-y-4 border border-slate-200">
+          <div className="text-center">
+            <div className="text-sm font-bold text-slate-700">{t("booking.helpUs.title")}</div>
+            <div className="text-xs text-slate-500">{t("booking.helpUs.subtitle")}</div>
           </div>
-        )}
-      </div>
 
-      {/* คำถามเพิ่มเติม */}
-      <div className="bg-white/60 rounded-2xl p-5 space-y-4 border border-slate-200">
-        <div className="text-center">
-          <div className="text-sm font-bold text-slate-700">{t("booking.helpUs.title")}</div>
-          <div className="text-xs text-slate-500">{t("booking.helpUs.subtitle")}</div>
-        </div>
+          <div>
+            <div className="text-xs font-semibold text-slate-500 mb-2">{t("booking.field.origin")}</div>
+            <ChipGroup
+              options={ORIGINS}
+              value={form.customer_origin}
+              onChange={(v) => setForm({ ...form, customer_origin: v ?? "" })}
+            />
+          </div>
 
-        <div>
-          <div className="text-xs font-semibold text-slate-500 mb-2">{t("booking.field.origin")}</div>
-          <ChipGroup
-            options={ORIGINS}
-            value={form.customer_origin}
-            onChange={(v) => setForm({ ...form, customer_origin: v ?? "" })}
-          />
-        </div>
+          <div>
+            <div className="text-xs font-semibold text-slate-500 mb-2">{t("booking.field.source")}</div>
+            <MultiChipGroup
+              options={SOURCES}
+              values={form.sources}
+              onChange={(vs) => setForm({ ...form, sources: vs })}
+            />
+          </div>
 
-        <div>
-          <div className="text-xs font-semibold text-slate-500 mb-2">{t("booking.field.source")}</div>
-          <MultiChipGroup
-            options={SOURCES}
-            values={form.sources}
-            onChange={(vs) => setForm({ ...form, sources: vs })}
-          />
+          <div>
+            <div className="text-xs font-semibold text-slate-500 mb-2">{t("booking.field.member")}</div>
+            <ChipGroup
+              options={[
+                { value: "1", label: t("booking.member.yes") },
+                { value: "0", label: t("booking.member.no") }
+              ]}
+              value={form.is_member === null ? "" : String(form.is_member)}
+              onChange={(v) =>
+                setForm({ ...form, is_member: v === null ? null : (Number(v) as 0 | 1) })
+              }
+            />
+            {form.is_member === 0 && (
+              <div className="mt-2 text-xs text-slate-500 bg-brand/5 border border-brand/20 rounded-lg p-2.5">
+                {t("booking.member.hint")}
+              </div>
+            )}
+          </div>
         </div>
-
-        <div>
-          <div className="text-xs font-semibold text-slate-500 mb-2">{t("booking.field.member")}</div>
-          <ChipGroup
-            options={[
-              { value: "1", label: t("booking.member.yes") },
-              { value: "0", label: t("booking.member.no") }
-            ]}
-            value={form.is_member === null ? "" : String(form.is_member)}
-            onChange={(v) =>
-              setForm({ ...form, is_member: v === null ? null : (Number(v) as 0 | 1) })
-            }
-          />
-          {form.is_member === 0 && (
-            <div className="mt-2 text-xs text-slate-500 bg-brand/5 border border-brand/20 rounded-lg p-2.5">
-              {t("booking.member.hint")}
-            </div>
-          )}
-        </div>
-      </div>
+      )}
 
       {error && <div className="text-red-600 text-sm text-center">{error}</div>}
 

@@ -44,11 +44,16 @@ export function generateSlots(open: string, close: string, slotMin: number): str
   return slots;
 }
 
+// Inclusive (boundary-touching) overlap: two intervals are considered to
+// conflict if they share even a single boundary minute. So [13:30, 15:00]
+// and [15:00, 16:30] count as overlapping. Restaurants need turnover time
+// between seatings, so back-to-back booking should be blocked by default
+// — treat the boundary as conflict, not as breathing room.
 export function overlaps(
   aStart: number, aDur: number,
   bStart: number, bDur: number
 ): boolean {
-  return aStart < bStart + bDur && bStart < aStart + aDur;
+  return aStart <= bStart + bDur && bStart <= aStart + aDur;
 }
 
 // ── Date display helpers ──────────────────────────────────────────────

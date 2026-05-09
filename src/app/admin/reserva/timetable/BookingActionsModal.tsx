@@ -8,15 +8,18 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import CancelReasonModal from "../bookings/CancelReasonModal";
 
-// Quick-action modal opened when admin clicks a booking block on the
-// timetable. Mirrors the controls available on /admin/reserva/bookings:
-//   - reassign table (dropdown limited to free + capacity-fitting tables)
-//   - mark seated / completed / no_show
-//   - cancel with reason (opens nested CancelReasonModal)
-//   - link to the full /r/<ref> detail page for anything more advanced
+// Action + edit modal opened when admin clicks a booking block on the
+// timetable. Mirrors controls from /admin/reserva/bookings AND adds
+// in-place editing of date/time/party/notes — admin shouldn't have to
+// leave the timetable to fix a typo.
 //
-// Date/time/party_size editing isn't here — that's the customer edit
-// page (/reserva/edit/<ref>) and would clutter this small popover.
+// Sections:
+//   - Header (customer name + phone, status pill)
+//   - Edit fields (party / date / time / notes) → "บันทึกการเปลี่ยนแปลง"
+//   - Reassign table (dropdown limited to free + capacity-fitting tables)
+//   - Status buttons (mark seated / completed / no_show)
+//   - Cancel with reason (opens nested CancelReasonModal)
+//   - Link out to /r/<ref> for the full QR/detail page
 
 type Tone = "primary" | "success" | "warn" | "danger" | "neutral";
 
@@ -38,6 +41,45 @@ export default function BookingActionsModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showCancel, setShowCancel] = useState(false);
+
+  // Edit-form state — initialized from the booking and only persisted on
+  // explicit "save". Admin can change values without committing until
+  // they tap save (lets them experiment with different times etc).
+  const [editParty, setEditParty] = useState(booking.party_size);
+  const [editDate, setEditDate] = useState(booking.booking_date);
+  const [editTime, setEditTime] = useState(booking.booking_time);
+  const [editNotes, setEditNotes] = useState(booking.notes ?? "");
+  const editDirty =
+    editParty !== booking.party_size ||
+    editDate !== booking.booking_date ||
+    editTime !== booking.booking_time ||
+    editNotes !== (booking.notes ?? "");
+
+  async function saveEdit() {
+    setBusy(true);
+    setErr(null);
+    const res = await fetch(apiUrl(`/api/admin/bookings/${booking.id}/edit`), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        party_size: editParty,
+        booking_date: editDate,
+        booking_time: editTime,
+        notes: editNotes
+      })
+    });
+    setBusy(false);
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      const codeMap: Record<string, string> = {
+        table_unavailable: t("admin.bookings.err.tableUnavailable")
+      };
+      setErr(codeMap[j.error] || t("admin.bookings.errorGeneric"));
+      return;
+    }
+    router.refresh();
+    onClose();
+  }
 
   async function setStatus(status: "seated" | "completed" | "no_show") {
     setBusy(true);
@@ -145,7 +187,64 @@ export default function BookingActionsModal({
             </div>
           )}
 
-          {booking.notes && (
+          {/* Edit fields — admin can change date/time/party/notes any time
+              (no customer-side cutoff). Save is only enabled when something
+              actually changed, so misclicks don't fire a no-op API call. */}
+          {allowCancel && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
+              <div className="text-xs font-bold text-slate-700">
+                {t("admin.bookings.edit.section")}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-500">
+                    {t("edit.row.date")}
+                  </label>
+                  <input type="date" className="input text-sm"
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500">
+                    {t("edit.row.time")}
+                  </label>
+                  <input type="time" step={300} className="input text-sm"
+                    value={editTime}
+                    onChange={(e) => setEditTime(e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">
+                  {t("edit.row.party")}
+                </label>
+                <input type="number" min={1} max={50} className="input text-sm"
+                  value={editParty}
+                  onChange={(e) =>
+                    setEditParty(Math.max(1, Math.min(50, Number(e.target.value) || 1)))
+                  } />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">
+                  {t("admin.bookings.notesLabel")}
+                </label>
+                <textarea className="input text-sm" rows={2} maxLength={500}
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)} />
+              </div>
+              <button
+                type="button"
+                onClick={saveEdit}
+                disabled={busy || !editDirty}
+                className="btn-primary w-full text-sm disabled:opacity-50"
+              >
+                {t("admin.bookings.edit.save")}
+              </button>
+            </div>
+          )}
+
+          {/* Read-only notes display when booking is locked (cancelled
+              or completed) — no edit but still show what was there. */}
+          {!allowCancel && booking.notes && (
             <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-sm">
               <div className="text-xs text-slate-500 mb-1">
                 {t("admin.bookings.notesLabel")}

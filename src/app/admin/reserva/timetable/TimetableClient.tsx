@@ -49,7 +49,17 @@ type Props = {
 export default function TimetableClient({ branch, zones, tables, bookings, date }: Props) {
   const router = useRouter();
   const { t } = useLang();
-  const [walkin, setWalkin] = useState<{ tableId: number; time: string } | null>(null);
+  // Two-step flow when admin clicks an empty cell:
+  //   Step 1 (cellPicker, mode=null) — chooser asking "วอล์คอิน / ผ่านโทรศัพท์ / ผ่าน LINE"
+  //   Step 2 (cellPicker, mode!=null) — BookingForm prefilled with the cell's
+  //     table+time and the picked channel. Saved cell entries always pre-fill
+  //     the table + time so admin doesn't re-enter what the click already
+  //     conveyed.
+  const [cellPicker, setCellPicker] = useState<{
+    tableId: number;
+    time: string;
+    mode: "walkin" | "phone" | "line" | null;
+  } | null>(null);
   // Click-to-edit on a booking overlay opens this modal (status actions,
   // table reassignment, cancel-with-reason). null = closed.
   const [editing, setEditing] = useState<Booking | null>(null);
@@ -128,7 +138,9 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
     const h = Math.floor(slotMinutes / 60);
     const m = slotMinutes % 60;
     const time = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-    setWalkin({ tableId, time });
+    // Open the type chooser first; admin picks walkin / phone / line, then
+    // the booking form for that mode opens with the cell pre-filled.
+    setCellPicker({ tableId, time, mode: null });
   }
 
   /** Convert a booking's start time + duration into pixel offset / width
@@ -250,14 +262,31 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
         )}
       </div>
 
-      {walkin && (
-        <WalkinModal
+      {/* Step 1: type chooser (mode still null). Admin picks the channel. */}
+      {cellPicker && cellPicker.mode === null && (
+        <CellTypeChooserModal
+          tableId={cellPicker.tableId}
+          time={cellPicker.time}
+          tableLabel={tables.find((tb) => tb.id === cellPicker.tableId)?.label ?? ""}
+          onClose={() => setCellPicker(null)}
+          onPick={(mode) =>
+            setCellPicker((prev) => (prev ? { ...prev, mode } : null))
+          }
+        />
+      )}
+      {/* Step 2: BookingForm in the chosen mode, prefilled with cell info. */}
+      {cellPicker && cellPicker.mode !== null && (
+        <CellBookingModal
           branch={branch}
-          tableId={walkin.tableId}
-          time={walkin.time}
+          tableId={cellPicker.tableId}
+          time={cellPicker.time}
           date={date}
-          onClose={() => setWalkin(null)}
-          onSaved={() => { setWalkin(null); router.refresh(); }}
+          mode={cellPicker.mode}
+          onBack={() =>
+            setCellPicker((prev) => (prev ? { ...prev, mode: null } : null))
+          }
+          onClose={() => setCellPicker(null)}
+          onSaved={() => { setCellPicker(null); router.refresh(); }}
         />
       )}
       {editing && (
@@ -295,8 +324,9 @@ function isOverlapFree(
     if (b.status === "cancelled" || b.status === "completed") continue;
     const start = timeToMin(b.booking_time);
     const end = start + (b.duration_minutes || 90);
-    // Overlap if [start, end) intersects [targetStart, targetEnd)
-    if (start < targetEnd && end > targetStart) return false;
+    // Inclusive (boundary-touching) overlap — back-to-back bookings on
+    // the same table are blocked. Matches lib/time.ts overlaps().
+    if (start <= targetEnd && end >= targetStart) return false;
   }
   return true;
 }
@@ -377,17 +407,115 @@ function TableRowComponent({
   );
 }
 
-function WalkinModal({
-  branch, tableId, time, date, onClose, onSaved
+// ── Step 1: type chooser ──────────────────────────────────────────────
+// Asks admin which channel the booking is coming through. Three big
+// buttons with icons + a tiny hint about what each one means. The cell
+// (table + time) is shown in the header so admin sees what they picked.
+function CellTypeChooserModal({
+  tableId, time, tableLabel, onClose, onPick
+}: {
+  tableId: number;
+  time: string;
+  tableLabel: string;
+  onClose: () => void;
+  onPick: (mode: "walkin" | "phone" | "line") => void;
+}) {
+  void tableId;
+  const { t } = useLang();
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 my-8 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-bold text-slate-800 text-lg">
+              {t("admin.reserva.timetable.cellPicker.title")}
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              {t("admin.reserva.timetable.cellPicker.subtitle", {
+                table: tableLabel, time
+              })}
+            </p>
+          </div>
+          <button type="button" onClick={onClose}
+            aria-label={t("common.close")}
+            className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2">×</button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2">
+          <CellTypeButton
+            tone="primary"
+            title={t("admin.bookings.addWalkin")}
+            desc={t("admin.reserva.timetable.cellPicker.walkinDesc")}
+            onClick={() => onPick("walkin")}
+          />
+          <CellTypeButton
+            tone="secondary"
+            title={t("admin.bookings.addPhone")}
+            desc={t("admin.reserva.timetable.cellPicker.phoneDesc")}
+            onClick={() => onPick("phone")}
+          />
+          <CellTypeButton
+            tone="secondary"
+            title={t("admin.bookings.addLine")}
+            desc={t("admin.reserva.timetable.cellPicker.lineDesc")}
+            onClick={() => onPick("line")}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CellTypeButton({
+  tone, title, desc, onClick
+}: {
+  tone: "primary" | "secondary";
+  title: string;
+  desc: string;
+  onClick: () => void;
+}) {
+  const cls = tone === "primary"
+    ? "border-brand bg-brand/5 hover:bg-brand/10 text-brand"
+    : "border-slate-200 bg-white hover:bg-slate-50 text-slate-800";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left rounded-xl border-[1.5px] p-3.5 transition active:scale-[0.99] ${cls}`}
+    >
+      <div className="font-bold">+ {title}</div>
+      <div className="text-xs opacity-80 mt-0.5">{desc}</div>
+    </button>
+  );
+}
+
+// ── Step 2: BookingForm in the chosen mode ────────────────────────────
+// Mounted after the chooser picks walkin / phone / line. Same layout as
+// the other +add modals on the bookings page; adds a small "back" link
+// to return to the chooser without losing the cell context.
+function CellBookingModal({
+  branch, tableId, time, date, mode, onBack, onClose, onSaved
 }: {
   branch: Branch;
   tableId: number;
   time: string;
   date: string;
+  mode: "walkin" | "phone" | "line";
+  onBack: () => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { t } = useLang();
+  const titleKey =
+    mode === "walkin" ? "admin.bookings.modal.walkinTitle"
+    : mode === "phone" ? "admin.bookings.modal.phoneTitle"
+    : "admin.bookings.modal.lineTitle";
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto"
@@ -399,9 +527,14 @@ function WalkinModal({
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="font-bold text-slate-800 text-lg">
-              {t("admin.bookings.modal.walkinTitle")}
-            </h2>
+            <button
+              type="button"
+              onClick={onBack}
+              className="text-xs text-slate-500 hover:text-brand mb-1"
+            >
+              ← {t("common.back")}
+            </button>
+            <h2 className="font-bold text-slate-800 text-lg">{t(titleKey)}</h2>
             <p className="text-xs text-slate-500 mt-1">
               {t("admin.reserva.timetable.walkinHint", { time })}
             </p>
@@ -412,7 +545,7 @@ function WalkinModal({
         <BookingForm
           branch={branch}
           liffId={null}
-          mode="walkin"
+          mode={mode}
           initialTableId={tableId}
           initialBookingTime={time}
           initialBookingDate={date}
