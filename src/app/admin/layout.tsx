@@ -2,6 +2,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { autoExpireStaleBookings } from "@/lib/stale-bookings";
 import LogoutButton from "./LogoutButton";
 import HeaderBrand from "../HeaderBrand";
 import LangToggle from "../LangToggle";
@@ -22,17 +23,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   // Count of pending_review bookings on the active branch — surfaces as a
   // red badge next to the "การจอง" sidebar entry so admin notices new
-  // customer requests without polling. Counts only today + future (past
-  // pending bookings shouldn't pull attention; they were missed already).
+  // customer requests without polling.
   let pendingCount = 0;
   if (user.activeBranchId) {
     try {
+      // Auto-expire stale rows first so the count reflects only bookings
+      // that still need action (past-cutoff pending → cancelled, removed
+      // from the count).
+      autoExpireStaleBookings();
       const db = getDb();
-      const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const row = db.prepare(
         `SELECT COUNT(*) AS n FROM bookings
-         WHERE branch_id = ? AND status = 'pending_review' AND booking_date >= ?`
-      ).get(user.activeBranchId, todayBkk) as { n: number } | undefined;
+         WHERE branch_id = ? AND status = 'pending_review'`
+      ).get(user.activeBranchId) as { n: number } | undefined;
       pendingCount = row?.n ?? 0;
     } catch {
       // schema not migrated yet (fresh deploy) → just show 0

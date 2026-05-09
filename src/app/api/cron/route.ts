@@ -13,6 +13,7 @@ import { getDb, type Branch, type Booking } from "@/lib/db";
 import { notifyCustomer, notifyStaff } from "@/lib/line";
 import { purgeOldBookings } from "@/lib/retention";
 import { bookingStartMs } from "@/lib/time";
+import { autoExpireStaleBookings } from "@/lib/stale-bookings";
 
 export async function POST(req: Request) {
   const token = req.headers.get("x-cron-token");
@@ -54,21 +55,12 @@ export async function POST(req: Request) {
     }
   }
 
-  // mark no_show อัตโนมัติ: ถ้าเลยเวลาจองไปแล้ว 30 นาที + ยัง confirmed → no_show
-  // (admin ยังกดปุ่ม "นั่งแล้ว" ภายหลังได้ ถ้าลูกค้ามาช้า)
-  const noShowCutoffMs = Date.now() - 30 * 60_000;
-  const stale = db.prepare(`
-    SELECT * FROM bookings WHERE status = 'confirmed'
-  `).all() as Booking[];
-  let autoNoShow = 0;
-  for (const b of stale) {
-    if (bookingStartMs(b.booking_date, b.booking_time) < noShowCutoffMs) {
-      db.prepare(
-        "UPDATE bookings SET status = 'no_show', updated_at = ? WHERE id = ?"
-      ).run(new Date().toISOString(), b.id);
-      autoNoShow++;
-    }
-  }
+  // Stale-booking cleanup — same logic also runs on every admin page load
+  // via autoExpireStaleBookings(), so behaviour is consistent whether the
+  // external cron is configured or not.
+  const expired = autoExpireStaleBookings();
+  const autoNoShow = expired.no_show_count;
+  const autoCancelledPending = expired.cancelled_pending_count;
 
   // retention cleanup
   const purged = purgeOldBookings();
@@ -77,6 +69,7 @@ export async function POST(req: Request) {
     ok: true,
     reminders_sent: remindersSent,
     auto_no_show: autoNoShow,
+    auto_cancelled_pending: autoCancelledPending,
     purged_old_bookings: purged
   });
 }
