@@ -7,20 +7,11 @@ import type { Branch } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 
-// LIFF SDK — types only. The SDK itself is loaded as an external <Script>
-// tag below, then attaches to window.liff at runtime.
-type LiffProfile = { userId: string; displayName: string; pictureUrl?: string };
-type LiffSDK = {
-  init: (cfg: { liffId: string }) => Promise<void>;
-  ready: Promise<void>;
-  isInClient: () => boolean;
-  isLoggedIn: () => boolean;
-  login: (cfg?: { redirectUri?: string }) => void;
-  getProfile: () => Promise<LiffProfile>;
-};
-declare global {
-  interface Window { liff?: LiffSDK }
-}
+// LIFF SDK type lives in lib/liff-types — importing this module runs the
+// `declare global` augmentation that types window.liff. The SDK itself is
+// loaded as an external <Script> tag below and attaches to window.liff at
+// runtime.
+import "@/lib/liff-types";
 
 type TableOption = {
   id: number;

@@ -18,18 +18,9 @@ import type { Lang } from "@/lib/i18n";
 //   "already"   → booking was already linked to this LINE account; show OK
 //   "error"     → something went wrong (usually no LIFF configured)
 
-type LiffProfile = { userId: string; displayName: string };
-type LiffSDK = {
-  init: (cfg: { liffId: string }) => Promise<void>;
-  ready: Promise<void>;
-  isInClient: () => boolean;
-  isLoggedIn: () => boolean;
-  login: (cfg?: { redirectUri?: string }) => void;
-  getProfile: () => Promise<LiffProfile>;
-};
-declare global {
-  interface Window { liff?: LiffSDK }
-}
+// The window.liff global type lives in lib/liff-types — importing it here
+// just so the ambient `declare global` runs (no value imported).
+import "@/lib/liff-types";
 
 type State =
   | { kind: "init" }
