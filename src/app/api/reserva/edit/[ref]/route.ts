@@ -37,18 +37,28 @@ const Body = z.union([
 ]);
 
 export async function PATCH(req: Request, { params }: { params: { ref: string } }) {
-  const ref = decodeURIComponent(params.ref ?? "");
-  if (!isBookingRef(ref)) {
-    return NextResponse.json({ error: "invalid_ref" }, { status: 400 });
-  }
+  const raw = decodeURIComponent(params.ref ?? "");
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
   }
 
+  // Accept either the R-format ref or a numeric id so the URL stays
+  // valid for legacy rows that might not have a ref_no. Page-side
+  // /reserva/edit/[ref] does the same dual lookup.
   const db = getDb();
-  const booking = db.prepare("SELECT * FROM bookings WHERE ref_no = ?").get(ref) as Booking | undefined;
+  let booking: Booking | undefined;
+  if (isBookingRef(raw)) {
+    booking = db.prepare("SELECT * FROM bookings WHERE ref_no = ?")
+      .get(raw) as Booking | undefined;
+  } else {
+    const numericId = Number(raw);
+    if (Number.isInteger(numericId) && numericId > 0) {
+      booking = db.prepare("SELECT * FROM bookings WHERE id = ?")
+        .get(numericId) as Booking | undefined;
+    }
+  }
   if (!booking) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (booking.status === "cancelled") {
     return NextResponse.json({ error: "already_cancelled" }, { status: 409 });

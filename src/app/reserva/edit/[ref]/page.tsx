@@ -34,16 +34,34 @@ type Row = Booking & { branch_name: string; branch_open_time: string; branch_clo
 export default function EditBookingPage({ params }: { params: { ref: string } }) {
   const lang = getLang();
   const raw = decodeURIComponent(params.ref ?? "");
-  if (!isBookingRef(raw)) notFound();
 
+  // The Flex card builds its URL with `bookingRef ?? String(bookingId)` —
+  // so legacy bookings without ref_no would land here with a numeric id
+  // like "/reserva/edit/42". Accept both formats so the button never
+  // 404s on the customer. Look up by ref_no when the param is in the
+  // R-format, fall back to numeric id otherwise.
   const db = getDb();
-  const booking = db.prepare(`
-    SELECT b.*, br.name AS branch_name,
-           br.open_time AS branch_open_time, br.close_time AS branch_close_time
-    FROM bookings b
-    LEFT JOIN branches br ON b.branch_id = br.id
-    WHERE b.ref_no = ?
-  `).get(raw) as Row | undefined;
+  let booking: Row | undefined;
+  if (isBookingRef(raw)) {
+    booking = db.prepare(`
+      SELECT b.*, br.name AS branch_name,
+             br.open_time AS branch_open_time, br.close_time AS branch_close_time
+      FROM bookings b
+      LEFT JOIN branches br ON b.branch_id = br.id
+      WHERE b.ref_no = ?
+    `).get(raw) as Row | undefined;
+  } else {
+    const numericId = Number(raw);
+    if (Number.isInteger(numericId) && numericId > 0) {
+      booking = db.prepare(`
+        SELECT b.*, br.name AS branch_name,
+               br.open_time AS branch_open_time, br.close_time AS branch_close_time
+        FROM bookings b
+        LEFT JOIN branches br ON b.branch_id = br.id
+        WHERE b.id = ?
+      `).get(numericId) as Row | undefined;
+    }
+  }
   if (!booking) notFound();
 
   // Compute minutes until booking_time (Bangkok). Compare against the
