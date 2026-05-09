@@ -89,8 +89,11 @@ export default function BookingsClient({
   // This is the core of the two-step customer flow: customer submits without
   // a table, admin picks a table here, then this fires off the confirmation.
   async function confirmAndNotify(id: number) {
+    // pendingTablePick[id] is `number | "" | undefined`; falsy check covers
+    // all three (empty string, undefined, and the impossible 0). After the
+    // guard tableId is narrowed to a positive number ready for the API call.
     const tableId = pendingTablePick[id];
-    if (!tableId || tableId === "") {
+    if (!tableId) {
       alert({
         title: t("common.error"),
         body: <p>{t("admin.bookings.pending.noTablePicked")}</p>,
