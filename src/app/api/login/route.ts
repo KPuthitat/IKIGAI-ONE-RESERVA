@@ -3,6 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { findPayrollUserByUsername } from "@/lib/payroll-db";
 import { createSession, syncUserFromPayroll } from "@/lib/auth";
+import { getDb } from "@/lib/db";
 
 const Body = z.object({
   username: z.string().min(1),
@@ -46,5 +47,14 @@ export async function POST(req: Request) {
   // 4) create session
   createSession(payrollUser.id, null);
 
-  return NextResponse.json({ ok: true, role: actualRole });
+  // 5) Tell the client whether the user has multiple branches assigned.
+  //    The login form uses this to route staff to /staff/branch-picker
+  //    only when there's a real choice (1-branch users go straight to
+  //    /staff and have their active branch implicitly set on first
+  //    page load via getSessionUser's default-to-first logic).
+  const branchCount = (getDb().prepare(
+    "SELECT COUNT(*) AS n FROM user_branches WHERE user_id = ?"
+  ).get(payrollUser.id) as { n: number }).n;
+
+  return NextResponse.json({ ok: true, role: actualRole, branchCount });
 }

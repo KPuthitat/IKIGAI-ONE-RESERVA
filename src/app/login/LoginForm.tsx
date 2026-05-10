@@ -33,7 +33,16 @@ export default function LoginForm({
         setErr(data.error || t("login.error.generic"));
         return;
       }
-      const dest = next || (data.role === "admin" ? "/admin" : "/staff");
+      // Staff with multiple branches go through the branch picker first
+      // so they explicitly pick "today's branch" before doing anything.
+      // Single-branch staff and admin skip straight to their landing.
+      const dest = next
+        ? next
+        : data.role === "admin"
+          ? "/admin"
+          : (data.branchCount ?? 0) > 1
+            ? "/staff/branch-picker"
+            : "/staff";
       router.push(dest);
       router.refresh();
     } finally {

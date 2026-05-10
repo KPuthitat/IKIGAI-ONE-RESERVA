@@ -605,6 +605,16 @@ export const dict: Record<Lang, Record<string, string>> = {
     // Staff PERSONA (time clock)
     "staff.persona.title": "PERSONA — ลงเวลาทำงาน",
     "staff.persona.backToModules": "← กลับ module",
+
+    // Staff branch picker — first stop after login when staff has >1 branch
+    "staff.branchPicker.title": "สวัสดี {name}",
+    "staff.branchPicker.subtitle": "วันนี้ทำงานสาขาไหน? เลือกสาขาก่อนเริ่มลงเวลา / ส่งเวร / ขอลา",
+    "staff.branchPicker.branchLabel": "สาขา",
+    "staff.branchPicker.activeChip": "ใช้อยู่",
+    "staff.branchPicker.empty.title": "ยังไม่ได้รับมอบหมายสาขา",
+    "staff.branchPicker.empty.body": "กรุณาติดต่อแอดมินเพื่อขอเข้าทำงานในสาขา",
+    "staff.topbar.today": "วันนี้",
+    "staff.topbar.changeBranch": "เปลี่ยน",
     // Staff sidebar nav
     "staff.nav.timeClock": "ลงเวลาทำงาน",
     "staff.nav.shiftOpen": "เปิดกะ",
@@ -1987,6 +1997,16 @@ export const dict: Record<Lang, Record<string, string>> = {
 
     // Staff PERSONA
     "staff.persona.title": "PERSONA — Time clock",
+
+    // Staff branch picker
+    "staff.branchPicker.title": "Hi {name}",
+    "staff.branchPicker.subtitle": "Which branch are you working at today? Pick before clocking in, submitting handover, or filing leave",
+    "staff.branchPicker.branchLabel": "Branch",
+    "staff.branchPicker.activeChip": "Current",
+    "staff.branchPicker.empty.title": "No branch assigned",
+    "staff.branchPicker.empty.body": "Please contact admin to assign you to a branch",
+    "staff.topbar.today": "Today",
+    "staff.topbar.changeBranch": "Change",
     // Staff sidebar nav
     "staff.nav.timeClock": "Clock in / out",
     "staff.nav.shiftOpen": "Open shift",

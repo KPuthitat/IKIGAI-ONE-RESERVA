@@ -21,7 +21,7 @@ export default function BranchSwitcher({
       value={activeBranchId ?? ""}
       onChange={async (e) => {
         const id = Number(e.target.value);
-        await fetch(apiUrl("/api/admin/branch"), {
+        await fetch(apiUrl("/api/branch"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ branch_id: id })

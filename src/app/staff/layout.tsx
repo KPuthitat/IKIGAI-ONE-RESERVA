@@ -7,6 +7,7 @@ import LangToggle from "../LangToggle";
 import Footer from "../Footer";
 import Sidebar, { type SidebarSection } from "../components/Sidebar";
 import StaffSidebarBrand from "./StaffSidebarBrand";
+import TodaysBranchPill from "./TodaysBranchPill";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,14 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   const user = getSessionUser();
   if (!user) return <>{children}</>;
   const lang = getLang();
+
+  // "Today's branch" — read from session activeBranchId, look up name.
+  // Pill renders in the topbar so staff always sees which branch their
+  // forms will write to. Click "เปลี่ยน" to swap branches mid-day.
+  const activeBranch = user.activeBranchId
+    ? user.branches.find((b) => b.id === user.activeBranchId) ?? null
+    : null;
+  const hasBranchChoice = user.branches.length > 1;
 
   // Sections scoped to each module via pathPrefix.
   const sections: SidebarSection[] = [
@@ -54,6 +63,10 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
               <HeaderBrand role="staff" />
             </div>
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+              <TodaysBranchPill
+                branchName={activeBranch?.name ?? null}
+                hasChoice={hasBranchChoice}
+              />
               <span className="text-xs text-white/60 hidden sm:inline">{user.display_name}</span>
               <LangToggle variant="dark" />
               <LogoutButton />
