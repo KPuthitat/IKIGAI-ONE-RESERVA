@@ -89,12 +89,12 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     btnEditBooking: "ปรับเปลี่ยน / ยกเลิกการจอง",
     btnCancelCall: "ยกเลิกการจอง",
     btnMenu: "เมนูอาหาร",
-    btnOpenAdmin: "เปิดในระบบ",
+    btnOpenAdmin: "เข้าสู่ระบบ",
     cancelHint: 'หรือพิมพ์ "ยกเลิก #{ref}" ในแชทนี้เพื่อยกเลิก (ก่อนถึงเวลาจอง 2 ชั่วโมง)',
     qrCaption: "ให้พนักงานสแกนคิวอาร์โค้ดเมื่อถึงร้าน\nเพื่อยืนยันการจอง",
     staffNewBooking: "มีการจองใหม่",
     staffReminder: "ใกล้ถึงเวลาจอง",
-    staffPendingReview: "มีคำขอจองรอตรวจสอบ",
+    staffPendingReview: "รายการจองผ่านระบบ",
     cancelledTitle: "การจองถูกยกเลิก",
     labelReason: "เหตุผล",
     noReasonGiven: "ทางร้านไม่ได้ระบุเหตุผล — โปรดติดต่อร้านโดยตรง",
@@ -119,12 +119,12 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     btnEditBooking: "Modify / cancel booking",
     btnCancelCall: "Cancel booking",
     btnMenu: "Menu",
-    btnOpenAdmin: "Open in admin",
+    btnOpenAdmin: "Sign in",
     cancelHint: 'Or reply "cancel #{ref}" in this chat (up to 2 hours before booking time)',
     qrCaption: "Show this QR to staff on arrival\nto confirm your booking",
     staffNewBooking: "New reservation",
     staffReminder: "Reservation coming up",
-    staffPendingReview: "New request awaiting review",
+    staffPendingReview: "New booking via system",
     cancelledTitle: "Booking cancelled",
     labelReason: "Reason",
     noReasonGiven: "No reason given — please contact the restaurant directly",
@@ -756,8 +756,12 @@ export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
           height: "sm",
           action: {
             type: "uri",
+            // Land on /login. After auth, the user gets redirected to
+            // /admin (module picker). The deep link to bookings was
+            // tried but customers tapping from a non-logged-in browser
+            // hit a redirect chain that broke in LINE's in-app webview.
             label: fx(args.lang, "btnOpenAdmin"),
-            uri: `${args.publicBaseUrl}/admin/reserva/bookings`
+            uri: `${args.publicBaseUrl}/login`
           }
         }
       ]
