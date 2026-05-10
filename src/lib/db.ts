@@ -257,6 +257,47 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // Phase 2 (2026-05) — time_entries.branch_id + leave_requests.branch_id
+  //
+  // Capturing branch on every clock-in / leave-request lets admin filter
+  // PERSONA pages per-branch (employees/timesheets/leave/payroll). Without
+  // it, a person who works at NAMA in the morning and HYPOPLARAEMIA in
+  // the afternoon would have their entire day lumped together — wrong
+  // for payroll and unhelpful for the per-branch admin views.
+  //
+  // Migration is two-step: ADD nullable, BACKFILL from user's first
+  // assigned branch (best guess for legacy rows since we don't know
+  // where they actually worked). Going forward, every new write picks
+  // up branch_id explicitly from the session activeBranchId.
+  function ensureBranchIdColumn(table: string) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (cols.some((c) => c.name === "branch_id")) return; // already migrated
+    db.exec(`ALTER TABLE ${table} ADD COLUMN branch_id INTEGER REFERENCES branches(id)`);
+    // Backfill orphan rows with the user's first-assigned branch (by
+    // user_branches insert order). When a user has zero branches, leave
+    // branch_id NULL — those rows surface as "untagged" in admin views.
+    db.exec(`
+      UPDATE ${table}
+      SET branch_id = (
+        SELECT ub.branch_id FROM user_branches ub
+        WHERE ub.user_id = ${table}.user_id
+        ORDER BY ub.branch_id LIMIT 1
+      )
+      WHERE branch_id IS NULL
+    `);
+  }
+  ensureBranchIdColumn("time_entries");
+  ensureBranchIdColumn("leave_requests");
+
+  // Index for the most common admin query: "show all entries at this
+  // branch in this date range" → composite (branch_id, ts/date_from).
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_time_entries_branch_ts
+      ON time_entries(branch_id, ts);
+    CREATE INDEX IF NOT EXISTS idx_leave_branch_status
+      ON leave_requests(branch_id, status, created_at);
+  `);
+
   // daily_reports — PERSONA shift handover + readiness reports.
   // One row per submission; `data` is a JSON blob of the form fields
   // for that report type so we can evolve the form without ALTER

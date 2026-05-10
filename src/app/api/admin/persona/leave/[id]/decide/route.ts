@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 const Body = z.object({
@@ -28,10 +28,16 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const db = getDb();
   const row = db.prepare(
-    "SELECT status FROM leave_requests WHERE id = ?"
-  ).get(id) as { status: string } | undefined;
+    "SELECT status, branch_id FROM leave_requests WHERE id = ?"
+  ).get(id) as { status: string; branch_id: number | null } | undefined;
 
   if (!row) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  // Branch guard (Phase 2): admin can only approve/reject requests
+  // from branches they're assigned to. Legacy rows with NULL branch_id
+  // (pre-migration) stay reachable as a one-time grace period.
+  if (row.branch_id != null && !userHasBranch(user, row.branch_id)) {
+    return NextResponse.json({ error: "branch_forbidden" }, { status: 403 });
+  }
   if (row.status !== "pending") {
     return NextResponse.json(
       { error: "already_decided", currentStatus: row.status },

@@ -17,6 +17,14 @@ export async function POST(req: Request) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
+  // Same-branch attribution as the clock endpoint — leave_requests
+  // gets tagged with the branch the staff is currently set to (via
+  // /staff/branch-picker). This is what /admin/persona/leave filters
+  // on so admin sees only their branch's pending requests.
+  if (!user.activeBranchId) {
+    return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
+  }
+
   const ct = req.headers.get("content-type") || "";
   if (!ct.includes("multipart/form-data")) {
     return NextResponse.json({ error: "expected_multipart" }, { status: 400 });
@@ -159,11 +167,12 @@ export async function POST(req: Request) {
   const result = db.prepare(`
     INSERT INTO leave_requests
       (user_id, type, date_from, date_to, days, hours, reason, evidence_filename,
-       status, created_by, is_special_request, replaces_id, ref_no, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+       status, created_by, is_special_request, replaces_id, ref_no, branch_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
   `).run(
     user.id, type, date_from, date_to, days, hours, reason,
-    evidenceFilename, user.id, isSpecial ? 1 : 0, replacesId, refNo, nowIso
+    evidenceFilename, user.id, isSpecial ? 1 : 0, replacesId, refNo,
+    user.activeBranchId, nowIso
   );
 
   return NextResponse.json({ ok: true, id: result.lastInsertRowid, ref_no: refNo });

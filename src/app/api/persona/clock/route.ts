@@ -35,6 +35,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_pin_format" }, { status: 400 });
   }
 
+  // The clock-in row is tagged with the staff's currently-selected
+  // branch (set via /staff/branch-picker). Without an active branch
+  // we can't attribute the entry — payroll-by-branch would be wrong.
+  // Staff with 0 branches assigned hits this path; admin must fix
+  // their assignments before they can clock in.
+  if (!user.activeBranchId) {
+    return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
+  }
+
   const db = getDb();
   const row = db.prepare("SELECT pin_hash FROM users WHERE id = ?").get(user.id) as
     | { pin_hash: string | null } | undefined;
@@ -129,8 +138,10 @@ export async function POST(req: Request) {
   }
 
   // ไม่มี existing → INSERT ใหม่ตามปกติ
-  db.prepare("INSERT INTO time_entries (user_id, type, ts) VALUES (?, ?, ?)")
-    .run(user.id, action, nowIso);
+  // branch_id captured from session activeBranchId so payroll/timesheets
+  // can attribute hours to the correct branch (Phase 2, 2026-05).
+  db.prepare("INSERT INTO time_entries (user_id, type, ts, branch_id) VALUES (?, ?, ?, ?)")
+    .run(user.id, action, nowIso, user.activeBranchId);
 
   // ── Fire-and-forget: ส่ง LINE flex confirmation message on clock-in ──
   // Channel: IKIGAI OS (platform-level OA, shared across all branches).

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 
@@ -29,52 +29,79 @@ type RecentResig = {
 };
 
 export default function AdminPersonaDashboard() {
-  requireAdmin();
+  const user = requireAdmin();
   const lang = getLang();
   const db = getDb();
+
+  if (!user.activeBranchId) {
+    return (
+      <div className="card text-sm text-slate-600">
+        {t(lang, "admin.notAssignedBranch")}
+      </div>
+    );
+  }
+  const branch = db.prepare("SELECT * FROM branches WHERE id = ?")
+    .get(user.activeBranchId) as Branch | undefined;
+  if (!branch) {
+    return <div className="card text-sm text-slate-600">{t(lang, "common.error")}</div>;
+  }
+
   const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const startIso = new Date(`${todayBkk}T00:00:00+07:00`).toISOString();
   const endIso = new Date(`${todayBkk}T23:59:59+07:00`).toISOString();
 
-  // ── Action items (rows that need admin attention) ──────────────────
+  // All counters scoped to the active branch (Phase 2). The dashboard
+  // reflects "what's pending at this branch" so admin gets a focused
+  // view per location. Resignation requests don't carry branch_id yet
+  // (out of scope for this phase) — that block is shown unfiltered
+  // with a small note.
   const pendingLeave = (db.prepare(
-    "SELECT COUNT(*) AS n FROM leave_requests WHERE status = 'pending'"
-  ).get() as Counter).n;
+    "SELECT COUNT(*) AS n FROM leave_requests WHERE branch_id = ? AND status = 'pending'"
+  ).get(branch.id) as Counter).n;
   const specialLeave = (db.prepare(
-    "SELECT COUNT(*) AS n FROM leave_requests WHERE status = 'pending' AND is_special_request = 1"
-  ).get() as Counter).n;
+    "SELECT COUNT(*) AS n FROM leave_requests WHERE branch_id = ? AND status = 'pending' AND is_special_request = 1"
+  ).get(branch.id) as Counter).n;
   const revisionLeave = (db.prepare(
-    "SELECT COUNT(*) AS n FROM leave_requests WHERE status = 'revision_requested'"
-  ).get() as Counter).n;
+    "SELECT COUNT(*) AS n FROM leave_requests WHERE branch_id = ? AND status = 'revision_requested'"
+  ).get(branch.id) as Counter).n;
   const pendingResig = (db.prepare(
     "SELECT COUNT(*) AS n FROM resignation_requests WHERE status = 'pending'"
   ).get() as Counter).n;
 
-  // ── Staff counts ────────────────────────────────────────────────────
-  const ptCount = (db.prepare(
-    "SELECT COUNT(*) AS n FROM users WHERE role = 'staff' AND employment_type = 'pt'"
-  ).get() as Counter).n;
-  const ftCount = (db.prepare(
-    "SELECT COUNT(*) AS n FROM users WHERE role = 'staff' AND employment_type = 'ft'"
-  ).get() as Counter).n;
-  const unsetCount = (db.prepare(
-    "SELECT COUNT(*) AS n FROM users WHERE role = 'staff' AND employment_type IS NULL"
-  ).get() as Counter).n;
-  const resigUnlocked = (db.prepare(
-    "SELECT COUNT(*) AS n FROM users WHERE resignation_unlocked_at IS NOT NULL"
-  ).get() as Counter).n;
+  // Staff counts — only people assigned to this branch via user_branches.
+  const ptCount = (db.prepare(`
+    SELECT COUNT(*) AS n FROM users u
+    INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.role = 'staff' AND u.employment_type = 'pt'
+  `).get(branch.id) as Counter).n;
+  const ftCount = (db.prepare(`
+    SELECT COUNT(*) AS n FROM users u
+    INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.role = 'staff' AND u.employment_type = 'ft'
+  `).get(branch.id) as Counter).n;
+  const unsetCount = (db.prepare(`
+    SELECT COUNT(*) AS n FROM users u
+    INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.role = 'staff' AND u.employment_type IS NULL
+  `).get(branch.id) as Counter).n;
+  const resigUnlocked = (db.prepare(`
+    SELECT COUNT(*) AS n FROM users u
+    INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.resignation_unlocked_at IS NOT NULL
+  `).get(branch.id) as Counter).n;
   const clockedInToday = (db.prepare(`
     SELECT COUNT(DISTINCT user_id) AS n FROM time_entries
-    WHERE ts >= ? AND ts <= ?
-  `).get(startIso, endIso) as Counter).n;
+    WHERE branch_id = ? AND ts >= ? AND ts <= ?
+  `).get(branch.id, startIso, endIso) as Counter).n;
 
-  // ── Recent activity ─────────────────────────────────────────────────
+  // ── Recent activity (also branch-scoped for leaves) ──────────────────
   const recentLeaves = db.prepare(`
     SELECT r.id, r.ref_no, r.type, r.date_from, r.date_to, r.status, r.is_special_request,
            u.display_name
     FROM leave_requests r JOIN users u ON r.user_id = u.id
+    WHERE r.branch_id = ?
     ORDER BY r.created_at DESC LIMIT 5
-  `).all() as RecentLeave[];
+  `).all(branch.id) as RecentLeave[];
   const recentResigs = db.prepare(`
     SELECT r.id, r.ref_no, r.proposed_last_day, r.status, u.display_name
     FROM resignation_requests r JOIN users u ON r.user_id = u.id
@@ -112,7 +139,10 @@ export default function AdminPersonaDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">{t(lang, "admin.persona.dashboard.title")}</h1>
+        <h1 className="text-2xl font-bold">
+          {t(lang, "admin.persona.dashboard.title")}
+          <span className="ml-2 text-sm font-medium text-brand">· {branch.name}</span>
+        </h1>
         <p className="text-sm text-slate-500">{t(lang, "admin.persona.dashboard.subtitle")}</p>
       </div>
 

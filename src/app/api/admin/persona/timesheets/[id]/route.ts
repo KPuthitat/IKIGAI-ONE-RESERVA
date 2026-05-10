@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 const Body = z.object({ reason: z.string().max(200).optional() });
 
-type Entry = { id: number; user_id: number; type: "in" | "out"; ts: string };
+type Entry = { id: number; user_id: number; type: "in" | "out"; ts: string; branch_id: number | null };
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const user = getSessionUser();
@@ -24,10 +24,19 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
 
   const db = getDb();
   const entry = db.prepare(
-    "SELECT id, user_id, type, ts FROM time_entries WHERE id = ?"
+    "SELECT id, user_id, type, ts, branch_id FROM time_entries WHERE id = ?"
   ).get(id) as Entry | undefined;
 
   if (!entry) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+  // Branch guard (Phase 2): admin can only delete entries from
+  // branches they're assigned to. Legacy rows with NULL branch_id
+  // (pre-migration backfill couldn't determine branch) are still
+  // reachable so admin can clean them up. New entries always have
+  // branch_id, so this won't be a long-term loophole.
+  if (entry.branch_id != null && !userHasBranch(user, entry.branch_id)) {
+    return NextResponse.json({ error: "branch_forbidden" }, { status: 403 });
+  }
 
   // snapshot → audit ก่อนลบ (idempotent transaction)
   // ใช้ ISO format สำหรับ created_at เช่นกัน (consistent กับ time_entries.ts)

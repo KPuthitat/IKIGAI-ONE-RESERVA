@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
@@ -35,27 +35,45 @@ function statusBadge(s: string, lang: Lang): { cls: string; label: string } {
 }
 
 export default function PayrollHubPage() {
-  requireAdmin();
+  const user = requireAdmin();
   const lang = getLang();
   const db = getDb();
 
-  // Setup completeness
+  if (!user.activeBranchId) {
+    return (
+      <div className="card text-sm text-slate-600">
+        {t(lang, "admin.notAssignedBranch")}
+      </div>
+    );
+  }
+  const branch = db.prepare("SELECT * FROM branches WHERE id = ?")
+    .get(user.activeBranchId) as Branch | undefined;
+  if (!branch) {
+    return <div className="card text-sm text-slate-600">{t(lang, "common.error")}</div>;
+  }
+
+  // Setup completeness — scoped to employees assigned to this branch.
+  // Same employee at both branches counts in both branches' setup
+  // checks (since they need their pay info filled either way).
   const ptMissing = (db.prepare(`
-    SELECT COUNT(*) AS n FROM users
-    WHERE role = 'staff' AND employment_type = 'pt'
-      AND (hourly_rate IS NULL OR hourly_rate = 0)
-  `).get() as Counter).n;
+    SELECT COUNT(*) AS n FROM users u
+    INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.role = 'staff' AND u.employment_type = 'pt'
+      AND (u.hourly_rate IS NULL OR u.hourly_rate = 0)
+  `).get(branch.id) as Counter).n;
 
   const ftMissing = (db.prepare(`
-    SELECT COUNT(*) AS n FROM users
-    WHERE role = 'staff' AND employment_type = 'ft'
-      AND (monthly_salary IS NULL OR monthly_salary = 0 OR pay_cycle IS NULL)
-  `).get() as Counter).n;
+    SELECT COUNT(*) AS n FROM users u
+    INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.role = 'staff' AND u.employment_type = 'ft'
+      AND (u.monthly_salary IS NULL OR u.monthly_salary = 0 OR u.pay_cycle IS NULL)
+  `).get(branch.id) as Counter).n;
 
   const totalStaff = (db.prepare(`
-    SELECT COUNT(*) AS n FROM users
-    WHERE role = 'staff' AND employment_type IS NOT NULL
-  `).get() as Counter).n;
+    SELECT COUNT(*) AS n FROM users u
+    INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.role = 'staff' AND u.employment_type IS NOT NULL
+  `).get(branch.id) as Counter).n;
 
   const settings = db.prepare(`
     SELECT ot_mode, ot_flat_per_15min, pt_default_hourly_rate
@@ -87,10 +105,18 @@ export default function PayrollHubPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-800">
           {t(lang, "admin.persona.payroll.hub.title")}
+          <span className="ml-2 text-sm font-medium text-brand">· {branch.name}</span>
         </h1>
         <p className="text-sm text-slate-500">
           {t(lang, "admin.persona.payroll.hub.subtitle")}
         </p>
+        {/* Phase 2 only filters the staff-setup metrics by branch.
+            Period creation + payroll lines themselves are still global
+            (a single period covers all branches). The per-branch
+            split happens in the Phase 3 compute-engine refactor. */}
+        <div className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 inline-block">
+          {t(lang, "admin.persona.payroll.hub.phase2Note")}
+        </div>
       </div>
 
       {/* Setup status */}
