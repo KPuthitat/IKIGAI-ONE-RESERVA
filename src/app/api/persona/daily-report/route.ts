@@ -24,9 +24,15 @@ import { shiftOpenFlex, notifyDailyReport } from "@/lib/line";
 // Checklist is dynamic — admin can add/edit items at /admin/persona/checklist.
 // We store the rendered label alongside the checked state so historical
 // reports stay readable even after admin renames or deletes an item.
+//
+// Optional `note` lets staff explain why an item is being skipped today
+// ("ฝนตกหนัก ตั้งป้ายไม่ได้" etc.). When set on an unchecked row, the
+// LINE card renders it under the label as a 📝 skipped-with-reason
+// item rather than a red ✗ "not done".
 const ChecklistEntry = z.object({
   label: z.string().min(1).max(200),
-  checked: z.boolean()
+  checked: z.boolean(),
+  note: z.string().max(500).nullable().optional()
 });
 const ShiftOpenData = z.object({
   yesterday_closing_amount: z.number().min(0).max(10_000_000).nullable(),
@@ -104,7 +110,13 @@ export async function POST(req: Request) {
       openerName: user.display_name,
       yesterdayClosingAmount: d.yesterday_closing_amount,
       morningDrawerAmount: d.morning_drawer_amount,
-      checklist: d.checklist
+      // Normalize the optional note → string|null so the renderer
+      // doesn't have to guard `undefined`.
+      checklist: d.checklist.map((c) => ({
+        label: c.label,
+        checked: c.checked,
+        note: c.note ?? null
+      }))
     });
     notifyDailyReport(branch, flex).catch((e) =>
       console.error("notify daily-report error", e)

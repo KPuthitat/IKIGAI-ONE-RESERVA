@@ -1,35 +1,27 @@
-// /staff/branch-picker — first-stop after login for multi-branch staff.
+// /admin/branch-picker — admin-side mirror of /staff/branch-picker.
 //
-// "เลือกก่อนว่าวันนี้ทำงานสาขาไหน" — staff with >1 assigned branches
-// must pick before any form (shift open/close, leave, etc.) becomes
-// available. The choice writes to session.active_branch_id; subsequent
-// pages read it via getSessionUser. Staff can return here anytime via
-// the topbar "เปลี่ยนสาขา" link to switch (e.g. half-day at A, then B
-// in the afternoon).
-//
-// Auto-skip behavior:
-//   - 0 branches → polite error ("contact admin to assign you")
-//   - 1 branch  → auto-set + redirect to /staff (no UI shown, no choice
-//                 to make, friction-free)
-//   - >1        → render BranchPickerClient
+// Reached via the topbar "เปลี่ยน" link in admin layout. Handles 0/1/many
+// branches identically to the staff picker (auto-skip + redirect on
+// 1 branch, polite error on 0). Admin reuses the BranchPickerClient
+// component so visuals stay consistent.
 
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { requireUser, setActiveBranch } from "@/lib/auth";
+import { requireAdmin, setActiveBranch } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import BranchPickerClient from "../../BranchPickerClient";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "เลือกสาขา" };
+export const metadata: Metadata = { title: "เลือกสาขา · Admin" };
 
-export default function BranchPickerPage({
+export default function AdminBranchPickerPage({
   searchParams
 }: { searchParams: { next?: string } }) {
-  const user = requireUser();
+  const user = requireAdmin();
   const lang = getLang();
-  const next = searchParams.next || "/staff";
+  const next = searchParams.next || "/admin";
 
   if (user.branches.length === 0) {
     return (
@@ -45,8 +37,6 @@ export default function BranchPickerPage({
   }
 
   if (user.branches.length === 1) {
-    // Auto-pick — no point showing a one-option screen. Persist the
-    // choice so the topbar pill renders correctly downstream.
     setActiveBranch(user.branches[0].id);
     redirect(next);
   }

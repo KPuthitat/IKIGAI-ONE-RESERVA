@@ -9,6 +9,14 @@ import { useLang } from "@/lib/LangProvider";
 // /staff/branch-picker (session activeBranchId). To swap branches
 // mid-day, staff uses the topbar "เปลี่ยน" link — this form just
 // trusts the server-supplied branch and submits to it.
+//
+// Each checklist row has THREE effective states:
+//   - checked (✓)              → done
+//   - unchecked + note         → skipped on purpose, with reason
+//   - unchecked + no note      → not done (red flag for admin)
+// The submit payload carries `{label, checked, note}` per row, and
+// the LINE Flex card renders all three states distinctly so admin
+// can read why something was skipped without chasing the staff.
 
 type ChecklistItem = { id: number; label: string };
 
@@ -33,6 +41,14 @@ export default function ShiftOpenForm({
   const [checked, setChecked] = useState<Record<number, boolean>>(() =>
     Object.fromEntries(checklistItems.map((it) => [it.id, false]))
   );
+  // Per-item note text. An empty string is the same as "no note" — only
+  // non-empty strings turn the row into the "skipped-with-note" state.
+  const [notes, setNotes] = useState<Record<number, string>>(() =>
+    Object.fromEntries(checklistItems.map((it) => [it.id, ""]))
+  );
+  // Which item ids have their note textarea expanded right now. Toggled
+  // by clicking the small "หมายเหตุ" button on the row.
+  const [openNotes, setOpenNotes] = useState<Record<number, boolean>>({});
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -57,10 +73,16 @@ export default function ShiftOpenForm({
     try {
       const yesterdayParsed = parseAmount(yesterdayAmount);
       const morningParsed = parseAmount(morningAmount);
-      const checklistPayload = checklistItems.map((it) => ({
-        label: it.label,
-        checked: !!checked[it.id]
-      }));
+      const checklistPayload = checklistItems.map((it) => {
+        const note = (notes[it.id] || "").trim();
+        return {
+          label: it.label,
+          checked: !!checked[it.id],
+          // Send null instead of empty string so the API/Flex layer
+          // doesn't have to treat "" specially.
+          note: note ? note : null
+        };
+      });
 
       const res = await fetch(apiUrl("/api/persona/daily-report"), {
         method: "POST",
@@ -180,29 +202,83 @@ export default function ShiftOpenForm({
           <div className="space-y-2">
             {checklistItems.map((it) => {
               const isChecked = !!checked[it.id];
+              const note = notes[it.id] || "";
+              const hasNote = note.trim().length > 0;
+              const isOpen = !!openNotes[it.id];
+              // Visual state: emerald when done, amber when skipped-with-note,
+              // slate by default. The note state visually overrides "undone"
+              // so staff can see at a glance which rows have an explanation.
+              const containerCls = isChecked
+                ? "border-emerald-300 bg-emerald-50"
+                : hasNote
+                  ? "border-amber-300 bg-amber-50"
+                  : "border-slate-200 hover:border-slate-300";
               return (
-                <label
+                <div
                   key={it.id}
-                  className={`flex items-center gap-3 p-3 rounded-xl border-[1.5px] cursor-pointer transition ${
-                    isChecked
-                      ? "border-emerald-300 bg-emerald-50"
-                      : "border-slate-200 hover:border-slate-300"
-                  }`}
+                  className={`rounded-xl border-[1.5px] transition ${containerCls}`}
                 >
-                  <input
-                    type="checkbox"
-                    className="w-5 h-5"
-                    checked={isChecked}
-                    onChange={(e) => setChecked((prev) => ({
-                      ...prev,
-                      [it.id]: e.target.checked
-                    }))}
-                  />
-                  <span className="text-sm flex-1">{it.label}</span>
-                  <span className={`text-xs font-bold ${isChecked ? "text-emerald-700" : "text-slate-400"}`}>
-                    {isChecked ? "✓" : "✗"}
-                  </span>
-                </label>
+                  <label className="flex items-center gap-3 p-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="w-5 h-5 flex-shrink-0"
+                      checked={isChecked}
+                      onChange={(e) => setChecked((prev) => ({
+                        ...prev,
+                        [it.id]: e.target.checked
+                      }))}
+                    />
+                    <span className="text-sm flex-1">{it.label}</span>
+                    <span className={`text-xs font-bold ${
+                      isChecked ? "text-emerald-700"
+                        : hasNote ? "text-amber-700"
+                        : "text-slate-400"
+                    }`}>
+                      {isChecked ? "✓" : hasNote ? "📝" : "✗"}
+                    </span>
+                  </label>
+
+                  <div className="px-3 pb-2.5 -mt-1 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setOpenNotes((prev) => ({
+                        ...prev,
+                        [it.id]: !prev[it.id]
+                      }))}
+                      className={`text-[11px] font-medium tracking-[0.5px] ${
+                        hasNote ? "text-amber-700" : "text-slate-400 hover:text-brand"
+                      }`}
+                    >
+                      {hasNote
+                        ? `📝 ${t("staff.persona.shift.open.noteExists")}`
+                        : `+ ${t("staff.persona.shift.open.addNote")}`}
+                    </button>
+                    {hasNote && !isOpen && (
+                      <span className="text-[11px] text-amber-700/80 truncate flex-1">
+                        — {note.trim()}
+                      </span>
+                    )}
+                  </div>
+
+                  {isOpen && (
+                    <div className="px-3 pb-3">
+                      <textarea
+                        className="input text-sm"
+                        rows={2}
+                        maxLength={500}
+                        placeholder={t("staff.persona.shift.open.notePlaceholder")}
+                        value={note}
+                        onChange={(e) => setNotes((prev) => ({
+                          ...prev,
+                          [it.id]: e.target.value
+                        }))}
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        {t("staff.persona.shift.open.noteHint")}
+                      </p>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>

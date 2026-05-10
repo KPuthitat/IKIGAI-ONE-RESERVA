@@ -1017,7 +1017,11 @@ export type ShiftOpenCardArgs = {
   morningDrawerAmount: number | null;
   // Dynamic checklist — labels come straight from admin's configured
   // shift_checklist_items rows. Empty array is valid (no checklist).
-  checklist: Array<{ label: string; checked: boolean }>;
+  // Each entry has 3 effective states:
+  //   - checked: true              → done ✓
+  //   - checked: false, note: set  → skipped-on-purpose 📝 (with reason)
+  //   - checked: false, note: null → not done ✗ (red flag)
+  checklist: Array<{ label: string; checked: boolean; note: string | null }>;
 };
 
 export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
@@ -1027,12 +1031,86 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
 
   const checklistRows = args.checklist;
   const hasChecklist = checklistRows.length > 0;
-  const allDone = hasChecklist && checklistRows.every((it) => it.checked);
-  const incompleteCount = checklistRows.filter((it) => !it.checked).length;
+  // Bucket each row into one of 3 states. "incomplete" only counts
+  // rows that are neither done nor skipped-with-reason — those are
+  // the ones admin needs to chase. Skipped-with-note rows are
+  // shown distinctly so the note can be read inline.
+  const doneCount = checklistRows.filter((it) => it.checked).length;
+  const skippedCount = checklistRows.filter((it) => !it.checked && !!it.note?.trim()).length;
+  const incompleteCount = checklistRows.filter((it) => !it.checked && !it.note?.trim()).length;
+  const allDone = hasChecklist && doneCount === checklistRows.length;
+
+  // Summary line — color + wording shifts based on which buckets are
+  // non-zero. "All done" wins, then "incomplete > 0" (red flag),
+  // otherwise it's just skipped-with-notes (amber, informational).
+  const summary = allDone
+    ? { text: "✓ เช็คลิสต์ครบทุกข้อ", color: "#059669" }
+    : incompleteCount > 0
+      ? {
+          text: skippedCount > 0
+            ? `⚠ ยังไม่ได้ทำ ${incompleteCount} ข้อ · ข้ามวันนี้ ${skippedCount} ข้อ — กรุณาตรวจสอบ`
+            : `⚠ มี ${incompleteCount} ข้อยังไม่เสร็จ — กรุณาตรวจสอบ`,
+          color: "#dc2626"
+        }
+      : {
+          text: `ทำแล้ว ${doneCount} ข้อ · ข้ามวันนี้ ${skippedCount} ข้อ (มีหมายเหตุ)`,
+          color: "#b45309"
+        };
+
+  // Single checklist row — a horizontal box with the status icon at
+  // flex:0 and the label at flex:1 with wrap:true. Long Thai labels
+  // wrap to multi-line cleanly without LINE truncating with "..."
+  // (which the previous "${icon} ${label}" single-text approach did
+  // on narrower devices).
+  const checklistItemBox = (it: { label: string; checked: boolean; note: string | null }) => {
+    const note = it.note?.trim();
+    const skipped = !it.checked && !!note;
+    const icon = it.checked ? "✓" : skipped ? "📝" : "✗";
+    const iconColor = it.checked ? "#059669" : skipped ? "#b45309" : "#dc2626";
+    const labelColor = it.checked ? COLOR_TEXT_DARK : skipped ? "#475569" : "#dc2626";
+    const rowBox: Record<string, unknown> = {
+      type: "box", layout: "horizontal", spacing: "sm",
+      contents: [
+        {
+          type: "text", text: icon,
+          flex: 0, size: "sm", weight: "bold",
+          color: iconColor
+        },
+        {
+          type: "text", text: it.label,
+          flex: 1, size: "xs", wrap: true,
+          color: labelColor,
+          weight: it.checked ? "regular" : "bold"
+        }
+      ]
+    };
+    if (skipped && note) {
+      // Wrap row + note vertically so the note hangs under the label
+      // and doesn't fight the icon column for horizontal space.
+      return {
+        type: "box", layout: "vertical", spacing: "xs",
+        contents: [
+          rowBox,
+          {
+            type: "text",
+            text: `↳ ${note}`,
+            size: "xxs",
+            color: "#b45309",
+            wrap: true,
+            margin: "none"
+          }
+        ]
+      };
+    }
+    return rowBox;
+  };
 
   const bubble = {
+    // "mega" gives the body extra horizontal room so long Thai
+    // checklist labels wrap to fewer lines. "kilo" was tight on
+    // narrow phones and contributed to the truncation issue.
     type: "bubble",
-    size: "kilo",
+    size: "mega",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: COLOR_INK_700,
@@ -1041,8 +1119,8 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
-            { type: "text", text: "PERSONA · เปิดกะ", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "PERSONA · เปิดกะ", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
           ]
         },
         {
@@ -1058,7 +1136,7 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
       paddingAll: "20px",
       contents: [
         { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
-        { type: "text", text: dateStr, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs" },
+        { type: "text", text: dateStr, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs", wrap: true },
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
         {
           type: "box", layout: "vertical", spacing: "sm", margin: "md",
@@ -1073,24 +1151,16 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
           { type: "separator", margin: "md", color: COLOR_DIVIDER },
           {
             type: "text",
-            text: allDone
-              ? "✓ เช็คลิสต์ครบทุกข้อ"
-              : `⚠ มี ${incompleteCount} ข้อยังไม่เสร็จ — กรุณาตรวจสอบ`,
+            text: summary.text,
             size: "xs",
-            color: allDone ? "#059669" : "#dc2626",
+            color: summary.color,
             weight: "bold",
             margin: "md",
             wrap: true
           },
           {
-            type: "box", layout: "vertical", spacing: "xs", margin: "sm",
-            contents: checklistRows.map((it) => ({
-              type: "text",
-              text: `${it.checked ? "✓" : "✗"} ${it.label}`,
-              size: "xs",
-              color: it.checked ? COLOR_TEXT_DARK : "#dc2626",
-              wrap: true
-            }))
+            type: "box", layout: "vertical", spacing: "sm", margin: "sm",
+            contents: checklistRows.map(checklistItemBox)
           }
         ] : [])
       ]

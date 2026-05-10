@@ -9,6 +9,7 @@ import LangToggle from "../LangToggle";
 import Footer from "../Footer";
 import Sidebar, { type SidebarSection } from "../components/Sidebar";
 import AdminSidebarBrand from "./AdminSidebarBrand";
+import TodaysBranchPill from "../TodaysBranchPill";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const user = getSessionUser();
   if (!user) return <>{children}</>;
   const lang = getLang();
+
+  // Today's-branch pill in the topbar — same pattern staff has, so
+  // admin can swap branches from any page (was a per-module dropdown
+  // until 2026-05). The pill links to /admin/branch-picker?next=...
+  // and the picker writes session.active_branch_id, then bounces back.
+  const activeBranch = user.activeBranchId
+    ? user.branches.find((b) => b.id === user.activeBranchId) ?? null
+    : null;
+  const hasBranchChoice = user.branches.length > 1;
 
   // Count of pending_review bookings on the active branch — surfaces as a
   // red badge next to the "การจอง" sidebar entry so admin notices new
@@ -107,6 +117,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <HeaderBrand role="admin" />
             </div>
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+              <TodaysBranchPill
+                branchName={activeBranch?.name ?? null}
+                hasChoice={hasBranchChoice}
+                pickerPath="/admin/branch-picker"
+              />
               <span className="text-xs text-white/60 hidden sm:inline">
                 {user.display_name} · {t(lang, "role.adminShort")}
               </span>

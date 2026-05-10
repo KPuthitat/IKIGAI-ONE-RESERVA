@@ -9,6 +9,10 @@ import { useLang } from "@/lib/LangProvider";
 // subdued helper line + brand-colored "เลือก →" CTA. The active branch
 // gets a chip and brand-tinted border so returning users see at a
 // glance where they last were. Whole card is the click target.
+//
+// Shared between /staff/branch-picker and /admin/branch-picker — both
+// roles get the same UX (only the picker page wrapper + the layout
+// chrome around it differs).
 
 export default function BranchPickerClient({
   branches, activeBranchId, next

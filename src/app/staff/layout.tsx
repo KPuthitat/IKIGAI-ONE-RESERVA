@@ -7,7 +7,7 @@ import LangToggle from "../LangToggle";
 import Footer from "../Footer";
 import Sidebar, { type SidebarSection } from "../components/Sidebar";
 import StaffSidebarBrand from "./StaffSidebarBrand";
-import TodaysBranchPill from "./TodaysBranchPill";
+import TodaysBranchPill from "../TodaysBranchPill";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +66,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
               <TodaysBranchPill
                 branchName={activeBranch?.name ?? null}
                 hasChoice={hasBranchChoice}
+                pickerPath="/staff/branch-picker"
               />
               <span className="text-xs text-white/60 hidden sm:inline">{user.display_name}</span>
               <LangToggle variant="dark" />

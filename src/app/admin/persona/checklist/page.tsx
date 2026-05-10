@@ -1,6 +1,6 @@
 // /admin/persona/checklist — admin manages the items shown on the
 // shift handover checklist forms. Per-branch since 2026-05; the active
-// branch is picked via the BranchSwitcher in the PERSONA admin layout.
+// branch is picked via the topbar pill in the global admin layout.
 // Soft delete via active=0; historical reports keep their labels because
 // they're stored as strings in daily_reports.data.
 
