@@ -115,7 +115,7 @@ export default function PayrollHubPage() {
             (a single period covers all branches). The per-branch
             split happens in the Phase 3 compute-engine refactor. */}
         <div className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 inline-block">
-          {t(lang, "admin.persona.payroll.hub.phase2Note")}
+          {t(lang, "admin.persona.payroll.hub.branchScopeNote")}
         </div>
       </div>
 
