@@ -30,6 +30,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       pathPrefix: "/staff/persona",
       items: [
         { href: "/staff/persona", label: t(lang, "staff.nav.timeClock") },
+        { href: "/staff/persona/shift/open", label: t(lang, "staff.nav.shiftOpen") },
         { href: "/staff/persona/leave", label: t(lang, "staff.nav.leave") },
         { href: "/staff/persona/resignation", label: t(lang, "staff.nav.resignation") }
       ]

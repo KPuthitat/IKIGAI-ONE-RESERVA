@@ -1000,3 +1000,140 @@ export async function notifyStaff(
     logSent("user", res.ok, res.error ?? null);
   }
 }
+
+// ── PERSONA: shift handover Flex cards ────────────────────────────────
+//
+// One Flex card per submission, pushed to the branch's staff group so
+// the team sees "เปิดกะ / ปิดกะ / รายงาน" summaries inline. The card
+// just renders the submitted data — no buttons (none of the staff Flex
+// buttons have ever worked reliably in LINE in-app browser, and the
+// data is glanceable as-is).
+
+export type ShiftOpenCardArgs = {
+  branchName: string;
+  reportDate: string;          // YYYY-MM-DD
+  openerName: string;
+  yesterdayClosingAmount: number | null;
+  morningDrawerAmount: number | null;
+  checklist: {
+    empeoIn: boolean;
+    shopfrontSign: boolean;
+    drawerCount: boolean;
+    restroom: boolean;
+    battery: boolean;
+    booking: boolean;
+  };
+};
+
+export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
+  const dateStr = formatThaiDate(args.reportDate);
+  const fmtBaht = (n: number | null) =>
+    n == null ? "—" : `${n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท`;
+
+  const checklistRows: Array<[string, boolean]> = [
+    ["Empeo work-in", args.checklist.empeoIn],
+    ["ตั้งป้ายหน้าร้าน", args.checklist.shopfrontSign],
+    ["นับเงินในลิ้นชัก", args.checklist.drawerCount],
+    ["ตรวจสอบความสะอาดห้องน้ำ", args.checklist.restroom],
+    ["ตรวจสอบ Battery", args.checklist.battery],
+    ["ตรวจสอบ Booking ประจำวัน", args.checklist.booking]
+  ];
+  const allDone = checklistRows.every(([, v]) => v);
+
+  const bubble = {
+    type: "bubble",
+    size: "kilo",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: COLOR_INK_700,
+      paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "PERSONA · เปิดกะ", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", spacing: "sm", margin: "md",
+          contents: [
+            { type: "text", text: "🟢", color: COLOR_BRAND_LIGHT, size: "lg", weight: "bold", flex: 0 },
+            { type: "text", text: "เปิดกะ", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md",
+      paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "text", text: dateStr, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs" },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        {
+          type: "box", layout: "vertical", spacing: "sm", margin: "md",
+          contents: [
+            kvRow("ผู้เปิดกะ", args.openerName),
+            kvRow("ยอดปิดกะเมื่อวาน", fmtBaht(args.yesterdayClosingAmount)),
+            kvRow("ยอดเปิดกะเช้านี้", fmtBaht(args.morningDrawerAmount),
+              { valueColor: COLOR_BRAND, valueWeight: "bold" })
+          ]
+        },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        {
+          type: "text",
+          text: allDone ? "✓ เช็คลิสต์ครบทุกข้อ" : "⚠ เช็คลิสต์มีข้อยังไม่เสร็จ",
+          size: "xs",
+          color: allDone ? "#059669" : "#dc2626",
+          weight: "bold",
+          margin: "md"
+        },
+        {
+          type: "box", layout: "vertical", spacing: "xs", margin: "sm",
+          contents: checklistRows.map(([label, ok]) => ({
+            type: "text",
+            text: `${ok ? "✓" : "✗"} ${label}`,
+            size: "xs",
+            color: ok ? COLOR_TEXT_DARK : "#dc2626",
+            wrap: true
+          }))
+        }
+      ]
+    },
+    styles: {
+      header: { backgroundColor: COLOR_INK_700 },
+      body: { backgroundColor: "#ffffff" }
+    }
+  };
+
+  return {
+    type: "flex",
+    altText: `เปิดกะ ${args.branchName} · ${dateStr} · ${args.openerName}`,
+    contents: bubble
+  };
+}
+
+/** Push a daily report Flex card to the branch's staff group / fallback
+ *  user IDs. Mirrors notifyStaff() — group preferred, per-user as
+ *  legacy fallback. Fire-and-forget; no logging table for daily reports
+ *  (the row in daily_reports already records the submission). */
+export async function notifyDailyReport(
+  branch: Branch, flex: LineFlexMessage
+): Promise<void> {
+  const token = resolveBranchToken(branch);
+  if (!token) return;
+  if (branch.staff_group_id) {
+    await sendLinePush(token, {
+      to: branch.staff_group_id,
+      messages: [flex]
+    });
+    return;
+  }
+  if (!branch.staff_line_user_ids) return;
+  let staffIds: string[] = [];
+  try { staffIds = JSON.parse(branch.staff_line_user_ids); } catch { return; }
+  for (const uid of staffIds) {
+    await sendLinePush(token, { to: uid, messages: [flex] });
+  }
+}

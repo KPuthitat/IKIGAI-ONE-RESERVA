@@ -173,6 +173,26 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE users ADD COLUMN pin_hash TEXT");
   }
 
+  // daily_reports — PERSONA shift handover + readiness reports.
+  // One row per submission; `data` is a JSON blob of the form fields
+  // for that report type so we can evolve the form without ALTER
+  // TABLE every time. Indexed on (branch_id, report_date) so admin
+  // can pull a day's reports cheaply, and on type for filtering.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daily_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL CHECK (type IN ('shift_open','shift_close','readiness_1130','readiness_1600')),
+      branch_id INTEGER NOT NULL REFERENCES branches(id),
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      report_date TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_daily_reports_branch_date ON daily_reports(branch_id, report_date);
+    CREATE INDEX IF NOT EXISTS idx_daily_reports_type ON daily_reports(type);
+  `);
+
   // time_entries_audit — เผื่อกรณี schema.sql ยังไม่ถูกรันบน server เก่า
   db.exec(`
     CREATE TABLE IF NOT EXISTS time_entries_audit (
@@ -1056,4 +1076,22 @@ export type Booking = {
   seated_at: string | null;
   cancelled_at: string | null;
   cancel_reason: string | null;       // shown to customer in cancellation Flex card
+};
+
+// ── PERSONA: shift handover + readiness reports ──────────────────────
+export type DailyReportType =
+  | "shift_open"      // เปิดกะ (yesterday closing + drawer + 6-item checklist)
+  | "shift_close"     // ปิดกะ (POS / EDC / expenses / OT / closing drawer)
+  | "readiness_1130"  // รายงานความพร้อม รอบ 11:30
+  | "readiness_1600"; // รายงานความพร้อม รอบ 16:00
+
+export type DailyReport = {
+  id: number;
+  type: DailyReportType;
+  branch_id: number;
+  user_id: number;
+  report_date: string;     // YYYY-MM-DD
+  data: string;            // JSON of form fields
+  created_at: string;
+  updated_at: string;
 };
