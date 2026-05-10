@@ -5,26 +5,19 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 
-// Six checklist items. Storage keys are stable; labels are i18n'd in
-// the render below so admin/staff can flip TH/EN.
-const CHECKLIST_KEYS = [
-  "empeo_in",
-  "shopfront_sign",
-  "drawer_count",
-  "restroom",
-  "battery",
-  "booking"
-] as const;
-
-type ChecklistKey = (typeof CHECKLIST_KEYS)[number];
+// Props from the server page. The checklist comes in as an ordered
+// array of {id, label} so the form renders whatever admin has
+// configured (no more hardcoded keys).
+type ChecklistItem = { id: number; label: string };
 
 export default function ShiftOpenForm({
-  branchName, openerName, today, yesterdayClosingHint
+  branchName, openerName, today, yesterdayClosingHint, checklistItems
 }: {
   branchName: string;
   openerName: string;
   today: string;
   yesterdayClosingHint: number | null;
+  checklistItems: ChecklistItem[];
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -34,23 +27,17 @@ export default function ShiftOpenForm({
     yesterdayClosingHint != null ? String(yesterdayClosingHint) : ""
   );
   const [morningAmount, setMorningAmount] = useState<string>("");
-  const [checklist, setChecklist] = useState<Record<ChecklistKey, boolean>>({
-    empeo_in: false,
-    shopfront_sign: false,
-    drawer_count: false,
-    restroom: false,
-    battery: false,
-    booking: false
-  });
+  // Checklist state: keyed by item id. Default unchecked.
+  const [checked, setChecked] = useState<Record<number, boolean>>(() =>
+    Object.fromEntries(checklistItems.map((it) => [it.id, false]))
+  );
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [done, setDone] = useState(false);
 
   function toggleAll(value: boolean) {
-    const next = { ...checklist };
-    for (const k of CHECKLIST_KEYS) next[k] = value;
-    setChecklist(next);
+    setChecked(Object.fromEntries(checklistItems.map((it) => [it.id, value])));
   }
 
   function parseAmount(s: string): number | null {
@@ -68,6 +55,10 @@ export default function ShiftOpenForm({
     try {
       const yesterdayParsed = parseAmount(yesterdayAmount);
       const morningParsed = parseAmount(morningAmount);
+      const checklistPayload = checklistItems.map((it) => ({
+        label: it.label,
+        checked: !!checked[it.id]
+      }));
 
       const res = await fetch(apiUrl("/api/persona/daily-report"), {
         method: "POST",
@@ -78,7 +69,7 @@ export default function ShiftOpenForm({
           data: {
             yesterday_closing_amount: yesterdayParsed,
             morning_drawer_amount: morningParsed,
-            checklist
+            checklist: checklistPayload
           }
         })
       });
@@ -89,7 +80,6 @@ export default function ShiftOpenForm({
       }
       setMsg({ kind: "ok", text: t("staff.persona.shift.open.savedOk") });
       setDone(true);
-      // Soft refresh to clear any cached prefill values for the next open.
       router.refresh();
     } catch {
       setMsg({ kind: "err", text: t("common.error") });
@@ -99,7 +89,7 @@ export default function ShiftOpenForm({
   }
 
   if (done) {
-    const allChecked = CHECKLIST_KEYS.every((k) => checklist[k]);
+    const allChecked = checklistItems.every((it) => checked[it.id]);
     return (
       <div className="card text-center space-y-3">
         <div className="text-5xl">{allChecked ? "✓" : "⚠"}</div>
@@ -166,55 +156,58 @@ export default function ShiftOpenForm({
         </div>
       </div>
 
-      <div className="card space-y-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <h2 className="font-bold text-slate-800">
-            {t("staff.persona.shift.open.checklistTitle")}
-          </h2>
-          <div className="flex gap-1.5">
-            <button type="button" onClick={() => toggleAll(true)}
-              className="px-2.5 py-1 text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50">
-              {t("staff.persona.shift.open.checkAll")}
-            </button>
-            <button type="button" onClick={() => toggleAll(false)}
-              className="px-2.5 py-1 text-xs rounded border border-slate-300 text-slate-600 hover:bg-slate-50">
-              {t("staff.persona.shift.open.uncheckAll")}
-            </button>
+      {checklistItems.length > 0 && (
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h2 className="font-bold text-slate-800">
+              {t("staff.persona.shift.open.checklistTitle")}
+            </h2>
+            <div className="flex gap-1.5">
+              <button type="button" onClick={() => toggleAll(true)}
+                className="px-2.5 py-1 text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+                {t("staff.persona.shift.open.checkAll")}
+              </button>
+              <button type="button" onClick={() => toggleAll(false)}
+                className="px-2.5 py-1 text-xs rounded border border-slate-300 text-slate-600 hover:bg-slate-50">
+                {t("staff.persona.shift.open.uncheckAll")}
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div className="space-y-2">
-          {CHECKLIST_KEYS.map((key) => {
-            const checked = checklist[key];
-            return (
-              <label
-                key={key}
-                className={`flex items-center gap-3 p-3 rounded-xl border-[1.5px] cursor-pointer transition ${
-                  checked
-                    ? "border-emerald-300 bg-emerald-50"
-                    : "border-slate-200 hover:border-slate-300"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="w-5 h-5"
-                  checked={checked}
-                  onChange={(e) => setChecklist((prev) => ({
-                    ...prev,
-                    [key]: e.target.checked
-                  }))}
-                />
-                <span className="text-sm flex-1">
-                  {t(`staff.persona.shift.open.checklist.${key}`)}
-                </span>
-                <span className={`text-xs font-bold ${checked ? "text-emerald-700" : "text-slate-400"}`}>
-                  {checked ? "✓" : "✗"}
-                </span>
-              </label>
-            );
-          })}
+          <div className="space-y-2">
+            {checklistItems.map((it) => {
+              const isChecked = !!checked[it.id];
+              return (
+                <label
+                  key={it.id}
+                  className={`flex items-center gap-3 p-3 rounded-xl border-[1.5px] cursor-pointer transition ${
+                    isChecked
+                      ? "border-emerald-300 bg-emerald-50"
+                      : "border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="w-5 h-5"
+                    checked={isChecked}
+                    onChange={(e) => setChecked((prev) => ({
+                      ...prev,
+                      [it.id]: e.target.checked
+                    }))}
+                  />
+                  <span className="text-sm flex-1">{it.label}</span>
+                  <span className={`text-xs font-bold ${isChecked ? "text-emerald-700" : "text-slate-400"}`}>
+                    {isChecked ? "✓" : "✗"}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+          <p className="text-xs text-slate-400">
+            {t("staff.persona.shift.open.checklistHint")}
+          </p>
         </div>
-      </div>
+      )}
 
       {msg && (
         <div className={`text-sm text-center ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>

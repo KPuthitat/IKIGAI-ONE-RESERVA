@@ -1015,14 +1015,9 @@ export type ShiftOpenCardArgs = {
   openerName: string;
   yesterdayClosingAmount: number | null;
   morningDrawerAmount: number | null;
-  checklist: {
-    empeoIn: boolean;
-    shopfrontSign: boolean;
-    drawerCount: boolean;
-    restroom: boolean;
-    battery: boolean;
-    booking: boolean;
-  };
+  // Dynamic checklist — labels come straight from admin's configured
+  // shift_checklist_items rows. Empty array is valid (no checklist).
+  checklist: Array<{ label: string; checked: boolean }>;
 };
 
 export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
@@ -1030,15 +1025,10 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
   const fmtBaht = (n: number | null) =>
     n == null ? "—" : `${n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท`;
 
-  const checklistRows: Array<[string, boolean]> = [
-    ["Empeo work-in", args.checklist.empeoIn],
-    ["ตั้งป้ายหน้าร้าน", args.checklist.shopfrontSign],
-    ["นับเงินในลิ้นชัก", args.checklist.drawerCount],
-    ["ตรวจสอบความสะอาดห้องน้ำ", args.checklist.restroom],
-    ["ตรวจสอบ Battery", args.checklist.battery],
-    ["ตรวจสอบ Booking ประจำวัน", args.checklist.booking]
-  ];
-  const allDone = checklistRows.every(([, v]) => v);
+  const checklistRows = args.checklist;
+  const hasChecklist = checklistRows.length > 0;
+  const allDone = hasChecklist && checklistRows.every((it) => it.checked);
+  const incompleteCount = checklistRows.filter((it) => !it.checked).length;
 
   const bubble = {
     type: "bubble",
@@ -1080,25 +1070,30 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
               { valueColor: COLOR_BRAND, valueWeight: "bold" })
           ]
         },
-        { type: "separator", margin: "md", color: COLOR_DIVIDER },
-        {
-          type: "text",
-          text: allDone ? "✓ เช็คลิสต์ครบทุกข้อ" : "⚠ เช็คลิสต์มีข้อยังไม่เสร็จ",
-          size: "xs",
-          color: allDone ? "#059669" : "#dc2626",
-          weight: "bold",
-          margin: "md"
-        },
-        {
-          type: "box", layout: "vertical", spacing: "xs", margin: "sm",
-          contents: checklistRows.map(([label, ok]) => ({
+        ...(hasChecklist ? [
+          { type: "separator", margin: "md", color: COLOR_DIVIDER },
+          {
             type: "text",
-            text: `${ok ? "✓" : "✗"} ${label}`,
+            text: allDone
+              ? "✓ เช็คลิสต์ครบทุกข้อ"
+              : `⚠ มี ${incompleteCount} ข้อยังไม่เสร็จ — กรุณาตรวจสอบ`,
             size: "xs",
-            color: ok ? COLOR_TEXT_DARK : "#dc2626",
+            color: allDone ? "#059669" : "#dc2626",
+            weight: "bold",
+            margin: "md",
             wrap: true
-          }))
-        }
+          },
+          {
+            type: "box", layout: "vertical", spacing: "xs", margin: "sm",
+            contents: checklistRows.map((it) => ({
+              type: "text",
+              text: `${it.checked ? "✓" : "✗"} ${it.label}`,
+              size: "xs",
+              color: it.checked ? COLOR_TEXT_DARK : "#dc2626",
+              wrap: true
+            }))
+          }
+        ] : [])
       ]
     },
     styles: {

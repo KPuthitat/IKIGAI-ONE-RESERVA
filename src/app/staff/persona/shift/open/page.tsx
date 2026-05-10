@@ -1,14 +1,13 @@
 // /staff/persona/shift/open — เปิดกะ
 //
-// Staff submits the morning handover (yesterday's closing amount,
-// today's drawer amount, 6-item checklist). On save, the server
-// stores a row in daily_reports and pushes a Flex card summary into
-// the branch's staff LINE group so everyone sees the open status.
+// Staff submits the morning handover. Server pre-fills yesterday's
+// closing amount from the latest shift_close report and loads the
+// active checklist items so admin's edits show up immediately.
 
 import Link from "next/link";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
-import { getDb, type Branch } from "@/lib/db";
+import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -38,8 +37,7 @@ export default function ShiftOpenPage() {
   }
 
   // Pre-fill yesterday's closing from the most recent shift_close row
-  // (if any) so staff doesn't have to re-type the number they already
-  // entered the night before.
+  // (if any). Falls through gracefully when there's no prior close.
   const lastClose = db.prepare(`
     SELECT data FROM daily_reports
     WHERE type = 'shift_close' AND branch_id = ?
@@ -54,6 +52,14 @@ export default function ShiftOpenPage() {
       }
     } catch { /* ignore malformed legacy data */ }
   }
+
+  // Load active checklist items. Admin manages this list at
+  // /admin/persona/checklist; the form renders whatever is active here.
+  const checklistItems = db.prepare(`
+    SELECT * FROM shift_checklist_items
+    WHERE type = 'shift_open' AND active = 1
+    ORDER BY display_order ASC, id ASC
+  `).all() as ShiftChecklistItem[];
 
   return (
     <div className="space-y-4">
@@ -73,6 +79,7 @@ export default function ShiftOpenPage() {
         openerName={user.display_name}
         today={todayBkk()}
         yesterdayClosingHint={yesterdayClosingHint}
+        checklistItems={checklistItems.map((c) => ({ id: c.id, label: c.label }))}
       />
     </div>
   );

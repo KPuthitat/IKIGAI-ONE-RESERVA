@@ -67,6 +67,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
         { href: "/admin/persona/holidays", label: t(lang, "admin.persona.nav.holidays") },
+        { href: "/admin/persona/checklist", label: t(lang, "admin.persona.nav.checklist") },
         { href: "/admin/persona/reports", label: t(lang, "admin.persona.nav.reports") },
         { href: "/admin/persona/messaging", label: t(lang, "admin.persona.nav.messaging") },
         { href: "/admin/persona/settings", label: t(lang, "admin.persona.nav.settings") },

@@ -17,17 +17,17 @@ import { shiftOpenFlex, notifyDailyReport } from "@/lib/line";
 // the shape per type, persists the row, and pushes a summary Flex card
 // to the branch's staff group.
 
+// Checklist is dynamic — admin can add/edit items at /admin/persona/checklist.
+// We store the rendered label alongside the checked state so historical
+// reports stay readable even after admin renames or deletes an item.
+const ChecklistEntry = z.object({
+  label: z.string().min(1).max(200),
+  checked: z.boolean()
+});
 const ShiftOpenData = z.object({
   yesterday_closing_amount: z.number().min(0).max(10_000_000).nullable(),
   morning_drawer_amount: z.number().min(0).max(10_000_000).nullable(),
-  checklist: z.object({
-    empeo_in: z.boolean(),
-    shopfront_sign: z.boolean(),
-    drawer_count: z.boolean(),
-    restroom: z.boolean(),
-    battery: z.boolean(),
-    booking: z.boolean()
-  })
+  checklist: z.array(ChecklistEntry).max(50)
 });
 
 const Body = z.object({
@@ -95,14 +95,7 @@ export async function POST(req: Request) {
       openerName: user.display_name,
       yesterdayClosingAmount: d.yesterday_closing_amount,
       morningDrawerAmount: d.morning_drawer_amount,
-      checklist: {
-        empeoIn: d.checklist.empeo_in,
-        shopfrontSign: d.checklist.shopfront_sign,
-        drawerCount: d.checklist.drawer_count,
-        restroom: d.checklist.restroom,
-        battery: d.checklist.battery,
-        booking: d.checklist.booking
-      }
+      checklist: d.checklist
     });
     notifyDailyReport(branch, flex).catch((e) =>
       console.error("notify daily-report error", e)
