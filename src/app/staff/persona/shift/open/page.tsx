@@ -7,6 +7,9 @@
 // mid-day, staff goes back to the picker via the topbar pill.
 //
 // Server pre-loads, for the active branch:
+//   - whether today's shift is already open (one-shift-per-branch-per-day).
+//     If so, render a locked view instead of the form, with a button to
+//     send an unlock request to admin.
 //   - the active checklist (admin manages it per-branch at
 //     /admin/persona/checklist)
 //   - yesterday's closing amount, taken from the latest shift_close
@@ -21,6 +24,7 @@ import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import ShiftOpenForm from "./ShiftOpenForm";
+import ShiftOpenLocked from "./ShiftOpenLocked";
 
 export const dynamic = "force-dynamic";
 
@@ -37,10 +41,6 @@ export default function ShiftOpenPage() {
       </div>
     );
   }
-  // Multi-branch staff who haven't picked a "today's branch" yet
-  // get bounced to the picker — we don't want to assume on their
-  // behalf when LINE notifications go to different groups per branch.
-  // (1-branch staff get auto-set on first page load via getSessionUser.)
   if (!user.activeBranchId) {
     redirect(`/staff/branch-picker?next=${encodeURIComponent("/staff/persona/shift/open")}`);
   }
@@ -50,6 +50,52 @@ export default function ShiftOpenPage() {
     .get(user.activeBranchId) as Branch | undefined;
   if (!branch) {
     return <div className="card">{t(lang, "common.error")}</div>;
+  }
+
+  const today = todayBkk();
+
+  // One-shift-open-per-branch-per-day. If a row already exists, render
+  // the locked view: shows who opened it + when, plus a button to send
+  // an unlock request to admin. The same lock applies to ALL staff at
+  // that branch (so person B can't accidentally re-submit on top of
+  // person A's report).
+  const existingOpen = db.prepare(`
+    SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name
+    FROM daily_reports r JOIN users u ON r.user_id = u.id
+    WHERE r.type = 'shift_open' AND r.branch_id = ? AND r.report_date = ?
+  `).get(branch.id, today) as
+    | { id: number; user_id: number; created_at: string; opener_name: string }
+    | undefined;
+  if (existingOpen) {
+    // Has the current user already requested an unlock? If yes, the
+    // CTA flips to a "request pending" state so they don't spam the
+    // group with duplicate requests.
+    const pendingReq = db.prepare(`
+      SELECT id FROM shift_unlock_requests
+      WHERE daily_report_id = ? AND requested_by = ? AND status = 'pending'
+    `).get(existingOpen.id, user.id) as { id: number } | undefined;
+    return (
+      <div className="space-y-4">
+        <div>
+          <Link href="/staff/persona" className="text-sm text-slate-500 hover:text-brand">
+            ← {t(lang, "common.back")}
+          </Link>
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold">{t(lang, "staff.persona.shift.open.title")}</h1>
+          <p className="text-sm text-slate-500">
+            {branch.name} · {t(lang, "staff.persona.shift.open.subtitle")}
+          </p>
+        </div>
+        <ShiftOpenLocked
+          branchName={branch.name}
+          reportId={existingOpen.id}
+          openerName={existingOpen.opener_name}
+          openedAtIso={existingOpen.created_at}
+          alreadyRequested={!!pendingReq}
+        />
+      </div>
+    );
   }
 
   // Pre-fill yesterday's closing from the latest shift_close at this branch.
@@ -93,7 +139,7 @@ export default function ShiftOpenPage() {
         branchId={branch.id}
         branchName={branch.name}
         openerName={user.display_name}
-        today={todayBkk()}
+        today={today}
         yesterdayClosingHint={yesterdayClosingHint}
         checklistItems={checklist.map((c) => ({ id: c.id, label: c.label }))}
       />

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, type Branch, type DailyReportType } from "@/lib/db";
 import { shiftOpenFlex, notifyDailyReport } from "@/lib/line";
+import { todayBkk } from "@/lib/time";
 
 // POST /api/persona/daily-report
 //
@@ -40,10 +41,13 @@ const ShiftOpenData = z.object({
   checklist: z.array(ChecklistEntry).max(50)
 });
 
+// `report_date` is no longer accepted from the client — server always
+// uses todayBkk(). Same for the user_id / opener — taken from session,
+// not the body. This stops a staff from "back-dating" a shift open or
+// filing on behalf of someone else.
 const Body = z.object({
   type: z.enum(["shift_open", "shift_close", "readiness_1130", "readiness_1600"]),
   branch_id: z.number().int().positive(),
-  report_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   data: z.unknown()    // narrowed per-type below
 });
 
@@ -58,7 +62,8 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  const { type, report_date, branch_id, data } = parsed.data;
+  const { type, branch_id, data } = parsed.data;
+  const report_date = todayBkk();
 
   // Authorization: staff can only submit reports for branches they're
   // assigned to. Stops a curious staff from spoofing a different
@@ -84,6 +89,30 @@ export async function POST(req: Request) {
   const branch = db.prepare("SELECT * FROM branches WHERE id = ?")
     .get(branch_id) as Branch | undefined;
   if (!branch) return NextResponse.json({ error: "branch_not_found" }, { status: 404 });
+
+  // Duplicate guard for shift_open: only one report per (branch, date).
+  // Ties to the unique partial index on daily_reports — we still check
+  // here so we can return a friendly error with the existing row info
+  // rather than a SQLITE_CONSTRAINT raw exception.
+  if (type === "shift_open") {
+    const existing = db.prepare(`
+      SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name
+      FROM daily_reports r JOIN users u ON r.user_id = u.id
+      WHERE r.type = 'shift_open' AND r.branch_id = ? AND r.report_date = ?
+    `).get(branch.id, report_date) as
+      | { id: number; user_id: number; created_at: string; opener_name: string }
+      | undefined;
+    if (existing) {
+      return NextResponse.json({
+        error: "already_opened",
+        existing: {
+          id: existing.id,
+          opener_name: existing.opener_name,
+          created_at: existing.created_at
+        }
+      }, { status: 409 });
+    }
+  }
 
   const insertedAt = new Date().toISOString();
   const result = db.prepare(`

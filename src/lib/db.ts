@@ -318,6 +318,37 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_daily_reports_type ON daily_reports(type);
   `);
 
+  // Unique guard for shift_open: one report per (branch, date). Without
+  // it, two staff could each open the same branch's shift and the LINE
+  // group would receive two cards. Enforced with a partial index — only
+  // shift_open rows participate; shift_close/readiness reuse the same
+  // table without conflict.
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_reports_shift_open_unique
+      ON daily_reports(branch_id, report_date)
+      WHERE type = 'shift_open';
+  `);
+
+  // shift_unlock_requests — staff asks admin to let them re-submit a
+  // shift_open they already filed (e.g. typo on the morning drawer
+  // amount). Notification to the LINE staff group is sent at create
+  // time; admin grants by deleting the daily_reports row (Phase 1)
+  // or via a future admin UI (Phase 2). Status flips to 'granted'
+  // when admin acts, 'pending' otherwise.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shift_unlock_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      daily_report_id INTEGER NOT NULL REFERENCES daily_reports(id) ON DELETE CASCADE,
+      requested_by INTEGER NOT NULL REFERENCES users(id),
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','granted','rejected')),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_shift_unlock_status ON shift_unlock_requests(status, created_at);
+  `);
+
   // time_entries_audit — เผื่อกรณี schema.sql ยังไม่ถูกรันบน server เก่า
   db.exec(`
     CREATE TABLE IF NOT EXISTS time_entries_audit (

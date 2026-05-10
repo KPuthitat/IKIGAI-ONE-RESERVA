@@ -1045,15 +1045,18 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
   const allDone = hasChecklist && doneCount === checklistRows.length;
 
   // Summary line — color + wording shifts based on which buckets are
-  // non-zero. "All done" wins, then "incomplete > 0" (red flag),
-  // otherwise it's just skipped-with-notes (amber, informational).
+  // non-zero. "All done" wins, then "incomplete > 0" (red flag, asks
+  // supervisor to double-check), otherwise it's just skipped-with-notes
+  // (amber, informational).
+  const supervisorWarning =
+    "Check list ก่อนเริ่มงานยังไม่ครบถ้วน ให้หัวหน้างานตรวจสอบอีกครั้ง";
   const summary = allDone
     ? { text: "✓ เช็คลิสต์ครบทุกข้อ", color: "#059669" }
     : incompleteCount > 0
       ? {
           text: skippedCount > 0
-            ? `⚠ ยังไม่ได้ทำ ${incompleteCount} ข้อ · ข้ามวันนี้ ${skippedCount} ข้อ — กรุณาตรวจสอบ`
-            : `⚠ มี ${incompleteCount} ข้อยังไม่เสร็จ — กรุณาตรวจสอบ`,
+            ? `⚠ ${supervisorWarning} (ยังไม่ได้ทำ ${incompleteCount} ข้อ · ข้ามวันนี้ ${skippedCount} ข้อ)`
+            : `⚠ ${supervisorWarning}`,
           color: "#dc2626"
         }
       : {
@@ -1178,6 +1181,97 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
   return {
     type: "flex",
     altText: `Check list ก่อนเริ่มงาน ${args.branchName} · ${dateStr} · ${args.openerName}`,
+    contents: bubble
+  };
+}
+
+// ── PERSONA: shift unlock request Flex ───────────────────────────────
+//
+// When a staff member spots an error on the shift_open they already
+// submitted (e.g. wrong morning drawer amount), they hit "ขอแก้ไข"
+// and this card lands in the staff LINE group so admin sees the
+// request inline. Admin grants by deleting the daily_reports row
+// (Phase 1) — staff can re-submit afterwards.
+
+export type ShiftUnlockRequestArgs = {
+  branchName: string;
+  reportDate: string;          // YYYY-MM-DD
+  openerName: string;          // who originally opened the shift
+  requesterName: string;       // who's asking for unlock (may differ)
+  reason: string;
+};
+
+export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMessage {
+  const dateStr = formatThaiDate(args.reportDate);
+  const bubble = {
+    type: "bubble",
+    size: "mega",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: COLOR_INK_700,
+      paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "PERSONA STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", margin: "md",
+          contents: [
+            { type: "text", text: "ขอแก้ไขเปิดกะ", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md",
+      paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "text", text: dateStr, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs", wrap: true },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        {
+          type: "box", layout: "vertical", spacing: "sm", margin: "md",
+          contents: [
+            kvRow("ผู้เปิดกะเดิม", args.openerName),
+            kvRow("ผู้ขอแก้ไข", args.requesterName,
+              { valueColor: COLOR_BRAND, valueWeight: "bold" })
+          ]
+        },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        {
+          type: "box", layout: "vertical", spacing: "xs", margin: "md",
+          contents: [
+            { type: "text", text: "เหตุผล", size: "xs", color: COLOR_LABEL },
+            {
+              type: "text",
+              text: args.reason,
+              size: "sm", color: COLOR_TEXT_DARK, wrap: true, weight: "bold"
+            }
+          ]
+        },
+        {
+          type: "text",
+          text: "หัวหน้างานโปรดตรวจสอบและปลดล็อคให้พนักงานบันทึกใหม่",
+          size: "xxs",
+          color: "#b45309",
+          wrap: true,
+          margin: "md"
+        }
+      ]
+    },
+    styles: {
+      header: { backgroundColor: COLOR_INK_700 },
+      body: { backgroundColor: "#ffffff" }
+    }
+  };
+
+  return {
+    type: "flex",
+    altText: `ขอแก้ไขเปิดกะ ${args.branchName} · ${dateStr} · ${args.requesterName}`,
     contents: bubble
   };
 }

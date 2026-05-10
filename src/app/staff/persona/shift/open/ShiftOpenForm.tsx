@@ -33,7 +33,9 @@ export default function ShiftOpenForm({
   const router = useRouter();
   const { t } = useLang();
 
-  const [reportDate, setReportDate] = useState(today);
+  // Date is derived server-side (always today). Opener is the logged-in
+  // user. Both are read-only on the form so staff can't backdate or
+  // file on someone else's behalf — server enforces too as defense.
   const [yesterdayAmount, setYesterdayAmount] = useState<string>(
     yesterdayClosingHint != null ? String(yesterdayClosingHint) : ""
   );
@@ -47,8 +49,13 @@ export default function ShiftOpenForm({
     Object.fromEntries(checklistItems.map((it) => [it.id, ""]))
   );
   // Which item ids have their note textarea expanded right now. Toggled
-  // by clicking the small "หมายเหตุ" button on the row.
+  // by clicking the small "หมายเหตุ" button on the row, or auto-opened
+  // when submit catches an unticked-without-note item.
   const [openNotes, setOpenNotes] = useState<Record<number, boolean>>({});
+  // Which item ids failed the "must-have-note-when-unchecked" rule on
+  // the last submit attempt. Their note inputs render with a red ring
+  // and the row gets a red error border.
+  const [errorIds, setErrorIds] = useState<Record<number, boolean>>({});
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -69,6 +76,28 @@ export default function ShiftOpenForm({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
+    // Validate: every unticked item must carry a non-empty note. Anything
+    // missing → show the error banner, auto-open those rows' note inputs,
+    // and abort. This pushes staff to either tick the item or explain
+    // why it's being skipped before the report leaves the form.
+    const missingNoteIds = checklistItems
+      .filter((it) => !checked[it.id] && !((notes[it.id] || "").trim()))
+      .map((it) => it.id);
+    if (missingNoteIds.length > 0) {
+      setErrorIds(Object.fromEntries(missingNoteIds.map((id) => [id, true])));
+      setOpenNotes((prev) => ({
+        ...prev,
+        ...Object.fromEntries(missingNoteIds.map((id) => [id, true]))
+      }));
+      setMsg({
+        kind: "err",
+        text: t("staff.persona.shift.open.requireNoteForUnchecked", {
+          n: String(missingNoteIds.length)
+        })
+      });
+      return;
+    }
+    setErrorIds({});
     setBusy(true);
     try {
       const yesterdayParsed = parseAmount(yesterdayAmount);
@@ -89,7 +118,6 @@ export default function ShiftOpenForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "shift_open",
-          report_date: reportDate,
           branch_id: branchId,
           data: {
             yesterday_closing_amount: yesterdayParsed,
@@ -99,6 +127,12 @@ export default function ShiftOpenForm({
         })
       });
       const j = await res.json().catch(() => ({}));
+      // Server returns 409 when someone else just opened the same shift
+      // between page load and submit. Refresh so the locked view picks up.
+      if (res.status === 409 && j.error === "already_opened") {
+        router.refresh();
+        return;
+      }
       if (!res.ok || !j.ok) {
         setMsg({ kind: "err", text: t("common.error") });
         return;
@@ -143,9 +177,8 @@ export default function ShiftOpenForm({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="label">{t("staff.persona.shift.open.field.date")}</label>
-            <input type="date" className="input"
-              value={reportDate} max={today}
-              onChange={(e) => setReportDate(e.target.value)} />
+            <input type="text" className="input bg-slate-50 text-slate-500"
+              value={today} readOnly />
           </div>
           <div>
             <label className="label">{t("staff.persona.shift.open.field.opener")}</label>
@@ -205,14 +238,19 @@ export default function ShiftOpenForm({
               const note = notes[it.id] || "";
               const hasNote = note.trim().length > 0;
               const isOpen = !!openNotes[it.id];
-              // Visual state: emerald when done, amber when skipped-with-note,
-              // slate by default. The note state visually overrides "undone"
-              // so staff can see at a glance which rows have an explanation.
-              const containerCls = isChecked
-                ? "border-emerald-300 bg-emerald-50"
-                : hasNote
-                  ? "border-amber-300 bg-amber-50"
-                  : "border-slate-200 hover:border-slate-300";
+              const hasError = !!errorIds[it.id];
+              // Visual state: red when error (unchecked + no note flagged
+              // by submit validation), emerald when done, amber when
+              // skipped-with-note, slate by default. The note state visually
+              // overrides "undone" so staff can see at a glance which rows
+              // have an explanation.
+              const containerCls = hasError
+                ? "border-rose-400 bg-rose-50 ring-2 ring-rose-200"
+                : isChecked
+                  ? "border-emerald-300 bg-emerald-50"
+                  : hasNote
+                    ? "border-amber-300 bg-amber-50"
+                    : "border-slate-200 hover:border-slate-300";
               return (
                 <div
                   key={it.id}
@@ -223,10 +261,21 @@ export default function ShiftOpenForm({
                       type="checkbox"
                       className="w-5 h-5 flex-shrink-0"
                       checked={isChecked}
-                      onChange={(e) => setChecked((prev) => ({
-                        ...prev,
-                        [it.id]: e.target.checked
-                      }))}
+                      onChange={(e) => {
+                        setChecked((prev) => ({
+                          ...prev,
+                          [it.id]: e.target.checked
+                        }));
+                        // Tick clears the "missing note" error since
+                        // a checked item doesn't need one.
+                        if (e.target.checked) {
+                          setErrorIds((prev) => {
+                            const next = { ...prev };
+                            delete next[it.id];
+                            return next;
+                          });
+                        }
+                      }}
                     />
                     <span className="text-sm flex-1">{it.label}</span>
                     <span className={`text-xs font-bold ${
@@ -263,18 +312,33 @@ export default function ShiftOpenForm({
                   {isOpen && (
                     <div className="px-3 pb-3">
                       <textarea
-                        className="input text-sm"
+                        className={`input text-sm ${hasError ? "border-rose-400 focus:border-rose-500" : ""}`}
                         rows={2}
                         maxLength={500}
                         placeholder={t("staff.persona.shift.open.notePlaceholder")}
                         value={note}
-                        onChange={(e) => setNotes((prev) => ({
-                          ...prev,
-                          [it.id]: e.target.value
-                        }))}
+                        onChange={(e) => {
+                          setNotes((prev) => ({
+                            ...prev,
+                            [it.id]: e.target.value
+                          }));
+                          // Typing into a previously-flagged note clears
+                          // the row's error state right away.
+                          if (e.target.value.trim() && hasError) {
+                            setErrorIds((prev) => {
+                              const next = { ...prev };
+                              delete next[it.id];
+                              return next;
+                            });
+                          }
+                        }}
                       />
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        {t("staff.persona.shift.open.noteHint")}
+                      <p className={`text-[10px] mt-1 ${
+                        hasError ? "text-rose-600 font-medium" : "text-slate-400"
+                      }`}>
+                        {hasError
+                          ? t("staff.persona.shift.open.requireNoteRowHint")
+                          : t("staff.persona.shift.open.noteHint")}
                       </p>
                     </div>
                   )}
