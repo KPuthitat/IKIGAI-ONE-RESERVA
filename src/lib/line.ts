@@ -745,27 +745,12 @@ export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
         ] : [])
       ]
     },
-    footer: {
-      type: "box", layout: "vertical",
-      paddingAll: "16px", paddingTop: "0px",
-      contents: [
-        {
-          type: "button",
-          style: "primary",
-          color: COLOR_BRAND,
-          height: "sm",
-          action: {
-            type: "uri",
-            // Land on /login. After auth, the user gets redirected to
-            // /admin (module picker). The deep link to bookings was
-            // tried but customers tapping from a non-logged-in browser
-            // hit a redirect chain that broke in LINE's in-app webview.
-            label: fx(args.lang, "btnOpenAdmin"),
-            uri: `${args.publicBaseUrl}/login`
-          }
-        }
-      ]
-    },
+    // Footer removed — every variation of the "open admin" / "sign in"
+    // button kept failing inside LINE's in-app browser (auth redirect
+    // chain doesn't follow through, cookies don't persist, etc.). The
+    // notification card body itself has all the info staff needs to
+    // glance at; if they want to act, they open the admin URL in their
+    // own bookmarked browser. Less surface area, fewer broken paths.
     styles: {
       header: { backgroundColor: COLOR_INK_700 },
       body: { backgroundColor: "#ffffff" },
