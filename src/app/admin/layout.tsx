@@ -109,7 +109,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen flex bg-slate-100">
-      <Sidebar sections={sections} brand={<AdminSidebarBrand />} />
+      <Sidebar
+        sections={sections}
+        brand={
+          <div className="space-y-3">
+            <AdminSidebarBrand />
+            <TodaysBranchPill
+              branchName={activeBranch?.name ?? null}
+              hasChoice={hasBranchChoice}
+              pickerPath="/admin/branch-picker"
+            />
+          </div>
+        }
+      />
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-ink-gradient text-white shadow-md">
           <div className="px-4 py-3 pl-16 flex items-center gap-3 flex-wrap">
@@ -117,11 +129,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <HeaderBrand role="admin" />
             </div>
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-              <TodaysBranchPill
-                branchName={activeBranch?.name ?? null}
-                hasChoice={hasBranchChoice}
-                pickerPath="/admin/branch-picker"
-              />
               <span className="text-xs text-white/60 hidden sm:inline">
                 {user.display_name} · {t(lang, "role.adminShort")}
               </span>

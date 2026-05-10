@@ -369,7 +369,11 @@ function kvRow(label: string, value: string, opts?: { valueColor?: string; value
   return {
     type: "box", layout: "horizontal", spacing: "sm",
     contents: [
-      { type: "text", text: label, size: "sm", color: COLOR_LABEL, flex: 4 },
+      // wrap:true on the label too — without it, long Thai labels like
+      // "ยอดปิดกะเมื่อวาน" got truncated to "ยอดปิดกะเมื..." on
+      // narrower devices because the column width is fixed by flex
+      // weights regardless of value length.
+      { type: "text", text: label, size: "sm", color: COLOR_LABEL, flex: 4, wrap: true },
       {
         type: "text", text: value, size: "sm",
         color: opts?.valueColor ?? COLOR_TEXT_DARK,
@@ -1120,13 +1124,13 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
           type: "box", layout: "horizontal",
           contents: [
             { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
-            { type: "text", text: "PERSONA · เปิดกะ", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
+            { type: "text", text: "PERSONA STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
           ]
         },
         {
           type: "box", layout: "baseline", margin: "md",
           contents: [
-            { type: "text", text: "เช็คลิสต์เปิดกะ", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+            { type: "text", text: "Check list ก่อนเริ่มงาน", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
           ]
         }
       ]
@@ -1173,7 +1177,7 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
 
   return {
     type: "flex",
-    altText: `เช็คลิสต์เปิดกะ ${args.branchName} · ${dateStr} · ${args.openerName}`,
+    altText: `Check list ก่อนเริ่มงาน ${args.branchName} · ${dateStr} · ${args.openerName}`,
     contents: bubble
   };
 }
