@@ -174,9 +174,15 @@ function runMigrations(db: Database.Database): void {
   }
 
   // shift_checklist_items — admin-configurable list of checklist items
-  // shown on the shift open / close handover forms. Global (not per-
-  // branch) so admin manages one list. Soft-deletable via active=0 so
-  // historical reports keep their references readable.
+  // shown on the shift open / close handover forms. Per-branch so each
+  // restaurant manages its own list (e.g. NAMA has "เครื่องชง pasta",
+  // HYPOPLARAEMIA does not). Soft-deletable via active=0 so historical
+  // reports keep their references readable.
+  //
+  // The table was originally created without branch_id. The migration
+  // below adds the column, clones any pre-existing global rows once per
+  // branch (so nothing is lost), and the per-branch seed below fills
+  // any branch that ends up without items.
   db.exec(`
     CREATE TABLE IF NOT EXISTS shift_checklist_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -186,30 +192,68 @@ function runMigrations(db: Database.Database): void {
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
-    CREATE INDEX IF NOT EXISTS idx_shift_checklist_type_active
-      ON shift_checklist_items(type, active, display_order);
   `);
 
-  // Seed default shift_open items if the table is empty for that type.
-  // Idempotent — only fires on a fresh database (or after admin manually
-  // emptied the list, which is unlikely).
-  const existingOpenCount = db.prepare(
-    "SELECT COUNT(*) AS n FROM shift_checklist_items WHERE type = 'shift_open'"
-  ).get() as { n: number };
-  if (existingOpenCount.n === 0) {
-    const defaults = [
-      "Empeo work-in",
-      "ตั้งป้ายหน้าร้าน",
-      "นับเงินในลิ้นชัก",
-      "ตรวจสอบความสะอาดห้องน้ำ (เติมสบู่/ทิชชู่/เปลี่ยนถุงขยะ)",
-      "ตรวจสอบ Battery",
-      "ตรวจสอบ Booking ประจำวัน"
-    ];
-    const ins = db.prepare(
-      "INSERT INTO shift_checklist_items (type, label, display_order) VALUES (?, ?, ?)"
-    );
-    for (let i = 0; i < defaults.length; i++) {
-      ins.run("shift_open", defaults[i], (i + 1) * 10);
+  const sccols = db.prepare("PRAGMA table_info(shift_checklist_items)").all() as Array<{ name: string }>;
+  const sccolNames = new Set(sccols.map((c) => c.name));
+  if (!sccolNames.has("branch_id")) {
+    db.exec("ALTER TABLE shift_checklist_items ADD COLUMN branch_id INTEGER REFERENCES branches(id)");
+    // Clone any orphan (NULL branch_id) rows once per existing branch so
+    // pre-migration items show up in every branch's list. Then drop the
+    // originals. Safe even if there are zero orphan rows.
+    type Orphan = {
+      id: number; type: "shift_open" | "shift_close"; label: string;
+      display_order: number; active: number;
+    };
+    const orphans = db.prepare(
+      "SELECT id, type, label, display_order, active FROM shift_checklist_items WHERE branch_id IS NULL"
+    ).all() as Orphan[];
+    if (orphans.length > 0) {
+      const branchIds = (db.prepare("SELECT id FROM branches").all() as Array<{ id: number }>).map((r) => r.id);
+      const insClone = db.prepare(
+        "INSERT INTO shift_checklist_items (type, label, display_order, active, branch_id) VALUES (?, ?, ?, ?, ?)"
+      );
+      for (const bid of branchIds) {
+        for (const o of orphans) {
+          insClone.run(o.type, o.label, o.display_order, o.active, bid);
+        }
+      }
+      db.exec("DELETE FROM shift_checklist_items WHERE branch_id IS NULL");
+    }
+  }
+
+  // Old (global) index is replaced by a branch-scoped one. DROP IF EXISTS
+  // is idempotent on the upgraded shape too, so we always converge on
+  // the new index.
+  db.exec("DROP INDEX IF EXISTS idx_shift_checklist_type_active");
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_shift_checklist_branch_type
+      ON shift_checklist_items(branch_id, type, active, display_order);
+  `);
+
+  // Seed default shift_open items per branch — only fills branches that
+  // currently have zero rows of this type. Idempotent across restarts;
+  // also covers a freshly-added branch (gets its own copy of the list).
+  const checklistDefaults = [
+    "Empeo work-in",
+    "ตั้งป้ายหน้าร้าน",
+    "นับเงินในลิ้นชัก",
+    "ตรวจสอบความสะอาดห้องน้ำ (เติมสบู่/ทิชชู่/เปลี่ยนถุงขยะ)",
+    "ตรวจสอบ Battery",
+    "ตรวจสอบ Booking ประจำวัน"
+  ];
+  const allBranches = db.prepare("SELECT id FROM branches").all() as Array<{ id: number }>;
+  const seedIns = db.prepare(
+    "INSERT INTO shift_checklist_items (type, label, display_order, branch_id) VALUES (?, ?, ?, ?)"
+  );
+  for (const b of allBranches) {
+    const cnt = db.prepare(
+      "SELECT COUNT(*) AS n FROM shift_checklist_items WHERE type = 'shift_open' AND branch_id = ?"
+    ).get(b.id) as { n: number };
+    if (cnt.n === 0) {
+      for (let i = 0; i < checklistDefaults.length; i++) {
+        seedIns.run("shift_open", checklistDefaults[i], (i + 1) * 10, b.id);
+      }
     }
   }
 
@@ -1139,6 +1183,8 @@ export type DailyReport = {
 export type ShiftChecklistItem = {
   id: number;
   type: "shift_open" | "shift_close";
+  /** Per-branch since 2026-05 — admin manages each branch's list independently. */
+  branch_id: number;
   label: string;
   display_order: number;
   active: number;          // 1 / 0

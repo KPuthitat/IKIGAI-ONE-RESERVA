@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, type Branch, type DailyReportType } from "@/lib/db";
 import { shiftOpenFlex, notifyDailyReport } from "@/lib/line";
 
@@ -12,10 +12,14 @@ import { shiftOpenFlex, notifyDailyReport } from "@/lib/line";
 //   readiness_1130    — รายงานความพร้อม รอบ 11:30 (Phase D — TODO)
 //   readiness_1600    — รายงานความพร้อม รอบ 16:00 (Phase D — TODO)
 //
-// The body always carries `type` + `report_date` + `data` (a JSON blob
-// that mirrors the form's field shape for that type). Server validates
-// the shape per type, persists the row, and pushes a summary Flex card
-// to the branch's staff group.
+// The body always carries `type` + `branch_id` + `report_date` + `data`
+// (a JSON blob that mirrors the form's field shape for that type). The
+// staff client sends `branch_id` explicitly so a person who works
+// morning at A and afternoon at B can submit two reports the same day.
+// Server validates the staff is assigned to that branch via
+// user_branches; if not, request is rejected. The LINE Flex card is
+// pushed to that branch's staff_group_id (NOT the session
+// activeBranchId), so notifications always land in the right group.
 
 // Checklist is dynamic — admin can add/edit items at /admin/persona/checklist.
 // We store the rendered label alongside the checked state so historical
@@ -32,6 +36,7 @@ const ShiftOpenData = z.object({
 
 const Body = z.object({
   type: z.enum(["shift_open", "shift_close", "readiness_1130", "readiness_1600"]),
+  branch_id: z.number().int().positive(),
   report_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   data: z.unknown()    // narrowed per-type below
 });
@@ -39,9 +44,6 @@ const Body = z.object({
 export async function POST(req: Request) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  if (!user.activeBranchId) {
-    return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
-  }
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
@@ -50,7 +52,14 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  const { type, report_date, data } = parsed.data;
+  const { type, report_date, branch_id, data } = parsed.data;
+
+  // Authorization: staff can only submit reports for branches they're
+  // assigned to. Stops a curious staff from spoofing a different
+  // branch's id in DevTools and pushing into that group.
+  if (!userHasBranch(user, branch_id)) {
+    return NextResponse.json({ error: "branch_forbidden" }, { status: 403 });
+  }
 
   // Per-type data validation. Other types will be added in Phase C/D.
   if (type === "shift_open") {
@@ -67,7 +76,7 @@ export async function POST(req: Request) {
 
   const db = getDb();
   const branch = db.prepare("SELECT * FROM branches WHERE id = ?")
-    .get(user.activeBranchId) as Branch | undefined;
+    .get(branch_id) as Branch | undefined;
   if (!branch) return NextResponse.json({ error: "branch_not_found" }, { status: 404 });
 
   const insertedAt = new Date().toISOString();

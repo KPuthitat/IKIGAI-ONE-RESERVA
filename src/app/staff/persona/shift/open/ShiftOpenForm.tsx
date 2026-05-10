@@ -1,43 +1,69 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 
-// Props from the server page. The checklist comes in as an ordered
-// array of {id, label} so the form renders whatever admin has
-// configured (no more hardcoded keys).
-type ChecklistItem = { id: number; label: string };
+// Pre-fetched per-branch payload from the server page. Each branch
+// option carries its own checklist (admin-configured) + yesterday's
+// closing hint so the form can switch branches without a round-trip.
+export type BranchOption = {
+  id: number;
+  name: string;
+  yesterdayClosingHint: number | null;
+  checklistItems: Array<{ id: number; label: string }>;
+};
 
 export default function ShiftOpenForm({
-  branchName, openerName, today, yesterdayClosingHint, checklistItems
+  openerName, today, branchOptions, defaultBranchId
 }: {
-  branchName: string;
   openerName: string;
   today: string;
-  yesterdayClosingHint: number | null;
-  checklistItems: ChecklistItem[];
+  branchOptions: BranchOption[];
+  defaultBranchId: number;
 }) {
   const router = useRouter();
   const { t } = useLang();
 
   const [reportDate, setReportDate] = useState(today);
+  const [branchId, setBranchId] = useState<number>(defaultBranchId);
+
+  const selectedBranch = useMemo(
+    () => branchOptions.find((b) => b.id === branchId) ?? branchOptions[0],
+    [branchOptions, branchId]
+  );
+
+  // Yesterday's closing — pre-filled from the selected branch's last
+  // shift_close. Switching branch resets the field to that branch's hint
+  // (otherwise admin sees a stale number when bouncing between branches).
   const [yesterdayAmount, setYesterdayAmount] = useState<string>(
-    yesterdayClosingHint != null ? String(yesterdayClosingHint) : ""
+    selectedBranch.yesterdayClosingHint != null ? String(selectedBranch.yesterdayClosingHint) : ""
   );
   const [morningAmount, setMorningAmount] = useState<string>("");
-  // Checklist state: keyed by item id. Default unchecked.
+
+  // Checklist state keyed by item id. When the branch changes we wipe
+  // and re-seed from the new branch's items (different lists per
+  // branch — see /admin/persona/checklist).
   const [checked, setChecked] = useState<Record<number, boolean>>(() =>
-    Object.fromEntries(checklistItems.map((it) => [it.id, false]))
+    Object.fromEntries(selectedBranch.checklistItems.map((it) => [it.id, false]))
   );
+
+  function onBranchChange(nextId: number) {
+    const next = branchOptions.find((b) => b.id === nextId);
+    if (!next) return;
+    setBranchId(nextId);
+    setChecked(Object.fromEntries(next.checklistItems.map((it) => [it.id, false])));
+    setYesterdayAmount(next.yesterdayClosingHint != null ? String(next.yesterdayClosingHint) : "");
+    setMorningAmount("");
+  }
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [done, setDone] = useState(false);
 
   function toggleAll(value: boolean) {
-    setChecked(Object.fromEntries(checklistItems.map((it) => [it.id, value])));
+    setChecked(Object.fromEntries(selectedBranch.checklistItems.map((it) => [it.id, value])));
   }
 
   function parseAmount(s: string): number | null {
@@ -55,7 +81,7 @@ export default function ShiftOpenForm({
     try {
       const yesterdayParsed = parseAmount(yesterdayAmount);
       const morningParsed = parseAmount(morningAmount);
-      const checklistPayload = checklistItems.map((it) => ({
+      const checklistPayload = selectedBranch.checklistItems.map((it) => ({
         label: it.label,
         checked: !!checked[it.id]
       }));
@@ -66,6 +92,7 @@ export default function ShiftOpenForm({
         body: JSON.stringify({
           type: "shift_open",
           report_date: reportDate,
+          branch_id: branchId,
           data: {
             yesterday_closing_amount: yesterdayParsed,
             morning_drawer_amount: morningParsed,
@@ -89,7 +116,7 @@ export default function ShiftOpenForm({
   }
 
   if (done) {
-    const allChecked = checklistItems.every((it) => checked[it.id]);
+    const allChecked = selectedBranch.checklistItems.every((it) => checked[it.id]);
     return (
       <div className="card text-center space-y-3">
         <div className="text-5xl">{allChecked ? "✓" : "⚠"}</div>
@@ -97,7 +124,7 @@ export default function ShiftOpenForm({
           {t("staff.persona.shift.open.done.title")}
         </h2>
         <p className="text-sm text-slate-600">
-          {t("staff.persona.shift.open.done.body", { branch: branchName })}
+          {t("staff.persona.shift.open.done.body", { branch: selectedBranch.name })}
         </p>
         {!allChecked && (
           <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
@@ -115,6 +142,29 @@ export default function ShiftOpenForm({
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="card space-y-4">
+        <div>
+          <label className="label">
+            {t("staff.persona.shift.open.field.branch")}
+            <span className="ml-2 text-[10px] text-slate-400 font-normal">
+              · {t("staff.persona.shift.open.field.branchHint")}
+            </span>
+          </label>
+          {branchOptions.length === 1 ? (
+            <input type="text" className="input bg-slate-50 text-slate-500"
+              value={selectedBranch.name} readOnly />
+          ) : (
+            <select
+              className="input"
+              value={branchId}
+              onChange={(e) => onBranchChange(Number(e.target.value))}
+            >
+              {branchOptions.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="label">{t("staff.persona.shift.open.field.date")}</label>
@@ -132,7 +182,7 @@ export default function ShiftOpenForm({
         <div>
           <label className="label">
             {t("staff.persona.shift.open.field.yesterdayClosing")}
-            {yesterdayClosingHint != null && (
+            {selectedBranch.yesterdayClosingHint != null && (
               <span className="ml-2 text-[10px] text-emerald-700 font-medium">
                 · {t("staff.persona.shift.open.prefilled")}
               </span>
@@ -156,7 +206,7 @@ export default function ShiftOpenForm({
         </div>
       </div>
 
-      {checklistItems.length > 0 && (
+      {selectedBranch.checklistItems.length > 0 ? (
         <div className="card space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h2 className="font-bold text-slate-800">
@@ -175,7 +225,7 @@ export default function ShiftOpenForm({
           </div>
 
           <div className="space-y-2">
-            {checklistItems.map((it) => {
+            {selectedBranch.checklistItems.map((it) => {
               const isChecked = !!checked[it.id];
               return (
                 <label
@@ -206,6 +256,10 @@ export default function ShiftOpenForm({
           <p className="text-xs text-slate-400">
             {t("staff.persona.shift.open.checklistHint")}
           </p>
+        </div>
+      ) : (
+        <div className="card text-xs text-slate-500 text-center">
+          {t("staff.persona.shift.open.checklistEmptyForBranch")}
         </div>
       )}
 

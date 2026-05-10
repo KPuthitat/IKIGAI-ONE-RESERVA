@@ -12,9 +12,13 @@ import type { ShiftChecklistItem } from "@/lib/db";
 // admin doesn't have to remember to "save".
 
 export default function ChecklistEditor({
-  initialItems
+  initialItems, branchId
 }: {
   initialItems: ShiftChecklistItem[];
+  /** Branch the editor is currently scoped to. Sent on POST so new
+   *  items are created inside this branch's list. PATCH/DELETE don't
+   *  need it because the API guards by item id → item.branch_id. */
+  branchId: number;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -62,7 +66,7 @@ export default function ChecklistEditor({
       const res = await fetch(apiUrl("/api/admin/persona/checklist"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "shift_open", label: trimmed })
+        body: JSON.stringify({ type: "shift_open", label: trimmed, branch_id: branchId })
       });
       if (!res.ok) throw new Error("add failed");
       setNewLabel("");

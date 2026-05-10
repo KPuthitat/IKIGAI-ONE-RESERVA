@@ -1,5 +1,5 @@
 import { requireAdmin } from "@/lib/auth";
-import BranchSwitcher from "./BranchSwitcher";
+import BranchSwitcher from "../BranchSwitcher";
 
 export const dynamic = "force-dynamic";
 
