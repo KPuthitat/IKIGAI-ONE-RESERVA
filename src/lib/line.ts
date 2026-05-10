@@ -1046,10 +1046,9 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
           ]
         },
         {
-          type: "box", layout: "baseline", spacing: "sm", margin: "md",
+          type: "box", layout: "baseline", margin: "md",
           contents: [
-            { type: "text", text: "🟢", color: COLOR_BRAND_LIGHT, size: "lg", weight: "bold", flex: 0 },
-            { type: "text", text: "เปิดกะ", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+            { type: "text", text: "เช็คลิสต์เปิดกะ", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
           ]
         }
       ]
@@ -1104,7 +1103,7 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
 
   return {
     type: "flex",
-    altText: `เปิดกะ ${args.branchName} · ${dateStr} · ${args.openerName}`,
+    altText: `เช็คลิสต์เปิดกะ ${args.branchName} · ${dateStr} · ${args.openerName}`,
     contents: bubble
   };
 }
