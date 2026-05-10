@@ -1049,7 +1049,7 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
   // supervisor to double-check), otherwise it's just skipped-with-notes
   // (amber, informational).
   const supervisorWarning =
-    "Check list ก่อนเริ่มงานยังไม่ครบถ้วน ให้หัวหน้างานตรวจสอบอีกครั้ง";
+    "เช็คลิสต์ก่อนเริ่มงานยังไม่ครบถ้วน ให้หัวหน้างานตรวจสอบอีกครั้ง";
   const summary = allDone
     ? { text: "✓ เช็คลิสต์ครบทุกข้อ", color: "#059669" }
     : incompleteCount > 0
@@ -1127,13 +1127,13 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
           type: "box", layout: "horizontal",
           contents: [
             { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
-            { type: "text", text: "PERSONA STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
+            { type: "text", text: "PERSONA • STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
           ]
         },
         {
           type: "box", layout: "baseline", margin: "md",
           contents: [
-            { type: "text", text: "Check list ก่อนเริ่มงาน", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+            { type: "text", text: "เช็คลิสต์ก่อนเริ่มงาน", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
           ]
         }
       ]
@@ -1180,7 +1180,7 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
 
   return {
     type: "flex",
-    altText: `Check list ก่อนเริ่มงาน ${args.branchName} · ${dateStr} · ${args.openerName}`,
+    altText: `เช็คลิสต์ก่อนเริ่มงาน ${args.branchName} · ${dateStr} · ${args.openerName}`,
     contents: bubble
   };
 }
@@ -1215,13 +1215,13 @@ export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMe
           type: "box", layout: "horizontal",
           contents: [
             { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
-            { type: "text", text: "PERSONA STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
+            { type: "text", text: "PERSONA • STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
           ]
         },
         {
           type: "box", layout: "baseline", margin: "md",
           contents: [
-            { type: "text", text: "ขอแก้ไขเปิดกะ", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+            { type: "text", text: "คำขอแก้ไขรายการ", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
           ]
         }
       ]
@@ -1236,7 +1236,7 @@ export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMe
         {
           type: "box", layout: "vertical", spacing: "sm", margin: "md",
           contents: [
-            kvRow("ผู้เปิดกะเดิม", args.openerName),
+            kvRow("ผู้ส่งรายการเดิม", args.openerName),
             kvRow("ผู้ขอแก้ไข", args.requesterName,
               { valueColor: COLOR_BRAND, valueWeight: "bold" })
           ]
@@ -1255,7 +1255,7 @@ export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMe
         },
         {
           type: "text",
-          text: "หัวหน้างานโปรดตรวจสอบและปลดล็อคให้พนักงานบันทึกใหม่",
+          text: "มีคำขอแก้ไขเช็คลิสต์ก่อนเริ่มงาน ให้แอดมินปลดล็อค และตรวจสอบรายการอีกครั้ง",
           size: "xxs",
           color: "#b45309",
           wrap: true,
@@ -1271,7 +1271,7 @@ export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMe
 
   return {
     type: "flex",
-    altText: `ขอแก้ไขเปิดกะ ${args.branchName} · ${dateStr} · ${args.requesterName}`,
+    altText: `คำขอแก้ไขรายการ ${args.branchName} · ${dateStr} · ${args.requesterName}`,
     contents: bubble
   };
 }

@@ -35,6 +35,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // red badge next to the "การจอง" sidebar entry so admin notices new
   // customer requests without polling.
   let pendingCount = 0;
+  // Count of pending shift_open unlock requests on the active branch —
+  // similar badge next to the "เช็คลิสต์ก่อนเริ่มงาน" admin entry so
+  // admin acts on staff edit-requests without polling.
+  let unlockPendingCount = 0;
   if (user.activeBranchId) {
     try {
       // Auto-expire stale rows first so the count reflects only bookings
@@ -47,9 +51,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
          WHERE branch_id = ? AND status = 'pending_review'`
       ).get(user.activeBranchId) as { n: number } | undefined;
       pendingCount = row?.n ?? 0;
+      const unlockRow = db.prepare(
+        `SELECT COUNT(*) AS n FROM shift_unlock_requests r
+         JOIN daily_reports dr ON dr.id = r.daily_report_id
+         WHERE r.status = 'pending' AND dr.branch_id = ?`
+      ).get(user.activeBranchId) as { n: number } | undefined;
+      unlockPendingCount = unlockRow?.n ?? 0;
     } catch {
       // schema not migrated yet (fresh deploy) → just show 0
       pendingCount = 0;
+      unlockPendingCount = 0;
     }
   }
 
@@ -78,6 +89,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
         { href: "/admin/persona/holidays", label: t(lang, "admin.persona.nav.holidays") },
         { href: "/admin/persona/checklist", label: t(lang, "admin.persona.nav.checklist") },
+        {
+          href: "/admin/persona/shift-reports",
+          label: t(lang, "admin.persona.nav.shiftReports"),
+          badge: unlockPendingCount > 0 ? unlockPendingCount : undefined
+        },
         { href: "/admin/persona/reports", label: t(lang, "admin.persona.nav.reports") },
         { href: "/admin/persona/messaging", label: t(lang, "admin.persona.nav.messaging") },
         { href: "/admin/persona/settings", label: t(lang, "admin.persona.nav.settings") },

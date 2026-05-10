@@ -13,7 +13,7 @@ import ChecklistEditor from "./ChecklistEditor";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "เช็คลิสต์เปิดกะ · PERSONA" };
+export const metadata: Metadata = { title: "เช็คลิสต์ก่อนเริ่มงาน · PERSONA" };
 
 export default function ChecklistPage() {
   const user = requireAdmin();

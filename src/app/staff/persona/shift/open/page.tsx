@@ -28,7 +28,7 @@ import ShiftOpenLocked from "./ShiftOpenLocked";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "เปิดกะ · PERSONA" };
+export const metadata: Metadata = { title: "เช็คลิสต์ก่อนเริ่มงาน · PERSONA" };
 
 export default function ShiftOpenPage() {
   const user = requireUser();
