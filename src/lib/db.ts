@@ -323,11 +323,39 @@ function runMigrations(db: Database.Database): void {
   // group would receive two cards. Enforced with a partial index — only
   // shift_open rows participate; shift_close/readiness reuse the same
   // table without conflict.
+  //
+  // Pre-cleanup: prior to this migration, the API didn't dedupe so
+  // databases that have been running a while may carry duplicate rows
+  // (same branch + date, multiple shift_open). Creating the unique
+  // index against those rows would throw SQLITE_CONSTRAINT and brick
+  // the whole getDb() call (every request fails — login included).
+  // We collapse dupes first by keeping only the highest-id (latest)
+  // row per (branch, date) group and dropping the older ones, then
+  // create the index. The DELETE is a no-op on clean databases.
   db.exec(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_reports_shift_open_unique
-      ON daily_reports(branch_id, report_date)
-      WHERE type = 'shift_open';
+    DELETE FROM daily_reports
+    WHERE type = 'shift_open'
+      AND id NOT IN (
+        SELECT MAX(id) FROM daily_reports
+        WHERE type = 'shift_open'
+        GROUP BY branch_id, report_date
+      );
   `);
+  try {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_reports_shift_open_unique
+        ON daily_reports(branch_id, report_date)
+        WHERE type = 'shift_open';
+    `);
+  } catch (e) {
+    // Defense-in-depth: if cleanup somehow missed a dupe (concurrent
+    // write between DELETE and CREATE INDEX, etc.), don't take the
+    // whole app down — log and continue. The app-level dedupe in
+    // the route handler still prevents new dupes; admin can clean
+    // the residue manually and a future restart will pick up the
+    // index.
+    console.warn("shift_open unique index creation skipped:", e);
+  }
 
   // shift_unlock_requests — staff asks admin to let them re-submit a
   // shift_open they already filed (e.g. typo on the morning drawer
