@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 // Collapsible left sidebar — used by /admin and /staff layouts.
@@ -54,9 +54,21 @@ export default function Sidebar({
   defaultOpen?: boolean;
 }) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [open, setOpen] = useState<boolean>(defaultOpen);
   const [hydrated, setHydrated] = useState(false);
+  // Track the current URL's query string so isActive() can distinguish
+  // sibling sidebar items that share a route but differ by ?type=
+  // (admin checklist editor for shift_open vs shift_close vs readiness_*).
+  // We read window.location.search via useEffect rather than the
+  // useSearchParams() hook so the component doesn't force its parent
+  // page into client-side rendering — which had crashed /login (the
+  // hook's Suspense requirement bubbled up and broke unrelated pages).
+  const [currentQuery, setCurrentQuery] = useState<string>("");
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setCurrentQuery(window.location.search);
+    }
+  }, [pathname]);
 
   // Restore from localStorage on mount
   useEffect(() => {
@@ -100,8 +112,9 @@ export default function Sidebar({
     // when paths match — the typical case.
     if (itemQuery) {
       const itemParams = new URLSearchParams(itemQuery);
+      const urlParams = new URLSearchParams(currentQuery);
       for (const [k, v] of itemParams) {
-        if (searchParams.get(k) !== v) return false;
+        if (urlParams.get(k) !== v) return false;
       }
       return true;
     }
