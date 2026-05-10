@@ -607,10 +607,11 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.backToModules": "← กลับ module",
 
     // Staff branch picker — first stop after login when staff has >1 branch
-    "staff.branchPicker.title": "สวัสดี {name}",
-    "staff.branchPicker.subtitle": "วันนี้ทำงานสาขาไหน? เลือกสาขาก่อนเริ่มลงเวลา / ส่งเวร / ขอลา",
+    "staff.branchPicker.title": "เลือกสาขาของวันนี้",
+    "staff.branchPicker.subtitle": "สวัสดี {name} · วันนี้ทำงานสาขาไหน? เลือกก่อนเริ่มลงเวลา ส่งเวร หรือขอลา",
     "staff.branchPicker.branchLabel": "สาขา",
     "staff.branchPicker.activeChip": "ใช้อยู่",
+    "staff.branchPicker.cta": "เลือกสาขานี้",
     "staff.branchPicker.empty.title": "ยังไม่ได้รับมอบหมายสาขา",
     "staff.branchPicker.empty.body": "กรุณาติดต่อแอดมินเพื่อขอเข้าทำงานในสาขา",
     "staff.topbar.today": "วันนี้",
@@ -1999,10 +2000,11 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.title": "PERSONA — Time clock",
 
     // Staff branch picker
-    "staff.branchPicker.title": "Hi {name}",
-    "staff.branchPicker.subtitle": "Which branch are you working at today? Pick before clocking in, submitting handover, or filing leave",
+    "staff.branchPicker.title": "Pick today's branch",
+    "staff.branchPicker.subtitle": "Hi {name} · which branch are you working at today? Pick before clocking in, submitting handover, or filing leave",
     "staff.branchPicker.branchLabel": "Branch",
     "staff.branchPicker.activeChip": "Current",
+    "staff.branchPicker.cta": "Pick this branch",
     "staff.branchPicker.empty.title": "No branch assigned",
     "staff.branchPicker.empty.body": "Please contact admin to assign you to a branch",
     "staff.topbar.today": "Today",

@@ -53,12 +53,12 @@ export default function BranchPickerPage({
 
   return (
     <div className="space-y-6">
-      <div className="text-center space-y-2">
+      <div>
         <h1 className="text-2xl font-bold text-slate-800">
-          {t(lang, "staff.branchPicker.title", { name: user.display_name })}
+          {t(lang, "staff.branchPicker.title")}
         </h1>
-        <p className="text-sm text-slate-500">
-          {t(lang, "staff.branchPicker.subtitle")}
+        <p className="text-sm text-slate-500 mt-1">
+          {t(lang, "staff.branchPicker.subtitle", { name: user.display_name })}
         </p>
       </div>
       <BranchPickerClient
