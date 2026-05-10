@@ -6,19 +6,28 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import type { ShiftChecklistItem } from "@/lib/db";
 
-// Editor for the global shift_open checklist items.
+// Editor for a per-branch checklist. The same UI handles all 4
+// daily-report types: shift_open, shift_close, readiness_1130,
+// readiness_1600. The page passes the active `type` so new items
+// land in the correct list.
+//
 // Inline edit + reorder via up/down buttons + soft (active 0/1) and
 // hard (DELETE) removals. Each row mutates immediately to the API so
 // admin doesn't have to remember to "save".
 
+type ChecklistType = "shift_open" | "shift_close" | "readiness_1130" | "readiness_1600";
+
 export default function ChecklistEditor({
-  initialItems, branchId
+  initialItems, branchId, type
 }: {
   initialItems: ShiftChecklistItem[];
   /** Branch the editor is currently scoped to. Sent on POST so new
    *  items are created inside this branch's list. PATCH/DELETE don't
    *  need it because the API guards by item id → item.branch_id. */
   branchId: number;
+  /** Which checklist type this editor is editing — sent on POST so
+   *  new items land in the right list. */
+  type: ChecklistType;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -66,7 +75,7 @@ export default function ChecklistEditor({
       const res = await fetch(apiUrl("/api/admin/persona/checklist"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "shift_open", label: trimmed, branch_id: branchId })
+        body: JSON.stringify({ type, label: trimmed, branch_id: branchId })
       });
       if (!res.ok) throw new Error("add failed");
       setNewLabel("");

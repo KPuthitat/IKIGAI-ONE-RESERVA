@@ -87,13 +87,61 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/service-charge", label: t(lang, "admin.persona.nav.svc") },
         { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
-        { href: "/admin/persona/holidays", label: t(lang, "admin.persona.nav.holidays") },
-        { href: "/admin/persona/checklist", label: t(lang, "admin.persona.nav.checklist") },
+        { href: "/admin/persona/holidays", label: t(lang, "admin.persona.nav.holidays") }
+      ]
+    },
+    // Pre-shift items — admin configures the checklist for each
+    // report type. Same /admin/persona/checklist editor handles all
+    // four; the page reads `?type=` to know which list to show/edit.
+    {
+      label: t(lang, "admin.persona.nav.section.preShift"),
+      pathPrefix: "/admin/persona",
+      items: [
+        {
+          href: "/admin/persona/checklist?type=shift_open",
+          label: t(lang, "admin.persona.nav.preShiftChecklist")
+        },
+        {
+          href: "/admin/persona/checklist?type=readiness_1130",
+          label: t(lang, "admin.persona.nav.readiness1130")
+        },
+        {
+          href: "/admin/persona/checklist?type=readiness_1600",
+          label: t(lang, "admin.persona.nav.readiness1600")
+        }
+      ]
+    },
+    // Post-shift items.
+    {
+      label: t(lang, "admin.persona.nav.section.postShift"),
+      pathPrefix: "/admin/persona",
+      items: [
+        {
+          href: "/admin/persona/checklist?type=shift_close",
+          label: t(lang, "admin.persona.nav.postShiftChecklist")
+        }
+      ]
+    },
+    // Edit-request inbox — admin reviews staff requests to redo a
+    // submitted checklist. Badge mirrors what shift-reports page
+    // queries so the count is accurate without polling.
+    {
+      label: t(lang, "admin.persona.nav.section.requests"),
+      pathPrefix: "/admin/persona",
+      items: [
         {
           href: "/admin/persona/shift-reports",
           label: t(lang, "admin.persona.nav.shiftReports"),
           badge: unlockPendingCount > 0 ? unlockPendingCount : undefined
-        },
+        }
+      ]
+    },
+    // Tail items kept under "PERSONA" header again so they sit at
+    // the bottom of the persona section.
+    {
+      label: "",  // empty label = no header
+      pathPrefix: "/admin/persona",
+      items: [
         { href: "/admin/persona/reports", label: t(lang, "admin.persona.nav.reports") },
         { href: "/admin/persona/messaging", label: t(lang, "admin.persona.nav.messaging") },
         { href: "/admin/persona/settings", label: t(lang, "admin.persona.nav.settings") },

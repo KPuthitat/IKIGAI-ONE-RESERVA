@@ -23,13 +23,18 @@ function formatBkkTime(iso: string): string {
 }
 
 export default function ShiftOpenLocked({
-  branchName, reportId, openerName, openedAtIso, alreadyRequested
+  branchName, reportId, openerName, openedAtIso, alreadyRequested, lastRejected
 }: {
   branchName: string;
   reportId: number;
   openerName: string;
   openedAtIso: string;
   alreadyRequested: boolean;
+  /** Set when staff's most recent unlock request was rejected. We
+   *  surface admin's decision_note (if any) inline so staff knows
+   *  what to do — accept the lock, or file another request with a
+   *  better-framed reason. */
+  lastRejected: { decisionNote: string | null } | null;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -108,13 +113,34 @@ export default function ShiftOpenLocked({
         </div>
       </div>
 
+      {/* Last-rejected banner — only when staff's most recent request
+          was rejected. Shows admin's note so staff knows whether to
+          accept the lock or file another request with better framing. */}
+      {lastRejected && (
+        <div className="card border-l-4 border-rose-400 bg-rose-50/50 space-y-1">
+          <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+            <span>✗</span>
+            {t("staff.persona.shift.open.locked.lastRejected.title")}
+          </h3>
+          <p className="text-sm text-slate-700 whitespace-pre-wrap">
+            {lastRejected.decisionNote
+              ? t("staff.persona.shift.open.locked.lastRejected.body", {
+                  note: lastRejected.decisionNote
+                })
+              : t("staff.persona.shift.open.locked.lastRejected.noNote")}
+          </p>
+        </div>
+      )}
+
       {!reasonOpen ? (
         <button
           type="button"
           onClick={() => setReasonOpen(true)}
           className="btn-secondary w-full"
         >
-          {t("staff.persona.shift.open.locked.requestBtn")}
+          {lastRejected
+            ? t("staff.persona.shift.open.locked.requestAgain")
+            : t("staff.persona.shift.open.locked.requestBtn")}
         </button>
       ) : (
         <form onSubmit={submitRequest} className="card space-y-3">

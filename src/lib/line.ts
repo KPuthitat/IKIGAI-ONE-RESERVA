@@ -1276,6 +1276,108 @@ export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMe
   };
 }
 
+// ── PERSONA: shift unlock decision Flex (admin → staff) ──────────────
+//
+// Admin's grant or reject decision lands back in the staff LINE group
+// so the requester sees the outcome immediately. Reject includes the
+// admin's note (when provided) so staff understands why and can file
+// another request with better reason if needed. Grant just confirms
+// the record was unlocked.
+
+export type ShiftUnlockDecisionArgs = {
+  branchName: string;
+  reportDate: string;          // YYYY-MM-DD
+  requesterName: string;
+  adminName: string;
+  decision: "granted" | "rejected";
+  decisionNote: string | null;
+};
+
+export function shiftUnlockDecisionFlex(args: ShiftUnlockDecisionArgs): LineFlexMessage {
+  const dateStr = formatThaiDate(args.reportDate);
+  const isGrant = args.decision === "granted";
+  const titleText = isGrant ? "อนุมัติให้แก้ไขรายการ" : "ปฏิเสธคำขอแก้ไขรายการ";
+  const accentColor = isGrant ? "#059669" : "#dc2626";
+  const iconText = isGrant ? "✓" : "✗";
+
+  const bubble = {
+    type: "bubble",
+    size: "mega",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: COLOR_INK_700,
+      paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "PERSONA • STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", margin: "md", spacing: "sm",
+          contents: [
+            { type: "text", text: iconText, color: accentColor, size: "lg", weight: "bold", flex: 0 },
+            { type: "text", text: titleText, color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md",
+      paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "text", text: dateStr, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs", wrap: true },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        {
+          type: "box", layout: "vertical", spacing: "sm", margin: "md",
+          contents: [
+            kvRow("ผู้ขอแก้ไข", args.requesterName),
+            kvRow("ผู้ตัดสินใจ", args.adminName,
+              { valueColor: COLOR_BRAND, valueWeight: "bold" })
+          ]
+        },
+        ...(args.decisionNote ? [
+          { type: "separator", margin: "md", color: COLOR_DIVIDER },
+          {
+            type: "box", layout: "vertical", spacing: "xs", margin: "md",
+            contents: [
+              { type: "text", text: "หมายเหตุจากแอดมิน", size: "xs", color: COLOR_LABEL },
+              {
+                type: "text",
+                text: args.decisionNote,
+                size: "sm", color: COLOR_TEXT_DARK, wrap: true, weight: "bold"
+              }
+            ]
+          }
+        ] : []),
+        {
+          type: "text",
+          text: isGrant
+            ? "พนักงานสามารถส่งรายการใหม่ได้แล้ว"
+            : "พนักงานสามารถส่งคำขอแก้ไขใหม่ได้ ถ้ายังต้องการ",
+          size: "xxs",
+          color: accentColor,
+          wrap: true,
+          margin: "md"
+        }
+      ]
+    },
+    styles: {
+      header: { backgroundColor: COLOR_INK_700 },
+      body: { backgroundColor: "#ffffff" }
+    }
+  };
+
+  return {
+    type: "flex",
+    altText: `${titleText} ${args.branchName} · ${dateStr} · ${args.requesterName}`,
+    contents: bubble
+  };
+}
+
 /** Push a daily report Flex card to the branch's staff group / fallback
  *  user IDs. Mirrors notifyStaff() — group preferred, per-user as
  *  legacy fallback. Fire-and-forget; no logging table for daily reports

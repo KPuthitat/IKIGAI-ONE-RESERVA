@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 // Collapsible left sidebar — used by /admin and /staff layouts.
@@ -54,6 +54,7 @@ export default function Sidebar({
   defaultOpen?: boolean;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [open, setOpen] = useState<boolean>(defaultOpen);
   const [hydrated, setHydrated] = useState(false);
 
@@ -82,11 +83,29 @@ export default function Sidebar({
   }, [pathname]);
 
   function isActive(href: string): boolean {
-    if (href === pathname) return true;
-    // /admin/persona is parent of /admin/persona/employees etc.
-    // but /admin should NOT match /admin/persona — only exact for top-level
+    // Split href into pathname + query so two items sharing a route
+    // but differing by ?type= (admin checklist editor for shift_open
+    // vs shift_close vs readiness_*) can be distinguished.
+    const [itemPath, itemQuery] = href.split("?");
+    // Top-level "/admin" / "/staff" only match exactly — otherwise
+    // they'd be considered active on every nested page.
     if (href === "/admin" || href === "/staff") return pathname === href;
-    return pathname.startsWith(href + "/") || pathname === href;
+    if (itemPath !== pathname) {
+      // Different path: parent-of-current still counts (e.g. nav
+      // entry for /admin/persona stays lit on /admin/persona/employees).
+      return pathname.startsWith(itemPath + "/");
+    }
+    // Same path. Item with an explicit query is only active when the
+    // current URL has the same query. Query-less item is always active
+    // when paths match — the typical case.
+    if (itemQuery) {
+      const itemParams = new URLSearchParams(itemQuery);
+      for (const [k, v] of itemParams) {
+        if (searchParams.get(k) !== v) return false;
+      }
+      return true;
+    }
+    return true;
   }
 
   // Filter sections by current pathname (sections without pathPrefix always show)

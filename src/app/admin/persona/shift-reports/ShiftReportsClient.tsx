@@ -46,11 +46,13 @@ export default function ShiftReportsClient({
   const router = useRouter();
   const { t } = useLang();
   const [busyId, setBusyId] = useState<number | null>(null);
+  // Which request id has the reject-form expanded + the note text in
+  // its textarea. Reject is a 2-step: open the form, type the note,
+  // then submit. Grant is a 1-step confirm dialog.
+  const [rejectForm, setRejectForm] = useState<{ id: number; note: string } | null>(null);
 
-  async function decide(requestId: number, decision: "granted" | "rejected") {
-    if (decision === "granted") {
-      if (!confirm(t("admin.persona.shiftReports.confirmGrant"))) return;
-    }
+  async function grant(requestId: number) {
+    if (!confirm(t("admin.persona.shiftReports.confirmGrant"))) return;
     setBusyId(requestId);
     try {
       const res = await fetch(
@@ -58,10 +60,33 @@ export default function ShiftReportsClient({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ decision })
+          body: JSON.stringify({ decision: "granted" })
         }
       );
-      if (!res.ok) throw new Error("decide failed");
+      if (!res.ok) throw new Error("grant failed");
+      router.refresh();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function submitReject() {
+    if (!rejectForm) return;
+    setBusyId(rejectForm.id);
+    try {
+      const res = await fetch(
+        apiUrl(`/api/admin/persona/shift-unlock-request/${rejectForm.id}/decide`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            decision: "rejected",
+            decision_note: rejectForm.note.trim() || undefined
+          })
+        }
+      );
+      if (!res.ok) throw new Error("reject failed");
+      setRejectForm(null);
       router.refresh();
     } finally {
       setBusyId(null);
@@ -148,26 +173,70 @@ export default function ShiftReportsClient({
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => decide(r.id, "rejected")}
-                      disabled={isBusy}
-                      className="btn-secondary flex-1 text-sm"
-                    >
-                      {t("admin.persona.shiftReports.reject")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => decide(r.id, "granted")}
-                      disabled={isBusy}
-                      className="btn-primary flex-1 text-sm"
-                    >
-                      {isBusy
-                        ? t("common.submitting")
-                        : t("admin.persona.shiftReports.grant")}
-                    </button>
-                  </div>
+                  {rejectForm?.id === r.id ? (
+                    <div className="space-y-2 bg-rose-50/50 border border-rose-200 rounded-lg p-3">
+                      <div className="text-sm font-bold text-slate-800">
+                        {t("admin.persona.shiftReports.rejectFormTitle")}
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-500 block mb-1">
+                          {t("admin.persona.shiftReports.rejectNoteLabel")}
+                        </label>
+                        <textarea
+                          className="input text-sm"
+                          rows={2}
+                          maxLength={500}
+                          placeholder={t("admin.persona.shiftReports.rejectNotePlaceholder")}
+                          value={rejectForm.note}
+                          onChange={(e) => setRejectForm({ ...rejectForm, note: e.target.value })}
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          {t("admin.persona.shiftReports.rejectNoteHint")}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setRejectForm(null)}
+                          disabled={isBusy}
+                          className="btn-secondary flex-1 text-sm"
+                        >
+                          {t("common.cancel")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={submitReject}
+                          disabled={isBusy}
+                          className="btn-danger flex-1 text-sm"
+                        >
+                          {isBusy
+                            ? t("common.submitting")
+                            : t("admin.persona.shiftReports.rejectSendBtn")}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRejectForm({ id: r.id, note: "" })}
+                        disabled={isBusy}
+                        className="btn-secondary flex-1 text-sm"
+                      >
+                        {t("admin.persona.shiftReports.reject")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => grant(r.id)}
+                        disabled={isBusy}
+                        className="btn-primary flex-1 text-sm"
+                      >
+                        {isBusy
+                          ? t("common.submitting")
+                          : t("admin.persona.shiftReports.grant")}
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

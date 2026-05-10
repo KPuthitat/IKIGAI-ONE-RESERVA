@@ -12,7 +12,7 @@ import { getDb, type ShiftChecklistItem } from "@/lib/db";
 // (must be one of the admin's assigned branches).
 
 const CreateBody = z.object({
-  type: z.enum(["shift_open", "shift_close"]),
+  type: z.enum(["shift_open", "shift_close", "readiness_1130", "readiness_1600"]),
   label: z.string().trim().min(1).max(200),
   /** Optional — defaults to admin's current activeBranchId. When set,
    *  must be a branch the admin is assigned to. */
@@ -36,7 +36,7 @@ export async function GET(req: Request) {
   }
   const url = new URL(req.url);
   const type = url.searchParams.get("type") ?? "shift_open";
-  if (type !== "shift_open" && type !== "shift_close") {
+  if (!["shift_open", "shift_close", "readiness_1130", "readiness_1600"].includes(type)) {
     return NextResponse.json({ error: "invalid_type" }, { status: 400 });
   }
   const overrideRaw = url.searchParams.get("branch_id");

@@ -186,13 +186,46 @@ function runMigrations(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS shift_checklist_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      type TEXT NOT NULL CHECK (type IN ('shift_open','shift_close')),
+      type TEXT NOT NULL CHECK (type IN ('shift_open','shift_close','readiness_1130','readiness_1600')),
       label TEXT NOT NULL,
       display_order INTEGER NOT NULL DEFAULT 100,
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  // 2026-05: extend CHECK on `type` to include 'readiness_1130' and
+  // 'readiness_1600' so admin can configure those checklists too.
+  // Tables created before this commit have the old narrow CHECK and
+  // would reject INSERTs of the new types. Idempotent — only rebuilds
+  // when the existing DDL doesn't already mention the new types.
+  const checklistDdl = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='shift_checklist_items'"
+  ).get() as { sql: string } | undefined;
+  if (checklistDdl && !/readiness_1130/.test(checklistDdl.sql)) {
+    const colInfos = db.prepare("PRAGMA table_info(shift_checklist_items)").all() as Array<{ name: string }>;
+    const colList = colInfos.map((c) => `"${c.name}"`).join(", ");
+    const newDdl = checklistDdl.sql
+      .replace(
+        /CHECK\s*\(\s*type\s+IN\s*\([^)]+\)\s*\)/,
+        "CHECK (type IN ('shift_open','shift_close','readiness_1130','readiness_1600'))"
+      )
+      .replace(
+        /CREATE TABLE\s+(?:IF NOT EXISTS\s+)?["`]?shift_checklist_items["`]?\b/i,
+        "CREATE TABLE shift_checklist_items_new"
+      );
+    db.exec("BEGIN");
+    try {
+      db.exec(newDdl);
+      db.exec(`INSERT INTO shift_checklist_items_new (${colList}) SELECT ${colList} FROM shift_checklist_items`);
+      db.exec("DROP TABLE shift_checklist_items");
+      db.exec("ALTER TABLE shift_checklist_items_new RENAME TO shift_checklist_items");
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+  }
 
   const sccols = db.prepare("PRAGMA table_info(shift_checklist_items)").all() as Array<{ name: string }>;
   const sccolNames = new Set(sccols.map((c) => c.name));
@@ -372,10 +405,19 @@ function runMigrations(db: Database.Database): void {
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','granted','rejected')),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       decided_by INTEGER REFERENCES users(id),
-      decided_at TEXT
+      decided_at TEXT,
+      decision_note TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_shift_unlock_status ON shift_unlock_requests(status, created_at);
   `);
+
+  // 2026-05: decision_note added so admin can explain a rejection
+  // (the staff sees this on the locked view + LINE notification).
+  // Idempotent — only adds the column if missing.
+  const surcols = db.prepare("PRAGMA table_info(shift_unlock_requests)").all() as Array<{ name: string }>;
+  if (!surcols.some((c) => c.name === "decision_note")) {
+    db.exec("ALTER TABLE shift_unlock_requests ADD COLUMN decision_note TEXT");
+  }
 
   // time_entries_audit — เผื่อกรณี schema.sql ยังไม่ถูกรันบน server เก่า
   db.exec(`

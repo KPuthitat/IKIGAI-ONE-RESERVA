@@ -67,13 +67,22 @@ export default function ShiftOpenPage() {
     | { id: number; user_id: number; created_at: string; opener_name: string }
     | undefined;
   if (existingOpen) {
-    // Has the current user already requested an unlock? If yes, the
-    // CTA flips to a "request pending" state so they don't spam the
-    // group with duplicate requests.
-    const pendingReq = db.prepare(`
-      SELECT id FROM shift_unlock_requests
-      WHERE daily_report_id = ? AND requested_by = ? AND status = 'pending'
-    `).get(existingOpen.id, user.id) as { id: number } | undefined;
+    // Has the current user already requested an unlock? Pull the
+    // latest request the user filed against this report — could be
+    // pending (block dup), rejected (show admin's note + allow retry),
+    // or granted (shouldn't happen here since the daily_report row
+    // would be deleted).
+    const lastReq = db.prepare(`
+      SELECT id, status, decision_note FROM shift_unlock_requests
+      WHERE daily_report_id = ? AND requested_by = ?
+      ORDER BY created_at DESC LIMIT 1
+    `).get(existingOpen.id, user.id) as
+      | { id: number; status: string; decision_note: string | null }
+      | undefined;
+    const pendingReq = lastReq?.status === "pending";
+    const lastRejected = lastReq?.status === "rejected"
+      ? { decisionNote: lastReq.decision_note }
+      : null;
     return (
       <div className="space-y-4">
         <div>
@@ -92,7 +101,8 @@ export default function ShiftOpenPage() {
           reportId={existingOpen.id}
           openerName={existingOpen.opener_name}
           openedAtIso={existingOpen.created_at}
-          alreadyRequested={!!pendingReq}
+          alreadyRequested={pendingReq}
+          lastRejected={lastRejected}
         />
       </div>
     );
