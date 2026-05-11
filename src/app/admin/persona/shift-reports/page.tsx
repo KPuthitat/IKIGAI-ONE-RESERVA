@@ -1,13 +1,24 @@
-// /admin/persona/shift-reports — admin's view of shift_open reports
-// at the active branch + any pending unlock requests on those reports.
+// /admin/persona/shift-reports — admin's view of the active branch's
+// daily reports (all 4 types: shift_open, readiness_1130,
+// readiness_1600, shift_close) for today, plus any pending unlock
+// requests on those reports.
 //
-// Phase 1: read-only list of today's report (if any) + pending unlock
-// requests with grant/reject buttons. Granting deletes the original
-// daily_reports row (cascades through shift_unlock_requests FK), so
-// staff can re-submit cleanly.
+// Today's status: one row per type — ✓ if a LIVE report exists (not
+// superseded), ○ otherwise. A small "แก้ไข N×" chip surfaces when the
+// chain has revisions (admin previously granted edit request(s)),
+// so it's obvious at a glance which reports got redone. Clicking the
+// chip expands the full revision chain inline (ฉบับแรก → ... →
+// ฉบับปัจจุบัน) annotated with each granted edit request — who
+// asked, what reason, which admin approved when, optional note.
 //
-// Phase 2 (future): historical view of past N days, ad-hoc admin
-// "force unlock" without a request, etc.
+// Pending unlock requests: list of staff edit requests still awaiting
+// a decision. Grant marks the underlying daily_reports row
+// `superseded_at` (the original survives for audit + chain rebuild);
+// reject leaves it untouched. Both decisions push a LINE Flex to the
+// branch group via /api/.../decide.
+//
+// Phase 3 (future): historical view of past N days, ad-hoc admin
+// "force unlock" without a request, export chain to CSV for audit.
 
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -18,7 +29,10 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import ShiftReportsClient, {
   type PendingUnlockRow,
-  type TodayReportRow
+  type TodayReportRow,
+  type ReportType,
+  type ChainLink,
+  type ChainsByType
 } from "./ShiftReportsClient";
 
 export const dynamic = "force-dynamic";
@@ -45,14 +59,124 @@ export default function AdminShiftReportsPage() {
 
   const today = todayBkk();
 
-  // Today's shift_open at this branch (if any). Show it inline so admin
-  // sees the status at a glance without clicking through.
-  const todayReport = db.prepare(`
-    SELECT r.id, r.user_id, r.report_date, r.created_at, u.display_name AS opener_name
-    FROM daily_reports r JOIN users u ON r.user_id = u.id
-    WHERE r.type = 'shift_open' AND r.branch_id = ? AND r.report_date = ?
-      AND r.superseded_at IS NULL
-  `).get(branch.id, today) as TodayReportRow | undefined;
+  // Today's LIVE reports at this branch — one per type at most (the
+  // partial unique index on daily_reports filters superseded rows out).
+  // The correlated subquery counts the full chain length (live +
+  // superseded predecessors); revision_count = chain length - 1, so
+  // 0 = fresh first submission, ≥1 = at least one redo via an
+  // admin-granted edit request.
+  const todayRows = db.prepare(`
+    SELECT r.id, r.type, r.user_id, r.report_date, r.created_at,
+           u.display_name AS opener_name,
+           (
+             SELECT COUNT(*) - 1 FROM daily_reports d2
+             WHERE d2.branch_id = r.branch_id
+               AND d2.type = r.type
+               AND d2.report_date = r.report_date
+           ) AS revision_count
+    FROM daily_reports r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.branch_id = ? AND r.report_date = ? AND r.superseded_at IS NULL
+  `).all(branch.id, today) as TodayReportRow[];
+
+  // Index by type so the client renders all 4 rows in a fixed order
+  // even if some types haven't been submitted yet today (null = ○).
+  const todayReports: Record<ReportType, TodayReportRow | null> = {
+    shift_open: null,
+    readiness_1130: null,
+    readiness_1600: null,
+    shift_close: null
+  };
+  for (const row of todayRows) {
+    if (row.type in todayReports) {
+      todayReports[row.type as ReportType] = row;
+    }
+  }
+
+  // Build revision chains per type — every daily_reports row for
+  // today's (branch, date), ordered oldest → newest. The client
+  // expands a chain when the admin clicks the "แก้ไข N×" chip.
+  //
+  // We always run this query (cheap — at most ~10 rows per branch/day)
+  // and group by type in JS; types with chain length ≤ 1 have no
+  // visible history but the empty array keeps Record<ReportType, _>
+  // exhaustive on the client.
+  type ChainRow = {
+    id: number;
+    type: ReportType;
+    created_at: string;
+    superseded_at: string | null;
+    user_name: string;
+  };
+  const chainRows = db.prepare(`
+    SELECT dr.id, dr.type, dr.created_at, dr.superseded_at,
+           u.display_name AS user_name
+    FROM daily_reports dr
+    JOIN users u ON u.id = dr.user_id
+    WHERE dr.branch_id = ? AND dr.report_date = ?
+    ORDER BY dr.type ASC, dr.id ASC
+  `).all(branch.id, today) as ChainRow[];
+
+  // Attach the granted unlock request to each row that GOT superseded.
+  // (The live tail row's granted_unlock is always null — nothing has
+  // superseded it yet, though a pending request may exist; pending
+  // ones surface in the "คำขอที่รอตรวจสอบ" section below, not here.)
+  type GrantedUnlock = {
+    id: number;
+    daily_report_id: number;
+    reason: string;
+    decided_at: string | null;
+    decision_note: string | null;
+    requester_name: string;
+    decided_by_name: string | null;
+  };
+  const unlockByReportId = new Map<number, GrantedUnlock>();
+  const supersededIds = chainRows
+    .filter((r) => r.superseded_at !== null)
+    .map((r) => r.id);
+  if (supersededIds.length > 0) {
+    const placeholders = supersededIds.map(() => "?").join(",");
+    const unlocks = db.prepare(`
+      SELECT r.id, r.daily_report_id, r.reason, r.decided_at, r.decision_note,
+             u.display_name AS requester_name,
+             du.display_name AS decided_by_name
+      FROM shift_unlock_requests r
+      JOIN users u ON u.id = r.requested_by
+      LEFT JOIN users du ON du.id = r.decided_by
+      WHERE r.status = 'granted' AND r.daily_report_id IN (${placeholders})
+    `).all(...supersededIds) as GrantedUnlock[];
+    for (const u of unlocks) {
+      unlockByReportId.set(u.daily_report_id, u);
+    }
+  }
+
+  const chains: ChainsByType = {
+    shift_open: [],
+    readiness_1130: [],
+    readiness_1600: [],
+    shift_close: []
+  };
+  for (const row of chainRows) {
+    if (!(row.type in chains)) continue;
+    const granted = unlockByReportId.get(row.id);
+    const link: ChainLink = {
+      id: row.id,
+      user_name: row.user_name,
+      created_at: row.created_at,
+      is_live: row.superseded_at === null,
+      granted_unlock: granted
+        ? {
+            id: granted.id,
+            requester_name: granted.requester_name,
+            reason: granted.reason,
+            decided_by_name: granted.decided_by_name,
+            decided_at: granted.decided_at,
+            decision_note: granted.decision_note
+          }
+        : null
+    };
+    chains[row.type].push(link);
+  }
 
   // Pending unlock requests across all reports at this branch — not
   // just today, in case a report was filed yesterday and admin only
@@ -86,7 +210,8 @@ export default function AdminShiftReportsPage() {
       <ShiftReportsClient
         branchName={branch.name}
         today={today}
-        todayReport={todayReport ?? null}
+        todayReports={todayReports}
+        chains={chains}
         pending={pending}
       />
       <div>

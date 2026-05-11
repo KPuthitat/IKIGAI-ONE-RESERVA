@@ -5,20 +5,52 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 
+export type ReportType =
+  | "shift_open"
+  | "shift_close"
+  | "readiness_1130"
+  | "readiness_1600";
+
 export type TodayReportRow = {
   id: number;
+  type: ReportType;
   user_id: number;
   report_date: string;
   created_at: string;
   opener_name: string;
+  // chain length minus 1 — i.e. how many superseded predecessors
+  // exist for the same (branch, date, type). 0 = first submission.
+  revision_count: number;
 };
+
+// One link in a (branch, date, type) chain. Ordered oldest → newest in
+// the chain array; the last link is always the live row. `granted_unlock`
+// is attached to the link that GOT superseded (i.e. it's the unlock that
+// caused this version to be replaced) — so the last link's granted_unlock
+// is always null (nothing has superseded it).
+export type ChainLink = {
+  id: number;
+  user_name: string;
+  created_at: string;
+  is_live: boolean;
+  granted_unlock: {
+    id: number;
+    requester_name: string;
+    reason: string;
+    decided_by_name: string | null;
+    decided_at: string | null;
+    decision_note: string | null;
+  } | null;
+};
+
+export type ChainsByType = Record<ReportType, ChainLink[]>;
 
 export type PendingUnlockRow = {
   id: number;                 // shift_unlock_requests.id
   daily_report_id: number;
   reason: string;
   created_at: string;         // request created
-  report_type: "shift_open" | "shift_close" | "readiness_1130" | "readiness_1600";
+  report_type: ReportType;
   report_date: string;
   opener_id: number;
   report_created_at: string;
@@ -26,7 +58,16 @@ export type PendingUnlockRow = {
   opener_name: string;
 };
 
-const REPORT_TYPE_LABELS: Record<PendingUnlockRow["report_type"], string> = {
+// Display order — pre-shift first (chronological), then post-shift.
+// Exported so the server page can keep its Record initialiser in sync.
+export const REPORT_TYPE_ORDER: ReportType[] = [
+  "shift_open",
+  "readiness_1130",
+  "readiness_1600",
+  "shift_close"
+];
+
+const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   shift_open:     "Check list ก่อนเริ่มงาน",
   shift_close:    "Check list หลังเลิกงาน",
   readiness_1130: "รายงานความพร้อมรอบ 11:30 น.",
@@ -43,12 +84,101 @@ function formatBkkTime(iso: string): string {
   return `${hh}:${mm}`;
 }
 
+// Inline revision-chain renderer. Receives the full chain (oldest →
+// newest, last = live) and renders one card per version. Between
+// versions, when the predecessor has an attached granted unlock
+// request, an arrow + reason block is shown — that's the audit
+// breadcrumb explaining WHY a revision happened.
+//
+// Visual: indented under the "today's status" row, with a left
+// border in amber to echo the chip colour. Compact — admin scans for
+// "who edited, why, and when admin approved", not for prose.
+function ChainView({ chain }: { chain: ChainLink[] }) {
+  const { t } = useLang();
+  // Helper: human label for a chain position. The live (tail) link is
+  // always "ฉบับปัจจุบัน"; position 0 is "ฉบับแรก"; everything else
+  // is "ฉบับแก้ไข ครั้งที่ N" where N = 1-indexed position. Keeps the
+  // labels deterministic regardless of chain length.
+  function versionLabel(idx: number, link: ChainLink): string {
+    if (link.is_live) return t("admin.persona.shiftReports.chain.current");
+    if (idx === 0) return t("admin.persona.shiftReports.chain.first");
+    return t("admin.persona.shiftReports.chain.revisionN", { n: String(idx) });
+  }
+  return (
+    <div className="ml-7 pl-3 border-l-2 border-amber-200 space-y-2">
+      <div className="text-[10px] font-bold tracking-[1px] text-amber-700 uppercase">
+        {t("admin.persona.shiftReports.chain.heading")}
+      </div>
+      {chain.map((link, idx) => (
+        <div key={link.id} className="space-y-2">
+          <div
+            className={`rounded border p-2 ${
+              link.is_live
+                ? "border-emerald-200 bg-emerald-50/50"
+                : "border-slate-200 bg-slate-50"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-xs font-bold text-slate-800">
+                {versionLabel(idx, link)}
+              </div>
+              <div className="text-[11px] text-slate-500">
+                {link.user_name} · {formatBkkTime(link.created_at)}
+              </div>
+            </div>
+          </div>
+          {/* Arrow + granted-unlock breadcrumb between this link and
+              the next one — only rendered when the current link was
+              superseded (granted_unlock attached). */}
+          {link.granted_unlock && (
+            <div className="ml-2 pl-3 border-l border-amber-300 space-y-1 py-1">
+              <div className="text-[10px] text-amber-700 font-bold">
+                ↓ {t("admin.persona.shiftReports.chain.requestArrow")}
+              </div>
+              <div className="text-[11px] text-slate-700">
+                <span className="font-bold">
+                  {t("admin.persona.shiftReports.chain.requesterLabel")}:
+                </span>{" "}
+                {link.granted_unlock.requester_name}
+              </div>
+              <div className="text-[11px] text-slate-700 whitespace-pre-wrap pl-2 border-l-2 border-slate-200 italic">
+                "{link.granted_unlock.reason}"
+              </div>
+              {link.granted_unlock.decided_by_name && link.granted_unlock.decided_at && (
+                <div className="text-[10px] text-slate-500">
+                  {t("admin.persona.shiftReports.chain.approvedBy", {
+                    admin: link.granted_unlock.decided_by_name,
+                    time: formatBkkTime(link.granted_unlock.decided_at)
+                  })}
+                </div>
+              )}
+              {link.granted_unlock.decision_note && (
+                <div className="text-[10px] text-slate-500 italic">
+                  {t("admin.persona.shiftReports.chain.adminNote")}: "
+                  {link.granted_unlock.decision_note}"
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ShiftReportsClient({
-  branchName, today, todayReport, pending
+  branchName, today, todayReports, chains, pending
 }: {
   branchName: string;
   today: string;
-  todayReport: TodayReportRow | null;
+  // One slot per report type — null = not submitted yet today.
+  // Renders 4 rows in REPORT_TYPE_ORDER so admin always sees the
+  // full daily schedule, not just the types that happened to be done.
+  todayReports: Record<ReportType, TodayReportRow | null>;
+  // Revision chains per type — oldest → newest, last = live. Expanded
+  // inline when admin clicks the "แก้ไข N×" chip. Empty array = no
+  // chain to show (or no submission yet today).
+  chains: ChainsByType;
   pending: PendingUnlockRow[];
 }) {
   const router = useRouter();
@@ -58,6 +188,18 @@ export default function ShiftReportsClient({
   // its textarea. Reject is a 2-step: open the form, type the note,
   // then submit. Grant is a 1-step confirm dialog.
   const [rejectForm, setRejectForm] = useState<{ id: number; note: string } | null>(null);
+  // Set of report types whose revision chain is currently expanded.
+  // Multiple can be open at once — admin might want to compare two
+  // types' history side-by-side.
+  const [expandedChains, setExpandedChains] = useState<Set<ReportType>>(new Set());
+  function toggleChain(type: ReportType) {
+    setExpandedChains((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  }
 
   async function grant(requestId: number) {
     if (!confirm(t("admin.persona.shiftReports.confirmGrant"))) return;
@@ -103,35 +245,74 @@ export default function ShiftReportsClient({
 
   return (
     <div className="space-y-4">
-      {/* Today's shift_open status */}
+      {/* Today's report status — one row per type (4 total). Each row
+          is ✓ when a LIVE daily_reports exists, ○ otherwise. The amber
+          "แก้ไข N×" chip is a button when revision_count ≥ 1; clicking
+          expands the full chain (original → ... → current) inline
+          below the row, with each granted edit request annotated. */}
       <div className="card">
-        <h2 className="font-bold text-slate-800 mb-2">
-          {t("admin.persona.shiftReports.todayTitle")} · {today}
+        <h2 className="font-bold text-slate-800 mb-3">
+          {t("admin.persona.shiftReports.todayTitle")} · {branchName} · {today}
         </h2>
-        {todayReport ? (
-          <div className="text-sm space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-emerald-700 text-lg">✓</span>
-              <span className="text-slate-700">
-                {t("admin.persona.shiftReports.todayDone", {
-                  branch: branchName,
-                  opener: todayReport.opener_name,
-                  time: formatBkkTime(todayReport.created_at)
-                })}
-              </span>
-            </div>
-            <div className="text-xs text-slate-400 pl-7">
-              {t("admin.persona.shiftReports.reportRef", { id: String(todayReport.id) })}
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <span className="text-slate-300 text-lg">○</span>
-            <span>
-              {t("admin.persona.shiftReports.todayNone", { branch: branchName })}
-            </span>
-          </div>
-        )}
+        <ul className="space-y-2">
+          {REPORT_TYPE_ORDER.map((type) => {
+            const r = todayReports[type];
+            const label = REPORT_TYPE_LABELS[type];
+            const chain = chains[type];
+            const isExpanded = expandedChains.has(type);
+            const hasChain = r != null && r.revision_count > 0 && chain.length > 1;
+            return (
+              <li key={type} className="flex flex-col gap-2">
+                <div className="flex items-start gap-2 text-sm">
+                  {r ? (
+                    <>
+                      <span className="text-emerald-700 text-lg leading-none mt-0.5 select-none">
+                        ✓
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-slate-800">{label}</div>
+                        <div className="text-xs text-slate-500">
+                          {r.opener_name} · {formatBkkTime(r.created_at)}
+                        </div>
+                      </div>
+                      {hasChain && (
+                        <button
+                          type="button"
+                          onClick={() => toggleChain(type)}
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 hover:bg-amber-200 font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer transition-colors"
+                          title={t("admin.persona.shiftReports.row.revisionTitle")}
+                          aria-expanded={isExpanded}
+                        >
+                          {t("admin.persona.shiftReports.row.revisionChip", {
+                            n: String(r.revision_count)
+                          })}
+                          <span className="text-[9px] leading-none">
+                            {isExpanded ? "▴" : "▾"}
+                          </span>
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-slate-300 text-lg leading-none mt-0.5 select-none">
+                        ○
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-slate-500">{label}</div>
+                        <div className="text-xs text-slate-400">
+                          {t("admin.persona.shiftReports.row.notDone")}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+                {hasChain && isExpanded && (
+                  <ChainView chain={chain} />
+                )}
+              </li>
+            );
+          })}
+        </ul>
       </div>
 
       {/* Pending unlock requests */}
