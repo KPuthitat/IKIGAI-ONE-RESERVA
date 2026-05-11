@@ -39,26 +39,28 @@ npm run build
 
 # Snapshot the PID PM2 thinks reserva is — anything else on the port
 # after the kill loop is an orphan that needs to die.
+#
+# IMPORTANT: use `pm2 pid <name>` here. The earlier version of this
+# script tried to grep the pid out of `pm2 jlist` JSON, but pm2's
+# jlist output contains multiple `"pid":` keys per process (pid,
+# parent_pid, pm_id, etc.) and the anchored-regex approach was
+# fragile — it matched nothing on some pm2 versions, leaving PM2_PID
+# empty, which made the orphan loop treat the legitimate
+# PM2-managed process as an orphan and SIGKILL it. `pm2 pid <name>`
+# returns just the integer pid on stdout, no JSON, no ambiguity.
 echo "==> [3/5] checking for orphan processes on :${PORT}"
-PM2_PID="$(pm2 jlist 2>/dev/null \
-  | grep -oE "\"name\":\"${PM2_APP}\"[^}]*\"pid\":[0-9]+" \
-  | grep -oE '[0-9]+$' \
-  || echo '')"
+PM2_PID="$(pm2 pid "$PM2_APP" 2>/dev/null | tr -d '[:space:]' | grep -oE '^[0-9]+$' || echo '')"
 
 # Loop through every pid currently bound to the port and kill any that
 # isn't the PM2-managed one. Idempotent — empty match list = nothing
 # to do.
+#
+# `lsof -ti :PORT -sTCP:LISTEN` prints one pid per line for processes
+# in LISTEN state on the port. Much simpler than the previous
+# `ss | grep | while` pipeline, and doesn't require root on systems
+# where the calling user owns the process.
 mapfile -t PORT_PIDS < <(
-  ss -tlnp 2>/dev/null \
-    | grep -oE "pid=[0-9]+" \
-    | grep -oE '[0-9]+' \
-    | sort -u \
-    | while read -r pid; do
-        if ss -tlnp "sport = :${PORT}" 2>/dev/null \
-           | grep -q "pid=${pid}"; then
-          echo "$pid"
-        fi
-      done
+  lsof -ti :"${PORT}" -sTCP:LISTEN 2>/dev/null | sort -u
 )
 
 for pid in "${PORT_PIDS[@]:-}"; do
@@ -87,16 +89,9 @@ sleep 5
 echo "==> [5/5] verifying"
 # Bound pid should match the new PM2 reserva pid. If not, something
 # else swooped in on port 3010 again — bail out so the human can
-# investigate.
-NEW_PM2_PID="$(pm2 jlist 2>/dev/null \
-  | grep -oE "\"name\":\"${PM2_APP}\"[^}]*\"pid\":[0-9]+" \
-  | grep -oE '[0-9]+$' \
-  || echo '')"
-BOUND_PID="$(ss -tlnp "sport = :${PORT}" 2>/dev/null \
-  | grep -oE 'pid=[0-9]+' \
-  | head -n1 \
-  | grep -oE '[0-9]+' \
-  || echo '')"
+# investigate. Same `pm2 pid` + `lsof` pattern as step 3.
+NEW_PM2_PID="$(pm2 pid "$PM2_APP" 2>/dev/null | tr -d '[:space:]' | grep -oE '^[0-9]+$' || echo '')"
+BOUND_PID="$(lsof -ti :"${PORT}" -sTCP:LISTEN 2>/dev/null | head -n1 || echo '')"
 
 if [[ -z "$BOUND_PID" ]]; then
   echo "    ✗ nothing is listening on :${PORT}"
