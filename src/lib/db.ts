@@ -386,13 +386,39 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE daily_reports ADD COLUMN replaces_id INTEGER REFERENCES daily_reports(id)");
   }
 
-  db.exec(`
-    DELETE FROM daily_reports
-    WHERE id NOT IN (
-      SELECT MAX(id) FROM daily_reports
-      GROUP BY branch_id, type, report_date
-    );
-  `);
+  // The DELETE below is a ONE-TIME dedupe cleanup that's only needed
+  // before the unique index exists. Skip it once the index is in
+  // place — subsequent migration runs would otherwise risk FK
+  // failures: daily_reports.replaces_id self-references the same
+  // table, so deleting an "older" row that has a newer revision
+  // pointing at it via replaces_id throws SQLITE_CONSTRAINT_FOREIGNKEY
+  // and bricks the whole getDb() (every request 500s — login too).
+  //
+  // The try/catch around the DELETE is the second line of defense
+  // for edge cases: a corrupted database where the index is missing
+  // but a revision chain exists. We log and continue; the unique
+  // index creation below may still fail on dupes, but its own
+  // try/catch keeps the app alive.
+  const liveIndexExists = !!db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_daily_reports_live_unique'"
+  ).get();
+  if (!liveIndexExists) {
+    try {
+      db.exec(`
+        DELETE FROM daily_reports
+        WHERE id NOT IN (
+          SELECT MAX(id) FROM daily_reports
+          GROUP BY branch_id, type, report_date
+        );
+      `);
+    } catch (e) {
+      // FK chain (replaces_id) most likely cause — old rows are
+      // referenced by newer revisions and can't be deleted. App-level
+      // dedupe in the daily-report route still prevents new dupes;
+      // operator can clean up manually if needed.
+      console.warn("daily_reports dedupe DELETE skipped:", e);
+    }
+  }
   db.exec("DROP INDEX IF EXISTS idx_daily_reports_shift_open_unique");
   // Replace the prior broad unique index with one that filters out
   // superseded rows, so a revision can be inserted alongside the
