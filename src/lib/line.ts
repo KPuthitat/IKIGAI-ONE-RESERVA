@@ -1603,7 +1603,7 @@ export function shiftUnlockDecisionFlex(args: ShiftUnlockDecisionArgs): LineFlex
           type: "box", layout: "vertical", spacing: "sm", margin: "md",
           contents: [
             kvRow("ผู้ขอแก้ไข", args.requesterName),
-            kvRow("ผู้ตัดสินใจ", args.adminName,
+            kvRow("ผู้อนุมัติรายการ", args.adminName,
               { valueColor: COLOR_BRAND, valueWeight: "bold" })
           ]
         },

@@ -116,9 +116,10 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
               <LogoutButton />
             </div>
           </div>
-          {/* Row 2 — today's branch pill on its own line. */}
+          {/* Row 2 — today's branch pill, right-aligned under the
+              logout button (same pattern as admin layout). */}
           {activeBranch && (
-            <div className="px-4 pb-2 pl-16">
+            <div className="px-4 pb-2 pl-16 flex justify-end">
               <TodaysBranchPill
                 branchName={activeBranch.name}
                 hasChoice={hasBranchChoice}

@@ -192,12 +192,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <LogoutButton />
             </div>
           </div>
-          {/* Row 2 — today's branch pill on its own line. Always full
-              width so the branch name can grow without colliding with
-              anything to its right. Hides itself on /admin/branch-picker
-              (the pill component handles that). */}
+          {/* Row 2 — today's branch pill sits right-aligned under the
+              logout button (per user feedback "ย้าย topbar pill ไปไว้
+              ที่ใต้ปุ่มออกจากระบบน่าจะดีกว่า"). The pill component
+              hides itself on /admin/branch-picker. */}
           {activeBranch && (
-            <div className="px-4 pb-2 pl-16">
+            <div className="px-4 pb-2 pl-16 flex justify-end">
               <TodaysBranchPill
                 branchName={activeBranch.name}
                 hasChoice={hasBranchChoice}
