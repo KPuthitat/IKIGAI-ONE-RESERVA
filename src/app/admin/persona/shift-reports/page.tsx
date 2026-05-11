@@ -23,7 +23,7 @@ import ShiftReportsClient, {
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "เช็คลิสต์ก่อนเริ่มงาน · PERSONA" };
+export const metadata: Metadata = { title: "คำขอแก้ไขรายการ · PERSONA" };
 
 export default function AdminShiftReportsPage() {
   const user = requireAdmin();
@@ -51,6 +51,7 @@ export default function AdminShiftReportsPage() {
     SELECT r.id, r.user_id, r.report_date, r.created_at, u.display_name AS opener_name
     FROM daily_reports r JOIN users u ON r.user_id = u.id
     WHERE r.type = 'shift_open' AND r.branch_id = ? AND r.report_date = ?
+      AND r.superseded_at IS NULL
   `).get(branch.id, today) as TodayReportRow | undefined;
 
   // Pending unlock requests across all reports at this branch — not

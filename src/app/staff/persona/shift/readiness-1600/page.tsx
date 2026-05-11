@@ -47,6 +47,7 @@ export default function Readiness1600Page() {
     SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name
     FROM daily_reports r JOIN users u ON r.user_id = u.id
     WHERE r.type = 'readiness_1600' AND r.branch_id = ? AND r.report_date = ?
+      AND r.superseded_at IS NULL
   `).get(branch.id, today) as
     | { id: number; user_id: number; created_at: string; opener_name: string }
     | undefined;
@@ -106,6 +107,7 @@ export default function Readiness1600Page() {
         branchId={branch.id}
         branchName={branch.name}
         checklistItems={checklist.map((c) => ({ id: c.id, label: c.label }))}
+        submitLabel={t(lang, "staff.persona.readiness.submit")}
         successCopy={{
           title: t(lang, "staff.persona.shiftReport.submitted.title"),
           body: t(lang, "staff.persona.shiftReport.submitted.body", {

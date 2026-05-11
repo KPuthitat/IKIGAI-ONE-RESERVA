@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
-import { getDb, type Branch, type DailyReportType } from "@/lib/db";
+import { getDb, logPersonaAction, type Branch, type DailyReportType } from "@/lib/db";
 import {
   shiftOpenFlex, shiftCloseFlex, readinessFlex, notifyDailyReport
 } from "@/lib/line";
@@ -112,13 +112,15 @@ export async function POST(req: Request) {
     .get(branch_id) as Branch | undefined;
   if (!branch) return NextResponse.json({ error: "branch_not_found" }, { status: 404 });
 
-  // Duplicate guard: one report per (branch, type, date). Ties to the
-  // unique index — we check first so the response includes the existing
-  // row's metadata instead of a raw SQLITE_CONSTRAINT.
+  // Duplicate guard: one LIVE (non-superseded) report per (branch,
+  // type, date). Ties to the unique partial index — we check first
+  // so the response includes the existing row's metadata instead of
+  // a raw SQLITE_CONSTRAINT.
   const existing = db.prepare(`
     SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name
     FROM daily_reports r JOIN users u ON r.user_id = u.id
     WHERE r.type = ? AND r.branch_id = ? AND r.report_date = ?
+      AND r.superseded_at IS NULL
   `).get(type, branch.id, report_date) as
     | { id: number; user_id: number; created_at: string; opener_name: string }
     | undefined;
@@ -133,20 +135,44 @@ export async function POST(req: Request) {
     }, { status: 409 });
   }
 
+  // If a previous row for the same (branch, type, date) is now
+  // superseded — i.e. admin granted an unlock and the staff is now
+  // re-submitting — chain the new row to the most recent superseded
+  // one via replaces_id. The locked-view + LINE card will surface
+  // "ฉบับแก้ไข" so reviewers know this is a revision.
+  const supersededPrev = db.prepare(`
+    SELECT id FROM daily_reports
+    WHERE type = ? AND branch_id = ? AND report_date = ?
+      AND superseded_at IS NOT NULL
+    ORDER BY id DESC LIMIT 1
+  `).get(type, branch.id, report_date) as { id: number } | undefined;
+  const isRevision = !!supersededPrev;
+
   const insertedAt = new Date().toISOString();
   const result = db.prepare(`
-    INSERT INTO daily_reports (type, branch_id, user_id, report_date, data, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO daily_reports
+      (type, branch_id, user_id, report_date, data, replaces_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     type as DailyReportType,
     branch.id,
     user.id,
     report_date,
     JSON.stringify(v.data),
+    supersededPrev?.id ?? null,
     insertedAt,
     insertedAt
   );
   const id = result.lastInsertRowid as number;
+
+  // Activity log — minimal: action + by-user + ref_id pointing at
+  // the new daily_reports row. Different action verb for revisions
+  // so admin reading the log can tell them apart.
+  logPersonaAction(
+    user.id,
+    isRevision ? `daily_report.resubmit.${type}` : `daily_report.submit.${type}`,
+    id
+  );
 
   // Build + push the Flex card to the branch staff group. Fire-and-forget
   // so a LINE API hiccup doesn't block the form submission.
@@ -166,7 +192,8 @@ export async function POST(req: Request) {
       openerName: user.display_name,
       yesterdayClosingAmount: d.yesterday_closing_amount,
       morningDrawerAmount: d.morning_drawer_amount,
-      checklist: normalizeChecklist(d.checklist)
+      checklist: normalizeChecklist(d.checklist),
+      isRevision
     });
   } else if (type === "shift_close") {
     const d = v.data as z.infer<typeof ShiftCloseData>;
@@ -175,7 +202,8 @@ export async function POST(req: Request) {
       reportDate: report_date,
       closerName: user.display_name,
       closingDrawerAmount: d.closing_drawer_amount,
-      checklist: normalizeChecklist(d.checklist)
+      checklist: normalizeChecklist(d.checklist),
+      isRevision
     });
   } else {
     // readiness_1130 / readiness_1600
@@ -185,7 +213,8 @@ export async function POST(req: Request) {
       reportDate: report_date,
       reporterName: user.display_name,
       slot: type === "readiness_1130" ? "11:30" : "16:00",
-      checklist: normalizeChecklist(d.checklist)
+      checklist: normalizeChecklist(d.checklist),
+      isRevision
     });
   }
   notifyDailyReport(branch, flex).catch((e) =>

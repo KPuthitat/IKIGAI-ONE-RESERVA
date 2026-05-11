@@ -27,8 +27,8 @@ export type PendingUnlockRow = {
 };
 
 const REPORT_TYPE_LABELS: Record<PendingUnlockRow["report_type"], string> = {
-  shift_open:     "เช็คลิสต์ก่อนเริ่มงาน",
-  shift_close:    "เช็คลิสต์หลังเลิกงาน",
+  shift_open:     "Check list ก่อนเริ่มงาน",
+  shift_close:    "Check list หลังเลิกงาน",
   readiness_1130: "รายงานความพร้อมรอบ 11:30 น.",
   readiness_1600: "รายงานความพร้อมรอบ 16:00 น."
 };

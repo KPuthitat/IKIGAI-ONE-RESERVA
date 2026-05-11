@@ -176,16 +176,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <Sidebar sections={sections} brand={<AdminSidebarBrand />} />
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-ink-gradient text-white shadow-md">
-          <div className="px-4 py-3 pl-16 flex items-center gap-3 flex-wrap">
+          {/* Row 1 — brand + user controls. Pill moved off this row
+              to prevent overlap with HeaderBrand on narrow screens
+              where long branch names ("NAMA PASTA SRIRACHA") were
+              pushing into the brand wordmark. */}
+          <div className="px-4 pt-3 pb-2 pl-16 flex items-center gap-3 flex-wrap">
             <div className="flex-1 min-w-0">
               <HeaderBrand role="admin" />
             </div>
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-              <TodaysBranchPill
-                branchName={activeBranch?.name ?? null}
-                hasChoice={hasBranchChoice}
-                pickerPath="/admin/branch-picker"
-              />
               <span className="text-xs text-white/60 hidden sm:inline">
                 {user.display_name} · {t(lang, "role.adminShort")}
               </span>
@@ -193,6 +192,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <LogoutButton />
             </div>
           </div>
+          {/* Row 2 — today's branch pill on its own line. Always full
+              width so the branch name can grow without colliding with
+              anything to its right. Hides itself on /admin/branch-picker
+              (the pill component handles that). */}
+          {activeBranch && (
+            <div className="px-4 pb-2 pl-16">
+              <TodaysBranchPill
+                branchName={activeBranch.name}
+                hasChoice={hasBranchChoice}
+                pickerPath="/admin/branch-picker"
+              />
+            </div>
+          )}
         </header>
         <main className="flex-1 w-full p-4 max-w-6xl mx-auto">{children}</main>
         <Footer />

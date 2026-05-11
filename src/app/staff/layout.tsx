@@ -104,21 +104,28 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       <Sidebar sections={sections} brand={<StaffSidebarBrand />} />
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-ink-gradient text-white shadow-md">
-          <div className="px-4 py-3 pl-16 flex items-center gap-3 flex-wrap">
+          {/* Row 1 — brand + user controls. Pill moved off this row
+              to prevent overlap with HeaderBrand on narrow screens. */}
+          <div className="px-4 pt-3 pb-2 pl-16 flex items-center gap-3 flex-wrap">
             <div className="flex-1 min-w-0">
               <HeaderBrand role="staff" />
             </div>
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-              <TodaysBranchPill
-                branchName={activeBranch?.name ?? null}
-                hasChoice={hasBranchChoice}
-                pickerPath="/staff/branch-picker"
-              />
               <span className="text-xs text-white/60 hidden sm:inline">{user.display_name}</span>
               <LangToggle variant="dark" />
               <LogoutButton />
             </div>
           </div>
+          {/* Row 2 — today's branch pill on its own line. */}
+          {activeBranch && (
+            <div className="px-4 pb-2 pl-16">
+              <TodaysBranchPill
+                branchName={activeBranch.name}
+                hasChoice={hasBranchChoice}
+                pickerPath="/staff/branch-picker"
+              />
+            </div>
+          )}
         </header>
         <main className="flex-1 w-full p-4 max-w-6xl mx-auto">{children}</main>
         <Footer />

@@ -19,7 +19,7 @@ import ShiftReportLocked from "../ShiftReportLocked";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "เช็คลิสต์หลังเลิกงาน · PERSONA" };
+export const metadata: Metadata = { title: "Check list หลังเลิกงาน · PERSONA" };
 
 export default function ShiftClosePage() {
   const user = requireUser();
@@ -50,6 +50,7 @@ export default function ShiftClosePage() {
     SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name
     FROM daily_reports r JOIN users u ON r.user_id = u.id
     WHERE r.type = 'shift_close' AND r.branch_id = ? AND r.report_date = ?
+      AND r.superseded_at IS NULL
   `).get(branch.id, today) as
     | { id: number; user_id: number; created_at: string; opener_name: string }
     | undefined;

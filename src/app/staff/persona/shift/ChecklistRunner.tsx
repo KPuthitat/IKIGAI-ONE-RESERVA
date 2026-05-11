@@ -29,13 +29,17 @@ type ChecklistItem = { id: number; label: string };
 type ReportType = "readiness_1130" | "readiness_1600";
 
 export default function ChecklistRunner({
-  type, branchId, branchName, checklistItems, successCopy
+  type, branchId, branchName, checklistItems, successCopy, submitLabel
 }: {
   type: ReportType;
   branchId: number;
   branchName: string;
   checklistItems: ChecklistItem[];
   successCopy: { title: string; body: string };
+  /** Submit button label — e.g. "ส่งรายงาน" for readiness reports,
+   *  "ส่ง Check list" for shift-open / shift-close. Passed by the
+   *  page so the same runner works for any report type. */
+  submitLabel: string;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -289,9 +293,7 @@ export default function ChecklistRunner({
 
       <button type="submit" disabled={busy}
         className="btn-primary w-full text-base py-3.5">
-        {busy
-          ? t("staff.persona.shift.open.submitting")
-          : t("staff.persona.shift.open.submit")}
+        {busy ? t("staff.persona.shift.open.submitting") : submitLabel}
       </button>
     </form>
   );

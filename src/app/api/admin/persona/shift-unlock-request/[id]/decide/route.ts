@@ -1,18 +1,19 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
-import { getDb, type Branch } from "@/lib/db";
+import { getDb, logPersonaAction, type Branch } from "@/lib/db";
 import { shiftUnlockDecisionFlex, notifyDailyReport } from "@/lib/line";
 
 // POST /api/admin/persona/shift-unlock-request/[id]/decide
 //
-// Admin grants or rejects a staff's request to redo a shift_open
-// report. Granting deletes the original daily_reports row (which
-// cascades through the shift_unlock_requests FK), so staff can
-// open the shift form again and re-submit. Rejecting marks the
-// request as 'rejected' + optionally records a decision_note,
-// then notifies the staff group via LINE so the requester knows
-// why before they file again.
+// Admin grants or rejects a staff's request to redo a daily report.
+// Granting marks the original daily_reports row `superseded_at` so
+// staff can submit a fresh row (the unique index ignores superseded
+// rows) — the original stays for audit. The new row will reference
+// the superseded id via replaces_id, and the LINE card flags it as
+// "ฉบับแก้ไข". Rejecting marks the request as 'rejected' + optionally
+// records a decision_note, then notifies the staff group so the
+// requester sees the outcome before filing again.
 
 const Body = z.object({
   decision: z.enum(["granted", "rejected"]),
@@ -77,17 +78,20 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const nowIso = new Date().toISOString();
   const tx = db.transaction(() => {
     if (parsed.data.decision === "granted") {
-      // Update the request first to record the decision, then delete
-      // the daily_reports row (FK ON DELETE CASCADE on
-      // shift_unlock_requests would also drop sibling requests on the
-      // same report). Doing UPDATE-then-DELETE preserves a tidy audit
-      // trail when admin pulls historical reports later.
+      // Update the request first to record the decision, then mark
+      // the original daily_reports row as superseded. The unique
+      // partial index filters superseded rows out, so staff can
+      // now insert a fresh row. The original survives for audit;
+      // the new row references it via replaces_id, and LINE cards
+      // render a "ฉบับแก้ไข" chip on revisions.
       db.prepare(`
         UPDATE shift_unlock_requests
         SET status = 'granted', decided_by = ?, decided_at = ?, decision_note = ?
         WHERE id = ?
       `).run(user.id, nowIso, note, id);
-      db.prepare("DELETE FROM daily_reports WHERE id = ?").run(row.daily_report_id);
+      db.prepare(
+        "UPDATE daily_reports SET superseded_at = ? WHERE id = ?"
+      ).run(nowIso, row.daily_report_id);
     } else {
       // Reject: leave the daily_reports row alone. Staff stays in
       // locked view; they can either accept it or file a fresh
@@ -100,6 +104,17 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
   });
   tx();
+
+  // Audit log — record the admin's decision so an audit screen
+  // can show "who granted what" without digging through Flex
+  // notifications. ref_id points at the request row.
+  logPersonaAction(
+    user.id,
+    parsed.data.decision === "granted"
+      ? "shift_unlock_request.grant"
+      : "shift_unlock_request.reject",
+    id
+  );
 
   // Push a Flex card to the staff LINE group so the requester knows
   // the outcome immediately — covers both grant and reject. Skipped

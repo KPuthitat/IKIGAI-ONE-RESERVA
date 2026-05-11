@@ -20,7 +20,7 @@ import ChecklistEditor from "./ChecklistEditor";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "เช็คลิสต์ก่อนเริ่มงาน · PERSONA" };
+export const metadata: Metadata = { title: "Check list ก่อนเริ่มงาน · PERSONA" };
 
 const TYPES = ["shift_open", "shift_close", "readiness_1130", "readiness_1600"] as const;
 type ChecklistType = (typeof TYPES)[number];

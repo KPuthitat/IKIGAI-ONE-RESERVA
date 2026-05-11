@@ -1026,7 +1026,40 @@ export type ShiftOpenCardArgs = {
   //   - checked: false, note: set  → skipped-on-purpose 📝 (with reason)
   //   - checked: false, note: null → not done ✗ (red flag)
   checklist: Array<{ label: string; checked: boolean; note: string | null }>;
+  /** True when this submission replaces a previously-submitted (and
+   *  admin-unlocked) report for the same (branch, type, date). The
+   *  card header gets a "ฉบับแก้ไข" chip so reviewers know they're
+   *  looking at a revision. */
+  isRevision?: boolean;
 };
+
+// Small reusable chip rendered above the card title when a report
+// is a revision (staff re-submitted after admin unlocked the
+// original). Wrap the text in a box so we can give it a real
+// background — LINE Flex `text` doesn't accept backgroundColor
+// directly, only `box` does. Returns null when not a revision so
+// callers can splice it conditionally.
+function revisionChip(isRevision?: boolean): Record<string, unknown> | null {
+  if (!isRevision) return null;
+  return {
+    type: "box", layout: "vertical",
+    backgroundColor: "#fde68a",
+    cornerRadius: "4px",
+    paddingAll: "2px",
+    paddingStart: "8px",
+    paddingEnd: "8px",
+    margin: "sm",
+    contents: [
+      {
+        type: "text",
+        text: "✏ ฉบับแก้ไข",
+        color: "#78350f",
+        size: "xxs",
+        weight: "bold"
+      }
+    ]
+  };
+}
 
 export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
   const dateStr = formatThaiDate(args.reportDate);
@@ -1049,9 +1082,9 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
   // supervisor to double-check), otherwise it's just skipped-with-notes
   // (amber, informational).
   const supervisorWarning =
-    "เช็คลิสต์ก่อนเริ่มงานยังไม่ครบถ้วน ให้หัวหน้างานตรวจสอบอีกครั้ง";
+    "Check list ก่อนเริ่มงานยังไม่ครบถ้วน ให้หัวหน้างานตรวจสอบอีกครั้ง";
   const summary = allDone
-    ? { text: "✓ เช็คลิสต์ครบทุกข้อ", color: "#059669" }
+    ? { text: "✓ Check list ครบทุกข้อ", color: "#059669" }
     : incompleteCount > 0
       ? {
           text: skippedCount > 0
@@ -1133,7 +1166,7 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
         {
           type: "box", layout: "baseline", margin: "md",
           contents: [
-            { type: "text", text: "เช็คลิสต์ก่อนเริ่มงาน", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+            { type: "text", text: "Check list ก่อนเริ่มงาน", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
           ]
         }
       ]
@@ -1142,6 +1175,7 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
       type: "box", layout: "vertical", spacing: "md",
       paddingAll: "20px",
       contents: [
+        ...(revisionChip(args.isRevision) ? [revisionChip(args.isRevision) as Record<string, unknown>] : []),
         { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
         { type: "text", text: dateStr, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs", wrap: true },
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
@@ -1180,7 +1214,7 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
 
   return {
     type: "flex",
-    altText: `เช็คลิสต์ก่อนเริ่มงาน ${args.branchName} · ${dateStr} · ${args.openerName}`,
+    altText: `Check list ก่อนเริ่มงาน ${args.branchName} · ${dateStr} · ${args.openerName}`,
     contents: bubble
   };
 }
@@ -1205,9 +1239,9 @@ function checklistFlexBlock(
   const allDone = doneCount === checklist.length;
 
   const supervisorWarning =
-    "เช็คลิสต์ยังไม่ครบถ้วน ให้หัวหน้างานตรวจสอบอีกครั้ง";
+    "Check list ยังไม่ครบถ้วน ให้หัวหน้างานตรวจสอบอีกครั้ง";
   const summary = allDone
-    ? { text: "✓ เช็คลิสต์ครบทุกข้อ", color: "#059669" }
+    ? { text: "✓ Check list ครบทุกข้อ", color: "#059669" }
     : incompleteCount > 0
       ? {
           text: skippedCount > 0
@@ -1285,6 +1319,7 @@ export type ShiftCloseCardArgs = {
   closerName: string;
   closingDrawerAmount: number | null;
   checklist: Array<{ label: string; checked: boolean; note: string | null }>;
+  isRevision?: boolean;
 };
 
 export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
@@ -1308,7 +1343,7 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
         {
           type: "box", layout: "baseline", margin: "md",
           contents: [
-            { type: "text", text: "เช็คลิสต์หลังเลิกงาน", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+            { type: "text", text: "Check list หลังเลิกงาน", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
           ]
         }
       ]
@@ -1316,6 +1351,7 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
     body: {
       type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
       contents: [
+        ...(revisionChip(args.isRevision) ? [revisionChip(args.isRevision) as Record<string, unknown>] : []),
         { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
         { type: "text", text: dateStr, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs", wrap: true },
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
@@ -1337,7 +1373,7 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
   };
   return {
     type: "flex",
-    altText: `เช็คลิสต์หลังเลิกงาน ${args.branchName} · ${dateStr} · ${args.closerName}`,
+    altText: `Check list หลังเลิกงาน ${args.branchName} · ${dateStr} · ${args.closerName}`,
     contents: bubble
   };
 }
@@ -1348,6 +1384,7 @@ export type ReadinessCardArgs = {
   reporterName: string;
   slot: "11:30" | "16:00";
   checklist: Array<{ label: string; checked: boolean; note: string | null }>;
+  isRevision?: boolean;
 };
 
 export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
@@ -1378,6 +1415,7 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
     body: {
       type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
       contents: [
+        ...(revisionChip(args.isRevision) ? [revisionChip(args.isRevision) as Record<string, unknown>] : []),
         { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
         { type: "text", text: dateStr, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs", wrap: true },
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
@@ -1413,8 +1451,8 @@ const REPORT_TYPE_LABEL_TH: Record<
   "shift_open" | "shift_close" | "readiness_1130" | "readiness_1600",
   string
 > = {
-  shift_open:     "เช็คลิสต์ก่อนเริ่มงาน",
-  shift_close:    "เช็คลิสต์หลังเลิกงาน",
+  shift_open:     "Check list ก่อนเริ่มงาน",
+  shift_close:    "Check list หลังเลิกงาน",
   readiness_1130: "รายงานความพร้อมรอบ 11:30 น.",
   readiness_1600: "รายงานความพร้อมรอบ 16:00 น."
 };

@@ -370,6 +370,22 @@ function runMigrations(db: Database.Database): void {
   // 4 daily-report types so close + readiness reports also enforce
   // one-per-day-per-branch. The narrow shift_open index is dropped
   // first so it doesn't conflict with the broader replacement.
+  // 2026-05 (later): add `superseded_at` + `replaces_id` so admin can
+  // "approve edit" instead of hard-deleting the original report.
+  // Granting an unlock marks the original superseded; the staff's
+  // re-submit creates a new row that references the original via
+  // replaces_id. Audit-trail preserved, and the unique-per-day
+  // partial index switches to filter superseded_at IS NULL so only
+  // the live (non-superseded) row counts toward uniqueness.
+  const drCols = db.prepare("PRAGMA table_info(daily_reports)").all() as Array<{ name: string }>;
+  const drColNames = new Set(drCols.map((c) => c.name));
+  if (!drColNames.has("superseded_at")) {
+    db.exec("ALTER TABLE daily_reports ADD COLUMN superseded_at TEXT");
+  }
+  if (!drColNames.has("replaces_id")) {
+    db.exec("ALTER TABLE daily_reports ADD COLUMN replaces_id INTEGER REFERENCES daily_reports(id)");
+  }
+
   db.exec(`
     DELETE FROM daily_reports
     WHERE id NOT IN (
@@ -378,10 +394,16 @@ function runMigrations(db: Database.Database): void {
     );
   `);
   db.exec("DROP INDEX IF EXISTS idx_daily_reports_shift_open_unique");
+  // Replace the prior broad unique index with one that filters out
+  // superseded rows, so a revision can be inserted alongside the
+  // original without violating uniqueness. Idempotent: DROP/CREATE
+  // is safe to re-run.
+  db.exec("DROP INDEX IF EXISTS idx_daily_reports_unique_per_day");
   try {
     db.exec(`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_reports_unique_per_day
-        ON daily_reports(branch_id, type, report_date);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_reports_live_unique
+        ON daily_reports(branch_id, type, report_date)
+        WHERE superseded_at IS NULL;
     `);
   } catch (e) {
     // Defense-in-depth: if cleanup somehow missed a dupe (concurrent
@@ -390,7 +412,7 @@ function runMigrations(db: Database.Database): void {
     // the route handler still prevents new dupes; admin can clean
     // the residue manually and a future restart will pick up the
     // index.
-    console.warn("daily_reports unique index creation skipped:", e);
+    console.warn("daily_reports live unique index creation skipped:", e);
   }
 
   // shift_unlock_requests — staff asks admin to let them re-submit a
@@ -412,6 +434,25 @@ function runMigrations(db: Database.Database): void {
       decision_note TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_shift_unlock_status ON shift_unlock_requests(status, created_at);
+  `);
+
+  // persona_activity_log — lightweight audit trail of who did what
+  // (no details). Keeps the table small + cheap: just user_id +
+  // action string + optional ref_id pointing at the affected row +
+  // timestamp. Reads stay rare (admin opens an audit screen), so we
+  // don't over-index.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS persona_activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      action TEXT NOT NULL,
+      ref_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_persona_activity_user_created
+      ON persona_activity_log(user_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_persona_activity_action_created
+      ON persona_activity_log(action, created_at);
   `);
 
   // 2026-05: decision_note added so admin can explain a rejection
@@ -1209,6 +1250,26 @@ function runMigrations(db: Database.Database): void {
         ON payroll_periods(status, period_end);
       COMMIT;
     `);
+  }
+}
+
+/** Append a row to persona_activity_log. Minimal interface — caller
+ *  just supplies who did what + optional ref_id pointing at the
+ *  affected row. Logging is best-effort; we swallow errors so a log
+ *  insert can't take down the request (audit trails should never
+ *  block the user-facing flow). */
+export function logPersonaAction(
+  userId: number,
+  action: string,
+  refId?: number | null
+): void {
+  try {
+    getDb().prepare(`
+      INSERT INTO persona_activity_log (user_id, action, ref_id, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(userId, action, refId ?? null, new Date().toISOString());
+  } catch (e) {
+    console.warn("logPersonaAction failed:", e);
   }
 }
 

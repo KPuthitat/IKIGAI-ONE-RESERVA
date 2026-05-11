@@ -28,7 +28,7 @@ import ShiftReportLocked from "../ShiftReportLocked";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "เช็คลิสต์ก่อนเริ่มงาน · PERSONA" };
+export const metadata: Metadata = { title: "Check list ก่อนเริ่มงาน · PERSONA" };
 
 export default function ShiftOpenPage() {
   const user = requireUser();
@@ -63,6 +63,7 @@ export default function ShiftOpenPage() {
     SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name
     FROM daily_reports r JOIN users u ON r.user_id = u.id
     WHERE r.type = 'shift_open' AND r.branch_id = ? AND r.report_date = ?
+      AND r.superseded_at IS NULL
   `).get(branch.id, today) as
     | { id: number; user_id: number; created_at: string; opener_name: string }
     | undefined;
@@ -109,10 +110,14 @@ export default function ShiftOpenPage() {
     );
   }
 
-  // Pre-fill yesterday's closing from the latest shift_close at this branch.
+  // Pre-fill yesterday's closing from the latest LIVE (non-superseded)
+  // shift_close at this branch. Superseded rows are kept for audit
+  // when admin grants an unlock, but they're stale — the live row is
+  // the source of truth. Staff can still hand-edit the prefilled
+  // value once it lands in the form.
   const lastClose = db.prepare(`
     SELECT data FROM daily_reports
-    WHERE type = 'shift_close' AND branch_id = ?
+    WHERE type = 'shift_close' AND branch_id = ? AND superseded_at IS NULL
     ORDER BY created_at DESC LIMIT 1
   `).get(branch.id) as { data: string } | undefined;
   let yesterdayClosingHint: number | null = null;

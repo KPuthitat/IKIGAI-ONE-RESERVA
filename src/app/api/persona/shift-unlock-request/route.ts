@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
-import { getDb, type Branch } from "@/lib/db";
+import { getDb, logPersonaAction, type Branch } from "@/lib/db";
 import { shiftUnlockRequestFlex, notifyDailyReport } from "@/lib/line";
 
 // POST /api/persona/shift-unlock-request — staff asks admin to unlock
@@ -71,6 +71,15 @@ export async function POST(req: Request) {
     VALUES (?, ?, ?, 'pending', ?)
   `).run(daily_report_id, user.id, reason, insertedAt);
   const requestId = result.lastInsertRowid as number;
+
+  // Audit log — staff filed an unlock request; ref_id is the new
+  // request row. The action verb includes the report type so admin
+  // can filter the audit screen later if needed.
+  logPersonaAction(
+    user.id,
+    `shift_unlock_request.create.${report.type}`,
+    requestId
+  );
 
   // Push Flex notification to staff group — fire-and-forget; log error
   // but don't block the response. Admin sees the card in the same group
