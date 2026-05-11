@@ -55,9 +55,11 @@ export default function AdminShiftReportsPage() {
 
   // Pending unlock requests across all reports at this branch — not
   // just today, in case a report was filed yesterday and admin only
-  // gets to it now.
+  // gets to it now. Includes report_type so admin can tell which
+  // form the request is for (shift_open / shift_close / readiness_*).
   const pending = db.prepare(`
     SELECT r.id, r.daily_report_id, r.reason, r.created_at,
+           dr.type AS report_type,
            dr.report_date, dr.user_id AS opener_id, dr.created_at AS report_created_at,
            u.display_name AS requester_name,
            ou.display_name AS opener_name

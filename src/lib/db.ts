@@ -359,26 +359,29 @@ function runMigrations(db: Database.Database): void {
   //
   // Pre-cleanup: prior to this migration, the API didn't dedupe so
   // databases that have been running a while may carry duplicate rows
-  // (same branch + date, multiple shift_open). Creating the unique
-  // index against those rows would throw SQLITE_CONSTRAINT and brick
-  // the whole getDb() call (every request fails — login included).
-  // We collapse dupes first by keeping only the highest-id (latest)
-  // row per (branch, date) group and dropping the older ones, then
+  // (same branch + type + date). Creating the unique index against
+  // those rows would throw SQLITE_CONSTRAINT and brick the whole
+  // getDb() call (every request fails — login included). We collapse
+  // dupes first by keeping only the highest-id (latest) row per
+  // (branch, type, date) group and dropping the older ones, then
   // create the index. The DELETE is a no-op on clean databases.
+  //
+  // 2026-05: index broadened from `WHERE type = 'shift_open'` to all
+  // 4 daily-report types so close + readiness reports also enforce
+  // one-per-day-per-branch. The narrow shift_open index is dropped
+  // first so it doesn't conflict with the broader replacement.
   db.exec(`
     DELETE FROM daily_reports
-    WHERE type = 'shift_open'
-      AND id NOT IN (
-        SELECT MAX(id) FROM daily_reports
-        WHERE type = 'shift_open'
-        GROUP BY branch_id, report_date
-      );
+    WHERE id NOT IN (
+      SELECT MAX(id) FROM daily_reports
+      GROUP BY branch_id, type, report_date
+    );
   `);
+  db.exec("DROP INDEX IF EXISTS idx_daily_reports_shift_open_unique");
   try {
     db.exec(`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_reports_shift_open_unique
-        ON daily_reports(branch_id, report_date)
-        WHERE type = 'shift_open';
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_reports_unique_per_day
+        ON daily_reports(branch_id, type, report_date);
     `);
   } catch (e) {
     // Defense-in-depth: if cleanup somehow missed a dupe (concurrent
@@ -387,7 +390,7 @@ function runMigrations(db: Database.Database): void {
     // the route handler still prevents new dupes; admin can clean
     // the residue manually and a future restart will pick up the
     // index.
-    console.warn("shift_open unique index creation skipped:", e);
+    console.warn("daily_reports unique index creation skipped:", e);
   }
 
   // shift_unlock_requests — staff asks admin to let them re-submit a

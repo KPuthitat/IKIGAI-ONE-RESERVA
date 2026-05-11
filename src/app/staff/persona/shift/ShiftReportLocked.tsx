@@ -5,16 +5,19 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 
-// Locked-state card shown when today's shift_open at this branch has
-// already been submitted by someone (possibly the same staff, possibly
-// another). Includes an inline "ขอแก้ไข" form that posts to the
-// unlock-request endpoint — admin gets a Flex card in the staff group
-// asking to approve. Admin grants by deleting the daily_reports row
-// (Phase 1); a future admin UI will let them do it with a button.
+// Locked-state card shown when today's report (any of the 4 types)
+// has already been submitted at this branch. Includes an inline
+// "ขอแก้ไข" form that posts to the unlock-request endpoint — admin
+// gets a Flex card in the staff group asking to approve. Admin
+// approves/rejects via /admin/persona/shift-reports.
+//
+// `typeLabel` is the human-readable Thai name of the report type
+// ("เช็คลิสต์ก่อนเริ่มงาน" etc.), interpolated into the title/body
+// so this one component handles all 4 report types.
 
 function formatBkkTime(iso: string): string {
   // The created_at column stores ISO timestamps in UTC. Convert to
-  // Bangkok time for the user-facing "เปิดเมื่อ" line.
+  // Bangkok time for the user-facing "ส่งเมื่อ" line.
   const d = new Date(iso);
   const bkk = new Date(d.getTime() + 7 * 60 * 60 * 1000);
   const hh = String(bkk.getUTCHours()).padStart(2, "0");
@@ -22,10 +25,15 @@ function formatBkkTime(iso: string): string {
   return `${hh}:${mm}`;
 }
 
-export default function ShiftOpenLocked({
-  branchName, reportId, openerName, openedAtIso, alreadyRequested, lastRejected
+export default function ShiftReportLocked({
+  branchName, typeLabel, reportId, openerName, openedAtIso,
+  alreadyRequested, lastRejected
 }: {
   branchName: string;
+  /** Human-readable Thai report-type label, e.g. "เช็คลิสต์ก่อนเริ่มงาน".
+   *  Interpolated into the locked-state copy so this component renders
+   *  correctly for shift_open / shift_close / readiness_*. */
+  typeLabel: string;
   reportId: number;
   openerName: string;
   openedAtIso: string;
@@ -49,7 +57,7 @@ export default function ShiftOpenLocked({
     e.preventDefault();
     setErr(null);
     if (reason.trim().length < 3) {
-      setErr(t("staff.persona.shift.open.locked.reasonRequired"));
+      setErr(t("staff.persona.shiftReport.locked.reasonRequired"));
       return;
     }
     setBusy(true);
@@ -82,10 +90,10 @@ export default function ShiftOpenLocked({
       <div className="card text-center space-y-3">
         <div className="text-5xl">📨</div>
         <h2 className="text-xl font-bold text-slate-800">
-          {t("staff.persona.shift.open.locked.requestSent.title")}
+          {t("staff.persona.shiftReport.locked.requestSent.title")}
         </h2>
         <p className="text-sm text-slate-600">
-          {t("staff.persona.shift.open.locked.requestSent.body")}
+          {t("staff.persona.shiftReport.locked.requestSent.body")}
         </p>
       </div>
     );
@@ -98,16 +106,19 @@ export default function ShiftOpenLocked({
           <div className="text-3xl">🔒</div>
           <div className="flex-1 space-y-1">
             <h2 className="font-bold text-slate-800">
-              {t("staff.persona.shift.open.locked.title", { branch: branchName })}
+              {t("staff.persona.shiftReport.locked.title", {
+                branch: branchName,
+                type: typeLabel
+              })}
             </h2>
             <p className="text-sm text-slate-600">
-              {t("staff.persona.shift.open.locked.body", {
+              {t("staff.persona.shiftReport.locked.body", {
                 opener: openerName,
                 time: formatBkkTime(openedAtIso)
               })}
             </p>
             <p className="text-xs text-slate-500 pt-1">
-              {t("staff.persona.shift.open.locked.hint")}
+              {t("staff.persona.shiftReport.locked.hint", { type: typeLabel })}
             </p>
           </div>
         </div>
@@ -120,14 +131,14 @@ export default function ShiftOpenLocked({
         <div className="card border-l-4 border-rose-400 bg-rose-50/50 space-y-1">
           <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
             <span>✗</span>
-            {t("staff.persona.shift.open.locked.lastRejected.title")}
+            {t("staff.persona.shiftReport.locked.lastRejected.title")}
           </h3>
           <p className="text-sm text-slate-700 whitespace-pre-wrap">
             {lastRejected.decisionNote
-              ? t("staff.persona.shift.open.locked.lastRejected.body", {
+              ? t("staff.persona.shiftReport.locked.lastRejected.body", {
                   note: lastRejected.decisionNote
                 })
-              : t("staff.persona.shift.open.locked.lastRejected.noNote")}
+              : t("staff.persona.shiftReport.locked.lastRejected.noNote")}
           </p>
         </div>
       )}
@@ -139,28 +150,28 @@ export default function ShiftOpenLocked({
           className="btn-secondary w-full"
         >
           {lastRejected
-            ? t("staff.persona.shift.open.locked.requestAgain")
-            : t("staff.persona.shift.open.locked.requestBtn")}
+            ? t("staff.persona.shiftReport.locked.requestAgain")
+            : t("staff.persona.shiftReport.locked.requestBtn")}
         </button>
       ) : (
         <form onSubmit={submitRequest} className="card space-y-3">
           <h3 className="font-bold text-slate-800">
-            {t("staff.persona.shift.open.locked.formTitle")}
+            {t("staff.persona.shiftReport.locked.formTitle")}
           </h3>
           <div>
             <label className="label">
-              {t("staff.persona.shift.open.locked.reasonLabel")} *
+              {t("staff.persona.shiftReport.locked.reasonLabel")} *
             </label>
             <textarea
               className="input text-sm"
               rows={3}
               maxLength={500}
-              placeholder={t("staff.persona.shift.open.locked.reasonPlaceholder")}
+              placeholder={t("staff.persona.shiftReport.locked.reasonPlaceholder")}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
             />
             <p className="text-[10px] text-slate-400 mt-1">
-              {t("staff.persona.shift.open.locked.reasonHint")}
+              {t("staff.persona.shiftReport.locked.reasonHint")}
             </p>
           </div>
           {err && (
@@ -181,7 +192,7 @@ export default function ShiftOpenLocked({
             >
               {busy
                 ? t("common.submitting")
-                : t("staff.persona.shift.open.locked.sendBtn")}
+                : t("staff.persona.shiftReport.locked.sendBtn")}
             </button>
           </div>
         </form>

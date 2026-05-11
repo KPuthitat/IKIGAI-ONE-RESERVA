@@ -1,4 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
+import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import LogoutButton from "../admin/LogoutButton";
@@ -24,6 +25,22 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
     : null;
   const hasBranchChoice = user.branches.length > 1;
 
+  // Badge: # of this user's edit requests with status='pending' or
+  // recently rejected (so staff sees a count indicator on their
+  // "คำขอแก้ไขรายการ" entry — mirror of admin's pending badge).
+  // Wrapped in try/catch in case schema isn't migrated yet on a
+  // first-deploy boot.
+  let myPendingEditCount = 0;
+  try {
+    const row = getDb().prepare(
+      `SELECT COUNT(*) AS n FROM shift_unlock_requests
+       WHERE requested_by = ? AND status = 'pending'`
+    ).get(user.id) as { n: number } | undefined;
+    myPendingEditCount = row?.n ?? 0;
+  } catch {
+    myPendingEditCount = 0;
+  }
+
   // Sections scoped to each module via pathPrefix.
   const sections: SidebarSection[] = [
     {
@@ -39,9 +56,38 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       pathPrefix: "/staff/persona",
       items: [
         { href: "/staff/persona", label: t(lang, "staff.nav.timeClock") },
-        { href: "/staff/persona/shift/open", label: t(lang, "staff.nav.shiftOpen") },
         { href: "/staff/persona/leave", label: t(lang, "staff.nav.leave") },
         { href: "/staff/persona/resignation", label: t(lang, "staff.nav.resignation") }
+      ]
+    },
+    // Pre-shift items mirror the admin sidebar grouping. Each entry
+    // is a separate route (not query-param) on the staff side because
+    // each form has its own page-level lock + edit-request flow.
+    {
+      label: t(lang, "staff.nav.section.preShift"),
+      pathPrefix: "/staff/persona",
+      items: [
+        { href: "/staff/persona/shift/open", label: t(lang, "staff.nav.preShiftChecklist") },
+        { href: "/staff/persona/shift/readiness-1130", label: t(lang, "staff.nav.readiness1130") },
+        { href: "/staff/persona/shift/readiness-1600", label: t(lang, "staff.nav.readiness1600") }
+      ]
+    },
+    {
+      label: t(lang, "staff.nav.section.postShift"),
+      pathPrefix: "/staff/persona",
+      items: [
+        { href: "/staff/persona/shift/close", label: t(lang, "staff.nav.postShiftChecklist") }
+      ]
+    },
+    {
+      label: t(lang, "staff.nav.section.requests"),
+      pathPrefix: "/staff/persona",
+      items: [
+        {
+          href: "/staff/persona/shift/edit-requests",
+          label: t(lang, "staff.nav.editRequests"),
+          badge: myPendingEditCount > 0 ? myPendingEditCount : undefined
+        }
       ]
     },
     {

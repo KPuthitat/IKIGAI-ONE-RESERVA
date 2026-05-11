@@ -5,12 +5,10 @@ import { getDb, type Branch } from "@/lib/db";
 import { shiftUnlockRequestFlex, notifyDailyReport } from "@/lib/line";
 
 // POST /api/persona/shift-unlock-request — staff asks admin to unlock
-// the existing shift_open at their branch so they can re-submit (e.g.
-// they typed the wrong morning drawer amount). Inserts a row in
-// shift_unlock_requests + pushes a Flex card to the staff LINE group
-// so admin sees the request inline. Admin grants by deleting the
-// daily_reports row (Phase 1) — a future admin UI will let them do
-// it with a button.
+// any submitted daily_report (shift_open / shift_close / readiness_*)
+// so they can re-submit. Inserts a row in shift_unlock_requests +
+// pushes a Flex card to the staff LINE group so admin sees the
+// request inline. Admin acts via /admin/persona/shift-reports.
 
 const Body = z.object({
   daily_report_id: z.number().int().positive(),
@@ -32,13 +30,15 @@ export async function POST(req: Request) {
   // Resolve the report so we can verify the branch + push to the
   // right LINE group. The unlock request is meaningless without
   // the report; rejecting unknown ids stops accidental garbage.
+  // We don't filter by type here — staff can request edits on any
+  // of the 4 report types (open, close, readiness 11:30, 16:00).
   const report = db.prepare(`
-    SELECT r.id, r.branch_id, r.report_date, r.user_id,
+    SELECT r.id, r.type, r.branch_id, r.report_date, r.user_id,
            u.display_name AS opener_name
     FROM daily_reports r JOIN users u ON r.user_id = u.id
-    WHERE r.id = ? AND r.type = 'shift_open'
+    WHERE r.id = ?
   `).get(daily_report_id) as
-    | { id: number; branch_id: number; report_date: string; user_id: number; opener_name: string }
+    | { id: number; type: string; branch_id: number; report_date: string; user_id: number; opener_name: string }
     | undefined;
   if (!report) return NextResponse.json({ error: "report_not_found" }, { status: 404 });
 
@@ -78,6 +78,8 @@ export async function POST(req: Request) {
   const flex = shiftUnlockRequestFlex({
     branchName: branch.name,
     reportDate: report.report_date,
+    reportType: report.type as
+      | "shift_open" | "shift_close" | "readiness_1130" | "readiness_1600",
     openerName: report.opener_name,
     requesterName: user.display_name,
     reason

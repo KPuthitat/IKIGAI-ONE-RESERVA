@@ -1185,24 +1185,252 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
   };
 }
 
+// ── PERSONA: shift_close + readiness Flex cards ──────────────────────
+//
+// Mirror shiftOpenFlex's structure so admin sees consistent visuals
+// across the 4 report types. Each card uses the same header bar
+// (IKIGAI OS · PERSONA • STAFF), summarizes the type-specific data,
+// and lists the checklist with the same 3-state rendering (done /
+// skipped-with-note / not-done) plus an incomplete-counter.
+
+/** Shared checklist body block — 3-state rendering + summary line.
+ *  Returns the Flex contents to splice into a body box. */
+function checklistFlexBlock(
+  checklist: Array<{ label: string; checked: boolean; note: string | null }>
+): unknown[] {
+  if (checklist.length === 0) return [];
+  const doneCount = checklist.filter((it) => it.checked).length;
+  const skippedCount = checklist.filter((it) => !it.checked && !!it.note?.trim()).length;
+  const incompleteCount = checklist.filter((it) => !it.checked && !it.note?.trim()).length;
+  const allDone = doneCount === checklist.length;
+
+  const supervisorWarning =
+    "เช็คลิสต์ยังไม่ครบถ้วน ให้หัวหน้างานตรวจสอบอีกครั้ง";
+  const summary = allDone
+    ? { text: "✓ เช็คลิสต์ครบทุกข้อ", color: "#059669" }
+    : incompleteCount > 0
+      ? {
+          text: skippedCount > 0
+            ? `⚠ ${supervisorWarning} (ยังไม่ได้ทำ ${incompleteCount} ข้อ · ข้ามวันนี้ ${skippedCount} ข้อ)`
+            : `⚠ ${supervisorWarning}`,
+          color: "#dc2626"
+        }
+      : {
+          text: `ทำแล้ว ${doneCount} ข้อ · ข้ามวันนี้ ${skippedCount} ข้อ (มีหมายเหตุ)`,
+          color: "#b45309"
+        };
+
+  const itemBox = (it: { label: string; checked: boolean; note: string | null }) => {
+    const note = it.note?.trim();
+    const skipped = !it.checked && !!note;
+    const icon = it.checked ? "✓" : skipped ? "📝" : "✗";
+    const iconColor = it.checked ? "#059669" : skipped ? "#b45309" : "#dc2626";
+    const labelColor = it.checked ? COLOR_TEXT_DARK : skipped ? "#475569" : "#dc2626";
+    const rowBox: Record<string, unknown> = {
+      type: "box", layout: "horizontal", spacing: "sm",
+      contents: [
+        {
+          type: "text", text: icon,
+          flex: 0, size: "sm", weight: "bold",
+          color: iconColor
+        },
+        {
+          type: "text", text: it.label,
+          flex: 1, size: "xs", wrap: true,
+          color: labelColor,
+          weight: it.checked ? "regular" : "bold"
+        }
+      ]
+    };
+    if (skipped && note) {
+      return {
+        type: "box", layout: "vertical", spacing: "xs",
+        contents: [
+          rowBox,
+          {
+            type: "text",
+            text: `↳ ${note}`,
+            size: "xxs",
+            color: "#b45309",
+            wrap: true,
+            margin: "none"
+          }
+        ]
+      };
+    }
+    return rowBox;
+  };
+
+  return [
+    { type: "separator", margin: "md", color: COLOR_DIVIDER },
+    {
+      type: "text",
+      text: summary.text,
+      size: "xs",
+      color: summary.color,
+      weight: "bold",
+      margin: "md",
+      wrap: true
+    },
+    {
+      type: "box", layout: "vertical", spacing: "sm", margin: "sm",
+      contents: checklist.map(itemBox)
+    }
+  ];
+}
+
+export type ShiftCloseCardArgs = {
+  branchName: string;
+  reportDate: string;          // YYYY-MM-DD
+  closerName: string;
+  closingDrawerAmount: number | null;
+  checklist: Array<{ label: string; checked: boolean; note: string | null }>;
+};
+
+export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
+  const dateStr = formatThaiDate(args.reportDate);
+  const fmtBaht = (n: number | null) =>
+    n == null ? "—" : `${n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท`;
+
+  const bubble = {
+    type: "bubble", size: "mega",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: COLOR_INK_700, paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "PERSONA • STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", margin: "md",
+          contents: [
+            { type: "text", text: "เช็คลิสต์หลังเลิกงาน", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "text", text: dateStr, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs", wrap: true },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        {
+          type: "box", layout: "vertical", spacing: "sm", margin: "md",
+          contents: [
+            kvRow("ผู้ส่งรายการ", args.closerName),
+            kvRow("ยอดเงินปิดงาน", fmtBaht(args.closingDrawerAmount),
+              { valueColor: COLOR_BRAND, valueWeight: "bold" })
+          ]
+        },
+        ...checklistFlexBlock(args.checklist)
+      ]
+    },
+    styles: {
+      header: { backgroundColor: COLOR_INK_700 },
+      body: { backgroundColor: "#ffffff" }
+    }
+  };
+  return {
+    type: "flex",
+    altText: `เช็คลิสต์หลังเลิกงาน ${args.branchName} · ${dateStr} · ${args.closerName}`,
+    contents: bubble
+  };
+}
+
+export type ReadinessCardArgs = {
+  branchName: string;
+  reportDate: string;
+  reporterName: string;
+  slot: "11:30" | "16:00";
+  checklist: Array<{ label: string; checked: boolean; note: string | null }>;
+};
+
+export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
+  const dateStr = formatThaiDate(args.reportDate);
+  const titleText = `รายงานความพร้อมรอบ ${args.slot} น.`;
+
+  const bubble = {
+    type: "bubble", size: "mega",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: COLOR_INK_700, paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "PERSONA • STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", margin: "md",
+          contents: [
+            { type: "text", text: titleText, color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "text", text: dateStr, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs", wrap: true },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        {
+          type: "box", layout: "vertical", spacing: "sm", margin: "md",
+          contents: [
+            kvRow("ผู้ส่งรายการ", args.reporterName)
+          ]
+        },
+        ...checklistFlexBlock(args.checklist)
+      ]
+    },
+    styles: {
+      header: { backgroundColor: COLOR_INK_700 },
+      body: { backgroundColor: "#ffffff" }
+    }
+  };
+  return {
+    type: "flex",
+    altText: `${titleText} ${args.branchName} · ${dateStr} · ${args.reporterName}`,
+    contents: bubble
+  };
+}
+
 // ── PERSONA: shift unlock request Flex ───────────────────────────────
 //
-// When a staff member spots an error on the shift_open they already
-// submitted (e.g. wrong morning drawer amount), they hit "ขอแก้ไข"
-// and this card lands in the staff LINE group so admin sees the
-// request inline. Admin grants by deleting the daily_reports row
-// (Phase 1) — staff can re-submit afterwards.
+// When a staff member spots an error on a daily report they already
+// submitted (any of the 4 types), they hit "ขอแก้ไข" and this card
+// lands in the staff LINE group so admin sees the request inline.
+// Admin acts via /admin/persona/shift-reports.
+
+const REPORT_TYPE_LABEL_TH: Record<
+  "shift_open" | "shift_close" | "readiness_1130" | "readiness_1600",
+  string
+> = {
+  shift_open:     "เช็คลิสต์ก่อนเริ่มงาน",
+  shift_close:    "เช็คลิสต์หลังเลิกงาน",
+  readiness_1130: "รายงานความพร้อมรอบ 11:30 น.",
+  readiness_1600: "รายงานความพร้อมรอบ 16:00 น."
+};
 
 export type ShiftUnlockRequestArgs = {
   branchName: string;
   reportDate: string;          // YYYY-MM-DD
-  openerName: string;          // who originally opened the shift
+  reportType: keyof typeof REPORT_TYPE_LABEL_TH;
+  openerName: string;          // who originally submitted
   requesterName: string;       // who's asking for unlock (may differ)
   reason: string;
 };
 
 export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMessage {
   const dateStr = formatThaiDate(args.reportDate);
+  const typeLabel = REPORT_TYPE_LABEL_TH[args.reportType];
   const bubble = {
     type: "bubble",
     size: "mega",
@@ -1236,6 +1464,8 @@ export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMe
         {
           type: "box", layout: "vertical", spacing: "sm", margin: "md",
           contents: [
+            kvRow("รายการที่ขอแก้ไข", typeLabel,
+              { valueColor: COLOR_TEXT_DARK }),
             kvRow("ผู้ส่งรายการเดิม", args.openerName),
             kvRow("ผู้ขอแก้ไข", args.requesterName,
               { valueColor: COLOR_BRAND, valueWeight: "bold" })
@@ -1255,7 +1485,7 @@ export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMe
         },
         {
           type: "text",
-          text: "มีคำขอแก้ไขเช็คลิสต์ก่อนเริ่มงาน ให้แอดมินปลดล็อค และตรวจสอบรายการอีกครั้ง",
+          text: `มีคำขอแก้ไข${typeLabel} ให้แอดมินปลดล็อค และตรวจสอบรายการอีกครั้ง`,
           size: "xxs",
           color: "#b45309",
           wrap: true,

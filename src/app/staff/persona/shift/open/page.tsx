@@ -24,7 +24,7 @@ import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import ShiftOpenForm from "./ShiftOpenForm";
-import ShiftOpenLocked from "./ShiftOpenLocked";
+import ShiftReportLocked from "../ShiftReportLocked";
 
 export const dynamic = "force-dynamic";
 
@@ -96,8 +96,9 @@ export default function ShiftOpenPage() {
             {branch.name} · {t(lang, "staff.persona.shift.open.subtitle")}
           </p>
         </div>
-        <ShiftOpenLocked
+        <ShiftReportLocked
           branchName={branch.name}
+          typeLabel={t(lang, "staff.persona.shiftReport.typeLabel.shiftOpen")}
           reportId={existingOpen.id}
           openerName={existingOpen.opener_name}
           openedAtIso={existingOpen.created_at}

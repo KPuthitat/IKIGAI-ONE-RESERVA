@@ -5,56 +5,48 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 
-// The branch is pinned to whichever branch the staff selected at
-// /staff/branch-picker (session activeBranchId). To swap branches
-// mid-day, staff uses the topbar "เปลี่ยน" link — this form just
-// trusts the server-supplied branch and submits to it.
+// Shared "click off the items + add notes for skipped ones" UI used
+// by readiness 11:30, readiness 16:00, and (effectively) shift_open
+// + shift_close — although the latter two need extra cash fields and
+// stay in their own form components.
 //
-// Each checklist row has THREE effective states:
-//   - checked (✓)              → done
-//   - unchecked + note         → skipped on purpose, with reason
-//   - unchecked + no note      → not done (red flag for admin)
-// The submit payload carries `{label, checked, note}` per row, and
-// the LINE Flex card renders all three states distinctly so admin
-// can read why something was skipped without chasing the staff.
+// This thin runner handles the checklist portion only: state, the
+// per-row "+ เพิ่มหมายเหตุ" toggle, and the validate-on-submit rule
+// (every unchecked item must carry a non-empty note before the form
+// can submit).
+//
+// Caller passes:
+//   - `type` so the API knows which daily-report bucket to write to
+//   - `branchId` for branch validation server-side
+//   - `checklistItems` rendered from admin's per-branch list
+//   - `extraSummary` (optional) — additional fields to render above
+//     the checklist, e.g. nothing for readiness, or a money field
+//     for shift_close. We keep this simple: callers wrap us if they
+//     need extra fields. So this component is checklist-only.
+//   - `successCopy` — title + body shown on the "submitted" screen.
 
 type ChecklistItem = { id: number; label: string };
+type ReportType = "readiness_1130" | "readiness_1600";
 
-export default function ShiftOpenForm({
-  branchId, branchName, openerName, today, yesterdayClosingHint, checklistItems
+export default function ChecklistRunner({
+  type, branchId, branchName, checklistItems, successCopy
 }: {
+  type: ReportType;
   branchId: number;
   branchName: string;
-  openerName: string;
-  today: string;
-  yesterdayClosingHint: number | null;
   checklistItems: ChecklistItem[];
+  successCopy: { title: string; body: string };
 }) {
   const router = useRouter();
   const { t } = useLang();
 
-  // Date is derived server-side (always today). Opener is the logged-in
-  // user. Both are read-only on the form so staff can't backdate or
-  // file on someone else's behalf — server enforces too as defense.
-  const [yesterdayAmount, setYesterdayAmount] = useState<string>(
-    yesterdayClosingHint != null ? String(yesterdayClosingHint) : ""
-  );
-  const [morningAmount, setMorningAmount] = useState<string>("");
   const [checked, setChecked] = useState<Record<number, boolean>>(() =>
     Object.fromEntries(checklistItems.map((it) => [it.id, false]))
   );
-  // Per-item note text. An empty string is the same as "no note" — only
-  // non-empty strings turn the row into the "skipped-with-note" state.
   const [notes, setNotes] = useState<Record<number, string>>(() =>
     Object.fromEntries(checklistItems.map((it) => [it.id, ""]))
   );
-  // Which item ids have their note textarea expanded right now. Toggled
-  // by clicking the small "หมายเหตุ" button on the row, or auto-opened
-  // when submit catches an unticked-without-note item.
   const [openNotes, setOpenNotes] = useState<Record<number, boolean>>({});
-  // Which item ids failed the "must-have-note-when-unchecked" rule on
-  // the last submit attempt. Their note inputs render with a red ring
-  // and the row gets a red error border.
   const [errorIds, setErrorIds] = useState<Record<number, boolean>>({});
 
   const [busy, setBusy] = useState(false);
@@ -65,21 +57,11 @@ export default function ShiftOpenForm({
     setChecked(Object.fromEntries(checklistItems.map((it) => [it.id, value])));
   }
 
-  function parseAmount(s: string): number | null {
-    const trimmed = s.trim();
-    if (trimmed === "") return null;
-    const n = Number(trimmed.replace(/,/g, ""));
-    if (!Number.isFinite(n) || n < 0) return null;
-    return n;
-  }
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
-    // Validate: every unticked item must carry a non-empty note. Anything
-    // missing → show the error banner, auto-open those rows' note inputs,
-    // and abort. This pushes staff to either tick the item or explain
-    // why it's being skipped before the report leaves the form.
+    // Same validation as ShiftOpenForm: every unticked row must have
+    // a note. Open the note inputs for offending rows + show banner.
     const missingNoteIds = checklistItems
       .filter((it) => !checked[it.id] && !((notes[it.id] || "").trim()))
       .map((it) => it.id);
@@ -100,39 +82,27 @@ export default function ShiftOpenForm({
     setErrorIds({});
     setBusy(true);
     try {
-      const yesterdayParsed = parseAmount(yesterdayAmount);
-      const morningParsed = parseAmount(morningAmount);
       const checklistPayload = checklistItems.map((it) => {
         const note = (notes[it.id] || "").trim();
         return {
           label: it.label,
           checked: !!checked[it.id],
-          // Send null instead of empty string so the API/Flex layer
-          // doesn't have to treat "" specially.
           note: note ? note : null
         };
       });
-
       const res = await fetch(apiUrl("/api/persona/daily-report"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: "shift_open",
+          type,
           branch_id: branchId,
-          data: {
-            yesterday_closing_amount: yesterdayParsed,
-            morning_drawer_amount: morningParsed,
-            checklist: checklistPayload
-          }
+          data: { checklist: checklistPayload }
         })
       });
       const j = await res.json().catch(() => ({}));
-      // Server returns 409 when someone else just submitted the same
-      // report between page load and submit. Refresh so the locked
-      // view picks up. (The error code was renamed `already_opened` →
-      // `already_submitted` when the endpoint generalized to all 4
-      // daily-report types.)
       if (res.status === 409 && j.error === "already_submitted") {
+        // Someone else just submitted between page load and submit —
+        // refresh so the locked view picks up.
         router.refresh();
         return;
       }
@@ -140,7 +110,6 @@ export default function ShiftOpenForm({
         setMsg({ kind: "err", text: t("common.error") });
         return;
       }
-      setMsg({ kind: "ok", text: t("staff.persona.shift.open.savedOk") });
       setDone(true);
       router.refresh();
     } catch {
@@ -151,21 +120,15 @@ export default function ShiftOpenForm({
   }
 
   if (done) {
-    const allChecked = checklistItems.every((it) => checked[it.id]);
     return (
       <div className="card text-center space-y-3">
-        <div className="text-5xl">{allChecked ? "✓" : "⚠"}</div>
+        <div className="text-5xl">✓</div>
         <h2 className="text-xl font-bold text-slate-800">
-          {t("staff.persona.shift.open.done.title")}
+          {successCopy.title}
         </h2>
         <p className="text-sm text-slate-600">
-          {t("staff.persona.shift.open.done.body", { branch: branchName })}
+          {successCopy.body}
         </p>
-        {!allChecked && (
-          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-            {t("staff.persona.shift.open.done.partialWarning")}
-          </div>
-        )}
         <button type="button" onClick={() => router.push("/staff/persona")}
           className="btn-secondary w-full">
           {t("common.back")}
@@ -176,44 +139,12 @@ export default function ShiftOpenForm({
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <div className="card space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="label">{t("staff.persona.shift.open.field.date")}</label>
-            <input type="text" className="input bg-slate-50 text-slate-500"
-              value={today} readOnly />
-          </div>
-          <div>
-            <label className="label">{t("staff.persona.shift.open.field.opener")}</label>
-            <input type="text" className="input bg-slate-50 text-slate-500"
-              value={openerName} readOnly />
-          </div>
-        </div>
-
-        <div>
-          <label className="label">
-            {t("staff.persona.shift.open.field.yesterdayClosing")}
-            {yesterdayClosingHint != null && (
-              <span className="ml-2 text-[10px] text-emerald-700 font-medium">
-                · {t("staff.persona.shift.open.prefilled")}
-              </span>
-            )}
-          </label>
-          <input type="number" inputMode="decimal" min={0} step="0.01"
-            className="input"
-            value={yesterdayAmount}
-            placeholder="0.00"
-            onChange={(e) => setYesterdayAmount(e.target.value)} />
-        </div>
-
-        <div>
-          <label className="label">{t("staff.persona.shift.open.field.morningDrawer")} *</label>
-          <input type="number" inputMode="decimal" min={0} step="0.01"
-            required
-            className="input"
-            value={morningAmount}
-            placeholder="0.00"
-            onChange={(e) => setMorningAmount(e.target.value)} />
+      <div className="card">
+        <div className="text-sm text-slate-600">
+          <span className="text-xs text-slate-400 tracking-[0.5px] uppercase mr-2">
+            {t("staff.persona.shift.open.field.branch")}
+          </span>
+          <span className="font-bold text-slate-800">{branchName}</span>
         </div>
       </div>
 
@@ -242,11 +173,6 @@ export default function ShiftOpenForm({
               const hasNote = note.trim().length > 0;
               const isOpen = !!openNotes[it.id];
               const hasError = !!errorIds[it.id];
-              // Visual state: red when error (unchecked + no note flagged
-              // by submit validation), emerald when done, amber when
-              // skipped-with-note, slate by default. The note state visually
-              // overrides "undone" so staff can see at a glance which rows
-              // have an explanation.
               const containerCls = hasError
                 ? "border-rose-400 bg-rose-50 ring-2 ring-rose-200"
                 : isChecked
@@ -269,8 +195,6 @@ export default function ShiftOpenForm({
                           ...prev,
                           [it.id]: e.target.checked
                         }));
-                        // Tick clears the "missing note" error since
-                        // a checked item doesn't need one.
                         if (e.target.checked) {
                           setErrorIds((prev) => {
                             const next = { ...prev };
@@ -325,8 +249,6 @@ export default function ShiftOpenForm({
                             ...prev,
                             [it.id]: e.target.value
                           }));
-                          // Typing into a previously-flagged note clears
-                          // the row's error state right away.
                           if (e.target.value.trim() && hasError) {
                             setErrorIds((prev) => {
                               const next = { ...prev };

@@ -18,11 +18,19 @@ export type PendingUnlockRow = {
   daily_report_id: number;
   reason: string;
   created_at: string;         // request created
+  report_type: "shift_open" | "shift_close" | "readiness_1130" | "readiness_1600";
   report_date: string;
   opener_id: number;
   report_created_at: string;
   requester_name: string;
   opener_name: string;
+};
+
+const REPORT_TYPE_LABELS: Record<PendingUnlockRow["report_type"], string> = {
+  shift_open:     "เช็คลิสต์ก่อนเริ่มงาน",
+  shift_close:    "เช็คลิสต์หลังเลิกงาน",
+  readiness_1130: "รายงานความพร้อมรอบ 11:30 น.",
+  readiness_1600: "รายงานความพร้อมรอบ 16:00 น."
 };
 
 // Format an ISO timestamp to Bangkok HH:MM. Used on the request card
@@ -150,7 +158,10 @@ export default function ShiftReportsClient({
                     <div className="text-xs text-slate-400 tracking-[0.5px] uppercase">
                       {t("admin.persona.shiftReports.requestLabel")}
                     </div>
-                    <div className="text-sm text-slate-700 mt-0.5">
+                    <div className="text-sm text-slate-800 font-bold mt-0.5">
+                      {REPORT_TYPE_LABELS[r.report_type]}
+                    </div>
+                    <div className="text-xs text-slate-600 mt-0.5">
                       {t("admin.persona.shiftReports.requestSummary", {
                         date: r.report_date,
                         opener: r.opener_name,
