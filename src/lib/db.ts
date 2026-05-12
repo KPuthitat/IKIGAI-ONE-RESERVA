@@ -867,6 +867,17 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("staff_group_id")) {
     db.exec("ALTER TABLE branches ADD COLUMN staff_group_id TEXT");
   }
+  // PERSONA readiness round times — per-branch HH:MM. Used in the
+  // readiness LINE Flex card title and (eventually) for scheduling
+  // reminders. Default 11:30 / 16:00 mirrors the original hardcoded
+  // round names so a fresh upgrade keeps the same display. Admin can
+  // edit per branch at /admin/persona/settings.
+  if (!bnames2.has("readiness_morning_time")) {
+    db.exec("ALTER TABLE branches ADD COLUMN readiness_morning_time TEXT NOT NULL DEFAULT '11:30'");
+  }
+  if (!bnames2.has("readiness_afternoon_time")) {
+    db.exec("ALTER TABLE branches ADD COLUMN readiness_afternoon_time TEXT NOT NULL DEFAULT '16:00'");
+  }
 
   // Phase 1C v9: replaces_id for resignation_requests
   const rrcols = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;
@@ -1323,6 +1334,8 @@ export type Branch = {
   extra_button_url: string | null;     // Customer Flex card secondary CTA URL
   contact_phone: string | null;        // Fallback phone shown in pending-confirmation LINE message
   staff_group_id: string | null;       // LINE group ID for staff notifications (preferred over staff_line_user_ids when set)
+  readiness_morning_time: string;      // HH:MM — used in รอบเช้า card title (e.g. "11:30")
+  readiness_afternoon_time: string;    // HH:MM — used in รอบบ่าย card title (e.g. "16:00")
 };
 
 export type User = {

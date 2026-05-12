@@ -12,8 +12,8 @@ import { todayBkk } from "@/lib/time";
 // One endpoint for all 4 daily-report types:
 //   shift_open        — เช็คลิสต์ก่อนเริ่มงาน (Phase B, live)
 //   shift_close       — เช็คลิสต์หลังเลิกงาน (Phase C, live as of 2026-05)
-//   readiness_1130    — รายงานความพร้อมรอบ 11:30 (live as of 2026-05)
-//   readiness_1600    — รายงานความพร้อมรอบ 16:00 (live as of 2026-05)
+//   readiness_1130    — รายงานความพร้อมรอบเช้า (live as of 2026-05)
+//   readiness_1600    — รายงานความพร้อมรอบบ่าย (live as of 2026-05)
 //
 // The body always carries `type` + `branch_id` + `data` (JSON blob whose
 // shape depends on the type). Server derives `report_date` from
@@ -213,13 +213,20 @@ export async function POST(req: Request) {
       isRevision
     });
   } else {
-    // readiness_1130 / readiness_1600
+    // readiness_1130 / readiness_1600 — pull slot label + time from
+    // the branch's admin-configured settings. Defaults baked into the
+    // schema (11:30 / 16:00) keep old data flowing through unchanged
+    // until admin sets a custom time per branch.
     const d = v.data as z.infer<typeof ReadinessData>;
+    const isMorning = type === "readiness_1130";
     flex = readinessFlex({
       branchName: branch.name,
       reportDate: report_date,
       reporterName: user.display_name,
-      slot: type === "readiness_1130" ? "11:30" : "16:00",
+      slotLabel: isMorning ? "รอบเช้า" : "รอบบ่าย",
+      slotTime: isMorning
+        ? branch.readiness_morning_time
+        : branch.readiness_afternoon_time,
       teamCommunications: d.team_communications,
       menusNotReady: d.menus_not_ready,
       menusModified: d.menus_modified,

@@ -70,8 +70,8 @@ export const REPORT_TYPE_ORDER: ReportType[] = [
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   shift_open:     "Check list ก่อนเริ่มงาน",
   shift_close:    "Check list หลังเลิกงาน",
-  readiness_1130: "รายงานความพร้อมรอบ 11:30 น.",
-  readiness_1600: "รายงานความพร้อมรอบ 16:00 น."
+  readiness_1130: "รายงานความพร้อมรอบเช้า",
+  readiness_1600: "รายงานความพร้อมรอบบ่าย"
 };
 
 // Format an ISO timestamp to Bangkok HH:MM. Used on the request card

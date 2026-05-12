@@ -1,4 +1,6 @@
-// /staff/persona/shift/readiness-1600 — รายงานความพร้อมรอบ 16:00 น.
+// /staff/persona/shift/readiness-1600 — รายงานความพร้อมรอบบ่าย
+// (route slug keeps the original "1600" tag for db.type compatibility;
+// the user-facing label comes from i18n + branch.readiness_afternoon_time)
 //
 // Same shape as readiness-1130; only the type and i18n labels differ.
 // See readiness-1130/page.tsx for the architecture commentary.
@@ -16,7 +18,7 @@ import ShiftReportLocked from "../ShiftReportLocked";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "รายงานความพร้อมรอบ 16:00 น. · PERSONA" };
+export const metadata: Metadata = { title: "รายงานความพร้อมรอบบ่าย · PERSONA" };
 
 export default function Readiness1600Page() {
   const user = requireUser();
@@ -43,6 +45,38 @@ export default function Readiness1600Page() {
   const today = todayBkk();
   const typeLabel = t(lang, "staff.persona.shiftReport.typeLabel.readiness1600");
 
+  // Prefill the afternoon form with the morning round's content so
+  // staff edits only what changed (most days the menu/comms list is
+  // mostly stable across the day). Falls back to a blank form when
+  // morning round wasn't submitted yet — we never block; staff can
+  // still file the afternoon round independently.
+  type MorningData = {
+    team_communications?: string;
+    menus_not_ready?: string;
+    menus_modified?: string;
+    alcohol_status?: "ok" | "blocked";
+  };
+  let morningPrefill: MorningData | undefined;
+  const morning = db.prepare(`
+    SELECT data FROM daily_reports
+    WHERE type = 'readiness_1130' AND branch_id = ? AND report_date = ?
+      AND superseded_at IS NULL
+  `).get(branch.id, today) as { data: string } | undefined;
+  if (morning) {
+    try {
+      const parsed = JSON.parse(morning.data) as MorningData;
+      morningPrefill = {
+        team_communications: parsed.team_communications ?? "",
+        menus_not_ready: parsed.menus_not_ready ?? "",
+        menus_modified: parsed.menus_modified ?? "",
+        alcohol_status: parsed.alcohol_status ?? "ok"
+      };
+    } catch {
+      // Corrupt JSON in the morning report — ignore, render blank.
+      morningPrefill = undefined;
+    }
+  }
+
   const existing = db.prepare(`
     SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name
     FROM daily_reports r JOIN users u ON r.user_id = u.id
@@ -68,7 +102,11 @@ export default function Readiness1600Page() {
         </div>
         <div>
           <h1 className="text-2xl font-bold">{typeLabel}</h1>
-          <p className="text-sm text-slate-500">{branch.name}</p>
+          <p className="text-sm text-slate-500">
+            {branch.name} · {t(lang, "staff.persona.readiness.timeNote", {
+              time: branch.readiness_afternoon_time
+            })}
+          </p>
         </div>
         <ShiftReportLocked
           branchName={branch.name}
@@ -94,7 +132,11 @@ export default function Readiness1600Page() {
       </div>
       <div>
         <h1 className="text-2xl font-bold">{typeLabel}</h1>
-        <p className="text-sm text-slate-500">{branch.name}</p>
+        <p className="text-sm text-slate-500">
+          {branch.name} · {t(lang, "staff.persona.readiness.timeNote", {
+            time: branch.readiness_afternoon_time
+          })}
+        </p>
       </div>
       <ReadinessForm
         type="readiness_1600"
@@ -110,6 +152,7 @@ export default function Readiness1600Page() {
             branch: branch.name
           })
         }}
+        initialValues={morningPrefill}
       />
     </div>
   );

@@ -1,4 +1,6 @@
-// /staff/persona/shift/readiness-1130 — รายงานความพร้อมรอบ 11:30 น.
+// /staff/persona/shift/readiness-1130 — รายงานความพร้อมรอบเช้า
+// (route slug keeps the original "1130" tag for db.type compatibility;
+// the user-facing label comes from i18n + branch.readiness_morning_time)
 //
 // One submission per (branch, date). Same locked-view + edit-request
 // flow as shift_open / shift_close. As of 2026-05 the body is a
@@ -20,7 +22,7 @@ import ShiftReportLocked from "../ShiftReportLocked";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "รายงานความพร้อมรอบ 11:30 น. · PERSONA" };
+export const metadata: Metadata = { title: "รายงานความพร้อมรอบเช้า · PERSONA" };
 
 export default function Readiness1130Page() {
   const user = requireUser();
@@ -73,7 +75,11 @@ export default function Readiness1130Page() {
         </div>
         <div>
           <h1 className="text-2xl font-bold">{typeLabel}</h1>
-          <p className="text-sm text-slate-500">{branch.name}</p>
+          <p className="text-sm text-slate-500">
+            {branch.name} · {t(lang, "staff.persona.readiness.timeNote", {
+              time: branch.readiness_morning_time
+            })}
+          </p>
         </div>
         <ShiftReportLocked
           branchName={branch.name}

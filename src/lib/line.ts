@@ -1382,7 +1382,10 @@ export type ReadinessCardArgs = {
   branchName: string;
   reportDate: string;
   reporterName: string;
-  slot: "11:30" | "16:00";
+  /** Slot label — "รอบเช้า" / "รอบบ่าย". */
+  slotLabel: string;
+  /** Slot time HH:MM — admin-configured per branch, shown next to slotLabel. */
+  slotTime: string;
   /** Free-text — admin's reading material. Empty string → renders "—". */
   teamCommunications: string;
   menusNotReady: string;
@@ -1397,6 +1400,9 @@ export type ReadinessCardArgs = {
 // section still appears (admin can see the staff filled the report
 // and that field had nothing) instead of vanishing — vanishing would
 // look like "did staff forget?".
+//
+// Plain text labels (no emoji prefix) per user feedback that the
+// earlier 📣/🚫/📋 set felt visually noisy.
 function readinessSection(label: string, body: string) {
   const isEmpty = !body.trim();
   return {
@@ -1419,13 +1425,18 @@ function readinessSection(label: string, body: string) {
 
 export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
   const dateStr = formatThaiDate(args.reportDate);
-  const titleText = `รายงานความพร้อมรอบ ${args.slot} น.`;
+  // Title carries both the slot label (รอบเช้า/รอบบ่าย) and the
+  // admin-configured time so recipients see "what round + at what
+  // exact time today" without checking another screen.
+  const titleText = `รายงานความพร้อม${args.slotLabel} (${args.slotTime} น.)`;
 
-  // Alcohol pill — green checkmark when ok, red X when blocked.
-  // Surfaces in a dedicated kvRow so admin spots the day's policy at
-  // a glance without reading the whole card.
+  // Alcohol value — text only, status conveyed by the colour. Earlier
+  // version used 🟢/❌ emoji prefixes which combined with the long
+  // "สถานะแอลกอฮอล์" label pushed the value to a second line on
+  // narrower screens. Shorter "แอลกอฮอล์" label + emoji-less value
+  // fits one line.
   const alcoholText =
-    args.alcoholStatus === "ok" ? "🟢 ขายได้ปกติ" : "❌ ห้ามขาย";
+    args.alcoholStatus === "ok" ? "ขายได้ปกติ" : "ห้ามขาย";
   const alcoholColor =
     args.alcoholStatus === "ok" ? "#047857" : "#be123c";
 
@@ -1461,13 +1472,13 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
           type: "box", layout: "vertical", spacing: "sm", margin: "md",
           contents: [
             kvRow("ผู้ส่งรายการ", args.reporterName),
-            kvRow("สถานะแอลกอฮอล์", alcoholText, { valueColor: alcoholColor })
+            kvRow("แอลกอฮอล์", alcoholText, { valueColor: alcoholColor })
           ]
         },
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
-        readinessSection("📣 เรื่องที่อยากสื่อสารในทีม", args.teamCommunications),
-        readinessSection("🚫 เมนูที่ไม่พร้อมขาย", args.menusNotReady),
-        readinessSection("📋 เมนูที่ขายได้ แต่มีการปรับบางอย่าง", args.menusModified)
+        readinessSection("เรื่องที่อยากสื่อสารในทีม", args.teamCommunications),
+        readinessSection("เมนูที่ไม่พร้อมขาย", args.menusNotReady),
+        readinessSection("เมนูที่ขายได้ แต่มีการปรับบางอย่าง", args.menusModified)
       ]
     },
     styles: {
@@ -1495,8 +1506,8 @@ const REPORT_TYPE_LABEL_TH: Record<
 > = {
   shift_open:     "Check list ก่อนเริ่มงาน",
   shift_close:    "Check list หลังเลิกงาน",
-  readiness_1130: "รายงานความพร้อมรอบ 11:30 น.",
-  readiness_1600: "รายงานความพร้อมรอบ 16:00 น."
+  readiness_1130: "รายงานความพร้อมรอบเช้า",
+  readiness_1600: "รายงานความพร้อมรอบบ่าย"
 };
 
 export type ShiftUnlockRequestArgs = {

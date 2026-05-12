@@ -33,7 +33,8 @@ export default function ReadinessForm({
   reporterName,
   todayDate,
   submitLabel,
-  successCopy
+  successCopy,
+  initialValues
 }: {
   type: ReportType;
   branchId: number;
@@ -43,14 +44,26 @@ export default function ReadinessForm({
   todayDate: string;
   submitLabel: string;
   successCopy: { title: string; body: string };
+  /** Optional pre-fill for the afternoon round — staff sees the
+   *  morning report's content already typed in and edits only what
+   *  changed. Empty/undefined = start from blank. */
+  initialValues?: {
+    team_communications?: string;
+    menus_not_ready?: string;
+    menus_modified?: string;
+    alcohol_status?: AlcoholStatus;
+  };
 }) {
   const router = useRouter();
   const { t } = useLang();
 
-  const [teamComm, setTeamComm] = useState("");
-  const [menusNotReady, setMenusNotReady] = useState("");
-  const [menusModified, setMenusModified] = useState("");
-  const [alcohol, setAlcohol] = useState<AlcoholStatus>("ok");
+  // Seed from initialValues when provided (afternoon round prefills
+  // from morning). Falling back to empty/ok matches the "blank form"
+  // behaviour of the morning round.
+  const [teamComm, setTeamComm] = useState(initialValues?.team_communications ?? "");
+  const [menusNotReady, setMenusNotReady] = useState(initialValues?.menus_not_ready ?? "");
+  const [menusModified, setMenusModified] = useState(initialValues?.menus_modified ?? "");
+  const [alcohol, setAlcohol] = useState<AlcoholStatus>(initialValues?.alcohol_status ?? "ok");
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -114,23 +127,26 @@ export default function ReadinessForm({
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      {/* Auto-filled context — reporter / date / branch. Read-only so
-          staff sees what'll be recorded but can't fudge it. */}
-      <div className="card space-y-1.5 text-sm">
-        <ContextRow
-          label={t("staff.persona.readiness.field.reporter")}
-          value={reporterName}
-          bold
-        />
-        <ContextRow
-          label={t("staff.persona.readiness.field.date")}
-          value={todayDate}
-        />
-        <ContextRow
-          label={t("staff.persona.readiness.field.branch")}
-          value={branchName}
-          bold
-        />
+      {/* Auto-filled context — date / reporter / branch. Read-only
+          input boxes (disabled) to match the shift-open form's layout
+          so staff has a consistent visual pattern across all daily
+          reports. Two-column grid on wider viewports collapses to
+          stack on mobile. */}
+      <div className="card">
+        <div className="grid sm:grid-cols-2 gap-3">
+          <ReadOnlyField
+            label={t("staff.persona.readiness.field.date")}
+            value={todayDate}
+          />
+          <ReadOnlyField
+            label={t("staff.persona.readiness.field.reporter")}
+            value={reporterName}
+          />
+          <ReadOnlyField
+            label={t("staff.persona.readiness.field.branch")}
+            value={branchName}
+          />
+        </div>
       </div>
 
       <FreeTextField
@@ -207,25 +223,28 @@ export default function ReadinessForm({
   );
 }
 
-// Small two-column row for the read-only context block at the top.
-// Kept inline (not exported) since only this form uses this layout.
-function ContextRow({
+// Read-only field with label-above-input layout — matches the
+// shift-open form's visual pattern so staff has one consistent
+// layout for "auto-filled context" across all 4 daily reports.
+// The disabled input renders muted slate so it's clearly not
+// editable but still feels like part of the form, not a chip.
+function ReadOnlyField({
   label,
-  value,
-  bold = false
+  value
 }: {
   label: string;
   value: string;
-  bold?: boolean;
 }) {
   return (
-    <div className="flex gap-2">
-      <span className="text-xs text-slate-400 tracking-[0.5px] uppercase w-24 flex-shrink-0 mt-0.5">
-        {label}
-      </span>
-      <span className={bold ? "font-bold text-slate-800" : "text-slate-700"}>
-        {value}
-      </span>
+    <div>
+      <label className="label">{label}</label>
+      <input
+        type="text"
+        className="input bg-slate-50 text-slate-600 cursor-not-allowed"
+        value={value}
+        disabled
+        readOnly
+      />
     </div>
   );
 }
