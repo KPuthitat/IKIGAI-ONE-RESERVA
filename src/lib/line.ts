@@ -1383,13 +1383,51 @@ export type ReadinessCardArgs = {
   reportDate: string;
   reporterName: string;
   slot: "11:30" | "16:00";
-  checklist: Array<{ label: string; checked: boolean; note: string | null }>;
+  /** Free-text — admin's reading material. Empty string → renders "—". */
+  teamCommunications: string;
+  menusNotReady: string;
+  menusModified: string;
+  /** Alcohol sales status for the day. */
+  alcoholStatus: "ok" | "blocked";
   isRevision?: boolean;
 };
+
+// One labelled section block in the readiness card. We use these for
+// the 3 free-text fields. Empty body collapses to a muted "—" so the
+// section still appears (admin can see the staff filled the report
+// and that field had nothing) instead of vanishing — vanishing would
+// look like "did staff forget?".
+function readinessSection(label: string, body: string) {
+  const isEmpty = !body.trim();
+  return {
+    type: "box", layout: "vertical", spacing: "xs", margin: "md",
+    contents: [
+      {
+        type: "text", text: label,
+        size: "xs", color: COLOR_LABEL, weight: "bold", wrap: true
+      },
+      {
+        type: "text",
+        text: isEmpty ? "—" : body,
+        size: "sm",
+        color: isEmpty ? COLOR_TEXT_MUTED : COLOR_TEXT_DARK,
+        wrap: true
+      }
+    ]
+  };
+}
 
 export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
   const dateStr = formatThaiDate(args.reportDate);
   const titleText = `รายงานความพร้อมรอบ ${args.slot} น.`;
+
+  // Alcohol pill — green checkmark when ok, red X when blocked.
+  // Surfaces in a dedicated kvRow so admin spots the day's policy at
+  // a glance without reading the whole card.
+  const alcoholText =
+    args.alcoholStatus === "ok" ? "🟢 ขายได้ปกติ" : "❌ ห้ามขาย";
+  const alcoholColor =
+    args.alcoholStatus === "ok" ? "#047857" : "#be123c";
 
   const bubble = {
     type: "bubble", size: "mega",
@@ -1422,10 +1460,14 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
         {
           type: "box", layout: "vertical", spacing: "sm", margin: "md",
           contents: [
-            kvRow("ผู้ส่งรายการ", args.reporterName)
+            kvRow("ผู้ส่งรายการ", args.reporterName),
+            kvRow("สถานะแอลกอฮอล์", alcoholText, { valueColor: alcoholColor })
           ]
         },
-        ...checklistFlexBlock(args.checklist)
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        readinessSection("📣 เรื่องที่อยากสื่อสารในทีม", args.teamCommunications),
+        readinessSection("🚫 เมนูที่ไม่พร้อมขาย", args.menusNotReady),
+        readinessSection("📋 เมนูที่ขายได้ แต่มีการปรับบางอย่าง", args.menusModified)
       ]
     },
     styles: {

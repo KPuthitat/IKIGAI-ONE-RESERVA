@@ -7,11 +7,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
-import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
+import { getDb, type Branch } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
-import ChecklistRunner from "../ChecklistRunner";
+import ReadinessForm from "../ReadinessForm";
 import ShiftReportLocked from "../ShiftReportLocked";
 
 export const dynamic = "force-dynamic";
@@ -85,12 +85,6 @@ export default function Readiness1600Page() {
     );
   }
 
-  const checklist = db.prepare(`
-    SELECT * FROM shift_checklist_items
-    WHERE type = 'readiness_1600' AND branch_id = ? AND active = 1
-    ORDER BY display_order ASC, id ASC
-  `).all(branch.id) as ShiftChecklistItem[];
-
   return (
     <div className="space-y-4">
       <div>
@@ -102,11 +96,12 @@ export default function Readiness1600Page() {
         <h1 className="text-2xl font-bold">{typeLabel}</h1>
         <p className="text-sm text-slate-500">{branch.name}</p>
       </div>
-      <ChecklistRunner
+      <ReadinessForm
         type="readiness_1600"
         branchId={branch.id}
         branchName={branch.name}
-        checklistItems={checklist.map((c) => ({ id: c.id, label: c.label }))}
+        reporterName={user.display_name}
+        todayDate={today}
         submitLabel={t(lang, "staff.persona.readiness.submit")}
         successCopy={{
           title: t(lang, "staff.persona.shiftReport.submitted.title"),

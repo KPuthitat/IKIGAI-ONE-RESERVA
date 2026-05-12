@@ -51,8 +51,15 @@ const ShiftCloseData = z.object({
   closing_drawer_amount: z.number().min(0).max(10_000_000).nullable(),
   checklist: z.array(ChecklistEntry).max(50)
 });
+// Readiness reports (11:30 + 16:00) — 3 free-text sections + alcohol
+// status. All text fields are optional (empty string allowed) so
+// staff isn't forced to type anything if there's nothing to report.
+// Alcohol always carries a value because the form defaults to "ok".
 const ReadinessData = z.object({
-  checklist: z.array(ChecklistEntry).max(50)
+  team_communications: z.string().max(2000).default(""),
+  menus_not_ready: z.string().max(2000).default(""),
+  menus_modified: z.string().max(2000).default(""),
+  alcohol_status: z.enum(["ok", "blocked"])
 });
 
 const Body = z.object({
@@ -213,7 +220,10 @@ export async function POST(req: Request) {
       reportDate: report_date,
       reporterName: user.display_name,
       slot: type === "readiness_1130" ? "11:30" : "16:00",
-      checklist: normalizeChecklist(d.checklist),
+      teamCommunications: d.team_communications,
+      menusNotReady: d.menus_not_ready,
+      menusModified: d.menus_modified,
+      alcoholStatus: d.alcohol_status,
       isRevision
     });
   }

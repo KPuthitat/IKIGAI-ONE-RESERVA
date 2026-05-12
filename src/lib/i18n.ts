@@ -673,11 +673,25 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.shift.open.done.body": "สรุป Check list ก่อนเริ่มงานของ {branch} ถูกส่งเข้ากลุ่ม LINE พนักงานแล้ว",
     "staff.persona.shift.open.done.partialWarning": "Check list ยังมีข้อที่ยังไม่เสร็จ — กรุณาดำเนินการให้ครบก่อนเริ่มกะ",
     "staff.persona.readiness.submit": "ส่งรายงาน",
+    // Readiness form (11:30 + 16:00) — free-text version.
+    "staff.persona.readiness.field.reporter": "ผู้รายงาน",
+    "staff.persona.readiness.field.date": "วันที่",
+    "staff.persona.readiness.field.branch": "สาขา",
+    "staff.persona.readiness.field.teamCommunications": "เรื่องที่อยากสื่อสารในทีม",
+    "staff.persona.readiness.field.menusNotReady": "เมนูที่ไม่พร้อมขาย",
+    "staff.persona.readiness.field.menusModified": "เมนูที่ขายได้ แต่มีการปรับบางอย่าง",
+    "staff.persona.readiness.field.alcoholStatus": "สถานะการขายแอลกอฮอล์ในวันนี้",
+    "staff.persona.readiness.placeholder.teamCommunications": "เช่น\n1. ลูกค้ามาเป็นกลุ่ม 8 คนเย็นนี้\n2. ของขวัญวันเกิดสำหรับโต๊ะ 3 รอจัดเตรียม",
+    "staff.persona.readiness.placeholder.menusNotReady": "เช่น\n1. คาโบนาร่า — ครีมหมด รอส่ง\n2. ทีรามิสุ — มาสคาร์โปเน่หมด",
+    "staff.persona.readiness.placeholder.menusModified": "เช่น\n1. สลัดซีซาร์ — ไม่มีไก่ ใช้กุ้งแทน\n2. ลาซานญ่า — เปลี่ยนเป็นแบบไม่ใส่หมู",
+    "staff.persona.readiness.alcohol.ok": "ขายได้ปกติ",
+    "staff.persona.readiness.alcohol.blocked": "ห้ามขาย",
 
-    // Generic shiftReport.* keys — used by the shared ShiftReportLocked
-    // component + ChecklistRunner so all 4 daily-report types reuse
-    // one set of strings interpolated with {type} (the human-readable
-    // Thai label of the report).
+    // Generic shiftReport.* keys — used by ShiftReportLocked + each of
+    // the per-type form components (ShiftOpenForm, ShiftCloseForm,
+    // ReadinessForm) so all 4 daily-report types reuse one set of
+    // strings interpolated with {type} (the human-readable Thai
+    // label of the report).
     "staff.persona.shiftReport.typeLabel.shiftOpen": "Check list ก่อนเริ่มงาน",
     "staff.persona.shiftReport.typeLabel.shiftClose": "Check list หลังเลิกงาน",
     "staff.persona.shiftReport.typeLabel.readiness1130": "รายงานความพร้อมรอบ 11:30 น.",
@@ -2186,6 +2200,18 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.shift.open.savedOk": "Report submitted",
     "staff.persona.shift.open.done.title": "Pre-shift Check list submitted",
     "staff.persona.readiness.submit": "Submit report",
+    "staff.persona.readiness.field.reporter": "Reporter",
+    "staff.persona.readiness.field.date": "Date",
+    "staff.persona.readiness.field.branch": "Branch",
+    "staff.persona.readiness.field.teamCommunications": "Team communications",
+    "staff.persona.readiness.field.menusNotReady": "Menus not available",
+    "staff.persona.readiness.field.menusModified": "Menus available with modifications",
+    "staff.persona.readiness.field.alcoholStatus": "Alcohol sales status today",
+    "staff.persona.readiness.placeholder.teamCommunications": "e.g.\n1. Group of 8 coming this evening\n2. Birthday cake for table 3",
+    "staff.persona.readiness.placeholder.menusNotReady": "e.g.\n1. Carbonara — out of cream, awaiting delivery\n2. Tiramisu — out of mascarpone",
+    "staff.persona.readiness.placeholder.menusModified": "e.g.\n1. Caesar salad — no chicken, shrimp substitute\n2. Lasagna — pork-free version",
+    "staff.persona.readiness.alcohol.ok": "Selling as normal",
+    "staff.persona.readiness.alcohol.blocked": "Sales paused",
     "staff.persona.shift.open.done.body": "{branch}'s pre-shift checklist summary has been pushed to the staff LINE group",
     "staff.persona.shift.open.done.partialWarning": "Some checklist items are still pending — please complete them before starting service",
 

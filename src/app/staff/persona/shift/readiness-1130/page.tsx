@@ -1,19 +1,21 @@
 // /staff/persona/shift/readiness-1130 — รายงานความพร้อมรอบ 11:30 น.
 //
 // One submission per (branch, date). Same locked-view + edit-request
-// flow as shift_open / shift_close. The body is a checklist only —
-// admin manages the items list at /admin/persona/checklist?type=
-// readiness_1130.
+// flow as shift_open / shift_close. As of 2026-05 the body is a
+// structured free-text form (3 textareas + alcohol radio) — admin's
+// per-branch readiness checklist is no longer used here. The admin
+// checklist editor route still exists at /admin/persona/checklist?
+// type=readiness_1130 but configures nothing the staff form reads.
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
-import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
+import { getDb, type Branch } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
-import ChecklistRunner from "../ChecklistRunner";
+import ReadinessForm from "../ReadinessForm";
 import ShiftReportLocked from "../ShiftReportLocked";
 
 export const dynamic = "force-dynamic";
@@ -88,12 +90,6 @@ export default function Readiness1130Page() {
     );
   }
 
-  const checklist = db.prepare(`
-    SELECT * FROM shift_checklist_items
-    WHERE type = 'readiness_1130' AND branch_id = ? AND active = 1
-    ORDER BY display_order ASC, id ASC
-  `).all(branch.id) as ShiftChecklistItem[];
-
   return (
     <div className="space-y-4">
       <div>
@@ -105,11 +101,12 @@ export default function Readiness1130Page() {
         <h1 className="text-2xl font-bold">{typeLabel}</h1>
         <p className="text-sm text-slate-500">{branch.name}</p>
       </div>
-      <ChecklistRunner
+      <ReadinessForm
         type="readiness_1130"
         branchId={branch.id}
         branchName={branch.name}
-        checklistItems={checklist.map((c) => ({ id: c.id, label: c.label }))}
+        reporterName={user.display_name}
+        todayDate={today}
         submitLabel={t(lang, "staff.persona.readiness.submit")}
         successCopy={{
           title: t(lang, "staff.persona.shiftReport.submitted.title"),
