@@ -2,13 +2,23 @@
 #
 # deploy.sh — one-shot deployment for /var/www/reserva on the VPS.
 #
-# Why this exists: `pm2 reload` and `pm2 restart` both have a race
-# window where the old next-server can outlive its kill_timeout, get
-# reparented to init (PID 1), and keep holding port 3010. PM2 thinks
-# the new spawn is "online" but it actually fails to bind, leaving an
-# orphan serving stale code. The fix has always been the same: find
-# the process on port 3010 that isn't the PM2-managed one and SIGKILL
-# it. This script automates that check so deploys are reliable.
+# Two recurring failure modes this script defends against:
+#
+# 1) Zombie next-server — `pm2 restart` has a race where the old
+#    next-server outlives its kill_timeout, gets reparented to init,
+#    and keeps holding port 3010. PM2 thinks the new spawn is
+#    "online" but it actually fails to bind. Fix: scan port 3010 for
+#    pids that aren't the PM2-managed one and SIGKILL them.
+#
+# 2) PM2 stale state — "Process N not found" error from
+#    `pm2 restart reserva`. PM2 keeps an app entry (with a pm_id)
+#    but the underlying process has died silently (build overwrote
+#    a chunk it was about to load, OOM-kill, manual kill, etc.).
+#    Plain `pm2 restart` errors out because it tries to restart the
+#    missing process by pm_id instead of starting a new one. Fix:
+#    use `pm2 reload ecosystem.config.js` (idempotent — starts the
+#    app if missing, gracefully reloads if running), and if THAT
+#    still fails, fall back to `pm2 delete + pm2 start`.
 #
 # Usage (on the VPS):
 #   cd /var/www/reserva
@@ -19,8 +29,9 @@
 #
 # Exit codes:
 #   0 — deploy succeeded, reserva is online + serving on port 3010
-#   1 — git pull / npm build / pm2 restart failed
+#   1 — git pull / npm build failed
 #   2 — port 3010 still held by something unexpected after cleanup
+#   3 — PM2 reload AND fallback delete+start both failed
 
 set -euo pipefail
 
@@ -31,10 +42,10 @@ HOST_BIND="127.0.0.1"   # matches ecosystem.config.js HOSTNAME
 
 cd "$APP_DIR"
 
-echo "==> [1/5] git pull origin main"
+echo "==> [1/6] git pull origin main"
 git pull origin main
 
-echo "==> [2/5] npm run build"
+echo "==> [2/6] npm run build"
 npm run build
 
 # Snapshot the PID PM2 thinks reserva is — anything else on the port
@@ -48,45 +59,79 @@ npm run build
 # empty, which made the orphan loop treat the legitimate
 # PM2-managed process as an orphan and SIGKILL it. `pm2 pid <name>`
 # returns just the integer pid on stdout, no JSON, no ambiguity.
-echo "==> [3/5] checking for orphan processes on :${PORT}"
+echo "==> [3/6] checking for orphan processes on :${PORT}"
 PM2_PID="$(pm2 pid "$PM2_APP" 2>/dev/null | tr -d '[:space:]' | grep -oE '^[0-9]+$' || echo '')"
 
-# Loop through every pid currently bound to the port and kill any that
-# isn't the PM2-managed one. Idempotent — empty match list = nothing
-# to do.
-#
-# `lsof -ti :PORT -sTCP:LISTEN` prints one pid per line for processes
-# in LISTEN state on the port. Much simpler than the previous
-# `ss | grep | while` pipeline, and doesn't require root on systems
-# where the calling user owns the process.
-mapfile -t PORT_PIDS < <(
-  lsof -ti :"${PORT}" -sTCP:LISTEN 2>/dev/null | sort -u
-)
+# SAFETY: if PM2 doesn't know the app's pid (entry was deleted, or
+# `pm2 pid` returned empty for any reason), skip the orphan kill
+# loop entirely. Otherwise we'd treat every listener on :3010 as an
+# orphan and nuke the legitimate process — which is exactly how the
+# script trashed its own PM2-managed reserva in earlier versions.
+# The reload/start step below handles "no process" cases cleanly.
+if [[ -z "$PM2_PID" ]]; then
+  echo "    PM2 has no pid for ${PM2_APP} — skipping orphan scan"
+  echo "    (will start fresh via pm2 reload/start in step 5)"
+else
+  # lsof -ti :PORT -sTCP:LISTEN prints one pid per line for processes
+  # in LISTEN state on the port. Much simpler than the previous
+  # `ss | grep | while` pipeline, and doesn't require root on systems
+  # where the calling user owns the process.
+  mapfile -t PORT_PIDS < <(
+    lsof -ti :"${PORT}" -sTCP:LISTEN 2>/dev/null | sort -u
+  )
+  for pid in "${PORT_PIDS[@]:-}"; do
+    [[ -z "$pid" ]] && continue
+    if [[ "$pid" == "$PM2_PID" ]]; then
+      echo "    pid $pid is PM2-managed (${PM2_APP}) — leaving it alone"
+      continue
+    fi
+    echo "    pid $pid is an orphan on :${PORT} — SIGKILL"
+    kill -9 "$pid" || true
+  done
+  # Brief pause so the kernel releases the socket before the new
+  # process tries to bind.
+  sleep 1
+fi
 
-for pid in "${PORT_PIDS[@]:-}"; do
-  [[ -z "$pid" ]] && continue
-  if [[ "$pid" == "$PM2_PID" ]]; then
-    echo "    pid $pid is PM2-managed (${PM2_APP}) — leaving it alone"
-    continue
+echo "==> [4/6] reloading PM2 (graceful, then fallback)"
+# Strategy:
+#   • `pm2 reload ecosystem.config.js` is idempotent — if reserva is
+#     running it does a graceful reload; if missing it starts fresh
+#     from the config. Either way the app entry ends up matching
+#     ecosystem.config.js, which kills the "Process N not found" bug
+#     where PM2's entry pm_id pointed at a long-dead process.
+#   • If reload fails for any reason (corrupted daemon state, etc.)
+#     fall back to delete+start — heavier but always works.
+#   • --update-env picks up env-var changes from ecosystem.config.js
+#     or .env without a separate cycle.
+if pm2 reload ecosystem.config.js --update-env 2>&1 | tee /tmp/pm2-reload.log; then
+  if grep -qiE "(error|errored)" /tmp/pm2-reload.log; then
+    echo "    reload reported an error — falling back to delete+start"
+    pm2 delete "$PM2_APP" 2>/dev/null || true
+    pm2 start ecosystem.config.js --update-env || {
+      echo "    ✗ fallback pm2 start also failed"
+      exit 3
+    }
   fi
-  echo "    pid $pid is an orphan on :${PORT} — SIGKILL"
-  kill -9 "$pid" || true
-done
+else
+  echo "    reload command failed — falling back to delete+start"
+  pm2 delete "$PM2_APP" 2>/dev/null || true
+  pm2 start ecosystem.config.js --update-env || {
+    echo "    ✗ fallback pm2 start also failed"
+    exit 3
+  }
+fi
 
-# Brief pause so the kernel releases the socket before pm2 restart
-# tries to bind from the new process.
-sleep 1
-
-echo "==> [4/5] pm2 restart ${PM2_APP}"
-# --update-env reloads any env-var changes from ecosystem.config.js
-# or .env without needing a delete/start cycle.
-pm2 restart "$PM2_APP" --update-env
+echo "==> [5/6] persisting PM2 state"
+# pm2 save records the current process list so it survives reboot
+# via pm2-systemd integration. Cheap to call on every deploy.
+pm2 save
 
 # Give Next.js a moment to come up. 5s is enough for our typical boot
 # time (~1-3s "Ready in...") plus a safety margin.
 sleep 5
 
-echo "==> [5/5] verifying"
+echo "==> [6/6] verifying"
 # Bound pid should match the new PM2 reserva pid. If not, something
 # else swooped in on port 3010 again — bail out so the human can
 # investigate. Same `pm2 pid` + `lsof` pattern as step 3.
