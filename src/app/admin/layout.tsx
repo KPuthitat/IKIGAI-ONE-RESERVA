@@ -73,7 +73,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/admin", label: t(lang, "sidebar.modulePicker") },
         { href: "/admin/persona", label: "PERSONA" },
-        { href: "/admin/reserva", label: "RESERVA" }
+        { href: "/admin/reserva", label: "RESERVA" },
+        // Global (non-module) system settings — IKIGAI OS LINE OA
+        // for cross-branch notifications, etc. Always-visible link
+        // since the page handles its own admin gating.
+        { href: "/admin/system-settings", label: t(lang, "admin.systemSettings.title") }
       ]
     },
     {

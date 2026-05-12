@@ -30,9 +30,17 @@ function normalizeTime(input: string): string {
   return `${hh}:${mm}`;
 }
 
+// Lenient hex colour check — accepts #RGB / #RRGGBB / #RRGGBBAA with
+// or without the leading #. We normalise to #RRGGBB on the way to
+// the DB. Empty string / null = "clear it, use default".
+const HEX_COLOR_RE = /^#?([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
 const Body = z.object({
   readiness_morning_time: z.string().regex(TIME_RE, "invalid_time"),
-  readiness_afternoon_time: z.string().regex(TIME_RE, "invalid_time")
+  readiness_afternoon_time: z.string().regex(TIME_RE, "invalid_time"),
+  // brand_color is fully optional; null/empty clears the field
+  // (the LINE Flex card then falls back to the IKIGAI default ink).
+  brand_color: z.string().regex(HEX_COLOR_RE, "invalid_color").nullable().optional()
 });
 
 export async function POST(req: Request) {
@@ -59,13 +67,23 @@ export async function POST(req: Request) {
   }
   const morning = normalizeTime(parsed.data.readiness_morning_time);
   const afternoon = normalizeTime(parsed.data.readiness_afternoon_time);
+  // Normalise brand_color: prefix with # if missing, lowercase,
+  // null when explicitly cleared. The Zod schema already validated
+  // the hex format (or null).
+  let brandColor: string | null = null;
+  if (parsed.data.brand_color) {
+    const raw = parsed.data.brand_color.trim().toLowerCase();
+    brandColor = raw.startsWith("#") ? raw : `#${raw}`;
+  }
 
   const db = getDb();
   db.prepare(`
     UPDATE branches
-    SET readiness_morning_time = ?, readiness_afternoon_time = ?
+    SET readiness_morning_time = ?,
+        readiness_afternoon_time = ?,
+        brand_color = ?
     WHERE id = ?
-  `).run(morning, afternoon, user.activeBranchId);
+  `).run(morning, afternoon, brandColor, user.activeBranchId);
 
   // Activity log so the audit trail captures who tweaked the
   // round times. ref_id = branch_id (the entity being changed).
@@ -78,6 +96,7 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: true,
     readiness_morning_time: morning,
-    readiness_afternoon_time: afternoon
+    readiness_afternoon_time: afternoon,
+    brand_color: brandColor
   });
 }

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, logPersonaAction, type Branch } from "@/lib/db";
-import { shiftUnlockRequestFlex, notifyDailyReport } from "@/lib/line";
+import { shiftUnlockRequestFlex, notifyToStaffGroup } from "@/lib/line";
 
 // POST /api/persona/shift-unlock-request — staff asks admin to unlock
 // any submitted daily_report (shift_open / shift_close / readiness_*)
@@ -93,7 +93,7 @@ export async function POST(req: Request) {
     requesterName: user.display_name,
     reason
   });
-  notifyDailyReport(branch, flex).catch((e) =>
+  notifyToStaffGroup(branch, flex, "global").catch((e) =>
     console.error("notify shift-unlock-request error", e)
   );
 

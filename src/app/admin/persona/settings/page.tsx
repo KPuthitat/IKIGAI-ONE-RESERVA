@@ -59,6 +59,7 @@ export default function PersonaSettingsPage() {
       <BranchSettingsForm
         morningTime={branch.readiness_morning_time}
         afternoonTime={branch.readiness_afternoon_time}
+        brandColor={branch.brand_color}
         branchName={branch.name}
       />
     </div>

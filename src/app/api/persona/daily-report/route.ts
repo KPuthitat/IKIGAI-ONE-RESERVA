@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, logPersonaAction, type Branch, type DailyReportType } from "@/lib/db";
 import {
-  shiftOpenFlex, shiftCloseFlex, readinessFlex, notifyDailyReport
+  shiftOpenFlex, shiftCloseFlex, readinessFlex, notifyToStaffGroup
 } from "@/lib/line";
 import { todayBkk } from "@/lib/time";
 
@@ -231,10 +231,15 @@ export async function POST(req: Request) {
       menusNotReady: d.menus_not_ready,
       menusModified: d.menus_modified,
       alcoholStatus: d.alcohol_status,
-      isRevision
+      isRevision,
+      headerColor: branch.brand_color
     });
   }
-  notifyDailyReport(branch, flex).catch((e) =>
+  // PERSONA notifications route through the IKIGAI OS LINE OA into
+  // the cross-branch shared staff group when configured. Falls back
+  // to the per-branch group automatically if the global OA hasn't
+  // been set up yet — see notifyToStaffGroup in line.ts.
+  notifyToStaffGroup(branch, flex, "global").catch((e) =>
     console.error("notify daily-report error", e)
   );
 

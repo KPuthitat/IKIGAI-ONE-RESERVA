@@ -2,7 +2,7 @@
 // LINE Notify ปิดบริการตั้งแต่ 31 มี.ค. 2025 จึงต้องใช้ Messaging API แทน
 // Free tier: 200 push messages/เดือน ต่อ channel (เพียงพอกับ ~120 bookings × 2 reminders)
 
-import { getDb, type Branch, type Booking } from "./db";
+import { getDb, getSystemSettings, type Branch, type Booking } from "./db";
 import { getChannelByCode } from "./messaging-channels";
 
 // LINE message kinds we use. Loose typing is intentional — Flex contents are
@@ -1393,6 +1393,11 @@ export type ReadinessCardArgs = {
   /** Alcohol sales status for the day. */
   alcoholStatus: "ok" | "blocked";
   isRevision?: boolean;
+  /** Optional header background hex (e.g. '#e94560'). Falls back to
+   *  the default IKIGAI ink colour when null/undefined. Used so each
+   *  branch's CI colour shows on the LINE card even when the message
+   *  is routed through the shared IKIGAI OS OA. */
+  headerColor?: string | null;
 };
 
 // One labelled section block in the readiness card. We use these for
@@ -1440,11 +1445,18 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
   const alcoholColor =
     args.alcoholStatus === "ok" ? "#047857" : "#be123c";
 
+  // Header colour is per-branch when supplied, otherwise the default
+  // IKIGAI ink slate. Same hex flows to both the header box's
+  // backgroundColor and the bubble-level styles.header — LINE applies
+  // the styles to round the header corners; mismatching the two would
+  // leave a visible seam.
+  const headerColor = args.headerColor || COLOR_INK_700;
+
   const bubble = {
     type: "bubble", size: "mega",
     header: {
       type: "box", layout: "vertical",
-      backgroundColor: COLOR_INK_700, paddingAll: "20px",
+      backgroundColor: headerColor, paddingAll: "20px",
       contents: [
         {
           type: "box", layout: "horizontal",
@@ -1482,7 +1494,7 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
       ]
     },
     styles: {
-      header: { backgroundColor: COLOR_INK_700 },
+      header: { backgroundColor: headerColor },
       body: { backgroundColor: "#ffffff" }
     }
   };
@@ -1721,4 +1733,48 @@ export async function notifyDailyReport(
   for (const uid of staffIds) {
     await sendLinePush(token, { to: uid, messages: [flex] });
   }
+}
+
+/** Route a staff-facing Flex notification using the cross-branch
+ *  multi-OA strategy:
+ *
+ *    routing="global" — push via the IKIGAI OS LINE OA to the
+ *      shared cross-branch staff group. Used for PERSONA
+ *      notifications (daily reports, edit requests, decisions) so
+ *      staff from every branch see them in one chat. The branch
+ *      identity is carried in the Flex body + header colour, not
+ *      in the OA sending the message.
+ *
+ *    routing="branch" — push via the branch's own OA to the
+ *      branch's staff group. Used for booking-related notifications
+ *      where each branch wants its own dedicated group.
+ *
+ *  Fallback: when routing="global" but system_settings hasn't been
+ *  configured yet (no global token or no global group ID), we drop
+ *  back to branch routing so adoption can roll out without a hard
+ *  cutover. Once admin sets the global OA at /admin/system-settings,
+ *  PERSONA notifications auto-switch to the shared group on the
+ *  next push.
+ *
+ *  Fire-and-forget — same contract as notifyDailyReport / notifyStaff. */
+export async function notifyToStaffGroup(
+  branch: Branch,
+  flex: LineFlexMessage,
+  routing: "global" | "branch" = "global"
+): Promise<void> {
+  if (routing === "global") {
+    const sys = getSystemSettings();
+    if (sys.global_line_channel_token && sys.global_staff_group_id) {
+      await sendLinePush(sys.global_line_channel_token, {
+        to: sys.global_staff_group_id,
+        messages: [flex]
+      });
+      return;
+    }
+    // Global OA not configured yet — fall through to branch routing.
+  }
+  // Branch routing — delegate to the existing notifyDailyReport
+  // helper which already handles the staff_group_id / per-user
+  // fallback chain.
+  return notifyDailyReport(branch, flex);
 }

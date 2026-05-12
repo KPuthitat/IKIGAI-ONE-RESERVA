@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, logPersonaAction, type Branch } from "@/lib/db";
-import { shiftUnlockDecisionFlex, notifyDailyReport } from "@/lib/line";
+import { shiftUnlockDecisionFlex, notifyToStaffGroup } from "@/lib/line";
 
 // POST /api/admin/persona/shift-unlock-request/[id]/decide
 //
@@ -131,7 +131,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         decision: parsed.data.decision,
         decisionNote: note
       });
-      notifyDailyReport(branch, flex).catch((e) =>
+      notifyToStaffGroup(branch, flex, "global").catch((e) =>
         console.error("notify shift-unlock-decision error", e)
       );
     }

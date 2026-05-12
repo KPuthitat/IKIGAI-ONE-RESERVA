@@ -878,6 +878,33 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("readiness_afternoon_time")) {
     db.exec("ALTER TABLE branches ADD COLUMN readiness_afternoon_time TEXT NOT NULL DEFAULT '16:00'");
   }
+  // Per-branch brand colour — hex string (e.g. '#e94560') used as the
+  // Flex card header background. NULL = use the default IKIGAI ink colour.
+  // Lets each branch reflect their own CI in the LINE notifications.
+  if (!bnames2.has("brand_color")) {
+    db.exec("ALTER TABLE branches ADD COLUMN brand_color TEXT");
+  }
+
+  // system_settings — singleton table for global configuration that
+  // isn't branch-scoped. Today this holds the IKIGAI OS LINE OA push
+  // credentials + the cross-branch staff group ID, used to route
+  // PERSONA notifications (daily reports, edit requests, decisions)
+  // to a single shared group where staff from every branch can see
+  // them. Bookings stay on the per-branch OA (see notifyStaff).
+  //
+  // Singleton enforced by CHECK(id = 1). The INSERT OR IGNORE seeds
+  // the row on first migration so callers can always SELECT * WHERE
+  // id = 1 without a NULL row check.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      global_line_channel_token TEXT,
+      global_staff_group_id TEXT,
+      updated_at TEXT,
+      updated_by INTEGER
+    );
+  `);
+  db.exec(`INSERT OR IGNORE INTO system_settings (id) VALUES (1);`);
 
   // Phase 1C v9: replaces_id for resignation_requests
   const rrcols = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;
@@ -1310,6 +1337,63 @@ export function logPersonaAction(
   }
 }
 
+/** Fetch the system_settings singleton. The migration seeds the row
+ *  on first boot so this never returns undefined — but we narrow
+ *  via the result cast anyway for downstream safety. */
+export function getSystemSettings(): SystemSettings {
+  const row = getDb().prepare("SELECT * FROM system_settings WHERE id = 1").get() as
+    | SystemSettings
+    | undefined;
+  // Defensive fallback if the seed somehow didn't run — return an
+  // empty config rather than crashing callers that just want to
+  // check "is global OA configured yet?".
+  if (!row) {
+    return {
+      id: 1,
+      global_line_channel_token: null,
+      global_staff_group_id: null,
+      updated_at: null,
+      updated_by: null
+    };
+  }
+  return row;
+}
+
+/** Write the singleton system_settings row. Treats empty strings as
+ *  NULL so admin can clear a field by leaving it blank rather than
+ *  having to type "null" or similar. */
+export function updateSystemSettings(
+  patch: {
+    global_line_channel_token?: string | null;
+    global_staff_group_id?: string | null;
+  },
+  updatedBy: number
+): void {
+  const norm = (v: string | null | undefined): string | null => {
+    if (v === undefined) return undefined as unknown as string | null; // sentinel — leave unchanged
+    const t = (v ?? "").trim();
+    return t === "" ? null : t;
+  };
+  // Build dynamic UPDATE so callers can patch a subset of fields
+  // without overwriting the others to NULL.
+  const sets: string[] = [];
+  const vals: Array<string | number | null> = [];
+  if (Object.prototype.hasOwnProperty.call(patch, "global_line_channel_token")) {
+    sets.push("global_line_channel_token = ?");
+    vals.push(norm(patch.global_line_channel_token ?? null));
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "global_staff_group_id")) {
+    sets.push("global_staff_group_id = ?");
+    vals.push(norm(patch.global_staff_group_id ?? null));
+  }
+  if (sets.length === 0) return;
+  sets.push("updated_at = ?", "updated_by = ?");
+  vals.push(new Date().toISOString(), updatedBy);
+  getDb().prepare(
+    `UPDATE system_settings SET ${sets.join(", ")} WHERE id = 1`
+  ).run(...vals);
+}
+
 export type Branch = {
   id: number;
   slug: string;
@@ -1336,6 +1420,23 @@ export type Branch = {
   staff_group_id: string | null;       // LINE group ID for staff notifications (preferred over staff_line_user_ids when set)
   readiness_morning_time: string;      // HH:MM — used in รอบเช้า card title (e.g. "11:30")
   readiness_afternoon_time: string;    // HH:MM — used in รอบบ่าย card title (e.g. "16:00")
+  brand_color: string | null;          // Hex e.g. '#e94560'. NULL = default IKIGAI ink colour.
+};
+
+// Global (non-branch-scoped) configuration. Today it carries the
+// IKIGAI OS LINE OA credentials + the shared cross-branch staff
+// group ID, used to route PERSONA notifications (daily reports,
+// edit requests, decisions) to a single group where staff from
+// every branch can read them. Booking notifications continue to
+// use the per-branch OA — see Q1 in the LINE OA design spec.
+//
+// Singleton — only one row, id always = 1.
+export type SystemSettings = {
+  id: 1;
+  global_line_channel_token: string | null;
+  global_staff_group_id: string | null;
+  updated_at: string | null;
+  updated_by: number | null;
 };
 
 export type User = {
