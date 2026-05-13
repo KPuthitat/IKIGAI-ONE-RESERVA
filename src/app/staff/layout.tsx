@@ -104,11 +104,20 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       <Sidebar sections={sections} brand={<StaffSidebarBrand />} />
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-ink-gradient text-white shadow-md">
-          {/* Row 1 — single-row topbar, matches admin layout. See
-              admin/layout.tsx for the narrow-screen strategy. */}
-          <div className="px-4 pt-3 pb-2 pl-16 flex items-center gap-2 sm:gap-3">
-            <div className="flex-1 min-w-0 overflow-hidden">
+          {/* Single-row topbar — see admin/layout.tsx for the
+              responsive-strategy commentary. Pill sits inside the
+              brand column so it wraps below the brand on narrow
+              widths instead of pushing buttons off-screen. */}
+          <div className="px-4 py-3 pl-16 flex items-center gap-2 sm:gap-3">
+            <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <HeaderBrand role="staff" />
+              {activeBranch && (
+                <TodaysBranchPill
+                  branchName={activeBranch.name}
+                  hasChoice={hasBranchChoice}
+                  pickerPath="/staff/branch-picker"
+                />
+              )}
             </div>
             <div className="hidden md:block text-xs text-white/60 truncate max-w-[180px] flex-shrink-0">
               {user.display_name}
@@ -118,17 +127,6 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
               <LogoutButton />
             </div>
           </div>
-          {/* Row 2 — today's branch pill, right-aligned under the
-              logout button (same pattern as admin layout). */}
-          {activeBranch && (
-            <div className="px-4 pb-2 pl-16 flex justify-end">
-              <TodaysBranchPill
-                branchName={activeBranch.name}
-                hasChoice={hasBranchChoice}
-                pickerPath="/staff/branch-picker"
-              />
-            </div>
-          )}
         </header>
         <main className="flex-1 w-full p-4 max-w-6xl mx-auto">{children}</main>
         <Footer />

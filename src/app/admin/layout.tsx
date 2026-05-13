@@ -180,20 +180,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <Sidebar sections={sections} brand={<AdminSidebarBrand />} />
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-ink-gradient text-white shadow-md">
-          {/* Row 1 — single-row topbar: brand on the left, user info
-              + language toggle + logout on the right, all on one
-              horizontal line. No flex-wrap so the row never breaks.
-              Strategy for staying single-row on narrow mobile:
-              • Brand: flex-1 + min-w-0 + overflow-hidden so it
-                shrinks and truncates instead of pushing buttons off.
-              • Username: hidden below md (≥768px); on tablets/desktop
-                it slots between brand and buttons.
-              • LangToggle + LogoutButton: wrapped in a flex-shrink-0
-                container so the kernel of the topbar (lang +
-                logout) never gets squeezed. */}
-          <div className="px-4 pt-3 pb-2 pl-16 flex items-center gap-2 sm:gap-3">
-            <div className="flex-1 min-w-0 overflow-hidden">
+          {/* Single-row topbar: brand + today's-branch pill on the
+              left, language toggle + logout on the right.
+              Responsive strategy:
+              • Outer flex is items-center, no wrap — the two columns
+                stay side-by-side on every viewport.
+              • Left column is itself a flex-wrap container. On wide
+                screens the brand and pill sit on one line; on narrow
+                mobile the pill drops onto a second line under the
+                brand (inside the same left column) instead of
+                colliding with the right-side buttons.
+              • Username chip is hidden below md to free space for
+                the pill.
+              • LangToggle + LogoutButton are wrapped in a
+                flex-shrink-0 container so the kernel of the topbar
+                is never the thing that gets squeezed. */}
+          <div className="px-4 py-3 pl-16 flex items-center gap-2 sm:gap-3">
+            <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <HeaderBrand role="admin" />
+              {activeBranch && (
+                <TodaysBranchPill
+                  branchName={activeBranch.name}
+                  hasChoice={hasBranchChoice}
+                  pickerPath="/admin/branch-picker"
+                />
+              )}
             </div>
             <div className="hidden md:block text-xs text-white/60 truncate max-w-[200px] flex-shrink-0">
               {user.display_name} · {t(lang, "role.adminShort")}
@@ -203,19 +214,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <LogoutButton />
             </div>
           </div>
-          {/* Row 2 — today's branch pill sits right-aligned under the
-              logout button (per user feedback "ย้าย topbar pill ไปไว้
-              ที่ใต้ปุ่มออกจากระบบน่าจะดีกว่า"). The pill component
-              hides itself on /admin/branch-picker. */}
-          {activeBranch && (
-            <div className="px-4 pb-2 pl-16 flex justify-end">
-              <TodaysBranchPill
-                branchName={activeBranch.name}
-                hasChoice={hasBranchChoice}
-                pickerPath="/admin/branch-picker"
-              />
-            </div>
-          )}
         </header>
         <main className="flex-1 w-full p-4 max-w-6xl mx-auto">{children}</main>
         <Footer />
