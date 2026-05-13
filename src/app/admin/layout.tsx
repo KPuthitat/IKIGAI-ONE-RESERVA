@@ -10,6 +10,7 @@ import Footer from "../Footer";
 import Sidebar, { type SidebarSection } from "../components/Sidebar";
 import AdminSidebarBrand from "./AdminSidebarBrand";
 import TodaysBranchPill from "../TodaysBranchPill";
+import HookFab from "../components/HookFab";
 
 export const dynamic = "force-dynamic";
 
@@ -78,7 +79,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // for cross-branch notifications, etc. Always-visible link
         // since the page handles its own admin gating.
         { href: "/admin/system-settings", label: t(lang, "admin.systemSettings.title") },
-        { href: "/admin/companies", label: t(lang, "admin.companies.title") }
+        { href: "/admin/companies", label: t(lang, "admin.companies.title") },
+        { href: "/help", label: t(lang, "owl.help.menu") }
       ]
     },
     {
@@ -229,6 +231,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <main className="flex-1 w-full p-4 max-w-6xl mx-auto">{children}</main>
         <Footer />
       </div>
+      <HookFab audience="admin" />
     </div>
   );
 }

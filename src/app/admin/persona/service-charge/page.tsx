@@ -28,6 +28,7 @@ import {
   SVC_COMPANY_SHARE_RATIO
 } from "@/lib/service-charge";
 import ServiceChargeClient from "./ServiceChargeClient";
+import OwlMascot from "../../../components/OwlMascot";
 
 export const dynamic = "force-dynamic";
 
@@ -171,8 +172,11 @@ export default function AdminServiceChargePage({
           {t(lang, "admin.persona.svc.distTitle")}
         </h2>
         {summary.rows.length === 0 ? (
-          <div className="text-sm text-slate-400 text-center py-10">
-            {t(lang, "admin.persona.svc.distEmpty")}
+          <div className="text-center py-10">
+            <OwlMascot size={80} mood="thinking" />
+            <p className="text-sm text-slate-400 mt-3">
+              {t(lang, "admin.persona.svc.distEmpty")}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">

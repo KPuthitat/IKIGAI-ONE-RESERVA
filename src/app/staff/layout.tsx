@@ -9,6 +9,7 @@ import Footer from "../Footer";
 import Sidebar, { type SidebarSection } from "../components/Sidebar";
 import StaffSidebarBrand from "./StaffSidebarBrand";
 import TodaysBranchPill from "../TodaysBranchPill";
+import HookFab from "../components/HookFab";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,12 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/staff/reserva", label: t(lang, "staff.nav.bookings") }
       ]
+    },
+    {
+      label: "",
+      items: [
+        { href: "/help", label: t(lang, "owl.help.menu") }
+      ]
     }
   ];
 
@@ -138,6 +145,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         <main className="flex-1 w-full p-4 max-w-6xl mx-auto">{children}</main>
         <Footer />
       </div>
+      <HookFab audience="staff" />
     </div>
   );
 }

@@ -19,6 +19,7 @@ import {
   getLastPublish,
   type AssignmentForStaffCalendar
 } from "@/lib/roster";
+import OwlMascot from "../../../components/OwlMascot";
 
 export const dynamic = "force-dynamic";
 
@@ -99,8 +100,11 @@ export default function StaffCalendarPage({
           )}
         </div>
       ) : (
-        <div className="card bg-amber-50 border-amber-200 text-sm text-amber-800">
-          ⏳ {t(lang, "staff.persona.calendar.notPublishedYet")}
+        <div className="card bg-amber-50 border-amber-200 flex items-center gap-3">
+          <OwlMascot size={64} mood="sleepy" showCoffee={false} />
+          <div className="text-sm text-amber-800">
+            ⏳ {t(lang, "staff.persona.calendar.notPublishedYet")}
+          </div>
         </div>
       )}
 

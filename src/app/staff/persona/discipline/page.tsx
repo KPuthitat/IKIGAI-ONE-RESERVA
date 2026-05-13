@@ -4,6 +4,7 @@ import { requireStaffOrAdmin } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { listWarningsForUser } from "@/lib/discipline";
+import OwlMascot from "../../../components/OwlMascot";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +34,11 @@ export default function StaffDisciplineListPage() {
       </div>
 
       {warnings.length === 0 ? (
-        <div className="card text-center text-sm text-slate-400 py-12">
-          ✓ {t(lang, "staff.persona.discipline.empty")}
+        <div className="card text-center py-10">
+          <OwlMascot size={96} mood="smile" />
+          <p className="text-sm text-emerald-700 font-bold mt-3">
+            ✓ {t(lang, "staff.persona.discipline.empty")}
+          </p>
         </div>
       ) : (
         <ul className="space-y-2">
