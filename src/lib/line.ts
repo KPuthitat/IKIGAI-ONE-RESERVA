@@ -89,6 +89,7 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     labelTable: "โต๊ะ",
     labelSource: "ที่มา",
     labelNotes: "หมายเหตุ",
+    labelFoodAllergy: "อาหารที่แพ้",
     seatsUnit: "ที่นั่ง",
     tableNotAssigned: "ยังไม่ได้กำหนด",
     btnViewRestaurant: "ดูข้อมูลร้าน",
@@ -119,6 +120,7 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     labelTable: "Table",
     labelSource: "Source",
     labelNotes: "Notes",
+    labelFoodAllergy: "Food allergy",
     seatsUnit: "guests",
     tableNotAssigned: "not assigned",
     btnViewRestaurant: "View restaurant",
@@ -359,6 +361,10 @@ export type StaffBookingCardArgs = {
   bookingTime: string;          // HH:MM
   tableLabel: string | null;
   notes: string | null;
+  // Food allergies / dietary restrictions. Rendered with a stronger
+  // visual treatment (rose accent + 🍽️) so staff catches it ahead of
+  // serving — even when notes is empty. Null = no allergy info given.
+  foodAllergy: string | null;
   source: string | null;
   publicBaseUrl: string;
   kind: "created" | "reminder" | "pending_review";
@@ -764,6 +770,19 @@ export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
         { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
         { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: bodyRows },
+        ...(args.foodAllergy ? [
+          { type: "separator", margin: "md", color: "#fecdd3" },
+          {
+            type: "text",
+            text: `🍽️ ${fx(args.lang, "labelFoodAllergy")}`,
+            size: "xs", color: "#b91c1c", weight: "bold", margin: "sm"
+          },
+          {
+            type: "text",
+            text: args.foodAllergy,
+            size: "sm", color: "#7f1d1d", weight: "bold", wrap: true, margin: "xs"
+          }
+        ] : []),
         ...(args.notes ? [
           { type: "separator", margin: "md", color: COLOR_DIVIDER },
           { type: "text", text: fx(args.lang, "labelNotes"), size: "xs", color: COLOR_LABEL, margin: "sm" },
@@ -986,6 +1005,7 @@ export async function notifyStaff(
     bookingTime: booking.booking_time,
     tableLabel,
     notes: booking.notes,
+    foodAllergy: booking.food_allergy,
     source: booking.source,
     publicBaseUrl: getPublicBaseUrl(),
     kind: type,

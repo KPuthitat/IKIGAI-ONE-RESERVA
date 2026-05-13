@@ -62,6 +62,14 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE bookings ADD COLUMN cancel_reason TEXT");
   }
 
+  // Food allergies / dietary restrictions — free text from the
+  // customer booking form. Surfaced to staff in the admin pending +
+  // detail views and in the LINE Flex card so the table survey doesn't
+  // re-ask. Empty/NULL = customer didn't mention any.
+  if (!bnames.has("food_allergy")) {
+    db.exec("ALTER TABLE bookings ADD COLUMN food_allergy TEXT");
+  }
+
   // Two-step booking workflow (added 2026-05-09):
   // Customer submits without picking a table → status='pending_review'.
   // Admin assigns a table + clicks "Confirm and notify" → status='confirmed'
@@ -1704,6 +1712,7 @@ export type Booking = {
   seated_at: string | null;
   cancelled_at: string | null;
   cancel_reason: string | null;       // shown to customer in cancellation Flex card
+  food_allergy: string | null;        // dietary restrictions / allergies (free text)
 };
 
 // ── PERSONA: shift handover + readiness reports ──────────────────────

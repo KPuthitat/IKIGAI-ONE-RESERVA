@@ -183,6 +183,12 @@ export default function EditBookingPage({
             {booking.notes && (
               <SummaryRow label={t(lang, "edit.row.notes")} value={booking.notes} />
             )}
+            {booking.food_allergy && (
+              <SummaryRow
+                label={t(lang, "booking.field.foodAllergy")}
+                value={booking.food_allergy}
+              />
+            )}
           </div>
 
           {editable && (

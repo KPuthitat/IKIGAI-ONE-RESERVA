@@ -33,6 +33,10 @@ const Body = z.object({
   customer_origin: z.string().max(50).optional().default(""),
   is_member: z.union([z.literal(0), z.literal(1)]).nullable().optional(),
   notes: z.string().max(500).optional().default(""),
+  // Food allergies / dietary restrictions — surfaced to staff in the
+  // table-survey flow. Optional free text; kept separate from `notes`
+  // so it's easy to query "any allergy info?" without parsing.
+  food_allergy: z.string().max(500).optional().default(""),
   table_id: z.number().int().nullable().optional(),
   line_user_id: z.string().max(64).optional().default(""),
   booking_channel: z.enum(["walkin", "phone", "line"])
@@ -97,9 +101,9 @@ export async function POST(req: Request) {
     INSERT INTO bookings (
       branch_id, table_id, customer_name, customer_phone, party_size,
       source, customer_origin, is_member,
-      booking_date, booking_time, duration_minutes, notes,
+      booking_date, booking_time, duration_minutes, notes, food_allergy,
       booking_channel, ref_no, status, created_by, seated_at, line_user_id
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     branch.id,
     data.table_id ?? null,
@@ -113,6 +117,7 @@ export async function POST(req: Request) {
     data.booking_time,
     branch.default_duration_minutes,
     data.notes || null,
+    data.food_allergy || null,
     data.booking_channel,
     ref,
     initialStatus,

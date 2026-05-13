@@ -253,6 +253,21 @@ export default function BookingActionsModal({
             </div>
           )}
 
+          {/* Food allergy — always visible (active or locked) since
+              this is safety-critical info staff need to see at a
+              glance. Stronger visual treatment (rose accent + emoji)
+              so it stands out among the other booking fields. */}
+          {booking.food_allergy && (
+            <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm">
+              <div className="text-xs text-rose-700 font-bold mb-1">
+                🍽️ {t("admin.bookings.allergyLabel")}
+              </div>
+              <div className="text-rose-900 whitespace-pre-wrap font-bold">
+                {booking.food_allergy}
+              </div>
+            </div>
+          )}
+
           {/* Table reassignment — only when booking is still active */}
           {allowCancel && (
             <div>

@@ -376,6 +376,11 @@ function PendingBookingCard({
             )}
           </div>
           {b.notes && <div className="text-sm text-slate-600 mt-1">{t("admin.bookings.notesLabel")}: {b.notes}</div>}
+          {b.food_allergy && (
+            <div className="text-sm text-rose-700 mt-1 font-bold">
+              🍽️ {t("admin.bookings.allergyLabel")}: {b.food_allergy}
+            </div>
+          )}
         </div>
       </div>
       {canEdit && (
@@ -477,6 +482,11 @@ function DateGroup({
                 )}
               </div>
               {b.notes && <div className="text-sm text-slate-600 mt-1">{t("admin.bookings.notesLabel")}: {b.notes}</div>}
+          {b.food_allergy && (
+            <div className="text-sm text-rose-700 mt-1 font-bold">
+              🍽️ {t("admin.bookings.allergyLabel")}: {b.food_allergy}
+            </div>
+          )}
             </div>
             <div className="text-sm">
               <span className={`px-2 py-1 rounded text-xs status-${b.status}`}>

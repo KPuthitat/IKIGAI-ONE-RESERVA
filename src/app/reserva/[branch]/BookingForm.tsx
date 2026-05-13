@@ -133,6 +133,10 @@ export default function BookingForm({
     customer_origin: "",
     is_member: null as 0 | 1 | null,
     notes: "",
+    // Food allergies / dietary restrictions — separate field from
+    // `notes` so staff can see it at a glance during the table survey
+    // without scanning a free-form notes blob.
+    food_allergy: "",
     line_user_id: ""
   });
   const [step, setStep] = useState<"form" | "choose" | "done">("form");
@@ -380,6 +384,7 @@ export default function BookingForm({
         customer_origin: form.customer_origin,
         is_member: form.is_member,
         notes: form.notes,
+        food_allergy: form.food_allergy,
         line_user_id: form.line_user_id,
         lang
       };
@@ -428,6 +433,7 @@ export default function BookingForm({
             customer_origin: form.customer_origin || "",
             is_member: form.is_member,
             notes: form.notes,
+            food_allergy: form.food_allergy,
             table_id: tableId,
             booking_channel: mode,
             // 'line' mode: staff may have pasted the customer's LINE userId
@@ -707,6 +713,24 @@ export default function BookingForm({
             value={form.party_size}
             onChange={(n) => setForm({ ...form, party_size: n })}
           />
+        </div>
+
+        {/* Food allergies — surfaced first so the customer sees it as
+            part of the core booking info, not buried under notes. The
+            field is optional but explicitly framed so staff have it
+            ready when they do the table survey. */}
+        <div>
+          <label className="label">{t("booking.field.foodAllergy")}</label>
+          <textarea
+            className="input" rows={2}
+            placeholder={t("booking.field.foodAllergyPlaceholder")}
+            value={form.food_allergy}
+            onChange={(e) => setForm({ ...form, food_allergy: e.target.value })}
+            maxLength={500}
+          />
+          <p className="text-[10px] text-slate-400 mt-1">
+            {t("booking.field.foodAllergyHint")}
+          </p>
         </div>
 
         <div>

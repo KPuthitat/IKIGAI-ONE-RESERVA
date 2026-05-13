@@ -27,6 +27,10 @@ const Body = z.object({
   customer_origin: z.string().max(50).optional().default(""),
   is_member: z.union([z.literal(0), z.literal(1)]).nullable().optional(),
   notes: z.string().max(500).optional().default(""),
+  // Food allergies / dietary restrictions — free text optional. Stored
+  // separately from `notes` so staff can surface it on the table
+  // survey without parsing the general notes field.
+  food_allergy: z.string().max(500).optional().default(""),
   line_user_id: z.string().max(64).optional().default(""),
   lang: z.enum(["th", "en"]).optional()
 });
@@ -56,9 +60,10 @@ export async function POST(req: Request) {
     INSERT INTO bookings (
       branch_id, table_id, customer_name, customer_phone, party_size,
       source, customer_origin, is_member,
-      booking_date, booking_time, duration_minutes, notes, line_user_id, lang,
+      booking_date, booking_time, duration_minutes, notes, food_allergy,
+      line_user_id, lang,
       booking_channel, ref_no, status
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'online', ?, 'pending_review')
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'online', ?, 'pending_review')
   `).run(
     branch.id,
     null,                                    // table_id always null at this stage
@@ -72,6 +77,7 @@ export async function POST(req: Request) {
     data.booking_time,
     branch.default_duration_minutes,
     data.notes || null,
+    data.food_allergy || null,
     data.line_user_id || null,
     data.lang ?? null,
     ref

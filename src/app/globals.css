@@ -11,12 +11,23 @@
 
 :root {
   font-family: var(--font-lineseed), ui-sans-serif, system-ui, sans-serif;
+  /* Disable browser-side font weight/style synthesis. We only have
+     real woff2 files for weights 400/700/800. Without this rule the
+     browser fakes 500/600/etc by stretching glyphs — looks awful on
+     Thai vowel marks (สระ-ู, ไม้หันอากาศ become uneven). With
+     synthesis off, intermediate weights round to the nearest available
+     real weight (font-medium→Regular, font-semibold→Bold) and Thai
+     text stays crisp. */
+  font-synthesis: none;
+  -webkit-font-synthesis: none;
 }
 
 html, body { height: 100%; }
 body {
   @apply bg-slate-50 text-slate-800;
   font-family: var(--font-lineseed), ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+  -webkit-font-synthesis: none;
 }
 
 /* Form elements don't inherit body font by default in any browser —
@@ -25,6 +36,8 @@ body {
    with wider vowel marks (e.g., "ลิงก์" looks like "ลิงท์"). */
 input, textarea, select, button {
   font-family: inherit;
+  font-synthesis: none;
+  -webkit-font-synthesis: none;
 }
 
 /* ── Buttons (rounded 10px, bold weight, no easing — matches payroll) ── */
