@@ -2,7 +2,13 @@
 // LINE Notify ปิดบริการตั้งแต่ 31 มี.ค. 2025 จึงต้องใช้ Messaging API แทน
 // Free tier: 200 push messages/เดือน ต่อ channel (เพียงพอกับ ~120 bookings × 2 reminders)
 
-import { getDb, getSystemSettings, type Branch, type Booking } from "./db";
+import {
+  getDb,
+  getSystemSettings,
+  type Branch,
+  type Booking,
+  type AttendanceRow
+} from "./db";
 import { getChannelByCode } from "./messaging-channels";
 
 // LINE message kinds we use. Loose typing is intentional — Flex contents are
@@ -1741,6 +1747,164 @@ export function shiftUnlockDecisionFlex(args: ShiftUnlockDecisionArgs): LineFlex
   return {
     type: "flex",
     altText: `${titleText} ${args.branchName} · ${dateStr} · ${args.requesterName}`,
+    contents: bubble
+  };
+}
+
+// ── PERSONA: daily attendance summary Flex (group-facing) ────────
+//
+// Sent to the cross-branch staff group every time someone clocks
+// in/out — a fresh snapshot of who's expected at the branch today,
+// who's shown up, who hasn't. Replaces the per-person spam pattern
+// (one DM per clock event) with one consolidated rolling card the
+// team can glance at.
+
+export type AttendanceSummaryArgs = {
+  branchName: string;
+  reportDate: string;          // YYYY-MM-DD Bangkok
+  roster: AttendanceRow[];
+  /** Who just clocked in/out — surfaced as a small "📥 just in"
+   *  line below the title so admin can see what triggered this
+   *  particular update. */
+  triggerName: string;
+  triggerAction: "in" | "out";
+  triggerTime: string;         // HH:MM Bangkok
+  headerColor?: string | null;
+};
+
+/** Format a clock-in/out ISO timestamp to "HH:MM" Bangkok local. */
+function fmtBkkTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const bkk = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+  return bkk.toISOString().slice(11, 16);
+}
+
+export function attendanceSummaryFlex(args: AttendanceSummaryArgs): LineFlexMessage {
+  const dateStr = formatThaiDate(args.reportDate);
+  const headerColor = args.headerColor || COLOR_INK_700;
+
+  // Bucket the roster — anyone with an in-time today is "arrived",
+  // everyone else is "absent". We don't try to enforce shift
+  // schedules here (those land in TC-5); for now the roster is the
+  // full set of staff assigned to the branch.
+  const arrived = args.roster.filter((r) => r.inTs);
+  const absent = args.roster.filter((r) => !r.inTs);
+
+  // Each arrived row: "นาย ก. · เข้า 08:32 · ออก 17:00" (out portion
+  // omitted when the staff is still on shift). Each absent row: just
+  // the display name. Both lists wrap inside a single box so long
+  // names don't break the column.
+  function arrivedLine(row: AttendanceRow): Record<string, unknown> {
+    const parts: string[] = [`เข้า ${fmtBkkTime(row.inTs)}`];
+    if (row.outTs) parts.push(`ออก ${fmtBkkTime(row.outTs)}`);
+    return {
+      type: "box", layout: "horizontal", spacing: "sm",
+      contents: [
+        {
+          type: "text", text: row.displayName,
+          size: "sm", color: COLOR_TEXT_DARK, weight: "bold",
+          flex: 5, wrap: true
+        },
+        {
+          type: "text", text: parts.join(" · "),
+          size: "xs", color: COLOR_TEXT_MUTED,
+          flex: 5, align: "end", wrap: true
+        }
+      ]
+    };
+  }
+  function absentLine(row: AttendanceRow): Record<string, unknown> {
+    return {
+      type: "text", text: row.displayName,
+      size: "sm", color: COLOR_TEXT_DARK, wrap: true, margin: "xs"
+    };
+  }
+
+  const bubble = {
+    type: "bubble", size: "mega",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: headerColor, paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "PERSONA • STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", margin: "md",
+          contents: [
+            { type: "text", text: "รายชื่อพนักงานวันนี้", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "text", text: dateStr, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs", wrap: true },
+        // Trigger line — points at who just punched in/out
+        {
+          type: "text",
+          text: args.triggerAction === "in"
+            ? `📥 ${args.triggerName} · เข้างานเวลา ${args.triggerTime}`
+            : `📤 ${args.triggerName} · เลิกงานเวลา ${args.triggerTime}`,
+          size: "xs",
+          color: COLOR_BRAND,
+          weight: "bold",
+          margin: "xs",
+          wrap: true
+        },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        // ── มาแล้ว ──
+        {
+          type: "text",
+          text: `✓ มาแล้ว (${arrived.length} คน)`,
+          size: "xs",
+          color: "#047857",
+          weight: "bold",
+          margin: "md"
+        },
+        ...(arrived.length > 0
+          ? [{
+              type: "box", layout: "vertical", spacing: "xs", margin: "sm",
+              contents: arrived.map(arrivedLine)
+            }]
+          : [{
+              type: "text", text: "—",
+              size: "sm", color: COLOR_TEXT_MUTED, margin: "sm"
+            }]
+        ),
+        // ── ยังไม่มา ──
+        ...(absent.length > 0 ? [
+          { type: "separator", margin: "md", color: COLOR_DIVIDER },
+          {
+            type: "text",
+            text: `⏳ ยังไม่มา (${absent.length} คน)`,
+            size: "xs",
+            color: "#b45309",
+            weight: "bold",
+            margin: "md"
+          },
+          {
+            type: "box", layout: "vertical", spacing: "xs", margin: "sm",
+            contents: absent.map(absentLine)
+          }
+        ] : [])
+      ]
+    },
+    styles: {
+      header: { backgroundColor: headerColor },
+      body: { backgroundColor: "#ffffff" }
+    }
+  };
+  return {
+    type: "flex",
+    altText: `รายชื่อพนักงาน ${args.branchName} · ${dateStr} · มา ${arrived.length}/${args.roster.length}`,
     contents: bubble
   };
 }

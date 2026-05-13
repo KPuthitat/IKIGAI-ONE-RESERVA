@@ -1348,6 +1348,63 @@ function runMigrations(db: Database.Database): void {
   }
 }
 
+/** One row in the daily attendance roster — used by the group
+ *  summary Flex card that lands in the shared staff group each
+ *  time someone clocks in / out. */
+export type AttendanceRow = {
+  userId: number;
+  displayName: string;
+  employmentType: string | null;   // 'pt' / 'ft' / null
+  inTs: string | null;             // ISO timestamp of today's first clock-in
+  outTs: string | null;            // ISO timestamp of today's first clock-out
+};
+
+/** Build today's attendance roster for a branch. Returns one row per
+ *  staff member assigned to the branch (via user_branches), sorted
+ *  by display_name. Rows include the in/out timestamps when present
+ *  so the caller can format "✓ มาแล้ว @08:32" vs "⏳ ยังไม่มา"
+ *  without another query.
+ *
+ *  Time entries are scoped to the given Bangkok-local date so a
+ *  late-night clock-out from the previous day doesn't leak into
+ *  tomorrow's summary. */
+export function getBranchAttendanceSummary(
+  branchId: number,
+  dateBkk: string
+): AttendanceRow[] {
+  const db = getDb();
+  const startIso = new Date(`${dateBkk}T00:00:00+07:00`).toISOString();
+  const endIso = new Date(`${dateBkk}T23:59:59+07:00`).toISOString();
+  // LEFT JOIN time_entries twice (in + out) so users with neither
+  // event today still appear in the roster as "absent".
+  const rows = db.prepare(`
+    SELECT u.id AS userId,
+           u.display_name AS displayName,
+           u.employment_type AS employmentType,
+           (
+             SELECT te.ts FROM time_entries te
+             WHERE te.user_id = u.id AND te.branch_id = ?
+               AND te.type = 'in' AND te.ts >= ? AND te.ts <= ?
+             ORDER BY te.ts ASC LIMIT 1
+           ) AS inTs,
+           (
+             SELECT te.ts FROM time_entries te
+             WHERE te.user_id = u.id AND te.branch_id = ?
+               AND te.type = 'out' AND te.ts >= ? AND te.ts <= ?
+             ORDER BY te.ts ASC LIMIT 1
+           ) AS outTs
+    FROM users u
+    JOIN user_branches ub ON ub.user_id = u.id
+    WHERE ub.branch_id = ? AND u.role = 'staff'
+    ORDER BY u.display_name COLLATE NOCASE ASC
+  `).all(
+    branchId, startIso, endIso,
+    branchId, startIso, endIso,
+    branchId
+  ) as AttendanceRow[];
+  return rows;
+}
+
 /** Append a row to persona_activity_log. Minimal interface — caller
  *  just supplies who did what + optional ref_id pointing at the
  *  affected row. Logging is best-effort; we swallow errors so a log
