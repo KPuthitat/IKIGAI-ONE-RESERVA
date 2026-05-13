@@ -180,18 +180,22 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <Sidebar sections={sections} brand={<AdminSidebarBrand />} />
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-ink-gradient text-white shadow-md">
-          {/* Row 1 — brand + user controls. Pill moved off this row
-              to prevent overlap with HeaderBrand on narrow screens
-              where long branch names ("NAMA PASTA SRIRACHA") were
-              pushing into the brand wordmark. */}
-          <div className="px-4 pt-3 pb-2 pl-16 flex items-center gap-3 flex-wrap">
+          {/* Row 1 — brand + user controls.
+              Layout: brand wordmark + signed-in user/role stacked
+              on the left (label below brand); language toggle +
+              logout on the right. `items-start` aligns the right
+              column to the top so the buttons sit at the brand's
+              baseline rather than centring across both rows of the
+              left column. flex-wrap kicks in on very narrow mobile
+              widths to drop the buttons below. */}
+          <div className="px-4 pt-3 pb-2 pl-16 flex items-start gap-3 flex-wrap">
             <div className="flex-1 min-w-0">
               <HeaderBrand role="admin" />
-            </div>
-            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-              <span className="text-xs text-white/60 hidden sm:inline">
+              <div className="text-xs text-white/60 mt-1 truncate">
                 {user.display_name} · {t(lang, "role.adminShort")}
-              </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
               <LangToggle variant="dark" />
               <LogoutButton />
             </div>
