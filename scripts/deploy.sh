@@ -127,19 +127,27 @@ echo "==> [5/6] persisting PM2 state"
 # via pm2-systemd integration. Cheap to call on every deploy.
 pm2 save
 
-# Give Next.js a moment to come up. 5s is enough for our typical boot
-# time (~1-3s "Ready in...") plus a safety margin.
-sleep 5
-
 echo "==> [6/6] verifying"
-# Bound pid should match the new PM2 reserva pid. If not, something
-# else swooped in on port 3010 again — bail out so the human can
-# investigate. Same `pm2 pid` + `lsof` pattern as step 3.
+# Boot wait — on the 1 vCPU droplet, Next.js + better-sqlite3 + the
+# migrations chain can take 10-20s before the new process binds to
+# port 3010. The old `sleep 5 + check once` pattern false-alarmed
+# every deploy ("✗ nothing is listening on :3010") even though the
+# process came up healthy a few seconds later. Poll for up to 30s,
+# checking once a second — exit the loop as soon as the port is
+# bound by the PM2-managed pid.
 NEW_PM2_PID="$(pm2 pid "$PM2_APP" 2>/dev/null | tr -d '[:space:]' | grep -oE '^[0-9]+$' || echo '')"
-BOUND_PID="$(lsof -ti :"${PORT}" -sTCP:LISTEN 2>/dev/null | head -n1 || echo '')"
+BOUND_PID=""
+for i in $(seq 1 30); do
+  BOUND_PID="$(lsof -ti :"${PORT}" -sTCP:LISTEN 2>/dev/null | head -n1 || echo '')"
+  if [[ -n "$BOUND_PID" && "$BOUND_PID" == "$NEW_PM2_PID" ]]; then
+    echo "    bound on :${PORT} after ${i}s"
+    break
+  fi
+  sleep 1
+done
 
 if [[ -z "$BOUND_PID" ]]; then
-  echo "    ✗ nothing is listening on :${PORT}"
+  echo "    ✗ nothing is listening on :${PORT} after 30s — check pm2 logs ${PM2_APP}"
   exit 2
 fi
 
