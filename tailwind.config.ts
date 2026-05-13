@@ -6,9 +6,12 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
+        // The CSS variable is injected by next/font/local in
+        // src/app/layout.tsx — Tailwind's `font-sans` class therefore
+        // resolves to the next/font-managed family at runtime,
+        // gaining the preload + size-adjust optimisations for free.
         sans: [
-          '"LINE Seed Sans TH"',
-          '"LINE Seed Sans"',
+          "var(--font-lineseed)",
           "ui-sans-serif",
           "system-ui",
           "sans-serif"
