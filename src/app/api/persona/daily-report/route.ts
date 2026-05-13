@@ -200,7 +200,8 @@ export async function POST(req: Request) {
       yesterdayClosingAmount: d.yesterday_closing_amount,
       morningDrawerAmount: d.morning_drawer_amount,
       checklist: normalizeChecklist(d.checklist),
-      isRevision
+      isRevision,
+      headerColor: branch.brand_color
     });
   } else if (type === "shift_close") {
     const d = v.data as z.infer<typeof ShiftCloseData>;
@@ -210,7 +211,8 @@ export async function POST(req: Request) {
       closerName: user.display_name,
       closingDrawerAmount: d.closing_drawer_amount,
       checklist: normalizeChecklist(d.checklist),
-      isRevision
+      isRevision,
+      headerColor: branch.brand_color
     });
   } else {
     // readiness_1130 / readiness_1600 — pull slot label + time from

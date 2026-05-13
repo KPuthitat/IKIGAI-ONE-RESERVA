@@ -91,7 +91,8 @@ export async function POST(req: Request) {
       | "shift_open" | "shift_close" | "readiness_1130" | "readiness_1600",
     openerName: report.opener_name,
     requesterName: user.display_name,
-    reason
+    reason,
+    headerColor: branch.brand_color
   });
   notifyToStaffGroup(branch, flex, "global").catch((e) =>
     console.error("notify shift-unlock-request error", e)

@@ -129,7 +129,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         requesterName: row.requester_name,
         adminName: user.display_name,
         decision: parsed.data.decision,
-        decisionNote: note
+        decisionNote: note,
+        headerColor: branch.brand_color
       });
       notifyToStaffGroup(branch, flex, "global").catch((e) =>
         console.error("notify shift-unlock-decision error", e)

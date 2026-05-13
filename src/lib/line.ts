@@ -148,6 +148,8 @@ export type ClockInCardArgs = {
   lunchEnd: string | null;     // 'HH:MM'
   hasLunchToday: boolean;      // false → ข้ามแสดงพักกลางวัน
   personaUrl: string;          // deep link the action button opens
+  /** Optional branch CI hex for the header background. */
+  headerColor?: string | null;
 };
 
 // IKIGAI OS CI palette — keep in sync with tailwind.config.ts
@@ -226,13 +228,16 @@ export function personaClockInFlex(args: ClockInCardArgs): LineFlexMessage {
   }
   bodyRows.push(timeRow("เวลาเลิกงาน", outHHMM));
 
+  const headerColor = args.headerColor || COLOR_INK_700;
+
   const bubble = {
     type: "bubble",
     size: "kilo",
-    // ── Header: ink navy with IKIGAI OS / PERSONA branding bar ──
+    // ── Header: branch CI colour (falls back to ink navy) with
+    // IKIGAI OS / PERSONA branding bar ──
     header: {
       type: "box", layout: "vertical",
-      backgroundColor: COLOR_INK_700,
+      backgroundColor: headerColor,
       paddingAll: "20px",
       paddingTop: "18px",
       paddingBottom: "18px",
@@ -294,7 +299,7 @@ export function personaClockInFlex(args: ClockInCardArgs): LineFlexMessage {
     // Subtle bottom-edge accent matching ink-900 (a thin band visible below
     // the footer button on most devices).
     styles: {
-      header: { backgroundColor: COLOR_INK_700 },
+      header: { backgroundColor: headerColor },
       body: { backgroundColor: "#ffffff" },
       footer: { backgroundColor: "#ffffff", separator: true, separatorColor: COLOR_DIVIDER }
     }
@@ -332,6 +337,9 @@ export type CustomerBookingCardArgs = {
    *  Label is hardcoded per language so it changes when the customer
    *  flips language toggle; admin only configures the link. */
   menuUrl?: string | null;
+  /** Optional header background hex — branch CI shows on the card
+   *  customers see in their LINE chat. Falls back to default ink. */
+  headerColor?: string | null;
 };
 
 export type StaffBookingCardArgs = {
@@ -349,6 +357,8 @@ export type StaffBookingCardArgs = {
   publicBaseUrl: string;
   kind: "created" | "reminder" | "pending_review";
   lang: Lang;                   // language for the staff alert (defaults to th in caller)
+  /** See CustomerBookingCardArgs headerColor. */
+  headerColor?: string | null;
 };
 
 /** Build a public HTTPS URL for a QR-code PNG that encodes the given target.
@@ -390,6 +400,7 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
   const titleText = isReminder ? fx(args.lang, "reminderTitle") : fx(args.lang, "confirmTitle");
   const iconText = isReminder ? "🔔" : "✓";
   const dateStr = localDate(args.bookingDate, args.lang);
+  const headerColor = args.headerColor || COLOR_INK_700;
 
   // Public-facing ref ('R20260500001') is what the customer + staff
   // identify the booking by. Fall back to numeric id only for legacy rows
@@ -408,7 +419,7 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
     size: "kilo",
     header: {
       type: "box", layout: "vertical",
-      backgroundColor: COLOR_INK_700,
+      backgroundColor: headerColor,
       paddingAll: "20px",
       contents: [
         {
@@ -513,7 +524,7 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
       ]
     },
     styles: {
-      header: { backgroundColor: COLOR_INK_700 },
+      header: { backgroundColor: headerColor },
       body: { backgroundColor: "#ffffff" },
       footer: { backgroundColor: "#ffffff", separator: true, separatorColor: COLOR_DIVIDER }
     }
@@ -542,6 +553,8 @@ export type CancelledBookingCardArgs = {
   reason: string | null;          // free text or one of the preset reasons
   contactPhone: string | null;    // for the tel: button (null = no button)
   lang: Lang;
+  /** Optional branch CI hex for the header background. */
+  headerColor?: string | null;
 };
 
 export function cancelledBookingFlex(args: CancelledBookingCardArgs): LineFlexMessage {
@@ -550,6 +563,7 @@ export function cancelledBookingFlex(args: CancelledBookingCardArgs): LineFlexMe
   const titleText = fx(args.lang, "cancelledTitle");
   const reasonLabel = fx(args.lang, "labelReason");
   const noReason = fx(args.lang, "noReasonGiven");
+  const headerColor = args.headerColor || COLOR_INK_700;
 
   const bodyRows = [
     kvRow(fx(args.lang, "labelDate"), dateStr),
@@ -563,7 +577,7 @@ export function cancelledBookingFlex(args: CancelledBookingCardArgs): LineFlexMe
     size: "kilo",
     header: {
       type: "box", layout: "vertical",
-      backgroundColor: COLOR_INK_700,
+      backgroundColor: headerColor,
       paddingAll: "20px",
       contents: [
         {
@@ -637,7 +651,7 @@ export function cancelledBookingFlex(args: CancelledBookingCardArgs): LineFlexMe
           ]
     },
     styles: {
-      header: { backgroundColor: COLOR_INK_700 },
+      header: { backgroundColor: headerColor },
       body: { backgroundColor: "#ffffff" },
       footer: { backgroundColor: "#ffffff", separator: true, separatorColor: COLOR_DIVIDER }
     }
@@ -673,7 +687,8 @@ export async function notifyCustomerCancelled(
     partySize: booking.party_size,
     reason: booking.cancel_reason,
     contactPhone: branch.contact_phone,
-    lang
+    lang,
+    headerColor: branch.brand_color
   });
   const res = await sendLinePush(token, {
     to: booking.line_user_id,
@@ -695,6 +710,7 @@ export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
       : fx(args.lang, "staffNewBooking");
   const iconText = isReminder ? "🔔" : isPending ? "⏳" : "🆕";
   const dateStr = localDate(args.bookingDate, args.lang);
+  const headerColor = args.headerColor || COLOR_INK_700;
 
   const bodyRows = [
     kvRow(fx(args.lang, "labelName"), args.customerName),
@@ -716,7 +732,7 @@ export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
     size: "kilo",
     header: {
       type: "box", layout: "vertical",
-      backgroundColor: COLOR_INK_700,
+      backgroundColor: headerColor,
       paddingAll: "20px",
       contents: [
         {
@@ -756,7 +772,7 @@ export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
     // glance at; if they want to act, they open the admin URL in their
     // own bookmarked browser. Less surface area, fewer broken paths.
     styles: {
-      header: { backgroundColor: COLOR_INK_700 },
+      header: { backgroundColor: headerColor },
       body: { backgroundColor: "#ffffff" },
       footer: { backgroundColor: "#ffffff", separator: true, separatorColor: COLOR_DIVIDER }
     }
@@ -931,7 +947,8 @@ export async function notifyCustomer(
     kind: type,
     lang: cardLang,
     contactPhone: branch.contact_phone,
-    menuUrl: branch.extra_button_url
+    menuUrl: branch.extra_button_url,
+    headerColor: branch.brand_color
   });
   const res = await sendLinePush(token, {
     to: booking.line_user_id,
@@ -966,7 +983,8 @@ export async function notifyStaff(
     source: booking.source,
     publicBaseUrl: getPublicBaseUrl(),
     kind: type,
-    lang: "th"
+    lang: "th",
+    headerColor: branch.brand_color
   });
 
   const logSent = (target: string, ok: boolean, err: string | null) => {
@@ -1031,6 +1049,10 @@ export type ShiftOpenCardArgs = {
    *  card header gets a "ฉบับแก้ไข" chip so reviewers know they're
    *  looking at a revision. */
   isRevision?: boolean;
+  /** Optional header background hex (e.g. '#e94560'). Falls back to
+   *  the default IKIGAI ink colour when null/undefined. Lets each
+   *  branch flag its identity in the cross-branch staff group. */
+  headerColor?: string | null;
 };
 
 // Small reusable chip rendered above the card title when a report
@@ -1145,6 +1167,8 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
     return rowBox;
   };
 
+  const headerColor = args.headerColor || COLOR_INK_700;
+
   const bubble = {
     // "mega" gives the body extra horizontal room so long Thai
     // checklist labels wrap to fewer lines. "kilo" was tight on
@@ -1153,7 +1177,7 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
     size: "mega",
     header: {
       type: "box", layout: "vertical",
-      backgroundColor: COLOR_INK_700,
+      backgroundColor: headerColor,
       paddingAll: "20px",
       contents: [
         {
@@ -1207,7 +1231,7 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
       ]
     },
     styles: {
-      header: { backgroundColor: COLOR_INK_700 },
+      header: { backgroundColor: headerColor },
       body: { backgroundColor: "#ffffff" }
     }
   };
@@ -1320,6 +1344,8 @@ export type ShiftCloseCardArgs = {
   closingDrawerAmount: number | null;
   checklist: Array<{ label: string; checked: boolean; note: string | null }>;
   isRevision?: boolean;
+  /** See readinessFlex / shiftOpenFlex headerColor. */
+  headerColor?: string | null;
 };
 
 export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
@@ -1327,11 +1353,13 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
   const fmtBaht = (n: number | null) =>
     n == null ? "—" : `${n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท`;
 
+  const headerColor = args.headerColor || COLOR_INK_700;
+
   const bubble = {
     type: "bubble", size: "mega",
     header: {
       type: "box", layout: "vertical",
-      backgroundColor: COLOR_INK_700, paddingAll: "20px",
+      backgroundColor: headerColor, paddingAll: "20px",
       contents: [
         {
           type: "box", layout: "horizontal",
@@ -1367,7 +1395,7 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
       ]
     },
     styles: {
-      header: { backgroundColor: COLOR_INK_700 },
+      header: { backgroundColor: headerColor },
       body: { backgroundColor: "#ffffff" }
     }
   };
@@ -1529,17 +1557,20 @@ export type ShiftUnlockRequestArgs = {
   openerName: string;          // who originally submitted
   requesterName: string;       // who's asking for unlock (may differ)
   reason: string;
+  /** See readinessFlex headerColor — branch CI hex for the header. */
+  headerColor?: string | null;
 };
 
 export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMessage {
   const dateStr = formatThaiDate(args.reportDate);
   const typeLabel = REPORT_TYPE_LABEL_TH[args.reportType];
+  const headerColor = args.headerColor || COLOR_INK_700;
   const bubble = {
     type: "bubble",
     size: "mega",
     header: {
       type: "box", layout: "vertical",
-      backgroundColor: COLOR_INK_700,
+      backgroundColor: headerColor,
       paddingAll: "20px",
       contents: [
         {
@@ -1597,7 +1628,7 @@ export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMe
       ]
     },
     styles: {
-      header: { backgroundColor: COLOR_INK_700 },
+      header: { backgroundColor: headerColor },
       body: { backgroundColor: "#ffffff" }
     }
   };
@@ -1624,6 +1655,8 @@ export type ShiftUnlockDecisionArgs = {
   adminName: string;
   decision: "granted" | "rejected";
   decisionNote: string | null;
+  /** See readinessFlex headerColor — branch CI hex for the header. */
+  headerColor?: string | null;
 };
 
 export function shiftUnlockDecisionFlex(args: ShiftUnlockDecisionArgs): LineFlexMessage {
@@ -1632,13 +1665,14 @@ export function shiftUnlockDecisionFlex(args: ShiftUnlockDecisionArgs): LineFlex
   const titleText = isGrant ? "อนุมัติให้แก้ไขรายการ" : "ปฏิเสธคำขอแก้ไขรายการ";
   const accentColor = isGrant ? "#059669" : "#dc2626";
   const iconText = isGrant ? "✓" : "✗";
+  const headerColor = args.headerColor || COLOR_INK_700;
 
   const bubble = {
     type: "bubble",
     size: "mega",
     header: {
       type: "box", layout: "vertical",
-      backgroundColor: COLOR_INK_700,
+      backgroundColor: headerColor,
       paddingAll: "20px",
       contents: [
         {
@@ -1699,7 +1733,7 @@ export function shiftUnlockDecisionFlex(args: ShiftUnlockDecisionArgs): LineFlex
       ]
     },
     styles: {
-      header: { backgroundColor: COLOR_INK_700 },
+      header: { backgroundColor: headerColor },
       body: { backgroundColor: "#ffffff" }
     }
   };
