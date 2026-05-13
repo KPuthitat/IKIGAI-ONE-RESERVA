@@ -45,7 +45,22 @@ cd "$APP_DIR"
 echo "==> [1/6] git pull origin main"
 git pull origin main
 
-echo "==> [2/6] npm run build"
+# Wipe the stale build cache before rebuilding.
+#
+# Why: when the diff between deploys adds many new files (whole new
+# routes, schema-shifting tables, etc.) Next.js' .next/server can
+# end up holding manifests that point at chunk hashes from the
+# OLD build. Those manifests survive `npm run build` because the
+# new build only overlays — it doesn't truncate the directory.
+# The mismatch shows up at runtime as
+#   TypeError: Cannot read properties of undefined (reading 'entryCSSFiles')
+# in webpack/app-render — fatal for the request, which triggers a
+# PM2 restart, which loops. Rebuilding from scratch costs ~5-10s
+# extra on this VPS and eliminates the class of bug entirely.
+# node_modules/.cache also gets cleared so webpack persistent cache
+# doesn't retain stale entries.
+echo "==> [2/6] clean rebuild (rm -rf .next + npm run build)"
+rm -rf .next node_modules/.cache
 npm run build
 
 # Snapshot the PID PM2 thinks reserva is — anything else on the port
