@@ -13,10 +13,39 @@ const Body = z.object({
   // ค่า: undefined = ครั้งแรก (server ตอบ needsReplace),
   //      true = แทนที่ด้วยเวลาปัจจุบัน,
   //      false = ใช้เวลาเดิม (no-op)
-  replaceTs: z.boolean().optional()
+  replaceTs: z.boolean().optional(),
+  // Anti-cheat (TC-2): GPS + QR. Both optional in the body — the
+  // server checks branch.geofence_enabled / branch.clock_qr_enabled
+  // to decide whether to require them. Sending them when disabled is
+  // harmless (we just ignore).
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+  // gpsAccuracy is the navigator.geolocation-reported accuracy in
+  // metres. We don't reject based on it here, but we widen the
+  // geofence by this much so a high-accuracy reading isn't rejected
+  // by a strict boundary while a low-accuracy one still has to be
+  // clearly inside.
+  gpsAccuracy: z.number().min(0).max(10000).optional(),
+  qrToken: z.string().max(64).optional()
 });
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
+
+// Great-circle distance between two lat/lng points, in metres.
+// Standard Haversine formula. Earth radius averaged as 6371 km.
+function haversineMeters(
+  lat1: number, lng1: number, lat2: number, lng2: number
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 6371000; // metres
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 export async function POST(req: Request) {
   const user = getSessionUser();
@@ -53,6 +82,74 @@ export async function POST(req: Request) {
   }
   if (!bcrypt.compareSync(parsed.data.pin, row.pin_hash)) {
     return NextResponse.json({ error: "wrong_pin" }, { status: 401 });
+  }
+
+  // ── Anti-cheat (TC-2): GPS geofence + QR code ──────────────────
+  // Fetch the branch row once here — same row drives both checks
+  // and is then handed off to the LINE notify path further down.
+  // Both gates are admin-toggleable (branches.geofence_enabled /
+  // clock_qr_enabled); when off, we skip the corresponding check
+  // entirely so existing deployments keep working.
+  const branchRow = db.prepare("SELECT * FROM branches WHERE id = ?")
+    .get(user.activeBranchId) as Branch | undefined;
+  if (!branchRow) {
+    return NextResponse.json({ error: "branch_not_found" }, { status: 404 });
+  }
+
+  if (branchRow.geofence_enabled === 1) {
+    if (parsed.data.lat == null || parsed.data.lng == null) {
+      return NextResponse.json({ error: "gps_required" }, { status: 400 });
+    }
+    if (branchRow.latitude == null || branchRow.longitude == null) {
+      // Geofence enabled but admin hasn't set a centre — fail closed
+      // rather than silently accepting any location, so this misconfig
+      // surfaces immediately instead of being mistaken for a working
+      // anti-cheat.
+      return NextResponse.json(
+        { error: "geofence_misconfigured" },
+        { status: 500 }
+      );
+    }
+    const distance = haversineMeters(
+      parsed.data.lat, parsed.data.lng,
+      branchRow.latitude, branchRow.longitude
+    );
+    // Effective radius = configured radius + GPS-reported accuracy.
+    // A phone reporting ±25m on a 100m geofence has up to 125m of
+    // "could be inside" margin — we accept that rather than reject
+    // a genuine on-site reading whose accuracy happens to be poor
+    // (e.g., indoors, near tall buildings). Cheating from home gives
+    // distances in kilometres so the margin doesn't open meaningful
+    // attack surface.
+    const effectiveRadius =
+      branchRow.geofence_radius_meters + (parsed.data.gpsAccuracy ?? 0);
+    if (distance > effectiveRadius) {
+      return NextResponse.json(
+        {
+          error: "out_of_geofence",
+          distanceMeters: Math.round(distance),
+          allowedMeters: branchRow.geofence_radius_meters
+        },
+        { status: 403 }
+      );
+    }
+  }
+
+  if (branchRow.clock_qr_enabled === 1) {
+    if (!parsed.data.qrToken) {
+      return NextResponse.json({ error: "qr_required" }, { status: 400 });
+    }
+    if (!branchRow.clock_qr_token) {
+      // QR enabled but admin hasn't set a token — same fail-closed
+      // logic as the geofence misconfig case above.
+      return NextResponse.json(
+        { error: "qr_misconfigured" },
+        { status: 500 }
+      );
+    }
+    if (parsed.data.qrToken !== branchRow.clock_qr_token) {
+      return NextResponse.json({ error: "invalid_qr_token" }, { status: 403 });
+    }
   }
 
   // คำนวณช่วงวันนี้ (Bangkok local)
@@ -151,8 +248,9 @@ export async function POST(req: Request) {
   if (action === "in" && user.activeBranchId) {
     const platform = getPlatformChannel();
     if (isChannelReady(platform)) {
-      const branch = db.prepare("SELECT * FROM branches WHERE id = ?")
-        .get(user.activeBranchId) as Branch | undefined;
+      // Re-use the branchRow already fetched at the anti-cheat
+      // gate above — saves a redundant SELECT.
+      const branch = branchRow;
       if (branch) {
         // Build the PERSONA deep link from the request — works on any host
         // (production or local) without depending on a possibly-stale env var.

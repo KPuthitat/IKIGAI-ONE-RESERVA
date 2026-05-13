@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, type Branch } from "@/lib/db";
 import TimeClockClient from "./TimeClockClient";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +12,16 @@ type TimeEntry = { id: number; type: "in" | "out"; ts: string };
 export default function StaffPersonaPage() {
   const user = requireUser();
   const db = getDb();
+
+  // Pull the active branch row so the client knows which anti-cheat
+  // gates are enabled (geofence / QR). Without it the clock-in
+  // button would naively submit and only learn about the failure
+  // from the API error — bad UX. We also pre-feed the branch name
+  // so the UI can mention "you must be at NAMA PASTA SRIRACHA" etc.
+  const branch = user.activeBranchId
+    ? (db.prepare("SELECT * FROM branches WHERE id = ?")
+        .get(user.activeBranchId) as Branch | undefined)
+    : undefined;
 
   const entries = db.prepare(`
     SELECT id, type, ts FROM time_entries
@@ -44,6 +54,9 @@ export default function StaffPersonaPage() {
       firstInTs={firstInTs}
       firstOutTs={firstOutTs}
       entries={entries}
+      branchName={branch?.name ?? null}
+      geofenceEnabled={branch?.geofence_enabled === 1}
+      qrEnabled={branch?.clock_qr_enabled === 1}
     />
   );
 }
