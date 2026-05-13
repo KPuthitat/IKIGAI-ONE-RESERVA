@@ -40,6 +40,36 @@ input, textarea, select, button {
   -webkit-font-synthesis: none;
 }
 
+/* Number / date / time inputs have a Chrome/Safari quirk where the
+   value-text element nested inside the control uses the browser's
+   default font (often Helvetica or Segoe UI) even when the outer
+   <input> has font-family set. The ::-webkit-* shadow-pseudo
+   selectors below reach into that nested element and force LineSeed
+   so typing numbers feels visually identical to the rest of the
+   form. */
+input[type="number"],
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"],
+input[type="tel"],
+input[type="search"] {
+  font-family: var(--font-lineseed), ui-sans-serif, system-ui, sans-serif;
+}
+input[type="date"]::-webkit-datetime-edit,
+input[type="time"]::-webkit-datetime-edit,
+input[type="datetime-local"]::-webkit-datetime-edit,
+input[type="month"]::-webkit-datetime-edit,
+input[type="week"]::-webkit-datetime-edit {
+  font-family: inherit;
+}
+input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+input[type="time"]::-webkit-datetime-edit-fields-wrapper,
+input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
+  font-family: inherit;
+}
+
 /* ── Buttons (rounded 10px, bold weight, no easing — matches payroll) ── */
 .btn {
   @apply inline-flex items-center justify-center px-5 py-2.5 rounded-[10px]

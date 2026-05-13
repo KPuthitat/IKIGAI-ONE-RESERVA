@@ -281,7 +281,7 @@ export default function BranchSettingsForm({
           />
           <input
             type="text"
-            className="input flex-1 font-mono text-sm"
+            className="input flex-1 text-sm"
             placeholder={DEFAULT_BRAND_COLOR}
             value={color}
             onChange={(e) => setColor(e.target.value)}
@@ -344,7 +344,7 @@ export default function BranchSettingsForm({
               <input
                 type="text"
                 inputMode="decimal"
-                className="input font-mono text-sm"
+                className="input text-sm"
                 placeholder="13.7563"
                 value={lat}
                 onChange={(e) => setLat(e.target.value)}
@@ -357,7 +357,7 @@ export default function BranchSettingsForm({
               <input
                 type="text"
                 inputMode="decimal"
-                className="input font-mono text-sm"
+                className="input text-sm"
                 placeholder="100.5018"
                 value={lng}
                 onChange={(e) => setLng(e.target.value)}
@@ -420,7 +420,7 @@ export default function BranchSettingsForm({
             <div className="flex items-center gap-2">
               <input
                 type="text"
-                className="input flex-1 font-mono text-xs"
+                className="input flex-1 text-xs"
                 placeholder={t("admin.persona.settings.timeClock.qr.tokenPlaceholder")}
                 value={qrToken}
                 onChange={(e) => setQrToken(e.target.value)}
@@ -463,7 +463,7 @@ export default function BranchSettingsForm({
           <div className="flex items-center gap-2">
             <input
               type="time"
-              className="input w-36 text-sm font-mono"
+              className="input w-36 text-sm"
               value={summaryTime}
               onChange={(e) => setSummaryTime(e.target.value)}
             />

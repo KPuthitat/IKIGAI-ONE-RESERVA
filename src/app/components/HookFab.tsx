@@ -80,25 +80,26 @@ export default function HookFab({
 
   return (
     <>
-      {/* FAB */}
+      {/* FAB — bare owl, no circle wrapper. Hit target is generous
+          via padding on the button itself, but visually only the
+          owl shows. */}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label={T.title}
         className={`fixed z-40 bottom-4 right-4 sm:bottom-6 sm:right-6
-          w-14 h-14 rounded-full shadow-xl border-[1.5px] border-white
-          flex items-center justify-center transition transform
+          p-1 transition transform
           ${open
-            ? "bg-slate-100 scale-95"
-            : "bg-amber-100 hover:scale-105 active:scale-95 hover:shadow-2xl"}
+            ? "scale-95 opacity-80"
+            : "hover:scale-110 active:scale-95"}
         `}
       >
-        <OwlMascot size={48} mood={open ? "smile" : "sleepy"} showCoffee={false} />
-        {/* Tiny "AI" hint dot */}
+        <OwlMascot size={64} mood={open ? "smile" : "sleepy"} />
+        {/* Tiny "?" hint dot, sits at the top-right of the owl. */}
         {!open && (
-          <span className="absolute top-0 right-0 bg-brand text-white text-[9px]
+          <span className="absolute top-0 right-0 bg-brand text-white text-[10px]
               font-bold rounded-full w-5 h-5 flex items-center justify-center
-              border-2 border-white">
+              shadow-md">
             ?
           </span>
         )}

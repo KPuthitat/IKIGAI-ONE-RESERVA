@@ -97,7 +97,7 @@ export default function SystemSettingsForm({
           </label>
           <input
             type={tokenRevealed ? "text" : "password"}
-            className="input font-mono text-xs"
+            className="input text-xs"
             placeholder={TOKEN_PLACEHOLDER || t("admin.systemSettings.lineOa.tokenPlaceholder")}
             value={tokenInput}
             onChange={(e) => setTokenInput(e.target.value)}
@@ -127,7 +127,7 @@ export default function SystemSettingsForm({
           </label>
           <input
             type="text"
-            className="input font-mono text-xs"
+            className="input text-xs"
             placeholder="Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
             value={groupInput}
             onChange={(e) => setGroupInput(e.target.value)}

@@ -209,19 +209,19 @@ function ShiftRow({
           value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
       </td>
       <td className="py-2 pr-2">
-        <input type="time" className="input text-sm font-mono"
+        <input type="time" className="input text-sm"
           value={start} onChange={(e) => setStart(e.target.value)} />
       </td>
       <td className="py-2 pr-2">
-        <input type="time" className="input text-sm font-mono"
+        <input type="time" className="input text-sm"
           value={end} onChange={(e) => setEnd(e.target.value)} />
       </td>
       <td className="py-2 pr-2">
         <div className="flex gap-1 items-center">
-          <input type="time" className="input text-xs font-mono w-24"
+          <input type="time" className="input text-xs w-24"
             value={bs} onChange={(e) => setBs(e.target.value)} />
           <span>–</span>
-          <input type="time" className="input text-xs font-mono w-24"
+          <input type="time" className="input text-xs w-24"
             value={be} onChange={(e) => setBe(e.target.value)} />
         </div>
       </td>

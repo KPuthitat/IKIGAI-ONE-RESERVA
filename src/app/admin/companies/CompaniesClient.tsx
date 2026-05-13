@@ -139,7 +139,7 @@ function CompanyRow({
         </div>
         <div>
           <label className="label text-[11px]">{t("admin.companies.field.taxId")}</label>
-          <input className="input text-sm font-mono" value={taxId}
+          <input className="input text-sm" value={taxId}
             onChange={(e) => setTaxId(e.target.value)} maxLength={20} />
         </div>
         <div>

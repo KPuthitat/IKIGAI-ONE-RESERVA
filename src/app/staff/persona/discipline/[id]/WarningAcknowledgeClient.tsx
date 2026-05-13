@@ -147,7 +147,7 @@ export default function WarningAcknowledgeClient({
           type="password"
           inputMode="numeric"
           maxLength={4}
-          className="input tracking-widest text-center text-lg font-mono w-32"
+          className="input tracking-widest text-center text-lg w-32"
           value={pin}
           onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
           placeholder="••••"

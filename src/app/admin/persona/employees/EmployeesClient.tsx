@@ -372,7 +372,7 @@ function EditModal({
                 </label>
                 <input
                   type="time"
-                  className="input font-mono"
+                  className="input"
                   value={shiftStartTime}
                   onChange={(e) => setShiftStartTime(e.target.value)}
                   step={60}
@@ -543,7 +543,7 @@ function EditModal({
           </p>
           <input
             type="text"
-            className="input font-mono text-xs"
+            className="input text-xs"
             value={lineUserId}
             maxLength={64}
             onChange={(e) => setLineUserId(e.target.value)}
