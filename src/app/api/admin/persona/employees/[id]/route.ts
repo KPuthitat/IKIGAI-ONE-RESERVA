@@ -26,6 +26,9 @@ const Body = z.object({
   salary_tax_mode: z.enum(["sso", "wht"]).optional(),
   // LINE userId (33-char string starting with 'U'). Empty / null = unbind.
   line_user_id: z.string().max(64).nullable().optional(),
+  // Expected shift start "HH:MM" — used by late-detection. Empty / null = unset
+  // (no lateness computed for this staff member). Accepts both 1- and 2-digit hours.
+  shift_start_time: z.string().regex(/^\d{1,2}:\d{2}$/).or(z.literal("")).nullable().optional(),
   // PIN — 4 digits to set, "" to clear, omit to keep
   pin: z.string().regex(/^\d{4}$/).or(z.literal("")).optional()
 });
@@ -96,6 +99,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("pay_cycle");
   addField("salary_tax_mode");
   addField("line_user_id");
+  // shift_start_time: empty string from form = clear to NULL
+  if ("shift_start_time" in data) {
+    fields.push("shift_start_time = ?");
+    const v = data.shift_start_time;
+    vals.push(v === "" || v === undefined ? null : v);
+  }
 
   // PIN handled separately because we need to bcrypt-hash before storing
   if (data.pin !== undefined) {

@@ -656,6 +656,14 @@ function runMigrations(db: Database.Database): void {
   // Phase 1C v6: resignation unlock (admin เปิดสิทธิ์ให้ staff ส่งคำขอลาออก)
   if (!unames.has("resignation_unlocked_at")) db.exec("ALTER TABLE users ADD COLUMN resignation_unlocked_at TEXT");
   if (!unames.has("resignation_unlocked_by")) db.exec("ALTER TABLE users ADD COLUMN resignation_unlocked_by INTEGER REFERENCES users(id)");
+  // TC-5: expected shift start time per user (HH:MM, Bangkok local).
+  // Used by the late-detection helper — clock-in time later than this
+  // (+ grace period) flags the entry as late. NULL means we can't
+  // compute lateness for this staff member; the monthly view shows
+  // their entries without a late count.
+  if (!unames.has("shift_start_time")) {
+    db.exec("ALTER TABLE users ADD COLUMN shift_start_time TEXT");
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS public_holidays (

@@ -25,6 +25,7 @@ export type EmployeeRow = {
   pay_cycle: "weekly" | "monthly" | null;
   salary_tax_mode: "sso" | "wht" | null;
   line_user_id: string | null;
+  shift_start_time: string | null;
   has_pin: number;
   resign_unlocked: number;
 };
@@ -216,6 +217,10 @@ function EditModal({
   const [payCycle, setPayCycle] = useState<"weekly" | "monthly" | "">(employee.pay_cycle ?? "");
   const [taxMode, setTaxMode] = useState<"sso" | "wht">(employee.salary_tax_mode ?? "sso");
   const [lineUserId, setLineUserId] = useState<string>(employee.line_user_id ?? "");
+  // Expected shift start "HH:MM" — drives late-detection. Empty = unset (no
+  // lateness computed for this staff member). Admin can set per-employee
+  // since shifts vary (kitchen 09:00, FOH 10:30, etc.).
+  const [shiftStartTime, setShiftStartTime] = useState<string>(employee.shift_start_time ?? "");
   // PIN — 4 digits. Empty = leave unchanged. "clear" toggles → send "" to API.
   const [pin, setPin] = useState("");
   const [clearPin, setClearPin] = useState(false);
@@ -241,7 +246,8 @@ function EditModal({
         monthly_salary: monthlySalary.trim() === "" ? null : Number(monthlySalary),
         pay_cycle: payCycle || null,
         salary_tax_mode: taxMode,
-        line_user_id: lineUserId.trim() || null
+        line_user_id: lineUserId.trim() || null,
+        shift_start_time: shiftStartTime.trim() === "" ? null : shiftStartTime.trim()
       };
       // PIN — only include if admin is setting/clearing it
       if (clearPin) {
@@ -348,6 +354,36 @@ function EditModal({
             {t("admin.persona.employees.hireDateHint")}
           </p>
         </div>
+
+        {/* ── Schedule / Time Clock — only relevant for staff who clock in.
+            shift_start_time feeds the late-detection engine (5-min grace,
+            >20% monthly minutes-late = no service charge). Leaving it
+            unset disables late computation for this user, which is the
+            right default for admins or staff without a fixed start time. */}
+        {employee.role === "staff" && (
+          <div className="border-t border-slate-200 pt-4">
+            <h4 className="text-sm font-semibold text-slate-700 mb-2">
+              {t("admin.persona.employees.section.schedule")}
+            </h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">
+                  {t("admin.persona.employees.field.shiftStartTime")}
+                </label>
+                <input
+                  type="time"
+                  className="input font-mono"
+                  value={shiftStartTime}
+                  onChange={(e) => setShiftStartTime(e.target.value)}
+                  step={60}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  {t("admin.persona.employees.shiftStartTimeHint")}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Payroll section (Phase 1D) ───────────────────────────── */}
         {employee.role === "staff" && (
