@@ -2,6 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
+/* LINE Seed Sans TH — self-hosted under /public/fonts to avoid the
+   jsdelivr CDN that was taking 20-30s to first-byte from Thailand
+   and leaving headers/footers in the system fallback font during
+   that window. Three weights cover the full UI: 400 body, 700
+   brand wordmark, 800 occasional emphasis. font-display: swap so
+   the system fallback shows during the millisecond before the
+   woff2 lands instead of FOIT-blocking the entire page. */
+@font-face {
+  font-family: "LINE Seed Sans TH";
+  src: url("/fonts/LINESeedSansTH-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "LINE Seed Sans TH";
+  src: url("/fonts/LINESeedSansTH-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "LINE Seed Sans TH";
+  src: url("/fonts/LINESeedSansTH-ExtraBold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+}
+
 :root {
   font-family: "LINE Seed Sans TH", "LINE Seed Sans", ui-sans-serif, system-ui,
     sans-serif;
