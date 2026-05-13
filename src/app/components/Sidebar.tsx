@@ -80,10 +80,21 @@ export default function Sidebar({
     setHydrated(true);
   }, []);
 
-  // Persist
+  // Persist + broadcast to any sibling component that wants to react
+  // to sidebar visibility (e.g. HeaderBrand swaps to a fuller layout
+  // when the sidebar collapses and frees up horizontal space).
+  // CustomEvent rather than Context because the topbar is rendered
+  // in a server-component layout — passing reactive state through
+  // would require pulling that layout into the client tree, which
+  // we don't want for one cosmetic toggle.
   useEffect(() => {
     if (!hydrated) return;
     try { localStorage.setItem(STORAGE_KEY, open ? "1" : "0"); } catch { /* ignore */ }
+    try {
+      window.dispatchEvent(
+        new CustomEvent("sidebar-state-change", { detail: { open } })
+      );
+    } catch { /* ignore */ }
   }, [open, hydrated]);
 
   // Close sidebar when navigating on mobile
