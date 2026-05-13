@@ -54,7 +54,13 @@ const Body = z.object({
   geofence_radius_meters: z.number().int().min(10).max(5000).optional(),
   geofence_enabled: z.boolean().optional(),
   clock_qr_token: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, "invalid_qr_token").nullable().optional(),
-  clock_qr_enabled: z.boolean().optional()
+  clock_qr_enabled: z.boolean().optional(),
+
+  // Daily attendance summary (TC-6) — HH:MM Bangkok at which the
+  // cron should post the 4-category roll-call to the executive group.
+  // null = feature disabled for this branch. Empty string from the
+  // form is also treated as null (handled below before save).
+  attendance_summary_time: z.string().regex(TIME_RE, "invalid_time").nullable().optional()
 });
 
 export async function POST(req: Request) {
@@ -125,6 +131,18 @@ export async function POST(req: Request) {
   if (parsed.data.clock_qr_enabled !== undefined) {
     sets.push("clock_qr_enabled = ?");
     vals.push(parsed.data.clock_qr_enabled ? 1 : 0);
+  }
+  // attendance_summary_time: normalise + reset dedupe column on change.
+  // When admin changes the summary time (or enables/disables the
+  // feature), clear the last_sent_date so today's summary fires at
+  // the new time even if a stale-dated value sits in the column.
+  if (Object.prototype.hasOwnProperty.call(parsed.data, "attendance_summary_time")) {
+    const raw = parsed.data.attendance_summary_time;
+    const normalised = raw ? normalizeTime(raw) : null;
+    sets.push("attendance_summary_time = ?");
+    vals.push(normalised);
+    sets.push("attendance_summary_last_sent_date = ?");
+    vals.push(null);
   }
 
   vals.push(user.activeBranchId);

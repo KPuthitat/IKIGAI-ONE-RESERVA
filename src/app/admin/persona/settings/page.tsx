@@ -66,6 +66,7 @@ export default function PersonaSettingsPage() {
         geofenceEnabled={branch.geofence_enabled === 1}
         clockQrToken={branch.clock_qr_token}
         clockQrEnabled={branch.clock_qr_enabled === 1}
+        attendanceSummaryTime={branch.attendance_summary_time}
         branchName={branch.name}
       />
     </div>

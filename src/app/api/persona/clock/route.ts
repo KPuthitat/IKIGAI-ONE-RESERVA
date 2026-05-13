@@ -4,15 +4,10 @@ import bcrypt from "bcryptjs";
 import { getSessionUser } from "@/lib/auth";
 import {
   getDb,
-  getBranchAttendanceSummary,
   type Branch
 } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
-import {
-  pushClockInCard,
-  attendanceSummaryFlex,
-  notifyToStaffGroup
-} from "@/lib/line";
+import { pushClockInCard } from "@/lib/line";
 import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
 
 const Body = z.object({
@@ -278,38 +273,12 @@ export async function POST(req: Request) {
     }
   }
 
-  // ── Group attendance summary (TC-3) ────────────────────────────
-  // Posts a roll-call card to the cross-branch staff group every
-  // time someone clocks IN or OUT — fresh snapshot of who's here,
-  // who's not. Routed via notifyToStaffGroup so it lands in the
-  // global IKIGAI OS group when configured (and falls back to the
-  // per-branch group otherwise).
-  //
-  // Fire-and-forget — the personal pushClockInCard above gives the
-  // staff their own confirmation; the summary just keeps the team
-  // visible to itself.
-  if (user.activeBranchId) {
-    const summaryTs = nowIso;
-    const summaryName = user.display_name;
-    void (async () => {
-      try {
-        const roster = getBranchAttendanceSummary(user.activeBranchId!, todayBkk);
-        const flex = attendanceSummaryFlex({
-          branchName: branchRow.name,
-          reportDate: todayBkk,
-          roster,
-          triggerName: summaryName,
-          triggerAction: action,
-          triggerTime: new Date(new Date(summaryTs).getTime() + 7 * 60 * 60 * 1000)
-            .toISOString().slice(11, 16),
-          headerColor: branchRow.brand_color
-        });
-        await notifyToStaffGroup(branchRow, flex, "global");
-      } catch (e) {
-        console.error("attendance summary error", e);
-      }
-    })();
-  }
+  // Note: the per-clock-event group "who's in / who's not" Flex was
+  // removed in TC-6. The personal pushClockInCard above still gives
+  // each staff their own confirmation. Executive group now receives
+  // one consolidated 4-category roll-call per day at the configured
+  // attendance_summary_time, fired from /api/cron — see
+  // src/lib/daily-attendance-summary.ts.
 
   return NextResponse.json({ ok: true, action });
 }

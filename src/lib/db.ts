@@ -924,6 +924,24 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN clock_qr_enabled INTEGER NOT NULL DEFAULT 0");
   }
 
+  // Daily attendance summary (TC-6) — per-branch HH:MM time at which
+  // the cron job posts a 4-category roll-call to the executive group:
+  //   • มาตรงเวลา (on time, within 5-min grace)
+  //   • มาสาย (late, >5 min past their personal shift_start)
+  //   • ลางาน (approved leave covers today)
+  //   • ขาดงาน (no clock-in, no approved leave)
+  // attendance_summary_last_sent_date is the dedupe key — once the
+  // cron sends today's summary, the date is recorded so subsequent
+  // cron ticks the same day are no-ops.
+  //   NULL summary_time = feature disabled for that branch.
+  //   Recommended value = branch open_time + 1 hour.
+  if (!bnames2.has("attendance_summary_time")) {
+    db.exec("ALTER TABLE branches ADD COLUMN attendance_summary_time TEXT");
+  }
+  if (!bnames2.has("attendance_summary_last_sent_date")) {
+    db.exec("ALTER TABLE branches ADD COLUMN attendance_summary_last_sent_date TEXT");
+  }
+
   // TC-4: time certification requests. Staff can't edit a clock
   // entry once the 5-min self-correction window closes — instead
   // they file a certification request here, admin reviews, on
@@ -1551,6 +1569,9 @@ export type Branch = {
   geofence_enabled: number;            // 0/1
   clock_qr_token: string | null;
   clock_qr_enabled: number;            // 0/1
+  // Daily attendance summary (TC-6) — see migration block above.
+  attendance_summary_time: string | null;           // HH:MM Bangkok, NULL = disabled
+  attendance_summary_last_sent_date: string | null; // YYYY-MM-DD dedupe key
 };
 
 // Global (non-branch-scoped) configuration. Today it carries the

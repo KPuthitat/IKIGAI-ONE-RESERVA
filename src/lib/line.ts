@@ -1909,6 +1909,182 @@ export function attendanceSummaryFlex(args: AttendanceSummaryArgs): LineFlexMess
   };
 }
 
+// ── Daily attendance summary (TC-6) ───────────────────────────────
+// One-shot card per branch per day, fired by /api/cron at the
+// admin-configured attendance_summary_time (HH:MM Bangkok). Splits
+// the roster into four buckets so executives can scan the morning
+// status without parsing a stream of clock-in pings.
+
+export type DailySummaryFlexRow = {
+  displayName: string;
+  category: "on_time" | "late" | "on_leave" | "absent";
+  inTs: string | null;          // ISO, only for on_time/late
+  minutesLate: number;          // only for late
+  leaveType: string | null;     // only for on_leave
+};
+
+export type DailyAttendanceSummaryArgs = {
+  branchName: string;
+  reportDate: string;           // YYYY-MM-DD Bangkok
+  rows: DailySummaryFlexRow[];
+  headerColor?: string | null;
+};
+
+/** TH-friendly label for leave_requests.type values. Falls back to
+ *  the raw type if we haven't enumerated it — better than dropping
+ *  the leave on the floor for an unknown type. */
+function leaveTypeLabelTh(type: string | null): string {
+  if (!type) return "ลางาน";
+  switch (type) {
+    case "sick": return "ลาป่วย";
+    case "personal": return "ลากิจ";
+    case "vacation": return "ลาพักร้อน";
+    case "maternity": return "ลาคลอด";
+    case "ordination": return "ลาบวช";
+    case "bereavement": return "ลาช่วยงานศพ";
+    case "unpaid": return "ลาไม่รับค่าจ้าง";
+    default: return type;
+  }
+}
+
+export function dailyAttendanceSummaryFlex(
+  args: DailyAttendanceSummaryArgs
+): LineFlexMessage {
+  const dateStr = formatThaiDate(args.reportDate);
+  const headerColor = args.headerColor || COLOR_INK_700;
+
+  const onTime = args.rows.filter((r) => r.category === "on_time");
+  const late = args.rows.filter((r) => r.category === "late");
+  const onLeave = args.rows.filter((r) => r.category === "on_leave");
+  const absent = args.rows.filter((r) => r.category === "absent");
+
+  // Section helpers — keep visual rhythm consistent across the four
+  // buckets. Each section has a coloured header line + an indented
+  // list of names. When the bucket is empty we render an em dash so
+  // executives can still see the section exists.
+  function sectionHeader(
+    icon: string, label: string, color: string, count: number
+  ): Record<string, unknown> {
+    return {
+      type: "text",
+      text: `${icon} ${label} (${count} คน)`,
+      size: "xs",
+      color,
+      weight: "bold",
+      margin: "md"
+    };
+  }
+
+  function nameRow(
+    name: string, trailing?: string
+  ): Record<string, unknown> {
+    if (!trailing) {
+      return {
+        type: "text", text: name,
+        size: "sm", color: COLOR_TEXT_DARK,
+        wrap: true, margin: "xs"
+      };
+    }
+    return {
+      type: "box", layout: "horizontal", spacing: "sm", margin: "xs",
+      contents: [
+        {
+          type: "text", text: name,
+          size: "sm", color: COLOR_TEXT_DARK, weight: "bold",
+          flex: 5, wrap: true
+        },
+        {
+          type: "text", text: trailing,
+          size: "xs", color: COLOR_TEXT_MUTED,
+          flex: 5, align: "end", wrap: true
+        }
+      ]
+    };
+  }
+
+  function sectionBody(
+    rows: DailySummaryFlexRow[],
+    trailingFor: (r: DailySummaryFlexRow) => string | undefined
+  ): Record<string, unknown> {
+    if (rows.length === 0) {
+      return {
+        type: "text", text: "—",
+        size: "sm", color: COLOR_TEXT_MUTED, margin: "sm"
+      };
+    }
+    return {
+      type: "box", layout: "vertical", spacing: "xs", margin: "sm",
+      contents: rows.map((r) => nameRow(r.displayName, trailingFor(r)))
+    };
+  }
+
+  const bubble = {
+    type: "bubble", size: "mega",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: headerColor, paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "PERSONA • รายงานเข้างาน", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", margin: "md",
+          contents: [
+            { type: "text", text: "สรุปการเข้างานประจำวัน", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "text", text: dateStr, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs", wrap: true },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+
+        // ── มาตรงเวลา ──
+        sectionHeader("✓", "มาตรงเวลา", "#047857", onTime.length),
+        sectionBody(onTime, (r) => r.inTs ? `เข้า ${fmtBkkTime(r.inTs)}` : undefined),
+
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        // ── มาสาย ──
+        sectionHeader("⚠", "มาสาย", "#b45309", late.length),
+        sectionBody(late, (r) =>
+          r.inTs
+            ? `เข้า ${fmtBkkTime(r.inTs)} · สาย ${r.minutesLate} น.`
+            : `สาย ${r.minutesLate} น.`
+        ),
+
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        // ── ลางาน ──
+        sectionHeader("📅", "ลางาน (อนุมัติแล้ว)", "#1d4ed8", onLeave.length),
+        sectionBody(onLeave, (r) => leaveTypeLabelTh(r.leaveType)),
+
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        // ── ขาดงาน ──
+        sectionHeader("✗", "ขาดงาน", "#b91c1c", absent.length),
+        sectionBody(absent, () => undefined)
+      ]
+    },
+    styles: {
+      header: { backgroundColor: headerColor },
+      body: { backgroundColor: "#ffffff" }
+    }
+  };
+
+  return {
+    type: "flex",
+    altText:
+      `สรุปเข้างาน ${args.branchName} ${dateStr} · ตรงเวลา ${onTime.length} · ` +
+      `สาย ${late.length} · ลา ${onLeave.length} · ขาด ${absent.length}`,
+    contents: bubble
+  };
+}
+
 /** Push a daily report Flex card to the branch's staff group / fallback
  *  user IDs. Mirrors notifyStaff() — group preferred, per-user as
  *  legacy fallback. Fire-and-forget; no logging table for daily reports

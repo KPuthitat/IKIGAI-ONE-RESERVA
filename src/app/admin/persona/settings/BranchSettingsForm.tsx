@@ -32,6 +32,7 @@ export default function BranchSettingsForm({
   geofenceEnabled,
   clockQrToken,
   clockQrEnabled,
+  attendanceSummaryTime,
   branchName
 }: {
   morningTime: string;
@@ -43,6 +44,7 @@ export default function BranchSettingsForm({
   geofenceEnabled: boolean;
   clockQrToken: string | null;
   clockQrEnabled: boolean;
+  attendanceSummaryTime: string | null;
   branchName: string;
 }) {
   const router = useRouter();
@@ -63,6 +65,12 @@ export default function BranchSettingsForm({
   const [geoOn, setGeoOn] = useState<boolean>(geofenceEnabled);
   const [qrToken, setQrToken] = useState<string>(clockQrToken || "");
   const [qrOn, setQrOn] = useState<boolean>(clockQrEnabled);
+  // Daily attendance summary time (TC-6) — HH:MM Bangkok. Empty
+  // string = disable feature. Recommended value = branch's typical
+  // shift start time + 1 hour, but admin is free to pick anything.
+  const [summaryTime, setSummaryTime] = useState<string>(
+    attendanceSummaryTime || ""
+  );
   // Per-section status text for the geolocate button (success/error
   // feedback after the navigator.geolocation callback returns).
   const [geoStatus, setGeoStatus] = useState<string | null>(null);
@@ -82,7 +90,8 @@ export default function BranchSettingsForm({
     radius === geofenceRadiusMeters &&
     geoOn === geofenceEnabled &&
     (qrToken || null) === (clockQrToken || null) &&
-    qrOn === clockQrEnabled;
+    qrOn === clockQrEnabled &&
+    (summaryTime || null) === (attendanceSummaryTime || null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -109,7 +118,8 @@ export default function BranchSettingsForm({
           geofence_radius_meters: radius,
           geofence_enabled: geoOn,
           clock_qr_token: qrToken.trim() || null,
-          clock_qr_enabled: qrOn
+          clock_qr_enabled: qrOn,
+          attendance_summary_time: summaryTime.trim() || null
         })
       });
       const j = await res.json().catch(() => ({}));
@@ -428,6 +438,50 @@ export default function BranchSettingsForm({
               {t("admin.persona.settings.timeClock.qr.tokenHint")}
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* ── Daily attendance summary (TC-6) ──
+          One-shot roll-call sent to the executive group at the time
+          configured below, splitting today's roster into 4 buckets
+          (on time / late / on approved leave / absent). Empty time
+          input = feature disabled for this branch. Suggested value
+          is the branch's typical shift start + 1 hour. */}
+      <div className="card space-y-3">
+        <div>
+          <h2 className="font-bold text-slate-800 text-sm">
+            {t("admin.persona.settings.attendanceSummary.title")}
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            {t("admin.persona.settings.attendanceSummary.help", { branch: branchName })}
+          </p>
+        </div>
+        <div>
+          <label className="label text-[11px]">
+            {t("admin.persona.settings.attendanceSummary.timeLabel")}
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="time"
+              className="input w-36 text-sm font-mono"
+              value={summaryTime}
+              onChange={(e) => setSummaryTime(e.target.value)}
+            />
+            {summaryTime && (
+              <button
+                type="button"
+                onClick={() => setSummaryTime("")}
+                className="text-xs text-slate-500 hover:text-brand underline whitespace-nowrap"
+              >
+                {t("admin.persona.settings.attendanceSummary.clear")}
+              </button>
+            )}
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1">
+            {summaryTime
+              ? t("admin.persona.settings.attendanceSummary.enabledHint", { time: summaryTime })
+              : t("admin.persona.settings.attendanceSummary.disabledHint")}
+          </p>
         </div>
       </div>
 
