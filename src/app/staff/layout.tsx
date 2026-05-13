@@ -87,6 +87,10 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           href: "/staff/persona/shift/edit-requests",
           label: t(lang, "staff.nav.editRequests"),
           badge: myPendingEditCount > 0 ? myPendingEditCount : undefined
+        },
+        {
+          href: "/staff/persona/time-certification",
+          label: t(lang, "staff.persona.nav.timeCert")
         }
       ]
     },

@@ -916,6 +916,33 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN clock_qr_enabled INTEGER NOT NULL DEFAULT 0");
   }
 
+  // TC-4: time certification requests. Staff can't edit a clock
+  // entry once the 5-min self-correction window closes — instead
+  // they file a certification request here, admin reviews, on
+  // approval we UPDATE the time_entries row + log to
+  // time_entries_audit (so the legacy audit chain stays intact).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS time_certifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entry_id INTEGER NOT NULL REFERENCES time_entries(id) ON DELETE CASCADE,
+      requested_by INTEGER NOT NULL REFERENCES users(id),
+      reason TEXT NOT NULL,
+      proposed_ts TEXT NOT NULL,
+      original_ts TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','approved','rejected')),
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT,
+      decision_note TEXT,
+      created_at TEXT NOT NULL
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_time_cert_pending_branch
+    ON time_certifications(status, entry_id)
+    WHERE status = 'pending';
+  `);
+
   // system_settings — singleton table for global configuration that
   // isn't branch-scoped. Today this holds the IKIGAI OS LINE OA push
   // credentials + the cross-branch staff group ID, used to route

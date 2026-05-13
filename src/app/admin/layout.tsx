@@ -137,6 +137,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           href: "/admin/persona/shift-reports",
           label: t(lang, "admin.persona.nav.shiftReports"),
           badge: unlockPendingCount > 0 ? unlockPendingCount : undefined
+        },
+        {
+          href: "/admin/persona/time-certifications",
+          label: t(lang, "admin.persona.nav.timeCert")
         }
       ]
     },
