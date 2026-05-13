@@ -80,25 +80,20 @@ export default function HeaderBrand({ role }: { role: "admin" | "staff" }) {
   }
 
   // ── Masthead (sidebar closed) ──────────────────────────────────
-  // Two-line layout that scales up the wordmark to claim the empty
-  // horizontal area. Sizes step up at sm/md so the masthead reads
-  // proportional on every viewport instead of being huge on phones
-  // and merely large on desktop.
+  // Mirrors the sidebar brand's typographic system so that when the
+  // sidebar collapses the topbar visually picks up where the sidebar
+  // brand left off — same wordmark face, same uppercase-tracked
+  // subtitle, just sized one step up to reflect the topbar's wider
+  // canvas. Keeps the page from feeling like two different brand
+  // identities depending on sidebar state.
+  const subtitle = moduleName ? `${moduleName} · ${role}` : role;
   return (
-    <Link href={`/${role}`} className="block leading-none">
-      <div className="brand-wordmark text-white text-2xl sm:text-3xl md:text-4xl">
+    <Link href={`/${role}`} className="block leading-tight">
+      <div className="brand-wordmark text-white text-xl sm:text-2xl md:text-3xl">
         IKIGAI OS
       </div>
-      <div className="mt-1.5 flex items-baseline gap-1.5 text-xs sm:text-sm text-white/70 font-light tracking-[0.5px]">
-        {moduleName && (
-          <>
-            <span>{moduleName}</span>
-            <span className="text-white/40">/</span>
-          </>
-        )}
-        <span className="uppercase tracking-[1.5px] text-white/60">
-          {role}
-        </span>
+      <div className="text-[10px] tracking-[2px] text-white/50 uppercase mt-1">
+        {subtitle}
       </div>
     </Link>
   );
