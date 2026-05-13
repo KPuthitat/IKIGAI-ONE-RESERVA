@@ -1583,6 +1583,174 @@ function runMigrations(db: Database.Database): void {
       COMMIT;
     `);
   }
+
+  // ─────────────────────────────────────────────────────────────
+  // TC-P (Profile Phase A) — multi-tenant companies + expanded
+  // employee fields + disciplinary warning system.
+  //
+  // companies   — top-level tenant. A branch belongs to one company.
+  //               Future expansion: more companies in the group can
+  //               own their own branches; staff can move between
+  //               companies via user_branches.
+  //
+  // users add-ons — Phase A profile fields the owner needs for
+  //                 payroll/HR (title prefix, names, DOB, addresses,
+  //                 emergency contact, job title, supervisor, ...).
+  //
+  // disciplinary_warnings + disciplinary_warning_views — written-
+  //                 warning letters admin issues to staff. Staff has
+  //                 to PIN-acknowledge, OR the system auto-
+  //                 acknowledges if they viewed it and then left the
+  //                 page (so "I never saw it" can't be claimed).
+  // ─────────────────────────────────────────────────────────────
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name_th TEXT NOT NULL,
+      name_en TEXT,
+      tax_id TEXT,
+      address TEXT,
+      phone TEXT,
+      email TEXT,
+      logo_url TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Seed the default company on first run so existing branches have
+  // somewhere to point. Name comes from the owner's empeo screenshot.
+  const companyCount = (db.prepare(
+    "SELECT COUNT(*) AS n FROM companies"
+  ).get() as { n: number }).n;
+  if (companyCount === 0) {
+    db.prepare(`
+      INSERT INTO companies (name_th, name_en)
+      VALUES (?, ?)
+    `).run("บริษัท อิคิไก เวลล์เกรด จำกัด", "Ikigai Wellgrade Co., Ltd.");
+  }
+
+  // branches.company_id — FK to companies. We backfill to the lowest
+  // company id (the seed above) for legacy branches that pre-date
+  // this column.
+  const branchCols = db.prepare("PRAGMA table_info(branches)").all() as Array<{ name: string }>;
+  const branchColNames = new Set(branchCols.map((c) => c.name));
+  if (!branchColNames.has("company_id")) {
+    db.exec("ALTER TABLE branches ADD COLUMN company_id INTEGER REFERENCES companies(id)");
+    const defaultCompanyId = (db.prepare(
+      "SELECT id FROM companies ORDER BY id ASC LIMIT 1"
+    ).get() as { id: number } | undefined)?.id ?? null;
+    if (defaultCompanyId) {
+      db.prepare("UPDATE branches SET company_id = ? WHERE company_id IS NULL").run(defaultCompanyId);
+    }
+  }
+
+  // users — Phase A profile columns. All nullable (existing rows
+  // keep working). Idempotent per-column ALTER.
+  const phaseAUserCols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  const phaseAUserSet = new Set(phaseAUserCols.map((c) => c.name));
+  const userCol = (name: string, ddl: string) => {
+    if (!phaseAUserSet.has(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${ddl}`);
+  };
+  // Personal
+  userCol("title_prefix",   "TEXT");      // นาย / นาง / นางสาว / ฯลฯ
+  userCol("first_name_th",  "TEXT");
+  userCol("last_name_th",   "TEXT");
+  userCol("first_name_en",  "TEXT");
+  userCol("last_name_en",   "TEXT");
+  userCol("nickname_th",    "TEXT");
+  userCol("nickname_en",    "TEXT");
+  userCol("dob",            "TEXT");      // YYYY-MM-DD
+  userCol("nationality",    "TEXT");
+  userCol("race",           "TEXT");
+  userCol("religion",       "TEXT");
+  userCol("marital_status", "TEXT");      // single / married / divorced / widowed
+  userCol("military_status","TEXT");      // exempt / passed / pending / served
+  userCol("blood_type",     "TEXT");      // A / B / AB / O (+/-)
+  userCol("height_cm",      "REAL");
+  userCol("weight_kg",      "REAL");
+  userCol("personal_notes", "TEXT");
+  // Contact
+  userCol("personal_email", "TEXT");
+  userCol("corporate_email","TEXT");
+  userCol("mobile_phone",   "TEXT");
+  userCol("work_phone",     "TEXT");
+  userCol("line_id",        "TEXT");      // human-readable LINE handle (NOT the userId)
+  userCol("house_address",      "TEXT");
+  userCol("house_subdistrict",  "TEXT");
+  userCol("house_district",     "TEXT");
+  userCol("house_province",     "TEXT");
+  userCol("house_postcode",     "TEXT");
+  userCol("contact_address",        "TEXT");
+  userCol("contact_subdistrict",    "TEXT");
+  userCol("contact_district",       "TEXT");
+  userCol("contact_province",       "TEXT");
+  userCol("contact_postcode",       "TEXT");
+  userCol("contact_same_as_house",  "INTEGER NOT NULL DEFAULT 0");
+  userCol("emergency_name",         "TEXT");
+  userCol("emergency_relationship", "TEXT");
+  userCol("emergency_phone",        "TEXT");
+  // Employment
+  userCol("supervisor_user_id", "INTEGER REFERENCES users(id)");
+  userCol("job_title",          "TEXT");  // free-text เช่น "พนักงานทั่วไปภายในร้าน"
+  userCol("contract_end_date",  "TEXT");  // YYYY-MM-DD
+  userCol("employment_status",  "TEXT");  // probation / permanent
+  userCol("track_attendance",   "INTEGER NOT NULL DEFAULT 1");  // 0 = admin/exec doesn't clock in
+  userCol("hire_mode",          "TEXT");  // monthly / daily / hourly
+  userCol("payment_method",     "TEXT");  // bank / cash
+  userCol("driver_license_no",  "TEXT");
+  userCol("manpower_type",      "TEXT");  // new / replacement
+  // Self-onboarding gate: when 1, staff is allowed to edit their own
+  // profile via /staff/persona/profile. Admin flips to 0 after they
+  // confirm the data is complete (so staff can't change KYC fields).
+  userCol("profile_self_edit_open", "INTEGER NOT NULL DEFAULT 1");
+  // Face-scan opt-in photo URL (path under /uploads/face/<uuid>.jpg
+  // when present). Optional — not all branches use face scan.
+  userCol("face_photo_url",     "TEXT");
+
+  // Disciplinary warnings (TC-P §8).
+  //   Severity ladder: verbal → written_1 → written_2 → final.
+  //   acknowledged_method:
+  //     'pin_explicit'  — staff entered correct PIN and tapped Acknowledge
+  //     'auto_on_leave' — staff opened the warning, didn't ack, and
+  //                       left the page. The client beforeunload
+  //                       handler POSTs auto-ack so the warning is
+  //                       counted as "seen + tacitly accepted".
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS disciplinary_warnings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      issued_by_user_id INTEGER NOT NULL REFERENCES users(id),
+      issued_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      severity TEXT NOT NULL CHECK (severity IN ('verbal','written_1','written_2','final')),
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      reason_category TEXT,
+      evidence_filename TEXT,
+      effective_date TEXT,
+      acknowledged_at TEXT,
+      acknowledged_method TEXT CHECK (acknowledged_method IN ('pin_explicit','auto_on_leave')),
+      auto_ack_reason TEXT,
+      ref_no TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_discipline_user_status
+      ON disciplinary_warnings(user_id, acknowledged_at);
+    CREATE INDEX IF NOT EXISTS idx_discipline_branch_issued
+      ON disciplinary_warnings(branch_id, issued_at);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS disciplinary_warning_views (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      warning_id INTEGER NOT NULL REFERENCES disciplinary_warnings(id) ON DELETE CASCADE,
+      viewed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      ip TEXT,
+      user_agent TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_discipline_view_warning
+      ON disciplinary_warning_views(warning_id, viewed_at);
+  `);
 }
 
 /** One row in the daily attendance roster — used by the group
@@ -1723,6 +1891,7 @@ export type Branch = {
   id: number;
   slug: string;
   name: string;
+  company_id: number | null;
   open_time: string;
   close_time: string;
   slot_minutes: number;
@@ -1774,6 +1943,42 @@ export type SystemSettings = {
   updated_by: number | null;
 };
 
+// ── TC-P (Profile Phase A) types ─────────────────────────────────
+
+export type Company = {
+  id: number;
+  name_th: string;
+  name_en: string | null;
+  tax_id: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  logo_url: string | null;
+  active: number;
+  created_at: string;
+};
+
+export type DisciplinarySeverity =
+  | "verbal" | "written_1" | "written_2" | "final";
+
+export type DisciplinaryWarning = {
+  id: number;
+  branch_id: number;
+  user_id: number;
+  issued_by_user_id: number;
+  issued_at: string;
+  severity: DisciplinarySeverity;
+  title: string;
+  body: string;
+  reason_category: string | null;
+  evidence_filename: string | null;
+  effective_date: string | null;
+  acknowledged_at: string | null;
+  acknowledged_method: "pin_explicit" | "auto_on_leave" | null;
+  auto_ack_reason: string | null;
+  ref_no: string | null;
+};
+
 export type ShiftCode = {
   id: number;
   branch_id: number;
@@ -1818,6 +2023,87 @@ export type User = {
   password_hash: string;
   display_name: string;
   role: "admin" | "staff";
+};
+
+/** Full Phase A employee profile row — superset of `User` with all
+ *  the empeo-equivalent personal, contact and employment fields the
+ *  admin edit modal and the staff self-edit page work with. Kept as
+ *  a separate type so existing User consumers stay lean; views that
+ *  need the rich profile cast to this. */
+export type EmployeeProfile = {
+  // Identity (from users table, same shape as User)
+  id: number;
+  username: string;
+  display_name: string;
+  role: "admin" | "staff";
+  // Personal
+  title_prefix: string | null;
+  first_name_th: string | null;
+  last_name_th: string | null;
+  first_name_en: string | null;
+  last_name_en: string | null;
+  nickname_th: string | null;
+  nickname_en: string | null;
+  dob: string | null;
+  gender: "male" | "female" | null;
+  nationality: string | null;
+  race: string | null;
+  religion: string | null;
+  marital_status: string | null;
+  military_status: string | null;
+  blood_type: string | null;
+  height_cm: number | null;
+  weight_kg: number | null;
+  personal_notes: string | null;
+  national_id: string | null;
+  // Contact
+  personal_email: string | null;
+  corporate_email: string | null;
+  mobile_phone: string | null;
+  work_phone: string | null;
+  line_id: string | null;
+  line_user_id: string | null;
+  house_address: string | null;
+  house_subdistrict: string | null;
+  house_district: string | null;
+  house_province: string | null;
+  house_postcode: string | null;
+  contact_address: string | null;
+  contact_subdistrict: string | null;
+  contact_district: string | null;
+  contact_province: string | null;
+  contact_postcode: string | null;
+  contact_same_as_house: number;
+  emergency_name: string | null;
+  emergency_relationship: string | null;
+  emergency_phone: string | null;
+  // Employment
+  supervisor_user_id: number | null;
+  job_title: string | null;
+  hire_date: string | null;
+  contract_end_date: string | null;
+  employment_status: "probation" | "permanent" | null;
+  employment_type: "pt" | "ft" | null;
+  track_attendance: number;
+  hire_mode: "monthly" | "daily" | "hourly" | null;
+  payment_method: "bank" | "cash" | null;
+  driver_license_no: string | null;
+  manpower_type: "new" | "replacement" | null;
+  profile_self_edit_open: number;
+  // Salary (already present)
+  hourly_rate: number | null;
+  monthly_salary: number | null;
+  pay_cycle: "weekly" | "monthly" | null;
+  salary_tax_mode: "sso" | "wht" | null;
+  // Banking (already present)
+  bank_name: string | null;
+  bank_account: string | null;
+  tax_id: string | null;
+  sso_id: string | null;
+  employee_code: string | null;
+  // Shift / weekly off (already present, included for one-stop access)
+  shift_start_time: string | null;
+  weekly_off_days: string | null;
 };
 
 export type TableRow = {

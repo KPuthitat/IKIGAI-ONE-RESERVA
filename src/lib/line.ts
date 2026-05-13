@@ -2105,6 +2105,98 @@ export function dailyAttendanceSummaryFlex(
   };
 }
 
+// ── Disciplinary warning Flex (TC-P §8) ──────────────────────────
+//
+// One Flex card pushed to the recipient staff member when a warning
+// is issued. Tone is serious without being aggressive — title +
+// severity badge + a 1-line summary, and a CTA that takes them to
+// the staff page where they must PIN-acknowledge. We deliberately
+// don't include the full body in the card so the staff has to land
+// on the in-app page (where we log the view + the auto-ack timer
+// runs).
+
+export type DisciplinaryFlexArgs = {
+  branchName: string;
+  recipientName: string;
+  severity: "verbal" | "written_1" | "written_2" | "final";
+  title: string;
+  refNo: string | null;
+  staffUrl: string;
+  headerColor?: string | null;
+};
+
+export function disciplinaryWarningFlex(args: DisciplinaryFlexArgs): LineFlexMessage {
+  // Severity tag — using rose for all to keep the gravity consistent;
+  // text differs so the staff still sees which level they got.
+  const severityTh =
+    args.severity === "verbal"     ? "ตักเตือนด้วยวาจา" :
+    args.severity === "written_1"  ? "ตักเตือนเป็นลายลักษณ์อักษร ครั้งที่ 1" :
+    args.severity === "written_2"  ? "ตักเตือนเป็นลายลักษณ์อักษร ครั้งที่ 2" :
+    "หนังสือเตือนครั้งสุดท้าย";
+  const headerColor = args.headerColor || "#7f1d1d"; // rose-900
+  const bubble = {
+    type: "bubble", size: "kilo",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: headerColor, paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: "#fecdd3", size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "PERSONA • วินัย", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+          ]
+        },
+        {
+          type: "text", text: "⚠ หนังสือตักเตือนทางวินัย",
+          color: "#ffffff", size: "lg", weight: "bold", margin: "md", wrap: true
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.recipientName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "text", text: args.branchName, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs" },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        {
+          type: "text", text: severityTh,
+          size: "xs", color: "#b91c1c", weight: "bold", margin: "md"
+        },
+        {
+          type: "text", text: args.title,
+          size: "sm", color: COLOR_TEXT_DARK, weight: "bold", wrap: true, margin: "xs"
+        },
+        ...(args.refNo ? [{
+          type: "text", text: `#${args.refNo}`,
+          size: "xs", color: COLOR_TEXT_MUTED, margin: "sm", weight: "bold"
+        }] : []),
+        {
+          type: "text",
+          text: "กรุณาเข้าระบบเพื่ออ่านรายละเอียดและกดรับทราบด้วยรหัส PIN ของคุณ",
+          size: "xs", color: COLOR_LABEL, wrap: true, margin: "md"
+        }
+      ]
+    },
+    footer: {
+      type: "box", layout: "vertical", spacing: "sm", paddingAll: "12px",
+      contents: [{
+        type: "button", style: "primary", color: "#b91c1c",
+        action: { type: "uri", label: "เปิดอ่าน + กดรับทราบ", uri: args.staffUrl }
+      }]
+    },
+    styles: {
+      header: { backgroundColor: headerColor },
+      body: { backgroundColor: "#ffffff" }
+    }
+  };
+  return {
+    type: "flex",
+    altText: `⚠ หนังสือเตือน · ${args.title} · ${args.recipientName}`,
+    contents: bubble
+  };
+}
+
 // ── Roster published / updated Flex (TC-R) ────────────────────────
 //
 // One-line announcement card the supervisor sends when the monthly

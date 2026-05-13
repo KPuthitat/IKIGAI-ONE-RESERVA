@@ -77,7 +77,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // Global (non-module) system settings — IKIGAI OS LINE OA
         // for cross-branch notifications, etc. Always-visible link
         // since the page handles its own admin gating.
-        { href: "/admin/system-settings", label: t(lang, "admin.systemSettings.title") }
+        { href: "/admin/system-settings", label: t(lang, "admin.systemSettings.title") },
+        { href: "/admin/companies", label: t(lang, "admin.companies.title") }
       ]
     },
     {
@@ -93,7 +94,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/service-charge", label: t(lang, "admin.persona.nav.svc") },
         { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
-        { href: "/admin/persona/holidays", label: t(lang, "admin.persona.nav.holidays") }
+        { href: "/admin/persona/holidays", label: t(lang, "admin.persona.nav.holidays") },
+        { href: "/admin/persona/discipline", label: t(lang, "admin.persona.nav.discipline") }
       ]
     },
     // Pre-shift items — admin configures the checklist for each

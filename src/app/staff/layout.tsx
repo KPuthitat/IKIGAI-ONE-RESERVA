@@ -57,6 +57,8 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/staff/persona", label: t(lang, "staff.nav.timeClock") },
         { href: "/staff/persona/calendar", label: t(lang, "staff.persona.nav.calendar") },
+        { href: "/staff/persona/profile", label: t(lang, "staff.persona.nav.profile") },
+        { href: "/staff/persona/discipline", label: t(lang, "staff.persona.nav.discipline") },
         { href: "/staff/persona/leave", label: t(lang, "staff.nav.leave") },
         { href: "/staff/persona/resignation", label: t(lang, "staff.nav.resignation") }
       ]
