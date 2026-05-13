@@ -60,6 +60,12 @@ export default function PersonaSettingsPage() {
         morningTime={branch.readiness_morning_time}
         afternoonTime={branch.readiness_afternoon_time}
         brandColor={branch.brand_color}
+        latitude={branch.latitude}
+        longitude={branch.longitude}
+        geofenceRadiusMeters={branch.geofence_radius_meters}
+        geofenceEnabled={branch.geofence_enabled === 1}
+        clockQrToken={branch.clock_qr_token}
+        clockQrEnabled={branch.clock_qr_enabled === 1}
         branchName={branch.name}
       />
     </div>

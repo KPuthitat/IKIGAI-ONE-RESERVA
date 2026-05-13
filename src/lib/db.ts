@@ -885,6 +885,37 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN brand_color TEXT");
   }
 
+  // PERSONA Time Clock anti-cheat: GPS geofence + QR code verification.
+  // Both are independently toggleable so admin can phase them in
+  // without breaking clock-in for staff before the staff UI ships
+  // location/QR capture. When both disabled the clock-in API skips
+  // the corresponding validation entirely (current legacy behaviour).
+  //
+  //   - latitude/longitude:        centre of allowed clock-in area
+  //   - geofence_radius_meters:    max distance from centre (default 100m)
+  //   - geofence_enabled:          0/1, gates the lat/lng check
+  //   - clock_qr_token:            opaque random string admin generates,
+  //                                printed as a QR poster in the shop
+  //   - clock_qr_enabled:          0/1, gates the QR check
+  if (!bnames2.has("latitude")) {
+    db.exec("ALTER TABLE branches ADD COLUMN latitude REAL");
+  }
+  if (!bnames2.has("longitude")) {
+    db.exec("ALTER TABLE branches ADD COLUMN longitude REAL");
+  }
+  if (!bnames2.has("geofence_radius_meters")) {
+    db.exec("ALTER TABLE branches ADD COLUMN geofence_radius_meters INTEGER NOT NULL DEFAULT 100");
+  }
+  if (!bnames2.has("geofence_enabled")) {
+    db.exec("ALTER TABLE branches ADD COLUMN geofence_enabled INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!bnames2.has("clock_qr_token")) {
+    db.exec("ALTER TABLE branches ADD COLUMN clock_qr_token TEXT");
+  }
+  if (!bnames2.has("clock_qr_enabled")) {
+    db.exec("ALTER TABLE branches ADD COLUMN clock_qr_enabled INTEGER NOT NULL DEFAULT 0");
+  }
+
   // system_settings — singleton table for global configuration that
   // isn't branch-scoped. Today this holds the IKIGAI OS LINE OA push
   // credentials + the cross-branch staff group ID, used to route
@@ -1421,6 +1452,13 @@ export type Branch = {
   readiness_morning_time: string;      // HH:MM — used in รอบเช้า card title (e.g. "11:30")
   readiness_afternoon_time: string;    // HH:MM — used in รอบบ่าย card title (e.g. "16:00")
   brand_color: string | null;          // Hex e.g. '#e94560'. NULL = default IKIGAI ink colour.
+  // PERSONA Time Clock anti-cheat — see schema migration in getDb().
+  latitude: number | null;
+  longitude: number | null;
+  geofence_radius_meters: number;
+  geofence_enabled: number;            // 0/1
+  clock_qr_token: string | null;
+  clock_qr_enabled: number;            // 0/1
 };
 
 // Global (non-branch-scoped) configuration. Today it carries the

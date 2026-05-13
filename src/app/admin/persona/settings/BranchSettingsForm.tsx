@@ -26,11 +26,23 @@ export default function BranchSettingsForm({
   morningTime,
   afternoonTime,
   brandColor,
+  latitude,
+  longitude,
+  geofenceRadiusMeters,
+  geofenceEnabled,
+  clockQrToken,
+  clockQrEnabled,
   branchName
 }: {
   morningTime: string;
   afternoonTime: string;
   brandColor: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  geofenceRadiusMeters: number;
+  geofenceEnabled: boolean;
+  clockQrToken: string | null;
+  clockQrEnabled: boolean;
   branchName: string;
 }) {
   const router = useRouter();
@@ -41,6 +53,20 @@ export default function BranchSettingsForm({
   // Brand colour stored as nullable hex. Empty string in the input
   // means "use default" — we normalise to null on submit.
   const [color, setColor] = useState<string>(brandColor || "");
+
+  // ── Time Clock anti-cheat fields ─────────────────────────────────
+  // GPS coords as strings so the input can be empty (NULL on save).
+  // Browser's geolocation API returns numbers; we stringify on capture.
+  const [lat, setLat] = useState<string>(latitude == null ? "" : String(latitude));
+  const [lng, setLng] = useState<string>(longitude == null ? "" : String(longitude));
+  const [radius, setRadius] = useState<number>(geofenceRadiusMeters);
+  const [geoOn, setGeoOn] = useState<boolean>(geofenceEnabled);
+  const [qrToken, setQrToken] = useState<string>(clockQrToken || "");
+  const [qrOn, setQrOn] = useState<boolean>(clockQrEnabled);
+  // Per-section status text for the geolocate button (success/error
+  // feedback after the navigator.geolocation callback returns).
+  const [geoStatus, setGeoStatus] = useState<string | null>(null);
+
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -50,20 +76,40 @@ export default function BranchSettingsForm({
   const pristine =
     morning === morningTime &&
     afternoon === afternoonTime &&
-    (color || null) === (brandColor || null);
+    (color || null) === (brandColor || null) &&
+    lat === (latitude == null ? "" : String(latitude)) &&
+    lng === (longitude == null ? "" : String(longitude)) &&
+    radius === geofenceRadiusMeters &&
+    geoOn === geofenceEnabled &&
+    (qrToken || null) === (clockQrToken || null) &&
+    qrOn === clockQrEnabled;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
     setBusy(true);
     try {
+      // Parse lat/lng from string inputs. Empty string → null (the
+      // server treats null as "geofence centre unset"). Non-empty
+      // strings that don't parse as numbers fall through to NaN
+      // which the Zod schema on the server rejects with a clear
+      // error message — caught here below.
+      const latNum = lat.trim() === "" ? null : Number(lat.trim());
+      const lngNum = lng.trim() === "" ? null : Number(lng.trim());
+
       const res = await fetch(apiUrl("/api/admin/persona/branch-settings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           readiness_morning_time: morning,
           readiness_afternoon_time: afternoon,
-          brand_color: color.trim() || null
+          brand_color: color.trim() || null,
+          latitude: latNum,
+          longitude: lngNum,
+          geofence_radius_meters: radius,
+          geofence_enabled: geoOn,
+          clock_qr_token: qrToken.trim() || null,
+          clock_qr_enabled: qrOn
         })
       });
       const j = await res.json().catch(() => ({}));
@@ -90,6 +136,67 @@ export default function BranchSettingsForm({
   function resetDefaults() {
     setMorning(DEFAULT_MORNING);
     setAfternoon(DEFAULT_AFTERNOON);
+  }
+
+  // Capture admin's current GPS coordinates and pre-fill the geofence
+  // centre. Convenient for setting up a new branch — open the page
+  // standing at the shop, tap once, done. Falls back to a helpful
+  // message when the browser denies geolocation (insecure context,
+  // user previously blocked permission, etc.).
+  function captureGps() {
+    setGeoStatus(t("admin.persona.settings.timeClock.geofence.locating"));
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGeoStatus(t("admin.persona.settings.timeClock.geofence.notSupported"));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        // 5 decimal places = ~1.1m precision at the equator. More
+        // than we need for a 100m geofence; chosen for visual
+        // consistency without dropping into scientific notation.
+        const la = pos.coords.latitude.toFixed(5);
+        const lo = pos.coords.longitude.toFixed(5);
+        setLat(la);
+        setLng(lo);
+        setGeoStatus(
+          t("admin.persona.settings.timeClock.geofence.locatedAccuracy", {
+            accuracy: String(Math.round(pos.coords.accuracy))
+          })
+        );
+      },
+      (err) => {
+        const codeMap: Record<number, string> = {
+          1: "geofence.errPermission",
+          2: "geofence.errUnavailable",
+          3: "geofence.errTimeout"
+        };
+        const key = codeMap[err.code] || "geofence.errGeneric";
+        setGeoStatus(t(`admin.persona.settings.timeClock.${key}`));
+      },
+      // High-accuracy = use GPS hardware when available. Slower
+      // (~5-10s on first call) but worth it for a one-time setup
+      // that pins where staff have to physically be.
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 }
+    );
+  }
+
+  // Mint a fresh 16-char URL-safe random token for the clock-in QR
+  // poster. Admin prints + posts at the shop; staff scans on
+  // clock-in. Rotating regenerates the token, invalidating any
+  // previously-printed posters.
+  function generateQrToken() {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let out = "";
+    const buf = new Uint8Array(16);
+    if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+      crypto.getRandomValues(buf);
+    } else {
+      // Should never hit in a browser, but a Math.random() fallback
+      // keeps this function from crashing in an exotic environment.
+      for (let i = 0; i < 16; i++) buf[i] = Math.floor(Math.random() * 256);
+    }
+    for (let i = 0; i < 16; i++) out += alphabet[buf[i] % alphabet.length];
+    setQrToken(out);
   }
 
   return (
@@ -186,6 +293,141 @@ export default function BranchSettingsForm({
         >
           <span className="opacity-70">IKIGAI OS · PREVIEW</span>
           <div className="font-bold mt-1">{branchName}</div>
+        </div>
+      </div>
+
+      {/* ── Time Clock anti-cheat (GPS geofence + QR code) ──
+          Two independent gates that the staff clock-in API enforces
+          before accepting a clock-in. Off by default so existing
+          deployments keep working until admin opts in. */}
+      <div className="card space-y-4">
+        <div>
+          <h2 className="font-bold text-slate-800 text-sm">
+            {t("admin.persona.settings.timeClock.title")}
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            {t("admin.persona.settings.timeClock.help", { branch: branchName })}
+          </p>
+        </div>
+
+        {/* ── GPS geofence ── */}
+        <div className="space-y-2.5 border-l-2 border-slate-200 pl-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="w-4 h-4"
+              checked={geoOn}
+              onChange={(e) => setGeoOn(e.target.checked)}
+            />
+            <span className="text-sm font-bold text-slate-800">
+              {t("admin.persona.settings.timeClock.geofence.enableLabel")}
+            </span>
+          </label>
+          <p className="text-[11px] text-slate-500">
+            {t("admin.persona.settings.timeClock.geofence.help")}
+          </p>
+          <div className="grid sm:grid-cols-2 gap-2">
+            <div>
+              <label className="label text-[11px]">
+                {t("admin.persona.settings.timeClock.geofence.latLabel")}
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                className="input font-mono text-sm"
+                placeholder="13.7563"
+                value={lat}
+                onChange={(e) => setLat(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="label text-[11px]">
+                {t("admin.persona.settings.timeClock.geofence.lngLabel")}
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                className="input font-mono text-sm"
+                placeholder="100.5018"
+                value={lng}
+                onChange={(e) => setLng(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={captureGps}
+              className="text-xs px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50 whitespace-nowrap"
+            >
+              📍 {t("admin.persona.settings.timeClock.geofence.useCurrent")}
+            </button>
+            {geoStatus && (
+              <span className="text-[11px] text-slate-500 truncate">{geoStatus}</span>
+            )}
+          </div>
+          <div>
+            <label className="label text-[11px]">
+              {t("admin.persona.settings.timeClock.geofence.radiusLabel")}
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={10}
+                max={5000}
+                step={10}
+                className="input w-32 text-sm"
+                value={radius}
+                onChange={(e) => setRadius(Number(e.target.value) || 0)}
+              />
+              <span className="text-xs text-slate-500">
+                {t("admin.persona.settings.timeClock.geofence.radiusUnit")}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── QR code ── */}
+        <div className="space-y-2.5 border-l-2 border-slate-200 pl-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="w-4 h-4"
+              checked={qrOn}
+              onChange={(e) => setQrOn(e.target.checked)}
+            />
+            <span className="text-sm font-bold text-slate-800">
+              {t("admin.persona.settings.timeClock.qr.enableLabel")}
+            </span>
+          </label>
+          <p className="text-[11px] text-slate-500">
+            {t("admin.persona.settings.timeClock.qr.help")}
+          </p>
+          <div>
+            <label className="label text-[11px]">
+              {t("admin.persona.settings.timeClock.qr.tokenLabel")}
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                className="input flex-1 font-mono text-xs"
+                placeholder={t("admin.persona.settings.timeClock.qr.tokenPlaceholder")}
+                value={qrToken}
+                onChange={(e) => setQrToken(e.target.value)}
+                maxLength={64}
+              />
+              <button
+                type="button"
+                onClick={generateQrToken}
+                className="text-xs px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50 whitespace-nowrap"
+              >
+                🎲 {t("admin.persona.settings.timeClock.qr.generate")}
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">
+              {t("admin.persona.settings.timeClock.qr.tokenHint")}
+            </p>
+          </div>
         </div>
       </div>
 

@@ -40,7 +40,21 @@ const Body = z.object({
   readiness_afternoon_time: z.string().regex(TIME_RE, "invalid_time"),
   // brand_color is fully optional; null/empty clears the field
   // (the LINE Flex card then falls back to the IKIGAI default ink).
-  brand_color: z.string().regex(HEX_COLOR_RE, "invalid_color").nullable().optional()
+  brand_color: z.string().regex(HEX_COLOR_RE, "invalid_color").nullable().optional(),
+
+  // PERSONA Time Clock anti-cheat config — all optional; client only
+  // sends fields the admin actually touched in the form. Validation:
+  //   • lat/lng: standard WGS84 ranges
+  //   • radius: 10m-5km bounds — narrower than 10m is impractical
+  //     (GPS drift on a phone can be 3-10m even outdoors), wider
+  //     than 5km defeats the geofence's purpose
+  //   • qr_token: 8-64 chars, URL-safe characters only; null clears it
+  latitude: z.number().min(-90).max(90).nullable().optional(),
+  longitude: z.number().min(-180).max(180).nullable().optional(),
+  geofence_radius_meters: z.number().int().min(10).max(5000).optional(),
+  geofence_enabled: z.boolean().optional(),
+  clock_qr_token: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, "invalid_qr_token").nullable().optional(),
+  clock_qr_enabled: z.boolean().optional()
 });
 
 export async function POST(req: Request) {
@@ -76,14 +90,47 @@ export async function POST(req: Request) {
     brandColor = raw.startsWith("#") ? raw : `#${raw}`;
   }
 
+  // Build a dynamic UPDATE so admin can patch a subset of fields
+  // — the Time Clock anti-cheat section is independent of the
+  // readiness times + brand colour above, and clients only send
+  // what they actually changed.
   const db = getDb();
-  db.prepare(`
-    UPDATE branches
-    SET readiness_morning_time = ?,
-        readiness_afternoon_time = ?,
-        brand_color = ?
-    WHERE id = ?
-  `).run(morning, afternoon, brandColor, user.activeBranchId);
+  const sets: string[] = [
+    "readiness_morning_time = ?",
+    "readiness_afternoon_time = ?",
+    "brand_color = ?"
+  ];
+  const vals: Array<string | number | null> = [morning, afternoon, brandColor];
+
+  if (Object.prototype.hasOwnProperty.call(parsed.data, "latitude")) {
+    sets.push("latitude = ?");
+    vals.push(parsed.data.latitude ?? null);
+  }
+  if (Object.prototype.hasOwnProperty.call(parsed.data, "longitude")) {
+    sets.push("longitude = ?");
+    vals.push(parsed.data.longitude ?? null);
+  }
+  if (parsed.data.geofence_radius_meters !== undefined) {
+    sets.push("geofence_radius_meters = ?");
+    vals.push(parsed.data.geofence_radius_meters);
+  }
+  if (parsed.data.geofence_enabled !== undefined) {
+    sets.push("geofence_enabled = ?");
+    vals.push(parsed.data.geofence_enabled ? 1 : 0);
+  }
+  if (Object.prototype.hasOwnProperty.call(parsed.data, "clock_qr_token")) {
+    sets.push("clock_qr_token = ?");
+    vals.push(parsed.data.clock_qr_token ?? null);
+  }
+  if (parsed.data.clock_qr_enabled !== undefined) {
+    sets.push("clock_qr_enabled = ?");
+    vals.push(parsed.data.clock_qr_enabled ? 1 : 0);
+  }
+
+  vals.push(user.activeBranchId);
+  db.prepare(
+    `UPDATE branches SET ${sets.join(", ")} WHERE id = ?`
+  ).run(...vals);
 
   // Activity log so the audit trail captures who tweaked the
   // round times. ref_id = branch_id (the entity being changed).
