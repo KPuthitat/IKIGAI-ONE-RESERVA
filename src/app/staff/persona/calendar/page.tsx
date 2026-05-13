@@ -16,7 +16,8 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import {
   listAssignmentsForUserMonth,
-  getLastPublish
+  getLastPublish,
+  type AssignmentForStaffCalendar
 } from "@/lib/roster";
 
 export const dynamic = "force-dynamic";
@@ -49,8 +50,10 @@ export default function StaffCalendarPage({
   const lastPublish = getLastPublish(branch.id, month);
 
   // Bucket assignments by date (a staff can be in multiple positions
-  // on the same day — show them grouped).
-  const byDate = new Map<string, typeof assignments>();
+  // on the same day — show them grouped). Explicit element type so
+  // the value array keeps the position_description field after
+  // Next.js' module-boundary type inference.
+  const byDate = new Map<string, AssignmentForStaffCalendar[]>();
   for (const a of assignments) {
     if (!byDate.has(a.assignment_date)) byDate.set(a.assignment_date, []);
     byDate.get(a.assignment_date)!.push(a);

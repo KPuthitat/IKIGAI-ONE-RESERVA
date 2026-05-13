@@ -35,6 +35,14 @@ export type AssignmentWithJoins = RosterAssignment & {
   shift_break_end: string | null;
 };
 
+/** Staff-calendar variant — same fields as AssignmentWithJoins plus the
+ *  position's free-text description. Kept as a separate exported type
+ *  so the staff page can declare it explicitly (Next.js' TS compiler
+ *  was losing the inline intersection across module boundaries). */
+export type AssignmentForStaffCalendar = AssignmentWithJoins & {
+  position_description: string | null;
+};
+
 // ── Reads ────────────────────────────────────────────────────────
 
 export function listShiftCodes(branchId: number): ShiftCode[] {
@@ -89,7 +97,7 @@ export function listAssignmentsForUserMonth(
   userId: number,
   branchId: number,
   yearMonth: string
-): AssignmentWithJoins[] {
+): AssignmentForStaffCalendar[] {
   const start = `${yearMonth}-01`;
   const end = `${yearMonth}-31`;
   return getDb().prepare(`
@@ -112,9 +120,7 @@ export function listAssignmentsForUserMonth(
       AND a.user_id = ?
       AND a.assignment_date >= ? AND a.assignment_date <= ?
     ORDER BY a.assignment_date ASC, p.display_order ASC
-  `).all(branchId, userId, start, end) as Array<AssignmentWithJoins & {
-    position_description: string | null;
-  }>;
+  `).all(branchId, userId, start, end) as AssignmentForStaffCalendar[];
 }
 
 /** The single most-recent publish-log entry for a branch+month.
