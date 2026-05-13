@@ -3,6 +3,10 @@ import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { computeStretch } from "@/lib/leave";
+import {
+  userAssignmentDatesInRange,
+  staffCountByDate
+} from "@/lib/roster";
 import LeaveAdminClient, { type LeaveAdminRow, type StaffOption } from "./LeaveAdminClient";
 
 export const dynamic = "force-dynamic";
@@ -68,10 +72,33 @@ export default function AdminLeavePage({
     LIMIT 200
   `).all(...params) as Omit<LeaveAdminRow, "stretchTotal" | "stretchHolidayCount" | "advanceDays">[];
 
-  // เพิ่ม stretch info เฉพาะ personal/annual
+  // เพิ่ม stretch info เฉพาะ personal/annual + roster-conflict info.
+  // Roster conflict (TC-R): if this leave overlaps with dates the
+  // staff has been assigned to in the duty roster, surface that on the
+  // admin's approval modal — supervisor can then arrange a swap before
+  // accepting. We compute it only for pending requests (no point
+  // alarming admin after the fact) and only for personal/sick types
+  // where short-notice approval matters; vacation/maternity is
+  // typically planned far enough ahead that conflicts are obvious.
   const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const todayMs = new Date(`${todayBkk}T00:00:00Z`).getTime();
   const requests: LeaveAdminRow[] = rawRequests.map((r) => {
+    let rosterConflict: LeaveAdminRow["rosterConflict"] = null;
+    if (r.status === "pending") {
+      const affectedDates = userAssignmentDatesInRange(branch.id, r.user_id, r.date_from, r.date_to);
+      if (affectedDates.length > 0) {
+        // For each affected day, count other staff still working
+        // (subtract 1 because this user is currently included in the
+        // count and would be removed if the leave is approved).
+        const counts = staffCountByDate(branch.id, r.date_from, r.date_to);
+        let minOthers: number | null = null;
+        for (const d of affectedDates) {
+          const others = Math.max(0, (counts.get(d) ?? 0) - 1);
+          if (minOthers === null || others < minOthers) minOthers = others;
+        }
+        rosterConflict = { affectedDates, minStaffOnAffectedDay: minOthers };
+      }
+    }
     if (r.type === "personal" || r.type === "annual") {
       const s = computeStretch(r.date_from, r.date_to);
       const fromMs = new Date(`${r.date_from}T00:00:00Z`).getTime();
@@ -82,10 +109,11 @@ export default function AdminLeavePage({
         ...r,
         stretchTotal: s.totalConsecutive,
         stretchHolidayCount: s.prepended.length + s.appended.length,
-        advanceDays: advanceDaysAtCreation
+        advanceDays: advanceDaysAtCreation,
+        rosterConflict
       };
     }
-    return { ...r, stretchTotal: null, stretchHolidayCount: null, advanceDays: null };
+    return { ...r, stretchTotal: null, stretchHolidayCount: null, advanceDays: null, rosterConflict };
   });
 
   // Status counters scoped to this branch — the tabs in the client

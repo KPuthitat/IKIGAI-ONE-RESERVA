@@ -26,6 +26,10 @@
 import { getDb } from "./db";
 import { pairShifts } from "./payroll-compute";
 import { LATE_GRACE_MINUTES, SC_INELIGIBILITY_THRESHOLD } from "./late-detection";
+import {
+  shiftStartByDateForUserMonth,
+  scheduledMinutesByUserForMonth
+} from "./roster";
 
 export const SVC_STAFF_SHARE_RATIO = 0.6;  // 3 of 5 parts
 export const SVC_COMPANY_SHARE_RATIO = 0.4; // 2 of 5 parts
@@ -322,28 +326,46 @@ export function computeMonthlySvcSummary(
   for (const r of resignRows) forfeitedFromResign.add(r.user_id);
 
   // 9. Roll up per-staff rows + forfeiture
-  // scheduledMinutes — daysInMonth × 8h matches monthly timesheet
-  //   (we don't subtract weekly_off; conservative on staff's side)
-  const scheduledMinutes = daysInMonth * assumedShift;
+  //
+  // Lateness here uses the per-day roster shift start when assigned,
+  // falling back to users.shift_start_time otherwise — same rule as
+  // the daily attendance summary, so all three views (SVC monthly,
+  // monthly timesheet, daily summary) agree on which clock-ins are
+  // "late".
+  //
+  // scheduledMinutes — prefer roster-assigned minutes for the month;
+  // fall back to the conservative daysInMonth × 8h when the roster
+  // is empty for that user (legacy behaviour).
+  const fallbackScheduledMinutes = daysInMonth * assumedShift;
+  const userIds = staff.map((s) => s.userId);
+  const rosterScheduledByUser = scheduledMinutesByUserForMonth(branchId, yearMonth, userIds);
+
   const rows: MonthlySvcRow[] = staff.map((s) => {
     const a = acc.get(s.userId) ?? { minutesWorked: 0, daysWorked: 0, grossAllocation: 0 };
-    // Lateness — inline rather than calling monthlyLateStats(...) so we
-    // don't double-import the helper here (avoids a cycle if the
-    // late-detection lib ever needs SVC types).
+    const rosterShiftByDate = shiftStartByDateForUserMonth(branchId, s.userId, yearMonth);
+    const rosterMin = rosterScheduledByUser.get(s.userId) ?? 0;
+    const scheduledMinutes = rosterMin > 0 ? rosterMin : fallbackScheduledMinutes;
+
+    // Lateness — per-event: look up effective shift start from roster
+    // first, then fall back to the static users.shift_start_time. If
+    // neither exists for a given event, that event simply isn't
+    // counted as late (no scheduled shift = no expectation).
     let lateMinutes = 0;
-    if (s.shiftStartTime) {
-      const startMin = hhmmToMin(s.shiftStartTime);
-      if (startMin != null) {
-        for (const ev of (insByUser.get(s.userId) ?? [])) {
-          const bkk = new Date(new Date(ev.ts).getTime() + 7 * 60 * 60 * 1000);
-          const actualMin = bkk.getUTCHours() * 60 + bkk.getUTCMinutes();
-          const diff = actualMin - startMin;
-          if (diff > LATE_GRACE_MINUTES) lateMinutes += diff;
-        }
-      }
+    let anyComputable = false;
+    for (const ev of (insByUser.get(s.userId) ?? [])) {
+      const bkk = new Date(new Date(ev.ts).getTime() + 7 * 60 * 60 * 1000);
+      const dateBkk = bkk.toISOString().slice(0, 10);
+      const effStart = rosterShiftByDate.get(dateBkk) ?? s.shiftStartTime;
+      if (!effStart) continue;
+      anyComputable = true;
+      const startMin = hhmmToMin(effStart);
+      if (startMin == null) continue;
+      const actualMin = bkk.getUTCHours() * 60 + bkk.getUTCMinutes();
+      const diff = actualMin - startMin;
+      if (diff > LATE_GRACE_MINUTES) lateMinutes += diff;
     }
     const lateRatio = scheduledMinutes > 0 ? lateMinutes / scheduledMinutes : 0;
-    const lateForfeit = !!s.shiftStartTime && lateRatio > SC_INELIGIBILITY_THRESHOLD;
+    const lateForfeit = anyComputable && lateRatio > SC_INELIGIBILITY_THRESHOLD;
     const resignForfeit = forfeitedFromResign.has(s.userId);
     const forfeited = lateForfeit || resignForfeit;
     return {

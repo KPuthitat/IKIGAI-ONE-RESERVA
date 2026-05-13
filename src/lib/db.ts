@@ -1014,6 +1014,135 @@ function runMigrations(db: Database.Database): void {
     ON daily_service_charge(branch_id, date);
   `);
 
+  // ── Roster (TC-R, 2026-05) ─────────────────────────────────────
+  //
+  // Three tables that together support "supervisor assigns monthly
+  // shifts to each staff" — replaces the legacy Google Sheet flow.
+  //
+  //   shift_codes        — branch-scoped, flexible. Supervisor names
+  //                        a shift ("NPF") and sets start/end + break
+  //                        + a colour for the grid. Drives late-
+  //                        detection (an assigned shift's start_time
+  //                        overrides users.shift_start_time on that
+  //                        date) and the staff calendar display.
+  //
+  //   roster_positions   — branch-scoped duty positions (CHECKER,
+  //                        SAUTE, ...). Each has a title + free-text
+  //                        description so staff can read their scope
+  //                        of work in the calendar.
+  //
+  //   roster_assignments — the actual (date × position) cells. One
+  //                        row per assigned slot. UNIQUE on
+  //                        (branch, date, position) so a position
+  //                        only has one occupant per day; a single
+  //                        staff can occupy multiple positions in
+  //                        a day (allowed per owner spec).
+  //
+  //   roster_publish_log — every "publish" or post-publish edit
+  //                        bumps a row here. Drives LINE notifications
+  //                        + supplies the "last published at" stamp
+  //                        the calendar UI shows staff.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shift_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      code TEXT NOT NULL,
+      name TEXT,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      break_start TEXT,
+      break_end TEXT,
+      color TEXT,
+      display_order INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_shift_codes_branch_code
+      ON shift_codes(branch_id, code);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS roster_positions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      description TEXT,
+      display_order INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_roster_positions_branch
+      ON roster_positions(branch_id, active, display_order);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS roster_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      assignment_date TEXT NOT NULL,
+      position_id INTEGER NOT NULL REFERENCES roster_positions(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      shift_code_id INTEGER NOT NULL REFERENCES shift_codes(id) ON DELETE RESTRICT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_by INTEGER REFERENCES users(id),
+      updated_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_roster_assign_uniq
+      ON roster_assignments(branch_id, assignment_date, position_id);
+    CREATE INDEX IF NOT EXISTS idx_roster_assign_user_date
+      ON roster_assignments(user_id, assignment_date);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS roster_publish_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      year_month TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('publish','edit')),
+      note TEXT,
+      published_by INTEGER REFERENCES users(id),
+      published_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_roster_publish_branch_month
+      ON roster_publish_log(branch_id, year_month, published_at);
+  `);
+
+  // Seed default shift codes + positions per branch on first migration.
+  // Mirrors the spreadsheet the owner currently uses (NAMA roster) so
+  // there's no blank-slate phase. Idempotent — only seeds when the
+  // branch has zero rows in the relevant table.
+  const branchesForSeed = db.prepare("SELECT id FROM branches").all() as Array<{ id: number }>;
+  for (const b of branchesForSeed) {
+    const shiftCount = (db.prepare(
+      "SELECT COUNT(*) AS n FROM shift_codes WHERE branch_id = ?"
+    ).get(b.id) as { n: number }).n;
+    if (shiftCount === 0) {
+      const ins = db.prepare(`
+        INSERT INTO shift_codes (branch_id, code, name, start_time, end_time, break_start, break_end, color, display_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      ins.run(b.id, "NPF",   null, "11:00", "21:00", "14:00", "16:00", "#fecdd3", 1);
+      ins.run(b.id, "FD-11", null, "11:00", "20:00", "15:00", "16:00", "#fef9c3", 2);
+      ins.run(b.id, "FD-12", null, "12:00", "21:00", "16:00", "17:00", "#fed7aa", 3);
+      ins.run(b.id, "NPN",   null, "16:00", "21:00", null,    null,    "#bfdbfe", 4);
+    }
+    const posCount = (db.prepare(
+      "SELECT COUNT(*) AS n FROM roster_positions WHERE branch_id = ?"
+    ).get(b.id) as { n: number }).n;
+    if (posCount === 0) {
+      const ins = db.prepare(`
+        INSERT INTO roster_positions (branch_id, title, description, display_order)
+        VALUES (?, ?, ?, ?)
+      `);
+      ins.run(b.id, "CHIEF", "ดูแลภาพรวมร้านทั้งหมด เป็นกำลังเสริมในตำแหน่งที่ขาด", 1);
+      ins.run(b.id, "SERVICE", "รับออเดอร์ เสิร์ฟอาหาร เสิร์ฟน้ำ ดูแลความสะอาดโต๊ะ", 2);
+      ins.run(b.id, "COLD KC.", "ดูแลอาหารที่ต้องทำในครัวเย็นทั้งหมด คอยเช็คสต็อกทุก", 3);
+      ins.run(b.id, "PASTA", "ดูแลและผลิตเส้นตามที่ได้รับมอบหมายรวมไปถึงดูแลความ", 4);
+      ins.run(b.id, "CHECKER", "ตรวจสอบคุณภาพอาหารก่อนเสิร์ฟ", 5);
+      ins.run(b.id, "SAUTE", "ผัด/ทอดเมนูตามออเดอร์", 6);
+      ins.run(b.id, "FRYING", "ทอดอาหารตามออเดอร์", 7);
+      ins.run(b.id, "WASHING", "ล้างจาน ดูแลความสะอาดส่วนหลัง", 8);
+    }
+  }
+
   // forfeit_svc — set when admin approves a resignation_request and
   // decides the resigning staff loses their service-charge accrual
   // for that month (e.g. "ลาออกผิดกติกา"). The monthly SVC engine
@@ -1643,6 +1772,44 @@ export type SystemSettings = {
   global_staff_group_id: string | null;
   updated_at: string | null;
   updated_by: number | null;
+};
+
+export type ShiftCode = {
+  id: number;
+  branch_id: number;
+  code: string;
+  name: string | null;
+  start_time: string;       // HH:MM
+  end_time: string;         // HH:MM
+  break_start: string | null;
+  break_end: string | null;
+  color: string | null;
+  display_order: number;
+  active: number;
+  created_at: string;
+};
+
+export type RosterPosition = {
+  id: number;
+  branch_id: number;
+  title: string;
+  description: string | null;
+  display_order: number;
+  active: number;
+  created_at: string;
+};
+
+export type RosterAssignment = {
+  id: number;
+  branch_id: number;
+  assignment_date: string;  // YYYY-MM-DD
+  position_id: number;
+  user_id: number;
+  shift_code_id: number;
+  created_by: number | null;
+  created_at: string;
+  updated_by: number | null;
+  updated_at: string | null;
 };
 
 export type User = {

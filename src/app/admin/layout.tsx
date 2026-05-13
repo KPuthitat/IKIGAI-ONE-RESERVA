@@ -86,6 +86,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/admin/persona", label: t(lang, "admin.persona.nav.dashboard") },
         { href: "/admin/persona/employees", label: t(lang, "admin.persona.nav.employees") },
+        { href: "/admin/persona/roster", label: t(lang, "admin.persona.nav.roster") },
         { href: "/admin/persona/timesheets", label: t(lang, "admin.persona.nav.timesheets") },
         { href: "/admin/persona/timesheets/monthly", label: t(lang, "admin.persona.nav.monthlyTimesheets") },
         { href: "/admin/persona/payroll", label: t(lang, "admin.persona.nav.payroll") },

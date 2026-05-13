@@ -2105,6 +2105,82 @@ export function dailyAttendanceSummaryFlex(
   };
 }
 
+// ── Roster published / updated Flex (TC-R) ────────────────────────
+//
+// One-line announcement card the supervisor sends when the monthly
+// roster is ready, or when it gets revised post-publish. The card
+// links staff back to /staff/persona/calendar (or the LIFF URL) so
+// they can read their own assignments. Intentionally minimal — the
+// full schedule lives in the app, not in the chat.
+
+export type RosterPublishedFlexArgs = {
+  branchName: string;
+  yearMonth: string;        // YYYY-MM Bangkok
+  kind: "publish" | "edit"; // first publish vs post-edit notice
+  note: string | null;      // optional change summary the supervisor types in
+  calendarUrl: string;      // deep link to /staff/persona/calendar
+  headerColor?: string | null;
+};
+
+export function rosterPublishedFlex(args: RosterPublishedFlexArgs): LineFlexMessage {
+  const headerColor = args.headerColor || COLOR_INK_700;
+  const title = args.kind === "publish"
+    ? `📅 ตารางงานเดือน ${args.yearMonth} พร้อมแล้ว`
+    : `✏️ ตารางงานเดือน ${args.yearMonth} ถูกแก้ไข`;
+  const subtitle = args.kind === "publish"
+    ? "หัวหน้างานเผยแพร่ตารางมอบหมายงานของเดือนนี้แล้ว"
+    : "หัวหน้างานปรับปรุงตารางหลังเผยแพร่ — กรุณาเช็คอีกครั้ง";
+  const bubble = {
+    type: "bubble", size: "kilo",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: headerColor, paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "PERSONA • ROSTER", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+          ]
+        },
+        {
+          type: "text", text: title, color: "#ffffff",
+          size: "lg", weight: "bold", wrap: true, margin: "md"
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "text", text: subtitle, size: "sm", color: COLOR_TEXT_MUTED, wrap: true, margin: "xs" },
+        ...(args.note ? [
+          { type: "separator", margin: "md", color: COLOR_DIVIDER },
+          { type: "text", text: "หมายเหตุ", size: "xs", color: COLOR_LABEL, margin: "sm" },
+          { type: "text", text: args.note, size: "sm", color: COLOR_TEXT_DARK, wrap: true, margin: "xs" }
+        ] : [])
+      ]
+    },
+    footer: {
+      type: "box", layout: "vertical", spacing: "sm", paddingAll: "12px",
+      contents: [{
+        type: "button", style: "primary",
+        color: COLOR_BRAND,
+        action: { type: "uri", label: "ดูตารางของฉัน", uri: args.calendarUrl }
+      }]
+    },
+    styles: {
+      header: { backgroundColor: headerColor },
+      body: { backgroundColor: "#ffffff" }
+    }
+  };
+  return {
+    type: "flex",
+    altText: `${title} · ${args.branchName}`,
+    contents: bubble
+  };
+}
+
 /** Push a daily report Flex card to the branch's staff group / fallback
  *  user IDs. Mirrors notifyStaff() — group preferred, per-user as
  *  legacy fallback. Fire-and-forget; no logging table for daily reports

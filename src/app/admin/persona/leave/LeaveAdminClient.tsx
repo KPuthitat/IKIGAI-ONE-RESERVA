@@ -49,6 +49,13 @@ export type LeaveAdminRow = {
   ref_no?: string | null;
   replaces_ref_no?: string | null;
   resubmitted_as_ref_no?: string | null;
+  // TC-R: roster-conflict warning surfaced on the approval modal.
+  // Server pre-computes the affected dates so we don't run a DB
+  // round-trip from the client when admin opens the modal.
+  rosterConflict?: {
+    affectedDates: string[];            // dates in the leave range with an assignment
+    minStaffOnAffectedDay: number | null; // smallest staff count across those days (others still on)
+  } | null;
 };
 
 type StatusFilter = "pending" | "approved" | "rejected" | "cancelled" | "revision_requested" | "all" | "special";
@@ -254,6 +261,20 @@ export default function LeaveAdminClient({
                     {r.decision_note && r.decided_by_name && (
                       <div className="text-xs text-slate-600 mt-1.5 bg-slate-100 px-2 py-1 rounded">
                         <span className="font-medium">{r.decided_by_name}:</span> {r.decision_note}
+                      </div>
+                    )}
+                    {/* TC-R roster-conflict warning — surfaces before
+                        the approve button so admin can arrange a swap
+                        rather than approve blindly. */}
+                    {r.rosterConflict && r.rosterConflict.affectedDates.length > 0 && (
+                      <div className="text-xs mt-1.5 bg-amber-50 border border-amber-300 text-amber-800 px-2 py-1.5 rounded">
+                        ⚠ {t("admin.persona.leave.rosterConflict", {
+                          n: r.rosterConflict.affectedDates.length,
+                          others: r.rosterConflict.minStaffOnAffectedDay ?? 0
+                        })}
+                        <div className="text-[10px] text-amber-700 mt-0.5 font-mono">
+                          {r.rosterConflict.affectedDates.join(", ")}
+                        </div>
                       </div>
                     )}
                   </div>

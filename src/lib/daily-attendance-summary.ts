@@ -24,6 +24,7 @@
 
 import { getDb, type Branch } from "./db";
 import { computeLateness } from "./late-detection";
+import { effectiveShiftStartByUserForDate } from "./roster";
 
 export type AttendanceCategory = "on_time" | "late" | "on_leave" | "absent";
 
@@ -96,11 +97,18 @@ export function buildDailyAttendanceRoster(
   const leaveByUser = new Map<number, string>();
   for (const r of leaveRows) leaveByUser.set(r.user_id, r.type);
 
+  // Roster overlay — when the supervisor has assigned shifts for
+  // today, the roster's start time wins over users.shift_start_time
+  // (which becomes a legacy fallback for staff still on the old
+  // per-user static schedule).
+  const rosterShiftByUser = effectiveShiftStartByUserForDate(branchId, dateBkk, staffIds);
+
   // 4) Bucket each staff member
   return staff.map((s) => {
     const inTs = inByUser.get(s.user_id) ?? null;
     if (inTs) {
-      const r = computeLateness(inTs, s.shift_start_time);
+      const effectiveStart = rosterShiftByUser.get(s.user_id) ?? s.shift_start_time;
+      const r = computeLateness(inTs, effectiveStart);
       if (r.computable && r.isLate) {
         return {
           userId: s.user_id,

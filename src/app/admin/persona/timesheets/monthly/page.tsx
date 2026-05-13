@@ -19,7 +19,11 @@ import { requireAdmin } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
-import { monthlyLateStats } from "@/lib/late-detection";
+import {
+  monthlyLateStatsRoster,
+  shiftStartByDateForUserMonth,
+  scheduledMinutesByUserForMonth
+} from "@/lib/roster";
 
 export const dynamic = "force-dynamic";
 
@@ -96,14 +100,27 @@ export default function MonthlyTimesheetPage({
     insByUser.get(r.user_id)!.push({ ts: r.ts });
   }
 
-  // Workdays in this month = lastDay (we don't subtract weekly_off
-  // days here; the conservative assumption gives every staff member
-  // the maximum benefit of the doubt on the 20% threshold).
-  const scheduledMinutes = lastDay * ASSUMED_SHIFT_MINUTES;
+  // Scheduled minutes — prefer the roster-assigned total (real shift
+  // hours minus breaks) over the conservative daysInMonth × 8h
+  // fallback. The roster lookup returns 0 for users who have no
+  // assignments that month; in that case we fall back to the legacy
+  // assumption so existing behaviour is preserved for branches that
+  // haven't filled in a roster yet.
+  const fallbackScheduledMinutes = lastDay * ASSUMED_SHIFT_MINUTES;
+  const userIds = employees.map((e) => e.user_id);
+  const rosterScheduledByUser = scheduledMinutesByUserForMonth(branch.id, month, userIds);
 
   const rows = employees.map((emp) => {
     const userIns = insByUser.get(emp.user_id) ?? [];
-    const stats = monthlyLateStats(userIns, emp.shift_start_time, scheduledMinutes);
+    const rosterShiftByDate = shiftStartByDateForUserMonth(branch.id, emp.user_id, month);
+    const rosterMin = rosterScheduledByUser.get(emp.user_id) ?? 0;
+    const scheduledMinutes = rosterMin > 0 ? rosterMin : fallbackScheduledMinutes;
+    const stats = monthlyLateStatsRoster(
+      userIns,
+      rosterShiftByDate,
+      emp.shift_start_time,    // fallback when roster has no row for that date
+      scheduledMinutes
+    );
     return {
       ...emp,
       inCount: userIns.length,

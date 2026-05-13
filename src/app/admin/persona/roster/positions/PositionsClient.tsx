@@ -1,0 +1,189 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { apiUrl } from "@/lib/url";
+import { useLang } from "@/lib/LangProvider";
+import type { RosterPosition } from "@/lib/db";
+
+export default function PositionsClient({ positions }: { positions: RosterPosition[] }) {
+  const router = useRouter();
+  const { t } = useLang();
+  const [pending, startTransition] = useTransition();
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function refresh() {
+    startTransition(() => router.refresh());
+  }
+
+  async function save(body: Record<string, unknown>, method: "POST" | "PATCH") {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/admin/persona/roster/position"), {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        setErr(j.error ?? t("common.error"));
+        return false;
+      }
+      return true;
+    } catch {
+      setErr(t("common.error"));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(id: number) {
+    if (!confirm(t("admin.persona.roster.positions.confirmDelete"))) return;
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/roster/position?id=${id}`), { method: "DELETE" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setErr(j.error ?? t("common.error")); return; }
+      refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="font-bold text-slate-800 text-sm">
+          {t("admin.persona.roster.positions.listTitle")} ({positions.length})
+        </h2>
+        {!creating && (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="text-xs px-3 py-1.5 rounded border border-brand text-brand hover:bg-rose-50 font-bold"
+          >
+            + {t("admin.persona.roster.positions.add")}
+          </button>
+        )}
+      </div>
+
+      {err && <div className="text-xs text-rose-600">✗ {err}</div>}
+
+      <div className="space-y-2">
+        {creating && (
+          <PositionRow
+            key="new"
+            position={null}
+            onCancel={() => setCreating(false)}
+            onSave={async (body) => {
+              if (await save(body, "POST")) {
+                setCreating(false);
+                refresh();
+              }
+            }}
+            busy={busy}
+            t={t}
+          />
+        )}
+        {positions.map((p) => (
+          <PositionRow
+            key={p.id}
+            position={p}
+            editing={editingId === p.id}
+            onStartEdit={() => setEditingId(p.id)}
+            onCancel={() => setEditingId(null)}
+            onDelete={() => remove(p.id)}
+            onSave={async (body) => {
+              if (await save({ id: p.id, ...body }, "PATCH")) {
+                setEditingId(null);
+                refresh();
+              }
+            }}
+            busy={busy}
+            t={t}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PositionRow({
+  position, editing, onStartEdit, onCancel, onDelete, onSave, busy, t
+}: {
+  position: RosterPosition | null;
+  editing?: boolean;
+  onStartEdit?: () => void;
+  onCancel: () => void;
+  onDelete?: () => void;
+  onSave: (body: Record<string, unknown>) => void;
+  busy: boolean;
+  t: (k: string) => string;
+}) {
+  const isNew = position === null;
+  const isEditing = isNew || editing;
+  const [title, setTitle] = useState(position?.title ?? "");
+  const [desc, setDesc] = useState(position?.description ?? "");
+  const [order, setOrder] = useState<number>(position?.display_order ?? 99);
+
+  if (!isEditing && position) {
+    return (
+      <div className="border border-slate-200 rounded-lg p-3 flex items-start gap-3">
+        <div className="text-xs font-mono text-slate-400 w-6 text-right pt-0.5">
+          {position.display_order}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-slate-800 text-sm">{position.title}</div>
+          {position.description && (
+            <div className="text-xs text-slate-500 mt-0.5 whitespace-pre-wrap">
+              {position.description}
+            </div>
+          )}
+        </div>
+        <div className="flex-shrink-0 flex gap-2">
+          <button type="button" onClick={onStartEdit}
+            className="text-xs text-brand hover:underline">
+            {t("common.edit")}
+          </button>
+          <button type="button" onClick={onDelete}
+            className="text-xs text-rose-500 hover:underline">
+            {t("common.delete")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-[1.5px] border-brand/50 bg-rose-50/30 rounded-lg p-3 space-y-2">
+      <div className="flex gap-2 items-center">
+        <input type="number" className="input w-20 text-sm"
+          value={order} onChange={(e) => setOrder(Number(e.target.value) || 0)} />
+        <input className="input flex-1 text-sm font-bold"
+          placeholder={t("admin.persona.roster.positions.titlePlaceholder")}
+          value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} />
+      </div>
+      <textarea className="input text-sm" rows={3}
+        placeholder={t("admin.persona.roster.positions.descPlaceholder")}
+        value={desc} onChange={(e) => setDesc(e.target.value)} maxLength={1000} />
+      <p className="text-[10px] text-slate-500">
+        {t("admin.persona.roster.positions.descHint")}
+      </p>
+      <div className="flex gap-2">
+        <button type="button" disabled={busy || !title.trim()}
+          onClick={() => onSave({ title, description: desc || null, display_order: order })}
+          className="flex-1 py-1.5 rounded bg-brand text-white text-xs font-bold disabled:opacity-50">
+          {busy ? "…" : t("common.save")}
+        </button>
+        <button type="button" disabled={busy} onClick={onCancel}
+          className="flex-1 py-1.5 rounded border border-slate-300 text-slate-600 text-xs">
+          {t("common.cancel")}
+        </button>
+      </div>
+    </div>
+  );
+}
