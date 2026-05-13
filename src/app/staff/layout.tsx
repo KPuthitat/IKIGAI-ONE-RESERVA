@@ -104,20 +104,16 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       <Sidebar sections={sections} brand={<StaffSidebarBrand />} />
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-ink-gradient text-white shadow-md">
-          {/* Row 1 — brand + user controls. Matches admin layout's
-              stacked pattern: brand on top, signed-in user name on
-              the line below (left column); language toggle + logout
-              on the right column, top-aligned to the brand's
-              baseline. flex-wrap drops the right column below on
-              very narrow widths. */}
-          <div className="px-4 pt-3 pb-2 pl-16 flex items-start gap-3 flex-wrap">
-            <div className="flex-1 min-w-0">
+          {/* Row 1 — single-row topbar, matches admin layout. See
+              admin/layout.tsx for the narrow-screen strategy. */}
+          <div className="px-4 pt-3 pb-2 pl-16 flex items-center gap-2 sm:gap-3">
+            <div className="flex-1 min-w-0 overflow-hidden">
               <HeaderBrand role="staff" />
-              <div className="text-xs text-white/60 mt-1 truncate">
-                {user.display_name}
-              </div>
             </div>
-            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            <div className="hidden md:block text-xs text-white/60 truncate max-w-[180px] flex-shrink-0">
+              {user.display_name}
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
               <LangToggle variant="dark" />
               <LogoutButton />
             </div>

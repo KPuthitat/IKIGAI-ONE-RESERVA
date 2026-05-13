@@ -21,8 +21,13 @@ export default function HeaderBrand({ role }: { role: "admin" | "staff" }) {
   );
   const moduleName = moduleEntry?.[1];
 
+  // Responsive sizing — slightly tighter on mobile to keep the
+  // single-row topbar from overflowing on ~360px viewports. The
+  // "/ role" suffix hides below sm because role context is already
+  // implied by which sidebar the user is in (admin vs staff); on
+  // wider screens it returns for the full hierarchy reading.
   return (
-    <div className="flex items-baseline gap-1 whitespace-nowrap text-base">
+    <div className="flex items-baseline gap-1 whitespace-nowrap text-sm sm:text-base">
       <Link href={`/${role}`} className="brand-wordmark text-white">
         IKIGAI OS
       </Link>
@@ -34,8 +39,8 @@ export default function HeaderBrand({ role }: { role: "admin" | "staff" }) {
           </span>
         </>
       )}
-      <span className="text-white/40 ml-2">/</span>
-      <span className="text-white/60 font-light tracking-[1.5px] uppercase">
+      <span className="text-white/40 ml-2 hidden sm:inline">/</span>
+      <span className="text-white/60 font-light tracking-[1.5px] uppercase hidden sm:inline">
         {role}
       </span>
     </div>
