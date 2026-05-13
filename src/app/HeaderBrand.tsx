@@ -56,6 +56,15 @@ export default function HeaderBrand({ role }: { role: "admin" | "staff" }) {
     return () => window.removeEventListener("sidebar-state-change", handler);
   }, []);
 
+  // Role label varies by whether a module is selected. On the
+  // module-picker landing pages (/admin, /staff) where moduleName
+  // is undefined we expand the role into "ADMIN PORTAL" /
+  // "STAFF PORTAL" so the brand reads as a complete identity by
+  // itself. Once the user drills into a module the suffix drops
+  // back to just the role, since the module name carries the
+  // navigation context.
+  const roleLabel = moduleName ? role : `${role} portal`;
+
   // ── Compact (sidebar open) ─────────────────────────────────────
   if (sidebarOpen) {
     return (
@@ -73,7 +82,7 @@ export default function HeaderBrand({ role }: { role: "admin" | "staff" }) {
         )}
         <span className="text-white/40 ml-2 hidden sm:inline">/</span>
         <span className="text-white/60 font-light tracking-[1.5px] uppercase hidden sm:inline">
-          {role}
+          {roleLabel}
         </span>
       </div>
     );
@@ -86,7 +95,7 @@ export default function HeaderBrand({ role }: { role: "admin" | "staff" }) {
   // subtitle, just sized one step up to reflect the topbar's wider
   // canvas. Keeps the page from feeling like two different brand
   // identities depending on sidebar state.
-  const subtitle = moduleName ? `${moduleName} · ${role}` : role;
+  const subtitle = moduleName ? `${moduleName} · ${role}` : roleLabel;
   return (
     <Link href={`/${role}`} className="block leading-tight">
       <div className="brand-wordmark text-white text-xl sm:text-2xl md:text-3xl">
