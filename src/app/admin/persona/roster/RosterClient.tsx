@@ -368,7 +368,7 @@ function AssignModal({
   onClose: () => void;
   onSave: (a: { date: string; positionId: number; userId: number; shiftCodeId: number }) => void;
   onClear: (a: { date: string; positionId: number }) => void;
-  t: (k: string) => string;
+  t: (k: string, vars?: Record<string, string | number>) => string;
 }) {
   const [userId, setUserId] = useState<number | "">(existing?.user_id ?? "");
   const [shiftCodeId, setShiftCodeId] = useState<number | "">(existing?.shift_code_id ?? "");
@@ -467,7 +467,7 @@ function PublishModal({
   onConfirm: () => void;
   onCancel: () => void;
   busy: boolean;
-  t: (k: string) => string;
+  t: (k: string, vars?: Record<string, string | number>) => string;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>

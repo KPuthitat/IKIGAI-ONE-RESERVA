@@ -122,7 +122,7 @@ function PositionRow({
   onDelete?: () => void;
   onSave: (body: Record<string, unknown>) => void;
   busy: boolean;
-  t: (k: string) => string;
+  t: (k: string, vars?: Record<string, string | number>) => string;
 }) {
   const isNew = position === null;
   const isEditing = isNew || editing;
