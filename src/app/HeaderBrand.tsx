@@ -1,24 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-// Adaptive topbar brand. Two visual states driven by sidebar visibility:
+// Topbar brand. Always single-line, regardless of sidebar state.
+// "IKIGAI OS • MODULE / ROLE" on inside-module pages, or
+// "IKIGAI OS / ROLE PORTAL" on the module-picker landing pages
+// (/admin, /staff) — the longer role suffix gives the brand a
+// proper title when there's no module name carrying the context.
 //
-//   • Sidebar OPEN  → compact single-line "IKIGAI OS • MODULE / ROLE"
-//     because the brand competes for horizontal space with the
-//     language toggle + logout button on the same row.
-//
-//   • Sidebar CLOSED → two-line masthead with a large IKIGAI OS
-//     wordmark and the MODULE / ROLE on a second line, both
-//     left-aligned. With the sidebar collapsed the header gains
-//     ~16 rem of horizontal real estate so the brand can fill it.
-//
-// State sync uses a CustomEvent dispatched by Sidebar (see
-// Sidebar.tsx's persist effect) plus an initial localStorage read.
-// We avoid a Context to keep the surrounding layout a pure server
-// component.
+// Mobile keeps just the wordmark + module so the row fits beside
+// the language toggle + logout button on ~360 px viewports; the
+// "/ role" suffix returns at sm.
 
 const MODULE_BY_PREFIX: Array<[string, string]> = [
   ["/admin/reserva", "RESERVA"],
@@ -29,8 +22,6 @@ const MODULE_BY_PREFIX: Array<[string, string]> = [
   ["/staff/ascenda", "ASCENDA"]
 ];
 
-const SIDEBAR_STORAGE_KEY = "sidebar-open";
-
 export default function HeaderBrand({ role }: { role: "admin" | "staff" }) {
   const pathname = usePathname() || "";
   const moduleEntry = MODULE_BY_PREFIX.find(([prefix]) =>
@@ -38,72 +29,28 @@ export default function HeaderBrand({ role }: { role: "admin" | "staff" }) {
   );
   const moduleName = moduleEntry?.[1];
 
-  // Initial render always assumes sidebar OPEN (the storage default)
-  // so SSR HTML and the first client render agree — useEffect then
-  // reconciles with the real localStorage value, and the event
-  // listener keeps it live thereafter.
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem(SIDEBAR_STORAGE_KEY);
-      if (v === "0") setSidebarOpen(false);
-    } catch { /* ignore */ }
-    const handler = (e: Event) => {
-      const ce = e as CustomEvent<{ open: boolean }>;
-      if (typeof ce.detail?.open === "boolean") setSidebarOpen(ce.detail.open);
-    };
-    window.addEventListener("sidebar-state-change", handler);
-    return () => window.removeEventListener("sidebar-state-change", handler);
-  }, []);
-
-  // Role label varies by whether a module is selected. On the
-  // module-picker landing pages (/admin, /staff) where moduleName
-  // is undefined we expand the role into "ADMIN PORTAL" /
-  // "STAFF PORTAL" so the brand reads as a complete identity by
-  // itself. Once the user drills into a module the suffix drops
-  // back to just the role, since the module name carries the
-  // navigation context.
+  // Module-picker landing pages get the longer "ROLE PORTAL"
+  // suffix; drilled-in pages stay terse since the module name
+  // already carries the context.
   const roleLabel = moduleName ? role : `${role} portal`;
 
-  // ── Compact (sidebar open) ─────────────────────────────────────
-  if (sidebarOpen) {
-    return (
-      <div className="flex items-baseline gap-1 whitespace-nowrap text-sm sm:text-base">
-        <Link href={`/${role}`} className="brand-wordmark text-white">
-          IKIGAI OS
-        </Link>
-        {moduleName && (
-          <>
-            <span className="text-white/40 px-0.5">•</span>
-            <span className="text-white/85 font-light tracking-[0.5px]">
-              {moduleName}
-            </span>
-          </>
-        )}
-        <span className="text-white/40 ml-2 hidden sm:inline">/</span>
-        <span className="text-white/60 font-light tracking-[1.5px] uppercase hidden sm:inline">
-          {roleLabel}
-        </span>
-      </div>
-    );
-  }
-
-  // ── Masthead (sidebar closed) ──────────────────────────────────
-  // Mirrors the sidebar brand's typographic system so that when the
-  // sidebar collapses the topbar visually picks up where the sidebar
-  // brand left off — same wordmark face, same uppercase-tracked
-  // subtitle, just sized one step up to reflect the topbar's wider
-  // canvas. Keeps the page from feeling like two different brand
-  // identities depending on sidebar state.
-  const subtitle = moduleName ? `${moduleName} · ${role}` : roleLabel;
   return (
-    <Link href={`/${role}`} className="block leading-tight">
-      <div className="brand-wordmark text-white text-xl sm:text-2xl md:text-3xl">
+    <div className="flex items-baseline gap-1 whitespace-nowrap text-sm sm:text-base">
+      <Link href={`/${role}`} className="brand-wordmark text-white">
         IKIGAI OS
-      </div>
-      <div className="text-[10px] tracking-[2px] text-white/50 uppercase mt-1">
-        {subtitle}
-      </div>
-    </Link>
+      </Link>
+      {moduleName && (
+        <>
+          <span className="text-white/40 px-0.5">•</span>
+          <span className="text-white/85 font-light tracking-[0.5px]">
+            {moduleName}
+          </span>
+        </>
+      )}
+      <span className="text-white/40 ml-2 hidden sm:inline">/</span>
+      <span className="text-white/60 font-light tracking-[1.5px] uppercase hidden sm:inline">
+        {roleLabel}
+      </span>
+    </div>
   );
 }
