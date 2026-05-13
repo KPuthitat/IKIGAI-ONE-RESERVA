@@ -823,7 +823,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.timeCert.rejectSubmit": "ส่งคำปฏิเสธ",
     "admin.persona.nav.timeCert": "คำขอรับรองเวลา",
     "staff.persona.nav.timeCert": "ขอรับรองเวลา",
-    "admin.persona.timesheets.monthly.title": "ตารางงานพนักงาน รายเดือน",
+    "admin.persona.timesheets.monthly.title": "บันทึกเข้าออกงาน รายเดือน",
     "admin.persona.timesheets.monthly.subtitle": "สรุปการมาสาย + ความพร้อมจ่ายเซอร์วิสชาร์จของพนักงานในเดือนที่เลือก",
     "admin.persona.timesheets.monthly.backToDaily": "กลับไป Timesheet รายวัน",
     "admin.persona.timesheets.monthly.monthPicker": "เลือกเดือน",
@@ -844,7 +844,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.timesheets.monthly.rule.sc20pct": "• สายเกิน 20% ของเวลางานทั้งเดือน = งดจ่ายเซอร์วิสชาร์จ",
     "admin.persona.timesheets.monthly.rule.ptDeduct": "• พาร์ทไทม์: สายไม่เกิน 5 นาที = เต็มเวลา · เกิน 5 นาที = หักเป็นนาที (แสดงในรายงาน payroll)",
     "admin.persona.timesheets.monthly.rule.shiftSetHint": "หมายเหตุ: ถ้ายังไม่ได้ตั้ง 'เวลาเข้างาน' ของพนักงาน ระบบจะไม่คำนวณการมาสาย — ตั้งได้ที่ /admin/persona/employees",
-    "admin.persona.nav.monthlyTimesheets": "ตารางงานพนักงาน (รายเดือน)",
+    "admin.persona.nav.monthlyTimesheets": "บันทึกเข้าออกงาน (รายเดือน)",
 
     // Service Charge admin page
     "admin.persona.svc.title": "เซอร์วิสชาร์จ",
@@ -1121,7 +1121,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     // Admin PERSONA — module sub-nav + dashboard + features
     "admin.persona.nav.dashboard": "ภาพรวม",
     "admin.persona.nav.employees": "พนักงาน",
-    "admin.persona.nav.timesheets": "ตารางงานพนักงาน",
+    "admin.persona.nav.timesheets": "บันทึกเข้าออกงาน",
     "admin.persona.nav.payroll": "เงินเดือน",
     "admin.persona.nav.svc": "เซอร์วิสชาร์จ",
     "admin.persona.nav.leave": "การลา",
@@ -1696,7 +1696,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.payroll.detail.transferNote": "★ ยอดประกันสังคมรวมส่วนนายจ้างที่ต้องสมทบเท่ากับลูกจ้าง — ตรวจสอบก่อนนำส่งจริง",
 
     // admin/persona/timesheets — แก้/ลบ time entries (Phase 1B v3)
-    "admin.persona.timesheets.title": "ตารางงานพนักงาน",
+    "admin.persona.timesheets.title": "บันทึกเข้าออกงาน",
     "admin.persona.timesheets.subtitle": "ดูและแก้ไขเวลาเข้า-ออกของพนักงาน (มี audit log)",
     "admin.persona.timesheets.fromDate": "วันที่เริ่ม",
     "admin.persona.timesheets.toDate": "วันที่สิ้นสุด",
