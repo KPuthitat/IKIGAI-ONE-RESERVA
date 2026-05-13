@@ -101,7 +101,12 @@ export function monthlyLateStats(
   totalMinutesLate: number;
   ratio: number;
   scEligible: boolean;
+  computable: boolean;
 } {
+  // computable is false when the user has no shift_start_time set —
+  // the page renders "—" for late columns in that case rather than
+  // misleading zeros that look like "always on time".
+  const computable = shiftStart != null && shiftStart.trim() !== "";
   let lateCount = 0;
   let totalMinutesLate = 0;
   for (const e of entries) {
@@ -116,6 +121,7 @@ export function monthlyLateStats(
     lateCount,
     totalMinutesLate,
     ratio,
-    scEligible: ratio <= SC_INELIGIBILITY_THRESHOLD
+    scEligible: ratio <= SC_INELIGIBILITY_THRESHOLD,
+    computable
   };
 }
