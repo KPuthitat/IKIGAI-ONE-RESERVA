@@ -285,12 +285,12 @@ export default function PayrollHubPage() {
             🚧 {t(lang, "admin.persona.payroll.hub.phase3Note")}
           </p>
         </div>
-        <Link href="/admin/persona/service-charge" className="card opacity-60 block hover:opacity-80 transition">
-          <h3 className="font-medium text-slate-700">
+        <Link href="/admin/persona/service-charge" className="card block hover:shadow-lg transition">
+          <h3 className="font-medium text-slate-800">
             {t(lang, "admin.persona.payroll.hub.svcTitle")}
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            🚧 {t(lang, "admin.persona.payroll.hub.phase4Note")}
+            {t(lang, "admin.persona.svc.subtitle")}
           </p>
         </Link>
       </div>

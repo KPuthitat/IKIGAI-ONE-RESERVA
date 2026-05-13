@@ -336,7 +336,8 @@ export default function LeaveAdminClient({
 }
 
 function DecisionModal({
-  decision, note, onChange, onConfirm, onCancel, busy, translate, nsPrompt
+  decision, note, onChange, onConfirm, onCancel, busy, translate, nsPrompt,
+  forfeitSvc, onForfeitSvcChange
 }: {
   decision: "approved" | "rejected" | "revision_requested";
   note: string;
@@ -346,6 +347,11 @@ function DecisionModal({
   busy: boolean;
   translate: (key: string) => string;
   nsPrompt: string; // "admin.persona.leave" หรือ "admin.persona.resignation"
+  // Optional — when both supplied, renders a "งด Service Charge"
+  // checkbox below the note field for resignation approvals. The
+  // leave flow leaves these undefined so the checkbox stays hidden.
+  forfeitSvc?: boolean;
+  onForfeitSvcChange?: (v: boolean) => void;
 }) {
   const promptKey =
     decision === "approved" ? `${nsPrompt}.notePromptApprove` :
@@ -374,6 +380,29 @@ function DecisionModal({
           maxLength={500}
           autoFocus
         />
+        {/* Resignation-only: SVC forfeiture toggle. Shown only when
+            the caller passes both forfeitSvc + handler, AND the
+            decision is "approved" (forfeiting an SVC on a rejected
+            request is meaningless). */}
+        {decision === "approved" && onForfeitSvcChange && (
+          <label className="flex items-start gap-2 cursor-pointer text-sm text-slate-700 select-none pt-1">
+            <input
+              type="checkbox"
+              className="w-4 h-4 mt-0.5"
+              checked={!!forfeitSvc}
+              onChange={(e) => onForfeitSvcChange(e.target.checked)}
+              disabled={busy}
+            />
+            <span>
+              <span className="font-bold text-rose-700">
+                {translate("admin.persona.resignation.forfeitSvc.label")}
+              </span>
+              <span className="block text-[11px] text-slate-500 mt-0.5">
+                {translate("admin.persona.resignation.forfeitSvc.hint")}
+              </span>
+            </span>
+          </label>
+        )}
         <div className="flex gap-2 pt-1">
           <button
             type="button"

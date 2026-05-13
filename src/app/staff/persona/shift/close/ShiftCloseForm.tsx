@@ -24,6 +24,10 @@ export default function ShiftCloseForm({
   const { t } = useLang();
 
   const [closingAmount, setClosingAmount] = useState<string>("");
+  // Service Charge collected from POS today. Optional — empty string
+  // = staff skipped (admin can fill at /admin/persona/service-charge).
+  // Persisted into daily_service_charge via the daily-report API.
+  const [svcAmount, setSvcAmount] = useState<string>("");
   const [checked, setChecked] = useState<Record<number, boolean>>(() =>
     Object.fromEntries(checklistItems.map((it) => [it.id, false]))
   );
@@ -73,6 +77,7 @@ export default function ShiftCloseForm({
     setBusy(true);
     try {
       const closingParsed = parseAmount(closingAmount);
+      const svcParsed = parseAmount(svcAmount);
       const checklistPayload = checklistItems.map((it) => {
         const note = (notes[it.id] || "").trim();
         return {
@@ -90,6 +95,11 @@ export default function ShiftCloseForm({
           branch_id: branchId,
           data: {
             closing_drawer_amount: closingParsed,
+            // Send SVC only when staff actually filled it. null on the
+            // server means "don't touch daily_service_charge"; an
+            // explicit 0 means "we collected nothing today" and is
+            // recorded for transparency.
+            service_charge_amount: svcParsed,
             checklist: checklistPayload
           }
         })
@@ -161,6 +171,22 @@ export default function ShiftCloseForm({
             onChange={(e) => setClosingAmount(e.target.value)} />
           <p className="text-[10px] text-slate-400 mt-1">
             {t("staff.persona.shift.close.field.closingDrawerHint")}
+          </p>
+        </div>
+
+        {/* Service Charge — ผู้ปิดกะกรอกยอด SVC จาก POS ของวันนี้.
+            ใช้คำนวณส่วนแบ่งให้พนักงานสาขานี้ในเดือนนี้ (60% สำหรับพนักงาน
+            หารตาม ชม.ทำงาน, 40% เข้าบริษัท). เว้นว่างได้ถ้ายังไม่รู้ยอด —
+            แอดมินจะกรอกย้อนหลังที่ /admin/persona/service-charge ได้. */}
+        <div>
+          <label className="label">{t("staff.persona.shift.close.field.svcAmount")}</label>
+          <input type="number" inputMode="decimal" min={0} step="0.01"
+            className="input"
+            value={svcAmount}
+            placeholder="0.00"
+            onChange={(e) => setSvcAmount(e.target.value)} />
+          <p className="text-[10px] text-slate-400 mt-1">
+            {t("staff.persona.shift.close.field.svcAmountHint")}
           </p>
         </div>
       </div>

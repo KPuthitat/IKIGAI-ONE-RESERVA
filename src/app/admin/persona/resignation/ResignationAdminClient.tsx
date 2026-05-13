@@ -95,10 +95,15 @@ export default function ResignationAdminClient({
   type DecideTarget = { id: number; decision: "approved" | "rejected" | "revision_requested" };
   const [decideTarget, setDecideTarget] = useState<DecideTarget | null>(null);
   const [decideNote, setDecideNote] = useState("");
+  // forfeitSvc — admin's per-decision choice when approving a
+  // resignation. true = staff loses this month's SVC accrual to the
+  // company. Defaults to false so the safe path is "keep paying".
+  const [forfeitSvc, setForfeitSvc] = useState(false);
 
   function decide(id: number, decision: DecideTarget["decision"]) {
     setDecideTarget({ id, decision });
     setDecideNote("");
+    setForfeitSvc(false);
   }
 
   async function confirmDecide() {
@@ -118,7 +123,14 @@ export default function ResignationAdminClient({
       const res = await fetch(apiUrl(`/api/admin/persona/resignation/${id}/decide`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, note: decideNote.trim() || undefined })
+        body: JSON.stringify({
+          decision,
+          note: decideNote.trim() || undefined,
+          // forfeit_svc is meaningful only when approving — the API
+          // ignores it for reject/revision, but sending it here keeps
+          // the contract symmetric.
+          forfeit_svc: decision === "approved" ? forfeitSvc : false
+        })
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) {
@@ -356,6 +368,8 @@ export default function ResignationAdminClient({
           busy={busyId === decideTarget.id}
           translate={t}
           nsPrompt="admin.persona.resignation"
+          forfeitSvc={forfeitSvc}
+          onForfeitSvcChange={setForfeitSvc}
         />
       )}
       {ConfirmDialog}

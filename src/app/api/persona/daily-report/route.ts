@@ -6,6 +6,7 @@ import {
   shiftOpenFlex, shiftCloseFlex, readinessFlex, notifyToStaffGroup
 } from "@/lib/line";
 import { todayBkk } from "@/lib/time";
+import { upsertDailyServiceCharge } from "@/lib/service-charge";
 
 // POST /api/persona/daily-report
 //
@@ -49,6 +50,11 @@ const ShiftOpenData = z.object({
 });
 const ShiftCloseData = z.object({
   closing_drawer_amount: z.number().min(0).max(10_000_000).nullable(),
+  // POS-collected Service Charge for the day. Optional (null = staff
+  // skipped the field; admin will need to fill via /admin/persona/service-charge).
+  // 0 is allowed (e.g. closed for renovation, but you still ran the
+  // shift_close form). Cap at 999_999 baht/day — matches the admin route.
+  service_charge_amount: z.number().min(0).max(999_999).nullable().optional(),
   checklist: z.array(ChecklistEntry).max(50)
 });
 // Readiness reports (11:30 + 16:00) — 3 free-text sections + alcohol
@@ -180,6 +186,40 @@ export async function POST(req: Request) {
     isRevision ? `daily_report.resubmit.${type}` : `daily_report.submit.${type}`,
     id
   );
+
+  // Service Charge — when staff submits a shift_close report with the
+  // service_charge_amount field set, upsert into daily_service_charge
+  // so the monthly SVC engine has the data without a separate admin
+  // entry step. Audit:
+  //   • daily_service_charge.entered_by_user_id = the closing staff
+  //   • persona_activity_log gets svc.daily.create/.update too
+  // We tolerate null (staff opted to skip; admin can fill later) and
+  // 0 (e.g. closed all day for renovation). A revision overwrites the
+  // existing row by date — the entered_by/audit columns preserve the
+  // history via persona_activity_log.
+  if (type === "shift_close") {
+    const d = v.data as z.infer<typeof ShiftCloseData>;
+    if (d.service_charge_amount != null) {
+      try {
+        const svc = upsertDailyServiceCharge({
+          branchId: branch.id,
+          date: report_date,
+          amountBaht: d.service_charge_amount,
+          userId: user.id,
+          dailyReportId: id
+        });
+        logPersonaAction(
+          user.id,
+          svc.created ? "svc.daily.create" : "svc.daily.update",
+          svc.id
+        );
+      } catch (e) {
+        // Don't fail the whole report submission on an SVC hiccup;
+        // admin can re-enter from /admin/persona/service-charge.
+        console.error("svc upsert from shift_close failed", e);
+      }
+    }
+  }
 
   // Build + push the Flex card to the branch staff group. Fire-and-forget
   // so a LINE API hiccup doesn't block the form submission.

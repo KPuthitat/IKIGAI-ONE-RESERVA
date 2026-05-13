@@ -969,6 +969,53 @@ function runMigrations(db: Database.Database): void {
     WHERE status = 'pending';
   `);
 
+  // SVC — daily service-charge pot logged per branch per day.
+  //
+  // Source: admin or the closing-shift staff enters today's POS-collected
+  // service-charge amount. The shift_close form will surface a field
+  // that POSTs into this table, so the typical entry path is the
+  // closing-shift checklist (not a separate admin task).
+  //
+  // Distribution rules live in src/lib/service-charge.ts:
+  //   • split into 5 parts → 3 to staff pool, 2 to company
+  //   • staff pool divided proportionally to each staff's hours that day
+  //   • monthly view applies the 20%-late forfeiture from late-detection
+  //
+  // UNIQUE(branch_id, date) — exactly one row per branch per day.
+  // entered_by_user_id captures the original submitter (for fraud
+  // accountability) while updated_by_user_id + updated_at record the
+  // last admin correction. All writes also land in persona_activity_log
+  // with action='svc.daily.create'/'svc.daily.update' for the audit
+  // trail the user explicitly asked for.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daily_service_charge (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      amount_baht REAL NOT NULL,
+      entered_by_user_id INTEGER NOT NULL REFERENCES users(id),
+      entered_at TEXT NOT NULL,
+      updated_by_user_id INTEGER REFERENCES users(id),
+      updated_at TEXT,
+      daily_report_id INTEGER REFERENCES daily_reports(id) ON DELETE SET NULL,
+      UNIQUE(branch_id, date)
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_daily_svc_branch_date
+    ON daily_service_charge(branch_id, date);
+  `);
+
+  // forfeit_svc — set when admin approves a resignation_request and
+  // decides the resigning staff loses their service-charge accrual
+  // for that month (e.g. "ลาออกผิดกติกา"). The monthly SVC engine
+  // checks this flag to forfeit the user's whole-month allocation
+  // to the company side. Default 0 (preserved → staff still gets SVC).
+  const rrcolsForSvc = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;
+  if (!rrcolsForSvc.some((c) => c.name === "forfeit_svc")) {
+    db.exec("ALTER TABLE resignation_requests ADD COLUMN forfeit_svc INTEGER NOT NULL DEFAULT 0");
+  }
+
   // system_settings — singleton table for global configuration that
   // isn't branch-scoped. Today this holds the IKIGAI OS LINE OA push
   // credentials + the cross-branch staff group ID, used to route

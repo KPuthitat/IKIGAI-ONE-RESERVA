@@ -300,14 +300,9 @@ export default function AdminPersonaDashboard() {
         </div>
       )}
 
-      {/* Legacy card */}
-      <div className="card">
-        <h2 className="font-semibold mb-3">{t(lang, "admin.persona.legacy.title")}</h2>
-        <p className="text-sm text-slate-600 mb-4">{t(lang, "admin.persona.legacy.note")}</p>
-        <Link href="/admin/persona/legacy" className="btn-secondary inline-flex">
-          {t(lang, "admin.persona.comingSoon.openLegacy")}
-        </Link>
-      </div>
+      {/* Legacy card removed 2026-05-13 — all features now native.
+          /admin/persona/legacy URL still resolves during the
+          ~2-week transition period and can then be deleted. */}
     </div>
   );
 }
