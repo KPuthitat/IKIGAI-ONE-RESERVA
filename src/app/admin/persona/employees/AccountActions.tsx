@@ -35,7 +35,7 @@ export default function AccountActions({
   //   primaryLink — the LIFF-wrapped liff.line.me URL when LIFF is
   //     configured (preferred — auto-binds LINE userId on redeem).
   //     Falls back to direct URL when LIFF env isn't set.
-  //   directLink  — the plain /invite/<token> URL. Used as a
+  //   directLink  — the plain /persona/invite/<token> URL. Used as a
   //     fallback when the staff can't open in LINE (desktop, etc.).
   const [primaryLink, setPrimaryLink] = useState<string | null>(null);
   const [directLink, setDirectLink] = useState<string | null>(null);

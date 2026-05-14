@@ -37,9 +37,9 @@ export default function RedeemForm({
   const [err, setErr] = useState<string | null>(null);
 
   // Captured from sessionStorage when the user came through
-  // /invite-redirect (LIFF bridge). Empty if the user opened the
-  // /invite/<token> URL directly in a regular browser — in that
-  // case admin will need to bind line_user_id later. The captured
+  // /persona/invite (the LIFF bridge). Empty if the user opened the
+  // /persona/invite/<token> URL directly in a regular browser — in
+  // that case admin will need to bind line_user_id later. The captured
   // displayName is shown as a "✓ เชื่อม LINE ของ <name> แล้ว"
   // banner so the staff knows their LINE got linked automatically.
   const [lineUserId, setLineUserId] = useState<string>("");
@@ -83,7 +83,7 @@ export default function RedeemForm({
 
     setBusy(true);
     try {
-      const res = await fetch(apiUrl(`/api/invite/${token}`), {
+      const res = await fetch(apiUrl(`/api/persona/invite/${token}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -40,7 +40,7 @@ export default function RedirectClient({ liffId }: { liffId: string }) {
           setStatusMsg("เปิดในเบราว์เซอร์ปกติ — ข้ามไปกรอกข้อมูล");
           // Forward without LIFF after 1s so the user sees the
           // message briefly.
-          setTimeout(() => router.replace(`/invite/${token}`), 800);
+          setTimeout(() => router.replace(`/persona/invite/${token}`), 800);
         }
         return;
       }
@@ -51,7 +51,7 @@ export default function RedirectClient({ liffId }: { liffId: string }) {
         // to manual form. Common during local development.
         setStatus("no_liff");
         setStatusMsg("LIFF ยังไม่ได้ตั้งค่า — ข้ามไปกรอกข้อมูล");
-        setTimeout(() => router.replace(`/invite/${token}`), 800);
+        setTimeout(() => router.replace(`/persona/invite/${token}`), 800);
         return;
       }
 
@@ -70,13 +70,13 @@ export default function RedirectClient({ liffId }: { liffId: string }) {
         sessionStorage.setItem(STORAGE_KEY_NAME, profile.displayName ?? "");
         setStatus("ready");
         setStatusMsg("เชื่อม LINE สำเร็จ กำลังเปิดหน้าเชิญ...");
-        router.replace(`/invite/${token}`);
+        router.replace(`/persona/invite/${token}`);
       } catch (e) {
         // LIFF init / profile failed — fall through to manual form.
         if (cancelled) return;
         setStatus("no_liff");
         setStatusMsg("เชื่อม LINE ไม่สำเร็จ — ข้ามไปกรอกข้อมูล");
-        setTimeout(() => router.replace(`/invite/${token}`), 1200);
+        setTimeout(() => router.replace(`/persona/invite/${token}`), 1200);
       }
     }, 250);
 

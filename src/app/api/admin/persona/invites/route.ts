@@ -105,16 +105,16 @@ export async function POST(req: Request) {
   //   liff_url    — wrapped via liff.line.me. When the staff taps
   //                 this in LINE, the app intercepts, runs the LIFF
   //                 SDK, captures their LINE userId, and forwards
-  //                 to /invite/<token>. This is the URL admin
-  //                 SHOULD share by default.
+  //                 to /persona/invite/<token>. This is the URL
+  //                 admin SHOULD share by default.
   //
-  //   direct_url  — plain /invite/<token>. Falls back when LIFF
+  //   direct_url  — plain /persona/invite/<token>. Falls back when LIFF
   //                 isn't configured, or when the staff has lost
   //                 their LINE account and needs to redeem in a
   //                 desktop browser. Doesn't auto-bind LINE userId
   //                 (admin will need to paste it after the fact).
   const base = (process.env.NEXT_PUBLIC_PUBLIC_BASE_URL || "").replace(/\/$/, "");
-  const directUrl = `${base}/invite/${invite.token}`;
+  const directUrl = `${base}/persona/invite/${invite.token}`;
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID_INVITE;
   const liffUrl = liffId
     ? `https://liff.line.me/${liffId}?token=${invite.token}`

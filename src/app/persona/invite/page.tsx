@@ -1,10 +1,13 @@
-// /invite-redirect — public LIFF endpoint URL for the Staff Invite
-// flow.
+// /persona/invite — public LIFF endpoint URL for the Staff Invite
+// flow. Lives under /persona/ to make the URL self-describe its
+// domain (staff onboarding belongs to the PERSONA module, not to
+// RESERVA which is customer bookings).
 //
 // Why a redirect bridge instead of putting LIFF directly on
-// /invite/[token]: LINE Developers Console requires LIFF endpoints
-// to be a STATIC URL — we can't register a URL with a [token] path
-// param. So the LIFF app's endpoint URL is this page, which:
+// /persona/invite/[token]: LINE Developers Console requires LIFF
+// endpoints to be a STATIC URL — we can't register a URL with a
+// [token] path param. So the LIFF app's endpoint URL is this page,
+// which:
 //
 //   1. Reads ?token=<x> from its own URL (LIFF preserves query
 //      params when forwarding from liff.line.me/<liffId>?token=<x>)
@@ -13,8 +16,8 @@
 //      pulls the user's profile (userId + displayName).
 //   4. Stashes them in sessionStorage so the redemption page can
 //      pick them up.
-//   5. Hard-redirects to /invite/<token> where the rest of the
-//      onboarding form lives.
+//   5. Hard-redirects to /persona/invite/<token> where the rest of
+//      the onboarding form lives.
 //
 // If the page is opened outside LINE (e.g. someone forwards the
 // URL to a desktop browser), LIFF either:

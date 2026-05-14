@@ -7,12 +7,16 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "เชิญเข้าใช้งาน · IKIGAI OS" };
 
-// /invite/[token] — public-facing landing page that the staff opens
-// from the LINE link the admin sent them. We look up the invite
-// server-side first so an expired/used token shows a friendly error
-// without leaking the form. On success, the RedeemForm collects the
-// staff's username + password + PIN and POSTs them to the redeem API,
-// which then auto-creates a session and routes the staff to /staff.
+// /persona/invite/[token] — public-facing landing page that the staff
+// opens from the LINE link the admin sent them. Lives under /persona/
+// because staff onboarding belongs to the PERSONA module (RESERVA is
+// for customer bookings).
+//
+// We look up the invite server-side first so an expired/used token
+// shows a friendly error without leaking the form. On success, the
+// RedeemForm collects the staff's username + password + PIN and POSTs
+// them to /api/persona/invite/[token], which then auto-creates a
+// session and routes the staff to /staff/persona.
 
 export default function InviteRedeemPage({ params }: { params: { token: string } }) {
   const invite = lookupValidInvite(params.token);

@@ -3,13 +3,14 @@ import { z } from "zod";
 import { lookupValidInvite, redeemInvite } from "@/lib/invites";
 import { createSession } from "@/lib/auth";
 
-// GET  /api/invite/[token] — peek at the invite. Public (the link
-//   itself is the secret). Returns display_name + kind so the
-//   redemption page can show "Welcome, ฐิติรัตน์".
+// GET  /api/persona/invite/[token] — peek at the invite. Public
+//   (the link itself is the secret). Returns display_name + kind
+//   so the redemption page can show "Welcome, ฐิติรัตน์".
 //
-// POST /api/invite/[token] — redeem. Body: username + password +
-//   pin + optional line_user_id. On success returns ok + auto-
-//   creates a session cookie so the staff is logged in immediately.
+// POST /api/persona/invite/[token] — redeem. Body: username +
+//   password + pin + optional line_user_id. On success returns ok
+//   + auto-creates a session cookie so the staff is logged in
+//   immediately.
 
 export async function GET(_req: Request, { params }: { params: { token: string } }) {
   const invite = lookupValidInvite(params.token);
