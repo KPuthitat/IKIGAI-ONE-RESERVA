@@ -31,14 +31,21 @@ export default function AccountActions({
   const [employmentType, setEmploymentType] = useState<"pt" | "ft" | "">("");
   const [jobTitle, setJobTitle] = useState("");
 
-  // Result state — the generated invite link to copy/share
-  const [link, setLink] = useState<string | null>(null);
+  // Result state — the generated invite links to copy/share.
+  //   primaryLink — the LIFF-wrapped liff.line.me URL when LIFF is
+  //     configured (preferred — auto-binds LINE userId on redeem).
+  //     Falls back to direct URL when LIFF env isn't set.
+  //   directLink  — the plain /invite/<token> URL. Used as a
+  //     fallback when the staff can't open in LINE (desktop, etc.).
+  const [primaryLink, setPrimaryLink] = useState<string | null>(null);
+  const [directLink, setDirectLink] = useState<string | null>(null);
+  const [hasLiff, setHasLiff] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
 
   function reset() {
     setMode(null); setBusy(false); setErr(null);
     setDisplayName(""); setRole("staff"); setEmploymentType(""); setJobTitle("");
-    setLink(null); setExpiresAt(null);
+    setPrimaryLink(null); setDirectLink(null); setHasLiff(false); setExpiresAt(null);
   }
 
   async function submitOnboard() {
@@ -63,7 +70,9 @@ export default function AccountActions({
         setErr(j.error ?? "เกิดข้อผิดพลาด");
         return;
       }
-      setLink(j.url);
+      setPrimaryLink(j.liff_url ?? j.direct_url ?? j.url);
+      setDirectLink(j.direct_url ?? j.url);
+      setHasLiff(!!j.liff_url);
       setExpiresAt(j.expires_at);
       setMode("showLink");
       startTransition(() => router.refresh());
@@ -72,9 +81,9 @@ export default function AccountActions({
     }
   }
 
-  function copyLink() {
-    if (!link) return;
-    navigator.clipboard?.writeText(link).catch(() => {});
+  function copy(text: string | null) {
+    if (!text) return;
+    navigator.clipboard?.writeText(text).catch(() => {});
   }
 
   return (
@@ -154,34 +163,58 @@ export default function AccountActions({
         </div>
       )}
 
-      {mode === "showLink" && link && (
+      {mode === "showLink" && primaryLink && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onClick={reset}>
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-3"
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}>
             <div className="text-center">
               <div className="text-4xl">✓</div>
               <h3 className="font-bold text-slate-800 text-lg mt-2">สร้างบัญชี + ลิงก์เรียบร้อย</h3>
               <p className="text-xs text-slate-500 mt-1">
-                ก๊อปลิงก์ด้านล่างส่งให้พนักงานทาง LINE
-                ลิงก์หมดอายุ {expiresAt ? new Date(expiresAt).toISOString().slice(0, 10) : "—"}
+                หมดอายุ {expiresAt ? new Date(expiresAt).toISOString().slice(0, 10) : "—"}
               </p>
             </div>
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs break-all select-all">
-              {link}
-            </div>
-            <div className="flex gap-2">
-              <button type="button" onClick={copyLink}
-                className="flex-1 py-2.5 rounded-lg border border-brand text-brand text-sm font-bold hover:bg-rose-50">
-                📋 คัดลอกลิงก์
+
+            {/* Primary link — wrapped via liff.line.me when LIFF is
+                configured, so opening it in LINE auto-binds the
+                staff's userId. Falls back to direct URL otherwise. */}
+            <div>
+              <div className="text-[11px] text-slate-500 mb-1 font-bold">
+                {hasLiff
+                  ? "ลิงก์สำหรับ LINE (แนะนำ — ผูก LINE อัตโนมัติ)"
+                  : "ลิงก์เชิญ"}
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs break-all select-all">
+                {primaryLink}
+              </div>
+              <button type="button" onClick={() => copy(primaryLink)}
+                className="w-full mt-2 py-2 rounded-lg border border-brand text-brand text-xs font-bold hover:bg-rose-50">
+                📋 คัดลอกลิงก์นี้
               </button>
-              <button type="button" onClick={reset}
-                className="flex-1 py-2.5 rounded-lg bg-brand text-white text-sm font-bold">
-                เสร็จสิ้น
-              </button>
             </div>
+
+            {hasLiff && directLink && primaryLink !== directLink && (
+              <div className="border-t border-slate-100 pt-3">
+                <div className="text-[11px] text-slate-500 mb-1">
+                  ลิงก์สำรอง (ใช้เปิดในเบราว์เซอร์ปกติ — แต่จะไม่ผูก LINE)
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-[10px] break-all select-all text-slate-500">
+                  {directLink}
+                </div>
+                <button type="button" onClick={() => copy(directLink)}
+                  className="w-full mt-1 py-1.5 rounded text-[11px] text-slate-500 hover:text-brand">
+                  คัดลอกลิงก์สำรอง
+                </button>
+              </div>
+            )}
+
+            <button type="button" onClick={reset}
+              className="w-full py-2.5 rounded-lg bg-brand text-white text-sm font-bold">
+              เสร็จสิ้น
+            </button>
             <p className="text-[10px] text-slate-400 text-center">
-              หมายเหตุ: ลิงก์นี้จะใช้ได้ครั้งเดียว — ส่งให้เฉพาะคนที่ต้องการเท่านั้น
+              หมายเหตุ: ลิงก์ใช้ได้ครั้งเดียว — ส่งให้เฉพาะคนที่ต้องการเท่านั้น
             </p>
           </div>
         </div>

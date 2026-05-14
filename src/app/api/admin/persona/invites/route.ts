@@ -100,10 +100,25 @@ export async function POST(req: Request) {
   });
   logPersonaAction(user.id, `invite.${d.kind}`, invite.id);
 
-  // Build the full redemption URL so admin can copy/paste it
-  // straight into LINE chat without assembling.
+  // Build redemption URLs the admin can paste into LINE chat.
+  //
+  //   liff_url    — wrapped via liff.line.me. When the staff taps
+  //                 this in LINE, the app intercepts, runs the LIFF
+  //                 SDK, captures their LINE userId, and forwards
+  //                 to /invite/<token>. This is the URL admin
+  //                 SHOULD share by default.
+  //
+  //   direct_url  — plain /invite/<token>. Falls back when LIFF
+  //                 isn't configured, or when the staff has lost
+  //                 their LINE account and needs to redeem in a
+  //                 desktop browser. Doesn't auto-bind LINE userId
+  //                 (admin will need to paste it after the fact).
   const base = (process.env.NEXT_PUBLIC_PUBLIC_BASE_URL || "").replace(/\/$/, "");
-  const url = `${base}/invite/${invite.token}`;
+  const directUrl = `${base}/invite/${invite.token}`;
+  const liffId = process.env.NEXT_PUBLIC_LIFF_ID_INVITE;
+  const liffUrl = liffId
+    ? `https://liff.line.me/${liffId}?token=${invite.token}`
+    : null;
 
   return NextResponse.json({
     ok: true,
@@ -111,6 +126,10 @@ export async function POST(req: Request) {
     user_id: userId,
     token: invite.token,
     expires_at: invite.expires_at,
-    url
+    // `url` retained for callers that expect a single field; prefer
+    // liff_url when available since it auto-binds LINE.
+    url: liffUrl ?? directUrl,
+    liff_url: liffUrl,
+    direct_url: directUrl
   });
 }

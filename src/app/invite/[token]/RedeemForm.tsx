@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+
+const STORAGE_KEY_USER_ID = "invite_line_user_id";
+const STORAGE_KEY_NAME = "invite_line_name";
 
 // Invite redemption client.
 //
@@ -32,6 +35,22 @@ export default function RedeemForm({
   const [pin2, setPin2] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Captured from sessionStorage when the user came through
+  // /invite-redirect (LIFF bridge). Empty if the user opened the
+  // /invite/<token> URL directly in a regular browser — in that
+  // case admin will need to bind line_user_id later. The captured
+  // displayName is shown as a "✓ เชื่อม LINE ของ <name> แล้ว"
+  // banner so the staff knows their LINE got linked automatically.
+  const [lineUserId, setLineUserId] = useState<string>("");
+  const [lineName, setLineName] = useState<string>("");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const uid = sessionStorage.getItem(STORAGE_KEY_USER_ID) ?? "";
+    const name = sessionStorage.getItem(STORAGE_KEY_NAME) ?? "";
+    if (uid) setLineUserId(uid);
+    if (name) setLineName(name);
+  }, []);
 
   const isRebind = kind === "rebind_line";
 
@@ -70,7 +89,11 @@ export default function RedeemForm({
         body: JSON.stringify({
           username: isRebind ? "_rebind_only" : username,
           password: isRebind ? "_rebind_only_______" : password,
-          pin
+          pin,
+          // Pass the LIFF-captured userId so the server can bind it
+          // to the user row in the same atomic transaction. Empty
+          // string when the user opened the page outside LINE.
+          line_user_id: lineUserId || undefined
         })
       });
       const j = await res.json().catch(() => ({}));
@@ -90,6 +113,19 @@ export default function RedeemForm({
 
   return (
     <form onSubmit={submit} className="space-y-3">
+      {lineUserId && (
+        <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-800">
+          ✓ เชื่อม LINE
+          {lineName ? <> ของ <span className="font-bold">{lineName}</span></> : null}
+          {" "}เรียบร้อย — หลังเริ่มใช้งานจะรับข้อความแจ้งเตือนได้ทันที
+        </div>
+      )}
+      {!lineUserId && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] text-amber-800">
+          ⓘ ไม่ได้เปิดผ่าน LINE — admin จะต้องผูก LINE ของคุณภายหลัง
+          ถ้าต้องการรับแจ้งเตือน กรุณาปิดหน้านี้แล้วเปิดลิงก์ใหม่ใน LINE app
+        </div>
+      )}
       {!isRebind && (
         <>
           <div>
