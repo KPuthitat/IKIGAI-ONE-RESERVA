@@ -113,30 +113,60 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
     }
   ];
 
+  // Mobile-only sidebar footer — pill / username / lang / logout
+  // moved here so the mobile topbar can stay just the brand.
+  // Desktop keeps the topbar layout (see md:* classes below).
+  const mobileSidebarFooter = (
+    <div className="md:hidden space-y-3">
+      {activeBranch && (
+        <div className="flex justify-start">
+          <TodaysBranchPill
+            branchName={activeBranch.name}
+            hasChoice={hasBranchChoice}
+            pickerPath="/staff/branch-picker"
+          />
+        </div>
+      )}
+      <div className="text-xs text-white/60 truncate">
+        {user.display_name}
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <LangToggle variant="dark" />
+        <LogoutButton />
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen flex bg-slate-100">
-      <Sidebar sections={sections} brand={<StaffSidebarBrand />} />
+      <Sidebar
+        sections={sections}
+        brand={<StaffSidebarBrand />}
+        footer={mobileSidebarFooter}
+      />
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-ink-gradient text-white shadow-md">
-          {/* Single-row topbar — see admin/layout.tsx for the
-              responsive-strategy commentary. Pill sits inside the
-              brand column so it wraps below the brand on narrow
-              widths instead of pushing buttons off-screen. */}
+          {/* Topbar — mobile shows only the brand. Branch pill,
+              username chip, lang toggle, and logout move to the
+              sidebar footer on small viewports (see md:* classes).
+              See admin/layout.tsx for the same pattern. */}
           <div className="px-4 py-3 pl-16 flex items-center gap-2 sm:gap-3">
             <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <HeaderBrand role="staff" />
               {activeBranch && (
-                <TodaysBranchPill
-                  branchName={activeBranch.name}
-                  hasChoice={hasBranchChoice}
-                  pickerPath="/staff/branch-picker"
-                />
+                <div className="hidden md:block">
+                  <TodaysBranchPill
+                    branchName={activeBranch.name}
+                    hasChoice={hasBranchChoice}
+                    pickerPath="/staff/branch-picker"
+                  />
+                </div>
               )}
             </div>
             <div className="hidden md:block text-xs text-white/60 truncate max-w-[180px] flex-shrink-0">
               {user.display_name}
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="hidden md:flex items-center gap-2 flex-shrink-0">
               <LangToggle variant="dark" />
               <LogoutButton />
             </div>

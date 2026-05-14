@@ -188,41 +188,65 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   ];
 
+  // Mobile-only footer for the sidebar: branch pill, lang toggle,
+  // logout. Desktop keeps these in the topbar (md+). On mobile the
+  // topbar reduces to just the program name so the row never wraps
+  // or collides with the menu button, and these controls live one
+  // tap away inside the slide-in sidebar instead.
+  const mobileSidebarFooter = (
+    <div className="md:hidden space-y-3">
+      {activeBranch && (
+        <div className="flex justify-start">
+          <TodaysBranchPill
+            branchName={activeBranch.name}
+            hasChoice={hasBranchChoice}
+            pickerPath="/admin/branch-picker"
+          />
+        </div>
+      )}
+      <div className="text-xs text-white/60 truncate">
+        {user.display_name} · {t(lang, "role.adminShort")}
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <LangToggle variant="dark" />
+        <LogoutButton />
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen flex bg-slate-100">
-      <Sidebar sections={sections} brand={<AdminSidebarBrand />} />
+      <Sidebar
+        sections={sections}
+        brand={<AdminSidebarBrand />}
+        footer={mobileSidebarFooter}
+      />
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-ink-gradient text-white shadow-md">
-          {/* Single-row topbar: brand + today's-branch pill on the
-              left, language toggle + logout on the right.
-              Responsive strategy:
-              • Outer flex is items-center, no wrap — the two columns
-                stay side-by-side on every viewport.
-              • Left column is itself a flex-wrap container. On wide
-                screens the brand and pill sit on one line; on narrow
-                mobile the pill drops onto a second line under the
-                brand (inside the same left column) instead of
-                colliding with the right-side buttons.
-              • Username chip is hidden below md to free space for
-                the pill.
-              • LangToggle + LogoutButton are wrapped in a
-                flex-shrink-0 container so the kernel of the topbar
-                is never the thing that gets squeezed. */}
+          {/* Topbar — single row.
+              Mobile: brand only. The branch pill, language toggle,
+                and logout live in the sidebar footer instead, so
+                the row stays compact next to the hamburger menu.
+              Desktop (md+): brand + branch pill on the left,
+                username chip + lang toggle + logout on the right
+                (the classic layout). */}
           <div className="px-4 py-3 pl-16 flex items-center gap-2 sm:gap-3">
             <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <HeaderBrand role="admin" />
               {activeBranch && (
-                <TodaysBranchPill
-                  branchName={activeBranch.name}
-                  hasChoice={hasBranchChoice}
-                  pickerPath="/admin/branch-picker"
-                />
+                <div className="hidden md:block">
+                  <TodaysBranchPill
+                    branchName={activeBranch.name}
+                    hasChoice={hasBranchChoice}
+                    pickerPath="/admin/branch-picker"
+                  />
+                </div>
               )}
             </div>
             <div className="hidden md:block text-xs text-white/60 truncate max-w-[200px] flex-shrink-0">
               {user.display_name} · {t(lang, "role.adminShort")}
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="hidden md:flex items-center gap-2 flex-shrink-0">
               <LangToggle variant="dark" />
               <LogoutButton />
             </div>

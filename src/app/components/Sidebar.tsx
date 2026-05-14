@@ -46,11 +46,17 @@ const STORAGE_KEY = "sidebar-open";
 export default function Sidebar({
   sections,
   brand,
+  footer,
   defaultOpen = true
 }: {
   sections: SidebarSection[];
   /** Optional custom brand element rendered at the very top of the sidebar. */
   brand?: React.ReactNode;
+  /** Optional footer content at the bottom of the sidebar — used on
+   *  mobile to host the branch pill / lang toggle / logout that
+   *  desktop puts in the topbar. Layouts can wrap their footer node
+   *  in `md:hidden` so it only appears on small viewports. */
+  footer?: React.ReactNode;
   defaultOpen?: boolean;
 }) {
   const pathname = usePathname();
@@ -167,15 +173,16 @@ export default function Sidebar({
           flex-shrink-0
           bg-ink-gradient text-white shadow-xl
           overflow-y-auto
+          flex flex-col
           transition-all duration-200 ease-out
           ${open ? "w-64 translate-x-0" : "w-64 -translate-x-full md:w-0"}
         `}
       >
-        <div className="px-4 pt-4 pb-3 border-b border-white/10">
+        <div className="px-4 pt-4 pb-3 border-b border-white/10 flex-shrink-0">
           {brand}
         </div>
 
-        <nav className="p-3 space-y-5">
+        <nav className="p-3 space-y-5 flex-1">
           {visibleSections.map((s, i) => (
             <div key={i}>
               {s.label && (
@@ -216,6 +223,12 @@ export default function Sidebar({
             </div>
           ))}
         </nav>
+
+        {footer && (
+          <div className="flex-shrink-0 border-t border-white/10 p-3">
+            {footer}
+          </div>
+        )}
       </aside>
     </>
   );
