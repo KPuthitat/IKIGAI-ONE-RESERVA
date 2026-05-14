@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { lookupValidInvite } from "@/lib/invites";
-import OwlMascot from "../../components/OwlMascot";
+import OwlMascot from "../../../components/OwlMascot";
 import RedeemForm from "./RedeemForm";
 
 export const dynamic = "force-dynamic";

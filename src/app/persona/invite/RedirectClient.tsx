@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import OwlMascot from "../components/OwlMascot";
+import OwlMascot from "../../components/OwlMascot";
 import "@/lib/liff-types";
 
 const STORAGE_KEY_USER_ID = "invite_line_user_id";
