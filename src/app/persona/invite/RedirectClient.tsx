@@ -1,21 +1,54 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import OwlMascot from "../../components/OwlMascot";
 import "@/lib/liff-types";
 
 const STORAGE_KEY_USER_ID = "invite_line_user_id";
 const STORAGE_KEY_NAME = "invite_line_name";
 
+// LIFF gotcha — when a staff opens `https://liff.line.me/<id>?token=ABC`,
+// LINE's wrapper sometimes forwards them to the endpoint URL with the
+// original query wrapped inside `?liff.state=%3Ftoken%3DABC` (URL-encoded)
+// instead of preserving `?token=ABC` directly. The exact behavior depends
+// on the LIFF SDK version and whether the user is in LINE in-app browser
+// vs external browser. We accept both shapes so the redeem flow never
+// dead-ends at "no_token" when the staff actually has a valid invite.
+function extractToken(): string | null {
+  if (typeof window === "undefined") return null;
+  const search = new URLSearchParams(window.location.search);
+
+  // 1) Direct case — LINE preserved `?token=ABC` as-is.
+  const direct = search.get("token");
+  if (direct) return direct;
+
+  // 2) Wrapped case — LIFF stuffed the original query into `liff.state`
+  //    (URL-encoded), e.g. `?liff.state=%3Ftoken%3DABC`. Decode + parse.
+  const liffState = search.get("liff.state");
+  if (liffState) {
+    try {
+      const decoded = decodeURIComponent(liffState);
+      const inner = new URLSearchParams(
+        decoded.startsWith("?") ? decoded.slice(1) : decoded
+      );
+      const t = inner.get("token");
+      if (t) return t;
+    } catch {
+      // malformed — fall through to null
+    }
+  }
+
+  return null;
+}
+
 export default function RedirectClient({ liffId }: { liffId: string }) {
   const router = useRouter();
-  const params = useSearchParams();
-  const token = params.get("token");
   const [status, setStatus] = useState<"init" | "no_token" | "ready" | "no_liff">("init");
   const [statusMsg, setStatusMsg] = useState<string>("");
 
   useEffect(() => {
+    const token = extractToken();
     if (!token) {
       setStatus("no_token");
       return;
@@ -82,7 +115,7 @@ export default function RedirectClient({ liffId }: { liffId: string }) {
 
     return () => { cancelled = true; clearInterval(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, liffId]);
+  }, [liffId]);
 
   if (status === "no_token") {
     return (
