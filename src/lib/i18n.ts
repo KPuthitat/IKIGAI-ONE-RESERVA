@@ -1138,7 +1138,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.nav.svc": "เซอร์วิสชาร์จ",
     "admin.persona.nav.roster": "ตารางมอบหมายงาน",
     "admin.persona.nav.discipline": "หนังสือตักเตือน",
-    "owl.help.menu": "🦉 ถามน้องฮูก",
+    "owl.help.menu": "ถามน้องฮูก",
 
     // Companies (multi-tenant)
     "admin.companies.title": "บริษัทในเครือ",
@@ -3052,7 +3052,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.nav.svc": "Service Charge",
     "admin.persona.nav.roster": "Duty roster",
     "admin.persona.nav.discipline": "Disciplinary",
-    "owl.help.menu": "🦉 Ask Hook",
+    "owl.help.menu": "Ask Hook",
 
     "admin.companies.title": "Companies",
     "admin.companies.subtitle": "Manage group companies. Each branch belongs to exactly one company — ready for multi-tenant expansion.",
