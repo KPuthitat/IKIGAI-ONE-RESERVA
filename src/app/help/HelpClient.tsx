@@ -55,7 +55,7 @@ export default function HelpClient() {
                 ? "bg-brand text-white border-brand"
                 : "bg-white text-slate-700 border-slate-200 hover:border-brand"
             }`}>
-            {c.emoji} {lang === "en" ? c.label_en : c.label_th}
+            {lang === "en" ? c.label_en : c.label_th}
           </button>
         ))}
       </div>
@@ -84,7 +84,6 @@ export default function HelpClient() {
                 <button type="button"
                   onClick={() => setOpenId(isOpen ? null : entry.id)}
                   className="w-full text-left p-4 flex items-start gap-3 hover:bg-slate-50">
-                  <span className="text-2xl flex-shrink-0">{cat?.emoji}</span>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-slate-800">
                       {lang === "en" ? entry.question_en : entry.question_th}

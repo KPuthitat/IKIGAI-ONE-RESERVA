@@ -10,6 +10,8 @@ import Sidebar, { type SidebarSection } from "../components/Sidebar";
 import StaffSidebarBrand from "./StaffSidebarBrand";
 import TodaysBranchPill from "../TodaysBranchPill";
 import HookFab from "../components/HookFab";
+import ImpersonationBanner from "../components/ImpersonationBanner";
+import { currentImpersonationContext } from "@/lib/impersonation";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +115,8 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
     }
   ];
 
+  const impCtx = currentImpersonationContext();
+
   // Mobile-only sidebar footer — pill / username / lang / logout
   // moved here so the mobile topbar can stay just the brand.
   // Desktop keeps the topbar layout (see md:* classes below).
@@ -139,6 +143,12 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen flex bg-slate-100">
+      {impCtx && (
+        <ImpersonationBanner
+          impersonatorName={impCtx.impersonatorName}
+          targetName={impCtx.targetName}
+        />
+      )}
       <Sidebar
         sections={sections}
         brand={<StaffSidebarBrand />}

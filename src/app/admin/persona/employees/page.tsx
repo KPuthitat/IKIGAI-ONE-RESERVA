@@ -3,6 +3,7 @@ import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import EmployeesClient, { type EmployeeRow } from "./EmployeesClient";
+import AccountActions from "./AccountActions";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,10 @@ export default function AdminEmployeesPage() {
           {t(lang, "admin.persona.employees.subtitle")}
         </p>
       </div>
+      <AccountActions
+        branchId={branch.id}
+        canCreateAdmin={user.role === "super_admin"}
+      />
       <EmployeesClient employees={employees} />
     </div>
   );

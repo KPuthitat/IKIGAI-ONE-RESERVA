@@ -60,7 +60,7 @@ export default function HookFab({
   // through the global i18n dict for a non-critical surface.
   const T = lang === "en"
     ? {
-        title: "Hi! I'm Hook 🦉",
+        title: "Hi! I'm Hook",
         sub: "Pick a category or type a question",
         searchPh: "Type your question…",
         chipAll: "All",
@@ -69,7 +69,7 @@ export default function HookFab({
         seeAll: "See all FAQs"
       }
     : {
-        title: "สวัสดีครับ ผมน้องฮูก 🦉",
+        title: "สวัสดีครับ ผมน้องฮูก",
         sub: "เลือกหมวด หรือพิมพ์คำถาม",
         searchPh: "พิมพ์คำถามที่ต้องการ…",
         chipAll: "ทั้งหมด",
@@ -158,7 +158,7 @@ export default function HookFab({
                       ? "bg-brand text-white border-brand"
                       : "border-slate-300 text-slate-600 hover:bg-slate-50"
                   }`}>
-                  {c.emoji} {lang === "en" ? c.label_en : c.label_th}
+                  {lang === "en" ? c.label_en : c.label_th}
                 </button>
               ))}
             </div>
@@ -183,7 +183,6 @@ export default function HookFab({
                       <button type="button"
                         onClick={() => setExpandedId(expanded ? null : entry.id)}
                         className="w-full text-left p-2.5 flex items-start gap-2 hover:bg-slate-50">
-                        <span className="text-base flex-shrink-0">{cat?.emoji}</span>
                         <span className="text-sm font-bold text-slate-800 flex-1">
                           {lang === "en" ? entry.question_en : entry.question_th}
                         </span>

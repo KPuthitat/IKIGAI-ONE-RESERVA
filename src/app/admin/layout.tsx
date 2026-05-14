@@ -11,6 +11,8 @@ import Sidebar, { type SidebarSection } from "../components/Sidebar";
 import AdminSidebarBrand from "./AdminSidebarBrand";
 import TodaysBranchPill from "../TodaysBranchPill";
 import HookFab from "../components/HookFab";
+import ImpersonationBanner from "../components/ImpersonationBanner";
+import { currentImpersonationContext } from "@/lib/impersonation";
 
 export const dynamic = "force-dynamic";
 
@@ -193,6 +195,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   ];
 
+  // Impersonation banner — only renders when super_admin/admin has
+  // started a "log in as" session for debugging. Sticky orange
+  // banner at the top reminds them they're viewing another user's
+  // view + provides a one-click way back to their own session.
+  const impCtx = currentImpersonationContext();
+
   // Mobile-only footer for the sidebar: branch pill, lang toggle,
   // logout. Desktop keeps these in the topbar (md+). On mobile the
   // topbar reduces to just the program name so the row never wraps
@@ -221,6 +229,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen flex bg-slate-100">
+      {impCtx && (
+        <ImpersonationBanner
+          impersonatorName={impCtx.impersonatorName}
+          targetName={impCtx.targetName}
+        />
+      )}
       <Sidebar
         sections={sections}
         brand={<AdminSidebarBrand />}

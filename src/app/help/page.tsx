@@ -19,14 +19,21 @@ export default function HelpPage() {
     <div className="min-h-screen bg-amber-50/40">
       <header className="bg-amber-100 border-b border-amber-200">
         <div className="max-w-3xl mx-auto px-4 py-6 flex items-center gap-4">
-          <OwlMascot size={88} mood="wink" />
+          <OwlMascot size={96} mood="wink" />
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-bold text-slate-800">ห้องน้องฮูก</h1>
-            <p className="text-sm text-slate-600 mt-0.5">
-              ผมคือน้องฮูก คอยตอบคำถามเรื่องการใช้งาน IKIGAI OS — ลองพิมพ์คำถามหรือเลือกหมวดด้านล่างได้เลยครับ
+            <h1 className="text-2xl font-bold text-slate-800">
+              ห้องน้องฮูก
+            </h1>
+            <p className="text-base text-amber-900 font-bold mt-1">
+              สวัสดีครับพี่ๆ น้องฮูกอยู่นี่แล้ว
             </p>
-            <p className="text-[11px] text-slate-500 mt-1">
-              มีคำถามทั้งหมด {FAQ_ENTRIES.length} ข้อ · {FAQ_CATEGORIES.length} หมวด
+            <p className="text-sm text-slate-700 mt-1 leading-relaxed">
+              พี่ๆ มีอะไรงงๆ ไม่เข้าใจ ลองพิมพ์คำถาม หรือกดดูตามหมวดด้านล่างได้เลยนะครับ
+              น้องเตรียมคำตอบไว้ให้แล้ว ถ้ายังไม่เจอที่ต้องการ บอกพี่แอดมินได้นะครับ
+              น้องจะค่อยๆ จำเพิ่มขึ้นเรื่อยๆ
+            </p>
+            <p className="text-[11px] text-amber-700 mt-2">
+              ตอนนี้น้องรู้ {FAQ_ENTRIES.length} คำถาม · จัดไว้ {FAQ_CATEGORIES.length} หมวด
             </p>
           </div>
         </div>

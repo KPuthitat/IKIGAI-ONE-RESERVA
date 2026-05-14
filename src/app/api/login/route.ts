@@ -3,7 +3,8 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { findPayrollUserByUsername } from "@/lib/payroll-db";
 import { createSession, syncUserFromPayroll } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, type UserRole } from "@/lib/db";
+import { consumeEmergencyCred } from "@/lib/emergency-creds";
 
 const Body = z.object({
   username: z.string().min(1),
@@ -18,43 +19,91 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "ข้อมูลไม่ครบ" }, { status: 400 });
   }
   const { username, password, role: requestedRole } = parsed.data;
+  const db = getDb();
 
-  // 1) ตรวจ user จาก Payroll DB
+  // ─── 3-step authentication ladder ─────────────────────────────
+  //   1. Payroll DB (legacy admin/staff accounts that pre-date this app)
+  //   2. Local users table (invite-redeemed accounts that exist only
+  //      here — they don't have a Payroll equivalent)
+  //   3. Emergency credentials (24h temp username + password issued
+  //      by admin when the staff can't log in any other way)
+  //
+  // The first match wins. We compare bcrypt at every step to avoid
+  // a timing-channel difference between "user exists, wrong password"
+  // and "user doesn't exist" — both fall through to the same final
+  // 401 below.
+
+  let authedUserId: number | null = null;
+  let authedRole: UserRole | null = null;
+
+  // (1) Payroll
   const payrollUser = findPayrollUserByUsername(username);
-  if (!payrollUser || !bcrypt.compareSync(password, payrollUser.password_hash)) {
+  if (payrollUser && bcrypt.compareSync(password, payrollUser.password_hash)) {
+    syncUserFromPayroll(payrollUser);
+    // Read the synced role from local users — preserves a locally-
+    // granted super_admin promotion, which Payroll doesn't know about.
+    const local = db.prepare("SELECT id, role FROM users WHERE id = ?")
+      .get(payrollUser.id) as { id: number; role: UserRole } | undefined;
+    if (local) {
+      authedUserId = local.id;
+      authedRole = local.role;
+    }
+  }
+
+  // (2) Local users (invite-redeemed)
+  if (!authedUserId) {
+    const local = db.prepare(`
+      SELECT id, password_hash, role, status FROM users
+      WHERE username = ? AND status = 'active'
+    `).get(username) as {
+      id: number; password_hash: string; role: UserRole; status: string
+    } | undefined;
+    if (local && bcrypt.compareSync(password, local.password_hash)) {
+      authedUserId = local.id;
+      authedRole = local.role;
+    }
+  }
+
+  // (3) Emergency credentials — single-use temp login.
+  if (!authedUserId) {
+    const emergencyUserId = consumeEmergencyCred(username, password);
+    if (emergencyUserId != null) {
+      const u = db.prepare("SELECT id, role FROM users WHERE id = ?")
+        .get(emergencyUserId) as { id: number; role: UserRole } | undefined;
+      if (u) {
+        authedUserId = u.id;
+        authedRole = u.role;
+      }
+    }
+  }
+
+  if (!authedUserId || !authedRole) {
     return NextResponse.json(
       { error: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" },
       { status: 401 }
     );
   }
 
-  const actualRole = payrollUser.role === "admin" ? "admin" : "staff";
-
-  // 2) Role ต้องตรงกับ tab ที่เลือกทั้งสองทาง
-  //    - เลือก ADMIN แต่ไม่ใช่ admin → ปฏิเสธ
-  //    - เลือก STAFF แต่เป็น admin → ปฏิเสธ (กัน admin มาใช้แท็บพนักงาน
-  //      แล้วบังเอิญเข้าระบบฝั่งแอดมิน)
-  if (requestedRole && requestedRole !== actualRole) {
+  // Role gate vs the tab the form is on. super_admin counts as
+  // "admin" for tab purposes — there's no separate super_admin tab.
+  const tabRole: "admin" | "staff" =
+    authedRole === "super_admin" || authedRole === "admin" ? "admin" : "staff";
+  if (requestedRole && requestedRole !== tabRole) {
     const msg = requestedRole === "admin"
       ? "บัญชีนี้ไม่มีสิทธิ์เข้าฝั่งผู้ดูแล"
       : "บัญชีผู้ดูแล กรุณาเลือกแท็บ ADMIN";
     return NextResponse.json({ error: msg }, { status: 403 });
   }
 
-  // 3) sync user → local users (สำหรับ FK ใน sessions)
-  syncUserFromPayroll(payrollUser);
+  // Stamp last_login_at — useful for the admin "inactive users" audit.
+  db.prepare("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?")
+    .run(authedUserId);
 
-  // 4) create session
-  createSession(payrollUser.id, null);
+  createSession(authedUserId, null);
 
-  // 5) Tell the client whether the user has multiple branches assigned.
-  //    The login form uses this to route staff to /staff/branch-picker
-  //    only when there's a real choice (1-branch users go straight to
-  //    /staff and have their active branch implicitly set on first
-  //    page load via getSessionUser's default-to-first logic).
-  const branchCount = (getDb().prepare(
+  const branchCount = (db.prepare(
     "SELECT COUNT(*) AS n FROM user_branches WHERE user_id = ?"
-  ).get(payrollUser.id) as { n: number }).n;
+  ).get(authedUserId) as { n: number }).n;
 
-  return NextResponse.json({ ok: true, role: actualRole, branchCount });
+  return NextResponse.json({ ok: true, role: tabRole, branchCount });
 }

@@ -34,15 +34,19 @@ export type FaqEntry = {
 };
 
 export const FAQ_CATEGORIES: Array<{ id: FaqCategory; label_th: string; label_en: string; emoji: string }> = [
-  { id: "start",      label_th: "เริ่มต้นใช้งาน",  label_en: "Getting started", emoji: "🚀" },
-  { id: "clock",      label_th: "ลงเวลาเข้า-ออก", label_en: "Time clock",      emoji: "⏰" },
-  { id: "leave",      label_th: "ขอลา",          label_en: "Leave requests",  emoji: "🏖️" },
-  { id: "roster",     label_th: "ตารางงาน",      label_en: "Duty roster",     emoji: "📅" },
-  { id: "discipline", label_th: "หนังสือเตือน",   label_en: "Disciplinary",    emoji: "⚠️" },
-  { id: "svc",        label_th: "เซอร์วิสชาร์จ",   label_en: "Service charge",  emoji: "💰" },
-  { id: "line",       label_th: "LINE OA",       label_en: "LINE OA",         emoji: "💬" },
-  { id: "settings",   label_th: "ตั้งค่าระบบ",     label_en: "System settings", emoji: "⚙️" },
-  { id: "trouble",    label_th: "ปัญหาทั่วไป",     label_en: "Troubleshooting", emoji: "🔧" }
+  // Emoji field kept for backward-compat with existing callers, but
+  // intentionally blank — the help UI now relies on plain labels +
+  // น้องฮูก's own mascot for visual personality. Less clutter on a
+  // long FAQ list, easier to read in Thai.
+  { id: "start",      label_th: "เริ่มต้นใช้งาน",  label_en: "Getting started", emoji: "" },
+  { id: "clock",      label_th: "ลงเวลาเข้า-ออก", label_en: "Time clock",      emoji: "" },
+  { id: "leave",      label_th: "ขอลา",          label_en: "Leave requests",  emoji: "" },
+  { id: "roster",     label_th: "ตารางงาน",      label_en: "Duty roster",     emoji: "" },
+  { id: "discipline", label_th: "หนังสือเตือน",   label_en: "Disciplinary",    emoji: "" },
+  { id: "svc",        label_th: "เซอร์วิสชาร์จ",   label_en: "Service charge",  emoji: "" },
+  { id: "line",       label_th: "LINE OA",       label_en: "LINE OA",         emoji: "" },
+  { id: "settings",   label_th: "ตั้งค่าระบบ",     label_en: "System settings", emoji: "" },
+  { id: "trouble",    label_th: "ปัญหาทั่วไป",     label_en: "Troubleshooting", emoji: "" }
 ];
 
 export const FAQ_ENTRIES: FaqEntry[] = [
