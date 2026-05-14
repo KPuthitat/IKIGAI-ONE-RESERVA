@@ -21,6 +21,10 @@ export type LiffSDK = {
   isLoggedIn: () => boolean;
   login: (cfg?: { redirectUri?: string }) => void;
   getProfile: () => Promise<LiffProfile>;
+  // Access token used to call LINE Profile API server-side and verify
+  // the userId — needed by the one-tap rich-menu login bridge so the
+  // server doesn't have to trust a client-asserted userId.
+  getAccessToken: () => string | null;
 };
 
 declare global {
