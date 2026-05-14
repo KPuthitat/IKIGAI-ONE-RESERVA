@@ -13,7 +13,7 @@ const Body = z.object({
 
 export async function POST(req: Request) {
   const user = getSessionUser();
-  if (!user || user.role !== "admin") {
+  if (!user || user.role !== "admin" && user.role !== "super_admin") {
     return NextResponse.json({ error: "ต้องเป็นแอดมิน" }, { status: 403 });
   }
   const parsed = Body.safeParse(await req.json());

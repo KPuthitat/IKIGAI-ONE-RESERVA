@@ -68,6 +68,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Sections are scoped to each module via pathPrefix — only the section
   // matching the current path is shown. The "Modules" section is always
   // visible so admin can switch back to the picker.
+  const isSuperAdmin = user.role === "super_admin";
+
   const sections: SidebarSection[] = [
     {
       label: t(lang, "sidebar.section.modules"),
@@ -75,11 +77,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin", label: t(lang, "sidebar.modulePicker") },
         { href: "/admin/persona", label: "PERSONA" },
         { href: "/admin/reserva", label: "RESERVA" },
-        // Global (non-module) system settings — IKIGAI OS LINE OA
-        // for cross-branch notifications, etc. Always-visible link
-        // since the page handles its own admin gating.
-        { href: "/admin/system-settings", label: t(lang, "admin.systemSettings.title") },
-        { href: "/admin/companies", label: t(lang, "admin.companies.title") },
+        // System-wide entries — only super_admin can manage these,
+        // so hide them from regular admins to keep the sidebar clean.
+        // The pages still enforce requireSuperAdmin() server-side as
+        // a belt-and-braces second check.
+        ...(isSuperAdmin ? [
+          { href: "/admin/system-settings", label: t(lang, "admin.systemSettings.title") },
+          { href: "/admin/companies", label: t(lang, "admin.companies.title") }
+        ] : []),
         { href: "/help", label: t(lang, "owl.help.menu") }
       ]
     },

@@ -13,7 +13,7 @@
 
 import Link from "next/link";
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/auth";
+import { requireSuperAdmin } from "@/lib/auth";
 import { getSystemSettings } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "System Settings · IKIGAI OS" };
 
 export default function SystemSettingsPage() {
-  requireAdmin();
+  requireSuperAdmin();
   const lang = getLang();
   const settings = getSystemSettings();
 

@@ -24,7 +24,7 @@ const UpdateBody = CreateBody.partial().extend({
 export async function POST(req: Request) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (user.role !== "super_admin") return NextResponse.json({ error: "forbidden_super_admin_only" }, { status: 403 });
 
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (user.role !== "super_admin") return NextResponse.json({ error: "forbidden_super_admin_only" }, { status: 403 });
 
   const parsed = UpdateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });

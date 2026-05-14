@@ -72,9 +72,19 @@ export function syncUserFromPayroll(payrollUser: {
   role: string;
 }): void {
   const db = getDb();
-  const role = payrollUser.role === "admin" ? "admin" : "staff";
-  const exists = db.prepare("SELECT id FROM users WHERE id = ?").get(payrollUser.id);
-  if (exists) {
+  // Preserve a locally-granted super_admin promotion: if the user is
+  // already super_admin in our DB, don't downgrade them back to admin
+  // when Payroll's record syncs through. Payroll only knows about
+  // admin/staff — super_admin is an IKIGAI OS-local concept.
+  const existing = db.prepare("SELECT role FROM users WHERE id = ?")
+    .get(payrollUser.id) as { role: string } | undefined;
+  let role: "super_admin" | "admin" | "staff";
+  if (existing?.role === "super_admin") {
+    role = "super_admin";
+  } else {
+    role = payrollUser.role === "admin" ? "admin" : "staff";
+  }
+  if (existing) {
     db.prepare(
       "UPDATE users SET username=?, password_hash=?, display_name=?, role=? WHERE id=?"
     ).run(payrollUser.username, payrollUser.password_hash, payrollUser.display_name, role, payrollUser.id);
@@ -97,14 +107,41 @@ export function requireUser(): SessionUser {
   return u;
 }
 
+// Role hierarchy:  super_admin > admin > staff
+// Each tier inherits the powers below. So an admin can do everything
+// staff can; super_admin can do everything admin can. The require*
+// helpers below take the role check exactly once at the page-server
+// boundary; downstream code reads user.role for finer-grained gates
+// (e.g. "only super_admin can delete a company").
+
+/** Allows admin or super_admin. Used by /admin/* pages today. */
 export function requireAdmin(): SessionUser {
   const u = requireUser();
-  if (u.role !== "admin") redirect("/staff?error=forbidden");
+  if (u.role !== "admin" && u.role !== "super_admin") {
+    redirect("/staff?error=forbidden");
+  }
+  return u;
+}
+
+/** Allows super_admin only. Used by system-wide settings (companies,
+ *  global LINE OA, user role management, impersonation). */
+export function requireSuperAdmin(): SessionUser {
+  const u = requireUser();
+  if (u.role !== "super_admin") redirect("/admin?error=super_admin_only");
   return u;
 }
 
 export function requireStaffOrAdmin(): SessionUser {
   return requireUser();
+}
+
+/** Cheap role predicates for component-level gating
+ *  (e.g. show/hide a delete button without redirecting). */
+export function isSuperAdmin(user: SessionUser | null): boolean {
+  return user?.role === "super_admin";
+}
+export function isAdminOrAbove(user: SessionUser | null): boolean {
+  return user?.role === "admin" || user?.role === "super_admin";
 }
 
 export function userHasBranch(user: SessionUser, branchId: number): boolean {

@@ -17,7 +17,7 @@ const Body = z.object({
 export async function PATCH(req: Request, { params }: { params: { code: string } }) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (user.role !== "admin" && user.role !== "super_admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const code = params.code?.trim();
   if (!code) return NextResponse.json({ error: "invalid_code" }, { status: 400 });

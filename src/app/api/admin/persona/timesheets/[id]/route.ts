@@ -10,7 +10,7 @@ type Entry = { id: number; user_id: number; type: "in" | "out"; ts: string; bran
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (user.role !== "admin" && user.role !== "super_admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) {

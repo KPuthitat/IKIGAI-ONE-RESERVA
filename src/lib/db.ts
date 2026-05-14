@@ -1751,6 +1751,133 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_discipline_view_warning
       ON disciplinary_warning_views(warning_id, viewed_at);
   `);
+
+  // ─────────────────────────────────────────────────────────────
+  // TC-A (Account management + RBAC) — 2026-05-14
+  //
+  //   users.role is widened from {admin,staff} to {super_admin,admin,
+  //   staff} via an in-place column rewrite — the legacy CHECK
+  //   constraint on the existing column doesn't include super_admin.
+  //
+  //   users.status — gates login. pending_invite means the row was
+  //   created by an admin but the staff hasn't redeemed their invite
+  //   link yet (so username/password/PIN aren't set).
+  //
+  //   invites — single-use, 7-day-TTL tokens admin generates to
+  //   onboard new staff via LINE. Each row links to a user_id; opening
+  //   the link in LINE captures the staff's LIFF userId and binds it
+  //   back to the user.
+  //
+  //   emergency_credentials — admin-issued 24h-TTL username+password
+  //   override so staff can log in without LINE in a pinch
+  //   (phone dead, account locked, etc.). Once the staff logs in
+  //   with one, it's marked used.
+  //
+  //   impersonation_log — every time super_admin or admin "logs in as"
+  //   a staff for debugging, a row is appended. Required for
+  //   defensible audit ("who did what" must distinguish the real
+  //   actor from the impersonated session).
+  // ─────────────────────────────────────────────────────────────
+
+  // Widen users.role CHECK to include 'super_admin'. Existing rows
+  // keep their value; only the constraint changes. Same in-place
+  // technique used for bookings.status earlier.
+  const userTableDdl = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+  ).get() as { sql: string } | undefined;
+  if (userTableDdl && /CHECK\s*\(\s*role\s+IN\s*\([^)]*\)/i.test(userTableDdl.sql)
+      && !/'super_admin'/.test(userTableDdl.sql)) {
+    const userCols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+    const colList = userCols.map((c) => `"${c.name}"`).join(", ");
+    const newDdl = userTableDdl.sql.replace(
+      /CHECK\s*\(\s*role\s+IN\s*\([^)]+\)\s*\)/i,
+      "CHECK (role IN ('super_admin','admin','staff'))"
+    ).replace(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?["`]?users["`]?\b/i, "CREATE TABLE users_new");
+    db.exec("BEGIN");
+    try {
+      db.exec(newDdl);
+      db.exec(`INSERT INTO users_new (${colList}) SELECT ${colList} FROM users`);
+      db.exec("DROP TABLE users");
+      db.exec("ALTER TABLE users_new RENAME TO users");
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+  }
+
+  // users.status — gates login. 'active' is the default for legacy rows.
+  const userColsForStatus = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  if (!userColsForStatus.some((c) => c.name === "status")) {
+    db.exec("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','pending_invite','disabled'))");
+  }
+  if (!userColsForStatus.some((c) => c.name === "last_login_at")) {
+    db.exec("ALTER TABLE users ADD COLUMN last_login_at TEXT");
+  }
+
+  // Promote the bootstrap 'admin' account to super_admin so the
+  // setup wizard / role grants have a starting point. Idempotent
+  // (only runs when nobody is currently super_admin).
+  const hasSuperAdmin = (db.prepare(
+    "SELECT COUNT(*) AS n FROM users WHERE role = 'super_admin'"
+  ).get() as { n: number }).n;
+  if (hasSuperAdmin === 0) {
+    db.prepare(
+      "UPDATE users SET role = 'super_admin' WHERE username = 'admin'"
+    ).run();
+  }
+
+  // Invites — single-use tokens admin generates to onboard new staff.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invites (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      kind TEXT NOT NULL DEFAULT 'onboard' CHECK (kind IN ('onboard','reset','rebind_line'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_invites_user ON invites(user_id);
+    CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
+  `);
+
+  // Emergency credentials — 24h temporary login override.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS emergency_credentials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      temp_username TEXT NOT NULL UNIQUE,
+      temp_password_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
+      created_by INTEGER NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      revoked_at TEXT,
+      revoke_reason TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_emergency_user ON emergency_credentials(user_id);
+    CREATE INDEX IF NOT EXISTS idx_emergency_temp_username ON emergency_credentials(temp_username);
+  `);
+
+  // Impersonation log — non-deletable audit trail. Every "log in as"
+  // by super_admin or admin appends a row at start + closes on stop.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS impersonation_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      impersonator_id INTEGER NOT NULL REFERENCES users(id),
+      target_user_id INTEGER NOT NULL REFERENCES users(id),
+      started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      ended_at TEXT,
+      reason TEXT,
+      ip TEXT,
+      user_agent TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_impersonation_active
+      ON impersonation_log(impersonator_id, ended_at)
+      WHERE ended_at IS NULL;
+  `);
 }
 
 /** One row in the daily attendance roster — used by the group
@@ -1943,6 +2070,45 @@ export type SystemSettings = {
   updated_by: number | null;
 };
 
+// ── TC-A (Account management) types ──────────────────────────────
+
+export type InviteKind = "onboard" | "reset" | "rebind_line";
+
+export type Invite = {
+  id: number;
+  user_id: number;
+  token: string;
+  expires_at: string;
+  used_at: string | null;
+  created_by: number | null;
+  created_at: string;
+  kind: InviteKind;
+};
+
+export type EmergencyCredential = {
+  id: number;
+  user_id: number;
+  temp_username: string;
+  temp_password_hash: string;
+  expires_at: string;
+  used_at: string | null;
+  created_by: number;
+  created_at: string;
+  revoked_at: string | null;
+  revoke_reason: string | null;
+};
+
+export type ImpersonationLog = {
+  id: number;
+  impersonator_id: number;
+  target_user_id: number;
+  started_at: string;
+  ended_at: string | null;
+  reason: string | null;
+  ip: string | null;
+  user_agent: string | null;
+};
+
 // ── TC-P (Profile Phase A) types ─────────────────────────────────
 
 export type Company = {
@@ -2017,12 +2183,22 @@ export type RosterAssignment = {
   updated_at: string | null;
 };
 
+/** Account role hierarchy.
+ *   super_admin — single, undeletable account ('admin' username).
+ *                 Manages companies, system settings, role assignment,
+ *                 and impersonates other accounts for debugging.
+ *   admin       — branch operator. Approves leave / discipline /
+ *                 resignation, manages roster, sees PERSONA dashboards.
+ *                 Promoted by super_admin only.
+ *   staff       — base level. /staff/* only. */
+export type UserRole = "super_admin" | "admin" | "staff";
+
 export type User = {
   id: number;
   username: string;
   password_hash: string;
   display_name: string;
-  role: "admin" | "staff";
+  role: UserRole;
 };
 
 /** Full Phase A employee profile row — superset of `User` with all
@@ -2035,7 +2211,8 @@ export type EmployeeProfile = {
   id: number;
   username: string;
   display_name: string;
-  role: "admin" | "staff";
+  role: UserRole;
+  status: "active" | "pending_invite" | "disabled";
   // Personal
   title_prefix: string | null;
   first_name_th: string | null;

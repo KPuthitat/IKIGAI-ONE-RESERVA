@@ -4,7 +4,7 @@ import { exportBookingsCsv } from "@/lib/csv";
 
 export async function GET(req: Request) {
   const user = getSessionUser();
-  if (!user || user.role !== "admin") {
+  if (!user || user.role !== "admin" && user.role !== "super_admin") {
     return NextResponse.json({ error: "ต้องเป็นแอดมิน" }, { status: 403 });
   }
   const url = new URL(req.url);

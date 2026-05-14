@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/auth";
+import { requireSuperAdmin } from "@/lib/auth";
 import { getDb, type Company } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "บริษัทในเครื
 // branches.company_id.
 
 export default function AdminCompaniesPage() {
-  requireAdmin();
+  requireSuperAdmin();
   const lang = getLang();
   const db = getDb();
 

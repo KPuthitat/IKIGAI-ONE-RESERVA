@@ -28,7 +28,7 @@ export async function POST(
 ) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  if (user.role !== "admin") {
+  if (user.role !== "admin" && user.role !== "super_admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

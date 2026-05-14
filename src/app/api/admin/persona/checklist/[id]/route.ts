@@ -25,7 +25,7 @@ function loadGuarded(id: number, user: NonNullable<ReturnType<typeof getSessionU
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const user = getSessionUser();
-  if (!user || user.role !== "admin") {
+  if (!user || user.role !== "admin" && user.role !== "super_admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const id = Number(params.id);
@@ -54,7 +54,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const user = getSessionUser();
-  if (!user || user.role !== "admin") {
+  if (!user || user.role !== "admin" && user.role !== "super_admin") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const id = Number(params.id);

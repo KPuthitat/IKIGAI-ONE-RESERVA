@@ -20,7 +20,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
   if (!row) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (!row.evidence_filename) return NextResponse.json({ error: "no_attachment" }, { status: 404 });
-  if (user.role !== "admin" && row.user_id !== user.id) {
+  if (user.role !== "admin" && user.role !== "super_admin" && row.user_id !== user.id) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

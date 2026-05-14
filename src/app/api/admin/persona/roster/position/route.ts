@@ -20,7 +20,7 @@ const UpdateBody = CreateBody.partial().extend({
 export async function POST(req: Request) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (user.role !== "admin" && user.role !== "super_admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
   if (!user.activeBranchId) return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
   if (!userHasBranch(user, user.activeBranchId)) return NextResponse.json({ error: "branch_forbidden" }, { status: 403 });
 
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (user.role !== "admin" && user.role !== "super_admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
   if (!user.activeBranchId) return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
 
   const parsed = UpdateBody.safeParse(await req.json().catch(() => ({})));
@@ -72,7 +72,7 @@ export async function PATCH(req: Request) {
 export async function DELETE(req: Request) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (user.role !== "admin" && user.role !== "super_admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
   if (!user.activeBranchId) return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
 
   const url = new URL(req.url);
