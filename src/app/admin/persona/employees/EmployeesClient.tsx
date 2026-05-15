@@ -10,6 +10,11 @@ export type EmployeeRow = {
   username: string;
   display_name: string;
   role: "admin" | "staff";
+  // Drives the Quick Actions section in the edit modal: pending_invite
+  // shows "ดูลิงก์เชิญ" (re-display original onboard link), active shows
+  // password-reset + LINE-rebind affordances. Disabled rows are filtered
+  // out at the page-server query level so they never reach this client.
+  status: "active" | "pending_invite" | "disabled";
   gender: "male" | "female" | null;
   employment_type: "pt" | "ft" | null;
   hire_date: string | null;
@@ -227,6 +232,101 @@ function EditModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // ── Invite Actions state ────────────────────────────────────────
+  // Three buttons surface from the API at /api/admin/persona/employees/[id]/invite-link:
+  //   • "ดูลิงก์เชิญ" (pending_invite users) — GET, reuses existing valid invite
+  //     or issues a fresh `onboard` one. Lets admin re-show a link they
+  //     closed before sending to staff.
+  //   • "ออกลิงก์รีเซ็ตรหัสผ่าน" (active users) — POST kind=reset.
+  //   • "ออกลิงก์ผูก LINE ใหม่" (active users) — POST kind=rebind_line.
+  //     Used when staff changes LINE account or admin needs to fix a
+  //     misplaced binding (e.g. bound to the wrong user during testing).
+  type InviteLinkResp = {
+    invite_id: number;
+    kind: "onboard" | "reset" | "rebind_line";
+    token: string;
+    expires_at: string;
+    url: string;
+    liff_url: string | null;
+    direct_url: string;
+    reused: boolean;
+  };
+  const [inviteLinkResp, setInviteLinkResp] = useState<InviteLinkResp | null>(null);
+  const [inviteLinkBusy, setInviteLinkBusy] = useState<"show" | "reset" | "rebind" | null>(null);
+
+  // ── Danger Zone state ───────────────────────────────────────────
+  // Two-step confirm to keep accidental clicks from disabling a staff
+  // (and dropping their LINE binding). First click sets confirmDelete;
+  // second click actually runs the DELETE.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  async function copyToClipboard(text: string | null): Promise<void> {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // best-effort — older browsers / insecure contexts will simply fail silently
+    }
+  }
+
+  async function loadInviteLink(): Promise<void> {
+    setErr(null);
+    setInviteLinkBusy("show");
+    try {
+      const res = await fetch(
+        apiUrl(`/api/admin/persona/employees/${employee.id}/invite-link`)
+      );
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) {
+        setErr(j?.error ?? t("common.error"));
+        return;
+      }
+      setInviteLinkResp(j as InviteLinkResp);
+    } finally {
+      setInviteLinkBusy(null);
+    }
+  }
+
+  async function regenerateInvite(kind: "reset" | "rebind_line"): Promise<void> {
+    setErr(null);
+    setInviteLinkBusy(kind === "reset" ? "reset" : "rebind");
+    try {
+      const res = await fetch(
+        apiUrl(`/api/admin/persona/employees/${employee.id}/invite-link?kind=${kind}`),
+        { method: "POST" }
+      );
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) {
+        setErr(j?.error ?? t("common.error"));
+        return;
+      }
+      setInviteLinkResp(j as InviteLinkResp);
+    } finally {
+      setInviteLinkBusy(null);
+    }
+  }
+
+  async function disableUser(): Promise<void> {
+    setErr(null);
+    setDeleteBusy(true);
+    try {
+      const res = await fetch(
+        apiUrl(`/api/admin/persona/employees/${employee.id}`),
+        { method: "DELETE" }
+      );
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) {
+        setErr(j?.error ?? t("common.error"));
+        setConfirmDelete(false);
+        return;
+      }
+      onSaved();
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   async function save() {
     setBusy(true);
     setErr(null);
@@ -285,8 +385,54 @@ function EditModal({
           </h3>
           <p className="text-sm text-slate-500 mt-0.5">
             {employee.display_name} <span className="text-slate-400">@{employee.username}</span>
+            {employee.status === "pending_invite" && (
+              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
+                ยังไม่ได้ลงทะเบียน
+              </span>
+            )}
           </p>
         </div>
+
+        {/* ── Quick Actions — invite link management ─────────────────
+            Surfaces whichever invite-issuing affordances make sense for
+            the user's current lifecycle state. Hidden for disabled rows
+            (they don't reach this client anyway, but guard for safety). */}
+        {employee.status !== "disabled" && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+            <div className="text-xs font-bold text-slate-700">บัญชี + ลิงก์เชิญ</div>
+            <div className="flex flex-wrap gap-2">
+              {employee.status === "pending_invite" && (
+                <button type="button"
+                  onClick={loadInviteLink}
+                  disabled={inviteLinkBusy !== null}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-brand text-white font-bold hover:opacity-90 disabled:opacity-50">
+                  {inviteLinkBusy === "show" ? "กำลังโหลด..." : "ดูลิงก์เชิญ"}
+                </button>
+              )}
+              {employee.status === "active" && (
+                <>
+                  <button type="button"
+                    onClick={() => regenerateInvite("reset")}
+                    disabled={inviteLinkBusy !== null}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 font-medium disabled:opacity-50">
+                    {inviteLinkBusy === "reset" ? "กำลังออก..." : "ออกลิงก์รีเซ็ตรหัสผ่าน"}
+                  </button>
+                  <button type="button"
+                    onClick={() => regenerateInvite("rebind_line")}
+                    disabled={inviteLinkBusy !== null}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-medium disabled:opacity-50">
+                    {inviteLinkBusy === "rebind" ? "กำลังออก..." : "ออกลิงก์ผูก LINE ใหม่"}
+                  </button>
+                </>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-500 leading-snug">
+              {employee.status === "pending_invite"
+                ? "พนักงานยังไม่ได้ตั้งรหัสผ่าน — กดเพื่อดู/ออกลิงก์เชิญส่งทาง LINE"
+                : "ใช้เมื่อพนักงานลืมรหัสผ่าน หรือเปลี่ยน LINE account ใหม่"}
+            </p>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -605,6 +751,56 @@ function EditModal({
 
         {err && <div className="text-rose-600 text-sm">{err}</div>}
 
+        {/* ── Danger Zone — soft-delete (status='disabled') ──────────
+            Doesn't hard-delete the users row because too many tables
+            (bookings, payroll, audit) reference users(id). The backend
+            DELETE just flips status + clears LINE binding + kills
+            sessions + revokes invites — see route.ts comment for the
+            full rationale. Two-step confirm via local state to avoid
+            accidental clicks. */}
+        <div className="border-t border-rose-200 pt-4">
+          <h4 className="text-sm font-semibold text-rose-700 mb-2">
+            ลบบัญชีพนักงาน
+          </h4>
+          <p className="text-xs text-slate-600 mb-2 leading-snug">
+            บัญชีจะถูกระงับ (status=disabled), ลบการผูก LINE, ปิด session
+            ที่ใช้งานอยู่ และยกเลิกลิงก์เชิญที่ยังไม่ได้ใช้
+            <br />
+            <span className="text-slate-500">
+              ข้อมูล payroll / ประวัติการจอง / audit log ยังคงอยู่
+              เพื่อรักษาประวัติ
+            </span>
+          </p>
+          {!confirmDelete ? (
+            <button type="button"
+              onClick={() => setConfirmDelete(true)}
+              disabled={busy || deleteBusy}
+              className="w-full py-2 rounded-lg border border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100 text-sm font-medium disabled:opacity-50">
+              ลบบัญชี {employee.display_name}
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-rose-700 font-bold">
+                ยืนยันลบ {employee.display_name} (@{employee.username}) ใช่ไหม?
+              </p>
+              <div className="flex gap-2">
+                <button type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={deleteBusy}
+                  className="flex-1 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs">
+                  ยกเลิก
+                </button>
+                <button type="button"
+                  onClick={disableUser}
+                  disabled={deleteBusy}
+                  className="flex-1 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold disabled:opacity-50">
+                  {deleteBusy ? "กำลังลบ..." : "ยืนยันลบ"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="flex gap-2 pt-2">
           <button type="button" onClick={onClose} disabled={busy}
             className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
@@ -616,6 +812,81 @@ function EditModal({
           </button>
         </div>
       </div>
+
+      {/* ── Invite link overlay ─────────────────────────────────────
+          Stacked on top of the EditModal (z-60) when admin clicks one
+          of the invite-action buttons. Shows the LIFF + direct URLs +
+          copy buttons. Closing returns to the form. Note we don't
+          router.refresh() here — the user's lifecycle state doesn't
+          change just because we issued a new invite. */}
+      {inviteLinkResp && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setInviteLinkResp(null)}>
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="text-center">
+              <div className="text-4xl">✓</div>
+              <h3 className="font-bold text-slate-800 text-lg mt-2">
+                {inviteLinkResp.reused
+                  ? "ลิงก์เชิญที่มีอยู่"
+                  : "ออกลิงก์เชิญใหม่เรียบร้อย"}
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                ประเภท: <span className="font-medium">
+                  {inviteLinkResp.kind === "onboard" && "ลงทะเบียนครั้งแรก"}
+                  {inviteLinkResp.kind === "reset" && "รีเซ็ตรหัสผ่าน"}
+                  {inviteLinkResp.kind === "rebind_line" && "ผูก LINE ใหม่"}
+                </span>
+                <br />
+                หมดอายุ {new Date(inviteLinkResp.expires_at).toISOString().slice(0, 10)}
+              </p>
+            </div>
+
+            {/* Primary (LIFF if available) */}
+            <div>
+              <div className="text-[11px] text-slate-500 mb-1 font-bold">
+                {inviteLinkResp.liff_url
+                  ? "ลิงก์สำหรับ LINE (แนะนำ — ผูก LINE อัตโนมัติ)"
+                  : "ลิงก์เชิญ"}
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs break-all select-all">
+                {inviteLinkResp.url}
+              </div>
+              <button type="button"
+                onClick={() => copyToClipboard(inviteLinkResp.url)}
+                className="w-full mt-2 py-2 rounded-lg border border-brand text-brand text-xs font-bold hover:bg-rose-50">
+                📋 คัดลอกลิงก์นี้
+              </button>
+            </div>
+
+            {inviteLinkResp.liff_url && inviteLinkResp.direct_url
+              && inviteLinkResp.url !== inviteLinkResp.direct_url && (
+              <div className="border-t border-slate-100 pt-3">
+                <div className="text-[11px] text-slate-500 mb-1">
+                  ลิงก์สำรอง (สำหรับเปิดในเบราว์เซอร์ปกติ — ไม่ผูก LINE อัตโนมัติ)
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-[10px] break-all select-all text-slate-500">
+                  {inviteLinkResp.direct_url}
+                </div>
+                <button type="button"
+                  onClick={() => copyToClipboard(inviteLinkResp.direct_url)}
+                  className="w-full mt-1 py-1.5 rounded text-[11px] text-slate-500 hover:text-brand">
+                  คัดลอกลิงก์สำรอง
+                </button>
+              </div>
+            )}
+
+            <button type="button"
+              onClick={() => setInviteLinkResp(null)}
+              className="w-full py-2.5 rounded-lg bg-brand text-white text-sm font-bold">
+              ปิด
+            </button>
+            <p className="text-[10px] text-slate-400 text-center">
+              หมายเหตุ: ลิงก์ใช้ได้ครั้งเดียว — ส่งให้เฉพาะคนที่ต้องการเท่านั้น
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { getSessionUser } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, logPersonaAction, type UserRole } from "@/lib/db";
+import { revokeOpenInvites } from "@/lib/invites";
 
 // PATCH /api/admin/persona/employees/[id] — admin update profile + payroll fields
 // Note: ไม่อนุญาตเปลี่ยน role/username/password_hash/display_name (sync จาก Payroll)
@@ -223,5 +224,79 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     vals.push(id);
     db.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`).run(...vals);
   }
+  return NextResponse.json({ ok: true });
+}
+
+// DELETE /api/admin/persona/employees/[id]
+//
+// Soft-delete an employee. Sets status='disabled', clears LINE binding,
+// revokes any open invites, and terminates active sessions. We DON'T
+// hard-delete the users row because many tables (bookings.created_by,
+// persona_activity_log, payroll_lines, etc.) reference users(id) and a
+// destructive cascade would lose operational/audit data.
+//
+// After the soft-delete:
+//   • The user disappears from /admin/persona/employees (filtered).
+//   • Their LINE userId is freed up — important when admin needs to
+//     re-bind it to a different user row (e.g. fixing a misplaced
+//     binding from a test account).
+//   • Their active session is killed so they can't continue acting
+//     under the old identity if they're currently logged in.
+//   • Login is blocked (login route filters status='active' only).
+//
+// Safety guards:
+//   • Can't soft-delete yourself.
+//   • Only super_admin can soft-delete an admin or another super_admin.
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const user = getSessionUser();
+  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  if (user.role !== "admin" && user.role !== "super_admin") {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  const id = Number(params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return NextResponse.json({ error: "invalid_id" }, { status: 400 });
+  }
+  if (id === user.id) {
+    return NextResponse.json({ error: "cannot_delete_self" }, { status: 400 });
+  }
+
+  const db = getDb();
+  const target = db.prepare(
+    "SELECT id, role, status, display_name FROM users WHERE id = ?"
+  ).get(id) as
+    | { id: number; role: UserRole; status: string; display_name: string }
+    | undefined;
+
+  if (!target) {
+    return NextResponse.json({ error: "user_not_found" }, { status: 404 });
+  }
+  if (target.status === "disabled") {
+    return NextResponse.json({ error: "already_disabled" }, { status: 409 });
+  }
+
+  // Only super_admin can disable admin / super_admin accounts. Plain
+  // admins are allowed to disable staff only.
+  if (target.role !== "staff" && user.role !== "super_admin") {
+    return NextResponse.json({ error: "super_admin_required_for_role" }, { status: 403 });
+  }
+
+  // All-in-one transaction so a crash partway can't leave a half-deleted
+  // account (e.g. status=disabled but sessions still alive, or invites
+  // still redeemable).
+  const tx = db.transaction(() => {
+    db.prepare(`
+      UPDATE users
+      SET status = 'disabled', line_user_id = NULL
+      WHERE id = ?
+    `).run(id);
+    db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+    revokeOpenInvites(id, "user_disabled");
+  });
+  tx();
+
+  logPersonaAction(user.id, "user.disable", id);
+
   return NextResponse.json({ ok: true });
 }

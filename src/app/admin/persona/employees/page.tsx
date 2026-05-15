@@ -28,8 +28,13 @@ export default function AdminEmployeesPage() {
     return <div className="card text-sm text-slate-600">{t(lang, "common.error")}</div>;
   }
 
+  // Excludes `status='disabled'` so soft-deleted accounts don't clutter
+  // the list. They still exist in the DB (audit + payroll history) but
+  // can't log in and aren't manageable from this UI. Active and
+  // pending_invite both show up — pending shows the "ดูลิงก์เชิญ"
+  // affordance to retrieve the link.
   const employees = db.prepare(`
-    SELECT u.id, u.username, u.display_name, u.role,
+    SELECT u.id, u.username, u.display_name, u.role, u.status,
            u.gender, u.employment_type, u.hire_date, u.weekly_off_days,
            u.employee_code, u.national_id, u.bank_name, u.bank_account,
            u.tax_id, u.sso_id, u.hourly_rate, u.monthly_salary, u.pay_cycle,
@@ -38,6 +43,7 @@ export default function AdminEmployeesPage() {
            CASE WHEN u.resignation_unlocked_at IS NULL THEN 0 ELSE 1 END AS resign_unlocked
     FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.status != 'disabled'
     ORDER BY u.role DESC,
              CASE WHEN u.employment_type = 'ft' THEN 0 WHEN u.employment_type = 'pt' THEN 1 ELSE 2 END,
              u.display_name ASC
