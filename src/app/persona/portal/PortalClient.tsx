@@ -124,12 +124,19 @@ export default function PortalClient({ liffId }: { liffId: string }) {
     return () => { cancelled = true; clearInterval(interval); };
   }, [liffId, router]);
 
-  const showManualLoginCta =
-    phase === "no_liff" || phase === "not_bound" || phase === "error";
+  // Manual /login CTA is shown ONLY for environmental failures
+  // (no_liff / error) where a legitimate admin opening the rich-menu
+  // link in a desktop browser might still want to get in. We deliberately
+  // do NOT show it for `not_bound` — that's an identity check failure
+  // (the LIFF userId isn't registered in our users table), and per
+  // policy unregistered staff must not be able to enter the system at
+  // all. They see only "ติดต่อหัวหน้างาน" with no actionable button.
+  const showManualLoginCta = phase === "no_liff" || phase === "error";
+  const showSpinner = phase === "init" || phase === "auth" || phase === "ok";
 
   const heading =
     phase === "ok" ? "เข้าระบบสำเร็จ" :
-    phase === "not_bound" ? "ยังไม่ได้ลงทะเบียน" :
+    phase === "not_bound" ? "ไม่สามารถเข้าระบบได้" :
     phase === "no_liff" ? "เปิดในเบราว์เซอร์ปกติ" :
     phase === "error" ? "ไม่สามารถเข้าระบบได้" :
     "กรุณารอสักครู่";
@@ -145,7 +152,7 @@ export default function PortalClient({ liffId }: { liffId: string }) {
         <OwlMascot size={96} mood={mascotMood} />
         <h1 className="text-lg font-bold text-slate-800">{heading}</h1>
 
-        {lineName && (
+        {lineName && phase !== "not_bound" && (
           <p className="text-xs text-slate-500">
             LINE: <span className="font-bold text-brand">{lineName}</span>
           </p>
@@ -154,12 +161,17 @@ export default function PortalClient({ liffId }: { liffId: string }) {
         <p className="text-sm text-slate-600">{msg}</p>
 
         {phase === "not_bound" && (
-          <p className="text-xs text-slate-500">
-            กรุณาติดต่อหัวหน้างานเพื่อขอลิงก์เชิญ
-          </p>
+          <div className="space-y-2 pt-1">
+            <p className="text-sm text-slate-700 font-medium">
+              บัญชี LINE ของคุณยังไม่ได้รับสิทธิ์เข้าใช้งานระบบ
+            </p>
+            <p className="text-xs text-slate-500">
+              กรุณาติดต่อหัวหน้างานเพื่อขอลิงก์เชิญลงทะเบียน
+            </p>
+          </div>
         )}
 
-        {!showManualLoginCta && (
+        {showSpinner && (
           <div className="w-12 h-1 mx-auto bg-amber-200 rounded-full overflow-hidden">
             <div className="h-full bg-amber-500 animate-pulse" />
           </div>
