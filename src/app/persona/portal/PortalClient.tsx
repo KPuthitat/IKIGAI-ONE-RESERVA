@@ -22,6 +22,26 @@ export default function PortalClient({ liffId }: { liffId: string }) {
   const [phase, setPhase] = useState<Phase>("init");
   const [msg, setMsg] = useState<string>("กำลังเตรียมเข้าระบบ...");
   const [lineName, setLineName] = useState<string | null>(null);
+  // Captured even when login fails — surfaced on the not_bound screen so
+  // a staff member can hand their LINE userId to an admin, who pastes it
+  // into the employee's "LINE binding" field. This is the robust
+  // fallback for when the invite LIFF flow misbehaves (blank page, etc.)
+  // since the portal LIFF itself clearly works to this point.
+  const [lineUserId, setLineUserId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function copyUserId(): Promise<void> {
+    if (!lineUserId) return;
+    try {
+      await navigator.clipboard.writeText(lineUserId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API unavailable (insecure context / old in-app
+      // browser). The userId is still shown in a select-all box so
+      // the staff can long-press → copy manually.
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -71,11 +91,16 @@ export default function PortalClient({ liffId }: { liffId: string }) {
           return;
         }
 
-        // Pull displayName for friendly "สวัสดี <ชื่อ>" copy. Non-fatal
-        // if it fails — the backend doesn't need it.
+        // Pull displayName + userId. displayName is for friendly copy;
+        // userId is the value an admin pastes into the employee's LINE
+        // binding field when the not_bound fallback is used. Non-fatal
+        // if it fails — the backend re-derives userId from accessToken.
         try {
           const profile = await liff.getProfile();
-          if (!cancelled) setLineName(profile.displayName ?? null);
+          if (!cancelled) {
+            setLineName(profile.displayName ?? null);
+            setLineUserId(profile.userId ?? null);
+          }
         } catch {
           // ignore
         }
@@ -161,13 +186,43 @@ export default function PortalClient({ liffId }: { liffId: string }) {
         <p className="text-sm text-slate-600">{msg}</p>
 
         {phase === "not_bound" && (
-          <div className="space-y-2 pt-1">
+          <div className="space-y-3 pt-1">
             <p className="text-sm text-slate-700 font-medium">
-              บัญชี LINE ของคุณยังไม่ได้รับสิทธิ์เข้าใช้งานระบบ
+              บัญชี LINE ของคุณยังไม่ได้ผูกกับระบบ
             </p>
-            <p className="text-xs text-slate-500">
-              กรุณาติดต่อหัวหน้างานเพื่อขอลิงก์เชิญลงทะเบียน
-            </p>
+
+            {lineName && (
+              <p className="text-xs text-slate-500">
+                LINE: <span className="font-bold text-brand">{lineName}</span>
+              </p>
+            )}
+
+            {lineUserId ? (
+              <div className="space-y-2">
+                <p className="text-xs text-slate-600">
+                  ส่ง <span className="font-bold">LINE ID</span> ด้านล่างนี้
+                  ให้หัวหน้างาน เพื่อผูกบัญชีให้คุณ
+                </p>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs break-all select-all font-mono text-slate-700">
+                  {lineUserId}
+                </div>
+                <button
+                  type="button"
+                  onClick={copyUserId}
+                  className="w-full py-2 rounded-lg border border-brand text-brand text-xs font-bold hover:bg-rose-50"
+                >
+                  {copied ? "✓ คัดลอกแล้ว" : "📋 คัดลอก LINE ID"}
+                </button>
+                <p className="text-[10px] text-slate-400 leading-snug">
+                  หัวหน้างานนำไปวางในช่อง "LINE binding" ของพนักงาน
+                  ที่หน้า จัดการพนักงาน แล้วคุณกดปุ่มนี้อีกครั้งจะเข้าได้เลย
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">
+                กรุณาติดต่อหัวหน้างานเพื่อขอลิงก์เชิญลงทะเบียน
+              </p>
+            )}
           </div>
         )}
 
