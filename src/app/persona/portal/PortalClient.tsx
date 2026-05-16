@@ -172,9 +172,9 @@ export default function PortalClient({ liffId }: { liffId: string }) {
     "sleepy";
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-amber-50/40 p-4">
+    <div className="min-h-[100dvh] flex items-center justify-center bg-amber-50/40 p-4">
       <div className="card max-w-md w-full text-center space-y-3">
-        <OwlMascot size={96} mood={mascotMood} />
+        <OwlMascot size={140} mood={mascotMood} className="mx-auto block" />
         <h1 className="text-lg font-bold text-slate-800">{heading}</h1>
 
         {lineName && phase !== "not_bound" && (

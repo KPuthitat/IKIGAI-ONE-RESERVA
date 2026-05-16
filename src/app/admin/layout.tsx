@@ -8,6 +8,7 @@ import HeaderBrand from "../HeaderBrand";
 import LangToggle from "../LangToggle";
 import Footer from "../Footer";
 import Sidebar, { type SidebarSection } from "../components/Sidebar";
+import ProgramInfo from "../components/ProgramInfo";
 import AdminSidebarBrand from "./AdminSidebarBrand";
 import TodaysBranchPill from "../TodaysBranchPill";
 import HookFab from "../components/HookFab";
@@ -224,6 +225,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <LangToggle variant="dark" />
         <LogoutButton />
       </div>
+      {/* Program metadata lives here on mobile — the full-width
+          <Footer> is hidden below md to keep the cramped main content
+          area clean. Same info, one tap away, pinned to the very
+          bottom of the slide-in sidebar. */}
+      <div className="border-t border-white/10 pt-3">
+        <ProgramInfo />
+      </div>
     </div>
   );
 
@@ -272,7 +280,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </header>
         <main className="flex-1 w-full p-4 max-w-6xl mx-auto">{children}</main>
-        <Footer />
+        {/* Desktop only — on mobile this info moves into the sidebar
+            bottom (see mobileSidebarFooter) so the page isn't crowded. */}
+        <div className="hidden md:block mt-auto">
+          <Footer />
+        </div>
       </div>
       <HookFab audience="admin" />
     </div>

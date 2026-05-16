@@ -169,20 +169,27 @@ export default function Sidebar({
       <aside
         className={`
           fixed md:sticky top-0 left-0 z-40
-          h-screen
+          h-[100dvh]
           flex-shrink-0
           bg-ink-gradient text-white shadow-xl
-          overflow-y-auto
+          overflow-hidden
           flex flex-col
           transition-all duration-200 ease-out
           ${open ? "w-64 translate-x-0" : "w-64 -translate-x-full md:w-0"}
         `}
       >
+        {/* Brand pinned at top, footer pinned at bottom, only the nav
+            scrolls. Previously overflow-y-auto sat on the whole aside
+            with h-screen — on mobile in-app browsers 100vh extends
+            behind the bottom toolbar, pushing the footer (user info /
+            logout) out of view. h-[100dvh] tracks the *visible*
+            viewport, and moving the scroll onto <nav> keeps the footer
+            permanently reachable. */}
         <div className="px-4 pt-4 pb-3 border-b border-white/10 flex-shrink-0">
           {brand}
         </div>
 
-        <nav className="p-3 space-y-5 flex-1">
+        <nav className="p-3 space-y-5 flex-1 overflow-y-auto min-h-0">
           {visibleSections.map((s, i) => (
             <div key={i}>
               {s.label && (
@@ -225,7 +232,7 @@ export default function Sidebar({
         </nav>
 
         {footer && (
-          <div className="flex-shrink-0 border-t border-white/10 p-3">
+          <div className="flex-shrink-0 border-t border-white/10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
             {footer}
           </div>
         )}

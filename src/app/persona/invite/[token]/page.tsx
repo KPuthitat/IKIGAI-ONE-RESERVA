@@ -23,9 +23,9 @@ export default function InviteRedeemPage({ params }: { params: { token: string }
 
   if (!invite) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-amber-50/40 p-4">
-        <div className="card max-w-md text-center space-y-3">
-          <OwlMascot size={96} mood="thinking" />
+      <div className="min-h-[100dvh] flex items-center justify-center bg-amber-50/40 p-4">
+        <div className="card max-w-md w-full text-center space-y-3">
+          <OwlMascot size={140} mood="thinking" className="mx-auto block" />
           <h1 className="text-xl font-bold text-slate-800">ลิงก์เชิญใช้งานไม่ถูกต้อง</h1>
           <p className="text-sm text-slate-600">
             ลิงก์นี้อาจหมดอายุ หรือถูกใช้ไปแล้ว
@@ -44,10 +44,10 @@ export default function InviteRedeemPage({ params }: { params: { token: string }
       : { title: "ผูก LINE ใหม่", sub: "ระบบจะผูก LINE ใหม่ของคุณกับบัญชีเดิม" };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-amber-50/40 p-4">
+    <div className="min-h-[100dvh] flex items-center justify-center bg-amber-50/40 p-4">
       <div className="card max-w-md w-full space-y-4">
         <div className="text-center">
-          <OwlMascot size={96} mood="smile" />
+          <OwlMascot size={140} mood="smile" className="mx-auto block" />
           <h1 className="text-2xl font-bold text-slate-800 mt-2">{kindCopy.title}</h1>
           <p className="text-sm text-amber-700 mt-1">{kindCopy.sub}</p>
           <p className="text-base font-bold text-slate-700 mt-3">

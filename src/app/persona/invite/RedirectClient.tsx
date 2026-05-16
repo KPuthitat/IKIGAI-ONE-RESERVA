@@ -119,9 +119,9 @@ export default function RedirectClient({ liffId }: { liffId: string }) {
 
   if (status === "no_token") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-amber-50/40 p-4">
-        <div className="card max-w-md text-center space-y-3">
-          <OwlMascot size={96} mood="thinking" />
+      <div className="min-h-[100dvh] flex items-center justify-center bg-amber-50/40 p-4">
+        <div className="card max-w-md w-full text-center space-y-3">
+          <OwlMascot size={140} mood="thinking" className="mx-auto block" />
           <h1 className="text-xl font-bold text-slate-800">ลิงก์ไม่ถูกต้อง</h1>
           <p className="text-sm text-slate-600">
             ไม่พบ token ในลิงก์ — กรุณาขอลิงก์ใหม่จากหัวหน้างานครับ
@@ -132,9 +132,9 @@ export default function RedirectClient({ liffId }: { liffId: string }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-amber-50/40 p-4">
-      <div className="card max-w-md text-center space-y-3">
-        <OwlMascot size={96} mood="sleepy" />
+    <div className="min-h-[100dvh] flex items-center justify-center bg-amber-50/40 p-4">
+      <div className="card max-w-md w-full text-center space-y-3">
+        <OwlMascot size={140} mood="sleepy" className="mx-auto block" />
         <h1 className="text-lg font-bold text-slate-800">
           {status === "ready" ? "เชื่อม LINE เรียบร้อย" : "กรุณารอสักครู่"}
         </h1>

@@ -37,15 +37,18 @@ export default function AccountActions({
   //     Falls back to direct URL when LIFF env isn't set.
   //   directLink  — the plain /persona/invite/<token> URL. Used as a
   //     fallback when the staff can't open in LINE (desktop, etc.).
-  const [primaryLink, setPrimaryLink] = useState<string | null>(null);
+  // We deliberately surface ONLY the plain direct URL. The LIFF-wrapped
+  // liff.line.me link proved unreliable (blank page on some devices) so
+  // the workflow is now: staff redeems via the direct link (no LINE
+  // capture), then admin binds the LINE userId manually from the portal
+  // not_bound screen. After binding, daily login is the rich-menu portal.
   const [directLink, setDirectLink] = useState<string | null>(null);
-  const [hasLiff, setHasLiff] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
 
   function reset() {
     setMode(null); setBusy(false); setErr(null);
     setDisplayName(""); setRole("staff"); setEmploymentType(""); setJobTitle("");
-    setPrimaryLink(null); setDirectLink(null); setHasLiff(false); setExpiresAt(null);
+    setDirectLink(null); setExpiresAt(null);
   }
 
   async function submitOnboard() {
@@ -70,9 +73,7 @@ export default function AccountActions({
         setErr(j.error ?? "เกิดข้อผิดพลาด");
         return;
       }
-      setPrimaryLink(j.liff_url ?? j.direct_url ?? j.url);
       setDirectLink(j.direct_url ?? j.url);
-      setHasLiff(!!j.liff_url);
       setExpiresAt(j.expires_at);
       setMode("showLink");
       startTransition(() => router.refresh());
@@ -163,7 +164,7 @@ export default function AccountActions({
         </div>
       )}
 
-      {mode === "showLink" && primaryLink && (
+      {mode === "showLink" && directLink && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onClick={reset}>
           <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
@@ -176,38 +177,24 @@ export default function AccountActions({
               </p>
             </div>
 
-            {/* Primary link — wrapped via liff.line.me when LIFF is
-                configured, so opening it in LINE auto-binds the
-                staff's userId. Falls back to direct URL otherwise. */}
             <div>
               <div className="text-[11px] text-slate-500 mb-1 font-bold">
-                {hasLiff
-                  ? "ลิงก์สำหรับ LINE (แนะนำ — ผูก LINE อัตโนมัติ)"
-                  : "ลิงก์เชิญ"}
+                ลิงก์เชิญ — ส่งให้พนักงานเปิดในเบราว์เซอร์เพื่อตั้ง username/password/PIN
               </div>
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs break-all select-all">
-                {primaryLink}
+                {directLink}
               </div>
-              <button type="button" onClick={() => copy(primaryLink)}
+              <button type="button" onClick={() => copy(directLink)}
                 className="w-full mt-2 py-2 rounded-lg border border-brand text-brand text-xs font-bold hover:bg-rose-50">
-                📋 คัดลอกลิงก์นี้
+                📋 คัดลอกลิงก์
               </button>
             </div>
 
-            {hasLiff && directLink && primaryLink !== directLink && (
-              <div className="border-t border-slate-100 pt-3">
-                <div className="text-[11px] text-slate-500 mb-1">
-                  ลิงก์สำรอง (ใช้เปิดในเบราว์เซอร์ปกติ — แต่จะไม่ผูก LINE)
-                </div>
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-[10px] break-all select-all text-slate-500">
-                  {directLink}
-                </div>
-                <button type="button" onClick={() => copy(directLink)}
-                  className="w-full mt-1 py-1.5 rounded text-[11px] text-slate-500 hover:text-brand">
-                  คัดลอกลิงก์สำรอง
-                </button>
-              </div>
-            )}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-[11px] text-amber-800 leading-snug">
+              หลังพนักงานลงทะเบียนเสร็จ ให้เขากดปุ่มในริชเมนู →
+              หน้าจอจะแสดง LINE ID → ส่งมาให้แอดมินวางในช่อง
+              "LINE binding" ของพนักงาน เพื่อเปิดใช้ล็อกอินอัตโนมัติ
+            </div>
 
             <button type="button" onClick={reset}
               className="w-full py-2.5 rounded-lg bg-brand text-white text-sm font-bold">

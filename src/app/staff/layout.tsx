@@ -6,6 +6,7 @@ import LogoutButton from "../admin/LogoutButton";
 import HeaderBrand from "../HeaderBrand";
 import LangToggle from "../LangToggle";
 import Footer from "../Footer";
+import ProgramInfo from "../components/ProgramInfo";
 import Sidebar, { type SidebarSection } from "../components/Sidebar";
 import StaffSidebarBrand from "./StaffSidebarBrand";
 import TodaysBranchPill from "../TodaysBranchPill";
@@ -138,6 +139,11 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         <LangToggle variant="dark" />
         <LogoutButton />
       </div>
+      {/* Program metadata — mobile only (full-width Footer hidden
+          below md to declutter the page). Pinned to sidebar bottom. */}
+      <div className="border-t border-white/10 pt-3">
+        <ProgramInfo />
+      </div>
     </div>
   );
 
@@ -183,7 +189,10 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           </div>
         </header>
         <main className="flex-1 w-full p-4 max-w-6xl mx-auto">{children}</main>
-        <Footer />
+        {/* Desktop only — mobile shows this in the sidebar bottom. */}
+        <div className="hidden md:block mt-auto">
+          <Footer />
+        </div>
       </div>
       <HookFab audience="staff" />
     </div>
