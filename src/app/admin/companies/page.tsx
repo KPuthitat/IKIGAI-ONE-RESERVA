@@ -39,6 +39,24 @@ export default function AdminCompaniesPage() {
     tax_branch_code: string | null;
   }>;
 
+  // Users + their branch grants — drives the per-branch admin list
+  // nested under each branch (company → branch → admins).
+  const users = db.prepare(`
+    SELECT id, display_name, username, role
+    FROM users
+    ORDER BY CASE role WHEN 'super_admin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+             display_name
+  `).all() as Array<{
+    id: number;
+    display_name: string;
+    username: string;
+    role: "super_admin" | "admin" | "staff";
+  }>;
+
+  const grants = db.prepare(
+    "SELECT user_id, branch_id, is_admin FROM user_branches"
+  ).all() as Array<{ user_id: number; branch_id: number; is_admin: number }>;
+
   return (
     <div className="space-y-4">
       <div>
@@ -49,7 +67,12 @@ export default function AdminCompaniesPage() {
           {t(lang, "admin.companies.subtitle")}
         </p>
       </div>
-      <CompaniesClient companies={rows} branches={branches} />
+      <CompaniesClient
+        companies={rows}
+        branches={branches}
+        users={users}
+        grants={grants}
+      />
     </div>
   );
 }
