@@ -64,9 +64,13 @@ export default function CountClient({
   function resolveBarcode(code: string) {
     const c = code.trim();
     if (!c) return;
-    const hit = items.find((i) => (i.barcode ?? "") === c);
+    // Match the scanned value against the box barcode OR the item_code
+    // (the QR we print encodes item_code).
+    const hit = items.find(
+      (i) => (i.barcode ?? "") === c || (i.item_code ?? "") === c
+    );
     if (hit) pick(hit);
-    else setMsg(`ไม่พบบาร์โค้ด ${c} ในคลัง — เพิ่มยานี้ในเมนูคลังก่อน`);
+    else setMsg(`ไม่พบรหัส ${c} ในคลัง — เพิ่มยานี้ในเมนูคลังก่อน`);
     if (scanRef.current) scanRef.current.value = "";
   }
 
@@ -140,7 +144,7 @@ export default function CountClient({
 
         <div className="flex flex-wrap gap-2">
           <input ref={scanRef} className="input flex-1 min-w-[180px]"
-            placeholder="สแกน / พิมพ์บาร์โค้ด แล้วกด Enter"
+            placeholder="สแกน / พิมพ์ รหัสยา หรือบาร์โค้ด แล้วกด Enter"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -149,7 +153,7 @@ export default function CountClient({
             }} />
           <button type="button" onClick={() => setScanCam(true)}
             className="text-sm px-4 py-2 rounded-lg border border-brand text-brand font-bold hover:bg-rose-50">
-            สแกนกล้อง
+            สแกนคิวอาร์โค้ด
           </button>
           <button type="button" onClick={submit} disabled={busy}
             className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold disabled:opacity-50">
@@ -229,7 +233,7 @@ export default function CountClient({
 
       {scanCam && (
         <BarcodeScanner
-          title="สแกนยาเพื่อนับ"
+          title="สแกนคิวอาร์โค้ดเพื่อนับ"
           onResult={(code) => resolveBarcode(code)}
           onClose={() => setScanCam(false)}
         />

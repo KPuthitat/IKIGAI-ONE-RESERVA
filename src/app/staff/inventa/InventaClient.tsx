@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
@@ -48,6 +48,7 @@ export default function InventaClient({
   const [showSuppliers, setShowSuppliers] = useState(false);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanCam, setScanCam] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const scanRef = useRef<HTMLInputElement>(null);
 
   const refresh = () => startTransition(() => router.refresh());
@@ -67,17 +68,17 @@ export default function InventaClient({
   // Scan: USB scanners type the code then send Enter. Look it up — a
   // hit opens the edit modal (adjust qty/details); a miss opens the
   // add modal pre-filled with the scanned barcode.
-  async function onScan(code: string) {
-    const barcode = code.trim();
-    if (!barcode) return;
+  async function onScan(raw: string) {
+    const code = raw.trim();
+    if (!code) return;
     setScanBusy(true);
     try {
       const res = await fetch(
-        apiUrl(`/api/inventa/items?barcode=${encodeURIComponent(barcode)}`)
+        apiUrl(`/api/inventa/items?code=${encodeURIComponent(code)}`)
       );
       const j = await res.json().catch(() => ({}));
       if (j?.item) setEdit(j.item as Item);
-      else setAdding({ barcode });
+      else setAdding({ barcode: code });
     } finally {
       setScanBusy(false);
       if (scanRef.current) scanRef.current.value = "";
@@ -104,12 +105,17 @@ export default function InventaClient({
           <button type="button"
             onClick={() => setScanCam(true)}
             className="text-sm px-4 py-2 rounded-lg border border-brand text-brand font-bold hover:bg-rose-50">
-            สแกนกล้อง
+            สแกนคิวอาร์โค้ด
           </button>
           <button type="button"
             onClick={() => setAdding({})}
             className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold hover:opacity-90">
             + เพิ่มยา/อุปกรณ์
+          </button>
+          <button type="button"
+            onClick={() => setShowImport(true)}
+            className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
+            นำเข้าจาก CSV
           </button>
           <button type="button"
             onClick={() => setShowSuppliers(true)}
@@ -119,6 +125,10 @@ export default function InventaClient({
           <Link href="/staff/inventa/grid"
             className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
             ผังกริด
+          </Link>
+          <Link href="/staff/inventa/labels"
+            className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
+            พิมพ์ QR
           </Link>
           <Link href="/staff/inventa/settings"
             className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
@@ -214,9 +224,16 @@ export default function InventaClient({
 
       {scanCam && (
         <BarcodeScanner
-          title="สแกน QR / บาร์โค้ด เพื่อค้นหายา"
+          title="สแกนคิวอาร์โค้ด เพื่อค้นหายา"
           onResult={(code) => onScan(code)}
           onClose={() => setScanCam(false)}
+        />
+      )}
+
+      {showImport && (
+        <ImportModal
+          onClose={() => setShowImport(false)}
+          onDone={() => { setShowImport(false); refresh(); }}
         />
       )}
 
@@ -593,6 +610,205 @@ function SuppliersModal({
           className="w-full py-2.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium">
           ปิด
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── CSV bulk import ────────────────────────────────────────────────
+// Excel-compatible CSV (no npm dependency, deploy stays plain
+// `npm run build`; handles Thai with a UTF-8 BOM). Thai header row
+// maps 1:1 to system fields; the client parses, the server inserts
+// row-by-row and reports skips.
+const IMPORT_COLUMNS: Array<[string, string]> = [
+  ["ชื่อสินค้า", "name"],
+  ["ชื่อสามัญ", "generic_name"],
+  ["รหัสสินค้า", "item_code"],
+  ["บาร์โค้ด", "barcode"],
+  ["หมวดหมู่", "category"],
+  ["ประเภท(ยา/อุปกรณ์)", "item_type"],
+  ["หน่วยเล็กสุด", "unit"],
+  ["ราคาต่อหน่วย", "unit_cost"],
+  ["ตำแหน่งเก็บยา", "storage_location"],
+  ["แถว", "grid_row"],
+  ["คอลัมน์", "grid_col"],
+  ["สี(R/Y/G)", "pick_freq"],
+  ["จุดสั่งซื้อ", "safety_stock"],
+  ["คงเหลือ", "current_qty"],
+  ["ผู้สั่ง(บริษัท)", "supplier"]
+];
+
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let q = false;
+  const s = text.replace(/^﻿/, "");
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) {
+      if (c === '"') {
+        if (s[i + 1] === '"') { cell += '"'; i++; }
+        else q = false;
+      } else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && s[i + 1] === "\n") i++;
+      row.push(cell); cell = "";
+      if (row.some((x) => x.trim() !== "")) rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  if (cell !== "" || row.length) {
+    row.push(cell);
+    if (row.some((x) => x.trim() !== "")) rows.push(row);
+  }
+  return rows;
+}
+
+function ImportModal({
+  onClose, onDone
+}: { onClose: () => void; onDone: () => void }) {
+  const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [fileName, setFileName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ created: number; errors: string[] } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  function downloadTemplate() {
+    const header = IMPORT_COLUMNS.map(([h]) => h).join(",");
+    const sample = [
+      "พาราเซตามอล 500mg", "Paracetamol", "IKGPH/A0001", "8850000000001",
+      "กลุ่มยาทั่วไป General Drugs", "ยา", "เม็ด", "1.00", "ตู้ยา",
+      "A", "1", "G", "100", "250", "วินฟาร์ม่า"
+    ].join(",");
+    const blob = new Blob(["﻿" + header + "\n" + sample + "\n"], {
+      type: "text/csv;charset=utf-8"
+    });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "inventa_template.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function onFile(e: ChangeEvent<HTMLInputElement>) {
+    setErr(null); setResult(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const grid = parseCsv(String(reader.result ?? ""));
+        if (grid.length < 2) { setErr("ไฟล์ว่างหรือไม่มีข้อมูล"); return; }
+        const head = grid[0].map((h) => h.trim());
+        const idx: Record<string, number> = {};
+        IMPORT_COLUMNS.forEach(([label, key]) => {
+          const at = head.indexOf(label);
+          if (at >= 0) idx[key] = at;
+        });
+        if (idx.name === undefined) {
+          setErr('ไม่พบคอลัมน์ "ชื่อสินค้า" — ใช้เทมเพลตที่ดาวน์โหลด');
+          return;
+        }
+        const out: Record<string, string>[] = [];
+        for (let r = 1; r < grid.length; r++) {
+          const o: Record<string, string> = {};
+          for (const [, key] of IMPORT_COLUMNS) {
+            if (idx[key] !== undefined) o[key] = (grid[r][idx[key]] ?? "").trim();
+          }
+          if (o.name) out.push(o);
+        }
+        setRows(out);
+      } catch {
+        setErr("อ่านไฟล์ไม่สำเร็จ");
+      }
+    };
+    reader.readAsText(file, "utf-8");
+  }
+
+  async function doImport() {
+    if (rows.length === 0) return;
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/inventa/items/import"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) { setErr(j?.error ?? "นำเข้าไม่สำเร็จ"); return; }
+      setResult({ created: j.created ?? 0, errors: j.errors ?? [] });
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-bold text-slate-800 text-lg">นำเข้ายาเป็น lot (CSV)</h3>
+        <p className="text-xs text-slate-500">
+          ดาวน์โหลดเทมเพลต → กรอกใน Excel → Save As <b>CSV UTF-8</b> →
+          อัปโหลดกลับ ระบบจะเพิ่มทุกแถวพร้อมกัน
+        </p>
+
+        <button type="button" onClick={downloadTemplate}
+          className="w-full py-2 rounded-lg border border-brand text-brand text-sm font-bold hover:bg-rose-50">
+          ดาวน์โหลดเทมเพลต CSV
+        </button>
+
+        <div>
+          <input type="file" accept=".csv,text/csv" onChange={onFile}
+            className="block w-full text-sm text-slate-600
+              file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0
+              file:bg-slate-100 file:text-slate-700 file:font-medium" />
+          {fileName && (
+            <p className="text-xs text-slate-500 mt-1">
+              {fileName} — พบ <b>{rows.length}</b> แถวพร้อมนำเข้า
+            </p>
+          )}
+        </div>
+
+        {err && <div className="text-sm text-rose-600">✗ {err}</div>}
+
+        {result && (
+          <div className="text-sm bg-emerald-50 border border-emerald-200 rounded-lg p-3 space-y-1">
+            <div className="text-emerald-700 font-bold">
+              นำเข้าสำเร็จ {result.created} รายการ
+            </div>
+            {result.errors.length > 0 && (
+              <div className="text-rose-600 text-xs">
+                ข้าม {result.errors.length} แถว:
+                <ul className="list-disc pl-4 mt-1">
+                  {result.errors.slice(0, 8).map((e, i) => <li key={i}>{e}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-1">
+          {result ? (
+            <button type="button" onClick={onDone}
+              className="flex-1 py-2.5 rounded-lg bg-brand text-white text-sm font-bold">
+              เสร็จสิ้น
+            </button>
+          ) : (
+            <>
+              <button type="button" onClick={onClose} disabled={busy}
+                className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 text-sm">
+                ยกเลิก
+              </button>
+              <button type="button" onClick={doImport}
+                disabled={busy || rows.length === 0}
+                className="flex-1 py-2.5 rounded-lg bg-brand text-white text-sm font-bold disabled:opacity-50">
+                {busy ? "กำลังนำเข้า..." : `นำเข้า ${rows.length} รายการ`}
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

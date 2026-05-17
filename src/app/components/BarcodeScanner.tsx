@@ -47,7 +47,7 @@ function ensureScript(): void {
 export default function BarcodeScanner({
   onResult,
   onClose,
-  title = "สแกนบาร์โค้ด / QR"
+  title = "สแกนคิวอาร์โค้ด"
 }: {
   onResult: (text: string) => void;
   onClose: () => void;

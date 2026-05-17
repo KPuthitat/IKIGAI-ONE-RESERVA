@@ -45,14 +45,17 @@ export async function GET(req: Request) {
   const db = getDb();
 
   const url = new URL(req.url);
-  const barcode = url.searchParams.get("barcode");
-  if (barcode) {
+  // A scan resolves either the box barcode OR the item_code (the QR we
+  // print encodes item_code). `code` is the new param; `barcode` kept
+  // for back-compat.
+  const code = (url.searchParams.get("code") ?? url.searchParams.get("barcode"))?.trim();
+  if (code) {
     const item = db.prepare(`
       SELECT * FROM inventa_items
-      WHERE barcode = ? AND active = 1
+      WHERE (barcode = ? OR item_code = ?) AND active = 1
         AND (branch_id IS ? OR branch_id = ?)
       ORDER BY id DESC LIMIT 1
-    `).get(barcode, branchId, branchId) as InventaItem | undefined;
+    `).get(code, code, branchId, branchId) as InventaItem | undefined;
     return NextResponse.json({ ok: true, item: item ?? null });
   }
 
