@@ -70,7 +70,8 @@ export default function EmployeesClient({ employees }: { employees: EmployeeRow[
     return days.map((d) => shorts[d]).join(", ");
   }
   function formatPayRate(u: EmployeeRow) {
-    if (u.role === "admin") return <span className="text-slate-300">—</span>;
+    // Admins are employees too — show their pay rate like staff
+    // (falls through to "—" if employment_type/rate isn't set yet).
     const taxBadge = u.salary_tax_mode === "wht" ? (
       <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700"
         title={t("admin.persona.employees.taxMode.whtShort")}>
@@ -520,7 +521,9 @@ function EditModal({
             >20% monthly minutes-late = no service charge). Leaving it
             unset disables late computation for this user, which is the
             right default for admins or staff without a fixed start time. */}
-        {employee.role === "staff" && (
+        {/* Admins are employees too — they get the same Schedule /
+            Payroll / identity fields as regular staff. */}
+        {(employee.role === "staff" || employee.role === "admin") && (
           <div className="border-t border-slate-200 pt-4">
             <h4 className="text-sm font-semibold text-slate-700 mb-2">
               {t("admin.persona.employees.section.schedule")}
@@ -546,7 +549,9 @@ function EditModal({
         )}
 
         {/* ── Payroll section (Phase 1D) ───────────────────────────── */}
-        {employee.role === "staff" && (
+        {/* Admins are employees too — they get the same Schedule /
+            Payroll / identity fields as regular staff. */}
+        {(employee.role === "staff" || employee.role === "admin") && (
           <>
             <div className="border-t border-slate-200 pt-4">
               <h4 className="text-sm font-semibold text-slate-700 mb-2">

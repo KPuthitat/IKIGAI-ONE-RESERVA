@@ -34,9 +34,6 @@ export default function AdminModeToggle() {
 
   return (
     <div>
-      <div className="text-[10px] font-bold tracking-[1.5px] text-white/40 uppercase mb-1.5">
-        {L.heading}
-      </div>
       <div
         className="flex items-center gap-1 p-1 rounded-lg bg-white/10"
         role="tablist"
