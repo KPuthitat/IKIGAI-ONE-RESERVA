@@ -63,7 +63,8 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/staff/inventa", label: "คลังยา/อุปกรณ์" },
         { href: "/staff/inventa/grid", label: "ผังกริด (หาตำแหน่งยา)" },
-        { href: "/staff/inventa/count", label: "เช็คสต๊อกรายสัปดาห์" }
+        { href: "/staff/inventa/count", label: "เช็คสต๊อกรายสัปดาห์" },
+        { href: "/staff/inventa/settings", label: "ตั้งค่า" }
       ]
     },
     {

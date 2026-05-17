@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import type { InventaItem, InventaSupplier } from "@/lib/inventa";
+import type { InventaItem, InventaSupplier, InventaLookup } from "@/lib/inventa";
 import InventaClient from "./InventaClient";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +27,12 @@ export default function InventaPage() {
     ORDER BY name
   `).all(branchId, branchId) as InventaSupplier[];
 
+  const lookups = db.prepare(`
+    SELECT * FROM inventa_lookups
+    WHERE active = 1 AND (branch_id IS NULL OR branch_id = ?)
+    ORDER BY kind, sort_order, value
+  `).all(branchId) as InventaLookup[];
+
   return (
     <div className="space-y-4">
       <div>
@@ -36,7 +42,7 @@ export default function InventaPage() {
           สีหยิบใช้ R/Y/G · ราคาทุนต่อหน่วยเล็กสุด
         </p>
       </div>
-      <InventaClient items={items} suppliers={suppliers} />
+      <InventaClient items={items} suppliers={suppliers} lookups={lookups} />
     </div>
   );
 }

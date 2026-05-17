@@ -15,6 +15,7 @@ const Body = z.object({
   generic_name: z.string().max(200).nullable().optional(),
   cgd_code: z.string().max(60).nullable().optional(),
   category: z.string().max(120).nullable().optional(),
+  storage_location: z.string().max(120).nullable().optional(),
   item_type: z.enum(["drug", "equipment"]).optional(),
   unit: z.string().max(40).nullable().optional(),
   last_purchase_price: z.number().min(0).nullable().optional(),
@@ -63,6 +64,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   set("generic_name", d.generic_name);
   set("cgd_code", d.cgd_code);
   set("category", d.category);
+  set("storage_location", d.storage_location);
   set("item_type", d.item_type);
   set("unit", d.unit);
   set("price_opd", d.price_opd);

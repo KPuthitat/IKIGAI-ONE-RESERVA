@@ -6,8 +6,8 @@ import Link from "next/link";
 import { apiUrl } from "@/lib/url";
 import BarcodeScanner from "@/app/components/BarcodeScanner";
 import {
-  PICK_FREQ_META, GRID_ROWS, GRID_COLS, binCode, unitCostFrom,
-  isLowStock, type PickFreq, type ItemType, type InventaSupplier
+  PICK_FREQ_META, GRID_COLS, binCode, isLowStock,
+  type PickFreq, type ItemType, type InventaSupplier, type InventaLookup
 } from "@/lib/inventa";
 
 type Item = {
@@ -18,6 +18,7 @@ type Item = {
   generic_name: string | null;
   cgd_code: string | null;
   category: string | null;
+  storage_location: string | null;
   item_type: ItemType;
   unit: string | null;
   unit_cost: number;
@@ -36,8 +37,8 @@ type Item = {
 };
 
 export default function InventaClient({
-  items, suppliers
-}: { items: Item[]; suppliers: InventaSupplier[] }) {
+  items, suppliers, lookups
+}: { items: Item[]; suppliers: InventaSupplier[]; lookups: InventaLookup[] }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [q, setQ] = useState("");
@@ -118,6 +119,10 @@ export default function InventaClient({
           <Link href="/staff/inventa/grid"
             className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
             ผังกริด
+          </Link>
+          <Link href="/staff/inventa/settings"
+            className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
+            ตั้งค่า
           </Link>
           <Link href="/staff/inventa/count"
             className="text-sm px-4 py-2 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold">
@@ -220,6 +225,7 @@ export default function InventaClient({
           item={edit}
           seed={adding ?? undefined}
           suppliers={suppliers}
+          lookups={lookups}
           onClose={() => { setEdit(null); setAdding(null); }}
           onSaved={() => { setEdit(null); setAdding(null); refresh(); }}
         />
@@ -238,27 +244,33 @@ export default function InventaClient({
 
 // ── Item add/edit modal ────────────────────────────────────────────
 function ItemModal({
-  item, seed, suppliers, onClose, onSaved
+  item, seed, suppliers, lookups, onClose, onSaved
 }: {
   item: Item | null;
   seed?: Partial<Item>;
   suppliers: InventaSupplier[];
+  lookups: InventaLookup[];
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const opts = (kind: string) =>
+    lookups.filter((l) => l.kind === kind).map((l) => l.value);
+  const rowOpts = opts("row");
+  const storageOpts = opts("storage");
+  const unitOpts = opts("unit");
+  const categoryOpts = opts("category");
+
   const base: Partial<Item> = item ?? seed ?? {};
   const [f, setF] = useState({
     item_code: base.item_code ?? "",
     barcode: base.barcode ?? "",
     name: base.name ?? "",
     generic_name: base.generic_name ?? "",
-    cgd_code: base.cgd_code ?? "",
     category: base.category ?? "",
     item_type: (base.item_type ?? "drug") as ItemType,
     unit: base.unit ?? "",
-    purchase_price: base.last_purchase_price != null ? String(base.last_purchase_price) : "",
-    purchase_units: base.last_purchase_units != null ? String(base.last_purchase_units) : "",
-    price_opd: base.price_opd != null ? String(base.price_opd) : "",
+    unit_cost: base.unit_cost != null ? String(base.unit_cost) : "",
+    storage_location: base.storage_location ?? "",
     supplier_id: base.supplier_id != null ? String(base.supplier_id) : "",
     grid_row: base.grid_row ?? "",
     grid_col: base.grid_col != null ? String(base.grid_col) : "",
@@ -275,9 +287,6 @@ function ItemModal({
   const up = (k: keyof typeof f, v: string) =>
     setF((p) => ({ ...p, [k]: v }) as typeof p);
 
-  const unitCost = unitCostFrom(
-    Number(f.purchase_price) || 0, Number(f.purchase_units) || 0
-  );
   const preview = binCode(
     f.grid_row || null,
     f.grid_col ? Number(f.grid_col) : null,
@@ -294,13 +303,11 @@ function ItemModal({
         barcode: f.barcode.trim() || null,
         name: f.name.trim(),
         generic_name: f.generic_name.trim() || null,
-        cgd_code: f.cgd_code.trim() || null,
         category: f.category.trim() || null,
         item_type: f.item_type,
         unit: f.unit.trim() || null,
-        last_purchase_price: f.purchase_price ? Number(f.purchase_price) : null,
-        last_purchase_units: f.purchase_units ? Number(f.purchase_units) : null,
-        price_opd: f.price_opd ? Number(f.price_opd) : null,
+        unit_cost: f.unit_cost ? Number(f.unit_cost) : 0,
+        storage_location: f.storage_location.trim() || null,
         supplier_id: f.supplier_id ? Number(f.supplier_id) : null,
         grid_row: f.grid_row || null,
         grid_col: f.grid_col ? Number(f.grid_col) : null,
@@ -369,36 +376,41 @@ function ItemModal({
               onChange={(e) => up("generic_name", e.target.value)} />
           </div>
           <div>
-            <label className="label">หมวดหมู่</label>
-            <input className="input" value={f.category}
-              onChange={(e) => up("category", e.target.value)}
-              placeholder="เช่น General Drugs / NSAIDs" />
-          </div>
-          <div>
             <label className="label">รหัสสินค้า</label>
             <input className="input" value={f.item_code}
               onChange={(e) => up("item_code", e.target.value)}
               placeholder="เช่น IKGPH/A0001" />
           </div>
-          <div>
-            <label className="label">รหัสกรมบัญชีกลาง</label>
-            <input className="input" value={f.cgd_code}
-              onChange={(e) => up("cgd_code", e.target.value)} />
+          <div className="col-span-2">
+            <label className="label">หมวดหมู่ยา</label>
+            <select className="input" value={f.category}
+              onChange={(e) => up("category", e.target.value)}>
+              <option value="">— เลือกหมวดหมู่ —</option>
+              {categoryOpts.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
         </div>
 
         {/* Location + colour */}
         <div className="border-t border-slate-200 pt-3">
           <div className="text-xs font-bold text-slate-700 mb-2">
-            ตำแหน่งในคลัง (Grid)
+            ตำแหน่งในคลัง
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="label">ตำแหน่งเก็บยา</label>
+              <select className="input" value={f.storage_location}
+                onChange={(e) => up("storage_location", e.target.value)}>
+                <option value="">—</option>
+                {storageOpts.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
             <div>
-              <label className="label">แถว (A–E)</label>
+              <label className="label">แถว (รหัสขึ้นต้น)</label>
               <select className="input" value={f.grid_row}
                 onChange={(e) => up("grid_row", e.target.value)}>
                 <option value="">—</option>
-                {GRID_ROWS.map((r) => <option key={r} value={r}>{r}</option>)}
+                {rowOpts.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
             <div>
@@ -409,14 +421,14 @@ function ItemModal({
                 {GRID_COLS.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-            <div>
-              <label className="label">สีหยิบใช้</label>
+            <div className="col-span-2">
+              <label className="label">สถานะการใช้ยา (สี)</label>
               <select className="input" value={f.pick_freq}
                 onChange={(e) => up("pick_freq", e.target.value)}>
                 <option value="">—</option>
-                <option value="R">R · นานๆ หยิบที</option>
-                <option value="Y">Y · ปานกลาง</option>
-                <option value="G">G · หยิบบ่อย</option>
+                <option value="R">R · ยาใช้น้อย</option>
+                <option value="Y">Y · ยาใช้ปานกลาง</option>
+                <option value="G">G · ยาใช้บ่อย</option>
               </select>
             </div>
           </div>
@@ -427,43 +439,23 @@ function ItemModal({
           )}
         </div>
 
-        {/* Cost (per smallest unit, derived from a purchase line) */}
-        <div className="border-t border-slate-200 pt-3">
-          <div className="text-xs font-bold text-slate-700 mb-2">
-            ราคาทุน (ต่อหน่วยเล็กสุด)
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="label">หน่วยเล็กสุด</label>
-              <input className="input" value={f.unit}
-                onChange={(e) => up("unit", e.target.value)}
-                placeholder="เช่น เม็ด / ขวด" />
-            </div>
-            <div>
-              <label className="label">ราคาซื้อรวม (บาท)</label>
-              <input className="input" type="number" min="0" step="0.01"
-                value={f.purchase_price}
-                onChange={(e) => up("purchase_price", e.target.value)}
-                placeholder="500" />
-            </div>
-            <div>
-              <label className="label">ได้กี่หน่วยเล็กสุด</label>
-              <input className="input" type="number" min="0" step="1"
-                value={f.purchase_units}
-                onChange={(e) => up("purchase_units", e.target.value)}
-                placeholder="500" />
-            </div>
-          </div>
-          <p className="text-xs text-slate-500 mt-2">
-            = ทุน <span className="font-bold text-brand">
-              {unitCost.toLocaleString(undefined, { maximumFractionDigits: 4 })}
-            </span> บาท / {f.unit || "หน่วย"}
-            <span className="text-slate-400"> (เช่น 500 บาท ÷ 500 เม็ด = 1 บาท/เม็ด)</span>
-          </p>
-        </div>
-
-        {/* Stock + supplier */}
+        {/* Unit + cost (per smallest unit, entered directly) */}
         <div className="grid grid-cols-2 gap-3 border-t border-slate-200 pt-3">
+          <div>
+            <label className="label">หน่วยเล็กสุด (หน่วยขาย)</label>
+            <select className="input" value={f.unit}
+              onChange={(e) => up("unit", e.target.value)}>
+              <option value="">—</option>
+              {unitOpts.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">ราคาต่อหน่วย (บาท/หน่วยเล็กสุด)</label>
+            <input className="input" type="number" min="0" step="0.0001"
+              value={f.unit_cost}
+              onChange={(e) => up("unit_cost", e.target.value)}
+              placeholder="เช่น 1.00" />
+          </div>
           <div>
             <label className="label">คงเหลือปัจจุบัน</label>
             <input className="input" type="number" min="0" value={f.current_qty}
@@ -475,8 +467,8 @@ function ItemModal({
               onChange={(e) => up("safety_stock", e.target.value)} />
             <p className="text-[10px] text-slate-400 mt-1">ค่าเริ่มต้น 50 — ต่ำกว่านี้ถือว่าต้องสั่ง</p>
           </div>
-          <div>
-            <label className="label">ผู้สั่ง (บริษัท)</label>
+          <div className="col-span-2">
+            <label className="label">ผู้สั่ง (บริษัทผู้จำหน่าย)</label>
             <select className="input" value={f.supplier_id}
               onChange={(e) => up("supplier_id", e.target.value)}>
               <option value="">—</option>
@@ -484,12 +476,6 @@ function ItemModal({
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
-          </div>
-          <div>
-            <label className="label">ราคาขาย OPD (อ้างอิง)</label>
-            <input className="input" type="number" min="0" step="0.01"
-              value={f.price_opd}
-              onChange={(e) => up("price_opd", e.target.value)} />
           </div>
         </div>
 

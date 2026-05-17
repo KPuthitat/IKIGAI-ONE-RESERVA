@@ -2021,6 +2021,71 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_inventa_order_lines_order
       ON inventa_order_lines(order_id);
   `);
+
+  // INVENTA configurable lookups — admin-editable option lists used by
+  // the item form (grid row prefixes, storage cabinets, smallest-unit
+  // names, drug categories). kind discriminates the list. branch_id
+  // NULL = global default seen by every branch; a branch can add its
+  // own rows on top.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inventa_lookups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER REFERENCES branches(id),
+      kind TEXT NOT NULL
+        CHECK (kind IN ('row','storage','unit','category')),
+      value TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 100,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_inventa_lookups_kind
+      ON inventa_lookups(kind, active);
+  `);
+
+  // Storage-cabinet column on items (ตู้ยา / ตู้เก็บยาควบคุม / ตู้เย็น).
+  const invCols = db.prepare("PRAGMA table_info(inventa_items)")
+    .all() as Array<{ name: string }>;
+  if (!invCols.some((c) => c.name === "storage_location")) {
+    db.exec("ALTER TABLE inventa_items ADD COLUMN storage_location TEXT");
+  }
+
+  // One-time global seed so a fresh clinic isn't staring at empty
+  // dropdowns. Only runs when the table is completely empty.
+  const lkCount = (db.prepare("SELECT COUNT(*) AS n FROM inventa_lookups")
+    .get() as { n: number }).n;
+  if (lkCount === 0) {
+    const ins = db.prepare(
+      "INSERT INTO inventa_lookups (branch_id, kind, value, sort_order) VALUES (NULL,?,?,?)"
+    );
+    const seed = (kind: string, vals: string[]) =>
+      vals.forEach((v, i) => ins.run(kind, v, (i + 1) * 10));
+
+    seed("row", ["A", "B", "C", "D", "E", "F"]);
+    seed("storage", ["ตู้ยา", "ตู้เก็บยาควบคุม", "ตู้เย็น", "ชั้นวางทั่วไป"]);
+    seed("unit", ["เม็ด", "แคปซูล", "ขวด", "แอมป์", "หลอด", "ซอง", "กล่อง", "ชิ้น", "แผง"]);
+    seed("category", [
+      "กลุ่มยาทั่วไป General Drugs",
+      "กลุ่มยา NSAIDs",
+      "กลุ่มยาปฏิชีวนะ - Penicillins",
+      "กลุ่มยาปฏิชีวนะ - Sulfonamides",
+      "กลุ่มยาปฏิชีวนะ - Macrolides",
+      "กลุ่มยาปฏิชีวนะ - Fluoroquinolones",
+      "กลุ่มยาปฏิชีวนะ - Cephalosporins",
+      "กลุ่มยารักษาโรคระบบทางเดินอาหาร - กระเพาะอาหาร",
+      "กลุ่มยารักษาโรคระบบทางเดินอาหาร - โรคท้องเสีย",
+      "กลุ่มยารักษาโรคระบบทางเดินหายใจ - หวัดที่มีอาการไอ",
+      "กลุ่มยารักษาโรคระบบทางเดินหายใจ - โรคหอบหืด",
+      "กลุ่มยารักษาโรคระบบสมองและระบบประสาท - อื่นๆ",
+      "กลุ่มยารักษาโรคความดันโลหิตสูง",
+      "กลุ่มยารักษาโรคระบบผิวหนัง - ผื่นคันที่ผิวหนัง",
+      "กลุ่มยารักษาโรคระบบผิวหนัง - ผิวหนังอักเสบติดเชื้อ",
+      "กลุ่มยารักษาโรคระบบต่อมไร้ท่อ",
+      "กลุ่มยารักษาโรคในระบบกล้ามเนื้อ กระดูกและข้อ - ยาคลายกล้ามเนื้อ",
+      "กลุ่มยารักษาอาการในภาวะฉุกเฉิน",
+      "กลุ่มยาอื่นๆ - ไม่ระบุ",
+      "GS02 Bag"
+    ]);
+  }
 }
 
 /** One row in the daily attendance roster — used by the group

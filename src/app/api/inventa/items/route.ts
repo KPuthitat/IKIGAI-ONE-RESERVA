@@ -19,6 +19,7 @@ const Body = z.object({
   generic_name: z.string().max(200).nullable().optional(),
   cgd_code: z.string().max(60).nullable().optional(),
   category: z.string().max(120).nullable().optional(),
+  storage_location: z.string().max(120).nullable().optional(),
   item_type: z.enum(["drug", "equipment"]).default("drug"),
   unit: z.string().max(40).nullable().optional(),
   // Cost is entered as a purchase line (price ÷ total smallest units);
@@ -87,16 +88,16 @@ export async function POST(req: Request) {
   const info = db.prepare(`
     INSERT INTO inventa_items
       (branch_id, item_code, barcode, name, generic_name, cgd_code,
-       category, item_type, unit, unit_cost, last_purchase_price,
-       last_purchase_units, price_opd, price_ipd, price_uc, supplier_id,
-       grid_row, grid_col, pick_freq, safety_stock, current_qty,
-       created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       category, storage_location, item_type, unit, unit_cost,
+       last_purchase_price, last_purchase_units, price_opd, price_ipd,
+       price_uc, supplier_id, grid_row, grid_col, pick_freq,
+       safety_stock, current_qty, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     user.activeBranchId ?? null,
     d.item_code ?? null, d.barcode ?? null, d.name.trim(),
     d.generic_name ?? null, d.cgd_code ?? null, d.category ?? null,
-    d.item_type, d.unit ?? null, unitCost,
+    d.storage_location ?? null, d.item_type, d.unit ?? null, unitCost,
     d.last_purchase_price ?? null, d.last_purchase_units ?? null,
     d.price_opd ?? null, d.price_ipd ?? null, d.price_uc ?? null,
     d.supplier_id ?? null, d.grid_row ?? null, d.grid_col ?? null,

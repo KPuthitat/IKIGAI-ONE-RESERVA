@@ -15,23 +15,41 @@ export const PICK_FREQ_META: Record<PickFreq, {
   chip: string;
 }> = {
   R: {
-    label: "นานๆ หยิบที",
+    label: "ยาใช้น้อย",
     short: "R",
-    desc: "ใช้น้อย — หยิบนานๆ ครั้ง",
+    desc: "ยาใช้น้อย — หยิบนานๆ ครั้ง",
     chip: "bg-rose-100 text-rose-700 border border-rose-300"
   },
   Y: {
-    label: "ปานกลาง",
+    label: "ยาใช้ปานกลาง",
     short: "Y",
-    desc: "ใช้ปานกลาง",
+    desc: "ยาใช้ปานกลาง",
     chip: "bg-amber-100 text-amber-700 border border-amber-300"
   },
   G: {
-    label: "หยิบบ่อย",
+    label: "ยาใช้บ่อย",
     short: "G",
-    desc: "ใช้บ่อย — หยิบเป็นประจำ",
+    desc: "ยาใช้บ่อย — หยิบเป็นประจำ",
     chip: "bg-emerald-100 text-emerald-700 border border-emerald-300"
   }
+};
+
+export type LookupKind = "row" | "storage" | "unit" | "category";
+
+export const LOOKUP_KIND_META: Record<LookupKind, string> = {
+  row: "แถว (รหัสขึ้นต้น)",
+  storage: "ตำแหน่งเก็บยา",
+  unit: "หน่วยเล็กสุด (หน่วยขาย)",
+  category: "หมวดหมู่ยา"
+};
+
+export type InventaLookup = {
+  id: number;
+  branch_id: number | null;
+  kind: LookupKind;
+  value: string;
+  sort_order: number;
+  active: number;
 };
 
 export const GRID_ROWS = ["A", "B", "C", "D", "E"] as const;
@@ -91,6 +109,7 @@ export type InventaItem = {
   generic_name: string | null;
   cgd_code: string | null;
   category: string | null;
+  storage_location: string | null;
   item_type: ItemType;
   unit: string | null;
   unit_cost: number;
