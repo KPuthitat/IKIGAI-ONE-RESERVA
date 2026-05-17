@@ -50,6 +50,28 @@ export default function AdminEmployeesPage() {
              u.display_name ASC
   `).all(branch.id) as EmployeeRow[];
 
+  // All branches + every listed employee's memberships — drives the
+  // "สิทธิ์เข้าสาขา" editor in the edit modal. editableBranchIds
+  // limits what THIS admin may toggle (super_admin → all; sub-admin
+  // → only branches they administer).
+  const allBranches = db.prepare(
+    "SELECT id, name FROM branches ORDER BY display_order, name"
+  ).all() as Array<{ id: number; name: string }>;
+
+  const empIds = employees.map((e) => e.id);
+  const grants =
+    empIds.length > 0
+      ? (db.prepare(
+          `SELECT user_id, branch_id FROM user_branches
+           WHERE user_id IN (${empIds.map(() => "?").join(",")})`
+        ).all(...empIds) as Array<{ user_id: number; branch_id: number }>)
+      : [];
+
+  const editableBranchIds =
+    user.role === "super_admin"
+      ? allBranches.map((b) => b.id)
+      : user.adminBranchIds;
+
   return (
     <div className="space-y-4">
       <div>
@@ -65,7 +87,12 @@ export default function AdminEmployeesPage() {
         branchId={branch.id}
         canCreateAdmin={user.role === "super_admin"}
       />
-      <EmployeesClient employees={employees} />
+      <EmployeesClient
+        employees={employees}
+        allBranches={allBranches}
+        grants={grants}
+        editableBranchIds={editableBranchIds}
+      />
     </div>
   );
 }

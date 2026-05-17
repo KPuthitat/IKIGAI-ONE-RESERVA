@@ -49,11 +49,29 @@ function parseWeeklyOffCsv(csv: string | null): number[] {
     .sort((a, b) => a - b);
 }
 
-export default function EmployeesClient({ employees }: { employees: EmployeeRow[] }) {
+export type BranchLite = { id: number; name: string };
+
+export default function EmployeesClient({
+  employees, allBranches, grants, editableBranchIds
+}: {
+  employees: EmployeeRow[];
+  allBranches: BranchLite[];
+  grants: Array<{ user_id: number; branch_id: number }>;
+  editableBranchIds: number[];
+}) {
   const router = useRouter();
   const { t, formatDate, lang } = useLang();
   const [pending, startTransition] = useTransition();
   const [editTarget, setEditTarget] = useState<EmployeeRow | null>(null);
+
+  // userId → branchIds the employee currently belongs to.
+  const branchIdsByUser = new Map<number, number[]>();
+  for (const g of grants) {
+    const arr = branchIdsByUser.get(g.user_id) ?? [];
+    arr.push(g.branch_id);
+    branchIdsByUser.set(g.user_id, arr);
+  }
+  const editableSet = new Set(editableBranchIds);
 
   function formatGender(g: string | null): string {
     if (!g) return "—";
@@ -175,11 +193,15 @@ export default function EmployeesClient({ employees }: { employees: EmployeeRow[
       {editTarget && (
         <EditModal
           employee={editTarget}
+          allBranches={allBranches}
+          currentBranchIds={branchIdsByUser.get(editTarget.id) ?? []}
+          editableSet={editableSet}
           onClose={() => setEditTarget(null)}
           onSaved={() => {
             setEditTarget(null);
             startTransition(() => router.refresh());
           }}
+          onRefresh={() => startTransition(() => router.refresh())}
         />
       )}
     </>
@@ -187,14 +209,60 @@ export default function EmployeesClient({ employees }: { employees: EmployeeRow[
 }
 
 function EditModal({
-  employee, onClose, onSaved
+  employee, allBranches, currentBranchIds, editableSet, onClose, onSaved, onRefresh
 }: {
   employee: EmployeeRow;
+  allBranches: BranchLite[];
+  currentBranchIds: number[];
+  editableSet: Set<number>;
   onClose: () => void;
   onSaved: () => void;
+  onRefresh: () => void;
 }) {
   const { t, lang } = useLang();
   const dayNames = lang === "en" ? DAY_NAMES_EN : DAY_NAMES_TH;
+
+  // ── Branch access (สิทธิ์เข้าสาขา) ───────────────────────────────
+  // Independent of the main profile save: its own selection + save
+  // button, hitting the dedicated endpoint that preserves is_admin.
+  const [branchSel, setBranchSel] = useState<Set<number>>(
+    new Set(currentBranchIds)
+  );
+  const [branchBusy, setBranchBusy] = useState(false);
+  const [branchMsg, setBranchMsg] = useState<string | null>(null);
+  function toggleBranch(bid: number) {
+    if (!editableSet.has(bid)) return;
+    setBranchSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(bid)) next.delete(bid); else next.add(bid);
+      return next;
+    });
+  }
+  async function saveBranches() {
+    setBranchBusy(true);
+    setBranchMsg(null);
+    try {
+      const res = await fetch(
+        apiUrl(`/api/admin/persona/employees/${employee.id}/branches`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ branch_ids: [...branchSel] })
+        }
+      );
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        setBranchMsg(j.error ?? t("common.error"));
+        return;
+      }
+      setBranchMsg("saved");
+      onRefresh();
+    } catch {
+      setBranchMsg(t("common.error"));
+    } finally {
+      setBranchBusy(false);
+    }
+  }
 
   const [titlePrefix, setTitlePrefix] = useState<string>(employee.title_prefix ?? "");
   const [gender, setGender] = useState<"male" | "female" | "">(employee.gender ?? "");
@@ -765,6 +833,50 @@ function EditModal({
                 </label>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* ── สิทธิ์เข้าสาขา — which branches this employee may enter.
+            Separate save (preserves branch-admin grants). Branches
+            outside this admin's scope show disabled. */}
+        <div className="border-t border-slate-200 pt-4">
+          <h4 className="text-sm font-semibold text-slate-700 mb-1">
+            สิทธิ์เข้าสาขา
+          </h4>
+          <p className="text-xs text-slate-500 mb-2">
+            พนักงานจะเลือกสาขาที่ติ๊กไว้ตอนเข้าระบบได้ ·
+            สาขาที่จางคือสาขาที่คุณไม่มีสิทธิ์จัดการ (ดูแลโดย super admin)
+          </p>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+            {allBranches.map((b) => {
+              const canEdit = editableSet.has(b.id);
+              return (
+                <label key={b.id}
+                  className={"flex items-center gap-2 text-sm " +
+                    (canEdit ? "text-slate-700" : "text-slate-400")}>
+                  <input
+                    type="checkbox"
+                    checked={branchSel.has(b.id)}
+                    disabled={!canEdit || branchBusy}
+                    onChange={() => toggleBranch(b.id)}
+                  />
+                  {b.name}
+                </label>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-3 mt-3">
+            <button type="button" onClick={saveBranches}
+              disabled={branchBusy}
+              className="px-4 py-2 rounded-lg bg-brand text-white text-sm font-bold disabled:opacity-50">
+              {branchBusy ? t("common.submitting") : "บันทึกสิทธิ์สาขา"}
+            </button>
+            {branchMsg === "saved" && (
+              <span className="text-sm text-emerald-600">บันทึกแล้ว</span>
+            )}
+            {branchMsg && branchMsg !== "saved" && (
+              <span className="text-sm text-rose-600">{branchMsg}</span>
+            )}
           </div>
         </div>
 
