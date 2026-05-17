@@ -1646,6 +1646,68 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // Multi-tenant RBAC — 3 companies / 4 branches.
+  //
+  // The original single-company seed ("บริษัท อิคิไก เวลล์เกรด
+  // จำกัด") is repurposed as Welltrade, which already owns NAMA +
+  // HYPOPLARAEMIA. The rename only fires while the company still
+  // carries the untouched seed name, so an owner edit through
+  // /admin/companies is never clobbered (idempotent after first run).
+  //
+  // user_branches.is_admin — per-branch admin grant. A sub-admin
+  // only manages branches where this flag is 1; super_admin is
+  // global and ignores it. Existing rows default to 0 (plain
+  // membership, no admin powers) — super_admin grants explicitly.
+  // ─────────────────────────────────────────────────────────────
+  db.prepare(`
+    UPDATE companies
+    SET name_th = 'บริษัท เวลล์เทรด จำกัด', name_en = 'Welltrade Co., Ltd.'
+    WHERE name_th = 'บริษัท อิคิไก เวลล์เกรด จำกัด'
+  `).run();
+
+  const ensureCompany = db.prepare(`
+    INSERT INTO companies (name_th, name_en)
+    SELECT ?, ?
+    WHERE NOT EXISTS (SELECT 1 FROM companies WHERE name_th = ?)
+  `);
+  ensureCompany.run("บริษัท เมดิเฮลท์ จำกัด", "Medihealth Co., Ltd.", "บริษัท เมดิเฮลท์ จำกัด");
+  ensureCompany.run("บริษัท ออมเนียร์ เฮลท์ จำกัด", "Omnia Health Co., Ltd.", "บริษัท ออมเนียร์ เฮลท์ จำกัด");
+
+  const companyIdByName = (name: string) =>
+    (db.prepare("SELECT id FROM companies WHERE name_th = ?").get(name) as
+      | { id: number }
+      | undefined)?.id ?? null;
+  const welltradeId = companyIdByName("บริษัท เวลล์เทรด จำกัด");
+  const medihealthId = companyIdByName("บริษัท เมดิเฮลท์ จำกัด");
+  const omniaId = companyIdByName("บริษัท ออมเนียร์ เฮลท์ จำกัด");
+
+  // New branches (idempotent by slug). NAMA + HYPOPLARAEMIA already
+  // exist from db:init; only the two clinic/lab branches are added.
+  const ensureBranch = db.prepare(
+    "INSERT OR IGNORE INTO branches (slug, name) VALUES (?, ?)"
+  );
+  ensureBranch.run("at-home-clinic", "AT HOME CLINIC");
+  ensureBranch.run("omnia-health-lab", "OMNIA HEALTH LABORATORY");
+
+  // Wire each branch to its company by slug — always converges to
+  // the intended ownership, safe to run every boot.
+  const setBranchCompany = db.prepare(
+    "UPDATE branches SET company_id = ? WHERE slug = ?"
+  );
+  if (welltradeId) {
+    setBranchCompany.run(welltradeId, "nama-sriracha");
+    setBranchCompany.run(welltradeId, "hypoplaraemia");
+  }
+  if (medihealthId) setBranchCompany.run(medihealthId, "at-home-clinic");
+  if (omniaId) setBranchCompany.run(omniaId, "omnia-health-lab");
+
+  // user_branches.is_admin — idempotent column add (PRAGMA-guarded).
+  const ubCols = db.prepare("PRAGMA table_info(user_branches)").all() as Array<{ name: string }>;
+  if (!ubCols.some((c) => c.name === "is_admin")) {
+    db.exec("ALTER TABLE user_branches ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
+  }
+
   // users — Phase A profile columns. All nullable (existing rows
   // keep working). Idempotent per-column ALTER.
   const phaseAUserCols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;

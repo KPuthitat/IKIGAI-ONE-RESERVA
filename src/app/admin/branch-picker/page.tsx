@@ -23,7 +23,15 @@ export default function AdminBranchPickerPage({
   const lang = getLang();
   const next = searchParams.next || "/admin";
 
-  if (user.branches.length === 0) {
+  // Admin console only operates on branches the user may administer:
+  // super_admin → all their member branches; sub-admin → branches
+  // granted via user_branches.is_admin. Branches where they are only
+  // staff are hidden here (they appear in the staff picker instead).
+  const adminBranches = user.branches.filter((b) =>
+    user.adminBranchIds.includes(b.id)
+  );
+
+  if (adminBranches.length === 0) {
     return (
       <div className="card text-center space-y-3">
         <h1 className="text-xl font-bold text-slate-800">
@@ -36,8 +44,8 @@ export default function AdminBranchPickerPage({
     );
   }
 
-  if (user.branches.length === 1) {
-    setActiveBranch(user.branches[0].id);
+  if (adminBranches.length === 1) {
+    setActiveBranch(adminBranches[0].id);
     redirect(next);
   }
 
@@ -52,7 +60,7 @@ export default function AdminBranchPickerPage({
         </p>
       </div>
       <BranchPickerClient
-        branches={user.branches.map((b) => ({ id: b.id, name: b.name }))}
+        branches={adminBranches.map((b) => ({ id: b.id, name: b.name }))}
         activeBranchId={user.activeBranchId}
         next={next}
       />

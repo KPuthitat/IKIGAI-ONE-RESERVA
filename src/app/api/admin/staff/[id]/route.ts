@@ -12,8 +12,11 @@ const Patch = z.object({
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const me = getSessionUser();
-  if (!me || me.role !== "admin") {
-    return NextResponse.json({ error: "ต้องเป็นแอดมิน" }, { status: 403 });
+  // super_admin only — changing another user's role or branch
+  // assignments is a privilege-granting action. Sub-admins manage
+  // their branches' day-to-day but cannot reassign accounts.
+  if (!me || me.role !== "super_admin") {
+    return NextResponse.json({ error: "เฉพาะผู้ดูแลระบบสูงสุด" }, { status: 403 });
   }
   const id = Number(params.id);
   const parsed = Patch.safeParse(await req.json());
@@ -40,8 +43,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const me = getSessionUser();
-  if (!me || me.role !== "admin") {
-    return NextResponse.json({ error: "ต้องเป็นแอดมิน" }, { status: 403 });
+  if (!me || me.role !== "super_admin") {
+    return NextResponse.json({ error: "เฉพาะผู้ดูแลระบบสูงสุด" }, { status: 403 });
   }
   const id = Number(params.id);
   if (id === me.id) return NextResponse.json({ error: "ลบบัญชีตัวเองไม่ได้" }, { status: 400 });

@@ -94,7 +94,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // a belt-and-braces second check.
         ...(isSuperAdmin ? [
           { href: "/admin/system-settings", label: t(lang, "admin.systemSettings.title") },
-          { href: "/admin/companies", label: t(lang, "admin.companies.title") }
+          { href: "/admin/companies", label: t(lang, "admin.companies.title") },
+          { href: "/admin/users", label: "สิทธิ์ผู้ใช้" }
         ] : []),
         { href: "/help", label: t(lang, "owl.help.menu") }
       ]
