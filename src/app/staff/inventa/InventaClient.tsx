@@ -2,7 +2,9 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { apiUrl } from "@/lib/url";
+import BarcodeScanner from "@/app/components/BarcodeScanner";
 import {
   PICK_FREQ_META, GRID_ROWS, GRID_COLS, binCode, unitCostFrom,
   isLowStock, type PickFreq, type ItemType, type InventaSupplier
@@ -46,6 +48,7 @@ export default function InventaClient({
   const [scanBusy, setScanBusy] = useState(false);
   const [view, setView] = useState<"list" | "grid">("list");
   const [cell, setCell] = useState<{ row: string; col: number } | null>(null);
+  const [scanCam, setScanCam] = useState(false);
   const scanRef = useRef<HTMLInputElement>(null);
 
   const refresh = () => startTransition(() => router.refresh());
@@ -100,6 +103,11 @@ export default function InventaClient({
             }}
           />
           <button type="button"
+            onClick={() => setScanCam(true)}
+            className="text-sm px-4 py-2 rounded-lg border border-brand text-brand font-bold hover:bg-rose-50">
+            สแกนกล้อง
+          </button>
+          <button type="button"
             onClick={() => setAdding({})}
             className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold hover:opacity-90">
             + เพิ่มยา/อุปกรณ์
@@ -109,6 +117,10 @@ export default function InventaClient({
             className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
             จัดการผู้สั่ง ({suppliers.length})
           </button>
+          <Link href="/staff/inventa/count"
+            className="text-sm px-4 py-2 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold">
+            เช็คสต๊อกรายสัปดาห์
+          </Link>
         </div>
 
         {/* View toggle + search + colour filter */}
@@ -206,6 +218,14 @@ export default function InventaClient({
           </tbody>
         </table>
       </div>
+      )}
+
+      {scanCam && (
+        <BarcodeScanner
+          title="สแกนยา/อุปกรณ์"
+          onResult={(code) => onScan(code)}
+          onClose={() => setScanCam(false)}
+        />
       )}
 
       {cell && (

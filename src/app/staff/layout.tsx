@@ -58,6 +58,14 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       ]
     },
     {
+      label: "INVENTA",
+      pathPrefix: "/staff/inventa",
+      items: [
+        { href: "/staff/inventa", label: "คลังยา/อุปกรณ์" },
+        { href: "/staff/inventa/count", label: "เช็คสต๊อกรายสัปดาห์" }
+      ]
+    },
+    {
       label: "PERSONA",
       pathPrefix: "/staff/persona",
       items: [
