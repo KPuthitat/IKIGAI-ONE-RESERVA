@@ -1909,6 +1909,118 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_health_checkups_branch
       ON health_checkups(branch_id);
   `);
+
+  // ── INVENTA — clinic stock-count module ──────────────────────────
+  // Per-branch drug/equipment inventory. Items live in a physical grid
+  // (row A–E × col 1–6) with a pick-frequency colour (R rare / Y med /
+  // G frequent) so the bin code "D4R" helps new staff find things.
+  // unit_cost is always per *smallest* unit (e.g. per tablet) — derived
+  // from a purchase price ÷ total smallest-unit qty so order rounds can
+  // be costed even when bills quote packs/strips. Expiry is out of
+  // scope for v1 (APSX is the system of record for that).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inventa_suppliers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER REFERENCES branches(id),
+      name TEXT NOT NULL,
+      order_cycle TEXT,
+      lead_time TEXT,
+      contact TEXT,
+      note TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_inventa_suppliers_branch
+      ON inventa_suppliers(branch_id);
+
+    CREATE TABLE IF NOT EXISTS inventa_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER REFERENCES branches(id),
+      item_code TEXT,
+      barcode TEXT,
+      name TEXT NOT NULL,
+      generic_name TEXT,
+      cgd_code TEXT,
+      category TEXT,
+      item_type TEXT NOT NULL DEFAULT 'drug'
+        CHECK (item_type IN ('drug','equipment')),
+      unit TEXT,
+      unit_cost REAL NOT NULL DEFAULT 0,
+      last_purchase_price REAL,
+      last_purchase_units REAL,
+      price_opd REAL,
+      price_ipd REAL,
+      price_uc REAL,
+      supplier_id INTEGER REFERENCES inventa_suppliers(id),
+      grid_row TEXT,
+      grid_col INTEGER,
+      pick_freq TEXT CHECK (pick_freq IN ('R','Y','G')),
+      safety_stock INTEGER NOT NULL DEFAULT 50,
+      current_qty INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_inventa_items_branch
+      ON inventa_items(branch_id, active);
+    CREATE INDEX IF NOT EXISTS idx_inventa_items_barcode
+      ON inventa_items(barcode);
+
+    CREATE TABLE IF NOT EXISTS inventa_counts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER REFERENCES branches(id),
+      count_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open'
+        CHECK (status IN ('open','submitted')),
+      note TEXT,
+      counted_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      submitted_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_inventa_counts_branch
+      ON inventa_counts(branch_id, count_date DESC);
+
+    CREATE TABLE IF NOT EXISTS inventa_count_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      count_id INTEGER NOT NULL REFERENCES inventa_counts(id) ON DELETE CASCADE,
+      item_id INTEGER NOT NULL REFERENCES inventa_items(id),
+      prev_qty INTEGER,
+      counted_qty INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_inventa_count_lines_count
+      ON inventa_count_lines(count_id);
+
+    CREATE TABLE IF NOT EXISTS inventa_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER REFERENCES branches(id),
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft','sent','approved','received','cancelled')),
+      note TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      sent_at TEXT,
+      approved_by INTEGER REFERENCES users(id),
+      approved_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_inventa_orders_branch
+      ON inventa_orders(branch_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS inventa_order_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES inventa_orders(id) ON DELETE CASCADE,
+      item_id INTEGER NOT NULL REFERENCES inventa_items(id),
+      supplier_id INTEGER REFERENCES inventa_suppliers(id),
+      qty_on_hand INTEGER,
+      suggested_qty INTEGER,
+      order_qty INTEGER NOT NULL DEFAULT 0,
+      unit_cost_at_order REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_inventa_order_lines_order
+      ON inventa_order_lines(order_id);
+  `);
 }
 
 /** One row in the daily attendance roster — used by the group

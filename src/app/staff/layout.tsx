@@ -53,7 +53,8 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/staff", label: t(lang, "sidebar.modulePicker") },
         { href: "/staff/persona", label: "PERSONA" },
-        { href: "/staff/reserva", label: "RESERVA" }
+        { href: "/staff/reserva", label: "RESERVA" },
+        { href: "/staff/inventa", label: "INVENTA" }
       ]
     },
     {

@@ -1,0 +1,106 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { getSessionUser } from "@/lib/auth";
+import { getDb } from "@/lib/db";
+import { unitCostFrom, type InventaItem } from "@/lib/inventa";
+
+// GET  /api/inventa/items                — list active items (branch)
+// GET  /api/inventa/items?barcode=xxx    — scan lookup (returns the one
+//        matching item or null) used by the "scan to add/edit" flow
+// POST /api/inventa/items                — create an item
+//
+// Any logged-in user may manage stock — clinic staff own the catalogue
+// (admins are employees too). Branch-scoped via session activeBranchId.
+
+const Body = z.object({
+  item_code: z.string().max(60).nullable().optional(),
+  barcode: z.string().max(60).nullable().optional(),
+  name: z.string().trim().min(1).max(200),
+  generic_name: z.string().max(200).nullable().optional(),
+  cgd_code: z.string().max(60).nullable().optional(),
+  category: z.string().max(120).nullable().optional(),
+  item_type: z.enum(["drug", "equipment"]).default("drug"),
+  unit: z.string().max(40).nullable().optional(),
+  // Cost is entered as a purchase line (price ÷ total smallest units);
+  // the server derives unit_cost so packs/strips are normalised.
+  last_purchase_price: z.number().min(0).nullable().optional(),
+  last_purchase_units: z.number().min(0).nullable().optional(),
+  unit_cost: z.number().min(0).nullable().optional(),
+  price_opd: z.number().min(0).nullable().optional(),
+  price_ipd: z.number().min(0).nullable().optional(),
+  price_uc: z.number().min(0).nullable().optional(),
+  supplier_id: z.number().int().positive().nullable().optional(),
+  grid_row: z.string().max(2).nullable().optional(),
+  grid_col: z.number().int().min(1).max(6).nullable().optional(),
+  pick_freq: z.enum(["R", "Y", "G"]).nullable().optional(),
+  safety_stock: z.number().int().min(0).default(50),
+  current_qty: z.number().int().min(0).default(0)
+});
+
+export async function GET(req: Request) {
+  const user = getSessionUser();
+  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  const branchId = user.activeBranchId ?? null;
+  const db = getDb();
+
+  const url = new URL(req.url);
+  const barcode = url.searchParams.get("barcode");
+  if (barcode) {
+    const item = db.prepare(`
+      SELECT * FROM inventa_items
+      WHERE barcode = ? AND active = 1
+        AND (branch_id IS ? OR branch_id = ?)
+      ORDER BY id DESC LIMIT 1
+    `).get(barcode, branchId, branchId) as InventaItem | undefined;
+    return NextResponse.json({ ok: true, item: item ?? null });
+  }
+
+  const items = db.prepare(`
+    SELECT i.*, s.name AS supplier_name
+    FROM inventa_items i
+    LEFT JOIN inventa_suppliers s ON s.id = i.supplier_id
+    WHERE i.active = 1 AND (i.branch_id IS ? OR i.branch_id = ?)
+    ORDER BY i.grid_row, i.grid_col, i.name
+  `).all(branchId, branchId);
+  return NextResponse.json({ ok: true, items });
+}
+
+export async function POST(req: Request) {
+  const user = getSessionUser();
+  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+
+  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "invalid_body", detail: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+  const d = parsed.data;
+  // Prefer the explicit purchase line; fall back to a directly-typed
+  // unit_cost; else 0.
+  const unitCost = d.last_purchase_price != null && d.last_purchase_units
+    ? unitCostFrom(d.last_purchase_price, d.last_purchase_units)
+    : (d.unit_cost ?? 0);
+
+  const db = getDb();
+  const info = db.prepare(`
+    INSERT INTO inventa_items
+      (branch_id, item_code, barcode, name, generic_name, cgd_code,
+       category, item_type, unit, unit_cost, last_purchase_price,
+       last_purchase_units, price_opd, price_ipd, price_uc, supplier_id,
+       grid_row, grid_col, pick_freq, safety_stock, current_qty,
+       created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).run(
+    user.activeBranchId ?? null,
+    d.item_code ?? null, d.barcode ?? null, d.name.trim(),
+    d.generic_name ?? null, d.cgd_code ?? null, d.category ?? null,
+    d.item_type, d.unit ?? null, unitCost,
+    d.last_purchase_price ?? null, d.last_purchase_units ?? null,
+    d.price_opd ?? null, d.price_ipd ?? null, d.price_uc ?? null,
+    d.supplier_id ?? null, d.grid_row ?? null, d.grid_col ?? null,
+    d.pick_freq ?? null, d.safety_stock, d.current_qty, user.id
+  );
+  return NextResponse.json({ ok: true, id: Number(info.lastInsertRowid) });
+}
