@@ -81,6 +81,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin", label: t(lang, "sidebar.modulePicker") },
         { href: "/admin/persona", label: "PERSONA" },
         { href: "/admin/reserva", label: "RESERVA" },
+        // INVENTA lives under /staff (clinic staff tool; admins are
+        // employees too). Surface it here so it's reachable from the
+        // admin console as well. super_admin also gets the settings link.
+        { href: "/staff/inventa", label: "INVENTA" },
+        ...(isSuperAdmin
+          ? [{ href: "/staff/inventa/settings", label: "INVENTA · ตั้งค่า" }]
+          : []),
         // System-wide entries — only super_admin can manage these,
         // so hide them from regular admins to keep the sidebar clean.
         // The pages still enforce requireSuperAdmin() server-side as

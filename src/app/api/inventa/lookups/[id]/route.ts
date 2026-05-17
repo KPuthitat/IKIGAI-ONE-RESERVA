@@ -18,6 +18,9 @@ const Body = z.object({
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  if (user.role !== "super_admin") {
+    return NextResponse.json({ error: "super_admin_only" }, { status: 403 });
+  }
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });
@@ -47,6 +50,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  if (user.role !== "super_admin") {
+    return NextResponse.json({ error: "super_admin_only" }, { status: 403 });
+  }
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });

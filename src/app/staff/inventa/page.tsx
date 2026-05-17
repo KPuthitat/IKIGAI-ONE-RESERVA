@@ -42,7 +42,8 @@ export default function InventaPage() {
           สีหยิบใช้ R/Y/G · ราคาทุนต่อหน่วยเล็กสุด
         </p>
       </div>
-      <InventaClient items={items} suppliers={suppliers} lookups={lookups} />
+      <InventaClient items={items} suppliers={suppliers} lookups={lookups}
+        isSuperAdmin={user.role === "super_admin"} />
     </div>
   );
 }

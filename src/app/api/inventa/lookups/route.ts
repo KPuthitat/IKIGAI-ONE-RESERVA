@@ -39,6 +39,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  if (user.role !== "super_admin") {
+    return NextResponse.json({ error: "super_admin_only" }, { status: 403 });
+  }
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(

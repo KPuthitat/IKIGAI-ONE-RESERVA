@@ -65,7 +65,11 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/inventa/grid", label: "ผังกริด (หาตำแหน่งยา)" },
         { href: "/staff/inventa/labels", label: "พิมพ์ QR ติดชั้น" },
         { href: "/staff/inventa/count", label: "เช็คสต๊อกรายสัปดาห์" },
-        { href: "/staff/inventa/settings", label: "ตั้งค่า" }
+        // Settings is super_admin-only — hide the link from everyone
+        // else (the page itself also enforces requireSuperAdmin).
+        ...(user.role === "super_admin"
+          ? [{ href: "/staff/inventa/settings", label: "ตั้งค่า (super admin)" }]
+          : [])
       ]
     },
     {

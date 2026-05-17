@@ -36,6 +36,15 @@ export default function AdminHomePage() {
           <p className="mt-4 text-brand font-bold text-sm">{t(lang, "portal.openBackend")}</p>
         </Link>
 
+        <Link href="/staff/inventa" className="card hover:shadow-2xl transition group block">
+          <div className="text-[11px] tracking-[1px] text-slate-400 mb-1">{t(lang, "portal.label.module")}</div>
+          <h2 className="text-2xl font-bold text-slate-800 group-hover:text-brand transition-colors">
+            INVENTA
+          </h2>
+          <p className="text-slate-500 text-sm mt-1">ระบบนับสต๊อกคลินิก — ยา/อุปกรณ์ ตำแหน่ง grid + จุดสั่งซื้อ</p>
+          <p className="mt-4 text-brand font-bold text-sm">{t(lang, "portal.openModule")}</p>
+        </Link>
+
         <Link href="/admin/ascenda" className="card hover:shadow-2xl transition group block opacity-80">
           <div className="flex items-center gap-2 mb-1">
             <div className="text-[11px] tracking-[1px] text-slate-400">{t(lang, "portal.label.module")}</div>

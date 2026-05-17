@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireSuperAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import type { InventaLookup, InventaSupplier } from "@/lib/inventa";
 import SettingsClient from "./SettingsClient";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 // uses: grid-row prefixes, storage cabinets, smallest-unit names,
 // drug categories, and the supplier (ผู้สั่ง) directory.
 export default function InventaSettingsPage() {
-  const user = requireUser();
+  const user = requireSuperAdmin();
   const db = getDb();
   const branchId = user.activeBranchId ?? null;
 

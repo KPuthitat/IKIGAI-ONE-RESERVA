@@ -37,8 +37,13 @@ type Item = {
 };
 
 export default function InventaClient({
-  items, suppliers, lookups
-}: { items: Item[]; suppliers: InventaSupplier[]; lookups: InventaLookup[] }) {
+  items, suppliers, lookups, isSuperAdmin
+}: {
+  items: Item[];
+  suppliers: InventaSupplier[];
+  lookups: InventaLookup[];
+  isSuperAdmin: boolean;
+}) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [q, setQ] = useState("");
@@ -130,10 +135,12 @@ export default function InventaClient({
             className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
             พิมพ์ QR
           </Link>
-          <Link href="/staff/inventa/settings"
-            className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-            ตั้งค่า
-          </Link>
+          {isSuperAdmin && (
+            <Link href="/staff/inventa/settings"
+              className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
+              ตั้งค่า
+            </Link>
+          )}
           <Link href="/staff/inventa/count"
             className="text-sm px-4 py-2 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold">
             เช็คสต๊อกรายสัปดาห์
