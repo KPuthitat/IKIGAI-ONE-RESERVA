@@ -139,8 +139,8 @@ export default function RedirectClient({ liffId }: { liffId: string }) {
           {status === "ready" ? "เชื่อม LINE เรียบร้อย" : "กรุณารอสักครู่"}
         </h1>
         <p className="text-sm text-slate-600">{statusMsg}</p>
-        <div className="w-12 h-1 mx-auto bg-amber-200 rounded-full overflow-hidden">
-          <div className="h-full bg-amber-500 animate-pulse" />
+        <div className="w-56 max-w-full mx-auto pt-1">
+          <div className="loadbar" />
         </div>
       </div>
     </div>

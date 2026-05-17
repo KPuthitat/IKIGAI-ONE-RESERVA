@@ -136,3 +136,38 @@ input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
     margin: 12mm;
   }
 }
+
+/* ── Indeterminate loading bar ──
+   Used on the auth / rich-menu portal / invite screens instead of a
+   plain "..." while LIFF + the backend check run. A brand-tinted track
+   with a glowing segment that sweeps left→right on a loop. */
+@keyframes ikigai-loadbar {
+  0%   { left: -45%; width: 45%; }
+  55%  { left: 35%;  width: 55%; }
+  100% { left: 100%; width: 45%; }
+}
+.loadbar {
+  position: relative;
+  height: 6px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgba(233, 69, 96, 0.12);
+}
+.loadbar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -45%;
+  width: 45%;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    rgba(233, 69, 96, 0.15),
+    #e94560,
+    rgba(233, 69, 96, 0.15)
+  );
+  box-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+  animation: ikigai-loadbar 1.15s ease-in-out infinite;
+}

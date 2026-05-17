@@ -232,7 +232,7 @@ export default function Sidebar({
         </nav>
 
         {footer && (
-          <div className="flex-shrink-0 border-t border-white/10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="flex-shrink-0 border-t border-white/10 px-3 pt-3 pb-[max(2.25rem,calc(env(safe-area-inset-bottom)+1.5rem))]">
             {footer}
           </div>
         )}

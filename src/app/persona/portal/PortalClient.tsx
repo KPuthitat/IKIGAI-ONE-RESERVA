@@ -117,13 +117,14 @@ export default function PortalClient({ liffId }: { liffId: string }) {
         if (cancelled) return;
 
         if (res.ok) {
-          const j = (await res.json().catch(() => ({}))) as { role?: string };
           setPhase("ok");
           setMsg("เข้าระบบสำเร็จ กำลังพาไปหน้าหลัก...");
-          // staff → /staff/persona (the PERSONA module entry that
-          // requireUser() will land them on anyway). admin → /admin.
-          const dest = j.role === "admin" ? "/admin" : "/staff/persona";
-          setTimeout(() => router.replace(dest), 600);
+          // Admin-as-employee: EVERYONE who logs in via the rich-menu
+          // portal lands in employee mode (/staff/persona) first —
+          // including admins. An admin opts into management via the
+          // "เปิดโหมดแอดมิน" switch in the sidebar. super_admin doesn't
+          // reach here (no LINE binding — logs in via /login).
+          setTimeout(() => router.replace("/staff/persona"), 600);
           return;
         }
 
@@ -227,8 +228,8 @@ export default function PortalClient({ liffId }: { liffId: string }) {
         )}
 
         {showSpinner && (
-          <div className="w-12 h-1 mx-auto bg-amber-200 rounded-full overflow-hidden">
-            <div className="h-full bg-amber-500 animate-pulse" />
+          <div className="w-56 max-w-full mx-auto pt-1">
+            <div className="loadbar" />
           </div>
         )}
 

@@ -78,6 +78,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       label: t(lang, "sidebar.section.modules"),
       items: [
         { href: "/admin", label: t(lang, "sidebar.modulePicker") },
+        // Admin-as-employee: switch back to the staff/employee view
+        // (clock-in, leave, etc.). Admins land in employee mode by
+        // default and only come here when managing.
+        { href: "/staff/persona", label: t(lang, "sidebar.employeeMode"), legacy: true },
         { href: "/admin/persona", label: "PERSONA" },
         { href: "/admin/reserva", label: "RESERVA" },
         // System-wide entries — only super_admin can manage these,

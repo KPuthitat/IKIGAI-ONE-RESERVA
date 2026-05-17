@@ -52,7 +52,13 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/staff", label: t(lang, "sidebar.modulePicker") },
         { href: "/staff/persona", label: "PERSONA" },
-        { href: "/staff/reserva", label: "RESERVA" }
+        { href: "/staff/reserva", label: "RESERVA" },
+        // Admin-as-employee: an admin (or super_admin) is an employee
+        // first — they land here by default and opt into management
+        // via this switch. Plain staff don't see it.
+        ...(user.role === "admin" || user.role === "super_admin"
+          ? [{ href: "/admin", label: t(lang, "sidebar.adminMode"), legacy: true }]
+          : [])
       ]
     },
     {
