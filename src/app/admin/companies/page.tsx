@@ -28,10 +28,16 @@ export default function AdminCompaniesPage() {
   `).all() as Array<Company & { branch_count: number }>;
 
   const branches = db.prepare(`
-    SELECT id, name, company_id
+    SELECT id, name, company_id, reg_address, tax_branch_code
     FROM branches
     ORDER BY display_order, name
-  `).all() as Array<{ id: number; name: string; company_id: number | null }>;
+  `).all() as Array<{
+    id: number;
+    name: string;
+    company_id: number | null;
+    reg_address: string | null;
+    tax_branch_code: string | null;
+  }>;
 
   return (
     <div className="space-y-4">

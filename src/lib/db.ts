@@ -1646,6 +1646,23 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // Per-branch registered address + tax branch code. Each branch
+  // files its own ที่อยู่จดทะเบียน for government paperwork
+  // (ใบกำกับภาษี / หนังสือราชการ). tax_branch_code: '00000' =
+  // สำนักงานใหญ่, '00001'+ = สาขาที่ N. When a company has zero
+  // branches the company's own address is treated as the head
+  // office at document time. Idempotent per-column ALTER.
+  const branchRegCols = new Set(
+    (db.prepare("PRAGMA table_info(branches)").all() as Array<{ name: string }>)
+      .map((c) => c.name)
+  );
+  if (!branchRegCols.has("reg_address")) {
+    db.exec("ALTER TABLE branches ADD COLUMN reg_address TEXT");
+  }
+  if (!branchRegCols.has("tax_branch_code")) {
+    db.exec("ALTER TABLE branches ADD COLUMN tax_branch_code TEXT");
+  }
+
   // ─────────────────────────────────────────────────────────────
   // Multi-tenant RBAC.
   //
@@ -2257,6 +2274,8 @@ export type Branch = {
   slug: string;
   name: string;
   company_id: number | null;
+  reg_address: string | null;       // ที่อยู่จดทะเบียนของสาขา (เอกสารราชการ)
+  tax_branch_code: string | null;   // '00000' = สำนักงานใหญ่, '00001'+ = สาขาที่ N
   open_time: string;
   close_time: string;
   slot_minutes: number;

@@ -89,18 +89,17 @@ export async function DELETE(req: Request) {
   const parsed = DeleteBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   const db = getDb();
-  // Refuse while branches still point here — the owner must reassign
-  // them first so no branch is left orphaned (company_id dangling).
-  const inUse = db.prepare(
+  // Detach any branches first (company_id → NULL) so deleting the
+  // company never leaves a dangling FK. An unassigned branch is a
+  // valid state — the owner re-points it from /admin/companies.
+  const detached = db.prepare(
     "SELECT COUNT(*) AS n FROM branches WHERE company_id = ?"
   ).get(parsed.data.id) as { n: number };
-  if (inUse.n > 0) {
-    return NextResponse.json(
-      { error: "company_has_branches", branch_count: inUse.n },
-      { status: 409 }
-    );
-  }
-  db.prepare("DELETE FROM companies WHERE id = ?").run(parsed.data.id);
+  const txn = db.transaction(() => {
+    db.prepare("UPDATE branches SET company_id = NULL WHERE company_id = ?").run(parsed.data.id);
+    db.prepare("DELETE FROM companies WHERE id = ?").run(parsed.data.id);
+  });
+  txn();
   logPersonaAction(user.id, "company.delete", parsed.data.id);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, detached_branches: detached.n });
 }

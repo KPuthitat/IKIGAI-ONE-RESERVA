@@ -6,7 +6,13 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import type { Company } from "@/lib/db";
 
-type BranchLite = { id: number; name: string; company_id: number | null };
+type BranchLite = {
+  id: number;
+  name: string;
+  company_id: number | null;
+  reg_address: string | null;
+  tax_branch_code: string | null;
+};
 
 export default function CompaniesClient({
   companies,
@@ -22,6 +28,7 @@ export default function CompaniesClient({
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [editingBranchId, setEditingBranchId] = useState<number | null>(null);
 
   function refresh() { startTransition(() => router.refresh()); }
 
@@ -41,11 +48,11 @@ export default function CompaniesClient({
 
   async function remove(c: Company & { branch_count: number }) {
     setErr(null);
-    if (c.branch_count > 0) {
-      setErr(`ลบไม่ได้ — บริษัทนี้ยังมี ${c.branch_count} สาขา ย้ายสาขาออกก่อน`);
-      return;
-    }
-    if (!window.confirm(`ลบบริษัท “${c.name_th}” ?`)) return;
+    const warn =
+      c.branch_count > 0
+        ? `ลบบริษัท “${c.name_th}” ?\n\nสาขา ${c.branch_count} แห่งที่ผูกอยู่จะถูกปลดออก (ไม่ระบุบริษัท) — ไปกำหนดบริษัทใหม่ให้ได้ภายหลัง`
+        : `ลบบริษัท “${c.name_th}” ?`;
+    if (!window.confirm(warn)) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl("/api/admin/companies"), {
@@ -54,14 +61,7 @@ export default function CompaniesClient({
         body: JSON.stringify({ id: c.id })
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) {
-        setErr(
-          j.error === "company_has_branches"
-            ? `ลบไม่ได้ — ยังมี ${j.branch_count} สาขาผูกอยู่`
-            : j.error ?? t("common.error")
-        );
-        return;
-      }
+      if (!res.ok || !j.ok) { setErr(j.error ?? t("common.error")); return; }
       refresh();
     } catch {
       setErr(t("common.error"));
@@ -70,20 +70,21 @@ export default function CompaniesClient({
     }
   }
 
-  async function assignBranch(branchId: number, companyId: number | null) {
+  async function saveBranch(body: Record<string, unknown>) {
     setErr(null);
     setBusy(true);
     try {
       const res = await fetch(apiUrl("/api/admin/companies/assign-branch"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ branch_id: branchId, company_id: companyId })
+        body: JSON.stringify(body)
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setErr(j.error ?? t("common.error")); return; }
-      refresh();
+      if (!res.ok || !j.ok) { setErr(j.error ?? t("common.error")); return false; }
+      return true;
     } catch {
       setErr(t("common.error"));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -103,6 +104,9 @@ export default function CompaniesClient({
             </button>
           )}
         </div>
+        <p className="text-[11px] text-slate-500">
+          1 บริษัทมีได้หลายสาขา · ถ้าบริษัทไม่มีสาขา ระบบถือว่าที่อยู่ของบริษัทคือ “สำนักงานใหญ่” โดยอัตโนมัติ
+        </p>
         {err && <div className="text-xs text-rose-600">✗ {err}</div>}
         <div className="space-y-2">
           {creating && (
@@ -134,41 +138,133 @@ export default function CompaniesClient({
         </div>
       </div>
 
-      {/* Branch → company assignment. Lets the owner move a branch
-          between companies (and fix the earlier auto-seed mismatch). */}
+      {/* Branch → company assignment + per-branch registered address.
+          Each branch files its own ที่อยู่จดทะเบียน for paperwork. */}
       <div className="card space-y-3">
         <div>
           <h2 className="font-bold text-slate-800 text-sm">
             สาขาทั้งหมด ({branches.length})
           </h2>
           <p className="text-[11px] text-slate-500">
-            เลือกบริษัทที่แต่ละสาขาสังกัด — “— ไม่ระบุ —” คือยังไม่ผูกบริษัท
+            กำหนดบริษัทที่สังกัด และ “ที่อยู่จดทะเบียน” ของแต่ละสาขา (ใช้ทำเอกสารราชการ)
+            — รหัสสาขาภาษี: 00000 = สำนักงานใหญ่, 00001 ขึ้นไป = สาขาที่ N
           </p>
         </div>
         <div className="space-y-2">
-          {branches.map((b) => (
-            <div key={b.id}
-              className="border border-slate-200 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm font-medium text-slate-700">{b.name}</span>
-              <select
-                className="input text-sm !w-auto !py-1"
-                value={b.company_id ?? ""}
+          {branches.map((b) => {
+            const isEditing = editingBranchId === b.id;
+            const company = companies.find((c) => c.id === b.company_id) ?? null;
+            if (!isEditing) {
+              return (
+                <div key={b.id}
+                  className="border border-slate-200 rounded-lg p-3 flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-slate-700">{b.name}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                      <span className={company ? "text-brand" : "text-amber-600"}>
+                        {company ? company.name_th : "— ไม่ระบุบริษัท —"}
+                      </span>
+                      <span>สาขาภาษี: {b.tax_branch_code || "—"}</span>
+                      {b.reg_address && (
+                        <span className="text-slate-400 truncate max-w-[260px]">
+                          {b.reg_address}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button type="button"
+                    onClick={() => setEditingBranchId(b.id)}
+                    className="text-xs text-brand hover:underline flex-shrink-0">
+                    {t("common.edit")}
+                  </button>
+                </div>
+              );
+            }
+            return (
+              <BranchEditor
+                key={b.id}
+                branch={b}
+                companies={companies}
+                busy={busy}
+                onCancel={() => setEditingBranchId(null)}
+                onSave={async (body) => {
+                  if (await saveBranch({ branch_id: b.id, ...body })) {
+                    setEditingBranchId(null);
+                    refresh();
+                  }
+                }}
                 disabled={busy || pending}
-                onChange={(e) =>
-                  assignBranch(
-                    b.id,
-                    e.target.value === "" ? null : Number(e.target.value)
-                  )
-                }
-              >
-                <option value="">— ไม่ระบุ —</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name_th}</option>
-                ))}
-              </select>
-            </div>
-          ))}
+              />
+            );
+          })}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function BranchEditor({
+  branch, companies, busy, onCancel, onSave
+}: {
+  branch: BranchLite;
+  companies: Array<Company & { branch_count: number }>;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (body: Record<string, unknown>) => void;
+  disabled?: boolean;
+}) {
+  const [name, setName] = useState(branch.name);
+  const [companyId, setCompanyId] = useState<string>(
+    branch.company_id ? String(branch.company_id) : ""
+  );
+  const [taxCode, setTaxCode] = useState(branch.tax_branch_code ?? "");
+  const [regAddress, setRegAddress] = useState(branch.reg_address ?? "");
+
+  return (
+    <div className="border-[1.5px] border-brand/50 bg-rose-50/30 rounded-lg p-3 space-y-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <div>
+          <label className="label text-[11px]">ชื่อสาขา *</label>
+          <input className="input text-sm" value={name}
+            onChange={(e) => setName(e.target.value)} maxLength={120} />
+        </div>
+        <div>
+          <label className="label text-[11px]">บริษัทที่สังกัด</label>
+          <select className="input text-sm" value={companyId}
+            onChange={(e) => setCompanyId(e.target.value)}>
+            <option value="">— ไม่ระบุบริษัท —</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>{c.name_th}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label text-[11px]">รหัสสาขาภาษี</label>
+          <input className="input text-sm" value={taxCode}
+            placeholder="00000 = สำนักงานใหญ่"
+            onChange={(e) => setTaxCode(e.target.value)} maxLength={10} />
+        </div>
+        <div className="md:col-span-2">
+          <label className="label text-[11px]">ที่อยู่จดทะเบียน (สำหรับเอกสารราชการ)</label>
+          <textarea className="input text-sm" rows={2} value={regAddress}
+            onChange={(e) => setRegAddress(e.target.value)} maxLength={1000} />
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button type="button" disabled={busy || !name.trim()}
+          onClick={() => onSave({
+            name: name.trim(),
+            company_id: companyId === "" ? null : Number(companyId),
+            tax_branch_code: taxCode.trim() || null,
+            reg_address: regAddress.trim() || null
+          })}
+          className="flex-1 py-1.5 rounded bg-brand text-white text-xs font-bold disabled:opacity-50">
+          {busy ? "…" : "บันทึก"}
+        </button>
+        <button type="button" disabled={busy} onClick={onCancel}
+          className="flex-1 py-1.5 rounded border border-slate-300 text-slate-600 text-xs">
+          ยกเลิก
+        </button>
       </div>
     </div>
   );
@@ -207,8 +303,10 @@ function CompanyRow({
           <div className="text-[11px] text-slate-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
             {company.tax_id && <span>{t("admin.companies.taxIdShort")}: {company.tax_id}</span>}
             {company.phone && <span>📞 {company.phone}</span>}
-            <span className="text-brand">
-              {t("admin.companies.branchCount", { n: company.branch_count })}
+            <span className={company.branch_count > 0 ? "text-brand" : "text-slate-400"}>
+              {company.branch_count > 0
+                ? t("admin.companies.branchCount", { n: company.branch_count })
+                : "ไม่มีสาขา (ใช้ที่อยู่บริษัทเป็นสำนักงานใหญ่)"}
             </span>
           </div>
         </div>
@@ -218,10 +316,8 @@ function CompanyRow({
             {t("common.edit")}
           </button>
           {onDelete && (
-            <button type="button" onClick={onDelete}
-              disabled={busy || company.branch_count > 0}
-              title={company.branch_count > 0 ? "ย้ายสาขาออกก่อนจึงจะลบได้" : ""}
-              className="text-xs text-rose-600 hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed">
+            <button type="button" onClick={onDelete} disabled={busy}
+              className="text-xs text-rose-600 hover:underline disabled:opacity-40">
               ลบ
             </button>
           )}
@@ -253,7 +349,7 @@ function CompanyRow({
             onChange={(e) => setPhone(e.target.value)} maxLength={40} />
         </div>
         <div className="md:col-span-2">
-          <label className="label text-[11px]">{t("admin.companies.field.address")}</label>
+          <label className="label text-[11px]">{t("admin.companies.field.address")} (สำนักงานใหญ่)</label>
           <textarea className="input text-sm" rows={2} value={address}
             onChange={(e) => setAddress(e.target.value)} maxLength={1000} />
         </div>
