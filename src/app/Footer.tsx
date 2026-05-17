@@ -30,11 +30,20 @@ export default function Footer() {
 
   return (
     <footer className="bg-ink-gradient text-white/80 border-t border-white/10 mt-auto">
-      <div className="max-w-6xl mx-auto px-4 py-3
-        flex flex-col gap-2 text-xs
-        sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:gap-3">
+      {/* Mobile (base): a single tidy centred column with even spacing
+          + safe-area bottom padding (booking pages are opened on phones
+          and the OS home indicator was crowding the last line). The
+          admin/staff shells hide this footer below md and show
+          ProgramInfo in the sidebar instead, so this mobile styling now
+          only affects the public booking + login pages. Desktop (sm+)
+          keeps the original 3-column grid untouched. */}
+      <div className="max-w-6xl mx-auto px-4 py-4
+        pb-[max(1rem,env(safe-area-inset-bottom))]
+        flex flex-col items-center gap-1.5 text-center text-[11px]
+        sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:gap-3
+        sm:text-left sm:text-xs sm:py-3 sm:pb-3">
 
-        {/* Left — brand + version + last update */}
+        {/* Brand + version + copyright */}
         <div className="flex items-center gap-2 justify-center sm:justify-start">
           <div className="w-7 h-7 rounded-lg bg-brand text-white flex items-center justify-center font-bold leading-none">
             I
@@ -52,7 +61,7 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* Center — last updated timestamp */}
+        {/* Last updated timestamp */}
         {lastUpdate && (
           <div className="flex items-center justify-center gap-1 text-white/60">
             <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-current">
@@ -62,7 +71,7 @@ export default function Footer() {
           </div>
         )}
 
-        {/* Right — powered by */}
+        {/* Powered by */}
         <div className="flex items-center justify-center sm:justify-end gap-1 text-white/60">
           <span>{t(lang, "footer.poweredBy")}</span>
           <a

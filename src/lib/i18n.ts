@@ -1138,6 +1138,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.nav.svc": "เซอร์วิสชาร์จ",
     "admin.persona.nav.roster": "ตารางมอบหมายงาน",
     "admin.persona.nav.discipline": "หนังสือตักเตือน",
+    "admin.persona.nav.health": "ผลตรวจสุขภาพ",
     "owl.help.menu": "ถามน้องฮูก",
 
     // Companies (multi-tenant)
@@ -3053,6 +3054,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.nav.svc": "Service Charge",
     "admin.persona.nav.roster": "Duty roster",
     "admin.persona.nav.discipline": "Disciplinary",
+    "admin.persona.nav.health": "Health checks",
     "owl.help.menu": "Ask Hook",
 
     "admin.companies.title": "Companies",

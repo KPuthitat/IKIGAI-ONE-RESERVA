@@ -1878,6 +1878,37 @@ function runMigrations(db: Database.Database): void {
       ON impersonation_log(impersonator_id, ended_at)
       WHERE ended_at IS NULL;
   `);
+
+  // Employee health check-ups — food-handler medical certificate
+  // (แบบ ส.ณ.11 / ผู้สัมผัสอาหาร). One row per certificate; the
+  // per-disease checklist is stored as JSON in items_json so the
+  // reference item list can evolve without a migration. We keep full
+  // history (multiple rows per user); the UI shows the latest by
+  // checkup_date and derives valid/expiring/expired from expiry_date.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS health_checkups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      branch_id INTEGER REFERENCES branches(id),
+      checkup_date TEXT NOT NULL,
+      expiry_date TEXT,
+      clinic_name TEXT,
+      doctor_name TEXT,
+      cert_no TEXT,
+      overall_result TEXT NOT NULL DEFAULT 'pass'
+        CHECK (overall_result IN ('pass','fail','conditional')),
+      items_json TEXT,
+      attachment_url TEXT,
+      notes TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_health_checkups_user
+      ON health_checkups(user_id, checkup_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_health_checkups_branch
+      ON health_checkups(branch_id);
+  `);
 }
 
 /** One row in the daily attendance roster — used by the group

@@ -105,7 +105,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
         { href: "/admin/persona/holidays", label: t(lang, "admin.persona.nav.holidays") },
-        { href: "/admin/persona/discipline", label: t(lang, "admin.persona.nav.discipline") }
+        { href: "/admin/persona/discipline", label: t(lang, "admin.persona.nav.discipline") },
+        { href: "/admin/persona/health", label: t(lang, "admin.persona.nav.health") }
       ]
     },
     // Pre-shift items — admin configures the checklist for each
