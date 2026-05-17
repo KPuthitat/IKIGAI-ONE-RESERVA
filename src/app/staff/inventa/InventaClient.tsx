@@ -44,6 +44,8 @@ export default function InventaClient({
   const [adding, setAdding] = useState<Partial<Item> | null>(null);
   const [showSuppliers, setShowSuppliers] = useState(false);
   const [scanBusy, setScanBusy] = useState(false);
+  const [view, setView] = useState<"list" | "grid">("list");
+  const [cell, setCell] = useState<{ row: string; col: number } | null>(null);
   const scanRef = useRef<HTMLInputElement>(null);
 
   const refresh = () => startTransition(() => router.refresh());
@@ -109,9 +111,18 @@ export default function InventaClient({
           </button>
         </div>
 
-        {/* Search + colour filter */}
+        {/* View toggle + search + colour filter */}
         <div className="flex flex-wrap gap-2 items-center">
-          <input className="input flex-1 min-w-[180px]" value={q}
+          <div className="flex gap-1 p-1 rounded-lg bg-slate-100">
+            {(["list", "grid"] as const).map((v) => (
+              <button key={v} type="button" onClick={() => setView(v)}
+                className={`text-xs font-bold px-3 py-1.5 rounded-md ${
+                  view === v ? "bg-white shadow text-brand" : "text-slate-500"}`}>
+                {v === "list" ? "ตาราง" : "ผังกริด"}
+              </button>
+            ))}
+          </div>
+          <input className="input flex-1 min-w-[160px]" value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="ค้นหา ชื่อ / ชื่อสามัญ / รหัส / ตำแหน่ง (เช่น D4R)" />
           <div className="flex gap-1">
@@ -129,6 +140,11 @@ export default function InventaClient({
         </div>
       </div>
 
+      {view === "grid" && (
+        <GridView items={filtered} onPick={(row, col) => setCell({ row, col })} />
+      )}
+
+      {view === "list" && (
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -190,6 +206,17 @@ export default function InventaClient({
           </tbody>
         </table>
       </div>
+      )}
+
+      {cell && (
+        <CellModal
+          row={cell.row}
+          col={cell.col}
+          items={items.filter((i) => i.grid_row === cell.row && i.grid_col === cell.col)}
+          onClose={() => setCell(null)}
+          onEdit={(it) => { setCell(null); setEdit(it); }}
+        />
+      )}
 
       {(edit || adding) && (
         <ItemModal
@@ -576,6 +603,147 @@ function SuppliersModal({
           ))}
           {suppliers.length === 0 && (
             <div className="py-4 text-center text-slate-400 text-sm">ยังไม่มีผู้สั่ง</div>
+          )}
+        </div>
+
+        <button type="button" onClick={onClose}
+          className="w-full py-2.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium">
+          ปิด
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Grid map view (A1–E6) ──────────────────────────────────────────
+// Visual shelf map: rows A–E (top→bottom) × columns 1–6 (left→right),
+// matching the physical layout. Each cell shows item count + R/Y/G
+// dots + a red ring if anything inside is at/below safety. Tap a cell
+// to drill into its items. Items without a full location fall into an
+// "unassigned" bucket so nothing is hidden.
+function GridView({
+  items, onPick
+}: {
+  items: Item[];
+  onPick: (row: string, col: number) => void;
+}) {
+  const key = (r: string, c: number) => `${r}|${c}`;
+  const byCell = new Map<string, Item[]>();
+  let unassigned = 0;
+  for (const i of items) {
+    if (i.grid_row && i.grid_col) {
+      const k = key(i.grid_row, i.grid_col);
+      const arr = byCell.get(k);
+      if (arr) arr.push(i);
+      else byCell.set(k, [i]);
+    } else {
+      unassigned += 1;
+    }
+  }
+
+  return (
+    <div className="card space-y-2 overflow-x-auto">
+      <div className="min-w-[560px]">
+        {GRID_ROWS.map((r) => (
+          <div key={r} className="grid grid-cols-6 gap-1.5 mb-1.5">
+            {GRID_COLS.map((c) => {
+              const list = byCell.get(key(r, c)) ?? [];
+              const low = list.some((i) => isLowStock(i.current_qty, i.safety_stock));
+              const cnt = (f: PickFreq) => list.filter((i) => i.pick_freq === f).length;
+              return (
+                <button key={c} type="button"
+                  onClick={() => onPick(r, c)}
+                  className={`text-left rounded-lg border p-2 min-h-[64px] transition ${
+                    list.length === 0
+                      ? "border-slate-200 bg-slate-50/60 hover:bg-slate-100"
+                      : low
+                        ? "border-rose-300 bg-rose-50 hover:bg-rose-100 ring-1 ring-rose-300"
+                        : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">{r}{c}</span>
+                    {list.length > 0 && (
+                      <span className="text-[10px] text-slate-500">{list.length} ตัว</span>
+                    )}
+                  </div>
+                  <div className="flex gap-1 mt-1.5">
+                    {(["R", "Y", "G"] as PickFreq[]).map((f) =>
+                      cnt(f) > 0 ? (
+                        <span key={f}
+                          className={`text-[10px] px-1.5 rounded ${PICK_FREQ_META[f].chip}`}>
+                          {f}{cnt(f)}
+                        </span>
+                      ) : null
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      {unassigned > 0 && (
+        <p className="text-xs text-amber-700">
+          มี {unassigned} รายการยังไม่ระบุตำแหน่ง — ดูที่มุมมอง "ตาราง" แล้วแก้ไขเพื่อกำหนดช่อง
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Cell drill-down ────────────────────────────────────────────────
+function CellModal({
+  row, col, items, onClose, onEdit
+}: {
+  row: string;
+  col: number;
+  items: Item[];
+  onClose: () => void;
+  onEdit: (it: Item) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-bold text-slate-800 text-lg">
+          ช่อง <span className="text-brand">{row}{col}</span>
+          <span className="ml-2 text-sm font-normal text-slate-500">
+            {items.length} รายการ
+          </span>
+        </h3>
+
+        <div className="divide-y divide-slate-100">
+          {items.map((i) => {
+            const low = isLowStock(i.current_qty, i.safety_stock);
+            const fm = i.pick_freq ? PICK_FREQ_META[i.pick_freq] : null;
+            return (
+              <div key={i.id} className="py-2 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      fm?.chip ?? "bg-slate-100 text-slate-500"}`}>
+                      {binCode(i.grid_row, i.grid_col, i.pick_freq)}
+                    </span>
+                    <span className="font-medium text-slate-800 truncate">{i.name}</span>
+                  </div>
+                  {i.generic_name && (
+                    <div className="text-xs text-slate-400">{i.generic_name}</div>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <span className={`text-sm font-bold ${low ? "text-rose-600" : "text-slate-700"}`}>
+                    {i.current_qty}{low && <span className="text-[10px] font-normal"> (ต่ำ)</span>}
+                  </span>
+                  <button type="button" onClick={() => onEdit(i)}
+                    className="text-xs text-brand hover:underline">แก้ไข</button>
+                </div>
+              </div>
+            );
+          })}
+          {items.length === 0 && (
+            <div className="py-6 text-center text-slate-400 text-sm">
+              ช่องนี้ยังไม่มีรายการ
+            </div>
           )}
         </div>
 
