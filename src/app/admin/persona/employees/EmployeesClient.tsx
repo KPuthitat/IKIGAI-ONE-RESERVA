@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { nameWithPrefix } from "@/lib/name";
 
 export type EmployeeRow = {
   id: number;
@@ -147,7 +148,7 @@ export default function EmployeesClient({
               return (
                 <tr key={u.id} className={`border-b last:border-0 ${incomplete ? "bg-amber-50/50" : "hover:bg-slate-50"}`}>
                   <td className="py-2 pr-3">
-                    <div className="font-medium text-slate-800">{u.display_name}</div>
+                    <div className="font-medium text-slate-800">{nameWithPrefix(u.title_prefix, u.display_name)}</div>
                     <div className="text-xs text-slate-400">@{u.username}</div>
                     {incomplete && (
                       <div className="text-xs text-amber-700 mt-0.5">
@@ -456,7 +457,7 @@ function EditModal({
             {t("admin.persona.employees.editTitle")}
           </h3>
           <p className="text-sm text-slate-500 mt-0.5">
-            {employee.display_name} <span className="text-slate-400">@{employee.username}</span>
+            {nameWithPrefix(employee.title_prefix, employee.display_name)} <span className="text-slate-400">@{employee.username}</span>
             {employee.status === "pending_invite" && (
               <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
                 ยังไม่ได้ลงทะเบียน
@@ -907,12 +908,12 @@ function EditModal({
               onClick={() => setConfirmDelete(true)}
               disabled={busy || deleteBusy}
               className="w-full py-2 rounded-lg border border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100 text-sm font-medium disabled:opacity-50">
-              ลบบัญชี {employee.display_name}
+              ลบบัญชี {nameWithPrefix(employee.title_prefix, employee.display_name)}
             </button>
           ) : (
             <div className="space-y-2">
               <p className="text-xs text-rose-700 font-bold">
-                ยืนยันลบ {employee.display_name} (@{employee.username}) ใช่ไหม?
+                ยืนยันลบ {nameWithPrefix(employee.title_prefix, employee.display_name)} (@{employee.username}) ใช่ไหม?
               </p>
               <div className="flex gap-2">
                 <button type="button"
@@ -993,7 +994,7 @@ function EditModal({
 
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-[11px] text-amber-800 leading-snug">
               หลังพนักงานลงทะเบียนเสร็จ → ให้กดปุ่มริชเมนู → หน้าจอแสดง
-              LINE ID → ส่งให้แอดมินวางในช่อง "LINE binding" ของพนักงาน
+              LINE ID → ส่งให้ผู้ดูแลระบบวางในช่อง "LINE binding" ของพนักงาน
               เพื่อเปิดล็อกอินอัตโนมัติผ่านริชเมนู
             </div>
 

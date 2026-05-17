@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { nameWithPrefix } from "@/lib/name";
 import type { Company } from "@/lib/db";
 
 type CompanyRowT = Company & { branch_count: number };
@@ -19,6 +20,7 @@ type UserLite = {
   display_name: string;
   username: string;
   role: "super_admin" | "admin" | "staff";
+  title_prefix: string | null;
 };
 type GrantRow = { user_id: number; branch_id: number; is_admin: number };
 
@@ -108,7 +110,7 @@ export default function CompaniesClient({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-[11px] text-slate-500 flex-1">
-          โครงสร้าง: บริษัท → สาขา → แอดมินของสาขา · บริษัทที่ไม่มีสาขา
+          โครงสร้าง: บริษัท → สาขา → ผู้ดูแลระบบของสาขา · บริษัทที่ไม่มีสาขา
           ระบบถือว่าที่อยู่บริษัทคือ “สำนักงานใหญ่” อัตโนมัติ
         </p>
         {!creatingCompany && (
@@ -339,27 +341,27 @@ function BranchBlock({
       <div className="bg-slate-50 rounded-md p-2 space-y-1.5">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-medium text-slate-600">
-            แอดมินของสาขานี้
+            ผู้ดูแลระบบของสาขานี้
           </span>
           {!picking && candidates.length > 0 && (
             <button type="button" onClick={() => setPicking(true)}
               className="text-xs text-brand hover:underline">
-              + เพิ่มแอดมินของสาขานี้
+              + เพิ่มผู้ดูแลระบบของสาขานี้
             </button>
           )}
         </div>
 
         {admins.length === 0 && (
-          <p className="text-[11px] text-slate-400">ยังไม่มีแอดมินของสาขานี้</p>
+          <p className="text-[11px] text-slate-400">ยังไม่มีผู้ดูแลระบบของสาขานี้</p>
         )}
         <div className="flex flex-wrap gap-1.5">
           {admins.map((a) => (
             <span key={a.id}
               className="inline-flex items-center gap-1 text-[11px] bg-white border border-slate-200 rounded-full pl-2 pr-1 py-0.5">
-              {a.display_name}
+              {nameWithPrefix(a.title_prefix, a.display_name)}
               <button type="button" disabled={busy}
                 onClick={() => onSetAdmin(a.id, false)}
-                title="ถอดสิทธิ์แอดมินสาขานี้"
+                title="ถอดสิทธิ์ผู้ดูแลระบบสาขานี้"
                 className="w-4 h-4 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 disabled:opacity-40 leading-none">
                 ×
               </button>
@@ -375,7 +377,7 @@ function BranchBlock({
               <option value="">— เลือกผู้ใช้ —</option>
               {candidates.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.display_name} (@{u.username}{u.role === "admin" ? " · แอดมิน" : ""})
+                  {nameWithPrefix(u.title_prefix, u.display_name)} (@{u.username}{u.role === "admin" ? " · ผู้ดูแลระบบ" : ""})
                 </option>
               ))}
             </select>
@@ -395,7 +397,7 @@ function BranchBlock({
           </div>
         )}
         {candidates.length === 0 && !picking && admins.length > 0 && (
-          <p className="text-[11px] text-slate-400">ผู้ใช้ทุกคนถูกเพิ่มเป็นแอดมินสาขานี้แล้ว</p>
+          <p className="text-[11px] text-slate-400">ผู้ใช้ทุกคนถูกเพิ่มเป็นผู้ดูแลระบบสาขานี้แล้ว</p>
         )}
       </div>
     </div>

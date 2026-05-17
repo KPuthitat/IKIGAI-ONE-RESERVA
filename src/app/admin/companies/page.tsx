@@ -41,9 +41,14 @@ export default function AdminCompaniesPage() {
 
   // Users + their branch grants — drives the per-branch admin list
   // nested under each branch (company → branch → admins).
+  // Exclude disabled + not-yet-onboarded (pending_invite) accounts:
+  // they can't log in, so they shouldn't be assignable as branch
+  // admins and only clutter the picker (these are the stale
+  // "@invite.xxxx" placeholder rows).
   const users = db.prepare(`
-    SELECT id, display_name, username, role
+    SELECT id, display_name, username, role, title_prefix
     FROM users
+    WHERE status NOT IN ('disabled', 'pending_invite')
     ORDER BY CASE role WHEN 'super_admin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
              display_name
   `).all() as Array<{
@@ -51,6 +56,7 @@ export default function AdminCompaniesPage() {
     display_name: string;
     username: string;
     role: "super_admin" | "admin" | "staff";
+    title_prefix: string | null;
   }>;
 
   const grants = db.prepare(

@@ -204,7 +204,7 @@ export default function RedeemForm({
       </button>
 
       <p className="text-[10px] text-slate-400 text-center">
-        จดข้อมูลที่ตั้งไว้ให้ดี — ถ้าลืม กรุณาขอให้แอดมินรีเซตให้
+        จดข้อมูลที่ตั้งไว้ให้ดี — ถ้าลืม กรุณาขอให้ผู้ดูแลระบบรีเซตให้
       </p>
     </form>
   );

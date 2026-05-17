@@ -192,7 +192,7 @@ export default function AccountActions({
 
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-[11px] text-amber-800 leading-snug">
               หลังพนักงานลงทะเบียนเสร็จ ให้เขากดปุ่มในริชเมนู →
-              หน้าจอจะแสดง LINE ID → ส่งมาให้แอดมินวางในช่อง
+              หน้าจอจะแสดง LINE ID → ส่งมาให้ผู้ดูแลระบบวางในช่อง
               "LINE binding" ของพนักงาน เพื่อเปิดใช้ล็อกอินอัตโนมัติ
             </div>
 
