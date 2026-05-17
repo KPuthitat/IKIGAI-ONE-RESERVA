@@ -4,7 +4,7 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import BarcodeScanner from "@/app/components/BarcodeScanner";
-import { binCode, isLowStock, PICK_FREQ_META, type PickFreq } from "@/lib/inventa";
+import { binCode, PICK_FREQ_META, type PickFreq } from "@/lib/inventa";
 
 export type CountItem = {
   id: number;
@@ -55,7 +55,10 @@ export default function CountClient({
   function pick(item: CountItem) {
     setSel(item);
     setMsg(null);
-    setQty(String(counted[item.id] ?? item.current_qty));
+    // Don't anchor on the system on-hand — it isn't deducted on use so
+    // it won't be accurate. Start blank (or the value already counted
+    // this round so it can be corrected).
+    setQty(counted[item.id] !== undefined ? String(counted[item.id]) : "");
   }
 
   function resolveBarcode(code: string) {
@@ -169,14 +172,11 @@ export default function CountClient({
             {sel.generic_name && (
               <div className="text-xs text-slate-400 mt-0.5">{sel.generic_name}</div>
             )}
-            <div className="text-xs text-slate-500 mt-1">
-              คงเหลือในระบบ: {sel.current_qty} {sel.unit ?? ""}
-            </div>
           </div>
           <div>
-            <label className="label">จำนวนที่นับได้ ({sel.unit ?? "หน่วย"})</label>
+            <label className="label">จำนวนที่นับได้จริง วันนี้ ({sel.unit ?? "หน่วย"})</label>
             <input className="input text-lg font-bold" type="number" min="0"
-              autoFocus value={qty}
+              autoFocus value={qty} placeholder="นับแล้วใส่ตัวเลข"
               onChange={(e) => setQty(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") saveLine(); }} />
           </div>
@@ -201,7 +201,6 @@ export default function CountClient({
           {filtered.map((i) => {
             const c = counted[i.id];
             const isDone = c !== undefined;
-            const low = isLowStock(i.current_qty, i.safety_stock);
             return (
               <button key={i.id} type="button" onClick={() => pick(i)}
                 className="w-full text-left py-2 flex items-center justify-between gap-2 hover:bg-slate-50">
@@ -217,9 +216,7 @@ export default function CountClient({
                 <div className="flex-shrink-0 text-sm">
                   {isDone
                     ? <span className="text-emerald-600 font-bold">นับแล้ว · {c}</span>
-                    : <span className={low ? "text-rose-600" : "text-slate-400"}>
-                        {low ? "ต่ำ · ยังไม่นับ" : "ยังไม่นับ"}
-                      </span>}
+                    : <span className="text-slate-400">ยังไม่นับ</span>}
                 </div>
               </button>
             );
