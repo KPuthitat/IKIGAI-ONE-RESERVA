@@ -172,24 +172,22 @@ export default function Sidebar({
           h-[100dvh]
           flex-shrink-0
           bg-ink-gradient text-white shadow-xl
-          overflow-hidden
+          overflow-y-auto
           flex flex-col
           transition-all duration-200 ease-out
           ${open ? "w-64 translate-x-0" : "w-64 -translate-x-full md:w-0"}
         `}
       >
-        {/* Brand pinned at top, footer pinned at bottom, only the nav
-            scrolls. Previously overflow-y-auto sat on the whole aside
-            with h-screen — on mobile in-app browsers 100vh extends
-            behind the bottom toolbar, pushing the footer (user info /
-            logout) out of view. h-[100dvh] tracks the *visible*
-            viewport, and moving the scroll onto <nav> keeps the footer
-            permanently reachable. */}
+        {/* The whole sidebar scrolls as one — the bottom block (Admin
+            Console toggle / user info / program info) flows right after
+            the menu and scrolls with it, rather than being pinned.
+            h-[100dvh] (not 100vh) so mobile in-app browser chrome
+            doesn't clip the last rows. */}
         <div className="px-4 pt-4 pb-3 border-b border-white/10 flex-shrink-0">
           {brand}
         </div>
 
-        <nav className="p-3 space-y-5 flex-1 overflow-y-auto min-h-0">
+        <nav className="p-3 space-y-5 flex-1">
           {visibleSections.map((s, i) => (
             <div key={i}>
               {s.label && (

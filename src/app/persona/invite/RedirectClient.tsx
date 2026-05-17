@@ -54,7 +54,7 @@ export default function RedirectClient({ liffId }: { liffId: string }) {
       return;
     }
     let cancelled = false;
-    setStatusMsg("กำลังเตรียมการเชื่อม LINE...");
+    setStatusMsg("กำลังเตรียมการเชื่อม LINE");
 
     // Polling guard — the LIFF SDK script loads via next/script with
     // strategy=beforeInteractive, but on slow mobile networks it can
@@ -102,7 +102,7 @@ export default function RedirectClient({ liffId }: { liffId: string }) {
         sessionStorage.setItem(STORAGE_KEY_USER_ID, profile.userId);
         sessionStorage.setItem(STORAGE_KEY_NAME, profile.displayName ?? "");
         setStatus("ready");
-        setStatusMsg("เชื่อม LINE สำเร็จ กำลังเปิดหน้าเชิญ...");
+        setStatusMsg("เชื่อม LINE สำเร็จ กำลังเปิดหน้าเชิญ");
         router.replace(`/persona/invite/${token}`);
       } catch (e) {
         // LIFF init / profile failed — fall through to manual form.

@@ -7,6 +7,7 @@ import HeaderBrand from "../HeaderBrand";
 import LangToggle from "../LangToggle";
 import Footer from "../Footer";
 import ProgramInfo from "../components/ProgramInfo";
+import AdminModeToggle from "../components/AdminModeToggle";
 import Sidebar, { type SidebarSection } from "../components/Sidebar";
 import StaffSidebarBrand from "./StaffSidebarBrand";
 import TodaysBranchPill from "../TodaysBranchPill";
@@ -52,13 +53,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/staff", label: t(lang, "sidebar.modulePicker") },
         { href: "/staff/persona", label: "PERSONA" },
-        { href: "/staff/reserva", label: "RESERVA" },
-        // Admin-as-employee: an admin (or super_admin) is an employee
-        // first — they land here by default and opt into management
-        // via this switch. Plain staff don't see it.
-        ...(user.role === "admin" || user.role === "super_admin"
-          ? [{ href: "/admin", label: t(lang, "sidebar.adminMode"), legacy: true }]
-          : [])
+        { href: "/staff/reserva", label: "RESERVA" }
       ]
     },
     {
@@ -127,28 +122,33 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   // Mobile-only sidebar footer — pill / username / lang / logout
   // moved here so the mobile topbar can stay just the brand.
   // Desktop keeps the topbar layout (see md:* classes below).
+  const isAdminUser = user.role === "admin" || user.role === "super_admin";
   const mobileSidebarFooter = (
-    <div className="md:hidden space-y-3">
-      {activeBranch && (
-        <div className="flex justify-start">
-          <TodaysBranchPill
-            branchName={activeBranch.name}
-            hasChoice={hasBranchChoice}
-            pickerPath="/staff/branch-picker"
-          />
+    <div className="space-y-3">
+      {/* STAFF / ADMIN switch — all breakpoints, admins only. */}
+      {isAdminUser && <AdminModeToggle />}
+      <div className="md:hidden space-y-3">
+        {activeBranch && (
+          <div className="flex justify-start">
+            <TodaysBranchPill
+              branchName={activeBranch.name}
+              hasChoice={hasBranchChoice}
+              pickerPath="/staff/branch-picker"
+            />
+          </div>
+        )}
+        <div className="text-xs text-white/60 truncate">
+          {user.display_name}
         </div>
-      )}
-      <div className="text-xs text-white/60 truncate">
-        {user.display_name}
-      </div>
-      <div className="flex items-center justify-between gap-2">
-        <LangToggle variant="dark" />
-        <LogoutButton />
-      </div>
-      {/* Program metadata — mobile only (full-width Footer hidden
-          below md to declutter the page). Pinned to sidebar bottom. */}
-      <div className="border-t border-white/10 pt-3">
-        <ProgramInfo />
+        <div className="flex items-center justify-between gap-2">
+          <LangToggle variant="dark" />
+          <LogoutButton />
+        </div>
+        {/* Program metadata — mobile only (full-width Footer hidden
+            below md to declutter the page). */}
+        <div className="border-t border-white/10 pt-3">
+          <ProgramInfo />
+        </div>
       </div>
     </div>
   );

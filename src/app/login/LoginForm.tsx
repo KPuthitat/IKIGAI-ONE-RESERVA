@@ -36,9 +36,14 @@ export default function LoginForm({
       // Staff with multiple branches go through the branch picker first
       // so they explicitly pick "today's branch" before doing anything.
       // Single-branch staff and admin skip straight to their landing.
+      // super_admin → /admin (its own dedicated console, unchanged).
+      // Everyone else — including plain admin — lands on the module
+      // picker first (admin is an employee first; the Admin Console
+      // is an opt-in toggle in the sidebar). Multi-branch staff still
+      // pick today's branch before the picker.
       const dest = next
         ? next
-        : data.role === "admin"
+        : data.is_super_admin
           ? "/admin"
           : (data.branchCount ?? 0) > 1
             ? "/staff/branch-picker"

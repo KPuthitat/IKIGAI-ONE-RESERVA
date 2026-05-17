@@ -35,6 +35,7 @@ export default function AdminEmployeesPage() {
   // affordance to retrieve the link.
   const employees = db.prepare(`
     SELECT u.id, u.username, u.display_name, u.role, u.status,
+           u.title_prefix,
            u.gender, u.employment_type, u.hire_date, u.weekly_off_days,
            u.employee_code, u.national_id, u.bank_name, u.bank_account,
            u.tax_id, u.sso_id, u.hourly_rate, u.monthly_salary, u.pay_cycle,

@@ -15,6 +15,7 @@ export type EmployeeRow = {
   // password-reset + LINE-rebind affordances. Disabled rows are filtered
   // out at the page-server query level so they never reach this client.
   status: "active" | "pending_invite" | "disabled";
+  title_prefix: string | null;
   gender: "male" | "female" | null;
   employment_type: "pt" | "ft" | null;
   hire_date: string | null;
@@ -194,6 +195,7 @@ function EditModal({
   const { t, lang } = useLang();
   const dayNames = lang === "en" ? DAY_NAMES_EN : DAY_NAMES_TH;
 
+  const [titlePrefix, setTitlePrefix] = useState<string>(employee.title_prefix ?? "");
   const [gender, setGender] = useState<"male" | "female" | "">(employee.gender ?? "");
   const [employmentType, setEmploymentType] = useState<"pt" | "ft" | "">(employee.employment_type ?? "");
   const [hireDate, setHireDate] = useState<string>(employee.hire_date ?? "");
@@ -332,6 +334,7 @@ function EditModal({
     setErr(null);
     try {
       const body: Record<string, string | number | number[] | null> = {
+        title_prefix: titlePrefix || null,
         gender: gender || null,
         employment_type: employmentType || null,
         hire_date: hireDate || null,
@@ -433,6 +436,17 @@ function EditModal({
             </p>
           </div>
         )}
+
+        <div>
+          <label className="label">คำนำหน้าชื่อ</label>
+          <select className="input" value={titlePrefix}
+            onChange={(e) => setTitlePrefix(e.target.value)}>
+            <option value="">— ไม่ระบุ —</option>
+            <option value="นาย">นาย</option>
+            <option value="นาง">นาง</option>
+            <option value="นางสาว">นางสาว</option>
+          </select>
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>

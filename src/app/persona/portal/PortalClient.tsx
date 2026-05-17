@@ -20,7 +20,7 @@ type Phase =
 export default function PortalClient({ liffId }: { liffId: string }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("init");
-  const [msg, setMsg] = useState<string>("กำลังเตรียมเข้าระบบ...");
+  const [msg, setMsg] = useState<string>("กำลังเตรียมเข้าระบบ");
   const [lineName, setLineName] = useState<string | null>(null);
   // Captured even when login fails — surfaced on the not_bound screen so
   // a staff member can hand their LINE userId to an admin, who pastes it
@@ -106,7 +106,7 @@ export default function PortalClient({ liffId }: { liffId: string }) {
         }
 
         setPhase("auth");
-        setMsg("กำลังตรวจสอบบัญชี...");
+        setMsg("กำลังตรวจสอบบัญชี");
 
         const res = await fetch(apiUrl("/api/auth/line-login"), {
           method: "POST",
@@ -118,13 +118,13 @@ export default function PortalClient({ liffId }: { liffId: string }) {
 
         if (res.ok) {
           setPhase("ok");
-          setMsg("เข้าระบบสำเร็จ กำลังพาไปหน้าหลัก...");
-          // Admin-as-employee: EVERYONE who logs in via the rich-menu
-          // portal lands in employee mode (/staff/persona) first —
-          // including admins. An admin opts into management via the
-          // "เปิดโหมดแอดมิน" switch in the sidebar. super_admin doesn't
-          // reach here (no LINE binding — logs in via /login).
-          setTimeout(() => router.replace("/staff/persona"), 600);
+          setMsg("เข้าระบบสำเร็จ กำลังพาไปหน้าหลัก");
+          // Always land on the module picker (/staff) first — the user
+          // chooses PERSONA / RESERVA from there. Admins are employees
+          // first; they opt into management via the Admin Console
+          // toggle in the sidebar. super_admin doesn't reach here
+          // (no LINE binding — logs in via /login).
+          setTimeout(() => router.replace("/staff"), 600);
           return;
         }
 

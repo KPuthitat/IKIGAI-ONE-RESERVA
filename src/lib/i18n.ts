@@ -104,7 +104,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "login.error.generic": "เข้าระบบไม่สำเร็จ",
 
     // Admin / Staff portal
-    "portal.chooseModule": "เลือก module",
+    "portal.chooseModule": "เลือกโปรแกรมที่ต้องการใช้งาน",
     "portal.adminSubtitle": "หลังบ้านสำหรับผู้ดูแลระบบ",
     "portal.staffSubtitle": "{name} · พนักงาน",
     "portal.notForbidden": "ไม่มีสิทธิ์เข้าฝั่งผู้ดูแล — ใช้ฝั่งพนักงานแทน",
@@ -2030,7 +2030,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "login.error.generic": "Sign-in failed",
 
     // Admin / Staff portal
-    "portal.chooseModule": "Choose a module",
+    "portal.chooseModule": "Choose a program to use",
     "portal.adminSubtitle": "Backend for administrators",
     "portal.staffSubtitle": "{name} · Staff",
     "portal.notForbidden": "No admin access — using staff side instead",

@@ -105,5 +105,14 @@ export async function POST(req: Request) {
     "SELECT COUNT(*) AS n FROM user_branches WHERE user_id = ?"
   ).get(authedUserId) as { n: number }).n;
 
-  return NextResponse.json({ ok: true, role: tabRole, branchCount });
+  // `is_super_admin` lets the client route super_admin straight to the
+  // /admin console (its dedicated entry, unchanged) while every other
+  // role — including plain admin — lands on the module picker first
+  // (admin is an employee first; management is an opt-in toggle).
+  return NextResponse.json({
+    ok: true,
+    role: tabRole,
+    is_super_admin: authedRole === "super_admin",
+    branchCount
+  });
 }

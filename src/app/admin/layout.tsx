@@ -9,6 +9,7 @@ import LangToggle from "../LangToggle";
 import Footer from "../Footer";
 import Sidebar, { type SidebarSection } from "../components/Sidebar";
 import ProgramInfo from "../components/ProgramInfo";
+import AdminModeToggle from "../components/AdminModeToggle";
 import AdminSidebarBrand from "./AdminSidebarBrand";
 import TodaysBranchPill from "../TodaysBranchPill";
 import HookFab from "../components/HookFab";
@@ -78,10 +79,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       label: t(lang, "sidebar.section.modules"),
       items: [
         { href: "/admin", label: t(lang, "sidebar.modulePicker") },
-        // Admin-as-employee: switch back to the staff/employee view
-        // (clock-in, leave, etc.). Admins land in employee mode by
-        // default and only come here when managing.
-        { href: "/staff/persona", label: t(lang, "sidebar.employeeMode"), legacy: true },
         { href: "/admin/persona", label: "PERSONA" },
         { href: "/admin/reserva", label: "RESERVA" },
         // System-wide entries — only super_admin can manage these,
@@ -213,29 +210,32 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // or collides with the menu button, and these controls live one
   // tap away inside the slide-in sidebar instead.
   const mobileSidebarFooter = (
-    <div className="md:hidden space-y-3">
-      {activeBranch && (
-        <div className="flex justify-start">
-          <TodaysBranchPill
-            branchName={activeBranch.name}
-            hasChoice={hasBranchChoice}
-            pickerPath="/admin/branch-picker"
-          />
+    <div className="space-y-3">
+      {/* STAFF / ADMIN switch — all breakpoints. Everyone in /admin is
+          admin or super_admin so it always renders here. */}
+      <AdminModeToggle />
+      <div className="md:hidden space-y-3">
+        {activeBranch && (
+          <div className="flex justify-start">
+            <TodaysBranchPill
+              branchName={activeBranch.name}
+              hasChoice={hasBranchChoice}
+              pickerPath="/admin/branch-picker"
+            />
+          </div>
+        )}
+        <div className="text-xs text-white/60 truncate">
+          {user.display_name} · {t(lang, "role.adminShort")}
         </div>
-      )}
-      <div className="text-xs text-white/60 truncate">
-        {user.display_name} · {t(lang, "role.adminShort")}
-      </div>
-      <div className="flex items-center justify-between gap-2">
-        <LangToggle variant="dark" />
-        <LogoutButton />
-      </div>
-      {/* Program metadata lives here on mobile — the full-width
-          <Footer> is hidden below md to keep the cramped main content
-          area clean. Same info, one tap away, pinned to the very
-          bottom of the slide-in sidebar. */}
-      <div className="border-t border-white/10 pt-3">
-        <ProgramInfo />
+        <div className="flex items-center justify-between gap-2">
+          <LangToggle variant="dark" />
+          <LogoutButton />
+        </div>
+        {/* Program metadata — mobile only (full-width Footer hidden
+            below md to keep the cramped main content area clean). */}
+        <div className="border-t border-white/10 pt-3">
+          <ProgramInfo />
+        </div>
       </div>
     </div>
   );
