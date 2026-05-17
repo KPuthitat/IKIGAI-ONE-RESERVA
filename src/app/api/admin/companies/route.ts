@@ -78,3 +78,29 @@ export async function PATCH(req: Request) {
   logPersonaAction(user.id, "company.update", d.id);
   return NextResponse.json({ ok: true });
 }
+
+const DeleteBody = z.object({ id: z.number().int().positive() });
+
+export async function DELETE(req: Request) {
+  const user = getSessionUser();
+  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  if (user.role !== "super_admin") return NextResponse.json({ error: "forbidden_super_admin_only" }, { status: 403 });
+
+  const parsed = DeleteBody.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+  const db = getDb();
+  // Refuse while branches still point here — the owner must reassign
+  // them first so no branch is left orphaned (company_id dangling).
+  const inUse = db.prepare(
+    "SELECT COUNT(*) AS n FROM branches WHERE company_id = ?"
+  ).get(parsed.data.id) as { n: number };
+  if (inUse.n > 0) {
+    return NextResponse.json(
+      { error: "company_has_branches", branch_count: inUse.n },
+      { status: 409 }
+    );
+  }
+  db.prepare("DELETE FROM companies WHERE id = ?").run(parsed.data.id);
+  logPersonaAction(user.id, "company.delete", parsed.data.id);
+  return NextResponse.json({ ok: true });
+}

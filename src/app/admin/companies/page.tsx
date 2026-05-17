@@ -27,6 +27,12 @@ export default function AdminCompaniesPage() {
     ORDER BY c.id ASC
   `).all() as Array<Company & { branch_count: number }>;
 
+  const branches = db.prepare(`
+    SELECT id, name, company_id
+    FROM branches
+    ORDER BY display_order, name
+  `).all() as Array<{ id: number; name: string; company_id: number | null }>;
+
   return (
     <div className="space-y-4">
       <div>
@@ -37,7 +43,7 @@ export default function AdminCompaniesPage() {
           {t(lang, "admin.companies.subtitle")}
         </p>
       </div>
-      <CompaniesClient companies={rows} />
+      <CompaniesClient companies={rows} branches={branches} />
     </div>
   );
 }
