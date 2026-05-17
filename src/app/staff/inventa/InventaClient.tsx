@@ -93,59 +93,72 @@ export default function InventaClient({
   return (
     <>
       <div className="card space-y-3">
-        {/* Scan + actions */}
-        <div className="flex flex-wrap gap-2 items-center">
-          <input
-            ref={scanRef}
-            className="input flex-1 min-w-[200px]"
-            placeholder="สแกน / พิมพ์บาร์โค้ด แล้วกด Enter"
-            disabled={scanBusy}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onScan((e.target as HTMLInputElement).value);
-              }
-            }}
-          />
-          <button type="button"
-            onClick={() => setScanCam(true)}
-            className="text-sm px-4 py-2 rounded-lg border border-brand text-brand font-bold hover:bg-rose-50">
-            สแกนคิวอาร์โค้ด
-          </button>
+        {/* Scan box — full width, the primary daily entry point. */}
+        <input
+          ref={scanRef}
+          className="input w-full"
+          placeholder="สแกน / พิมพ์บาร์โค้ด แล้วกด Enter"
+          disabled={scanBusy}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onScan((e.target as HTMLInputElement).value);
+            }
+          }}
+        />
+
+        {/* Primary actions — 2-up grid on mobile, inline from sm up. */}
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
           <button type="button"
             onClick={() => setAdding({})}
             className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold hover:opacity-90">
             + เพิ่มยา/อุปกรณ์
           </button>
-          <button type="button"
-            onClick={() => setShowImport(true)}
-            className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-            นำเข้าจาก CSV
-          </button>
-          <button type="button"
-            onClick={() => setShowSuppliers(true)}
-            className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-            จัดการผู้สั่ง ({suppliers.length})
-          </button>
-          <Link href="/staff/inventa/grid"
-            className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-            ผังกริด
-          </Link>
-          <Link href="/staff/inventa/labels"
-            className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-            พิมพ์ QR
-          </Link>
-          {isSuperAdmin && (
-            <Link href="/staff/inventa/settings"
-              className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-              ตั้งค่า
-            </Link>
-          )}
           <Link href="/staff/inventa/count"
-            className="text-sm px-4 py-2 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold">
+            className="text-sm px-4 py-2 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold text-center">
             เช็คสต๊อกรายสัปดาห์
           </Link>
+          <button type="button"
+            onClick={() => setScanCam(true)}
+            className="text-sm px-4 py-2 rounded-lg border border-brand text-brand font-bold hover:bg-rose-50">
+            สแกนคิวอาร์โค้ด
+          </button>
         </div>
+
+        {/* Secondary tools — collapsed by default so the bar stays
+            clean on a phone. Native <details> = no extra state. */}
+        <details className="group">
+          <summary className="cursor-pointer list-none text-xs font-medium text-slate-500 hover:text-slate-700 select-none flex items-center gap-1">
+            <span className="transition-transform group-open:rotate-90">›</span>
+            เครื่องมืออื่น
+          </summary>
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 mt-2">
+            <button type="button"
+              onClick={() => setShowImport(true)}
+              className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
+              นำเข้าจาก CSV
+            </button>
+            <button type="button"
+              onClick={() => setShowSuppliers(true)}
+              className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
+              จัดการผู้สั่ง ({suppliers.length})
+            </button>
+            <Link href="/staff/inventa/grid"
+              className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center">
+              ผังกริด
+            </Link>
+            <Link href="/staff/inventa/labels"
+              className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center">
+              พิมพ์ QR
+            </Link>
+            {isSuperAdmin && (
+              <Link href="/staff/inventa/settings"
+                className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center">
+                ตั้งค่า
+              </Link>
+            )}
+          </div>
+        </details>
 
         {/* Search + colour filter */}
         <div className="flex flex-wrap gap-2 items-center">

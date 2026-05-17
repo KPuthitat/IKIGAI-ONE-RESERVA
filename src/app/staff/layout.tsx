@@ -138,7 +138,13 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   // Mobile-only sidebar footer — pill / username / lang / logout
   // moved here so the mobile topbar can stay just the brand.
   // Desktop keeps the topbar layout (see md:* classes below).
-  const isAdminUser = user.role === "admin" || user.role === "super_admin";
+  // The STAFF / ADMIN switch is for people who are an employee FIRST
+  // but also hold admin rights — i.e. role 'admin' with at least one
+  // branch they administer. They land in staff mode and flip this to
+  // open the admin console. Plain staff (no admin rights) get no
+  // switch. super_admin is the top-level settings account and never
+  // works as staff, so it gets no switch either.
+  const isAdminUser = user.role === "admin" && user.adminBranchIds.length > 0;
   const mobileSidebarFooter = (
     <div className="space-y-3">
       {/* STAFF / ADMIN switch — all breakpoints, admins only. */}
