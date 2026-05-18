@@ -1,0 +1,230 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { apiUrl } from "@/lib/url";
+import { binCode, type PickFreq } from "@/lib/inventa";
+
+export type LowStockItem = {
+  id: number;
+  name: string;
+  item_code: string | null;
+  unit: string | null;
+  grid_row: string | null;
+  grid_col: number | null;
+  pick_freq: PickFreq | null;
+  current_qty: number;
+  safety_stock: number;
+  unit_cost: number;
+  supplier_name: string | null;
+};
+
+export type OrderRow = {
+  id: number;
+  status: "draft" | "sent" | "approved" | "received" | "cancelled";
+  note: string | null;
+  created_at: string;
+  sent_at: string | null;
+  approved_at: string | null;
+  line_count: number;
+  total_cost: number;
+  created_by_name: string | null;
+  approved_by_name: string | null;
+};
+
+const STATUS_META: Record<OrderRow["status"], { label: string; cls: string }> = {
+  draft:     { label: "ร่าง",        cls: "bg-slate-100 text-slate-600" },
+  sent:      { label: "รออนุมัติ",   cls: "bg-amber-100 text-amber-700" },
+  approved:  { label: "อนุมัติแล้ว", cls: "bg-emerald-100 text-emerald-700" },
+  received:  { label: "รับของแล้ว",  cls: "bg-sky-100 text-sky-700" },
+  cancelled: { label: "ยกเลิก",      cls: "bg-rose-100 text-rose-600" }
+};
+
+export default function OrdersClient({
+  lowStock, orders, canApprove
+}: {
+  lowStock: LowStockItem[];
+  orders: OrderRow[];
+  canApprove: boolean;
+}) {
+  const router = useRouter();
+  // selected item_id → order qty (string for the input). Default qty
+  // = max(0, safety - current). Unchecked = not in the order.
+  const [sel, setSel] = useState<Record<number, string>>({});
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const groups = useMemo(() => {
+    const m = new Map<string, LowStockItem[]>();
+    for (const it of lowStock) {
+      const k = it.supplier_name ?? "— ไม่ระบุผู้จำหน่าย —";
+      const arr = m.get(k) ?? [];
+      arr.push(it);
+      m.set(k, arr);
+    }
+    return [...m.entries()];
+  }, [lowStock]);
+
+  function suggested(it: LowStockItem): number {
+    return Math.max(0, it.safety_stock - it.current_qty);
+  }
+  function toggle(it: LowStockItem) {
+    setSel((p) => {
+      const next = { ...p };
+      if (it.id in next) delete next[it.id];
+      else next[it.id] = String(suggested(it) || 1);
+      return next;
+    });
+  }
+  function setQty(id: number, v: string) {
+    setSel((p) => ({ ...p, [id]: v.replace(/[^0-9]/g, "") }));
+  }
+  function selectAll() {
+    const all: Record<number, string> = {};
+    for (const it of lowStock) all[it.id] = String(suggested(it) || 1);
+    setSel(all);
+  }
+
+  const chosen = Object.entries(sel)
+    .map(([id, q]) => ({ item_id: Number(id), order_qty: Number(q) }))
+    .filter((l) => l.order_qty > 0);
+
+  async function submit() {
+    if (chosen.length === 0) { setErr("เลือกอย่างน้อย 1 รายการ"); return; }
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/inventa/orders"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: note.trim() || undefined, lines: chosen })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setErr(j.error ?? "ส่งไม่สำเร็จ"); return; }
+      router.push(`/staff/inventa/orders/${j.id}`);
+    } catch {
+      setErr("ส่งไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* ── Reorder builder ─────────────────────────────────────── */}
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="font-bold text-slate-800 text-sm">
+            รายการที่ควรสั่ง ({lowStock.length})
+          </h2>
+          {lowStock.length > 0 && (
+            <button type="button" onClick={selectAll}
+              className="text-xs text-brand hover:underline">
+              เลือกทั้งหมด
+            </button>
+          )}
+        </div>
+
+        {lowStock.length === 0 && (
+          <p className="text-sm text-slate-400">
+            ไม่มีรายการที่ถึงจุดสั่งซื้อ — สต๊อกเพียงพอทุกตัว
+          </p>
+        )}
+
+        {groups.map(([supplier, items]) => (
+          <div key={supplier} className="space-y-1.5">
+            <div className="text-[11px] tracking-[1px] text-slate-400 uppercase">
+              {supplier}
+            </div>
+            {items.map((it) => {
+              const checked = it.id in sel;
+              const bin = binCode(it.grid_row, it.grid_col, it.pick_freq);
+              return (
+                <div key={it.id}
+                  className={"flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2 " +
+                    (checked ? "bg-rose-50/40" : "")}>
+                  <label className="flex items-center gap-2 flex-1 min-w-[180px] cursor-pointer">
+                    <input type="checkbox" checked={checked}
+                      onChange={() => toggle(it)} />
+                    <span className="text-sm">
+                      <span className="font-medium text-slate-800">{it.name}</span>
+                      {bin && <span className="ml-1 text-[11px] text-slate-400">[{bin}]</span>}
+                      <span className="block text-[11px] text-slate-500">
+                        คงเหลือ {it.current_qty} / จุดสั่ง {it.safety_stock}
+                        {it.unit ? ` ${it.unit}` : ""} · ทุน ฿{it.unit_cost}
+                      </span>
+                    </span>
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] text-slate-500">สั่ง</span>
+                    <input
+                      className="input !w-20 !py-1 text-sm text-right"
+                      inputMode="numeric"
+                      value={checked ? sel[it.id] : String(suggested(it))}
+                      disabled={!checked}
+                      onChange={(e) => setQty(it.id, e.target.value)}
+                    />
+                    <span className="text-[11px] text-slate-500">{it.unit ?? "หน่วย"}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+
+        {lowStock.length > 0 && (
+          <div className="border-t border-slate-100 pt-3 space-y-2">
+            <textarea className="input text-sm" rows={2} value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="หมายเหตุถึงผู้อนุมัติ / ผู้จำหน่าย (ถ้ามี)" />
+            {err && <div className="text-sm text-rose-600">{err}</div>}
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={submit}
+                disabled={busy || chosen.length === 0}
+                className="btn-primary text-sm disabled:opacity-50">
+                {busy ? "กำลังส่ง…" : `ส่งขออนุมัติ (${chosen.length}) — แจ้งกลุ่มไลน์`}
+              </button>
+              <span className="text-[11px] text-slate-400">
+                ระบบจะแจ้งกลุ่มไลน์พนักงาน/ผู้บริหารให้อนุมัติ
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Recent orders ───────────────────────────────────────── */}
+      <div className="card space-y-2">
+        <h2 className="font-bold text-slate-800 text-sm">
+          ใบสั่งซื้อล่าสุด ({orders.length})
+        </h2>
+        {orders.length === 0 && (
+          <p className="text-sm text-slate-400">ยังไม่มีใบสั่งซื้อ</p>
+        )}
+        {orders.map((o) => {
+          const m = STATUS_META[o.status];
+          return (
+            <Link key={o.id} href={`/staff/inventa/orders/${o.id}`}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 hover:bg-slate-50 -mx-1 px-1 rounded">
+              <span className="font-bold text-slate-700 text-sm">#{o.id}</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${m.cls}`}>
+                {m.label}
+              </span>
+              <span className="text-xs text-slate-500">
+                {o.line_count} รายการ · ฿{o.total_cost.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
+              </span>
+              <span className="text-[11px] text-slate-400">
+                {o.created_by_name ?? "—"} · {o.created_at.slice(0, 16).replace("T", " ")}
+              </span>
+              {canApprove && o.status === "sent" && (
+                <span className="text-[11px] text-amber-700 font-medium ml-auto">
+                  รออนุมัติ →
+                </span>
+              )}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

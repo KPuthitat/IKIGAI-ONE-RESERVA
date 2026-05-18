@@ -127,6 +127,10 @@ export default function InventaClient({
             className="text-sm px-4 py-2 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold text-center">
             เช็คสต๊อกรายสัปดาห์
           </Link>
+          <Link href="/staff/inventa/orders"
+            className="text-sm px-4 py-2 rounded-lg border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 font-bold text-center">
+            ใบสั่งซื้อ
+          </Link>
           <button type="button"
             onClick={() => setShowImport(true)}
             className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
