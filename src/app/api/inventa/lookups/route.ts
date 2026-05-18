@@ -3,19 +3,17 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
-// GET  /api/inventa/lookups          — all active option lists
-// GET  /api/inventa/lookups?kind=row — one list
-// POST /api/inventa/lookups          — add an option
+// GET  /api/inventa/lookups          — this branch's option lists
+// GET  /api/inventa/lookups?kind=... — one list
+// POST /api/inventa/lookups          — add an option (super_admin)
 //
-// Global (branch_id NULL) defaults + this branch's own additions.
+// Per-branch only. There is no global/shared scope — every branch
+// keeps its own categories / units / storage locations.
 
 const Body = z.object({
   kind: z.enum(["row", "storage", "unit", "category"]),
   value: z.string().trim().min(1).max(200),
-  sort_order: z.number().int().optional(),
-  // null = global (ทุกสาขา); a branch id = that branch only.
-  // Omitted → defaults to the caller's active branch (legacy behaviour).
-  branch_id: z.number().int().positive().nullable().optional()
+  sort_order: z.number().int().optional()
 });
 
 export async function GET(req: Request) {
@@ -28,12 +26,12 @@ export async function GET(req: Request) {
   const rows = kind
     ? db.prepare(`
         SELECT * FROM inventa_lookups
-        WHERE active = 1 AND kind = ? AND (branch_id IS NULL OR branch_id = ?)
+        WHERE active = 1 AND kind = ? AND branch_id = ?
         ORDER BY sort_order, value
       `).all(kind, branchId)
     : db.prepare(`
         SELECT * FROM inventa_lookups
-        WHERE active = 1 AND (branch_id IS NULL OR branch_id = ?)
+        WHERE active = 1 AND branch_id = ?
         ORDER BY kind, sort_order, value
       `).all(branchId);
   return NextResponse.json({ ok: true, lookups: rows });
@@ -53,11 +51,10 @@ export async function POST(req: Request) {
     );
   }
   const d = parsed.data;
-  // Route is super_admin-only, so an explicit branch_id (incl. null
-  // for global) is trusted. When the key is omitted, fall back to the
-  // caller's active branch to preserve the previous behaviour.
-  const branchId =
-    d.branch_id === undefined ? (user.activeBranchId ?? null) : d.branch_id;
+  const branchId = user.activeBranchId ?? null;
+  if (branchId == null) {
+    return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
+  }
   const info = getDb().prepare(`
     INSERT INTO inventa_lookups (branch_id, kind, value, sort_order)
     VALUES (?, ?, ?, ?)

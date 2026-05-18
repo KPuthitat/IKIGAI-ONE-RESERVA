@@ -57,11 +57,11 @@ export async function POST(req: Request) {
   const branchId = user.activeBranchId ?? null;
   const db = getDb();
 
-  // supplier name → id (case-insensitive exact)
+  // supplier name → id (case-insensitive exact) — this branch only.
   const supRows = db.prepare(`
     SELECT id, name FROM inventa_suppliers
-    WHERE active = 1 AND (branch_id IS ? OR branch_id = ?)
-  `).all(branchId, branchId) as { id: number; name: string }[];
+    WHERE active = 1 AND branch_id = ?
+  `).all(branchId) as { id: number; name: string }[];
   const supByName = new Map(
     supRows.map((s) => [s.name.trim().toLowerCase(), s.id])
   );

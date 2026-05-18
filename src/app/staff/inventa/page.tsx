@@ -23,13 +23,14 @@ export default function InventaPage() {
 
   const suppliers = db.prepare(`
     SELECT * FROM inventa_suppliers
-    WHERE active = 1 AND (branch_id IS ? OR branch_id = ?)
+    WHERE active = 1 AND branch_id = ?
     ORDER BY name
-  `).all(branchId, branchId) as InventaSupplier[];
+  `).all(branchId) as InventaSupplier[];
 
+  // Per-branch only — no global/shared lookups.
   const lookups = db.prepare(`
     SELECT * FROM inventa_lookups
-    WHERE active = 1 AND (branch_id IS NULL OR branch_id = ?)
+    WHERE active = 1 AND branch_id = ?
     ORDER BY kind, sort_order, value
   `).all(branchId) as InventaLookup[];
 
