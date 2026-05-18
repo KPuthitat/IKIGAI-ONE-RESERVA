@@ -1,5 +1,7 @@
 import { requireSuperAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import type { InventaLookup, InventaSupplier } from "@/lib/inventa";
 import SettingsClient from "./SettingsClient";
 
@@ -11,6 +13,7 @@ export const dynamic = "force-dynamic";
 // shared/global scope; each branch keeps its own distinct setup.
 export default function InventaSettingsPage() {
   const user = requireSuperAdmin();
+  const lang = getLang();
   const db = getDb();
   const branchId = user.activeBranchId ?? null;
 
@@ -22,10 +25,9 @@ export default function InventaSettingsPage() {
   if (!branchId || !branch) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold text-slate-800">INVENTA · ตั้งค่า</h1>
+        <h1 className="text-2xl font-bold text-slate-800">{t(lang, "inv.set.title")}</h1>
         <div className="card text-sm text-amber-700">
-          ยังไม่ได้เลือกสาขา — กดเปลี่ยนสาขาที่แถบด้านบนก่อน
-          แล้วจึงตั้งค่า INVENTA ของสาขานั้น
+          {t(lang, "inv.set.noBranch")}
         </div>
       </div>
     );
@@ -46,11 +48,8 @@ export default function InventaSettingsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">INVENTA · ตั้งค่า</h1>
-        <p className="text-sm text-slate-500">
-          กำหนดตัวเลือกที่ใช้ในฟอร์มรายการสินค้าของสาขานี้ — ตำแหน่งจัดเก็บ,
-          หน่วยนับ, หมวดหมู่ และผู้จำหน่าย · แต่ละสาขาตั้งค่าของตัวเองแยกกัน
-        </p>
+        <h1 className="text-2xl font-bold text-slate-800">{t(lang, "inv.set.title")}</h1>
+        <p className="text-sm text-slate-500">{t(lang, "inv.set.subtitle")}</p>
       </div>
       <SettingsClient
         lookups={lookups}

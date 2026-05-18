@@ -139,7 +139,7 @@ export default function InventaClient({
           <button type="button"
             onClick={() => setShowSuppliers(true)}
             className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-            จัดการผู้สั่ง ({suppliers.length})
+            จัดการผู้จำหน่าย ({suppliers.length})
           </button>
         </div>
 
@@ -201,7 +201,7 @@ export default function InventaClient({
               <th className="py-2 pr-3">แถบสี / จัดเก็บ</th>
               <th className="py-2 pr-3">ชื่อ</th>
               <th className="py-2 pr-3">หมวด</th>
-              <th className="py-2 pr-3">ผู้สั่ง</th>
+              <th className="py-2 pr-3">ผู้จำหน่าย</th>
               <th className="py-2 pr-3">หน่วย</th>
               <th className="py-2 pr-3 text-right">ทุน/หน่วย</th>
               <th className="py-2 pr-3 text-right">คงเหลือ</th>
@@ -518,7 +518,7 @@ function ItemModal({
             <p className="text-[10px] text-slate-400 mt-1">ค่าเริ่มต้น 50 — ต่ำกว่านี้ถือว่าต้องสั่ง</p>
           </div>
           <div className="col-span-2">
-            <label className="label">ผู้สั่ง (บริษัทผู้จำหน่าย)</label>
+            <label className="label">ผู้จำหน่าย</label>
             <select className="input" value={f.supplier_id}
               onChange={(e) => up("supplier_id", e.target.value)}>
               <option value="">—</option>
@@ -593,7 +593,7 @@ function SuppliersModal({
   }
 
   async function del(id: number, nm: string) {
-    if (!confirm(`ลบผู้สั่ง "${nm}"?`)) return;
+    if (!confirm(`ลบผู้จำหน่าย "${nm}"?`)) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl(`/api/inventa/suppliers/${id}`), { method: "DELETE" });
@@ -606,7 +606,7 @@ function SuppliersModal({
       onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
-        <h3 className="font-bold text-slate-800 text-lg">จัดการผู้สั่ง (บริษัท)</h3>
+        <h3 className="font-bold text-slate-800 text-lg">จัดการผู้จำหน่าย (บริษัท)</h3>
         <p className="text-xs text-slate-500">
           แต่ละบริษัทมีรอบสั่ง/รอบส่งต่างกัน — บันทึกไว้เพื่อวางแผนสั่งซื้อ
         </p>
@@ -624,7 +624,7 @@ function SuppliersModal({
           </div>
           <button type="button" onClick={add} disabled={busy || !name.trim()}
             className="w-full py-2 rounded-lg bg-brand text-white text-sm font-bold disabled:opacity-50">
-            + เพิ่มผู้สั่ง
+            + เพิ่มผู้จำหน่าย
           </button>
         </div>
 
@@ -643,7 +643,7 @@ function SuppliersModal({
             </div>
           ))}
           {suppliers.length === 0 && (
-            <div className="py-4 text-center text-slate-400 text-sm">ยังไม่มีผู้สั่ง</div>
+            <div className="py-4 text-center text-slate-400 text-sm">ยังไม่มีผู้จำหน่าย</div>
           )}
         </div>
 
@@ -674,7 +674,7 @@ const IMPORT_COLUMNS: Array<[string, string]> = [
   ["แถบสี(R/Y/G)", "pick_freq"],
   ["จุดสั่งซื้อ", "safety_stock"],
   ["คงเหลือ", "current_qty"],
-  ["ผู้สั่ง(บริษัท)", "supplier"]
+  ["ผู้จำหน่าย(บริษัท)", "supplier"]
 ];
 
 function parseCsv(text: string): string[][] {

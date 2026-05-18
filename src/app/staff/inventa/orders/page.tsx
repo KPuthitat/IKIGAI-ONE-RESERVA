@@ -1,5 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import OrdersClient, {
   type LowStockItem,
   type OrderRow
@@ -16,6 +18,7 @@ export const dynamic = "force-dynamic";
 //     approve / print the supplier PO.
 export default function InventaOrdersPage() {
   const user = requireUser();
+  const lang = getLang();
   const db = getDb();
   const branchId = user.activeBranchId ?? null;
 
@@ -51,11 +54,8 @@ export default function InventaOrdersPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">INVENTA · ใบสั่งซื้อ</h1>
-        <p className="text-sm text-slate-500">
-          รายการที่ถึงจุดสั่งซื้อ (คงเหลือ ≤ จุดสั่งซื้อ) — เลือกที่จะสั่ง
-          แล้วส่งขออนุมัติเข้ากลุ่มไลน์ · อนุมัติแล้วพิมพ์ใบสั่งซื้อส่งผู้จำหน่าย
-        </p>
+        <h1 className="text-2xl font-bold text-slate-800">{t(lang, "inv.orders.title")}</h1>
+        <p className="text-sm text-slate-500">{t(lang, "inv.orders.subtitle")}</p>
       </div>
       <OrdersClient
         lowStock={lowStock}

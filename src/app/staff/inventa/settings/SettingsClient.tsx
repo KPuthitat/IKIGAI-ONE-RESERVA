@@ -94,7 +94,7 @@ export default function SettingsClient({
           </Section>
         );
       })}
-      <Section title="ผู้สั่ง / บริษัทผู้จำหน่าย" count={suppliers.length}>
+      <Section title="ผู้จำหน่าย" count={suppliers.length}>
         <SupplierBody suppliers={suppliers} onChanged={refresh} />
       </Section>
 

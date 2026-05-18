@@ -1937,7 +1937,24 @@ export const dict: Record<Lang, Record<string, string>> = {
     "clock.recordError": "บันทึกเวลาไม่สำเร็จ ลองใหม่",
     "clock.now": "ตอนนี้ {time}",
     "clock.short.in": "เข้า",
-    "clock.short.out": "ออก"
+    "clock.short.out": "ออก",
+    "inv.module.desc": "ระบบบริหารคลังสินค้า — ตรวจนับสต๊อก บาร์โค้ด/คิวอาร์โค้ด และจัดทำใบสั่งซื้อ รองรับทุกประเภทธุรกิจ",
+    "inv.nav.stock": "คลังสินค้า",
+    "inv.nav.orders": "ใบสั่งซื้อ",
+    "inv.nav.qr": "สร้างคิวอาร์โค้ด",
+    "inv.nav.count": "เช็คสต๊อกรายสัปดาห์",
+    "inv.nav.settings": "ตั้งค่า",
+    "inv.stock.title": "INVENTA · คลังสินค้า",
+    "inv.stock.subtitle": "ระบบบริหารคลังสินค้า — บันทึกรายการพร้อมบาร์โค้ด/คิวอาร์โค้ด กำหนดตำแหน่งจัดเก็บ แถบสี และต้นทุนต่อหน่วย รองรับการตรวจนับและจัดทำใบสั่งซื้อ ใช้ได้กับทุกประเภทธุรกิจ",
+    "inv.orders.title": "INVENTA · ใบสั่งซื้อ",
+    "inv.orders.subtitle": "รายการที่ถึงจุดสั่งซื้อ (คงเหลือ ≤ จุดสั่งซื้อ) — เลือกที่จะสั่ง แล้วส่งขออนุมัติเข้ากลุ่มไลน์ · อนุมัติแล้วพิมพ์ใบสั่งซื้อส่งผู้จำหน่าย",
+    "inv.qr.title": "INVENTA · สร้างคิวอาร์โค้ด",
+    "inv.qr.subtitle": "สร้างคิวอาร์โค้ดประจำรายการสินค้า (อ้างอิงรหัสสินค้า) สำหรับติดชั้นวางหรือบรรจุภัณฑ์ ใช้สแกนเพื่อเรียกดู/ตรวจนับรายการได้ทันที · สั่งพิมพ์หรือบันทึกเป็นไฟล์ PDF",
+    "inv.count.title": "INVENTA · เช็คสต๊อกรายสัปดาห์",
+    "inv.count.subtitle": "สแกนคิวอาร์โค้ด/บาร์โค้ด หรือเลือกจากรายการ แล้วกรอกจำนวนที่นับได้จริง — ระบบบันทึกเป็นยอด ณ วันที่ตรวจนับ เพื่อใช้อ้างอิงและปรับปรุงยอดคงเหลือ (ไม่ตัดสต๊อกอัตโนมัติ จึงไม่อิงยอดคงเหลือเดิม)",
+    "inv.set.title": "INVENTA · ตั้งค่า",
+    "inv.set.subtitle": "กำหนดตัวเลือกที่ใช้ในฟอร์มรายการสินค้าของสาขานี้ — ตำแหน่งจัดเก็บ, หน่วยนับ, หมวดหมู่ และผู้จำหน่าย · แต่ละสาขาตั้งค่าของตัวเองแยกกัน",
+    "inv.set.noBranch": "ยังไม่ได้เลือกสาขา — กดเปลี่ยนสาขาที่แถบด้านบนก่อน แล้วจึงตั้งค่า INVENTA ของสาขานั้น"
   },
   en: {
     // Common
@@ -3847,7 +3864,24 @@ export const dict: Record<Lang, Record<string, string>> = {
     "clock.recordError": "Failed to record, try again",
     "clock.now": "Now {time}",
     "clock.short.in": "In",
-    "clock.short.out": "Out"
+    "clock.short.out": "Out",
+    "inv.module.desc": "Inventory management — stock counts, barcodes/QR codes and purchase orders. Works for any business.",
+    "inv.nav.stock": "Stock",
+    "inv.nav.orders": "Purchase Orders",
+    "inv.nav.qr": "Generate QR Codes",
+    "inv.nav.count": "Weekly Stock Count",
+    "inv.nav.settings": "Settings",
+    "inv.stock.title": "INVENTA · Stock",
+    "inv.stock.subtitle": "Inventory management — record items with barcode/QR code, set storage location, colour band and unit cost; supports stock counting and purchase orders. Works for any business.",
+    "inv.orders.title": "INVENTA · Purchase Orders",
+    "inv.orders.subtitle": "Items at/below the reorder point — pick what to order, send for approval via the LINE group, then print the purchase order for the supplier once approved.",
+    "inv.qr.title": "INVENTA · Generate QR Codes",
+    "inv.qr.subtitle": "Generate a QR code per item (encodes the item code) to stick on shelves or packaging — scan to look up / count instantly · print or save as PDF.",
+    "inv.count.title": "INVENTA · Weekly Stock Count",
+    "inv.count.subtitle": "Scan a QR/barcode or pick from the list and enter the actual counted quantity — recorded as the figure as of the count date for reference/adjustment (no automatic stock deduction, so it ignores the previous balance).",
+    "inv.set.title": "INVENTA · Settings",
+    "inv.set.subtitle": "Configure the options used in this branch's item form — storage locations, units, categories and suppliers · each branch keeps its own separate setup.",
+    "inv.set.noBranch": "No branch selected — switch branch from the bar above first, then configure that branch's INVENTA."
   }
 };
 

@@ -61,14 +61,14 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       label: "INVENTA",
       pathPrefix: "/staff/inventa",
       items: [
-        { href: "/staff/inventa", label: "คลังสินค้า" },
-        { href: "/staff/inventa/orders", label: "ใบสั่งซื้อ" },
-        { href: "/staff/inventa/labels", label: "สร้างคิวอาร์โค้ด" },
-        { href: "/staff/inventa/count", label: "เช็คสต๊อกรายสัปดาห์" },
+        { href: "/staff/inventa", label: t(lang, "inv.nav.stock") },
+        { href: "/staff/inventa/orders", label: t(lang, "inv.nav.orders") },
+        { href: "/staff/inventa/labels", label: t(lang, "inv.nav.qr") },
+        { href: "/staff/inventa/count", label: t(lang, "inv.nav.count") },
         // Settings is super_admin-only — hide the link from everyone
         // else (the page itself also enforces requireSuperAdmin).
         ...(user.role === "super_admin"
-          ? [{ href: "/staff/inventa/settings", label: "ตั้งค่า" }]
+          ? [{ href: "/staff/inventa/settings", label: t(lang, "inv.nav.settings") }]
           : [])
       ]
     },

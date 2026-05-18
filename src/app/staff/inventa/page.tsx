@@ -1,5 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import type { InventaItem, InventaSupplier, InventaLookup } from "@/lib/inventa";
 import InventaClient from "./InventaClient";
 
@@ -10,6 +12,7 @@ export const dynamic = "force-dynamic";
 // to the user's active branch.
 export default function InventaPage() {
   const user = requireUser();
+  const lang = getLang();
   const db = getDb();
   const branchId = user.activeBranchId ?? null;
 
@@ -37,12 +40,8 @@ export default function InventaPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">INVENTA · คลังสินค้า</h1>
-        <p className="text-sm text-slate-500">
-          ระบบบริหารคลังสินค้า — บันทึกรายการพร้อมบาร์โค้ด/คิวอาร์โค้ด
-          กำหนดตำแหน่งจัดเก็บ แถบสี และต้นทุนต่อหน่วย รองรับการตรวจนับ
-          และจัดทำใบสั่งซื้อ ใช้ได้กับทุกประเภทธุรกิจ
-        </p>
+        <h1 className="text-2xl font-bold text-slate-800">{t(lang, "inv.stock.title")}</h1>
+        <p className="text-sm text-slate-500">{t(lang, "inv.stock.subtitle")}</p>
       </div>
       <InventaClient items={items} suppliers={suppliers} lookups={lookups}
         isSuperAdmin={user.role === "super_admin"} />

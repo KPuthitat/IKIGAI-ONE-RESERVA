@@ -1,5 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import CountClient, { type CountItem } from "./CountClient";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +12,7 @@ export const dynamic = "force-dynamic";
 // current_qty. Submit locks the session for history.
 export default function InventaCountPage() {
   const user = requireUser();
+  const lang = getLang();
   const db = getDb();
   const branchId = user.activeBranchId ?? null;
 
@@ -38,12 +41,8 @@ export default function InventaCountPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">INVENTA · เช็คสต๊อกรายสัปดาห์</h1>
-        <p className="text-sm text-slate-500">
-          สแกนคิวอาร์โค้ด/บาร์โค้ด หรือเลือกจากรายการ แล้วกรอกจำนวนที่นับได้จริง
-          — ระบบบันทึกเป็นยอด ณ วันที่ตรวจนับ เพื่อใช้อ้างอิงและปรับปรุง
-          ยอดคงเหลือ (ไม่ตัดสต๊อกอัตโนมัติ จึงไม่อิงยอดคงเหลือเดิม)
-        </p>
+        <h1 className="text-2xl font-bold text-slate-800">{t(lang, "inv.count.title")}</h1>
+        <p className="text-sm text-slate-500">{t(lang, "inv.count.subtitle")}</p>
       </div>
       <CountClient
         items={items}

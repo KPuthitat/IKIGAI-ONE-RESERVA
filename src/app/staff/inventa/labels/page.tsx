@@ -1,5 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import LabelsClient, { type LabelItem } from "./LabelsClient";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +12,7 @@ export const dynamic = "force-dynamic";
 // label to pull the item up instantly.
 export default function InventaLabelsPage() {
   const user = requireUser();
+  const lang = getLang();
   const db = getDb();
   const branchId = user.activeBranchId ?? null;
 
@@ -23,12 +26,8 @@ export default function InventaLabelsPage() {
   return (
     <div className="space-y-4">
       <div className="no-print">
-        <h1 className="text-2xl font-bold text-slate-800">INVENTA · สร้างคิวอาร์โค้ด</h1>
-        <p className="text-sm text-slate-500">
-          สร้างคิวอาร์โค้ดประจำรายการสินค้า (อ้างอิงรหัสสินค้า) สำหรับติด
-          ชั้นวางหรือบรรจุภัณฑ์ ใช้สแกนเพื่อเรียกดู/ตรวจนับรายการได้ทันที ·
-          สั่งพิมพ์หรือบันทึกเป็นไฟล์ PDF
-        </p>
+        <h1 className="text-2xl font-bold text-slate-800">{t(lang, "inv.qr.title")}</h1>
+        <p className="text-sm text-slate-500">{t(lang, "inv.qr.subtitle")}</p>
       </div>
       <LabelsClient items={items} />
     </div>

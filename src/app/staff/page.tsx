@@ -53,7 +53,7 @@ export default function StaffHomePage({
           <h2 className="text-2xl font-bold text-slate-800 group-hover:text-brand transition-colors">
             INVENTA
           </h2>
-          <p className="text-slate-500 text-sm mt-1">ระบบบริหารคลังสินค้า — ตรวจนับสต๊อก บาร์โค้ด/คิวอาร์โค้ด และจัดทำใบสั่งซื้อ รองรับทุกประเภทธุรกิจ</p>
+          <p className="text-slate-500 text-sm mt-1">{t(lang, "inv.module.desc")}</p>
           <p className="mt-4 text-brand font-bold text-sm">{t(lang, "portal.openModule")}</p>
         </Link>
 
