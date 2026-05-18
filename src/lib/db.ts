@@ -2110,59 +2110,12 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE inventa_items ADD COLUMN storage_location TEXT");
   }
 
-  // One-time global seed so a fresh install isn't staring at empty
-  // dropdowns. Guarded by a persistent marker (NOT a COUNT) so that
-  // a deliberate "ล้างข้อมูล INVENTA" wipe stays wiped — the seed
-  // must never silently come back on the next boot.
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS inventa_meta (key TEXT PRIMARY KEY, val TEXT)"
-  );
-  const lkSeeded = db.prepare(
-    "SELECT 1 FROM inventa_meta WHERE key = 'lookups_seeded'"
-  ).get();
-  if (!lkSeeded) {
-    // Only actually seed when the table is empty (existing installs
-    // already have their lookups — just arm the marker for them so a
-    // future manual wipe doesn't trigger a reseed).
-    const lkCount = (db.prepare("SELECT COUNT(*) AS n FROM inventa_lookups")
-      .get() as { n: number }).n;
-    if (lkCount === 0) {
-    const ins = db.prepare(
-      "INSERT INTO inventa_lookups (branch_id, kind, value, sort_order) VALUES (NULL,?,?,?)"
-    );
-    const seed = (kind: string, vals: string[]) =>
-      vals.forEach((v, i) => ins.run(kind, v, (i + 1) * 10));
-
-    seed("row", ["A", "B", "C", "D", "E", "F"]);
-    seed("storage", ["ตู้ยา", "ตู้เก็บยาควบคุม", "ตู้เย็น", "ชั้นวางทั่วไป"]);
-    seed("unit", ["เม็ด", "แคปซูล", "ขวด", "แอมป์", "หลอด", "ซอง", "กล่อง", "ชิ้น", "แผง"]);
-    seed("category", [
-      "กลุ่มยาทั่วไป General Drugs",
-      "กลุ่มยา NSAIDs",
-      "กลุ่มยาปฏิชีวนะ - Penicillins",
-      "กลุ่มยาปฏิชีวนะ - Sulfonamides",
-      "กลุ่มยาปฏิชีวนะ - Macrolides",
-      "กลุ่มยาปฏิชีวนะ - Fluoroquinolones",
-      "กลุ่มยาปฏิชีวนะ - Cephalosporins",
-      "กลุ่มยารักษาโรคระบบทางเดินอาหาร - กระเพาะอาหาร",
-      "กลุ่มยารักษาโรคระบบทางเดินอาหาร - โรคท้องเสีย",
-      "กลุ่มยารักษาโรคระบบทางเดินหายใจ - หวัดที่มีอาการไอ",
-      "กลุ่มยารักษาโรคระบบทางเดินหายใจ - โรคหอบหืด",
-      "กลุ่มยารักษาโรคระบบสมองและระบบประสาท - อื่นๆ",
-      "กลุ่มยารักษาโรคความดันโลหิตสูง",
-      "กลุ่มยารักษาโรคระบบผิวหนัง - ผื่นคันที่ผิวหนัง",
-      "กลุ่มยารักษาโรคระบบผิวหนัง - ผิวหนังอักเสบติดเชื้อ",
-      "กลุ่มยารักษาโรคระบบต่อมไร้ท่อ",
-      "กลุ่มยารักษาโรคในระบบกล้ามเนื้อ กระดูกและข้อ - ยาคลายกล้ามเนื้อ",
-      "กลุ่มยารักษาอาการในภาวะฉุกเฉิน",
-      "กลุ่มยาอื่นๆ - ไม่ระบุ",
-      "GS02 Bag"
-    ]);
-    }
-    db.prepare(
-      "INSERT OR IGNORE INTO inventa_meta (key, val) VALUES ('lookups_seeded', '1')"
-    ).run();
-  }
+  // INVENTA ships with NO preset lookups. Each business defines its
+  // own categories / units / storage locations / colour-band meaning
+  // from /staff/inventa/settings, so the dropdowns start empty rather
+  // than pre-filled with clinic-specific values. (Existing installs
+  // that still carry the old seed clear it via the super_admin
+  // "ล้างข้อมูล INVENTA" tool — see /api/inventa/admin/reset.)
 }
 
 /** One row in the daily attendance roster — used by the group
