@@ -36,8 +36,9 @@ export default function InventaSettingsPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-800">INVENTA · ตั้งค่า</h1>
         <p className="text-sm text-slate-500">
-          จัดการตัวเลือกที่ใช้ในฟอร์มรายการ — แถว, ตำแหน่งจัดเก็บ, หน่วย,
-          หมวดหมู่, และผู้จำหน่าย · เลือกได้ว่าตั้งให้ส่วนกลางหรือเฉพาะสาขา
+          กำหนดตัวเลือกที่ใช้ในฟอร์มรายการสินค้า — ตำแหน่งจัดเก็บ, หน่วยนับ,
+          หมวดหมู่ และผู้จำหน่าย · เลือกได้ว่าตั้งเป็นค่าส่วนกลาง (ใช้ทุกสาขา)
+          หรือเฉพาะสาขา
         </p>
       </div>
       <SettingsClient lookups={lookups} suppliers={suppliers} branches={branches} />

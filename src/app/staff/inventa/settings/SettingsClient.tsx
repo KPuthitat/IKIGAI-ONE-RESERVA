@@ -8,7 +8,7 @@ import {
   type InventaSupplier
 } from "@/lib/inventa";
 
-const KINDS: LookupKind[] = ["row", "storage", "unit", "category"];
+const KINDS: LookupKind[] = ["storage", "unit", "category"];
 
 // Each setting group is a top-to-bottom collapsible section
 // (accordion) so the page reads as a tidy list instead of a wall of
@@ -124,56 +124,47 @@ export default function SettingsClient({
           onChanged={refresh} />
       </Section>
 
-      <Section title="ย้ายข้อมูล INVENTA ระหว่างสาขา" count={branches.length}>
-        <MoveBranchBody branches={branches} onChanged={refresh} />
+      <Section title="ล้างข้อมูล INVENTA ทั้งหมด" count={0}>
+        <ResetDataBody onChanged={refresh} />
       </Section>
     </div>
   );
 }
 
-function MoveBranchBody({
-  branches, onChanged
-}: {
-  branches: Array<{ id: number; name: string }>;
-  onChanged: () => void;
-}) {
-  const [from, setFrom] = useState<string>("");
-  const [to, setTo] = useState<string>("");
+function ResetDataBody({ onChanged }: { onChanged: () => void }) {
+  const [phrase, setPhrase] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const CONFIRM = "ล้างข้อมูล";
 
-  async function move() {
-    if (!from || !to || from === to) {
-      setMsg("เลือกสาขาต้นทางและปลายทางให้ต่างกัน");
+  async function reset() {
+    if (phrase.trim() !== CONFIRM) {
+      setMsg(`พิมพ์ "${CONFIRM}" ให้ตรงเพื่อยืนยัน`);
       return;
     }
-    const fromName = branches.find((b) => String(b.id) === from)?.name ?? from;
-    const toName = branches.find((b) => String(b.id) === to)?.name ?? to;
     if (!window.confirm(
-      `ย้ายข้อมูล INVENTA ทั้งหมด (รายการ/ผู้จำหน่าย/หมวดเฉพาะสาขา/การนับ/ใบสั่งซื้อ)\n` +
-      `จาก "${fromName}" → "${toName}" ?\n\nสาขาต้นทางจะไม่เหลือข้อมูล INVENTA`
+      "ล้างข้อมูล INVENTA ทั้งหมดทุกสาขา (รายการ/ผู้จำหน่าย/หมวด/ตัวเลือก/" +
+      "การนับ/ใบสั่งซื้อ) — ลบถาวร กู้คืนไม่ได้ ยืนยันหรือไม่?"
     )) return;
     setBusy(true);
     setMsg(null);
     try {
-      const res = await fetch(apiUrl("/api/inventa/admin/move-branch"), {
+      const res = await fetch(apiUrl("/api/inventa/admin/reset"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          from_branch_id: Number(from),
-          to_branch_id: Number(to)
-        })
+        body: JSON.stringify({ confirm: CONFIRM })
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setMsg(j.error ?? "ย้ายไม่สำเร็จ"); return; }
-      const m = j.moved;
+      if (!res.ok || !j.ok) { setMsg(j.error ?? "ล้างไม่สำเร็จ"); return; }
+      const d = j.deleted;
       setMsg(
-        `ย้ายแล้ว: รายการ ${m.items} · ผู้จำหน่าย ${m.suppliers} · ` +
-        `หมวด/ตัวเลือก ${m.lookups} · การนับ ${m.counts} · ใบสั่งซื้อ ${m.orders}`
+        `ล้างแล้ว: รายการ ${d.items} · ผู้จำหน่าย ${d.suppliers} · ` +
+        `หมวด/ตัวเลือก ${d.lookups} · การนับ ${d.counts} · ใบสั่งซื้อ ${d.orders}`
       );
+      setPhrase("");
       onChanged();
     } catch {
-      setMsg("ย้ายไม่สำเร็จ");
+      setMsg("ล้างไม่สำเร็จ");
     } finally {
       setBusy(false);
     }
@@ -181,37 +172,24 @@ function MoveBranchBody({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-slate-500">
-        ใช้กรณีข้อมูลถูกสร้าง/ทดสอบไว้ผิดสาขา — ย้ายทั้งหมดไปสาขาที่ถูกต้อง
-        ในครั้งเดียว (หมวด/ตัวเลือกแบบ “ทุกสาขา (ส่วนกลาง)” จะไม่ถูกย้าย ใช้ร่วมกันตามเดิม)
-      </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div>
-          <label className="label text-[11px]">จากสาขา (ต้นทาง)</label>
-          <select className="input text-sm" value={from}
-            onChange={(e) => setFrom(e.target.value)}>
-            <option value="">— เลือกสาขา —</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label text-[11px]">ไปสาขา (ปลายทาง)</label>
-          <select className="input text-sm" value={to}
-            onChange={(e) => setTo(e.target.value)}>
-            <option value="">— เลือกสาขา —</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
-        </div>
+      <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 leading-relaxed">
+        ลบข้อมูล INVENTA <b>ทั้งหมดทุกสาขา</b> อย่างถาวร — รายการสินค้า,
+        ผู้จำหน่าย, หมวดหมู่/หน่วย/ตำแหน่ง/แถบสี (รวมส่วนกลาง),
+        ประวัติการนับ และใบสั่งซื้อทั้งหมด · ใช้เมื่อต้องการเริ่มต้นใหม่
+      </div>
+      <div>
+        <label className="label text-[11px]">
+          พิมพ์ “{CONFIRM}” เพื่อยืนยัน
+        </label>
+        <input className="input text-sm" value={phrase}
+          onChange={(e) => setPhrase(e.target.value)}
+          placeholder={CONFIRM} />
       </div>
       {msg && <div className="text-sm text-slate-700">{msg}</div>}
-      <button type="button" onClick={move}
-        disabled={busy || !from || !to || from === to}
+      <button type="button" onClick={reset}
+        disabled={busy || phrase.trim() !== CONFIRM}
         className="text-sm px-4 py-2 rounded-lg bg-rose-600 text-white font-bold disabled:opacity-50">
-        {busy ? "กำลังย้าย…" : "ย้ายข้อมูล INVENTA"}
+        {busy ? "กำลังล้าง…" : "ล้างข้อมูล INVENTA ทั้งหมด"}
       </button>
     </div>
   );

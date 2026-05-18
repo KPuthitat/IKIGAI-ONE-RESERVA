@@ -38,8 +38,9 @@ export default function InventaPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-800">INVENTA · คลังสินค้า</h1>
         <p className="text-sm text-slate-500">
-          ระบบนับสต๊อก — บาร์โค้ด · ตำแหน่ง grid (แถว A–E × คอลัมน์ 1–6) ·
-          สีหยิบใช้ R/Y/G · ราคาทุนต่อหน่วยเล็กสุด
+          ระบบบริหารคลังสินค้า — บันทึกรายการพร้อมบาร์โค้ด/คิวอาร์โค้ด
+          กำหนดตำแหน่งจัดเก็บ แถบสี และต้นทุนต่อหน่วย รองรับการตรวจนับ
+          และจัดทำใบสั่งซื้อ ใช้ได้กับทุกประเภทธุรกิจ
         </p>
       </div>
       <InventaClient items={items} suppliers={suppliers} lookups={lookups}

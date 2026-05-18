@@ -2110,11 +2110,23 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE inventa_items ADD COLUMN storage_location TEXT");
   }
 
-  // One-time global seed so a fresh clinic isn't staring at empty
-  // dropdowns. Only runs when the table is completely empty.
-  const lkCount = (db.prepare("SELECT COUNT(*) AS n FROM inventa_lookups")
-    .get() as { n: number }).n;
-  if (lkCount === 0) {
+  // One-time global seed so a fresh install isn't staring at empty
+  // dropdowns. Guarded by a persistent marker (NOT a COUNT) so that
+  // a deliberate "ล้างข้อมูล INVENTA" wipe stays wiped — the seed
+  // must never silently come back on the next boot.
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS inventa_meta (key TEXT PRIMARY KEY, val TEXT)"
+  );
+  const lkSeeded = db.prepare(
+    "SELECT 1 FROM inventa_meta WHERE key = 'lookups_seeded'"
+  ).get();
+  if (!lkSeeded) {
+    // Only actually seed when the table is empty (existing installs
+    // already have their lookups — just arm the marker for them so a
+    // future manual wipe doesn't trigger a reseed).
+    const lkCount = (db.prepare("SELECT COUNT(*) AS n FROM inventa_lookups")
+      .get() as { n: number }).n;
+    if (lkCount === 0) {
     const ins = db.prepare(
       "INSERT INTO inventa_lookups (branch_id, kind, value, sort_order) VALUES (NULL,?,?,?)"
     );
@@ -2146,6 +2158,10 @@ function runMigrations(db: Database.Database): void {
       "กลุ่มยาอื่นๆ - ไม่ระบุ",
       "GS02 Bag"
     ]);
+    }
+    db.prepare(
+      "INSERT OR IGNORE INTO inventa_meta (key, val) VALUES ('lookups_seeded', '1')"
+    ).run();
   }
 }
 

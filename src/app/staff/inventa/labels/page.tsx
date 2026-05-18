@@ -23,10 +23,11 @@ export default function InventaLabelsPage() {
   return (
     <div className="space-y-4">
       <div className="no-print">
-        <h1 className="text-2xl font-bold text-slate-800">INVENTA · พิมพ์ QR ติดชั้น</h1>
+        <h1 className="text-2xl font-bold text-slate-800">INVENTA · สร้างคิวอาร์โค้ด</h1>
         <p className="text-sm text-slate-500">
-          QR แต่ละดวงเก็บ "รหัสสินค้า" — สแกนแล้วระบบเปิดรายการนั้นทันที
-          (ใช้สแกนตอนนับได้เลย) · เลือกพิมพ์แล้วบันทึกเป็น PDF ก็ได้
+          สร้างคิวอาร์โค้ดประจำรายการสินค้า (อ้างอิงรหัสสินค้า) สำหรับติด
+          ชั้นวางหรือบรรจุภัณฑ์ ใช้สแกนเพื่อเรียกดู/ตรวจนับรายการได้ทันที ·
+          สั่งพิมพ์หรือบันทึกเป็นไฟล์ PDF
         </p>
       </div>
       <LabelsClient items={items} />

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { apiUrl } from "@/lib/url";
 import BarcodeScanner from "@/app/components/BarcodeScanner";
 import {
-  PICK_FREQ_META, GRID_COLS, binCode, isLowStock,
+  PICK_FREQ_META, isLowStock,
   type PickFreq, type ItemType, type InventaSupplier, type InventaLookup
 } from "@/lib/inventa";
 
@@ -64,8 +64,8 @@ export default function InventaClient({
       if (freqFilter && i.pick_freq !== freqFilter) return false;
       if (!term) return true;
       return [
-        i.name, i.generic_name, i.item_code, i.barcode, i.category,
-        binCode(i.grid_row, i.grid_col, i.pick_freq)
+        i.name, i.generic_name, i.item_code, i.barcode,
+        i.category, i.storage_location
       ].some((v) => (v ?? "").toLowerCase().includes(term));
     });
   }, [items, q, freqFilter]);
@@ -151,13 +151,9 @@ export default function InventaClient({
             เครื่องมืออื่น
           </summary>
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 mt-2">
-            <Link href="/staff/inventa/grid"
-              className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center">
-              ผังกริด
-            </Link>
             <Link href="/staff/inventa/labels"
               className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center">
-              พิมพ์ QR
+              สร้างคิวอาร์โค้ด
             </Link>
             {isSuperAdmin && (
               <Link href="/staff/inventa/settings"
@@ -168,22 +164,30 @@ export default function InventaClient({
           </div>
         </details>
 
-        {/* Search + colour filter */}
+        {/* Search + colour-band filter */}
         <div className="flex flex-wrap gap-2 items-center">
           <input className="input flex-1 min-w-[160px]" value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="ค้นหา ชื่อ / ชื่อรอง / รหัส / ตำแหน่ง (เช่น D4R)" />
+            placeholder="ค้นหา ชื่อ / ชื่อรอง / รหัส / หมวด / ตำแหน่งจัดเก็บ" />
           <div className="flex gap-1">
-            {(["", "R", "Y", "G"] as const).map((f) => (
-              <button key={f || "all"} type="button"
-                onClick={() => setFreqFilter(f)}
-                className={`text-xs px-3 py-1.5 rounded-md border ${
-                  freqFilter === f
-                    ? "bg-brand text-white border-brand font-bold"
-                    : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
-                {f === "" ? "ทั้งหมด" : PICK_FREQ_META[f].short}
-              </button>
-            ))}
+            {(["", "R", "Y", "G"] as const).map((f) => {
+              const active = freqFilter === f;
+              const fm = f === "" ? null : PICK_FREQ_META[f];
+              return (
+                <button key={f || "all"} type="button"
+                  onClick={() => setFreqFilter(f)}
+                  className={`text-xs px-3 py-1.5 rounded-md border font-bold ${
+                    active
+                      ? fm
+                        ? fm.chip + " ring-2 ring-offset-1 ring-slate-300"
+                        : "bg-brand text-white border-brand"
+                      : fm
+                        ? fm.chip + " opacity-70"
+                        : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+                  {f === "" ? "ทั้งหมด" : fm!.short}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -192,7 +196,7 @@ export default function InventaClient({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-500 border-b">
-              <th className="py-2 pr-3">ตำแหน่ง</th>
+              <th className="py-2 pr-3">แถบสี / จัดเก็บ</th>
               <th className="py-2 pr-3">ชื่อ</th>
               <th className="py-2 pr-3">หมวด</th>
               <th className="py-2 pr-3">ผู้สั่ง</th>
@@ -209,11 +213,15 @@ export default function InventaClient({
               return (
                 <tr key={i.id}
                   className={`border-b last:border-0 ${low ? "bg-rose-50/50" : "hover:bg-slate-50"}`}>
-                  <td className="py-2 pr-3">
-                    <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded ${
-                      fm?.chip ?? "bg-slate-100 text-slate-500"}`}>
-                      {binCode(i.grid_row, i.grid_col, i.pick_freq) || "—"}
-                    </span>
+                  <td className="py-2 pr-3 whitespace-nowrap">
+                    {fm && (
+                      <span className={`inline-block text-[11px] font-bold px-2 py-0.5 rounded ${fm.chip}`}>
+                        {fm.short}
+                      </span>
+                    )}
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      {i.storage_location || "—"}
+                    </div>
                   </td>
                   <td className="py-2 pr-3">
                     <div className="font-medium text-slate-800">{i.name}</div>
@@ -300,7 +308,6 @@ function ItemModal({
 }) {
   const opts = (kind: string) =>
     lookups.filter((l) => l.kind === kind).map((l) => l.value);
-  const rowOpts = opts("row");
   const storageOpts = opts("storage");
   const unitOpts = opts("unit");
   const categoryOpts = opts("category");
@@ -332,11 +339,8 @@ function ItemModal({
   const up = (k: keyof typeof f, v: string) =>
     setF((p) => ({ ...p, [k]: v }) as typeof p);
 
-  const preview = binCode(
-    f.grid_row || null,
-    f.grid_col ? Number(f.grid_col) : null,
-    (f.pick_freq || null) as PickFreq | null
-  );
+  // Camera scan → fills the barcode field (add/edit item).
+  const [scanField, setScanField] = useState(false);
 
   async function save() {
     setErr(null);
@@ -406,9 +410,16 @@ function ItemModal({
             </select>
           </div>
           <div>
-            <label className="label">บาร์โค้ด</label>
-            <input className="input" value={f.barcode}
-              onChange={(e) => up("barcode", e.target.value)} />
+            <label className="label">บาร์โค้ด / คิวอาร์โค้ด</label>
+            <div className="flex gap-2">
+              <input className="input flex-1" value={f.barcode}
+                onChange={(e) => up("barcode", e.target.value)}
+                placeholder="พิมพ์ หรือกดสแกน" />
+              <button type="button" onClick={() => setScanField(true)}
+                className="px-3 rounded-lg border border-brand text-brand text-sm font-bold hover:bg-rose-50 whitespace-nowrap">
+                สแกน
+              </button>
+            </div>
           </div>
           <div className="col-span-2">
             <label className="label">ชื่อสินค้า *</label>
@@ -436,13 +447,13 @@ function ItemModal({
           </div>
         </div>
 
-        {/* Location + colour */}
+        {/* Storage location + colour band */}
         <div className="border-t border-slate-200 pt-3">
           <div className="text-xs font-bold text-slate-700 mb-2">
-            ตำแหน่งในคลัง
+            ตำแหน่งจัดเก็บ &amp; แถบสี
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
+            <div>
               <label className="label">ตำแหน่งจัดเก็บ</label>
               <select className="input" value={f.storage_location}
                 onChange={(e) => up("storage_location", e.target.value)}>
@@ -451,37 +462,16 @@ function ItemModal({
               </select>
             </div>
             <div>
-              <label className="label">แถว (รหัสขึ้นต้น)</label>
-              <select className="input" value={f.grid_row}
-                onChange={(e) => up("grid_row", e.target.value)}>
-                <option value="">—</option>
-                {rowOpts.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">คอลัมน์ (1–6)</label>
-              <select className="input" value={f.grid_col}
-                onChange={(e) => up("grid_col", e.target.value)}>
-                <option value="">—</option>
-                {GRID_COLS.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div className="col-span-2">
-              <label className="label">ความถี่หยิบใช้ (สี)</label>
+              <label className="label">แถบสี</label>
               <select className="input" value={f.pick_freq}
                 onChange={(e) => up("pick_freq", e.target.value)}>
-                <option value="">—</option>
-                <option value="R">R · หยิบใช้น้อย</option>
-                <option value="Y">Y · หยิบใช้ปานกลาง</option>
-                <option value="G">G · หยิบใช้บ่อย</option>
+                <option value="">— ไม่ระบุ —</option>
+                <option value="R">แดง</option>
+                <option value="Y">เหลือง</option>
+                <option value="G">เขียว</option>
               </select>
             </div>
           </div>
-          {preview && (
-            <p className="text-xs text-slate-500 mt-2">
-              รหัสตำแหน่ง: <span className="font-bold text-brand">{preview}</span>
-            </p>
-          )}
         </div>
 
         {/* Unit + cost (per smallest unit, entered directly) */}
@@ -543,6 +533,14 @@ function ItemModal({
           </button>
         </div>
       </div>
+
+      {scanField && (
+        <BarcodeScanner
+          title="สแกนบาร์โค้ด / คิวอาร์โค้ด"
+          onResult={(code) => up("barcode", code)}
+          onClose={() => setScanField(false)}
+        />
+      )}
     </div>
   );
 }
@@ -658,9 +656,7 @@ const IMPORT_COLUMNS: Array<[string, string]> = [
   ["หน่วยเล็กสุด", "unit"],
   ["ราคาต่อหน่วย", "unit_cost"],
   ["ตำแหน่งจัดเก็บ", "storage_location"],
-  ["แถว", "grid_row"],
-  ["คอลัมน์", "grid_col"],
-  ["สี(R/Y/G)", "pick_freq"],
+  ["แถบสี(R/Y/G)", "pick_freq"],
   ["จุดสั่งซื้อ", "safety_stock"],
   ["คงเหลือ", "current_qty"],
   ["ผู้สั่ง(บริษัท)", "supplier"]
@@ -709,7 +705,7 @@ function ImportModal({
     const sample = [
       "ตัวอย่างสินค้า A", "", "A0001", "8850000000001",
       "หมวดทั่วไป", "สินค้า", "ชิ้น", "1.00", "ชั้นวางทั่วไป",
-      "A", "1", "G", "100", "250", ""
+      "G", "100", "250", ""
     ].join(",");
     const blob = new Blob(["﻿" + header + "\n" + sample + "\n"], {
       type: "text/csv;charset=utf-8"

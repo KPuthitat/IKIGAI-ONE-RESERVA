@@ -4,10 +4,10 @@
 export type PickFreq = "R" | "Y" | "G";
 export type ItemType = "drug" | "equipment";
 
-// Pick-frequency colour. The bin code (e.g. "D4R") = grid_row +
-// grid_col + pick_freq. Within one physical grid cell several items
-// live together; the colour tells staff how often each is used so a
-// new hire can locate it fast. R = นานๆ หยิบที, G = หยิบบ่อย.
+// Colour band — a free-form red / yellow / green tag each business
+// can use however it likes (priority, condition, zone, fast/slow
+// moving …). Stored values stay R/Y/G for backward compatibility;
+// only the presentation is a neutral colour label now.
 export const PICK_FREQ_META: Record<PickFreq, {
   label: string;       // Thai label
   short: string;       // chip text
@@ -16,21 +16,21 @@ export const PICK_FREQ_META: Record<PickFreq, {
   chip: string;
 }> = {
   R: {
-    label: "หยิบใช้น้อย",
-    short: "R",
-    desc: "หยิบใช้น้อย — นานๆ ครั้ง",
+    label: "แดง",
+    short: "แดง",
+    desc: "แถบสีแดง",
     chip: "bg-rose-100 text-rose-700 border border-rose-300"
   },
   Y: {
-    label: "หยิบใช้ปานกลาง",
-    short: "Y",
-    desc: "หยิบใช้ปานกลาง",
+    label: "เหลือง",
+    short: "เหลือง",
+    desc: "แถบสีเหลือง",
     chip: "bg-amber-100 text-amber-700 border border-amber-300"
   },
   G: {
-    label: "หยิบใช้บ่อย",
-    short: "G",
-    desc: "หยิบใช้บ่อย — เป็นประจำ",
+    label: "เขียว",
+    short: "เขียว",
+    desc: "แถบสีเขียว",
     chip: "bg-emerald-100 text-emerald-700 border border-emerald-300"
   }
 };
