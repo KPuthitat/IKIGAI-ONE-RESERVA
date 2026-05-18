@@ -59,11 +59,19 @@ export function getSessionUser(): SessionUser | null {
   }
   // ลำดับการแสดงสาขา — flagship (NAMA = display_order 1) ขึ้นก่อนเสมอ
   // ตามด้วยอัลฟาเบติก (display_order default = 100 สำหรับสาขาอื่น)
-  const branches = db.prepare(`
-    SELECT b.* FROM user_branches ub JOIN branches b ON ub.branch_id = b.id
-    WHERE ub.user_id = ?
-    ORDER BY b.display_order, b.name
-  `).all(row.id) as Branch[];
+  //
+  // super_admin is global: it can enter EVERY branch, so its branch
+  // set is the whole table (not just user_branches rows). Everyone
+  // else is scoped to their explicit membership.
+  const branches = (row.role === "super_admin"
+    ? db.prepare(`
+        SELECT b.* FROM branches b ORDER BY b.display_order, b.name
+      `).all()
+    : db.prepare(`
+        SELECT b.* FROM user_branches ub JOIN branches b ON ub.branch_id = b.id
+        WHERE ub.user_id = ?
+        ORDER BY b.display_order, b.name
+      `).all(row.id)) as Branch[];
 
   // Branches this user can administer. super_admin is global so it
   // gets every branch; a sub-admin only gets branches explicitly
@@ -128,20 +136,26 @@ export function syncUserFromPayroll(payrollUser: {
 
 /** Switch the session's active branch. Rejects branches the user is
  *  not a member of (defence-in-depth: the picker only lists allowed
- *  branches, but a hand-crafted POST must not bypass that). Returns
- *  true when the switch was applied. */
+ *  branches, but a hand-crafted POST must not bypass that).
+ *  super_admin is global — it may switch into any existing branch.
+ *  Returns true when the switch was applied. */
 export function setActiveBranch(branchId: number): boolean {
   const id = cookies().get(SESSION_COOKIE)?.value;
   if (!id) return false;
   const db = getDb();
   const session = db.prepare(
-    "SELECT user_id FROM sessions WHERE id = ?"
-  ).get(id) as { user_id: number } | undefined;
+    `SELECT s.user_id, u.role
+       FROM sessions s JOIN users u ON u.id = s.user_id
+      WHERE s.id = ?`
+  ).get(id) as { user_id: number; role: string } | undefined;
   if (!session) return false;
-  const member = db.prepare(
-    "SELECT 1 FROM user_branches WHERE user_id = ? AND branch_id = ?"
-  ).get(session.user_id, branchId);
-  if (!member) return false;
+  const allowed =
+    session.role === "super_admin"
+      ? db.prepare("SELECT 1 FROM branches WHERE id = ?").get(branchId)
+      : db.prepare(
+          "SELECT 1 FROM user_branches WHERE user_id = ? AND branch_id = ?"
+        ).get(session.user_id, branchId);
+  if (!allowed) return false;
   db.prepare("UPDATE sessions SET active_branch_id = ? WHERE id = ?").run(branchId, id);
   return true;
 }
