@@ -80,8 +80,7 @@ export default function BranchPickerClient({
                 {b.name}
               </h2>
               {b.company && (
-                <div className="mt-0.5 text-xs text-slate-500 flex items-center gap-1">
-                  <span aria-hidden>🏢</span>
+                <div className="mt-0.5 text-xs text-slate-500">
                   {b.company}
                 </div>
               )}

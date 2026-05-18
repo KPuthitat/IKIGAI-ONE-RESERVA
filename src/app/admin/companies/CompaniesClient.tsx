@@ -162,7 +162,7 @@ export default function CompaniesClient({
                   {c.name_en && <div className="text-xs text-slate-500">{c.name_en}</div>}
                   <div className="text-[11px] text-slate-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
                     {c.tax_id && <span>{t("admin.companies.taxIdShort")}: {c.tax_id}</span>}
-                    {c.phone && <span>📞 {c.phone}</span>}
+                    {c.phone && <span>โทร {c.phone}</span>}
                     <span className={list.length > 0 ? "text-brand" : "text-slate-400"}>
                       {list.length > 0
                         ? t("admin.companies.branchCount", { n: list.length })
