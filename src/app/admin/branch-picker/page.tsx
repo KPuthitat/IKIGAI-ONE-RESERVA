@@ -8,6 +8,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireAdmin, setActiveBranch } from "@/lib/auth";
+import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import BranchPickerClient from "../../BranchPickerClient";
@@ -49,6 +50,14 @@ export default function AdminBranchPickerPage({
     redirect(next);
   }
 
+  // Company name per branch — shown small on each card so the admin
+  // knows which company they're switching into.
+  const companyById = new Map<number, string>(
+    (getDb()
+      .prepare("SELECT id, name_th FROM companies")
+      .all() as Array<{ id: number; name_th: string }>).map((c) => [c.id, c.name_th])
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -60,7 +69,11 @@ export default function AdminBranchPickerPage({
         </p>
       </div>
       <BranchPickerClient
-        branches={adminBranches.map((b) => ({ id: b.id, name: b.name }))}
+        branches={adminBranches.map((b) => ({
+          id: b.id,
+          name: b.name,
+          company: b.company_id != null ? companyById.get(b.company_id) ?? null : null
+        }))}
         activeBranchId={user.activeBranchId}
         next={next}
       />

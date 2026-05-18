@@ -17,7 +17,7 @@ import { useLang } from "@/lib/LangProvider";
 export default function BranchPickerClient({
   branches, activeBranchId, next
 }: {
-  branches: Array<{ id: number; name: string }>;
+  branches: Array<{ id: number; name: string; company?: string | null }>;
   activeBranchId: number | null;
   next: string;
 }) {
@@ -79,6 +79,12 @@ export default function BranchPickerClient({
               <h2 className="text-2xl font-bold text-slate-800 group-hover:text-brand transition-colors">
                 {b.name}
               </h2>
+              {b.company && (
+                <div className="mt-0.5 text-xs text-slate-500 flex items-center gap-1">
+                  <span aria-hidden>🏢</span>
+                  {b.company}
+                </div>
+              )}
               <p className="mt-4 text-brand font-bold text-sm flex items-center gap-1">
                 {isBusy ? t("common.submitting") : t("staff.branchPicker.cta")}
                 {!isBusy && <span aria-hidden>→</span>}

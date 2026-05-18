@@ -16,6 +16,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireUser, setActiveBranch } from "@/lib/auth";
+import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import BranchPickerClient from "../../BranchPickerClient";
@@ -51,6 +52,15 @@ export default function BranchPickerPage({
     redirect(next);
   }
 
+  // Resolve each branch's company name so staff see which company a
+  // branch belongs to before choosing (helps when branch names alone
+  // are ambiguous across the group).
+  const companyById = new Map<number, string>(
+    (getDb()
+      .prepare("SELECT id, name_th FROM companies")
+      .all() as Array<{ id: number; name_th: string }>).map((c) => [c.id, c.name_th])
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -62,7 +72,11 @@ export default function BranchPickerPage({
         </p>
       </div>
       <BranchPickerClient
-        branches={user.branches.map((b) => ({ id: b.id, name: b.name }))}
+        branches={user.branches.map((b) => ({
+          id: b.id,
+          name: b.name,
+          company: b.company_id != null ? companyById.get(b.company_id) ?? null : null
+        }))}
         activeBranchId={user.activeBranchId}
         next={next}
       />
