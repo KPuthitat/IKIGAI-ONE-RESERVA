@@ -3,55 +3,56 @@
 import { useEffect } from "react";
 
 // Forces the browser-tab title (document.title) to an ALL-UPPERCASE,
-// Latin-only string on every page, including App-Router soft
+// ASCII-only string on every page, including App-Router soft
 // navigations.
 //
-// Why a MutationObserver instead of editing each page's metadata:
-// Next.js renders <title> from per-route `metadata`, and there is no
-// built-in transform for the title.template "%s". Observing the
-// <title> element catches every title Next writes (initial + client
-// nav) and re-formats it in one place.
+// Why observe <head> (not just the <title> node): on a client-side
+// navigation Next.js REPLACES the <title> element rather than editing
+// its text. A MutationObserver bound to the old node goes dead after
+// that swap, so the new (Thai / mixed-case) title slips through. We
+// observe document.head with subtree:true so a replaced <title> is
+// still caught and re-formatted.
 //
 // Thai has no upper/lower case, so a plain toUpperCase() left the tab
-// looking half-cased ("เข้าระบบ · IKIGAI OS"). Per request we strip
-// Thai entirely, drop now-empty separator segments, uppercase the
-// rest, and fall back to the brand so the tab is always a clean
-// uppercase Latin string (e.g. "เข้าระบบ · IKIGAI OS" -> "IKIGAI OS",
-// "PERSONA · Admin · IKIGAI OS" -> "PERSONA · ADMIN · IKIGAI OS").
+// half-cased ("เข้าระบบ · IKIGAI OS"). We unify separators to an
+// ASCII pipe, strip every non-ASCII char (Thai etc.), uppercase, then
+// rejoin the surviving Latin segments — falling back to the brand so
+// the tab is always a clean uppercase Latin string
+// (e.g. "เข้าระบบ · IKIGAI OS" -> "IKIGAI OS",
+//  "Admin · IKIGAI OS" -> "ADMIN - IKIGAI OS").
 function formatTitle(raw: string): string {
   const cleaned = raw
-    // Thai Unicode block (U+0E00-U+0E7F) -> remove. The \u escape
-    // form (not literal Thai glyphs) keeps the strip working no
-    // matter how this source file is encoded/transpiled.
-    .replace(/[฀-๿]+/g, "")
-    // Any remaining non-ASCII (stray symbols, NBSP, etc.) -> space.
-    .replace(/[^\x00-\x7F]+/g, " ")
+    // Common separators (·, |, /, en/em dash, hyphen) -> ASCII pipe
+    // so we can keep segment boundaries after stripping non-ASCII.
+    .replace(/[·|/–—-]+/g, "|")
+    // Anything outside printable ASCII (Thai, NBSP, symbols) -> gone.
+    .replace(/[^\x20-\x7E]+/g, "")
     .toUpperCase()
-    // split on common separators, drop blanks, rejoin tidily
-    .split(/[·|/\\–—-]/)
-    .map((s) => s.trim())
+    .split("|")
+    .map((s) => s.replace(/\s+/g, " ").trim())
     .filter(Boolean)
-    .join(" · ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .join(" - ");
   return cleaned || "IKIGAI OS";
 }
 
 export default function TitleUppercase() {
   useEffect(() => {
-    const titleEl = document.querySelector("title");
-    if (!titleEl) return;
-
     const apply = () => {
       const cur = document.title;
       const next = formatTitle(cur);
-      // Guard the observer against its own write (infinite loop).
+      // Guard against the observer reacting to its own write.
       if (cur !== next) document.title = next;
     };
 
     apply();
+    // Observe the whole <head>: catches both in-place title edits and
+    // full <title> element replacement done by Next on soft nav.
     const obs = new MutationObserver(apply);
-    obs.observe(titleEl, { childList: true, characterData: true, subtree: true });
+    obs.observe(document.head, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
     return () => obs.disconnect();
   }, []);
 

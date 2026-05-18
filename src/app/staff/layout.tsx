@@ -68,7 +68,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         // Settings is super_admin-only — hide the link from everyone
         // else (the page itself also enforces requireSuperAdmin).
         ...(user.role === "super_admin"
-          ? [{ href: "/staff/inventa/settings", label: "ตั้งค่า (super admin)" }]
+          ? [{ href: "/staff/inventa/settings", label: "ตั้งค่า" }]
           : [])
       ]
     },

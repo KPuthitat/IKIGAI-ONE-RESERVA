@@ -107,7 +107,16 @@ export default function InventaClient({
           }}
         />
 
-        {/* Primary actions — 2-up grid on mobile, inline from sm up. */}
+        {/* Scan QR — full-width primary action (same treatment as the
+            RESERVA scanner button on mobile). */}
+        <button type="button"
+          onClick={() => setScanCam(true)}
+          className="w-full text-sm px-4 py-2.5 rounded-lg border border-brand text-brand font-bold hover:bg-rose-50">
+          สแกนคิวอาร์โค้ด
+        </button>
+
+        {/* Primary actions — 2-up grid on mobile, inline from sm up.
+            Import stays visible here (it's step 1 of the workflow). */}
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
           <button type="button"
             onClick={() => setAdding({})}
@@ -119,9 +128,14 @@ export default function InventaClient({
             เช็คสต๊อกรายสัปดาห์
           </Link>
           <button type="button"
-            onClick={() => setScanCam(true)}
-            className="text-sm px-4 py-2 rounded-lg border border-brand text-brand font-bold hover:bg-rose-50">
-            สแกนคิวอาร์โค้ด
+            onClick={() => setShowImport(true)}
+            className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
+            นำเข้ายาด้วยไฟล์ CSV
+          </button>
+          <button type="button"
+            onClick={() => setShowSuppliers(true)}
+            className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
+            จัดการผู้สั่ง ({suppliers.length})
           </button>
         </div>
 
@@ -133,16 +147,6 @@ export default function InventaClient({
             เครื่องมืออื่น
           </summary>
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 mt-2">
-            <button type="button"
-              onClick={() => setShowImport(true)}
-              className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-              นำเข้าจาก CSV
-            </button>
-            <button type="button"
-              onClick={() => setShowSuppliers(true)}
-              className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-              จัดการผู้สั่ง ({suppliers.length})
-            </button>
             <Link href="/staff/inventa/grid"
               className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center">
               ผังกริด

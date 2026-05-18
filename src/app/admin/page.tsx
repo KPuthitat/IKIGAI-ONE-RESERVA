@@ -4,7 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 
-export const metadata: Metadata = { title: "Admin" };
+export const metadata: Metadata = { title: "ADMIN" };
 
 export default function AdminHomePage() {
   requireAdmin();

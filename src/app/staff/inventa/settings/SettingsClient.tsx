@@ -10,6 +10,33 @@ import {
 
 const KINDS: LookupKind[] = ["row", "storage", "unit", "category"];
 
+// Each setting group is a top-to-bottom collapsible section
+// (accordion) so the page reads as a tidy list instead of a wall of
+// chips. First section open by default; the rest collapsed.
+function Section({
+  title, count, defaultOpen, children
+}: {
+  title: string;
+  count: number;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="card !p-0 overflow-hidden group" open={defaultOpen}>
+      <summary className="cursor-pointer list-none select-none flex items-center justify-between px-4 py-3 hover:bg-slate-50">
+        <span className="font-bold text-slate-800">
+          {title}
+          <span className="ml-2 text-xs font-normal text-slate-400">({count})</span>
+        </span>
+        <span className="text-slate-400 transition-transform group-open:rotate-90">›</span>
+      </summary>
+      <div className="px-4 pb-4 pt-1 space-y-3 border-t border-slate-100">
+        {children}
+      </div>
+    </details>
+  );
+}
+
 export default function SettingsClient({
   lookups, suppliers
 }: {
@@ -41,20 +68,25 @@ export default function SettingsClient({
   }
 
   return (
-    <div className="space-y-4">
-      {KINDS.map((k) => (
-        <LookupCard key={k} kind={k}
-          items={lookups.filter((l) => l.kind === k)}
-          busy={busy}
-          onAdd={(v) => addLookup(k, v)}
-          onDelete={delLookup} />
-      ))}
-      <SupplierCard suppliers={suppliers} onChanged={refresh} />
+    <div className="space-y-3">
+      {KINDS.map((k, i) => {
+        const items = lookups.filter((l) => l.kind === k);
+        return (
+          <Section key={k} title={LOOKUP_KIND_META[k]} count={items.length}
+            defaultOpen={i === 0}>
+            <LookupBody kind={k} items={items} busy={busy}
+              onAdd={(v) => addLookup(k, v)} onDelete={delLookup} />
+          </Section>
+        );
+      })}
+      <Section title="ผู้สั่ง / บริษัทผู้จำหน่าย" count={suppliers.length}>
+        <SupplierBody suppliers={suppliers} onChanged={refresh} />
+      </Section>
     </div>
   );
 }
 
-function LookupCard({
+function LookupBody({
   kind, items, busy, onAdd, onDelete
 }: {
   kind: LookupKind;
@@ -65,8 +97,7 @@ function LookupCard({
 }) {
   const [v, setV] = useState("");
   return (
-    <div className="card space-y-3">
-      <h3 className="font-bold text-slate-800">{LOOKUP_KIND_META[kind]}</h3>
+    <>
       <div className="flex flex-wrap gap-2">
         {items.map((it) => (
           <span key={it.id}
@@ -96,11 +127,11 @@ function LookupCard({
           เพิ่ม
         </button>
       </div>
-    </div>
+    </>
   );
 }
 
-function SupplierCard({
+function SupplierBody({
   suppliers, onChanged
 }: {
   suppliers: InventaSupplier[];
@@ -136,20 +167,16 @@ function SupplierCard({
   }
 
   return (
-    <div className="card space-y-3">
-      <h3 className="font-bold text-slate-800">ผู้สั่ง / บริษัทผู้จำหน่าย</h3>
-      <p className="text-xs text-slate-500">
-        เช่น วินฟาร์ม่า, DKSH, DKLL, eZRx — แต่ละบริษัทมีรอบสั่ง/รอบส่งต่างกัน
-      </p>
+    <>
       <div className="border border-slate-200 rounded-lg p-3 space-y-2">
         <input className="input" value={name} placeholder="ชื่อบริษัท *"
           onChange={(e) => setName(e.target.value)} />
         <div className="grid grid-cols-2 gap-2">
           <input className="input text-sm" value={cycle}
-            placeholder="รอบสั่ง เช่น ทุกอังคาร"
+            placeholder="รอบสั่ง"
             onChange={(e) => setCycle(e.target.value)} />
           <input className="input text-sm" value={lead}
-            placeholder="รอบส่ง เช่น 2-3 วัน"
+            placeholder="รอบส่ง"
             onChange={(e) => setLead(e.target.value)} />
         </div>
         <button type="button" onClick={add} disabled={busy || !name.trim()}
@@ -175,6 +202,6 @@ function SupplierCard({
           <div className="py-4 text-center text-slate-400 text-sm">ยังไม่มีบริษัท</div>
         )}
       </div>
-    </div>
+    </>
   );
 }

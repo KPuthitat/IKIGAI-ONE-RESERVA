@@ -110,9 +110,15 @@ export default function LoginForm({
           <div className="text-red-600 text-sm text-center min-h-[18px] mb-2">{err}</div>
         )}
 
-        <button className="btn-primary w-full" disabled={busy}>
-          {busy ? t("login.submitting") : t("login.submit")}
-        </button>
+        {busy ? (
+          <div className="w-full py-3" aria-label={t("login.submitting")} role="status">
+            <div className="loadbar" />
+          </div>
+        ) : (
+          <button className="btn-primary w-full">
+            {t("login.submit")}
+          </button>
+        )}
       </form>
     </>
   );
