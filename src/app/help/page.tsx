@@ -3,6 +3,7 @@ import Link from "next/link";
 import OwlMascot from "../components/OwlMascot";
 import HelpClient from "./HelpClient";
 import { FAQ_CATEGORIES, FAQ_ENTRIES } from "@/lib/owl-faq";
+import { getSessionUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,17 @@ export const metadata: Metadata = { title: "ห้องน้องฮูก ·
 // live across every category.
 
 export default function HelpPage() {
+  // "กลับหน้าหลัก" must respect auth state: "/" always bounces to
+  // /login, so a logged-in user lands back on the login screen. Send
+  // them to their real home instead (super_admin → admin console,
+  // everyone else → staff module picker); guests → login.
+  const user = getSessionUser();
+  const homeHref = user
+    ? user.role === "super_admin"
+      ? "/admin"
+      : "/staff"
+    : "/login";
+
   return (
     <div className="min-h-screen bg-amber-50/40">
       <header className="bg-amber-100 border-b border-amber-200">
@@ -42,7 +54,7 @@ export default function HelpPage() {
       <main className="max-w-3xl mx-auto px-4 py-6">
         <HelpClient />
         <div className="mt-8 text-center text-xs text-slate-500">
-          <Link href="/" className="text-brand hover:underline">← กลับหน้าหลัก</Link>
+          <Link href={homeHref} className="text-brand hover:underline">← กลับหน้าหลัก</Link>
         </div>
       </main>
     </div>
