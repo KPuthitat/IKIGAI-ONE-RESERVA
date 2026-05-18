@@ -169,23 +169,25 @@ export default function InventaClient({
           <input className="input flex-1 min-w-[160px]" value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="ค้นหา ชื่อ / ชื่อรอง / รหัส / หมวด / ตำแหน่งจัดเก็บ" />
-          <div className="flex gap-1">
-            {(["", "R", "Y", "G"] as const).map((f) => {
+          <div className="flex gap-1.5 items-center">
+            <button type="button" onClick={() => setFreqFilter("")}
+              className={`text-xs px-3 py-1.5 rounded-md border ${
+                freqFilter === ""
+                  ? "bg-brand text-white border-brand font-bold"
+                  : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+              ทั้งหมด
+            </button>
+            {(["R", "Y", "G"] as const).map((f) => {
+              const fm = PICK_FREQ_META[f];
               const active = freqFilter === f;
-              const fm = f === "" ? null : PICK_FREQ_META[f];
               return (
-                <button key={f || "all"} type="button"
-                  onClick={() => setFreqFilter(f)}
-                  className={`text-xs px-3 py-1.5 rounded-md border font-bold ${
+                <button key={f} type="button"
+                  title={fm.label}
+                  onClick={() => setFreqFilter(active ? "" : f)}
+                  className={`w-6 h-6 rounded-full ${fm.dot} transition ${
                     active
-                      ? fm
-                        ? fm.chip + " ring-2 ring-offset-1 ring-slate-300"
-                        : "bg-brand text-white border-brand"
-                      : fm
-                        ? fm.chip + " opacity-70"
-                        : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
-                  {f === "" ? "ทั้งหมด" : fm!.short}
-                </button>
+                      ? "ring-2 ring-offset-1 ring-slate-500"
+                      : "opacity-50 hover:opacity-100"}`} />
               );
             })}
           </div>
@@ -215,9 +217,8 @@ export default function InventaClient({
                   className={`border-b last:border-0 ${low ? "bg-rose-50/50" : "hover:bg-slate-50"}`}>
                   <td className="py-2 pr-3 whitespace-nowrap">
                     {fm && (
-                      <span className={`inline-block text-[11px] font-bold px-2 py-0.5 rounded ${fm.chip}`}>
-                        {fm.short}
-                      </span>
+                      <span title={fm.label}
+                        className={`inline-block w-3.5 h-3.5 rounded-full align-middle ${fm.dot}`} />
                     )}
                     <div className="text-[11px] text-slate-500 mt-0.5">
                       {i.storage_location || "—"}
@@ -463,13 +464,27 @@ function ItemModal({
             </div>
             <div>
               <label className="label">แถบสี</label>
-              <select className="input" value={f.pick_freq}
-                onChange={(e) => up("pick_freq", e.target.value)}>
-                <option value="">— ไม่ระบุ —</option>
-                <option value="R">แดง</option>
-                <option value="Y">เหลือง</option>
-                <option value="G">เขียว</option>
-              </select>
+              <div className="flex items-center gap-2 h-[42px]">
+                <button type="button" onClick={() => up("pick_freq", "")}
+                  title="ไม่ระบุ"
+                  className={`w-7 h-7 rounded-full border border-slate-300 text-slate-400 text-sm flex items-center justify-center ${
+                    f.pick_freq === "" ? "ring-2 ring-offset-1 ring-slate-500" : "opacity-60 hover:opacity-100"}`}>
+                  ✕
+                </button>
+                {(["R", "Y", "G"] as const).map((c) => {
+                  const fm = PICK_FREQ_META[c];
+                  const active = f.pick_freq === c;
+                  return (
+                    <button key={c} type="button"
+                      title={fm.label}
+                      onClick={() => up("pick_freq", c)}
+                      className={`w-7 h-7 rounded-full ${fm.dot} transition ${
+                        active
+                          ? "ring-2 ring-offset-1 ring-slate-500"
+                          : "opacity-50 hover:opacity-100"}`} />
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

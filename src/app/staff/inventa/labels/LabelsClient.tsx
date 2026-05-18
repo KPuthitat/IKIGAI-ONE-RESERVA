@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { binCode, PICK_FREQ_META, type PickFreq } from "@/lib/inventa";
+import Link from "next/link";
+import { PICK_FREQ_META, type PickFreq } from "@/lib/inventa";
 
 export type LabelItem = {
   id: number;
@@ -76,8 +77,8 @@ export default function LabelsClient({ items }: { items: LabelItem[] }) {
               {" "}· ข้าม {skipped} (ไม่มีรหัสสินค้า/บาร์โค้ด)
             </span>
           )}
-          {status === "loading" && <span className="text-slate-400"> · กำลังสร้าง QR...</span>}
-          {status === "error" && <span className="text-rose-600"> · สร้าง QR ไม่สำเร็จ ลองรีเฟรช</span>}
+          {status === "loading" && <span className="text-slate-400"> · กำลังสร้างคิวอาร์...</span>}
+          {status === "error" && <span className="text-rose-600"> · สร้างคิวอาร์ไม่สำเร็จ ลองรีเฟรช</span>}
         </div>
         <button type="button"
           onClick={() => window.print()}
@@ -90,7 +91,6 @@ export default function LabelsClient({ items }: { items: LabelItem[] }) {
       <div className="printable">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {printable.map((i) => {
-            const bin = binCode(i.grid_row, i.grid_col, i.pick_freq);
             const fm = i.pick_freq ? PICK_FREQ_META[i.pick_freq] : null;
             return (
               <div key={i.id}
@@ -105,20 +105,28 @@ export default function LabelsClient({ items }: { items: LabelItem[] }) {
                 <div className="text-xs font-medium text-slate-800 leading-tight line-clamp-2">
                   {i.name}
                 </div>
-                {bin && (
-                  <span className={`mt-1 text-[10px] font-bold px-1.5 rounded ${
-                    fm?.chip ?? "bg-slate-100 text-slate-500"}`}>
-                    {bin}
-                  </span>
+                {fm && (
+                  <span title={fm.label}
+                    className={`mt-1 w-3 h-3 rounded-full ${fm.dot}`} />
                 )}
               </div>
             );
           })}
         </div>
         {printable.length === 0 && (
-          <p className="text-center text-slate-400 text-sm py-8 no-print">
-            ยังไม่มีรายการที่มีรหัสสินค้า/บาร์โค้ด
-          </p>
+          <div className="text-center text-slate-500 text-sm py-10 no-print space-y-2">
+            <p className="font-medium text-slate-600">ยังไม่มีคิวอาร์โค้ดให้พิมพ์</p>
+            <p className="text-xs leading-relaxed max-w-md mx-auto">
+              หน้านี้จะสร้างคิวอาร์โค้ดให้อัตโนมัติ <b>เฉพาะรายการที่กรอก
+              “รหัสสินค้า” หรือ “บาร์โค้ด” ไว้แล้ว</b> — ไปที่เมนู “คลังสินค้า”
+              เพิ่ม/แก้รายการแล้วใส่รหัสสินค้า จากนั้นกลับมาหน้านี้เพื่อสั่งพิมพ์
+              สติกเกอร์ติดชั้นวาง/บรรจุภัณฑ์
+            </p>
+            <Link href="/staff/inventa"
+              className="inline-block mt-1 text-brand font-bold hover:underline">
+              ไปที่คลังสินค้า →
+            </Link>
+          </div>
         )}
       </div>
     </>

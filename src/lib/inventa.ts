@@ -9,29 +9,32 @@ export type ItemType = "drug" | "equipment";
 // moving …). Stored values stay R/Y/G for backward compatibility;
 // only the presentation is a neutral colour label now.
 export const PICK_FREQ_META: Record<PickFreq, {
-  label: string;       // Thai label
-  short: string;       // chip text
+  label: string;       // Thai label (used in aria-label / tooltip only)
+  short: string;
   desc: string;
-  // Tailwind classes for the colour chip
-  chip: string;
+  chip: string;        // light chip bg (legacy)
+  dot: string;         // solid swatch colour — the only thing shown in UI
 }> = {
   R: {
     label: "แดง",
     short: "แดง",
     desc: "แถบสีแดง",
-    chip: "bg-rose-100 text-rose-700 border border-rose-300"
+    chip: "bg-rose-100 text-rose-700 border border-rose-300",
+    dot: "bg-rose-500"
   },
   Y: {
     label: "เหลือง",
     short: "เหลือง",
     desc: "แถบสีเหลือง",
-    chip: "bg-amber-100 text-amber-700 border border-amber-300"
+    chip: "bg-amber-100 text-amber-700 border border-amber-300",
+    dot: "bg-amber-400"
   },
   G: {
     label: "เขียว",
     short: "เขียว",
     desc: "แถบสีเขียว",
-    chip: "bg-emerald-100 text-emerald-700 border border-emerald-300"
+    chip: "bg-emerald-100 text-emerald-700 border border-emerald-300",
+    dot: "bg-emerald-500"
   }
 };
 
