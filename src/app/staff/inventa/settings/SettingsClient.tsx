@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import {
@@ -38,15 +38,19 @@ function Section({
 }
 
 export default function SettingsClient({
-  lookups, suppliers
+  lookups, suppliers, branches
 }: {
   lookups: InventaLookup[];
   suppliers: InventaSupplier[];
+  branches: Array<{ id: number; name: string }>;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const refresh = () => startTransition(() => router.refresh());
   const [busy, setBusy] = useState(false);
+
+  // scope = null → "ทุกสาขา (ส่วนกลาง)"; a number → that branch only.
+  const [scope, setScope] = useState<number | null>(null);
 
   async function addLookup(kind: LookupKind, value: string) {
     if (!value.trim()) return;
@@ -54,7 +58,7 @@ export default function SettingsClient({
     try {
       const res = await fetch(apiUrl("/api/inventa/lookups"), {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind, value: value.trim() })
+        body: JSON.stringify({ kind, value: value.trim(), branch_id: scope })
       });
       if (res.ok) refresh();
     } finally { setBusy(false); }
@@ -67,10 +71,46 @@ export default function SettingsClient({
     } finally { setBusy(false); }
   }
 
+  const scopedLookups = useMemo(
+    () => lookups.filter((l) => (l.branch_id ?? null) === scope),
+    [lookups, scope]
+  );
+  const scopedSuppliers = useMemo(
+    () => suppliers.filter((s) => (s.branch_id ?? null) === scope),
+    [suppliers, scope]
+  );
+
+  const scopeLabel = scope === null
+    ? "ทุกสาขา (ส่วนกลาง)"
+    : branches.find((b) => b.id === scope)?.name ?? `สาขา #${scope}`;
+
   return (
     <div className="space-y-3">
+      {/* Scope selector — decides which set you're viewing/editing. */}
+      <div className="card space-y-1.5">
+        <label className="text-xs font-bold text-slate-600">
+          ตั้งค่านี้ใช้กับ
+        </label>
+        <select
+          className="input"
+          value={scope === null ? "" : String(scope)}
+          onChange={(e) =>
+            setScope(e.target.value === "" ? null : Number(e.target.value))
+          }
+        >
+          <option value="">ทุกสาขา (ส่วนกลาง)</option>
+          {branches.map((b) => (
+            <option key={b.id} value={b.id}>เฉพาะสาขา · {b.name}</option>
+          ))}
+        </select>
+        <p className="text-[11px] text-slate-500">
+          กำลังจัดการ: <b>{scopeLabel}</b> · ค่าส่วนกลางจะใช้ร่วมกันทุกสาขา;
+          ค่าเฉพาะสาขาจะเห็นเฉพาะสาขานั้น
+        </p>
+      </div>
+
       {KINDS.map((k, i) => {
-        const items = lookups.filter((l) => l.kind === k);
+        const items = scopedLookups.filter((l) => l.kind === k);
         return (
           <Section key={k} title={LOOKUP_KIND_META[k]} count={items.length}
             defaultOpen={i === 0}>
@@ -79,8 +119,9 @@ export default function SettingsClient({
           </Section>
         );
       })}
-      <Section title="ผู้สั่ง / บริษัทผู้จำหน่าย" count={suppliers.length}>
-        <SupplierBody suppliers={suppliers} onChanged={refresh} />
+      <Section title="ผู้สั่ง / บริษัทผู้จำหน่าย" count={scopedSuppliers.length}>
+        <SupplierBody suppliers={scopedSuppliers} scope={scope}
+          onChanged={refresh} />
       </Section>
     </div>
   );
@@ -111,7 +152,7 @@ function LookupBody({
           </span>
         ))}
         {items.length === 0 && (
-          <span className="text-sm text-slate-400">ยังไม่มีตัวเลือก</span>
+          <span className="text-sm text-slate-400">ยังไม่มีตัวเลือกในขอบเขตนี้</span>
         )}
       </div>
       <div className="flex gap-2">
@@ -132,9 +173,10 @@ function LookupBody({
 }
 
 function SupplierBody({
-  suppliers, onChanged
+  suppliers, scope, onChanged
 }: {
   suppliers: InventaSupplier[];
+  scope: number | null;
   onChanged: () => void;
 }) {
   const [name, setName] = useState("");
@@ -151,7 +193,8 @@ function SupplierBody({
         body: JSON.stringify({
           name: name.trim(),
           order_cycle: cycle.trim() || null,
-          lead_time: lead.trim() || null
+          lead_time: lead.trim() || null,
+          branch_id: scope
         })
       });
       if (res.ok) { setName(""); setCycle(""); setLead(""); onChanged(); }
@@ -199,7 +242,9 @@ function SupplierBody({
           </div>
         ))}
         {suppliers.length === 0 && (
-          <div className="py-4 text-center text-slate-400 text-sm">ยังไม่มีบริษัท</div>
+          <div className="py-4 text-center text-slate-400 text-sm">
+            ยังไม่มีบริษัทในขอบเขตนี้
+          </div>
         )}
       </div>
     </>

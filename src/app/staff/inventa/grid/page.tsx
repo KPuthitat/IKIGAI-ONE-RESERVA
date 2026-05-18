@@ -23,9 +23,9 @@ export default function InventaGridPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">INVENTA · ผังกริด (หาตำแหน่งยา)</h1>
+        <h1 className="text-2xl font-bold text-slate-800">INVENTA · ผังกริด (หาตำแหน่ง)</h1>
         <p className="text-sm text-slate-500">
-          แผนผังชั้นวาง A1–E6 — ค้นหายาแล้วดูว่าอยู่ช่องไหน หรือจิ้มช่องเพื่อดูยาในช่องนั้น
+          แผนผังชั้นวาง A1–E6 — ค้นหารายการแล้วดูว่าอยู่ช่องไหน หรือจิ้มช่องเพื่อดูรายการในช่องนั้น
         </p>
       </div>
       <StockGrid items={items} />

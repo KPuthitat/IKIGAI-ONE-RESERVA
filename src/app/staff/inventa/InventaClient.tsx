@@ -121,7 +121,7 @@ export default function InventaClient({
           <button type="button"
             onClick={() => setAdding({})}
             className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold hover:opacity-90">
-            + เพิ่มยา/อุปกรณ์
+            + เพิ่มรายการ
           </button>
           <Link href="/staff/inventa/count"
             className="text-sm px-4 py-2 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold text-center">
@@ -130,7 +130,7 @@ export default function InventaClient({
           <button type="button"
             onClick={() => setShowImport(true)}
             className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-            นำเข้ายาด้วยไฟล์ CSV
+            นำเข้าด้วยไฟล์ CSV
           </button>
           <button type="button"
             onClick={() => setShowSuppliers(true)}
@@ -168,7 +168,7 @@ export default function InventaClient({
         <div className="flex flex-wrap gap-2 items-center">
           <input className="input flex-1 min-w-[160px]" value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="ค้นหา ชื่อ / ชื่อสามัญ / รหัส / ตำแหน่ง (เช่น D4R)" />
+            placeholder="ค้นหา ชื่อ / ชื่อรอง / รหัส / ตำแหน่ง (เช่น D4R)" />
           <div className="flex gap-1">
             {(["", "R", "Y", "G"] as const).map((f) => (
               <button key={f || "all"} type="button"
@@ -239,7 +239,7 @@ export default function InventaClient({
             })}
             {filtered.length === 0 && (
               <tr><td colSpan={8} className="py-6 text-center text-slate-400 text-sm">
-                ไม่พบรายการ — สแกนบาร์โค้ดหรือกด "เพิ่มยา/อุปกรณ์"
+                ไม่พบรายการ — สแกนบาร์โค้ดหรือกด "เพิ่มรายการ"
               </td></tr>
             )}
           </tbody>
@@ -248,7 +248,7 @@ export default function InventaClient({
 
       {scanCam && (
         <BarcodeScanner
-          title="สแกนคิวอาร์โค้ด เพื่อค้นหายา"
+          title="สแกนคิวอาร์โค้ด เพื่อค้นหารายการ"
           onResult={(code) => onScan(code)}
           onClose={() => setScanCam(false)}
         />
@@ -389,7 +389,7 @@ function ItemModal({
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-2xl w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
         <h3 className="font-bold text-slate-800 text-lg">
-          {item ? "แก้ไขรายการ" : "เพิ่มยา/อุปกรณ์"}
+          {item ? "แก้ไขรายการ" : "เพิ่มรายการ"}
         </h3>
 
         <div className="grid grid-cols-2 gap-3">
@@ -397,8 +397,8 @@ function ItemModal({
             <label className="label">ประเภท *</label>
             <select className="input" value={f.item_type}
               onChange={(e) => up("item_type", e.target.value)}>
-              <option value="drug">ยา</option>
-              <option value="equipment">อุปกรณ์</option>
+              <option value="drug">สินค้า</option>
+              <option value="equipment">วัสดุ/อุปกรณ์</option>
             </select>
           </div>
           <div>
@@ -412,7 +412,7 @@ function ItemModal({
               onChange={(e) => up("name", e.target.value)} />
           </div>
           <div>
-            <label className="label">ชื่อสามัญ</label>
+            <label className="label">ชื่อรอง</label>
             <input className="input" value={f.generic_name}
               onChange={(e) => up("generic_name", e.target.value)} />
           </div>
@@ -423,7 +423,7 @@ function ItemModal({
               placeholder="เช่น IKGPH/A0001" />
           </div>
           <div className="col-span-2">
-            <label className="label">หมวดหมู่ยา</label>
+            <label className="label">หมวดหมู่</label>
             <select className="input" value={f.category}
               onChange={(e) => up("category", e.target.value)}>
               <option value="">— เลือกหมวดหมู่ —</option>
@@ -439,7 +439,7 @@ function ItemModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="label">ตำแหน่งเก็บยา</label>
+              <label className="label">ตำแหน่งจัดเก็บ</label>
               <select className="input" value={f.storage_location}
                 onChange={(e) => up("storage_location", e.target.value)}>
                 <option value="">—</option>
@@ -463,13 +463,13 @@ function ItemModal({
               </select>
             </div>
             <div className="col-span-2">
-              <label className="label">สถานะการใช้ยา (สี)</label>
+              <label className="label">ความถี่หยิบใช้ (สี)</label>
               <select className="input" value={f.pick_freq}
                 onChange={(e) => up("pick_freq", e.target.value)}>
                 <option value="">—</option>
-                <option value="R">R · ยาใช้น้อย</option>
-                <option value="Y">Y · ยาใช้ปานกลาง</option>
-                <option value="G">G · ยาใช้บ่อย</option>
+                <option value="R">R · หยิบใช้น้อย</option>
+                <option value="Y">Y · หยิบใช้ปานกลาง</option>
+                <option value="G">G · หยิบใช้บ่อย</option>
               </select>
             </div>
           </div>
@@ -646,14 +646,14 @@ function SuppliersModal({
 // row-by-row and reports skips.
 const IMPORT_COLUMNS: Array<[string, string]> = [
   ["ชื่อสินค้า", "name"],
-  ["ชื่อสามัญ", "generic_name"],
+  ["ชื่อรอง", "generic_name"],
   ["รหัสสินค้า", "item_code"],
   ["บาร์โค้ด", "barcode"],
   ["หมวดหมู่", "category"],
-  ["ประเภท(ยา/อุปกรณ์)", "item_type"],
+  ["ประเภท", "item_type"],
   ["หน่วยเล็กสุด", "unit"],
   ["ราคาต่อหน่วย", "unit_cost"],
-  ["ตำแหน่งเก็บยา", "storage_location"],
+  ["ตำแหน่งจัดเก็บ", "storage_location"],
   ["แถว", "grid_row"],
   ["คอลัมน์", "grid_col"],
   ["สี(R/Y/G)", "pick_freq"],
@@ -703,9 +703,9 @@ function ImportModal({
   function downloadTemplate() {
     const header = IMPORT_COLUMNS.map(([h]) => h).join(",");
     const sample = [
-      "พาราเซตามอล 500mg", "Paracetamol", "IKGPH/A0001", "8850000000001",
-      "กลุ่มยาทั่วไป General Drugs", "ยา", "เม็ด", "1.00", "ตู้ยา",
-      "A", "1", "G", "100", "250", "วินฟาร์ม่า"
+      "ตัวอย่างสินค้า A", "", "A0001", "8850000000001",
+      "หมวดทั่วไป", "สินค้า", "ชิ้น", "1.00", "ชั้นวางทั่วไป",
+      "A", "1", "G", "100", "250", ""
     ].join(",");
     const blob = new Blob(["﻿" + header + "\n" + sample + "\n"], {
       type: "text/csv;charset=utf-8"
@@ -772,7 +772,7 @@ function ImportModal({
       onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
-        <h3 className="font-bold text-slate-800 text-lg">นำเข้ายาเป็น lot (CSV)</h3>
+        <h3 className="font-bold text-slate-800 text-lg">นำเข้ารายการ (CSV)</h3>
         <p className="text-xs text-slate-500">
           ดาวน์โหลดเทมเพลต → กรอกใน Excel → Save As <b>CSV UTF-8</b> →
           อัปโหลดกลับ ระบบจะเพิ่มทุกแถวพร้อมกัน

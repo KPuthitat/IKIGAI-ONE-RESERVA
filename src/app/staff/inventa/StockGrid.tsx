@@ -64,7 +64,7 @@ export default function StockGrid({ items }: { items: GridItem[] }) {
         <div className="flex flex-wrap gap-2 items-center">
           <input className="input flex-1 min-w-[180px]" value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="ค้นหายาเพื่อหาตำแหน่ง (ชื่อ / รหัส / D4R)" />
+            placeholder="ค้นหารายการเพื่อหาตำแหน่ง (ชื่อ / รหัส / D4R)" />
           <div className="flex gap-1">
             {(["", "R", "Y", "G"] as const).map((f) => (
               <button key={f || "all"} type="button"
@@ -121,7 +121,7 @@ export default function StockGrid({ items }: { items: GridItem[] }) {
         </div>
         {unassigned > 0 && (
           <p className="text-xs text-amber-700">
-            มี {unassigned} รายการยังไม่ระบุตำแหน่ง — ไปกำหนดช่องที่เมนู "คลังยา/อุปกรณ์"
+            มี {unassigned} รายการยังไม่ระบุตำแหน่ง — ไปกำหนดช่องที่เมนู "คลังสินค้า"
           </p>
         )}
       </div>

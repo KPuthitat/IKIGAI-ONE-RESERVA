@@ -36,9 +36,9 @@ export default function InventaPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">INVENTA · คลังยา/อุปกรณ์</h1>
+        <h1 className="text-2xl font-bold text-slate-800">INVENTA · คลังสินค้า</h1>
         <p className="text-sm text-slate-500">
-          ระบบนับสต๊อกคลินิก — บาร์โค้ด · ตำแหน่ง grid (แถว A–E × คอลัมน์ 1–6) ·
+          ระบบนับสต๊อก — บาร์โค้ด · ตำแหน่ง grid (แถว A–E × คอลัมน์ 1–6) ·
           สีหยิบใช้ R/Y/G · ราคาทุนต่อหน่วยเล็กสุด
         </p>
       </div>

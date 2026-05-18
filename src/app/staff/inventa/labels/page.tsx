@@ -23,9 +23,9 @@ export default function InventaLabelsPage() {
   return (
     <div className="space-y-4">
       <div className="no-print">
-        <h1 className="text-2xl font-bold text-slate-800">INVENTA · พิมพ์ QR ติดชั้นยา</h1>
+        <h1 className="text-2xl font-bold text-slate-800">INVENTA · พิมพ์ QR ติดชั้น</h1>
         <p className="text-sm text-slate-500">
-          QR แต่ละดวงเก็บ "รหัสสินค้า" — สแกนแล้วระบบเปิดยาตัวนั้นทันที
+          QR แต่ละดวงเก็บ "รหัสสินค้า" — สแกนแล้วระบบเปิดรายการนั้นทันที
           (ใช้สแกนตอนนับได้เลย) · เลือกพิมพ์แล้วบันทึกเป็น PDF ก็ได้
         </p>
       </div>

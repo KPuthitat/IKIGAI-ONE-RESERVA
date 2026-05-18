@@ -41,7 +41,7 @@ export default function AdminHomePage() {
           <h2 className="text-2xl font-bold text-slate-800 group-hover:text-brand transition-colors">
             INVENTA
           </h2>
-          <p className="text-slate-500 text-sm mt-1">ระบบนับสต๊อกคลินิก — ยา/อุปกรณ์ ตำแหน่ง grid + จุดสั่งซื้อ</p>
+          <p className="text-slate-500 text-sm mt-1">ระบบนับสต๊อกคลังสินค้า — ตำแหน่ง grid + จุดสั่งซื้อ ใช้ได้ทุกธุรกิจ</p>
           <p className="mt-4 text-brand font-bold text-sm">{t(lang, "portal.openModule")}</p>
         </Link>
 

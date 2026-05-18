@@ -34,7 +34,12 @@ function num(v: unknown, def = 0): number {
 }
 function itemType(v: unknown): "drug" | "equipment" {
   const s = String(v ?? "").trim().toLowerCase();
-  return s === "equipment" || s === "อุปกรณ์" ? "equipment" : "drug";
+  // "drug"/"equipment" are legacy internal values; UI now uses the
+  // business-neutral labels สินค้า (→ drug) and วัสดุ/อุปกรณ์
+  // (→ equipment). Match loosely so either wording imports correctly.
+  const isEquip =
+    s === "equipment" || s.includes("อุปกรณ์") || s.includes("วัสดุ");
+  return isEquip ? "equipment" : "drug";
 }
 function freq(v: unknown): "R" | "Y" | "G" | null {
   const s = String(v ?? "").trim().toUpperCase();

@@ -61,8 +61,8 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       label: "INVENTA",
       pathPrefix: "/staff/inventa",
       items: [
-        { href: "/staff/inventa", label: "คลังยา/อุปกรณ์" },
-        { href: "/staff/inventa/grid", label: "ผังกริด (หาตำแหน่งยา)" },
+        { href: "/staff/inventa", label: "คลังสินค้า" },
+        { href: "/staff/inventa/grid", label: "ผังกริด (หาตำแหน่ง)" },
         { href: "/staff/inventa/labels", label: "พิมพ์ QR ติดชั้น" },
         { href: "/staff/inventa/count", label: "เช็คสต๊อกรายสัปดาห์" },
         // Settings is super_admin-only — hide the link from everyone

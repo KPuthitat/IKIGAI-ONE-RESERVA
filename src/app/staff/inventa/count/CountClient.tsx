@@ -70,7 +70,7 @@ export default function CountClient({
       (i) => (i.barcode ?? "") === c || (i.item_code ?? "") === c
     );
     if (hit) pick(hit);
-    else setMsg(`ไม่พบรหัส ${c} ในคลัง — เพิ่มยานี้ในเมนูคลังก่อน`);
+    else setMsg(`ไม่พบรหัส ${c} ในคลัง — เพิ่มรายการนี้ในเมนูคลังก่อน`);
     if (scanRef.current) scanRef.current.value = "";
   }
 
@@ -144,7 +144,7 @@ export default function CountClient({
 
         <div className="flex flex-wrap gap-2">
           <input ref={scanRef} className="input flex-1 min-w-[180px]"
-            placeholder="สแกน / พิมพ์ รหัสยา หรือบาร์โค้ด แล้วกด Enter"
+            placeholder="สแกน / พิมพ์ รหัส หรือบาร์โค้ด แล้วกด Enter"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -200,7 +200,7 @@ export default function CountClient({
 
       <div className="card space-y-2">
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)}
-          placeholder="ค้นหายาเพื่อนับด้วยมือ (ไม่ต้องสแกน)" />
+          placeholder="ค้นหารายการเพื่อนับด้วยมือ (ไม่ต้องสแกน)" />
         <div className="divide-y divide-slate-100 max-h-[50vh] overflow-y-auto">
           {filtered.map((i) => {
             const c = counted[i.id];

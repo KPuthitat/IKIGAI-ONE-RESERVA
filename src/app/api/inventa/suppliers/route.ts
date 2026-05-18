@@ -12,7 +12,11 @@ const Body = z.object({
   order_cycle: z.string().max(200).nullable().optional(),
   lead_time: z.string().max(200).nullable().optional(),
   contact: z.string().max(200).nullable().optional(),
-  note: z.string().max(1000).nullable().optional()
+  note: z.string().max(1000).nullable().optional(),
+  // null = global (ทุกสาขา); a branch id = that branch only. Only
+  // honoured for super_admin (the settings screen); regular staff
+  // adding a supplier inline always get their active branch.
+  branch_id: z.number().int().positive().nullable().optional()
 });
 
 export async function GET() {
@@ -38,12 +42,16 @@ export async function POST(req: Request) {
     );
   }
   const d = parsed.data;
+  const branchId =
+    user.role === "super_admin" && d.branch_id !== undefined
+      ? d.branch_id
+      : (user.activeBranchId ?? null);
   const info = getDb().prepare(`
     INSERT INTO inventa_suppliers
       (branch_id, name, order_cycle, lead_time, contact, note)
     VALUES (?,?,?,?,?,?)
   `).run(
-    user.activeBranchId ?? null, d.name.trim(),
+    branchId, d.name.trim(),
     d.order_cycle ?? null, d.lead_time ?? null,
     d.contact ?? null, d.note ?? null
   );

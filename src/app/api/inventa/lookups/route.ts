@@ -12,7 +12,10 @@ import { getDb } from "@/lib/db";
 const Body = z.object({
   kind: z.enum(["row", "storage", "unit", "category"]),
   value: z.string().trim().min(1).max(200),
-  sort_order: z.number().int().optional()
+  sort_order: z.number().int().optional(),
+  // null = global (ทุกสาขา); a branch id = that branch only.
+  // Omitted → defaults to the caller's active branch (legacy behaviour).
+  branch_id: z.number().int().positive().nullable().optional()
 });
 
 export async function GET(req: Request) {
@@ -50,9 +53,14 @@ export async function POST(req: Request) {
     );
   }
   const d = parsed.data;
+  // Route is super_admin-only, so an explicit branch_id (incl. null
+  // for global) is trusted. When the key is omitted, fall back to the
+  // caller's active branch to preserve the previous behaviour.
+  const branchId =
+    d.branch_id === undefined ? (user.activeBranchId ?? null) : d.branch_id;
   const info = getDb().prepare(`
     INSERT INTO inventa_lookups (branch_id, kind, value, sort_order)
     VALUES (?, ?, ?, ?)
-  `).run(user.activeBranchId ?? null, d.kind, d.value.trim(), d.sort_order ?? 100);
+  `).run(branchId, d.kind, d.value.trim(), d.sort_order ?? 100);
   return NextResponse.json({ ok: true, id: Number(info.lastInsertRowid) });
 }
