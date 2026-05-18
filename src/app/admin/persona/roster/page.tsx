@@ -26,6 +26,7 @@ import {
   getLastPublish
 } from "@/lib/roster";
 import RosterClient from "./RosterClient";
+import NotifyShiftsButton from "./NotifyShiftsButton";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +103,7 @@ export default function AdminRosterPage({
           className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
           ⚙️ {t(lang, "admin.persona.roster.managePositions")}
         </Link>
+        <NotifyShiftsButton />
         <span className="flex-1" />
         {lastPublish && (
           <span className="text-[11px] text-slate-500">

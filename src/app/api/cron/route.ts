@@ -24,6 +24,11 @@ import {
   isDailySummaryDue,
   markDailySummarySent
 } from "@/lib/daily-attendance-summary";
+import {
+  sendShiftNotifications,
+  isShiftNotifyDue,
+  markShiftNotifySent
+} from "@/lib/shift-notify";
 
 export async function POST(req: Request) {
   const token = req.headers.get("x-cron-token");
@@ -35,6 +40,7 @@ export async function POST(req: Request) {
   const branches = db.prepare("SELECT * FROM branches").all() as Branch[];
   let remindersSent = 0;
   let attendanceSummariesSent = 0;
+  let shiftNotificationsSent = 0;
 
   // ── Daily attendance summary (TC-6) ──────────────────────────────
   // Once per day per branch, at the admin-configured
@@ -82,6 +88,25 @@ export async function POST(req: Request) {
     }
   }
 
+  // ── Per-shift personal LINE reminder ─────────────────────────────
+  // Once per day per branch, at branches.shift_notify_time, DM every
+  // staff member rostered today (to their personal line_user_id)
+  // with their shift time + position. Same idempotency model as the
+  // attendance summary: isShiftNotifyDue() short-circuits on the
+  // dedupe column so repeated cron pings don't re-send.
+  for (const branch of branches) {
+    if (!isShiftNotifyDue(branch, nowHhmmBkk, todayBkk)) continue;
+    try {
+      const { sent } = await sendShiftNotifications(branch, todayBkk);
+      shiftNotificationsSent += sent;
+      // Stamp even when 0 went out (no roster / no LINE bound) so we
+      // don't retry every 5 min for an empty day.
+      markShiftNotifySent(branch.id, todayBkk);
+    } catch (e) {
+      console.error("shift notify error", branch.slug, e);
+    }
+  }
+
   for (const branch of branches) {
     const reminderWindow = branch.reminder_minutes_before;
     // ดึง booking ที่ยัง confirmed และยังไม่เคยส่ง reminder
@@ -125,6 +150,7 @@ export async function POST(req: Request) {
     ok: true,
     reminders_sent: remindersSent,
     attendance_summaries_sent: attendanceSummariesSent,
+    shift_notifications_sent: shiftNotificationsSent,
     auto_no_show: autoNoShow,
     purged_old_bookings: purged
   });

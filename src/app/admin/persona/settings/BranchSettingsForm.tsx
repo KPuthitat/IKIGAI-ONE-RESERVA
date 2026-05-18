@@ -33,6 +33,7 @@ export default function BranchSettingsForm({
   clockQrToken,
   clockQrEnabled,
   attendanceSummaryTime,
+  shiftNotifyTime,
   branchName
 }: {
   morningTime: string;
@@ -45,6 +46,7 @@ export default function BranchSettingsForm({
   clockQrToken: string | null;
   clockQrEnabled: boolean;
   attendanceSummaryTime: string | null;
+  shiftNotifyTime: string | null;
   branchName: string;
 }) {
   const router = useRouter();
@@ -71,6 +73,10 @@ export default function BranchSettingsForm({
   const [summaryTime, setSummaryTime] = useState<string>(
     attendanceSummaryTime || ""
   );
+  // Per-shift personal LINE reminder time. Empty = auto off.
+  const [shiftNotify, setShiftNotify] = useState<string>(
+    shiftNotifyTime || ""
+  );
   // Per-section status text for the geolocate button (success/error
   // feedback after the navigator.geolocation callback returns).
   const [geoStatus, setGeoStatus] = useState<string | null>(null);
@@ -91,7 +97,8 @@ export default function BranchSettingsForm({
     geoOn === geofenceEnabled &&
     (qrToken || null) === (clockQrToken || null) &&
     qrOn === clockQrEnabled &&
-    (summaryTime || null) === (attendanceSummaryTime || null);
+    (summaryTime || null) === (attendanceSummaryTime || null) &&
+    (shiftNotify || null) === (shiftNotifyTime || null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -119,7 +126,8 @@ export default function BranchSettingsForm({
           geofence_enabled: geoOn,
           clock_qr_token: qrToken.trim() || null,
           clock_qr_enabled: qrOn,
-          attendance_summary_time: summaryTime.trim() || null
+          attendance_summary_time: summaryTime.trim() || null,
+          shift_notify_time: shiftNotify.trim() || null
         })
       });
       const j = await res.json().catch(() => ({}));
@@ -481,6 +489,44 @@ export default function BranchSettingsForm({
             {summaryTime
               ? t("admin.persona.settings.attendanceSummary.enabledHint", { time: summaryTime })
               : t("admin.persona.settings.attendanceSummary.disabledHint")}
+          </p>
+        </div>
+      </div>
+
+      <div className="card space-y-3">
+        <div>
+          <h2 className="font-bold text-slate-800 text-sm">
+            แจ้งเตือนเวรงาน (ไลน์ส่วนตัวพนักงาน)
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            ทุกเช้าระบบจะส่งข้อความเข้าไลน์ส่วนตัวของพนักงานที่มีเวรในวันนั้น
+            (เวลากะ + ตำแหน่ง) สำหรับสาขา {branchName} — ต้องผูก LINE ของ
+            พนักงานไว้ในข้อมูลพนักงานก่อน
+          </p>
+        </div>
+        <div>
+          <label className="label text-[11px]">เวลาส่งอัตโนมัติ (ทุกวัน)</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="time"
+              className="input w-36 text-sm"
+              value={shiftNotify}
+              onChange={(e) => setShiftNotify(e.target.value)}
+            />
+            {shiftNotify && (
+              <button
+                type="button"
+                onClick={() => setShiftNotify("")}
+                className="text-xs text-slate-500 hover:text-brand underline whitespace-nowrap"
+              >
+                ปิดการส่งอัตโนมัติ
+              </button>
+            )}
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1">
+            {shiftNotify
+              ? `เปิดอยู่ — ส่งทุกวันเวลา ${shiftNotify} น. (กดส่งเองได้ที่หน้าตารางมอบหมายงาน)`
+              : "ปิดการส่งอัตโนมัติ — ยังกดส่งเองได้ที่หน้าตารางมอบหมายงาน"}
           </p>
         </div>
       </div>

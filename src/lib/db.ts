@@ -950,6 +950,20 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN attendance_summary_last_sent_date TEXT");
   }
 
+  // Per-shift personal LINE reminder: each morning at
+  // shift_notify_time the cron DMs every staff member who has a
+  // roster assignment that day (to their users.line_user_id) with
+  // their shift time + position. shift_notify_last_sent_date is the
+  // same-day dedupe key (mirrors attendance_summary_*).
+  //   NULL shift_notify_time = auto-send disabled (manual button
+  //   still works from the roster page).
+  if (!bnames2.has("shift_notify_time")) {
+    db.exec("ALTER TABLE branches ADD COLUMN shift_notify_time TEXT");
+  }
+  if (!bnames2.has("shift_notify_last_sent_date")) {
+    db.exec("ALTER TABLE branches ADD COLUMN shift_notify_last_sent_date TEXT");
+  }
+
   // TC-4: time certification requests. Staff can't edit a clock
   // entry once the 5-min self-correction window closes — instead
   // they file a certification request here, admin reviews, on
@@ -2309,6 +2323,8 @@ export type Branch = {
   // Daily attendance summary (TC-6) — see migration block above.
   attendance_summary_time: string | null;           // HH:MM Bangkok, NULL = disabled
   attendance_summary_last_sent_date: string | null; // YYYY-MM-DD dedupe key
+  shift_notify_time: string | null;                 // HH:MM Bangkok, NULL = auto disabled
+  shift_notify_last_sent_date: string | null;       // YYYY-MM-DD dedupe key
 };
 
 // Global (non-branch-scoped) configuration. Today it carries the

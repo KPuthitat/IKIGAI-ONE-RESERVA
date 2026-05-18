@@ -67,6 +67,7 @@ export default function PersonaSettingsPage() {
         clockQrToken={branch.clock_qr_token}
         clockQrEnabled={branch.clock_qr_enabled === 1}
         attendanceSummaryTime={branch.attendance_summary_time}
+        shiftNotifyTime={branch.shift_notify_time}
         branchName={branch.name}
       />
     </div>

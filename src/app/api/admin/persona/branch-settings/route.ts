@@ -60,7 +60,10 @@ const Body = z.object({
   // cron should post the 4-category roll-call to the executive group.
   // null = feature disabled for this branch. Empty string from the
   // form is also treated as null (handled below before save).
-  attendance_summary_time: z.string().regex(TIME_RE, "invalid_time").nullable().optional()
+  attendance_summary_time: z.string().regex(TIME_RE, "invalid_time").nullable().optional(),
+  // Per-shift personal LINE reminder time (HH:MM Bangkok). null /
+  // empty = auto-send off (manual roster button still works).
+  shift_notify_time: z.string().regex(TIME_RE, "invalid_time").nullable().optional()
 });
 
 export async function POST(req: Request) {
@@ -142,6 +145,16 @@ export async function POST(req: Request) {
     sets.push("attendance_summary_time = ?");
     vals.push(normalised);
     sets.push("attendance_summary_last_sent_date = ?");
+    vals.push(null);
+  }
+  // shift_notify_time — same normalise + reset-dedupe rule so a time
+  // change re-arms today's auto reminder.
+  if (Object.prototype.hasOwnProperty.call(parsed.data, "shift_notify_time")) {
+    const raw = parsed.data.shift_notify_time;
+    const normalised = raw ? normalizeTime(raw) : null;
+    sets.push("shift_notify_time = ?");
+    vals.push(normalised);
+    sets.push("shift_notify_last_sent_date = ?");
     vals.push(null);
   }
 
