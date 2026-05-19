@@ -4,6 +4,7 @@ import { useMemo, useRef, useState, useTransition, type ChangeEvent } from "reac
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
+import { useLang } from "@/lib/LangProvider";
 import BarcodeScanner from "@/app/components/BarcodeScanner";
 import {
   PICK_FREQ_META, isLowStock,
@@ -45,6 +46,7 @@ export default function InventaClient({
   isSuperAdmin: boolean;
 }) {
   const router = useRouter();
+  const { t } = useLang();
   const [, startTransition] = useTransition();
   const [q, setQ] = useState("");
   const [freqFilter, setFreqFilter] = useState<PickFreq | "">("");
@@ -97,7 +99,7 @@ export default function InventaClient({
         <input
           ref={scanRef}
           className="input w-full"
-          placeholder="สแกน / พิมพ์บาร์โค้ด แล้วกด Enter"
+          placeholder={t("inv.scan.ph")}
           disabled={scanBusy}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
@@ -112,7 +114,7 @@ export default function InventaClient({
         <button type="button"
           onClick={() => setScanCam(true)}
           className="w-full text-sm px-4 py-2.5 rounded-lg border border-brand text-brand font-bold hover:bg-rose-50">
-          สแกนคิวอาร์โค้ด
+          {t("inv.btn.scanQr")}
         </button>
 
         {/* Primary actions — 2-up grid on mobile, inline from sm up.
@@ -121,25 +123,25 @@ export default function InventaClient({
           <button type="button"
             onClick={() => setAdding({})}
             className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold hover:opacity-90">
-            + เพิ่มรายการ
+            {t("inv.btn.addItem")}
           </button>
           <Link href="/staff/inventa/count"
             className="text-sm px-4 py-2 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold text-center">
-            เช็คสต๊อกรายสัปดาห์
+            {t("inv.nav.count")}
           </Link>
           <Link href="/staff/inventa/orders"
             className="text-sm px-4 py-2 rounded-lg border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 font-bold text-center">
-            ใบสั่งซื้อ
+            {t("inv.nav.orders")}
           </Link>
           <button type="button"
             onClick={() => setShowImport(true)}
             className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-            นำเข้าด้วยไฟล์ CSV
+            {t("inv.btn.importCsv")}
           </button>
           <button type="button"
             onClick={() => setShowSuppliers(true)}
             className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-            จัดการผู้จำหน่าย ({suppliers.length})
+            {t("inv.btn.suppliers")} ({suppliers.length})
           </button>
         </div>
 
@@ -148,17 +150,17 @@ export default function InventaClient({
         <details className="group">
           <summary className="cursor-pointer list-none text-xs font-medium text-slate-500 hover:text-slate-700 select-none flex items-center gap-1">
             <span className="transition-transform group-open:rotate-90">›</span>
-            เครื่องมืออื่น
+            {t("inv.tools.more")}
           </summary>
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 mt-2">
             <Link href="/staff/inventa/labels"
               className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center">
-              สร้างคิวอาร์โค้ด
+              {t("inv.nav.qr")}
             </Link>
             {isSuperAdmin && (
               <Link href="/staff/inventa/settings"
                 className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center">
-                ตั้งค่า
+                {t("inv.nav.settings")}
               </Link>
             )}
           </div>
@@ -168,14 +170,14 @@ export default function InventaClient({
         <div className="flex flex-wrap gap-2 items-center">
           <input className="input flex-1 min-w-[160px]" value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="ค้นหา ชื่อ / ชื่อรอง / รหัส / หมวด / ตำแหน่งจัดเก็บ" />
+            placeholder={t("inv.search.ph")} />
           <div className="flex gap-1.5 items-center">
             <button type="button" onClick={() => setFreqFilter("")}
               className={`text-xs px-3 py-1.5 rounded-md border ${
                 freqFilter === ""
                   ? "bg-brand text-white border-brand font-bold"
                   : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
-              ทั้งหมด
+              {t("inv.filter.all")}
             </button>
             {(["R", "Y", "G"] as const).map((f) => {
               const fm = PICK_FREQ_META[f];
@@ -198,13 +200,13 @@ export default function InventaClient({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-500 border-b">
-              <th className="py-2 pr-3">แถบสี / จัดเก็บ</th>
-              <th className="py-2 pr-3">ชื่อ</th>
-              <th className="py-2 pr-3">หมวด</th>
-              <th className="py-2 pr-3">ผู้จำหน่าย</th>
-              <th className="py-2 pr-3">หน่วย</th>
-              <th className="py-2 pr-3 text-right">ทุน/หน่วย</th>
-              <th className="py-2 pr-3 text-right">คงเหลือ</th>
+              <th className="py-2 pr-3">{t("inv.col.band")}</th>
+              <th className="py-2 pr-3">{t("inv.col.name")}</th>
+              <th className="py-2 pr-3">{t("inv.col.category")}</th>
+              <th className="py-2 pr-3">{t("inv.col.supplier")}</th>
+              <th className="py-2 pr-3">{t("inv.col.unit")}</th>
+              <th className="py-2 pr-3 text-right">{t("inv.col.cost")}</th>
+              <th className="py-2 pr-3 text-right">{t("inv.col.qty")}</th>
               <th className="py-2 pr-3 w-16"></th>
             </tr>
           </thead>
@@ -221,7 +223,7 @@ export default function InventaClient({
                         className={`inline-block w-3.5 h-3.5 rounded-full align-middle ${fm.dot}`} />
                     )}
                     <div className="text-[11px] text-slate-500 mt-0.5">
-                      {i.storage_location || "—"}
+                      {i.storage_location || t("inv.dash")}
                     </div>
                   </td>
                   <td className="py-2 pr-3">
@@ -233,26 +235,26 @@ export default function InventaClient({
                       <div className="text-[10px] text-slate-400">{i.item_code}</div>
                     )}
                   </td>
-                  <td className="py-2 pr-3 text-slate-600 text-xs">{i.category ?? "—"}</td>
-                  <td className="py-2 pr-3 text-slate-600 text-xs">{i.supplier_name ?? "—"}</td>
-                  <td className="py-2 pr-3 text-slate-600 text-xs">{i.unit ?? "—"}</td>
+                  <td className="py-2 pr-3 text-slate-600 text-xs">{i.category ?? t("inv.dash")}</td>
+                  <td className="py-2 pr-3 text-slate-600 text-xs">{i.supplier_name ?? t("inv.dash")}</td>
+                  <td className="py-2 pr-3 text-slate-600 text-xs">{i.unit ?? t("inv.dash")}</td>
                   <td className="py-2 pr-3 text-right text-slate-700">
-                    {i.unit_cost ? i.unit_cost.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"}
+                    {i.unit_cost ? i.unit_cost.toLocaleString(undefined, { maximumFractionDigits: 4 }) : t("inv.dash")}
                   </td>
                   <td className={`py-2 pr-3 text-right font-bold ${low ? "text-rose-600" : "text-slate-800"}`}>
                     {i.current_qty}
-                    {low && <span className="ml-1 text-[10px] font-normal">(ต่ำ)</span>}
+                    {low && <span className="ml-1 text-[10px] font-normal">{t("inv.low")}</span>}
                   </td>
                   <td className="py-2 pr-3 text-right">
                     <button type="button" onClick={() => setEdit(i)}
-                      className="text-xs text-brand hover:underline">แก้ไข</button>
+                      className="text-xs text-brand hover:underline">{t("inv.btn.edit")}</button>
                   </td>
                 </tr>
               );
             })}
             {filtered.length === 0 && (
               <tr><td colSpan={8} className="py-6 text-center text-slate-400 text-sm">
-                ไม่พบรายการ — สแกนบาร์โค้ดหรือกด "เพิ่มรายการ"
+                {t("inv.empty")}
               </td></tr>
             )}
           </tbody>
@@ -261,7 +263,7 @@ export default function InventaClient({
 
       {scanCam && (
         <BarcodeScanner
-          title="สแกนคิวอาร์โค้ด เพื่อค้นหารายการ"
+          title={t("inv.scan.findTitle")}
           onResult={(code) => onScan(code)}
           onClose={() => setScanCam(false)}
         />
@@ -307,6 +309,7 @@ function ItemModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useLang();
   const opts = (kind: string) =>
     lookups.filter((l) => l.kind === kind).map((l) => l.value);
   const storageOpts = opts("storage");
@@ -345,7 +348,7 @@ function ItemModal({
 
   async function save() {
     setErr(null);
-    if (!f.name.trim()) { setErr("กรอกชื่อ"); return; }
+    if (!f.name.trim()) { setErr(t("inv.err.name")); return; }
     setBusy(true);
     try {
       const body = {
@@ -373,7 +376,7 @@ function ItemModal({
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body) });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j?.ok) { setErr(j?.error ?? "เกิดข้อผิดพลาด"); return; }
+      if (!res.ok || !j?.ok) { setErr(j?.error ?? t("inv.err.generic")); return; }
       onSaved();
     } finally {
       setBusy(false);
@@ -382,12 +385,12 @@ function ItemModal({
 
   async function del() {
     if (!item) return;
-    if (!confirm(`ลบ "${item.name}" ออกจากคลัง?`)) return;
+    if (!confirm(t("inv.confirm.del", { name: item.name }))) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl(`/api/inventa/items/${item.id}`), { method: "DELETE" });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j?.ok) { setErr(j?.error ?? "ลบไม่สำเร็จ"); return; }
+      if (!res.ok || !j?.ok) { setErr(j?.error ?? t("inv.err.del")); return; }
       onSaved();
     } finally { setBusy(false); }
   }
@@ -398,51 +401,51 @@ function ItemModal({
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-2xl w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
         <h3 className="font-bold text-slate-800 text-lg">
-          {item ? "แก้ไขรายการ" : "เพิ่มรายการ"}
+          {item ? t("inv.item.edit") : t("inv.item.add")}
         </h3>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="label">ประเภท *</label>
+            <label className="label">{t("inv.f.type")} *</label>
             <select className="input" value={f.item_type}
               onChange={(e) => up("item_type", e.target.value)}>
-              <option value="drug">สินค้า</option>
-              <option value="equipment">วัสดุ/อุปกรณ์</option>
+              <option value="drug">{t("inv.type.goods")}</option>
+              <option value="equipment">{t("inv.type.material")}</option>
             </select>
           </div>
           <div>
-            <label className="label">บาร์โค้ด / คิวอาร์โค้ด</label>
+            <label className="label">{t("inv.f.barcode")}</label>
             <div className="flex gap-2">
               <input className="input flex-1" value={f.barcode}
                 onChange={(e) => up("barcode", e.target.value)}
-                placeholder="พิมพ์ หรือกดสแกน" />
+                placeholder={t("inv.f.barcodePh")} />
               <button type="button" onClick={() => setScanField(true)}
                 className="px-3 rounded-lg border border-brand text-brand text-sm font-bold hover:bg-rose-50 whitespace-nowrap">
-                สแกน
+                {t("inv.btn.scan")}
               </button>
             </div>
           </div>
           <div className="col-span-2">
-            <label className="label">ชื่อสินค้า *</label>
+            <label className="label">{t("inv.f.name")} *</label>
             <input className="input" value={f.name}
               onChange={(e) => up("name", e.target.value)} />
           </div>
           <div>
-            <label className="label">ชื่อรอง</label>
+            <label className="label">{t("inv.f.altName")}</label>
             <input className="input" value={f.generic_name}
               onChange={(e) => up("generic_name", e.target.value)} />
           </div>
           <div>
-            <label className="label">รหัสสินค้า</label>
+            <label className="label">{t("inv.f.code")}</label>
             <input className="input" value={f.item_code}
               onChange={(e) => up("item_code", e.target.value)}
-              placeholder="เช่น IKGPH/A0001" />
+              placeholder={t("inv.f.codePh")} />
           </div>
           <div className="col-span-2">
-            <label className="label">หมวดหมู่</label>
+            <label className="label">{t("inv.f.category")}</label>
             <select className="input" value={f.category}
               onChange={(e) => up("category", e.target.value)}>
-              <option value="">— เลือกหมวดหมู่ —</option>
+              <option value="">{t("inv.cat.choose")}</option>
               {categoryOpts.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
@@ -451,22 +454,22 @@ function ItemModal({
         {/* Storage location + colour band */}
         <div className="border-t border-slate-200 pt-3">
           <div className="text-xs font-bold text-slate-700 mb-2">
-            ตำแหน่งจัดเก็บ &amp; แถบสี
+            {t("inv.sec.locBand")}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label">ตำแหน่งจัดเก็บ</label>
+              <label className="label">{t("inv.f.location")}</label>
               <select className="input" value={f.storage_location}
                 onChange={(e) => up("storage_location", e.target.value)}>
-                <option value="">—</option>
+                <option value="">{t("inv.dash")}</option>
                 {storageOpts.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div>
-              <label className="label">แถบสี</label>
+              <label className="label">{t("inv.f.band")}</label>
               <div className="flex items-center gap-2 h-[42px]">
                 <button type="button" onClick={() => up("pick_freq", "")}
-                  title="ไม่ระบุ"
+                  title={t("inv.band.none")}
                   className={`w-7 h-7 rounded-full border border-slate-300 text-slate-400 text-sm flex items-center justify-center ${
                     f.pick_freq === "" ? "ring-2 ring-offset-1 ring-slate-500" : "opacity-60 hover:opacity-100"}`}>
                   ✕
@@ -492,36 +495,36 @@ function ItemModal({
         {/* Unit + cost (per smallest unit, entered directly) */}
         <div className="grid grid-cols-2 gap-3 border-t border-slate-200 pt-3">
           <div>
-            <label className="label">หน่วยเล็กสุด (หน่วยขาย)</label>
+            <label className="label">{t("inv.f.unit")}</label>
             <select className="input" value={f.unit}
               onChange={(e) => up("unit", e.target.value)}>
-              <option value="">—</option>
+              <option value="">{t("inv.dash")}</option>
               {unitOpts.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
           <div>
-            <label className="label">ราคาต่อหน่วย (บาท/หน่วยเล็กสุด)</label>
+            <label className="label">{t("inv.f.cost")}</label>
             <input className="input" type="number" min="0" step="0.0001"
               value={f.unit_cost}
               onChange={(e) => up("unit_cost", e.target.value)}
-              placeholder="เช่น 1.00" />
+              placeholder={t("inv.f.costPh")} />
           </div>
           <div>
-            <label className="label">คงเหลือปัจจุบัน</label>
+            <label className="label">{t("inv.f.onhand")}</label>
             <input className="input" type="number" min="0" value={f.current_qty}
               onChange={(e) => up("current_qty", e.target.value)} />
           </div>
           <div>
-            <label className="label">จุดสั่งซื้อ (safety stock)</label>
+            <label className="label">{t("inv.f.safety")}</label>
             <input className="input" type="number" min="0" value={f.safety_stock}
               onChange={(e) => up("safety_stock", e.target.value)} />
-            <p className="text-[10px] text-slate-400 mt-1">ค่าเริ่มต้น 50 — ต่ำกว่านี้ถือว่าต้องสั่ง</p>
+            <p className="text-[10px] text-slate-400 mt-1">{t("inv.f.safetyHint")}</p>
           </div>
           <div className="col-span-2">
-            <label className="label">ผู้จำหน่าย</label>
+            <label className="label">{t("inv.f.supplier")}</label>
             <select className="input" value={f.supplier_id}
               onChange={(e) => up("supplier_id", e.target.value)}>
-              <option value="">—</option>
+              <option value="">{t("inv.dash")}</option>
               {suppliers.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
@@ -535,23 +538,23 @@ function ItemModal({
           {item && (
             <button type="button" onClick={del} disabled={busy}
               className="px-4 py-2.5 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 text-sm">
-              ลบ
+              {t("inv.btn.delete")}
             </button>
           )}
           <button type="button" onClick={onClose} disabled={busy}
             className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 text-sm">
-            ยกเลิก
+            {t("inv.btn.cancel")}
           </button>
           <button type="button" onClick={save} disabled={busy}
             className="flex-1 py-2.5 rounded-lg bg-brand text-white text-sm font-bold disabled:opacity-50">
-            {busy ? "กำลังบันทึก..." : "บันทึก"}
+            {busy ? t("inv.btn.saving") : t("inv.btn.save")}
           </button>
         </div>
       </div>
 
       {scanField && (
         <BarcodeScanner
-          title="สแกนบาร์โค้ด / คิวอาร์โค้ด"
+          title={t("inv.scan.title2")}
           onResult={(code) => up("barcode", code)}
           onClose={() => setScanField(false)}
         />
@@ -568,6 +571,7 @@ function SuppliersModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const { t } = useLang();
   const [name, setName] = useState("");
   const [cycle, setCycle] = useState("");
   const [lead, setLead] = useState("");
@@ -593,7 +597,7 @@ function SuppliersModal({
   }
 
   async function del(id: number, nm: string) {
-    if (!confirm(`ลบผู้จำหน่าย "${nm}"?`)) return;
+    if (!confirm(t("inv.sup.delConfirm", { name: nm }))) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl(`/api/inventa/suppliers/${id}`), { method: "DELETE" });
@@ -606,25 +610,25 @@ function SuppliersModal({
       onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
-        <h3 className="font-bold text-slate-800 text-lg">จัดการผู้จำหน่าย (บริษัท)</h3>
+        <h3 className="font-bold text-slate-800 text-lg">{t("inv.sup.title")}</h3>
         <p className="text-xs text-slate-500">
-          แต่ละบริษัทมีรอบสั่ง/รอบส่งต่างกัน — บันทึกไว้เพื่อวางแผนสั่งซื้อ
+          {t("inv.sup.help")}
         </p>
 
         <div className="space-y-2 border border-slate-200 rounded-lg p-3">
-          <input className="input" value={name} placeholder="ชื่อบริษัท *"
+          <input className="input" value={name} placeholder={t("inv.sup.namePh")}
             onChange={(e) => setName(e.target.value)} />
           <div className="grid grid-cols-2 gap-2">
             <input className="input text-sm" value={cycle}
-              placeholder="รอบสั่ง เช่น ทุกอังคาร"
+              placeholder={t("inv.sup.cyclePh")}
               onChange={(e) => setCycle(e.target.value)} />
             <input className="input text-sm" value={lead}
-              placeholder="รอบส่ง เช่น 2-3 วัน"
+              placeholder={t("inv.sup.leadPh")}
               onChange={(e) => setLead(e.target.value)} />
           </div>
           <button type="button" onClick={add} disabled={busy || !name.trim()}
             className="w-full py-2 rounded-lg bg-brand text-white text-sm font-bold disabled:opacity-50">
-            + เพิ่มผู้จำหน่าย
+            {t("inv.sup.add")}
           </button>
         </div>
 
@@ -634,22 +638,22 @@ function SuppliersModal({
               <div>
                 <div className="font-medium text-slate-800 text-sm">{s.name}</div>
                 <div className="text-xs text-slate-500">
-                  {s.order_cycle ? `สั่ง: ${s.order_cycle}` : ""}
-                  {s.lead_time ? ` · ส่ง: ${s.lead_time}` : ""}
+                  {s.order_cycle ? `${t("inv.sup.order")}: ${s.order_cycle}` : ""}
+                  {s.lead_time ? ` · ${t("inv.sup.deliver")}: ${s.lead_time}` : ""}
                 </div>
               </div>
               <button type="button" onClick={() => del(s.id, s.name)}
-                className="text-xs text-rose-600 hover:underline">ลบ</button>
+                className="text-xs text-rose-600 hover:underline">{t("inv.btn.delete")}</button>
             </div>
           ))}
           {suppliers.length === 0 && (
-            <div className="py-4 text-center text-slate-400 text-sm">ยังไม่มีผู้จำหน่าย</div>
+            <div className="py-4 text-center text-slate-400 text-sm">{t("inv.sup.none")}</div>
           )}
         </div>
 
         <button type="button" onClick={onClose}
           className="w-full py-2.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium">
-          ปิด
+          {t("inv.close")}
         </button>
       </div>
     </div>
@@ -709,6 +713,7 @@ function parseCsv(text: string): string[][] {
 function ImportModal({
   onClose, onDone
 }: { onClose: () => void; onDone: () => void }) {
+  const { t } = useLang();
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [fileName, setFileName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -741,7 +746,7 @@ function ImportModal({
     reader.onload = () => {
       try {
         const grid = parseCsv(String(reader.result ?? ""));
-        if (grid.length < 2) { setErr("ไฟล์ว่างหรือไม่มีข้อมูล"); return; }
+        if (grid.length < 2) { setErr(t("inv.imp.empty")); return; }
         const head = grid[0].map((h) => h.trim());
         const idx: Record<string, number> = {};
         IMPORT_COLUMNS.forEach(([label, key]) => {
@@ -749,7 +754,7 @@ function ImportModal({
           if (at >= 0) idx[key] = at;
         });
         if (idx.name === undefined) {
-          setErr('ไม่พบคอลัมน์ "ชื่อสินค้า" — ใช้เทมเพลตที่ดาวน์โหลด');
+          setErr(t("inv.imp.noName"));
           return;
         }
         const out: Record<string, string>[] = [];
@@ -762,7 +767,7 @@ function ImportModal({
         }
         setRows(out);
       } catch {
-        setErr("อ่านไฟล์ไม่สำเร็จ");
+        setErr(t("inv.imp.readFail"));
       }
     };
     reader.readAsText(file, "utf-8");
@@ -777,7 +782,7 @@ function ImportModal({
         body: JSON.stringify({ rows })
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j?.ok) { setErr(j?.error ?? "นำเข้าไม่สำเร็จ"); return; }
+      if (!res.ok || !j?.ok) { setErr(j?.error ?? t("inv.imp.failGeneric")); return; }
       setResult({ created: j.created ?? 0, errors: j.errors ?? [] });
     } finally { setBusy(false); }
   }
@@ -787,15 +792,12 @@ function ImportModal({
       onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
-        <h3 className="font-bold text-slate-800 text-lg">นำเข้ารายการ (CSV)</h3>
-        <p className="text-xs text-slate-500">
-          ดาวน์โหลดเทมเพลต → กรอกใน Excel → Save As <b>CSV UTF-8</b> →
-          อัปโหลดกลับ ระบบจะเพิ่มทุกแถวพร้อมกัน
-        </p>
+        <h3 className="font-bold text-slate-800 text-lg">{t("inv.imp.title")}</h3>
+        <p className="text-xs text-slate-500">{t("inv.imp.help")}</p>
 
         <button type="button" onClick={downloadTemplate}
           className="w-full py-2 rounded-lg border border-brand text-brand text-sm font-bold hover:bg-rose-50">
-          ดาวน์โหลดเทมเพลต CSV
+          {t("inv.imp.dl")}
         </button>
 
         <div>
@@ -805,7 +807,7 @@ function ImportModal({
               file:bg-slate-100 file:text-slate-700 file:font-medium" />
           {fileName && (
             <p className="text-xs text-slate-500 mt-1">
-              {fileName} — พบ <b>{rows.length}</b> แถวพร้อมนำเข้า
+              {fileName} — {t("inv.imp.preview", { n: rows.length })}
             </p>
           )}
         </div>
@@ -815,11 +817,11 @@ function ImportModal({
         {result && (
           <div className="text-sm bg-emerald-50 border border-emerald-200 rounded-lg p-3 space-y-1">
             <div className="text-emerald-700 font-bold">
-              นำเข้าสำเร็จ {result.created} รายการ
+              {t("inv.imp.done", { n: result.created })}
             </div>
             {result.errors.length > 0 && (
               <div className="text-rose-600 text-xs">
-                ข้าม {result.errors.length} แถว:
+                {t("inv.imp.errors", { n: result.errors.length })}:
                 <ul className="list-disc pl-4 mt-1">
                   {result.errors.slice(0, 8).map((e, i) => <li key={i}>{e}</li>)}
                 </ul>
@@ -832,18 +834,18 @@ function ImportModal({
           {result ? (
             <button type="button" onClick={onDone}
               className="flex-1 py-2.5 rounded-lg bg-brand text-white text-sm font-bold">
-              เสร็จสิ้น
+              {t("inv.imp.finish")}
             </button>
           ) : (
             <>
               <button type="button" onClick={onClose} disabled={busy}
                 className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 text-sm">
-                ยกเลิก
+                {t("inv.btn.cancel")}
               </button>
               <button type="button" onClick={doImport}
                 disabled={busy || rows.length === 0}
                 className="flex-1 py-2.5 rounded-lg bg-brand text-white text-sm font-bold disabled:opacity-50">
-                {busy ? "กำลังนำเข้า..." : `นำเข้า ${rows.length} รายการ`}
+                {busy ? t("inv.imp.importing") : t("inv.imp.doImport", { n: rows.length })}
               </button>
             </>
           )}
