@@ -14,6 +14,7 @@ import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import TimetableClient from "./TimetableClient";
+import TableManager from "./TableManager";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,8 @@ export default function TimetablePage({ searchParams }: { searchParams: { date?:
         </Link>
         <Legend lang={lang} />
       </div>
+
+      <TableManager branch={branch} tables={tables} zones={zones} />
 
       <TimetableClient
         branch={branch}
