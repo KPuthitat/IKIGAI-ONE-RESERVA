@@ -20,40 +20,53 @@ export default function ReservaMessagingPage() {
   // can offer a single per-branch card that consolidates every LINE-OA
   // setting in one place.
   const db = getDb();
-  // Per-branch scope: a branch admin only manages their own branch's
-  // OA; super_admin (global) sees every reserva channel.
-  const allChannels = listReservaChannels();
-  const scoped = user.role === "super_admin"
-    ? allChannels
-    : allChannels.filter(
-        (c) => c.branch_id != null && user.adminBranchIds.includes(c.branch_id)
-      );
-  const channels = scoped.map((c) => {
-    const branch = c.branch_id != null
-      ? (db.prepare("SELECT * FROM branches WHERE id = ?")
-          .get(c.branch_id) as Branch | undefined)
-      : undefined;
-    return {
-      code: c.code,
-      label: c.label,
-      branch_id: c.branch_id,
-      has_token: !!c.channel_token,
-      has_secret: !!c.channel_secret,
-      liff_id: c.liff_id,
-      updated_at: c.updated_at,
-      // Branch-level notification settings (null when no branch is linked,
-      // but every reserva channel has a branch).
-      staff_group_id: branch?.staff_group_id ?? null,
-      extra_button_url: branch?.extra_button_url ?? null,
-      contact_phone: branch?.contact_phone ?? null
-    };
-  });
+
+  // Scope to the admin's currently-selected branch only — EVERYONE,
+  // including super_admin, sees just the active branch's OA card so the
+  // page isn't a confusing wall of every branch. To manage another
+  // branch, switch via the branch picker.
+  const branchId = user.activeBranchId;
+  if (branchId == null) {
+    return (
+      <div className="card text-sm text-slate-600">
+        {t(lang, "admin.notAssignedBranch")}
+      </div>
+    );
+  }
+  const branchRow = db.prepare("SELECT id, name FROM branches WHERE id = ?")
+    .get(branchId) as { id: number; name: string } | undefined;
+
+  const channels = listReservaChannels()
+    .filter((c) => c.branch_id === branchId)
+    .map((c) => {
+      const branch = c.branch_id != null
+        ? (db.prepare("SELECT * FROM branches WHERE id = ?")
+            .get(c.branch_id) as Branch | undefined)
+        : undefined;
+      return {
+        code: c.code,
+        label: c.label,
+        branch_id: c.branch_id,
+        has_token: !!c.channel_token,
+        has_secret: !!c.channel_secret,
+        liff_id: c.liff_id,
+        updated_at: c.updated_at,
+        // Branch-level notification settings (null when no branch is linked,
+        // but every reserva channel has a branch).
+        staff_group_id: branch?.staff_group_id ?? null,
+        extra_button_url: branch?.extra_button_url ?? null,
+        contact_phone: branch?.contact_phone ?? null
+      };
+    });
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">
           {t(lang, "admin.reserva.messaging.title")}
+          {branchRow && (
+            <span className="ml-2 text-sm font-medium text-brand">· {branchRow.name}</span>
+          )}
         </h1>
         <p className="text-sm text-slate-500">
           {t(lang, "admin.reserva.messaging.subtitle")}
