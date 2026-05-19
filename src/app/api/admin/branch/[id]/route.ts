@@ -12,8 +12,9 @@ const Patch = z.object({
   line_channel_secret: z.string().max(200).optional(),
   line_channel_token: z.string().max(500).optional(),
   staff_line_user_ids: z.string().max(2000).optional(),
-  // Branch status (Phase 1F.2)
-  status: z.enum(["open", "coming_soon"]).optional(),
+  // Branch status (Phase 1F.2) — 'closed' = booking system off for this
+  // branch (shown to customers but greyed-out / not bookable).
+  status: z.enum(["open", "coming_soon", "closed"]).optional(),
   opens_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   closed_weekdays: z.string().max(50).nullable().optional(),  // JSON array string
   // Lunch break (Phase 1F.3)

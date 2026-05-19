@@ -38,11 +38,33 @@ export default function BookPage({ params }: { params: { branch: string } }) {
           </Link>
           <header className="mb-6">
             <h1 className="text-2xl font-bold text-slate-800">{branch.name}</h1>
-            <p className="text-slate-500 text-sm mt-1">
-              {t(lang, "customer.reserva.formIntro", { open: branch.open_time, close: branch.close_time })}
-            </p>
+            {branch.status === "open" && (
+              <p className="text-slate-500 text-sm mt-1">
+                {t(lang, "customer.reserva.formIntro", { open: branch.open_time, close: branch.close_time })}
+              </p>
+            )}
           </header>
-          <BookingForm branch={branch} liffId={liffId} />
+          {branch.status === "open" ? (
+            <BookingForm branch={branch} liffId={liffId} />
+          ) : (
+            <div className="card text-center py-10 space-y-2">
+              <p className="text-lg font-bold text-slate-800">
+                {branch.status === "closed"
+                  ? t(lang, "customer.reserva.closedBadge")
+                  : t(lang, "customer.reserva.comingSoonBadge")}
+              </p>
+              <p className="text-sm text-slate-500">
+                {branch.status === "closed"
+                  ? t(lang, "customer.reserva.closedMsg")
+                  : branch.opens_on
+                    ? t(lang, "customer.reserva.opensOn", { date: branch.opens_on })
+                    : t(lang, "customer.reserva.opensSoon")}
+              </p>
+              <Link href="/reserva" className="inline-block mt-2 text-brand font-bold hover:underline">
+                {t(lang, "customer.reserva.chooseAnotherBranch")}
+              </Link>
+            </div>
+          )}
         </div>
       </main>
       <Footer />

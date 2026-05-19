@@ -117,10 +117,14 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
       <div>
         <label className="label">{t("admin.settings.field.status")}</label>
         <select className="input" value={form.status}
-          onChange={(e) => setForm({ ...form, status: e.target.value as "open" | "coming_soon" })}>
+          onChange={(e) => setForm({ ...form, status: e.target.value as "open" | "coming_soon" | "closed" })}>
           <option value="open">{t("admin.settings.status.open")}</option>
           <option value="coming_soon">{t("admin.settings.status.comingSoon")}</option>
+          <option value="closed">{t("admin.settings.status.closed")}</option>
         </select>
+        {form.status === "closed" && (
+          <p className="text-xs text-rose-600 mt-1">{t("admin.settings.status.closedHint")}</p>
+        )}
       </div>
       {form.status === "coming_soon" && (
         <div>

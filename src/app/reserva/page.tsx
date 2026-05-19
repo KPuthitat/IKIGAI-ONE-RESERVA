@@ -86,6 +86,8 @@ export default function CustomerReservaPage() {
           {branches.map((b) => {
             const closed = parseClosedWeekdays(b.closed_weekdays);
             const isComingSoon = b.status === "coming_soon";
+            const isClosed = b.status === "closed";
+            const bookable = b.status === "open";
             const card = (
               <div className="card hover:shadow-2xl transition group block relative">
                 {isComingSoon && (
@@ -93,10 +95,19 @@ export default function CustomerReservaPage() {
                     {t(lang, "customer.reserva.comingSoonBadge")}
                   </div>
                 )}
+                {isClosed && (
+                  <div className="absolute top-3 right-3 text-[10px] tracking-[1px] font-bold px-2 py-1 rounded-full bg-rose-100 text-rose-700">
+                    {t(lang, "customer.reserva.closedBadge")}
+                  </div>
+                )}
                 <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand transition-colors pr-24">
                   {b.name}
                 </h2>
-                {isComingSoon ? (
+                {isClosed ? (
+                  <p className="text-rose-600 text-sm mt-2 font-medium">
+                    {t(lang, "customer.reserva.closedMsg")}
+                  </p>
+                ) : isComingSoon ? (
                   <p className="text-slate-500 text-sm mt-2">
                     {b.opens_on
                       ? t(lang, "customer.reserva.opensOn", { date: b.opens_on })
@@ -150,12 +161,12 @@ export default function CustomerReservaPage() {
               </div>
             );
 
-            return isComingSoon ? (
-              <div key={b.id} className="opacity-75 cursor-not-allowed">{card}</div>
-            ) : (
+            return bookable ? (
               <Link key={b.id} href={`/reserva/${b.slug}`} className="block">
                 {card}
               </Link>
+            ) : (
+              <div key={b.id} className="opacity-75 cursor-not-allowed">{card}</div>
             );
           })}
         </div>

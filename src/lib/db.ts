@@ -2267,7 +2267,7 @@ export type Branch = {
   line_channel_secret: string | null;
   line_channel_token: string | null;
   staff_line_user_ids: string | null;
-  status: "open" | "coming_soon";
+  status: "open" | "coming_soon" | "closed";
   opens_on: string | null;          // YYYY-MM-DD เมื่อ status = coming_soon
   closed_weekdays: string | null;   // JSON array of 0-6, e.g., '[1]' = ปิดทุกจันทร์
   lunch_break_start: string | null; // HH:MM

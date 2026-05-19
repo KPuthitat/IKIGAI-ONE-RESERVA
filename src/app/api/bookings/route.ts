@@ -47,6 +47,16 @@ export async function POST(req: Request) {
   const branch = db.prepare("SELECT * FROM branches WHERE slug = ?").get(data.branch_slug) as Branch | undefined;
   if (!branch) return NextResponse.json({ error: "ไม่พบสาขา" }, { status: 404 });
 
+  // Branch must be actively open for bookings. Blocks direct POSTs / stale
+  // links to a 'coming_soon' or 'closed' branch even though the public list
+  // already hides/greys them out.
+  if (branch.status !== "open") {
+    return NextResponse.json(
+      { error: "สาขานี้ปิดรับจองอยู่ในขณะนี้" },
+      { status: 403 }
+    );
+  }
+
   const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
   if (data.booking_date < todayBkk) {
     return NextResponse.json({ error: "ไม่สามารถจองย้อนหลังได้" }, { status: 400 });
