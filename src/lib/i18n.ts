@@ -129,7 +129,7 @@ export const dict: Record<Lang, Record<string, string>> = {
 
     // Customer reserva landing
     "customer.reserva.title": "RESERVA",
-    "customer.reserva.subtitle": "ระบบจองโต๊ะร้านอาหาร",
+    "customer.reserva.subtitle": "ระบบจองสำหรับลูกค้า",
     "customer.reserva.featured": "FEATURED",
     "customer.reserva.openHours": "เปิดบริการ {open} – {close} น.",
     "customer.reserva.bookCta": "จองโต๊ะ →",
@@ -2253,7 +2253,7 @@ export const dict: Record<Lang, Record<string, string>> = {
 
     // Customer reserva landing
     "customer.reserva.title": "RESERVA",
-    "customer.reserva.subtitle": "Book a table",
+    "customer.reserva.subtitle": "Customer booking",
     "customer.reserva.featured": "FEATURED",
     "customer.reserva.openHours": "Open {open} – {close}",
     "customer.reserva.bookCta": "Book a table →",

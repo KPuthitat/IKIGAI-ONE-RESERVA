@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ตั้งค่า LINE OA · RESERVA" };
 
 export default function ReservaMessagingPage() {
-  requireAdmin();
+  const user = requireAdmin();
   const lang = getLang();
 
   // Channel info (token / secret / liff_id) lives on messaging_channels;
@@ -20,7 +20,15 @@ export default function ReservaMessagingPage() {
   // can offer a single per-branch card that consolidates every LINE-OA
   // setting in one place.
   const db = getDb();
-  const channels = listReservaChannels().map((c) => {
+  // Per-branch scope: a branch admin only manages their own branch's
+  // OA; super_admin (global) sees every reserva channel.
+  const allChannels = listReservaChannels();
+  const scoped = user.role === "super_admin"
+    ? allChannels
+    : allChannels.filter(
+        (c) => c.branch_id != null && user.adminBranchIds.includes(c.branch_id)
+      );
+  const channels = scoped.map((c) => {
     const branch = c.branch_id != null
       ? (db.prepare("SELECT * FROM branches WHERE id = ?")
           .get(c.branch_id) as Branch | undefined)

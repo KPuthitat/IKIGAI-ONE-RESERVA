@@ -8,7 +8,7 @@ import Footer from "../Footer";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "จองโต๊ะ · RESERVA" };
+export const metadata: Metadata = { title: "ระบบจองสำหรับลูกค้า · RESERVA" };
 
 const DAY_NAMES_TH = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
 const DAY_NAMES_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -64,10 +64,14 @@ function computeTodayStatus(b: Branch, todayBkk: string): TodayStatus {
 export default function CustomerReservaPage() {
   const lang = getLang();
   const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  // ลำดับการแสดง: flagship ขึ้นก่อน (NAMA = display_order 1)
+  // Open-for-booking branches float to the top; coming-soon then
+  // closed sink below. display_order/name keeps a stable order within
+  // each tier (flagship NAMA = display_order 1).
   const branches = getDb().prepare(`
     SELECT * FROM branches
-    ORDER BY display_order, name
+    ORDER BY
+      CASE status WHEN 'open' THEN 0 WHEN 'coming_soon' THEN 1 ELSE 2 END,
+      display_order, name
   `).all() as Branch[];
 
   return (
