@@ -194,9 +194,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/reserva/bookings", label: t(lang, "admin.nav.bookings") },
         { href: "/admin/reserva/timetable", label: t(lang, "admin.reserva.nav.timetable") },
         { href: "/admin/reserva/scan", label: t(lang, "admin.reserva.nav.scan") },
-        // ผังโต๊ะ + โซน hidden — floor-plan/table model shelved pending a
-        // time-slot redesign. Pages remain in the codebase (just unlinked)
-        // so this is fully reversible.
+        { href: "/admin/reserva/zones", label: t(lang, "admin.reserva.nav.zones") },
+        // ผังโต๊ะ (spatial floor-plan) stays hidden — superseded by the
+        // timetable + per-table management. Page kept for reversibility.
         { href: "/admin/reserva/staff", label: t(lang, "admin.nav.users") },
         { href: "/admin/reserva/messaging", label: t(lang, "admin.reserva.nav.messaging") },
         { href: "/admin/reserva/settings", label: t(lang, "admin.nav.settings") },

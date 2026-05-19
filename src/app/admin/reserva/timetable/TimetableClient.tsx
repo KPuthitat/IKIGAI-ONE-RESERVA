@@ -110,6 +110,34 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
     return arr;
   }, [slotCount, openMin]);
 
+  // Slots that fall inside the branch's lunch/closed break for THIS date.
+  // Mirrors the customer-page rule (lib reserva): the break applies only
+  // on weekdays listed in lunch_break_weekdays and is skipped on any date
+  // in no_lunch_break_dates. Break slots render grey + non-clickable.
+  const breakSlots = useMemo(() => {
+    const set = new Set<number>();
+    const bs = branch.lunch_break_start;
+    const be = branch.lunch_break_end;
+    if (!bs || !be || !/^\d{2}:\d{2}$/.test(bs) || !/^\d{2}:\d{2}$/.test(be)) return set;
+    let weekdays: number[] = [];
+    let exceptions: string[] = [];
+    try { weekdays = branch.lunch_break_weekdays ? JSON.parse(branch.lunch_break_weekdays) : []; } catch {}
+    try { exceptions = branch.no_lunch_break_dates ? JSON.parse(branch.no_lunch_break_dates) : []; } catch {}
+    const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
+    if (!weekdays.includes(dow) || exceptions.includes(date)) return set;
+    const toMin = (s: string) => {
+      const [h, m] = s.split(":").map(Number);
+      return h * 60 + m;
+    };
+    const bStart = toMin(bs);
+    const bEnd = toMin(be);
+    for (const s of slots) {
+      if (s.minutes >= bStart && s.minutes < bEnd) set.add(s.index);
+    }
+    return set;
+  }, [branch.lunch_break_start, branch.lunch_break_end,
+      branch.lunch_break_weekdays, branch.no_lunch_break_dates, date, slots]);
+
   const groups = useMemo(() => {
     const zoneIds = new Set(zones.map((z) => z.id));
     const grouped: Array<{ zone: Zone | null; tables: TableRow[] }> = [];
@@ -221,8 +249,13 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
           </div>
           {slots.map((s) => (
             <div key={s.index}
-              className="text-xs text-slate-500 text-center py-1 flex items-center justify-center"
-              style={{ height: ROW_PX }}>
+              className={`text-xs text-center py-1 flex items-center justify-center ${
+                breakSlots.has(s.index)
+                  ? "bg-slate-200 text-slate-400"
+                  : "text-slate-500"
+              }`}
+              style={{ height: ROW_PX }}
+              title={breakSlots.has(s.index) ? t("admin.reserva.timetable.breakSlot") : undefined}>
               {s.label}
             </div>
           ))}
@@ -246,6 +279,7 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
                 gridCols={gridCols}
                 bookings={bookingsByTable.get(tbl.id) ?? []}
                 rowPx={ROW_PX}
+                breakSlots={breakSlots}
                 onEmptyCellClick={onEmptyCellClick}
                 onEdit={(b) => setEditing(b)}
                 bookingPlacement={bookingPlacement}
@@ -337,7 +371,7 @@ function timeToMin(hhmm: string): number {
 }
 
 function TableRowComponent({
-  table, slots, gridCols, bookings, rowPx,
+  table, slots, gridCols, bookings, rowPx, breakSlots,
   onEmptyCellClick, onEdit, bookingPlacement, bookingTone
 }: {
   table: TableRow;
@@ -345,6 +379,7 @@ function TableRowComponent({
   gridCols: string;
   bookings: Booking[];
   rowPx: number;
+  breakSlots: Set<number>;
   onEmptyCellClick: (tableId: number, slotMinutes: number) => void;
   onEdit: (b: Booking) => void;
   bookingPlacement: (b: Booking) => { left: number; width: number } | null;
@@ -362,19 +397,30 @@ function TableRowComponent({
         <span className="text-xs text-slate-400">{table.capacity}</span>
       </div>
 
-      {/* Empty time-slot cells */}
-      {slots.map((s) => (
-        <button
-          key={s.index}
-          type="button"
-          onClick={() => onEmptyCellClick(table.id, s.minutes)}
-          className="border-r border-slate-100 hover:bg-emerald-50 transition relative"
-          style={{ height: rowPx }}
-          title={`+ ${s.label} · ${table.label}`}
-        >
-          <span className="sr-only">+ {table.label} {s.label}</span>
-        </button>
-      ))}
+      {/* Empty time-slot cells. Break slots render as inert grey cells —
+          no walk-in can be seated while the kitchen/restaurant is closed
+          for the break. */}
+      {slots.map((s) =>
+        breakSlots.has(s.index) ? (
+          <div
+            key={s.index}
+            className="border-r border-slate-100 bg-slate-100"
+            style={{ height: rowPx }}
+            aria-hidden
+          />
+        ) : (
+          <button
+            key={s.index}
+            type="button"
+            onClick={() => onEmptyCellClick(table.id, s.minutes)}
+            className="border-r border-slate-100 hover:bg-emerald-50 transition relative"
+            style={{ height: rowPx }}
+            title={`+ ${s.label} · ${table.label}`}
+          >
+            <span className="sr-only">+ {table.label} {s.label}</span>
+          </button>
+        )
+      )}
 
       {/* Booking overlays — absolute-positioned over the empty cells.
           Click opens BookingActionsModal so admin can change status,
