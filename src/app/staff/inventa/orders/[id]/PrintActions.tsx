@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { useLang } from "@/lib/LangProvider";
 
 type Status = "draft" | "sent" | "approved" | "received" | "cancelled";
 
@@ -18,6 +19,7 @@ export default function PrintActions({
   canManage: boolean;
 }) {
   const router = useRouter();
+  const { t } = useLang();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -31,10 +33,10 @@ export default function PrintActions({
         body: JSON.stringify({ action })
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setErr(j.error ?? "ทำรายการไม่สำเร็จ"); return; }
+      if (!res.ok || !j.ok) { setErr(j.error ?? t("inv.po.actFail")); return; }
       router.refresh();
     } catch {
-      setErr("ทำรายการไม่สำเร็จ");
+      setErr(t("inv.po.actFail"));
     } finally {
       setBusy(false);
     }
@@ -46,29 +48,29 @@ export default function PrintActions({
 
       {canApprove && status === "sent" && (
         <button type="button" disabled={busy}
-          onClick={() => act("approve", "อนุมัติใบสั่งซื้อนี้?")}
+          onClick={() => act("approve", t("inv.po.cfApprove"))}
           className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
-          อนุมัติ
+          {t("inv.po.approve")}
         </button>
       )}
       {canManage && status === "approved" && (
         <button type="button" disabled={busy}
-          onClick={() => act("receive", "ยืนยันว่ารับของครบแล้ว?")}
+          onClick={() => act("receive", t("inv.po.cfReceive"))}
           className="text-xs px-3 py-1.5 rounded-lg border border-sky-400 text-sky-700 font-bold hover:bg-sky-50 disabled:opacity-50">
-          รับของแล้ว
+          {t("inv.po.receive")}
         </button>
       )}
       {canManage && (status === "sent" || status === "approved") && (
         <button type="button" disabled={busy}
-          onClick={() => act("cancel", "ยกเลิกใบสั่งซื้อนี้?")}
+          onClick={() => act("cancel", t("inv.po.cfCancel"))}
           className="text-xs px-3 py-1.5 rounded-lg border border-rose-300 text-rose-600 hover:bg-rose-50 disabled:opacity-50">
-          ยกเลิก
+          {t("inv.po.cancel")}
         </button>
       )}
       <button type="button"
         onClick={() => window.print()}
         className="text-xs px-3 py-1.5 rounded-lg bg-brand text-white font-bold hover:opacity-90">
-        พิมพ์ / บันทึก PDF
+        {t("inv.lbl.print")}
       </button>
     </div>
   );

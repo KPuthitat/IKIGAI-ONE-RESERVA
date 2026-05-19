@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useLang } from "@/lib/LangProvider";
 import { PICK_FREQ_META, type PickFreq } from "@/lib/inventa";
 
 export type LabelItem = {
@@ -26,6 +27,7 @@ function getQR(): QRCodeLib | undefined {
 }
 
 export default function LabelsClient({ items }: { items: LabelItem[] }) {
+  const { t } = useLang();
   const printable = useMemo(
     () => items.filter((i) => (i.item_code || i.barcode)),
     [items]
@@ -71,20 +73,20 @@ export default function LabelsClient({ items }: { items: LabelItem[] }) {
     <>
       <div className="card no-print flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-slate-600">
-          พร้อมพิมพ์ <b>{printable.length}</b> ดวง
+          {t("inv.lbl.ready", { n: printable.length })}
           {skipped > 0 && (
             <span className="text-amber-700">
-              {" "}· ข้าม {skipped} (ไม่มีรหัสสินค้า/บาร์โค้ด)
+              {" "}· {t("inv.lbl.skipped", { n: skipped })}
             </span>
           )}
-          {status === "loading" && <span className="text-slate-400"> · กำลังสร้างคิวอาร์...</span>}
-          {status === "error" && <span className="text-rose-600"> · สร้างคิวอาร์ไม่สำเร็จ ลองรีเฟรช</span>}
+          {status === "loading" && <span className="text-slate-400"> · {t("inv.lbl.gen")}</span>}
+          {status === "error" && <span className="text-rose-600"> · {t("inv.lbl.genFail")}</span>}
         </div>
         <button type="button"
           onClick={() => window.print()}
           disabled={status !== "ready"}
           className="text-sm px-5 py-2 rounded-lg bg-brand text-white font-bold disabled:opacity-50">
-          พิมพ์ / บันทึก PDF
+          {t("inv.lbl.print")}
         </button>
       </div>
 
@@ -115,16 +117,13 @@ export default function LabelsClient({ items }: { items: LabelItem[] }) {
         </div>
         {printable.length === 0 && (
           <div className="text-center text-slate-500 text-sm py-10 no-print space-y-2">
-            <p className="font-medium text-slate-600">ยังไม่มีคิวอาร์โค้ดให้พิมพ์</p>
+            <p className="font-medium text-slate-600">{t("inv.lbl.emptyTitle")}</p>
             <p className="text-xs leading-relaxed max-w-md mx-auto">
-              หน้านี้จะสร้างคิวอาร์โค้ดให้อัตโนมัติ <b>เฉพาะรายการที่กรอก
-              “รหัสสินค้า” หรือ “บาร์โค้ด” ไว้แล้ว</b> — ไปที่เมนู “คลังสินค้า”
-              เพิ่ม/แก้รายการแล้วใส่รหัสสินค้า จากนั้นกลับมาหน้านี้เพื่อสั่งพิมพ์
-              สติกเกอร์ติดชั้นวาง/บรรจุภัณฑ์
+              {t("inv.lbl.emptyHelp")}
             </p>
             <Link href="/staff/inventa"
               className="inline-block mt-1 text-brand font-bold hover:underline">
-              ไปที่คลังสินค้า →
+              {t("inv.lbl.goStock")}
             </Link>
           </div>
         )}

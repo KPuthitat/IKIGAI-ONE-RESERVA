@@ -3,16 +3,19 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
-import {
-  LOOKUP_KIND_META, type LookupKind, type InventaLookup,
-  type InventaSupplier
-} from "@/lib/inventa";
+import { useLang } from "@/lib/LangProvider";
+import type { LookupKind, InventaLookup, InventaSupplier } from "@/lib/inventa";
 
 const KINDS: LookupKind[] = ["storage", "unit", "category"];
 
-// Each setting group is a top-to-bottom collapsible section
-// (accordion) so the page reads as a tidy list instead of a wall of
-// chips. First section open by default; the rest collapsed.
+// kind → i18n key for its label (no more Thai-only LOOKUP_KIND_META).
+const KIND_KEY: Record<LookupKind, string> = {
+  storage: "inv.f.location",
+  unit: "inv.f.unit",
+  category: "inv.f.category",
+  row: "inv.f.location"
+};
+
 function Section({
   title, count, defaultOpen, children
 }: {
@@ -45,13 +48,11 @@ export default function SettingsClient({
   branchName: string;
 }) {
   const router = useRouter();
+  const { t } = useLang();
   const [, startTransition] = useTransition();
   const refresh = () => startTransition(() => router.refresh());
   const [busy, setBusy] = useState(false);
 
-  // All INVENTA settings are per-branch. The page server-loads only
-  // this (active) branch's rows; new rows are created for the active
-  // branch by the API — no global/shared scope exists.
   async function addLookup(kind: LookupKind, value: string) {
     if (!value.trim()) return;
     setBusy(true);
@@ -74,31 +75,31 @@ export default function SettingsClient({
   return (
     <div className="space-y-3">
       <div className="card">
-        <p className="text-sm text-slate-700">
-          กำลังตั้งค่าสำหรับสาขา: <b>{branchName}</b>
-        </p>
+        <p className="text-sm text-slate-700"
+          dangerouslySetInnerHTML={{
+            __html: t("inv.set.forBranch", { name: `<b>${branchName}</b>` })
+          }} />
         <p className="text-[11px] text-slate-500 mt-0.5">
-          แต่ละสาขามีหมวดหมู่/หน่วย/ตำแหน่งจัดเก็บ/ผู้จำหน่ายของตัวเอง
-          ที่แตกต่างกันได้ — สลับสาขาที่แถบ “วันนี้ … เปลี่ยน” ด้านบน
-          เพื่อตั้งค่าสาขาอื่น
+          {t("inv.set.branchHint")}
         </p>
       </div>
 
       {KINDS.map((k, i) => {
         const items = lookups.filter((l) => l.kind === k);
+        const label = t(KIND_KEY[k]);
         return (
-          <Section key={k} title={LOOKUP_KIND_META[k]} count={items.length}
+          <Section key={k} title={label} count={items.length}
             defaultOpen={i === 0}>
-            <LookupBody kind={k} items={items} busy={busy}
+            <LookupBody label={label} items={items} busy={busy}
               onAdd={(v) => addLookup(k, v)} onDelete={delLookup} />
           </Section>
         );
       })}
-      <Section title="ผู้จำหน่าย" count={suppliers.length}>
+      <Section title={t("inv.f.supplier")} count={suppliers.length}>
         <SupplierBody suppliers={suppliers} onChanged={refresh} />
       </Section>
 
-      <Section title="ล้างข้อมูล INVENTA ทั้งหมด" count={0}>
+      <Section title={t("inv.reset.title")} count={0}>
         <ResetDataBody onChanged={refresh} />
       </Section>
     </div>
@@ -106,20 +107,19 @@ export default function SettingsClient({
 }
 
 function ResetDataBody({ onChanged }: { onChanged: () => void }) {
+  const { t } = useLang();
   const [phrase, setPhrase] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  // The API requires this exact Thai token regardless of UI language.
   const CONFIRM = "ล้างข้อมูล";
 
   async function reset() {
     if (phrase.trim() !== CONFIRM) {
-      setMsg(`พิมพ์ "${CONFIRM}" ให้ตรงเพื่อยืนยัน`);
+      setMsg(t("inv.reset.mismatch", { w: CONFIRM }));
       return;
     }
-    if (!window.confirm(
-      "ล้างข้อมูล INVENTA ทั้งหมดทุกสาขา (รายการ/ผู้จำหน่าย/หมวด/ตัวเลือก/" +
-      "การนับ/ใบสั่งซื้อ) — ลบถาวร กู้คืนไม่ได้ ยืนยันหรือไม่?"
-    )) return;
+    if (!window.confirm(t("inv.reset.confirm2"))) return;
     setBusy(true);
     setMsg(null);
     try {
@@ -129,16 +129,16 @@ function ResetDataBody({ onChanged }: { onChanged: () => void }) {
         body: JSON.stringify({ confirm: CONFIRM })
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setMsg(j.error ?? "ล้างไม่สำเร็จ"); return; }
+      if (!res.ok || !j.ok) { setMsg(j.error ?? t("inv.reset.fail")); return; }
       const d = j.deleted;
-      setMsg(
-        `ล้างแล้ว: รายการ ${d.items} · ผู้จำหน่าย ${d.suppliers} · ` +
-        `หมวด/ตัวเลือก ${d.lookups} · การนับ ${d.counts} · ใบสั่งซื้อ ${d.orders}`
-      );
+      setMsg(t("inv.reset.doneMsg", {
+        items: d.items, sup: d.suppliers, lk: d.lookups,
+        cnt: d.counts, ord: d.orders
+      }));
       setPhrase("");
       onChanged();
     } catch {
-      setMsg("ล้างไม่สำเร็จ");
+      setMsg(t("inv.reset.fail"));
     } finally {
       setBusy(false);
     }
@@ -147,13 +147,11 @@ function ResetDataBody({ onChanged }: { onChanged: () => void }) {
   return (
     <div className="space-y-3">
       <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 leading-relaxed">
-        ลบข้อมูล INVENTA <b>ทั้งหมดทุกสาขา</b> อย่างถาวร — รายการสินค้า,
-        ผู้จำหน่าย, หมวดหมู่/หน่วย/ตำแหน่ง/แถบสี (รวมส่วนกลาง),
-        ประวัติการนับ และใบสั่งซื้อทั้งหมด · ใช้เมื่อต้องการเริ่มต้นใหม่
+        {t("inv.reset.warn")}
       </div>
       <div>
         <label className="label text-[11px]">
-          พิมพ์ “{CONFIRM}” เพื่อยืนยัน
+          {t("inv.reset.typeConfirm", { w: CONFIRM })}
         </label>
         <input className="input text-sm" value={phrase}
           onChange={(e) => setPhrase(e.target.value)}
@@ -163,21 +161,22 @@ function ResetDataBody({ onChanged }: { onChanged: () => void }) {
       <button type="button" onClick={reset}
         disabled={busy || phrase.trim() !== CONFIRM}
         className="text-sm px-4 py-2 rounded-lg bg-rose-600 text-white font-bold disabled:opacity-50">
-        {busy ? "กำลังล้าง…" : "ล้างข้อมูล INVENTA ทั้งหมด"}
+        {busy ? t("inv.reset.btnBusy") : t("inv.reset.title")}
       </button>
     </div>
   );
 }
 
 function LookupBody({
-  kind, items, busy, onAdd, onDelete
+  label, items, busy, onAdd, onDelete
 }: {
-  kind: LookupKind;
+  label: string;
   items: InventaLookup[];
   busy: boolean;
   onAdd: (v: string) => void;
   onDelete: (id: number) => void;
 }) {
+  const { t } = useLang();
   const [v, setV] = useState("");
   return (
     <>
@@ -194,20 +193,20 @@ function LookupBody({
           </span>
         ))}
         {items.length === 0 && (
-          <span className="text-sm text-slate-400">ยังไม่มีตัวเลือกในขอบเขตนี้</span>
+          <span className="text-sm text-slate-400">{t("inv.lk.none")}</span>
         )}
       </div>
       <div className="flex gap-2">
         <input className="input flex-1" value={v}
           onChange={(e) => setV(e.target.value)}
-          placeholder={`เพิ่ม ${LOOKUP_KIND_META[kind]}`}
+          placeholder={t("inv.lk.addPh", { label })}
           onKeyDown={(e) => {
             if (e.key === "Enter") { e.preventDefault(); onAdd(v); setV(""); }
           }} />
         <button type="button" disabled={busy || !v.trim()}
           onClick={() => { onAdd(v); setV(""); }}
           className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold disabled:opacity-50">
-          เพิ่ม
+          {t("inv.btn.add")}
         </button>
       </div>
     </>
@@ -220,6 +219,7 @@ function SupplierBody({
   suppliers: InventaSupplier[];
   onChanged: () => void;
 }) {
+  const { t } = useLang();
   const [name, setName] = useState("");
   const [cycle, setCycle] = useState("");
   const [lead, setLead] = useState("");
@@ -241,7 +241,7 @@ function SupplierBody({
     } finally { setBusy(false); }
   }
   async function del(id: number, nm: string) {
-    if (!confirm(`ลบผู้จำหน่าย "${nm}"?`)) return;
+    if (!confirm(t("inv.sup.delConfirm", { name: nm }))) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl(`/api/inventa/suppliers/${id}`), { method: "DELETE" });
@@ -252,19 +252,19 @@ function SupplierBody({
   return (
     <>
       <div className="border border-slate-200 rounded-lg p-3 space-y-2">
-        <input className="input" value={name} placeholder="ชื่อบริษัท *"
+        <input className="input" value={name} placeholder={t("inv.sup.namePh")}
           onChange={(e) => setName(e.target.value)} />
         <div className="grid grid-cols-2 gap-2">
           <input className="input text-sm" value={cycle}
-            placeholder="รอบสั่ง"
+            placeholder={t("inv.sup.cyclePh")}
             onChange={(e) => setCycle(e.target.value)} />
           <input className="input text-sm" value={lead}
-            placeholder="รอบส่ง"
+            placeholder={t("inv.sup.leadPh")}
             onChange={(e) => setLead(e.target.value)} />
         </div>
         <button type="button" onClick={add} disabled={busy || !name.trim()}
           className="w-full py-2 rounded-lg bg-brand text-white text-sm font-bold disabled:opacity-50">
-          + เพิ่มบริษัท
+          {t("inv.sup.add")}
         </button>
       </div>
       <div className="divide-y divide-slate-100">
@@ -273,17 +273,17 @@ function SupplierBody({
             <div>
               <div className="font-medium text-slate-800 text-sm">{s.name}</div>
               <div className="text-xs text-slate-500">
-                {s.order_cycle ? `สั่ง: ${s.order_cycle}` : ""}
-                {s.lead_time ? ` · ส่ง: ${s.lead_time}` : ""}
+                {s.order_cycle ? `${t("inv.sup.order")}: ${s.order_cycle}` : ""}
+                {s.lead_time ? ` · ${t("inv.sup.deliver")}: ${s.lead_time}` : ""}
               </div>
             </div>
             <button type="button" onClick={() => del(s.id, s.name)}
-              className="text-xs text-rose-600 hover:underline">ลบ</button>
+              className="text-xs text-rose-600 hover:underline">{t("inv.btn.delete")}</button>
           </div>
         ))}
         {suppliers.length === 0 && (
           <div className="py-4 text-center text-slate-400 text-sm">
-            ยังไม่มีบริษัทในขอบเขตนี้
+            {t("inv.sup.none")}
           </div>
         )}
       </div>

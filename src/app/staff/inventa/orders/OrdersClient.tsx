@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { useLang } from "@/lib/LangProvider";
 import { binCode, type PickFreq } from "@/lib/inventa";
 
 export type LowStockItem = {
@@ -33,12 +34,12 @@ export type OrderRow = {
   approved_by_name: string | null;
 };
 
-const STATUS_META: Record<OrderRow["status"], { label: string; cls: string }> = {
-  draft:     { label: "ร่าง",        cls: "bg-slate-100 text-slate-600" },
-  sent:      { label: "รออนุมัติ",   cls: "bg-amber-100 text-amber-700" },
-  approved:  { label: "อนุมัติแล้ว", cls: "bg-emerald-100 text-emerald-700" },
-  received:  { label: "รับของแล้ว",  cls: "bg-sky-100 text-sky-700" },
-  cancelled: { label: "ยกเลิก",      cls: "bg-rose-100 text-rose-600" }
+const STATUS_CLS: Record<OrderRow["status"], string> = {
+  draft: "bg-slate-100 text-slate-600",
+  sent: "bg-amber-100 text-amber-700",
+  approved: "bg-emerald-100 text-emerald-700",
+  received: "bg-sky-100 text-sky-700",
+  cancelled: "bg-rose-100 text-rose-600"
 };
 
 export default function OrdersClient({
@@ -49,6 +50,7 @@ export default function OrdersClient({
   canApprove: boolean;
 }) {
   const router = useRouter();
+  const { t } = useLang();
   // selected item_id → order qty (string for the input). Default qty
   // = max(0, safety - current). Unchecked = not in the order.
   const [sel, setSel] = useState<Record<number, string>>({});
@@ -59,13 +61,13 @@ export default function OrdersClient({
   const groups = useMemo(() => {
     const m = new Map<string, LowStockItem[]>();
     for (const it of lowStock) {
-      const k = it.supplier_name ?? "— ไม่ระบุผู้จำหน่าย —";
+      const k = it.supplier_name ?? t("inv.ord.noSupplier");
       const arr = m.get(k) ?? [];
       arr.push(it);
       m.set(k, arr);
     }
     return [...m.entries()];
-  }, [lowStock]);
+  }, [lowStock, t]);
 
   function suggested(it: LowStockItem): number {
     return Math.max(0, it.safety_stock - it.current_qty);
@@ -92,7 +94,7 @@ export default function OrdersClient({
     .filter((l) => l.order_qty > 0);
 
   async function submit() {
-    if (chosen.length === 0) { setErr("เลือกอย่างน้อย 1 รายการ"); return; }
+    if (chosen.length === 0) { setErr(t("inv.ord.selectMin")); return; }
     setBusy(true); setErr(null);
     try {
       const res = await fetch(apiUrl("/api/inventa/orders"), {
@@ -101,10 +103,10 @@ export default function OrdersClient({
         body: JSON.stringify({ note: note.trim() || undefined, lines: chosen })
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setErr(j.error ?? "ส่งไม่สำเร็จ"); return; }
+      if (!res.ok || !j.ok) { setErr(j.error ?? t("inv.ord.sendFail")); return; }
       router.push(`/staff/inventa/orders/${j.id}`);
     } catch {
-      setErr("ส่งไม่สำเร็จ");
+      setErr(t("inv.ord.sendFail"));
     } finally {
       setBusy(false);
     }
@@ -116,19 +118,19 @@ export default function OrdersClient({
       <div className="card space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <h2 className="font-bold text-slate-800 text-sm">
-            รายการที่ควรสั่ง ({lowStock.length})
+            {t("inv.ord.reorder", { n: lowStock.length })}
           </h2>
           {lowStock.length > 0 && (
             <button type="button" onClick={selectAll}
               className="text-xs text-brand hover:underline">
-              เลือกทั้งหมด
+              {t("inv.ord.selectAll")}
             </button>
           )}
         </div>
 
         {lowStock.length === 0 && (
           <p className="text-sm text-slate-400">
-            ไม่มีรายการที่ถึงจุดสั่งซื้อ — สต๊อกเพียงพอทุกตัว
+            {t("inv.ord.noLow")}
           </p>
         )}
 
@@ -151,13 +153,13 @@ export default function OrdersClient({
                       <span className="font-medium text-slate-800">{it.name}</span>
                       {bin && <span className="ml-1 text-[11px] text-slate-400">[{bin}]</span>}
                       <span className="block text-[11px] text-slate-500">
-                        คงเหลือ {it.current_qty} / จุดสั่ง {it.safety_stock}
-                        {it.unit ? ` ${it.unit}` : ""} · ทุน ฿{it.unit_cost}
+                        {t("inv.ord.onhand")} {it.current_qty} / {t("inv.ord.repoint")} {it.safety_stock}
+                        {it.unit ? ` ${it.unit}` : ""} · {t("inv.ord.cost")} ฿{it.unit_cost}
                       </span>
                     </span>
                   </label>
                   <div className="flex items-center gap-1">
-                    <span className="text-[11px] text-slate-500">สั่ง</span>
+                    <span className="text-[11px] text-slate-500">{t("inv.ord.order")}</span>
                     <input
                       className="input !w-20 !py-1 text-sm text-right"
                       inputMode="numeric"
@@ -165,7 +167,7 @@ export default function OrdersClient({
                       disabled={!checked}
                       onChange={(e) => setQty(it.id, e.target.value)}
                     />
-                    <span className="text-[11px] text-slate-500">{it.unit ?? "หน่วย"}</span>
+                    <span className="text-[11px] text-slate-500">{it.unit ?? t("inv.ord.unit")}</span>
                   </div>
                 </div>
               );
@@ -177,16 +179,16 @@ export default function OrdersClient({
           <div className="border-t border-slate-100 pt-3 space-y-2">
             <textarea className="input text-sm" rows={2} value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="หมายเหตุถึงผู้อนุมัติ / ผู้จำหน่าย (ถ้ามี)" />
+              placeholder={t("inv.ord.notePh")} />
             {err && <div className="text-sm text-rose-600">{err}</div>}
             <div className="flex items-center gap-3">
               <button type="button" onClick={submit}
                 disabled={busy || chosen.length === 0}
                 className="btn-primary text-sm disabled:opacity-50">
-                {busy ? "กำลังส่ง…" : `ส่งขออนุมัติ (${chosen.length}) — แจ้งกลุ่มไลน์`}
+                {busy ? t("inv.ord.sending") : t("inv.ord.submit", { n: chosen.length })}
               </button>
               <span className="text-[11px] text-slate-400">
-                ระบบจะแจ้งกลุ่มไลน์พนักงาน/ผู้บริหารให้อนุมัติ
+                {t("inv.ord.submitHint")}
               </span>
             </div>
           </div>
@@ -196,29 +198,28 @@ export default function OrdersClient({
       {/* ── Recent orders ───────────────────────────────────────── */}
       <div className="card space-y-2">
         <h2 className="font-bold text-slate-800 text-sm">
-          ใบสั่งซื้อล่าสุด ({orders.length})
+          {t("inv.ord.recent", { n: orders.length })}
         </h2>
         {orders.length === 0 && (
-          <p className="text-sm text-slate-400">ยังไม่มีใบสั่งซื้อ</p>
+          <p className="text-sm text-slate-400">{t("inv.ord.none")}</p>
         )}
         {orders.map((o) => {
-          const m = STATUS_META[o.status];
           return (
             <Link key={o.id} href={`/staff/inventa/orders/${o.id}`}
               className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 hover:bg-slate-50 -mx-1 px-1 rounded">
               <span className="font-bold text-slate-700 text-sm">#{o.id}</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${m.cls}`}>
-                {m.label}
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_CLS[o.status]}`}>
+                {t(`inv.ord.st.${o.status}`)}
               </span>
               <span className="text-xs text-slate-500">
-                {o.line_count} รายการ · ฿{o.total_cost.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
+                {t("inv.ord.lineCount", { n: o.line_count })} · ฿{o.total_cost.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
               </span>
               <span className="text-[11px] text-slate-400">
-                {o.created_by_name ?? "—"} · {o.created_at.slice(0, 16).replace("T", " ")}
+                {o.created_by_name ?? t("inv.dash")} · {o.created_at.slice(0, 16).replace("T", " ")}
               </span>
               {canApprove && o.status === "sent" && (
                 <span className="text-[11px] text-amber-700 font-medium ml-auto">
-                  รออนุมัติ →
+                  {t("inv.ord.awaiting")}
                 </span>
               )}
             </Link>

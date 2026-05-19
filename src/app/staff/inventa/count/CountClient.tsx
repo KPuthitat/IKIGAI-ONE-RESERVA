@@ -3,8 +3,9 @@
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { useLang } from "@/lib/LangProvider";
 import BarcodeScanner from "@/app/components/BarcodeScanner";
-import { binCode, PICK_FREQ_META, type PickFreq } from "@/lib/inventa";
+import { PICK_FREQ_META, type PickFreq } from "@/lib/inventa";
 
 export type CountItem = {
   id: number;
@@ -28,6 +29,7 @@ export default function CountClient({
   initialCounted: Record<number, number>;
 }) {
   const router = useRouter();
+  const { t } = useLang();
   const [, startTransition] = useTransition();
   const refresh = () => startTransition(() => router.refresh());
 
@@ -47,30 +49,24 @@ export default function CountClient({
     const term = q.trim().toLowerCase();
     if (!term) return items;
     return items.filter((i) => [
-      i.name, i.generic_name, i.item_code, i.barcode,
-      binCode(i.grid_row, i.grid_col, i.pick_freq)
+      i.name, i.generic_name, i.item_code, i.barcode
     ].some((v) => (v ?? "").toLowerCase().includes(term)));
   }, [items, q]);
 
   function pick(item: CountItem) {
     setSel(item);
     setMsg(null);
-    // Don't anchor on the system on-hand — it isn't deducted on use so
-    // it won't be accurate. Start blank (or the value already counted
-    // this round so it can be corrected).
     setQty(counted[item.id] !== undefined ? String(counted[item.id]) : "");
   }
 
   function resolveBarcode(code: string) {
     const c = code.trim();
     if (!c) return;
-    // Match the scanned value against the box barcode OR the item_code
-    // (the QR we print encodes item_code).
     const hit = items.find(
       (i) => (i.barcode ?? "") === c || (i.item_code ?? "") === c
     );
     if (hit) pick(hit);
-    else setMsg(`ไม่พบรหัส ${c} ในคลัง — เพิ่มรายการนี้ในเมนูคลังก่อน`);
+    else setMsg(t("inv.cnt.notFound", { code: c }));
     if (scanRef.current) scanRef.current.value = "";
   }
 
@@ -85,7 +81,7 @@ export default function CountClient({
   async function saveLine() {
     if (!sel || !session) return;
     const n = Number(qty);
-    if (!Number.isInteger(n) || n < 0) { setMsg("กรอกจำนวนเป็นเลขจำนวนเต็ม"); return; }
+    if (!Number.isInteger(n) || n < 0) { setMsg(t("inv.cnt.intError")); return; }
     setBusy(true);
     setMsg(null);
     try {
@@ -95,7 +91,7 @@ export default function CountClient({
         body: JSON.stringify({ item_id: sel.id, counted_qty: n })
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j?.ok) { setMsg(j?.error ?? "บันทึกไม่สำเร็จ"); return; }
+      if (!res.ok || !j?.ok) { setMsg(j?.error ?? t("inv.cnt.saveFail")); return; }
       setCounted((p) => ({ ...p, [sel.id]: n }));
       setSel(null);
       setQty("");
@@ -104,7 +100,7 @@ export default function CountClient({
 
   async function submit() {
     if (!session) return;
-    if (!confirm(`ส่งบันทึกการนับรอบนี้? (นับแล้ว ${done}/${total} รายการ)`)) return;
+    if (!confirm(t("inv.cnt.submitConfirm", { done, total }))) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl(`/api/inventa/counts/${session.id}/submit`), {
@@ -117,10 +113,10 @@ export default function CountClient({
   if (!session) {
     return (
       <div className="card text-center space-y-3 py-8">
-        <p className="text-slate-600">ยังไม่มีรอบนับที่เปิดอยู่</p>
+        <p className="text-slate-600">{t("inv.cnt.noSession")}</p>
         <button type="button" onClick={startSession} disabled={busy}
           className="px-6 py-2.5 rounded-lg bg-brand text-white font-bold disabled:opacity-50">
-          {busy ? "กำลังเปิด..." : "เริ่มรอบนับวันนี้"}
+          {busy ? t("inv.cnt.opening") : t("inv.cnt.start")}
         </button>
       </div>
     );
@@ -131,10 +127,10 @@ export default function CountClient({
       <div className="card space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="text-sm text-slate-600">
-            รอบนับวันที่ <span className="font-bold text-slate-800">{session.count_date}</span>
+            {t("inv.cnt.roundDate")} <span className="font-bold text-slate-800">{session.count_date}</span>
           </div>
           <div className="text-sm">
-            นับแล้ว <span className="font-bold text-brand">{done}</span> / {total}
+            {t("inv.cnt.counted")} <span className="font-bold text-brand">{done}</span> / {total}
           </div>
         </div>
         <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
@@ -144,7 +140,7 @@ export default function CountClient({
 
         <div className="flex flex-wrap gap-2">
           <input ref={scanRef} className="input flex-1 min-w-[180px]"
-            placeholder="สแกน / พิมพ์ รหัส หรือบาร์โค้ด แล้วกด Enter"
+            placeholder={t("inv.cnt.scanPh")}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -153,11 +149,11 @@ export default function CountClient({
             }} />
           <button type="button" onClick={() => setScanCam(true)}
             className="text-sm px-4 py-2 rounded-lg border border-brand text-brand font-bold hover:bg-rose-50">
-            สแกนคิวอาร์โค้ด
+            {t("inv.btn.scanQr")}
           </button>
           <button type="button" onClick={submit} disabled={busy}
             className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold disabled:opacity-50">
-            ส่งบันทึกการนับ
+            {t("inv.cnt.submit")}
           </button>
         </div>
         {msg && <div className="text-sm text-rose-600">{msg}</div>}
@@ -167,10 +163,10 @@ export default function CountClient({
         <div className="card space-y-3 border-2 border-brand">
           <div>
             <div className="flex items-center gap-2">
-              <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                sel.pick_freq ? PICK_FREQ_META[sel.pick_freq].chip : "bg-slate-100 text-slate-500"}`}>
-                {binCode(sel.grid_row, sel.grid_col, sel.pick_freq) || "—"}
-              </span>
+              {sel.pick_freq && (
+                <span title={PICK_FREQ_META[sel.pick_freq].label}
+                  className={`inline-block w-3.5 h-3.5 rounded-full ${PICK_FREQ_META[sel.pick_freq].dot}`} />
+              )}
               <span className="font-bold text-slate-800">{sel.name}</span>
             </div>
             {sel.generic_name && (
@@ -178,9 +174,11 @@ export default function CountClient({
             )}
           </div>
           <div>
-            <label className="label">จำนวนที่นับได้จริง วันนี้ ({sel.unit ?? "หน่วย"})</label>
+            <label className="label">
+              {t("inv.cnt.qtyLabel", { unit: sel.unit ?? t("inv.ord.unit") })}
+            </label>
             <input className="input text-lg font-bold" type="number" min="0"
-              autoFocus value={qty} placeholder="นับแล้วใส่ตัวเลข"
+              autoFocus value={qty} placeholder={t("inv.cnt.qtyPh")}
               onChange={(e) => setQty(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") saveLine(); }} />
           </div>
@@ -188,11 +186,11 @@ export default function CountClient({
             <button type="button" onClick={() => { setSel(null); setQty(""); }}
               disabled={busy}
               className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 text-sm">
-              ยกเลิก
+              {t("inv.btn.cancel")}
             </button>
             <button type="button" onClick={saveLine} disabled={busy}
               className="flex-1 py-2.5 rounded-lg bg-brand text-white text-sm font-bold disabled:opacity-50">
-              {busy ? "กำลังบันทึก..." : "บันทึกจำนวน"}
+              {busy ? t("inv.btn.saving") : t("inv.cnt.saveQty")}
             </button>
           </div>
         </div>
@@ -200,40 +198,41 @@ export default function CountClient({
 
       <div className="card space-y-2">
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)}
-          placeholder="ค้นหารายการเพื่อนับด้วยมือ (ไม่ต้องสแกน)" />
+          placeholder={t("inv.cnt.searchPh")} />
         <div className="divide-y divide-slate-100 max-h-[50vh] overflow-y-auto">
           {filtered.map((i) => {
             const c = counted[i.id];
             const isDone = c !== undefined;
+            const fm = i.pick_freq ? PICK_FREQ_META[i.pick_freq] : null;
             return (
               <button key={i.id} type="button" onClick={() => pick(i)}
                 className="w-full text-left py-2 flex items-center justify-between gap-2 hover:bg-slate-50">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                      i.pick_freq ? PICK_FREQ_META[i.pick_freq].chip : "bg-slate-100 text-slate-500"}`}>
-                      {binCode(i.grid_row, i.grid_col, i.pick_freq) || "—"}
-                    </span>
+                    {fm && (
+                      <span title={fm.label}
+                        className={`inline-block w-3 h-3 rounded-full ${fm.dot}`} />
+                    )}
                     <span className="font-medium text-slate-800 truncate">{i.name}</span>
                   </div>
                 </div>
                 <div className="flex-shrink-0 text-sm">
                   {isDone
-                    ? <span className="text-emerald-600 font-bold">นับแล้ว · {c}</span>
-                    : <span className="text-slate-400">ยังไม่นับ</span>}
+                    ? <span className="text-emerald-600 font-bold">{t("inv.cnt.countedTag", { n: c })}</span>
+                    : <span className="text-slate-400">{t("inv.cnt.notCounted")}</span>}
                 </div>
               </button>
             );
           })}
           {filtered.length === 0 && (
-            <div className="py-6 text-center text-slate-400 text-sm">ไม่พบรายการ</div>
+            <div className="py-6 text-center text-slate-400 text-sm">{t("inv.cnt.noItems")}</div>
           )}
         </div>
       </div>
 
       {scanCam && (
         <BarcodeScanner
-          title="สแกนคิวอาร์โค้ดเพื่อนับ"
+          title={t("inv.cnt.scanTitle")}
           onResult={(code) => resolveBarcode(code)}
           onClose={() => setScanCam(false)}
         />

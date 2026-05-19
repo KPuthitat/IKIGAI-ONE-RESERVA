@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import PrintActions from "./PrintActions";
 
 export const dynamic = "force-dynamic";
@@ -31,17 +33,14 @@ type Line = {
   supplier_name: string | null;
 };
 
-const STATUS_LABEL: Record<OrderHead["status"], string> = {
-  draft: "ร่าง", sent: "รออนุมัติ", approved: "อนุมัติแล้ว",
-  received: "รับของแล้ว", cancelled: "ยกเลิก"
-};
-
 export default function InventaOrderDetailPage({
   params
 }: { params: { id: string } }) {
   const user = requireUser();
+  const lang = getLang();
   const db = getDb();
   const id = Number(params.id);
+  const stLabel = (s: OrderHead["status"]) => t(lang, `inv.ord.st.${s}`);
 
   const order = Number.isInteger(id)
     ? (db.prepare(`
@@ -57,7 +56,7 @@ export default function InventaOrderDetailPage({
   if (!order) {
     return (
       <div className="card text-sm text-slate-600">
-        ไม่พบใบสั่งซื้อ — <Link href="/staff/inventa/orders" className="text-brand underline">กลับ</Link>
+        {t(lang, "inv.po.notFound")} — <Link href="/staff/inventa/orders" className="text-brand underline">{t(lang, "inv.po.back")}</Link>
       </div>
     );
   }
@@ -67,8 +66,8 @@ export default function InventaOrderDetailPage({
   if (!isSuper && order.branch_id !== (user.activeBranchId ?? null)) {
     return (
       <div className="card text-sm text-rose-600">
-        ใบสั่งซื้อนี้ไม่ได้อยู่ในสาขาที่คุณเปิดอยู่ —{" "}
-        <Link href="/staff/inventa/orders" className="text-brand underline">กลับ</Link>
+        {t(lang, "inv.po.branchMismatch")} —{" "}
+        <Link href="/staff/inventa/orders" className="text-brand underline">{t(lang, "inv.po.back")}</Link>
       </div>
     );
   }
@@ -102,26 +101,26 @@ export default function InventaOrderDetailPage({
   // Group lines by supplier — each supplier prints as its own PO sheet.
   const bySupplier = new Map<string, Line[]>();
   for (const l of lines) {
-    const k = l.supplier_name ?? "— ไม่ระบุผู้จำหน่าย —";
+    const k = l.supplier_name ?? t(lang, "inv.ord.noSupplier");
     const arr = bySupplier.get(k) ?? [];
     arr.push(l);
     bySupplier.set(k, arr);
   }
   const supplierGroups = [...bySupplier.entries()];
   const grandTotal = lines.reduce((s, l) => s + l.order_qty * l.unit_cost_at_order, 0);
-  const buyerName = company?.name_th ?? branch?.name ?? "—";
+  const buyerName = company?.name_th ?? branch?.name ?? t(lang, "inv.dash");
   const buyerAddr = branch?.reg_address || company?.address || "";
 
   return (
     <div className="space-y-4">
       <div className="no-print flex flex-wrap items-center gap-2">
         <Link href="/staff/inventa/orders" className="text-sm text-brand hover:underline">
-          ← กลับรายการ
+          {t(lang, "inv.po.backList")}
         </Link>
         <span className="text-sm text-slate-400">·</span>
-        <span className="font-bold text-slate-800">ใบสั่งซื้อ #{order.id}</span>
+        <span className="font-bold text-slate-800">{t(lang, "inv.po.title", { id: order.id })}</span>
         <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-          {STATUS_LABEL[order.status]}
+          {stLabel(order.status)}
         </span>
         <span className="flex-1" />
         <PrintActions
@@ -142,25 +141,25 @@ export default function InventaOrderDetailPage({
               className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
               <div className="flex justify-between gap-4 flex-wrap">
                 <div>
-                  <div className="text-lg font-bold text-slate-800">ใบสั่งซื้อสินค้า</div>
-                  <div className="text-xs text-slate-500">Purchase Order #{order.id}
+                  <div className="text-lg font-bold text-slate-800">{t(lang, "inv.po.docTitle")}</div>
+                  <div className="text-xs text-slate-500">{t(lang, "inv.po.docTitle")} #{order.id}
                     {supplierGroups.length > 1 ? `-${gi + 1}` : ""}</div>
                   <div className="text-xs text-slate-500 mt-1">
-                    วันที่ {order.created_at.slice(0, 10)} · สถานะ {STATUS_LABEL[order.status]}
+                    {t(lang, "inv.po.date")} {order.created_at.slice(0, 10)} · {t(lang, "inv.po.status")} {stLabel(order.status)}
                   </div>
                 </div>
                 <div className="text-right text-xs text-slate-600">
                   <div className="font-bold text-slate-800">{buyerName}</div>
                   {buyerAddr && <div className="max-w-[260px]">{buyerAddr}</div>}
-                  {company?.tax_id && <div>เลขผู้เสียภาษี {company.tax_id}
-                    {branch?.tax_branch_code ? ` (สาขา ${branch.tax_branch_code})` : ""}</div>}
+                  {company?.tax_id && <div>{t(lang, "inv.po.taxId")} {company.tax_id}
+                    {branch?.tax_branch_code ? ` (${t(lang, "inv.po.branchCode")} ${branch.tax_branch_code})` : ""}</div>}
                   {(branch?.contact_phone || company?.phone) &&
-                    <div>โทร {branch?.contact_phone || company?.phone}</div>}
+                    <div>{t(lang, "inv.po.tel")} {branch?.contact_phone || company?.phone}</div>}
                 </div>
               </div>
 
               <div className="text-sm">
-                <span className="text-slate-500">ผู้จำหน่าย: </span>
+                <span className="text-slate-500">{t(lang, "inv.po.supplierLabel")} </span>
                 <span className="font-bold text-slate-800">{supplier}</span>
               </div>
 
@@ -168,13 +167,13 @@ export default function InventaOrderDetailPage({
                 <thead>
                   <tr className="border-y border-slate-300 text-left text-xs text-slate-600">
                     <th className="py-2 pr-2 w-8">#</th>
-                    <th className="py-2 pr-2">รายการ</th>
-                    <th className="py-2 pr-2">รหัส</th>
-                    <th className="py-2 pr-2 text-right">คงเหลือ</th>
-                    <th className="py-2 pr-2 text-right">สั่ง</th>
-                    <th className="py-2 pr-2">หน่วย</th>
-                    <th className="py-2 pr-2 text-right">ทุน/หน่วย</th>
-                    <th className="py-2 pl-2 text-right">รวม</th>
+                    <th className="py-2 pr-2">{t(lang, "inv.po.colItem")}</th>
+                    <th className="py-2 pr-2">{t(lang, "inv.po.colCode")}</th>
+                    <th className="py-2 pr-2 text-right">{t(lang, "inv.po.colOnhand")}</th>
+                    <th className="py-2 pr-2 text-right">{t(lang, "inv.po.colOrder")}</th>
+                    <th className="py-2 pr-2">{t(lang, "inv.po.colUnit")}</th>
+                    <th className="py-2 pr-2 text-right">{t(lang, "inv.po.colCost")}</th>
+                    <th className="py-2 pl-2 text-right">{t(lang, "inv.po.colTotal")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -182,10 +181,10 @@ export default function InventaOrderDetailPage({
                     <tr key={l.id} className="border-b border-slate-100 align-top">
                       <td className="py-1.5 pr-2 text-slate-400">{i + 1}</td>
                       <td className="py-1.5 pr-2 font-medium text-slate-800">{l.item_name}</td>
-                      <td className="py-1.5 pr-2 text-slate-500">{l.item_code ?? "—"}</td>
-                      <td className="py-1.5 pr-2 text-right text-slate-500">{l.qty_on_hand ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-slate-500">{l.item_code ?? t(lang, "inv.dash")}</td>
+                      <td className="py-1.5 pr-2 text-right text-slate-500">{l.qty_on_hand ?? t(lang, "inv.dash")}</td>
                       <td className="py-1.5 pr-2 text-right font-bold">{l.order_qty}</td>
-                      <td className="py-1.5 pr-2 text-slate-500">{l.unit ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-slate-500">{l.unit ?? t(lang, "inv.dash")}</td>
                       <td className="py-1.5 pr-2 text-right text-slate-500">
                         ฿{l.unit_cost_at_order.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
                       </td>
@@ -197,7 +196,7 @@ export default function InventaOrderDetailPage({
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-slate-300 font-bold">
-                    <td colSpan={7} className="py-2 text-right">รวมผู้จำหน่ายนี้</td>
+                    <td colSpan={7} className="py-2 text-right">{t(lang, "inv.po.subtotal")}</td>
                     <td className="py-2 pl-2 text-right">
                       ฿{subtotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
                     </td>
@@ -207,19 +206,19 @@ export default function InventaOrderDetailPage({
 
               {order.note && (
                 <div className="text-xs text-slate-600">
-                  <span className="text-slate-400">หมายเหตุ: </span>{order.note}
+                  <span className="text-slate-400">{t(lang, "inv.po.note")} </span>{order.note}
                 </div>
               )}
 
               <div className="grid grid-cols-2 gap-8 pt-8 text-xs text-slate-600">
                 <div className="text-center">
                   <div className="border-t border-slate-400 pt-1 mt-10">
-                    ผู้ขอซื้อ — {order.created_by_name ?? "—"}
+                    {t(lang, "inv.po.requester")} — {order.created_by_name ?? t(lang, "inv.dash")}
                   </div>
                 </div>
                 <div className="text-center">
                   <div className="border-t border-slate-400 pt-1 mt-10">
-                    ผู้อนุมัติ {order.approved_by_name ? `— ${order.approved_by_name}` : ""}
+                    {t(lang, "inv.po.approver")} {order.approved_by_name ? `— ${order.approved_by_name}` : ""}
                   </div>
                 </div>
               </div>
@@ -229,7 +228,7 @@ export default function InventaOrderDetailPage({
 
         {supplierGroups.length > 1 && (
           <div className="text-right text-sm font-bold text-slate-800 no-print">
-            มูลค่ารวมทั้งใบ: ฿{grandTotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
+            {t(lang, "inv.po.grand")} ฿{grandTotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
           </div>
         )}
       </div>
