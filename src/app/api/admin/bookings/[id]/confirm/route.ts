@@ -25,8 +25,12 @@ import { notifyCustomer } from "@/lib/line";
 // precondition strictly — admin may want to use this to re-send the card
 // after editing the table.
 
+// table_id is optional now that the floor-plan / table-assignment step
+// has been shelved. When omitted, the booking is confirmed (and the
+// customer card sent) WITHOUT touching table_id — so any table that was
+// set stays, and table-less bookings just confirm straight through.
 const Body = z.object({
-  table_id: z.number().int().positive()
+  table_id: z.number().int().positive().nullable().optional()
 });
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -50,25 +54,33 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  // Race-condition guard: someone else may have grabbed this table for an
-  // overlapping slot between the admin opening the page and clicking confirm.
-  const free = isTableFree({
-    branchId: booking.branch_id,
-    tableId: parsed.data.table_id,
-    date: booking.booking_date,
-    time: booking.booking_time,
-    durationMinutes: booking.duration_minutes,
-    excludeBookingId: booking.id
-  });
-  if (!free) {
-    return NextResponse.json({ error: "table_unavailable" }, { status: 409 });
-  }
-
   const now = new Date().toISOString();
-  db.prepare(`
-    UPDATE bookings SET table_id = ?, status = 'confirmed', updated_at = ?
-    WHERE id = ?
-  `).run(parsed.data.table_id, now, id);
+  if (parsed.data.table_id != null) {
+    // A table was explicitly chosen — keep the legacy behaviour:
+    // double-booking race guard, then set table + confirm.
+    const free = isTableFree({
+      branchId: booking.branch_id,
+      tableId: parsed.data.table_id,
+      date: booking.booking_date,
+      time: booking.booking_time,
+      durationMinutes: booking.duration_minutes,
+      excludeBookingId: booking.id
+    });
+    if (!free) {
+      return NextResponse.json({ error: "table_unavailable" }, { status: 409 });
+    }
+    db.prepare(`
+      UPDATE bookings SET table_id = ?, status = 'confirmed', updated_at = ?
+      WHERE id = ?
+    `).run(parsed.data.table_id, now, id);
+  } else {
+    // No table (floor-plan step shelved) — confirm straight through and
+    // leave table_id untouched so any previously-set table is preserved.
+    db.prepare(`
+      UPDATE bookings SET status = 'confirmed', updated_at = ?
+      WHERE id = ?
+    `).run(now, id);
+  }
 
   // Re-fetch with the updated table_id so notifyCustomer sees the new
   // table on the booking row (the Flex card includes table label).

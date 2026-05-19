@@ -10,26 +10,20 @@ import CancelReasonModal from "../bookings/CancelReasonModal";
 
 type Row = Booking & {
   table_label: string | null;
-  available_table_ids: number[];
 };
 
 const AUTO_REFRESH_MS = 30_000;
 
 export default function PendingClient({
-  pendingBookings,
-  tables
+  pendingBookings
 }: {
   pendingBookings: Row[];
-  tables: Array<{ id: number; label: string; capacity: number }>;
 }) {
   const router = useRouter();
   const { t, lang } = useLang();
   const [busyId, setBusyId] = useState<number | null>(null);
   const { alert, ConfirmDialog } = useConfirm();
 
-  // Per-row table picker state. Allow each pending booking to remember its
-  // own pick while admin is reviewing several at once.
-  const [tablePick, setTablePick] = useState<Record<number, number | "">>({});
   const [lastRefresh, setLastRefresh] = useState<Date>(() => new Date());
 
   // Cancel-with-reason modal target.
@@ -47,21 +41,11 @@ export default function PendingClient({
   }, [router, cancelTarget]);
 
   async function confirmAndNotify(id: number) {
-    const tableId = tablePick[id];
-    if (!tableId) {
-      alert({
-        title: t("common.error"),
-        body: <p>{t("admin.bookings.pending.noTablePicked")}</p>,
-        variant: "danger",
-        okLabel: t("common.confirm")
-      });
-      return;
-    }
     setBusyId(id);
     const res = await fetch(apiUrl(`/api/admin/bookings/${id}/confirm`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table_id: tableId })
+      body: JSON.stringify({})
     });
     setBusyId(null);
     if (!res.ok) {
@@ -176,35 +160,9 @@ export default function PendingClient({
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 mt-3 border-t border-slate-100 pt-3">
-              <label className="text-sm text-slate-600">
-                {t("admin.bookings.pending.assignTable")}:
-              </label>
-              <select
-                className="text-sm border rounded px-2 py-1.5"
-                value={tablePick[b.id] ?? ""}
-                onChange={(e) =>
-                  setTablePick((prev) => ({
-                    ...prev,
-                    [b.id]: e.target.value ? Number(e.target.value) : ""
-                  }))
-                }
-                disabled={busyId === b.id}
-              >
-                <option value="">{t("admin.bookings.tableNone")}</option>
-                {tables
-                  .filter((tab) =>
-                    tab.capacity >= b.party_size &&
-                    b.available_table_ids.includes(tab.id)
-                  )
-                  .map((tab) => (
-                    <option key={tab.id} value={tab.id}>
-                      {tab.label} ({tab.capacity})
-                    </option>
-                  ))}
-              </select>
               <button
                 onClick={() => confirmAndNotify(b.id)}
-                disabled={busyId === b.id || !tablePick[b.id]}
+                disabled={busyId === b.id}
                 className="btn-primary text-sm ml-auto"
               >
                 {t("admin.bookings.pending.confirmAndNotify")}

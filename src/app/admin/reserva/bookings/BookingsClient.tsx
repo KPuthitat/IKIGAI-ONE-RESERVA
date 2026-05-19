@@ -143,21 +143,14 @@ export default function BookingsClient({
   }
 
   async function confirmAndNotify(id: number) {
+    // Floor-plan step shelved — table is optional. Send the chosen table
+    // if one happens to be picked, otherwise confirm straight through.
     const tableId = pendingTablePick[id];
-    if (!tableId) {
-      alert({
-        title: t("common.error"),
-        body: <p>{t("admin.bookings.pending.noTablePicked")}</p>,
-        variant: "danger",
-        okLabel: t("common.confirm")
-      });
-      return;
-    }
     setBusyId(id);
     const res = await fetch(apiUrl(`/api/admin/bookings/${id}/confirm`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table_id: tableId })
+      body: JSON.stringify(tableId ? { table_id: tableId } : {})
     });
     setBusyId(null);
     if (!res.ok) {
@@ -410,7 +403,7 @@ function PendingBookingCard({
           </select>
           <button
             onClick={onConfirm}
-            disabled={busyId === b.id || !pendingTablePick[b.id]}
+            disabled={busyId === b.id}
             className="btn-primary text-sm ml-auto"
           >
             {t("admin.bookings.pending.confirmAndNotify")}
