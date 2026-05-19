@@ -17,7 +17,6 @@ export type ReservaChannelInitial = {
   // Branch-level LINE notification settings (consolidated here so admin
   // doesn't need to hop between /settings and /messaging).
   staff_group_id: string | null;
-  staff_line_user_ids: string | null;     // JSON array
   extra_button_url: string | null;        // Menu link on Flex card
   contact_phone: string | null;           // tel: button on Flex card
 };
@@ -72,9 +71,6 @@ function ChannelCard({
   // plain strings so we can edit and re-send. Null becomes "" for input
   // compatibility; saved as null when blank.
   const [staffGroupId, setStaffGroupId] = useState(channel.staff_group_id ?? "");
-  const [staffLineUserIds, setStaffLineUserIds] = useState(
-    channel.staff_line_user_ids ?? "[]"
-  );
   const [extraButtonUrl, setExtraButtonUrl] = useState(channel.extra_button_url ?? "");
   const [contactPhone, setContactPhone] = useState(channel.contact_phone ?? "");
 
@@ -105,17 +101,9 @@ function ChannelCard({
       if (liffChanged) channelBody.liff_id = liffTrimmed;
 
       // ── 2. Branch-level notification fields ────────────────────────
-      // Validate JSON shape on the user-IDs textarea before sending.
-      try { JSON.parse(staffLineUserIds); }
-      catch {
-        setMsg({ kind: "err", text: t(lang, "admin.settings.invalidJson") });
-        setBusy(false);
-        return;
-      }
       const branchBody: Record<string, string | null> = {};
       const branchPairs: Array<[keyof typeof channel, string | null, string]> = [
         ["staff_group_id", staffGroupId.trim() || null, channel.staff_group_id ?? ""],
-        ["staff_line_user_ids", staffLineUserIds.trim() || null, channel.staff_line_user_ids ?? ""],
         ["extra_button_url", extraButtonUrl.trim() || null, channel.extra_button_url ?? ""],
         ["contact_phone", contactPhone.trim() || null, channel.contact_phone ?? ""]
       ];
@@ -319,18 +307,6 @@ function ChannelCard({
           placeholder="Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
         <p className="text-xs text-slate-500 mt-1 whitespace-pre-line">
           {t(lang, "admin.settings.staffGroupIdHint")}
-        </p>
-      </div>
-
-      {/* Staff LINE user IDs (legacy fallback) */}
-      <div>
-        <label className="label">{t(lang, "admin.settings.field.staffLineIds")}</label>
-        <textarea className="input text-xs" rows={3}
-          value={staffLineUserIds}
-          onChange={(e) => setStaffLineUserIds(e.target.value)}
-          placeholder='["U1234abcd...","U5678efgh..."]' />
-        <p className="text-xs text-slate-500 mt-1">
-          {t(lang, "admin.settings.staffLineIdsHint")}
         </p>
       </div>
 

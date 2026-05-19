@@ -36,7 +36,6 @@ export default function ReservaMessagingPage() {
       // Branch-level notification settings (null when no branch is linked,
       // but every reserva channel has a branch).
       staff_group_id: branch?.staff_group_id ?? null,
-      staff_line_user_ids: branch?.staff_line_user_ids ?? null,
       extra_button_url: branch?.extra_button_url ?? null,
       contact_phone: branch?.contact_phone ?? null
     };
