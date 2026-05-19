@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
@@ -176,13 +177,22 @@ export default function EmployeesClient({
                       : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="py-2 pr-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setEditTarget(u)}
-                      className="text-xs text-brand hover:underline"
-                    >
-                      {t("admin.persona.employees.edit")}
-                    </button>
+                    <div className="flex flex-col items-end gap-1">
+                      <Link
+                        href={`/admin/persona/employees/${u.id}`}
+                        className="text-xs text-brand font-medium hover:underline"
+                        title={t("admin.persona.employees.fullProfileHint")}
+                      >
+                        {t("admin.persona.employees.fullProfile")}
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => setEditTarget(u)}
+                        className="text-xs text-slate-500 hover:underline"
+                      >
+                        {t("admin.persona.employees.edit")}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
