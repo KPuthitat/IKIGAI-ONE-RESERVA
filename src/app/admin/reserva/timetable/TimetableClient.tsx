@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Branch, Booking, TableRow, Zone } from "@/lib/db";
+import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import BookingForm from "@/app/reserva/[branch]/BookingForm";
 import BookingActionsModal from "./BookingActionsModal";
@@ -63,6 +64,40 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
   // Click-to-edit on a booking overlay opens this modal (status actions,
   // table reassignment, cancel-with-reason). null = closed.
   const [editing, setEditing] = useState<Booking | null>(null);
+
+  // Drag-and-drop: while a card is mid-drag, draggingId holds its id so
+  // empty cells can render a "drop target" affordance. moveMsg is a
+  // transient error toast (4s auto-clear) shown after a failed drop.
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+  const [moveMsg, setMoveMsg] = useState<string | null>(null);
+
+  async function moveBooking(bookingId: number, tableId: number, slotMinutes: number): Promise<void> {
+    const h = Math.floor(slotMinutes / 60);
+    const m = slotMinutes % 60;
+    const time = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    setMoveMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/bookings/${bookingId}/move`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table_id: tableId, booking_time: time })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        const key =
+          j.error === "slot_conflict" ? "admin.reserva.timetable.moveErr.conflict" :
+          j.error === "table_unavailable" ? "admin.reserva.timetable.moveErr.tableGone" :
+          "admin.reserva.timetable.moveErr.generic";
+        setMoveMsg(t(key));
+        window.setTimeout(() => setMoveMsg(null), 4000);
+        return;
+      }
+      router.refresh();
+    } catch {
+      setMoveMsg(t("admin.reserva.timetable.moveErr.generic"));
+      window.setTimeout(() => setMoveMsg(null), 4000);
+    }
+  }
 
   // Zoom state — start with whatever the user picked last time, default
   // to 'normal'. Persisted in localStorage on each change.
@@ -202,23 +237,34 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
     <div className="space-y-2">
       {/* Zoom toggle — lets staff trade compact (more hours visible) for
           wide (more text per cell). Persists per-user via localStorage. */}
-      <div className="flex items-center gap-1 text-xs text-slate-500">
-        <span className="mr-1">{t("admin.reserva.timetable.zoom")}:</span>
-        {(["compact", "normal", "wide"] as const).map((z) => (
-          <button
-            key={z}
-            type="button"
-            onClick={() => changeZoom(z)}
-            className={`px-2.5 py-1 rounded-md transition ${
-              zoom === z
-                ? "bg-brand text-white"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-            }`}
-          >
-            {t(`admin.reserva.timetable.zoom.${z}`)}
-          </button>
-        ))}
+      <div className="flex items-center justify-between gap-3 flex-wrap text-xs text-slate-500">
+        <div className="flex items-center gap-1">
+          <span className="mr-1">{t("admin.reserva.timetable.zoom")}:</span>
+          {(["compact", "normal", "wide"] as const).map((z) => (
+            <button
+              key={z}
+              type="button"
+              onClick={() => changeZoom(z)}
+              className={`px-2.5 py-1 rounded-md transition ${
+                zoom === z
+                  ? "bg-brand text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {t(`admin.reserva.timetable.zoom.${z}`)}
+            </button>
+          ))}
+        </div>
+        <div className="italic text-slate-400">
+          {t("admin.reserva.timetable.dragHint")}
+        </div>
       </div>
+
+      {moveMsg && (
+        <div className="rounded-lg border border-rose-300 bg-rose-50 text-rose-700 text-sm px-3 py-2">
+          ✗ {moveMsg}
+        </div>
+      )}
 
       <div className="card !p-0 overflow-x-auto">
       {unassigned.length > 0 && (
@@ -280,6 +326,10 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
                 bookings={bookingsByTable.get(tbl.id) ?? []}
                 rowPx={ROW_PX}
                 breakSlots={breakSlots}
+                draggingId={draggingId}
+                onDragStart={setDraggingId}
+                onDragEnd={() => setDraggingId(null)}
+                onDropBooking={moveBooking}
                 onEmptyCellClick={onEmptyCellClick}
                 onEdit={(b) => setEditing(b)}
                 bookingPlacement={bookingPlacement}
@@ -372,6 +422,7 @@ function timeToMin(hhmm: string): number {
 
 function TableRowComponent({
   table, slots, gridCols, bookings, rowPx, breakSlots,
+  draggingId, onDragStart, onDragEnd, onDropBooking,
   onEmptyCellClick, onEdit, bookingPlacement, bookingTone
 }: {
   table: TableRow;
@@ -380,11 +431,18 @@ function TableRowComponent({
   bookings: Booking[];
   rowPx: number;
   breakSlots: Set<number>;
+  draggingId: number | null;
+  onDragStart: (id: number) => void;
+  onDragEnd: () => void;
+  onDropBooking: (bookingId: number, tableId: number, slotMinutes: number) => void;
   onEmptyCellClick: (tableId: number, slotMinutes: number) => void;
   onEdit: (b: Booking) => void;
   bookingPlacement: (b: Booking) => { left: number; width: number } | null;
   bookingTone: (b: Booking) => string;
 }) {
+  // When a card is mid-drag we add a faint dashed outline to every
+  // non-break empty cell to telegraph "you can drop here".
+  const isDragging = draggingId != null;
   return (
     <div className="relative grid border-b border-slate-100"
       style={{ gridTemplateColumns: gridCols }}>
@@ -399,7 +457,8 @@ function TableRowComponent({
 
       {/* Empty time-slot cells. Break slots render as inert grey cells —
           no walk-in can be seated while the kitchen/restaurant is closed
-          for the break. */}
+          for the break. Non-break cells double as drop targets for
+          drag-and-drop booking moves. */}
       {slots.map((s) =>
         breakSlots.has(s.index) ? (
           <div
@@ -413,7 +472,24 @@ function TableRowComponent({
             key={s.index}
             type="button"
             onClick={() => onEmptyCellClick(table.id, s.minutes)}
-            className="border-r border-slate-100 hover:bg-emerald-50 transition relative"
+            onDragOver={(e) => {
+              if (draggingId == null) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+            }}
+            onDrop={(e) => {
+              if (draggingId == null) return;
+              e.preventDefault();
+              const id = Number(e.dataTransfer.getData("text/plain"));
+              if (Number.isInteger(id) && id > 0) {
+                onDropBooking(id, table.id, s.minutes);
+              }
+            }}
+            className={`border-r border-slate-100 transition relative ${
+              isDragging
+                ? "hover:bg-emerald-100 hover:ring-2 hover:ring-emerald-400 hover:ring-inset"
+                : "hover:bg-emerald-50"
+            }`}
             style={{ height: rowPx }}
             title={`+ ${s.label} · ${table.label}`}
           >
@@ -424,16 +500,28 @@ function TableRowComponent({
 
       {/* Booking overlays — absolute-positioned over the empty cells.
           Click opens BookingActionsModal so admin can change status,
-          reassign table, or cancel without leaving the timetable. */}
+          reassign table, or cancel. Drag the card to another empty cell
+          (same row or another table) to atomically change table+time
+          via /api/admin/bookings/[id]/move. */}
       {bookings.map((b) => {
         const place = bookingPlacement(b);
         if (!place) return null;
+        const isThisDragging = draggingId === b.id;
         return (
           <button
             type="button"
             key={b.id}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData("text/plain", String(b.id));
+              e.dataTransfer.effectAllowed = "move";
+              onDragStart(b.id);
+            }}
+            onDragEnd={() => onDragEnd()}
             onClick={() => onEdit(b)}
-            className={`absolute rounded border ${bookingTone(b)} px-1.5 py-0.5 text-xs leading-tight overflow-hidden text-left hover:brightness-95 active:scale-[0.98] transition z-[5]`}
+            className={`absolute rounded-lg border ${bookingTone(b)} px-1.5 py-0.5 text-xs leading-tight overflow-hidden text-left shadow-sm hover:brightness-95 active:scale-[0.98] transition z-[5] cursor-grab active:cursor-grabbing ${
+              isThisDragging ? "opacity-50 ring-2 ring-brand" : ""
+            }`}
             style={{
               left: place.left + 2,
               width: place.width - 4,
