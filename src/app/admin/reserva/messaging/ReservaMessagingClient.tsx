@@ -373,26 +373,36 @@ function ChannelCard({
       <p className="text-xs text-slate-500 -mt-1">
         {t(lang, "admin.reserva.messaging.notify.audienceHint")}
       </p>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 mt-1">
-        <ToggleColumn
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1">
+        <AudienceCard
+          accent="rose"
           heading={t(lang, "admin.reserva.messaging.notify.customer")}
+          subtitle={t(lang, "admin.reserva.messaging.notify.customerSubtitle")}
           rows={[
             { label: t(lang, "admin.reserva.messaging.notify.pending"),
+              desc:  t(lang, "admin.reserva.messaging.notify.descCustPending"),
               value: notifyCustPending,  set: setNotifyCustPending },
             { label: t(lang, "admin.reserva.messaging.notify.created"),
+              desc:  t(lang, "admin.reserva.messaging.notify.descCustCreated"),
               value: notifyCustCreated,  set: setNotifyCustCreated },
             { label: t(lang, "admin.reserva.messaging.notify.reminder"),
+              desc:  t(lang, "admin.reserva.messaging.notify.descCustReminder"),
               value: notifyCustReminder, set: setNotifyCustReminder }
           ]}
         />
-        <ToggleColumn
+        <AudienceCard
+          accent="sky"
           heading={t(lang, "admin.reserva.messaging.notify.staff")}
+          subtitle={t(lang, "admin.reserva.messaging.notify.staffSubtitle")}
           rows={[
             { label: t(lang, "admin.reserva.messaging.notify.pending"),
+              desc:  t(lang, "admin.reserva.messaging.notify.descStaffPending"),
               value: notifyStaffPending,  set: setNotifyStaffPending },
             { label: t(lang, "admin.reserva.messaging.notify.created"),
+              desc:  t(lang, "admin.reserva.messaging.notify.descStaffCreated"),
               value: notifyStaffCreated,  set: setNotifyStaffCreated },
             { label: t(lang, "admin.reserva.messaging.notify.reminder"),
+              desc:  t(lang, "admin.reserva.messaging.notify.descStaffReminder"),
               value: notifyStaffReminder, set: setNotifyStaffReminder }
           ]}
         />
@@ -423,24 +433,72 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ToggleColumn({
-  heading, rows
+// Two-column card showing one audience's three event toggles. Per-row
+// label + small description + iOS-style switch on the right. Active
+// rows use a brand-tinted background so the eye can scan which kinds
+// are on at a glance.
+function AudienceCard({
+  heading, subtitle, accent, rows
 }: {
   heading: string;
-  rows: Array<{ label: string; value: boolean; set: (v: boolean) => void }>;
+  subtitle: string;
+  accent: "rose" | "sky";
+  rows: Array<{ label: string; desc: string; value: boolean; set: (v: boolean) => void }>;
 }) {
+  const dotCls = accent === "rose" ? "bg-rose-500" : "bg-sky-500";
+  const onBg = accent === "rose" ? "bg-rose-500" : "bg-sky-500";
+  const activeRowCls = accent === "rose" ? "bg-rose-50/40" : "bg-sky-50/40";
   return (
-    <div>
-      <div className="text-xs font-bold text-slate-600 mb-1.5">{heading}</div>
-      <div className="space-y-1.5">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex items-start gap-2 mb-3">
+        <span className={`w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0 ${dotCls}`} />
+        <div className="min-w-0">
+          <div className="font-bold text-slate-800">{heading}</div>
+          <div className="text-xs text-slate-500 mt-0.5 leading-snug">{subtitle}</div>
+        </div>
+      </div>
+      <div className="divide-y divide-slate-100 -mx-2">
         {rows.map((r) => (
-          <label key={r.label} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-            <input type="checkbox" checked={r.value}
-              onChange={(e) => r.set(e.target.checked)} />
-            <span>{r.label}</span>
-          </label>
+          <button
+            key={r.label}
+            type="button"
+            onClick={() => r.set(!r.value)}
+            className={`w-full flex items-start justify-between gap-3 px-2 py-2.5 rounded-lg text-left transition ${
+              r.value ? activeRowCls : "hover:bg-slate-50/60"
+            }`}
+          >
+            <div className="min-w-0 flex-1">
+              <div className={`text-sm font-medium leading-tight ${r.value ? "text-slate-800" : "text-slate-500"}`}>
+                {r.label}
+              </div>
+              <div className={`text-xs leading-snug mt-0.5 ${r.value ? "text-slate-500" : "text-slate-400"}`}>
+                {r.desc}
+              </div>
+            </div>
+            <Switch on={r.value} onBg={onBg} />
+          </button>
         ))}
       </div>
     </div>
+  );
+}
+
+// Tailwind-only iOS-style toggle (no extra deps). Parent <button>
+// handles the click + a11y; this is purely the visual indicator.
+function Switch({ on, onBg }: { on: boolean; onBg: string }) {
+  return (
+    <span
+      role="switch"
+      aria-checked={on}
+      className={`relative inline-flex flex-shrink-0 h-6 w-11 mt-0.5 items-center rounded-full transition-colors ${
+        on ? onBg : "bg-slate-300"
+      }`}
+    >
+      <span
+        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+          on ? "translate-x-[22px]" : "translate-x-0.5"
+        }`}
+      />
+    </span>
   );
 }
