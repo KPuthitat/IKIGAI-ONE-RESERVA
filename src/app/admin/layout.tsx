@@ -218,10 +218,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // tap away inside the slide-in sidebar instead.
   const mobileSidebarFooter = (
     <div className="space-y-3">
-      {/* STAFF / ADMIN switch — only for branch admins (employee +
-          admin rights). super_admin is the settings-only top account
-          and never switches to staff, so it gets no toggle. */}
-      {user.role === "admin" && user.adminBranchIds.length > 0 && (
+      {/* STAFF / ADMIN switch — shown to anyone with admin powers:
+          super_admin (so the owner can pop into staff mode for
+          testing) and branch-admins (employee first, admin rights
+          second). Plain staff users get no toggle. */}
+      {(user.role === "super_admin" ||
+        (user.role === "admin" && user.adminBranchIds.length > 0)) && (
         <AdminModeToggle />
       )}
       <div className="md:hidden space-y-3">
