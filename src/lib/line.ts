@@ -910,6 +910,13 @@ export async function notifyCustomerPending(
   branch: Branch, booking: Booking
 ): Promise<void> {
   const db = getDb();
+  // Per-branch audience toggle — admin can mute this kind from settings.
+  if (!branch.notify_customer_pending) {
+    db.prepare(
+      "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
+    ).run(booking.id, "pending_review", "customer", "skipped", "pref_off");
+    return;
+  }
   const token = resolveBranchToken(branch);
   if (!token || !booking.line_user_id) {
     db.prepare(
@@ -946,6 +953,17 @@ export async function notifyCustomer(
   branch: Branch, booking: Booking, type: "created" | "reminder"
 ): Promise<void> {
   const db = getDb();
+  // Per-branch audience toggle — admin can mute reminder / created
+  // independently from the messaging settings card.
+  const prefOn = type === "reminder"
+    ? !!branch.notify_customer_reminder
+    : !!branch.notify_customer_created;
+  if (!prefOn) {
+    db.prepare(
+      "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
+    ).run(booking.id, type, "customer", "skipped", "pref_off");
+    return;
+  }
   const token = resolveBranchToken(branch);
   if (!token || !booking.line_user_id) {
     db.prepare(
@@ -989,6 +1007,20 @@ export async function notifyStaff(
   type: "created" | "reminder" | "pending_review"
 ): Promise<void> {
   const db = getDb();
+  // Per-branch audience toggle — admin can mute any of the three staff
+  // kinds independently. staff_reminder defaults OFF (set in schema) so
+  // existing branches stop getting time-to-arrive group spam without
+  // any extra opt-in.
+  const prefOn =
+    type === "reminder" ? !!branch.notify_staff_reminder :
+    type === "pending_review" ? !!branch.notify_staff_pending :
+    !!branch.notify_staff_created;
+  if (!prefOn) {
+    db.prepare(
+      "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
+    ).run(booking.id, type, "staff", "skipped", "pref_off");
+    return;
+  }
   const token = resolveBranchToken(branch);
   if (!token) return;
 

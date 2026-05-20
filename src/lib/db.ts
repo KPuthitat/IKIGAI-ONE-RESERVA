@@ -883,6 +883,30 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("staff_group_id")) {
     db.exec("ALTER TABLE branches ADD COLUMN staff_group_id TEXT");
   }
+  // Per-branch notification audience toggles — admin can mute any
+  // (event × audience) combo from the messaging settings card. Defaults
+  // mirror the prior hardcoded behaviour, EXCEPT staff_reminder which
+  // defaults OFF: the "ใกล้ถึงเวลาจอง" reminder in the staff group is
+  // pure noise (customers already get reminded directly), and it was
+  // the first toggle admin asked for.
+  if (!bnames2.has("notify_customer_pending")) {
+    db.exec("ALTER TABLE branches ADD COLUMN notify_customer_pending INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!bnames2.has("notify_customer_created")) {
+    db.exec("ALTER TABLE branches ADD COLUMN notify_customer_created INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!bnames2.has("notify_customer_reminder")) {
+    db.exec("ALTER TABLE branches ADD COLUMN notify_customer_reminder INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!bnames2.has("notify_staff_pending")) {
+    db.exec("ALTER TABLE branches ADD COLUMN notify_staff_pending INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!bnames2.has("notify_staff_created")) {
+    db.exec("ALTER TABLE branches ADD COLUMN notify_staff_created INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!bnames2.has("notify_staff_reminder")) {
+    db.exec("ALTER TABLE branches ADD COLUMN notify_staff_reminder INTEGER NOT NULL DEFAULT 0");
+  }
   // PERSONA readiness round times — per-branch HH:MM. Used in the
   // readiness LINE Flex card title and (eventually) for scheduling
   // reminders. Default 11:30 / 16:00 mirrors the original hardcoded
@@ -2279,6 +2303,15 @@ export type Branch = {
   extra_button_url: string | null;     // Customer Flex card secondary CTA URL
   contact_phone: string | null;        // Fallback phone shown in pending-confirmation LINE message
   staff_group_id: string | null;       // LINE group ID for staff notifications (preferred over staff_line_user_ids when set)
+  // Per-event notification audience toggles (1 = send, 0 = mute).
+  // staff_reminder defaults to 0 — the time-to-arrive heads-up in the
+  // staff group was too noisy and was the first toggle admin asked for.
+  notify_customer_pending: number;
+  notify_customer_created: number;
+  notify_customer_reminder: number;
+  notify_staff_pending: number;
+  notify_staff_created: number;
+  notify_staff_reminder: number;
   readiness_morning_time: string;      // HH:MM — used in รอบเช้า card title (e.g. "11:30")
   readiness_afternoon_time: string;    // HH:MM — used in รอบบ่าย card title (e.g. "16:00")
   brand_color: string | null;          // Hex e.g. '#e94560'. NULL = default IKIGAI ink colour.
