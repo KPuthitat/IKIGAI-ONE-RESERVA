@@ -252,21 +252,34 @@ export default function BookingForm({
     };
   }, [form.booking_date, timeBounds]);
 
-  // snap เวลาให้อยู่ในช่วงที่ valid (ปัด 5 นาที, ไม่ก่อน min, ไม่หลัง max, ข้าม lunch break)
-  function snapTime(raw: string): string {
-    const m = hhmmToMin(raw);
-    if (m == null) return minTimeStr;
-    let total = Math.round(m / 5) * 5;
+  // Discrete 15-minute slots between open and (kitchen) close. Lunch
+  // break slots are filtered out entirely — customer never sees them
+  // in the dropdown, so they can't pick a time the restaurant won't
+  // accept.
+  const timeOptions = useMemo(() => {
     const minM = hhmmToMin(minTimeStr) ?? timeBounds.openMin;
     const maxM = hhmmToMin(maxTimeStr) ?? timeBounds.kitchenCloseMin;
-    if (total < minM) total = minM;
-    if (total > maxM) total = maxM;
-    if (lunchBreak && total >= lunchBreak.start && total < lunchBreak.end) {
-      // ถ้าตกในช่วงพักกลางวัน → ดันไปที่จุดสิ้นสุด lunch break
-      total = lunchBreak.end;
-      if (total > maxM) total = maxM;
+    const start = Math.ceil(minM / 15) * 15;
+    const end = Math.floor(maxM / 15) * 15;
+    const opts: string[] = [];
+    for (let m = start; m <= end; m += 15) {
+      if (lunchBreak && m >= lunchBreak.start && m < lunchBreak.end) continue;
+      opts.push(minToHHMM(m));
     }
-    return minToHHMM(total);
+    return opts;
+  }, [minTimeStr, maxTimeStr, lunchBreak, timeBounds.openMin, timeBounds.kitchenCloseMin]);
+
+  // Snap to the closest available 15-min slot (preferring the same or
+  // later time). Returns "" only when there are no valid slots at all
+  // (e.g. it's already past kitchen close for today).
+  function snapTime(raw: string): string {
+    if (timeOptions.length === 0) return "";
+    const m = hhmmToMin(raw);
+    if (m == null) return timeOptions[0];
+    // First try same-or-later; fall back to closest overall.
+    const later = timeOptions.find((opt) => (hhmmToMin(opt) ?? 0) >= m);
+    if (later) return later;
+    return timeOptions[timeOptions.length - 1];
   }
 
   // เปลี่ยนวันที่/branch → snap เวลาที่เคยเลือกให้ valid อีกครั้ง
@@ -671,18 +684,24 @@ export default function BookingForm({
           </div>
           <div>
             <label className="label">{t("booking.field.time")} *</label>
-            <input
-              type="time" step={300}
+            <select
               className="input"
               required
               value={form.booking_time}
-              min={minTimeStr}
-              max={maxTimeStr}
-              onChange={(e) => setForm({ ...form, booking_time: snapTime(e.target.value) })}
-              onBlur={(e) => setForm({ ...form, booking_time: snapTime(e.target.value) })}
-            />
+              onChange={(e) => setForm({ ...form, booking_time: e.target.value })}
+              disabled={timeOptions.length === 0}
+            >
+              {(!form.booking_time || !timeOptions.includes(form.booking_time)) && (
+                <option value="" disabled>—</option>
+              )}
+              {timeOptions.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
             <p className="text-[11px] text-slate-400 mt-1">
-              {t("booking.timeHint", { open: minTimeStr, close: maxTimeStr })}
+              {timeOptions.length === 0
+                ? t("booking.timeNoSlots")
+                : t("booking.timeHint", { open: minTimeStr, close: maxTimeStr })}
             </p>
             {lunchBreakLabel && (
               <p className="text-[11px] text-rose-600 mt-0.5">

@@ -5,7 +5,7 @@
 // 2-hour cutoff is enforced both here (button states) and on the API
 // route (definitive guard).
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { Branch } from "@/lib/db";
@@ -35,6 +35,67 @@ export default function EditBookingForm({
   const [confirmCancel, setConfirmCancel] = useState(false);
 
   const today = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  // 15-min slots between open and close on the selected date, minus
+  // any lunch break that applies to that day. Mirrors the picker on
+  // the new-booking form so customers see the same options.
+  const timeOptions = useMemo(() => {
+    const toMin = (s: string | null | undefined): number | null => {
+      if (!s || !/^\d{2}:\d{2}$/.test(s)) return null;
+      const [h, m] = s.split(":").map(Number);
+      return h * 60 + m;
+    };
+    const fromMin = (m: number) =>
+      `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+    const parseArr = <T,>(s: string | null): T[] => {
+      if (!s) return [];
+      try { const a = JSON.parse(s); return Array.isArray(a) ? a as T[] : []; } catch { return []; }
+    };
+    const open  = toMin(branch.open_time)  ?? 11 * 60;
+    const close = toMin(branch.close_time) ?? 22 * 60;
+    // Resolve lunch break for the selected date (skips weekends or
+    // dates listed in no_lunch_break_dates, matching the customer
+    // landing page rule).
+    let lbS: number | null = null, lbE: number | null = null;
+    const lbStart = toMin(branch.lunch_break_start);
+    const lbEnd   = toMin(branch.lunch_break_end);
+    if (lbStart != null && lbEnd != null && lbEnd > lbStart) {
+      const weekdays = parseArr<number>(branch.lunch_break_weekdays);
+      const exceptions = new Set(parseArr<string>(branch.no_lunch_break_dates));
+      const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
+      if (weekdays.includes(dow) && !exceptions.has(date)) {
+        lbS = lbStart; lbE = lbEnd;
+      }
+    }
+    const start = Math.ceil(open / 15) * 15;
+    const end = Math.floor(close / 15) * 15;
+    const opts: string[] = [];
+    for (let m = start; m <= end; m += 15) {
+      if (lbS != null && lbE != null && m >= lbS && m < lbE) continue;
+      opts.push(fromMin(m));
+    }
+    return opts;
+  }, [branch.open_time, branch.close_time,
+      branch.lunch_break_start, branch.lunch_break_end,
+      branch.lunch_break_weekdays, branch.no_lunch_break_dates, date]);
+
+  // When the date change makes the previously-picked time invalid
+  // (e.g. it now lands inside a lunch break that wasn't there before),
+  // snap to the closest same-or-later available slot so the customer
+  // can't save a time the kitchen won't accept.
+  useEffect(() => {
+    if (timeOptions.length === 0) return;
+    if (timeOptions.includes(time)) return;
+    const parts = time.split(":");
+    const cur = parts.length === 2 ? Number(parts[0]) * 60 + Number(parts[1]) : NaN;
+    const later = Number.isFinite(cur)
+      ? timeOptions.find((o) => {
+          const [oh, om] = o.split(":").map(Number);
+          return oh * 60 + om >= cur;
+        })
+      : undefined;
+    setTime(later ?? timeOptions[0]);
+  }, [timeOptions, time]);
 
   async function save(): Promise<void> {
     setBusy(true);
@@ -117,9 +178,16 @@ export default function EditBookingForm({
         </div>
         <div>
           <label className="label">{t("edit.row.time")}</label>
-          <input type="time" className="input" value={time}
-            min={branch.open_time} max={branch.close_time}
-            onChange={(e) => setTime(e.target.value)} />
+          <select className="input" value={time}
+            onChange={(e) => setTime(e.target.value)}
+            disabled={timeOptions.length === 0}>
+            {!timeOptions.includes(time) && (
+              <option value={time} disabled>{time || "—"}</option>
+            )}
+            {timeOptions.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
         </div>
       </div>
 
