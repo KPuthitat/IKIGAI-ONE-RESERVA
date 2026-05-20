@@ -35,6 +35,8 @@ export const metadata: Metadata = { title: "ตารางมอบหมาย
 type StaffOption = {
   id: number;
   display_name: string;
+  first_name_th: string | null;
+  last_name_th: string | null;
   employment_type: string | null;
 };
 
@@ -66,11 +68,17 @@ export default function AdminRosterPage({
   const lastPublish = getLastPublish(branch.id, month);
 
   // Staff pool — anyone assigned to this branch via user_branches.
+  // Includes admins (a branch admin still works shifts like any other
+  // employee) and excludes disabled accounts. super_admin is the
+  // settings-only top role and isn't rosterable.
   const staff = db.prepare(`
-    SELECT u.id, u.display_name, u.employment_type
+    SELECT u.id, u.display_name, u.first_name_th, u.last_name_th,
+           u.employment_type
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
-    WHERE ub.branch_id = ? AND u.role = 'staff'
+    WHERE ub.branch_id = ?
+      AND u.role IN ('staff','admin')
+      AND u.status != 'disabled'
     ORDER BY u.display_name COLLATE NOCASE
   `).all(branch.id) as StaffOption[];
 
@@ -173,6 +181,8 @@ export default function AdminRosterPage({
             position_id: a.position_id,
             user_id: a.user_id,
             user_display_name: a.user_display_name,
+            user_first_name: a.user_first_name,
+            user_last_name: a.user_last_name,
             shift_code_id: a.shift_code_id,
             shift_code: a.shift_code,
             shift_color: a.shift_color,

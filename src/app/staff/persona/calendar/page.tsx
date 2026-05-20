@@ -132,7 +132,10 @@ export default function StaffCalendarPage({
         <ul className="space-y-2">
           {days.map((d) => {
             const dayAssigns = byDate.get(d) ?? [];
-            const dow = new Date(`${d}T00:00:00+07:00`).getUTCDay();
+            // Use Z (UTC midnight of the calendar date) so getUTCDay
+            // matches the actual weekday — the previous +07:00 form
+            // shifted the result back one day.
+            const dow = new Date(`${d}T00:00:00Z`).getUTCDay();
             const isToday = d === todayBkk;
             const isOff = dayAssigns.length === 0;
             return (

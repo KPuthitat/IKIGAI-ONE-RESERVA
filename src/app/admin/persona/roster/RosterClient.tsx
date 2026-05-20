@@ -15,13 +15,21 @@ type ShiftCode = {
   id: number; code: string; name: string | null;
   start_time: string; end_time: string; color: string | null;
 };
-type Staff = { id: number; display_name: string; employment_type: string | null };
+type Staff = {
+  id: number;
+  display_name: string;
+  first_name_th: string | null;
+  last_name_th: string | null;
+  employment_type: string | null;
+};
 type Assignment = {
   id: number;
   date: string;
   position_id: number;
   user_id: number;
   user_display_name: string;
+  user_first_name: string | null;
+  user_last_name: string | null;
   shift_code_id: number;
   shift_code: string;
   shift_color: string | null;
@@ -168,8 +176,12 @@ export default function RosterClient({
     }
   }
 
+  // Day-of-week for a YYYY-MM-DD calendar date — uses Z (UTC midnight)
+  // so `getUTCDay()` reflects the calendar date itself, not whatever
+  // UTC day Bangkok-midnight happens to land on. The previous +07:00
+  // form rendered every roster column off-by-one.
   const dowOf = (yyyymmdd: string) => {
-    const d = new Date(`${yyyymmdd}T00:00:00+07:00`);
+    const d = new Date(`${yyyymmdd}T00:00:00Z`);
     return d.getUTCDay();
   };
 
@@ -226,8 +238,15 @@ export default function RosterClient({
                       >
                         {a ? (
                           <>
+                            {/* Three-line layout: first name / last
+                                name / assigned shift. Falls back to
+                                the full display_name when the user
+                                hasn't filled in first/last yet. */}
                             <div className="font-bold leading-tight text-slate-800">
-                              {a.user_display_name}
+                              {a.user_first_name?.trim() || a.user_display_name}
+                            </div>
+                            <div className="text-[10px] leading-tight text-slate-700 mt-0.5">
+                              {a.user_last_name?.trim() || " "}
                             </div>
                             <div className="text-[9px] text-slate-700 mt-0.5">
                               {a.shift_code}

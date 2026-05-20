@@ -26,6 +26,8 @@ import { computeLateness, SC_INELIGIBILITY_THRESHOLD } from "./late-detection";
 export type AssignmentWithJoins = RosterAssignment & {
   position_title: string;
   user_display_name: string;
+  user_first_name: string | null;
+  user_last_name: string | null;
   user_id_normal: number;
   shift_code: string;
   shift_color: string | null;
@@ -75,6 +77,8 @@ export function listAssignmentsForMonth(
            p.display_order AS position_display_order,
            u.id AS user_id_normal,
            u.display_name AS user_display_name,
+           u.first_name_th AS user_first_name,
+           u.last_name_th AS user_last_name,
            s.code AS shift_code,
            s.color AS shift_color,
            s.start_time AS shift_start_time,
@@ -105,6 +109,8 @@ export function listAssignmentsForUserMonth(
            p.title AS position_title,
            u.id AS user_id_normal,
            u.display_name AS user_display_name,
+           u.first_name_th AS user_first_name,
+           u.last_name_th AS user_last_name,
            s.code AS shift_code,
            s.color AS shift_color,
            s.start_time AS shift_start_time,
