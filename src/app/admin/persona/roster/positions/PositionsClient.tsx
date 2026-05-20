@@ -159,30 +159,57 @@ function PositionRow({
   }
 
   return (
-    <div className="border-[1.5px] border-brand/50 bg-rose-50/30 rounded-lg p-3 space-y-2">
-      <div className="flex gap-2 items-center">
-        <input type="number" className="input w-20 text-sm"
-          value={order} onChange={(e) => setOrder(Number(e.target.value) || 0)} />
-        <input className="input flex-1 text-sm font-bold"
+    <div className="border-[1.5px] border-brand/50 bg-rose-50/30 rounded-lg p-4 space-y-3">
+      {/* Title — the primary field, given its own row + a label so
+          it's obvious what you're typing. text-lg + py-2.5 makes the
+          input chunky enough to read at a glance. */}
+      <div>
+        <label className="label">
+          {t("admin.persona.roster.positions.titleLabel")}
+        </label>
+        <input
+          className="input w-full text-lg font-bold py-2.5"
           placeholder={t("admin.persona.roster.positions.titlePlaceholder")}
-          value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} />
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          maxLength={60}
+          autoFocus
+        />
       </div>
-      <textarea className="input text-sm" rows={3}
-        placeholder={t("admin.persona.roster.positions.descPlaceholder")}
-        value={desc} onChange={(e) => setDesc(e.target.value)} maxLength={1000} />
-      <p className="text-[10px] text-slate-500">
-        {t("admin.persona.roster.positions.descHint")}
-      </p>
-      <div className="flex gap-2">
-        <button type="button" disabled={busy || !title.trim()}
-          onClick={() => onSave({ title, description: desc || null, display_order: order })}
-          className="flex-1 py-1.5 rounded bg-brand text-white text-xs font-bold disabled:opacity-50">
-          {busy ? "…" : t("common.save")}
-        </button>
-        <button type="button" disabled={busy} onClick={onCancel}
-          className="flex-1 py-1.5 rounded border border-slate-300 text-slate-600 text-xs">
-          {t("common.cancel")}
-        </button>
+
+      {/* Description */}
+      <div>
+        <label className="label">
+          {t("admin.persona.roster.positions.descLabel")}
+        </label>
+        <textarea className="input text-sm" rows={3}
+          placeholder={t("admin.persona.roster.positions.descPlaceholder")}
+          value={desc} onChange={(e) => setDesc(e.target.value)} maxLength={1000} />
+        <p className="text-[10px] text-slate-500 mt-1">
+          {t("admin.persona.roster.positions.descHint")}
+        </p>
+      </div>
+
+      {/* Display order — small inline field, less prominent. */}
+      <div className="flex items-end gap-3 flex-wrap pt-1">
+        <div>
+          <label className="label">
+            {t("admin.persona.roster.positions.orderLabel")}
+          </label>
+          <input type="number" className="input w-20 text-sm"
+            value={order} onChange={(e) => setOrder(Number(e.target.value) || 0)} />
+        </div>
+        <div className="flex-1 flex gap-2 justify-end min-w-[160px]">
+          <button type="button" disabled={busy} onClick={onCancel}
+            className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm">
+            {t("common.cancel")}
+          </button>
+          <button type="button" disabled={busy || !title.trim()}
+            onClick={() => onSave({ title, description: desc || null, display_order: order })}
+            className="px-5 py-2 rounded-lg bg-brand text-white text-sm font-bold disabled:opacity-50">
+            {busy ? "…" : t("common.save")}
+          </button>
+        </div>
       </div>
     </div>
   );
