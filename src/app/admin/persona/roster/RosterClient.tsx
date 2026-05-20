@@ -38,6 +38,35 @@ type Assignment = {
 
 const DOW_TH = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
 
+// Best-effort first/last split for a roster cell. Prefers the explicit
+// users.first_name_th / last_name_th columns; falls back to splitting
+// display_name on whitespace (stripping common Thai/English title
+// prefixes first) so the 3-line cell layout still works even when
+// admin hasn't filled the structured name fields for that employee.
+function splitName(
+  displayName: string,
+  first: string | null,
+  last: string | null
+): { first: string; last: string } {
+  const f = first?.trim() ?? "";
+  const l = last?.trim() ?? "";
+  if (f || l) return { first: f, last: l };
+  const trimmed = (displayName ?? "").trim();
+  if (!trimmed) return { first: "", last: "" };
+  const stripped = trimmed.replace(
+    /^(นาย|นาง|นางสาว|ดร\.|เด็กชาย|เด็กหญิง|Mr\.|Mrs\.|Ms\.|Dr\.)\s+/,
+    ""
+  );
+  const parts = stripped.split(/\s+/);
+  if (parts.length >= 2) {
+    return {
+      first: parts.slice(0, parts.length - 1).join(" "),
+      last: parts[parts.length - 1]
+    };
+  }
+  return { first: stripped, last: "" };
+}
+
 export default function RosterClient({
   month, daysInMonth, positions, shiftCodes, staff, assignments
 }: {
@@ -243,10 +272,10 @@ export default function RosterClient({
                                 the full display_name when the user
                                 hasn't filled in first/last yet. */}
                             <div className="font-bold leading-tight text-slate-800">
-                              {a.user_first_name?.trim() || a.user_display_name}
+                              {splitName(a.user_display_name, a.user_first_name, a.user_last_name).first}
                             </div>
                             <div className="text-[10px] leading-tight text-slate-700 mt-0.5">
-                              {a.user_last_name?.trim() || " "}
+                              {splitName(a.user_display_name, a.user_first_name, a.user_last_name).last || "—"}
                             </div>
                             <div className="text-[9px] text-slate-700 mt-0.5">
                               {a.shift_code}
