@@ -267,17 +267,16 @@ export default function RosterClient({
                       >
                         {a ? (
                           <>
-                            {/* Three-line layout: first name / last
-                                name / assigned shift. Falls back to
-                                the full display_name when the user
-                                hasn't filled in first/last yet. */}
+                            {/* Two-line layout: first name / shift.
+                                Last name was intentionally dropped —
+                                the cell is narrow and the schedule is
+                                an internal view, so first name + role
+                                + shift code is enough to identify
+                                everyone without overflowing. */}
                             <div className="font-bold leading-tight text-slate-800">
                               {splitName(a.user_display_name, a.user_first_name, a.user_last_name).first}
                             </div>
-                            <div className="text-[10px] leading-tight text-slate-700 mt-0.5">
-                              {splitName(a.user_display_name, a.user_first_name, a.user_last_name).last || "—"}
-                            </div>
-                            <div className="text-[9px] text-slate-700 mt-0.5">
+                            <div className="text-[10px] text-slate-700 mt-0.5">
                               {a.shift_code}
                             </div>
                           </>
