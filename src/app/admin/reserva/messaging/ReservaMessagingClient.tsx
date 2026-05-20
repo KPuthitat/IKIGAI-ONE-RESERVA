@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import Switch from "@/app/components/Switch";
 
 export type ReservaChannelInitial = {
   code: string;
@@ -446,7 +447,6 @@ function AudienceCard({
   rows: Array<{ label: string; desc: string; value: boolean; set: (v: boolean) => void }>;
 }) {
   const dotCls = accent === "rose" ? "bg-rose-500" : "bg-sky-500";
-  const onBg = accent === "rose" ? "bg-rose-500" : "bg-sky-500";
   const activeRowCls = accent === "rose" ? "bg-rose-50/40" : "bg-sky-50/40";
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -459,11 +459,9 @@ function AudienceCard({
       </div>
       <div className="divide-y divide-slate-100 -mx-2">
         {rows.map((r) => (
-          <button
+          <label
             key={r.label}
-            type="button"
-            onClick={() => r.set(!r.value)}
-            className={`w-full flex items-start justify-between gap-3 px-2 py-2.5 rounded-lg text-left transition ${
+            className={`w-full flex items-start justify-between gap-3 px-2 py-2.5 rounded-lg cursor-pointer transition ${
               r.value ? activeRowCls : "hover:bg-slate-50/60"
             }`}
           >
@@ -475,30 +473,12 @@ function AudienceCard({
                 {r.desc}
               </div>
             </div>
-            <Switch on={r.value} onBg={onBg} />
-          </button>
+            <span className="mt-0.5">
+              <Switch checked={r.value} onChange={r.set} accent={accent} />
+            </span>
+          </label>
         ))}
       </div>
     </div>
-  );
-}
-
-// Tailwind-only iOS-style toggle (no extra deps). Parent <button>
-// handles the click + a11y; this is purely the visual indicator.
-function Switch({ on, onBg }: { on: boolean; onBg: string }) {
-  return (
-    <span
-      role="switch"
-      aria-checked={on}
-      className={`relative inline-flex flex-shrink-0 h-6 w-11 mt-0.5 items-center rounded-full transition-colors ${
-        on ? onBg : "bg-slate-300"
-      }`}
-    >
-      <span
-        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-          on ? "translate-x-[22px]" : "translate-x-0.5"
-        }`}
-      />
-    </span>
   );
 }

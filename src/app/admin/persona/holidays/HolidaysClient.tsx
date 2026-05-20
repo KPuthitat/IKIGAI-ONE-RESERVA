@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { useConfirm } from "@/app/components/useConfirm";
+import Switch from "@/app/components/Switch";
 
 export type HolidayRow = {
   date: string;
@@ -219,11 +220,9 @@ function HolidayModal({
         </div>
 
         <label className="flex items-start gap-2 text-sm cursor-pointer">
-          <input
-            type="checkbox" checked={isWorkday}
-            onChange={(e) => setIsWorkday(e.target.checked)}
-            className="mt-0.5"
-          />
+          <span className="mt-0.5">
+            <Switch checked={isWorkday} onChange={setIsWorkday} />
+          </span>
           <span className="text-slate-700">
             {t("admin.persona.holidays.isWorkdayLabel")}
           </span>

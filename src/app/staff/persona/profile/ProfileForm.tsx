@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import Switch from "@/app/components/Switch";
 import type { EmployeeProfile } from "@/lib/db";
 
 // Shared multi-section profile form.
@@ -350,8 +351,8 @@ export default function ProfileForm({
             {t("staff.persona.profile.section.contactAddress")}
           </h3>
           <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer mb-2">
-            <input type="checkbox" checked={f.contact_same_as_house} disabled={locked}
-              onChange={(e) => update("contact_same_as_house", e.target.checked)} />
+            <Switch checked={f.contact_same_as_house} disabled={locked}
+              onChange={(v) => update("contact_same_as_house", v)} />
             {t("staff.persona.profile.field.contactSameAsHouse")}
           </label>
           {!f.contact_same_as_house && (
@@ -465,8 +466,8 @@ export default function ProfileForm({
           </Grid>
           <div className="mt-3 space-y-2">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={f.track_attendance}
-                onChange={(e) => update("track_attendance", e.target.checked)} />
+              <Switch checked={f.track_attendance}
+                onChange={(v) => update("track_attendance", v)} />
               <span className="font-bold text-slate-700">
                 {t("staff.persona.profile.field.trackAttendance")}
               </span>
@@ -475,8 +476,8 @@ export default function ProfileForm({
               </span>
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={f.profile_self_edit_open}
-                onChange={(e) => update("profile_self_edit_open", e.target.checked)} />
+              <Switch checked={f.profile_self_edit_open}
+                onChange={(v) => update("profile_self_edit_open", v)} />
               <span className="font-bold text-slate-700">
                 {t("staff.persona.profile.field.selfEditOpen")}
               </span>

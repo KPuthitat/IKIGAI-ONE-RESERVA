@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { useConfirm } from "@/app/components/useConfirm";
+import Switch from "@/app/components/Switch";
 
 export type ResignationStatus = "pending" | "approved" | "rejected" | "cancelled" | "revision_requested";
 
@@ -215,12 +216,9 @@ export default function ResignationClient({
             {isEarlierThanMin && (
               <div className="border-2 border-amber-400 bg-amber-50 rounded-lg p-3">
                 <label className="flex items-start gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isSpecial}
-                    onChange={(e) => setIsSpecial(e.target.checked)}
-                    className="mt-0.5"
-                  />
+                  <span className="mt-0.5">
+                    <Switch checked={isSpecial} onChange={setIsSpecial} />
+                  </span>
                   <div>
                     <div className="font-medium text-amber-900">
                       {t("staff.persona.resignation.specialTrack.title")}

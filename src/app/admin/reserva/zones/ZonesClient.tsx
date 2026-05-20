@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import Switch from "@/app/components/Switch";
 
 type ZoneRow = {
   id: number;
@@ -223,7 +224,7 @@ function ZoneFormModal({
           </div>
           <div className="flex items-end">
             <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+              <Switch checked={active} onChange={setActive} accent="emerald" />
               {t(lang, "admin.reserva.zones.activeLabel")}
             </label>
           </div>

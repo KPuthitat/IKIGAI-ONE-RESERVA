@@ -8,6 +8,7 @@ import { useLang } from "@/lib/LangProvider";
 import { ALL_LEAVE_TYPES, type LeaveType } from "@/lib/leave-types";
 import type { LeaveStatus } from "@/app/staff/persona/leave/LeaveClient";
 import { useConfirm } from "@/app/components/useConfirm";
+import Switch from "@/app/components/Switch";
 
 export type StaffOption = {
   id: number;
@@ -407,13 +408,9 @@ function DecisionModal({
             request is meaningless). */}
         {decision === "approved" && onForfeitSvcChange && (
           <label className="flex items-start gap-2 cursor-pointer text-sm text-slate-700 select-none pt-1">
-            <input
-              type="checkbox"
-              className="w-4 h-4 mt-0.5"
-              checked={!!forfeitSvc}
-              onChange={(e) => onForfeitSvcChange(e.target.checked)}
-              disabled={busy}
-            />
+            <span className="mt-0.5">
+              <Switch checked={!!forfeitSvc} onChange={onForfeitSvcChange} disabled={busy} />
+            </span>
             <span>
               <span className="font-bold text-rose-700">
                 {translate("admin.persona.resignation.forfeitSvc.label")}
@@ -547,7 +544,7 @@ function CreateForm({ staffList, onDone }: { staffList: StaffOption[]; onDone: (
       {from === to && (
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={usePartial} onChange={(e) => setUsePartial(e.target.checked)} />
+            <Switch checked={usePartial} onChange={setUsePartial} />
             {t("staff.persona.leave.partialDay")}
           </label>
           {usePartial && (

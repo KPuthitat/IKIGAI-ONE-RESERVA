@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import Switch from "@/app/components/Switch";
 
 // Client form for editing per-branch PERSONA settings. Today this
 // covers just the 2 readiness round times — staff form subtitles +
@@ -331,11 +332,10 @@ export default function BranchSettingsForm({
         {/* ── GPS geofence ── */}
         <div className="space-y-2.5 border-l-2 border-slate-200 pl-3">
           <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="w-4 h-4"
+            <Switch
               checked={geoOn}
-              onChange={(e) => setGeoOn(e.target.checked)}
+              onChange={setGeoOn}
+              accent="emerald"
             />
             <span className="text-sm font-bold text-slate-800">
               {t("admin.persona.settings.timeClock.geofence.enableLabel")}
@@ -408,11 +408,10 @@ export default function BranchSettingsForm({
         {/* ── QR code ── */}
         <div className="space-y-2.5 border-l-2 border-slate-200 pl-3">
           <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="w-4 h-4"
+            <Switch
               checked={qrOn}
-              onChange={(e) => setQrOn(e.target.checked)}
+              onChange={setQrOn}
+              accent="emerald"
             />
             <span className="text-sm font-bold text-slate-800">
               {t("admin.persona.settings.timeClock.qr.enableLabel")}
