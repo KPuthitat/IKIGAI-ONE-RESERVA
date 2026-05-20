@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { Branch } from "@/lib/db";
 import { useLang } from "@/lib/LangProvider";
+import TimePicker from "@/app/components/TimePicker";
 
 export default function EditBookingForm({
   ref_no, branch, initial
@@ -176,18 +177,15 @@ export default function EditBookingForm({
           <input type="date" className="input" value={date} min={today}
             onChange={(e) => setDate(e.target.value)} />
         </div>
-        <div>
+        <div className="sm:col-span-2">
           <label className="label">{t("edit.row.time")}</label>
-          <select className="input" value={time}
-            onChange={(e) => setTime(e.target.value)}
-            disabled={timeOptions.length === 0}>
-            {!timeOptions.includes(time) && (
-              <option value={time} disabled>{time || "—"}</option>
-            )}
-            {timeOptions.map((opt) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
+          <TimePicker
+            value={time}
+            onChange={setTime}
+            options={timeOptions}
+            hourLabel={t("booking.timeHour")}
+            minuteLabel={t("booking.timeMinute")}
+          />
         </div>
       </div>
 

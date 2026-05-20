@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Branch } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import TimePicker from "@/app/components/TimePicker";
 
 // LIFF SDK type lives in lib/liff-types — importing this module runs the
 // `declare global` augmentation that types window.liff. The SDK itself is
@@ -348,6 +349,13 @@ export default function BookingForm({
       setError(t("booking.error.pastTime"));
       return;
     }
+    // The custom TimePicker leaves booking_time empty only when there
+    // is literally no valid slot — guard so the API never receives a
+    // blank time.
+    if (!form.booking_time) {
+      setError(t("booking.timeNoSlots"));
+      return;
+    }
     if (mode === "customer") {
       // Skip the table picker — submit directly with table_id=null.
       await submitPendingRequest();
@@ -684,21 +692,14 @@ export default function BookingForm({
           </div>
           <div>
             <label className="label">{t("booking.field.time")} *</label>
-            <select
-              className="input"
-              required
+            <TimePicker
               value={form.booking_time}
-              onChange={(e) => setForm({ ...form, booking_time: e.target.value })}
-              disabled={timeOptions.length === 0}
-            >
-              {(!form.booking_time || !timeOptions.includes(form.booking_time)) && (
-                <option value="" disabled>—</option>
-              )}
-              {timeOptions.map((opt) => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
-            <p className="text-[11px] text-slate-400 mt-1">
+              onChange={(v) => setForm({ ...form, booking_time: v })}
+              options={timeOptions}
+              hourLabel={t("booking.timeHour")}
+              minuteLabel={t("booking.timeMinute")}
+            />
+            <p className="text-[11px] text-slate-400 mt-2">
               {timeOptions.length === 0
                 ? t("booking.timeNoSlots")
                 : t("booking.timeHint", { open: minTimeStr, close: maxTimeStr })}
