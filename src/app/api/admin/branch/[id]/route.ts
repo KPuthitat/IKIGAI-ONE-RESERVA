@@ -34,7 +34,15 @@ const Patch = z.object({
   // LINE group ID for staff notifications — captured from the webhook
   // when the OA is invited into a group. Push to this ID reaches all
   // members of the group with a single message.
-  staff_group_id: z.string().max(100).nullable().optional()
+  staff_group_id: z.string().max(100).nullable().optional(),
+  // Per-event notification audience toggles. Booleans on the wire,
+  // converted to 0/1 SQLite ints below.
+  notify_customer_pending: z.boolean().optional(),
+  notify_customer_created: z.boolean().optional(),
+  notify_customer_reminder: z.boolean().optional(),
+  notify_staff_pending: z.boolean().optional(),
+  notify_staff_created: z.boolean().optional(),
+  notify_staff_reminder: z.boolean().optional()
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -49,7 +57,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const parsed = Patch.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: "ข้อมูลไม่ถูกต้อง" }, { status: 400 });
   const updates: Record<string, string | number | null> = {};
-  for (const [k, v] of Object.entries(parsed.data)) if (v !== undefined) updates[k] = v;
+  for (const [k, v] of Object.entries(parsed.data)) {
+    if (v === undefined) continue;
+    // SQLite has no bool — convert the notification toggles to 0/1.
+    updates[k] = typeof v === "boolean" ? (v ? 1 : 0) : v;
+  }
   if (Object.keys(updates).length === 0) return NextResponse.json({ ok: true });
   const sets = Object.keys(updates).map((k) => `${k} = ?`).join(", ");
   getDb().prepare(`UPDATE branches SET ${sets} WHERE id = ?`).run(...Object.values(updates), id);

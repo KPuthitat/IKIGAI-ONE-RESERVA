@@ -55,7 +55,13 @@ export default function ReservaMessagingPage() {
         // but every reserva channel has a branch).
         staff_group_id: branch?.staff_group_id ?? null,
         extra_button_url: branch?.extra_button_url ?? null,
-        contact_phone: branch?.contact_phone ?? null
+        contact_phone: branch?.contact_phone ?? null,
+        notify_customer_pending: branch?.notify_customer_pending ?? 1,
+        notify_customer_created: branch?.notify_customer_created ?? 1,
+        notify_customer_reminder: branch?.notify_customer_reminder ?? 1,
+        notify_staff_pending: branch?.notify_staff_pending ?? 1,
+        notify_staff_created: branch?.notify_staff_created ?? 1,
+        notify_staff_reminder: branch?.notify_staff_reminder ?? 0
       };
     });
 

@@ -19,6 +19,13 @@ export type ReservaChannelInitial = {
   staff_group_id: string | null;
   extra_button_url: string | null;        // Menu link on Flex card
   contact_phone: string | null;           // tel: button on Flex card
+  // Per-event audience toggles (SQLite 0/1). The UI flips booleans.
+  notify_customer_pending: number;
+  notify_customer_created: number;
+  notify_customer_reminder: number;
+  notify_staff_pending: number;
+  notify_staff_created: number;
+  notify_staff_reminder: number;
 };
 
 export default function ReservaMessagingClient({
@@ -74,6 +81,14 @@ function ChannelCard({
   const [extraButtonUrl, setExtraButtonUrl] = useState(channel.extra_button_url ?? "");
   const [contactPhone, setContactPhone] = useState(channel.contact_phone ?? "");
 
+  // Per-event audience toggles (UI as booleans, persisted as 0/1).
+  const [notifyCustPending,  setNotifyCustPending]  = useState(!!channel.notify_customer_pending);
+  const [notifyCustCreated,  setNotifyCustCreated]  = useState(!!channel.notify_customer_created);
+  const [notifyCustReminder, setNotifyCustReminder] = useState(!!channel.notify_customer_reminder);
+  const [notifyStaffPending,  setNotifyStaffPending]  = useState(!!channel.notify_staff_pending);
+  const [notifyStaffCreated,  setNotifyStaffCreated]  = useState(!!channel.notify_staff_created);
+  const [notifyStaffReminder, setNotifyStaffReminder] = useState(!!channel.notify_staff_reminder);
+
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -101,7 +116,7 @@ function ChannelCard({
       if (liffChanged) channelBody.liff_id = liffTrimmed;
 
       // ── 2. Branch-level notification fields ────────────────────────
-      const branchBody: Record<string, string | null> = {};
+      const branchBody: Record<string, string | boolean | null> = {};
       const branchPairs: Array<[keyof typeof channel, string | null, string]> = [
         ["staff_group_id", staffGroupId.trim() || null, channel.staff_group_id ?? ""],
         ["extra_button_url", extraButtonUrl.trim() || null, channel.extra_button_url ?? ""],
@@ -109,6 +124,21 @@ function ChannelCard({
       ];
       for (const [key, newVal, oldVal] of branchPairs) {
         if ((newVal ?? "") !== oldVal) branchBody[key] = newVal;
+      }
+
+      // Audience toggles — only include the keys that actually changed,
+      // converted to boolean for the API (the route maps booleans to
+      // SQLite 0/1 ints before the UPDATE).
+      const togglePairs: Array<[keyof typeof channel, boolean]> = [
+        ["notify_customer_pending",  notifyCustPending],
+        ["notify_customer_created",  notifyCustCreated],
+        ["notify_customer_reminder", notifyCustReminder],
+        ["notify_staff_pending",     notifyStaffPending],
+        ["notify_staff_created",     notifyStaffCreated],
+        ["notify_staff_reminder",    notifyStaffReminder]
+      ];
+      for (const [key, newBool] of togglePairs) {
+        if (newBool !== !!channel[key]) branchBody[key] = newBool;
       }
 
       const noChannelChange = Object.keys(channelBody).length === 0;
@@ -338,6 +368,36 @@ function ChannelCard({
         </p>
       </div>
 
+      {/* ───────── Audience toggles ───────── */}
+      <SectionTitle>{t(lang, "admin.reserva.messaging.section.notifyAudience")}</SectionTitle>
+      <p className="text-xs text-slate-500 -mt-1">
+        {t(lang, "admin.reserva.messaging.notify.audienceHint")}
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 mt-1">
+        <ToggleColumn
+          heading={t(lang, "admin.reserva.messaging.notify.customer")}
+          rows={[
+            { label: t(lang, "admin.reserva.messaging.notify.pending"),
+              value: notifyCustPending,  set: setNotifyCustPending },
+            { label: t(lang, "admin.reserva.messaging.notify.created"),
+              value: notifyCustCreated,  set: setNotifyCustCreated },
+            { label: t(lang, "admin.reserva.messaging.notify.reminder"),
+              value: notifyCustReminder, set: setNotifyCustReminder }
+          ]}
+        />
+        <ToggleColumn
+          heading={t(lang, "admin.reserva.messaging.notify.staff")}
+          rows={[
+            { label: t(lang, "admin.reserva.messaging.notify.pending"),
+              value: notifyStaffPending,  set: setNotifyStaffPending },
+            { label: t(lang, "admin.reserva.messaging.notify.created"),
+              value: notifyStaffCreated,  set: setNotifyStaffCreated },
+            { label: t(lang, "admin.reserva.messaging.notify.reminder"),
+              value: notifyStaffReminder, set: setNotifyStaffReminder }
+          ]}
+        />
+      </div>
+
       <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-100">
         {msg && (
           <span className={`text-sm ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
@@ -359,6 +419,28 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
       <h3 className="text-xs font-bold text-slate-700 tracking-wider uppercase pt-3 pb-1">
         {children}
       </h3>
+    </div>
+  );
+}
+
+function ToggleColumn({
+  heading, rows
+}: {
+  heading: string;
+  rows: Array<{ label: string; value: boolean; set: (v: boolean) => void }>;
+}) {
+  return (
+    <div>
+      <div className="text-xs font-bold text-slate-600 mb-1.5">{heading}</div>
+      <div className="space-y-1.5">
+        {rows.map((r) => (
+          <label key={r.label} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+            <input type="checkbox" checked={r.value}
+              onChange={(e) => r.set(e.target.checked)} />
+            <span>{r.label}</span>
+          </label>
+        ))}
+      </div>
     </div>
   );
 }
