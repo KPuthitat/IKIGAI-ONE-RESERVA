@@ -78,8 +78,6 @@ export default function TimetablePage({ searchParams }: { searchParams: { date?:
         <Legend lang={lang} />
       </div>
 
-      <TableManager branch={branch} tables={tables} zones={zones} />
-
       <TimetableClient
         branch={branch}
         zones={zones}
@@ -87,6 +85,10 @@ export default function TimetablePage({ searchParams }: { searchParams: { date?:
         bookings={bookings}
         date={date}
       />
+
+      {/* Management panel sits BELOW the grid so the timetable itself
+          is the first thing admin sees on load. */}
+      <TableManager branch={branch} tables={tables} zones={zones} />
     </div>
   );
 }

@@ -40,12 +40,50 @@ export default function PendingPage() {
     ORDER BY b.created_at ASC
   `).all(branch.id) as Array<Booking & { table_label: string | null }>;
 
+  // ── Overnight summary ─────────────────────────────────────────────
+  // Cutoff = yesterday's close_time in Bangkok, expressed as UTC ISO
+  // so it lines up with SQLite's created_at strings (stored UTC).
+  // "Overnight" means "anything that came in after we shut last night",
+  // which is exactly the inbox a morning shift needs to triage.
+  const ctMatch = (branch.close_time || "22:00").match(/^(\d{2}):(\d{2})$/);
+  const closeH = ctMatch ? Number(ctMatch[1]) : 22;
+  const closeM = ctMatch ? Number(ctMatch[2]) : 0;
+  const bkkNow = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  const yesterdayCloseUtc = new Date(Date.UTC(
+    bkkNow.getUTCFullYear(), bkkNow.getUTCMonth(), bkkNow.getUTCDate() - 1,
+    closeH - 7, closeM, 0
+  ));
+  const overnight = db.prepare(`
+    SELECT COUNT(*) AS n, COALESCE(SUM(party_size), 0) AS seats
+    FROM bookings
+    WHERE branch_id = ? AND status = 'pending_review'
+      AND datetime(created_at) >= datetime(?)
+  `).get(branch.id, yesterdayCloseUtc.toISOString()) as { n: number; seats: number };
+  const sinceLabel = `${String(closeH).padStart(2, "0")}:${String(closeM).padStart(2, "0")}`;
+
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold">{t(lang, "admin.nav.pendingReview")}</h1>
         <p className="text-sm text-slate-500">{branch.name}</p>
       </div>
+
+      {overnight.n > 0 && (
+        <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
+          <div className="font-bold text-indigo-900">
+            {t(lang, "admin.pending.overnight.title")}
+          </div>
+          <div className="text-sm text-indigo-700 mt-1">
+            {t(lang, "admin.pending.overnight.summary", {
+              n: overnight.n, seats: overnight.seats, since: sinceLabel
+            })}
+          </div>
+          <div className="text-xs text-indigo-700/70 mt-1">
+            ↓ {t(lang, "admin.pending.overnight.cta")}
+          </div>
+        </div>
+      )}
+
       <PendingClient pendingBookings={pendingBookings} />
     </div>
   );
