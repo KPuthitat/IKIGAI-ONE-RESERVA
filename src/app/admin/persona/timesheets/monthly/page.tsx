@@ -21,16 +21,13 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { nameWithPrefix } from "@/lib/name";
 import {
-  monthlyLateStatsRoster,
-  shiftStartByDateForUserMonth,
-  scheduledMinutesByUserForMonth
-} from "@/lib/roster";
+  computeMonthlyAttendanceStats,
+  type MonthlyAttendanceStats
+} from "@/lib/monthly-attendance-stats";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "สถิติการเข้างานของพนักงาน · PERSONA" };
-
-const ASSUMED_SHIFT_MINUTES = 8 * 60; // 8-hour shift, matches payroll engine
 
 type EmployeeRow = {
   user_id: number;
@@ -68,16 +65,6 @@ export default function MonthlyTimesheetPage({
   const currentMonth = nowBkk.toISOString().slice(0, 7); // 'YYYY-MM'
   const month = searchParams.month || currentMonth;
 
-  // Month bounds in Bangkok local
-  const monthStart = `${month}-01T00:00:00+07:00`;
-  // Last day of month — JavaScript trick: day 0 of next month = last
-  // day of this month.
-  const [yyyy, mm] = month.split("-").map(Number);
-  const lastDay = new Date(Date.UTC(yyyy, mm, 0)).getUTCDate();
-  const monthEnd = `${month}-${String(lastDay).padStart(2, "0")}T23:59:59+07:00`;
-  const monthStartIso = new Date(monthStart).toISOString();
-  const monthEndIso = new Date(monthEnd).toISOString();
-
   // Staff assigned to this branch with their shift settings.
   const employees = db.prepare(`
     SELECT u.id AS user_id, u.display_name, u.title_prefix,
@@ -88,46 +75,18 @@ export default function MonthlyTimesheetPage({
     ORDER BY u.display_name COLLATE NOCASE
   `).all(branch.id) as EmployeeRow[];
 
-  // All "in" events for those users in this month at this branch.
-  // Single query then bucket in JS — much faster than N queries.
-  const ins = db.prepare(`
-    SELECT user_id, ts FROM time_entries
-    WHERE branch_id = ? AND type = 'in' AND ts >= ? AND ts <= ?
-  `).all(branch.id, monthStartIso, monthEndIso) as
-    Array<{ user_id: number; ts: string }>;
-
-  const insByUser = new Map<number, Array<{ ts: string }>>();
-  for (const r of ins) {
-    if (!insByUser.has(r.user_id)) insByUser.set(r.user_id, []);
-    insByUser.get(r.user_id)!.push({ ts: r.ts });
-  }
-
-  // Scheduled minutes — prefer the roster-assigned total (real shift
-  // hours minus breaks) over the conservative daysInMonth × 8h
-  // fallback. The roster lookup returns 0 for users who have no
-  // assignments that month; in that case we fall back to the legacy
-  // assumption so existing behaviour is preserved for branches that
-  // haven't filled in a roster yet.
-  const fallbackScheduledMinutes = lastDay * ASSUMED_SHIFT_MINUTES;
-  const userIds = employees.map((e) => e.user_id);
-  const rosterScheduledByUser = scheduledMinutesByUserForMonth(branch.id, month, userIds);
+  // Phase P4 (2026-05-21) — richer per-user stats. The engine owns all
+  // of: worked hours, late/early-out counts, leaves by type, restricted-
+  // day leaves, abnormal leaves, combined %, and the 3-tier SC ruling.
+  const richStatsByUser = computeMonthlyAttendanceStats(
+    branch.id,
+    month,
+    employees.map((e) => ({ user_id: e.user_id, shift_start_time: e.shift_start_time }))
+  );
 
   const rows = employees.map((emp) => {
-    const userIns = insByUser.get(emp.user_id) ?? [];
-    const rosterShiftByDate = shiftStartByDateForUserMonth(branch.id, emp.user_id, month);
-    const rosterMin = rosterScheduledByUser.get(emp.user_id) ?? 0;
-    const scheduledMinutes = rosterMin > 0 ? rosterMin : fallbackScheduledMinutes;
-    const stats = monthlyLateStatsRoster(
-      userIns,
-      rosterShiftByDate,
-      emp.shift_start_time,    // fallback when roster has no row for that date
-      scheduledMinutes
-    );
-    return {
-      ...emp,
-      inCount: userIns.length,
-      ...stats
-    };
+    const rich = richStatsByUser.get(emp.user_id) as MonthlyAttendanceStats;
+    return { ...emp, rich };
   });
 
   // Month picker: build a small list of recent months (last 6) so
@@ -188,17 +147,32 @@ export default function MonthlyTimesheetPage({
                 <tr className="text-left text-xs uppercase tracking-[0.5px] text-slate-500 border-b border-slate-200">
                   <th className="py-2 pr-2">{t(lang, "admin.persona.timesheets.monthly.col.name")}</th>
                   <th className="py-2 pr-2">{t(lang, "admin.persona.timesheets.monthly.col.type")}</th>
-                  <th className="py-2 pr-2">{t(lang, "admin.persona.timesheets.monthly.col.shiftStart")}</th>
-                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.timesheets.monthly.col.workDays")}</th>
-                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.timesheets.monthly.col.lateCount")}</th>
-                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.timesheets.monthly.col.lateMinutes")}</th>
-                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.timesheets.monthly.col.lateRatio")}</th>
+                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.timesheets.monthly.col.workedHours")}</th>
+                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.timesheets.monthly.col.lateEarly")}</th>
+                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.timesheets.monthly.col.leave")}</th>
+                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.timesheets.monthly.col.restrictedLeave")}</th>
+                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.timesheets.monthly.col.abnormalLeave")}</th>
+                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.timesheets.monthly.col.combinedPct")}</th>
                   <th className="py-2 pr-2">{t(lang, "admin.persona.timesheets.monthly.col.scStatus")}</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => {
-                  const ratioPct = (r.ratio * 100).toFixed(1);
+                  const rich = r.rich;
+                  const workedHours = (rich.workedMinutes / 60);
+                  const combinedPct = rich.combinedPenaltyPct.toFixed(1);
+                  const tierLabel =
+                    rich.scTier === "full" ? t(lang, "admin.persona.timesheets.monthly.scTier.full") :
+                    rich.scTier === "half" ? t(lang, "admin.persona.timesheets.monthly.scTier.half") :
+                    t(lang, "admin.persona.timesheets.monthly.scTier.none");
+                  const tierCls =
+                    rich.scTier === "full" ? "bg-emerald-100 text-emerald-700"
+                    : rich.scTier === "half" ? "bg-amber-100 text-amber-700"
+                    : "bg-rose-100 text-rose-700";
+                  // Tooltip: leave breakdown by type for hover-on-the-leave-count cell.
+                  const leaveBreakdown = Object.entries(rich.leaveCountByType)
+                    .map(([k, n]) => `${t(lang, `leave.type.${k}` as any)}: ${n}`)
+                    .join(" · ");
                   return (
                     <tr key={r.user_id} className="border-b border-slate-100 last:border-b-0">
                       <td className="py-2 pr-2 font-bold text-slate-800">{nameWithPrefix(r.title_prefix, r.display_name)}</td>
@@ -206,31 +180,38 @@ export default function MonthlyTimesheetPage({
                         {r.employment_type === "ft" ? "FT" :
                          r.employment_type === "pt" ? "PT" : "—"}
                       </td>
-                      <td className="py-2 pr-2 font-mono text-xs">
-                        {r.shift_start_time ?? <span className="text-slate-400">—</span>}
-                      </td>
-                      <td className="py-2 pr-2 text-right font-mono">{r.inCount}</td>
                       <td className="py-2 pr-2 text-right font-mono">
-                        {r.computable ? r.lateCount : "—"}
+                        {rich.computable ? workedHours.toFixed(1) : "—"}
+                      </td>
+                      <td className="py-2 pr-2 text-right font-mono text-xs">
+                        {rich.computable
+                          ? <span title={t(lang, "admin.persona.timesheets.monthly.lateEarlyTooltip", { late: rich.lateMinutesTotal, early: rich.earlyOutMinutesTotal })}>
+                              {rich.lateCount}/{rich.earlyOutCount}
+                            </span>
+                          : "—"}
                       </td>
                       <td className="py-2 pr-2 text-right font-mono">
-                        {r.computable ? `${r.totalMinutesLate}` : "—"}
+                        <span title={leaveBreakdown || undefined}>
+                          {rich.totalLeaveDays || "—"}
+                        </span>
                       </td>
                       <td className="py-2 pr-2 text-right font-mono">
-                        {r.computable ? `${ratioPct}%` : "—"}
+                        {rich.leavesOnRestrictedDays || "—"}
+                      </td>
+                      <td className="py-2 pr-2 text-right font-mono">
+                        {rich.abnormalLeaveCount || "—"}
+                      </td>
+                      <td className="py-2 pr-2 text-right font-mono">
+                        {rich.computable ? `${combinedPct}%` : "—"}
                       </td>
                       <td className="py-2 pr-2">
-                        {!r.shift_start_time ? (
+                        {!rich.computable ? (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
                             {t(lang, "admin.persona.timesheets.monthly.scStatus.noShift")}
                           </span>
-                        ) : r.scEligible ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">
-                            ✓ {t(lang, "admin.persona.timesheets.monthly.scStatus.eligible")}
-                          </span>
                         ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">
-                            ✗ {t(lang, "admin.persona.timesheets.monthly.scStatus.ineligible")}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${tierCls}`}>
+                            {tierLabel}
                           </span>
                         )}
                       </td>
@@ -248,9 +229,12 @@ export default function MonthlyTimesheetPage({
         <div className="font-bold text-slate-700 uppercase tracking-[0.5px] text-[10px] mb-1">
           {t(lang, "admin.persona.timesheets.monthly.rulesTitle")}
         </div>
+        <div>{t(lang, "admin.persona.timesheets.monthly.rule.workedHours")}</div>
         <div>{t(lang, "admin.persona.timesheets.monthly.rule.grace")}</div>
-        <div>{t(lang, "admin.persona.timesheets.monthly.rule.sc20pct")}</div>
-        <div>{t(lang, "admin.persona.timesheets.monthly.rule.ptDeduct")}</div>
+        <div>{t(lang, "admin.persona.timesheets.monthly.rule.combinedPct")}</div>
+        <div>{t(lang, "admin.persona.timesheets.monthly.rule.scTiers")}</div>
+        <div>{t(lang, "admin.persona.timesheets.monthly.rule.restrictedDays")}</div>
+        <div>{t(lang, "admin.persona.timesheets.monthly.rule.abnormalLeaves")}</div>
         <div className="text-slate-400 mt-2">
           {t(lang, "admin.persona.timesheets.monthly.rule.shiftSetHint")}
         </div>
