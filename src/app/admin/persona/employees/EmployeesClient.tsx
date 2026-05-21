@@ -39,19 +39,6 @@ export type EmployeeRow = {
   resign_unlocked: number;
 };
 
-const DAY_NAMES_TH = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
-const DAY_NAMES_EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const DAY_SHORT_TH = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
-const DAY_SHORT_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-function parseWeeklyOffCsv(csv: string | null): number[] {
-  if (!csv || !csv.trim()) return [];
-  return csv.split(",")
-    .map((s) => Number(s.trim()))
-    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6)
-    .sort((a, b) => a - b);
-}
-
 export type BranchLite = { id: number; name: string };
 
 export default function EmployeesClient({
@@ -63,7 +50,7 @@ export default function EmployeesClient({
   editableBranchIds: number[];
 }) {
   const router = useRouter();
-  const { t, formatDate, lang } = useLang();
+  const { t, formatDate } = useLang();
   const [pending, startTransition] = useTransition();
   const [editTarget, setEditTarget] = useState<EmployeeRow | null>(null);
 
@@ -144,12 +131,6 @@ export default function EmployeesClient({
   function formatEmployment(e: string | null): string {
     if (!e) return "—";
     return e === "ft" ? t("admin.persona.employees.employment.ft") : t("admin.persona.employees.employment.pt");
-  }
-  function formatWeeklyOff(csv: string | null): string {
-    const days = parseWeeklyOffCsv(csv);
-    if (days.length === 0) return "—";
-    const shorts = lang === "en" ? DAY_SHORT_EN : DAY_SHORT_TH;
-    return days.map((d) => shorts[d]).join(", ");
   }
   function formatPayRate(u: EmployeeRow) {
     // Admins are employees too — show their pay rate like staff
@@ -247,7 +228,6 @@ export default function EmployeesClient({
               <th className="py-2 pr-3">{t("admin.persona.employees.col.role")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.gender")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.employment")}</th>
-              <th className="py-2 pr-3">{t("admin.persona.employees.col.weeklyOff")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.hireDate")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.payRate")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.pin")}</th>
@@ -257,13 +237,13 @@ export default function EmployeesClient({
           <tbody>
             {visibleEmployees.length === 0 && (
               <tr>
-                <td colSpan={10} className="py-8 text-center text-sm text-slate-400">
+                <td colSpan={9} className="py-8 text-center text-sm text-slate-400">
                   {t("admin.persona.employees.noMatch")}
                 </td>
               </tr>
             )}
             {visibleEmployees.map((u) => {
-              const incomplete = u.role === "staff" && (!u.gender || !u.employment_type || !u.hire_date || parseWeeklyOffCsv(u.weekly_off_days).length === 0);
+              const incomplete = u.role === "staff" && (!u.gender || !u.employment_type || !u.hire_date);
               return (
                 <tr key={u.id} className={`border-b last:border-0 ${incomplete ? "bg-amber-50/50" : "hover:bg-slate-50"}`}>
                   <td className="py-2 pr-3 align-top">
@@ -291,7 +271,6 @@ export default function EmployeesClient({
                   </td>
                   <td className="py-2 pr-3 text-slate-700">{formatGender(u.gender)}</td>
                   <td className="py-2 pr-3 text-slate-700">{formatEmployment(u.employment_type)}</td>
-                  <td className="py-2 pr-3 text-slate-700">{formatWeeklyOff(u.weekly_off_days)}</td>
                   <td className="py-2 pr-3 text-slate-700">
                     {u.hire_date ? formatDate(u.hire_date) : "—"}
                   </td>
@@ -355,8 +334,7 @@ function EditModal({
   onSaved: () => void;
   onRefresh: () => void;
 }) {
-  const { t, lang } = useLang();
-  const dayNames = lang === "en" ? DAY_NAMES_EN : DAY_NAMES_TH;
+  const { t } = useLang();
 
   // ── Branch access (สิทธิ์เข้าสาขา) ───────────────────────────────
   // Independent of the main profile save: its own selection + save
@@ -404,15 +382,6 @@ function EditModal({
   const [gender, setGender] = useState<"male" | "female" | "">(employee.gender ?? "");
   const [employmentType, setEmploymentType] = useState<"pt" | "ft" | "">(employee.employment_type ?? "");
   const [hireDate, setHireDate] = useState<string>(employee.hire_date ?? "");
-  const [weeklyOffDays, setWeeklyOffDays] = useState<number[]>(
-    parseWeeklyOffCsv(employee.weekly_off_days)
-  );
-  function toggleOffDay(day: number): void {
-    setWeeklyOffDays((prev) => prev.includes(day)
-      ? prev.filter((d) => d !== day)
-      : [...prev, day].sort((a, b) => a - b)
-    );
-  }
   // Phase 1D — Payroll fields
   const [employeeCode, setEmployeeCode] = useState<string>(employee.employee_code ?? "");
   const [nationalId, setNationalId] = useState<string>(employee.national_id ?? "");
@@ -543,7 +512,6 @@ function EditModal({
         gender: gender || null,
         employment_type: employmentType || null,
         hire_date: hireDate || null,
-        weekly_off_days: weeklyOffDays.length === 0 ? null : weeklyOffDays,
         employee_code: employeeCode.trim() || null,
         national_id: nationalId.trim() || null,
         tax_id: taxId.trim() || null,
@@ -670,42 +638,6 @@ function EditModal({
               <option value="pt">{t("admin.persona.employees.employment.pt")}</option>
             </select>
           </div>
-        </div>
-
-        <div>
-          <label className="label">{t("admin.persona.employees.field.weeklyOff")}</label>
-          <div className="grid grid-cols-7 gap-1">
-            {dayNames.map((d, i) => {
-              const checked = weeklyOffDays.includes(i);
-              return (
-                <label
-                  key={i}
-                  className={`flex flex-col items-center gap-1 border rounded-lg px-2 py-2 cursor-pointer transition text-xs ${
-                    checked
-                      ? "border-brand bg-rose-50/40 ring-1 ring-brand/30 text-slate-800"
-                      : "border-slate-200 hover:bg-slate-50 text-slate-600"
-                  }`}
-                  title={d}
-                >
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={checked}
-                    onChange={() => toggleOffDay(i)}
-                  />
-                  <span className={`w-5 h-5 rounded flex items-center justify-center text-[11px] font-medium ${
-                    checked ? "bg-brand text-white" : "bg-slate-100 text-slate-400"
-                  }`}>
-                    {checked ? "✓" : ""}
-                  </span>
-                  <span>{lang === "en" ? DAY_SHORT_EN[i] : DAY_SHORT_TH[i]}</span>
-                </label>
-              );
-            })}
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {t("admin.persona.employees.weeklyOffHint")}
-          </p>
         </div>
 
         <div>
