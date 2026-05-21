@@ -6,7 +6,8 @@ import { getDb, type ShiftChecklistItem } from "@/lib/db";
 const PatchBody = z.object({
   label: z.string().trim().min(1).max(200).optional(),
   display_order: z.number().int().min(0).max(100_000).optional(),
-  active: z.union([z.literal(0), z.literal(1)]).optional()
+  active: z.union([z.literal(0), z.literal(1)]).optional(),
+  kind: z.enum(["checkbox", "text"]).optional()
 });
 
 /** Look up the item and verify the calling admin is assigned to the

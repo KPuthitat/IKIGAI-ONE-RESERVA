@@ -237,6 +237,13 @@ function runMigrations(db: Database.Database): void {
 
   const sccols = db.prepare("PRAGMA table_info(shift_checklist_items)").all() as Array<{ name: string }>;
   const sccolNames = new Set(sccols.map((c) => c.name));
+  // 2026-05-21: per-item `kind` so admin can mark an entry as a
+  // free-text box (kind='text') instead of the default check-yes/no
+  // (kind='checkbox'). Staff forms branch on this. Legacy rows default
+  // to 'checkbox' so the system behaves identically pre-migration.
+  if (!sccolNames.has("kind")) {
+    db.exec("ALTER TABLE shift_checklist_items ADD COLUMN kind TEXT NOT NULL DEFAULT 'checkbox'");
+  }
   if (!sccolNames.has("branch_id")) {
     db.exec("ALTER TABLE shift_checklist_items ADD COLUMN branch_id INTEGER REFERENCES branches(id)");
     // Clone any orphan (NULL branch_id) rows once per existing branch so
@@ -2640,10 +2647,15 @@ export type DailyReport = {
 
 export type ShiftChecklistItem = {
   id: number;
-  type: "shift_open" | "shift_close";
+  type: "shift_open" | "shift_close" | "readiness_1130" | "readiness_1600";
   /** Per-branch since 2026-05 — admin manages each branch's list independently. */
   branch_id: number;
   label: string;
+  /** 'checkbox' (default): renders as a yes/no checkbox on the staff form.
+   *  'text': renders as a free-form text input — used for items where
+   *  admin wants the staff to record a specific value (เช่น "ยอดเงินใน
+   *  ลิ้นชัก") rather than just confirm completion. */
+  kind: "checkbox" | "text";
   display_order: number;
   active: number;          // 1 / 0
   created_at: string;

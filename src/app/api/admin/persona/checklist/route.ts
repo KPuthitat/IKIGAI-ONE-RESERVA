@@ -16,7 +16,9 @@ const CreateBody = z.object({
   label: z.string().trim().min(1).max(200),
   /** Optional — defaults to admin's current activeBranchId. When set,
    *  must be a branch the admin is assigned to. */
-  branch_id: z.number().int().positive().optional()
+  branch_id: z.number().int().positive().optional(),
+  /** 'checkbox' (default) or 'text'. See ShiftChecklistItem.kind. */
+  kind: z.enum(["checkbox", "text"]).optional()
 });
 
 function resolveBranchId(
@@ -64,7 +66,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }
-  const { type, label, branch_id: override } = parsed.data;
+  const { type, label, branch_id: override, kind } = parsed.data;
   const r = resolveBranchId(user, override ?? null);
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
 
@@ -75,8 +77,8 @@ export async function POST(req: Request) {
     "SELECT COALESCE(MAX(display_order), 0) AS max FROM shift_checklist_items WHERE type = ? AND branch_id = ?"
   ).get(type, r.branchId) as { max: number };
   const result = db.prepare(`
-    INSERT INTO shift_checklist_items (type, label, display_order, branch_id)
-    VALUES (?, ?, ?, ?)
-  `).run(type, label, maxRow.max + 10, r.branchId);
+    INSERT INTO shift_checklist_items (type, label, display_order, branch_id, kind)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(type, label, maxRow.max + 10, r.branchId, kind ?? "checkbox");
   return NextResponse.json({ ok: true, id: result.lastInsertRowid });
 }

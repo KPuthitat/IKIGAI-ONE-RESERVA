@@ -158,7 +158,11 @@ export default function ShiftOpenPage() {
         openerName={nameWithPrefix(user.title_prefix, user.display_name)}
         today={today}
         yesterdayClosingHint={yesterdayClosingHint}
-        checklistItems={checklist.map((c) => ({ id: c.id, label: c.label }))}
+        checklistItems={checklist.map((c) => ({
+          id: c.id,
+          label: c.label,
+          kind: (c.kind ?? "checkbox") as "checkbox" | "text"
+        }))}
       />
     </div>
   );

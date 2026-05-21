@@ -34,6 +34,7 @@ export default function ChecklistEditor({
   const [items, setItems] = useState<ShiftChecklistItem[]>(initialItems);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [newLabel, setNewLabel] = useState("");
+  const [newKind, setNewKind] = useState<"checkbox" | "text">("checkbox");
   const [busyAdd, setBusyAdd] = useState(false);
 
   async function patchItem(id: number, patch: Partial<ShiftChecklistItem>) {
@@ -75,10 +76,11 @@ export default function ChecklistEditor({
       const res = await fetch(apiUrl("/api/admin/persona/checklist"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, label: trimmed, branch_id: branchId })
+        body: JSON.stringify({ type, label: trimmed, branch_id: branchId, kind: newKind })
       });
       if (!res.ok) throw new Error("add failed");
       setNewLabel("");
+      setNewKind("checkbox");
       router.refresh();
     } finally {
       setBusyAdd(false);
@@ -133,6 +135,7 @@ export default function ChecklistEditor({
                 isLast={i === items.length - 1}
                 busy={busyId === it.id}
                 onPatchLabel={(label) => patchItem(it.id, { label })}
+                onPatchKind={(kind) => patchItem(it.id, { kind })}
                 onToggleActive={() =>
                   patchItem(it.id, { active: it.active ? 0 : 1 })}
                 onMoveUp={() => move(it.id, -1)}
@@ -149,15 +152,23 @@ export default function ChecklistEditor({
         <h2 className="font-bold text-slate-800 text-sm">
           {t("admin.persona.checklist.addTitle")}
         </h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <input
             type="text"
-            className="input flex-1"
+            className="input flex-1 min-w-[180px]"
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
             placeholder={t("admin.persona.checklist.addPlaceholder")}
             maxLength={200}
           />
+          <select
+            className="input text-sm"
+            value={newKind}
+            onChange={(e) => setNewKind(e.target.value as "checkbox" | "text")}
+          >
+            <option value="checkbox">{t("admin.persona.checklist.kind.checkbox")}</option>
+            <option value="text">{t("admin.persona.checklist.kind.text")}</option>
+          </select>
           <button
             type="submit"
             disabled={busyAdd || !newLabel.trim()}
@@ -168,6 +179,9 @@ export default function ChecklistEditor({
               : t("admin.persona.checklist.addBtn")}
           </button>
         </div>
+        <p className="text-[11px] text-slate-500">
+          {t("admin.persona.checklist.kind.hint")}
+        </p>
       </form>
     </div>
   );
@@ -175,13 +189,14 @@ export default function ChecklistEditor({
 
 function ChecklistRow({
   item, isFirst, isLast, busy,
-  onPatchLabel, onToggleActive, onMoveUp, onMoveDown, onDelete, t
+  onPatchLabel, onPatchKind, onToggleActive, onMoveUp, onMoveDown, onDelete, t
 }: {
   item: ShiftChecklistItem;
   isFirst: boolean;
   isLast: boolean;
   busy: boolean;
   onPatchLabel: (label: string) => Promise<void>;
+  onPatchKind: (kind: "checkbox" | "text") => Promise<void>;
   onToggleActive: () => Promise<void>;
   onMoveUp: () => Promise<void>;
   onMoveDown: () => Promise<void>;
@@ -247,6 +262,16 @@ function ChecklistRow({
         </button>
       )}
 
+      <select
+        value={item.kind ?? "checkbox"}
+        disabled={busy}
+        onChange={(e) => onPatchKind(e.target.value as "checkbox" | "text")}
+        className="text-xs border border-slate-300 rounded px-1.5 py-1 text-slate-700 bg-white"
+        title={t("admin.persona.checklist.kind.hint")}
+      >
+        <option value="checkbox">{t("admin.persona.checklist.kind.checkbox")}</option>
+        <option value="text">{t("admin.persona.checklist.kind.text")}</option>
+      </select>
       <button
         type="button"
         onClick={onToggleActive}

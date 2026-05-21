@@ -10,7 +10,7 @@ import { useLang } from "@/lib/LangProvider";
 // amount the staff types here becomes the next day's "ยอดเงินปิดกะ
 // เมื่อวาน" prefill on the pre-shift form.
 
-type ChecklistItem = { id: number; label: string };
+type ChecklistItem = { id: number; label: string; kind: "checkbox" | "text" };
 
 export default function ShiftCloseForm({
   branchId, branchName, closerName, checklistItems
@@ -34,6 +34,13 @@ export default function ShiftCloseForm({
   const [notes, setNotes] = useState<Record<number, string>>(() =>
     Object.fromEntries(checklistItems.map((it) => [it.id, ""]))
   );
+  // See ShiftOpenForm for the rationale — text items keep their value
+  // here and we mirror them into the (checked, note) payload at submit
+  // so downstream renderers (LINE Flex, audit) don't need to know about
+  // kinds.
+  const [textValues, setTextValues] = useState<Record<number, string>>(() =>
+    Object.fromEntries(checklistItems.map((it) => [it.id, ""]))
+  );
   const [openNotes, setOpenNotes] = useState<Record<number, boolean>>({});
   const [errorIds, setErrorIds] = useState<Record<number, boolean>>({});
 
@@ -42,7 +49,14 @@ export default function ShiftCloseForm({
   const [done, setDone] = useState(false);
 
   function toggleAll(value: boolean) {
-    setChecked(Object.fromEntries(checklistItems.map((it) => [it.id, value])));
+    setChecked((prev) => ({
+      ...prev,
+      ...Object.fromEntries(
+        checklistItems
+          .filter((it) => it.kind === "checkbox")
+          .map((it) => [it.id, value])
+      )
+    }));
   }
 
   function parseAmount(s: string): number | null {
@@ -57,7 +71,10 @@ export default function ShiftCloseForm({
     e.preventDefault();
     setMsg(null);
     const missingNoteIds = checklistItems
-      .filter((it) => !checked[it.id] && !((notes[it.id] || "").trim()))
+      .filter((it) => {
+        if (it.kind === "text") return !((textValues[it.id] || "").trim());
+        return !checked[it.id] && !((notes[it.id] || "").trim());
+      })
       .map((it) => it.id);
     if (missingNoteIds.length > 0) {
       setErrorIds(Object.fromEntries(missingNoteIds.map((id) => [id, true])));
@@ -79,9 +96,19 @@ export default function ShiftCloseForm({
       const closingParsed = parseAmount(closingAmount);
       const svcParsed = parseAmount(svcAmount);
       const checklistPayload = checklistItems.map((it) => {
+        if (it.kind === "text") {
+          const value = (textValues[it.id] || "").trim();
+          return {
+            label: it.label,
+            kind: "text" as const,
+            checked: !!value,
+            note: value || null
+          };
+        }
         const note = (notes[it.id] || "").trim();
         return {
           label: it.label,
+          kind: "checkbox" as const,
           checked: !!checked[it.id],
           note: note ? note : null
         };
@@ -211,11 +238,55 @@ export default function ShiftCloseForm({
 
           <div className="space-y-2">
             {checklistItems.map((it) => {
+              const hasError = !!errorIds[it.id];
+              if (it.kind === "text") {
+                const value = textValues[it.id] || "";
+                const filled = value.trim().length > 0;
+                const cls = hasError
+                  ? "border-rose-400 bg-rose-50 ring-2 ring-rose-200"
+                  : filled
+                    ? "border-emerald-300 bg-emerald-50"
+                    : "border-slate-200 hover:border-slate-300";
+                return (
+                  <div
+                    key={it.id}
+                    className={`rounded-xl border-[1.5px] transition p-3 ${cls}`}
+                  >
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                      {it.label}
+                    </label>
+                    <input
+                      type="text"
+                      className={`input text-sm ${hasError ? "border-rose-400 focus:border-rose-500" : ""}`}
+                      maxLength={500}
+                      value={value}
+                      placeholder={t("staff.persona.shift.open.textValuePlaceholder")}
+                      onChange={(e) => {
+                        setTextValues((prev) => ({
+                          ...prev,
+                          [it.id]: e.target.value
+                        }));
+                        if (e.target.value.trim() && hasError) {
+                          setErrorIds((prev) => {
+                            const next = { ...prev };
+                            delete next[it.id];
+                            return next;
+                          });
+                        }
+                      }}
+                    />
+                    {hasError && (
+                      <p className="text-[10px] text-rose-600 font-medium mt-1">
+                        {t("staff.persona.shift.open.textValueRequired")}
+                      </p>
+                    )}
+                  </div>
+                );
+              }
               const isChecked = !!checked[it.id];
               const note = notes[it.id] || "";
               const hasNote = note.trim().length > 0;
               const isOpen = !!openNotes[it.id];
-              const hasError = !!errorIds[it.id];
               const containerCls = hasError
                 ? "border-rose-400 bg-rose-50 ring-2 ring-rose-200"
                 : isChecked

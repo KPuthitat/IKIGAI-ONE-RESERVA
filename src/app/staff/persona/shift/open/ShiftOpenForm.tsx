@@ -18,7 +18,7 @@ import { useLang } from "@/lib/LangProvider";
 // the LINE Flex card renders all three states distinctly so admin
 // can read why something was skipped without chasing the staff.
 
-type ChecklistItem = { id: number; label: string };
+type ChecklistItem = { id: number; label: string; kind: "checkbox" | "text" };
 
 export default function ShiftOpenForm({
   branchId, branchName, openerName, today, yesterdayClosingHint, checklistItems
@@ -43,6 +43,14 @@ export default function ShiftOpenForm({
   const [checked, setChecked] = useState<Record<number, boolean>>(() =>
     Object.fromEntries(checklistItems.map((it) => [it.id, false]))
   );
+  // For text-input items, the entered value lives in `textValues`. We
+  // mirror it into the same payload shape as a checkbox+note row by
+  // treating non-empty text as `checked=true` and shoving the value
+  // into the note field, so the existing LINE Flex renderer renders
+  // text answers without any code change downstream.
+  const [textValues, setTextValues] = useState<Record<number, string>>(() =>
+    Object.fromEntries(checklistItems.map((it) => [it.id, ""]))
+  );
   // Per-item note text. An empty string is the same as "no note" — only
   // non-empty strings turn the row into the "skipped-with-note" state.
   const [notes, setNotes] = useState<Record<number, string>>(() =>
@@ -62,7 +70,16 @@ export default function ShiftOpenForm({
   const [done, setDone] = useState(false);
 
   function toggleAll(value: boolean) {
-    setChecked(Object.fromEntries(checklistItems.map((it) => [it.id, value])));
+    // "Mark all done" only applies to checkbox items — text inputs
+    // need their value typed by hand and shouldn't get auto-ticked.
+    setChecked((prev) => ({
+      ...prev,
+      ...Object.fromEntries(
+        checklistItems
+          .filter((it) => it.kind === "checkbox")
+          .map((it) => [it.id, value])
+      )
+    }));
   }
 
   function parseAmount(s: string): number | null {
@@ -76,12 +93,16 @@ export default function ShiftOpenForm({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
-    // Validate: every unticked item must carry a non-empty note. Anything
-    // missing → show the error banner, auto-open those rows' note inputs,
-    // and abort. This pushes staff to either tick the item or explain
-    // why it's being skipped before the report leaves the form.
+    // Validate. For text items: the typed value cannot be empty (treat
+    // it as a required field; admins typically use text rows for things
+    // like cash counts where blank is wrong). For checkbox items: same
+    // rule as before — either ticked, or carrying a note explaining the
+    // skip.
     const missingNoteIds = checklistItems
-      .filter((it) => !checked[it.id] && !((notes[it.id] || "").trim()))
+      .filter((it) => {
+        if (it.kind === "text") return !((textValues[it.id] || "").trim());
+        return !checked[it.id] && !((notes[it.id] || "").trim());
+      })
       .map((it) => it.id);
     if (missingNoteIds.length > 0) {
       setErrorIds(Object.fromEntries(missingNoteIds.map((id) => [id, true])));
@@ -103,9 +124,22 @@ export default function ShiftOpenForm({
       const yesterdayParsed = parseAmount(yesterdayAmount);
       const morningParsed = parseAmount(morningAmount);
       const checklistPayload = checklistItems.map((it) => {
+        if (it.kind === "text") {
+          const value = (textValues[it.id] || "").trim();
+          // Mirror text into the existing (checked, note) shape so the
+          // downstream Flex renderer doesn't need to know about kinds:
+          //   checked=true + note=<typed value>
+          return {
+            label: it.label,
+            kind: "text" as const,
+            checked: !!value,
+            note: value || null
+          };
+        }
         const note = (notes[it.id] || "").trim();
         return {
           label: it.label,
+          kind: "checkbox" as const,
           checked: !!checked[it.id],
           // Send null instead of empty string so the API/Flex layer
           // doesn't have to treat "" specially.
@@ -151,7 +185,9 @@ export default function ShiftOpenForm({
   }
 
   if (done) {
-    const allChecked = checklistItems.every((it) => checked[it.id]);
+    const allChecked = checklistItems.every((it) =>
+      it.kind === "text" ? (textValues[it.id] || "").trim().length > 0 : checked[it.id]
+    );
     return (
       <div className="card text-center space-y-3">
         <div className="text-5xl">{allChecked ? "✓" : "⚠"}</div>
@@ -237,11 +273,55 @@ export default function ShiftOpenForm({
 
           <div className="space-y-2">
             {checklistItems.map((it) => {
+              const hasError = !!errorIds[it.id];
+              if (it.kind === "text") {
+                const value = textValues[it.id] || "";
+                const filled = value.trim().length > 0;
+                const cls = hasError
+                  ? "border-rose-400 bg-rose-50 ring-2 ring-rose-200"
+                  : filled
+                    ? "border-emerald-300 bg-emerald-50"
+                    : "border-slate-200 hover:border-slate-300";
+                return (
+                  <div
+                    key={it.id}
+                    className={`rounded-xl border-[1.5px] transition p-3 ${cls}`}
+                  >
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                      {it.label}
+                    </label>
+                    <input
+                      type="text"
+                      className={`input text-sm ${hasError ? "border-rose-400 focus:border-rose-500" : ""}`}
+                      maxLength={500}
+                      value={value}
+                      placeholder={t("staff.persona.shift.open.textValuePlaceholder")}
+                      onChange={(e) => {
+                        setTextValues((prev) => ({
+                          ...prev,
+                          [it.id]: e.target.value
+                        }));
+                        if (e.target.value.trim() && hasError) {
+                          setErrorIds((prev) => {
+                            const next = { ...prev };
+                            delete next[it.id];
+                            return next;
+                          });
+                        }
+                      }}
+                    />
+                    {hasError && (
+                      <p className="text-[10px] text-rose-600 font-medium mt-1">
+                        {t("staff.persona.shift.open.textValueRequired")}
+                      </p>
+                    )}
+                  </div>
+                );
+              }
               const isChecked = !!checked[it.id];
               const note = notes[it.id] || "";
               const hasNote = note.trim().length > 0;
               const isOpen = !!openNotes[it.id];
-              const hasError = !!errorIds[it.id];
               // Visual state: red when error (unchecked + no note flagged
               // by submit validation), emerald when done, amber when
               // skipped-with-note, slate by default. The note state visually
