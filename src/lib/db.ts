@@ -2710,15 +2710,6 @@ export type ShiftChecklistItem = {
   created_at: string;
 };
 
-/** Decode options_json into a string[]. Returns [] when the row isn't
- *  a choice kind or the JSON is malformed — never throws. */
-export function parseChecklistOptions(row: { options_json: string | null }): string[] {
-  if (!row.options_json) return [];
-  try {
-    const parsed = JSON.parse(row.options_json);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((s): s is string => typeof s === "string");
-  } catch {
-    return [];
-  }
-}
+// parseChecklistOptions() moved to ./checklist-options.ts so client
+// components can import it without dragging better-sqlite3 into the
+// browser bundle. Server callers import from there too.

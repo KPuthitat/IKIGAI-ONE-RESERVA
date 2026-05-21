@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import type { ShiftChecklistItem } from "@/lib/db";
-import { parseChecklistOptions } from "@/lib/db";
+import { parseChecklistOptions } from "@/lib/checklist-options";
 
 // Editor for a per-branch checklist. The same UI handles all 4
 // daily-report types: shift_open, shift_close, readiness_1130,
