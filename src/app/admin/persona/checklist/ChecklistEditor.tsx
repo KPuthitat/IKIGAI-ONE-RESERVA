@@ -635,6 +635,14 @@ function ChecklistRow({
 
 // Tiny editable textarea for the per-row description. Patches on blur
 // (not on every keystroke) so quick typing doesn't fire N writes.
+//
+// Collapsed by default when the row has no description yet — shows a
+// small "+ เพิ่มคำอธิบาย" link instead of an always-empty textarea.
+// Each row was taking ~80px of vertical space just to host an empty
+// placeholder, which made the editor feel cramped on mobile. Click
+// expands to textarea with autofocus; blur with still-empty content
+// collapses back. Rows that already have a description render
+// expanded so the existing text is visible without an extra click.
 function DescriptionEditor({
   initial, busy, onCommit, t
 }: {
@@ -644,6 +652,30 @@ function DescriptionEditor({
   t: (k: string, vars?: Record<string, string | number>) => string;
 }) {
   const [draft, setDraft] = useState(initial);
+  const [expanded, setExpanded] = useState(initial.trim().length > 0);
+
+  // Keep local state in sync if initial changes (e.g. after a refetch
+  // that swaps the row). Without this, an admin who saved a value
+  // would see the link collapse on the next refresh because draft
+  // stayed at the old value while initial advanced.
+  useEffect(() => {
+    setDraft(initial);
+    setExpanded(initial.trim().length > 0);
+  }, [initial]);
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        disabled={busy}
+        className="text-[11px] text-slate-500 hover:text-brand disabled:opacity-40"
+      >
+        + {t("admin.persona.checklist.descriptionAdd")}
+      </button>
+    );
+  }
+
   return (
     <div>
       <textarea
@@ -651,12 +683,23 @@ function DescriptionEditor({
         rows={1}
         maxLength={500}
         value={draft}
+        // Autofocus only when we just expanded from a previously-empty
+        // state — avoids stealing focus on initial mount when a row
+        // already has saved description content.
+        autoFocus={initial.trim().length === 0}
         disabled={busy}
         placeholder={t("admin.persona.checklist.descriptionPlaceholder")}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {
           if (draft.trim() !== initial.trim()) {
             void onCommit(draft);
+          }
+          // Re-collapse when both saved and draft are empty so the
+          // row doesn't keep hosting an empty input after admin
+          // changes their mind. Rows with saved content stay
+          // expanded so the value remains visible.
+          if (draft.trim().length === 0 && initial.trim().length === 0) {
+            setExpanded(false);
           }
         }}
       />
