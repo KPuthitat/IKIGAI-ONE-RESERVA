@@ -34,6 +34,9 @@ export type ReadinessChecklistItem = {
   /** Only meaningful for kind === 'choice'. ≥ 2 entries guaranteed by
    *  the admin API. */
   options?: string[];
+  /** When set, this row is a child of another item. The form renders
+   *  it indented under its parent. null = top-level row. */
+  parent_id?: number | null;
 };
 
 export default function ReadinessForm({
@@ -64,6 +67,18 @@ export default function ReadinessForm({
 
   const items = checklistItems;
 
+  // Group items into parent → children for rendering. Submit order is
+  // still flat (parents-then-children); the LINE Flex renderer reads
+  // is_child to indent. Server query already orders by display_order.
+  const topLevel = items.filter((it) => !it.parent_id);
+  const childrenByParent = new Map<number, ReadinessChecklistItem[]>();
+  for (const it of items) {
+    if (it.parent_id) {
+      if (!childrenByParent.has(it.parent_id)) childrenByParent.set(it.parent_id, []);
+      childrenByParent.get(it.parent_id)!.push(it);
+    }
+  }
+
   // One state map per kind. checkbox → tick state; text → typed
   // string; choice → selected option string (null until staff picks).
   const [checked, setChecked] = useState<Record<number, boolean>>(() =>
@@ -85,18 +100,25 @@ export default function ReadinessForm({
     setMsg(null);
     setBusy(true);
     try {
-      // Build the checklist payload — text/choice items mirror their
-      // value into `note` so the LINE Flex card shows it; checkbox
-      // items just carry tick state. Backend stores the array as-is
-      // and the Flex renderer treats `note` uniformly across kinds.
-      const checklistPayload = items.map((it) => {
+      // Build the checklist payload, flattening parents+children in
+      // display order. Each child row carries is_child=true so the
+      // downstream LINE Flex renderer indents it under its parent.
+      const checklistPayload: Array<{
+        label: string;
+        kind: "checkbox" | "text" | "choice";
+        checked: boolean;
+        note: string | null;
+        is_child?: boolean;
+      }> = [];
+      const buildEntry = (it: ReadinessChecklistItem, isChild: boolean) => {
         if (it.kind === "text") {
           const value = (textValues[it.id] || "").trim();
           return {
             label: it.label,
             kind: "text" as const,
             checked: !!value,
-            note: value || null
+            note: value || null,
+            ...(isChild ? { is_child: true } : {})
           };
         }
         if (it.kind === "choice") {
@@ -105,16 +127,23 @@ export default function ReadinessForm({
             label: it.label,
             kind: "choice" as const,
             checked: !!sel,
-            note: sel ?? null
+            note: sel ?? null,
+            ...(isChild ? { is_child: true } : {})
           };
         }
         return {
           label: it.label,
           kind: "checkbox" as const,
           checked: !!checked[it.id],
-          note: null
+          note: null,
+          ...(isChild ? { is_child: true } : {})
         };
-      });
+      };
+      for (const parent of topLevel) {
+        checklistPayload.push(buildEntry(parent, false));
+        const kids = childrenByParent.get(parent.id) ?? [];
+        for (const k of kids) checklistPayload.push(buildEntry(k, true));
+      }
 
       const res = await fetch(apiUrl("/api/persona/daily-report"), {
         method: "POST",
@@ -201,107 +230,21 @@ export default function ReadinessForm({
 
       <div className="card space-y-3">
         <div className="space-y-3">
-          {items.map((it) => {
-            if (it.kind === "text") {
-              const value = textValues[it.id] || "";
-              const filled = value.trim().length > 0;
-              return (
-                <div
-                  key={it.id}
-                  className={`rounded-xl border-[1.5px] transition p-3 ${
-                    filled
-                      ? "border-emerald-300 bg-emerald-50"
-                      : "border-slate-200 hover:border-slate-300"
-                  }`}
-                >
-                  <label className="block text-sm font-bold text-slate-800 mb-1.5">
-                    {it.label}
-                  </label>
-                  <textarea
-                    className="input text-sm"
-                    rows={3}
-                    maxLength={2000}
-                    value={value}
-                    placeholder={t("staff.persona.readiness.textValuePlaceholder")}
-                    onChange={(e) =>
-                      setTextValues((prev) => ({
-                        ...prev,
-                        [it.id]: e.target.value
-                      }))
-                    }
-                  />
-                </div>
-              );
-            }
-            if (it.kind === "choice") {
-              const sel = choices[it.id];
-              const opts = it.options ?? [];
-              return (
-                <div
-                  key={it.id}
-                  className={`rounded-xl border-[1.5px] transition p-3 ${
-                    sel
-                      ? "border-emerald-300 bg-emerald-50"
-                      : "border-slate-200"
-                  }`}
-                >
-                  <div className="block text-sm font-bold text-slate-800 mb-2">
-                    {it.label}
-                  </div>
-                  <div className="flex gap-2 flex-wrap">
-                    {opts.map((opt) => {
-                      const picked = sel === opt;
-                      return (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={() =>
-                            setChoices((prev) => ({ ...prev, [it.id]: opt }))
-                          }
-                          className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-lg text-sm font-bold transition-all border-2 ${
-                            picked
-                              ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                              : "border-slate-200 text-slate-500 hover:border-slate-300"
-                          }`}
-                        >
-                          {picked ? "● " : ""}{opt}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            }
-            const isChecked = !!checked[it.id];
+          {topLevel.map((parent) => {
+            const kids = childrenByParent.get(parent.id) ?? [];
             return (
-              <label
-                key={it.id}
-                className={`flex items-center gap-3 p-3 rounded-xl border-[1.5px] transition cursor-pointer ${
-                  isChecked
-                    ? "border-emerald-300 bg-emerald-50"
-                    : "border-slate-200 hover:border-slate-300"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="w-5 h-5 flex-shrink-0"
-                  checked={isChecked}
-                  onChange={(e) =>
-                    setChecked((prev) => ({
-                      ...prev,
-                      [it.id]: e.target.checked
-                    }))
-                  }
-                />
-                <span className="text-sm flex-1 font-bold text-slate-800">{it.label}</span>
-                <span
-                  className={`text-xs font-bold ${
-                    isChecked ? "text-emerald-700" : "text-slate-400"
-                  }`}
-                >
-                  {isChecked ? "✓" : "—"}
-                </span>
-              </label>
+              <div key={parent.id} className="space-y-2">
+                {renderReadinessItem(parent, false, {
+                  checked, setChecked, textValues, setTextValues, choices, setChoices, t
+                })}
+                {kids.length > 0 && (
+                  <div className="ml-4 pl-3 border-l-2 border-slate-200 space-y-2">
+                    {kids.map((kid) => renderReadinessItem(kid, true, {
+                      checked, setChecked, textValues, setTextValues, choices, setChoices, t
+                    }))}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -326,6 +269,120 @@ export default function ReadinessForm({
         {busy ? t("staff.persona.shift.open.submitting") : submitLabel}
       </button>
     </form>
+  );
+}
+
+// Render one checklist item — extracted so the same code handles
+// both top-level rows and indented children. `isChild` only affects
+// font size + a slightly tighter padding so children read as visually
+// subordinate; the input mechanics are identical.
+function renderReadinessItem(
+  it: ReadinessChecklistItem,
+  isChild: boolean,
+  ctx: {
+    checked: Record<number, boolean>;
+    setChecked: React.Dispatch<React.SetStateAction<Record<number, boolean>>>;
+    textValues: Record<number, string>;
+    setTextValues: React.Dispatch<React.SetStateAction<Record<number, string>>>;
+    choices: Record<number, string | null>;
+    setChoices: React.Dispatch<React.SetStateAction<Record<number, string | null>>>;
+    t: (k: string, vars?: Record<string, string | number>) => string;
+  }
+) {
+  const labelSize = isChild ? "text-xs" : "text-sm";
+  const labelClass = `block ${labelSize} font-bold text-slate-800`;
+  const pad = isChild ? "p-2" : "p-3";
+
+  if (it.kind === "text") {
+    const value = ctx.textValues[it.id] || "";
+    const filled = value.trim().length > 0;
+    return (
+      <div
+        key={it.id}
+        className={`rounded-xl border-[1.5px] transition ${pad} ${
+          filled
+            ? "border-emerald-300 bg-emerald-50"
+            : "border-slate-200 hover:border-slate-300"
+        }`}
+      >
+        <label className={`${labelClass} mb-1.5`}>{it.label}</label>
+        <textarea
+          className="input text-sm"
+          rows={isChild ? 2 : 3}
+          maxLength={2000}
+          value={value}
+          placeholder={ctx.t("staff.persona.readiness.textValuePlaceholder")}
+          onChange={(e) =>
+            ctx.setTextValues((prev) => ({ ...prev, [it.id]: e.target.value }))
+          }
+        />
+      </div>
+    );
+  }
+  if (it.kind === "choice") {
+    const sel = ctx.choices[it.id];
+    const opts = it.options ?? [];
+    return (
+      <div
+        key={it.id}
+        className={`rounded-xl border-[1.5px] transition ${pad} ${
+          sel ? "border-emerald-300 bg-emerald-50" : "border-slate-200"
+        }`}
+      >
+        <div className={`${labelClass} mb-2`}>{it.label}</div>
+        <div className="flex gap-2 flex-wrap">
+          {opts.map((opt) => {
+            const picked = sel === opt;
+            return (
+              <button
+                key={opt}
+                type="button"
+                onClick={() =>
+                  ctx.setChoices((prev) => ({ ...prev, [it.id]: opt }))
+                }
+                className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-lg text-sm font-bold transition-all border-2 ${
+                  picked
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                    : "border-slate-200 text-slate-500 hover:border-slate-300"
+                }`}
+              >
+                {picked ? "● " : ""}{opt}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+  const isChecked = !!ctx.checked[it.id];
+  return (
+    <label
+      key={it.id}
+      className={`flex items-center gap-3 ${pad} rounded-xl border-[1.5px] transition cursor-pointer ${
+        isChecked
+          ? "border-emerald-300 bg-emerald-50"
+          : "border-slate-200 hover:border-slate-300"
+      }`}
+    >
+      <input
+        type="checkbox"
+        className="w-5 h-5 flex-shrink-0"
+        checked={isChecked}
+        onChange={(e) =>
+          ctx.setChecked((prev) => ({ ...prev, [it.id]: e.target.checked }))
+        }
+      />
+      <span className={`${labelSize} flex-1 font-bold text-slate-800`}>
+        {it.label}
+      </span>
+      <span
+        className={`text-xs font-bold ${
+          isChecked ? "text-emerald-700" : "text-slate-400"
+        }`}
+      >
+        {isChecked ? "✓" : "—"}
+      </span>
+    </label>
   );
 }
 

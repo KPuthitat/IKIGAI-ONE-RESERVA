@@ -292,15 +292,11 @@ export default function MessagingClient({
         </div>
       )}
 
-      {/* RESERVA per-branch hint */}
-      <div className="card border-l-4 border-sky-300 bg-sky-50/40">
-        <h2 className="font-semibold text-slate-800">
-          {t(lang, "admin.messaging.reservaTitle")}
-        </h2>
-        <p className="text-xs text-slate-600 mt-1">
-          {t(lang, "admin.messaging.reservaDesc")}
-        </p>
-      </div>
+      {/* The PERSONA messaging page used to surface a RESERVA hint
+          card here — removed 2026-05-21 because admins were confused
+          about whether this page also configured RESERVA's per-branch
+          OAs. It doesn't (that lives at /admin/reserva). Keeping
+          PERSONA's settings page scoped strictly to PERSONA. */}
 
       {/* Setup steps */}
       <div className="card text-sm text-slate-700 space-y-2">

@@ -1310,9 +1310,14 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
 // skipped-with-note / not-done) plus an incomplete-counter.
 
 /** Shared checklist body block — 3-state rendering + summary line.
- *  Returns the Flex contents to splice into a body box. */
+ *  Returns the Flex contents to splice into a body box.
+ *
+ *  Each entry can carry `is_child` to signal "this row is a sub-item
+ *  of the previous parent" — renderer indents it with a leading
+ *  spacer and a slightly smaller font so the visual hierarchy on the
+ *  LINE card matches the admin's tree in the editor. */
 function checklistFlexBlock(
-  checklist: Array<{ label: string; checked: boolean; note: string | null }>
+  checklist: Array<{ label: string; checked: boolean; note: string | null; is_child?: boolean }>
 ): unknown[] {
   if (checklist.length === 0) return [];
   const doneCount = checklist.filter((it) => it.checked).length;
@@ -1336,14 +1341,23 @@ function checklistFlexBlock(
           color: "#b45309"
         };
 
-  const itemBox = (it: { label: string; checked: boolean; note: string | null }) => {
+  const itemBox = (it: { label: string; checked: boolean; note: string | null; is_child?: boolean }) => {
     const note = it.note?.trim();
     const skipped = !it.checked && !!note;
-    const icon = it.checked ? "✓" : skipped ? "📝" : "✗";
-    const iconColor = it.checked ? "#059669" : skipped ? "#b45309" : "#dc2626";
+    const isChild = !!it.is_child;
+    // Child rows: prefix with " ↳" so even monochrome rendering keeps
+    // the hierarchy. Top-level rows show their checkbox icon as-is.
+    const icon = isChild ? "↳" : (it.checked ? "✓" : skipped ? "📝" : "✗");
+    const iconColor = isChild
+      ? COLOR_TEXT_MUTED
+      : (it.checked ? "#059669" : skipped ? "#b45309" : "#dc2626");
     const labelColor = it.checked ? COLOR_TEXT_DARK : skipped ? "#475569" : "#dc2626";
     const rowBox: Record<string, unknown> = {
       type: "box", layout: "horizontal", spacing: "sm",
+      // Indent the entire child row by adding left padding via a
+      // small leading filler. Keeps the icon + label aligned within
+      // the indented column.
+      ...(isChild ? { paddingStart: "20px" } : {}),
       contents: [
         {
           type: "text", text: icon,
@@ -1354,7 +1368,7 @@ function checklistFlexBlock(
           type: "text", text: it.label,
           flex: 1, size: "xs", wrap: true,
           color: labelColor,
-          weight: it.checked ? "regular" : "bold"
+          weight: it.checked && !isChild ? "regular" : "bold"
         }
       ]
     };
@@ -1377,7 +1391,10 @@ function checklistFlexBlock(
             size: "xxs",
             color: skipped ? "#b45309" : COLOR_TEXT_DARK,
             wrap: true,
-            margin: "none"
+            margin: "none",
+            // Align the note under the indented label when this is a
+            // child row, otherwise under the parent's label position.
+            ...(isChild ? { paddingStart: "40px" } : { paddingStart: "20px" })
           }
         ]
       };

@@ -25,6 +25,9 @@ type ChecklistItem = {
   /** Only meaningful when kind === 'choice'. ≥ 2 entries guaranteed
    *  by the admin API. */
   options?: string[];
+  /** When set, this row is a child of another item. The form renders
+   *  it indented under its parent. null = top-level row. */
+  parent_id?: number | null;
 };
 
 export default function ShiftOpenForm({
@@ -135,17 +138,18 @@ export default function ShiftOpenForm({
     try {
       const yesterdayParsed = parseAmount(yesterdayAmount);
       const morningParsed = parseAmount(morningAmount);
-      const checklistPayload = checklistItems.map((it) => {
+      // Flatten parents-then-children so the LINE Flex renders the
+      // hierarchy in order. is_child=true on child rows tells the
+      // renderer to indent them under their parent.
+      const buildEntry = (it: ChecklistItem, isChild: boolean) => {
         if (it.kind === "text") {
           const value = (textValues[it.id] || "").trim();
-          // Mirror text into the existing (checked, note) shape so the
-          // downstream Flex renderer doesn't need to know about kinds:
-          //   checked=true + note=<typed value>
           return {
             label: it.label,
             kind: "text" as const,
             checked: !!value,
-            note: value || null
+            note: value || null,
+            ...(isChild ? { is_child: true } : {})
           };
         }
         if (it.kind === "choice") {
@@ -154,7 +158,8 @@ export default function ShiftOpenForm({
             label: it.label,
             kind: "choice" as const,
             checked: !!sel,
-            note: sel ?? null
+            note: sel ?? null,
+            ...(isChild ? { is_child: true } : {})
           };
         }
         const note = (notes[it.id] || "").trim();
@@ -164,9 +169,18 @@ export default function ShiftOpenForm({
           checked: !!checked[it.id],
           // Send null instead of empty string so the API/Flex layer
           // doesn't have to treat "" specially.
-          note: note ? note : null
+          note: note ? note : null,
+          ...(isChild ? { is_child: true } : {})
         };
-      });
+      };
+      const topLevelItems = checklistItems.filter((it) => !it.parent_id);
+      const checklistPayload: Array<ReturnType<typeof buildEntry>> = [];
+      for (const parent of topLevelItems) {
+        checklistPayload.push(buildEntry(parent, false));
+        for (const k of checklistItems.filter((c) => c.parent_id === parent.id)) {
+          checklistPayload.push(buildEntry(k, true));
+        }
+      }
 
       const res = await fetch(apiUrl("/api/persona/daily-report"), {
         method: "POST",
@@ -295,8 +309,25 @@ export default function ShiftOpenForm({
           </div>
 
           <div className="space-y-2">
-            {checklistItems.map((it) => {
+            {/* Order checklist items so each parent is immediately
+                followed by its children, regardless of how display_order
+                interleaves across groups. Children are visually
+                indented via an extra ml-4 class on the wrapper. */}
+            {(() => {
+              const ordered: Array<{ item: ChecklistItem; isChild: boolean }> = [];
+              const parents = checklistItems.filter((it) => !it.parent_id);
+              for (const p of parents) {
+                ordered.push({ item: p, isChild: false });
+                for (const c of checklistItems.filter((c) => c.parent_id === p.id)) {
+                  ordered.push({ item: c, isChild: true });
+                }
+              }
+              return ordered.map(({ item: it, isChild }) => {
               const hasError = !!errorIds[it.id];
+              // Each branch builds an inner JSX element; we wrap once
+              // at the end with the indent classes when isChild is set.
+              // That keeps the per-kind classNames simple.
+              let inner: React.ReactNode = null;
               if (it.kind === "choice") {
                 const sel = choices[it.id];
                 const opts = it.options ?? [];
@@ -305,8 +336,8 @@ export default function ShiftOpenForm({
                   : sel
                     ? "border-emerald-300 bg-emerald-50"
                     : "border-slate-200";
-                return (
-                  <div key={it.id} className={`rounded-xl border-[1.5px] transition p-3 ${cls}`}>
+                inner = (
+                  <div className={`rounded-xl border-[1.5px] transition p-3 ${cls}`}>
                     <div className="block text-sm font-bold text-slate-800 mb-2">
                       {it.label}
                     </div>
@@ -345,8 +376,7 @@ export default function ShiftOpenForm({
                     )}
                   </div>
                 );
-              }
-              if (it.kind === "text") {
+              } else if (it.kind === "text") {
                 const value = textValues[it.id] || "";
                 const filled = value.trim().length > 0;
                 const cls = hasError
@@ -354,11 +384,8 @@ export default function ShiftOpenForm({
                   : filled
                     ? "border-emerald-300 bg-emerald-50"
                     : "border-slate-200 hover:border-slate-300";
-                return (
-                  <div
-                    key={it.id}
-                    className={`rounded-xl border-[1.5px] transition p-3 ${cls}`}
-                  >
+                inner = (
+                  <div className={`rounded-xl border-[1.5px] transition p-3 ${cls}`}>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">
                       {it.label}
                     </label>
@@ -389,7 +416,7 @@ export default function ShiftOpenForm({
                     )}
                   </div>
                 );
-              }
+              } else {
               const isChecked = !!checked[it.id];
               const note = notes[it.id] || "";
               const hasNote = note.trim().length > 0;
@@ -406,11 +433,8 @@ export default function ShiftOpenForm({
                   : hasNote
                     ? "border-amber-300 bg-amber-50"
                     : "border-slate-200 hover:border-slate-300";
-              return (
-                <div
-                  key={it.id}
-                  className={`rounded-xl border-[1.5px] transition ${containerCls}`}
-                >
+              inner = (
+                <div className={`rounded-xl border-[1.5px] transition ${containerCls}`}>
                   <label className="flex items-center gap-3 p-3 cursor-pointer">
                     <input
                       type="checkbox"
@@ -499,7 +523,17 @@ export default function ShiftOpenForm({
                   )}
                 </div>
               );
-            })}
+              }
+              return (
+                <div
+                  key={it.id}
+                  className={isChild ? "ml-4 pl-3 border-l-2 border-slate-200" : ""}
+                >
+                  {inner}
+                </div>
+              );
+              });
+            })()}
           </div>
           <p className="text-xs text-slate-400">
             {t("staff.persona.shift.open.checklistHint")}

@@ -128,13 +128,20 @@ export default function ChecklistEditor({
   }
 
   async function move(id: number, direction: -1 | 1) {
-    // Swap display_order with the neighbor in the given direction.
-    const idx = items.findIndex((it) => it.id === id);
+    // Swap display_order with the SIBLING neighbour at the same level
+    // (same parent_id). Children only swap among children of the same
+    // parent; top-level rows only swap with other top-level rows.
+    const me = items.find((x) => x.id === id);
+    if (!me) return;
+    const siblings = items
+      .filter((x) => (x.parent_id ?? null) === (me.parent_id ?? null))
+      .sort((a, b) => a.display_order - b.display_order);
+    const idx = siblings.findIndex((x) => x.id === id);
     if (idx < 0) return;
     const target = idx + direction;
-    if (target < 0 || target >= items.length) return;
-    const a = items[idx];
-    const b = items[target];
+    if (target < 0 || target >= siblings.length) return;
+    const a = siblings[idx];
+    const b = siblings[target];
     setBusyId(id);
     try {
       await Promise.all([
@@ -155,46 +162,194 @@ export default function ChecklistEditor({
     }
   }
 
+  // Group items into parent → children. Server query already orders by
+  // display_order so the natural array order is correct for both
+  // levels; we just split into top-level + children-by-parent maps.
+  const topLevel = items
+    .filter((it) => it.parent_id == null)
+    .sort((a, b) => a.display_order - b.display_order);
+  const childrenByParent = new Map<number, ShiftChecklistItem[]>();
+  for (const it of items) {
+    if (it.parent_id != null) {
+      if (!childrenByParent.has(it.parent_id)) childrenByParent.set(it.parent_id, []);
+      childrenByParent.get(it.parent_id)!.push(it);
+    }
+  }
+  for (const arr of childrenByParent.values()) {
+    arr.sort((a, b) => a.display_order - b.display_order);
+  }
+
+  // Inline "+ เพิ่มรายการย่อย" state — which parent currently has its
+  // child-add form expanded, and its draft contents. Only one parent's
+  // form is open at a time to keep the UI calm.
+  const [childAddParentId, setChildAddParentId] = useState<number | null>(null);
+  const [childAddLabel, setChildAddLabel] = useState("");
+  const [childAddKind, setChildAddKind] = useState<"checkbox" | "text" | "choice">("text");
+  const [childAddOptions, setChildAddOptions] = useState<string[]>(["", ""]);
+  const [childAddBusy, setChildAddBusy] = useState(false);
+  const [childAddErr, setChildAddErr] = useState<string | null>(null);
+
+  function openChildAdd(parentId: number) {
+    setChildAddParentId(parentId);
+    setChildAddLabel("");
+    setChildAddKind("text");   // text is the common case ("Cash xx,xxx.xx")
+    setChildAddOptions(["", ""]);
+    setChildAddErr(null);
+  }
+
+  async function submitChildAdd() {
+    if (childAddParentId == null) return;
+    setChildAddErr(null);
+    const trimmed = childAddLabel.trim();
+    if (!trimmed) return;
+    let payloadOptions: string[] | undefined;
+    if (childAddKind === "choice") {
+      payloadOptions = childAddOptions.map((o) => o.trim()).filter((o) => o.length > 0);
+      if (payloadOptions.length < 2) {
+        setChildAddErr(t("admin.persona.checklist.kind.choiceMinOptions"));
+        return;
+      }
+    }
+    setChildAddBusy(true);
+    try {
+      const res = await fetch(apiUrl("/api/admin/persona/checklist"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type,
+          label: trimmed,
+          branch_id: branchId,
+          kind: childAddKind,
+          parent_id: childAddParentId,
+          ...(payloadOptions ? { options: payloadOptions } : {})
+        })
+      });
+      if (!res.ok) throw new Error("add child failed");
+      setChildAddParentId(null);
+      setChildAddLabel("");
+      setChildAddKind("text");
+      setChildAddOptions(["", ""]);
+      router.refresh();
+    } finally {
+      setChildAddBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-3">
       <div className="card space-y-3">
         <h2 className="font-bold text-slate-800 text-sm">
           {t("admin.persona.checklist.listTitle")}
         </h2>
-        {items.length === 0 ? (
+        {topLevel.length === 0 ? (
           <div className="text-sm text-slate-500 text-center py-6">
             {t("admin.persona.checklist.empty")}
           </div>
         ) : (
           <div className="space-y-2">
-            {items.map((it, i) => (
-              <ChecklistRow
-                key={it.id}
-                item={it}
-                isFirst={i === 0}
-                isLast={i === items.length - 1}
-                busy={busyId === it.id}
-                onPatchLabel={(label) => patchItem(it.id, { label })}
-                onPatchKind={(kind) => {
-                  // Just flip the kind. Don't try to seed options
-                  // here — sending `["", ""]` would trip the API's
-                  // `.string().trim().min(1)` validator and the PATCH
-                  // would 400, making the dropdown look broken.
-                  // After the kind change lands, the OptionsEditor
-                  // appears below the row (renders 2 blank inputs by
-                  // default) and admin types the options there; the
-                  // commitOptions handler patches once they're filled.
-                  return patchItem(it.id, { kind });
-                }}
-                onPatchOptions={(opts) => patchItem(it.id, { options: opts })}
-                onToggleActive={() =>
-                  patchItem(it.id, { active: it.active ? 0 : 1 })}
-                onMoveUp={() => move(it.id, -1)}
-                onMoveDown={() => move(it.id, 1)}
-                onDelete={() => deleteItem(it.id)}
-                t={t}
-              />
-            ))}
+            {topLevel.map((parent, i) => {
+              const children = childrenByParent.get(parent.id) ?? [];
+              return (
+                <div key={parent.id} className="space-y-2">
+                  <ChecklistRow
+                    item={parent}
+                    isFirst={i === 0}
+                    isLast={i === topLevel.length - 1}
+                    busy={busyId === parent.id}
+                    onPatchLabel={(label) => patchItem(parent.id, { label })}
+                    onPatchKind={(kind) => patchItem(parent.id, { kind })}
+                    onPatchOptions={(opts) => patchItem(parent.id, { options: opts })}
+                    onToggleActive={() =>
+                      patchItem(parent.id, { active: parent.active ? 0 : 1 })}
+                    onMoveUp={() => move(parent.id, -1)}
+                    onMoveDown={() => move(parent.id, 1)}
+                    onDelete={() => deleteItem(parent.id)}
+                    onAddChild={() => openChildAdd(parent.id)}
+                    t={t}
+                  />
+                  {/* Children — indented and visually grouped under the
+                      parent. Move up/down stays scoped to siblings. */}
+                  {children.length > 0 && (
+                    <div className="ml-8 space-y-2 border-l-2 border-slate-200 pl-3">
+                      {children.map((child, ci) => (
+                        <ChecklistRow
+                          key={child.id}
+                          item={child}
+                          isFirst={ci === 0}
+                          isLast={ci === children.length - 1}
+                          busy={busyId === child.id}
+                          isChild
+                          onPatchLabel={(label) => patchItem(child.id, { label })}
+                          onPatchKind={(kind) => patchItem(child.id, { kind })}
+                          onPatchOptions={(opts) => patchItem(child.id, { options: opts })}
+                          onToggleActive={() =>
+                            patchItem(child.id, { active: child.active ? 0 : 1 })}
+                          onMoveUp={() => move(child.id, -1)}
+                          onMoveDown={() => move(child.id, 1)}
+                          onDelete={() => deleteItem(child.id)}
+                          t={t}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {/* Inline child-add form — collapsed by default,
+                      expands when admin clicks "+ เพิ่มรายการย่อย"
+                      on the parent row. Only one parent shows the
+                      form at a time. */}
+                  {childAddParentId === parent.id && (
+                    <div className="ml-8 border-l-2 border-brand pl-3 py-2 space-y-2">
+                      <div className="flex gap-2 flex-wrap">
+                        <input
+                          type="text"
+                          className="input flex-1 min-w-[180px] text-sm"
+                          value={childAddLabel}
+                          autoFocus
+                          maxLength={200}
+                          onChange={(e) => setChildAddLabel(e.target.value)}
+                          placeholder={t("admin.persona.checklist.childAddPlaceholder")}
+                        />
+                        <select
+                          className="input text-sm"
+                          value={childAddKind}
+                          onChange={(e) => setChildAddKind(e.target.value as "checkbox" | "text" | "choice")}
+                        >
+                          <option value="text">{t("admin.persona.checklist.kind.text")}</option>
+                          <option value="checkbox">{t("admin.persona.checklist.kind.checkbox")}</option>
+                          <option value="choice">{t("admin.persona.checklist.kind.choice")}</option>
+                        </select>
+                        <button
+                          type="button"
+                          disabled={childAddBusy || !childAddLabel.trim()}
+                          onClick={submitChildAdd}
+                          className="btn-primary text-sm whitespace-nowrap"
+                        >
+                          {childAddBusy ? t("common.submitting") : t("admin.persona.checklist.childAddBtn")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setChildAddParentId(null)}
+                          disabled={childAddBusy}
+                          className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+                        >
+                          {t("common.cancel")}
+                        </button>
+                      </div>
+                      {childAddKind === "choice" && (
+                        <OptionsEditor
+                          options={childAddOptions}
+                          onChange={setChildAddOptions}
+                          label={t("admin.persona.checklist.kind.optionsLabel")}
+                          t={t}
+                        />
+                      )}
+                      {childAddErr && (
+                        <div className="text-xs text-rose-600">✗ {childAddErr}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -249,14 +404,18 @@ export default function ChecklistEditor({
 }
 
 function ChecklistRow({
-  item, isFirst, isLast, busy,
+  item, isFirst, isLast, busy, isChild,
   onPatchLabel, onPatchKind, onPatchOptions,
-  onToggleActive, onMoveUp, onMoveDown, onDelete, t
+  onToggleActive, onMoveUp, onMoveDown, onDelete, onAddChild, t
 }: {
   item: ShiftChecklistItem;
   isFirst: boolean;
   isLast: boolean;
   busy: boolean;
+  /** True when the row is a child (already nested under a parent).
+   *  Child rows don't get the "+ เพิ่มรายการย่อย" button — we keep
+   *  nesting to 2 levels max. */
+  isChild?: boolean;
   onPatchLabel: (label: string) => Promise<void>;
   onPatchKind: (kind: "checkbox" | "text" | "choice") => Promise<void>;
   onPatchOptions: (options: string[]) => Promise<void>;
@@ -264,6 +423,9 @@ function ChecklistRow({
   onMoveUp: () => Promise<void>;
   onMoveDown: () => Promise<void>;
   onDelete: () => Promise<void>;
+  /** Top-level rows only — invoked when admin clicks
+   *  "+ เพิ่มรายการย่อย". Parent component owns the inline form. */
+  onAddChild?: () => void;
   t: (k: string, vars?: Record<string, string | number>) => string;
 }) {
   const [editing, setEditing] = useState(false);
@@ -373,6 +535,22 @@ function ChecklistRow({
           aria-label={t("common.delete")}
         >×</button>
       </div>
+
+      {/* "+ เพิ่มรายการย่อย" — only on top-level rows. Children stay
+          flat (no grand-children). Sits as a low-visual-weight link
+          under the main row controls so admin only sees it when they
+          want it. */}
+      {!isChild && onAddChild && (
+        <div className="mt-1.5 pl-7">
+          <button
+            type="button"
+            onClick={onAddChild}
+            className="text-[11px] text-brand hover:underline"
+          >
+            + {t("admin.persona.checklist.addChild")}
+          </button>
+        </div>
+      )}
 
       {/* Options editor — only visible for choice rows. Sits below the
           main row so it doesn't crowd the kind / activate / delete

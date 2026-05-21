@@ -15,6 +15,8 @@ type ChecklistItem = {
   label: string;
   kind: "checkbox" | "text" | "choice";
   options?: string[];
+  /** When set, child of another item — rendered indented. */
+  parent_id?: number | null;
 };
 
 export default function ShiftCloseForm({
@@ -105,14 +107,17 @@ export default function ShiftCloseForm({
     try {
       const closingParsed = parseAmount(closingAmount);
       const svcParsed = parseAmount(svcAmount);
-      const checklistPayload = checklistItems.map((it) => {
+      // Flatten parents-then-children; mark child rows with is_child=true
+      // so the LINE Flex renderer indents them under their parent.
+      const buildEntry = (it: ChecklistItem, isChild: boolean) => {
         if (it.kind === "text") {
           const value = (textValues[it.id] || "").trim();
           return {
             label: it.label,
             kind: "text" as const,
             checked: !!value,
-            note: value || null
+            note: value || null,
+            ...(isChild ? { is_child: true } : {})
           };
         }
         if (it.kind === "choice") {
@@ -121,7 +126,8 @@ export default function ShiftCloseForm({
             label: it.label,
             kind: "choice" as const,
             checked: !!sel,
-            note: sel ?? null
+            note: sel ?? null,
+            ...(isChild ? { is_child: true } : {})
           };
         }
         const note = (notes[it.id] || "").trim();
@@ -129,9 +135,18 @@ export default function ShiftCloseForm({
           label: it.label,
           kind: "checkbox" as const,
           checked: !!checked[it.id],
-          note: note ? note : null
+          note: note ? note : null,
+          ...(isChild ? { is_child: true } : {})
         };
-      });
+      };
+      const topLevelItems = checklistItems.filter((it) => !it.parent_id);
+      const checklistPayload: Array<ReturnType<typeof buildEntry>> = [];
+      for (const parent of topLevelItems) {
+        checklistPayload.push(buildEntry(parent, false));
+        for (const k of checklistItems.filter((c) => c.parent_id === parent.id)) {
+          checklistPayload.push(buildEntry(k, true));
+        }
+      }
 
       const res = await fetch(apiUrl("/api/persona/daily-report"), {
         method: "POST",
@@ -256,8 +271,22 @@ export default function ShiftCloseForm({
           </div>
 
           <div className="space-y-2">
-            {checklistItems.map((it) => {
+            {/* Reorder so each parent is immediately followed by its
+                children. Display-order alone may interleave across
+                parent groups since children get their own
+                display_order scoped to their parent. */}
+            {(() => {
+              const ordered: ChecklistItem[] = [];
+              for (const p of checklistItems.filter((it) => !it.parent_id)) {
+                ordered.push(p);
+                for (const c of checklistItems.filter((c) => c.parent_id === p.id)) {
+                  ordered.push(c);
+                }
+              }
+              return ordered.map((it) => {
               const hasError = !!errorIds[it.id];
+              const isChild = !!it.parent_id;
+              const indentCls = isChild ? "ml-4 pl-3 border-l-2 border-slate-200" : "";
               if (it.kind === "choice") {
                 const sel = choices[it.id];
                 const opts = it.options ?? [];
@@ -267,7 +296,7 @@ export default function ShiftCloseForm({
                     ? "border-emerald-300 bg-emerald-50"
                     : "border-slate-200";
                 return (
-                  <div key={it.id} className={`rounded-xl border-[1.5px] transition p-3 ${cls}`}>
+                  <div key={it.id} className={`${indentCls} rounded-xl border-[1.5px] transition p-3 ${cls}`}>
                     <div className="block text-sm font-bold text-slate-800 mb-2">
                       {it.label}
                     </div>
@@ -318,7 +347,7 @@ export default function ShiftCloseForm({
                 return (
                   <div
                     key={it.id}
-                    className={`rounded-xl border-[1.5px] transition p-3 ${cls}`}
+                    className={`${indentCls} rounded-xl border-[1.5px] transition p-3 ${cls}`}
                   >
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">
                       {it.label}
@@ -365,7 +394,7 @@ export default function ShiftCloseForm({
               return (
                 <div
                   key={it.id}
-                  className={`rounded-xl border-[1.5px] transition ${containerCls}`}
+                  className={`${indentCls} rounded-xl border-[1.5px] transition ${containerCls}`}
                 >
                   <label className="flex items-center gap-3 p-3 cursor-pointer">
                     <input
@@ -451,7 +480,8 @@ export default function ShiftCloseForm({
                   )}
                 </div>
               );
-            })}
+              });
+            })()}
           </div>
           <p className="text-xs text-slate-400">
             {t("staff.persona.shift.open.checklistHint")}

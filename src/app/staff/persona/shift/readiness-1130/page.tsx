@@ -137,7 +137,8 @@ export default function Readiness1130Page() {
             id: c.id,
             label: c.label,
             kind: (c.kind ?? "checkbox") as "checkbox" | "text" | "choice",
-            options: c.kind === "choice" ? parseChecklistOptions(c) : undefined
+            options: c.kind === "choice" ? parseChecklistOptions(c) : undefined,
+            parent_id: c.parent_id ?? null
           }))
           // Skip choice items that admin hasn't finished configuring
           // (< 2 valid options). Otherwise staff would see a label

@@ -44,7 +44,11 @@ const ChecklistEntry = z.object({
    *  LINE renderer can distinguish render kinds. For choice items,
    *  `note` holds the selected option text. Optional for backward
    *  compatibility with rows submitted before P5c. */
-  kind: z.enum(["checkbox", "text", "choice"]).optional()
+  kind: z.enum(["checkbox", "text", "choice"]).optional(),
+  /** When true, the row is a child of the previous top-level item.
+   *  Staff form orders parents-then-children and sets this flag on
+   *  children; the LINE Flex renderer indents accordingly. */
+  is_child: z.boolean().optional()
 });
 
 // Per-type data schemas. Each form in the staff UI submits one of these.
@@ -237,9 +241,14 @@ export async function POST(req: Request) {
   // Each type gets its own Flex builder so admin can tell at a glance
   // which report just landed.
   const normalizeChecklist = (
-    items: Array<{ label: string; checked: boolean; note?: string | null }>
+    items: Array<{ label: string; checked: boolean; note?: string | null; is_child?: boolean }>
   ) =>
-    items.map((c) => ({ label: c.label, checked: c.checked, note: c.note ?? null }));
+    items.map((c) => ({
+      label: c.label,
+      checked: c.checked,
+      note: c.note ?? null,
+      is_child: !!c.is_child
+    }));
 
   let flex;
   if (type === "shift_open") {

@@ -142,9 +142,9 @@ export default function Readiness1600Page() {
             id: c.id,
             label: c.label,
             kind: (c.kind ?? "checkbox") as "checkbox" | "text" | "choice",
-            options: c.kind === "choice" ? parseChecklistOptions(c) : undefined
+            options: c.kind === "choice" ? parseChecklistOptions(c) : undefined,
+            parent_id: c.parent_id ?? null
           }))
-          // Skip incomplete choice items — see readiness-1130 page.tsx.
           .filter((c) => c.kind !== "choice" || (c.options?.length ?? 0) >= 2)}
       />
     </div>

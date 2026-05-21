@@ -251,6 +251,18 @@ function runMigrations(db: Database.Database): void {
   if (!sccolNames.has("options_json")) {
     db.exec("ALTER TABLE shift_checklist_items ADD COLUMN options_json TEXT");
   }
+  // 2026-05-21: parent_id enables 2-level nesting — a parent row (e.g.
+  // "ยอดรวม POS") + child rows (e.g. "Cash", "PromptPay", ...). Only
+  // 2 levels deep: a row whose parent_id IS NOT NULL cannot itself be
+  // a parent. Enforced at the API + UI layers. NULL = top-level row
+  // (matches legacy data).
+  //
+  // ON DELETE CASCADE so deleting a parent cleans up its children
+  // automatically. Same self-referential pattern as several other
+  // tables in the schema.
+  if (!sccolNames.has("parent_id")) {
+    db.exec("ALTER TABLE shift_checklist_items ADD COLUMN parent_id INTEGER REFERENCES shift_checklist_items(id) ON DELETE CASCADE");
+  }
   if (!sccolNames.has("branch_id")) {
     db.exec("ALTER TABLE shift_checklist_items ADD COLUMN branch_id INTEGER REFERENCES branches(id)");
     // Clone any orphan (NULL branch_id) rows once per existing branch so
@@ -2705,6 +2717,11 @@ export type ShiftChecklistItem = {
   /** JSON-encoded `string[]` of choice options when kind === 'choice',
    *  null otherwise. Use `parseChecklistOptions(row)` to read. */
   options_json: string | null;
+  /** Self-referential link for 2-level nesting. NULL = top-level row
+   *  shown directly in the staff form. Non-NULL = child row rendered
+   *  indented under its parent. Children inherit their own kind/
+   *  options — the link is purely visual + grouping. */
+  parent_id: number | null;
   display_order: number;
   active: number;          // 1 / 0
   created_at: string;
