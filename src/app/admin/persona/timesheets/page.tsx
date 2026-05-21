@@ -56,7 +56,8 @@ export default function TimesheetsPage({
   }
 
   const entries = db.prepare(`
-    SELECT te.id, te.user_id, te.type, te.ts, u.username, u.display_name
+    SELECT te.id, te.user_id, te.type, te.ts, u.username,
+           u.display_name, u.title_prefix
     FROM time_entries te
     JOIN users u ON te.user_id = u.id
     WHERE te.branch_id = ? AND te.ts >= ? AND te.ts <= ? ${userClause}
@@ -67,7 +68,7 @@ export default function TimesheetsPage({
   // User dropdown — only people assigned to this branch (so admin
   // doesn't see staff from the other branch in the filter list).
   const users = db.prepare(`
-    SELECT DISTINCT u.id, u.username, u.display_name
+    SELECT DISTINCT u.id, u.username, u.display_name, u.title_prefix
     FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
     WHERE u.id IN (SELECT DISTINCT user_id FROM time_entries WHERE branch_id = ?)

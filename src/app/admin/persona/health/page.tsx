@@ -29,7 +29,7 @@ export default function AdminHealthPage() {
   // Latest check-up per employee via a correlated subquery on the
   // health_checkups (user_id, checkup_date DESC) index.
   const rows = db.prepare(`
-    SELECT u.id, u.username, u.display_name, u.role, u.employment_type,
+    SELECT u.id, u.username, u.display_name, u.title_prefix, u.role, u.employment_type,
            hc.id          AS checkup_id,
            hc.checkup_date AS checkup_date,
            hc.expiry_date  AS expiry_date,

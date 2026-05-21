@@ -30,8 +30,10 @@ export function generateWarningRef(): string {
 
 export type WarningWithUsers = DisciplinaryWarning & {
   user_display_name: string;
+  user_title_prefix: string | null;
   user_username: string;
   issued_by_name: string;
+  issued_by_prefix: string | null;
 };
 
 export function listWarningsForBranch(branchId: number, status: "all" | "pending" | "acknowledged" = "all"): WarningWithUsers[] {
@@ -41,8 +43,10 @@ export function listWarningsForBranch(branchId: number, status: "all" | "pending
   return getDb().prepare(`
     SELECT w.*,
            u.display_name AS user_display_name,
+           u.title_prefix AS user_title_prefix,
            u.username AS user_username,
-           iu.display_name AS issued_by_name
+           iu.display_name AS issued_by_name,
+           iu.title_prefix AS issued_by_prefix
     FROM disciplinary_warnings w
     JOIN users u ON u.id = w.user_id
     JOIN users iu ON iu.id = w.issued_by_user_id
@@ -59,8 +63,10 @@ export function listWarningsForUser(userId: number, status: "all" | "pending" | 
   return getDb().prepare(`
     SELECT w.*,
            u.display_name AS user_display_name,
+           u.title_prefix AS user_title_prefix,
            u.username AS user_username,
-           iu.display_name AS issued_by_name
+           iu.display_name AS issued_by_name,
+           iu.title_prefix AS issued_by_prefix
     FROM disciplinary_warnings w
     JOIN users u ON u.id = w.user_id
     JOIN users iu ON iu.id = w.issued_by_user_id
@@ -73,8 +79,10 @@ export function getWarning(id: number): WarningWithUsers | null {
   return (getDb().prepare(`
     SELECT w.*,
            u.display_name AS user_display_name,
+           u.title_prefix AS user_title_prefix,
            u.username AS user_username,
-           iu.display_name AS issued_by_name
+           iu.display_name AS issued_by_name,
+           iu.title_prefix AS issued_by_prefix
     FROM disciplinary_warnings w
     JOIN users u ON u.id = w.user_id
     JOIN users iu ON iu.id = w.issued_by_user_id

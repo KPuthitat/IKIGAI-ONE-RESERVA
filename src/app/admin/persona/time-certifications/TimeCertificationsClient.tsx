@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { nameWithPrefix } from "@/lib/name";
 import type { PendingCertRow } from "./page";
 
 function bkkDisplay(iso: string): string {
@@ -63,7 +64,7 @@ export default function TimeCertificationsClient({
                 {t("admin.persona.timeCert.requesterLabel")}
               </div>
               <div className="font-bold text-slate-800 text-sm mt-0.5">
-                {r.requester_name}
+                {nameWithPrefix(r.requester_prefix, r.requester_name)}
               </div>
             </div>
 

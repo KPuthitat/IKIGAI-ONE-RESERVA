@@ -68,6 +68,7 @@ export default function AdminShiftReportsPage() {
   const todayRows = db.prepare(`
     SELECT r.id, r.type, r.user_id, r.report_date, r.created_at,
            u.display_name AS opener_name,
+           u.title_prefix AS opener_prefix,
            (
              SELECT COUNT(*) - 1 FROM daily_reports d2
              WHERE d2.branch_id = r.branch_id
@@ -107,10 +108,12 @@ export default function AdminShiftReportsPage() {
     created_at: string;
     superseded_at: string | null;
     user_name: string;
+    user_prefix: string | null;
   };
   const chainRows = db.prepare(`
     SELECT dr.id, dr.type, dr.created_at, dr.superseded_at,
-           u.display_name AS user_name
+           u.display_name AS user_name,
+           u.title_prefix AS user_prefix
     FROM daily_reports dr
     JOIN users u ON u.id = dr.user_id
     WHERE dr.branch_id = ? AND dr.report_date = ?
@@ -128,7 +131,9 @@ export default function AdminShiftReportsPage() {
     decided_at: string | null;
     decision_note: string | null;
     requester_name: string;
+    requester_prefix: string | null;
     decided_by_name: string | null;
+    decided_by_prefix: string | null;
   };
   const unlockByReportId = new Map<number, GrantedUnlock>();
   const supersededIds = chainRows
@@ -139,7 +144,9 @@ export default function AdminShiftReportsPage() {
     const unlocks = db.prepare(`
       SELECT r.id, r.daily_report_id, r.reason, r.decided_at, r.decision_note,
              u.display_name AS requester_name,
-             du.display_name AS decided_by_name
+             u.title_prefix AS requester_prefix,
+             du.display_name AS decided_by_name,
+             du.title_prefix AS decided_by_prefix
       FROM shift_unlock_requests r
       JOIN users u ON u.id = r.requested_by
       LEFT JOIN users du ON du.id = r.decided_by
@@ -162,14 +169,17 @@ export default function AdminShiftReportsPage() {
     const link: ChainLink = {
       id: row.id,
       user_name: row.user_name,
+      user_prefix: row.user_prefix,
       created_at: row.created_at,
       is_live: row.superseded_at === null,
       granted_unlock: granted
         ? {
             id: granted.id,
             requester_name: granted.requester_name,
+            requester_prefix: granted.requester_prefix,
             reason: granted.reason,
             decided_by_name: granted.decided_by_name,
+            decided_by_prefix: granted.decided_by_prefix,
             decided_at: granted.decided_at,
             decision_note: granted.decision_note
           }
@@ -187,7 +197,9 @@ export default function AdminShiftReportsPage() {
            dr.type AS report_type,
            dr.report_date, dr.user_id AS opener_id, dr.created_at AS report_created_at,
            u.display_name AS requester_name,
-           ou.display_name AS opener_name
+           u.title_prefix AS requester_prefix,
+           ou.display_name AS opener_name,
+           ou.title_prefix AS opener_prefix
     FROM shift_unlock_requests r
     JOIN daily_reports dr ON dr.id = r.daily_report_id
     JOIN users u ON u.id = r.requested_by

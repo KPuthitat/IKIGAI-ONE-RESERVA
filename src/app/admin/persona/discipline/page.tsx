@@ -4,6 +4,7 @@ import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { listWarningsForBranch } from "@/lib/discipline";
+import { nameWithPrefix } from "@/lib/name";
 import DisciplineClient from "./DisciplineClient";
 
 export const dynamic = "force-dynamic";
@@ -22,13 +23,13 @@ export default function AdminDisciplinePage() {
   if (!branch) return <div className="card text-sm text-slate-600">{t(lang, "common.error")}</div>;
 
   const staffList = db.prepare(`
-    SELECT u.id, u.display_name, u.username, u.employment_type
+    SELECT u.id, u.display_name, u.title_prefix, u.username, u.employment_type
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
     WHERE ub.branch_id = ? AND u.role = 'staff'
     ORDER BY u.display_name COLLATE NOCASE
   `).all(branch.id) as Array<{
-    id: number; display_name: string; username: string; employment_type: string | null;
+    id: number; display_name: string; title_prefix: string | null; username: string; employment_type: string | null;
   }>;
   const warnings = listWarningsForBranch(branch.id);
 
@@ -50,8 +51,8 @@ export default function AdminDisciplinePage() {
           ref_no: w.ref_no,
           severity: w.severity,
           title: w.title,
-          recipient: w.user_display_name,
-          issued_by: w.issued_by_name,
+          recipient: nameWithPrefix(w.user_title_prefix, w.user_display_name),
+          issued_by: nameWithPrefix(w.issued_by_prefix, w.issued_by_name),
           issued_at: w.issued_at,
           acknowledged_at: w.acknowledged_at,
           acknowledged_method: w.acknowledged_method

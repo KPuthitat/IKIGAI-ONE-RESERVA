@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { nameWithPrefix } from "@/lib/name";
 
 export type ReportType =
   | "shift_open"
@@ -18,6 +19,7 @@ export type TodayReportRow = {
   report_date: string;
   created_at: string;
   opener_name: string;
+  opener_prefix: string | null;
   // chain length minus 1 — i.e. how many superseded predecessors
   // exist for the same (branch, date, type). 0 = first submission.
   revision_count: number;
@@ -31,13 +33,16 @@ export type TodayReportRow = {
 export type ChainLink = {
   id: number;
   user_name: string;
+  user_prefix: string | null;
   created_at: string;
   is_live: boolean;
   granted_unlock: {
     id: number;
     requester_name: string;
+    requester_prefix: string | null;
     reason: string;
     decided_by_name: string | null;
+    decided_by_prefix: string | null;
     decided_at: string | null;
     decision_note: string | null;
   } | null;
@@ -55,7 +60,9 @@ export type PendingUnlockRow = {
   opener_id: number;
   report_created_at: string;
   requester_name: string;
+  requester_prefix: string | null;
   opener_name: string;
+  opener_prefix: string | null;
 };
 
 // Display order — pre-shift first (chronological), then post-shift.
@@ -123,7 +130,7 @@ function ChainView({ chain }: { chain: ChainLink[] }) {
                 {versionLabel(idx, link)}
               </div>
               <div className="text-[11px] text-slate-500">
-                {link.user_name} · {formatBkkTime(link.created_at)}
+                {nameWithPrefix(link.user_prefix, link.user_name)} · {formatBkkTime(link.created_at)}
               </div>
             </div>
           </div>
@@ -139,7 +146,7 @@ function ChainView({ chain }: { chain: ChainLink[] }) {
                 <span className="font-bold">
                   {t("admin.persona.shiftReports.chain.requesterLabel")}:
                 </span>{" "}
-                {link.granted_unlock.requester_name}
+                {nameWithPrefix(link.granted_unlock.requester_prefix, link.granted_unlock.requester_name)}
               </div>
               <div className="text-[11px] text-slate-700 whitespace-pre-wrap pl-2 border-l-2 border-slate-200 italic">
                 "{link.granted_unlock.reason}"
@@ -147,7 +154,7 @@ function ChainView({ chain }: { chain: ChainLink[] }) {
               {link.granted_unlock.decided_by_name && link.granted_unlock.decided_at && (
                 <div className="text-[10px] text-slate-500">
                   {t("admin.persona.shiftReports.chain.approvedBy", {
-                    admin: link.granted_unlock.decided_by_name,
+                    admin: nameWithPrefix(link.granted_unlock.decided_by_prefix, link.granted_unlock.decided_by_name),
                     time: formatBkkTime(link.granted_unlock.decided_at)
                   })}
                 </div>
@@ -272,7 +279,7 @@ export default function ShiftReportsClient({
                       <div className="flex-1 min-w-0">
                         <div className="text-slate-800">{label}</div>
                         <div className="text-xs text-slate-500">
-                          {r.opener_name} · {formatBkkTime(r.created_at)}
+                          {nameWithPrefix(r.opener_prefix, r.opener_name)} · {formatBkkTime(r.created_at)}
                         </div>
                       </div>
                       {hasChain && (
@@ -345,7 +352,7 @@ export default function ShiftReportsClient({
                     <div className="text-xs text-slate-600 mt-0.5">
                       {t("admin.persona.shiftReports.requestSummary", {
                         date: r.report_date,
-                        opener: r.opener_name,
+                        opener: nameWithPrefix(r.opener_prefix, r.opener_name),
                         time: formatBkkTime(r.report_created_at)
                       })}
                     </div>
@@ -353,7 +360,7 @@ export default function ShiftReportsClient({
 
                   <div className="bg-amber-50 border border-amber-200 rounded p-2.5 space-y-1">
                     <div className="text-[10px] font-bold tracking-[1px] text-amber-700 uppercase">
-                      {t("admin.persona.shiftReports.reasonLabel")} · {r.requester_name}
+                      {t("admin.persona.shiftReports.reasonLabel")} · {nameWithPrefix(r.requester_prefix, r.requester_name)}
                     </div>
                     <div className="text-sm text-slate-800 whitespace-pre-wrap">
                       {r.reason}

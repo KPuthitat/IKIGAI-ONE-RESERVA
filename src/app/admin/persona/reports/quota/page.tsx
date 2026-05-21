@@ -6,6 +6,7 @@ import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
 import { rowsToCsv, type CsvCell } from "@/lib/csv";
 import { todayBkk } from "@/lib/time";
+import { nameWithPrefix } from "@/lib/name";
 import QuotaToolbar from "./QuotaToolbar";
 import type { StaffOpt } from "../ReportToolbar";
 
@@ -16,6 +17,7 @@ export const metadata: Metadata = { title: "โควตาการลา · PE
 type StaffUser = {
   id: number;
   display_name: string;
+  title_prefix: string | null;
   gender: string | null;
   employment_type: string | null;
 };
@@ -71,7 +73,7 @@ export default function QuotaReportPage({
 
   // Staff users (only those with employment_type set)
   let staffSql = `
-    SELECT id, display_name, gender, employment_type
+    SELECT id, display_name, title_prefix, gender, employment_type
     FROM users
     WHERE role = 'staff' AND employment_type IS NOT NULL
   `;
@@ -112,6 +114,7 @@ export default function QuotaReportPage({
   type Row = {
     user_id: number;
     display_name: string;
+    title_prefix: string | null;
     type: string;
     quota: number | null;
     used: number;
@@ -129,6 +132,7 @@ export default function QuotaReportPage({
       rows.push({
         user_id: u.id,
         display_name: u.display_name,
+        title_prefix: u.title_prefix,
         type: lt.code,
         quota,
         used,
@@ -140,7 +144,7 @@ export default function QuotaReportPage({
 
   // Staff list for dropdown (full list, not just filtered)
   const staffList = db.prepare(`
-    SELECT id, display_name FROM users WHERE role = 'staff'
+    SELECT id, display_name, title_prefix FROM users WHERE role = 'staff'
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
   `).all() as StaffOpt[];
@@ -166,7 +170,7 @@ export default function QuotaReportPage({
     t(lang, "admin.persona.reports.quota.col.overrideFlag")
   ];
   const csvRows: CsvCell[][] = rows.map((r) => [
-    r.display_name,
+    nameWithPrefix(r.title_prefix, r.display_name),
     leaveTypeLabel(r.type, lang),
     r.quota ?? "",
     r.used,
@@ -268,7 +272,7 @@ export default function QuotaReportPage({
                   return (
                     <tr key={i} className={`border-b border-slate-100 last:border-0 ${isFirstOfUser ? "border-t-2 border-t-slate-200" : ""}`}>
                       <td className="py-2 pr-3 font-medium">
-                        {isFirstOfUser ? r.display_name : ""}
+                        {isFirstOfUser ? nameWithPrefix(r.title_prefix, r.display_name) : ""}
                       </td>
                       <td className="py-2 pr-3 text-slate-600">
                         {leaveTypeLabel(r.type, lang)}

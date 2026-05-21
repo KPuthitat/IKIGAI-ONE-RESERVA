@@ -9,11 +9,13 @@ import { ALL_LEAVE_TYPES, type LeaveType } from "@/lib/leave-types";
 import type { LeaveStatus } from "@/app/staff/persona/leave/LeaveClient";
 import { useConfirm } from "@/app/components/useConfirm";
 import Switch from "@/app/components/Switch";
+import { nameWithPrefix } from "@/lib/name";
 
 export type StaffOption = {
   id: number;
   username: string;
   display_name: string;
+  title_prefix: string | null;
   role: string;
 };
 
@@ -35,8 +37,11 @@ export type LeaveAdminRow = {
   created_at: string;
   username: string;
   display_name: string;
+  title_prefix: string | null;
   decided_by_name: string | null;
+  decided_by_prefix: string | null;
   created_by_name: string | null;
+  created_by_prefix: string | null;
   // stretch info (เฉพาะ personal/annual)
   stretchTotal: number | null;
   stretchHolidayCount: number | null;
@@ -192,7 +197,7 @@ export default function LeaveAdminClient({
                       <div className="text-xs text-slate-400 font-mono mb-0.5">#{r.ref_no}</div>
                     )}
                     <div className="font-medium text-slate-800">
-                      {r.display_name}
+                      {nameWithPrefix(r.title_prefix, r.display_name)}
                       <span className="text-xs text-slate-400 ml-1.5">@{r.username}</span>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 mt-1">
@@ -256,12 +261,12 @@ export default function LeaveAdminClient({
                     )}
                     {r.created_by && r.created_by !== r.user_id && r.created_by_name && (
                       <div className="text-xs text-slate-500 mt-1">
-                        {t("admin.persona.leave.recordedBy", { name: r.created_by_name })}
+                        {t("admin.persona.leave.recordedBy", { name: nameWithPrefix(r.created_by_prefix, r.created_by_name) })}
                       </div>
                     )}
                     {r.decision_note && r.decided_by_name && (
                       <div className="text-xs text-slate-600 mt-1.5 bg-slate-100 px-2 py-1 rounded">
-                        <span className="font-medium">{r.decided_by_name}:</span> {r.decision_note}
+                        <span className="font-medium">{nameWithPrefix(r.decided_by_prefix, r.decided_by_name)}:</span> {r.decision_note}
                       </div>
                     )}
                     {/* TC-R roster-conflict warning — surfaces before
@@ -513,7 +518,7 @@ function CreateForm({ staffList, onDone }: { staffList: StaffOption[]; onDone: (
         <label className="label">{t("admin.persona.leave.staff")}</label>
         <select className="input" value={userId} onChange={(e) => setUserId(Number(e.target.value))}>
           {staffList.map((u) => (
-            <option key={u.id} value={u.id}>{u.display_name} (@{u.username})</option>
+            <option key={u.id} value={u.id}>{nameWithPrefix(u.title_prefix, u.display_name)} (@{u.username})</option>
           ))}
         </select>
       </div>

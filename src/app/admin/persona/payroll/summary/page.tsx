@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
+import { nameWithPrefix } from "@/lib/name";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,7 @@ function fmtMoney(v: number): string {
 type EmpRow = {
   user_id: number;
   display_name: string;
+  title_prefix: string | null;
   employment_type: "pt" | "ft" | null;
   salary_tax_mode_snapshot: "sso" | "wht" | null;
   total_gross: number;
@@ -115,6 +117,7 @@ export default function PayrollMonthlySummaryPage({
   const empRows = db.prepare(`
     SELECT pl.user_id,
            pl.display_name,
+           u.title_prefix,
            MAX(pl.employment_type) AS employment_type,
            MAX(pl.salary_tax_mode_snapshot) AS salary_tax_mode_snapshot,
            SUM(pl.gross_pay)  AS total_gross,
@@ -124,6 +127,7 @@ export default function PayrollMonthlySummaryPage({
            COUNT(*)            AS period_count
     FROM payroll_lines pl
     JOIN payroll_periods pp ON pl.period_id = pp.id
+    LEFT JOIN users u ON u.id = pl.user_id
     WHERE pp.pay_date >= ? AND pp.pay_date <= ?
     GROUP BY pl.user_id
     ORDER BY (MAX(pl.employment_type) = 'ft') DESC,
@@ -250,7 +254,7 @@ export default function PayrollMonthlySummaryPage({
                   <tr key={r.user_id} className="border-b border-slate-100 last:border-0">
                     <td className="py-2 pr-3">
                       <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
-                        <span>{r.display_name}</span>
+                        <span>{nameWithPrefix(r.title_prefix, r.display_name)}</span>
                         {r.employment_type === "pt" && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
                             {t(lang, "admin.persona.employees.employment.pt")}

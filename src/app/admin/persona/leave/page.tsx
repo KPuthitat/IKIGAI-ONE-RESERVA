@@ -60,9 +60,11 @@ export default function AdminLeavePage({
            (SELECT ref_no FROM leave_requests WHERE id = r.replaces_id) AS replaces_ref_no,
            (SELECT id FROM leave_requests WHERE replaces_id = r.id ORDER BY id DESC LIMIT 1) AS resubmitted_as_id,
            (SELECT ref_no FROM leave_requests WHERE replaces_id = r.id ORDER BY id DESC LIMIT 1) AS resubmitted_as_ref_no,
-           u.username, u.display_name,
+           u.username, u.display_name, u.title_prefix,
            du.display_name AS decided_by_name,
-           cu.display_name AS created_by_name
+           du.title_prefix AS decided_by_prefix,
+           cu.display_name AS created_by_name,
+           cu.title_prefix AS created_by_prefix
     FROM leave_requests r
     JOIN users u ON r.user_id = u.id
     LEFT JOIN users du ON r.decided_by = du.id
@@ -133,7 +135,7 @@ export default function AdminLeavePage({
   // to this branch (admin shouldn't be filing on behalf of staff at
   // the other branch).
   const staffList = db.prepare(`
-    SELECT u.id, u.username, u.display_name, u.role
+    SELECT u.id, u.username, u.display_name, u.title_prefix, u.role
     FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
     WHERE u.role = 'staff'

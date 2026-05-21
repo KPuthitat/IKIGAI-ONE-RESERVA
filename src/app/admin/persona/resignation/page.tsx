@@ -33,8 +33,9 @@ export default function AdminResignationPage({
     SELECT r.id, r.user_id, r.proposed_last_day, r.computed_min_last_day,
            r.reason, r.evidence_filename, r.is_special_request,
            r.status, r.decided_by, r.decided_at, r.decision_note, r.created_at, r.ref_no,
-           u.username, u.display_name, u.hire_date,
-           du.display_name AS decided_by_name
+           u.username, u.display_name, u.title_prefix, u.hire_date,
+           du.display_name AS decided_by_name,
+           du.title_prefix AS decided_by_prefix
     FROM resignation_requests r
     JOIN users u ON r.user_id = u.id
     LEFT JOIN users du ON r.decided_by = du.id
@@ -50,7 +51,7 @@ export default function AdminResignationPage({
 
   // staff list สำหรับ unlock dropdown
   const staffList = db.prepare(`
-    SELECT u.id, u.username, u.display_name,
+    SELECT u.id, u.username, u.display_name, u.title_prefix,
            u.resignation_unlocked_at,
            uu.display_name AS unlocked_by_name
     FROM users u
@@ -59,7 +60,7 @@ export default function AdminResignationPage({
     ORDER BY CASE WHEN u.employment_type = 'ft' THEN 0 WHEN u.employment_type = 'pt' THEN 1 ELSE 2 END,
              u.display_name
   `).all() as Array<{
-    id: number; username: string; display_name: string;
+    id: number; username: string; display_name: string; title_prefix: string | null;
     resignation_unlocked_at: string | null;
     unlocked_by_name: string | null;
   }>;

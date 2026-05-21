@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
 import { useConfirm } from "@/app/components/useConfirm";
+import { nameWithPrefix } from "@/lib/name";
 
 export type TimeEntryRow = {
   id: number;
@@ -13,12 +14,14 @@ export type TimeEntryRow = {
   ts: string;
   username: string;
   display_name: string;
+  title_prefix: string | null;
 };
 
 export type UserOption = {
   id: number;
   username: string;
   display_name: string;
+  title_prefix: string | null;
 };
 
 export type AuditRow = {
@@ -148,7 +151,7 @@ export default function TimesheetsClient({
             </option>
             {users.map((u) => (
               <option key={u.id} value={u.id}>
-                {u.display_name} ({u.username})
+                {nameWithPrefix(u.title_prefix, u.display_name)} ({u.username})
               </option>
             ))}
           </select>
@@ -181,7 +184,7 @@ export default function TimesheetsClient({
               {entries.map((e) => (
                 <tr key={e.id} className="border-b last:border-0 hover:bg-slate-50">
                   <td className="py-2 pr-3">
-                    <div className="font-medium text-slate-800">{e.display_name}</div>
+                    <div className="font-medium text-slate-800">{nameWithPrefix(e.title_prefix, e.display_name)}</div>
                     <div className="text-xs text-slate-500">@{e.username}</div>
                   </td>
                   <td className="py-2 pr-3">

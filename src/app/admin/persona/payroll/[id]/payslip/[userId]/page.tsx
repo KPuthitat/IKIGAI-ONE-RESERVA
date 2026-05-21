@@ -7,6 +7,7 @@ import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
+import { nameWithPrefix } from "@/lib/name";
 import PayslipPrintButton from "./PayslipPrintButton";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +57,7 @@ type EmployeeProfile = {
   bank_account: string | null;
   national_id: string | null;
   employee_code: string | null;
+  title_prefix: string | null;
 };
 
 function fmtMoney(v: number): string {
@@ -117,7 +119,7 @@ export default function PayslipPage({
   if (!line) notFound();
 
   const profile = db.prepare(`
-    SELECT bank_name, bank_account, national_id, employee_code FROM users WHERE id = ?
+    SELECT bank_name, bank_account, national_id, employee_code, title_prefix FROM users WHERE id = ?
   `).get(userId) as EmployeeProfile | undefined;
 
   const employmentLabel =
@@ -157,7 +159,7 @@ export default function PayslipPage({
 
         {/* Employee + period info — 2 columns */}
         <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm mb-4">
-          <Row label={t(lang, "admin.persona.payroll.payslip.employeeName")} value={line.display_name} />
+          <Row label={t(lang, "admin.persona.payroll.payslip.employeeName")} value={nameWithPrefix(profile?.title_prefix ?? null, line.display_name)} />
           <Row label={t(lang, "admin.persona.payroll.payslip.employeeCode")} value={profile?.employee_code ?? line.employee_code ?? "—"} />
           <Row label={t(lang, "admin.persona.payroll.payslip.employmentType")} value={employmentLabel} />
           <Row label={t(lang, "admin.persona.payroll.payslip.taxMode")} value={taxModeLabel} />

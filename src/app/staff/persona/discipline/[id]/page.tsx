@@ -5,6 +5,7 @@ import { requireStaffOrAdmin } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { getWarning, recordView } from "@/lib/discipline";
+import { nameWithPrefix } from "@/lib/name";
 import WarningAcknowledgeClient from "./WarningAcknowledgeClient";
 
 export const dynamic = "force-dynamic";
@@ -70,7 +71,7 @@ export default function StaffDisciplineDetailPage({ params }: { params: { id: st
         </div>
 
         <div className="text-[11px] text-slate-500">
-          {t(lang, "staff.persona.discipline.issuedBy", { name: w.issued_by_name })}
+          {t(lang, "staff.persona.discipline.issuedBy", { name: nameWithPrefix(w.issued_by_prefix, w.issued_by_name) })}
           · {new Date(w.issued_at).toISOString().slice(0, 16).replace("T", " ")}
           {w.effective_date && (
             <span className="ml-2">

@@ -4,8 +4,9 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { nameWithPrefix } from "@/lib/name";
 
-type StaffOption = { id: number; display_name: string; username: string; employment_type: string | null };
+type StaffOption = { id: number; display_name: string; title_prefix: string | null; username: string; employment_type: string | null };
 type WarningRow = {
   id: number;
   ref_no: string | null;
@@ -93,7 +94,7 @@ export default function DisciplineClient({
                 <option value="">— {t("admin.persona.discipline.pickStaff")} —</option>
                 {staffList.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.display_name} @{s.username}
+                    {nameWithPrefix(s.title_prefix, s.display_name)} @{s.username}
                   </option>
                 ))}
               </select>

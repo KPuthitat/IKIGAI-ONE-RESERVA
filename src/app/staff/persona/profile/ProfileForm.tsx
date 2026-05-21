@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import Switch from "@/app/components/Switch";
 import type { EmployeeProfile } from "@/lib/db";
+import { nameWithPrefix } from "@/lib/name";
 
 // Shared multi-section profile form.
 //
@@ -20,7 +21,7 @@ import type { EmployeeProfile } from "@/lib/db";
 // employees/[id] (already extended for Phase A), staff posts to
 // /api/persona/profile.
 
-export type ProfileSupervisor = { id: number; display_name: string };
+export type ProfileSupervisor = { id: number; display_name: string; title_prefix: string | null };
 
 type Mode = "self" | "admin";
 
@@ -418,7 +419,7 @@ export default function ProfileForm({
                 onChange={(e) => update("supervisor_user_id", e.target.value === "" ? "" : Number(e.target.value))}>
                 <option value="">—</option>
                 {supervisors.filter((s) => s.id !== profile.id).map((s) => (
-                  <option key={s.id} value={s.id}>{s.display_name}</option>
+                  <option key={s.id} value={s.id}>{nameWithPrefix(s.title_prefix, s.display_name)}</option>
                 ))}
               </select>
             </Field>

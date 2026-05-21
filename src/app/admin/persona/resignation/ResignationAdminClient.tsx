@@ -8,6 +8,7 @@ import { useLang } from "@/lib/LangProvider";
 import type { ResignationStatus } from "@/app/staff/persona/resignation/ResignationClient";
 import { DecisionModal } from "@/app/admin/persona/leave/LeaveAdminClient";
 import { useConfirm } from "@/app/components/useConfirm";
+import { nameWithPrefix } from "@/lib/name";
 
 export type ResignationAdminRow = {
   id: number;
@@ -24,8 +25,10 @@ export type ResignationAdminRow = {
   created_at: string;
   username: string;
   display_name: string;
+  title_prefix: string | null;
   hire_date: string | null;
   decided_by_name: string | null;
+  decided_by_prefix: string | null;
   ref_no?: string | null;
 };
 
@@ -33,6 +36,7 @@ export type StaffUnlockOption = {
   id: number;
   username: string;
   display_name: string;
+  title_prefix: string | null;
   resignation_unlocked_at: string | null;
   unlocked_by_name: string | null;
 };
@@ -176,7 +180,7 @@ export default function ResignationAdminClient({
             >
               {staffList.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.display_name} (@{u.username})
+                  {nameWithPrefix(u.title_prefix, u.display_name)} (@{u.username})
                   {u.resignation_unlocked_at ? ` — ${t("admin.persona.resignation.alreadyUnlocked")}` : ""}
                 </option>
               ))}
@@ -201,7 +205,7 @@ export default function ResignationAdminClient({
               {unlockedUsers.map((u) => (
                 <li key={u.id} className="flex items-center justify-between text-sm bg-white rounded px-3 py-1.5 border border-amber-200">
                   <span>
-                    <span className="font-medium">{u.display_name}</span>
+                    <span className="font-medium">{nameWithPrefix(u.title_prefix, u.display_name)}</span>
                     <span className="text-xs text-slate-400 ml-1">@{u.username}</span>
                     {u.resignation_unlocked_at && (
                       <span className="text-xs text-slate-500 ml-2">
@@ -269,7 +273,7 @@ export default function ResignationAdminClient({
                         <div className="text-xs text-slate-400 font-mono mb-0.5">#{r.ref_no}</div>
                       )}
                       <div className="font-medium text-slate-800">
-                        {r.display_name}
+                        {nameWithPrefix(r.title_prefix, r.display_name)}
                         <span className="text-xs text-slate-400 ml-1.5">@{r.username}</span>
                       </div>
                       <div className="flex flex-wrap items-center gap-2 mt-1">
@@ -309,7 +313,7 @@ export default function ResignationAdminClient({
                       )}
                       {r.decision_note && r.decided_by_name && (
                         <div className="text-xs text-slate-600 mt-1.5 bg-slate-100 px-2 py-1 rounded">
-                          <span className="font-medium">{r.decided_by_name}:</span> {r.decision_note}
+                          <span className="font-medium">{nameWithPrefix(r.decided_by_prefix, r.decided_by_name)}:</span> {r.decision_note}
                         </div>
                       )}
                     </div>

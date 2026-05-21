@@ -4,6 +4,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useTransition } from "react";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import { nameWithPrefix } from "@/lib/name";
 import type { StaffOpt } from "../ReportToolbar";
 
 function downloadCsv(filename: string, csv: string): void {
@@ -72,7 +73,7 @@ export default function QuotaToolbar({
         >
           <option value="">{t(lang, "admin.persona.reports.filter.allEmployees")}</option>
           {staffList.map((s) => (
-            <option key={s.id} value={s.id}>{s.display_name}</option>
+            <option key={s.id} value={s.id}>{nameWithPrefix(s.title_prefix, s.display_name)}</option>
           ))}
         </select>
       </div>

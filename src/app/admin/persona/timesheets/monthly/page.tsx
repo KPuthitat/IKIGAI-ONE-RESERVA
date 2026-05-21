@@ -19,6 +19,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { nameWithPrefix } from "@/lib/name";
 import {
   monthlyLateStatsRoster,
   shiftStartByDateForUserMonth,
@@ -34,6 +35,7 @@ const ASSUMED_SHIFT_MINUTES = 8 * 60; // 8-hour shift, matches payroll engine
 type EmployeeRow = {
   user_id: number;
   display_name: string;
+  title_prefix: string | null;
   employment_type: string | null;
   shift_start_time: string | null;
 };
@@ -78,11 +80,11 @@ export default function MonthlyTimesheetPage({
 
   // Staff assigned to this branch with their shift settings.
   const employees = db.prepare(`
-    SELECT u.id AS user_id, u.display_name, u.employment_type,
-           u.shift_start_time
+    SELECT u.id AS user_id, u.display_name, u.title_prefix,
+           u.employment_type, u.shift_start_time
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
-    WHERE ub.branch_id = ? AND u.role = 'staff'
+    WHERE ub.branch_id = ? AND u.role IN ('staff','admin') AND u.status != 'disabled'
     ORDER BY u.display_name COLLATE NOCASE
   `).all(branch.id) as EmployeeRow[];
 
@@ -199,7 +201,7 @@ export default function MonthlyTimesheetPage({
                   const ratioPct = (r.ratio * 100).toFixed(1);
                   return (
                     <tr key={r.user_id} className="border-b border-slate-100 last:border-b-0">
-                      <td className="py-2 pr-2 font-bold text-slate-800">{r.display_name}</td>
+                      <td className="py-2 pr-2 font-bold text-slate-800">{nameWithPrefix(r.title_prefix, r.display_name)}</td>
                       <td className="py-2 pr-2 text-xs text-slate-500">
                         {r.employment_type === "ft" ? "FT" :
                          r.employment_type === "pt" ? "PT" : "—"}

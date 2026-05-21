@@ -6,6 +6,7 @@ import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
 import { rowsToCsv, type CsvCell } from "@/lib/csv";
 import { todayBkk } from "@/lib/time";
+import { nameWithPrefix } from "@/lib/name";
 import ReportToolbar, { type StaffOpt } from "../ReportToolbar";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,7 @@ type LeaveRow = {
   ref_no: string | null;
   user_id: number;
   display_name: string;
+  title_prefix: string | null;
   type: string;
   date_from: string;
   date_to: string;
@@ -78,7 +80,7 @@ export default function LeaveReportPage({
   }
 
   const rows = db.prepare(`
-    SELECT r.ref_no, r.user_id, u.display_name, r.type, r.date_from, r.date_to,
+    SELECT r.ref_no, r.user_id, u.display_name, u.title_prefix, r.type, r.date_from, r.date_to,
            r.days, r.hours, r.decided_at, r.is_special_request
     FROM leave_requests r
     JOIN users u ON r.user_id = u.id
@@ -91,7 +93,7 @@ export default function LeaveReportPage({
 
   // Staff dropdown
   const staffList = db.prepare(`
-    SELECT id, display_name FROM users WHERE role = 'staff'
+    SELECT id, display_name, title_prefix FROM users WHERE role = 'staff'
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
   `).all() as StaffOpt[];
@@ -124,7 +126,7 @@ export default function LeaveReportPage({
   ];
   const csvRows: CsvCell[][] = rows.map((r) => [
     r.ref_no ?? "",
-    r.display_name,
+    nameWithPrefix(r.title_prefix, r.display_name),
     leaveTypeLabel(r.type, lang),
     r.date_from,
     r.date_to,
@@ -249,7 +251,7 @@ export default function LeaveReportPage({
                     <td className="py-2 pr-3 font-mono text-xs text-slate-500">
                       {r.ref_no ?? ""}
                     </td>
-                    <td className="py-2 pr-3 font-medium">{r.display_name}</td>
+                    <td className="py-2 pr-3 font-medium">{nameWithPrefix(r.title_prefix, r.display_name)}</td>
                     <td className="py-2 pr-3">
                       {leaveTypeLabel(r.type, lang)}
                       {r.is_special_request === 1 && (

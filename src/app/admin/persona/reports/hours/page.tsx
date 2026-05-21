@@ -6,6 +6,7 @@ import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
 import { rowsToCsv, type CsvCell } from "@/lib/csv";
 import { todayBkk } from "@/lib/time";
+import { nameWithPrefix } from "@/lib/name";
 import ReportToolbar, { type StaffOpt } from "../ReportToolbar";
 
 export const dynamic = "force-dynamic";
@@ -17,12 +18,14 @@ type Entry = {
   ts: string;
   type: "in" | "out";
   display_name: string;
+  title_prefix: string | null;
   employment_type: string | null;
 };
 
 type UserSummary = {
   user_id: number;
   display_name: string;
+  title_prefix: string | null;
   employment_type: string | null;
   totalHours: number;
   daysWorked: number;
@@ -89,6 +92,7 @@ function aggregateByUser(entries: Entry[]): Map<number, UserSummary> {
     out.set(uid, {
       user_id: uid,
       display_name: list[0].display_name,
+      title_prefix: list[0].title_prefix,
       employment_type: list[0].employment_type,
       totalHours: totalMs / 3_600_000,
       daysWorked: daysWithWork.size,
@@ -130,7 +134,7 @@ export default function HoursReportPage({
   }
 
   const entries = db.prepare(`
-    SELECT te.user_id, te.ts, te.type, u.display_name, u.employment_type
+    SELECT te.user_id, te.ts, te.type, u.display_name, u.title_prefix, u.employment_type
     FROM time_entries te
     JOIN users u ON te.user_id = u.id
     WHERE te.ts >= ? AND te.ts <= ? ${userClause}
@@ -147,7 +151,7 @@ export default function HoursReportPage({
 
   // Staff list for dropdown
   const staffList = db.prepare(`
-    SELECT id, display_name FROM users WHERE role = 'staff'
+    SELECT id, display_name, title_prefix FROM users WHERE role = 'staff'
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
   `).all() as StaffOpt[];
@@ -169,7 +173,7 @@ export default function HoursReportPage({
     t(lang, "admin.persona.reports.hours.col.unpaired")
   ];
   const csvRows: CsvCell[][] = summaryRows.map((r) => [
-    r.display_name,
+    nameWithPrefix(r.title_prefix, r.display_name),
     employmentTypeLabel(r.employment_type, lang),
     r.totalHours.toFixed(2),
     r.daysWorked,
@@ -261,7 +265,7 @@ export default function HoursReportPage({
               <tbody>
                 {summaryRows.map((r) => (
                   <tr key={r.user_id} className="border-b border-slate-100 last:border-0">
-                    <td className="py-2 pr-3 font-medium">{r.display_name}</td>
+                    <td className="py-2 pr-3 font-medium">{nameWithPrefix(r.title_prefix, r.display_name)}</td>
                     <td className="py-2 pr-3 text-slate-600">
                       {employmentTypeLabel(r.employment_type, lang)}
                     </td>

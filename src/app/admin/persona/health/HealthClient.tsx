@@ -13,11 +13,13 @@ import {
   type HealthOverall,
   type CheckupStatus
 } from "@/lib/health-checkup";
+import { nameWithPrefix } from "@/lib/name";
 
 export type HealthRow = {
   id: number;
   username: string;
   display_name: string;
+  title_prefix: string | null;
   role: "admin" | "staff" | "super_admin";
   employment_type: "pt" | "ft" | null;
   checkup_id: number | null;
@@ -74,7 +76,7 @@ export default function HealthClient({ rows }: { rows: HealthRow[] }) {
                     : st === "none" ? "bg-slate-50/40"
                     : "hover:bg-slate-50"}`}>
                   <td className="py-2 pr-3">
-                    <div className="font-medium text-slate-800">{r.display_name}</div>
+                    <div className="font-medium text-slate-800">{nameWithPrefix(r.title_prefix, r.display_name)}</div>
                     <div className="text-xs text-slate-400">@{r.username}</div>
                   </td>
                   <td className="py-2 pr-3 text-slate-700">
@@ -276,7 +278,7 @@ function CheckupModal({
             ผลตรวจสุขภาพ — แบบ ส.ณ.11
           </h3>
           <p className="text-sm text-slate-500 mt-0.5">
-            {row.display_name} <span className="text-slate-400">@{row.username}</span>
+            {nameWithPrefix(row.title_prefix, row.display_name)} <span className="text-slate-400">@{row.username}</span>
           </p>
         </div>
 

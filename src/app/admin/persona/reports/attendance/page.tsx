@@ -6,6 +6,7 @@ import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
 import { rowsToCsv, type CsvCell } from "@/lib/csv";
 import { todayBkk } from "@/lib/time";
+import { nameWithPrefix } from "@/lib/name";
 import ReportToolbar, { type StaffOpt } from "../ReportToolbar";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ export const metadata: Metadata = { title: "รายงานการมาท
 type StaffUser = {
   id: number;
   display_name: string;
+  title_prefix: string | null;
   employment_type: string | null;
   weekly_off_days: string | null;       // CSV "1,2"
 };
@@ -86,7 +88,7 @@ export default function AttendanceReportPage({
 
   // Staff users (only those with employment_type set get attendance tracking)
   let staffSql = `
-    SELECT id, display_name, employment_type, weekly_off_days
+    SELECT id, display_name, title_prefix, employment_type, weekly_off_days
     FROM users
     WHERE role = 'staff' AND employment_type IS NOT NULL
   `;
@@ -174,7 +176,7 @@ export default function AttendanceReportPage({
 
   // Staff list for dropdown
   const staffList = db.prepare(`
-    SELECT id, display_name FROM users WHERE role = 'staff'
+    SELECT id, display_name, title_prefix FROM users WHERE role = 'staff'
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
   `).all() as StaffOpt[];
@@ -202,7 +204,7 @@ export default function AttendanceReportPage({
   const csvRows: CsvCell[][] = staff.map((u) => {
     const c = userCounts.get(u.id)!;
     return [
-      u.display_name,
+      nameWithPrefix(u.title_prefix, u.display_name),
       employmentTypeLabel(u.employment_type, lang),
       c.worked,
       c.leave,
@@ -303,7 +305,7 @@ export default function AttendanceReportPage({
                   const c = userCounts.get(u.id)!;
                   return (
                     <tr key={u.id} className="border-b border-slate-100 last:border-0">
-                      <td className="py-2 pr-3 font-medium">{u.display_name}</td>
+                      <td className="py-2 pr-3 font-medium">{nameWithPrefix(u.title_prefix, u.display_name)}</td>
                       <td className="py-2 pr-3 text-slate-600">{employmentTypeLabel(u.employment_type, lang)}</td>
                       <td className="py-2 pr-3 text-right text-emerald-700 font-medium">{c.worked}</td>
                       <td className="py-2 pr-3 text-right text-amber-700">{c.leave}</td>

@@ -8,6 +8,7 @@ import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
 import ConfirmModal from "@/app/components/ConfirmModal";
+import { nameWithPrefix } from "@/lib/name";
 
 export type PeriodDetail = {
   id: number;
@@ -29,8 +30,11 @@ export type PeriodDetail = {
   notes: string | null;
   created_at: string;
   computed_by_name: string | null;
+  computed_by_prefix: string | null;
   finalized_by_name: string | null;
+  finalized_by_prefix: string | null;
   paid_by_name: string | null;
+  paid_by_prefix: string | null;
 };
 
 export type PayrollLineRow = {
@@ -38,6 +42,7 @@ export type PayrollLineRow = {
   user_id: number;
   employee_code: string | null;
   display_name: string;
+  title_prefix: string | null;
   employment_type: "pt" | "ft" | null;
   pay_cycle_snapshot: "weekly" | "monthly" | null;
   hourly_rate_snapshot: number | null;
@@ -84,6 +89,7 @@ function fmtMoney(v: number): string {
 export type AddableStaff = {
   id: number;
   display_name: string;
+  title_prefix: string | null;
   employment_type: "pt" | "ft" | null;
 };
 
@@ -92,6 +98,7 @@ export type UnlockEntry = {
   reason: string;
   unlocked_at: string;
   unlocked_by_name: string | null;
+  unlocked_by_prefix: string | null;
   action: string;  // 'unlock' | 'force_open'
 };
 
@@ -280,7 +287,7 @@ export default function PeriodDetailClient({
               {t(lang, "admin.persona.payroll.detail.computedAt", {
                 ts: new Date(period.computed_at).toLocaleString("en-GB", { timeZone: "Asia/Bangkok" })
               })}
-              {period.computed_by_name && ` (${period.computed_by_name})`}
+              {period.computed_by_name && ` (${nameWithPrefix(period.computed_by_prefix, period.computed_by_name)})`}
               <span className="mx-1">·</span>
               OT: {otModeBadge}
             </p>
@@ -380,7 +387,7 @@ export default function PeriodDetailClient({
             {t(lang, "admin.persona.payroll.detail.paidNotice", {
               ts: new Date(period.paid_at).toLocaleString("en-GB", { timeZone: "Asia/Bangkok" })
             })}
-            {period.paid_by_name && ` (${period.paid_by_name})`}
+            {period.paid_by_name && ` (${nameWithPrefix(period.paid_by_prefix, period.paid_by_name)})`}
           </span>
         )}
         {isFinalized && (
@@ -469,7 +476,7 @@ export default function PeriodDetailClient({
                 <tr key={l.id} className={`border-b border-slate-100 last:border-0 ${l.overridden ? "bg-sky-50/40" : ""}`}>
                   <td className="py-2 pr-3">
                     <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
-                      <span>{l.display_name}</span>
+                      <span>{nameWithPrefix(l.title_prefix, l.display_name)}</span>
                       {l.employment_type === "pt" && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
                           {t(lang, "admin.persona.employees.employment.pt")}
@@ -718,7 +725,7 @@ export default function PeriodDetailClient({
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${actionCls}`}>
                         {actionLabel}
                       </span>
-                      <span>{u.unlocked_by_name ?? "—"}</span>
+                      <span>{u.unlocked_by_name ? nameWithPrefix(u.unlocked_by_prefix, u.unlocked_by_name) : "—"}</span>
                     </div>
                     <span>{new Date(u.unlocked_at).toLocaleString("en-GB", { timeZone: "Asia/Bangkok" })}</span>
                   </div>
@@ -777,7 +784,7 @@ function AddStaffModal({
                   t(lang, "admin.persona.employees.unset");
                 return (
                   <option key={s.id} value={s.id}>
-                    {s.display_name} · {empLabel}
+                    {nameWithPrefix(s.title_prefix, s.display_name)} · {empLabel}
                   </option>
                 );
               })}
@@ -959,7 +966,7 @@ function LineEditModal({
         onClick={(e) => e.stopPropagation()}>
         <div>
           <h3 className="font-semibold text-slate-800">{t(lang, "admin.persona.payroll.detail.editLine")}</h3>
-          <p className="text-sm text-slate-500">{line.display_name}</p>
+          <p className="text-sm text-slate-500">{nameWithPrefix(line.title_prefix, line.display_name)}</p>
         </div>
 
         {/* Mode toggle */}

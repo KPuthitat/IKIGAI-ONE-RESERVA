@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { nameWithPrefix } from "@/lib/name";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ type RecentLeave = {
   status: string;
   is_special_request: number;
   display_name: string;
+  title_prefix: string | null;
 };
 type RecentResig = {
   id: number;
@@ -26,6 +28,7 @@ type RecentResig = {
   proposed_last_day: string;
   status: string;
   display_name: string;
+  title_prefix: string | null;
 };
 
 export default function AdminPersonaDashboard() {
@@ -97,13 +100,13 @@ export default function AdminPersonaDashboard() {
   // ── Recent activity (also branch-scoped for leaves) ──────────────────
   const recentLeaves = db.prepare(`
     SELECT r.id, r.ref_no, r.type, r.date_from, r.date_to, r.status, r.is_special_request,
-           u.display_name
+           u.display_name, u.title_prefix
     FROM leave_requests r JOIN users u ON r.user_id = u.id
     WHERE r.branch_id = ?
     ORDER BY r.created_at DESC LIMIT 5
   `).all(branch.id) as RecentLeave[];
   const recentResigs = db.prepare(`
-    SELECT r.id, r.ref_no, r.proposed_last_day, r.status, u.display_name
+    SELECT r.id, r.ref_no, r.proposed_last_day, r.status, u.display_name, u.title_prefix
     FROM resignation_requests r JOIN users u ON r.user_id = u.id
     ORDER BY r.created_at DESC LIMIT 5
   `).all() as RecentResig[];
@@ -232,7 +235,7 @@ export default function AdminPersonaDashboard() {
                     {r.ref_no && (
                       <span className="text-xs text-slate-400 font-mono mr-1.5">#{r.ref_no}</span>
                     )}
-                    <span className="font-medium text-slate-700">{r.display_name}</span>
+                    <span className="font-medium text-slate-700">{nameWithPrefix(r.title_prefix, r.display_name)}</span>
                     <span className="text-slate-500 mx-1.5">·</span>
                     <span className="text-slate-600">{t(lang, `leave.type.${r.type}` as any)}</span>
                     {r.is_special_request === 1 && (
@@ -270,7 +273,7 @@ export default function AdminPersonaDashboard() {
                     {r.ref_no && (
                       <span className="text-xs text-slate-400 font-mono mr-1.5">#{r.ref_no}</span>
                     )}
-                    <span className="font-medium text-slate-700">{r.display_name}</span>
+                    <span className="font-medium text-slate-700">{nameWithPrefix(r.title_prefix, r.display_name)}</span>
                     <div className="text-xs text-slate-400 mt-0.5">
                       {t(lang, "admin.persona.dashboard.lastDay")}: {r.proposed_last_day}
                     </div>

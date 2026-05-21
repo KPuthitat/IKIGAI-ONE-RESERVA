@@ -69,7 +69,7 @@ export default function AdminEmployeeProfilePage({
   // out the employee themselves). Kept un-branch-scoped on purpose so a
   // cross-branch supervisor can still be selected by the owner.
   const supervisors = db.prepare(
-    `SELECT id, display_name FROM users
+    `SELECT id, display_name, title_prefix FROM users
       WHERE status != 'disabled'
       ORDER BY display_name`
   ).all() as ProfileSupervisor[];

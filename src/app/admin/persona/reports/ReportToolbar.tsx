@@ -5,6 +5,7 @@ import { useTransition } from "react";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
 import MonthPicker from "@/app/components/MonthPicker";
+import { nameWithPrefix } from "@/lib/name";
 
 // Trigger browser download — client only
 function downloadCsv(filename: string, csv: string): void {
@@ -20,7 +21,7 @@ function downloadCsv(filename: string, csv: string): void {
   URL.revokeObjectURL(url);
 }
 
-export type StaffOpt = { id: number; display_name: string };
+export type StaffOpt = { id: number; display_name: string; title_prefix: string | null };
 
 export default function ReportToolbar({
   lang,
@@ -75,7 +76,7 @@ export default function ReportToolbar({
         >
           <option value="">{t(lang, "admin.persona.reports.filter.allEmployees")}</option>
           {staffList.map((s) => (
-            <option key={s.id} value={s.id}>{s.display_name}</option>
+            <option key={s.id} value={s.id}>{nameWithPrefix(s.title_prefix, s.display_name)}</option>
           ))}
         </select>
       </div>

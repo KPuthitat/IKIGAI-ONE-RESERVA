@@ -24,6 +24,7 @@ export type PendingCertRow = {
   reason: string;
   requested_by: number;
   requester_name: string;
+  requester_prefix: string | null;
   created_at: string;
 };
 
@@ -44,7 +45,8 @@ export default function AdminTimeCertificationsPage() {
     SELECT c.id, c.entry_id, c.original_ts, c.proposed_ts, c.reason,
            c.requested_by, c.created_at,
            e.type AS entry_type,
-           u.display_name AS requester_name
+           u.display_name AS requester_name,
+           u.title_prefix AS requester_prefix
     FROM time_certifications c
     JOIN time_entries e ON e.id = c.entry_id
     JOIN users u ON u.id = c.requested_by
