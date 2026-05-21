@@ -76,7 +76,17 @@ export default function ChecklistPage({
           {t(lang, "admin.persona.checklist.subtitle")}
         </p>
       </div>
-      <ChecklistEditor initialItems={items} branchId={branch.id} type={type} />
+      {/* key forces React to unmount + remount when the user navigates
+          between report types (or branches). Without it, the client
+          component's useState seeds from the first initialItems and
+          ignores subsequent prop changes — so switching shift_open →
+          readiness_1130 would show the old list with the new header. */}
+      <ChecklistEditor
+        key={`${branch.id}-${type}`}
+        initialItems={items}
+        branchId={branch.id}
+        type={type}
+      />
     </div>
   );
 }
