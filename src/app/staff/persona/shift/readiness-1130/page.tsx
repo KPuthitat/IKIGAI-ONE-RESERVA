@@ -13,7 +13,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
-import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
+import { getDb, type Branch, type ShiftChecklistItem, parseChecklistOptions } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -97,9 +97,9 @@ export default function Readiness1130Page() {
     );
   }
 
-  // Admin-configured extra checklist for this branch + type. The
-  // ReadinessForm renders these BELOW the built-in 3 textareas; an
-  // empty list = nothing extra, same behaviour as before.
+  // Admin-configured checklist — drives the WHOLE form (no static
+  // fields anymore). The migration seeds defaults per branch so
+  // existing branches see the same 4 items they always had.
   const checklist = db.prepare(`
     SELECT * FROM shift_checklist_items
     WHERE type = 'readiness_1130' AND branch_id = ? AND active = 1
@@ -134,7 +134,8 @@ export default function Readiness1130Page() {
         checklistItems={checklist.map((c) => ({
           id: c.id,
           label: c.label,
-          kind: (c.kind ?? "checkbox") as "checkbox" | "text"
+          kind: (c.kind ?? "checkbox") as "checkbox" | "text" | "choice",
+          options: c.kind === "choice" ? parseChecklistOptions(c) : undefined
         }))}
       />
     </div>

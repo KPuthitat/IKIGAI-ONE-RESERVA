@@ -40,11 +40,11 @@ const ChecklistEntry = z.object({
   label: z.string().min(1).max(200),
   checked: z.boolean(),
   note: z.string().max(500).nullable().optional(),
-  /** "checkbox" | "text" — staff form sends this with every entry so
-   *  the LINE renderer can distinguish "ticked yes/no" from "the staff
-   *  typed this value". Optional for backward compatibility with rows
-   *  submitted before P5c. */
-  kind: z.enum(["checkbox", "text"]).optional()
+  /** "checkbox" | "text" | "choice" — staff form sends this so the
+   *  LINE renderer can distinguish render kinds. For choice items,
+   *  `note` holds the selected option text. Optional for backward
+   *  compatibility with rows submitted before P5c. */
+  kind: z.enum(["checkbox", "text", "choice"]).optional()
 });
 
 // Per-type data schemas. Each form in the staff UI submits one of these.
@@ -62,19 +62,21 @@ const ShiftCloseData = z.object({
   service_charge_amount: z.number().min(0).max(999_999).nullable().optional(),
   checklist: z.array(ChecklistEntry).max(50)
 });
-// Readiness reports (11:30 + 16:00) — 3 free-text sections + alcohol
-// status. All text fields are optional (empty string allowed) so
-// staff isn't forced to type anything if there's nothing to report.
-// Alcohol always carries a value because the form defaults to "ok".
+// Readiness reports (11:30 + 16:00) — 2026-05-21 onward driven entirely
+// by the admin checklist. Legacy fields (team_communications, menus_*,
+// alcohol_status) are still accepted-and-ignored for back-compat with
+// any stale client tabs, but the canonical payload is just the
+// checklist array. Migration seeds equivalent defaults per branch so
+// admins get the same 4 items they had before.
 const ReadinessData = z.object({
-  team_communications: z.string().max(2000).default(""),
-  menus_not_ready: z.string().max(2000).default(""),
-  menus_modified: z.string().max(2000).default(""),
-  alcohol_status: z.enum(["ok", "blocked"]),
-  /** Optional admin-configured extra items. Empty / missing array =
-   *  branch hasn't customized the readiness form — falls back to the
-   *  legacy 3-textareas-only behaviour. */
-  checklist: z.array(ChecklistEntry).max(50).optional().default([])
+  checklist: z.array(ChecklistEntry).max(50).default([]),
+  // Tolerated legacy keys — never read by the new code, but Zod would
+  // otherwise reject them if a stale browser tab POSTs with the old
+  // shape. We use passthrough() conceptually via these optionals.
+  team_communications: z.string().max(2000).optional(),
+  menus_not_ready: z.string().max(2000).optional(),
+  menus_modified: z.string().max(2000).optional(),
+  alcohol_status: z.enum(["ok", "blocked"]).optional()
 });
 
 const Body = z.object({
@@ -264,10 +266,9 @@ export async function POST(req: Request) {
       headerColor: branch.brand_color
     });
   } else {
-    // readiness_1130 / readiness_1600 — pull slot label + time from
-    // the branch's admin-configured settings. Defaults baked into the
-    // schema (11:30 / 16:00) keep old data flowing through unchanged
-    // until admin sets a custom time per branch.
+    // readiness_1130 / readiness_1600 — fully driven by the admin
+    // checklist. Slot label + time still come from branch settings so
+    // the Flex card reads "รายงานความพร้อมรอบเช้า (11:30 น.)" etc.
     const d = v.data as z.infer<typeof ReadinessData>;
     const isMorning = type === "readiness_1130";
     flex = readinessFlex({
@@ -278,10 +279,6 @@ export async function POST(req: Request) {
       slotTime: isMorning
         ? branch.readiness_morning_time
         : branch.readiness_afternoon_time,
-      teamCommunications: d.team_communications,
-      menusNotReady: d.menus_not_ready,
-      menusModified: d.menus_modified,
-      alcoholStatus: d.alcohol_status,
       checklist: normalizeChecklist(d.checklist ?? []),
       isRevision,
       headerColor: branch.brand_color

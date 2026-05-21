@@ -17,8 +17,11 @@ const CreateBody = z.object({
   /** Optional — defaults to admin's current activeBranchId. When set,
    *  must be a branch the admin is assigned to. */
   branch_id: z.number().int().positive().optional(),
-  /** 'checkbox' (default) or 'text'. See ShiftChecklistItem.kind. */
-  kind: z.enum(["checkbox", "text"]).optional()
+  /** 'checkbox' (default), 'text', or 'choice'. See ShiftChecklistItem.kind. */
+  kind: z.enum(["checkbox", "text", "choice"]).optional(),
+  /** When kind === 'choice', the radio options shown to the staff.
+   *  Required for choice (≥ 2 items), ignored for checkbox / text. */
+  options: z.array(z.string().trim().min(1).max(100)).max(20).optional()
 });
 
 function resolveBranchId(
@@ -66,7 +69,20 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }
-  const { type, label, branch_id: override, kind } = parsed.data;
+  const { type, label, branch_id: override, kind, options } = parsed.data;
+  const effectiveKind = kind ?? "checkbox";
+
+  // Choice items must arrive with at least 2 options — otherwise the
+  // staff form has nothing to render and the row is unusable. We
+  // reject early instead of saving a broken row that admin would have
+  // to debug later.
+  if (effectiveKind === "choice" && (!options || options.length < 2)) {
+    return NextResponse.json(
+      { error: "choice_requires_options" },
+      { status: 400 }
+    );
+  }
+
   const r = resolveBranchId(user, override ?? null);
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
 
@@ -76,9 +92,10 @@ export async function POST(req: Request) {
   const maxRow = db.prepare(
     "SELECT COALESCE(MAX(display_order), 0) AS max FROM shift_checklist_items WHERE type = ? AND branch_id = ?"
   ).get(type, r.branchId) as { max: number };
+  const optionsJson = effectiveKind === "choice" && options ? JSON.stringify(options) : null;
   const result = db.prepare(`
-    INSERT INTO shift_checklist_items (type, label, display_order, branch_id, kind)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(type, label, maxRow.max + 10, r.branchId, kind ?? "checkbox");
+    INSERT INTO shift_checklist_items (type, label, display_order, branch_id, kind, options_json)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(type, label, maxRow.max + 10, r.branchId, effectiveKind, optionsJson);
   return NextResponse.json({ ok: true, id: result.lastInsertRowid });
 }

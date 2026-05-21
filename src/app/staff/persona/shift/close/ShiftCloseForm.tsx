@@ -10,7 +10,12 @@ import { useLang } from "@/lib/LangProvider";
 // amount the staff types here becomes the next day's "ยอดเงินปิดกะ
 // เมื่อวาน" prefill on the pre-shift form.
 
-type ChecklistItem = { id: number; label: string; kind: "checkbox" | "text" };
+type ChecklistItem = {
+  id: number;
+  label: string;
+  kind: "checkbox" | "text" | "choice";
+  options?: string[];
+};
 
 export default function ShiftCloseForm({
   branchId, branchName, closerName, checklistItems
@@ -41,6 +46,10 @@ export default function ShiftCloseForm({
   const [textValues, setTextValues] = useState<Record<number, string>>(() =>
     Object.fromEntries(checklistItems.map((it) => [it.id, ""]))
   );
+  // Choice items: the staff's picked option (or null until picked).
+  const [choices, setChoices] = useState<Record<number, string | null>>(() =>
+    Object.fromEntries(checklistItems.map((it) => [it.id, null]))
+  );
   const [openNotes, setOpenNotes] = useState<Record<number, boolean>>({});
   const [errorIds, setErrorIds] = useState<Record<number, boolean>>({});
 
@@ -53,7 +62,7 @@ export default function ShiftCloseForm({
       ...prev,
       ...Object.fromEntries(
         checklistItems
-          .filter((it) => it.kind === "checkbox")
+          .filter((it) => it.kind === "checkbox" || !it.kind)
           .map((it) => [it.id, value])
       )
     }));
@@ -73,6 +82,7 @@ export default function ShiftCloseForm({
     const missingNoteIds = checklistItems
       .filter((it) => {
         if (it.kind === "text") return !((textValues[it.id] || "").trim());
+        if (it.kind === "choice") return !choices[it.id];
         return !checked[it.id] && !((notes[it.id] || "").trim());
       })
       .map((it) => it.id);
@@ -103,6 +113,15 @@ export default function ShiftCloseForm({
             kind: "text" as const,
             checked: !!value,
             note: value || null
+          };
+        }
+        if (it.kind === "choice") {
+          const sel = choices[it.id];
+          return {
+            label: it.label,
+            kind: "choice" as const,
+            checked: !!sel,
+            note: sel ?? null
           };
         }
         const note = (notes[it.id] || "").trim();
@@ -239,6 +258,55 @@ export default function ShiftCloseForm({
           <div className="space-y-2">
             {checklistItems.map((it) => {
               const hasError = !!errorIds[it.id];
+              if (it.kind === "choice") {
+                const sel = choices[it.id];
+                const opts = it.options ?? [];
+                const cls = hasError
+                  ? "border-rose-400 bg-rose-50 ring-2 ring-rose-200"
+                  : sel
+                    ? "border-emerald-300 bg-emerald-50"
+                    : "border-slate-200";
+                return (
+                  <div key={it.id} className={`rounded-xl border-[1.5px] transition p-3 ${cls}`}>
+                    <div className="block text-sm font-bold text-slate-800 mb-2">
+                      {it.label}
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {opts.map((opt) => {
+                        const picked = sel === opt;
+                        return (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => {
+                              setChoices((prev) => ({ ...prev, [it.id]: opt }));
+                              if (hasError) {
+                                setErrorIds((prev) => {
+                                  const next = { ...prev };
+                                  delete next[it.id];
+                                  return next;
+                                });
+                              }
+                            }}
+                            className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-lg text-sm font-bold transition-all border-2 ${
+                              picked
+                                ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                : "border-slate-200 text-slate-500 hover:border-slate-300"
+                            }`}
+                          >
+                            {picked ? "● " : ""}{opt}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {hasError && (
+                      <p className="text-[10px] text-rose-600 font-medium mt-1.5">
+                        {t("staff.persona.shift.open.choiceRequired")}
+                      </p>
+                    )}
+                  </div>
+                );
+              }
               if (it.kind === "text") {
                 const value = textValues[it.id] || "";
                 const filled = value.trim().length > 0;

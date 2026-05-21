@@ -18,7 +18,14 @@ import { useLang } from "@/lib/LangProvider";
 // the LINE Flex card renders all three states distinctly so admin
 // can read why something was skipped without chasing the staff.
 
-type ChecklistItem = { id: number; label: string; kind: "checkbox" | "text" };
+type ChecklistItem = {
+  id: number;
+  label: string;
+  kind: "checkbox" | "text" | "choice";
+  /** Only meaningful when kind === 'choice'. ≥ 2 entries guaranteed
+   *  by the admin API. */
+  options?: string[];
+};
 
 export default function ShiftOpenForm({
   branchId, branchName, openerName, today, yesterdayClosingHint, checklistItems
@@ -51,6 +58,10 @@ export default function ShiftOpenForm({
   const [textValues, setTextValues] = useState<Record<number, string>>(() =>
     Object.fromEntries(checklistItems.map((it) => [it.id, ""]))
   );
+  // For choice items, the picked option (or null until staff picks).
+  const [choices, setChoices] = useState<Record<number, string | null>>(() =>
+    Object.fromEntries(checklistItems.map((it) => [it.id, null]))
+  );
   // Per-item note text. An empty string is the same as "no note" — only
   // non-empty strings turn the row into the "skipped-with-note" state.
   const [notes, setNotes] = useState<Record<number, string>>(() =>
@@ -71,12 +82,12 @@ export default function ShiftOpenForm({
 
   function toggleAll(value: boolean) {
     // "Mark all done" only applies to checkbox items — text inputs
-    // need their value typed by hand and shouldn't get auto-ticked.
+    // and choice radios need their value picked by hand.
     setChecked((prev) => ({
       ...prev,
       ...Object.fromEntries(
         checklistItems
-          .filter((it) => it.kind === "checkbox")
+          .filter((it) => it.kind === "checkbox" || !it.kind)
           .map((it) => [it.id, value])
       )
     }));
@@ -95,12 +106,13 @@ export default function ShiftOpenForm({
     setMsg(null);
     // Validate. For text items: the typed value cannot be empty (treat
     // it as a required field; admins typically use text rows for things
-    // like cash counts where blank is wrong). For checkbox items: same
-    // rule as before — either ticked, or carrying a note explaining the
-    // skip.
+    // like cash counts where blank is wrong). For choice items: an
+    // option must be picked. For checkbox items: same rule as before —
+    // either ticked, or carrying a note explaining the skip.
     const missingNoteIds = checklistItems
       .filter((it) => {
         if (it.kind === "text") return !((textValues[it.id] || "").trim());
+        if (it.kind === "choice") return !choices[it.id];
         return !checked[it.id] && !((notes[it.id] || "").trim());
       })
       .map((it) => it.id);
@@ -134,6 +146,15 @@ export default function ShiftOpenForm({
             kind: "text" as const,
             checked: !!value,
             note: value || null
+          };
+        }
+        if (it.kind === "choice") {
+          const sel = choices[it.id];
+          return {
+            label: it.label,
+            kind: "choice" as const,
+            checked: !!sel,
+            note: sel ?? null
           };
         }
         const note = (notes[it.id] || "").trim();
@@ -185,9 +206,11 @@ export default function ShiftOpenForm({
   }
 
   if (done) {
-    const allChecked = checklistItems.every((it) =>
-      it.kind === "text" ? (textValues[it.id] || "").trim().length > 0 : checked[it.id]
-    );
+    const allChecked = checklistItems.every((it) => {
+      if (it.kind === "text") return (textValues[it.id] || "").trim().length > 0;
+      if (it.kind === "choice") return !!choices[it.id];
+      return checked[it.id];
+    });
     return (
       <div className="card text-center space-y-3">
         <div className="text-5xl">{allChecked ? "✓" : "⚠"}</div>
@@ -274,6 +297,55 @@ export default function ShiftOpenForm({
           <div className="space-y-2">
             {checklistItems.map((it) => {
               const hasError = !!errorIds[it.id];
+              if (it.kind === "choice") {
+                const sel = choices[it.id];
+                const opts = it.options ?? [];
+                const cls = hasError
+                  ? "border-rose-400 bg-rose-50 ring-2 ring-rose-200"
+                  : sel
+                    ? "border-emerald-300 bg-emerald-50"
+                    : "border-slate-200";
+                return (
+                  <div key={it.id} className={`rounded-xl border-[1.5px] transition p-3 ${cls}`}>
+                    <div className="block text-sm font-bold text-slate-800 mb-2">
+                      {it.label}
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {opts.map((opt) => {
+                        const picked = sel === opt;
+                        return (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => {
+                              setChoices((prev) => ({ ...prev, [it.id]: opt }));
+                              if (hasError) {
+                                setErrorIds((prev) => {
+                                  const next = { ...prev };
+                                  delete next[it.id];
+                                  return next;
+                                });
+                              }
+                            }}
+                            className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-lg text-sm font-bold transition-all border-2 ${
+                              picked
+                                ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                : "border-slate-200 text-slate-500 hover:border-slate-300"
+                            }`}
+                          >
+                            {picked ? "● " : ""}{opt}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {hasError && (
+                      <p className="text-[10px] text-rose-600 font-medium mt-1.5">
+                        {t("staff.persona.shift.open.choiceRequired")}
+                      </p>
+                    )}
+                  </div>
+                );
+              }
               if (it.kind === "text") {
                 const value = textValues[it.id] || "";
                 const filled = value.trim().length > 0;

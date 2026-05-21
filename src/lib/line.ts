@@ -1480,16 +1480,12 @@ export type ReadinessCardArgs = {
   slotLabel: string;
   /** Slot time HH:MM — admin-configured per branch, shown next to slotLabel. */
   slotTime: string;
-  /** Free-text — admin's reading material. Empty string → renders "—". */
-  teamCommunications: string;
-  menusNotReady: string;
-  menusModified: string;
-  /** Alcohol sales status for the day. */
-  alcoholStatus: "ok" | "blocked";
-  /** Admin-configured extra checklist items (P5c). Empty array =
-   *  branch hasn't added any — the card renders only the 3 built-in
-   *  sections, identical to the pre-P5c layout. */
-  checklist?: Array<{ label: string; checked: boolean; note?: string | null }>;
+  /** The full set of checklist items the staff filled out — fully
+   *  admin-configurable since 2026-05-21. Each item is either a
+   *  checkbox (`checked`), a text entry (`checked` + `note` = typed
+   *  value), or a choice (`checked` + `note` = picked option). The
+   *  Flex renderer treats them uniformly. */
+  checklist: Array<{ label: string; checked: boolean; note?: string | null }>;
   isRevision?: boolean;
   /** Optional header background hex (e.g. '#e94560'). Falls back to
    *  the default IKIGAI ink colour when null/undefined. Used so each
@@ -1498,33 +1494,9 @@ export type ReadinessCardArgs = {
   headerColor?: string | null;
 };
 
-// One labelled section block in the readiness card. We use these for
-// the 3 free-text fields. Empty body collapses to a muted "—" so the
-// section still appears (admin can see the staff filled the report
-// and that field had nothing) instead of vanishing — vanishing would
-// look like "did staff forget?".
-//
-// Plain text labels (no emoji prefix) per user feedback that the
-// earlier 📣/🚫/📋 set felt visually noisy.
-function readinessSection(label: string, body: string) {
-  const isEmpty = !body.trim();
-  return {
-    type: "box", layout: "vertical", spacing: "xs", margin: "md",
-    contents: [
-      {
-        type: "text", text: label,
-        size: "xs", color: COLOR_LABEL, weight: "bold", wrap: true
-      },
-      {
-        type: "text",
-        text: isEmpty ? "—" : body,
-        size: "sm",
-        color: isEmpty ? COLOR_TEXT_MUTED : COLOR_TEXT_DARK,
-        wrap: true
-      }
-    ]
-  };
-}
+// (readinessSection helper deleted 2026-05-21 — the readiness card is
+// now built entirely from the admin checklist via checklistFlexBlock,
+// no labelled-section blocks needed.)
 
 export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
   const dateStr = formatThaiDate(args.reportDate);
@@ -1532,16 +1504,6 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
   // admin-configured time so recipients see "what round + at what
   // exact time today" without checking another screen.
   const titleText = `รายงานความพร้อม${args.slotLabel} (${args.slotTime} น.)`;
-
-  // Alcohol value — text only, status conveyed by the colour. Earlier
-  // version used 🟢/❌ emoji prefixes which combined with the long
-  // "สถานะแอลกอฮอล์" label pushed the value to a second line on
-  // narrower screens. Shorter "แอลกอฮอล์" label + emoji-less value
-  // fits one line.
-  const alcoholText =
-    args.alcoholStatus === "ok" ? "ขายได้ปกติ" : "ห้ามขาย";
-  const alcoholColor =
-    args.alcoholStatus === "ok" ? "#047857" : "#be123c";
 
   // Header colour is per-branch when supplied, otherwise the default
   // IKIGAI ink slate. Same hex flows to both the header box's
@@ -1581,18 +1543,13 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
         {
           type: "box", layout: "vertical", spacing: "sm", margin: "md",
           contents: [
-            kvRow("ผู้ส่งรายการ", args.reporterName),
-            kvRow("แอลกอฮอล์", alcoholText, { valueColor: alcoholColor })
+            kvRow("ผู้ส่งรายการ", args.reporterName)
           ]
         },
-        { type: "separator", margin: "md", color: COLOR_DIVIDER },
-        readinessSection("เรื่องที่อยากสื่อสารในทีม", args.teamCommunications),
-        readinessSection("เมนูที่ไม่พร้อมขาย", args.menusNotReady),
-        readinessSection("เมนูที่ขายได้ แต่มีการปรับบางอย่าง", args.menusModified),
-        // Admin-configured extras (P5c) — reuses the same 3-state row
-        // renderer as shift_open/shift_close so admins recognise the
-        // visual language. Empty array renders nothing.
-        ...checklistFlexBlock((args.checklist ?? []).map((c) => ({
+        // Admin-configured items — fully drive the card body since
+        // 2026-05-21. Reuses the same 3-state row renderer as
+        // shift_open / shift_close so admins recognise the language.
+        ...checklistFlexBlock(args.checklist.map((c) => ({
           label: c.label,
           checked: c.checked,
           note: c.note ?? null

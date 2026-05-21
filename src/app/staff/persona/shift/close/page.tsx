@@ -10,7 +10,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
-import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
+import { getDb, type Branch, type ShiftChecklistItem, parseChecklistOptions } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -113,7 +113,8 @@ export default function ShiftClosePage() {
         checklistItems={checklist.map((c) => ({
           id: c.id,
           label: c.label,
-          kind: (c.kind ?? "checkbox") as "checkbox" | "text"
+          kind: (c.kind ?? "checkbox") as "checkbox" | "text" | "choice",
+          options: c.kind === "choice" ? parseChecklistOptions(c) : undefined
         }))}
       />
     </div>

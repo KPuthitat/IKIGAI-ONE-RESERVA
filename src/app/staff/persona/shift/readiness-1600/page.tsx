@@ -9,7 +9,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
-import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
+import { getDb, type Branch, type ShiftChecklistItem, parseChecklistOptions } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -47,36 +47,11 @@ export default function Readiness1600Page() {
   const typeLabel = t(lang, "staff.persona.shiftReport.typeLabel.readiness1600");
 
   // Prefill the afternoon form with the morning round's content so
-  // staff edits only what changed (most days the menu/comms list is
-  // mostly stable across the day). Falls back to a blank form when
-  // morning round wasn't submitted yet — we never block; staff can
-  // still file the afternoon round independently.
-  type MorningData = {
-    team_communications?: string;
-    menus_not_ready?: string;
-    menus_modified?: string;
-    alcohol_status?: "ok" | "blocked";
-  };
-  let morningPrefill: MorningData | undefined;
-  const morning = db.prepare(`
-    SELECT data FROM daily_reports
-    WHERE type = 'readiness_1130' AND branch_id = ? AND report_date = ?
-      AND superseded_at IS NULL
-  `).get(branch.id, today) as { data: string } | undefined;
-  if (morning) {
-    try {
-      const parsed = JSON.parse(morning.data) as MorningData;
-      morningPrefill = {
-        team_communications: parsed.team_communications ?? "",
-        menus_not_ready: parsed.menus_not_ready ?? "",
-        menus_modified: parsed.menus_modified ?? "",
-        alcohol_status: parsed.alcohol_status ?? "ok"
-      };
-    } catch {
-      // Corrupt JSON in the morning report — ignore, render blank.
-      morningPrefill = undefined;
-    }
-  }
+  // Morning-prefill flow (used to seed the afternoon textareas from
+  // the morning round) was removed when the legacy static fields were
+  // dropped — the form is now driven entirely by the admin checklist
+  // and items don't carry per-item "prefill from morning" semantics.
+  // Reintroduce per-item prefill if admins ask for it later.
 
   const existing = db.prepare(`
     SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name, u.title_prefix AS opener_prefix
@@ -161,11 +136,11 @@ export default function Readiness1600Page() {
             branch: branch.name
           })
         }}
-        initialValues={morningPrefill}
         checklistItems={checklist.map((c) => ({
           id: c.id,
           label: c.label,
-          kind: (c.kind ?? "checkbox") as "checkbox" | "text"
+          kind: (c.kind ?? "checkbox") as "checkbox" | "text" | "choice",
+          options: c.kind === "choice" ? parseChecklistOptions(c) : undefined
         }))}
       />
     </div>

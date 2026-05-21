@@ -244,6 +244,13 @@ function runMigrations(db: Database.Database): void {
   if (!sccolNames.has("kind")) {
     db.exec("ALTER TABLE shift_checklist_items ADD COLUMN kind TEXT NOT NULL DEFAULT 'checkbox'");
   }
+  // 2026-05-21: kind='choice' adds a multi-option radio. Admin types
+  // the options in the editor; staff sees pill buttons (one selected
+  // at a time). Stored as a JSON array of strings, null when kind ≠
+  // 'choice'. Default NULL so legacy text/checkbox rows stay unchanged.
+  if (!sccolNames.has("options_json")) {
+    db.exec("ALTER TABLE shift_checklist_items ADD COLUMN options_json TEXT");
+  }
   if (!sccolNames.has("branch_id")) {
     db.exec("ALTER TABLE shift_checklist_items ADD COLUMN branch_id INTEGER REFERENCES branches(id)");
     // Clone any orphan (NULL branch_id) rows once per existing branch so
@@ -301,6 +308,41 @@ function runMigrations(db: Database.Database): void {
     if (cnt.n === 0) {
       for (let i = 0; i < checklistDefaults.length; i++) {
         seedIns.run("shift_open", checklistDefaults[i], (i + 1) * 10, b.id);
+      }
+    }
+  }
+
+  // 2026-05-21: readiness_1130 + readiness_1600 used to be 3 hardcoded
+  // textareas + 1 alcohol radio. Refactored to be fully admin-driven —
+  // seed the equivalent items per branch so existing behaviour is
+  // preserved out-of-the-box. Branches whose admins have already added
+  // any readiness items are left alone (cnt > 0 means they've already
+  // customized; don't overwrite). The alcohol item uses kind='choice'
+  // with 2 options to keep the same UX as the old radio.
+  const seedInsRich = db.prepare(
+    "INSERT INTO shift_checklist_items (type, label, display_order, branch_id, kind, options_json) VALUES (?, ?, ?, ?, ?, ?)"
+  );
+  const READINESS_DEFAULTS: Array<{
+    label: string; kind: "text" | "choice"; options?: string[];
+  }> = [
+    { label: "เรื่องที่อยากสื่อสารในทีม", kind: "text" },
+    { label: "เมนูที่ไม่พร้อมขาย", kind: "text" },
+    { label: "เมนูที่ขายได้ แต่มีการปรับบางอย่าง", kind: "text" },
+    { label: "สถานะการขายแอลกอฮอล์ในวันนี้", kind: "choice", options: ["ขายได้ปกติ", "ห้ามขาย"] }
+  ];
+  for (const b of allBranches) {
+    for (const readinessType of ["readiness_1130", "readiness_1600"] as const) {
+      const cnt = db.prepare(
+        "SELECT COUNT(*) AS n FROM shift_checklist_items WHERE type = ? AND branch_id = ?"
+      ).get(readinessType, b.id) as { n: number };
+      if (cnt.n === 0) {
+        for (let i = 0; i < READINESS_DEFAULTS.length; i++) {
+          const d = READINESS_DEFAULTS[i];
+          seedInsRich.run(
+            readinessType, d.label, (i + 1) * 10, b.id,
+            d.kind, d.options ? JSON.stringify(d.options) : null
+          );
+        }
       }
     }
   }
@@ -2654,12 +2696,29 @@ export type ShiftChecklistItem = {
   /** Per-branch since 2026-05 — admin manages each branch's list independently. */
   branch_id: number;
   label: string;
-  /** 'checkbox' (default): renders as a yes/no checkbox on the staff form.
-   *  'text': renders as a free-form text input — used for items where
-   *  admin wants the staff to record a specific value (เช่น "ยอดเงินใน
-   *  ลิ้นชัก") rather than just confirm completion. */
-  kind: "checkbox" | "text";
+  /** Render mode on the staff form:
+   *    'checkbox' — yes/no tick (default for legacy rows).
+   *    'text'     — free-form text input (e.g. "ยอดเงินในลิ้นชัก").
+   *    'choice'   — one-of-N radio. Admin types the options at the
+   *                 same time as the label; staff picks exactly one. */
+  kind: "checkbox" | "text" | "choice";
+  /** JSON-encoded `string[]` of choice options when kind === 'choice',
+   *  null otherwise. Use `parseChecklistOptions(row)` to read. */
+  options_json: string | null;
   display_order: number;
   active: number;          // 1 / 0
   created_at: string;
 };
+
+/** Decode options_json into a string[]. Returns [] when the row isn't
+ *  a choice kind or the JSON is malformed — never throws. */
+export function parseChecklistOptions(row: { options_json: string | null }): string[] {
+  if (!row.options_json) return [];
+  try {
+    const parsed = JSON.parse(row.options_json);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((s): s is string => typeof s === "string");
+  } catch {
+    return [];
+  }
+}
