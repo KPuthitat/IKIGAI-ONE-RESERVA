@@ -2371,10 +2371,19 @@ export async function notifyToStaffGroup(
     const token = platform?.channel_token ?? sys.global_line_channel_token ?? null;
     const groupId = sys.global_staff_group_id ?? null;
     if (token && groupId) {
-      await sendLinePush(token, {
+      const result = await sendLinePush(token, {
         to: groupId,
         messages: [flex]
       });
+      // Surface failures so callers that await this (e.g. the manual
+      // resend endpoint) can return a real error to the UI. The
+      // auto-flow's .catch(...) wrapper still swallows it for
+      // fire-and-forget behaviour.
+      if (!result.ok) {
+        throw new Error(
+          `LINE push failed (HTTP ${result.status}): ${result.error ?? "unknown"}`
+        );
+      }
       return;
     }
     // Global OA not configured yet — fall through to branch routing.

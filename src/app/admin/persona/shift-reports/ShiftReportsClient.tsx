@@ -211,24 +211,35 @@ export default function ShiftReportsClient({
         apiUrl(`/api/persona/daily-report/${reportId}/resend-notification`),
         { method: "POST" }
       );
-      if (res.ok) {
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body?.ok) {
         setResendMsg({
           reportId,
           kind: "ok",
           text: t("admin.persona.shiftReports.resendOk")
         });
       } else {
+        // Show the actual error from the server so admin knows whether
+        // the issue is token / group / LINE API itself. Falls back to
+        // the generic message when the API returned nothing useful.
+        const detail = body?.message || body?.error
+          ? `${body?.error ?? "error"}${body?.message ? ` — ${body.message}` : ""}`
+          : "";
         setResendMsg({
           reportId,
           kind: "err",
-          text: t("admin.persona.shiftReports.resendFail")
+          text: detail
+            ? `${t("admin.persona.shiftReports.resendFail")} · ${detail}`
+            : t("admin.persona.shiftReports.resendFail")
         });
       }
-    } catch {
+    } catch (e) {
       setResendMsg({
         reportId,
         kind: "err",
-        text: t("admin.persona.shiftReports.resendFail")
+        text: `${t("admin.persona.shiftReports.resendFail")} · ${
+          e instanceof Error ? e.message : "network"
+        }`
       });
     } finally {
       setResendBusyId(null);

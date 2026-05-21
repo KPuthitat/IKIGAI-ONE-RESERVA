@@ -38,6 +38,53 @@ export default function MessagingClient({
   const [groupBusy, setGroupBusy] = useState(false);
   const [groupMsg, setGroupMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
+  // LINE test-push diagnostic state. The "ทดสอบส่งข้อความ" button
+  // calls /api/admin/messaging/test-push which exercises the same
+  // credentials the auto-flow uses. The response is shown verbatim so
+  // admin can see the real LINE API error (or a friendlier Thai
+  // explanation pre-baked on the server).
+  const [testBusy, setTestBusy] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    kind: "ok" | "err";
+    message: string;
+    lineStatus?: number | null;
+    lineBody?: string | null;
+    status?: Record<string, unknown> | null;
+  } | null>(null);
+
+  async function runTestPush(): Promise<void> {
+    setTestBusy(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(apiUrl("/api/admin/messaging/test-push"), {
+        method: "POST"
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j?.ok) {
+        setTestResult({
+          kind: "ok",
+          message: t(lang, "admin.messaging.test.ok"),
+          status: j.status ?? null
+        });
+      } else {
+        setTestResult({
+          kind: "err",
+          message: j?.message ?? j?.error ?? t(lang, "common.error"),
+          lineStatus: j?.line_status ?? null,
+          lineBody: j?.line_body ?? null,
+          status: j?.status ?? null
+        });
+      }
+    } catch (e) {
+      setTestResult({
+        kind: "err",
+        message: e instanceof Error ? e.message : t(lang, "common.error")
+      });
+    } finally {
+      setTestBusy(false);
+    }
+  }
+
   async function saveGroupId(): Promise<void> {
     setGroupBusy(true);
     setGroupMsg(null);
@@ -292,11 +339,70 @@ export default function MessagingClient({
         </div>
       )}
 
-      {/* The PERSONA messaging page used to surface a RESERVA hint
-          card here — removed 2026-05-21 because admins were confused
-          about whether this page also configured RESERVA's per-branch
-          OAs. It doesn't (that lives at /admin/reserva). Keeping
-          PERSONA's settings page scoped strictly to PERSONA. */}
+      {/* Diagnostic: actually push a test message via the same path
+          the auto-flow uses. The 502 response body carries the real
+          LINE API error so admin can fix the root cause (wrong token /
+          OA-not-in-group / wrong group id) instead of guessing. */}
+      <div className="card space-y-3 border-l-4 border-sky-300 bg-sky-50/40">
+        <div>
+          <h2 className="font-semibold text-slate-800">
+            {t(lang, "admin.messaging.test.title")}
+          </h2>
+          <p className="text-xs text-slate-600 mt-1">
+            {t(lang, "admin.messaging.test.hint")}
+          </p>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            onClick={runTestPush}
+            disabled={testBusy}
+            className="btn-primary text-sm"
+          >
+            {testBusy ? t(lang, "common.submitting") : t(lang, "admin.messaging.test.btn")}
+          </button>
+          {testResult && (
+            <span
+              className={`text-sm ${
+                testResult.kind === "ok" ? "text-emerald-700" : "text-rose-600"
+              }`}
+            >
+              {testResult.kind === "ok" ? "✓ " : "✗ "}{testResult.message}
+            </span>
+          )}
+        </div>
+        {/* Detailed diagnosis — only on failure. Shows which credentials
+            are present + the raw LINE API response so admin can debug
+            without SSH-ing to read server logs. */}
+        {testResult && testResult.kind === "err" && testResult.status && (
+          <div className="text-[11px] bg-white border border-rose-200 rounded-md p-2.5 space-y-1 font-mono">
+            <div className="text-rose-700 font-bold">
+              {t(lang, "admin.messaging.test.diagnosis")}
+            </div>
+            <div>
+              Platform token: {(testResult.status as Record<string, unknown>).has_platform_token ? "✓ ตั้งแล้ว" : "✗ ยังไม่ได้ตั้ง"}
+            </div>
+            <div>
+              Legacy token: {(testResult.status as Record<string, unknown>).has_legacy_token ? "✓ ตั้งแล้ว" : "✗ ยังไม่ได้ตั้ง"}
+            </div>
+            <div>
+              Group ID: {(testResult.status as Record<string, unknown>).has_group_id
+                ? `✓ ${(testResult.status as Record<string, unknown>).group_id_preview} (${(testResult.status as Record<string, unknown>).group_id_looks_valid ? "รูปแบบถูก" : "รูปแบบผิด"})`
+                : "✗ ยังไม่ได้ตั้ง"}
+            </div>
+            {testResult.lineStatus != null && (
+              <div className="pt-1 border-t border-rose-100">
+                LINE API HTTP {testResult.lineStatus}
+              </div>
+            )}
+            {testResult.lineBody && (
+              <div className="text-rose-600 break-all">
+                {testResult.lineBody}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Setup steps */}
       <div className="card text-sm text-slate-700 space-y-2">
