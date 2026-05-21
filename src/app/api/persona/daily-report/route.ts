@@ -40,15 +40,21 @@ const ChecklistEntry = z.object({
   label: z.string().min(1).max(200),
   checked: z.boolean(),
   note: z.string().max(500).nullable().optional(),
-  /** "checkbox" | "text" | "choice" — staff form sends this so the
-   *  LINE renderer can distinguish render kinds. For choice items,
-   *  `note` holds the selected option text. Optional for backward
-   *  compatibility with rows submitted before P5c. */
-  kind: z.enum(["checkbox", "text", "choice"]).optional(),
+  /** "checkbox" | "text" | "choice" | "amount" — staff form sends this
+   *  so the LINE renderer can distinguish render kinds. For choice
+   *  items, `note` holds the selected option text. For amount items,
+   *  `note` holds the formatted "12,345.67" baht value. Optional for
+   *  back-compat with rows submitted before P5c. */
+  kind: z.enum(["checkbox", "text", "choice", "amount"]).optional(),
   /** When true, the row is a child of the previous top-level item.
    *  Staff form orders parents-then-children and sets this flag on
    *  children; the LINE Flex renderer indents accordingly. */
-  is_child: z.boolean().optional()
+  is_child: z.boolean().optional(),
+  /** When true, this is the amount row admin marked as the LINE
+   *  card's headline. The API pulls its `note` value (already
+   *  formatted "12,345.67") into the Flex builder's headlineAmount
+   *  argument so the card features it big at the top. */
+  is_headline: z.boolean().optional()
 });
 
 // Per-type data schemas. Each form in the staff UI submits one of these.
@@ -241,14 +247,34 @@ export async function POST(req: Request) {
   // Each type gets its own Flex builder so admin can tell at a glance
   // which report just landed.
   const normalizeChecklist = (
-    items: Array<{ label: string; checked: boolean; note?: string | null; is_child?: boolean }>
+    items: Array<{
+      label: string;
+      checked: boolean;
+      note?: string | null;
+      is_child?: boolean;
+      kind?: string;
+      is_headline?: boolean;
+    }>
   ) =>
     items.map((c) => ({
       label: c.label,
       checked: c.checked,
       note: c.note ?? null,
-      is_child: !!c.is_child
+      is_child: !!c.is_child,
+      kind: c.kind,
+      is_headline: !!c.is_headline
     }));
+
+  // Pull out the headline-amount entry's value (if any) so the Flex
+  // builder can feature it prominently at the top. Each report type
+  // can have one; admin sets the toggle on a kind='amount' row.
+  const headlineFor = (
+    items: Array<{ label: string; note?: string | null; is_headline?: boolean }>
+  ): { label: string; amount: string } | null => {
+    const h = items.find((c) => c.is_headline && c.note?.trim());
+    if (!h) return null;
+    return { label: h.label, amount: (h.note ?? "").trim() };
+  };
 
   let flex;
   if (type === "shift_open") {
@@ -260,6 +286,7 @@ export async function POST(req: Request) {
       yesterdayClosingAmount: d.yesterday_closing_amount,
       morningDrawerAmount: d.morning_drawer_amount,
       checklist: normalizeChecklist(d.checklist),
+      headline: headlineFor(d.checklist),
       isRevision,
       headerColor: branch.brand_color
     });
@@ -271,6 +298,7 @@ export async function POST(req: Request) {
       closerName: user.display_name,
       closingDrawerAmount: d.closing_drawer_amount,
       checklist: normalizeChecklist(d.checklist),
+      headline: headlineFor(d.checklist),
       isRevision,
       headerColor: branch.brand_color
     });
@@ -289,6 +317,7 @@ export async function POST(req: Request) {
         ? branch.readiness_morning_time
         : branch.readiness_afternoon_time,
       checklist: normalizeChecklist(d.checklist ?? []),
+      headline: headlineFor(d.checklist ?? []),
       isRevision,
       headerColor: branch.brand_color
     });

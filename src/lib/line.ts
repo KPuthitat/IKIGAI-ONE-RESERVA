@@ -1102,6 +1102,9 @@ export type ShiftOpenCardArgs = {
   //   - checked: false, note: set  → skipped-on-purpose 📝 (with reason)
   //   - checked: false, note: null → not done ✗ (red flag)
   checklist: Array<{ label: string; checked: boolean; note: string | null }>;
+  /** Optional headline amount featured above the checklist body. See
+   *  ReadinessCardArgs.headline for the contract — same shape. */
+  headline?: { label: string; amount: string } | null;
   /** True when this submission replaces a previously-submitted (and
    *  admin-unlocked) report for the same (branch, type, date). The
    *  card header gets a "ฉบับแก้ไข" chip so reviewers know they're
@@ -1270,6 +1273,9 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
               { valueColor: COLOR_BRAND, valueWeight: "bold" })
           ]
         },
+        ...(headlineFlexBlock(args.headline ?? null)
+          ? [headlineFlexBlock(args.headline ?? null) as Record<string, unknown>]
+          : []),
         ...(hasChecklist ? [
           { type: "separator", margin: "md", color: COLOR_DIVIDER },
           {
@@ -1435,6 +1441,9 @@ export type ShiftCloseCardArgs = {
   closerName: string;
   closingDrawerAmount: number | null;
   checklist: Array<{ label: string; checked: boolean; note: string | null }>;
+  /** Optional headline amount featured above the checklist body. See
+   *  ReadinessCardArgs.headline for the contract — same shape. */
+  headline?: { label: string; amount: string } | null;
   isRevision?: boolean;
   /** See readinessFlex / shiftOpenFlex headerColor. */
   headerColor?: string | null;
@@ -1483,6 +1492,9 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
               { valueColor: COLOR_BRAND, valueWeight: "bold" })
           ]
         },
+        ...(headlineFlexBlock(args.headline ?? null)
+          ? [headlineFlexBlock(args.headline ?? null) as Record<string, unknown>]
+          : []),
         ...checklistFlexBlock(args.checklist)
       ]
     },
@@ -1512,6 +1524,11 @@ export type ReadinessCardArgs = {
    *  value), or a choice (`checked` + `note` = picked option). The
    *  Flex renderer treats them uniformly. */
   checklist: Array<{ label: string; checked: boolean; note?: string | null }>;
+  /** Optional amount admin tagged as the "card headline" — featured
+   *  prominently at the top of the bubble (e.g. ยอดเงินปิดกะ
+   *  32,999.00 บาท in red). When null, no headline row is rendered
+   *  and the body starts straight with the checklist. */
+  headline?: { label: string; amount: string } | null;
   isRevision?: boolean;
   /** Optional header background hex (e.g. '#e94560'). Falls back to
    *  the default IKIGAI ink colour when null/undefined. Used so each
@@ -1523,6 +1540,47 @@ export type ReadinessCardArgs = {
 // (readinessSection helper deleted 2026-05-21 — the readiness card is
 // now built entirely from the admin checklist via checklistFlexBlock,
 // no labelled-section blocks needed.)
+
+/** Headline block — the "ยอดเงินปิดกะ 32,999.00 บาท" box that sits
+ *  prominently above the checklist. Admin opts in by marking ONE
+ *  amount-kind row per (branch, type) as headline; when no row is
+ *  marked, the caller passes null and no block is rendered. The
+ *  rendering keeps the visual hierarchy intentionally bold so it
+ *  reads at a glance — large value in the brand red, small label
+ *  in muted slate underneath. */
+function headlineFlexBlock(
+  headline: { label: string; amount: string } | null
+): Record<string, unknown> | null {
+  if (!headline) return null;
+  return {
+    type: "box",
+    layout: "vertical",
+    spacing: "xs",
+    margin: "md",
+    paddingAll: "12px",
+    backgroundColor: "#fef2f2",
+    cornerRadius: "8px",
+    borderColor: "#fecaca",
+    borderWidth: "1px",
+    contents: [
+      {
+        type: "text",
+        text: headline.label,
+        size: "xs",
+        color: COLOR_TEXT_MUTED,
+        wrap: true
+      },
+      {
+        type: "text",
+        text: `${headline.amount} บาท`,
+        size: "xxl",
+        weight: "bold",
+        color: "#dc2626",
+        wrap: false
+      }
+    ]
+  };
+}
 
 export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
   const dateStr = formatThaiDate(args.reportDate);
@@ -1572,6 +1630,11 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
             kvRow("ผู้ส่งรายการ", args.reporterName)
           ]
         },
+        // Headline amount (optional) — admin marks an amount row as
+        // "show big on top" and we render it here in brand red.
+        ...(headlineFlexBlock(args.headline ?? null)
+          ? [headlineFlexBlock(args.headline ?? null) as Record<string, unknown>]
+          : []),
         // Admin-configured items — fully drive the card body since
         // 2026-05-21. Reuses the same 3-state row renderer as
         // shift_open / shift_close so admins recognise the language.

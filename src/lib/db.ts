@@ -263,6 +263,17 @@ function runMigrations(db: Database.Database): void {
   if (!sccolNames.has("parent_id")) {
     db.exec("ALTER TABLE shift_checklist_items ADD COLUMN parent_id INTEGER REFERENCES shift_checklist_items(id) ON DELETE CASCADE");
   }
+  // 2026-05-21: is_headline_amount flags ONE amount-kind item per
+  // (branch, type) as "the big number on top of the LINE Flex card".
+  // Admin marks e.g. "ยอดเงินปิดกะในลิ้นชัก" so the card surfaces it
+  // prominently above the checklist body. The flag is meaningful only
+  // when kind='amount'; for everything else it's stored but ignored.
+  // Uniqueness ("only one headline per type") is enforced at the API
+  // layer — toggling a row on auto-clears any previous headline in
+  // the same scope.
+  if (!sccolNames.has("is_headline_amount")) {
+    db.exec("ALTER TABLE shift_checklist_items ADD COLUMN is_headline_amount INTEGER NOT NULL DEFAULT 0");
+  }
   if (!sccolNames.has("branch_id")) {
     db.exec("ALTER TABLE shift_checklist_items ADD COLUMN branch_id INTEGER REFERENCES branches(id)");
     // Clone any orphan (NULL branch_id) rows once per existing branch so
@@ -2710,10 +2721,13 @@ export type ShiftChecklistItem = {
   label: string;
   /** Render mode on the staff form:
    *    'checkbox' — yes/no tick (default for legacy rows).
-   *    'text'     — free-form text input (e.g. "ยอดเงินในลิ้นชัก").
+   *    'text'     — free-form text input (e.g. "เมนูที่ไม่พร้อมขาย").
    *    'choice'   — one-of-N radio. Admin types the options at the
-   *                 same time as the label; staff picks exactly one. */
-  kind: "checkbox" | "text" | "choice";
+   *                 same time as the label; staff picks exactly one.
+   *    'amount'   — currency input. Staff enters a baht amount with
+   *                 2 decimal places; the LINE card renders it Thai-
+   *                 number formatted (12,345.67 บาท). */
+  kind: "checkbox" | "text" | "choice" | "amount";
   /** JSON-encoded `string[]` of choice options when kind === 'choice',
    *  null otherwise. Use `parseChecklistOptions(row)` to read. */
   options_json: string | null;
@@ -2722,6 +2736,11 @@ export type ShiftChecklistItem = {
    *  indented under its parent. Children inherit their own kind/
    *  options — the link is purely visual + grouping. */
   parent_id: number | null;
+  /** When kind='amount', flags this row as the "big number on top" of
+   *  the LINE card. Only one row per (branch, type) should carry this
+   *  — the API enforces by clearing any prior headline when a new one
+   *  is set. Stored as 1 / 0. */
+  is_headline_amount: number;
   display_order: number;
   active: number;          // 1 / 0
   created_at: string;

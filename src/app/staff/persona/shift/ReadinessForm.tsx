@@ -30,13 +30,17 @@ type ReportType = "readiness_1130" | "readiness_1600";
 export type ReadinessChecklistItem = {
   id: number;
   label: string;
-  kind: "checkbox" | "text" | "choice";
+  kind: "checkbox" | "text" | "choice" | "amount";
   /** Only meaningful for kind === 'choice'. ≥ 2 entries guaranteed by
    *  the admin API. */
   options?: string[];
   /** When set, this row is a child of another item. The form renders
    *  it indented under its parent. null = top-level row. */
   parent_id?: number | null;
+  /** Marks the amount row that should be featured prominently at the
+   *  top of the LINE Flex card (per admin's "is_headline_amount"
+   *  toggle). At most one per (branch, type). */
+  is_headline?: boolean;
 };
 
 export default function ReadinessForm({
@@ -111,14 +115,23 @@ export default function ReadinessForm({
         is_child?: boolean;
       }> = [];
       const buildEntry = (it: ReadinessChecklistItem, isChild: boolean) => {
-        if (it.kind === "text") {
+        const headlineFlag = it.kind === "amount" && it.is_headline
+          ? { is_headline: true }
+          : {};
+        if (it.kind === "text" || it.kind === "amount") {
           const value = (textValues[it.id] || "").trim();
+          // For amount: normalise to 2 decimal places + comma grouping
+          // so the LINE card renders a clean Thai-style number.
+          const formatted = it.kind === "amount" && value
+            ? formatBahtAmount(value)
+            : value;
           return {
             label: it.label,
-            kind: "text" as const,
+            kind: it.kind,
             checked: !!value,
-            note: value || null,
-            ...(isChild ? { is_child: true } : {})
+            note: formatted || null,
+            ...(isChild ? { is_child: true } : {}),
+            ...headlineFlag
           };
         }
         if (it.kind === "choice") {
@@ -272,6 +285,21 @@ export default function ReadinessForm({
   );
 }
 
+/** Normalise a free-form baht amount string to "12,345.67" with
+ *  thousand-separators and exactly 2 decimal places. Returns "" when
+ *  the input doesn't parse to a valid non-negative number — caller
+ *  decides whether to send empty / drop the field in that case. */
+function formatBahtAmount(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  const n = Number(trimmed.replace(/,/g, ""));
+  if (!Number.isFinite(n) || n < 0) return "";
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
 // Render one checklist item — extracted so the same code handles
 // both top-level rows and indented children. `isChild` only affects
 // font size + a slightly tighter padding so children read as visually
@@ -316,6 +344,51 @@ function renderReadinessItem(
             ctx.setTextValues((prev) => ({ ...prev, [it.id]: e.target.value }))
           }
         />
+      </div>
+    );
+  }
+  if (it.kind === "amount") {
+    const value = ctx.textValues[it.id] || "";
+    const filled = value.trim().length > 0;
+    return (
+      <div
+        key={it.id}
+        className={`rounded-xl border-[1.5px] transition ${pad} ${
+          filled
+            ? "border-emerald-300 bg-emerald-50"
+            : "border-slate-200 hover:border-slate-300"
+        }`}
+      >
+        <label className={`${labelClass} mb-1.5`}>{it.label}</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            min="0"
+            className="input text-sm flex-1 font-mono"
+            placeholder="0.00"
+            value={value}
+            onChange={(e) =>
+              ctx.setTextValues((prev) => ({ ...prev, [it.id]: e.target.value }))
+            }
+            onBlur={() => {
+              // Snap to 2 decimal places on blur — sticky if the staff
+              // typed e.g. "1234" we save "1234.00" so the LINE card
+              // and downstream rendering have a normalised value.
+              const trimmed = value.trim();
+              if (!trimmed) return;
+              const n = Number(trimmed.replace(/,/g, ""));
+              if (Number.isFinite(n) && n >= 0) {
+                ctx.setTextValues((prev) => ({
+                  ...prev,
+                  [it.id]: n.toFixed(2)
+                }));
+              }
+            }}
+          />
+          <span className="text-sm font-bold text-slate-600 select-none">฿</span>
+        </div>
       </div>
     );
   }

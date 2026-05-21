@@ -21,14 +21,29 @@ import { useLang } from "@/lib/LangProvider";
 type ChecklistItem = {
   id: number;
   label: string;
-  kind: "checkbox" | "text" | "choice";
+  kind: "checkbox" | "text" | "choice" | "amount";
   /** Only meaningful when kind === 'choice'. ≥ 2 entries guaranteed
    *  by the admin API. */
   options?: string[];
   /** When set, this row is a child of another item. The form renders
    *  it indented under its parent. null = top-level row. */
   parent_id?: number | null;
+  /** Marks the amount row that should be featured prominently at the
+   *  top of the LINE Flex card. At most one per (branch, type). */
+  is_headline?: boolean;
 };
+
+/** Normalise a baht amount to "12,345.67". Returns "" when invalid. */
+function formatBahtAmount(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  const n = Number(trimmed.replace(/,/g, ""));
+  if (!Number.isFinite(n) || n < 0) return "";
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
 
 export default function ShiftOpenForm({
   branchId, branchName, openerName, today, yesterdayClosingHint, checklistItems
@@ -114,7 +129,9 @@ export default function ShiftOpenForm({
     // either ticked, or carrying a note explaining the skip.
     const missingNoteIds = checklistItems
       .filter((it) => {
-        if (it.kind === "text") return !((textValues[it.id] || "").trim());
+        if (it.kind === "text" || it.kind === "amount") {
+          return !((textValues[it.id] || "").trim());
+        }
         if (it.kind === "choice") return !choices[it.id];
         return !checked[it.id] && !((notes[it.id] || "").trim());
       })
@@ -142,14 +159,21 @@ export default function ShiftOpenForm({
       // hierarchy in order. is_child=true on child rows tells the
       // renderer to indent them under their parent.
       const buildEntry = (it: ChecklistItem, isChild: boolean) => {
-        if (it.kind === "text") {
+        const headlineFlag = it.kind === "amount" && it.is_headline
+          ? { is_headline: true }
+          : {};
+        if (it.kind === "text" || it.kind === "amount") {
           const value = (textValues[it.id] || "").trim();
+          const formatted = it.kind === "amount" && value
+            ? formatBahtAmount(value)
+            : value;
           return {
             label: it.label,
-            kind: "text" as const,
+            kind: it.kind,
             checked: !!value,
-            note: value || null,
-            ...(isChild ? { is_child: true } : {})
+            note: formatted || null,
+            ...(isChild ? { is_child: true } : {}),
+            ...headlineFlag
           };
         }
         if (it.kind === "choice") {
@@ -221,7 +245,9 @@ export default function ShiftOpenForm({
 
   if (done) {
     const allChecked = checklistItems.every((it) => {
-      if (it.kind === "text") return (textValues[it.id] || "").trim().length > 0;
+      if (it.kind === "text" || it.kind === "amount") {
+        return (textValues[it.id] || "").trim().length > 0;
+      }
       if (it.kind === "choice") return !!choices[it.id];
       return checked[it.id];
     });
@@ -409,6 +435,59 @@ export default function ShiftOpenForm({
                         }
                       }}
                     />
+                    {hasError && (
+                      <p className="text-[10px] text-rose-600 font-medium mt-1">
+                        {t("staff.persona.shift.open.textValueRequired")}
+                      </p>
+                    )}
+                  </div>
+                );
+              } else if (it.kind === "amount") {
+                const value = textValues[it.id] || "";
+                const filled = value.trim().length > 0;
+                const cls = hasError
+                  ? "border-rose-400 bg-rose-50 ring-2 ring-rose-200"
+                  : filled
+                    ? "border-emerald-300 bg-emerald-50"
+                    : "border-slate-200 hover:border-slate-300";
+                inner = (
+                  <div className={`rounded-xl border-[1.5px] transition p-3 ${cls}`}>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                      {it.label}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0"
+                        className={`input text-sm flex-1 font-mono ${hasError ? "border-rose-400 focus:border-rose-500" : ""}`}
+                        placeholder="0.00"
+                        value={value}
+                        onChange={(e) => {
+                          setTextValues((prev) => ({ ...prev, [it.id]: e.target.value }));
+                          if (e.target.value.trim() && hasError) {
+                            setErrorIds((prev) => {
+                              const next = { ...prev };
+                              delete next[it.id];
+                              return next;
+                            });
+                          }
+                        }}
+                        onBlur={() => {
+                          const trimmed = value.trim();
+                          if (!trimmed) return;
+                          const n = Number(trimmed.replace(/,/g, ""));
+                          if (Number.isFinite(n) && n >= 0) {
+                            setTextValues((prev) => ({
+                              ...prev,
+                              [it.id]: n.toFixed(2)
+                            }));
+                          }
+                        }}
+                      />
+                      <span className="text-sm font-bold text-slate-600 select-none">฿</span>
+                    </div>
                     {hasError && (
                       <p className="text-[10px] text-rose-600 font-medium mt-1">
                         {t("staff.persona.shift.open.textValueRequired")}

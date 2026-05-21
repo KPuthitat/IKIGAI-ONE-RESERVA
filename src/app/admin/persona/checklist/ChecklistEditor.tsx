@@ -45,7 +45,7 @@ export default function ChecklistEditor({
   }, [initialItems]);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [newLabel, setNewLabel] = useState("");
-  const [newKind, setNewKind] = useState<"checkbox" | "text" | "choice">("checkbox");
+  const [newKind, setNewKind] = useState<"checkbox" | "text" | "choice" | "amount">("checkbox");
   // Buffered options for the "add new item" form. Only meaningful when
   // newKind === 'choice'. Min 2 entries enforced by the API and the
   // disabled-when-< 2 state on the Submit button.
@@ -184,7 +184,7 @@ export default function ChecklistEditor({
   // form is open at a time to keep the UI calm.
   const [childAddParentId, setChildAddParentId] = useState<number | null>(null);
   const [childAddLabel, setChildAddLabel] = useState("");
-  const [childAddKind, setChildAddKind] = useState<"checkbox" | "text" | "choice">("text");
+  const [childAddKind, setChildAddKind] = useState<"checkbox" | "text" | "choice" | "amount">("text");
   const [childAddOptions, setChildAddOptions] = useState<string[]>(["", ""]);
   const [childAddBusy, setChildAddBusy] = useState(false);
   const [childAddErr, setChildAddErr] = useState<string | null>(null);
@@ -259,6 +259,7 @@ export default function ChecklistEditor({
                     onPatchLabel={(label) => patchItem(parent.id, { label })}
                     onPatchKind={(kind) => patchItem(parent.id, { kind })}
                     onPatchOptions={(opts) => patchItem(parent.id, { options: opts })}
+                    onPatchHeadline={(flag) => patchItem(parent.id, { is_headline_amount: flag })}
                     onToggleActive={() =>
                       patchItem(parent.id, { active: parent.active ? 0 : 1 })}
                     onMoveUp={() => move(parent.id, -1)}
@@ -282,6 +283,7 @@ export default function ChecklistEditor({
                           onPatchLabel={(label) => patchItem(child.id, { label })}
                           onPatchKind={(kind) => patchItem(child.id, { kind })}
                           onPatchOptions={(opts) => patchItem(child.id, { options: opts })}
+                          onPatchHeadline={(flag) => patchItem(child.id, { is_headline_amount: flag })}
                           onToggleActive={() =>
                             patchItem(child.id, { active: child.active ? 0 : 1 })}
                           onMoveUp={() => move(child.id, -1)}
@@ -311,7 +313,7 @@ export default function ChecklistEditor({
                         <select
                           className="input text-sm"
                           value={childAddKind}
-                          onChange={(e) => setChildAddKind(e.target.value as "checkbox" | "text" | "choice")}
+                          onChange={(e) => setChildAddKind(e.target.value as "checkbox" | "text" | "choice" | "amount")}
                         >
                           <option value="text">{t("admin.persona.checklist.kind.text")}</option>
                           <option value="checkbox">{t("admin.persona.checklist.kind.checkbox")}</option>
@@ -370,10 +372,11 @@ export default function ChecklistEditor({
           <select
             className="input text-sm"
             value={newKind}
-            onChange={(e) => setNewKind(e.target.value as "checkbox" | "text" | "choice")}
+            onChange={(e) => setNewKind(e.target.value as "checkbox" | "text" | "choice" | "amount")}
           >
             <option value="checkbox">{t("admin.persona.checklist.kind.checkbox")}</option>
             <option value="text">{t("admin.persona.checklist.kind.text")}</option>
+            <option value="amount">{t("admin.persona.checklist.kind.amount")}</option>
             <option value="choice">{t("admin.persona.checklist.kind.choice")}</option>
           </select>
           <button
@@ -405,7 +408,7 @@ export default function ChecklistEditor({
 
 function ChecklistRow({
   item, isFirst, isLast, busy, isChild,
-  onPatchLabel, onPatchKind, onPatchOptions,
+  onPatchLabel, onPatchKind, onPatchOptions, onPatchHeadline,
   onToggleActive, onMoveUp, onMoveDown, onDelete, onAddChild, t
 }: {
   item: ShiftChecklistItem;
@@ -417,8 +420,12 @@ function ChecklistRow({
    *  nesting to 2 levels max. */
   isChild?: boolean;
   onPatchLabel: (label: string) => Promise<void>;
-  onPatchKind: (kind: "checkbox" | "text" | "choice") => Promise<void>;
+  onPatchKind: (kind: "checkbox" | "text" | "choice" | "amount") => Promise<void>;
   onPatchOptions: (options: string[]) => Promise<void>;
+  /** amount kind only — toggle the "show big on LINE card" flag.
+   *  Parent passes 1/0; the API atomically clears prior headlines
+   *  in the same (branch, type) when 1. */
+  onPatchHeadline: (flag: 0 | 1) => Promise<void>;
   onToggleActive: () => Promise<void>;
   onMoveUp: () => Promise<void>;
   onMoveDown: () => Promise<void>;
@@ -505,7 +512,7 @@ function ChecklistRow({
         <select
           value={item.kind ?? "checkbox"}
           disabled={busy}
-          onChange={(e) => onPatchKind(e.target.value as "checkbox" | "text" | "choice")}
+          onChange={(e) => onPatchKind(e.target.value as "checkbox" | "text" | "choice" | "amount")}
           className="text-xs border border-slate-300 rounded px-1.5 py-1 text-slate-700 bg-white"
           title={t("admin.persona.checklist.kind.hint")}
         >
@@ -572,6 +579,34 @@ function ChecklistRow({
               ⚠ {t("admin.persona.checklist.kind.optionsIncomplete")}
             </p>
           )}
+        </div>
+      )}
+
+      {/* Headline-amount toggle — amount kind only. Admin marks one
+          amount row per (branch, type) as "show this big on top of
+          the LINE card". The PATCH endpoint auto-clears any other
+          headline in the same scope, so the UI doesn't need to
+          enforce uniqueness — just refresh and the previous row's
+          toggle flips itself off. */}
+      {item.kind === "amount" && (
+        <div className="mt-2 pl-7">
+          <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="w-4 h-4"
+              checked={!!item.is_headline_amount}
+              disabled={busy}
+              onChange={(e) =>
+                onPatchHeadline(e.target.checked ? 1 : 0)
+              }
+            />
+            <span className="font-medium">
+              {t("admin.persona.checklist.kind.headlineToggle")}
+            </span>
+          </label>
+          <p className="text-[10px] text-slate-500 pl-6 mt-0.5">
+            {t("admin.persona.checklist.kind.headlineHint")}
+          </p>
         </div>
       )}
     </div>
