@@ -195,6 +195,45 @@ export default function ShiftReportsClient({
   // its textarea. Reject is a 2-step: open the form, type the note,
   // then submit. Grant is a 1-step confirm dialog.
   const [rejectForm, setRejectForm] = useState<{ id: number; note: string } | null>(null);
+  // Manual LINE resend state per report id. Keys are the daily_reports
+  // row id; value is the in-flight / result state. Cleared after a
+  // few seconds so the row goes back to its neutral look.
+  const [resendBusyId, setResendBusyId] = useState<number | null>(null);
+  const [resendMsg, setResendMsg] = useState<{
+    reportId: number; kind: "ok" | "err"; text: string
+  } | null>(null);
+
+  async function resendNotification(reportId: number) {
+    setResendBusyId(reportId);
+    setResendMsg(null);
+    try {
+      const res = await fetch(
+        apiUrl(`/api/persona/daily-report/${reportId}/resend-notification`),
+        { method: "POST" }
+      );
+      if (res.ok) {
+        setResendMsg({
+          reportId,
+          kind: "ok",
+          text: t("admin.persona.shiftReports.resendOk")
+        });
+      } else {
+        setResendMsg({
+          reportId,
+          kind: "err",
+          text: t("admin.persona.shiftReports.resendFail")
+        });
+      }
+    } catch {
+      setResendMsg({
+        reportId,
+        kind: "err",
+        text: t("admin.persona.shiftReports.resendFail")
+      });
+    } finally {
+      setResendBusyId(null);
+    }
+  }
   // Set of report types whose revision chain is currently expanded.
   // Multiple can be open at once — admin might want to compare two
   // types' history side-by-side.
@@ -298,6 +337,24 @@ export default function ShiftReportsClient({
                           </span>
                         </button>
                       )}
+                      {/* Manual LINE resend — same endpoint that the
+                          staff lock screen uses. Admins reach for this
+                          when the auto-push didn't land in the group
+                          (token misconfig, group not joined yet, LINE
+                          transient outage). Awaits the API so the
+                          status under the row reflects the real push
+                          outcome. */}
+                      <button
+                        type="button"
+                        disabled={resendBusyId === r.id}
+                        onClick={() => resendNotification(r.id)}
+                        className="text-[10px] px-1.5 py-0.5 rounded border border-brand text-brand hover:bg-rose-50 font-bold whitespace-nowrap disabled:opacity-50"
+                        title={t("admin.persona.shiftReports.resendHint")}
+                      >
+                        📨 {resendBusyId === r.id
+                          ? t("common.submitting")
+                          : t("admin.persona.shiftReports.resendBtn")}
+                      </button>
                     </>
                   ) : (
                     <>
@@ -315,6 +372,15 @@ export default function ShiftReportsClient({
                 </div>
                 {hasChain && isExpanded && (
                   <ChainView chain={chain} />
+                )}
+                {r && resendMsg && resendMsg.reportId === r.id && (
+                  <div
+                    className={`text-xs pl-7 ${
+                      resendMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600"
+                    }`}
+                  >
+                    {resendMsg.kind === "ok" ? "✓ " : "✗ "}{resendMsg.text}
+                  </div>
                 )}
               </li>
             );
