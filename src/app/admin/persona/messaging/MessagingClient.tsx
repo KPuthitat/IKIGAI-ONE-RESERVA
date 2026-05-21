@@ -16,8 +16,13 @@ export type PlatformChannelInitial = {
 };
 
 export default function MessagingClient({
-  lang, platform
-}: { lang: Lang; platform: PlatformChannelInitial }) {
+  lang, platform, globalStaffGroupId = "", isSuperAdmin = false
+}: {
+  lang: Lang;
+  platform: PlatformChannelInitial;
+  globalStaffGroupId?: string;
+  isSuperAdmin?: boolean;
+}) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -26,6 +31,38 @@ export default function MessagingClient({
   const [clearAll, setClearAll] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  // Cross-branch staff group ID for PERSONA notifications. Only the
+  // super_admin sees / can change this — see the page guard.
+  const [groupId, setGroupId] = useState(globalStaffGroupId);
+  const [groupBusy, setGroupBusy] = useState(false);
+  const [groupMsg, setGroupMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  async function saveGroupId(): Promise<void> {
+    setGroupBusy(true);
+    setGroupMsg(null);
+    try {
+      const res = await fetch(apiUrl("/api/admin/system-settings"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ global_staff_group_id: groupId.trim() })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        setGroupMsg({
+          kind: "err",
+          text: j?.message || j?.error || t(lang, "common.error")
+        });
+        return;
+      }
+      setGroupMsg({ kind: "ok", text: t(lang, "common.saved") });
+      startTransition(() => router.refresh());
+    } catch {
+      setGroupMsg({ kind: "err", text: t(lang, "common.error") });
+    } finally {
+      setGroupBusy(false);
+    }
+  }
 
   // Webhook URL — Next.js is mounted at the domain root after Deploy V2
   // (Nginx forwards / → port 3010, no /reserva prefix). Build the URL from
@@ -209,6 +246,51 @@ export default function MessagingClient({
           </button>
         </div>
       </div>
+
+      {/* ── Cross-branch staff group ── super_admin only.
+          PERSONA notifications (daily reports, edit requests,
+          readiness summaries, decisions) are pushed via the IKIGAI
+          OS OA to this one group, regardless of which branch a
+          checklist or report came from. Per-branch checklist content
+          stays different; the destination group does not. */}
+      {isSuperAdmin && (
+        <div className="card space-y-3">
+          <div>
+            <h2 className="font-semibold text-slate-800">
+              {t(lang, "admin.systemSettings.lineOa.groupIdLabel")}
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              {t(lang, "admin.systemSettings.lineOa.groupIdHint")}
+            </p>
+          </div>
+          <input
+            type="text"
+            className="input text-xs"
+            placeholder="Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            value={groupId}
+            onChange={(e) => setGroupId(e.target.value.trim())}
+            autoComplete="off"
+            maxLength={100}
+          />
+          <ol className="text-[11px] text-slate-500 space-y-0.5 leading-snug list-decimal pl-4">
+            <li>เปิด LINE OA Manager → Settings → Chat → เปิด "Allow group chats"</li>
+            <li>เชิญ OA "IKIGAI OS PORTAL" เข้ากลุ่มพนักงานรวม</li>
+            <li>บอทจะโพสต์ Group ID (ขึ้นต้นด้วย C…) เข้ากลุ่มอัตโนมัติ — คัดลอกมาวางช่องด้านบน</li>
+            <li>บันทึก → ทุกแจ้งเตือน PERSONA ของทุกสาขาจะมาเข้ากลุ่มเดียวกันนี้</li>
+          </ol>
+          <div className="flex items-center justify-between gap-3 pt-1">
+            {groupMsg && (
+              <span className={`text-sm ${groupMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
+                {groupMsg.kind === "ok" ? "✓ " : "✗ "}{groupMsg.text}
+              </span>
+            )}
+            <button type="button" onClick={saveGroupId} disabled={groupBusy}
+              className="btn-primary text-sm ml-auto">
+              {groupBusy ? t(lang, "common.submitting") : t(lang, "common.save")}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* RESERVA per-branch hint */}
       <div className="card border-l-4 border-sky-300 bg-sky-50/40">
