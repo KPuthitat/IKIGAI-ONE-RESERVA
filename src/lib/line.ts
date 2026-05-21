@@ -7,6 +7,7 @@ import {
   getSystemSettings,
   type Branch,
   type Booking,
+  type BookingOccasion,
   type AttendanceRow
 } from "./db";
 import { getChannelByCode, getPlatformChannel } from "./messaging-channels";
@@ -366,6 +367,11 @@ export type StaffBookingCardArgs = {
   // serving — even when notes is empty. Null = no allergy info given.
   foodAllergy: string | null;
   source: string | null;
+  /** Special occasion the customer flagged on the booking form. Drives
+   *  a prominent badge on the staff card so the team can prepare (e.g.
+   *  birthday plate, quiet table for a business meeting). Null = no
+   *  occasion was specified. */
+  occasion: BookingOccasion | null;
   publicBaseUrl: string;
   kind: "created" | "reminder" | "pending_review";
   lang: Lang;                   // language for the staff alert (defaults to th in caller)
@@ -404,6 +410,63 @@ function kvRow(label: string, value: string, opts?: { valueColor?: string; value
       }
     ]
   };
+}
+
+/** Localised display label + emoji for a booking occasion. Shared by
+ *  the staff Flex card and any future customer-facing reference. Falls
+ *  back to a generic "special occasion" line if the enum drifts and we
+ *  see a value we don't recognise — keeps the card from breaking. */
+function occasionDisplay(
+  occasion: BookingOccasion,
+  lang: Lang
+): { emoji: string; label: string } {
+  const TH: Record<BookingOccasion, { emoji: string; label: string }> = {
+    birthday:    { emoji: "🎂", label: "วันเกิด" },
+    anniversary: { emoji: "💑", label: "วันครบรอบ" },
+    business:    { emoji: "🤝", label: "ประชุมงาน" },
+    date:        { emoji: "💕", label: "เดท" },
+    family:      { emoji: "👨‍👩‍👧", label: "รวมครอบครัว" },
+    friends:     { emoji: "🍽", label: "พบเพื่อน" },
+    celebration: { emoji: "✨", label: "ฉลองโอกาสพิเศษ" },
+    other:       { emoji: "✨", label: "โอกาสพิเศษ" }
+  };
+  const EN: Record<BookingOccasion, { emoji: string; label: string }> = {
+    birthday:    { emoji: "🎂", label: "Birthday" },
+    anniversary: { emoji: "💑", label: "Anniversary" },
+    business:    { emoji: "🤝", label: "Business meeting" },
+    date:        { emoji: "💕", label: "Date" },
+    family:      { emoji: "👨‍👩‍👧", label: "Family gathering" },
+    friends:     { emoji: "🍽", label: "Friends gathering" },
+    celebration: { emoji: "✨", label: "Celebration" },
+    other:       { emoji: "✨", label: "Special occasion" }
+  };
+  return (lang === "en" ? EN : TH)[occasion]
+    ?? { emoji: "✨", label: lang === "en" ? "Special occasion" : "โอกาสพิเศษ" };
+}
+
+/** Build the Flex sub-block that surfaces the customer's occasion on
+ *  the staff card. Amber accent (warm, not alarming) — distinct from
+ *  the rose-red allergy block so staff don't confuse "prepare cake"
+ *  with "watch out, allergy". Returns an array of Flex blocks so the
+ *  caller can `...spread` it conditionally; empty array = no occasion. */
+function occasionStaffBlock(
+  occasion: BookingOccasion,
+  lang: Lang
+): Record<string, unknown>[] {
+  const d = occasionDisplay(occasion, lang);
+  return [
+    { type: "separator", margin: "md", color: "#fde68a" },
+    {
+      type: "text",
+      text: `${d.emoji} ${lang === "en" ? "Special occasion" : "โอกาสพิเศษ"}`,
+      size: "xs", color: "#b45309", weight: "bold", margin: "sm"
+    },
+    {
+      type: "text",
+      text: d.label,
+      size: "sm", color: "#78350f", weight: "bold", wrap: true, margin: "xs"
+    }
+  ];
 }
 
 /** Build a customer-facing Flex card for a new / upcoming booking. */
@@ -770,6 +833,11 @@ export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
         { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
         { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: bodyRows },
+        // Occasion badge — placed BEFORE food allergy so staff see the
+        // celebration cue first (it changes how they prep the table)
+        // while the allergy block still wins on serving-time attention
+        // via its rose-red treatment. Null occasion = block omitted.
+        ...(args.occasion ? occasionStaffBlock(args.occasion, args.lang) : []),
         ...(args.foodAllergy ? [
           { type: "separator", margin: "md", color: "#fecdd3" },
           {
@@ -900,6 +968,70 @@ function resolveBranchToken(branch: Branch): string | null {
   return branch.line_channel_token ?? null;
 }
 
+/** Personalised reply per occasion — bilingual.
+ *
+ *  Returned text is appended as a SECOND text bubble after the generic
+ *  "request received" message. Two bubbles instead of one big text body
+ *  on purpose: LINE renders each text message as its own chat bubble,
+ *  so the occasion message reads like a warm follow-up rather than
+ *  admin boilerplate (peak-end rule — last bubble shapes the memory of
+ *  the booking touch).
+ *
+ *  Templates are hand-crafted, hardcoded, and intentionally generic
+ *  across the two brand restaurants (NAMA PASTA / HYPOPLARAEMIA) so we
+ *  don't tie copy to a specific tone yet. When you want per-branch
+ *  customization, add a JSON `occasion_messages` column on branches and
+ *  fall back here when the row's missing. Keep these defaults around
+ *  as the always-safe fallback — empty branch config still gets warm
+ *  copy.
+ *
+ *  Returns null when occasion is null/unknown so callers can skip the
+ *  extra message entirely (don't send "no special occasion" text — it
+ *  would feel robotic). */
+function occasionReplyText(
+  occasion: BookingOccasion | null | undefined,
+  lang: Lang
+): string | null {
+  if (!occasion) return null;
+  const TH: Record<BookingOccasion, string> = {
+    birthday:
+      "🎂 ขอบคุณที่เลือกเรามาฉลองวันเกิด — ทีมงานจะเตรียมต้อนรับอย่างพิเศษ ถ้ามีรายละเอียดเพิ่ม (ชื่อบนเค้ก, รสที่ไม่ทาน, ของเซอร์ไพรส์) ตอบกลับมาได้เลยครับ",
+    anniversary:
+      "💑 ขอบคุณที่เลือกเป็นพื้นที่ของช่วงเวลาสำคัญ — เราจะจัดโต๊ะในมุมที่อบอุ่นและเป็นส่วนตัวให้ บอกได้เลยถ้าต้องการให้พิเศษกว่านี้",
+    business:
+      "🤝 รับทราบครับ — เราจะจัดโต๊ะในมุมที่คุยงานสะดวก เสียงรบกวนน้อย และพร้อมเสิร์ฟตรงเวลา ถ้ามีลูกค้าหรือพาร์ทเนอร์มาด้วย แจ้งจำนวนล่วงหน้าได้",
+    date:
+      "💕 ขอบคุณที่เลือกเรา — เราจะจัดบรรยากาศที่ผ่อนคลายและเป็นส่วนตัวไว้ให้ ถ้าต้องการเซอร์ไพรส์ใดเป็นพิเศษ ส่งข้อความบอกได้เลยครับ",
+    family:
+      "👨‍👩‍👧 ขอบคุณที่เลือกเรารวมครอบครัว — เราจะจัดโต๊ะที่นั่งสบาย คุยกันสะดวก เสิร์ฟพร้อมกันให้ครบทุกคน",
+    friends:
+      "🍽 ดีใจที่ได้เป็นพื้นที่นัดเจอกันของคุณ — เราจะจัดโต๊ะให้พร้อมพูดคุย อาหารเสิร์ฟพร้อมกันให้ครบทุกที่นั่ง",
+    celebration:
+      "✨ ขอบคุณที่เลือกเรามาฉลอง — บอกทีมงานได้เลยถ้าต้องการให้เตรียมเซอร์ไพรส์ใดเป็นพิเศษ",
+    other:
+      "✨ ขอบคุณที่เลือกเราในโอกาสพิเศษนี้ — ถ้ามีรายละเอียดที่ต้องการให้เตรียม บอกทีมงานได้เสมอครับ"
+  };
+  const EN: Record<BookingOccasion, string> = {
+    birthday:
+      "🎂 Thank you for choosing us to celebrate the birthday — we'll prepare a warm welcome. Reply with any details (name on cake, food preferences, surprises you'd like) and we'll take care of it.",
+    anniversary:
+      "💑 Thank you for letting us be part of this important moment — we'll arrange a warm and private corner for you. Let us know if you'd like us to make it even more special.",
+    business:
+      "🤝 Noted — we'll set up a quieter table that's good for conversation, with on-time service. Feel free to share the number of guests or partners joining in advance.",
+    date:
+      "💕 Thank you for choosing us — we'll have a relaxed, private setting ready. If you'd like us to prepare any specific surprise, just message us.",
+    family:
+      "👨‍👩‍👧 Thank you for choosing us for your family gathering — we'll set up a comfortable table where everyone can chat and be served together.",
+    friends:
+      "🍽 Glad to be your meet-up spot — we'll set the table for easy conversation and serve everyone at the same time.",
+    celebration:
+      "✨ Thank you for celebrating with us — let us know if there's a particular surprise we can prepare.",
+    other:
+      "✨ Thank you for choosing us for this special occasion — feel free to tell us any details you'd like us to prepare."
+  };
+  return (lang === "en" ? EN : TH)[occasion];
+}
+
 /** Send a plain-text acknowledgement to the customer that their booking
  *  request was received and is awaiting admin confirmation. Used in the
  *  two-step customer flow — no Flex card or QR is sent at this stage,
@@ -940,9 +1072,17 @@ export async function notifyCustomerPending(
   const text = lang === "en"
     ? `Booking request received #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} guests\n\nAdmin will send your booking confirmation via LINE during business hours.\n${phoneTail}`
     : `ได้รับคำขอจอง #${ref}\n${dateStr} ${booking.booking_time} · ${booking.party_size} ที่นั่ง\n\nแอดมินจะส่งข้อความยืนยันการจองให้ทางไลน์ภายในเวลาทำการ\n${phoneTail}`;
+  // Append occasion-specific warm follow-up as a second bubble when
+  // customer picked one. Two bubbles read as personal — one big merged
+  // text body would look like admin boilerplate.
+  const messages: LineMessage[] = [{ type: "text", text }];
+  const occasionText = occasionReplyText(booking.occasion, lang);
+  if (occasionText) {
+    messages.push({ type: "text", text: occasionText });
+  }
   const res = await sendLinePush(token, {
     to: booking.line_user_id,
-    messages: [{ type: "text", text }]
+    messages
   });
   db.prepare(
     "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
@@ -1039,6 +1179,7 @@ export async function notifyStaff(
     notes: booking.notes,
     foodAllergy: booking.food_allergy,
     source: booking.source,
+    occasion: booking.occasion,
     publicBaseUrl: getPublicBaseUrl(),
     kind: type,
     lang: "th",

@@ -157,6 +157,12 @@ export default function PendingClient({
                     🍽️ {t("admin.bookings.allergyLabel")}: {b.food_allergy}
                   </div>
                 )}
+                {b.occasion && (
+                  <div className="text-sm text-amber-800 mt-1 font-medium">
+                    ✨ {t("admin.bookings.occasionLabel")}:{" "}
+                    {t(`booking.occasion.${b.occasion}`)}
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 mt-3 border-t border-slate-100 pt-3">

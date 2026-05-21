@@ -39,6 +39,25 @@ const ORIGIN_DEFS: Array<{ value: string; key: string }> = [
   { value: "other_province", key: "booking.origin.other_province" }
 ];
 
+// Special occasion options — must mirror OCCASION_KINDS in src/lib/db.ts
+// (the API Zod schema rejects anything else). Each entry carries the
+// emoji we want to show in the dropdown so the chooser feels warm/
+// personal rather than a dry compliance field. Empty value (the first
+// option) is "not specified" and resolves to NULL on submit.
+type OccasionValue =
+  | "birthday" | "anniversary" | "business" | "date"
+  | "family" | "friends" | "celebration" | "other";
+const OCCASION_DEFS: Array<{ value: OccasionValue; emoji: string; key: string }> = [
+  { value: "birthday",    emoji: "🎂",      key: "booking.occasion.birthday" },
+  { value: "anniversary", emoji: "💑",      key: "booking.occasion.anniversary" },
+  { value: "business",    emoji: "🤝",      key: "booking.occasion.business" },
+  { value: "date",        emoji: "💕",      key: "booking.occasion.date" },
+  { value: "family",      emoji: "👨‍👩‍👧", key: "booking.occasion.family" },
+  { value: "friends",     emoji: "🍽",      key: "booking.occasion.friends" },
+  { value: "celebration", emoji: "✨",      key: "booking.occasion.celebration" },
+  { value: "other",       emoji: "✨",      key: "booking.occasion.other" }
+];
+
 export type BookingFormMode = "customer" | "walkin" | "phone" | "line";
 
 export default function BookingForm({
@@ -138,6 +157,11 @@ export default function BookingForm({
     // `notes` so staff can see it at a glance during the table survey
     // without scanning a free-form notes blob.
     food_allergy: "",
+    // Special occasion — drives the personalised LINE reply that
+    // gets sent right after the customer submits, and shows on the
+    // staff Flex card so the team can prepare. Empty string = not
+    // specified (mapped to NULL in API payload).
+    occasion: "" as "" | OccasionValue,
     line_user_id: ""
   });
   const [step, setStep] = useState<"form" | "choose" | "done">("form");
@@ -406,6 +430,10 @@ export default function BookingForm({
         is_member: form.is_member,
         notes: form.notes,
         food_allergy: form.food_allergy,
+        // Empty string = "not specified" — omit the key entirely so the
+        // server-side zod schema (optional .enum) accepts the payload
+        // without us needing a separate `null` literal in the enum.
+        ...(form.occasion ? { occasion: form.occasion } : {}),
         line_user_id: form.line_user_id,
         lang
       };
@@ -455,6 +483,7 @@ export default function BookingForm({
             is_member: form.is_member,
             notes: form.notes,
             food_allergy: form.food_allergy,
+            ...(form.occasion ? { occasion: form.occasion } : {}),
             table_id: tableId,
             booking_channel: mode,
             // 'line' mode: staff may have pasted the customer's LINE userId
@@ -466,6 +495,11 @@ export default function BookingForm({
         : {
             branch_slug: branch.slug,
             ...form,
+            // Strip empty-string occasion before posting — the Zod
+            // .enum() rejects "" so we want it absent entirely. The
+            // spread above includes it; overwrite via a conditional
+            // so it's either set to a valid value or undefined.
+            occasion: form.occasion || undefined,
             source: form.sources.length > 0 ? JSON.stringify(form.sources) : "",
             table_id: tableId,
             lang   // customer flow: tag booking with current UI lang so the
@@ -755,6 +789,49 @@ export default function BookingForm({
           />
           <p className="text-[10px] text-slate-400 mt-1">
             {t("booking.field.foodAllergyHint")}
+          </p>
+        </div>
+
+        {/* Special occasion picker — drives both a personalised LINE
+            reply right after submit and a badge on the staff card so
+            the team can prepare (e.g. cake plate, quiet table). Kept
+            optional + clearly labelled as "no obligation" because
+            making it required would scare off casual diners. The
+            label asks in a warm, light way to lean into the
+            psychology — customers who feel "seen" by a brand book
+            again. */}
+        <div>
+          <label className="label">{t("booking.field.occasion")}</label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, occasion: "" })}
+              className={`text-xs px-3 py-2 rounded-lg border transition ${
+                form.occasion === ""
+                  ? "border-brand bg-brand/5 text-brand font-medium"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+              }`}
+            >
+              {t("booking.occasion.none")}
+            </button>
+            {OCCASION_DEFS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setForm({ ...form, occasion: opt.value })}
+                className={`text-xs px-3 py-2 rounded-lg border transition ${
+                  form.occasion === opt.value
+                    ? "border-brand bg-brand/5 text-brand font-medium"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                }`}
+              >
+                <span className="mr-1">{opt.emoji}</span>
+                {t(opt.key)}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1.5">
+            {t("booking.field.occasionHint")}
           </p>
         </div>
 

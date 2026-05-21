@@ -319,6 +319,7 @@ export default function ChecklistEditor({
                         >
                           <option value="text">{t("admin.persona.checklist.kind.text")}</option>
                           <option value="checkbox">{t("admin.persona.checklist.kind.checkbox")}</option>
+                          <option value="amount">{t("admin.persona.checklist.kind.amount")}</option>
                           <option value="choice">{t("admin.persona.checklist.kind.choice")}</option>
                         </select>
                         <button
@@ -524,6 +525,7 @@ function ChecklistRow({
         >
           <option value="checkbox">{t("admin.persona.checklist.kind.checkbox")}</option>
           <option value="text">{t("admin.persona.checklist.kind.text")}</option>
+          <option value="amount">{t("admin.persona.checklist.kind.amount")}</option>
           <option value="choice">{t("admin.persona.checklist.kind.choice")}</option>
         </select>
         <button

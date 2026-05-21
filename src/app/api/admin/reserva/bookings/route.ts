@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
-import { getDb, type Branch, type Booking } from "@/lib/db";
+import { getDb, OCCASION_KINDS, type Branch, type Booking } from "@/lib/db";
 import { isTableFree } from "@/lib/table-allocator";
 import { notifyStaff, notifyCustomer } from "@/lib/line";
 import { generateBookingRef } from "@/lib/reserva-ref";
@@ -37,6 +37,11 @@ const Body = z.object({
   // table-survey flow. Optional free text; kept separate from `notes`
   // so it's easy to query "any allergy info?" without parsing.
   food_allergy: z.string().max(500).optional().default(""),
+  // Special occasion — same enum as the customer endpoint. Lets staff
+  // tag walk-in / phone-in bookings (e.g. "anniversary couple just
+  // called") so the staff card surfaces the cue, and downstream
+  // analytics counts these consistently with the customer-driven ones.
+  occasion: z.enum(OCCASION_KINDS).optional(),
   table_id: z.number().int().nullable().optional(),
   line_user_id: z.string().max(64).optional().default(""),
   booking_channel: z.enum(["walkin", "phone", "line"])
@@ -102,8 +107,9 @@ export async function POST(req: Request) {
       branch_id, table_id, customer_name, customer_phone, party_size,
       source, customer_origin, is_member,
       booking_date, booking_time, duration_minutes, notes, food_allergy,
+      occasion,
       booking_channel, ref_no, status, created_by, seated_at, line_user_id
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     branch.id,
     data.table_id ?? null,
@@ -118,6 +124,7 @@ export async function POST(req: Request) {
     branch.default_duration_minutes,
     data.notes || null,
     data.food_allergy || null,
+    data.occasion ?? null,
     data.booking_channel,
     ref,
     initialStatus,

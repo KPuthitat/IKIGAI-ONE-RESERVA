@@ -70,6 +70,16 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE bookings ADD COLUMN food_allergy TEXT");
   }
 
+  // Special occasion (added 2026-05-22) — drives the personalised
+  // LINE reply customer gets after submitting (and the staff Flex
+  // card shows it so the team can prepare e.g. a birthday plate).
+  // One of a fixed enum (see OCCASION_KINDS) or NULL = customer
+  // didn't specify. Free-text 'notes' still exists for everything
+  // that doesn't fit one of the buckets.
+  if (!bnames.has("occasion")) {
+    db.exec("ALTER TABLE bookings ADD COLUMN occasion TEXT");
+  }
+
   // Two-step booking workflow (added 2026-05-09):
   // Customer submits without picking a table → status='pending_review'.
   // Admin assigns a table + clicks "Confirm and notify" → status='confirmed'
@@ -2699,7 +2709,24 @@ export type Booking = {
   cancelled_at: string | null;
   cancel_reason: string | null;       // shown to customer in cancellation Flex card
   food_allergy: string | null;        // dietary restrictions / allergies (free text)
+  occasion: BookingOccasion | null;   // see OCCASION_KINDS — drives personalised reply
 };
+
+// Special-occasion enum — drives personalised LINE reply + staff
+// preparation. Kept narrow on purpose so the reply templates stay
+// hand-crafted per case. Customers who pick "other" or skip the
+// field get the neutral confirmation copy.
+export const OCCASION_KINDS = [
+  "birthday",        // วันเกิด
+  "anniversary",     // วันครบรอบ
+  "business",        // ประชุมงาน
+  "date",            // เดท
+  "family",          // รวมญาติ / ครอบครัว
+  "friends",         // พบเพื่อน
+  "celebration",     // ฉลองทั่วไป
+  "other"            // ระบุไว้ใน notes
+] as const;
+export type BookingOccasion = (typeof OCCASION_KINDS)[number];
 
 // ── PERSONA: shift handover + readiness reports ──────────────────────
 export type DailyReportType =

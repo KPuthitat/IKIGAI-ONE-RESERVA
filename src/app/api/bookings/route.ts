@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getDb, type Branch, type Booking } from "@/lib/db";
+import { getDb, OCCASION_KINDS, type Branch, type Booking } from "@/lib/db";
 import { notifyCustomerPending, notifyStaff } from "@/lib/line";
 import { generateBookingRef } from "@/lib/reserva-ref";
 
@@ -31,6 +31,11 @@ const Body = z.object({
   // separately from `notes` so staff can surface it on the table
   // survey without parsing the general notes field.
   food_allergy: z.string().max(500).optional().default(""),
+  // Special occasion — one of OCCASION_KINDS or omitted/empty for
+  // "not specified". Drives the personalised LINE reply customer
+  // gets immediately after submitting (notifyCustomerPending) and
+  // shows on the staff Flex card so the team can prepare.
+  occasion: z.enum(OCCASION_KINDS).optional(),
   line_user_id: z.string().max(64).optional().default(""),
   lang: z.enum(["th", "en"]).optional()
 });
@@ -71,9 +76,10 @@ export async function POST(req: Request) {
       branch_id, table_id, customer_name, customer_phone, party_size,
       source, customer_origin, is_member,
       booking_date, booking_time, duration_minutes, notes, food_allergy,
+      occasion,
       line_user_id, lang,
       booking_channel, ref_no, status
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'online', ?, 'pending_review')
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'online', ?, 'pending_review')
   `).run(
     branch.id,
     null,                                    // table_id always null at this stage
@@ -88,6 +94,7 @@ export async function POST(req: Request) {
     branch.default_duration_minutes,
     data.notes || null,
     data.food_allergy || null,
+    data.occasion ?? null,
     data.line_user_id || null,
     data.lang ?? null,
     ref
