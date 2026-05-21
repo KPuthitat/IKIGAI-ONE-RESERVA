@@ -1381,20 +1381,29 @@ function checklistFlexBlock(
     //   • !checked + note → legacy "skipped with reason" case.
     // The icon already disambiguates which case it is (📝 vs ↳).
     if (note) {
+      // The note line needs left padding to align under the row's
+      // label. paddingStart is only valid on `box` components, not on
+      // `text` (LINE 400 "unknown field" otherwise), so wrap the text
+      // in a thin vertical box that carries the padding.
+      const notePadStart = isChild ? "40px" : "20px";
       return {
         type: "box", layout: "vertical", spacing: "xs",
         contents: [
           rowBox,
           {
-            type: "text",
-            text: `↳ ${note}`,
-            size: "xxs",
-            color: skipped ? "#b45309" : COLOR_TEXT_DARK,
-            wrap: true,
-            margin: "none",
-            // Align the note under the indented label when this is a
-            // child row, otherwise under the parent's label position.
-            ...(isChild ? { paddingStart: "40px" } : { paddingStart: "20px" })
+            type: "box",
+            layout: "vertical",
+            paddingStart: notePadStart,
+            contents: [
+              {
+                type: "text",
+                text: `↳ ${note}`,
+                size: "xxs",
+                color: skipped ? "#b45309" : COLOR_TEXT_DARK,
+                wrap: true,
+                margin: "none"
+              }
+            ]
           }
         ]
       };
