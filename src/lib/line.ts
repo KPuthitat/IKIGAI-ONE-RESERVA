@@ -1101,7 +1101,14 @@ export type ShiftOpenCardArgs = {
   //   - checked: true              → done ✓
   //   - checked: false, note: set  → skipped-on-purpose 📝 (with reason)
   //   - checked: false, note: null → not done ✗ (red flag)
-  checklist: Array<{ label: string; checked: boolean; note: string | null }>;
+  // Optional is_child + description fields propagate from admin rows.
+  checklist: Array<{
+    label: string;
+    checked: boolean;
+    note: string | null;
+    is_child?: boolean;
+    description?: string | null;
+  }>;
   /** Headline amounts featured above the checklist body — admin
    *  marks amount rows with is_headline_amount. Stack ordered by
    *  display_order; first one renders biggest. Empty/omitted = no
@@ -1475,7 +1482,18 @@ export type ShiftCloseCardArgs = {
   reportDate: string;          // YYYY-MM-DD
   closerName: string;
   closingDrawerAmount: number | null;
-  checklist: Array<{ label: string; checked: boolean; note: string | null }>;
+  // Same shape as ShiftOpenCardArgs.checklist — see that doc block.
+  // Optional is_child + description fields propagate from admin rows
+  // and are tolerated here so callers can pass a single normalized
+  // shape across all three Flex builders without TS excess-property
+  // tripping on fresh object literals.
+  checklist: Array<{
+    label: string;
+    checked: boolean;
+    note: string | null;
+    is_child?: boolean;
+    description?: string | null;
+  }>;
   /** Headline amounts featured above the checklist body — admin
    *  marks amount rows with is_headline_amount. Stack ordered by
    *  display_order; first one renders biggest. Empty/omitted = no
@@ -1564,6 +1582,7 @@ export type ReadinessCardArgs = {
     label: string;
     checked: boolean;
     note?: string | null;
+    is_child?: boolean;
     description?: string | null;
   }>;
   /** Headline amounts featured above the checklist body — admin
@@ -1688,7 +1707,13 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
         ...checklistFlexBlock(args.checklist.map((c) => ({
           label: c.label,
           checked: c.checked,
-          note: c.note ?? null
+          note: c.note ?? null,
+          // Pass through optional fields so readiness cards get the
+          // same child-indent + description rendering as open/close
+          // cards. Mapper used to drop these and the rendering quietly
+          // regressed for readiness — preserve them here.
+          is_child: c.is_child,
+          description: c.description ?? null
         }))) as Record<string, unknown>[]
       ]
     },
