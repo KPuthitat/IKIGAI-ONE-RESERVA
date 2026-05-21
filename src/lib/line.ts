@@ -9,7 +9,7 @@ import {
   type Booking,
   type AttendanceRow
 } from "./db";
-import { getChannelByCode } from "./messaging-channels";
+import { getChannelByCode, getPlatformChannel } from "./messaging-channels";
 
 // LINE message kinds we use. Loose typing is intentional — Flex contents are
 // large JSON blobs and the API spec already documents the shape.
@@ -2351,10 +2351,28 @@ export async function notifyToStaffGroup(
   routing: "global" | "branch" = "global"
 ): Promise<void> {
   if (routing === "global") {
+    // The IKIGAI OS LINE OA credentials live on messaging_channels
+    // (code='ikigai-os') — that's where /admin/persona/messaging
+    // writes them via setPlatformChannel(). The cross-branch group
+    // id stays on system_settings because it's a routing decision
+    // (which group to push into), not a channel credential.
+    //
+    // Earlier code read the token from system_settings.global_line_
+    // channel_token, but the new admin UI never writes there. The
+    // mismatch meant tokens set via /admin/persona/messaging were
+    // ignored and notifications silently fell back to per-branch
+    // routing (and silently failed when branches had no staff group
+    // configured either).
+    const platform = getPlatformChannel();
     const sys = getSystemSettings();
-    if (sys.global_line_channel_token && sys.global_staff_group_id) {
-      await sendLinePush(sys.global_line_channel_token, {
-        to: sys.global_staff_group_id,
+    // Token preference: messaging_channels.platform first, then the
+    // legacy system_settings.global_line_channel_token as a fallback
+    // so installs that still use the super-admin page keep working.
+    const token = platform?.channel_token ?? sys.global_line_channel_token ?? null;
+    const groupId = sys.global_staff_group_id ?? null;
+    if (token && groupId) {
+      await sendLinePush(token, {
+        to: groupId,
         messages: [flex]
       });
       return;

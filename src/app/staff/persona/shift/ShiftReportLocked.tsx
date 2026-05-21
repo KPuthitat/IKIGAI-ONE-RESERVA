@@ -52,6 +52,41 @@ export default function ShiftReportLocked({
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(alreadyRequested);
   const [err, setErr] = useState<string | null>(null);
+  // Manual LINE-resend state. Lets staff retrigger the notification
+  // when the auto-push didn't reach the group (token misconfigured,
+  // group not joined yet, transient LINE outage). Result toast hangs
+  // around for a few seconds so staff sees it without scrolling.
+  const [resendBusy, setResendBusy] = useState(false);
+  const [resendMsg, setResendMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  async function resendNotification() {
+    setResendBusy(true);
+    setResendMsg(null);
+    try {
+      const res = await fetch(
+        apiUrl(`/api/persona/daily-report/${reportId}/resend-notification`),
+        { method: "POST" }
+      );
+      if (res.ok) {
+        setResendMsg({
+          kind: "ok",
+          text: t("staff.persona.shiftReport.locked.resendOk")
+        });
+      } else {
+        setResendMsg({
+          kind: "err",
+          text: t("staff.persona.shiftReport.locked.resendFail")
+        });
+      }
+    } catch {
+      setResendMsg({
+        kind: "err",
+        text: t("staff.persona.shiftReport.locked.resendFail")
+      });
+    } finally {
+      setResendBusy(false);
+    }
+  }
 
   async function submitRequest(e: React.FormEvent) {
     e.preventDefault();
@@ -101,18 +136,17 @@ export default function ShiftReportLocked({
 
   return (
     <div className="space-y-4">
-      <div className="card border-l-4 border-amber-400 bg-amber-50/50">
+      <div className="card border-l-4 border-emerald-400 bg-emerald-50/50">
         <div className="flex items-start gap-3">
-          <div className="text-3xl">🔒</div>
+          <div className="text-3xl">✅</div>
           <div className="flex-1 space-y-1">
             <h2 className="font-bold text-slate-800">
-              {t("staff.persona.shiftReport.locked.title", {
-                branch: branchName,
-                type: typeLabel
-              })}
+              {t("staff.persona.shiftReport.locked.title")}
             </h2>
             <p className="text-sm text-slate-600">
               {t("staff.persona.shiftReport.locked.body", {
+                branch: branchName,
+                type: typeLabel,
                 opener: openerName,
                 time: formatBkkTime(openedAtIso)
               })}
@@ -123,6 +157,39 @@ export default function ShiftReportLocked({
           </div>
         </div>
       </div>
+
+      {/* Manual LINE resend — visible to anyone viewing the lock
+          screen. The auto-flow is fire-and-forget so an admin can't
+          tell from the UI whether the LINE push succeeded; this
+          button gives a deterministic retry path. Awaits the API so
+          the success/fail toast reflects the actual push outcome. */}
+      <div className="card flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex-1 min-w-[200px]">
+          <div className="text-sm font-bold text-slate-700">
+            {t("staff.persona.shiftReport.locked.resendBtn")}
+          </div>
+          <div className="text-[11px] text-slate-500">
+            {t("staff.persona.shiftReport.locked.resendHint")}
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={resendBusy}
+          onClick={resendNotification}
+          className="text-sm px-3 py-1.5 rounded-lg border border-brand text-brand font-bold hover:bg-rose-50 disabled:opacity-50"
+        >
+          📨 {resendBusy ? t("common.submitting") : t("staff.persona.shiftReport.locked.resendBtn")}
+        </button>
+      </div>
+      {resendMsg && (
+        <div
+          className={`text-sm text-center ${
+            resendMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600"
+          }`}
+        >
+          {resendMsg.kind === "ok" ? "✓ " : "✗ "}{resendMsg.text}
+        </div>
+      )}
 
       {/* Last-rejected banner — only when staff's most recent request
           was rejected. Shows admin's note so staff knows whether to
