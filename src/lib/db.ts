@@ -2480,6 +2480,9 @@ export type User = {
   username: string;
   password_hash: string;
   display_name: string;
+  /** Honorific prefix shown before display_name everywhere (คุณ / นพ. / etc.).
+   *  Column is on the users table; rendered via lib/name.nameWithPrefix. */
+  title_prefix: string | null;
   role: UserRole;
 };
 
