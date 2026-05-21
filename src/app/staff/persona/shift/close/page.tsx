@@ -14,6 +14,7 @@ import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { nameWithPrefix } from "@/lib/name";
 import ShiftCloseForm from "./ShiftCloseForm";
 import ShiftReportLocked from "../ShiftReportLocked";
 
@@ -47,12 +48,12 @@ export default function ShiftClosePage() {
   const typeLabel = t(lang, "staff.persona.shiftReport.typeLabel.shiftClose");
 
   const existing = db.prepare(`
-    SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name
+    SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name, u.title_prefix AS opener_prefix
     FROM daily_reports r JOIN users u ON r.user_id = u.id
     WHERE r.type = 'shift_close' AND r.branch_id = ? AND r.report_date = ?
       AND r.superseded_at IS NULL
   `).get(branch.id, today) as
-    | { id: number; user_id: number; created_at: string; opener_name: string }
+    | { id: number; user_id: number; created_at: string; opener_name: string; opener_prefix: string | null }
     | undefined;
   if (existing) {
     const lastReq = db.prepare(`
@@ -77,7 +78,7 @@ export default function ShiftClosePage() {
           branchName={branch.name}
           typeLabel={typeLabel}
           reportId={existing.id}
-          openerName={existing.opener_name}
+          openerName={nameWithPrefix(existing.opener_prefix, existing.opener_name)}
           openedAtIso={existing.created_at}
           alreadyRequested={lastReq?.status === "pending"}
           lastRejected={lastReq?.status === "rejected"
@@ -108,7 +109,7 @@ export default function ShiftClosePage() {
       <ShiftCloseForm
         branchId={branch.id}
         branchName={branch.name}
-        closerName={user.display_name}
+        closerName={nameWithPrefix(user.title_prefix, user.display_name)}
         checklistItems={checklist.map((c) => ({ id: c.id, label: c.label }))}
       />
     </div>

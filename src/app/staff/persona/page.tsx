@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
+import { nameWithPrefix } from "@/lib/name";
 import TimeClockClient from "./TimeClockClient";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +50,7 @@ export default function StaffPersonaPage() {
 
   return (
     <TimeClockClient
-      userName={user.display_name}
+      userName={nameWithPrefix(user.title_prefix, user.display_name)}
       hasPin={hasPin}
       firstInTs={firstInTs}
       firstOutTs={firstOutTs}

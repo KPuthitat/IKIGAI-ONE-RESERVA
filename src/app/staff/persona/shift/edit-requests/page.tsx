@@ -10,6 +10,7 @@ import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
+import { nameWithPrefix } from "@/lib/name";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ type RequestRow = {
   report_date: string;
   branch_name: string;
   decided_by_name: string | null;
+  decided_by_prefix: string | null;
 };
 
 function formatBkkDateTime(iso: string): string {
@@ -79,7 +81,8 @@ export default function StaffEditRequestsPage() {
            r.decision_note,
            dr.type AS report_type, dr.report_date,
            b.name AS branch_name,
-           du.display_name AS decided_by_name
+           du.display_name AS decided_by_name,
+           du.title_prefix AS decided_by_prefix
     FROM shift_unlock_requests r
     JOIN daily_reports dr ON dr.id = r.daily_report_id
     JOIN branches b ON b.id = dr.branch_id
@@ -155,7 +158,7 @@ export default function StaffEditRequestsPage() {
                       {r.status === "granted"
                         ? t(lang, "staff.persona.editRequests.adminGranted")
                         : t(lang, "staff.persona.editRequests.adminRejected")}
-                      {r.decided_by_name && ` · ${r.decided_by_name}`}
+                      {r.decided_by_name && ` · ${nameWithPrefix(r.decided_by_prefix, r.decided_by_name)}`}
                     </div>
                     {r.decision_note ? (
                       <div className="text-sm text-slate-800 whitespace-pre-wrap">

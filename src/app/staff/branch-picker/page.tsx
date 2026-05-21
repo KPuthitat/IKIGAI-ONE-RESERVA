@@ -19,6 +19,7 @@ import { requireUser, setActiveBranch } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { nameWithPrefix } from "@/lib/name";
 import BranchPickerClient from "../../BranchPickerClient";
 
 export const dynamic = "force-dynamic";
@@ -68,7 +69,7 @@ export default function BranchPickerPage({
           {t(lang, "staff.branchPicker.title")}
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          {t(lang, "staff.branchPicker.subtitle", { name: user.display_name })}
+          {t(lang, "staff.branchPicker.subtitle", { name: nameWithPrefix(user.title_prefix, user.display_name) })}
         </p>
       </div>
       <BranchPickerClient

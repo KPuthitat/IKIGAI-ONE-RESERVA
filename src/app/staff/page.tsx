@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { nameWithPrefix } from "@/lib/name";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export default function StaffHomePage({
       <div>
         <h1 className="text-2xl font-bold text-slate-800">{t(lang, "portal.chooseModule")}</h1>
         <p className="text-sm text-slate-500 mt-1">
-          {t(lang, "portal.staffSubtitle", { name: user.display_name })}
+          {t(lang, "portal.staffSubtitle", { name: nameWithPrefix(user.title_prefix, user.display_name) })}
         </p>
         {showForbidden && (
           <div className="mt-3 text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3">

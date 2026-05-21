@@ -14,6 +14,7 @@ import TodaysBranchPill from "../TodaysBranchPill";
 import HookFab from "../components/HookFab";
 import ImpersonationBanner from "../components/ImpersonationBanner";
 import { currentImpersonationContext } from "@/lib/impersonation";
+import { nameWithPrefix } from "@/lib/name";
 
 export const dynamic = "force-dynamic";
 
@@ -159,7 +160,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           </div>
         )}
         <div className="text-xs text-white/60 truncate">
-          {user.display_name}
+          {nameWithPrefix(user.title_prefix, user.display_name)}
         </div>
         <div className="flex items-center justify-between gap-2">
           <LangToggle variant="dark" />
@@ -207,7 +208,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
               )}
             </div>
             <div className="hidden md:block text-xs text-white/60 truncate max-w-[180px] flex-shrink-0">
-              {user.display_name}
+              {nameWithPrefix(user.title_prefix, user.display_name)}
             </div>
             <div className="hidden md:flex items-center gap-2 flex-shrink-0">
               <LangToggle variant="dark" />

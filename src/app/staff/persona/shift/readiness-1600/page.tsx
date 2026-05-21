@@ -13,6 +13,7 @@ import { getDb, type Branch } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { nameWithPrefix } from "@/lib/name";
 import ReadinessForm from "../ReadinessForm";
 import ShiftReportLocked from "../ShiftReportLocked";
 
@@ -78,12 +79,12 @@ export default function Readiness1600Page() {
   }
 
   const existing = db.prepare(`
-    SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name
+    SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name, u.title_prefix AS opener_prefix
     FROM daily_reports r JOIN users u ON r.user_id = u.id
     WHERE r.type = 'readiness_1600' AND r.branch_id = ? AND r.report_date = ?
       AND r.superseded_at IS NULL
   `).get(branch.id, today) as
-    | { id: number; user_id: number; created_at: string; opener_name: string }
+    | { id: number; user_id: number; created_at: string; opener_name: string; opener_prefix: string | null }
     | undefined;
   if (existing) {
     const lastReq = db.prepare(`
@@ -112,7 +113,7 @@ export default function Readiness1600Page() {
           branchName={branch.name}
           typeLabel={typeLabel}
           reportId={existing.id}
-          openerName={existing.opener_name}
+          openerName={nameWithPrefix(existing.opener_prefix, existing.opener_name)}
           openedAtIso={existing.created_at}
           alreadyRequested={lastReq?.status === "pending"}
           lastRejected={lastReq?.status === "rejected"
@@ -142,7 +143,7 @@ export default function Readiness1600Page() {
         type="readiness_1600"
         branchId={branch.id}
         branchName={branch.name}
-        reporterName={user.display_name}
+        reporterName={nameWithPrefix(user.title_prefix, user.display_name)}
         todayDate={today}
         submitLabel={t(lang, "staff.persona.readiness.submit")}
         successCopy={{

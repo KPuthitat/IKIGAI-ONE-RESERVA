@@ -23,6 +23,7 @@ import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { nameWithPrefix } from "@/lib/name";
 import ShiftOpenForm from "./ShiftOpenForm";
 import ShiftReportLocked from "../ShiftReportLocked";
 
@@ -60,12 +61,12 @@ export default function ShiftOpenPage() {
   // that branch (so person B can't accidentally re-submit on top of
   // person A's report).
   const existingOpen = db.prepare(`
-    SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name
+    SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name, u.title_prefix AS opener_prefix
     FROM daily_reports r JOIN users u ON r.user_id = u.id
     WHERE r.type = 'shift_open' AND r.branch_id = ? AND r.report_date = ?
       AND r.superseded_at IS NULL
   `).get(branch.id, today) as
-    | { id: number; user_id: number; created_at: string; opener_name: string }
+    | { id: number; user_id: number; created_at: string; opener_name: string; opener_prefix: string | null }
     | undefined;
   if (existingOpen) {
     // Has the current user already requested an unlock? Pull the
@@ -101,7 +102,7 @@ export default function ShiftOpenPage() {
           branchName={branch.name}
           typeLabel={t(lang, "staff.persona.shiftReport.typeLabel.shiftOpen")}
           reportId={existingOpen.id}
-          openerName={existingOpen.opener_name}
+          openerName={nameWithPrefix(existingOpen.opener_prefix, existingOpen.opener_name)}
           openedAtIso={existingOpen.created_at}
           alreadyRequested={pendingReq}
           lastRejected={lastRejected}
@@ -154,7 +155,7 @@ export default function ShiftOpenPage() {
       <ShiftOpenForm
         branchId={branch.id}
         branchName={branch.name}
-        openerName={user.display_name}
+        openerName={nameWithPrefix(user.title_prefix, user.display_name)}
         today={today}
         yesterdayClosingHint={yesterdayClosingHint}
         checklistItems={checklist.map((c) => ({ id: c.id, label: c.label }))}

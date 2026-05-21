@@ -5,6 +5,7 @@ import type { Branch, User } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { useConfirm } from "@/app/components/useConfirm";
+import { nameWithPrefix } from "@/lib/name";
 
 type UserWithBranches = User & { branch_ids: number[] };
 
@@ -184,7 +185,7 @@ export default function StaffClient({
           <tbody>
             {users.map((u) => (
               <tr key={u.id} className="border-t border-slate-100 align-top">
-                <td className="py-2 font-medium">{u.display_name}</td>
+                <td className="py-2 font-medium">{nameWithPrefix(u.title_prefix, u.display_name)}</td>
                 <td>{u.username}</td>
                 <td>
                   <span className={u.role === "admin" ? "text-brand font-medium" : "text-slate-600"}>
@@ -212,7 +213,7 @@ export default function StaffClient({
                   <button onClick={() => resetPassword(u.id)} className="text-xs text-brand mr-2">
                     {t("admin.users.changePassword")}
                   </button>
-                  <button onClick={() => deleteUser(u.id, u.display_name)} className="text-xs text-red-600">
+                  <button onClick={() => deleteUser(u.id, nameWithPrefix(u.title_prefix, u.display_name))} className="text-xs text-red-600">
                     {t("admin.users.delete")}
                   </button>
                 </td>
