@@ -705,9 +705,14 @@ export default function BookingForm({
                 : t("booking.timeHint", { open: minTimeStr, close: maxTimeStr })}
             </p>
             {lunchBreakLabel && (
-              <p className="text-[11px] text-rose-600 mt-0.5">
-                {t("booking.lunchBreakInfo", { start: lunchBreakLabel.start, end: lunchBreakLabel.end })}
-              </p>
+              <div className="mt-2 text-xs px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 flex items-start gap-2 leading-snug">
+                <span aria-hidden>🕐</span>
+                <span>
+                  {t("booking.lunchBreakInfo", {
+                    start: lunchBreakLabel.start, end: lunchBreakLabel.end
+                  })}
+                </span>
+              </div>
             )}
             {isSpecialOpenDay && (
               <p className="text-[11px] text-emerald-700 mt-0.5">
@@ -824,6 +829,16 @@ export default function BookingForm({
       )}
 
       {error && <div className="text-red-600 text-sm text-center">{error}</div>}
+
+      {/* Customer-facing notice that the table isn't held until admin
+          confirms — sits right above the submit button so it's the
+          last thing they read before sending the request. */}
+      {mode === "customer" && (
+        <div className="text-xs px-3 py-2.5 rounded-lg border border-sky-200 bg-sky-50 text-sky-900 leading-relaxed flex items-start gap-2">
+          <span aria-hidden>📌</span>
+          <span>{t("booking.notice.noTableUntilConfirm")}</span>
+        </div>
+      )}
 
       <button disabled={submitting || isPastTime} className="btn-primary w-full text-base py-3.5">
         {submitting

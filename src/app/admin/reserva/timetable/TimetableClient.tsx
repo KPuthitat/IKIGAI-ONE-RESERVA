@@ -24,7 +24,11 @@ import { useLang } from "@/lib/LangProvider";
 import BookingForm from "@/app/reserva/[branch]/BookingForm";
 import BookingActionsModal from "./BookingActionsModal";
 
-const SLOT_MINUTES = 30;
+const SLOT_MINUTES = 15;   // 15-min granularity matches the customer
+                           // booking picker — a customer who picked
+                           // 18:15 lands in a slot that exists on the
+                           // grid (the previous 30-min grid would have
+                           // them straddle two columns).
 const LABEL_COL_PX = 110;
 
 // Zoom presets for cell width × row height. Lets staff trade off
