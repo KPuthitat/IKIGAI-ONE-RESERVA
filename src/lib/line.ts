@@ -1566,11 +1566,11 @@ export type ReadinessCardArgs = {
     note?: string | null;
     description?: string | null;
   }>;
-  /** Optional amount admin tagged as the "card headline" — featured
-   *  prominently at the top of the bubble (e.g. ยอดเงินปิดกะ
-   *  32,999.00 บาท in red). When null, no headline row is rendered
-   *  and the body starts straight with the checklist. */
-  headline?: { label: string; amount: string } | null;
+  /** Headline amounts featured above the checklist body — admin
+   *  marks amount rows with is_headline_amount. Stack ordered by
+   *  display_order; first one renders biggest. Empty/omitted = no
+   *  headline block. */
+  headlines?: Array<{ label: string; amount: string }>;
   isRevision?: boolean;
   /** Optional header background hex (e.g. '#e94560'). Falls back to
    *  the default IKIGAI ink colour when null/undefined. Used so each

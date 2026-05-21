@@ -30,6 +30,8 @@ type ChecklistEntry = {
   checked: boolean;
   note?: string | null;
   is_child?: boolean;
+  is_headline?: boolean;
+  description?: string | null;
 };
 
 export async function POST(
@@ -97,8 +99,18 @@ export async function POST(
       label: c.label,
       checked: c.checked,
       note: c.note ?? null,
-      is_child: !!c.is_child
+      is_child: !!c.is_child,
+      description: c.description ?? null
     }));
+
+  // Same shape as the auto-flow's headlinesFor — pull every
+  // is_headline-flagged entry with a non-empty value, preserving
+  // submit order so the Flex builder renders them with the same
+  // primary→secondary visual hierarchy that the original push had.
+  const headlinesFor = (items: ChecklistEntry[]) =>
+    items
+      .filter((c) => c.is_headline && c.note?.trim())
+      .map((c) => ({ label: c.label, amount: (c.note ?? "").trim() }));
 
   let flex;
   if (row.type === "shift_open") {
@@ -114,6 +126,7 @@ export async function POST(
       yesterdayClosingAmount: d.yesterday_closing_amount,
       morningDrawerAmount: d.morning_drawer_amount,
       checklist: normalizeChecklist(d.checklist ?? []),
+      headlines: headlinesFor(d.checklist ?? []),
       isRevision,
       headerColor: branch.brand_color
     });
@@ -128,6 +141,7 @@ export async function POST(
       closerName: row.opener_name,
       closingDrawerAmount: d.closing_drawer_amount,
       checklist: normalizeChecklist(d.checklist ?? []),
+      headlines: headlinesFor(d.checklist ?? []),
       isRevision,
       headerColor: branch.brand_color
     });
@@ -144,6 +158,7 @@ export async function POST(
         ? branch.readiness_morning_time
         : branch.readiness_afternoon_time,
       checklist: normalizeChecklist(d.checklist ?? []),
+      headlines: headlinesFor(d.checklist ?? []),
       isRevision,
       headerColor: branch.brand_color
     });

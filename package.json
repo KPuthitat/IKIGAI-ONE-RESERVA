@@ -4,11 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "prebuild": "node --import tsx scripts/check-i18n.ts",
+    "prebuild": "node --import tsx scripts/check-i18n.ts && node scripts/scan-build-risks.mjs && npx tsc --noEmit -p tsconfig.json",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "check:i18n": "node --import tsx scripts/check-i18n.ts",
+    "check:risks": "node scripts/scan-build-risks.mjs",
+    "check:types": "npx tsc --noEmit -p tsconfig.json",
     "db:init": "node --import tsx scripts/init-db.ts",
     "db:seed": "node --import tsx scripts/seed.ts",
     "cron:run": "node --import tsx scripts/cron.ts"
