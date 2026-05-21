@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
@@ -33,6 +33,16 @@ export default function ChecklistEditor({
   const router = useRouter();
   const { t } = useLang();
   const [items, setItems] = useState<ShiftChecklistItem[]>(initialItems);
+  // Re-sync from props whenever the server data changes — happens after
+  // every router.refresh() that follows an add/PATCH/delete. Without
+  // this, useState's lazy initializer holds the old list forever and
+  // newly-added rows appear only after a hard browser reload. The
+  // optimistic-delete code in deleteItem() still works because the
+  // server's next refresh also won't include the deleted row, so the
+  // sync re-applies the same end state.
+  useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [newLabel, setNewLabel] = useState("");
   const [newKind, setNewKind] = useState<"checkbox" | "text" | "choice">("checkbox");
