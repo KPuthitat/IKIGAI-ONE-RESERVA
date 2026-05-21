@@ -39,7 +39,12 @@ import { upsertDailyServiceCharge } from "@/lib/service-charge";
 const ChecklistEntry = z.object({
   label: z.string().min(1).max(200),
   checked: z.boolean(),
-  note: z.string().max(500).nullable().optional()
+  note: z.string().max(500).nullable().optional(),
+  /** "checkbox" | "text" — staff form sends this with every entry so
+   *  the LINE renderer can distinguish "ticked yes/no" from "the staff
+   *  typed this value". Optional for backward compatibility with rows
+   *  submitted before P5c. */
+  kind: z.enum(["checkbox", "text"]).optional()
 });
 
 // Per-type data schemas. Each form in the staff UI submits one of these.
@@ -65,7 +70,11 @@ const ReadinessData = z.object({
   team_communications: z.string().max(2000).default(""),
   menus_not_ready: z.string().max(2000).default(""),
   menus_modified: z.string().max(2000).default(""),
-  alcohol_status: z.enum(["ok", "blocked"])
+  alcohol_status: z.enum(["ok", "blocked"]),
+  /** Optional admin-configured extra items. Empty / missing array =
+   *  branch hasn't customized the readiness form — falls back to the
+   *  legacy 3-textareas-only behaviour. */
+  checklist: z.array(ChecklistEntry).max(50).optional().default([])
 });
 
 const Body = z.object({
@@ -273,6 +282,7 @@ export async function POST(req: Request) {
       menusNotReady: d.menus_not_ready,
       menusModified: d.menus_modified,
       alcoholStatus: d.alcohol_status,
+      checklist: normalizeChecklist(d.checklist ?? []),
       isRevision,
       headerColor: branch.brand_color
     });

@@ -6,15 +6,21 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 
 // Readiness report form — used by /staff/persona/shift/readiness-1130
-// and /staff/persona/shift/readiness-1600. Replaces the older
-// ChecklistRunner usage for these two types (which made staff tick
-// admin-configured items); the new layout is 3 free-text textareas
-// + an alcohol radio because the questions are inherently freeform:
+// and /staff/persona/shift/readiness-1600. The layout starts with the
+// 3 built-in free-text themes + an alcohol radio because those topics
+// are common to every branch:
 //
 //   • เรื่องที่อยากสื่อสารในทีม
 //   • เมนูที่ไม่พร้อมขาย
 //   • เมนูที่ขายได้ แต่มีการปรับบางอย่าง
 //   • สถานะการขายแอลกอฮอล์ในวันนี้  (🟢 ขายได้ปกติ / ❌ ห้ามขาย)
+//
+// Any extra admin-configured checklist items (managed at
+// /admin/persona/checklist?type=readiness_1130|readiness_1600) render
+// BELOW these built-ins. Each admin item is either a checkbox (กดเปิด
+// = พร้อม) or a text-input (กรอกค่าเอง) — matching the shift_open /
+// shift_close customization. Branches that haven't added any admin
+// items behave exactly as before — built-ins only.
 //
 // All 3 textareas are optional (เว้นว่างได้); the LINE card renders
 // "ไม่มี" for any empty field. Alcohol status defaults to "ok" so
@@ -26,6 +32,12 @@ import { useLang } from "@/lib/LangProvider";
 type ReportType = "readiness_1130" | "readiness_1600";
 type AlcoholStatus = "ok" | "blocked";
 
+export type ReadinessChecklistItem = {
+  id: number;
+  label: string;
+  kind: "checkbox" | "text";
+};
+
 export default function ReadinessForm({
   type,
   branchId,
@@ -34,7 +46,8 @@ export default function ReadinessForm({
   todayDate,
   submitLabel,
   successCopy,
-  initialValues
+  initialValues,
+  checklistItems
 }: {
   type: ReportType;
   branchId: number;
@@ -53,6 +66,10 @@ export default function ReadinessForm({
     menus_modified?: string;
     alcohol_status?: AlcoholStatus;
   };
+  /** Admin-configured extra checklist items for this branch. Renders
+   *  as a third "card" section below the built-in textareas. Empty
+   *  array = nothing rendered, same as the legacy form. */
+  checklistItems?: ReadinessChecklistItem[];
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -65,6 +82,19 @@ export default function ReadinessForm({
   const [menusModified, setMenusModified] = useState(initialValues?.menus_modified ?? "");
   const [alcohol, setAlcohol] = useState<AlcoholStatus>(initialValues?.alcohol_status ?? "ok");
 
+  // Admin-checklist state — separate maps for checkbox and text items,
+  // keyed by item id. All start unchecked / empty; readiness items are
+  // less critical than shift_open's "missing-note" rule, so we don't
+  // force a value to submit. Empty text just becomes null in the
+  // payload and the LINE card renders "ไม่มี".
+  const items = checklistItems ?? [];
+  const [checked, setChecked] = useState<Record<number, boolean>>(() =>
+    Object.fromEntries(items.map((it) => [it.id, false]))
+  );
+  const [textValues, setTextValues] = useState<Record<number, string>>(() =>
+    Object.fromEntries(items.map((it) => [it.id, ""]))
+  );
+
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [done, setDone] = useState(false);
@@ -74,6 +104,29 @@ export default function ReadinessForm({
     setMsg(null);
     setBusy(true);
     try {
+      // Build admin-checklist payload — same shape as shift_open /
+      // shift_close so the downstream LINE Flex renderer doesn't need
+      // separate handling. Text items mirror their value into
+      // `note` so the Flex card shows the typed answer; checkbox
+      // items just carry their tick state.
+      const checklistPayload = items.map((it) => {
+        if (it.kind === "text") {
+          const value = (textValues[it.id] || "").trim();
+          return {
+            label: it.label,
+            kind: "text" as const,
+            checked: !!value,
+            note: value || null
+          };
+        }
+        return {
+          label: it.label,
+          kind: "checkbox" as const,
+          checked: !!checked[it.id],
+          note: null
+        };
+      });
+
       const res = await fetch(apiUrl("/api/persona/daily-report"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -84,7 +137,8 @@ export default function ReadinessForm({
             team_communications: teamComm.trim(),
             menus_not_ready: menusNotReady.trim(),
             menus_modified: menusModified.trim(),
-            alcohol_status: alcohol
+            alcohol_status: alcohol,
+            checklist: checklistPayload
           }
         })
       });
@@ -200,6 +254,84 @@ export default function ReadinessForm({
           </button>
         </div>
       </div>
+
+      {/* Admin-configured extra checklist — only renders when the
+          branch has at least one item set up at /admin/persona/checklist
+          for this report type. Keeps the form short for branches that
+          haven't customized anything. */}
+      {items.length > 0 && (
+        <div className="card space-y-3">
+          <h2 className="font-bold text-slate-800 text-sm">
+            {t("staff.persona.readiness.extraChecklistTitle")}
+          </h2>
+          <div className="space-y-2">
+            {items.map((it) => {
+              if (it.kind === "text") {
+                const value = textValues[it.id] || "";
+                const filled = value.trim().length > 0;
+                return (
+                  <div
+                    key={it.id}
+                    className={`rounded-xl border-[1.5px] transition p-3 ${
+                      filled
+                        ? "border-emerald-300 bg-emerald-50"
+                        : "border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                      {it.label}
+                    </label>
+                    <input
+                      type="text"
+                      className="input text-sm"
+                      maxLength={500}
+                      value={value}
+                      placeholder={t("staff.persona.readiness.textValuePlaceholder")}
+                      onChange={(e) =>
+                        setTextValues((prev) => ({
+                          ...prev,
+                          [it.id]: e.target.value
+                        }))
+                      }
+                    />
+                  </div>
+                );
+              }
+              const isChecked = !!checked[it.id];
+              return (
+                <label
+                  key={it.id}
+                  className={`flex items-center gap-3 p-3 rounded-xl border-[1.5px] transition cursor-pointer ${
+                    isChecked
+                      ? "border-emerald-300 bg-emerald-50"
+                      : "border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="w-5 h-5 flex-shrink-0"
+                    checked={isChecked}
+                    onChange={(e) =>
+                      setChecked((prev) => ({
+                        ...prev,
+                        [it.id]: e.target.checked
+                      }))
+                    }
+                  />
+                  <span className="text-sm flex-1">{it.label}</span>
+                  <span
+                    className={`text-xs font-bold ${
+                      isChecked ? "text-emerald-700" : "text-slate-400"
+                    }`}
+                  >
+                    {isChecked ? "✓" : "—"}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {msg && (
         <div

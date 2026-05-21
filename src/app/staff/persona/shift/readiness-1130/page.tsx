@@ -13,7 +13,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
-import { getDb, type Branch } from "@/lib/db";
+import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -97,6 +97,15 @@ export default function Readiness1130Page() {
     );
   }
 
+  // Admin-configured extra checklist for this branch + type. The
+  // ReadinessForm renders these BELOW the built-in 3 textareas; an
+  // empty list = nothing extra, same behaviour as before.
+  const checklist = db.prepare(`
+    SELECT * FROM shift_checklist_items
+    WHERE type = 'readiness_1130' AND branch_id = ? AND active = 1
+    ORDER BY display_order ASC, id ASC
+  `).all(branch.id) as ShiftChecklistItem[];
+
   return (
     <div className="space-y-4">
       <div>
@@ -122,6 +131,11 @@ export default function Readiness1130Page() {
             branch: branch.name
           })
         }}
+        checklistItems={checklist.map((c) => ({
+          id: c.id,
+          label: c.label,
+          kind: (c.kind ?? "checkbox") as "checkbox" | "text"
+        }))}
       />
     </div>
   );

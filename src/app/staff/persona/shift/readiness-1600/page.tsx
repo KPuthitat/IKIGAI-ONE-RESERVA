@@ -9,7 +9,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
-import { getDb, type Branch } from "@/lib/db";
+import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -124,6 +124,14 @@ export default function Readiness1600Page() {
     );
   }
 
+  // Admin-configured extra checklist for this branch + type. Renders
+  // below the built-in 3 textareas; empty = unchanged from legacy form.
+  const checklist = db.prepare(`
+    SELECT * FROM shift_checklist_items
+    WHERE type = 'readiness_1600' AND branch_id = ? AND active = 1
+    ORDER BY display_order ASC, id ASC
+  `).all(branch.id) as ShiftChecklistItem[];
+
   return (
     <div className="space-y-4">
       <div>
@@ -154,6 +162,11 @@ export default function Readiness1600Page() {
           })
         }}
         initialValues={morningPrefill}
+        checklistItems={checklist.map((c) => ({
+          id: c.id,
+          label: c.label,
+          kind: (c.kind ?? "checkbox") as "checkbox" | "text"
+        }))}
       />
     </div>
   );

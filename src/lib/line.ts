@@ -1358,7 +1358,15 @@ function checklistFlexBlock(
         }
       ]
     };
-    if (skipped && note) {
+    // Show the note line whenever a note is present. Two distinct
+    // cases benefit:
+    //   • checked + note  → text-input item where the staff filled in
+    //                        a value (P5c). Without this line the card
+    //                        would say "✓ ยอดเงินคงเหลือ" but never
+    //                        show the actual amount.
+    //   • !checked + note → legacy "skipped with reason" case.
+    // The icon already disambiguates which case it is (📝 vs ↳).
+    if (note) {
       return {
         type: "box", layout: "vertical", spacing: "xs",
         contents: [
@@ -1367,7 +1375,7 @@ function checklistFlexBlock(
             type: "text",
             text: `↳ ${note}`,
             size: "xxs",
-            color: "#b45309",
+            color: skipped ? "#b45309" : COLOR_TEXT_DARK,
             wrap: true,
             margin: "none"
           }
@@ -1478,6 +1486,10 @@ export type ReadinessCardArgs = {
   menusModified: string;
   /** Alcohol sales status for the day. */
   alcoholStatus: "ok" | "blocked";
+  /** Admin-configured extra checklist items (P5c). Empty array =
+   *  branch hasn't added any — the card renders only the 3 built-in
+   *  sections, identical to the pre-P5c layout. */
+  checklist?: Array<{ label: string; checked: boolean; note?: string | null }>;
   isRevision?: boolean;
   /** Optional header background hex (e.g. '#e94560'). Falls back to
    *  the default IKIGAI ink colour when null/undefined. Used so each
@@ -1576,7 +1588,15 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
         readinessSection("เรื่องที่อยากสื่อสารในทีม", args.teamCommunications),
         readinessSection("เมนูที่ไม่พร้อมขาย", args.menusNotReady),
-        readinessSection("เมนูที่ขายได้ แต่มีการปรับบางอย่าง", args.menusModified)
+        readinessSection("เมนูที่ขายได้ แต่มีการปรับบางอย่าง", args.menusModified),
+        // Admin-configured extras (P5c) — reuses the same 3-state row
+        // renderer as shift_open/shift_close so admins recognise the
+        // visual language. Empty array renders nothing.
+        ...checklistFlexBlock((args.checklist ?? []).map((c) => ({
+          label: c.label,
+          checked: c.checked,
+          note: c.note ?? null
+        }))) as Record<string, unknown>[]
       ]
     },
     styles: {

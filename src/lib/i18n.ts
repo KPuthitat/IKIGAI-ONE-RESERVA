@@ -739,6 +739,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.readiness.placeholder.menusModified": "เช่น\n1. สลัดซีซาร์ — ไม่มีไก่ ใช้กุ้งแทน\n2. ลาซานญ่า — เปลี่ยนเป็นแบบไม่ใส่หมู",
     "staff.persona.readiness.alcohol.ok": "ขายได้ปกติ",
     "staff.persona.readiness.alcohol.blocked": "ห้ามขาย",
+    "staff.persona.readiness.extraChecklistTitle": "รายการเพิ่มเติม (ตั้งโดยผู้ดูแลสาขา)",
+    "staff.persona.readiness.textValuePlaceholder": "พิมพ์คำตอบที่นี่",
     "staff.persona.readiness.timeNote": "เริ่มเวลา {time} น.",
 
     // Generic shiftReport.* keys — used by ShiftReportLocked + each of
@@ -2939,6 +2941,8 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.readiness.placeholder.menusModified": "e.g.\n1. Caesar salad — no chicken, shrimp substitute\n2. Lasagna — pork-free version",
     "staff.persona.readiness.alcohol.ok": "Selling as normal",
     "staff.persona.readiness.alcohol.blocked": "Sales paused",
+    "staff.persona.readiness.extraChecklistTitle": "Additional items (set by branch admin)",
+    "staff.persona.readiness.textValuePlaceholder": "Type your answer here",
     "staff.persona.readiness.timeNote": "Starts at {time}",
     "staff.persona.shift.open.done.body": "{branch}'s pre-shift checklist summary has been pushed to the staff LINE group",
     "staff.persona.shift.open.done.partialWarning": "Some checklist items are still pending — please complete them before starting service",
