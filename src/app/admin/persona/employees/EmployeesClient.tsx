@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
@@ -67,6 +67,67 @@ export default function EmployeesClient({
   const [pending, startTransition] = useTransition();
   const [editTarget, setEditTarget] = useState<EmployeeRow | null>(null);
 
+  // ── Filter + sort toolbar ──────────────────────────────────────
+  // Search matches across display_name / employee_code / username.
+  // Sort defaults to "code" — matches the server's default ORDER BY,
+  // so the table looks identical on first render. Role filter is a
+  // small chip group above the table.
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"code" | "name" | "role" | "hireDate">("code");
+  const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "staff">("all");
+
+  const visibleEmployees = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const filtered = employees.filter((u) => {
+      if (roleFilter !== "all" && u.role !== roleFilter) return false;
+      if (!term) return true;
+      const hay = [
+        u.display_name,
+        u.employee_code ?? "",
+        u.username,
+        u.title_prefix ?? ""
+      ].join(" ").toLowerCase();
+      return hay.includes(term);
+    });
+    // Stable sort — empty-code rows sink to the bottom for "code"
+    // sort so newly-hired staff without codes don't shuffle the list.
+    const cmp = (a: EmployeeRow, b: EmployeeRow): number => {
+      switch (sortBy) {
+        case "code": {
+          const ac = (a.employee_code ?? "").trim();
+          const bc = (b.employee_code ?? "").trim();
+          if (!ac && !bc) return a.display_name.localeCompare(b.display_name);
+          if (!ac) return 1;
+          if (!bc) return -1;
+          return ac.localeCompare(bc, undefined, { numeric: true, sensitivity: "base" });
+        }
+        case "name":
+          return a.display_name.localeCompare(b.display_name);
+        case "hireDate": {
+          const ad = a.hire_date ?? "";
+          const bd = b.hire_date ?? "";
+          if (!ad && !bd) return 0;
+          if (!ad) return 1;
+          if (!bd) return -1;
+          return ad.localeCompare(bd);
+        }
+        case "role":
+        default: {
+          // admin → staff, then ft → pt → unset, then name.
+          const roleRank = (r: string) => (r === "admin" ? 0 : 1);
+          const empRank = (e: string | null) =>
+            e === "ft" ? 0 : e === "pt" ? 1 : 2;
+          const rd = roleRank(a.role) - roleRank(b.role);
+          if (rd !== 0) return rd;
+          const ed = empRank(a.employment_type) - empRank(b.employment_type);
+          if (ed !== 0) return ed;
+          return a.display_name.localeCompare(b.display_name);
+        }
+      }
+    };
+    return [...filtered].sort(cmp);
+  }, [employees, search, sortBy, roleFilter]);
+
   // userId → branchIds the employee currently belongs to.
   const branchIdsByUser = new Map<number, number[]>();
   for (const g of grants) {
@@ -129,10 +190,59 @@ export default function EmployeesClient({
 
   return (
     <>
+      {/* Toolbar — search box + role chips + sort dropdown */}
+      <div className="card flex flex-wrap items-center gap-3">
+        <input
+          type="search"
+          className="input flex-1 min-w-[220px]"
+          placeholder={t("admin.persona.employees.searchPlaceholder")}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-slate-500 mr-1">
+            {t("admin.persona.employees.filterRole")}:
+          </span>
+          {(["all", "admin", "staff"] as const).map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setRoleFilter(r)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition ${
+                roleFilter === r
+                  ? "bg-brand text-white border-brand"
+                  : "border-slate-300 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {r === "all"
+                ? t("admin.persona.employees.filterRole.all")
+                : t(`admin.persona.employees.role.${r}` as any)}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1">
+          <label htmlFor="emp-sort" className="text-xs text-slate-500 mr-1">
+            {t("admin.persona.employees.sortBy")}:
+          </label>
+          <select
+            id="emp-sort"
+            className="text-xs border border-slate-300 rounded-lg px-2 py-1 bg-white"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+          >
+            <option value="code">{t("admin.persona.employees.sort.code")}</option>
+            <option value="name">{t("admin.persona.employees.sort.name")}</option>
+            <option value="role">{t("admin.persona.employees.sort.role")}</option>
+            <option value="hireDate">{t("admin.persona.employees.sort.hireDate")}</option>
+          </select>
+        </div>
+      </div>
+
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-500 border-b">
+              <th className="py-2 pr-3 w-24">{t("admin.persona.employees.col.code")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.user")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.role")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.gender")}</th>
@@ -145,10 +255,24 @@ export default function EmployeesClient({
             </tr>
           </thead>
           <tbody>
-            {employees.map((u) => {
+            {visibleEmployees.length === 0 && (
+              <tr>
+                <td colSpan={10} className="py-8 text-center text-sm text-slate-400">
+                  {t("admin.persona.employees.noMatch")}
+                </td>
+              </tr>
+            )}
+            {visibleEmployees.map((u) => {
               const incomplete = u.role === "staff" && (!u.gender || !u.employment_type || !u.hire_date || parseWeeklyOffCsv(u.weekly_off_days).length === 0);
               return (
                 <tr key={u.id} className={`border-b last:border-0 ${incomplete ? "bg-amber-50/50" : "hover:bg-slate-50"}`}>
+                  <td className="py-2 pr-3 align-top">
+                    {u.employee_code?.trim() ? (
+                      <span className="font-mono text-xs text-slate-700">{u.employee_code}</span>
+                    ) : (
+                      <span className="text-xs text-slate-300">—</span>
+                    )}
+                  </td>
                   <td className="py-2 pr-3">
                     <div className="font-medium text-slate-800">{nameWithPrefix(u.title_prefix, u.display_name)}</div>
                     <div className="text-xs text-slate-400">@{u.username}</div>

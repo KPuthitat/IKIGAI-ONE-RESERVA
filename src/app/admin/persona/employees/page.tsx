@@ -45,9 +45,13 @@ export default function AdminEmployeesPage() {
     FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
     WHERE u.status != 'disabled'
-    ORDER BY u.role DESC,
-             CASE WHEN u.employment_type = 'ft' THEN 0 WHEN u.employment_type = 'pt' THEN 1 ELSE 2 END,
-             u.display_name ASC
+    ORDER BY
+      -- Sort by employee_code (admin uses this as the canonical staff
+      -- key in payroll). Empty / NULL codes drop to the bottom so the
+      -- list is stable as new hires get codes assigned later.
+      CASE WHEN u.employee_code IS NULL OR u.employee_code = '' THEN 1 ELSE 0 END,
+      u.employee_code COLLATE NOCASE,
+      u.display_name COLLATE NOCASE
   `).all(branch.id) as EmployeeRow[];
 
   // All branches + every listed employee's memberships — drives the
