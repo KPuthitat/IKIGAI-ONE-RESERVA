@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
+    "prebuild": "node --import tsx scripts/check-i18n.ts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "check:i18n": "node --import tsx scripts/check-i18n.ts",
     "db:init": "node --import tsx scripts/init-db.ts",
     "db:seed": "node --import tsx scripts/seed.ts",
     "cron:run": "node --import tsx scripts/cron.ts"
