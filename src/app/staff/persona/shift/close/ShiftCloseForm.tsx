@@ -19,6 +19,8 @@ type ChecklistItem = {
   parent_id?: number | null;
   /** Marks the amount row featured at top of the LINE Flex card. */
   is_headline?: boolean;
+  /** Optional small-text help shown below the label. */
+  description?: string | null;
 };
 
 /** Normalise a baht amount to "12,345.67". Returns "" when invalid. */
@@ -129,6 +131,9 @@ export default function ShiftCloseForm({
         const headlineFlag = it.kind === "amount" && it.is_headline
           ? { is_headline: true }
           : {};
+        const descriptionPart = it.description?.trim()
+          ? { description: it.description.trim() }
+          : {};
         if (it.kind === "text" || it.kind === "amount") {
           const value = (textValues[it.id] || "").trim();
           const formatted = it.kind === "amount" && value
@@ -140,7 +145,8 @@ export default function ShiftCloseForm({
             checked: !!value,
             note: formatted || null,
             ...(isChild ? { is_child: true } : {}),
-            ...headlineFlag
+            ...headlineFlag,
+            ...descriptionPart
           };
         }
         if (it.kind === "choice") {
@@ -150,7 +156,8 @@ export default function ShiftCloseForm({
             kind: "choice" as const,
             checked: !!sel,
             note: sel ?? null,
-            ...(isChild ? { is_child: true } : {})
+            ...(isChild ? { is_child: true } : {}),
+            ...descriptionPart
           };
         }
         const note = (notes[it.id] || "").trim();
@@ -159,7 +166,8 @@ export default function ShiftCloseForm({
           kind: "checkbox" as const,
           checked: !!checked[it.id],
           note: note ? note : null,
-          ...(isChild ? { is_child: true } : {})
+          ...(isChild ? { is_child: true } : {}),
+          ...descriptionPart
         };
       };
       const topLevelItems = checklistItems.filter((it) => !it.parent_id);
@@ -320,9 +328,14 @@ export default function ShiftCloseForm({
                     : "border-slate-200";
                 return (
                   <div key={it.id} className={`${indentCls} rounded-xl border-[1.5px] transition p-3 ${cls}`}>
-                    <div className="block text-sm font-bold text-slate-800 mb-2">
+                    <div className={`block text-sm font-bold text-slate-800 ${it.description ? "" : "mb-2"}`}>
                       {it.label}
                     </div>
+                    {it.description && (
+                      <p className="text-[10px] text-slate-500 mb-2 mt-0.5 whitespace-pre-wrap">
+                        {it.description}
+                      </p>
+                    )}
                     <div className="flex gap-2 flex-wrap">
                       {opts.map((opt) => {
                         const picked = sel === opt;
@@ -372,9 +385,14 @@ export default function ShiftCloseForm({
                     key={it.id}
                     className={`${indentCls} rounded-xl border-[1.5px] transition p-3 ${cls}`}
                   >
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                    <label className={`block text-sm font-medium text-slate-700 ${it.description ? "" : "mb-1.5"}`}>
                       {it.label}
                     </label>
+                    {it.description && (
+                      <p className="text-[10px] text-slate-500 mb-1.5 mt-0.5 whitespace-pre-wrap">
+                        {it.description}
+                      </p>
+                    )}
                     <input
                       type="text"
                       className={`input text-sm ${hasError ? "border-rose-400 focus:border-rose-500" : ""}`}
@@ -416,9 +434,14 @@ export default function ShiftCloseForm({
                     key={it.id}
                     className={`${indentCls} rounded-xl border-[1.5px] transition p-3 ${cls}`}
                   >
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                    <label className={`block text-sm font-medium text-slate-700 ${it.description ? "" : "mb-1.5"}`}>
                       {it.label}
                     </label>
+                    {it.description && (
+                      <p className="text-[10px] text-slate-500 mb-1.5 mt-0.5 whitespace-pre-wrap">
+                        {it.description}
+                      </p>
+                    )}
                     <div className="flex items-center gap-2">
                       <input
                         type="number"
@@ -495,7 +518,14 @@ export default function ShiftCloseForm({
                         }
                       }}
                     />
-                    <span className="text-sm flex-1">{it.label}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm">{it.label}</span>
+                      {it.description && (
+                        <p className="text-[10px] text-slate-500 mt-0.5 whitespace-pre-wrap">
+                          {it.description}
+                        </p>
+                      )}
+                    </div>
                     <span className={`text-xs font-bold ${
                       isChecked ? "text-emerald-700"
                         : hasNote ? "text-amber-700"

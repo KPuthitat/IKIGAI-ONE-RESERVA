@@ -166,7 +166,8 @@ export default function ShiftOpenPage() {
             kind: (c.kind ?? "checkbox") as "checkbox" | "text" | "choice" | "amount",
             options: c.kind === "choice" ? parseChecklistOptions(c) : undefined,
             parent_id: c.parent_id ?? null,
-            is_headline: !!c.is_headline_amount
+            is_headline: !!c.is_headline_amount,
+            description: c.description ?? null
           }))
           .filter((c) => c.kind !== "choice" || (c.options?.length ?? 0) >= 2)}
       />

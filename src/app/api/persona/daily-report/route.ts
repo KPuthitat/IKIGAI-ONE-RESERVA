@@ -50,11 +50,14 @@ const ChecklistEntry = z.object({
    *  Staff form orders parents-then-children and sets this flag on
    *  children; the LINE Flex renderer indents accordingly. */
   is_child: z.boolean().optional(),
-  /** When true, this is the amount row admin marked as the LINE
-   *  card's headline. The API pulls its `note` value (already
-   *  formatted "12,345.67") into the Flex builder's headlineAmount
-   *  argument so the card features it big at the top. */
-  is_headline: z.boolean().optional()
+  /** When true, this is an amount row admin marked as a LINE-card
+   *  headline. Multiple rows can carry this; the API extracts them
+   *  in submitted order and the Flex builder stacks them above the
+   *  checklist body, first biggest. */
+  is_headline: z.boolean().optional(),
+  /** Optional small-text help displayed under the label on the LINE
+   *  card. Passed through from admin's row.description. */
+  description: z.string().max(500).nullable().optional()
 });
 
 // Per-type data schemas. Each form in the staff UI submits one of these.
@@ -254,6 +257,7 @@ export async function POST(req: Request) {
       is_child?: boolean;
       kind?: string;
       is_headline?: boolean;
+      description?: string | null;
     }>
   ) =>
     items.map((c) => ({
@@ -262,18 +266,19 @@ export async function POST(req: Request) {
       note: c.note ?? null,
       is_child: !!c.is_child,
       kind: c.kind,
-      is_headline: !!c.is_headline
+      is_headline: !!c.is_headline,
+      description: c.description ?? null
     }));
 
-  // Pull out the headline-amount entry's value (if any) so the Flex
-  // builder can feature it prominently at the top. Each report type
-  // can have one; admin sets the toggle on a kind='amount' row.
-  const headlineFor = (
+  // Pull out ALL headline-amount entries with values so the Flex
+  // builder can stack them above the body — first one biggest. The
+  // submit-order from the staff form mirrors admin's display_order.
+  const headlinesFor = (
     items: Array<{ label: string; note?: string | null; is_headline?: boolean }>
-  ): { label: string; amount: string } | null => {
-    const h = items.find((c) => c.is_headline && c.note?.trim());
-    if (!h) return null;
-    return { label: h.label, amount: (h.note ?? "").trim() };
+  ): Array<{ label: string; amount: string }> => {
+    return items
+      .filter((c) => c.is_headline && c.note?.trim())
+      .map((c) => ({ label: c.label, amount: (c.note ?? "").trim() }));
   };
 
   let flex;
@@ -286,7 +291,7 @@ export async function POST(req: Request) {
       yesterdayClosingAmount: d.yesterday_closing_amount,
       morningDrawerAmount: d.morning_drawer_amount,
       checklist: normalizeChecklist(d.checklist),
-      headline: headlineFor(d.checklist),
+      headlines: headlinesFor(d.checklist),
       isRevision,
       headerColor: branch.brand_color
     });
@@ -298,7 +303,7 @@ export async function POST(req: Request) {
       closerName: user.display_name,
       closingDrawerAmount: d.closing_drawer_amount,
       checklist: normalizeChecklist(d.checklist),
-      headline: headlineFor(d.checklist),
+      headlines: headlinesFor(d.checklist),
       isRevision,
       headerColor: branch.brand_color
     });
@@ -317,7 +322,7 @@ export async function POST(req: Request) {
         ? branch.readiness_morning_time
         : branch.readiness_afternoon_time,
       checklist: normalizeChecklist(d.checklist ?? []),
-      headline: headlineFor(d.checklist ?? []),
+      headlines: headlinesFor(d.checklist ?? []),
       isRevision,
       headerColor: branch.brand_color
     });

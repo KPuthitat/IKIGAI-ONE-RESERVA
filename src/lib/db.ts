@@ -263,16 +263,22 @@ function runMigrations(db: Database.Database): void {
   if (!sccolNames.has("parent_id")) {
     db.exec("ALTER TABLE shift_checklist_items ADD COLUMN parent_id INTEGER REFERENCES shift_checklist_items(id) ON DELETE CASCADE");
   }
-  // 2026-05-21: is_headline_amount flags ONE amount-kind item per
-  // (branch, type) as "the big number on top of the LINE Flex card".
-  // Admin marks e.g. "ยอดเงินปิดกะในลิ้นชัก" so the card surfaces it
-  // prominently above the checklist body. The flag is meaningful only
-  // when kind='amount'; for everything else it's stored but ignored.
-  // Uniqueness ("only one headline per type") is enforced at the API
-  // layer — toggling a row on auto-clears any previous headline in
-  // the same scope.
+  // 2026-05-21: is_headline_amount flags an amount-kind item to be
+  // featured prominently above the checklist body on the LINE Flex
+  // card. Originally one-per-(branch,type) but admin wanted multiple
+  // (e.g. ยอดขายวันนี้ + ยอดเงินปิดกะ both featured); the constraint
+  // was dropped 2026-05-21 evening — flagged rows now stack ordered
+  // by display_order, with the first one rendering biggest. The flag
+  // is meaningful only when kind='amount'.
   if (!sccolNames.has("is_headline_amount")) {
     db.exec("ALTER TABLE shift_checklist_items ADD COLUMN is_headline_amount INTEGER NOT NULL DEFAULT 0");
+  }
+  // 2026-05-21: description is optional small-text help shown under
+  // the label on the staff form + LINE Flex card. Admin uses it for
+  // examples / clarifications (e.g. "ค่าเหล้า เลม่อน ผงกาแฟ...") so
+  // long-form context doesn't have to live in the label text.
+  if (!sccolNames.has("description")) {
+    db.exec("ALTER TABLE shift_checklist_items ADD COLUMN description TEXT");
   }
   if (!sccolNames.has("branch_id")) {
     db.exec("ALTER TABLE shift_checklist_items ADD COLUMN branch_id INTEGER REFERENCES branches(id)");
@@ -2736,11 +2742,15 @@ export type ShiftChecklistItem = {
    *  indented under its parent. Children inherit their own kind/
    *  options — the link is purely visual + grouping. */
   parent_id: number | null;
-  /** When kind='amount', flags this row as the "big number on top" of
-   *  the LINE card. Only one row per (branch, type) should carry this
-   *  — the API enforces by clearing any prior headline when a new one
-   *  is set. Stored as 1 / 0. */
+  /** When kind='amount', flags this row to be rendered above the
+   *  checklist body on the LINE Flex card. Multiple rows can carry
+   *  this — they stack in display_order, with the FIRST one shown in
+   *  biggest type and subsequent ones smaller. Stored as 1 / 0. */
   is_headline_amount: number;
+  /** Optional small-text help shown under the row's label on the
+   *  staff form + LINE Flex card. Used for examples or clarifications
+   *  the label itself shouldn't carry. */
+  description: string | null;
   display_order: number;
   active: number;          // 1 / 0
   created_at: string;

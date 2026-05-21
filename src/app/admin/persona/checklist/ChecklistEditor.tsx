@@ -260,6 +260,7 @@ export default function ChecklistEditor({
                     onPatchKind={(kind) => patchItem(parent.id, { kind })}
                     onPatchOptions={(opts) => patchItem(parent.id, { options: opts })}
                     onPatchHeadline={(flag) => patchItem(parent.id, { is_headline_amount: flag })}
+                    onPatchDescription={(text) => patchItem(parent.id, { description: text })}
                     onToggleActive={() =>
                       patchItem(parent.id, { active: parent.active ? 0 : 1 })}
                     onMoveUp={() => move(parent.id, -1)}
@@ -284,6 +285,7 @@ export default function ChecklistEditor({
                           onPatchKind={(kind) => patchItem(child.id, { kind })}
                           onPatchOptions={(opts) => patchItem(child.id, { options: opts })}
                           onPatchHeadline={(flag) => patchItem(child.id, { is_headline_amount: flag })}
+                          onPatchDescription={(text) => patchItem(child.id, { description: text })}
                           onToggleActive={() =>
                             patchItem(child.id, { active: child.active ? 0 : 1 })}
                           onMoveUp={() => move(child.id, -1)}
@@ -409,6 +411,7 @@ export default function ChecklistEditor({
 function ChecklistRow({
   item, isFirst, isLast, busy, isChild,
   onPatchLabel, onPatchKind, onPatchOptions, onPatchHeadline,
+  onPatchDescription,
   onToggleActive, onMoveUp, onMoveDown, onDelete, onAddChild, t
 }: {
   item: ShiftChecklistItem;
@@ -423,9 +426,12 @@ function ChecklistRow({
   onPatchKind: (kind: "checkbox" | "text" | "choice" | "amount") => Promise<void>;
   onPatchOptions: (options: string[]) => Promise<void>;
   /** amount kind only — toggle the "show big on LINE card" flag.
-   *  Parent passes 1/0; the API atomically clears prior headlines
-   *  in the same (branch, type) when 1. */
+   *  Multiple amount rows can carry this; they stack by display_order
+   *  with the first one rendered biggest. */
   onPatchHeadline: (flag: 0 | 1) => Promise<void>;
+  /** Patch the description (small help text under the label).
+   *  Triggered on blur of the inline editor. */
+  onPatchDescription: (text: string) => Promise<void>;
   onToggleActive: () => Promise<void>;
   onMoveUp: () => Promise<void>;
   onMoveDown: () => Promise<void>;
@@ -609,6 +615,49 @@ function ChecklistRow({
           </p>
         </div>
       )}
+
+      {/* Description — small free-text under the label on staff form +
+          LINE card. Empty hides the line. We PATCH on blur to avoid
+          firing on every keystroke. */}
+      <div className="mt-2 pl-7">
+        <DescriptionEditor
+          initial={item.description ?? ""}
+          busy={busy}
+          onCommit={onPatchDescription}
+          t={t}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Tiny editable textarea for the per-row description. Patches on blur
+// (not on every keystroke) so quick typing doesn't fire N writes.
+function DescriptionEditor({
+  initial, busy, onCommit, t
+}: {
+  initial: string;
+  busy: boolean;
+  onCommit: (text: string) => Promise<void>;
+  t: (k: string, vars?: Record<string, string | number>) => string;
+}) {
+  const [draft, setDraft] = useState(initial);
+  return (
+    <div>
+      <textarea
+        className="input text-[11px] w-full"
+        rows={1}
+        maxLength={500}
+        value={draft}
+        disabled={busy}
+        placeholder={t("admin.persona.checklist.descriptionPlaceholder")}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (draft.trim() !== initial.trim()) {
+            void onCommit(draft);
+          }
+        }}
+      />
     </div>
   );
 }

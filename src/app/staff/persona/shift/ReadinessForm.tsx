@@ -37,10 +37,12 @@ export type ReadinessChecklistItem = {
   /** When set, this row is a child of another item. The form renders
    *  it indented under its parent. null = top-level row. */
   parent_id?: number | null;
-  /** Marks the amount row that should be featured prominently at the
-   *  top of the LINE Flex card (per admin's "is_headline_amount"
-   *  toggle). At most one per (branch, type). */
+  /** Marks the amount row to be featured at the top of the LINE Flex
+   *  card. Multiple rows can carry this — they stack by display order
+   *  on the card, with the first one rendered biggest. */
   is_headline?: boolean;
+  /** Optional small-text help shown below the label. */
+  description?: string | null;
 };
 
 export default function ReadinessForm({
@@ -109,14 +111,19 @@ export default function ReadinessForm({
       // downstream LINE Flex renderer indents it under its parent.
       const checklistPayload: Array<{
         label: string;
-        kind: "checkbox" | "text" | "choice";
+        kind: "checkbox" | "text" | "choice" | "amount";
         checked: boolean;
         note: string | null;
         is_child?: boolean;
+        is_headline?: boolean;
+        description?: string | null;
       }> = [];
       const buildEntry = (it: ReadinessChecklistItem, isChild: boolean) => {
         const headlineFlag = it.kind === "amount" && it.is_headline
           ? { is_headline: true }
+          : {};
+        const descriptionPart = it.description?.trim()
+          ? { description: it.description.trim() }
           : {};
         if (it.kind === "text" || it.kind === "amount") {
           const value = (textValues[it.id] || "").trim();
@@ -131,7 +138,8 @@ export default function ReadinessForm({
             checked: !!value,
             note: formatted || null,
             ...(isChild ? { is_child: true } : {}),
-            ...headlineFlag
+            ...headlineFlag,
+            ...descriptionPart
           };
         }
         if (it.kind === "choice") {
@@ -141,7 +149,8 @@ export default function ReadinessForm({
             kind: "choice" as const,
             checked: !!sel,
             note: sel ?? null,
-            ...(isChild ? { is_child: true } : {})
+            ...(isChild ? { is_child: true } : {}),
+            ...descriptionPart
           };
         }
         return {
@@ -149,7 +158,8 @@ export default function ReadinessForm({
           kind: "checkbox" as const,
           checked: !!checked[it.id],
           note: null,
-          ...(isChild ? { is_child: true } : {})
+          ...(isChild ? { is_child: true } : {}),
+          ...descriptionPart
         };
       };
       for (const parent of topLevel) {
@@ -333,7 +343,12 @@ function renderReadinessItem(
             : "border-slate-200 hover:border-slate-300"
         }`}
       >
-        <label className={`${labelClass} mb-1.5`}>{it.label}</label>
+        <label className={`${labelClass} ${it.description ? "" : "mb-1.5"}`}>{it.label}</label>
+        {it.description && (
+          <p className="text-[10px] text-slate-500 mb-1.5 mt-0.5 whitespace-pre-wrap">
+            {it.description}
+          </p>
+        )}
         <textarea
           className="input text-sm"
           rows={isChild ? 2 : 3}
@@ -359,7 +374,12 @@ function renderReadinessItem(
             : "border-slate-200 hover:border-slate-300"
         }`}
       >
-        <label className={`${labelClass} mb-1.5`}>{it.label}</label>
+        <label className={`${labelClass} ${it.description ? "" : "mb-1.5"}`}>{it.label}</label>
+        {it.description && (
+          <p className="text-[10px] text-slate-500 mb-1.5 mt-0.5 whitespace-pre-wrap">
+            {it.description}
+          </p>
+        )}
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -402,7 +422,12 @@ function renderReadinessItem(
           sel ? "border-emerald-300 bg-emerald-50" : "border-slate-200"
         }`}
       >
-        <div className={`${labelClass} mb-2`}>{it.label}</div>
+        <div className={`${labelClass} ${it.description ? "" : "mb-2"}`}>{it.label}</div>
+        {it.description && (
+          <p className="text-[10px] text-slate-500 mb-2 mt-0.5 whitespace-pre-wrap">
+            {it.description}
+          </p>
+        )}
         <div className="flex gap-2 flex-wrap">
           {opts.map((opt) => {
             const picked = sel === opt;
@@ -431,7 +456,7 @@ function renderReadinessItem(
   return (
     <label
       key={it.id}
-      className={`flex items-center gap-3 ${pad} rounded-xl border-[1.5px] transition cursor-pointer ${
+      className={`flex items-start gap-3 ${pad} rounded-xl border-[1.5px] transition cursor-pointer ${
         isChecked
           ? "border-emerald-300 bg-emerald-50"
           : "border-slate-200 hover:border-slate-300"
@@ -439,17 +464,24 @@ function renderReadinessItem(
     >
       <input
         type="checkbox"
-        className="w-5 h-5 flex-shrink-0"
+        className="w-5 h-5 flex-shrink-0 mt-0.5"
         checked={isChecked}
         onChange={(e) =>
           ctx.setChecked((prev) => ({ ...prev, [it.id]: e.target.checked }))
         }
       />
-      <span className={`${labelSize} flex-1 font-bold text-slate-800`}>
-        {it.label}
-      </span>
+      <div className="flex-1 min-w-0">
+        <div className={`${labelSize} font-bold text-slate-800`}>
+          {it.label}
+        </div>
+        {it.description && (
+          <p className="text-[10px] text-slate-500 mt-0.5 whitespace-pre-wrap">
+            {it.description}
+          </p>
+        )}
+      </div>
       <span
-        className={`text-xs font-bold ${
+        className={`text-xs font-bold mt-0.5 ${
           isChecked ? "text-emerald-700" : "text-slate-400"
         }`}
       >

@@ -12,10 +12,13 @@ const PatchBody = z.object({
    *  list on an existing choice row. Server replaces (not merges) the
    *  whole list when this field is present. */
   options: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
-  /** Headline-amount toggle. Setting 1 also clears any other headline
-   *  row in the same (branch, type) so there's exactly one. Setting 0
-   *  just clears the flag on this row. Only meaningful for amount kind. */
-  is_headline_amount: z.union([z.literal(0), z.literal(1)]).optional()
+  /** Headline-amount toggle. Multiple amount rows can be flagged —
+   *  they stack on the LINE card in display_order, first one biggest.
+   *  Only meaningful for amount kind. */
+  is_headline_amount: z.union([z.literal(0), z.literal(1)]).optional(),
+  /** Optional small-text description shown under the label. Empty
+   *  string normalises to NULL. */
+  description: z.string().max(500).optional()
 });
 
 /** Look up the item and verify the calling admin is assigned to the
@@ -76,19 +79,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     updates.options_json = null;
   }
 
-  // Headline-amount toggle. When admin turns this on, atomically clear
-  // the flag on any other row in the same (branch, type) so there's
-  // always exactly one. Setting 0 just clears this row.
+  // Headline-amount toggle. Multiple amount rows can be flagged
+   // (admin wanted ยอดขายวันนี้ AND ยอดเงินปิดกะ both featured); they
+   // stack on the LINE card ordered by display_order, biggest first.
+   // No atomic-clear here — admin manages the set freely.
   if (incoming.is_headline_amount !== undefined) {
     updates.is_headline_amount = incoming.is_headline_amount;
-    if (incoming.is_headline_amount === 1) {
-      const db2 = getDb();
-      db2.prepare(`
-        UPDATE shift_checklist_items
-        SET is_headline_amount = 0
-        WHERE branch_id = ? AND type = ? AND id != ?
-      `).run(guard.item.branch_id, guard.item.type, id);
-    }
+  }
+  // Description — empty string normalises to NULL so the column
+  // doesn't end up with whitespace-only rows.
+  if (incoming.description !== undefined) {
+    const trimmed = incoming.description.trim();
+    updates.description = trimmed === "" ? null : trimmed;
   }
 
   if (Object.keys(updates).length === 0) {

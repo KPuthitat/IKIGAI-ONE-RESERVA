@@ -26,7 +26,10 @@ const CreateBody = z.object({
   /** Optional — when set, makes the new row a child of an existing
    *  row. Parent must be in the same branch + type AND must not itself
    *  have a parent (we limit nesting to 2 levels). */
-  parent_id: z.number().int().positive().optional()
+  parent_id: z.number().int().positive().optional(),
+  /** Optional small-text help shown under the label on staff form +
+   *  LINE Flex card. Empty string is normalised to NULL. */
+  description: z.string().max(500).optional()
 });
 
 function resolveBranchId(
@@ -74,7 +77,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }
-  const { type, label, branch_id: override, kind, options, parent_id } = parsed.data;
+  const { type, label, branch_id: override, kind, options, parent_id, description } = parsed.data;
   const effectiveKind = kind ?? "checkbox";
 
   // Choice items must arrive with at least 2 options — otherwise the
@@ -126,9 +129,14 @@ export async function POST(req: Request) {
         "SELECT COALESCE(MAX(display_order), 0) AS max FROM shift_checklist_items WHERE type = ? AND branch_id = ? AND parent_id IS NULL"
       ).get(type, r.branchId) as { max: number };
   const optionsJson = effectiveKind === "choice" && options ? JSON.stringify(options) : null;
+  const descTrimmed = description?.trim();
   const result = db.prepare(`
-    INSERT INTO shift_checklist_items (type, label, display_order, branch_id, kind, options_json, parent_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(type, label, orderScope.max + 10, r.branchId, effectiveKind, optionsJson, parent_id ?? null);
+    INSERT INTO shift_checklist_items (type, label, display_order, branch_id, kind, options_json, parent_id, description)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    type, label, orderScope.max + 10, r.branchId, effectiveKind,
+    optionsJson, parent_id ?? null,
+    descTrimmed ? descTrimmed : null
+  );
   return NextResponse.json({ ok: true, id: result.lastInsertRowid });
 }

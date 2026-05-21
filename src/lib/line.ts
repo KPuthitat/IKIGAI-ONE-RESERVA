@@ -1102,9 +1102,11 @@ export type ShiftOpenCardArgs = {
   //   - checked: false, note: set  → skipped-on-purpose 📝 (with reason)
   //   - checked: false, note: null → not done ✗ (red flag)
   checklist: Array<{ label: string; checked: boolean; note: string | null }>;
-  /** Optional headline amount featured above the checklist body. See
-   *  ReadinessCardArgs.headline for the contract — same shape. */
-  headline?: { label: string; amount: string } | null;
+  /** Headline amounts featured above the checklist body — admin
+   *  marks amount rows with is_headline_amount. Stack ordered by
+   *  display_order; first one renders biggest. Empty/omitted = no
+   *  headline block. */
+  headlines?: Array<{ label: string; amount: string }>;
   /** True when this submission replaces a previously-submitted (and
    *  admin-unlocked) report for the same (branch, type, date). The
    *  card header gets a "ฉบับแก้ไข" chip so reviewers know they're
@@ -1273,8 +1275,8 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
               { valueColor: COLOR_BRAND, valueWeight: "bold" })
           ]
         },
-        ...(headlineFlexBlock(args.headline ?? null)
-          ? [headlineFlexBlock(args.headline ?? null) as Record<string, unknown>]
+        ...(headlineFlexBlock(args.headlines ?? [])
+          ? [headlineFlexBlock(args.headlines ?? []) as Record<string, unknown>]
           : []),
         ...(hasChecklist ? [
           { type: "separator", margin: "md", color: COLOR_DIVIDER },
@@ -1323,7 +1325,13 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
  *  spacer and a slightly smaller font so the visual hierarchy on the
  *  LINE card matches the admin's tree in the editor. */
 function checklistFlexBlock(
-  checklist: Array<{ label: string; checked: boolean; note: string | null; is_child?: boolean }>
+  checklist: Array<{
+    label: string;
+    checked: boolean;
+    note: string | null;
+    is_child?: boolean;
+    description?: string | null;
+  }>
 ): unknown[] {
   if (checklist.length === 0) return [];
   const doneCount = checklist.filter((it) => it.checked).length;
@@ -1347,8 +1355,15 @@ function checklistFlexBlock(
           color: "#b45309"
         };
 
-  const itemBox = (it: { label: string; checked: boolean; note: string | null; is_child?: boolean }) => {
+  const itemBox = (it: {
+    label: string;
+    checked: boolean;
+    note: string | null;
+    is_child?: boolean;
+    description?: string | null;
+  }) => {
     const note = it.note?.trim();
+    const description = it.description?.trim();
     const skipped = !it.checked && !!note;
     const isChild = !!it.is_child;
     // Child rows: prefix with " ↳" so even monochrome rendering keeps
@@ -1386,35 +1401,55 @@ function checklistFlexBlock(
     //                        show the actual amount.
     //   • !checked + note → legacy "skipped with reason" case.
     // The icon already disambiguates which case it is (📝 vs ↳).
-    if (note) {
-      // The note line needs left padding to align under the row's
-      // label. paddingStart is only valid on `box` components, not on
-      // `text` (LINE 400 "unknown field" otherwise), so wrap the text
-      // in a thin vertical box that carries the padding.
-      const notePadStart = isChild ? "40px" : "20px";
-      return {
-        type: "box", layout: "vertical", spacing: "xs",
+    // Below the row we may stack: description (admin's small help
+     // text, when set) and/or note (staff's typed value / skip reason).
+     // Both align under the label using a paddingStart wrapper box —
+     // paddingStart isn't valid on `text` directly.
+    const extras: Record<string, unknown>[] = [];
+    const labelPadStart = isChild ? "40px" : "20px";
+    if (description) {
+      extras.push({
+        type: "box",
+        layout: "vertical",
+        paddingStart: labelPadStart,
         contents: [
-          rowBox,
           {
-            type: "box",
-            layout: "vertical",
-            paddingStart: notePadStart,
-            contents: [
-              {
-                type: "text",
-                text: `↳ ${note}`,
-                size: "xxs",
-                color: skipped ? "#b45309" : COLOR_TEXT_DARK,
-                wrap: true,
-                margin: "none"
-              }
-            ]
+            type: "text",
+            text: description,
+            size: "xxs",
+            color: COLOR_TEXT_MUTED,
+            wrap: true,
+            margin: "none"
           }
         ]
-      };
+      });
     }
-    return rowBox;
+    if (note) {
+      // Show the note line whenever a note is present. Two cases:
+      //   • checked + note  → text/amount item the staff filled in
+      //   • !checked + note → legacy "skipped with reason" case.
+      // The leading icon (📝 vs ↳) already disambiguates.
+      extras.push({
+        type: "box",
+        layout: "vertical",
+        paddingStart: labelPadStart,
+        contents: [
+          {
+            type: "text",
+            text: `↳ ${note}`,
+            size: "xxs",
+            color: skipped ? "#b45309" : COLOR_TEXT_DARK,
+            wrap: true,
+            margin: "none"
+          }
+        ]
+      });
+    }
+    if (extras.length === 0) return rowBox;
+    return {
+      type: "box", layout: "vertical", spacing: "xs",
+      contents: [rowBox, ...extras]
+    };
   };
 
   return [
@@ -1441,9 +1476,11 @@ export type ShiftCloseCardArgs = {
   closerName: string;
   closingDrawerAmount: number | null;
   checklist: Array<{ label: string; checked: boolean; note: string | null }>;
-  /** Optional headline amount featured above the checklist body. See
-   *  ReadinessCardArgs.headline for the contract — same shape. */
-  headline?: { label: string; amount: string } | null;
+  /** Headline amounts featured above the checklist body — admin
+   *  marks amount rows with is_headline_amount. Stack ordered by
+   *  display_order; first one renders biggest. Empty/omitted = no
+   *  headline block. */
+  headlines?: Array<{ label: string; amount: string }>;
   isRevision?: boolean;
   /** See readinessFlex / shiftOpenFlex headerColor. */
   headerColor?: string | null;
@@ -1492,8 +1529,8 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
               { valueColor: COLOR_BRAND, valueWeight: "bold" })
           ]
         },
-        ...(headlineFlexBlock(args.headline ?? null)
-          ? [headlineFlexBlock(args.headline ?? null) as Record<string, unknown>]
+        ...(headlineFlexBlock(args.headlines ?? [])
+          ? [headlineFlexBlock(args.headlines ?? []) as Record<string, unknown>]
           : []),
         ...checklistFlexBlock(args.checklist)
       ]
@@ -1523,7 +1560,12 @@ export type ReadinessCardArgs = {
    *  checkbox (`checked`), a text entry (`checked` + `note` = typed
    *  value), or a choice (`checked` + `note` = picked option). The
    *  Flex renderer treats them uniformly. */
-  checklist: Array<{ label: string; checked: boolean; note?: string | null }>;
+  checklist: Array<{
+    label: string;
+    checked: boolean;
+    note?: string | null;
+    description?: string | null;
+  }>;
   /** Optional amount admin tagged as the "card headline" — featured
    *  prominently at the top of the bubble (e.g. ยอดเงินปิดกะ
    *  32,999.00 บาท in red). When null, no headline row is rendered
@@ -1541,17 +1583,38 @@ export type ReadinessCardArgs = {
 // now built entirely from the admin checklist via checklistFlexBlock,
 // no labelled-section blocks needed.)
 
-/** Headline block — the "ยอดเงินปิดกะ 32,999.00 บาท" box that sits
- *  prominently above the checklist. Admin opts in by marking ONE
- *  amount-kind row per (branch, type) as headline; when no row is
- *  marked, the caller passes null and no block is rendered. The
- *  rendering keeps the visual hierarchy intentionally bold so it
- *  reads at a glance — large value in the brand red, small label
- *  in muted slate underneath. */
+/** Headline block — the "ยอดเงินปิดกะ 32,999.00 บาท" stack that sits
+ *  prominently above the checklist. Admin opts in by marking
+ *  amount-kind rows as headline; the FIRST entry renders biggest, the
+ *  rest stack smaller below it. Empty array = no block rendered.
+ *  Visual hierarchy is bold-by-design so the numbers read at a
+ *  glance from a busy LINE group. */
 function headlineFlexBlock(
-  headline: { label: string; amount: string } | null
+  headlines: Array<{ label: string; amount: string }>
 ): Record<string, unknown> | null {
-  if (!headline) return null;
+  if (headlines.length === 0) return null;
+  const rows: Record<string, unknown>[] = [];
+  headlines.forEach((h, i) => {
+    const isPrimary = i === 0;
+    rows.push(
+      {
+        type: "text",
+        text: h.label,
+        size: "xs",
+        color: COLOR_TEXT_MUTED,
+        wrap: true,
+        ...(isPrimary ? {} : { margin: "md" })
+      },
+      {
+        type: "text",
+        text: `${h.amount} บาท`,
+        size: isPrimary ? "xxl" : "xl",
+        weight: "bold",
+        color: "#dc2626",
+        wrap: false
+      }
+    );
+  });
   return {
     type: "box",
     layout: "vertical",
@@ -1562,23 +1625,7 @@ function headlineFlexBlock(
     cornerRadius: "8px",
     borderColor: "#fecaca",
     borderWidth: "1px",
-    contents: [
-      {
-        type: "text",
-        text: headline.label,
-        size: "xs",
-        color: COLOR_TEXT_MUTED,
-        wrap: true
-      },
-      {
-        type: "text",
-        text: `${headline.amount} บาท`,
-        size: "xxl",
-        weight: "bold",
-        color: "#dc2626",
-        wrap: false
-      }
-    ]
+    contents: rows
   };
 }
 
@@ -1632,8 +1679,8 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
         },
         // Headline amount (optional) — admin marks an amount row as
         // "show big on top" and we render it here in brand red.
-        ...(headlineFlexBlock(args.headline ?? null)
-          ? [headlineFlexBlock(args.headline ?? null) as Record<string, unknown>]
+        ...(headlineFlexBlock(args.headlines ?? [])
+          ? [headlineFlexBlock(args.headlines ?? []) as Record<string, unknown>]
           : []),
         // Admin-configured items — fully drive the card body since
         // 2026-05-21. Reuses the same 3-state row renderer as
