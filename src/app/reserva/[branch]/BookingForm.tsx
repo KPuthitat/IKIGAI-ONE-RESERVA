@@ -7,6 +7,7 @@ import type { Branch } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import TimePicker from "@/app/components/TimePicker";
+import BookingSocialProof from "./BookingSocialProof";
 
 // LIFF SDK type lives in lib/liff-types — importing this module runs the
 // `declare global` augmentation that types window.liff. The SDK itself is
@@ -714,6 +715,17 @@ export default function BookingForm({
             onChange={(e) => setForm({ ...form, customer_phone: e.target.value })}
           />
         </div>
+
+        {/* Live social proof + real scarcity — customer-mode only.
+            Sits above the date/time row so the message lands BEFORE
+            the customer commits to a slot. Hidden in admin modes
+            (walkin/phone/line) which aren't marketing surfaces. */}
+        {mode === "customer" && (
+          <BookingSocialProof
+            branchSlug={branch.slug}
+            bookingDate={form.booking_date}
+          />
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
