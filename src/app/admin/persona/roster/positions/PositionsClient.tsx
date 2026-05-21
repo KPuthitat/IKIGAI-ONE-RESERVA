@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import Switch from "@/app/components/Switch";
 import type { RosterPosition } from "@/lib/db";
 
 export default function PositionsClient({ positions }: { positions: RosterPosition[] }) {
@@ -54,6 +55,19 @@ export default function PositionsClient({ positions }: { positions: RosterPositi
     }
   }
 
+  // Toggle the position's active flag — drives whether it appears as
+  // a row in the monthly roster grid. Flipping OFF doesn't delete
+  // anything; flipping back ON restores the row.
+  async function toggleActive(id: number, active: boolean) {
+    setBusy(true); setErr(null);
+    try {
+      const ok = await save({ id, active }, "PATCH");
+      if (ok) refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="card space-y-3">
       <div className="flex items-center justify-between">
@@ -97,6 +111,7 @@ export default function PositionsClient({ positions }: { positions: RosterPositi
             onStartEdit={() => setEditingId(p.id)}
             onCancel={() => setEditingId(null)}
             onDelete={() => remove(p.id)}
+            onToggleActive={(active) => toggleActive(p.id, active)}
             onSave={async (body) => {
               if (await save({ id: p.id, ...body }, "PATCH")) {
                 setEditingId(null);
@@ -113,13 +128,14 @@ export default function PositionsClient({ positions }: { positions: RosterPositi
 }
 
 function PositionRow({
-  position, editing, onStartEdit, onCancel, onDelete, onSave, busy, t
+  position, editing, onStartEdit, onCancel, onDelete, onToggleActive, onSave, busy, t
 }: {
   position: RosterPosition | null;
   editing?: boolean;
   onStartEdit?: () => void;
   onCancel: () => void;
   onDelete?: () => void;
+  onToggleActive?: (active: boolean) => void;
   onSave: (body: Record<string, unknown>) => void;
   busy: boolean;
   t: (k: string, vars?: Record<string, string | number>) => string;
@@ -131,20 +147,44 @@ function PositionRow({
   const [order, setOrder] = useState<number>(position?.display_order ?? 99);
 
   if (!isEditing && position) {
+    const active = position.active === 1;
     return (
-      <div className="border border-slate-200 rounded-lg p-3 flex items-start gap-3">
+      <div className={`border border-slate-200 rounded-lg p-3 flex items-start gap-3 transition ${
+        active ? "" : "bg-slate-50/60 opacity-70"
+      }`}>
         <div className="text-xs font-mono text-slate-400 w-6 text-right pt-0.5">
           {position.display_order}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-bold text-slate-800 text-sm">{position.title}</div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-slate-800 text-sm">{position.title}</span>
+            {!active && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 font-medium">
+                {t("admin.persona.roster.positions.hiddenFromGrid")}
+              </span>
+            )}
+          </div>
           {position.description && (
             <div className="text-xs text-slate-500 mt-0.5 whitespace-pre-wrap">
               {position.description}
             </div>
           )}
         </div>
-        <div className="flex-shrink-0 flex gap-2">
+        <div className="flex-shrink-0 flex items-center gap-3">
+          {/* Show-in-schedule switch — flipping OFF hides the position
+              from the monthly roster grid without deleting it. */}
+          <label className="flex items-center gap-1.5 cursor-pointer"
+            title={t("admin.persona.roster.positions.showOnGridHint")}>
+            <Switch
+              checked={active}
+              accent="emerald"
+              disabled={busy}
+              onChange={(v) => onToggleActive?.(v)}
+            />
+            <span className="text-[10px] text-slate-500 select-none">
+              {t("admin.persona.roster.positions.showOnGrid")}
+            </span>
+          </label>
           <button type="button" onClick={onStartEdit}
             className="text-xs text-brand hover:underline">
             {t("common.edit")}

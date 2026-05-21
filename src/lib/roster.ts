@@ -61,6 +61,16 @@ export function listPositions(branchId: number): RosterPosition[] {
   ).all(branchId) as RosterPosition[];
 }
 
+/** Like listPositions but includes hidden (active=0) rows too — used
+ *  by the admin position-settings page where the visibility switch
+ *  needs to render inactive positions so admin can flip them back on. */
+export function listAllPositions(branchId: number): RosterPosition[] {
+  return getDb().prepare(
+    `SELECT * FROM roster_positions WHERE branch_id = ?
+     ORDER BY active DESC, display_order ASC, id ASC`
+  ).all(branchId) as RosterPosition[];
+}
+
 /** All assignments in a given Bangkok-month for a branch, joined with
  *  user + shift_code + position labels so the caller can render the
  *  grid in one pass. Returned ordered by (date, position display) for

@@ -1,15 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
-
-// localStorage key — set of hidden position ids stored as JSON array.
-// Per-user / per-browser; not synced across devices. That's fine since
-// "which positions do I want to focus on right now" is a personal view
-// preference, not a property of the schedule itself.
-const HIDDEN_POSITIONS_KEY = "roster.hiddenPositions";
 
 // Roster monthly grid — admin clicks a cell to assign (or clear) a
 // staff/shift combo. Renders the full month in one HTML table; CSS
@@ -93,36 +87,12 @@ export default function RosterClient({
   const [publishKind, setPublishKind] = useState<"publish" | "edit">("publish");
   const [publishNote, setPublishNote] = useState("");
 
-  // ── Position visibility filter ───────────────────────────────────
-  // Admin can hide positions from the grid (e.g. when focusing on
-  // kitchen-only rows for a few minutes). Hidden set persists in
-  // localStorage so the choice survives reloads.
-  const [hiddenIds, setHiddenIds] = useState<Set<number>>(new Set());
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(HIDDEN_POSITIONS_KEY);
-    if (!raw) return;
-    try {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) {
-        setHiddenIds(new Set(arr.filter((n: unknown): n is number => typeof n === "number")));
-      }
-    } catch { /* ignore */ }
-  }, []);
-  function togglePositionVisible(id: number): void {
-    setHiddenIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(HIDDEN_POSITIONS_KEY, JSON.stringify([...next]));
-      }
-      return next;
-    });
-  }
-  const visiblePositions = useMemo(
-    () => positions.filter((p) => !hiddenIds.has(p.id)),
-    [positions, hiddenIds]
-  );
+  // Position visibility is configured server-side on
+  // /admin/persona/roster/positions (per-position active toggle), so
+  // there's no per-user filter chip here anymore. listPositions on
+  // the page server already returns active=1 only — the grid just
+  // renders whatever it gets.
+  const visiblePositions = positions;
 
   // Build the full date list for the month so empty cells render too.
   const dates = useMemo(() => {
@@ -253,53 +223,6 @@ export default function RosterClient({
 
   return (
     <>
-      {/* Position visibility filter — chip strip lets admin quickly
-          hide/show whole rows in the grid below. Toggling here only
-          affects this admin's own view (localStorage), not the
-          underlying schedule. */}
-      {positions.length > 0 && (
-        <div className="card flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-bold text-slate-600">
-            {t("admin.persona.roster.positionFilter")}:
-          </span>
-          {positions.map((p) => {
-            const hidden = hiddenIds.has(p.id);
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => togglePositionVisible(p.id)}
-                aria-pressed={!hidden}
-                className={`text-xs px-2.5 py-1 rounded-full border transition ${
-                  hidden
-                    ? "border-slate-200 bg-slate-50 text-slate-400 hover:text-slate-600"
-                    : "border-brand bg-brand text-white"
-                }`}
-                title={hidden
-                  ? t("admin.persona.roster.positionFilter.show")
-                  : t("admin.persona.roster.positionFilter.hide")}
-              >
-                {hidden ? "○" : "●"} {p.title}
-              </button>
-            );
-          })}
-          {hiddenIds.size > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                setHiddenIds(new Set());
-                if (typeof window !== "undefined") {
-                  window.localStorage.setItem(HIDDEN_POSITIONS_KEY, "[]");
-                }
-              }}
-              className="text-[11px] text-slate-500 hover:text-brand underline ml-1"
-            >
-              {t("admin.persona.roster.positionFilter.showAll")}
-            </button>
-          )}
-        </div>
-      )}
-
       <div className="card overflow-x-auto">
         <table className="text-xs border-collapse min-w-full">
           <thead>

@@ -4,7 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
-import { listPositions } from "@/lib/roster";
+import { listAllPositions } from "@/lib/roster";
 import PositionsClient from "./PositionsClient";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,9 @@ export default function AdminPositionsPage() {
     .get(user.activeBranchId) as Branch | undefined;
   if (!branch) return <div className="card text-sm text-slate-600">{t(lang, "common.error")}</div>;
 
-  const positions = listPositions(branch.id);
+  // Include inactive positions so the visibility switch can render
+  // them — admin can flip a hidden position back on without re-creating.
+  const positions = listAllPositions(branch.id);
 
   return (
     <div className="space-y-4">
