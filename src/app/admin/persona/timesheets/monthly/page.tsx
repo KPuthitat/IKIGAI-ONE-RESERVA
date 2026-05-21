@@ -27,7 +27,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Timesheet เดือน · PERSONA" };
+export const metadata: Metadata = { title: "สถิติการเข้างานของพนักงาน · PERSONA" };
 
 const ASSUMED_SHIFT_MINUTES = 8 * 60; // 8-hour shift, matches payroll engine
 
