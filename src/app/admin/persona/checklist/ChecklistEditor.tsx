@@ -166,12 +166,14 @@ export default function ChecklistEditor({
                 busy={busyId === it.id}
                 onPatchLabel={(label) => patchItem(it.id, { label })}
                 onPatchKind={(kind) => {
-                  // When admin switches kind TO 'choice', seed two
-                  // blank options so they immediately see the editor
-                  // rather than a confused empty pill row.
-                  if (kind === "choice") {
-                    return patchItem(it.id, { kind, options: ["", ""] });
-                  }
+                  // Just flip the kind. Don't try to seed options
+                  // here — sending `["", ""]` would trip the API's
+                  // `.string().trim().min(1)` validator and the PATCH
+                  // would 400, making the dropdown look broken.
+                  // After the kind change lands, the OptionsEditor
+                  // appears below the row (renders 2 blank inputs by
+                  // default) and admin types the options there; the
+                  // commitOptions handler patches once they're filled.
                   return patchItem(it.id, { kind });
                 }}
                 onPatchOptions={(opts) => patchItem(it.id, { options: opts })}
@@ -365,7 +367,10 @@ function ChecklistRow({
       {/* Options editor — only visible for choice rows. Sits below the
           main row so it doesn't crowd the kind / activate / delete
           controls. PATCH happens once admin moves focus away from each
-          input, so quick label-then-options edits don't fire N writes. */}
+          input, so quick label-then-options edits don't fire N writes.
+          When a choice row has < 2 saved options, we also warn admin
+          that staff won't see this row until they finish (matches the
+          server-side filter in the staff page queries). */}
       {item.kind === "choice" && (
         <div className="mt-2 pl-7">
           <OptionsEditor
@@ -374,6 +379,11 @@ function ChecklistRow({
             label={t("admin.persona.checklist.kind.optionsLabel")}
             t={t}
           />
+          {initialOptions.length < 2 && (
+            <p className="text-[11px] text-amber-700 mt-1 font-medium">
+              ⚠ {t("admin.persona.checklist.kind.optionsIncomplete")}
+            </p>
+          )}
         </div>
       )}
     </div>

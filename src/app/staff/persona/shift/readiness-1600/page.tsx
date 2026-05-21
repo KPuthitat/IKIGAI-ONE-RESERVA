@@ -137,12 +137,15 @@ export default function Readiness1600Page() {
             branch: branch.name
           })
         }}
-        checklistItems={checklist.map((c) => ({
-          id: c.id,
-          label: c.label,
-          kind: (c.kind ?? "checkbox") as "checkbox" | "text" | "choice",
-          options: c.kind === "choice" ? parseChecklistOptions(c) : undefined
-        }))}
+        checklistItems={checklist
+          .map((c) => ({
+            id: c.id,
+            label: c.label,
+            kind: (c.kind ?? "checkbox") as "checkbox" | "text" | "choice",
+            options: c.kind === "choice" ? parseChecklistOptions(c) : undefined
+          }))
+          // Skip incomplete choice items — see readiness-1130 page.tsx.
+          .filter((c) => c.kind !== "choice" || (c.options?.length ?? 0) >= 2)}
       />
     </div>
   );

@@ -132,12 +132,17 @@ export default function Readiness1130Page() {
             branch: branch.name
           })
         }}
-        checklistItems={checklist.map((c) => ({
-          id: c.id,
-          label: c.label,
-          kind: (c.kind ?? "checkbox") as "checkbox" | "text" | "choice",
-          options: c.kind === "choice" ? parseChecklistOptions(c) : undefined
-        }))}
+        checklistItems={checklist
+          .map((c) => ({
+            id: c.id,
+            label: c.label,
+            kind: (c.kind ?? "checkbox") as "checkbox" | "text" | "choice",
+            options: c.kind === "choice" ? parseChecklistOptions(c) : undefined
+          }))
+          // Skip choice items that admin hasn't finished configuring
+          // (< 2 valid options). Otherwise staff would see a label
+          // with no pill buttons and the form would refuse to submit.
+          .filter((c) => c.kind !== "choice" || (c.options?.length ?? 0) >= 2)}
       />
     </div>
   );
