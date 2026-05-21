@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { nameWithPrefix } from "@/lib/name";
+import Switch from "@/app/components/Switch";
 
 export type EmployeeRow = {
   id: number;
@@ -831,13 +832,13 @@ function EditModal({
             </div>
             <div className="flex items-end">
               {employee.has_pin === 1 && (
-                <label className="flex items-center gap-2 text-sm text-slate-600 pb-2">
-                  <input
-                    type="checkbox"
+                <label className="flex items-center gap-2 text-sm text-slate-600 pb-2 cursor-pointer">
+                  <Switch
                     checked={clearPin}
-                    onChange={(e) => {
-                      setClearPin(e.target.checked);
-                      if (e.target.checked) setPin("");
+                    accent="rose"
+                    onChange={(v) => {
+                      setClearPin(v);
+                      if (v) setPin("");
                     }}
                   />
                   {t("admin.persona.employees.clearPin")}

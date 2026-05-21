@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import Switch from "@/app/components/Switch";
 
 export type PlatformChannelInitial = {
   label: string;
@@ -183,13 +184,13 @@ export default function MessagingClient({
 
         {/* Clear toggle */}
         {(platform.has_token || platform.has_secret) && (
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input
-              type="checkbox"
+          <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+            <Switch
               checked={clearAll}
-              onChange={(e) => {
-                setClearAll(e.target.checked);
-                if (e.target.checked) { setToken(""); setSecret(""); }
+              accent="rose"
+              onChange={(v) => {
+                setClearAll(v);
+                if (v) { setToken(""); setSecret(""); }
               }}
             />
             {t(lang, "admin.messaging.clearBoth")}

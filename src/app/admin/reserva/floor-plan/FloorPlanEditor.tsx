@@ -5,6 +5,7 @@ import type { TableRow, Zone } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { useConfirm } from "@/app/components/useConfirm";
+import Switch from "@/app/components/Switch";
 
 const CANVAS_W = 900;
 const CANVAS_H = 600;
@@ -317,9 +318,10 @@ export default function FloorPlanEditor({
               </div>
             </div>
             <label className="flex items-center gap-2">
-              <input
-                type="checkbox" checked={selected.active === 1}
-                onChange={(e) => updateSelected({ active: e.target.checked ? 1 : 0 })}
+              <Switch
+                checked={selected.active === 1}
+                accent="emerald"
+                onChange={(v) => updateSelected({ active: v ? 1 : 0 })}
               />
               <span className="text-sm">{t("admin.floorplan.active")}</span>
             </label>
