@@ -2578,12 +2578,26 @@ export type RosterPublishedFlexArgs = {
 
 export function rosterPublishedFlex(args: RosterPublishedFlexArgs): LineFlexMessage {
   const headerColor = args.headerColor || COLOR_INK_700;
+  // Convert YYYY-MM → "พฤษภาคม" so the title reads natural Thai
+  // instead of the numeric "2026-05". Falls back to the raw value
+  // when the input doesn't parse — defensive against legacy callers.
+  const TH_MONTHS = [
+    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+  ];
+  const ymParts = args.yearMonth.split("-");
+  const monthIdx = parseInt(ymParts[1] ?? "", 10) - 1;
+  const monthName = monthIdx >= 0 && monthIdx < 12
+    ? TH_MONTHS[monthIdx]
+    : args.yearMonth;
+  // Owner asked for plain-text copy without emoji decoration — the
+  // RESERVA/PERSONA pill in the header already telegraphs context.
   const title = args.kind === "publish"
-    ? `📅 ตารางงานเดือน ${args.yearMonth} พร้อมแล้ว`
-    : `✏️ ตารางงานเดือน ${args.yearMonth} ถูกแก้ไข`;
+    ? `ตารางเดือน${monthName} พร้อมแล้ว`
+    : `ตารางเดือน${monthName} ถูกแก้ไข`;
   const subtitle = args.kind === "publish"
-    ? "หัวหน้างานเผยแพร่ตารางมอบหมายงานของเดือนนี้แล้ว"
-    : "หัวหน้างานปรับปรุงตารางหลังเผยแพร่ — กรุณาเช็คอีกครั้ง";
+    ? `ทางบริษัทได้เผยแพร่ตารางปฏิบัติงานประจำเดือน${monthName}แล้ว หากมีข้อสงสัยให้ติดต่อกับหัวหน้างานของคุณ`
+    : `ทางบริษัทได้ปรับปรุงตารางปฏิบัติงานประจำเดือน${monthName} กรุณาตรวจสอบอีกครั้ง หากมีข้อสงสัยให้ติดต่อกับหัวหน้างานของคุณ`;
   const bubble = {
     type: "bubble", size: "kilo",
     header: {
@@ -2620,7 +2634,9 @@ export function rosterPublishedFlex(args: RosterPublishedFlexArgs): LineFlexMess
       contents: [{
         type: "button", style: "primary",
         color: COLOR_BRAND,
-        action: { type: "uri", label: "ดูตารางของฉัน", uri: args.calendarUrl }
+        // Short English label per owner request — "Schedule" reads
+        // unambiguously at a glance even for staff who skim the card.
+        action: { type: "uri", label: "Schedule", uri: args.calendarUrl }
       }]
     },
     styles: {
