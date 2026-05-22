@@ -99,6 +99,8 @@ export default function ShiftCloseForm({
     setMsg(null);
     const missingNoteIds = checklistItems
       .filter((it) => {
+        // 'section' = non-interactive header, never counted as missing.
+        if (it.kind === "section") return false;
         if (it.kind === "text" || it.kind === "amount") {
           return !((textValues[it.id] || "").trim());
         }
@@ -134,6 +136,18 @@ export default function ShiftCloseForm({
         const descriptionPart = it.description?.trim()
           ? { description: it.description.trim() }
           : {};
+        // 'section' header — non-interactive but shipped in payload so
+        // the LINE Flex renders the group title inline.
+        if (it.kind === "section") {
+          return {
+            label: it.label,
+            kind: "section" as const,
+            checked: false,
+            note: null,
+            ...(isChild ? { is_child: true } : {}),
+            ...descriptionPart
+          };
+        }
         if (it.kind === "text" || it.kind === "amount") {
           const value = (textValues[it.id] || "").trim();
           const formatted = it.kind === "amount" && value
@@ -318,6 +332,20 @@ export default function ShiftCloseForm({
               const hasError = !!errorIds[it.id];
               const isChild = !!it.parent_id;
               const indentCls = isChild ? "ml-4 pl-3 border-l-2 border-slate-200" : "";
+              if (it.kind === "section") {
+                return (
+                  <div key={it.id} className={`${indentCls} pt-3 pb-1`}>
+                    <div className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+                      {it.label}
+                    </div>
+                    {it.description?.trim() && (
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        {it.description.trim()}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
               if (it.kind === "choice") {
                 const sel = choices[it.id];
                 const opts = it.options ?? [];

@@ -1250,11 +1250,15 @@ export type ShiftOpenCardArgs = {
   //   - checked: false, note: set  → skipped-on-purpose 📝 (with reason)
   //   - checked: false, note: null → not done ✗ (red flag)
   // Optional is_child + description fields propagate from admin rows.
+  // kind='section' rows render as non-interactive group headers; the
+  // Flex layer skips them from the done/skipped/incomplete summary
+  // counts since the staff has no answer to give for them.
   checklist: Array<{
     label: string;
     checked: boolean;
     note: string | null;
     is_child?: boolean;
+    kind?: string;
     description?: string | null;
   }>;
   /** Headline amounts featured above the checklist body — admin
@@ -1312,10 +1316,13 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
   // rows that are neither done nor skipped-with-reason — those are
   // the ones admin needs to chase. Skipped-with-note rows are
   // shown distinctly so the note can be read inline.
-  const doneCount = checklistRows.filter((it) => it.checked).length;
-  const skippedCount = checklistRows.filter((it) => !it.checked && !!it.note?.trim()).length;
-  const incompleteCount = checklistRows.filter((it) => !it.checked && !it.note?.trim()).length;
-  const allDone = hasChecklist && doneCount === checklistRows.length;
+  // Section rows are non-interactive headers, so they get filtered
+  // out of every bucket — staff has no answer to give for them.
+  const answerableRows = checklistRows.filter((it) => it.kind !== "section");
+  const doneCount = answerableRows.filter((it) => it.checked).length;
+  const skippedCount = answerableRows.filter((it) => !it.checked && !!it.note?.trim()).length;
+  const incompleteCount = answerableRows.filter((it) => !it.checked && !it.note?.trim()).length;
+  const allDone = answerableRows.length > 0 && doneCount === answerableRows.length;
 
   // Summary line — color + wording shifts based on which buckets are
   // non-zero. "All done" wins, then "incomplete > 0" (red flag, asks
@@ -1342,7 +1349,21 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
   // wrap to multi-line cleanly without LINE truncating with "..."
   // (which the previous "${icon} ${label}" single-text approach did
   // on narrower devices).
-  const checklistItemBox = (it: { label: string; checked: boolean; note: string | null }) => {
+  const checklistItemBox = (it: { label: string; checked: boolean; note: string | null; kind?: string }) => {
+    // 'section' row renders as a small-caps group header with no
+    // icon/checkbox. Same treatment used on the staff form so the
+    // card reads consistently with what the staff just filled in.
+    if (it.kind === "section") {
+      return {
+        type: "text",
+        text: it.label,
+        size: "xxs",
+        weight: "bold",
+        color: COLOR_TEXT_MUTED,
+        margin: "md",
+        wrap: true
+      };
+    }
     const note = it.note?.trim();
     const skipped = !it.checked && !!note;
     const icon = it.checked ? "✓" : skipped ? "📝" : "✗";
@@ -1485,14 +1506,19 @@ function checklistFlexBlock(
     checked: boolean;
     note: string | null;
     is_child?: boolean;
+    kind?: string;
     description?: string | null;
   }>
 ): unknown[] {
   if (checklist.length === 0) return [];
-  const doneCount = checklist.filter((it) => it.checked).length;
-  const skippedCount = checklist.filter((it) => !it.checked && !!it.note?.trim()).length;
-  const incompleteCount = checklist.filter((it) => !it.checked && !it.note?.trim()).length;
-  const allDone = doneCount === checklist.length;
+  // Section rows are non-interactive headers — exclude them from
+  // every count bucket so "ครบทุกข้อ" really means every answerable
+  // row was answered, not "every row including the headers".
+  const answerable = checklist.filter((it) => it.kind !== "section");
+  const doneCount = answerable.filter((it) => it.checked).length;
+  const skippedCount = answerable.filter((it) => !it.checked && !!it.note?.trim()).length;
+  const incompleteCount = answerable.filter((it) => !it.checked && !it.note?.trim()).length;
+  const allDone = answerable.length > 0 && doneCount === answerable.length;
 
   const supervisorWarning =
     "Check list ยังไม่ครบถ้วน ให้หัวหน้างานตรวจสอบอีกครั้ง";
@@ -1515,8 +1541,23 @@ function checklistFlexBlock(
     checked: boolean;
     note: string | null;
     is_child?: boolean;
+    kind?: string;
     description?: string | null;
   }) => {
+    // Section header — same uppercase muted-grey treatment as the
+    // staff form, no icon, no checkbox. Indent slightly for children.
+    if (it.kind === "section") {
+      return {
+        type: "text",
+        text: it.label,
+        size: "xxs",
+        weight: "bold",
+        color: COLOR_TEXT_MUTED,
+        margin: "md",
+        wrap: true,
+        ...(it.is_child ? { paddingStart: "20px" } : {})
+      };
+    }
     const note = it.note?.trim();
     const description = it.description?.trim();
     const skipped = !it.checked && !!note;
@@ -1640,6 +1681,7 @@ export type ShiftCloseCardArgs = {
     checked: boolean;
     note: string | null;
     is_child?: boolean;
+    kind?: string;
     description?: string | null;
   }>;
   /** Headline amounts featured above the checklist body — admin
@@ -1731,6 +1773,7 @@ export type ReadinessCardArgs = {
     checked: boolean;
     note?: string | null;
     is_child?: boolean;
+    kind?: string;
     description?: string | null;
   }>;
   /** Headline amounts featured above the checklist body — admin
@@ -1857,10 +1900,11 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
           checked: c.checked,
           note: c.note ?? null,
           // Pass through optional fields so readiness cards get the
-          // same child-indent + description rendering as open/close
-          // cards. Mapper used to drop these and the rendering quietly
-          // regressed for readiness — preserve them here.
+          // same child-indent + description + section-header rendering
+          // as open/close cards. Mapper used to drop these and the
+          // rendering quietly regressed for readiness — preserve them.
           is_child: c.is_child,
+          kind: c.kind,
           description: c.description ?? null
         }))) as Record<string, unknown>[]
       ]

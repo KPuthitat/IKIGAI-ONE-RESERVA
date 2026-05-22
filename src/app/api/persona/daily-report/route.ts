@@ -40,12 +40,14 @@ const ChecklistEntry = z.object({
   label: z.string().min(1).max(200),
   checked: z.boolean(),
   note: z.string().max(500).nullable().optional(),
-  /** "checkbox" | "text" | "choice" | "amount" — staff form sends this
-   *  so the LINE renderer can distinguish render kinds. For choice
-   *  items, `note` holds the selected option text. For amount items,
-   *  `note` holds the formatted "12,345.67" baht value. Optional for
-   *  back-compat with rows submitted before P5c. */
-  kind: z.enum(["checkbox", "text", "choice", "amount"]).optional(),
+  /** "checkbox" | "text" | "choice" | "amount" | "section" — staff
+   *  form sends this so the LINE renderer can distinguish render kinds.
+   *  For choice items, `note` holds the selected option text. For
+   *  amount items, `note` holds the formatted "12,345.67" baht value.
+   *  For section, neither checked nor note is meaningful (renderer
+   *  treats it as a group header). Optional for back-compat with rows
+   *  submitted before P5c. */
+  kind: z.enum(["checkbox", "text", "choice", "amount", "section"]).optional(),
   /** When true, the row is a child of the previous top-level item.
    *  Staff form orders parents-then-children and sets this flag on
    *  children; the LINE Flex renderer indents accordingly. */

@@ -69,11 +69,43 @@ export default function Sidebar({
   // useSearchParams() hook so the component doesn't force its parent
   // page into client-side rendering — which had crashed /login (the
   // hook's Suspense requirement bubbled up and broke unrelated pages).
+  //
+  // Earlier version only re-synced on pathname change, which missed the
+  // soft-nav case where Next's <Link> moves between two sibling routes
+  // that share a pathname but differ on `?type=` — `pathname` stays
+  // equal, so the effect didn't fire and the sidebar kept lighting up
+  // the OLD type's link. We now listen to a synthetic "ikigai:urlchange"
+  // event that we dispatch from a one-time patch of pushState/
+  // replaceState so every soft navigation triggers a query re-read.
   const [currentQuery, setCurrentQuery] = useState<string>("");
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setCurrentQuery(window.location.search);
+    if (typeof window === "undefined") return;
+    const sync = () => setCurrentQuery(window.location.search);
+    sync();
+    // One-time global patch of history methods so we get an event for
+    // every soft navigation (Next.js' <Link> uses pushState; popstate
+    // alone only fires for browser back/forward). Idempotent across
+    // HMR + multiple Sidebar instances via the flag on window.
+    const w = window as typeof window & { __ikigaiNavPatched?: boolean };
+    if (!w.__ikigaiNavPatched) {
+      w.__ikigaiNavPatched = true;
+      const origPush = history.pushState;
+      const origReplace = history.replaceState;
+      history.pushState = function (...args: Parameters<History["pushState"]>) {
+        origPush.apply(this, args);
+        window.dispatchEvent(new Event("ikigai:urlchange"));
+      };
+      history.replaceState = function (...args: Parameters<History["replaceState"]>) {
+        origReplace.apply(this, args);
+        window.dispatchEvent(new Event("ikigai:urlchange"));
+      };
     }
+    window.addEventListener("ikigai:urlchange", sync);
+    window.addEventListener("popstate", sync);
+    return () => {
+      window.removeEventListener("ikigai:urlchange", sync);
+      window.removeEventListener("popstate", sync);
+    };
   }, [pathname]);
 
   // Restore from localStorage on mount

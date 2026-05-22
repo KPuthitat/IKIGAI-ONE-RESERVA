@@ -31,6 +31,7 @@ type ChecklistEntry = {
   note?: string | null;
   is_child?: boolean;
   is_headline?: boolean;
+  kind?: string;
   description?: string | null;
 };
 
@@ -100,6 +101,11 @@ export async function POST(
       checked: c.checked,
       note: c.note ?? null,
       is_child: !!c.is_child,
+      // Pass `kind` through so the LINE Flex renderer can spot
+      // 'section' rows and render them as group headers (not as
+      // ✗-marked "not done" items, which the old default treated
+      // them as before this commit).
+      kind: c.kind,
       description: c.description ?? null
     }));
 

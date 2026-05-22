@@ -2776,7 +2776,12 @@ export type ShiftChecklistItem = {
    *    'amount'   — currency input. Staff enters a baht amount with
    *                 2 decimal places; the LINE card renders it Thai-
    *                 number formatted (12,345.67 บาท). */
-  kind: "checkbox" | "text" | "choice" | "amount";
+  /** 'section' renders as a non-interactive group header on staff
+   *  forms + LINE Flex — no checkbox / input. Used to visually group
+   *  related rows underneath without forcing the staff to "answer"
+   *  the header. Section rows are silently skipped in summary
+   *  counts (done/skipped/incomplete). */
+  kind: "checkbox" | "text" | "choice" | "amount" | "section";
   /** JSON-encoded `string[]` of choice options when kind === 'choice',
    *  null otherwise. Use `parseChecklistOptions(row)` to read. */
   options_json: string | null;

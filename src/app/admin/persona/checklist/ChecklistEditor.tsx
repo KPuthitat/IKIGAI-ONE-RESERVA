@@ -45,7 +45,7 @@ export default function ChecklistEditor({
   }, [initialItems]);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [newLabel, setNewLabel] = useState("");
-  const [newKind, setNewKind] = useState<"checkbox" | "text" | "choice" | "amount">("checkbox");
+  const [newKind, setNewKind] = useState<"checkbox" | "text" | "choice" | "amount" | "section">("checkbox");
   // Buffered options for the "add new item" form. Only meaningful when
   // newKind === 'choice'. Min 2 entries enforced by the API and the
   // disabled-when-< 2 state on the Submit button.
@@ -184,7 +184,7 @@ export default function ChecklistEditor({
   // form is open at a time to keep the UI calm.
   const [childAddParentId, setChildAddParentId] = useState<number | null>(null);
   const [childAddLabel, setChildAddLabel] = useState("");
-  const [childAddKind, setChildAddKind] = useState<"checkbox" | "text" | "choice" | "amount">("text");
+  const [childAddKind, setChildAddKind] = useState<"checkbox" | "text" | "choice" | "amount" | "section">("text");
   const [childAddOptions, setChildAddOptions] = useState<string[]>(["", ""]);
   const [childAddBusy, setChildAddBusy] = useState(false);
   const [childAddErr, setChildAddErr] = useState<string | null>(null);
@@ -315,12 +315,13 @@ export default function ChecklistEditor({
                         <select
                           className="input text-sm"
                           value={childAddKind}
-                          onChange={(e) => setChildAddKind(e.target.value as "checkbox" | "text" | "choice" | "amount")}
+                          onChange={(e) => setChildAddKind(e.target.value as "checkbox" | "text" | "choice" | "amount" | "section")}
                         >
                           <option value="text">{t("admin.persona.checklist.kind.text")}</option>
                           <option value="checkbox">{t("admin.persona.checklist.kind.checkbox")}</option>
                           <option value="amount">{t("admin.persona.checklist.kind.amount")}</option>
                           <option value="choice">{t("admin.persona.checklist.kind.choice")}</option>
+                          <option value="section">{t("admin.persona.checklist.kind.section")}</option>
                         </select>
                         <button
                           type="button"
@@ -375,12 +376,13 @@ export default function ChecklistEditor({
           <select
             className="input text-sm"
             value={newKind}
-            onChange={(e) => setNewKind(e.target.value as "checkbox" | "text" | "choice" | "amount")}
+            onChange={(e) => setNewKind(e.target.value as "checkbox" | "text" | "choice" | "amount" | "section")}
           >
             <option value="checkbox">{t("admin.persona.checklist.kind.checkbox")}</option>
             <option value="text">{t("admin.persona.checklist.kind.text")}</option>
             <option value="amount">{t("admin.persona.checklist.kind.amount")}</option>
             <option value="choice">{t("admin.persona.checklist.kind.choice")}</option>
+            <option value="section">{t("admin.persona.checklist.kind.section")}</option>
           </select>
           <button
             type="submit"
@@ -424,7 +426,7 @@ function ChecklistRow({
    *  nesting to 2 levels max. */
   isChild?: boolean;
   onPatchLabel: (label: string) => Promise<void>;
-  onPatchKind: (kind: "checkbox" | "text" | "choice" | "amount") => Promise<void>;
+  onPatchKind: (kind: "checkbox" | "text" | "choice" | "amount" | "section") => Promise<void>;
   onPatchOptions: (options: string[]) => Promise<void>;
   /** amount kind only — toggle the "show big on LINE card" flag.
    *  Multiple amount rows can carry this; they stack by display_order
@@ -519,7 +521,7 @@ function ChecklistRow({
         <select
           value={item.kind ?? "checkbox"}
           disabled={busy}
-          onChange={(e) => onPatchKind(e.target.value as "checkbox" | "text" | "choice" | "amount")}
+          onChange={(e) => onPatchKind(e.target.value as "checkbox" | "text" | "choice" | "amount" | "section")}
           className="text-xs border border-slate-300 rounded px-1.5 py-1 text-slate-700 bg-white"
           title={t("admin.persona.checklist.kind.hint")}
         >
@@ -527,6 +529,7 @@ function ChecklistRow({
           <option value="text">{t("admin.persona.checklist.kind.text")}</option>
           <option value="amount">{t("admin.persona.checklist.kind.amount")}</option>
           <option value="choice">{t("admin.persona.checklist.kind.choice")}</option>
+          <option value="section">{t("admin.persona.checklist.kind.section")}</option>
         </select>
         <button
           type="button"

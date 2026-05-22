@@ -21,7 +21,7 @@ import { useLang } from "@/lib/LangProvider";
 type ChecklistItem = {
   id: number;
   label: string;
-  kind: "checkbox" | "text" | "choice" | "amount";
+  kind: "checkbox" | "text" | "choice" | "amount" | "section";
   /** Only meaningful when kind === 'choice'. ≥ 2 entries guaranteed
    *  by the admin API. */
   options?: string[];
@@ -131,6 +131,9 @@ export default function ShiftOpenForm({
     // either ticked, or carrying a note explaining the skip.
     const missingNoteIds = checklistItems
       .filter((it) => {
+        // 'section' rows are non-interactive headers — staff has no
+        // input to fill, so they never count as missing.
+        if (it.kind === "section") return false;
         if (it.kind === "text" || it.kind === "amount") {
           return !((textValues[it.id] || "").trim());
         }
@@ -167,6 +170,19 @@ export default function ShiftOpenForm({
         const descriptionPart = it.description?.trim()
           ? { description: it.description.trim() }
           : {};
+        // 'section' header — no value to gather, but we still ship it
+        // in the payload so the LINE Flex renders the group title in
+        // the same place it appears in the staff form.
+        if (it.kind === "section") {
+          return {
+            label: it.label,
+            kind: "section" as const,
+            checked: false,
+            note: null,
+            ...(isChild ? { is_child: true } : {}),
+            ...descriptionPart
+          };
+        }
         if (it.kind === "text" || it.kind === "amount") {
           const value = (textValues[it.id] || "").trim();
           const formatted = it.kind === "amount" && value
@@ -362,7 +378,23 @@ export default function ShiftOpenForm({
               // at the end with the indent classes when isChild is set.
               // That keeps the per-kind classNames simple.
               let inner: React.ReactNode = null;
-              if (it.kind === "choice") {
+              if (it.kind === "section") {
+                // Non-interactive group header. No box / no border /
+                // no controls — just a small caps title that breaks
+                // the list into sections.
+                inner = (
+                  <div className="pt-3 pb-1">
+                    <div className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+                      {it.label}
+                    </div>
+                    {it.description?.trim() && (
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        {it.description.trim()}
+                      </div>
+                    )}
+                  </div>
+                );
+              } else if (it.kind === "choice") {
                 const sel = choices[it.id];
                 const opts = it.options ?? [];
                 const cls = hasError

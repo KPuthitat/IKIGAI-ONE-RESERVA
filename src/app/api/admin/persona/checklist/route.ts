@@ -17,9 +17,10 @@ const CreateBody = z.object({
   /** Optional — defaults to admin's current activeBranchId. When set,
    *  must be a branch the admin is assigned to. */
   branch_id: z.number().int().positive().optional(),
-  /** 'checkbox' (default), 'text', 'choice', or 'amount'. See
-   *  ShiftChecklistItem.kind for the rendering semantics. */
-  kind: z.enum(["checkbox", "text", "choice", "amount"]).optional(),
+  /** 'checkbox' (default), 'text', 'choice', 'amount', or 'section'.
+   *  'section' renders as a non-interactive group heading — see
+   *  ShiftChecklistItem.kind for full rendering semantics. */
+  kind: z.enum(["checkbox", "text", "choice", "amount", "section"]).optional(),
   /** When kind === 'choice', the radio options shown to the staff.
    *  Required for choice (≥ 2 items), ignored for everything else. */
   options: z.array(z.string().trim().min(1).max(100)).max(20).optional(),

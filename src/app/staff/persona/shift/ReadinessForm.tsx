@@ -30,7 +30,7 @@ type ReportType = "readiness_1130" | "readiness_1600";
 export type ReadinessChecklistItem = {
   id: number;
   label: string;
-  kind: "checkbox" | "text" | "choice" | "amount";
+  kind: "checkbox" | "text" | "choice" | "amount" | "section";
   /** Only meaningful for kind === 'choice'. ≥ 2 entries guaranteed by
    *  the admin API. */
   options?: string[];
@@ -111,7 +111,7 @@ export default function ReadinessForm({
       // downstream LINE Flex renderer indents it under its parent.
       const checklistPayload: Array<{
         label: string;
-        kind: "checkbox" | "text" | "choice" | "amount";
+        kind: "checkbox" | "text" | "choice" | "amount" | "section";
         checked: boolean;
         note: string | null;
         is_child?: boolean;
@@ -125,6 +125,18 @@ export default function ReadinessForm({
         const descriptionPart = it.description?.trim()
           ? { description: it.description.trim() }
           : {};
+        // Section header — non-interactive but shipped so LINE Flex
+        // renders the group title in place.
+        if (it.kind === "section") {
+          return {
+            label: it.label,
+            kind: "section" as const,
+            checked: false,
+            note: null,
+            ...(isChild ? { is_child: true } : {}),
+            ...descriptionPart
+          };
+        }
         if (it.kind === "text" || it.kind === "amount") {
           const value = (textValues[it.id] || "").trim();
           // For amount: normalise to 2 decimal places + comma grouping
@@ -330,6 +342,23 @@ function renderReadinessItem(
   const labelSize = isChild ? "text-xs" : "text-sm";
   const labelClass = `block ${labelSize} font-bold text-slate-800`;
   const pad = isChild ? "p-2" : "p-3";
+
+  if (it.kind === "section") {
+    // Non-interactive header. Same uppercase, muted-grey treatment as
+    // open/close forms so all three checklist surfaces look consistent.
+    return (
+      <div key={it.id} className={isChild ? "ml-4 pl-3 border-l-2 border-slate-200 pt-3 pb-1" : "pt-3 pb-1"}>
+        <div className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+          {it.label}
+        </div>
+        {it.description?.trim() && (
+          <div className="text-[10px] text-slate-400 mt-0.5">
+            {it.description.trim()}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (it.kind === "text") {
     const value = ctx.textValues[it.id] || "";

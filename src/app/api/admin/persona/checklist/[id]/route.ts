@@ -7,7 +7,7 @@ const PatchBody = z.object({
   label: z.string().trim().min(1).max(200).optional(),
   display_order: z.number().int().min(0).max(100_000).optional(),
   active: z.union([z.literal(0), z.literal(1)]).optional(),
-  kind: z.enum(["checkbox", "text", "choice", "amount"]).optional(),
+  kind: z.enum(["checkbox", "text", "choice", "amount", "section"]).optional(),
   /** Set together with kind='choice', or alone to update the option
    *  list on an existing choice row. Server replaces (not merges) the
    *  whole list when this field is present. */
