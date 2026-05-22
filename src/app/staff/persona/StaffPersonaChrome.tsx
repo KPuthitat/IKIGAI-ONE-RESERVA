@@ -5,12 +5,22 @@ import { usePathname } from "next/navigation";
 import StaffPersonaTabs from "./StaffPersonaTabs";
 
 // Shared chrome (back link + module title + 3-tab strip) for the
-// PERSONA staff area. Renders nothing on sub-flow paths that are meant
-// to feel standalone (currently the shift handover form). Each
-// sub-flow is responsible for providing its own back link + heading.
-//
-// Hidden when pathname starts with one of HIDE_PREFIXES.
-const HIDE_PREFIXES = ["/staff/persona/shift"];
+// PERSONA staff area. The tabs only make sense on the three main
+// destinations they navigate between (clock-in, leave, resignation).
+// On every other sub-flow (shift handover, calendar, discipline,
+// profile, time-certification, etc.) the tabs were appearing as
+// unrelated floating UI — the owner asked for them to be scoped to
+// the main 3 only, so we flip to an allow-list:
+//   • /staff/persona             → clock (root)
+//   • /staff/persona/leave       → leave + subroutes
+//   • /staff/persona/resignation → resignation + subroutes
+// Anything else returns null. Each sub-flow already provides its
+// own back link + heading, so removing the chrome leaves a clean
+// standalone surface.
+const SHOW_PREFIXES = [
+  "/staff/persona/leave",
+  "/staff/persona/resignation"
+];
 
 export default function StaffPersonaChrome({
   labels
@@ -24,7 +34,9 @@ export default function StaffPersonaChrome({
   };
 }) {
   const pathname = usePathname() ?? "";
-  if (HIDE_PREFIXES.some((p) => pathname.startsWith(p))) {
+  const isClockRoot = pathname === "/staff/persona" || pathname === "/staff/persona/";
+  const isTabRoute = isClockRoot || SHOW_PREFIXES.some((p) => pathname.startsWith(p));
+  if (!isTabRoute) {
     return null;
   }
   return (

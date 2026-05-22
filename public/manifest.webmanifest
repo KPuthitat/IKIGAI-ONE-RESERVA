@@ -1,0 +1,23 @@
+{
+  "name": "IKIGAI OS",
+  "short_name": "IKIGAI",
+  "description": "ระบบจัดการธุรกิจ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#e94560",
+  "icons": [
+    {
+      "src": "/owl-mascot.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/owl-mascot.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

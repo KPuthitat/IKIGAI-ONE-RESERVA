@@ -254,6 +254,16 @@ function ClockAction({
   const qrReady = !qrEnabled || qrToken != null;
   const gatesReady = gpsReady && qrReady;
 
+  // True when the visible errorMsg is about the geofence specifically —
+  // we suppress the green/amber GateChip in that case so the user
+  // doesn't see two contradictory location messages at once. Match
+  // against the translated out-of-zone copy (we compare on the literal
+  // string the API surfaces because we don't tag the error by code in
+  // state — keep it simple). If we add more localized variants later
+  // this check generalises into a small set of "geofence error" keys.
+  const geofenceErrorActive =
+    !!errorMsg && errorMsg === t("staff.persona.gps.outOfRange");
+
   // Kick off GPS capture as soon as the user opens the clock-in flow.
   // Phones can take 5-10s to acquire a fresh fix outdoors / indoors;
   // by starting in parallel with PIN entry the wait is often
@@ -277,6 +287,13 @@ function ClockAction({
         // already. Keeping setGpsStatus null avoids the redundant
         // line of text right next to the chip on the same screen.
         setGpsStatus(null);
+        // Clear any lingering geofence error so the chip flips from
+        // red to green cleanly once the user moves into range and
+        // taps retry. Other error kinds (wrong_pin, rate_limited)
+        // we leave alone — they're not GPS-related.
+        setErrorMsg((prev) =>
+          prev === t("staff.persona.gps.outOfRange") ? null : prev
+        );
       },
       (err) => {
         const map: Record<number, string> = {
@@ -480,24 +497,29 @@ function ClockAction({
         {action === "in" ? t("staff.persona.pinPrompt.in") : t("staff.persona.pinPrompt.out")}
       </div>
 
-      {/* Anti-cheat gate status banners — shown above the PIN dots
-          so staff knows what else is needed before tapping digits.
-          Each gate renders as a coloured chip: amber while pending,
-          emerald once satisfied, rose on hard failure. */}
+      {/* Anti-cheat gate status — single centered banner per gate.
+          GateChip now has 3 visual states for the geofence:
+            • ready (green) — gpsCoords captured + no error
+            • error (red)   — out_of_geofence error pending
+            • pending (amber) — initial / re-checking
+          That collapses what used to be "chip + duplicate errorMsg line"
+          into one source of truth so the user never sees contradictory
+          green/red messages at the same time. */}
       {(geofenceEnabled || qrEnabled) && (
-        <div className="flex flex-col gap-1.5 text-left">
+        <div className="flex flex-col items-center gap-1.5">
           {geofenceEnabled && (
             <GateChip
-              ready={gpsCoords != null}
+              tone={
+                gpsCoords ? "ready"
+                  : geofenceErrorActive ? "error"
+                  : "pending"
+              }
               label={
-                // Simplified copy — staff only need to know "in zone /
-                // out of zone". The accuracy / distance / radius detail
-                // we used to dump here was cluttering the screen; the
-                // gate icon (✓ / ○) carries the same yes/no signal in
-                // half the visual space.
-                gpsCoords
-                  ? t("staff.persona.gps.ready")
-                  : (gpsStatus ?? t("staff.persona.gps.waitingForLocation"))
+                geofenceErrorActive
+                  ? t("staff.persona.gps.outOfRange")
+                  : gpsCoords
+                    ? t("staff.persona.gps.ready")
+                    : (gpsStatus ?? t("staff.persona.gps.waitingForLocation"))
               }
               actionLabel={gpsCoords ? null : t("staff.persona.gps.retry")}
               onAction={captureGps}
@@ -505,7 +527,7 @@ function ClockAction({
           )}
           {qrEnabled && (
             <GateChip
-              ready={qrToken != null}
+              tone={qrToken ? "ready" : "pending"}
               label={
                 qrToken
                   ? t("staff.persona.qr.ready")
@@ -531,8 +553,11 @@ function ClockAction({
           />
         ))}
       </div>
-      {errorMsg && (
-        <div className="text-red-600 text-sm font-medium whitespace-pre-line">{errorMsg}</div>
+      {/* Don't repeat the geofence error here — the chip above is
+          already in red showing the same thing. Other error kinds
+          (wrong PIN, rate-limited, etc.) still render here. */}
+      {errorMsg && !geofenceErrorActive && (
+        <div className="text-red-600 text-sm font-medium whitespace-pre-line text-center">{errorMsg}</div>
       )}
       <Keypad
         onDigit={pressDigit}
@@ -569,28 +594,37 @@ function ClockAction({
 }
 
 // Single gate status chip — used for both GPS and QR checkpoints
-// on the PIN screen. Receives `ready` (gate satisfied) + a label
-// describing the current state, plus an optional inline action
-// button (retry GPS, rescan QR).
+// on the PIN screen. Receives `tone` (3-state visual: green ready,
+// red error, amber pending) + a label describing the current state,
+// plus an optional inline action button (retry GPS, rescan QR).
+//
+// Earlier API was a `ready` boolean (2 states only); we extended to
+// 3 tones so the geofence chip can render the out-of-zone error
+// directly here instead of duplicating it as a separate red text
+// below the PIN dots.
 function GateChip({
-  ready,
+  tone,
   label,
   actionLabel,
   onAction
 }: {
-  ready: boolean;
+  tone: "ready" | "pending" | "error";
   label: string;
   actionLabel: string | null;
   onAction: () => void;
 }) {
-  const cls = ready
-    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-    : "bg-amber-50 border-amber-200 text-amber-800";
-  const icon = ready ? "✓" : "○";
+  const cls =
+    tone === "ready"   ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+    : tone === "error" ? "bg-rose-50 border-rose-300 text-rose-700"
+    :                    "bg-amber-50 border-amber-200 text-amber-800";
+  const icon =
+    tone === "ready"   ? "✓"
+    : tone === "error" ? "✗"
+    :                    "○";
   return (
-    <div className={`flex items-center gap-2 text-[11px] px-2.5 py-1.5 rounded-lg border ${cls}`}>
+    <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg border w-full ${cls}`}>
       <span className="font-bold">{icon}</span>
-      <span className="flex-1">{label}</span>
+      <span className="flex-1 text-center">{label}</span>
       {actionLabel && (
         <button
           type="button"

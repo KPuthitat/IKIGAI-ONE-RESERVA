@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { LangProvider } from "@/lib/LangProvider";
@@ -49,7 +49,30 @@ export const metadata: Metadata = {
     default: "IKIGAI OS",
     template: "%s · IKIGAI OS"
   },
-  description: "ระบบจัดการธุรกิจ"
+  description: "ระบบจัดการธุรกิจ",
+  // Web-app icon set — points at the owl mascot PNG we already ship
+  // for the in-page <OwlMascot> component. Re-using the same file
+  // keeps the brand consistent (no separate "favicon" art) and avoids
+  // an extra asset to maintain. The PNG is roughly 256×256 with
+  // transparent background which is fine for:
+  //   - browser tab favicon (any modern browser accepts PNG)
+  //   - apple-touch-icon (iOS "Add to Home Screen")
+  //   - Android Chrome shortcut icon (via the manifest below)
+  icons: {
+    icon: [{ url: "/owl-mascot.png", type: "image/png" }],
+    apple: [{ url: "/owl-mascot.png" }],
+    shortcut: ["/owl-mascot.png"]
+  },
+  manifest: "/manifest.webmanifest"
+};
+
+// Theme colour ย้ายมาที่ viewport export ตาม Next.js 14 spec
+// (Next-warned the old themeColor-in-metadata pattern). Matches the
+// brand-rose used in tailwind config (.btn-primary background, brand
+// chips, etc.) so the Android address-bar tints to the same colour
+// as the in-page CTAs.
+export const viewport: Viewport = {
+  themeColor: "#e94560"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
