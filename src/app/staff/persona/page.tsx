@@ -57,6 +57,9 @@ export default function StaffPersonaPage() {
       entries={entries}
       branchName={branch?.name ?? null}
       geofenceEnabled={branch?.geofence_enabled === 1}
+      geofenceLat={branch?.latitude ?? null}
+      geofenceLng={branch?.longitude ?? null}
+      geofenceRadiusMeters={branch?.geofence_radius_meters ?? 100}
       qrEnabled={branch?.clock_qr_enabled === 1}
     />
   );

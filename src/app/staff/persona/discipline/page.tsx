@@ -24,21 +24,32 @@ export default function StaffDisciplineListPage() {
   const warnings = listWarningsForUser(user.id);
 
   return (
-    <div className="space-y-4">
-      <div>
+    <div className="max-w-2xl mx-auto space-y-4">
+      <div className="text-center">
         <h1 className="text-2xl font-bold text-slate-800">
           {t(lang, "staff.persona.discipline.title")}
         </h1>
         <p className="text-sm text-slate-500 mt-1">
           {t(lang, "staff.persona.discipline.subtitle")}
         </p>
+        {/* Explanatory paragraph — staff who land here for the first
+            time without any context shouldn't have to guess what the
+            page is for. Tone: matter-of-fact, not alarming. */}
+        <p className="text-xs text-slate-500 mt-3 max-w-md mx-auto leading-relaxed">
+          {t(lang, "staff.persona.discipline.intro")}
+        </p>
       </div>
 
       {warnings.length === 0 ? (
-        <div className="card text-center py-10">
-          <OwlMascot size={96} mood="smile" />
-          <p className="text-sm text-emerald-700 font-bold mt-3">
+        <div className="card text-center py-12">
+          <div className="flex justify-center">
+            <OwlMascot size={96} mood="smile" />
+          </div>
+          <p className="text-base text-emerald-700 font-bold mt-3">
             ✓ {t(lang, "staff.persona.discipline.empty")}
+          </p>
+          <p className="text-xs text-slate-500 mt-2 max-w-sm mx-auto">
+            {t(lang, "staff.persona.discipline.emptyHint")}
           </p>
         </div>
       ) : (

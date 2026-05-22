@@ -100,6 +100,59 @@ export function recordView(warningId: number, ip?: string | null, userAgent?: st
   `).run(warningId, ip ?? null, userAgent ?? null);
 }
 
+// Severity escalation order — used by getSuggestedSeverity() to bump
+// up one step when a previous warning is still within its validity
+// window. Final stays final (next step would be terminate, which is
+// outside this system's scope — admin decides separately).
+const SEVERITY_LADDER = ["verbal", "written_1", "written_2", "final"] as const;
+export type WarningSeverity = (typeof SEVERITY_LADDER)[number];
+
+/** Return the active (non-expired, ignoring acknowledged status)
+ *  warnings for a user. Active = issued within their validity window.
+ *  validity_months NULL → treated as no-expiry → always active until
+ *  admin manually closes (legacy behavior pre-2026-05-22). */
+export function listActiveWarnings(userId: number): WarningWithUsers[] {
+  const rows = listWarningsForUser(userId);
+  const nowMs = Date.now();
+  return rows.filter((w) => {
+    if (!w.validity_months) return true;  // null = no expiry
+    const issuedMs = new Date(w.issued_at + (w.issued_at.endsWith("Z") ? "" : "Z")).getTime();
+    const expiresMs = issuedMs + w.validity_months * 30 * 86400_000;
+    return nowMs < expiresMs;
+  });
+}
+
+/** Suggest the next severity for a new warning given the user's
+ *  current active history. Logic:
+ *    - No active warnings → 'verbal' (start of ladder)
+ *    - One+ active → bump highest one step (capped at 'final')
+ *  Caller (admin form) shows this as a recommendation; admin can
+ *  override before submitting. */
+export function getSuggestedSeverity(userId: number): {
+  suggested: WarningSeverity;
+  highestActive: WarningSeverity | null;
+  activeCount: number;
+} {
+  const active = listActiveWarnings(userId);
+  if (active.length === 0) {
+    return { suggested: "verbal", highestActive: null, activeCount: 0 };
+  }
+  // Find the highest severity among active warnings
+  let highestIdx = -1;
+  for (const w of active) {
+    const idx = SEVERITY_LADDER.indexOf(w.severity as WarningSeverity);
+    if (idx > highestIdx) highestIdx = idx;
+  }
+  const highestActive = SEVERITY_LADDER[highestIdx] ?? null;
+  // Bump one step (or stay at final if already there).
+  const nextIdx = Math.min(highestIdx + 1, SEVERITY_LADDER.length - 1);
+  return {
+    suggested: SEVERITY_LADDER[nextIdx],
+    highestActive,
+    activeCount: active.length
+  };
+}
+
 export function acknowledgeWarning(
   id: number,
   method: "pin_explicit" | "auto_on_leave",

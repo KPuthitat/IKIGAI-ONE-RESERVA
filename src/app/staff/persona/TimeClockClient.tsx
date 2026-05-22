@@ -31,6 +31,9 @@ export default function TimeClockClient({
   entries,
   branchName,
   geofenceEnabled,
+  geofenceLat,
+  geofenceLng,
+  geofenceRadiusMeters,
   qrEnabled
 }: {
   userName: string;
@@ -44,6 +47,19 @@ export default function TimeClockClient({
    *  the client requests navigator.geolocation before submission and
    *  the server rejects clock-ins without a fix. */
   geofenceEnabled: boolean;
+  /** Branch's configured geofence centre + radius. Used CLIENT-side
+   *  to verify the captured GPS fix is actually inside the fence
+   *  before showing the green "อยู่ในพื้นที่บริษัท" chip. Previously
+   *  the chip turned green as soon as ANY fix was captured, which
+   *  was misleading — the server-side fence check only runs on
+   *  submit, so users saw "in zone" then got rejected with "out of
+   *  zone" after typing their PIN. With the centre+radius mirrored
+   *  here we can give honest feedback before they touch the keypad.
+   *  Nulls = admin hasn't configured the fence yet → we fall back to
+   *  "captured" without claiming in/out (server still enforces). */
+  geofenceLat: number | null;
+  geofenceLng: number | null;
+  geofenceRadiusMeters: number;
   /** Whether the branch admin has enabled QR anti-cheat. When true
    *  the client shows a camera scanner that must produce a token
    *  matching the branch's clock_qr_token before submission. */
@@ -136,6 +152,9 @@ export default function TimeClockClient({
               onSuccess={() => router.refresh()}
               branchName={branchName}
               geofenceEnabled={geofenceEnabled}
+              geofenceLat={geofenceLat}
+              geofenceLng={geofenceLng}
+              geofenceRadiusMeters={geofenceRadiusMeters}
               qrEnabled={qrEnabled}
             />
           )}
@@ -214,6 +233,9 @@ function ClockAction({
   onSuccess,
   branchName,
   geofenceEnabled,
+  geofenceLat,
+  geofenceLng,
+  geofenceRadiusMeters,
   qrEnabled
 }: {
   action: "in" | "out";
@@ -221,6 +243,9 @@ function ClockAction({
   onSuccess: () => void;
   branchName: string | null;
   geofenceEnabled: boolean;
+  geofenceLat: number | null;
+  geofenceLng: number | null;
+  geofenceRadiusMeters: number;
   qrEnabled: boolean;
 }) {
   const { t } = useLang();
@@ -249,20 +274,68 @@ function ClockAction({
   // PIN in order, depending on which gates are enabled.
   const [showQrScanner, setShowQrScanner] = useState(false);
 
-  // Whether each gate has been satisfied (or is irrelevant).
+  // Whether each gate has been satisfied (or is irrelevant). Note
+  // gpsReady here is just "did we get a position fix"; the actual
+  // in-fence check happens in inZone (below) and is folded into
+  // gatesReady further down so the keypad refuses input when we
+  // KNOW the user will be rejected.
   const gpsReady = !geofenceEnabled || gpsCoords != null;
   const qrReady = !qrEnabled || qrToken != null;
-  const gatesReady = gpsReady && qrReady;
 
-  // True when the visible errorMsg is about the geofence specifically —
-  // we suppress the green/amber GateChip in that case so the user
-  // doesn't see two contradictory location messages at once. Match
-  // against the translated out-of-zone copy (we compare on the literal
-  // string the API surfaces because we don't tag the error by code in
-  // state — keep it simple). If we add more localized variants later
-  // this check generalises into a small set of "geofence error" keys.
+  // ── Client-side geofence check (haversine) ────────────────────────
+  // Run on every captured fix so the chip shows in/out of zone
+  // BEFORE the user types their PIN. Same formula as the server's
+  // /api/persona/clock route — we mirror the calculation here so
+  // the answers line up. Returns:
+  //   true  — fix is inside (or fence not configured / disabled)
+  //   false — fix is outside the configured fence
+  //
+  // We widen the effective radius by the GPS accuracy reading
+  // (same widening the server applies) so a noisy 30m-accuracy
+  // fix at the edge of a 100m fence still reads "in zone" instead
+  // of flickering. Without this widening the chip can flip back
+  // and forth on every refresh as the accuracy varies.
+  function haversineMeters(
+    lat1: number, lng1: number, lat2: number, lng2: number
+  ): number {
+    const R = 6371000;
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2
+      + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  // null = "we don't know yet" (no GPS fix or fence misconfigured) —
+  // chip shows pending/amber. true/false = definitive in/out → chip
+  // shows green/red.
+  const inZone: boolean | null =
+    !geofenceEnabled                ? true   // gate off entirely
+    : !gpsCoords                    ? null   // no fix yet
+    : geofenceLat == null || geofenceLng == null
+                                    ? null   // admin hasn't set centre
+    : haversineMeters(gpsCoords.lat, gpsCoords.lng, geofenceLat, geofenceLng)
+        <= geofenceRadiusMeters + gpsCoords.accuracy;
+
+  // Geofence chip should show red when EITHER:
+  //   - we computed locally that the user is outside the fence, OR
+  //   - the server already rejected a submit with out_of_geofence
+  // The second case used to be the only signal — but it only fired
+  // AFTER the user wasted a PIN entry. Adding the first lets us warn
+  // before they touch the keypad.
   const geofenceErrorActive =
-    !!errorMsg && errorMsg === t("staff.persona.gps.outOfRange");
+    inZone === false
+    || (!!errorMsg && errorMsg === t("staff.persona.gps.outOfRange"));
+
+  // Gates are ready when every enabled gate is satisfied. For the
+  // geofence we require BOTH a captured fix AND a local in-zone
+  // verdict — refusing keypad input until we're confident the
+  // server will accept saves the user from tapping their PIN just
+  // to be told they're in the wrong place.
+  const geofenceSatisfied = !geofenceEnabled || inZone === true;
+  const gatesReady = geofenceSatisfied && qrReady;
 
   // Kick off GPS capture as soon as the user opens the clock-in flow.
   // Phones can take 5-10s to acquire a fresh fix outdoors / indoors;
@@ -510,18 +583,26 @@ function ClockAction({
           {geofenceEnabled && (
             <GateChip
               tone={
-                gpsCoords ? "ready"
-                  : geofenceErrorActive ? "error"
+                // Use the locally-computed inZone so the chip's
+                // green/red answer comes from haversine, NOT from
+                // "did we get a fix". geofenceErrorActive already
+                // folds in both inZone=false and the server's
+                // out_of_geofence error, so this branch order is:
+                //   error  → user is outside fence (local or server)
+                //   ready  → inside fence (locally verified)
+                //   pending → no fix yet, or fence misconfigured
+                geofenceErrorActive ? "error"
+                  : inZone === true ? "ready"
                   : "pending"
               }
               label={
                 geofenceErrorActive
                   ? t("staff.persona.gps.outOfRange")
-                  : gpsCoords
+                  : inZone === true
                     ? t("staff.persona.gps.ready")
                     : (gpsStatus ?? t("staff.persona.gps.waitingForLocation"))
               }
-              actionLabel={gpsCoords ? null : t("staff.persona.gps.retry")}
+              actionLabel={inZone === true ? null : t("staff.persona.gps.retry")}
               onAction={captureGps}
             />
           )}

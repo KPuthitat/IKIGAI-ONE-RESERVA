@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
@@ -45,8 +45,47 @@ export default function DisciplineClient({
   const [body, setBody] = useState("");
   const [reason, setReason] = useState("");
   const [effectiveDate, setEffectiveDate] = useState("");
+  // Validity window for the new warning (in months). Common ladder:
+  // verbal 3-6, written_1 6-12, written_2 12-18, final 18-24. We
+  // default to 6 — admin-friendly middle ground — and let the dropdown
+  // offer the rest. NULL/0 = no expiry (legacy, indefinite).
+  const [validityMonths, setValidityMonths] = useState<number>(6);
+  // Active-warnings panel data — fetched whenever userId changes.
+  // suggested = severity the system recommends as the next offence
+  // step given the user's current active history.
+  const [activeInfo, setActiveInfo] = useState<{
+    activeCount: number;
+    highest: WarningRow["severity"] | null;
+    suggested: WarningRow["severity"];
+  } | null>(null);
 
   function refresh() { startTransition(() => router.refresh()); }
+
+  // Pull active warnings for the picked user so the admin can see at a
+  // glance whether they're escalating or starting fresh. Runs every
+  // time the picker changes. Aborts the in-flight fetch when the user
+  // switches recipients to avoid stale state landing on top of fresh.
+  useEffect(() => {
+    if (!userId) { setActiveInfo(null); return; }
+    const ctrl = new AbortController();
+    fetch(apiUrl(`/api/admin/persona/discipline/active?user_id=${userId}`), {
+      signal: ctrl.signal
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => {
+        if (!j) return;
+        setActiveInfo({
+          activeCount: j.active_count,
+          highest: j.highest_active,
+          suggested: j.suggested
+        });
+        // Auto-apply the system's suggestion. Admin can still override
+        // via the dropdown before submitting.
+        if (j.suggested) setSeverity(j.suggested);
+      })
+      .catch(() => { /* network / abort — ignore */ });
+    return () => ctrl.abort();
+  }, [userId]);
 
   async function issue() {
     setBusy(true); setErr(null);
@@ -58,7 +97,8 @@ export default function DisciplineClient({
           user_id: Number(userId),
           severity, title: title.trim(), body: body.trim(),
           reason_category: reason.trim() || null,
-          effective_date: effectiveDate || null
+          effective_date: effectiveDate || null,
+          validity_months: validityMonths > 0 ? validityMonths : null
         })
       });
       const j = await res.json().catch(() => ({}));
@@ -66,6 +106,8 @@ export default function DisciplineClient({
       setCreating(false);
       setUserId(""); setTitle(""); setBody(""); setReason(""); setEffectiveDate("");
       setSeverity("written_1");
+      setValidityMonths(6);
+      setActiveInfo(null);
       refresh();
     } finally { setBusy(false); }
   }
@@ -108,6 +150,31 @@ export default function DisciplineClient({
                 <option value="written_2">{SEVERITY_LABEL.written_2}</option>
                 <option value="final">{SEVERITY_LABEL.final}</option>
               </select>
+              {/* Escalation hint — when the picked staff already has
+                  active warnings, surface that here so admin doesn't
+                  silently issue a same-level repeat. The dropdown
+                  pre-selects the suggestion via useEffect above; this
+                  panel just explains WHY. */}
+              {activeInfo && activeInfo.activeCount > 0 && (
+                <div className="mt-2 p-2 rounded bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-snug">
+                  <div className="font-bold">
+                    ⚠ {t("admin.persona.discipline.escalateBanner", {
+                      n: activeInfo.activeCount,
+                      highest: SEVERITY_LABEL[activeInfo.highest ?? "verbal"]
+                    })}
+                  </div>
+                  <div className="mt-0.5">
+                    {t("admin.persona.discipline.escalateSuggest", {
+                      next: SEVERITY_LABEL[activeInfo.suggested]
+                    })}
+                  </div>
+                </div>
+              )}
+              {activeInfo && activeInfo.activeCount === 0 && userId !== "" && (
+                <div className="mt-2 p-2 rounded bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800">
+                  ✓ {t("admin.persona.discipline.escalateNone")}
+                </div>
+              )}
             </div>
             <div className="sm:col-span-2">
               <label className="label">{t("admin.persona.discipline.field.title")} *</label>
@@ -143,6 +210,20 @@ export default function DisciplineClient({
               <label className="label">{t("admin.persona.discipline.field.effectiveDate")}</label>
               <input type="date" className="input" value={effectiveDate}
                 onChange={(e) => setEffectiveDate(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">{t("admin.persona.discipline.field.validity")}</label>
+              <select className="input" value={validityMonths}
+                onChange={(e) => setValidityMonths(Number(e.target.value))}>
+                <option value={3}>{t("admin.persona.discipline.validity.3")}</option>
+                <option value={6}>{t("admin.persona.discipline.validity.6")}</option>
+                <option value={12}>{t("admin.persona.discipline.validity.12")}</option>
+                <option value={24}>{t("admin.persona.discipline.validity.24")}</option>
+                <option value={0}>{t("admin.persona.discipline.validity.none")}</option>
+              </select>
+              <p className="text-[10px] text-slate-500 mt-1">
+                {t("admin.persona.discipline.validityHint")}
+              </p>
             </div>
           </div>
           {err && <div className="text-sm text-rose-600">✗ {err}</div>}

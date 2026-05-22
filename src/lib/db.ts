@@ -1925,6 +1925,18 @@ function runMigrations(db: Database.Database): void {
       ON disciplinary_warning_views(warning_id, viewed_at);
   `);
 
+  // Validity window — added 2026-05-22. Lets the admin specify how
+  // many months a warning stays "active" for the purposes of
+  // escalation. After this many months past issued_at, the warning
+  // is treated as expired and no longer counts toward "previous
+  // offence within active window" calculations. NULL = no expiry
+  // (warning is active indefinitely, legacy behavior).
+  const dwCols = db.prepare("PRAGMA table_info(disciplinary_warnings)").all() as Array<{ name: string }>;
+  const dwNames = new Set(dwCols.map((c) => c.name));
+  if (!dwNames.has("validity_months")) {
+    db.exec("ALTER TABLE disciplinary_warnings ADD COLUMN validity_months INTEGER");
+  }
+
   // ─────────────────────────────────────────────────────────────
   // TC-A (Account management + RBAC) — 2026-05-14
   //
@@ -2506,6 +2518,10 @@ export type DisciplinaryWarning = {
   acknowledged_method: "pin_explicit" | "auto_on_leave" | null;
   auto_ack_reason: string | null;
   ref_no: string | null;
+  /** How many months this warning stays "active" for the purposes of
+   *  escalating subsequent offenses. NULL = no expiry (legacy default).
+   *  Set by admin at issue time; common values: 3, 6, 12, 24. */
+  validity_months: number | null;
 };
 
 export type ShiftCode = {

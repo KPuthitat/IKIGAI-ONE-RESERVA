@@ -17,7 +17,12 @@ const Body = z.object({
   title: z.string().trim().min(1).max(200),
   body: z.string().trim().min(1).max(5000),
   reason_category: z.string().trim().max(60).nullable().optional(),
-  effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
+  effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  // Months the warning stays "active" for escalation purposes. Capped
+  // at 60 months (5 years) — anything longer is effectively permanent,
+  // admin can leave it null in that case for clarity. Null = legacy
+  // no-expiry behaviour.
+  validity_months: z.number().int().min(1).max(60).nullable().optional()
 });
 
 export async function POST(req: Request) {
@@ -48,14 +53,15 @@ export async function POST(req: Request) {
   const ins = db.prepare(`
     INSERT INTO disciplinary_warnings
       (branch_id, user_id, issued_by_user_id, severity, title, body,
-       reason_category, effective_date, ref_no)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       reason_category, effective_date, ref_no, validity_months)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     branch.id, d.user_id, user.id, d.severity,
     d.title.trim(), d.body.trim(),
     d.reason_category?.trim() || null,
     d.effective_date || null,
-    refNo
+    refNo,
+    d.validity_months ?? null
   );
   const id = Number(ins.lastInsertRowid);
   logPersonaAction(user.id, "discipline.issue", id);

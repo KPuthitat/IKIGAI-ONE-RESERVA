@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import OwlMascot from "./OwlMascot";
 import {
@@ -11,6 +11,37 @@ import {
   type FaqEntry
 } from "@/lib/owl-faq";
 import { useLang } from "@/lib/LangProvider";
+
+// Persisted FAB position — {right, bottom} in CSS pixels measured from
+// the viewport's bottom-right corner so the owl stays put when the
+// window is resized in the same orientation. Defaults to the original
+// bottom-right anchor on first load; users who never drag never see a
+// change. Falls back silently if localStorage is unavailable (private
+// mode, SSR, etc.).
+const STORAGE_KEY = "ikigai.owl.fab.pos";
+const DEFAULT_POS = { right: 16, bottom: 16 };
+const FAB_SIZE = 72; // approximate hit-box; used for viewport clamping
+const DRAG_THRESHOLD = 6; // px before tap → drag
+
+function loadPosition(): { right: number; bottom: number } {
+  if (typeof window === "undefined") return DEFAULT_POS;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_POS;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.right === "number" && typeof parsed?.bottom === "number") {
+      return parsed;
+    }
+  } catch { /* fall through */ }
+  return DEFAULT_POS;
+}
+
+function savePosition(p: { right: number; bottom: number }): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+  } catch { /* ignore — non-essential */ }
+}
 
 // HookFab — น้องฮูก floating helper.
 //
@@ -37,6 +68,80 @@ export default function HookFab({
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<FaqCategory | "">("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // FAB position state — restored from localStorage on first mount.
+  // SSR-safe: starts at DEFAULT_POS so the server-rendered HTML and
+  // the first client render match, then we sync from localStorage in
+  // a useEffect (no hydration mismatch warning).
+  const [pos, setPos] = useState(DEFAULT_POS);
+  useEffect(() => { setPos(loadPosition()); }, []);
+
+  // Drag bookkeeping — captured on pointerdown, mutated on pointermove.
+  // Using a ref instead of state so the move handler doesn't re-render
+  // on every pixel. `moved` flips to true once movement exceeds the
+  // tap threshold; that flag is what distinguishes "drag" (save +
+  // suppress open toggle) from "tap" (open the panel).
+  const dragRef = useRef<{
+    startX: number; startY: number;
+    startRight: number; startBottom: number;
+    moved: boolean;
+  } | null>(null);
+
+  function onFabPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
+    // Capture so pointermove fires even if the finger drifts outside
+    // the small owl hitbox.
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startRight: pos.right,
+      startBottom: pos.bottom,
+      moved: false
+    };
+  }
+
+  function onFabPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (!d.moved && Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return;
+    d.moved = true;
+    // Moving in screen-space; we anchor from bottom-right so positive
+    // x-screen movement reduces `right` and positive y-screen movement
+    // reduces `bottom`.
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const nextRight = Math.min(vw - FAB_SIZE, Math.max(0, d.startRight - dx));
+    const nextBottom = Math.min(vh - FAB_SIZE, Math.max(0, d.startBottom - dy));
+    setPos({ right: nextRight, bottom: nextBottom });
+  }
+
+  function onFabPointerUp(e: React.PointerEvent<HTMLButtonElement>) {
+    const d = dragRef.current;
+    if (!d) return;
+    if (d.moved) {
+      // True drag — persist the new resting position and DON'T treat
+      // the gesture as a tap.
+      savePosition(pos);
+    } else {
+      // Tap (no movement) — toggle the panel as before.
+      setOpen((o) => !o);
+    }
+    dragRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  }
+
+  // Panel anchor: hugs the FAB on the same right edge, sits just above
+  // it. If the FAB has been dragged near the top of the screen, the
+  // 560-tall panel would overflow upward → we clamp to a minimum top
+  // gap so the panel stays fully visible.
+  const panelBottom = Math.min(
+    pos.bottom + FAB_SIZE + 8,
+    // Leave at least 24px above the panel; panel is up to 560px tall.
+    (typeof window === "undefined" ? 0 : window.innerHeight) - 560 - 24
+  );
+  const safePanelBottom = Math.max(panelBottom, pos.bottom + FAB_SIZE + 8);
 
   // Close the panel on Escape — feels native for a modal/popover.
   useEffect(() => {
@@ -80,15 +185,19 @@ export default function HookFab({
 
   return (
     <>
-      {/* FAB — bare owl, no circle wrapper. Hit target is generous
-          via padding on the button itself, but visually only the
-          owl shows. */}
+      {/* FAB — bare owl, no circle wrapper. Drag to reposition (touch
+          or mouse). Tap (no drag movement) toggles the panel. The
+          position is persisted to localStorage so each device
+          remembers where the user parked the owl. */}
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onPointerDown={onFabPointerDown}
+        onPointerMove={onFabPointerMove}
+        onPointerUp={onFabPointerUp}
+        onPointerCancel={onFabPointerUp}
         aria-label={T.title}
-        className={`fixed z-40 bottom-4 right-4 sm:bottom-6 sm:right-6
-          p-1 transition transform
+        style={{ right: pos.right, bottom: pos.bottom, touchAction: "none" }}
+        className={`fixed z-40 p-1 transition-transform select-none
           ${open
             ? "scale-95 opacity-80"
             : "hover:scale-110 active:scale-95"}
@@ -105,10 +214,13 @@ export default function HookFab({
         )}
       </button>
 
-      {/* Panel */}
+      {/* Panel — anchored to the current FAB position so it follows the
+          owl when the user drags it to a new corner. Clamped near the
+          top of the viewport so the 560-tall panel never overflows. */}
       {open && (
         <div
-          className="fixed z-50 bottom-20 right-4 sm:bottom-24 sm:right-6
+          style={{ right: pos.right, bottom: safePanelBottom }}
+          className="fixed z-50
             w-[min(380px,calc(100vw-2rem))] max-h-[min(560px,calc(100vh-7rem))]
             bg-white rounded-2xl shadow-2xl border border-slate-200
             flex flex-col overflow-hidden"
