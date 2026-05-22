@@ -13,7 +13,7 @@ import { useLang } from "@/lib/LangProvider";
 type ChecklistItem = {
   id: number;
   label: string;
-  kind: "checkbox" | "text" | "choice" | "amount";
+  kind: "checkbox" | "text" | "choice" | "amount" | "section";
   options?: string[];
   /** When set, child of another item — rendered indented. */
   parent_id?: number | null;

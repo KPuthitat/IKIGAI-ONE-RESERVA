@@ -141,7 +141,7 @@ export default function Readiness1600Page() {
           .map((c) => ({
             id: c.id,
             label: c.label,
-            kind: (c.kind ?? "checkbox") as "checkbox" | "text" | "choice" | "amount",
+            kind: (c.kind ?? "checkbox") as "checkbox" | "text" | "choice" | "amount" | "section",
             options: c.kind === "choice" ? parseChecklistOptions(c) : undefined,
             parent_id: c.parent_id ?? null,
             is_headline: !!c.is_headline_amount,
