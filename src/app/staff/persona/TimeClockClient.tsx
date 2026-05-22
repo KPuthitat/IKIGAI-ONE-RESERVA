@@ -272,11 +272,11 @@ function ClockAction({
           lng: pos.coords.longitude,
           accuracy: pos.coords.accuracy
         });
-        setGpsStatus(
-          t("staff.persona.gps.located", {
-            accuracy: String(Math.round(pos.coords.accuracy))
-          })
-        );
+        // No accuracy-meters string here — the chip's ✓ icon and the
+        // simplified "อยู่ในพื้นที่บริษัท" label carry the signal
+        // already. Keeping setGpsStatus null avoids the redundant
+        // line of text right next to the chip on the same screen.
+        setGpsStatus(null);
       },
       (err) => {
         const map: Record<number, string> = {
@@ -339,10 +339,11 @@ function ClockAction({
         else if (data.error === "already_done_today") setErrorMsg(t("staff.persona.alreadyDoneToday"));
         else if (data.error === "gps_required") setErrorMsg(t("staff.persona.gps.required"));
         else if (data.error === "out_of_geofence") {
-          setErrorMsg(t("staff.persona.gps.outOfRange", {
-            distance: String(data.distanceMeters ?? "?"),
-            allowed: String(data.allowedMeters ?? "?")
-          }));
+          // Simplified copy — distance/radius detail dropped per
+          // owner feedback. Staff only need the yes/no signal; the
+          // forced GPS re-capture below already handles "you moved
+          // closer, try again" without us having to print numbers.
+          setErrorMsg(t("staff.persona.gps.outOfRange"));
           // Force re-capture — a stale reading from elsewhere on the
           // way to the shop shouldn't keep the staff stuck. Clear
           // gpsCoords so the next attempt asks the browser fresh.
@@ -489,10 +490,13 @@ function ClockAction({
             <GateChip
               ready={gpsCoords != null}
               label={
+                // Simplified copy — staff only need to know "in zone /
+                // out of zone". The accuracy / distance / radius detail
+                // we used to dump here was cluttering the screen; the
+                // gate icon (✓ / ○) carries the same yes/no signal in
+                // half the visual space.
                 gpsCoords
-                  ? t("staff.persona.gps.ready", {
-                      accuracy: String(Math.round(gpsCoords.accuracy))
-                    })
+                  ? t("staff.persona.gps.ready")
                   : (gpsStatus ?? t("staff.persona.gps.waitingForLocation"))
               }
               actionLabel={gpsCoords ? null : t("staff.persona.gps.retry")}

@@ -71,7 +71,57 @@ export default function TimesheetsClient({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [resendingId, setResendingId] = useState<number | null>(null);
   const { confirm, alert, ConfirmDialog } = useConfirm();
+
+  // Manual re-push of the clock-in LINE card. Available only for
+  // 'in' rows (clock-out doesn't produce a card). Used when the
+  // auto-push at clock-in time was skipped — staff hadn't bound
+  // LINE yet, platform OA was misconfigured, transient LINE
+  // outage, etc.
+  async function resendNotification(entry: TimeEntryRow): Promise<void> {
+    setResendingId(entry.id);
+    try {
+      const res = await fetch(
+        `/api/admin/persona/timesheets/${entry.id}/resend-notification`,
+        { method: "POST" }
+      );
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        alert({
+          title: t(lang, "admin.persona.timesheets.resend.successTitle"),
+          body: <p>{t(lang, "admin.persona.timesheets.resend.successBody")}</p>,
+          okLabel: t(lang, "common.confirm")
+        });
+      } else {
+        // Map known error codes to user-friendly copy so admin
+        // knows what to fix instead of seeing raw error strings.
+        const codeMap: Record<string, string> = {
+          no_line_user_id: t(lang, "admin.persona.timesheets.resend.errNoLine"),
+          platform_not_configured: t(lang, "admin.persona.timesheets.resend.errNoChannel"),
+          not_resendable: t(lang, "admin.persona.timesheets.resend.errNotIn"),
+          branch_forbidden: t(lang, "admin.persona.timesheets.resend.errBranch"),
+          push_failed: t(lang, "admin.persona.timesheets.resend.errPushFailed")
+        };
+        const msg = codeMap[j?.error] || t(lang, "common.error");
+        alert({
+          title: t(lang, "admin.persona.timesheets.resend.failTitle"),
+          body: <p>{msg}</p>,
+          variant: "danger",
+          okLabel: t(lang, "common.confirm")
+        });
+      }
+    } catch {
+      alert({
+        title: t(lang, "common.error"),
+        body: <p>{t(lang, "admin.persona.timesheets.resend.errPushFailed")}</p>,
+        variant: "danger",
+        okLabel: t(lang, "common.confirm")
+      });
+    } finally {
+      setResendingId(null);
+    }
+  }
 
   async function deleteEntry(entry: TimeEntryRow): Promise<void> {
     const body = t(lang, "admin.persona.timesheets.confirmDelete")
@@ -119,7 +169,7 @@ export default function TimesheetsClient({
       .finally(() => setDeletingId(null));
   }
 
-  const isLoading = pending || deletingId !== null;
+  const isLoading = pending || deletingId !== null || resendingId !== null;
 
   return (
     <>
@@ -177,7 +227,7 @@ export default function TimesheetsClient({
                 <th className="py-2 pr-3">{t(lang, "admin.persona.timesheets.col.user")}</th>
                 <th className="py-2 pr-3">{t(lang, "admin.persona.timesheets.col.type")}</th>
                 <th className="py-2 pr-3">{t(lang, "admin.persona.timesheets.col.ts")}</th>
-                <th className="py-2 pr-3 w-24"></th>
+                <th className="py-2 pr-3 w-40"></th>
               </tr>
             </thead>
             <tbody>
@@ -202,16 +252,34 @@ export default function TimesheetsClient({
                     {formatBkk(e.ts, lang)}
                   </td>
                   <td className="py-2 pr-3 text-right">
-                    <button
-                      type="button"
-                      disabled={isLoading}
-                      onClick={() => deleteEntry(e)}
-                      className="text-xs text-rose-600 hover:text-rose-700 hover:underline disabled:opacity-50"
-                    >
-                      {deletingId === e.id
-                        ? t(lang, "admin.persona.timesheets.deleting")
-                        : t(lang, "admin.persona.timesheets.delete")}
-                    </button>
+                    <div className="flex justify-end items-center gap-3">
+                      {/* Resend button — only on clock-in rows since
+                          clock-out doesn't push a LINE card. Sits
+                          before delete so the muscle memory for
+                          "danger button last" stays. */}
+                      {e.type === "in" && (
+                        <button
+                          type="button"
+                          disabled={isLoading}
+                          onClick={() => resendNotification(e)}
+                          className="text-xs text-brand hover:underline disabled:opacity-50"
+                        >
+                          {resendingId === e.id
+                            ? t(lang, "admin.persona.timesheets.resend.sending")
+                            : t(lang, "admin.persona.timesheets.resend.btn")}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={isLoading}
+                        onClick={() => deleteEntry(e)}
+                        className="text-xs text-rose-600 hover:text-rose-700 hover:underline disabled:opacity-50"
+                      >
+                        {deletingId === e.id
+                          ? t(lang, "admin.persona.timesheets.deleting")
+                          : t(lang, "admin.persona.timesheets.delete")}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

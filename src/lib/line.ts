@@ -932,12 +932,19 @@ export async function pushClockInCard(args: {
   platformChannelToken: string;   // from messaging_channels (IKIGAI OS)
   personaUrl: string;             // CTA button target (e.g., '/staff/persona')
   clockInIsoTs: string;
-}): Promise<void> {
+}): Promise<{ ok: boolean; status: number; error?: string; skipped?: "no_line_user_id" }> {
+  // Return shape: same as sendLinePush() with an extra `skipped`
+  // discriminator when we deliberately skip (no userId bound). Auto-
+  // flow at clock-in time does fire-and-forget so it ignores this
+  // return; the admin resend endpoint inspects it to give the user
+  // a real success/failure toast.
   const db = getDb();
   const u = db.prepare("SELECT line_user_id FROM users WHERE id = ?").get(args.userId) as
     | { line_user_id: string | null } | undefined;
 
-  if (!u?.line_user_id) return;
+  if (!u?.line_user_id) {
+    return { ok: false, status: 0, skipped: "no_line_user_id" };
+  }
 
   const bkkDate = new Date(new Date(args.clockInIsoTs).getTime() + 7 * 60 * 60 * 1000)
     .toISOString().slice(0, 10);
@@ -953,7 +960,7 @@ export async function pushClockInCard(args: {
     personaUrl: args.personaUrl
   });
 
-  await sendLinePush(args.platformChannelToken, {
+  return sendLinePush(args.platformChannelToken, {
     to: u.line_user_id,
     messages: [flex]
   });
