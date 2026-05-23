@@ -140,6 +140,22 @@ export default function ShiftOpenPage() {
     ORDER BY display_order ASC, id ASC
   `).all(branch.id) as ShiftChecklistItem[];
 
+  // Prefill source — latest superseded report for today's shift_open
+  // at this branch. Passed to the form so a re-do after admin
+  // approves an unlock starts pre-filled with what was typed
+  // before. Same pattern as shift_close. See close/page.tsx.
+  type PrevRow = { data: string };
+  const previousRow = db.prepare(`
+    SELECT data FROM daily_reports
+    WHERE type = 'shift_open' AND branch_id = ? AND report_date = ?
+      AND superseded_at IS NOT NULL
+    ORDER BY id DESC LIMIT 1
+  `).get(branch.id, today) as PrevRow | undefined;
+  let previousData: Record<string, unknown> | null = null;
+  if (previousRow) {
+    try { previousData = JSON.parse(previousRow.data); } catch { previousData = null; }
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -159,6 +175,7 @@ export default function ShiftOpenPage() {
         openerName={nameWithPrefix(user.title_prefix, user.display_name)}
         today={today}
         yesterdayClosingHint={yesterdayClosingHint}
+        previousData={previousData}
         checklistItems={checklist
           .map((c) => ({
             id: c.id,

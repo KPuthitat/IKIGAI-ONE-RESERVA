@@ -1044,6 +1044,19 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN clock_qr_enabled INTEGER NOT NULL DEFAULT 0");
   }
 
+  // Service-charge required-on-close-shift flag (added 2026-05-23).
+  // When ON, the shift_close form shows a mandatory "ยอดเซอร์วิสชาร์จ
+  // วันนี้" field that feeds the staff-share calculator at
+  // /admin/persona/service-charge. When OFF (default), the field is
+  // hidden and admin fills the value back-office at month-end.
+  // Replaces the old always-shown closing_drawer + service_charge
+  // fields — closing-drawer is now an admin-configurable checklist
+  // item (admin owns the schema), and service-charge stays top-level
+  // because it has a hard downstream consumer (the calculator).
+  if (!bnames2.has("require_service_charge")) {
+    db.exec("ALTER TABLE branches ADD COLUMN require_service_charge INTEGER NOT NULL DEFAULT 0");
+  }
+
   // Daily attendance summary (TC-6) — per-branch HH:MM time at which
   // the cron job posts a 4-category roll-call to the executive group:
   //   • มาตรงเวลา (on time, within 5-min grace)
@@ -2422,6 +2435,11 @@ export type Branch = {
   geofence_enabled: number;            // 0/1
   clock_qr_token: string | null;
   clock_qr_enabled: number;            // 0/1
+  // When 1, the shift_close staff form shows + requires a service
+  // charge amount field at the top (feeds the staff-share
+  // calculator). When 0 (default), the field is hidden and admin
+  // backfills back-office. Added 2026-05-23.
+  require_service_charge: number;      // 0/1
   // Daily attendance summary (TC-6) — see migration block above.
   attendance_summary_time: string | null;           // HH:MM Bangkok, NULL = disabled
   attendance_summary_last_sent_date: string | null; // YYYY-MM-DD dedupe key

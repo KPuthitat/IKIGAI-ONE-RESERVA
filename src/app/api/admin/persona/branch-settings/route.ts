@@ -55,6 +55,10 @@ const Body = z.object({
   geofence_enabled: z.boolean().optional(),
   clock_qr_token: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, "invalid_qr_token").nullable().optional(),
   clock_qr_enabled: z.boolean().optional(),
+  // Whether the shift_close staff form must collect a service-charge
+  // amount at the top (feeds the staff-share calculator). Added
+  // 2026-05-23. Default off — existing branches stay unchanged.
+  require_service_charge: z.boolean().optional(),
 
   // Daily attendance summary (TC-6) — HH:MM Bangkok at which the
   // cron should post the 4-category roll-call to the executive group.
@@ -134,6 +138,10 @@ export async function POST(req: Request) {
   if (parsed.data.clock_qr_enabled !== undefined) {
     sets.push("clock_qr_enabled = ?");
     vals.push(parsed.data.clock_qr_enabled ? 1 : 0);
+  }
+  if (parsed.data.require_service_charge !== undefined) {
+    sets.push("require_service_charge = ?");
+    vals.push(parsed.data.require_service_charge ? 1 : 0);
   }
   // attendance_summary_time: normalise + reset dedupe column on change.
   // When admin changes the summary time (or enables/disables the

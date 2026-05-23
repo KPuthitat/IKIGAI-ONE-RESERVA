@@ -48,7 +48,8 @@ function formatBahtAmount(raw: string): string {
 }
 
 export default function ShiftOpenForm({
-  branchId, branchName, openerName, today, yesterdayClosingHint, checklistItems
+  branchId, branchName, openerName, today, yesterdayClosingHint, checklistItems,
+  previousData = null
 }: {
   branchId: number;
   branchName: string;
@@ -56,19 +57,62 @@ export default function ShiftOpenForm({
   today: string;
   yesterdayClosingHint: number | null;
   checklistItems: ChecklistItem[];
+  /** Most recent superseded report's parsed `data` JSON, if any.
+   *  Passed in when admin previously granted an unlock so the form
+   *  re-renders pre-filled with what the staff typed before. Matched
+   *  against the current checklist by label. */
+  previousData?: Record<string, unknown> | null;
 }) {
   const router = useRouter();
   const { t } = useLang();
 
+  // Pre-fill seed — see ShiftCloseForm for the same pattern. Build a
+  // label-indexed lookup once at mount so the four useState lazy
+  // initializers can each pull from it without re-iterating.
+  const prevByLabel = (() => {
+    const m = new Map<string, {
+      checked: boolean;
+      note: string | null;
+      kind?: string;
+    }>();
+    const arr = (previousData?.checklist ?? []) as Array<{
+      label: string;
+      checked: boolean;
+      note?: string | null;
+      kind?: string;
+    }>;
+    for (const it of arr) {
+      m.set(it.label, {
+        checked: !!it.checked,
+        note: it.note ?? null,
+        kind: it.kind
+      });
+    }
+    return m;
+  })();
+
   // Date is derived server-side (always today). Opener is the logged-in
   // user. Both are read-only on the form so staff can't backdate or
   // file on someone else's behalf — server enforces too as defense.
-  const [yesterdayAmount, setYesterdayAmount] = useState<string>(
-    yesterdayClosingHint != null ? String(yesterdayClosingHint) : ""
-  );
-  const [morningAmount, setMorningAmount] = useState<string>("");
+  // yesterdayAmount prefills from previousData first, then the daily
+  // hint (which reads yesterday's closing), then empty.
+  const [yesterdayAmount, setYesterdayAmount] = useState<string>(() => {
+    const v = previousData?.yesterday_closing_amount;
+    if (typeof v === "number") return String(v);
+    return yesterdayClosingHint != null ? String(yesterdayClosingHint) : "";
+  });
+  const [morningAmount, setMorningAmount] = useState<string>(() => {
+    const v = previousData?.morning_drawer_amount;
+    return typeof v === "number" ? String(v) : "";
+  });
   const [checked, setChecked] = useState<Record<number, boolean>>(() =>
-    Object.fromEntries(checklistItems.map((it) => [it.id, false]))
+    Object.fromEntries(checklistItems.map((it) => {
+      const prev = prevByLabel.get(it.label);
+      const restored = prev && (it.kind === "checkbox" || !it.kind)
+        ? prev.checked
+        : false;
+      return [it.id, restored];
+    }))
   );
   // For text-input items, the entered value lives in `textValues`. We
   // mirror it into the same payload shape as a checkbox+note row by
@@ -76,16 +120,34 @@ export default function ShiftOpenForm({
   // into the note field, so the existing LINE Flex renderer renders
   // text answers without any code change downstream.
   const [textValues, setTextValues] = useState<Record<number, string>>(() =>
-    Object.fromEntries(checklistItems.map((it) => [it.id, ""]))
+    Object.fromEntries(checklistItems.map((it) => {
+      const prev = prevByLabel.get(it.label);
+      const restored = prev && (it.kind === "text" || it.kind === "amount")
+        ? (prev.note ?? "")
+        : "";
+      return [it.id, restored];
+    }))
   );
   // For choice items, the picked option (or null until staff picks).
   const [choices, setChoices] = useState<Record<number, string | null>>(() =>
-    Object.fromEntries(checklistItems.map((it) => [it.id, null]))
+    Object.fromEntries(checklistItems.map((it) => {
+      const prev = prevByLabel.get(it.label);
+      const restored = prev && it.kind === "choice"
+        ? (prev.note ?? null)
+        : null;
+      return [it.id, restored];
+    }))
   );
   // Per-item note text. An empty string is the same as "no note" — only
   // non-empty strings turn the row into the "skipped-with-note" state.
   const [notes, setNotes] = useState<Record<number, string>>(() =>
-    Object.fromEntries(checklistItems.map((it) => [it.id, ""]))
+    Object.fromEntries(checklistItems.map((it) => {
+      const prev = prevByLabel.get(it.label);
+      const restored = prev && (it.kind === "checkbox" || !it.kind)
+        ? (prev.note ?? "")
+        : "";
+      return [it.id, restored];
+    }))
   );
   // Which item ids have their note textarea expanded right now. Toggled
   // by clicking the small "หมายเหตุ" button on the row, or auto-opened

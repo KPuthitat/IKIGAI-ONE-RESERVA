@@ -36,37 +36,112 @@ function formatBahtAmount(raw: string): string {
 }
 
 export default function ShiftCloseForm({
-  branchId, branchName, closerName, checklistItems
+  branchId, branchName, closerName, checklistItems,
+  requireServiceCharge = false,
+  previousData = null
 }: {
   branchId: number;
   branchName: string;
   closerName: string;
   checklistItems: ChecklistItem[];
+  /** When the branch admin has flipped require_service_charge ON,
+   *  the staff form shows a mandatory "ยอดเซอร์วิสชาร์จวันนี้"
+   *  field at the top that feeds the staff-share calculator. When
+   *  OFF (default), the field is hidden — admin backfills the
+   *  monthly total back-office. Replaces the old always-shown
+   *  closing-drawer + service-charge pair; closing-drawer is now
+   *  fully expressible via the admin checklist. */
+  requireServiceCharge?: boolean;
+  /** Most recent superseded report's parsed `data` JSON, if any.
+   *  Passed in when admin previously granted an unlock so the form
+   *  re-renders pre-filled with what the staff typed before — much
+   *  better UX than forcing them to re-key everything just to fix
+   *  one number. Matched against the current checklist by label
+   *  (labels are user-facing + stable; ids change if admin edits). */
+  previousData?: Record<string, unknown> | null;
 }) {
   const router = useRouter();
   const { t } = useLang();
 
-  const [closingAmount, setClosingAmount] = useState<string>("");
-  // Service Charge collected from POS today. Optional — empty string
-  // = staff skipped (admin can fill at /admin/persona/service-charge).
-  // Persisted into daily_service_charge via the daily-report API.
-  const [svcAmount, setSvcAmount] = useState<string>("");
+  // Pre-fill seed — when previousData carries a prior submission's
+  // checklist, build per-id lookup maps once for the initial state.
+  // Falls back to empty objects so the form behaves identically
+  // when there's no prior submission (the common case).
+  const prevByLabel = (() => {
+    const m = new Map<string, {
+      checked: boolean;
+      note: string | null;
+      kind?: string;
+    }>();
+    const arr = (previousData?.checklist ?? []) as Array<{
+      label: string;
+      checked: boolean;
+      note?: string | null;
+      kind?: string;
+    }>;
+    for (const it of arr) {
+      m.set(it.label, {
+        checked: !!it.checked,
+        note: it.note ?? null,
+        kind: it.kind
+      });
+    }
+    return m;
+  })();
+
+  // Service Charge collected from POS today. Only shown + required
+  // when requireServiceCharge prop is true. Persisted into
+  // daily_service_charge via the daily-report API. Pre-fills from
+  // previousData.service_charge_amount if it's a number; otherwise
+  // empty so the user can leave-blank-then-fill flow works.
+  const [svcAmount, setSvcAmount] = useState<string>(() => {
+    const v = previousData?.service_charge_amount;
+    return typeof v === "number" ? String(v) : "";
+  });
   const [checked, setChecked] = useState<Record<number, boolean>>(() =>
-    Object.fromEntries(checklistItems.map((it) => [it.id, false]))
+    Object.fromEntries(checklistItems.map((it) => {
+      const prev = prevByLabel.get(it.label);
+      // Only restore the checked bool for checkbox-kind rows —
+      // text/choice/amount don't really have a meaningful "checked"
+      // state visible to the user.
+      const restored = prev && (it.kind === "checkbox" || !it.kind)
+        ? prev.checked
+        : false;
+      return [it.id, restored];
+    }))
   );
   const [notes, setNotes] = useState<Record<number, string>>(() =>
-    Object.fromEntries(checklistItems.map((it) => [it.id, ""]))
+    Object.fromEntries(checklistItems.map((it) => {
+      const prev = prevByLabel.get(it.label);
+      // Restore the note for checkbox rows (skip-with-reason text).
+      const restored = prev && (it.kind === "checkbox" || !it.kind)
+        ? (prev.note ?? "")
+        : "";
+      return [it.id, restored];
+    }))
   );
   // See ShiftOpenForm for the rationale — text items keep their value
   // here and we mirror them into the (checked, note) payload at submit
   // so downstream renderers (LINE Flex, audit) don't need to know about
   // kinds.
   const [textValues, setTextValues] = useState<Record<number, string>>(() =>
-    Object.fromEntries(checklistItems.map((it) => [it.id, ""]))
+    Object.fromEntries(checklistItems.map((it) => {
+      const prev = prevByLabel.get(it.label);
+      const restored = prev && (it.kind === "text" || it.kind === "amount")
+        ? (prev.note ?? "")
+        : "";
+      return [it.id, restored];
+    }))
   );
   // Choice items: the staff's picked option (or null until picked).
   const [choices, setChoices] = useState<Record<number, string | null>>(() =>
-    Object.fromEntries(checklistItems.map((it) => [it.id, null]))
+    Object.fromEntries(checklistItems.map((it) => {
+      const prev = prevByLabel.get(it.label);
+      const restored = prev && it.kind === "choice"
+        ? (prev.note ?? null)
+        : null;
+      return [it.id, restored];
+    }))
   );
   const [openNotes, setOpenNotes] = useState<Record<number, boolean>>({});
   const [errorIds, setErrorIds] = useState<Record<number, boolean>>({});
@@ -122,10 +197,23 @@ export default function ShiftCloseForm({
       });
       return;
     }
+    // Service charge — only validate when admin requires it. Empty
+    // when required = block submit with friendly message.
+    if (requireServiceCharge && parseAmount(svcAmount) == null) {
+      setMsg({
+        kind: "err",
+        text: t("staff.persona.shift.close.svcRequired")
+      });
+      return;
+    }
+
     setErrorIds({});
     setBusy(true);
     try {
-      const closingParsed = parseAmount(closingAmount);
+      // closing_drawer_amount removed from the form 2026-05-23 —
+      // admin now models that as a checklist amount item if needed.
+      // We still send null so the API stores the column explicitly.
+      const closingParsed = null;
       const svcParsed = parseAmount(svcAmount);
       // Flatten parents-then-children; mark child rows with is_child=true
       // so the LINE Flex renderer indents them under their parent.
@@ -267,34 +355,31 @@ export default function ShiftCloseForm({
           </div>
         </div>
 
-        <div>
-          <label className="label">{t("staff.persona.shift.close.field.closingDrawer")} *</label>
-          <input type="number" inputMode="decimal" min={0} step="0.01"
-            required
-            className="input"
-            value={closingAmount}
-            placeholder="0.00"
-            onChange={(e) => setClosingAmount(e.target.value)} />
-          <p className="text-[10px] text-slate-400 mt-1">
-            {t("staff.persona.shift.close.field.closingDrawerHint")}
-          </p>
-        </div>
+        {/* Closing-drawer field removed 2026-05-23 — admins now own
+            the checklist schema entirely (they can add a kind=amount
+            row for closing-drawer with their preferred label). The
+            duplicate top-level + checklist version was confusing. */}
 
-        {/* Service Charge — ผู้ปิดกะกรอกยอด SVC จาก POS ของวันนี้.
-            ใช้คำนวณส่วนแบ่งให้พนักงานสาขานี้ในเดือนนี้ (60% สำหรับพนักงาน
-            หารตาม ชม.ทำงาน, 40% เข้าบริษัท). เว้นว่างได้ถ้ายังไม่รู้ยอด —
-            แอดมินจะกรอกย้อนหลังที่ /admin/persona/service-charge ได้. */}
-        <div>
-          <label className="label">{t("staff.persona.shift.close.field.svcAmount")}</label>
-          <input type="number" inputMode="decimal" min={0} step="0.01"
-            className="input"
-            value={svcAmount}
-            placeholder="0.00"
-            onChange={(e) => setSvcAmount(e.target.value)} />
-          <p className="text-[10px] text-slate-400 mt-1">
-            {t("staff.persona.shift.close.field.svcAmountHint")}
-          </p>
-        </div>
+        {/* Service Charge — only when branch admin has flipped the
+            require_service_charge toggle on. Feeds the staff-share
+            calculator at /admin/persona/service-charge. When the
+            toggle is off, this field is hidden and admin backfills
+            the monthly total themselves. Required-when-shown so the
+            calculator never receives a half-filled month. */}
+        {requireServiceCharge && (
+          <div>
+            <label className="label">{t("staff.persona.shift.close.field.svcAmount")} *</label>
+            <input type="number" inputMode="decimal" min={0} step="0.01"
+              required
+              className="input"
+              value={svcAmount}
+              placeholder="0.00"
+              onChange={(e) => setSvcAmount(e.target.value)} />
+            <p className="text-[10px] text-slate-400 mt-1">
+              {t("staff.persona.shift.close.field.svcAmountHint")}
+            </p>
+          </div>
+        )}
       </div>
 
       {checklistItems.length > 0 ? (

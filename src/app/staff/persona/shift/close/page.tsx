@@ -96,6 +96,24 @@ export default function ShiftClosePage() {
     ORDER BY display_order ASC, id ASC
   `).all(branch.id) as ShiftChecklistItem[];
 
+  // Prefill source — when admin previously granted an unlock for
+  // today's shift_close at this branch, the superseded row carries
+  // the values the staff already typed. Reading the latest one and
+  // passing it as initialValues spares staff from re-typing the
+  // whole form when they only need to fix one or two fields.
+  // Falls back to empty when there's no prior submission.
+  type PrevRow = { data: string };
+  const previousRow = db.prepare(`
+    SELECT data FROM daily_reports
+    WHERE type = 'shift_close' AND branch_id = ? AND report_date = ?
+      AND superseded_at IS NOT NULL
+    ORDER BY id DESC LIMIT 1
+  `).get(branch.id, today) as PrevRow | undefined;
+  let previousData: Record<string, unknown> | null = null;
+  if (previousRow) {
+    try { previousData = JSON.parse(previousRow.data); } catch { previousData = null; }
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -111,6 +129,8 @@ export default function ShiftClosePage() {
         branchId={branch.id}
         branchName={branch.name}
         closerName={nameWithPrefix(user.title_prefix, user.display_name)}
+        requireServiceCharge={branch.require_service_charge === 1}
+        previousData={previousData}
         checklistItems={checklist
           .map((c) => ({
             id: c.id,

@@ -33,6 +33,7 @@ export default function BranchSettingsForm({
   geofenceEnabled,
   clockQrToken,
   clockQrEnabled,
+  requireServiceCharge,
   attendanceSummaryTime,
   shiftNotifyTime,
   branchName
@@ -46,6 +47,7 @@ export default function BranchSettingsForm({
   geofenceEnabled: boolean;
   clockQrToken: string | null;
   clockQrEnabled: boolean;
+  requireServiceCharge: boolean;
   attendanceSummaryTime: string | null;
   shiftNotifyTime: string | null;
   branchName: string;
@@ -68,6 +70,11 @@ export default function BranchSettingsForm({
   const [geoOn, setGeoOn] = useState<boolean>(geofenceEnabled);
   const [qrToken, setQrToken] = useState<string>(clockQrToken || "");
   const [qrOn, setQrOn] = useState<boolean>(clockQrEnabled);
+  // require_service_charge toggle (added 2026-05-23). When ON, the
+  // shift_close staff form shows a mandatory "ยอดเซอร์วิสชาร์จ"
+  // field that feeds the staff-share calculator. When OFF, the
+  // field is hidden and admin backfills back-office.
+  const [svcRequired, setSvcRequired] = useState<boolean>(requireServiceCharge);
   // Daily attendance summary time (TC-6) — HH:MM Bangkok. Empty
   // string = disable feature. Recommended value = branch's typical
   // shift start time + 1 hour, but admin is free to pick anything.
@@ -98,6 +105,7 @@ export default function BranchSettingsForm({
     geoOn === geofenceEnabled &&
     (qrToken || null) === (clockQrToken || null) &&
     qrOn === clockQrEnabled &&
+    svcRequired === requireServiceCharge &&
     (summaryTime || null) === (attendanceSummaryTime || null) &&
     (shiftNotify || null) === (shiftNotifyTime || null);
 
@@ -127,6 +135,7 @@ export default function BranchSettingsForm({
           geofence_enabled: geoOn,
           clock_qr_token: qrToken.trim() || null,
           clock_qr_enabled: qrOn,
+          require_service_charge: svcRequired,
           attendance_summary_time: summaryTime.trim() || null,
           shift_notify_time: shiftNotify.trim() || null
         })
@@ -446,6 +455,36 @@ export default function BranchSettingsForm({
             </p>
           </div>
         </div>
+      </div>
+
+      {/* ── Shift-close form configuration ────────────────────────
+          Lightweight per-branch toggles for fields the shift_close
+          staff form shows at the top (above the admin checklist).
+          Currently just service-charge — closing-drawer was removed
+          2026-05-23 because admin can express it as a checklist
+          amount item. */}
+      <div className="card space-y-3">
+        <div>
+          <h2 className="font-bold text-slate-800 text-sm">
+            {t("admin.persona.settings.shiftClose.title")}
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            {t("admin.persona.settings.shiftClose.help", { branch: branchName })}
+          </p>
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <Switch
+            checked={svcRequired}
+            onChange={setSvcRequired}
+            accent="emerald"
+          />
+          <span className="text-sm font-bold text-slate-800">
+            {t("admin.persona.settings.shiftClose.svcRequiredLabel")}
+          </span>
+        </label>
+        <p className="text-[11px] text-slate-500">
+          {t("admin.persona.settings.shiftClose.svcRequiredHint")}
+        </p>
       </div>
 
       {/* ── Daily attendance summary (TC-6) ──

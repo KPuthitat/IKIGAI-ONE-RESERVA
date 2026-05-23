@@ -34,6 +34,7 @@ import ShiftReportsClient, {
   type ChainLink,
   type ChainsByType
 } from "./ShiftReportsClient";
+import SendAttendanceSummaryButton from "./SendAttendanceSummaryButton";
 
 export const dynamic = "force-dynamic";
 
@@ -219,6 +220,7 @@ export default function AdminShiftReportsPage() {
           {t(lang, "admin.persona.shiftReports.subtitle")}
         </p>
       </div>
+      <SendAttendanceSummaryButton />
       <ShiftReportsClient
         branchName={branch.name}
         today={today}

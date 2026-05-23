@@ -107,6 +107,20 @@ export default function Readiness1130Page() {
     ORDER BY display_order ASC, id ASC
   `).all(branch.id) as ShiftChecklistItem[];
 
+  // Prefill from latest superseded report for same (branch, date).
+  // See close/page.tsx for the rationale.
+  type PrevRow = { data: string };
+  const previousRow = db.prepare(`
+    SELECT data FROM daily_reports
+    WHERE type = 'readiness_1130' AND branch_id = ? AND report_date = ?
+      AND superseded_at IS NOT NULL
+    ORDER BY id DESC LIMIT 1
+  `).get(branch.id, today) as PrevRow | undefined;
+  let previousData: Record<string, unknown> | null = null;
+  if (previousRow) {
+    try { previousData = JSON.parse(previousRow.data); } catch { previousData = null; }
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -124,6 +138,7 @@ export default function Readiness1130Page() {
         branchName={branch.name}
         reporterName={nameWithPrefix(user.title_prefix, user.display_name)}
         todayDate={today}
+        previousData={previousData}
         submitLabel={t(lang, "staff.persona.readiness.submit")}
         successCopy={{
           title: t(lang, "staff.persona.shiftReport.submitted.title"),

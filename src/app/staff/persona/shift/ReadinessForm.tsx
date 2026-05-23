@@ -53,7 +53,8 @@ export default function ReadinessForm({
   todayDate,
   submitLabel,
   successCopy,
-  checklistItems
+  checklistItems,
+  previousData = null
 }: {
   type: ReportType;
   branchId: number;
@@ -67,6 +68,11 @@ export default function ReadinessForm({
    *  up; the form renders a placeholder pointing them at the setup
    *  page instead of silently submitting an empty report. */
   checklistItems: ReadinessChecklistItem[];
+  /** Most recent superseded report's parsed `data` JSON, if any.
+   *  When admin grants an unlock, pre-fill the form with the prior
+   *  values so staff doesn't have to re-type everything just to
+   *  correct one field. Matched against current checklist by label. */
+  previousData?: Record<string, unknown> | null;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -85,16 +91,59 @@ export default function ReadinessForm({
     }
   }
 
+  // Pre-fill seed — same pattern as ShiftOpenForm / ShiftCloseForm.
+  // Build a label-indexed lookup of the prior submission's checklist
+  // so the useState lazy initializers can seed from it.
+  const prevByLabel = (() => {
+    const m = new Map<string, {
+      checked: boolean;
+      note: string | null;
+      kind?: string;
+    }>();
+    const arr = (previousData?.checklist ?? []) as Array<{
+      label: string;
+      checked: boolean;
+      note?: string | null;
+      kind?: string;
+    }>;
+    for (const it of arr) {
+      m.set(it.label, {
+        checked: !!it.checked,
+        note: it.note ?? null,
+        kind: it.kind
+      });
+    }
+    return m;
+  })();
+
   // One state map per kind. checkbox → tick state; text → typed
   // string; choice → selected option string (null until staff picks).
   const [checked, setChecked] = useState<Record<number, boolean>>(() =>
-    Object.fromEntries(items.map((it) => [it.id, false]))
+    Object.fromEntries(items.map((it) => {
+      const prev = prevByLabel.get(it.label);
+      const restored = prev && (it.kind === "checkbox" || !it.kind)
+        ? prev.checked
+        : false;
+      return [it.id, restored];
+    }))
   );
   const [textValues, setTextValues] = useState<Record<number, string>>(() =>
-    Object.fromEntries(items.map((it) => [it.id, ""]))
+    Object.fromEntries(items.map((it) => {
+      const prev = prevByLabel.get(it.label);
+      const restored = prev && (it.kind === "text" || it.kind === "amount")
+        ? (prev.note ?? "")
+        : "";
+      return [it.id, restored];
+    }))
   );
   const [choices, setChoices] = useState<Record<number, string | null>>(() =>
-    Object.fromEntries(items.map((it) => [it.id, null]))
+    Object.fromEntries(items.map((it) => {
+      const prev = prevByLabel.get(it.label);
+      const restored = prev && it.kind === "choice"
+        ? (prev.note ?? null)
+        : null;
+      return [it.id, restored];
+    }))
   );
 
   const [busy, setBusy] = useState(false);
