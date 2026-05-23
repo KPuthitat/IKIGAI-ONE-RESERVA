@@ -1,0 +1,58 @@
+name: CI
+
+# Runs the pre-build validation chain on every push + PR so we catch
+# the same problems the VPS would catch — but earlier, before the
+# code reaches production. The VPS still runs the chain again as
+# part of `npm run build`; this workflow exists so a bad push gets
+# a red ❌ on GitHub without having to pull on the production droplet.
+#
+# Intentionally narrow scope: no full `next build`, no tests yet
+# (tests live in the backlog — see README "Engineering hygiene").
+# Just the three cheap checks that catch ~all of the recent bugs:
+#   - i18n duplicates (build-killer)
+#   - client-imports-server-only-module (build-killer)
+#   - TypeScript errors (build-killer)
+#
+# All three together run in ~30-40 seconds on a free GitHub runner.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: tsc + i18n + risks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # Match the LTS version the VPS runs.
+          node-version: '20'
+          # Cache npm so subsequent runs install in ~5s instead of ~30s.
+          cache: 'npm'
+
+      - name: Install dependencies
+        # `npm install` (not `npm ci`) because we don't ship a
+        # package-lock.json yet — adding one is on the engineering-
+        # hygiene roadmap. --no-audit / --no-fund cut ~10s of
+        # unrelated npm noise.
+        run: npm install --no-audit --no-fund
+
+      - name: Check i18n (duplicate keys)
+        run: npm run check:i18n
+
+      - name: Scan build risks (client/server bundle separation)
+        run: npm run check:risks
+
+      - name: TypeScript type-check
+        # The actual command our prebuild runs — identical, so a green
+        # CI guarantees the VPS build's prebuild step won't fail.
+        run: npx tsc --noEmit -p tsconfig.json

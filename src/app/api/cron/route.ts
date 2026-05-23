@@ -29,13 +29,27 @@ import {
   isShiftNotifyDue,
   markShiftNotifySent
 } from "@/lib/shift-notify";
+import { reportError } from "@/lib/error-reporter";
 
 export async function POST(req: Request) {
   const token = req.headers.get("x-cron-token");
   if (!process.env.CRON_SECRET || token !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  try {
+    return await runCron();
+  } catch (e) {
+    // Outer safety net — per-loop try/catch above should handle most
+    // failures gracefully, but anything that escapes (db unavailable,
+    // OOM, etc.) lands here. Report + still return 500 so the
+    // external scheduler logs the failure too.
+    console.error("cron top-level error", e);
+    reportError(e, "cron top-level", {});
+    return NextResponse.json({ ok: false, error: "internal" }, { status: 500 });
+  }
+}
 
+async function runCron(): Promise<NextResponse> {
   const db = getDb();
   const branches = db.prepare("SELECT * FROM branches").all() as Branch[];
   let remindersSent = 0;
@@ -85,6 +99,11 @@ export async function POST(req: Request) {
       markDailySummarySent(branch.id, todayBkk);
     } catch (e) {
       console.error("daily attendance summary error", branch.slug, e);
+      reportError(e, "cron daily-attendance-summary", {
+        branchSlug: branch.slug,
+        branchId: branch.id,
+        date: todayBkk
+      });
     }
   }
 
@@ -104,6 +123,11 @@ export async function POST(req: Request) {
       markShiftNotifySent(branch.id, todayBkk);
     } catch (e) {
       console.error("shift notify error", branch.slug, e);
+      reportError(e, "cron shift-notify", {
+        branchSlug: branch.slug,
+        branchId: branch.id,
+        date: todayBkk
+      });
     }
   }
 
@@ -133,6 +157,11 @@ export async function POST(req: Request) {
         remindersSent++;
       } catch (e) {
         console.error("reminder error", e);
+        reportError(e, "cron booking-reminder", {
+          branchSlug: branch.slug,
+          bookingId: b.id,
+          bookingRef: b.ref_no
+        });
       }
     }
   }
