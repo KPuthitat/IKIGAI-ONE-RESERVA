@@ -175,6 +175,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/admin/persona/reports", label: t(lang, "admin.persona.nav.reports") },
         { href: "/admin/persona/messaging", label: t(lang, "admin.persona.nav.messaging") },
+        { href: "/admin/persona/messaging/quota", label: t(lang, "admin.persona.nav.messagingQuota") },
         { href: "/admin/persona/settings", label: t(lang, "admin.persona.nav.settings") }
         // Legacy iframe link removed 2026-05-13 — all features are
         // now native PERSONA pages. /admin/persona/legacy still

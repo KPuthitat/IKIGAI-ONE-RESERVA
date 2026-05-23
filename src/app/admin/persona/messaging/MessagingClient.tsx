@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { apiUrl } from "@/lib/url";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
@@ -167,6 +168,24 @@ export default function MessagingClient({
 
   return (
     <div className="space-y-4">
+      {/* Quick link to the live quota dashboard — first thing the
+          admin sees, since "how much message budget is left" is the
+          question they'll ask most often after the May-2026 outage. */}
+      <Link
+        href="/admin/persona/messaging/quota"
+        className="card flex items-center justify-between gap-3 hover:shadow-md transition-shadow border-brand/30 bg-brand/5"
+      >
+        <div>
+          <div className="text-sm font-bold text-brand">
+            📊 {t(lang, "admin.messaging.quotaLinkTitle")}
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {t(lang, "admin.messaging.quotaLinkDesc")}
+          </div>
+        </div>
+        <span className="text-brand">→</span>
+      </Link>
+
       {/* Platform channel: IKIGAI OS */}
       <div className="card space-y-4">
         <div className="flex items-start justify-between gap-3">
