@@ -200,8 +200,14 @@ export async function POST(req: Request, { params }: { params: { branch: string 
         continue;
       }
 
-      // Help text — different per scope
-      if (/help|ช่วย|สั่ง|cmd/i.test(text)) {
+      // Help text — different per scope. Anchored to whole-message
+      // match (^...$) so we don't trigger on every chat that happens
+      // to contain "สั่ง" as a substring — that was bombing staff
+      // with help-text spam any time anyone wrote "สั่งอาหาร",
+      // "ส่งคำสั่ง", "สั่งงาน", etc. (Same anchoring pattern as the
+      // 'id' branch above; missed in the original code.) Drop "สั่ง"
+      // entirely — it never appears as a standalone message anyway.
+      if (/^\s*(help|ช่วย|cmd|menu|วิธีใช้)\s*$/i.test(text)) {
         const helpText = channel.scope === "platform"
           ? "วิธีใช้:\n- พิมพ์ 'id' เพื่อดู LINE User ID ของคุณ (พนักงานใช้สำหรับ bind ในระบบ)"
           : "วิธีใช้:\n- พิมพ์ 'ยกเลิก #หมายเลขจอง' เพื่อยกเลิก\n- พิมพ์ 'id' เพื่อดู LINE User ID ของคุณ\n- จองโต๊ะใหม่ที่ลิงก์ของร้าน";

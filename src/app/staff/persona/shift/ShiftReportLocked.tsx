@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import ReportDetailView, { type ReportDetail } from "@/app/components/ReportDetailView";
 
 // Locked-state card shown when today's report (any of the 4 types)
 // has already been submitted at this branch. Includes an inline
@@ -58,6 +59,36 @@ export default function ShiftReportLocked({
   // around for a few seconds so staff sees it without scrolling.
   const [resendBusy, setResendBusy] = useState(false);
   const [resendMsg, setResendMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  // Inline "ดูรายละเอียด" state — lets staff re-check the values
+  // they just submitted before deciding whether to request an
+  // unlock. Cached on first open since daily_reports rows are
+  // immutable post-submit.
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detail, setDetail] = useState<ReportDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  async function toggleDetail() {
+    const next = !detailOpen;
+    setDetailOpen(next);
+    if (!next || detail || detailLoading) return;
+    setDetailLoading(true);
+    setDetailError(null);
+    try {
+      const res = await fetch(apiUrl(`/api/persona/daily-report/${reportId}`));
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) {
+        setDetailError(j?.error ?? "fetch_failed");
+        return;
+      }
+      setDetail(j.report as ReportDetail);
+    } catch (e) {
+      setDetailError(e instanceof Error ? e.message : "network_error");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
 
   async function resendNotification() {
     setResendBusy(true);
@@ -189,6 +220,40 @@ export default function ShiftReportLocked({
         >
           {resendMsg.kind === "ok" ? "✓ " : "✗ "}{resendMsg.text}
         </div>
+      )}
+
+      {/* "ดูรายละเอียด" — staff re-checks what they submitted
+          before deciding whether to file an unlock request. Lazy-
+          fetches the report on first open. */}
+      <div className="card flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex-1 min-w-[200px]">
+          <div className="text-sm font-bold text-slate-700">
+            {t("staff.persona.shiftReport.locked.viewDetail")}
+          </div>
+          <div className="text-[11px] text-slate-500">
+            {t("staff.persona.shiftReport.locked.viewDetailHint")}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={toggleDetail}
+          className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 font-bold hover:bg-slate-50"
+          aria-expanded={detailOpen}
+        >
+          🔍 {t("staff.persona.shiftReport.locked.viewDetail")}
+          <span className="ml-1 text-[10px] leading-none">
+            {detailOpen ? "▴" : "▾"}
+          </span>
+        </button>
+      </div>
+      {detailOpen && (
+        <ReportDetailView
+          reportId={reportId}
+          detail={detail}
+          loading={detailLoading}
+          error={detailError}
+          t={t}
+        />
       )}
 
       {/* Last-rejected banner — only when staff's most recent request

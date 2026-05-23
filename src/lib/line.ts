@@ -2020,7 +2020,7 @@ export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMe
         },
         {
           type: "text",
-          text: `มีคำขอแก้ไข${typeLabel} ให้แอดมินปลดล็อค และตรวจสอบรายการอีกครั้ง`,
+          text: `มีคำขอแก้ไข ${typeLabel} ให้แอดมินปลดล็อค และตรวจสอบรายการอีกครั้ง`,
           size: "xxs",
           color: "#b45309",
           wrap: true,
