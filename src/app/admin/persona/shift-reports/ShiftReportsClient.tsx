@@ -6,6 +6,36 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { nameWithPrefix } from "@/lib/name";
 
+// Shape of the report-detail payload fetched lazily when admin
+// clicks "ดูรายละเอียด" on a row. Mirrors what
+// /api/admin/persona/daily-report/[id] returns. We type the data
+// loose (Record<string, unknown>) because the schema varies by
+// report type — open has yesterday_closing_amount + morning_drawer_
+// amount, close has closing_drawer_amount, readiness has neither.
+type ReportDetail = {
+  id: number;
+  type: ReportType;
+  report_date: string;
+  created_at: string;
+  opener_name: string;
+  opener_prefix: string | null;
+  is_revision: boolean;
+  data: {
+    yesterday_closing_amount?: number | null;
+    morning_drawer_amount?: number | null;
+    closing_drawer_amount?: number | null;
+    checklist?: Array<{
+      label: string;
+      checked: boolean;
+      note?: string | null;
+      kind?: string;
+      is_child?: boolean;
+      is_headline?: boolean;
+      description?: string | null;
+    }>;
+  };
+};
+
 export type ReportType =
   | "shift_open"
   | "shift_close"
@@ -203,6 +233,51 @@ export default function ShiftReportsClient({
     reportId: number; kind: "ok" | "err"; text: string
   } | null>(null);
 
+  // Inline report-detail expand state. Keyed by reportId so multiple
+  // rows can be open simultaneously (admin comparing two types).
+  // detailCache stores the fetched payload so re-toggling the same
+  // row doesn't re-fetch — daily reports are immutable once
+  // submitted (revisions create new rows), so cache is safe.
+  const [expandedDetailIds, setExpandedDetailIds] = useState<Set<number>>(new Set());
+  const [detailCache, setDetailCache] = useState<Record<number, ReportDetail>>({});
+  const [detailLoadingId, setDetailLoadingId] = useState<number | null>(null);
+  const [detailErrorByReport, setDetailErrorByReport] = useState<Record<number, string>>({});
+
+  async function toggleDetail(reportId: number) {
+    setExpandedDetailIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(reportId)) {
+        next.delete(reportId);
+      } else {
+        next.add(reportId);
+      }
+      return next;
+    });
+    // Lazy-fetch on first expand. Re-collapse+expand reuses cache.
+    if (detailCache[reportId] || detailLoadingId === reportId) return;
+    setDetailLoadingId(reportId);
+    setDetailErrorByReport((p) => {
+      const { [reportId]: _omit, ...rest } = p;
+      return rest;
+    });
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/daily-report/${reportId}`));
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) {
+        setDetailErrorByReport((p) => ({ ...p, [reportId]: j?.error ?? "fetch_failed" }));
+        return;
+      }
+      setDetailCache((p) => ({ ...p, [reportId]: j.report as ReportDetail }));
+    } catch (e) {
+      setDetailErrorByReport((p) => ({
+        ...p,
+        [reportId]: e instanceof Error ? e.message : "network_error"
+      }));
+    } finally {
+      setDetailLoadingId(null);
+    }
+  }
+
   async function resendNotification(reportId: number) {
     setResendBusyId(reportId);
     setResendMsg(null);
@@ -363,6 +438,23 @@ export default function ShiftReportsClient({
                           </span>
                         </button>
                       )}
+                      {/* "ดูรายละเอียด" — supervisor expands the
+                          full report content inline below this row.
+                          Lazy-fetches the payload on first open and
+                          caches it (daily_reports rows are immutable
+                          once submitted — revisions create new rows
+                          — so the cache never goes stale).  */}
+                      <button
+                        type="button"
+                        onClick={() => toggleDetail(r.id)}
+                        className="text-[10px] px-1.5 py-0.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold whitespace-nowrap"
+                        aria-expanded={expandedDetailIds.has(r.id)}
+                      >
+                        🔍 {t("admin.persona.shiftReports.viewDetail")}
+                        <span className="ml-1 text-[9px] leading-none">
+                          {expandedDetailIds.has(r.id) ? "▴" : "▾"}
+                        </span>
+                      </button>
                       {/* Manual LINE resend — same endpoint that the
                           staff lock screen uses. Admins reach for this
                           when the auto-push didn't land in the group
@@ -407,6 +499,15 @@ export default function ShiftReportsClient({
                   >
                     {resendMsg.kind === "ok" ? "✓ " : "✗ "}{resendMsg.text}
                   </div>
+                )}
+                {r && expandedDetailIds.has(r.id) && (
+                  <ReportDetailView
+                    reportId={r.id}
+                    detail={detailCache[r.id] ?? null}
+                    loading={detailLoadingId === r.id}
+                    error={detailErrorByReport[r.id] ?? null}
+                    t={t}
+                  />
                 )}
               </li>
             );
@@ -534,6 +635,160 @@ export default function ShiftReportsClient({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Inline report-detail viewer ────────────────────────────────────
+//
+// Renders below a "today's status" row when admin expands it. Shows
+// the actual checklist values the staff submitted plus any numeric
+// fields specific to the report type:
+//   shift_open     → ยอดเงินปิดกะเมื่อวาน + ยอดเงินเปิดกะเช้านี้
+//   shift_close    → ยอดเงินปิดกะ
+//   readiness_*    → (none)
+//
+// Loading / error states are inline so admin doesn't lose context.
+// The checklist mirrors the staff form's + LINE Flex's visual
+// conventions so what admin sees here matches what the staff saw
+// when filling it (✓ checked emerald / 📝 skipped amber with
+// reason / ✗ not done rose / section muted small-caps header).
+function ReportDetailView({
+  reportId,
+  detail,
+  loading,
+  error,
+  t
+}: {
+  reportId: number;
+  detail: ReportDetail | null;
+  loading: boolean;
+  error: string | null;
+  t: (k: string, vars?: Record<string, string | number>) => string;
+}) {
+  if (loading) {
+    return (
+      <div className="ml-7 pl-3 border-l-2 border-slate-200 py-2">
+        <div className="text-xs text-slate-500">
+          {t("admin.persona.shiftReports.detail.loading")}
+        </div>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="ml-7 pl-3 border-l-2 border-rose-300 py-2">
+        <div className="text-xs text-rose-700">
+          ✗ {t("admin.persona.shiftReports.detail.loadError")}: {error}
+        </div>
+      </div>
+    );
+  }
+  if (!detail) return null;
+
+  const data = detail.data;
+  const checklist = data.checklist ?? [];
+
+  // Numeric fields rendered as a small key/value table at top.
+  // Skipped entirely for readiness reports where neither field exists.
+  const amounts: Array<{ label: string; value: number | null | undefined }> = [];
+  if (detail.type === "shift_open") {
+    amounts.push({
+      label: t("admin.persona.shiftReports.detail.yesterdayClosing"),
+      value: data.yesterday_closing_amount
+    });
+    amounts.push({
+      label: t("admin.persona.shiftReports.detail.morningDrawer"),
+      value: data.morning_drawer_amount
+    });
+  } else if (detail.type === "shift_close") {
+    amounts.push({
+      label: t("admin.persona.shiftReports.detail.closingDrawer"),
+      value: data.closing_drawer_amount
+    });
+  }
+
+  const fmtBaht = (n: number | null | undefined): string => {
+    if (n == null) return "—";
+    return `${n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท`;
+  };
+
+  return (
+    <div className="ml-7 pl-3 border-l-2 border-emerald-200 py-2 space-y-2">
+      <div className="text-[10px] font-bold tracking-[1px] text-emerald-700 uppercase">
+        {t("admin.persona.shiftReports.detail.heading", { id: reportId })}
+      </div>
+
+      {amounts.length > 0 && (
+        <div className="rounded bg-slate-50 border border-slate-200 p-2.5 space-y-1">
+          {amounts.map((a) => (
+            <div key={a.label} className="flex justify-between text-xs">
+              <span className="text-slate-500">{a.label}</span>
+              <span className="font-mono font-bold text-slate-800">
+                {fmtBaht(a.value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {checklist.length === 0 ? (
+        <div className="text-xs text-slate-400 italic">
+          {t("admin.persona.shiftReports.detail.emptyChecklist")}
+        </div>
+      ) : (
+        <ul className="space-y-1.5">
+          {checklist.map((it, i) => {
+            // Section header — non-interactive title, mirror the
+            // staff form's small-caps treatment.
+            if (it.kind === "section") {
+              return (
+                <li key={i} className={`pt-2 ${it.is_child ? "pl-4" : ""}`}>
+                  <div className="text-[10px] font-bold tracking-wider text-slate-500 uppercase">
+                    {it.label}
+                  </div>
+                </li>
+              );
+            }
+            const note = it.note?.trim();
+            const skipped = !it.checked && !!note;
+            // Icon + colour tier mirrors the LINE Flex card so a
+            // supervisor recognises the visual language.
+            const icon = it.checked ? "✓" : skipped ? "📝" : "✗";
+            const iconCls = it.checked
+              ? "text-emerald-700"
+              : skipped ? "text-amber-700"
+              : "text-rose-600";
+            const labelCls = it.checked
+              ? "text-slate-800"
+              : skipped ? "text-slate-700"
+              : "text-rose-700 font-bold";
+            return (
+              <li
+                key={i}
+                className={`flex items-start gap-2 text-xs ${it.is_child ? "pl-4" : ""}`}
+              >
+                <span className={`text-sm leading-none mt-0.5 ${iconCls}`}>{icon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className={labelCls}>{it.label}</div>
+                  {it.description?.trim() && (
+                    <div className="text-[10px] text-slate-400 mt-0.5">
+                      {it.description.trim()}
+                    </div>
+                  )}
+                  {note && (
+                    <div className={`text-[11px] mt-0.5 font-mono ${
+                      skipped ? "text-amber-700" : "text-slate-700"
+                    }`}>
+                      ↳ {note}
+                    </div>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
