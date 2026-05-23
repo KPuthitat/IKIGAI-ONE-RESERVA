@@ -219,19 +219,34 @@ export default function ShiftReportsClient({
           text: t("admin.persona.shiftReports.resendOk")
         });
       } else {
-        // Show the actual error from the server so admin knows whether
-        // the issue is token / group / LINE API itself. Falls back to
-        // the generic message when the API returned nothing useful.
-        const detail = body?.message || body?.error
-          ? `${body?.error ?? "error"}${body?.message ? ` — ${body.message}` : ""}`
-          : "";
-        setResendMsg({
-          reportId,
-          kind: "err",
-          text: detail
-            ? `${t("admin.persona.shiftReports.resendFail")} · ${detail}`
-            : t("admin.persona.shiftReports.resendFail")
-        });
+        // Detect the LINE monthly-quota case and show a humanised
+        // explanation instead of the raw HTTP 429 / JSON dump that
+        // confused the owner ("ฝากเชคทั้งระบบ" — they thought it
+        // was a system bug when really LINE's free 200-msg/month
+        // cap was hit). Other errors fall through to the generic
+        // detail concatenation so we don't hide diagnostic info.
+        const isQuotaError =
+          body?.message === "monthly_quota_exceeded"
+          || body?.error === "monthly_quota_exceeded"
+          || /reached your monthly limit/i.test(body?.message ?? "");
+        if (isQuotaError) {
+          setResendMsg({
+            reportId,
+            kind: "err",
+            text: t("admin.persona.shiftReports.resendFailQuota")
+          });
+        } else {
+          const detail = body?.message || body?.error
+            ? `${body?.error ?? "error"}${body?.message ? ` — ${body.message}` : ""}`
+            : "";
+          setResendMsg({
+            reportId,
+            kind: "err",
+            text: detail
+              ? `${t("admin.persona.shiftReports.resendFail")} · ${detail}`
+              : t("admin.persona.shiftReports.resendFail")
+          });
+        }
       }
     } catch (e) {
       setResendMsg({

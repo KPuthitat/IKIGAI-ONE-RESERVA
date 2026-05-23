@@ -38,6 +38,19 @@ export async function sendLinePush(
     });
     if (!res.ok) {
       const text = await res.text();
+      // Translate the most common LINE failure (monthly free-tier
+      // quota exhaustion, HTTP 429) into a stable error code admin
+      // UIs can recognise. The raw LINE response is "monthly limit"
+      // text that looks like a system bug to non-technical owners —
+      // surfacing a tagged code lets us show humanised copy + a
+      // direct link to the LINE OA Manager instead.
+      if (res.status === 429 && /monthly limit/i.test(text)) {
+        return {
+          ok: false,
+          status: 429,
+          error: "monthly_quota_exceeded"
+        };
+      }
       return { ok: false, status: res.status, error: text };
     }
     return { ok: true, status: res.status };

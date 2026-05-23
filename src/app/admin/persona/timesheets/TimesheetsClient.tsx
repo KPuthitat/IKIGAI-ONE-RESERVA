@@ -96,6 +96,13 @@ export default function TimesheetsClient({
       } else {
         // Map known error codes to user-friendly copy so admin
         // knows what to fix instead of seeing raw error strings.
+        // Special case: the LINE 429 monthly-cap error gets its own
+        // copy with the OA Manager URL, because "push_failed" alone
+        // looks like a transient blip when it's really a billing /
+        // wait-until-next-month situation.
+        const isQuotaError =
+          j?.message === "monthly_quota_exceeded"
+          || /reached your monthly limit/i.test(j?.message ?? "");
         const codeMap: Record<string, string> = {
           no_line_user_id: t(lang, "admin.persona.timesheets.resend.errNoLine"),
           platform_not_configured: t(lang, "admin.persona.timesheets.resend.errNoChannel"),
@@ -103,7 +110,9 @@ export default function TimesheetsClient({
           branch_forbidden: t(lang, "admin.persona.timesheets.resend.errBranch"),
           push_failed: t(lang, "admin.persona.timesheets.resend.errPushFailed")
         };
-        const msg = codeMap[j?.error] || t(lang, "common.error");
+        const msg = isQuotaError
+          ? t(lang, "admin.persona.shiftReports.resendFailQuota")
+          : codeMap[j?.error] || t(lang, "common.error");
         alert({
           title: t(lang, "admin.persona.timesheets.resend.failTitle"),
           body: <p>{msg}</p>,
