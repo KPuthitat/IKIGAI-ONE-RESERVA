@@ -816,48 +816,6 @@ export default function BookingForm({
           />
         </div>
 
-        {/* Special occasion picker — drives both a personalised LINE
-            reply right after submit and a badge on the staff card so
-            the team can prepare (e.g. cake plate, quiet table). Kept
-            optional + clearly labelled as "no obligation" because
-            making it required would scare off casual diners. Moved
-            below notes 2026-05 per owner direction — keeps the
-            primary fields (date/time/party/allergy/notes) flowing
-            naturally with the secondary occasion picker at the bottom. */}
-        <div>
-          <label className="label">{t("booking.field.occasion")}</label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <button
-              type="button"
-              onClick={() => setForm({ ...form, occasion: "" })}
-              className={`text-xs px-3 py-2 rounded-lg border transition ${
-                form.occasion === ""
-                  ? "border-brand bg-brand/5 text-brand font-medium"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-              }`}
-            >
-              {t("booking.occasion.none")}
-            </button>
-            {OCCASION_DEFS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setForm({ ...form, occasion: opt.value })}
-                className={`text-xs px-3 py-2 rounded-lg border transition ${
-                  form.occasion === opt.value
-                    ? "border-brand bg-brand/5 text-brand font-medium"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                }`}
-              >
-                {t(opt.key)}
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-slate-400 mt-1.5">
-            {t("booking.field.occasionHint")}
-          </p>
-        </div>
-
         {/* LINE userId field intentionally NOT shown for mode='line'.
             The new flow always uses the claim link — admin saves the
             booking, gets a /reserva/<branch>/claim/<ref> URL, sends it
@@ -914,6 +872,25 @@ export default function BookingForm({
                 {t("booking.member.hint")}
               </div>
             )}
+          </div>
+
+          {/* Occasion picker — moved into the marketing block 2026-05
+              per owner direction so it sits with the other short
+              optional questions (origin / source / member). Drives
+              a personalised LINE reply after submit + a badge on the
+              staff card so the team can prepare. */}
+          <div>
+            <div className="text-xs font-semibold text-slate-500 mb-2">{t("booking.field.occasion")}</div>
+            <ChipGroup
+              options={[
+                ...OCCASION_DEFS.map((opt) => ({ value: opt.value, label: t(opt.key) }))
+              ]}
+              value={form.occasion}
+              onChange={(v) => setForm({ ...form, occasion: (v ?? "") as typeof form.occasion })}
+            />
+            <p className="text-[10px] text-slate-400 mt-1.5">
+              {t("booking.field.occasionHint")}
+            </p>
           </div>
         </div>
       )}
