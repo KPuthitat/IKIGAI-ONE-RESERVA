@@ -21,6 +21,7 @@ export type ReservaChannelInitial = {
   extra_button_url: string | null;        // Menu link on Flex card
   contact_phone: string | null;           // tel: button on Flex card
   customer_line_oa_url: string | null;    // /reserva picker redirect target (LINE add-friend URL)
+  cross_promotions: string | null;        // JSON: Array<{target_slug, url, enabled}>
   // Per-event audience toggles (SQLite 0/1). The UI flips booleans.
   notify_customer_pending: number;
   notify_customer_created: number;
@@ -30,9 +31,23 @@ export type ReservaChannelInitial = {
   notify_staff_reminder: number;
 };
 
+export type OtherBranchOpt = { id: number; slug: string; name: string };
+
+/** One row in cross_promotions JSON — admin's stance toward
+ *  promoting `target_slug` from the current branch context. */
+export type CrossPromotion = {
+  target_slug: string;
+  url: string | null;
+  enabled: boolean;
+};
+
 export default function ReservaMessagingClient({
-  lang, channels
-}: { lang: Lang; channels: ReservaChannelInitial[] }) {
+  lang, channels, otherBranches
+}: {
+  lang: Lang;
+  channels: ReservaChannelInitial[];
+  otherBranches: OtherBranchOpt[];
+}) {
   return (
     <div className="space-y-4">
       {channels.length === 0 ? (
@@ -41,7 +56,12 @@ export default function ReservaMessagingClient({
         </div>
       ) : (
         channels.map((c) => (
-          <ChannelCard key={c.code} lang={lang} channel={c} />
+          <ChannelCard
+            key={c.code}
+            lang={lang}
+            channel={c}
+            otherBranches={otherBranches}
+          />
         ))
       )}
 
@@ -63,8 +83,12 @@ export default function ReservaMessagingClient({
 }
 
 function ChannelCard({
-  lang, channel
-}: { lang: Lang; channel: ReservaChannelInitial }) {
+  lang, channel, otherBranches
+}: {
+  lang: Lang;
+  channel: ReservaChannelInitial;
+  otherBranches: OtherBranchOpt[];
+}) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -83,6 +107,18 @@ function ChannelCard({
   const [extraButtonUrl, setExtraButtonUrl] = useState(channel.extra_button_url ?? "");
   const [contactPhone, setContactPhone] = useState(channel.contact_phone ?? "");
   const [customerLineOaUrl, setCustomerLineOaUrl] = useState(channel.customer_line_oa_url ?? "");
+
+  // Cross-promotion matrix — one row per OTHER branch. We hydrate
+  // from the stored JSON, then merge against `otherBranches` so a
+  // newly-added branch appears in the UI even though it's not yet
+  // in cross_promotions. Empty / invalid JSON → empty matrix.
+  const [crossPromos, setCrossPromos] = useState<CrossPromotion[]>(() => {
+    const parsed = parseCrossPromotions(channel.cross_promotions);
+    return otherBranches.map((b) => {
+      const existing = parsed.find((p) => p.target_slug === b.slug);
+      return existing ?? { target_slug: b.slug, url: null, enabled: false };
+    });
+  });
 
   // Per-event audience toggles (UI as booleans, persisted as 0/1).
   const [notifyCustPending,  setNotifyCustPending]  = useState(!!channel.notify_customer_pending);
@@ -120,11 +156,27 @@ function ChannelCard({
 
       // ── 2. Branch-level notification fields ────────────────────────
       const branchBody: Record<string, string | boolean | null> = {};
+      // Serialise cross_promotions — only emit rows that are enabled OR
+      // have a non-empty URL (don't waste storage on empty all-false rows).
+      const promosSerialised = JSON.stringify(
+        crossPromos
+          .filter((p) => p.enabled || (p.url && p.url.trim().length > 0))
+          .map((p) => ({
+            target_slug: p.target_slug,
+            url: p.url?.trim() || null,
+            enabled: !!p.enabled
+          }))
+      );
+      // Treat "[]" as null so the column stays NULL when admin has
+      // never configured anything — matches the migration default.
+      const promosToSave = promosSerialised === "[]" ? null : promosSerialised;
+
       const branchPairs: Array<[keyof typeof channel, string | null, string]> = [
         ["staff_group_id", staffGroupId.trim() || null, channel.staff_group_id ?? ""],
         ["extra_button_url", extraButtonUrl.trim() || null, channel.extra_button_url ?? ""],
         ["contact_phone", contactPhone.trim() || null, channel.contact_phone ?? ""],
-        ["customer_line_oa_url", customerLineOaUrl.trim() || null, channel.customer_line_oa_url ?? ""]
+        ["customer_line_oa_url", customerLineOaUrl.trim() || null, channel.customer_line_oa_url ?? ""],
+        ["cross_promotions", promosToSave, channel.cross_promotions ?? ""]
       ];
       for (const [key, newVal, oldVal] of branchPairs) {
         if ((newVal ?? "") !== oldVal) branchBody[key] = newVal;
@@ -385,6 +437,50 @@ function ChannelCard({
         </p>
       </div>
 
+      {/* Cross-branch promotion matrix — when /reserva is visited
+          with ?from=<thisBranch>, the picker shows only the OTHER
+          branches enabled below, using the LINE OA URLs typed here.
+          Rich menu URL: /reserva?from=<thisBranchSlug> */}
+      {otherBranches.length > 0 && (
+        <div>
+          <label className="label">{t(lang, "admin.settings.field.crossPromos")}</label>
+          <p className="text-xs text-slate-500 -mt-1 mb-2">
+            {t(lang, "admin.settings.crossPromosHint")}
+          </p>
+          <div className="space-y-2">
+            {otherBranches.map((b, idx) => {
+              const row = crossPromos[idx];
+              const update = (patch: Partial<CrossPromotion>) => {
+                setCrossPromos((prev) => prev.map((r, i) =>
+                  i === idx ? { ...r, ...patch } : r
+                ));
+              };
+              return (
+                <div key={b.slug} className="flex items-center gap-2 border border-slate-200 rounded-lg p-2">
+                  <label className="flex items-center gap-2 min-w-[120px] shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={row?.enabled ?? false}
+                      onChange={(e) => update({ enabled: e.target.checked })}
+                    />
+                    <span className="text-sm font-medium text-slate-700">{b.name}</span>
+                  </label>
+                  <input
+                    type="url"
+                    className="input flex-1 text-sm"
+                    value={row?.url ?? ""}
+                    onChange={(e) => update({ url: e.target.value || null })}
+                    placeholder="https://line.me/R/ti/p/@xxxxxxx"
+                    maxLength={500}
+                    disabled={!row?.enabled}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ───────── Audience toggles ───────── */}
       <SectionTitle>{t(lang, "admin.reserva.messaging.section.notifyAudience")}</SectionTitle>
       <p className="text-xs text-slate-500 -mt-1">
@@ -497,4 +593,26 @@ function AudienceCard({
       </div>
     </div>
   );
+}
+
+/** Parse the stored cross_promotions JSON safely. Returns [] on any
+ *  parse error / null / unexpected shape — admin UI then re-builds
+ *  default rows for every otherBranch via merge. */
+function parseCrossPromotions(raw: string | null): CrossPromotion[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((p): p is CrossPromotion =>
+        p && typeof p === "object" && typeof p.target_slug === "string"
+      )
+      .map((p) => ({
+        target_slug: p.target_slug,
+        url: typeof p.url === "string" ? p.url : null,
+        enabled: !!p.enabled
+      }));
+  } catch {
+    return [];
+  }
 }

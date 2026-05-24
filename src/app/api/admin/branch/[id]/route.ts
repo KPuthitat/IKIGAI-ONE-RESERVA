@@ -36,6 +36,9 @@ const Patch = z.object({
   // redirects here instead of the booking form, so the customer always
   // friends the OA first.
   customer_line_oa_url: z.string().max(500).nullable().optional(),
+  // JSON-encoded cross-promotion matrix. Validated as JSON at the SQL
+  // layer downstream — admin sends the stringified array.
+  cross_promotions: z.string().max(4000).nullable().optional(),
   // LINE group ID for staff notifications — captured from the webhook
   // when the OA is invited into a group. Push to this ID reaches all
   // members of the group with a single message.

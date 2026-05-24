@@ -61,18 +61,78 @@ function computeTodayStatus(b: Branch, todayBkk: string): TodayStatus {
   };
 }
 
-export default function CustomerReservaPage() {
+// Cross-promotion entry shape mirrors the admin matrix in
+// ReservaMessagingClient. Parser is local — we don't share with the
+// admin client because that one runs in the browser and we don't
+// want to drag the picker into the same bundle.
+type CrossPromotion = {
+  target_slug: string;
+  url: string | null;
+  enabled: boolean;
+};
+
+function parseCrossPromos(raw: string | null): CrossPromotion[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((p): p is CrossPromotion =>
+        p && typeof p === "object" && typeof p.target_slug === "string"
+      )
+      .map((p) => ({
+        target_slug: p.target_slug,
+        url: typeof p.url === "string" ? p.url : null,
+        enabled: !!p.enabled
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export default function CustomerReservaPage({
+  searchParams
+}: {
+  searchParams: { from?: string };
+}) {
   const lang = getLang();
   const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const db = getDb();
   // Open-for-booking branches float to the top; coming-soon then
   // closed sink below. display_order/name keeps a stable order within
   // each tier (flagship NAMA = display_order 1).
-  const branches = getDb().prepare(`
+  let branches = db.prepare(`
     SELECT * FROM branches
     ORDER BY
       CASE status WHEN 'open' THEN 0 WHEN 'coming_soon' THEN 1 ELSE 2 END,
       display_order, name
   `).all() as Branch[];
+
+  // ?from=<slug> cross-promotion filter — when a customer arrives
+  // from a specific branch's LINE rich menu, the source branch's
+  // cross_promotions matrix dictates which OTHER branches are
+  // visible + which LINE OA URL each one uses. Source branch itself
+  // is always included so the customer can also book it.
+  const fromSlug = typeof searchParams.from === "string" ? searchParams.from : null;
+  const sourceBranch = fromSlug
+    ? (db.prepare("SELECT * FROM branches WHERE slug = ?")
+        .get(fromSlug) as Branch | undefined)
+    : undefined;
+  // Map of target_slug → URL the source admin configured. Empty
+  // when ?from is absent or invalid — picker shows everything.
+  const promoUrls = new Map<string, string | null>();
+  if (sourceBranch) {
+    const promos = parseCrossPromos(sourceBranch.cross_promotions);
+    const enabledTargets = new Set(
+      promos.filter((p) => p.enabled).map((p) => p.target_slug)
+    );
+    branches = branches.filter((b) =>
+      b.slug === sourceBranch.slug || enabledTargets.has(b.slug)
+    );
+    for (const p of promos) {
+      if (p.enabled) promoUrls.set(p.target_slug, p.url);
+    }
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-ink-gradient">
@@ -165,15 +225,23 @@ export default function CustomerReservaPage() {
               </div>
             );
 
-            // Branch card click target: prefer the branch's LINE OA
-            // "add friend" URL when configured (owner direction
-            // 2026-05). Sending customers through the OA first means
-            // they're already friends by the time they reach the
-            // booking form (via the OA's rich menu), so the Flex
-            // confirmation card can actually be pushed back to them.
-            // Falls back to the direct booking link when no URL set.
+            // Branch card click target priority:
+            //   1. Cross-promotion URL the source branch (?from=) set
+            //      for this target — applies only when admin enabled
+            //      this target in the source's matrix.
+            //   2. The target branch's own customer_line_oa_url
+            //      (default landing for organic /reserva visits).
+            //   3. Direct booking link /reserva/<slug> (legacy
+            //      fallback when no OA URL is configured).
+            // Sending customers through the OA first means they're
+            // already friends by the time they reach the booking form
+            // (via the OA's rich menu), so the Flex confirmation card
+            // can actually be pushed back to them.
+            const crossUrl = promoUrls.has(b.slug)
+              ? promoUrls.get(b.slug)
+              : null;
             const targetHref = bookable
-              ? (b.customer_line_oa_url || `/reserva/${b.slug}`)
+              ? (crossUrl || b.customer_line_oa_url || `/reserva/${b.slug}`)
               : null;
             const isExternal = !!targetHref && /^https?:\/\//i.test(targetHref);
             return bookable && targetHref ? (

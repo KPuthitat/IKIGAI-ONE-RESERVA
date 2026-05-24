@@ -1000,6 +1000,20 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("customer_line_oa_url")) {
     db.exec("ALTER TABLE branches ADD COLUMN customer_line_oa_url TEXT");
   }
+  // Cross-branch promotion matrix (added 2026-05). When a customer
+  // visits /reserva?from=<thisBranchSlug>, the picker only shows the
+  // OTHER branches the admin of <thisBranch> has enabled here, using
+  // the URLs the admin has typed. Stored as JSON because the matrix
+  // is tiny (4 branches × 4 entries = 16 rows max company-wide) and
+  // we never query it relationally.
+  //
+  // Shape: Array<{ target_slug: string; url: string | null; enabled: boolean }>
+  // NULL or empty array = no cross-promotions; the picker without
+  // ?from still shows every branch with its own customer_line_oa_url
+  // (legacy behaviour preserved).
+  if (!bnames2.has("cross_promotions")) {
+    db.exec("ALTER TABLE branches ADD COLUMN cross_promotions TEXT");
+  }
   // LINE group ID for staff notifications — when set, notifyStaff()
   // pushes to this single group instead of looping over staff_line_user_ids.
   // Format: 'C' followed by ~32 hex chars (LINE's group ID format).
@@ -2553,6 +2567,9 @@ export type Branch = {
   // tap instead of /reserva/<slug> — customer adds the OA first,
   // then the OA's rich menu deep-links to the booking form.
   customer_line_oa_url: string | null;
+  // JSON: Array<{ target_slug: string; url: string | null; enabled: boolean }>
+  // Cross-promotion entries when /reserva is visited with ?from=<thisBranch>.
+  cross_promotions: string | null;
   staff_group_id: string | null;       // LINE group ID for staff notifications (preferred over staff_line_user_ids when set)
   // Per-event notification audience toggles (1 = send, 0 = mute).
   // staff_reminder defaults to 0 — the time-to-arrive heads-up in the

@@ -36,6 +36,15 @@ export default function ReservaMessagingPage() {
   const branchRow = db.prepare("SELECT id, name FROM branches WHERE id = ?")
     .get(branchId) as { id: number; name: string } | undefined;
 
+  // All other branches — for the cross-promotion matrix UI in the
+  // admin card. Each row in the matrix represents a target branch
+  // the admin of the current branch may promote.
+  const otherBranches = db.prepare(`
+    SELECT id, slug, name FROM branches
+    WHERE id != ? AND status != 'closed'
+    ORDER BY display_order, name
+  `).all(branchId) as Array<{ id: number; slug: string; name: string }>;
+
   const channels = listReservaChannels()
     .filter((c) => c.branch_id === branchId)
     .map((c) => {
@@ -57,6 +66,7 @@ export default function ReservaMessagingPage() {
         extra_button_url: branch?.extra_button_url ?? null,
         contact_phone: branch?.contact_phone ?? null,
         customer_line_oa_url: branch?.customer_line_oa_url ?? null,
+        cross_promotions: branch?.cross_promotions ?? null,
         notify_customer_pending: branch?.notify_customer_pending ?? 1,
         notify_customer_created: branch?.notify_customer_created ?? 1,
         notify_customer_reminder: branch?.notify_customer_reminder ?? 1,
@@ -79,7 +89,11 @@ export default function ReservaMessagingPage() {
           {t(lang, "admin.reserva.messaging.subtitle")}
         </p>
       </div>
-      <ReservaMessagingClient lang={lang} channels={channels} />
+      <ReservaMessagingClient
+        lang={lang}
+        channels={channels}
+        otherBranches={otherBranches}
+      />
     </div>
   );
 }
