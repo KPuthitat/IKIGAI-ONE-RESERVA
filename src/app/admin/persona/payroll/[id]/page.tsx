@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "รอบเงินเดือน
 export default function PeriodDetailPage({
   params
 }: { params: { id: string } }) {
-  requireAdmin();
+  const user = requireAdmin();
   const lang = getLang();
   const db = getDb();
 
@@ -54,17 +54,29 @@ export default function PeriodDetailPage({
              pl.display_name
   `).all(id) as PayrollLineRow[];
 
-  // Staff list for "Add employee" picker — exclude those already in the period.
-  // Includes all staff users (even those without employment_type set) so admin
-  // can add anyone (e.g. contractors) — the line starts at zero anyway.
+  // Staff list for "Add employee" picker — scoped to admin's active
+  // branch so AT-HOME admin doesn't see NAMA staff in the picker.
+  // Excludes those already in the period. Includes all staff users
+  // (even those without employment_type set) so admin can add anyone
+  // (e.g. contractors) — the line starts at zero anyway.
+  // (super_admin sees all branches' staff since they manage the
+  // whole company; falls back to no branch filter for them.)
+  const branchFilter = user.role === "super_admin"
+    ? ""
+    : "AND id IN (SELECT user_id FROM user_branches WHERE branch_id = ?)";
+  const addableParams: Array<number> = [id];
+  if (user.role !== "super_admin" && user.activeBranchId) {
+    addableParams.push(user.activeBranchId);
+  }
   const addableStaff = db.prepare(`
     SELECT id, display_name, title_prefix, employment_type
     FROM users
     WHERE role = 'staff'
       AND id NOT IN (SELECT user_id FROM payroll_lines WHERE period_id = ?)
+      ${branchFilter}
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
-  `).all(id) as Array<{ id: number; display_name: string; title_prefix: string | null; employment_type: "pt" | "ft" | null }>;
+  `).all(...addableParams) as Array<{ id: number; display_name: string; title_prefix: string | null; employment_type: "pt" | "ft" | null }>;
 
   // Audit history for this period — both 'unlock' (paid→finalized) and
   // 'force_open' (created early) events. Newest first.

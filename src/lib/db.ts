@@ -1074,6 +1074,19 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("attendance_summary_last_sent_date")) {
     db.exec("ALTER TABLE branches ADD COLUMN attendance_summary_last_sent_date TEXT");
   }
+  // One-time default backfill (2026-05-24): owner reported the auto
+  // attendance summary never landed in the executive group. Root
+  // cause was attendance_summary_time being NULL on every existing
+  // branch (admin needed to set it manually but the UI for that was
+  // only added later). Backfill any branch still on NULL to "11:00"
+  // so the feature works out-of-the-box. Idempotent — sets only when
+  // currently NULL; admin's later changes stick.
+  db.exec(`
+    UPDATE branches
+    SET attendance_summary_time = '11:00'
+    WHERE attendance_summary_time IS NULL
+      AND status = 'open'
+  `);
 
   // Per-shift personal LINE reminder: each morning at
   // shift_notify_time the cron DMs every staff member who has a

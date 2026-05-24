@@ -72,9 +72,18 @@ export default function AttendanceReportPage({
 }: {
   searchParams: { month?: string; user_id?: string };
 }) {
-  requireAdmin();
+  const user = requireAdmin();
   const lang = getLang();
   const db = getDb();
+
+  if (!user.activeBranchId) {
+    return (
+      <div className="card text-sm text-slate-600">
+        {t(lang, "admin.notAssignedBranch")}
+      </div>
+    );
+  }
+  const activeBranchId = user.activeBranchId;
 
   const today = todayBkk();
   const month = /^\d{4}-\d{2}$/.test(searchParams.month ?? "")
@@ -86,18 +95,22 @@ export default function AttendanceReportPage({
   const fromIso = new Date(`${from}T00:00:00+07:00`).toISOString();
   const toIso = new Date(`${to}T23:59:59+07:00`).toISOString();
 
-  // Staff users (only those with employment_type set get attendance tracking)
+  // Staff users (only those with employment_type set get attendance
+  // tracking) — scoped to the admin's ACTIVE branch via user_branches
+  // so an AT-HOME admin doesn't see NAMA staff in the attendance
+  // report (previous version returned every staff in the system).
   let staffSql = `
-    SELECT id, display_name, title_prefix, employment_type, weekly_off_days
-    FROM users
-    WHERE role = 'staff' AND employment_type IS NOT NULL
+    SELECT u.id, u.display_name, u.title_prefix, u.employment_type, u.weekly_off_days
+    FROM users u
+    JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.role = 'staff' AND u.employment_type IS NOT NULL
   `;
-  const staffParams: Array<string | number> = [];
+  const staffParams: Array<string | number> = [activeBranchId];
   if (userIdFilter) {
-    staffSql += " AND id = ?";
+    staffSql += " AND u.id = ?";
     staffParams.push(userIdFilter);
   }
-  staffSql += " ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END, display_name";
+  staffSql += " ORDER BY CASE WHEN u.employment_type = 'ft' THEN 0 WHEN u.employment_type = 'pt' THEN 1 ELSE 2 END, u.display_name";
   const staff = db.prepare(staffSql).all(...staffParams) as StaffUser[];
 
   // Public holidays in month (only ones business considers off)
@@ -132,11 +145,14 @@ export default function AttendanceReportPage({
     }
   }
 
-  // Clock-in days per user
+  // Clock-in days per user — scoped to admin's active branch so
+  // attendance counts reflect work AT THIS BRANCH only (a staff
+  // who works at NAMA in the morning and HYPO in the afternoon
+  // should count once at NAMA's report and once at HYPO's).
   const clockIns = db.prepare(`
     SELECT user_id, ts FROM time_entries
-    WHERE type = 'in' AND ts >= ? AND ts <= ?
-  `).all(fromIso, toIso) as Array<{ user_id: number; ts: string }>;
+    WHERE type = 'in' AND branch_id = ? AND ts >= ? AND ts <= ?
+  `).all(activeBranchId, fromIso, toIso) as Array<{ user_id: number; ts: string }>;
   const workedByUser = new Map<number, Set<string>>();
   for (const ci of clockIns) {
     if (!workedByUser.has(ci.user_id)) workedByUser.set(ci.user_id, new Set());
@@ -174,12 +190,18 @@ export default function AttendanceReportPage({
     userCounts.set(u.id, counts);
   }
 
-  // Staff list for dropdown
+  // Staff list for dropdown — same branch scope as the report data
+  // itself. Showing every staff in the system would let admin pick
+  // a sibling-branch user and see (empty) zero counts; better to
+  // hide them entirely so the picker only lists relevant people.
   const staffList = db.prepare(`
-    SELECT id, display_name, title_prefix FROM users WHERE role = 'staff'
-    ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
-             display_name
-  `).all() as StaffOpt[];
+    SELECT u.id, u.display_name, u.title_prefix
+    FROM users u
+    JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.role = 'staff'
+    ORDER BY CASE WHEN u.employment_type = 'ft' THEN 0 WHEN u.employment_type = 'pt' THEN 1 ELSE 2 END,
+             u.display_name
+  `).all(activeBranchId) as StaffOpt[];
 
   // Aggregations
   const totals = { worked: 0, leave: 0, off: 0, holiday: 0, absent: 0 };

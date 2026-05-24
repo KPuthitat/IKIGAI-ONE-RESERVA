@@ -114,9 +114,18 @@ export default function HoursReportPage({
 }: {
   searchParams: { month?: string; user_id?: string };
 }) {
-  requireAdmin();
+  const user = requireAdmin();
   const lang = getLang();
   const db = getDb();
+
+  if (!user.activeBranchId) {
+    return (
+      <div className="card text-sm text-slate-600">
+        {t(lang, "admin.notAssignedBranch")}
+      </div>
+    );
+  }
+  const activeBranchId = user.activeBranchId;
 
   const today = todayBkk();
   const month = /^\d{4}-\d{2}$/.test(searchParams.month ?? "")
@@ -126,7 +135,10 @@ export default function HoursReportPage({
 
   const { fromIso, toIso } = monthRange(month);
 
-  const params: Array<string | number> = [fromIso, toIso];
+  // Scope entries to admin's active branch (same as attendance
+  // report). Previously returned every staff's hours globally —
+  // an AT-HOME admin could see NAMA staff's work hours.
+  const params: Array<string | number> = [activeBranchId, fromIso, toIso];
   let userClause = "";
   if (userIdFilter) {
     userClause = "AND te.user_id = ?";
@@ -137,7 +149,7 @@ export default function HoursReportPage({
     SELECT te.user_id, te.ts, te.type, u.display_name, u.title_prefix, u.employment_type
     FROM time_entries te
     JOIN users u ON te.user_id = u.id
-    WHERE te.ts >= ? AND te.ts <= ? ${userClause}
+    WHERE te.branch_id = ? AND te.ts >= ? AND te.ts <= ? ${userClause}
     ORDER BY te.user_id, te.ts
   `).all(...params) as Entry[];
 
@@ -149,12 +161,15 @@ export default function HoursReportPage({
     return a.display_name.localeCompare(b.display_name, "th");
   });
 
-  // Staff list for dropdown
+  // Staff list for dropdown — scoped to admin's active branch.
   const staffList = db.prepare(`
-    SELECT id, display_name, title_prefix FROM users WHERE role = 'staff'
-    ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
-             display_name
-  `).all() as StaffOpt[];
+    SELECT u.id, u.display_name, u.title_prefix
+    FROM users u
+    JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.role = 'staff'
+    ORDER BY CASE WHEN u.employment_type = 'ft' THEN 0 WHEN u.employment_type = 'pt' THEN 1 ELSE 2 END,
+             u.display_name
+  `).all(activeBranchId) as StaffOpt[];
 
   // Aggregations
   const totalEmployees = summaryRows.length;

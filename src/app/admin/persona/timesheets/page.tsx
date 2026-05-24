@@ -77,7 +77,14 @@ export default function TimesheetsPage({
              u.display_name
   `).all(branch.id, branch.id) as UserOption[];
 
-  // audit log ล่าสุด (10 รายการ)
+  // audit log ล่าสุด (10 รายการ) — scoped to the admin's active
+  // branch. Filter via the recipient user being assigned to this
+  // branch (entry_user_id IN user_branches WHERE branch_id = ?).
+  // This is the broadest available proxy since time_entries_audit
+  // doesn't carry branch_id directly (it snapshots fields from the
+  // deleted time_entries row but not its branch). Previously this
+  // query had no WHERE clause and leaked audit events from every
+  // branch — an AT-HOME admin could see NAMA staff edits.
   const audit = db.prepare(`
     SELECT a.id, a.entry_id, a.entry_user_id, a.entry_type, a.entry_ts,
            a.action, a.admin_id, a.reason, a.created_at,
@@ -86,9 +93,12 @@ export default function TimesheetsPage({
     FROM time_entries_audit a
     LEFT JOIN users u ON a.entry_user_id = u.id
     LEFT JOIN users au ON a.admin_id = au.id
+    WHERE a.entry_user_id IN (
+      SELECT user_id FROM user_branches WHERE branch_id = ?
+    )
     ORDER BY a.created_at DESC
     LIMIT 10
-  `).all() as AuditRow[];
+  `).all(branch.id) as AuditRow[];
 
   return (
     <div className="space-y-4">
