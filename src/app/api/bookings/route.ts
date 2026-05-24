@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getDb, OCCASION_KINDS, type Branch, type Booking } from "@/lib/db";
 import { notifyCustomerPending, notifyStaff } from "@/lib/line";
 import { generateBookingRef } from "@/lib/reserva-ref";
+import { assignRedemptionForNewRow } from "@/lib/redemption";
 
 // Customer-facing booking endpoint.
 //
@@ -70,6 +71,12 @@ export async function POST(req: Request) {
   // No table_id race-condition check needed — admin picks the table later
   // when confirming. The only remaining guard is the past-date one above.
 
+  // First-time check (free-ice-cream promo). Decides at insert time;
+  // re-running would race if two customers share a phone and submit
+  // back-to-back, but the chance is negligible at our volume.
+  const { status: redemptionStatus, code: verificationCode } =
+    assignRedemptionForNewRow({ phone: data.customer_phone });
+
   const ref = generateBookingRef(data.booking_date);
   const result = db.prepare(`
     INSERT INTO bookings (
@@ -78,8 +85,9 @@ export async function POST(req: Request) {
       booking_date, booking_time, duration_minutes, notes, food_allergy,
       occasion,
       line_user_id, lang,
-      booking_channel, ref_no, status
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'online', ?, 'pending_review')
+      booking_channel, ref_no, status,
+      verification_code, redemption_status
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'online', ?, 'pending_review', ?, ?)
   `).run(
     branch.id,
     null,                                    // table_id always null at this stage
@@ -97,7 +105,9 @@ export async function POST(req: Request) {
     data.occasion ?? null,
     data.line_user_id || null,
     data.lang ?? null,
-    ref
+    ref,
+    verificationCode,
+    redemptionStatus
   );
   const id = result.lastInsertRowid as number;
 

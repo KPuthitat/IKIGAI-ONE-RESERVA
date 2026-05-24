@@ -17,6 +17,7 @@ import { t } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
 import { isBookingRef } from "@/lib/reserva-ref";
 import MarkSeatedButton from "./MarkSeatedButton";
+import ClaimIceCreamPanel from "./ClaimIceCreamPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -152,6 +153,22 @@ export default function ShortLinkPage({ params }: { params: { id: string } }) {
               {t(lang, "shortlink.cancelled")}
             </div>
           ) : null}
+
+          {/* Redemption panel — only render when the booking carries
+              a redemption_status of 'eligible' / 'claimed' / 'expired'.
+              'not_eligible' (returning customer) and NULL (legacy)
+              hide the panel entirely. */}
+          {(booking.redemption_status === "eligible"
+            || booking.redemption_status === "claimed"
+            || booking.redemption_status === "expired") && (
+            <ClaimIceCreamPanel
+              bookingId={booking.id}
+              code={booking.verification_code}
+              initialStatus={booking.redemption_status}
+              claimedAt={booking.redeemed_at}
+              lang={lang}
+            />
+          )}
 
           <div className="text-xs text-center pt-2 border-t border-slate-100">
             <Link href="/staff/reserva" className="text-slate-500 hover:text-brand">

@@ -73,7 +73,10 @@ export default function StaffReservaPage({ searchParams }: { searchParams: { fro
           <h1 className="text-2xl font-bold">{t(lang, "staff.reserva.title")}</h1>
           <p className="text-sm text-slate-500">{branch.name}</p>
         </div>
-        <form className="ml-auto flex items-center gap-2">
+        <Link href="/staff/walk-in" className="btn-secondary ml-auto">
+          + {t(lang, "staff.walkIn.title")}
+        </Link>
+        <form className="flex items-center gap-2">
           <label className="text-sm">{t(lang, "admin.bookings.jumpToDate")}</label>
           <input type="date" name="from" defaultValue={fromDate} className="input w-auto" />
           <button className="btn-secondary">{t(lang, "staff.reserva.viewBtn")}</button>

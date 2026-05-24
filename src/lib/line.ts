@@ -113,6 +113,10 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     btnOpenAdmin: "เข้าสู่ระบบ",
     cancelHint: 'หรือพิมพ์ "ยกเลิก #{ref}" ในแชทนี้เพื่อยกเลิก (ก่อนถึงเวลาจอง 2 ชั่วโมง)',
     qrCaption: "ให้พนักงานสแกนคิวอาร์โค้ดเมื่อถึงร้าน\nเพื่อยืนยันการจอง",
+    redemptionCodeLabel: "รหัสยืนยัน",
+    redemptionEligibleTitle: "ลูกค้าใหม่รับฟรี! ไอติม 1 ลูก",
+    redemptionEligibleHint: "ยื่นรหัสนี้ให้พนักงานที่ร้านภายใน 6 ชั่วโมงหลังเวลาที่จอง",
+    redemptionClaimedTitle: "รับไอติมแล้ว ขอบคุณที่มาทาน",
     staffNewBooking: "มีการจองใหม่",
     staffReminder: "ใกล้ถึงเวลาจอง",
     staffPendingReview: "รายการจองผ่านระบบ",
@@ -144,6 +148,10 @@ const FLEX_STRINGS: Record<Lang, Record<string, string>> = {
     btnOpenAdmin: "Sign in",
     cancelHint: 'Or reply "cancel #{ref}" in this chat (up to 2 hours before booking time)',
     qrCaption: "Show this QR to staff on arrival\nto confirm your booking",
+    redemptionCodeLabel: "Verification code",
+    redemptionEligibleTitle: "New customer perk — 1 free ice cream",
+    redemptionEligibleHint: "Show this code to staff within 6 hours of your booking time",
+    redemptionClaimedTitle: "Ice cream claimed — thanks for visiting!",
     staffNewBooking: "New reservation",
     staffReminder: "Reservation coming up",
     staffPendingReview: "New booking via system",
@@ -362,6 +370,14 @@ export type CustomerBookingCardArgs = {
   /** Optional header background hex — branch CI shows on the card
    *  customers see in their LINE chat. Falls back to default ink. */
   headerColor?: string | null;
+  /** 6-char verification code printed below the QR so the customer
+   *  can read it aloud if scanning fails. Null = legacy row that
+   *  pre-dates the verification feature. */
+  verificationCode?: string | null;
+  /** Free-ice-cream redemption state. When 'eligible' a small banner
+   *  appears under the QR with the perk description. When 'claimed'
+   *  / 'expired' the banner reflects that. NULL = legacy row. */
+  redemptionStatus?: "eligible" | "claimed" | "expired" | "not_eligible" | null;
 };
 
 export type StaffBookingCardArgs = {
@@ -555,7 +571,67 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
               type: "text",
               text: fx(args.lang, "qrCaption"),
               size: "xxs", color: COLOR_TEXT_MUTED, wrap: true, align: "center"
-            }
+            },
+            // Verification code — printed in large monospaced-ish text
+            // so the customer can read it aloud if scanning fails. Both
+            // sides (customer Flex + staff /r page) show the same string
+            // so staff visually confirms a match before approving.
+            ...(args.verificationCode ? [
+              { type: "separator", margin: "md", color: COLOR_DIVIDER },
+              {
+                type: "text",
+                text: fx(args.lang, "redemptionCodeLabel"),
+                size: "xxs", color: COLOR_LABEL, align: "center", margin: "md"
+              },
+              {
+                type: "text",
+                text: args.verificationCode,
+                size: "xxl", color: COLOR_TEXT_DARK, align: "center",
+                weight: "bold", margin: "xs"
+              }
+            ] : []),
+            // Free-ice-cream banner — only shown for first-time
+            // customers (status 'eligible'). 'claimed' shows a thank-
+            // you stub; 'expired' / 'not_eligible' show nothing so we
+            // don't dangle a perk the customer can't redeem.
+            ...(args.redemptionStatus === "eligible" ? [
+              {
+                type: "box", layout: "vertical", spacing: "xs",
+                margin: "md", paddingAll: "12px",
+                backgroundColor: "#fff7ed", cornerRadius: "8px",
+                borderWidth: "1px", borderColor: "#fdba74",
+                contents: [
+                  {
+                    type: "text",
+                    text: fx(args.lang, "redemptionEligibleTitle"),
+                    size: "sm", color: "#9a3412", weight: "bold",
+                    wrap: true, align: "center"
+                  },
+                  {
+                    type: "text",
+                    text: fx(args.lang, "redemptionEligibleHint"),
+                    size: "xxs", color: "#9a3412", wrap: true,
+                    align: "center", margin: "xs"
+                  }
+                ]
+              }
+            ] : []),
+            ...(args.redemptionStatus === "claimed" ? [
+              {
+                type: "box", layout: "vertical",
+                margin: "md", paddingAll: "12px",
+                backgroundColor: "#ecfdf5", cornerRadius: "8px",
+                borderWidth: "1px", borderColor: "#86efac",
+                contents: [
+                  {
+                    type: "text",
+                    text: fx(args.lang, "redemptionClaimedTitle"),
+                    size: "sm", color: "#065f46", weight: "bold",
+                    wrap: true, align: "center"
+                  }
+                ]
+              }
+            ] : [])
           ]
         }
         // The chat-cancel hint ("หรือพิมพ์ ยกเลิก #ref...") was removed
@@ -1151,7 +1227,9 @@ export async function notifyCustomer(
     lang: cardLang,
     contactPhone: branch.contact_phone,
     menuUrl: branch.extra_button_url,
-    headerColor: branch.brand_color
+    headerColor: branch.brand_color,
+    verificationCode: booking.verification_code,
+    redemptionStatus: booking.redemption_status
   });
   const res = await sendLinePush(token, {
     to: booking.line_user_id,

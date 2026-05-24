@@ -80,6 +80,34 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE bookings ADD COLUMN occasion TEXT");
   }
 
+  // Verification + redemption (added 2026-05-24) — the QR shown on
+  // the LINE confirm card. Staff scans on arrival; the code is the
+  // single identifier behind the QR + the human-readable fallback
+  // ("X4F2K9" prints under the QR so the customer can read it aloud
+  // if scanning fails).
+  //   verification_code     — 6-char A-Z0-9 (no 0/O/1/I to avoid
+  //                            misread). NULL on legacy rows.
+  //   redemption_status     — eligible | claimed | expired | not_eligible
+  //                            "not_eligible" = returning customer
+  //                            (matched on phone). "expired" set by
+  //                            cron 6 hours after booking_time.
+  //   redeemed_at / by      — set when staff clicks "เคลมไอติม".
+  if (!bnames.has("verification_code")) {
+    db.exec("ALTER TABLE bookings ADD COLUMN verification_code TEXT");
+  }
+  if (!bnames.has("redemption_status")) {
+    db.exec("ALTER TABLE bookings ADD COLUMN redemption_status TEXT");
+  }
+  if (!bnames.has("redeemed_at")) {
+    db.exec("ALTER TABLE bookings ADD COLUMN redeemed_at TEXT");
+  }
+  if (!bnames.has("redeemed_by_user_id")) {
+    db.exec("ALTER TABLE bookings ADD COLUMN redeemed_by_user_id INTEGER REFERENCES users(id)");
+  }
+  // Code lookup index — staff scans → ID by code. Sparse since most
+  // legacy rows are NULL.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_bookings_verification_code ON bookings(verification_code) WHERE verification_code IS NOT NULL");
+
   // Two-step booking workflow (added 2026-05-09):
   // Customer submits without picking a table → status='pending_review'.
   // Admin assigns a table + clicks "Confirm and notify" → status='confirmed'
@@ -2266,6 +2294,84 @@ function runMigrations(db: Database.Database): void {
   // than pre-filled with clinic-specific values. (Existing installs
   // that still carry the old seed clear it via the super_admin
   // "ล้างข้อมูล INVENTA" tool — see /api/inventa/admin/reset.)
+
+  // Walk-in visits (added 2026-05-24) — staff records anyone who walks
+  // in without a booking. Mirrors a slice of `bookings`: phone is the
+  // identity key used to decide "first-time vs returning". Walk-ins
+  // also qualify for the free-ice-cream promo when first-time, so they
+  // carry the same verification_code + redemption_status enum as
+  // bookings — staff scans / shows the code at handoff. ASCENDA reads
+  // this table to credit the staff member who took the entry.
+  //   guest_name        — short label only ("คุณ A", "ลูกค้าผู้ชาย").
+  //                        Not PDPA-sensitive on its own; phone is.
+  //   party_size        — adults + kids combined, single integer.
+  //   phone             — required so we can match first-time across
+  //                        bookings + walk_in_visits. Hashed lookup
+  //                        is fine (we just need equality).
+  //   first_time        — snapshot at insert time (1/0). Determines
+  //                        redemption_status default.
+  //   recorded_by_user_id — the staff who keyed the row. ASCENDA
+  //                        scoring credits this user.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS walk_in_visits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      visited_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      guest_name TEXT,
+      phone TEXT,
+      party_size INTEGER NOT NULL DEFAULT 1,
+      table_id INTEGER REFERENCES tables(id),
+      occasion TEXT,
+      notes TEXT,
+      first_time INTEGER NOT NULL DEFAULT 0,
+      verification_code TEXT,
+      redemption_status TEXT,
+      redeemed_at TEXT,
+      redeemed_by_user_id INTEGER REFERENCES users(id),
+      recorded_by_user_id INTEGER NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_walk_in_visits_branch_date
+      ON walk_in_visits(branch_id, visited_at);
+    CREATE INDEX IF NOT EXISTS idx_walk_in_visits_phone
+      ON walk_in_visits(phone) WHERE phone IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_walk_in_visits_code
+      ON walk_in_visits(verification_code)
+      WHERE verification_code IS NOT NULL;
+  `);
+
+  // Staff credits ledger (added 2026-05-24) — append-only log of every
+  // ASCENDA-eligible action a staff member performs. Today it only
+  // tracks "captured a first-time customer" but the enum will expand
+  // (closing-task on-time, no missed clock-ins, etc) once ASCENDA
+  // scoring goes live. Stored as a separate table (not a column on
+  // walk_in_visits / bookings) so future credit kinds that aren't
+  // tied to a single source row still fit cleanly.
+  //   kind              — 'first_time_capture' for now. Open enum,
+  //                        validated in the API layer not the DB so
+  //                        new kinds don't need a migration.
+  //   points            — integer score delta (positive = earned).
+  //                        Default 1; future weights set per-kind in
+  //                        application code.
+  //   ref_table/ref_id  — the row that triggered the credit. NULL
+  //                        when admin-granted manually.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS staff_credits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      branch_id INTEGER REFERENCES branches(id),
+      kind TEXT NOT NULL,
+      points INTEGER NOT NULL DEFAULT 1,
+      ref_table TEXT,
+      ref_id INTEGER,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_staff_credits_user
+      ON staff_credits(user_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_staff_credits_kind
+      ON staff_credits(kind, created_at);
+  `);
 }
 
 /** One row in the daily attendance roster — used by the group
@@ -2757,7 +2863,20 @@ export type Booking = {
   cancel_reason: string | null;       // shown to customer in cancellation Flex card
   food_allergy: string | null;        // dietary restrictions / allergies (free text)
   occasion: BookingOccasion | null;   // see OCCASION_KINDS — drives personalised reply
+  // Verification + redemption (2026-05-24). NULL on legacy rows.
+  verification_code: string | null;       // 6-char A-Z2-9 shown on Flex card + admin
+  redemption_status: RedemptionStatus | null;
+  redeemed_at: string | null;             // ISO when staff claimed
+  redeemed_by_user_id: number | null;     // staff who clicked "เคลมไอติม"
 };
+
+/** Free-ice-cream redemption state machine. NULL = legacy row that
+ *  pre-dates the feature. */
+export type RedemptionStatus =
+  | "eligible"        // first-time customer (no prior booking/walk-in matched by phone)
+  | "claimed"         // staff handed the ice cream over (redeemed_at set)
+  | "expired"         // 6 hours past booking_time without claim — cron sweeps
+  | "not_eligible";   // returning customer — no offer
 
 // Special-occasion enum — drives personalised LINE reply + staff
 // preparation. Kept narrow on purpose so the reply templates stay

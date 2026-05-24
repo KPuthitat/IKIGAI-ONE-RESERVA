@@ -123,7 +123,8 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       label: "RESERVA",
       pathPrefix: "/staff/reserva",
       items: [
-        { href: "/staff/reserva", label: t(lang, "staff.nav.bookings") }
+        { href: "/staff/reserva", label: t(lang, "staff.nav.bookings") },
+        { href: "/staff/walk-in", label: t(lang, "staff.walkIn.title") }
       ]
     },
     {

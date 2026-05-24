@@ -30,6 +30,7 @@ import {
   markShiftNotifySent
 } from "@/lib/shift-notify";
 import { reportError } from "@/lib/error-reporter";
+import { expireOldRedemptions } from "@/lib/redemption";
 
 export async function POST(req: Request) {
   const token = req.headers.get("x-cron-token");
@@ -172,6 +173,20 @@ async function runCron(): Promise<NextResponse> {
   // to no_show; pending_review stays in admin's queue for manual review.
   const { no_show_count: autoNoShow } = autoExpireStaleBookings();
 
+  // Redemption expiry sweep — flip still-eligible rows older than
+  // 6 hours past their booking_time (or visited_at for walk-ins)
+  // to 'expired'. Cheap query, idempotent — runs every cron tick.
+  let expiredBookings = 0;
+  let expiredWalkIns = 0;
+  try {
+    const r = expireOldRedemptions();
+    expiredBookings = r.bookings;
+    expiredWalkIns = r.walkIns;
+  } catch (e) {
+    console.error("redemption expiry sweep error", e);
+    reportError(e, "cron redemption-expiry", {});
+  }
+
   // retention cleanup
   const purged = purgeOldBookings();
 
@@ -181,6 +196,8 @@ async function runCron(): Promise<NextResponse> {
     attendance_summaries_sent: attendanceSummariesSent,
     shift_notifications_sent: shiftNotificationsSent,
     auto_no_show: autoNoShow,
+    expired_redemptions_bookings: expiredBookings,
+    expired_redemptions_walk_ins: expiredWalkIns,
     purged_old_bookings: purged
   });
 }

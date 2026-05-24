@@ -5,6 +5,7 @@ import { getDb, OCCASION_KINDS, type Branch, type Booking } from "@/lib/db";
 import { isTableFree } from "@/lib/table-allocator";
 import { notifyStaff, notifyCustomer } from "@/lib/line";
 import { generateBookingRef } from "@/lib/reserva-ref";
+import { assignRedemptionForNewRow } from "@/lib/redemption";
 
 // POST /api/admin/reserva/bookings
 //
@@ -101,6 +102,13 @@ export async function POST(req: Request) {
   }
   const seatedAt = data.booking_channel === "walkin" ? new Date().toISOString() : null;
 
+  // First-time check (free-ice-cream promo). Walk-ins also qualify
+  // since the customer chose us today regardless of channel. Phone
+  // may be empty for walk-ins; assignRedemptionForNewRow returns
+  // 'not_eligible' in that case (no way to verify "first-time").
+  const { status: redemptionStatus, code: verificationCode } =
+    assignRedemptionForNewRow({ phone: data.customer_phone });
+
   const ref = generateBookingRef(data.booking_date);
   const result = db.prepare(`
     INSERT INTO bookings (
@@ -108,8 +116,9 @@ export async function POST(req: Request) {
       source, customer_origin, is_member,
       booking_date, booking_time, duration_minutes, notes, food_allergy,
       occasion,
-      booking_channel, ref_no, status, created_by, seated_at, line_user_id
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      booking_channel, ref_no, status, created_by, seated_at, line_user_id,
+      verification_code, redemption_status
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     branch.id,
     data.table_id ?? null,
@@ -130,7 +139,9 @@ export async function POST(req: Request) {
     initialStatus,
     user.id,
     seatedAt,
-    data.line_user_id || null
+    data.line_user_id || null,
+    verificationCode,
+    redemptionStatus
   );
   const id = result.lastInsertRowid as number;
 
