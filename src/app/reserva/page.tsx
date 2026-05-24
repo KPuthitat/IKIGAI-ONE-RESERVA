@@ -231,18 +231,39 @@ export default function CustomerReservaPage({
             //      this target in the source's matrix.
             //   2. The target branch's own customer_line_oa_url
             //      (default landing for organic /reserva visits).
-            //   3. Direct booking link /reserva/<slug> (legacy
-            //      fallback when no OA URL is configured).
-            // Sending customers through the OA first means they're
-            // already friends by the time they reach the booking form
-            // (via the OA's rich menu), so the Flex confirmation card
-            // can actually be pushed back to them.
+            //   3. Direct booking link /reserva/<slug>.
+            //
+            // CRITICAL: in ?from= context (customer just came from
+            // another branch's booking flow), step #3 is REMOVED for
+            // OTHER branches. The owner's complaint: customers who
+            // tap "เลือกสาขาอื่น" after booking at HYPO land on
+            // NAMA's booking form without ever reaching NAMA's LINE
+            // OA — they then have no way to contact NAMA when they
+            // have questions. So in ?from context, other branches
+            // must have a LINE OA URL (cross-promo or own) to be
+            // tappable; cards with no URL are silently filtered out
+            // earlier via enabledTargets / cross_promotions logic.
             const crossUrl = promoUrls.has(b.slug)
               ? promoUrls.get(b.slug)
               : null;
-            const targetHref = bookable
-              ? (crossUrl || b.customer_line_oa_url || `/reserva/${b.slug}`)
-              : null;
+            const isSourceBranch = sourceBranch && b.slug === sourceBranch.slug;
+            let targetHref: string | null = null;
+            if (bookable) {
+              if (sourceBranch && !isSourceBranch) {
+                // ?from context + OTHER branch — LINE OA URL is
+                // mandatory; no booking-form fallback.
+                targetHref = crossUrl || b.customer_line_oa_url || null;
+              } else {
+                // Organic visit OR re-booking at the source branch:
+                // full priority chain is allowed.
+                targetHref = crossUrl || b.customer_line_oa_url || `/reserva/${b.slug}`;
+              }
+            }
+            // Hide the card entirely when we're in ?from context for
+            // a non-source branch and there's no URL to send to.
+            if (sourceBranch && !isSourceBranch && !targetHref) {
+              return null;
+            }
             const isExternal = !!targetHref && /^https?:\/\//i.test(targetHref);
             return bookable && targetHref ? (
               isExternal ? (

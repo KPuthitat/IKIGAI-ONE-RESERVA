@@ -586,7 +586,14 @@ export default function BookingForm({
           </div>
         )}
 
-        <button onClick={() => router.push("/reserva")} className="btn-secondary w-full">
+        {/* Preserve branch context so the picker filters / routes via
+            this branch's cross_promotions matrix. Without ?from the
+            picker uses each target's default URL — which falls back
+            to the target's booking form when no LINE OA URL is set,
+            and customers complained that landing on NAMA's booking
+            form without going through NAMA's LINE OA first means
+            they can't contact NAMA when they have questions. */}
+        <button onClick={() => router.push(`/reserva?from=${branch.slug}`)} className="btn-secondary w-full">
           {t("booking.success.backToBranch")}
         </button>
       </div>

@@ -65,7 +65,7 @@ export default function BookPage({ params }: { params: { branch: string } }) {
           {/* Hide the "choose another branch" link entirely for
               in-LINE traffic — that's the whole point of the lock. */}
           {!lineLocked && (
-            <Link href="/reserva" className="text-sm text-slate-500 hover:text-brand inline-flex items-center gap-1 mb-3">
+            <Link href={`/reserva?from=${branch.slug}`} className="text-sm text-slate-500 hover:text-brand inline-flex items-center gap-1 mb-3">
               {t(lang, "customer.reserva.chooseAnotherBranch")}
             </Link>
           )}
@@ -97,7 +97,7 @@ export default function BookPage({ params }: { params: { branch: string } }) {
                   closed/coming-soon branches the customer should
                   stay parked at this branch until staff replies. */}
               {!lineLocked && (
-                <Link href="/reserva" className="inline-block mt-2 text-brand font-bold hover:underline">
+                <Link href={`/reserva?from=${branch.slug}`} className="inline-block mt-2 text-brand font-bold hover:underline">
                   {t(lang, "customer.reserva.chooseAnotherBranch")}
                 </Link>
               )}
