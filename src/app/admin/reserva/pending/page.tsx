@@ -10,7 +10,7 @@
 // count meaningful (zero bookings here = inbox zero).
 
 import { requireUser } from "@/lib/auth";
-import { getDb, type Branch, type Booking } from "@/lib/db";
+import { getDb, type Branch, type Booking, type TableRow } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { autoExpireStaleBookings } from "@/lib/stale-bookings";
@@ -39,6 +39,13 @@ export default function PendingPage() {
     WHERE b.branch_id = ? AND b.status = 'pending_review'
     ORDER BY b.created_at ASC
   `).all(branch.id) as Array<Booking & { table_label: string | null }>;
+
+  // Tables for the per-card picker — admin MUST pick one before
+  // confirming so customers never get a Flex card without an actual
+  // table to sit at. Active tables only.
+  const allTables = db.prepare(
+    "SELECT * FROM tables WHERE branch_id = ? AND active = 1 ORDER BY label"
+  ).all(branch.id) as TableRow[];
 
   // ── Overnight summary ─────────────────────────────────────────────
   // Cutoff = yesterday's close_time in Bangkok, expressed as UTC ISO
@@ -84,7 +91,12 @@ export default function PendingPage() {
         </div>
       )}
 
-      <PendingClient pendingBookings={pendingBookings} />
+      <PendingClient
+        pendingBookings={pendingBookings}
+        tables={allTables.map((row) => ({
+          id: row.id, label: row.label, capacity: row.capacity
+        }))}
+      />
     </div>
   );
 }

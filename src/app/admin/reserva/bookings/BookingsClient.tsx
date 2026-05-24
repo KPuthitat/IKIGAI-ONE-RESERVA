@@ -485,11 +485,28 @@ function DateGroup({
               <span className={`px-2 py-1 rounded text-xs status-${b.status}`}>
                 {t(`status.${b.status}`)}
               </span>
+              {/* Surface "ยังไม่ได้กำหนดโต๊ะ" loudly when the booking
+                  is confirmed/seated but table_id is null — the
+                  previous bug let admin push the customer Flex without
+                  a table, and they need an obvious affordance to fix
+                  it. Red badge + a thicker red border on the dropdown
+                  draws the eye. */}
+              {b.table_id == null
+                && b.status !== "cancelled"
+                && b.status !== "completed" && (
+                <div className="mt-1 text-[11px] px-2 py-0.5 rounded bg-rose-100 text-rose-700 font-bold inline-block">
+                  ⚠ {t("admin.bookings.tableMissing")}
+                </div>
+              )}
               <div className="mt-1 text-slate-600">
                 {t("admin.bookings.tableLabel")}{" "}
                 {canEdit ? (
                   <select
-                    className="text-sm border rounded px-1"
+                    className={`text-sm border rounded px-1 ${
+                      b.table_id == null && b.status !== "cancelled" && b.status !== "completed"
+                        ? "border-rose-400 border-[1.5px] bg-rose-50"
+                        : ""
+                    }`}
                     value={b.table_id ?? ""}
                     onChange={(e) => onAssignTable(b.id, e.target.value ? Number(e.target.value) : null)}
                     disabled={busyId === b.id || b.status === "cancelled"}

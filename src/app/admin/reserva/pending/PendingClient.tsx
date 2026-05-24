@@ -15,9 +15,10 @@ type Row = Booking & {
 const AUTO_REFRESH_MS = 30_000;
 
 export default function PendingClient({
-  pendingBookings
+  pendingBookings, tables
 }: {
   pendingBookings: Row[];
+  tables: Array<{ id: number; label: string; capacity: number }>;
 }) {
   const router = useRouter();
   const { t, lang } = useLang();
@@ -25,6 +26,12 @@ export default function PendingClient({
   const { alert, ConfirmDialog } = useConfirm();
 
   const [lastRefresh, setLastRefresh] = useState<Date>(() => new Date());
+
+  // Per-pending-row table selection. Confirm button stays disabled
+  // until a table is picked — prevents the previous bug where admin
+  // could push a customer Flex card with no table assigned, so the
+  // customer arrived with no seat ready.
+  const [tablePick, setTablePick] = useState<Record<number, number | "">>({});
 
   // Cancel-with-reason modal target.
   const [cancelTarget, setCancelTarget] = useState<Row | null>(null);
@@ -41,17 +48,29 @@ export default function PendingClient({
   }, [router, cancelTarget]);
 
   async function confirmAndNotify(id: number) {
+    const tableId = tablePick[id];
+    // UI guard — button is also disabled when no table is picked.
+    if (!tableId) {
+      alert({
+        title: t("common.error"),
+        body: <p>{t("admin.bookings.err.tableRequired")}</p>,
+        variant: "danger",
+        okLabel: t("common.confirm")
+      });
+      return;
+    }
     setBusyId(id);
     const res = await fetch(apiUrl(`/api/admin/bookings/${id}/confirm`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({})
+      body: JSON.stringify({ table_id: tableId })
     });
     setBusyId(null);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       const codeMap: Record<string, string> = {
-        table_unavailable: t("admin.bookings.err.tableUnavailable")
+        table_unavailable: t("admin.bookings.err.tableUnavailable"),
+        table_required: t("admin.bookings.err.tableRequired")
       };
       alert({
         title: t("common.error"),
@@ -166,10 +185,36 @@ export default function PendingClient({
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 mt-3 border-t border-slate-100 pt-3">
+              <label className="text-sm text-slate-600 font-medium">
+                {t("admin.bookings.pending.assignTable")}:
+              </label>
+              <select
+                className="text-sm border-[1.5px] border-amber-300 rounded px-2 py-1.5 bg-white"
+                value={tablePick[b.id] ?? ""}
+                onChange={(e) =>
+                  setTablePick((prev) => ({
+                    ...prev,
+                    [b.id]: e.target.value ? Number(e.target.value) : ""
+                  }))
+                }
+                disabled={busyId === b.id}
+              >
+                <option value="">{t("admin.bookings.tableNone")}</option>
+                {tables
+                  .filter((tab) => tab.capacity >= b.party_size)
+                  .map((tab) => (
+                    <option key={tab.id} value={tab.id}>
+                      {tab.label} ({tab.capacity})
+                    </option>
+                  ))}
+              </select>
               <button
                 onClick={() => confirmAndNotify(b.id)}
-                disabled={busyId === b.id}
-                className="btn-primary text-sm ml-auto"
+                disabled={busyId === b.id || !tablePick[b.id]}
+                className="btn-primary text-sm ml-auto disabled:opacity-40 disabled:cursor-not-allowed"
+                title={!tablePick[b.id]
+                  ? t("admin.bookings.err.tableRequired")
+                  : undefined}
               >
                 {t("admin.bookings.pending.confirmAndNotify")}
               </button>

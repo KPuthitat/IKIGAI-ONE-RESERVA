@@ -55,9 +55,19 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
 
   const now = new Date().toISOString();
+  // Owner direction 2026-05: confirming a booking without a table is
+  // a hard error. Customer was complaining that the Flex card landed
+  // with no seat assigned — they walked in expecting a table and we
+  // had nothing for them. The body MAY omit table_id when the booking
+  // row already has one (admin pre-assigned via the table dropdown),
+  // but the final state MUST have a table set.
+  const effectiveTableId = parsed.data.table_id ?? booking.table_id ?? null;
+  if (effectiveTableId == null) {
+    return NextResponse.json({ error: "table_required" }, { status: 400 });
+  }
   if (parsed.data.table_id != null) {
-    // A table was explicitly chosen — keep the legacy behaviour:
-    // double-booking race guard, then set table + confirm.
+    // A table was explicitly chosen — double-booking race guard then
+    // set table + confirm.
     const free = isTableFree({
       branchId: booking.branch_id,
       tableId: parsed.data.table_id,
@@ -74,8 +84,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       WHERE id = ?
     `).run(parsed.data.table_id, now, id);
   } else {
-    // No table (floor-plan step shelved) — confirm straight through and
-    // leave table_id untouched so any previously-set table is preserved.
+    // No table in body but the row already has one — just flip status.
     db.prepare(`
       UPDATE bookings SET status = 'confirmed', updated_at = ?
       WHERE id = ?
