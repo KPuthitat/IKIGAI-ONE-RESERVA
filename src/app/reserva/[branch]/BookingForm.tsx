@@ -714,14 +714,30 @@ export default function BookingForm({
             {t("booking.field.phone")}
             {mode !== "walkin" && " *"}
           </label>
+          {/* Phone input — digits + leading "+" only. Owner
+              direction 2026-05: don't allow dashes/spaces/parens
+              even at typing time, so the field shows the canonical
+              format from the start (not just after save). pattern
+              attribute backs it up at form-submit time for any
+              paste-bypass. */}
           <input
             className="input"
             required={mode !== "walkin"}
             type="tel"
             inputMode="tel" autoComplete="tel"
+            pattern="^\+?[0-9]+$"
             placeholder={t("booking.field.phonePlaceholder")}
             value={form.customer_phone}
-            onChange={(e) => setForm({ ...form, customer_phone: e.target.value })}
+            onChange={(e) => {
+              // Strip anything that isn't a digit or leading "+".
+              // Keeps the "+" only at position 0; later "+" chars
+              // are dropped silently.
+              const raw = e.target.value;
+              const cleaned = raw
+                .replace(/[^\d+]/g, "")
+                .replace(/(?!^)\+/g, "");
+              setForm({ ...form, customer_phone: cleaned });
+            }}
           />
         </div>
 
