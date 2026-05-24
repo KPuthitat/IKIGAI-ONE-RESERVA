@@ -77,6 +77,12 @@ export default function ClaimClient({
   const [origin, setOrigin] = useState<string>("");
   const [sources, setSources] = useState<string[]>([]);
   const [isMember, setIsMember] = useState<"" | "0" | "1">("");
+  // PDPA consent — must be checked before the "Confirm" button submits
+  // the LINE userId + marketing answers. The userId itself is captured
+  // by LIFF silently at page load (LINE's own permission flow already
+  // applies on first visit), but we don't TRANSMIT it to our server
+  // without an explicit consent tap here.
+  const [pdpaConsent, setPdpaConsent] = useState(false);
 
   function tt(key: string, vars?: Record<string, string | number>): string {
     return tServer(lang, key, vars);
@@ -121,6 +127,7 @@ export default function ClaimClient({
   // ── Step 2: customer taps "Confirm and get QR" ────────────────────
   async function submitClaim() {
     if (state.kind !== "ready") return;
+    if (!pdpaConsent) return;                  // belt-and-braces — button is also disabled
     const userId = state.userId;
     setState({ kind: "claiming" });
     try {
@@ -230,10 +237,29 @@ export default function ClaimClient({
             </div>
           </div>
 
+          {/* PDPA consent — required (Thailand Personal Data
+              Protection Act 2019, sect. 19/24). Submit button
+              stays disabled until checked. */}
+          <label className="flex items-start gap-2 text-xs text-slate-700 border border-slate-200 rounded-lg p-3 bg-slate-50">
+            <input
+              type="checkbox"
+              checked={pdpaConsent}
+              onChange={(e) => setPdpaConsent(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              {tt("claim.pdpa.consent")}{" "}
+              <Link href="/privacy" target="_blank" className="text-brand underline">
+                {tt("claim.pdpa.policyLink")}
+              </Link>
+            </span>
+          </label>
+
           <button
             type="button"
             onClick={submitClaim}
-            className="btn-primary w-full text-base py-3.5"
+            disabled={!pdpaConsent}
+            className="btn-primary w-full text-base py-3.5 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {tt("claim.cta.confirm")}
           </button>

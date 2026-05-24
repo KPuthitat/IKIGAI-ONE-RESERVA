@@ -11,6 +11,7 @@ import {
   type AttendanceRow
 } from "./db";
 import { getChannelByCode, getPlatformChannel } from "./messaging-channels";
+import { decryptSecret } from "./secret-vault";
 
 // LINE message kinds we use. Loose typing is intentional — Flex contents are
 // large JSON blobs and the API spec already documents the shape.
@@ -1057,11 +1058,14 @@ export async function pushClockInCard(args: {
 
 /** Resolve the LINE channel token for a branch, preferring messaging_channels
  *  (new) and falling back to the legacy branches.line_channel_token column.
- *  Returns null if neither has a value. */
+ *  Returns null if neither has a value. messaging_channels rows are
+ *  decrypted automatically; the legacy column is run through
+ *  decryptSecret too so values written after the 2026-05 vault rollout
+ *  also work. */
 function resolveBranchToken(branch: Branch): string | null {
   const ch = getChannelByCode(branch.slug);
   if (ch?.channel_token) return ch.channel_token;
-  return branch.line_channel_token ?? null;
+  return decryptSecret(branch.line_channel_token) ?? null;
 }
 
 /** Personalised reply per occasion — bilingual.
@@ -2811,7 +2815,7 @@ export async function notifyToStaffGroup(
     // Token preference: messaging_channels.platform first, then the
     // legacy system_settings.global_line_channel_token as a fallback
     // so installs that still use the super-admin page keep working.
-    const token = platform?.channel_token ?? sys.global_line_channel_token ?? null;
+    const token = platform?.channel_token ?? decryptSecret(sys.global_line_channel_token) ?? null;
     const groupId = sys.global_staff_group_id ?? null;
     if (token && groupId) {
       const result = await sendLinePush(token, {

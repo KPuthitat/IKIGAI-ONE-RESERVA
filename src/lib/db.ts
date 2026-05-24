@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { encryptSecret } from "./secret-vault";
 
 const DB_PATH = process.env.DATABASE_PATH || "./data/reserva.db";
 
@@ -2494,7 +2495,10 @@ export function updateSystemSettings(
   const vals: Array<string | number | null> = [];
   if (Object.prototype.hasOwnProperty.call(patch, "global_line_channel_token")) {
     sets.push("global_line_channel_token = ?");
-    vals.push(norm(patch.global_line_channel_token ?? null));
+    // Encrypt at rest (PDPA hardening 2026-05). Read path in line.ts
+    // funnels through decryptSecret() so plaintext callers don't notice.
+    const raw = norm(patch.global_line_channel_token ?? null);
+    vals.push(raw ? encryptSecret(raw) : raw);
   }
   if (Object.prototype.hasOwnProperty.call(patch, "global_staff_group_id")) {
     sets.push("global_staff_group_id = ?");

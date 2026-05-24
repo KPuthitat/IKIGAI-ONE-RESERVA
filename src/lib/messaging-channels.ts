@@ -13,6 +13,7 @@
 // platform OA is seeded with code='ikigai-os' on first DB open.
 
 import { getDb } from "./db";
+import { encryptSecret, decryptSecret } from "./secret-vault";
 
 export type MessagingChannel = {
   id: number;
@@ -20,8 +21,8 @@ export type MessagingChannel = {
   code: string;
   label: string;
   branch_id: number | null;
-  channel_secret: string | null;
-  channel_token: string | null;
+  channel_secret: string | null;     // plaintext after decryptRow (DB stores "enc:v1:" blob)
+  channel_token: string | null;      // plaintext after decryptRow
   liff_id: string | null;            // LIFF app ID for the booking page (RESERVA only)
   updated_at: string;
   updated_by: number | null;
@@ -29,12 +30,23 @@ export type MessagingChannel = {
 
 const PLATFORM_CODE = "ikigai-os";
 
+/** Decrypt the secret/token fields on a row read from the DB. All
+ *  read paths funnel through here so downstream callers see plaintext
+ *  the same way they always did — encryption is invisible above this
+ *  layer. */
+function decryptRow<T extends MessagingChannel | undefined>(row: T): T {
+  if (!row) return row;
+  row.channel_secret = decryptSecret(row.channel_secret);
+  row.channel_token = decryptSecret(row.channel_token);
+  return row;
+}
+
 /** The IKIGAI OS platform channel (singleton). Returns null if not configured. */
 export function getPlatformChannel(): MessagingChannel | null {
   const row = getDb().prepare(
     "SELECT * FROM messaging_channels WHERE code = ? LIMIT 1"
   ).get(PLATFORM_CODE) as MessagingChannel | undefined;
-  return row ?? null;
+  return decryptRow(row) ?? null;
 }
 
 /** Look up any channel by its webhook code/slug. Used by the webhook router. */
@@ -42,20 +54,21 @@ export function getChannelByCode(code: string): MessagingChannel | null {
   const row = getDb().prepare(
     "SELECT * FROM messaging_channels WHERE code = ? LIMIT 1"
   ).get(code) as MessagingChannel | undefined;
-  return row ?? null;
+  return decryptRow(row) ?? null;
 }
 
 /** All RESERVA per-branch channels, ordered by branch.display_order then label.
  *  NAMA (display_order=1) ends up first; new branches default to 100 and
  *  fall through to alphabetical-by-label. */
 export function listReservaChannels(): MessagingChannel[] {
-  return getDb().prepare(`
+  const rows = getDb().prepare(`
     SELECT mc.*
     FROM messaging_channels mc
     LEFT JOIN branches b ON b.id = mc.branch_id
     WHERE mc.scope = 'reserva'
     ORDER BY COALESCE(b.display_order, 100), mc.label
   `).all() as MessagingChannel[];
+  return rows.map((r) => decryptRow(r));
 }
 
 /** Partial-update credentials on any channel by code (platform or reserva).
@@ -78,14 +91,16 @@ export function setChannelCreds(args: {
   if (args.channel_token !== undefined) {
     sets.push("channel_token = ?");
     const v = args.channel_token.trim();
-    vals.push(v === "" ? null : v);
+    vals.push(v === "" ? null : encryptSecret(v));
   }
   if (args.channel_secret !== undefined) {
     sets.push("channel_secret = ?");
     const v = args.channel_secret.trim();
-    vals.push(v === "" ? null : v);
+    vals.push(v === "" ? null : encryptSecret(v));
   }
   if (args.liff_id !== undefined) {
+    // LIFF ID is not a secret — public-by-design (embedded in the
+    // claim URL). Leave plaintext.
     sets.push("liff_id = ?");
     const v = args.liff_id.trim();
     vals.push(v === "" ? null : v);

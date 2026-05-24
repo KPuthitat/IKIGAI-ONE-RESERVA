@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { encryptSecret } from "@/lib/secret-vault";
 
 const Patch = z.object({
   open_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
@@ -60,7 +61,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   for (const [k, v] of Object.entries(parsed.data)) {
     if (v === undefined) continue;
     // SQLite has no bool — convert the notification toggles to 0/1.
-    updates[k] = typeof v === "boolean" ? (v ? 1 : 0) : v;
+    let value: string | number | null = typeof v === "boolean" ? (v ? 1 : 0) : v;
+    // PDPA — encrypt LINE secret/token at rest. Empty string clears
+    // (encryptSecret returns null for empty). Re-encrypts existing
+    // ciphertext is a no-op (encryptSecret skips values that already
+    // carry the enc:v1: prefix).
+    if ((k === "line_channel_secret" || k === "line_channel_token") && typeof value === "string") {
+      value = encryptSecret(value);
+    }
+    updates[k] = value;
   }
   if (Object.keys(updates).length === 0) return NextResponse.json({ ok: true });
   const sets = Object.keys(updates).map((k) => `${k} = ?`).join(", ");
