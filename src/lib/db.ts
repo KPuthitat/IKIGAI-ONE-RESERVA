@@ -990,6 +990,16 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("contact_phone")) {
     db.exec("ALTER TABLE branches ADD COLUMN contact_phone TEXT");
   }
+  // Customer LINE OA URL (added 2026-05) — admin pastes the branch's
+  // public LINE "add friend" URL (https://line.me/R/ti/p/@xxx). The
+  // customer branch picker (/reserva) opens this URL instead of
+  // /reserva/<slug> when set, so customers always reach the OA
+  // BEFORE the booking form. The OA's rich menu then deep-links
+  // back into the booking form. NULL = fall back to the direct
+  // booking link (legacy behaviour).
+  if (!bnames2.has("customer_line_oa_url")) {
+    db.exec("ALTER TABLE branches ADD COLUMN customer_line_oa_url TEXT");
+  }
   // LINE group ID for staff notifications — when set, notifyStaff()
   // pushes to this single group instead of looping over staff_line_user_ids.
   // Format: 'C' followed by ~32 hex chars (LINE's group ID format).
@@ -2538,6 +2548,11 @@ export type Branch = {
   extra_button_label: string | null;   // Customer Flex card secondary CTA label
   extra_button_url: string | null;     // Customer Flex card secondary CTA URL
   contact_phone: string | null;        // Fallback phone shown in pending-confirmation LINE message
+  // Public LINE OA "add friend" URL (e.g., https://line.me/R/ti/p/@xxx).
+  // When set, /reserva (customer branch picker) opens this URL on
+  // tap instead of /reserva/<slug> — customer adds the OA first,
+  // then the OA's rich menu deep-links to the booking form.
+  customer_line_oa_url: string | null;
   staff_group_id: string | null;       // LINE group ID for staff notifications (preferred over staff_line_user_ids when set)
   // Per-event notification audience toggles (1 = send, 0 = mute).
   // staff_reminder defaults to 0 — the time-to-arrive heads-up in the

@@ -165,10 +165,35 @@ export default function CustomerReservaPage() {
               </div>
             );
 
-            return bookable ? (
-              <Link key={b.id} href={`/reserva/${b.slug}`} className="block">
-                {card}
-              </Link>
+            // Branch card click target: prefer the branch's LINE OA
+            // "add friend" URL when configured (owner direction
+            // 2026-05). Sending customers through the OA first means
+            // they're already friends by the time they reach the
+            // booking form (via the OA's rich menu), so the Flex
+            // confirmation card can actually be pushed back to them.
+            // Falls back to the direct booking link when no URL set.
+            const targetHref = bookable
+              ? (b.customer_line_oa_url || `/reserva/${b.slug}`)
+              : null;
+            const isExternal = !!targetHref && /^https?:\/\//i.test(targetHref);
+            return bookable && targetHref ? (
+              isExternal ? (
+                // External LINE OA — open in same tab so LINE on
+                // mobile launches the app smoothly. target="_blank"
+                // on mobile LINE WebView often loses the session.
+                <a
+                  key={b.id}
+                  href={targetHref}
+                  className="block"
+                  rel="noopener noreferrer"
+                >
+                  {card}
+                </a>
+              ) : (
+                <Link key={b.id} href={targetHref} className="block">
+                  {card}
+                </Link>
+              )
             ) : (
               <div key={b.id} className="opacity-75 cursor-not-allowed">{card}</div>
             );

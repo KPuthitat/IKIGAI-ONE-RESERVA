@@ -56,6 +56,7 @@ export default function ReservaMessagingPage() {
         staff_group_id: branch?.staff_group_id ?? null,
         extra_button_url: branch?.extra_button_url ?? null,
         contact_phone: branch?.contact_phone ?? null,
+        customer_line_oa_url: branch?.customer_line_oa_url ?? null,
         notify_customer_pending: branch?.notify_customer_pending ?? 1,
         notify_customer_created: branch?.notify_customer_created ?? 1,
         notify_customer_reminder: branch?.notify_customer_reminder ?? 1,

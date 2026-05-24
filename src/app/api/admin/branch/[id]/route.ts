@@ -32,6 +32,10 @@ const Patch = z.object({
   // customer has a way to reach the restaurant if admin doesn't get to
   // their booking quickly.
   contact_phone: z.string().max(40).nullable().optional(),
+  // Public LINE OA "add friend" URL — customer branch picker (/reserva)
+  // redirects here instead of the booking form, so the customer always
+  // friends the OA first.
+  customer_line_oa_url: z.string().max(500).nullable().optional(),
   // LINE group ID for staff notifications — captured from the webhook
   // when the OA is invited into a group. Push to this ID reaches all
   // members of the group with a single message.

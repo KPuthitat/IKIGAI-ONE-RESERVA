@@ -48,15 +48,17 @@ const ORIGIN_DEFS: Array<{ value: string; key: string }> = [
 type OccasionValue =
   | "birthday" | "anniversary" | "business" | "date"
   | "family" | "friends" | "celebration" | "other";
-const OCCASION_DEFS: Array<{ value: OccasionValue; emoji: string; key: string }> = [
-  { value: "birthday",    emoji: "🎂",      key: "booking.occasion.birthday" },
-  { value: "anniversary", emoji: "💑",      key: "booking.occasion.anniversary" },
-  { value: "business",    emoji: "🤝",      key: "booking.occasion.business" },
-  { value: "date",        emoji: "💕",      key: "booking.occasion.date" },
-  { value: "family",      emoji: "👨‍👩‍👧", key: "booking.occasion.family" },
-  { value: "friends",     emoji: "🍽",      key: "booking.occasion.friends" },
-  { value: "celebration", emoji: "✨",      key: "booking.occasion.celebration" },
-  { value: "other",       emoji: "✨",      key: "booking.occasion.other" }
+// Emoji removed 2026-05 per owner direction — chooser stays warm via
+// label copy alone, no decoration. Order preserved.
+const OCCASION_DEFS: Array<{ value: OccasionValue; key: string }> = [
+  { value: "birthday",    key: "booking.occasion.birthday" },
+  { value: "anniversary", key: "booking.occasion.anniversary" },
+  { value: "business",    key: "booking.occasion.business" },
+  { value: "date",        key: "booking.occasion.date" },
+  { value: "family",      key: "booking.occasion.family" },
+  { value: "friends",     key: "booking.occasion.friends" },
+  { value: "celebration", key: "booking.occasion.celebration" },
+  { value: "other",       key: "booking.occasion.other" }
 ];
 
 export type BookingFormMode = "customer" | "walkin" | "phone" | "line";
@@ -804,14 +806,24 @@ export default function BookingForm({
           </p>
         </div>
 
+        <div>
+          <label className="label">{t("booking.field.notes")}</label>
+          <textarea
+            className="input" rows={2}
+            placeholder={t("booking.field.notesPlaceholder")}
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          />
+        </div>
+
         {/* Special occasion picker — drives both a personalised LINE
             reply right after submit and a badge on the staff card so
             the team can prepare (e.g. cake plate, quiet table). Kept
             optional + clearly labelled as "no obligation" because
-            making it required would scare off casual diners. The
-            label asks in a warm, light way to lean into the
-            psychology — customers who feel "seen" by a brand book
-            again. */}
+            making it required would scare off casual diners. Moved
+            below notes 2026-05 per owner direction — keeps the
+            primary fields (date/time/party/allergy/notes) flowing
+            naturally with the secondary occasion picker at the bottom. */}
         <div>
           <label className="label">{t("booking.field.occasion")}</label>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -837,7 +849,6 @@ export default function BookingForm({
                     : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
                 }`}
               >
-                <span className="mr-1">{opt.emoji}</span>
                 {t(opt.key)}
               </button>
             ))}
@@ -845,16 +856,6 @@ export default function BookingForm({
           <p className="text-[10px] text-slate-400 mt-1.5">
             {t("booking.field.occasionHint")}
           </p>
-        </div>
-
-        <div>
-          <label className="label">{t("booking.field.notes")}</label>
-          <textarea
-            className="input" rows={2}
-            placeholder={t("booking.field.notesPlaceholder")}
-            value={form.notes}
-            onChange={(e) => setForm({ ...form, notes: e.target.value })}
-          />
         </div>
 
         {/* LINE userId field intentionally NOT shown for mode='line'.

@@ -20,6 +20,7 @@ export type ReservaChannelInitial = {
   staff_group_id: string | null;
   extra_button_url: string | null;        // Menu link on Flex card
   contact_phone: string | null;           // tel: button on Flex card
+  customer_line_oa_url: string | null;    // /reserva picker redirect target (LINE add-friend URL)
   // Per-event audience toggles (SQLite 0/1). The UI flips booleans.
   notify_customer_pending: number;
   notify_customer_created: number;
@@ -81,6 +82,7 @@ function ChannelCard({
   const [staffGroupId, setStaffGroupId] = useState(channel.staff_group_id ?? "");
   const [extraButtonUrl, setExtraButtonUrl] = useState(channel.extra_button_url ?? "");
   const [contactPhone, setContactPhone] = useState(channel.contact_phone ?? "");
+  const [customerLineOaUrl, setCustomerLineOaUrl] = useState(channel.customer_line_oa_url ?? "");
 
   // Per-event audience toggles (UI as booleans, persisted as 0/1).
   const [notifyCustPending,  setNotifyCustPending]  = useState(!!channel.notify_customer_pending);
@@ -121,7 +123,8 @@ function ChannelCard({
       const branchPairs: Array<[keyof typeof channel, string | null, string]> = [
         ["staff_group_id", staffGroupId.trim() || null, channel.staff_group_id ?? ""],
         ["extra_button_url", extraButtonUrl.trim() || null, channel.extra_button_url ?? ""],
-        ["contact_phone", contactPhone.trim() || null, channel.contact_phone ?? ""]
+        ["contact_phone", contactPhone.trim() || null, channel.contact_phone ?? ""],
+        ["customer_line_oa_url", customerLineOaUrl.trim() || null, channel.customer_line_oa_url ?? ""]
       ];
       for (const [key, newVal, oldVal] of branchPairs) {
         if ((newVal ?? "") !== oldVal) branchBody[key] = newVal;
@@ -366,6 +369,19 @@ function ChannelCard({
           placeholder="https://drive.google.com/..." />
         <p className="text-xs text-slate-500 mt-1">
           {t(lang, "admin.settings.menuBtnHint")}
+        </p>
+      </div>
+
+      {/* Customer LINE OA URL — branch picker redirect target */}
+      <div>
+        <label className="label">{t(lang, "admin.settings.field.customerLineOaUrl")}</label>
+        <input className="input"
+          type="url"
+          value={customerLineOaUrl} maxLength={500}
+          onChange={(e) => setCustomerLineOaUrl(e.target.value)}
+          placeholder="https://line.me/R/ti/p/@xxxxxxx" />
+        <p className="text-xs text-slate-500 mt-1">
+          {t(lang, "admin.settings.customerLineOaUrlHint")}
         </p>
       </div>
 
