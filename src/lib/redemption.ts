@@ -18,7 +18,14 @@ import { issueUniqueCode } from "./verification-code";
 /** Has this phone number appeared on any prior booking or walk-in?
  *  `excludeBookingId` lets you skip the row you just created when
  *  checking from a webhook (so a brand-new booking doesn't disqualify
- *  itself). */
+ *  itself).
+ *
+ *  IMPORTANT: stored customer_phone values are NOT normalised on
+ *  insert (legacy + admin-entered rows may contain dashes, spaces,
+ *  parens). We therefore normalise BOTH sides of the comparison via
+ *  SQL REPLACE so "081-234-5678" in the DB matches "0812345678" from
+ *  the new submission. Without this, every check returned false and
+ *  every customer was wrongly marked first-time. */
 export function hasPriorVisit(
   phone: string | null | undefined,
   opts: { excludeBookingId?: number; excludeWalkInId?: number } = {}
@@ -28,12 +35,16 @@ export function hasPriorVisit(
   const db = getDb();
   const exB = opts.excludeBookingId ?? 0;
   const exW = opts.excludeWalkInId ?? 0;
+  // Strip whitespace, dashes, parens from the stored value at query
+  // time. SQLite doesn't have a regex REPLACE, so we chain four
+  // REPLACE calls — covers the formats Thai customers actually type.
+  const NORM = `REPLACE(REPLACE(REPLACE(REPLACE(%s, ' ', ''), '-', ''), '(', ''), ')', '')`;
   const row = db.prepare(`
     SELECT 1 FROM bookings
-      WHERE customer_phone = ? AND id != ?
+      WHERE ${NORM.replace("%s", "customer_phone")} = ? AND id != ?
     UNION ALL
     SELECT 1 FROM walk_in_visits
-      WHERE phone = ? AND id != ?
+      WHERE ${NORM.replace("%s", "phone")} = ? AND id != ?
     LIMIT 1
   `).get(normalised, exB, normalised, exW);
   return !!row;
