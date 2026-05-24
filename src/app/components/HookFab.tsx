@@ -11,6 +11,28 @@ import {
   type FaqEntry
 } from "@/lib/owl-faq";
 import { useLang } from "@/lib/LangProvider";
+import { apiUrl } from "@/lib/url";
+import { nameWithPrefix } from "@/lib/name";
+
+// One row in the "งานค้าง" feed at the top of the panel — owl
+// surfaces queues admin should action on. Mirrors the server's
+// PendingItem shape in /api/owl/admin-pending.
+type OwlPendingItem = {
+  kind:
+    | "pending_review_bookings"
+    | "confirmed_no_table"
+    | "shift_unlock_requests"
+    | "leave_requests";
+  count: number;
+  href: string;
+};
+type OwlPendingResponse = {
+  user_name: string;
+  user_prefix: string | null;
+  branch_name: string | null;
+  total: number;
+  items: OwlPendingItem[];
+};
 
 // Persisted FAB position — {right, bottom} in CSS pixels measured from
 // the viewport's bottom-right corner so the owl stays put when the
@@ -75,6 +97,30 @@ export default function HookFab({
   // a useEffect (no hydration mismatch warning).
   const [pos, setPos] = useState(DEFAULT_POS);
   useEffect(() => { setPos(loadPosition()); }, []);
+
+  // "งานค้าง" — admin-only digest of pending queues (new bookings,
+  // tables waiting to be assigned, etc.). Fetched on mount + every 60s
+  // while the page is open so the badge dot stays current without
+  // requiring the user to refresh. Skipped for non-admin audiences
+  // (staff/customer get the FAQ-only Owl).
+  const [pending, setPending] = useState<OwlPendingResponse | null>(null);
+  useEffect(() => {
+    if (audience !== "admin") return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await fetch(apiUrl("/api/owl/admin-pending"), {
+          cache: "no-store"
+        });
+        if (!res.ok) return;
+        const data = await res.json() as OwlPendingResponse;
+        if (!cancelled) setPending(data);
+      } catch { /* offline / 401 — ignore, owl stays in FAQ-only mode */ }
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [audience]);
 
   // Drag bookkeeping — captured on pointerdown, mutated on pointermove.
   // Using a ref instead of state so the move handler doesn't re-render
@@ -171,7 +217,20 @@ export default function HookFab({
         chipAll: "All",
         nope: "Hmm, I don't know that one yet. Open the help center?",
         openHelp: "Open the help center",
-        seeAll: "See all FAQs"
+        seeAll: "See all FAQs",
+        pendingTitle: "A few things to look at",
+        pendingIntro: (name: string) =>
+          `Hi ${name}, I noticed these are waiting for you:`,
+        pendingItem: {
+          pending_review_bookings: (n: number) =>
+            `${n} new booking${n === 1 ? "" : "s"} need confirmation`,
+          confirmed_no_table: (n: number) =>
+            `${n} confirmed booking${n === 1 ? "" : "s"} with no table assigned`,
+          shift_unlock_requests: (n: number) =>
+            `${n} edit request${n === 1 ? "" : "s"} on locked shift reports`,
+          leave_requests: (n: number) =>
+            `${n} leave request${n === 1 ? "" : "s"} pending approval`
+        }
       }
     : {
         title: "สวัสดีครับ ผมน้องฮูก",
@@ -180,7 +239,20 @@ export default function HookFab({
         chipAll: "ทั้งหมด",
         nope: "ยังไม่รู้คำตอบครับ ลองเปิดห้องน้องฮูกแบบเต็มดูครับ",
         openHelp: "เปิดห้องน้องฮูกแบบเต็ม",
-        seeAll: "ดูคำถามทั้งหมด"
+        seeAll: "ดูคำถามทั้งหมด",
+        pendingTitle: "มีงานค้างฝากดูครับ",
+        pendingIntro: (name: string) =>
+          `สวัสดีครับพี่ ${name} น้องฮูกฝากพี่ช่วยจัดการต่อด้วยนะครับ`,
+        pendingItem: {
+          pending_review_bookings: (n: number) =>
+            `จองใหม่รอยืนยัน ${n} รายการ`,
+          confirmed_no_table: (n: number) =>
+            `รายการที่ confirm แล้วแต่ยังไม่ได้กำหนดโต๊ะ ${n} รายการ`,
+          shift_unlock_requests: (n: number) =>
+            `คำขอแก้รายงานกะที่ล็อกแล้ว ${n} รายการ`,
+          leave_requests: (n: number) =>
+            `คำขอลาที่รออนุมัติ ${n} รายการ`
+        }
       };
 
   return (
@@ -204,14 +276,22 @@ export default function HookFab({
         `}
       >
         <OwlMascot size={64} mood={open ? "smile" : "sleepy"} />
-        {/* Tiny "?" hint dot, sits at the top-right of the owl. */}
-        {!open && (
+        {/* Badge — when admin has pending items, show the count
+            instead of "?". The count badge uses amber for urgency
+            so it stands out against the brand-red "?" baseline. */}
+        {!open && pending && pending.total > 0 ? (
+          <span className="absolute top-0 right-0 bg-amber-500 text-white text-[10px]
+              font-bold rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center
+              shadow-md ring-2 ring-white">
+            {pending.total > 99 ? "99+" : pending.total}
+          </span>
+        ) : !open ? (
           <span className="absolute top-0 right-0 bg-brand text-white text-[10px]
               font-bold rounded-full w-5 h-5 flex items-center justify-center
               shadow-md">
             ?
           </span>
-        )}
+        ) : null}
       </button>
 
       {/* Panel — anchored to the current FAB position so it follows the
@@ -241,6 +321,38 @@ export default function HookFab({
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            {/* Pending queue — admin only. The owl plays the role of
+                an attentive assistant, addressing the admin by name
+                ("สวัสดีครับพี่ X น้องฮูกฝากพี่ช่วยจัดการต่อด้วยนะครับ")
+                and listing the queues that need attention with deep
+                links straight into the relevant admin page. */}
+            {pending && pending.total > 0 && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-2">
+                <div className="font-bold text-amber-900 text-sm">
+                  {T.pendingTitle}
+                </div>
+                <div className="text-xs text-amber-800/90 leading-relaxed">
+                  {T.pendingIntro(nameWithPrefix(pending.user_prefix, pending.user_name))}
+                </div>
+                <ul className="space-y-1 mt-1">
+                  {pending.items.map((it) => (
+                    <li key={it.kind}>
+                      <Link
+                        href={it.href}
+                        onClick={() => setOpen(false)}
+                        className="flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-lg bg-white border border-amber-200 hover:border-amber-400 hover:bg-amber-50/50"
+                      >
+                        <span className="text-slate-700">
+                          {T.pendingItem[it.kind]?.(it.count) ?? `${it.count}`}
+                        </span>
+                        <span className="text-brand font-bold">→</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {/* Search */}
             <input
               type="text"

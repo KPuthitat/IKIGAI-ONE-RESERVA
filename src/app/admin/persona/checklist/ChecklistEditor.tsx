@@ -302,10 +302,13 @@ export default function ChecklistEditor({
                       form at a time. */}
                   {childAddParentId === parent.id && (
                     <div className="ml-8 border-l-2 border-brand pl-3 py-2 space-y-2">
-                      <div className="flex gap-2 flex-wrap">
+                      {/* Same mobile-stack pattern as the parent add
+                          form — input + kind + buttons stack vertically
+                          on phones so the input has full width. */}
+                      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
                         <input
                           type="text"
-                          className="input flex-1 min-w-[180px] text-sm"
+                          className="input w-full sm:flex-1 text-sm"
                           value={childAddLabel}
                           autoFocus
                           maxLength={200}
@@ -313,7 +316,7 @@ export default function ChecklistEditor({
                           placeholder={t("admin.persona.checklist.childAddPlaceholder")}
                         />
                         <select
-                          className="input text-sm"
+                          className="input text-sm w-full sm:w-auto"
                           value={childAddKind}
                           onChange={(e) => setChildAddKind(e.target.value as "checkbox" | "text" | "choice" | "amount" | "section")}
                         >
@@ -323,22 +326,24 @@ export default function ChecklistEditor({
                           <option value="choice">{t("admin.persona.checklist.kind.choice")}</option>
                           <option value="section">{t("admin.persona.checklist.kind.section")}</option>
                         </select>
-                        <button
-                          type="button"
-                          disabled={childAddBusy || !childAddLabel.trim()}
-                          onClick={submitChildAdd}
-                          className="btn-primary text-sm whitespace-nowrap"
-                        >
-                          {childAddBusy ? t("common.submitting") : t("admin.persona.checklist.childAddBtn")}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setChildAddParentId(null)}
-                          disabled={childAddBusy}
-                          className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
-                        >
-                          {t("common.cancel")}
-                        </button>
+                        <div className="flex gap-2 w-full sm:w-auto">
+                          <button
+                            type="button"
+                            disabled={childAddBusy || !childAddLabel.trim()}
+                            onClick={submitChildAdd}
+                            className="btn-primary text-sm whitespace-nowrap flex-1 sm:flex-initial"
+                          >
+                            {childAddBusy ? t("common.submitting") : t("admin.persona.checklist.childAddBtn")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setChildAddParentId(null)}
+                            disabled={childAddBusy}
+                            className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+                          >
+                            {t("common.cancel")}
+                          </button>
+                        </div>
                       </div>
                       {childAddKind === "choice" && (
                         <OptionsEditor
@@ -364,17 +369,22 @@ export default function ChecklistEditor({
         <h2 className="font-bold text-slate-800 text-sm">
           {t("admin.persona.checklist.addTitle")}
         </h2>
-        <div className="flex gap-2 flex-wrap">
+        {/* Mobile: stack vertically (input → kind → submit). Desktop
+            (sm+): one flex row to keep the existing density. Without
+            this stack the label input dropped under the kind dropdown
+            on phones and admin couldn't see the text they were
+            typing without scrolling. */}
+        <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
-            className="input flex-1 min-w-[180px]"
+            className="input w-full sm:flex-1"
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
             placeholder={t("admin.persona.checklist.addPlaceholder")}
             maxLength={200}
           />
           <select
-            className="input text-sm"
+            className="input text-sm w-full sm:w-auto"
             value={newKind}
             onChange={(e) => setNewKind(e.target.value as "checkbox" | "text" | "choice" | "amount" | "section")}
           >
@@ -387,7 +397,7 @@ export default function ChecklistEditor({
           <button
             type="submit"
             disabled={busyAdd || !newLabel.trim()}
-            className="btn-primary text-sm whitespace-nowrap"
+            className="btn-primary text-sm whitespace-nowrap w-full sm:w-auto"
           >
             {busyAdd
               ? t("common.submitting")
@@ -472,7 +482,11 @@ function ChecklistRow({
     <div className={`p-2.5 rounded-lg border ${
       item.active ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-70"
     }`}>
-      <div className="flex items-center gap-2">
+      {/* Mobile: label fills the row; arrows/kind/active/delete drop
+          onto a second flex-wrap row underneath so the label has room
+          to breathe and doesn't truncate to one or two characters on
+          phones. Desktop (sm+) keeps the original single-row density. */}
+      <div className="flex items-start gap-2 sm:items-center sm:flex-nowrap flex-wrap">
         <div className="flex flex-col">
           <button
             type="button"
@@ -492,7 +506,7 @@ function ChecklistRow({
 
         {editing ? (
           <input
-            className="input flex-1 text-sm"
+            className="input flex-1 min-w-0 text-sm w-full"
             value={draft}
             autoFocus
             maxLength={200}
@@ -507,7 +521,7 @@ function ChecklistRow({
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="flex-1 text-left text-sm text-slate-800 hover:text-brand truncate"
+            className="flex-1 min-w-0 basis-full sm:basis-auto text-left text-sm text-slate-800 hover:text-brand break-words"
           >
             {item.label}
             {!item.active && (
@@ -518,40 +532,46 @@ function ChecklistRow({
           </button>
         )}
 
-        <select
-          value={item.kind ?? "checkbox"}
-          disabled={busy}
-          onChange={(e) => onPatchKind(e.target.value as "checkbox" | "text" | "choice" | "amount" | "section")}
-          className="text-xs border border-slate-300 rounded px-1.5 py-1 text-slate-700 bg-white"
-          title={t("admin.persona.checklist.kind.hint")}
-        >
-          <option value="checkbox">{t("admin.persona.checklist.kind.checkbox")}</option>
-          <option value="text">{t("admin.persona.checklist.kind.text")}</option>
-          <option value="amount">{t("admin.persona.checklist.kind.amount")}</option>
-          <option value="choice">{t("admin.persona.checklist.kind.choice")}</option>
-          <option value="section">{t("admin.persona.checklist.kind.section")}</option>
-        </select>
-        <button
-          type="button"
-          onClick={onToggleActive}
-          disabled={busy}
-          className={`text-xs px-2 py-1 rounded border ${
-            item.active
-              ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-              : "border-slate-300 text-slate-500 hover:bg-slate-50"
-          }`}
-        >
-          {item.active
-            ? t("admin.persona.checklist.activeChip")
-            : t("admin.persona.checklist.inactiveChip")}
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          disabled={busy}
-          className="text-xs px-2 py-1 rounded border border-rose-300 text-rose-700 hover:bg-rose-50"
-          aria-label={t("common.delete")}
-        >×</button>
+        {/* Controls cluster — wraps onto its own row on mobile via
+            basis-full + sm:basis-auto. Each control stays compact;
+            we let them spill horizontally inside this cluster
+            without affecting the label above. */}
+        <div className="flex items-center gap-2 basis-full sm:basis-auto flex-wrap ml-7 sm:ml-0">
+          <select
+            value={item.kind ?? "checkbox"}
+            disabled={busy}
+            onChange={(e) => onPatchKind(e.target.value as "checkbox" | "text" | "choice" | "amount" | "section")}
+            className="text-xs border border-slate-300 rounded px-1.5 py-1 text-slate-700 bg-white"
+            title={t("admin.persona.checklist.kind.hint")}
+          >
+            <option value="checkbox">{t("admin.persona.checklist.kind.checkbox")}</option>
+            <option value="text">{t("admin.persona.checklist.kind.text")}</option>
+            <option value="amount">{t("admin.persona.checklist.kind.amount")}</option>
+            <option value="choice">{t("admin.persona.checklist.kind.choice")}</option>
+            <option value="section">{t("admin.persona.checklist.kind.section")}</option>
+          </select>
+          <button
+            type="button"
+            onClick={onToggleActive}
+            disabled={busy}
+            className={`text-xs px-2 py-1 rounded border ${
+              item.active
+                ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                : "border-slate-300 text-slate-500 hover:bg-slate-50"
+            }`}
+          >
+            {item.active
+              ? t("admin.persona.checklist.activeChip")
+              : t("admin.persona.checklist.inactiveChip")}
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={busy}
+            className="text-xs px-2 py-1 rounded border border-rose-300 text-rose-700 hover:bg-rose-50"
+            aria-label={t("common.delete")}
+          >×</button>
+        </div>
       </div>
 
       {/* "+ เพิ่มรายการย่อย" — only on top-level rows. Children stay
