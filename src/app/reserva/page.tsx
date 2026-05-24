@@ -249,13 +249,22 @@ export default function CustomerReservaPage({
             const isSourceBranch = sourceBranch && b.slug === sourceBranch.slug;
             let targetHref: string | null = null;
             if (bookable) {
-              if (sourceBranch && !isSourceBranch) {
+              if (sourceBranch && isSourceBranch) {
+                // ?from context + clicking the source branch itself:
+                // the customer just came FROM this branch's LINE OA,
+                // so they're already a friend — sending them back to
+                // the LINE OA is a useless detour. Skip every LINE
+                // OA URL and go straight to the booking form.
+                // (Earlier bug: HYPO admin accidentally typed NAMA's
+                // URL into HYPO's customer_line_oa_url field, so
+                // clicking HYPO on /reserva?from=hypo bounced to NAMA.)
+                targetHref = `/reserva/${b.slug}`;
+              } else if (sourceBranch && !isSourceBranch) {
                 // ?from context + OTHER branch — LINE OA URL is
                 // mandatory; no booking-form fallback.
                 targetHref = crossUrl || b.customer_line_oa_url || null;
               } else {
-                // Organic visit OR re-booking at the source branch:
-                // full priority chain is allowed.
+                // Organic visit (no ?from): full priority chain.
                 targetHref = crossUrl || b.customer_line_oa_url || `/reserva/${b.slug}`;
               }
             }

@@ -5,7 +5,7 @@ import { getDb, OCCASION_KINDS, type Branch, type Booking } from "@/lib/db";
 import { isTableFree } from "@/lib/table-allocator";
 import { notifyStaff, notifyCustomer } from "@/lib/line";
 import { generateBookingRef } from "@/lib/reserva-ref";
-import { assignRedemptionForNewRow } from "@/lib/redemption";
+import { assignRedemptionForNewRow, normalisePhone } from "@/lib/redemption";
 
 // POST /api/admin/reserva/bookings
 //
@@ -102,12 +102,20 @@ export async function POST(req: Request) {
   }
   const seatedAt = data.booking_channel === "walkin" ? new Date().toISOString() : null;
 
+  // Normalise the phone before storage so the DB carries a single
+  // canonical format (no dashes/spaces/parens). Same rationale as
+  // the customer endpoint — comparison + display stay consistent.
+  // Walk-ins may have an empty phone; keep it empty in that case.
+  const normalisedPhone = data.customer_phone
+    ? (normalisePhone(data.customer_phone) ?? data.customer_phone)
+    : "";
+
   // First-time check (free-ice-cream promo). Walk-ins also qualify
   // since the customer chose us today regardless of channel. Phone
   // may be empty for walk-ins; assignRedemptionForNewRow returns
   // 'not_eligible' in that case (no way to verify "first-time").
   const { status: redemptionStatus, code: verificationCode } =
-    assignRedemptionForNewRow({ phone: data.customer_phone });
+    assignRedemptionForNewRow({ phone: normalisedPhone });
 
   const ref = generateBookingRef(data.booking_date);
   const result = db.prepare(`
@@ -123,7 +131,7 @@ export async function POST(req: Request) {
     branch.id,
     data.table_id ?? null,
     data.customer_name,
-    data.customer_phone || "",
+    normalisedPhone,
     data.party_size,
     data.source || null,
     data.customer_origin || null,

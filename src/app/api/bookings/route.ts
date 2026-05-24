@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getDb, OCCASION_KINDS, type Branch, type Booking } from "@/lib/db";
 import { notifyCustomerPending, notifyStaff } from "@/lib/line";
 import { generateBookingRef } from "@/lib/reserva-ref";
-import { assignRedemptionForNewRow } from "@/lib/redemption";
+import { assignRedemptionForNewRow, normalisePhone } from "@/lib/redemption";
 
 // Customer-facing booking endpoint.
 //
@@ -71,11 +71,18 @@ export async function POST(req: Request) {
   // No table_id race-condition check needed — admin picks the table later
   // when confirming. The only remaining guard is the past-date one above.
 
+  // Normalise the phone before storage so the DB carries a single
+  // canonical format (digits + leading "+" only — no dashes / spaces
+  // / parens). Comparison-heavy paths like hasPriorVisit can then
+  // match without REPLACE() acrobatics, and the admin UI shows a
+  // consistent string instead of whatever the customer typed.
+  const normalisedPhone = normalisePhone(data.customer_phone) ?? data.customer_phone;
+
   // First-time check (free-ice-cream promo). Decides at insert time;
   // re-running would race if two customers share a phone and submit
   // back-to-back, but the chance is negligible at our volume.
   const { status: redemptionStatus, code: verificationCode } =
-    assignRedemptionForNewRow({ phone: data.customer_phone });
+    assignRedemptionForNewRow({ phone: normalisedPhone });
 
   const ref = generateBookingRef(data.booking_date);
   const result = db.prepare(`
@@ -92,7 +99,7 @@ export async function POST(req: Request) {
     branch.id,
     null,                                    // table_id always null at this stage
     data.customer_name,
-    data.customer_phone,
+    normalisedPhone,
     data.party_size,
     data.source || null,
     data.customer_origin || null,

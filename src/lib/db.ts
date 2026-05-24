@@ -153,6 +153,22 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // Phone format backfill (added 2026-05) — strip dashes / spaces /
+  // parens from existing customer_phone values so the column stores
+  // a single canonical format (digits + leading "+" only). New rows
+  // go in pre-normalised via the API routes. Idempotent: the WHERE
+  // clause skips already-clean values so this is essentially free
+  // after the first run.
+  db.exec(`
+    UPDATE bookings
+    SET customer_phone = REPLACE(REPLACE(REPLACE(REPLACE(customer_phone, ' ', ''), '-', ''), '(', ''), ')', '')
+    WHERE customer_phone IS NOT NULL
+      AND (customer_phone LIKE '% %'
+        OR customer_phone LIKE '%-%'
+        OR customer_phone LIKE '%(%'
+        OR customer_phone LIKE '%)%')
+  `);
+
   // Public-facing booking reference: 'R' + YYYYMM + 4-digit sequence per
   // calendar month. Customers see it on the LINE Flex card; staff scan
   // the QR (which encodes this ref) to find the booking instantly.
