@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import OwlMascot from "./OwlMascot";
 import {
@@ -26,12 +27,18 @@ type OwlPendingItem = {
   count: number;
   href: string;
 };
+type OwlBranchGroup = {
+  branch_id: number;
+  branch_name: string;
+  branch_slug: string;
+  total: number;
+  items: OwlPendingItem[];
+};
 type OwlPendingResponse = {
   user_name: string;
   user_prefix: string | null;
-  branch_name: string | null;
   total: number;
-  items: OwlPendingItem[];
+  branches: OwlBranchGroup[];
 };
 
 // Persisted FAB position — {right, bottom} in CSS pixels measured from
@@ -86,10 +93,29 @@ export default function HookFab({
   audience?: FaqAudience;
 }) {
   const { lang } = useLang();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<FaqCategory | "">("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  /** Switch active branch + navigate. Owl items for a non-active
+   *  branch need this two-step because the target admin page reads
+   *  data from session.activeBranchId — landing there without first
+   *  flipping the session would show the wrong branch's queue. */
+  async function goToBranchItem(branchId: number, href: string) {
+    setOpen(false);
+    try {
+      await fetch(apiUrl("/api/branch"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch_id: branchId })
+      });
+    } catch { /* ignore — navigation still happens, page will show
+                  current active branch if the switch failed */ }
+    router.push(href);
+    router.refresh();
+  }
 
   // FAB position state — restored from localStorage on first mount.
   // SSR-safe: starts at DEFAULT_POS so the server-rendered HTML and
@@ -323,33 +349,47 @@ export default function HookFab({
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {/* Pending queue — admin only. The owl plays the role of
                 an attentive assistant, addressing the admin by name
-                ("สวัสดีครับพี่ X น้องฮูกฝากพี่ช่วยจัดการต่อด้วยนะครับ")
-                and listing the queues that need attention with deep
-                links straight into the relevant admin page. */}
+                and showing pending work across EVERY branch they
+                oversee (universal owl, 2026-05). One sub-card per
+                branch keeps the queues separable. The branch link
+                isn't clickable separately — admin taps the
+                individual item to navigate. */}
             {pending && pending.total > 0 && (
-              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-2">
-                <div className="font-bold text-amber-900 text-sm">
-                  {T.pendingTitle}
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-3">
+                <div>
+                  <div className="font-bold text-amber-900 text-sm">
+                    {T.pendingTitle}
+                  </div>
+                  <div className="text-xs text-amber-800/90 leading-relaxed mt-0.5">
+                    {T.pendingIntro(nameWithPrefix(pending.user_prefix, pending.user_name))}
+                  </div>
                 </div>
-                <div className="text-xs text-amber-800/90 leading-relaxed">
-                  {T.pendingIntro(nameWithPrefix(pending.user_prefix, pending.user_name))}
-                </div>
-                <ul className="space-y-1 mt-1">
-                  {pending.items.map((it) => (
-                    <li key={it.kind}>
-                      <Link
-                        href={it.href}
-                        onClick={() => setOpen(false)}
-                        className="flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-lg bg-white border border-amber-200 hover:border-amber-400 hover:bg-amber-50/50"
-                      >
-                        <span className="text-slate-700">
-                          {T.pendingItem[it.kind]?.(it.count) ?? `${it.count}`}
-                        </span>
-                        <span className="text-brand font-bold">→</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
+                {pending.branches.map((br) => (
+                  <div key={br.branch_id} className="space-y-1">
+                    <div className="text-[11px] tracking-wide font-bold text-amber-900 uppercase">
+                      {br.branch_name}
+                      <span className="ml-1.5 text-[10px] font-normal text-amber-700">
+                        ({br.total})
+                      </span>
+                    </div>
+                    <ul className="space-y-1">
+                      {br.items.map((it) => (
+                        <li key={`${br.branch_id}-${it.kind}`}>
+                          <button
+                            type="button"
+                            onClick={() => goToBranchItem(br.branch_id, it.href)}
+                            className="w-full flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-lg bg-white border border-amber-200 hover:border-amber-400 hover:bg-amber-50/50 text-left"
+                          >
+                            <span className="text-slate-700">
+                              {T.pendingItem[it.kind]?.(it.count) ?? `${it.count}`}
+                            </span>
+                            <span className="text-brand font-bold">→</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </div>
             )}
 

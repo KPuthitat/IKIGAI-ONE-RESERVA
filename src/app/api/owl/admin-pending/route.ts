@@ -30,118 +30,163 @@ type PendingItem = {
   href: string;
 };
 
+/** One group in the owl's "งานค้าง" digest — pending items for a
+ *  single branch the current admin oversees. The owl renders one
+ *  card per branch so admin can act on each independently. */
+export type OwlBranchGroup = {
+  branch_id: number;
+  branch_name: string;
+  branch_slug: string;
+  total: number;
+  items: PendingItem[];
+};
+
 export type OwlAdminPendingResponse = {
   user_name: string;
   user_prefix: string | null;
-  branch_name: string | null;
-  total: number;
-  items: PendingItem[];
+  total: number;          // sum across ALL branches
+  branches: OwlBranchGroup[];
 };
 
 export async function GET() {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   // Owl assistant is admin-only — staff don't manage queues. Returning
-  // 200 with empty items keeps the client simple (no error branch).
+  // 200 with empty branches keeps the client simple (no error branch).
   const isAdmin = user.role === "admin" || user.role === "super_admin";
-  if (!isAdmin || !user.activeBranchId) {
+  if (!isAdmin) {
     return NextResponse.json({
       user_name: user.display_name,
       user_prefix: user.title_prefix,
-      branch_name: null,
       total: 0,
-      items: []
+      branches: []
     } as OwlAdminPendingResponse);
   }
 
   const db = getDb();
-  const branchId = user.activeBranchId;
-  const items: PendingItem[] = [];
 
-  // 1. Pending-review bookings — the most actionable queue.
-  try {
-    const row = db.prepare(`
-      SELECT COUNT(*) AS n FROM bookings
-      WHERE branch_id = ? AND status = 'pending_review'
-    `).get(branchId) as { n: number };
-    if (row.n > 0) {
-      items.push({
-        kind: "pending_review_bookings",
-        count: row.n,
-        href: "/admin/reserva/pending"
-      });
+  // Universal owl (2026-05) — instead of just the active branch,
+  // surface pending work across every branch the admin oversees so
+  // they don't need to switch branches just to spot what's waiting.
+  // Super-admin gets every branch in the company; branch-admin gets
+  // only the branches in their adminBranchIds list.
+  let branchRows: Array<{ id: number; slug: string; name: string }>;
+  if (user.role === "super_admin") {
+    branchRows = db.prepare(`
+      SELECT id, slug, name FROM branches
+      WHERE status != 'closed'
+      ORDER BY display_order, name
+    `).all() as Array<{ id: number; slug: string; name: string }>;
+  } else {
+    if (user.adminBranchIds.length === 0) {
+      return NextResponse.json({
+        user_name: user.display_name,
+        user_prefix: user.title_prefix,
+        total: 0,
+        branches: []
+      } as OwlAdminPendingResponse);
     }
-  } catch { /* table may not exist on a fresh install — ignore */ }
+    const placeholders = user.adminBranchIds.map(() => "?").join(",");
+    branchRows = db.prepare(`
+      SELECT id, slug, name FROM branches
+      WHERE id IN (${placeholders}) AND status != 'closed'
+      ORDER BY display_order, name
+    `).all(...user.adminBranchIds) as Array<{ id: number; slug: string; name: string }>;
+  }
 
-  // 2. Confirmed bookings missing a table — the recent bug. Show
-  //    only today + future so old data doesn't permanently nag.
-  try {
-    const today = new Date(Date.now() + 7 * 60 * 60 * 1000)
-      .toISOString().slice(0, 10);
-    const row = db.prepare(`
-      SELECT COUNT(*) AS n FROM bookings
-      WHERE branch_id = ?
-        AND status IN ('confirmed','seated')
-        AND table_id IS NULL
-        AND booking_date >= ?
-    `).get(branchId, today) as { n: number };
-    if (row.n > 0) {
-      items.push({
-        kind: "confirmed_no_table",
-        count: row.n,
-        href: "/admin/reserva/bookings"
-      });
-    }
-  } catch { /* ignore */ }
+  const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10);
 
-  // 3. Shift unlock requests — staff asking to edit a locked report.
-  //    Branch is on the linked daily_report row, not the request itself.
-  try {
-    const row = db.prepare(`
-      SELECT COUNT(*) AS n
-      FROM shift_unlock_requests sur
-      JOIN daily_reports dr ON dr.id = sur.daily_report_id
-      WHERE dr.branch_id = ? AND sur.status = 'pending'
-    `).get(branchId) as { n: number };
-    if (row.n > 0) {
-      items.push({
-        kind: "shift_unlock_requests",
-        count: row.n,
-        href: "/admin/persona/shift-reports"
-      });
-    }
-  } catch { /* table may not exist yet — ignore */ }
+  const branches: OwlBranchGroup[] = [];
+  for (const branch of branchRows) {
+    const items: PendingItem[] = [];
 
-  // 4. Pending leave requests for staff assigned to this branch.
-  //    leave_requests has user_id only, no branch_id, so filter via
-  //    the user_branches mapping.
-  try {
-    const row = db.prepare(`
-      SELECT COUNT(*) AS n
-      FROM leave_requests lr
-      WHERE lr.status = 'pending'
-        AND lr.user_id IN (
-          SELECT user_id FROM user_branches WHERE branch_id = ?
-        )
-    `).get(branchId) as { n: number };
-    if (row.n > 0) {
-      items.push({
-        kind: "leave_requests",
-        count: row.n,
-        href: "/admin/persona/leave"
-      });
-    }
-  } catch { /* ignore */ }
+    // 1. Pending-review bookings — the most actionable queue.
+    try {
+      const row = db.prepare(`
+        SELECT COUNT(*) AS n FROM bookings
+        WHERE branch_id = ? AND status = 'pending_review'
+      `).get(branch.id) as { n: number };
+      if (row.n > 0) {
+        items.push({
+          kind: "pending_review_bookings",
+          count: row.n,
+          href: "/admin/reserva/pending"
+        });
+      }
+    } catch { /* table may not exist on a fresh install — ignore */ }
 
-  const branch = db.prepare("SELECT name FROM branches WHERE id = ?")
-    .get(branchId) as { name: string } | undefined;
+    // 2. Confirmed bookings missing a table — the recent bug. Show
+    //    only today + future so old data doesn't permanently nag.
+    try {
+      const row = db.prepare(`
+        SELECT COUNT(*) AS n FROM bookings
+        WHERE branch_id = ?
+          AND status IN ('confirmed','seated')
+          AND table_id IS NULL
+          AND booking_date >= ?
+      `).get(branch.id, todayBkk) as { n: number };
+      if (row.n > 0) {
+        items.push({
+          kind: "confirmed_no_table",
+          count: row.n,
+          href: "/admin/reserva/bookings"
+        });
+      }
+    } catch { /* ignore */ }
 
-  const total = items.reduce((s, it) => s + it.count, 0);
+    // 3. Shift unlock requests — branch is on the linked daily_report row.
+    try {
+      const row = db.prepare(`
+        SELECT COUNT(*) AS n
+        FROM shift_unlock_requests sur
+        JOIN daily_reports dr ON dr.id = sur.daily_report_id
+        WHERE dr.branch_id = ? AND sur.status = 'pending'
+      `).get(branch.id) as { n: number };
+      if (row.n > 0) {
+        items.push({
+          kind: "shift_unlock_requests",
+          count: row.n,
+          href: "/admin/persona/shift-reports"
+        });
+      }
+    } catch { /* table may not exist yet — ignore */ }
+
+    // 4. Pending leave requests for staff assigned to this branch.
+    try {
+      const row = db.prepare(`
+        SELECT COUNT(*) AS n
+        FROM leave_requests lr
+        WHERE lr.status = 'pending'
+          AND lr.user_id IN (
+            SELECT user_id FROM user_branches WHERE branch_id = ?
+          )
+      `).get(branch.id) as { n: number };
+      if (row.n > 0) {
+        items.push({
+          kind: "leave_requests",
+          count: row.n,
+          href: "/admin/persona/leave"
+        });
+      }
+    } catch { /* ignore */ }
+
+    if (items.length === 0) continue;  // skip clean branches
+    const branchTotal = items.reduce((s, it) => s + it.count, 0);
+    branches.push({
+      branch_id: branch.id,
+      branch_name: branch.name,
+      branch_slug: branch.slug,
+      total: branchTotal,
+      items
+    });
+  }
+
+  const total = branches.reduce((s, b) => s + b.total, 0);
   return NextResponse.json({
     user_name: user.display_name,
     user_prefix: user.title_prefix,
-    branch_name: branch?.name ?? null,
     total,
-    items
+    branches
   } as OwlAdminPendingResponse);
 }
