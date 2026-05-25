@@ -233,6 +233,41 @@ export default function HookFab({
     }).slice(0, 8);
   }, [q, cat, audience, lang]);
 
+  // Day-of-year picker — rotates owl greetings so the user doesn't
+  // read the same line every morning. Deterministic within a day so
+  // refreshes/re-opens don't shuffle mid-session (jarring), but
+  // changes at midnight Bangkok. We use Bangkok-local YMD for the
+  // seed because that's the human-day boundary the owner cares about.
+  const greetingIndex = (() => {
+    const bkkDate = new Date(Date.now() + 7 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10); // YYYY-MM-DD
+    let h = 0;
+    for (let i = 0; i < bkkDate.length; i++) {
+      h = ((h << 5) - h + bkkDate.charCodeAt(i)) | 0;
+    }
+    return Math.abs(h);
+  })();
+  const TH_INTROS: Array<(name: string) => string> = [
+    (name) => `สวัสดีครับพี่ ${name} น้องฮูกฝากพี่ช่วยจัดการต่อด้วยนะครับ`,
+    (name) => `ดีจ้าพี่ ${name} วันนี้มีงานเล็กๆ ฝากดูสักนิดนะครับ`,
+    (name) => `สวัสดีครับพี่ ${name} น้องเก็บงานค้างไว้รออยู่ครับ`,
+    (name) => `พี่ ${name} ขา รบกวนช่วยดูสิ่งที่ค้างอยู่หน่อยนะครับ`,
+    (name) => `หวัดดีครับพี่ ${name} น้องฮูกเตือนความจำให้ครับ`,
+    (name) => `ขออภัยที่รบกวนพี่ ${name} — มีของฝากอยู่นิดเดียวเองครับ`,
+    (name) => `เช้านี้พี่ ${name} เริ่มที่งานพวกนี้ก่อนเป็นไงครับ`,
+    (name) => `สวัสดีครับพี่ ${name} อย่าลืมงานที่รอพี่อยู่นะครับ`
+  ];
+  const EN_INTROS: Array<(name: string) => string> = [
+    (name) => `Hi ${name}, I noticed these are waiting for you:`,
+    (name) => `Morning ${name} — a few things on your list today:`,
+    (name) => `Hey ${name}, dropping off some bits for you:`,
+    (name) => `Hi ${name}, when you have a moment these are pending:`,
+    (name) => `Quick nudge ${name} — these are waiting for action:`,
+    (name) => `Hello ${name}, no rush, but these are still open:`,
+    (name) => `Hi ${name}, fresh queue for you:`,
+    (name) => `Hey ${name}, here's what came in for you:`
+  ];
+
   // i18n strings inline — only ~10 strings, simpler than threading
   // through the global i18n dict for a non-critical surface.
   const T = lang === "en"
@@ -245,8 +280,7 @@ export default function HookFab({
         openHelp: "Open the help center",
         seeAll: "See all FAQs",
         pendingTitle: "A few things to look at",
-        pendingIntro: (name: string) =>
-          `Hi ${name}, I noticed these are waiting for you:`,
+        pendingIntro: EN_INTROS[greetingIndex % EN_INTROS.length],
         pendingItem: {
           pending_review_bookings: (n: number) =>
             `${n} new booking${n === 1 ? "" : "s"} need confirmation`,
@@ -267,8 +301,7 @@ export default function HookFab({
         openHelp: "เปิดห้องน้องฮูกแบบเต็ม",
         seeAll: "ดูคำถามทั้งหมด",
         pendingTitle: "มีงานค้างฝากดูครับ",
-        pendingIntro: (name: string) =>
-          `สวัสดีครับพี่ ${name} น้องฮูกฝากพี่ช่วยจัดการต่อด้วยนะครับ`,
+        pendingIntro: TH_INTROS[greetingIndex % TH_INTROS.length],
         pendingItem: {
           pending_review_bookings: (n: number) =>
             `จองใหม่รอยืนยัน ${n} รายการ`,

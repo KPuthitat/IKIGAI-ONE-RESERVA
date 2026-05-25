@@ -1470,6 +1470,13 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "default_escalation_hours")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN default_escalation_hours INTEGER NOT NULL DEFAULT 24");
   }
+  // Cron heartbeat (2026-05-25) — stamped by every successful POST
+  // /api/cron call. Lets admin diagnose "is the external cron job
+  // actually pinging us?" without SSH'ing into the VPS. NULL = never
+  // called since the migration ran.
+  if (!ssCols.some((c) => c.name === "last_cron_run_at")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN last_cron_run_at TEXT");
+  }
 
   // Phase 1C v9: replaces_id for resignation_requests
   const rrcols = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;

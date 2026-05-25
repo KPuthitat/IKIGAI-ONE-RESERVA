@@ -53,6 +53,11 @@ export async function POST(req: Request) {
 
 async function runCron(): Promise<NextResponse> {
   const db = getDb();
+  // Stamp the heartbeat right at the top so even partially-failing
+  // runs are recorded. Diagnostic page reads this to confirm the
+  // external scheduler is actually pinging us.
+  db.prepare("UPDATE system_settings SET last_cron_run_at = ? WHERE id = 1")
+    .run(new Date().toISOString());
   const branches = db.prepare("SELECT * FROM branches").all() as Branch[];
   let remindersSent = 0;
   let attendanceSummariesSent = 0;
