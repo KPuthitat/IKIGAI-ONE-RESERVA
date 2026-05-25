@@ -31,6 +31,7 @@ import {
 } from "@/lib/shift-notify";
 import { reportError } from "@/lib/error-reporter";
 import { expireOldRedemptions } from "@/lib/redemption";
+import { escalateStaleRequests } from "@/lib/approval-chain";
 
 export async function POST(req: Request) {
   const token = req.headers.get("x-cron-token");
@@ -187,6 +188,27 @@ async function runCron(): Promise<NextResponse> {
     reportError(e, "cron redemption-expiry", {});
   }
 
+  // Chain-of-command escalation sweep (added 2026-05). Any pending
+  // leave/resignation request whose current approver has held it
+  // beyond their escalation window gets reassigned to the next
+  // person up the chain. Idempotent — runs every cron tick.
+  let escalatedLeave = 0;
+  let escalatedResign = 0;
+  try {
+    const l = escalateStaleRequests("leave_requests");
+    escalatedLeave = l.reassigned;
+  } catch (e) {
+    console.error("leave escalation sweep error", e);
+    reportError(e, "cron leave-escalation", {});
+  }
+  try {
+    const r = escalateStaleRequests("resignation_requests");
+    escalatedResign = r.reassigned;
+  } catch (e) {
+    console.error("resignation escalation sweep error", e);
+    reportError(e, "cron resignation-escalation", {});
+  }
+
   // retention cleanup
   const purged = purgeOldBookings();
 
@@ -198,6 +220,8 @@ async function runCron(): Promise<NextResponse> {
     auto_no_show: autoNoShow,
     expired_redemptions_bookings: expiredBookings,
     expired_redemptions_walk_ins: expiredWalkIns,
+    escalated_leave_requests: escalatedLeave,
+    escalated_resignation_requests: escalatedResign,
     purged_old_bookings: purged
   });
 }

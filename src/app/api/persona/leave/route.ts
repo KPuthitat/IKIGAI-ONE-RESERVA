@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { buildInitialApprovalFields } from "@/lib/approval-chain";
 import {
   ALL_LEAVE_TYPES, getEligibleLeaveTypesForUser, saveLeaveAttachment,
   analyzeLongLeave, detectWeekendExtension, getPublicHolidaySet, generateRefNo,
@@ -162,17 +163,25 @@ export async function POST(req: Request) {
     }
   }
 
+  // Pick the initial approver from the chain-of-command (added 2026-05).
+  // Direct manager first, fallback to super_admin. The cron sweep
+  // escalates if they don't decide within their escalation window.
+  const chain = buildInitialApprovalFields(user.id);
+
   const nowIso = new Date().toISOString();
   const refNo = generateRefNo("leave_requests");
   const result = db.prepare(`
     INSERT INTO leave_requests
       (user_id, type, date_from, date_to, days, hours, reason, evidence_filename,
-       status, created_by, is_special_request, replaces_id, ref_no, branch_id, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+       status, created_by, is_special_request, replaces_id, ref_no, branch_id, created_at,
+       current_approver_user_id, escalated_to_level, last_escalated_at, approval_history)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     user.id, type, date_from, date_to, days, hours, reason,
     evidenceFilename, user.id, isSpecial ? 1 : 0, replacesId, refNo,
-    user.activeBranchId, nowIso
+    user.activeBranchId, nowIso,
+    chain.current_approver_user_id, chain.escalated_to_level,
+    chain.last_escalated_at, chain.approval_history
   );
 
   return NextResponse.json({ ok: true, id: result.lastInsertRowid, ref_no: refNo });

@@ -37,6 +37,11 @@ export type EmployeeRow = {
   shift_start_time: string | null;
   has_pin: number;
   resign_unlocked: number;
+  // Chain-of-command (added 2026-05). Direct manager for approval
+  // routing + per-user override for the escalation window. NULL on
+  // both = "top of chain" / "use system default".
+  reports_to_user_id: number | null;
+  escalation_hours: number | null;
 };
 
 export type BranchLite = { id: number; name: string };
@@ -402,6 +407,13 @@ function EditModal({
   // lateness computed for this staff member). Admin can set per-employee
   // since shifts vary (kitchen 09:00, FOH 10:30, etc.).
   const [shiftStartTime, setShiftStartTime] = useState<string>(employee.shift_start_time ?? "");
+  // Chain-of-command — direct manager + per-user escalation window.
+  const [reportsToUserId, setReportsToUserId] = useState<string>(
+    employee.reports_to_user_id == null ? "" : String(employee.reports_to_user_id)
+  );
+  const [escalationHours, setEscalationHours] = useState<string>(
+    employee.escalation_hours == null ? "" : String(employee.escalation_hours)
+  );
   // PIN — 4 digits. Empty = leave unchanged. "clear" toggles → send "" to API.
   const [pin, setPin] = useState("");
   const [clearPin, setClearPin] = useState(false);
@@ -523,7 +535,9 @@ function EditModal({
         pay_cycle: payCycle || null,
         salary_tax_mode: taxMode,
         line_user_id: lineUserId.trim() || null,
-        shift_start_time: shiftStartTime.trim() === "" ? null : shiftStartTime.trim()
+        shift_start_time: shiftStartTime.trim() === "" ? null : shiftStartTime.trim(),
+        reports_to_user_id: reportsToUserId === "" ? null : Number(reportsToUserId),
+        escalation_hours: escalationHours.trim() === "" ? null : Number(escalationHours)
       };
       // PIN — only include if admin is setting/clearing it
       if (clearPin) {
@@ -678,6 +692,55 @@ function EditModal({
                 />
                 <p className="text-xs text-slate-500 mt-1">
                   {t("admin.persona.employees.shiftStartTimeHint")}
+                </p>
+              </div>
+            </div>
+
+            {/* Chain-of-command (2026-05). Routes leave / resignation
+                approvals up a per-user hierarchy. Top-of-chain (super_
+                admin or "no manager") leaves the field blank.
+                Escalation hours = how long this person may hold a
+                request before it auto-routes to their manager. */}
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <div>
+                <label className="label">
+                  {t("admin.persona.employees.field.reportsTo")}
+                </label>
+                <select
+                  className="input"
+                  value={reportsToUserId}
+                  onChange={(e) => setReportsToUserId(e.target.value)}
+                >
+                  <option value="">
+                    — {t("admin.persona.employees.reportsTo.none")} —
+                  </option>
+                  {employees
+                    .filter((e2) => e2.id !== employee.id)
+                    .map((e2) => (
+                      <option key={e2.id} value={e2.id}>
+                        {e2.display_name}{e2.role === "super_admin" ? " (super)" : e2.role === "admin" ? " (admin)" : ""}
+                      </option>
+                    ))}
+                </select>
+                <p className="text-xs text-slate-500 mt-1">
+                  {t("admin.persona.employees.reportsToHint")}
+                </p>
+              </div>
+              <div>
+                <label className="label">
+                  {t("admin.persona.employees.field.escalationHours")}
+                </label>
+                <input
+                  type="number"
+                  className="input"
+                  value={escalationHours}
+                  onChange={(e) => setEscalationHours(e.target.value)}
+                  min={1}
+                  max={720}
+                  placeholder={t("admin.persona.employees.escalationHoursPlaceholder")}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  {t("admin.persona.employees.escalationHoursHint")}
                 </p>
               </div>
             </div>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { computeMinLastWorkingDay, saveLeaveAttachment, generateRefNo } from "@/lib/leave";
+import { buildInitialApprovalFields } from "@/lib/approval-chain";
 
 // POST /api/persona/resignation — staff submit
 // กฎ: ต้องลาออกล่วงหน้าอย่างน้อย 1 รอบเงินเดือน (= สิ้นเดือนถัดจากเดือนที่ยื่น)
@@ -72,13 +73,22 @@ export async function POST(req: Request) {
 
   const nowIso = new Date().toISOString();
   const refNo = generateRefNo("resignation_requests");
+  // Chain-of-command initial assignment (added 2026-05). Direct
+  // manager first, cron escalates after escalation_hours of inaction.
+  const chain = buildInitialApprovalFields(user.id);
   const tx = db.transaction(() => {
     const r = db.prepare(`
       INSERT INTO resignation_requests
         (user_id, proposed_last_day, computed_min_last_day, reason, evidence_filename,
-         is_special_request, status, ref_no, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-    `).run(user.id, proposed, minLastDay, reason, evidenceFilename, isSpecial ? 1 : 0, refNo, nowIso);
+         is_special_request, status, ref_no, created_at,
+         current_approver_user_id, escalated_to_level, last_escalated_at, approval_history)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+    `).run(
+      user.id, proposed, minLastDay, reason, evidenceFilename,
+      isSpecial ? 1 : 0, refNo, nowIso,
+      chain.current_approver_user_id, chain.escalated_to_level,
+      chain.last_escalated_at, chain.approval_history
+    );
     db.prepare(
       "UPDATE users SET resignation_unlocked_at = NULL, resignation_unlocked_by = NULL WHERE id = ?"
     ).run(user.id);

@@ -695,6 +695,23 @@ function runMigrations(db: Database.Database): void {
   if (!unames.has("gender")) db.exec("ALTER TABLE users ADD COLUMN gender TEXT"); // 'male'|'female'|null
   if (!unames.has("employment_type")) db.exec("ALTER TABLE users ADD COLUMN employment_type TEXT"); // 'pt'|'ft'|null
 
+  // Chain-of-command for approvals (added 2026-05). Owner direction:
+  // staff requests (leave / resignation / future approvals) route to
+  // a direct manager first; if they don't decide within
+  // escalation_hours, the request escalates up the chain to the
+  // manager's manager, eventually super_admin.
+  //   reports_to_user_id  — direct manager. NULL = top of chain
+  //                          (super_admin is the implicit ceiling).
+  //   escalation_hours    — how long this user's queue may sit
+  //                          before the request escalates. NULL =
+  //                          use SYSTEM default (24h).
+  if (!unames.has("reports_to_user_id")) {
+    db.exec("ALTER TABLE users ADD COLUMN reports_to_user_id INTEGER REFERENCES users(id)");
+  }
+  if (!unames.has("escalation_hours")) {
+    db.exec("ALTER TABLE users ADD COLUMN escalation_hours INTEGER");
+  }
+
   const lrcols = db.prepare("PRAGMA table_info(leave_requests)").all() as Array<{ name: string }>;
   const lnames = new Set(lrcols.map((c) => c.name));
   if (!lnames.has("hours")) db.exec("ALTER TABLE leave_requests ADD COLUMN hours REAL"); // null = full day(s)
@@ -704,6 +721,35 @@ function runMigrations(db: Database.Database): void {
   if (!lnames.has("is_special_request")) db.exec("ALTER TABLE leave_requests ADD COLUMN is_special_request INTEGER NOT NULL DEFAULT 0");
   // Phase 1C v9: replaces_id — ลิงก์คำขอใหม่ที่แก้แล้วกลับไปยังคำขอเดิม
   if (!lnames.has("replaces_id")) db.exec("ALTER TABLE leave_requests ADD COLUMN replaces_id INTEGER");
+
+  // Chain-of-command tracking (added 2026-05). The leave request is
+  // assigned to a specific approver at creation time (the requester's
+  // reports_to_user_id, falling back to super_admin). When that
+  // approver doesn't decide within their escalation_hours, the cron
+  // sweeper reassigns to THEIR manager and bumps escalated_to_level.
+  // history_json keeps the full audit trail of who saw it when.
+  //   current_approver_user_id  — who needs to action this NOW.
+  //                                Null = nobody assigned yet (legacy).
+  //   escalated_to_level         — 0 = first assignee, 1 = first
+  //                                 escalation up the chain, etc.
+  //   last_escalated_at          — ISO ts of the most recent
+  //                                 reassignment (used by the cron
+  //                                 sweep + LINE timer display).
+  //   approval_history           — JSON array of
+  //                                 [{user_id, assigned_at, level}].
+  if (!lnames.has("current_approver_user_id")) {
+    db.exec("ALTER TABLE leave_requests ADD COLUMN current_approver_user_id INTEGER REFERENCES users(id)");
+  }
+  if (!lnames.has("escalated_to_level")) {
+    db.exec("ALTER TABLE leave_requests ADD COLUMN escalated_to_level INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!lnames.has("last_escalated_at")) {
+    db.exec("ALTER TABLE leave_requests ADD COLUMN last_escalated_at TEXT");
+  }
+  if (!lnames.has("approval_history")) {
+    db.exec("ALTER TABLE leave_requests ADD COLUMN approval_history TEXT");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_leave_approver_pending ON leave_requests(current_approver_user_id, status)");
 
   // leave_types catalog (กฎเกณฑ์การลา)
   db.exec(`
@@ -1395,11 +1441,38 @@ function runMigrations(db: Database.Database): void {
   `);
   db.exec(`INSERT OR IGNORE INTO system_settings (id) VALUES (1);`);
 
+  // System-wide default escalation window for the chain-of-command
+  // approval flow (added 2026-05). Per-user override sits on
+  // users.escalation_hours; super_admin sets the global fallback
+  // here via /admin/system-settings.
+  const ssCols = db.prepare("PRAGMA table_info(system_settings)")
+    .all() as Array<{ name: string }>;
+  if (!ssCols.some((c) => c.name === "default_escalation_hours")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN default_escalation_hours INTEGER NOT NULL DEFAULT 24");
+  }
+
   // Phase 1C v9: replaces_id for resignation_requests
   const rrcols = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;
   if (!rrcols.some((c) => c.name === "replaces_id")) {
     db.exec("ALTER TABLE resignation_requests ADD COLUMN replaces_id INTEGER");
   }
+
+  // Chain-of-command tracking for resignation requests — same shape
+  // as leave_requests so the assign-on-create + cron escalation
+  // helpers work for both via a small switch on table name.
+  if (!rrcols.some((c) => c.name === "current_approver_user_id")) {
+    db.exec("ALTER TABLE resignation_requests ADD COLUMN current_approver_user_id INTEGER REFERENCES users(id)");
+  }
+  if (!rrcols.some((c) => c.name === "escalated_to_level")) {
+    db.exec("ALTER TABLE resignation_requests ADD COLUMN escalated_to_level INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!rrcols.some((c) => c.name === "last_escalated_at")) {
+    db.exec("ALTER TABLE resignation_requests ADD COLUMN last_escalated_at TEXT");
+  }
+  if (!rrcols.some((c) => c.name === "approval_history")) {
+    db.exec("ALTER TABLE resignation_requests ADD COLUMN approval_history TEXT");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_resignation_approver_pending ON resignation_requests(current_approver_user_id, status)");
 
   // Phase 1C v10: ref_no — เลขอ้างอิง [Prefix]YYYYMM + 2-digit seq ต่อเดือน
   // Leave = "L", Resignation = "R"

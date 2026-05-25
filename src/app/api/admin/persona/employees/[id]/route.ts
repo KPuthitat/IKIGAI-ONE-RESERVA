@@ -30,6 +30,10 @@ const Body = z.object({
   // Expected shift start "HH:MM" — used by late-detection. Empty / null = unset
   // (no lateness computed for this staff member). Accepts both 1- and 2-digit hours.
   shift_start_time: z.string().regex(/^\d{1,2}:\d{2}$/).or(z.literal("")).nullable().optional(),
+  // Chain-of-command (2026-05). Direct manager + per-user override
+  // of the escalation window (system default kicks in when null).
+  reports_to_user_id: z.number().int().positive().nullable().optional(),
+  escalation_hours:   z.number().int().min(1).max(720).nullable().optional(),
   // PIN — 4 digits to set, "" to clear, omit to keep
   pin: z.string().regex(/^\d{4}$/).or(z.literal("")).optional(),
 
@@ -157,6 +161,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const v = data.shift_start_time;
     vals.push(v === "" || v === undefined ? null : v);
   }
+  // Chain-of-command — null = top of chain / use system default.
+  addField("reports_to_user_id");
+  addField("escalation_hours");
 
   // ── Phase A profile (TC-P) ────────────────────────────────────
   // Plain string fields — same pattern as the existing payroll

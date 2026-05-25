@@ -152,16 +152,21 @@ export async function GET() {
       }
     } catch { /* table may not exist yet — ignore */ }
 
-    // 4. Pending leave requests for staff assigned to this branch.
+    // 4. Pending leave requests — chain-of-command aware (2026-05).
+    //    Show only items where THIS user is the current_approver, so
+    //    each manager sees their own queue (not everyone's). Super
+    //    admin also sees fallback items (current_approver IS NULL —
+    //    shouldn't happen post-migration but defensive).
     try {
       const row = db.prepare(`
         SELECT COUNT(*) AS n
         FROM leave_requests lr
         WHERE lr.status = 'pending'
+          AND lr.current_approver_user_id = ?
           AND lr.user_id IN (
             SELECT user_id FROM user_branches WHERE branch_id = ?
           )
-      `).get(branch.id) as { n: number };
+      `).get(user.id, branch.id) as { n: number };
       if (row.n > 0) {
         items.push({
           kind: "leave_requests",

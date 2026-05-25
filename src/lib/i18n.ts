@@ -1790,6 +1790,12 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.employees.section.schedule": "ตารางเวลางาน",
     "admin.persona.employees.field.shiftStartTime": "เวลาเข้างานตามตาราง",
     "admin.persona.employees.shiftStartTimeHint": "ใช้คำนวณเวลาสาย — มีช่วงผ่อนปรน 5 นาที / หากเดือนใดสายเกิน 20% จะไม่ได้รับ service charge (เฉพาะ FT) — เว้นว่างหากยังไม่กำหนดเวลาเข้างานชัดเจน",
+    "admin.persona.employees.field.reportsTo": "หัวหน้าโดยตรง (สายอนุมัติ)",
+    "admin.persona.employees.reportsTo.none": "ไม่มีหัวหน้า (อยู่บนสุดของสาย)",
+    "admin.persona.employees.reportsToHint": "ใช้สำหรับส่งคำขอลา/ลาออกของพนักงานคนนี้ ส่งไปให้ใครอนุมัติก่อน ถ้าไม่อนุมัติภายในเวลาที่ตั้งไว้ จะ escalate ขึ้นไปหาหัวหน้าของเขาอีกที",
+    "admin.persona.employees.field.escalationHours": "ช.ม. ก่อน escalate (เมื่อเป็นผู้อนุมัติ)",
+    "admin.persona.employees.escalationHoursPlaceholder": "เช่น 24",
+    "admin.persona.employees.escalationHoursHint": "ตอนคนนี้ได้รับคำขอให้อนุมัติ ถ้าไม่ตอบภายใน X ช.ม. ระบบส่งต่อให้หัวหน้าของเขา เว้นว่าง = ใช้ค่า default ของระบบ (24 ช.ม.)",
 
     // Public holidays admin
     "admin.persona.holidays.title": "ปฏิทินวันหยุดราชการ",
@@ -4146,6 +4152,12 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.employees.section.schedule": "Work schedule",
     "admin.persona.employees.field.shiftStartTime": "Scheduled shift start",
     "admin.persona.employees.shiftStartTimeHint": "Used for late detection — 5-minute grace window. If monthly late minutes exceed 20% of scheduled time, the FT staff loses service charge eligibility. Leave blank if the start time isn't fixed yet.",
+    "admin.persona.employees.field.reportsTo": "Reports to (approval chain)",
+    "admin.persona.employees.reportsTo.none": "No manager (top of chain)",
+    "admin.persona.employees.reportsToHint": "When this person submits a leave/resignation request, it goes here first for approval. If not actioned in time, escalates up to that manager's manager.",
+    "admin.persona.employees.field.escalationHours": "Hours before escalating (when acting as approver)",
+    "admin.persona.employees.escalationHoursPlaceholder": "e.g. 24",
+    "admin.persona.employees.escalationHoursHint": "When this person is the active approver and doesn't decide within X hours, the request escalates to their manager. Leave blank to use the system default (24h).",
 
     // Public holidays admin
     "admin.persona.holidays.title": "Public holidays",
