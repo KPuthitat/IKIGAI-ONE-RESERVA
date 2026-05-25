@@ -67,31 +67,25 @@ export default function SendAttendanceSummaryButton() {
     return msg ? `${code}: ${msg}` : code;
   }
 
+  // Slim chip-style button — designed to slot inline next to the
+  // attendance summary card's title (2026-05-25). Earlier full-card
+  // version moved out; keeping the API the same so the embed point
+  // changes are minimal.
   return (
-    <div className="card flex flex-col gap-2">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex-1 min-w-[200px]">
-          <div className="text-sm font-bold text-slate-800">
-            📊 {t("admin.persona.attendanceSummary.title")}
-          </div>
-          <div className="text-xs text-slate-500 mt-0.5">
-            {t("admin.persona.attendanceSummary.hint")}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={send}
-          disabled={busy}
-          className="text-sm px-3 py-1.5 rounded-lg bg-brand text-white font-bold hover:opacity-90 disabled:opacity-50 whitespace-nowrap"
-        >
-          {busy
-            ? t("common.submitting")
-            : "📨 " + t("admin.persona.attendanceSummary.sendBtn")}
-        </button>
-      </div>
+    <div className="inline-flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={send}
+        disabled={busy}
+        className="text-[10px] px-2 py-1 rounded border border-brand text-brand hover:bg-rose-50 font-bold whitespace-nowrap disabled:opacity-50"
+      >
+        {busy
+          ? t("common.submitting")
+          : "📨 " + t("admin.persona.shiftReports.resendBtn")}
+      </button>
       {result && (
         <div
-          className={`text-xs ${
+          className={`text-[10px] ${
             result.kind === "ok" ? "text-emerald-700" : "text-rose-600"
           }`}
         >

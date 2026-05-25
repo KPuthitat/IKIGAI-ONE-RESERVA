@@ -368,10 +368,16 @@ export default function ShiftReportsClient({
           "แก้ไข N×" chip is a button when revision_count ≥ 1; clicking
           expands the full chain (original → ... → current) inline
           below the row, with each granted edit request annotated. */}
+      {/* Section 2: Today's report status card. Upgraded the
+          heading 2026-05-25 to match the outer attendance-summary
+          section's style (text-lg + emoji prefix). */}
+      <h2 className="text-lg font-bold text-slate-800">
+        📝 สถานะรายงานของวันนี้
+        <span className="ml-2 text-xs font-medium text-slate-400">
+          · {branchName} · {today}
+        </span>
+      </h2>
       <div className="card">
-        <h2 className="font-bold text-slate-800 mb-3">
-          {t("admin.persona.shiftReports.todayTitle")} · {branchName} · {today}
-        </h2>
         <ul className="space-y-2">
           {REPORT_TYPE_ORDER.map((type) => {
             const r = todayReports[type];
@@ -486,10 +492,12 @@ export default function ShiftReportsClient({
         </ul>
       </div>
 
-      {/* Pending unlock requests */}
+      {/* Section 3: Pending unlock requests. Upgraded heading
+          2026-05-25 to match the other sections (text-lg + emoji)
+          so each section reads as a distinct box. */}
       <div>
-        <h2 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
-          {t("admin.persona.shiftReports.pendingTitle")}
+        <h2 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
+          ✏️ {t("admin.persona.shiftReports.pendingTitle")}
           {pending.length > 0 && (
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand text-white font-bold">
               {pending.length}

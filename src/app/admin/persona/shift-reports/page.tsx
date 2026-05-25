@@ -36,10 +36,7 @@ import ShiftReportsClient, {
   type ChainLink,
   type ChainsByType
 } from "./ShiftReportsClient";
-// SendAttendanceSummaryButton removed 2026-05-25 per owner direction
-// — daily summary should auto-fire on cron, not be a manual button.
-// External scheduler hits /api/cron; the cron-status diagnostic page
-// at /api/admin/persona/cron-status reports whether it's working.
+import SendAttendanceSummaryButton from "./SendAttendanceSummaryButton";
 
 export const dynamic = "force-dynamic";
 
@@ -238,11 +235,15 @@ export default function AdminShiftReportsPage() {
 
       {/* ── Section 1: Attendance summary — added 2026-05-25 per
           owner direction. Same data the cron sends to LINE at the
-          configured time, but always visible here too. */}
+          configured time, but always visible here too + inline
+          "send again" button so admin can re-fire when needed. */}
       <section>
-        <h2 className="text-lg font-bold text-slate-800 mb-2">
-          📋 สรุปการเข้างานวันนี้
-        </h2>
+        <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
+          <h2 className="text-lg font-bold text-slate-800">
+            📋 สรุปการเข้างานวันนี้
+          </h2>
+          <SendAttendanceSummaryButton />
+        </div>
         <div className="card grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
           <div>
             <div className="text-xs font-bold text-emerald-700 mb-1">
@@ -315,19 +316,17 @@ export default function AdminShiftReportsPage() {
         </p>
       </section>
 
-      {/* ── Section 2: Shift report status + edit requests */}
-      <section>
-        <h2 className="text-lg font-bold text-slate-800 mb-2">
-          📝 สถานะรายงานวันนี้ + คำขอแก้ไขรายการ
-        </h2>
-        <ShiftReportsClient
-          branchName={branch.name}
-          today={today}
-          todayReports={todayReports}
-          chains={chains}
-          pending={pending}
-        />
-      </section>
+      {/* ── Section 2 + 3: Shift report status + edit requests
+          ShiftReportsClient renders 2 independent inner sections,
+          each with its own h2 + card. We don't add an outer wrapper
+          so they appear as distinct boxes in the page flow. */}
+      <ShiftReportsClient
+        branchName={branch.name}
+        today={today}
+        todayReports={todayReports}
+        chains={chains}
+        pending={pending}
+      />
 
       <div>
         <Link href="/admin/persona" className="text-sm text-slate-500 hover:text-brand">
