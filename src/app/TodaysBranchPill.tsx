@@ -27,18 +27,25 @@ export default function TodaysBranchPill({
   if (pathname === pickerPath || pathname.startsWith(pickerPath + "/")) return null;
   if (!branchName) return null;
 
+  // 2026-05-25 layout rework — "วันนี้" prefix removed (took up
+  // too much horizontal space + wrapped awkwardly in the narrow
+  // sidebar). Now: pin-icon + branch name on row 1, small "เปลี่ยน"
+  // chip on row 2 if there's a choice. Stays compact + each line
+  // wraps cleanly on narrow viewports.
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] bg-white/[.10] border border-white/[.20] rounded-full pl-2.5 pr-1 py-0.5">
-      <span className="text-white/50 tracking-[0.5px]">{t("staff.topbar.today")}</span>
-      <span className="text-white font-bold">{branchName}</span>
+    <div className="flex flex-col items-start gap-1 max-w-full">
+      <div className="inline-flex items-start gap-1.5 text-[12px] text-white font-bold break-words">
+        <span aria-hidden className="text-white/60 mt-0.5 select-none">📍</span>
+        <span className="leading-tight">{branchName}</span>
+      </div>
       {hasChoice && (
         <Link
           href={`${pickerPath}?next=${encodeURIComponent(pathname)}`}
-          className="text-brand-light hover:text-white px-1.5 py-0.5 rounded-full bg-brand/30 hover:bg-brand/50 ml-0.5 transition"
+          className="text-[10px] text-brand-light hover:text-white px-2 py-0.5 rounded-full bg-brand/30 hover:bg-brand/50 transition"
         >
           {t("staff.topbar.changeBranch")}
         </Link>
       )}
-    </span>
+    </div>
   );
 }
