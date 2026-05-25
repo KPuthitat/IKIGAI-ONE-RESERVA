@@ -26,7 +26,12 @@ import { getDb, type Branch } from "./db";
 import { computeLateness } from "./late-detection";
 import { effectiveShiftStartByUserForDate } from "./roster";
 
-export type AttendanceCategory = "on_time" | "late" | "on_leave" | "absent";
+export type AttendanceCategory =
+  | "on_time"
+  | "late"
+  | "on_leave"
+  | "absent"
+  | "not_yet";   // shift today but start time hasn't arrived yet (2026-05)
 
 export type DailySummaryRow = {
   userId: number;
@@ -42,10 +47,17 @@ export type DailySummaryRow = {
  *    1. All staff assigned to the branch via user_branches
  *    2. Their first clock-in event in today's Bangkok window
  *    3. Approved leave_requests overlapping today
- *  Returns one row per staff member with a category + supporting data. */
+ *  Returns one row per staff member with a category + supporting data.
+ *
+ *  `nowMs` defaults to Date.now() and feeds the "not_yet" bucket —
+ *  staff whose shift starts later today (e.g., 13:00 shift) and the
+ *  summary fires earlier (e.g., 11:00 cron tick) shouldn't be marked
+ *  absent. Pass an explicit nowMs for deterministic tests / when the
+ *  caller wants the summary "as of HH:MM" rather than the wall clock. */
 export function buildDailyAttendanceRoster(
   branchId: number,
-  dateBkk: string
+  dateBkk: string,
+  nowMs: number = Date.now()
 ): DailySummaryRow[] {
   const db = getDb();
   const startIso = new Date(`${dateBkk}T00:00:00+07:00`).toISOString();
@@ -114,6 +126,12 @@ export function buildDailyAttendanceRoster(
   // per-user static schedule).
   const rosterShiftByUser = effectiveShiftStartByUserForDate(branchId, dateBkk, staffIds);
 
+  // Bangkok-local current time as "HH:MM" string. Lexicographic
+  // string compare is safe on zero-padded times, same trick the
+  // rest of the codebase uses for isDailySummaryDue.
+  const nowHhmmBkk = new Date(nowMs + 7 * 60 * 60 * 1000)
+    .toISOString().slice(11, 16);
+
   // 4) Bucket each staff member. Owner direction 2026-05: if a user
   //    has NO shift today (no roster assignment AND no legacy
   //    shift_start_time AND no approved leave covering today), it's
@@ -162,6 +180,20 @@ export function buildDailyAttendanceRoster(
         inTs: null,
         minutesLate: 0,
         leaveType
+      }];
+    }
+    // No clock-in, no leave — split into "not_yet" vs "absent" by
+    // comparing now with their shift start. Staff whose shift starts
+    // later today shouldn't read as absent on the 11:00 summary.
+    if (effectiveStart && nowHhmmBkk < effectiveStart) {
+      return [{
+        userId: s.user_id,
+        displayName: s.display_name,
+        titlePrefix: s.title_prefix,
+        category: "not_yet" as const,
+        inTs: null,
+        minutesLate: 0,
+        leaveType: null
       }];
     }
     return [{

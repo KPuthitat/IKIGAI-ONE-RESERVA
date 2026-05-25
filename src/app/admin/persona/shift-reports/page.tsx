@@ -219,6 +219,7 @@ export default function AdminShiftReportsPage() {
   const onTime = attendanceRows.filter((r) => r.category === "on_time");
   const late = attendanceRows.filter((r) => r.category === "late");
   const onLeave = attendanceRows.filter((r) => r.category === "on_leave");
+  const notYet = attendanceRows.filter((r) => r.category === "not_yet");
   const absent = attendanceRows.filter((r) => r.category === "absent");
 
   return (
@@ -244,7 +245,7 @@ export default function AdminShiftReportsPage() {
           </h2>
           <SendAttendanceSummaryButton />
         </div>
-        <div className="card grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+        <div className="card grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
           <div>
             <div className="text-xs font-bold text-emerald-700 mb-1">
               ✓ มาตรงเวลา ({onTime.length})
@@ -287,6 +288,22 @@ export default function AdminShiftReportsPage() {
             ) : (
               <ul className="space-y-0.5">
                 {onLeave.map((r) => (
+                  <li key={r.userId} className="text-slate-700">
+                    {nameWithPrefix(r.titlePrefix, r.displayName)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <div className="text-xs font-bold text-slate-600 mb-1">
+              ⏰ ยังไม่ถึงเวลา ({notYet.length})
+            </div>
+            {notYet.length === 0 ? (
+              <div className="text-xs text-slate-400">—</div>
+            ) : (
+              <ul className="space-y-0.5">
+                {notYet.map((r) => (
                   <li key={r.userId} className="text-slate-700">
                     {nameWithPrefix(r.titlePrefix, r.displayName)}
                   </li>

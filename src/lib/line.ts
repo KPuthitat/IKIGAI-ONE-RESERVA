@@ -2410,7 +2410,7 @@ export function attendanceSummaryFlex(args: AttendanceSummaryArgs): LineFlexMess
 export type DailySummaryFlexRow = {
   displayName: string;
   titlePrefix?: string | null;   // 2026-05: prepended to displayName via nameWithPrefix
-  category: "on_time" | "late" | "on_leave" | "absent";
+  category: "on_time" | "late" | "on_leave" | "absent" | "not_yet";
   inTs: string | null;          // ISO, only for on_time/late
   minutesLate: number;          // only for late
   leaveType: string | null;     // only for on_leave
@@ -2450,6 +2450,7 @@ export function dailyAttendanceSummaryFlex(
   const late = args.rows.filter((r) => r.category === "late");
   const onLeave = args.rows.filter((r) => r.category === "on_leave");
   const absent = args.rows.filter((r) => r.category === "absent");
+  const notYet = args.rows.filter((r) => r.category === "not_yet");
 
   // Section helpers — keep visual rhythm consistent across the four
   // buckets. Each section has a coloured header line + an indented
@@ -2560,6 +2561,11 @@ export function dailyAttendanceSummaryFlex(
         sectionBody(onLeave, (r) => leaveTypeLabelTh(r.leaveType)),
 
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        // ── ยังไม่ถึงเวลาเข้างาน (2026-05) ──
+        sectionHeader("⏰", "ยังไม่ถึงเวลาเข้างาน", "#475569", notYet.length),
+        sectionBody(notYet, () => undefined),
+
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
         // ── ขาดงาน ──
         sectionHeader("✗", "ขาดงาน", "#b91c1c", absent.length),
         sectionBody(absent, () => undefined)
@@ -2575,7 +2581,7 @@ export function dailyAttendanceSummaryFlex(
     type: "flex",
     altText:
       `สรุปเข้างาน ${args.branchName} ${dateStr} · ตรงเวลา ${onTime.length} · ` +
-      `สาย ${late.length} · ลา ${onLeave.length} · ขาด ${absent.length}`,
+      `สาย ${late.length} · ลา ${onLeave.length} · รอ ${notYet.length} · ขาด ${absent.length}`,
     contents: bubble
   };
 }
