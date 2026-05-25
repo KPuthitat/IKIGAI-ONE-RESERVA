@@ -12,6 +12,7 @@ import {
 } from "./db";
 import { getChannelByCode, getPlatformChannel } from "./messaging-channels";
 import { decryptSecret } from "./secret-vault";
+import { nameWithPrefix } from "./name";
 
 // LINE message kinds we use. Loose typing is intentional — Flex contents are
 // large JSON blobs and the API spec already documents the shape.
@@ -1766,6 +1767,12 @@ export type ShiftCloseCardArgs = {
   reportDate: string;          // YYYY-MM-DD
   closerName: string;
   closingDrawerAmount: number | null;
+  /** Service charge collected today — only relevant when the branch
+   *  has require_service_charge ON. Rendered as a separate kv row
+   *  under "ยอดเงินปิดงาน" so admin reading the LINE card sees the
+   *  SVC number without scrolling through the checklist. null when
+   *  the branch doesn't collect SVC or staff didn't fill it. */
+  serviceChargeAmount?: number | null;
   // Same shape as ShiftOpenCardArgs.checklist — see that doc block.
   // Optional is_child + description fields propagate from admin rows
   // and are tolerated here so callers can pass a single normalized
@@ -1829,7 +1836,15 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
           contents: [
             kvRow("ผู้ส่งรายการ", args.closerName),
             kvRow("ยอดเงินปิดงาน", fmtBaht(args.closingDrawerAmount),
-              { valueColor: COLOR_BRAND, valueWeight: "bold" })
+              { valueColor: COLOR_BRAND, valueWeight: "bold" }),
+            // Service-charge — only render when admin is collecting
+            // it AND staff filled it in. Suppressed when null so the
+            // card doesn't read "เซอร์วิสชาร์จ —" on branches that
+            // don't collect it.
+            ...(args.serviceChargeAmount != null
+              ? [kvRow("เซอร์วิสชาร์จวันนี้", fmtBaht(args.serviceChargeAmount),
+                  { valueColor: COLOR_BRAND, valueWeight: "bold" })]
+              : [])
           ]
         },
         ...(headlineFlexBlock(args.headlines ?? [])
@@ -2394,6 +2409,7 @@ export function attendanceSummaryFlex(args: AttendanceSummaryArgs): LineFlexMess
 
 export type DailySummaryFlexRow = {
   displayName: string;
+  titlePrefix?: string | null;   // 2026-05: prepended to displayName via nameWithPrefix
   category: "on_time" | "late" | "on_leave" | "absent";
   inTs: string | null;          // ISO, only for on_time/late
   minutesLate: number;          // only for late
@@ -2491,7 +2507,9 @@ export function dailyAttendanceSummaryFlex(
     }
     return {
       type: "box", layout: "vertical", spacing: "xs", margin: "sm",
-      contents: rows.map((r) => nameRow(r.displayName, trailingFor(r)))
+      contents: rows.map((r) =>
+        nameRow(nameWithPrefix(r.titlePrefix ?? null, r.displayName), trailingFor(r))
+      )
     };
   }
 
@@ -2532,8 +2550,8 @@ export function dailyAttendanceSummaryFlex(
         sectionHeader("⚠", "มาสาย", "#b45309", late.length),
         sectionBody(late, (r) =>
           r.inTs
-            ? `เข้า ${fmtBkkTime(r.inTs)} · สาย ${r.minutesLate} น.`
-            : `สาย ${r.minutesLate} น.`
+            ? `เข้า ${fmtBkkTime(r.inTs)} · สาย ${r.minutesLate} นาที`
+            : `สาย ${r.minutesLate} นาที`
         ),
 
         { type: "separator", margin: "md", color: COLOR_DIVIDER },

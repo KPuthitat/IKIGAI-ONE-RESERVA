@@ -61,6 +61,7 @@ export async function POST() {
     reportDate: today,
     rows: rows.map((r) => ({
       displayName: r.displayName,
+      titlePrefix: r.titlePrefix,
       category: r.category,
       inTs: r.inTs,
       minutesLate: r.minutesLate,

@@ -31,6 +31,7 @@ export type AttendanceCategory = "on_time" | "late" | "on_leave" | "absent";
 export type DailySummaryRow = {
   userId: number;
   displayName: string;
+  titlePrefix: string | null;   // 2026-05: include the คุณ/พี่/ฯ prefix
   category: AttendanceCategory;
   inTs: string | null;          // ISO of first clock-in (null for leave/absent)
   minutesLate: number;          // 0 for on_time/on_leave/absent
@@ -50,19 +51,29 @@ export function buildDailyAttendanceRoster(
   const startIso = new Date(`${dateBkk}T00:00:00+07:00`).toISOString();
   const endIso = new Date(`${dateBkk}T23:59:59+07:00`).toISOString();
 
-  // 1) Staff roster for the branch
+  // 1) Staff roster for the branch — owner direction 2026-05:
+  //    - include admin role (admins are employees too)
+  //    - skip status != 'active' (disabled / pending invites)
+  //    - skip test accounts (username starting with 'test')
+  //    - include title_prefix so the LINE card shows e.g.
+  //      "คุณ A" instead of bare "A"
   type RosterRow = {
     user_id: number;
     display_name: string;
+    title_prefix: string | null;
     shift_start_time: string | null;
   };
   const staff = db.prepare(`
     SELECT u.id AS user_id,
            u.display_name,
+           u.title_prefix,
            u.shift_start_time
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
-    WHERE ub.branch_id = ? AND u.role = 'staff'
+    WHERE ub.branch_id = ?
+      AND u.role IN ('staff', 'admin')
+      AND u.status = 'active'
+      AND (u.username IS NULL OR LOWER(u.username) NOT LIKE 'test%')
     ORDER BY u.display_name COLLATE NOCASE ASC
   `).all(branchId) as RosterRow[];
   if (staff.length === 0) return [];
@@ -103,51 +114,65 @@ export function buildDailyAttendanceRoster(
   // per-user static schedule).
   const rosterShiftByUser = effectiveShiftStartByUserForDate(branchId, dateBkk, staffIds);
 
-  // 4) Bucket each staff member
-  return staff.map((s) => {
+  // 4) Bucket each staff member. Owner direction 2026-05: if a user
+  //    has NO shift today (no roster assignment AND no legacy
+  //    shift_start_time AND no approved leave covering today), it's
+  //    their weekly off day — skip them from the summary so the list
+  //    stays focused on people who were supposed to be at work.
+  //    Approved leave still surfaces so admins know the off day was
+  //    pre-approved time off rather than a no-shift gap.
+  return staff.flatMap((s) => {
     const inTs = inByUser.get(s.user_id) ?? null;
+    const leaveType = leaveByUser.get(s.user_id) ?? null;
+    const rosterStart = rosterShiftByUser.get(s.user_id) ?? null;
+    const effectiveStart = rosterStart ?? s.shift_start_time;
+    // Skip people with no shift today AND no leave — they're on
+    // their weekly off, no need to clutter the roster.
+    if (!inTs && !leaveType && !effectiveStart) return [];
     if (inTs) {
-      const effectiveStart = rosterShiftByUser.get(s.user_id) ?? s.shift_start_time;
       const r = computeLateness(inTs, effectiveStart);
       if (r.computable && r.isLate) {
-        return {
+        return [{
           userId: s.user_id,
           displayName: s.display_name,
+          titlePrefix: s.title_prefix,
           category: "late" as const,
           inTs,
           minutesLate: r.minutesLate,
           leaveType: null
-        };
+        }];
       }
-      return {
+      return [{
         userId: s.user_id,
         displayName: s.display_name,
+        titlePrefix: s.title_prefix,
         category: "on_time" as const,
         inTs,
         minutesLate: 0,
         leaveType: null
-      };
+      }];
     }
     // No clock-in — leave overrides absent
-    const leaveType = leaveByUser.get(s.user_id) ?? null;
     if (leaveType) {
-      return {
+      return [{
         userId: s.user_id,
         displayName: s.display_name,
+        titlePrefix: s.title_prefix,
         category: "on_leave" as const,
         inTs: null,
         minutesLate: 0,
         leaveType
-      };
+      }];
     }
-    return {
+    return [{
       userId: s.user_id,
       displayName: s.display_name,
+      titlePrefix: s.title_prefix,
       category: "absent" as const,
       inTs: null,
       minutesLate: 0,
       leaveType: null
-    };
+    }];
   });
 }
 

@@ -93,6 +93,7 @@ async function runCron(): Promise<NextResponse> {
           reportDate: todayBkk,
           rows: rows.map((r) => ({
             displayName: r.displayName,
+            titlePrefix: r.titlePrefix,
             category: r.category,
             inTs: r.inTs,
             minutesLate: r.minutesLate,

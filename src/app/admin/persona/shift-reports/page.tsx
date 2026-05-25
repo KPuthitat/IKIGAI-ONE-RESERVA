@@ -34,11 +34,14 @@ import ShiftReportsClient, {
   type ChainLink,
   type ChainsByType
 } from "./ShiftReportsClient";
-import SendAttendanceSummaryButton from "./SendAttendanceSummaryButton";
+// SendAttendanceSummaryButton removed 2026-05-25 per owner direction
+// — daily summary should auto-fire on cron, not be a manual button.
+// External scheduler hits /api/cron; the cron-status diagnostic page
+// at /api/admin/persona/cron-status reports whether it's working.
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "คำขอแก้ไขรายการ · PERSONA" };
+export const metadata: Metadata = { title: "รายงานประจำวัน · PERSONA" };
 
 export default function AdminShiftReportsPage() {
   const user = requireAdmin();
@@ -220,7 +223,7 @@ export default function AdminShiftReportsPage() {
           {t(lang, "admin.persona.shiftReports.subtitle")}
         </p>
       </div>
-      <SendAttendanceSummaryButton />
+{/* manual send button removed — see import block note */}
       <ShiftReportsClient
         branchName={branch.name}
         today={today}

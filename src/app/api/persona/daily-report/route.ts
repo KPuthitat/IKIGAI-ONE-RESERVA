@@ -304,6 +304,7 @@ export async function POST(req: Request) {
       reportDate: report_date,
       closerName: user.display_name,
       closingDrawerAmount: d.closing_drawer_amount,
+      serviceChargeAmount: d.service_charge_amount ?? null,
       checklist: normalizeChecklist(d.checklist),
       headlines: headlinesFor(d.checklist),
       isRevision,
