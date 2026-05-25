@@ -139,6 +139,7 @@ export async function POST(
   } else if (row.type === "shift_close") {
     const d = data as {
       closing_drawer_amount: number | null;
+      service_charge_amount?: number | null;
       checklist: ChecklistEntry[];
     };
     flex = shiftCloseFlex({
@@ -146,6 +147,7 @@ export async function POST(
       reportDate: row.report_date,
       closerName: row.opener_name,
       closingDrawerAmount: d.closing_drawer_amount,
+      serviceChargeAmount: d.service_charge_amount ?? null,
       checklist: normalizeChecklist(d.checklist ?? []),
       headlines: headlinesFor(d.checklist ?? []),
       isRevision,

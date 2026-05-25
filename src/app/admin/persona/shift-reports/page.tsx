@@ -27,6 +27,8 @@ import { getDb, type Branch } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { nameWithPrefix } from "@/lib/name";
+import { buildDailyAttendanceRoster } from "@/lib/daily-attendance-summary";
 import ShiftReportsClient, {
   type PendingUnlockRow,
   type TodayReportRow,
@@ -212,8 +214,18 @@ export default function AdminShiftReportsPage() {
     ORDER BY r.created_at DESC
   `).all(branch.id) as PendingUnlockRow[];
 
+  // Today's attendance roster — same data that's sent to the
+  // executive group every morning, surfaced ON-PAGE so admin can
+  // glance at it without scrolling through LINE. Categorised
+  // (on_time / late / on_leave / absent).
+  const attendanceRows = buildDailyAttendanceRoster(branch.id, today);
+  const onTime = attendanceRows.filter((r) => r.category === "on_time");
+  const late = attendanceRows.filter((r) => r.category === "late");
+  const onLeave = attendanceRows.filter((r) => r.category === "on_leave");
+  const absent = attendanceRows.filter((r) => r.category === "absent");
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">
           {t(lang, "admin.persona.shiftReports.title")}
@@ -223,14 +235,100 @@ export default function AdminShiftReportsPage() {
           {t(lang, "admin.persona.shiftReports.subtitle")}
         </p>
       </div>
-{/* manual send button removed — see import block note */}
-      <ShiftReportsClient
-        branchName={branch.name}
-        today={today}
-        todayReports={todayReports}
-        chains={chains}
-        pending={pending}
-      />
+
+      {/* ── Section 1: Attendance summary — added 2026-05-25 per
+          owner direction. Same data the cron sends to LINE at the
+          configured time, but always visible here too. */}
+      <section>
+        <h2 className="text-lg font-bold text-slate-800 mb-2">
+          📋 สรุปการเข้างานวันนี้
+        </h2>
+        <div className="card grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+          <div>
+            <div className="text-xs font-bold text-emerald-700 mb-1">
+              ✓ มาตรงเวลา ({onTime.length})
+            </div>
+            {onTime.length === 0 ? (
+              <div className="text-xs text-slate-400">—</div>
+            ) : (
+              <ul className="space-y-0.5">
+                {onTime.map((r) => (
+                  <li key={r.userId} className="text-slate-700">
+                    {nameWithPrefix(r.titlePrefix, r.displayName)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <div className="text-xs font-bold text-amber-700 mb-1">
+              ⚠ มาสาย ({late.length})
+            </div>
+            {late.length === 0 ? (
+              <div className="text-xs text-slate-400">—</div>
+            ) : (
+              <ul className="space-y-0.5">
+                {late.map((r) => (
+                  <li key={r.userId} className="text-slate-700">
+                    {nameWithPrefix(r.titlePrefix, r.displayName)}
+                    <span className="text-amber-600 text-xs"> · {r.minutesLate} นาที</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <div className="text-xs font-bold text-sky-700 mb-1">
+              📅 ลางาน ({onLeave.length})
+            </div>
+            {onLeave.length === 0 ? (
+              <div className="text-xs text-slate-400">—</div>
+            ) : (
+              <ul className="space-y-0.5">
+                {onLeave.map((r) => (
+                  <li key={r.userId} className="text-slate-700">
+                    {nameWithPrefix(r.titlePrefix, r.displayName)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <div className="text-xs font-bold text-rose-700 mb-1">
+              ✗ ขาดงาน ({absent.length})
+            </div>
+            {absent.length === 0 ? (
+              <div className="text-xs text-slate-400">—</div>
+            ) : (
+              <ul className="space-y-0.5">
+                {absent.map((r) => (
+                  <li key={r.userId} className="text-slate-700">
+                    {nameWithPrefix(r.titlePrefix, r.displayName)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+        <p className="text-[11px] text-slate-400 mt-1.5">
+          อัปเดตทุกครั้งที่รีเฟรชหน้านี้ · ส่งเข้ากลุ่ม executive อัตโนมัติเวลา {branch.attendance_summary_time || "—"}
+        </p>
+      </section>
+
+      {/* ── Section 2: Shift report status + edit requests */}
+      <section>
+        <h2 className="text-lg font-bold text-slate-800 mb-2">
+          📝 สถานะรายงานวันนี้ + คำขอแก้ไขรายการ
+        </h2>
+        <ShiftReportsClient
+          branchName={branch.name}
+          today={today}
+          todayReports={todayReports}
+          chains={chains}
+          pending={pending}
+        />
+      </section>
+
       <div>
         <Link href="/admin/persona" className="text-sm text-slate-500 hover:text-brand">
           ← {t(lang, "common.back")}

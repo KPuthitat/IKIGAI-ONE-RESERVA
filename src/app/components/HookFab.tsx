@@ -247,15 +247,19 @@ export default function HookFab({
     }
     return Math.abs(h);
   })();
+  // น้องฮูก = junior boy assistant. Voice: warm, eager-to-help,
+  // always polite with "ครับ" + "พี่" address. Avoid feminine
+  // particles (ค่ะ/จ้า/ขา). Mix of "morning report", "checking
+  // in", and "I prepared this for you" tones.
   const TH_INTROS: Array<(name: string) => string> = [
     (name) => `สวัสดีครับพี่ ${name} น้องฮูกฝากพี่ช่วยจัดการต่อด้วยนะครับ`,
-    (name) => `ดีจ้าพี่ ${name} วันนี้มีงานเล็กๆ ฝากดูสักนิดนะครับ`,
-    (name) => `สวัสดีครับพี่ ${name} น้องเก็บงานค้างไว้รออยู่ครับ`,
-    (name) => `พี่ ${name} ขา รบกวนช่วยดูสิ่งที่ค้างอยู่หน่อยนะครับ`,
-    (name) => `หวัดดีครับพี่ ${name} น้องฮูกเตือนความจำให้ครับ`,
-    (name) => `ขออภัยที่รบกวนพี่ ${name} — มีของฝากอยู่นิดเดียวเองครับ`,
+    (name) => `สวัสดีครับพี่ ${name} วันนี้น้องเตรียมงานไว้ให้พี่แล้วครับ`,
+    (name) => `สวัสดีครับพี่ ${name} น้องเก็บงานค้างไว้รอพี่อยู่ครับ`,
+    (name) => `พี่ ${name} ครับ รบกวนพี่ช่วยดูสิ่งที่ค้างอยู่หน่อยนะครับ`,
+    (name) => `หวัดดีครับพี่ ${name} น้องฮูกขออนุญาตเตือนความจำพี่นะครับ`,
+    (name) => `ขออภัยที่รบกวนพี่ ${name} ครับ — มีของฝากอยู่นิดเดียวเองครับ`,
     (name) => `เช้านี้พี่ ${name} เริ่มที่งานพวกนี้ก่อนเป็นไงครับ`,
-    (name) => `สวัสดีครับพี่ ${name} อย่าลืมงานที่รอพี่อยู่นะครับ`
+    (name) => `สวัสดีครับพี่ ${name} อย่าลืมงานที่รอพี่อยู่นะครับ น้องช่วยไว้ตรงนี้`
   ];
   const EN_INTROS: Array<(name: string) => string> = [
     (name) => `Hi ${name}, I noticed these are waiting for you:`,
