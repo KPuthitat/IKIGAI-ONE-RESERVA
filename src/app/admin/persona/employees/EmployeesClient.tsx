@@ -313,6 +313,7 @@ export default function EmployeesClient({
       {editTarget && (
         <EditModal
           employee={editTarget}
+          allEmployees={employees}
           allBranches={allBranches}
           currentBranchIds={branchIdsByUser.get(editTarget.id) ?? []}
           editableSet={editableSet}
@@ -329,9 +330,14 @@ export default function EmployeesClient({
 }
 
 function EditModal({
-  employee, allBranches, currentBranchIds, editableSet, onClose, onSaved, onRefresh
+  employee, allEmployees, allBranches, currentBranchIds, editableSet,
+  onClose, onSaved, onRefresh
 }: {
   employee: EmployeeRow;
+  /** Full employee list — drives the "Reports to" dropdown in the
+   *  chain-of-command section. Passed in from the outer component
+   *  so the modal doesn't need its own fetch. */
+  allEmployees: EmployeeRow[];
   allBranches: BranchLite[];
   currentBranchIds: number[];
   editableSet: Set<number>;
@@ -714,11 +720,11 @@ function EditModal({
                   <option value="">
                     — {t("admin.persona.employees.reportsTo.none")} —
                   </option>
-                  {employees
+                  {allEmployees
                     .filter((e2) => e2.id !== employee.id)
                     .map((e2) => (
                       <option key={e2.id} value={e2.id}>
-                        {e2.display_name}{e2.role === "super_admin" ? " (super)" : e2.role === "admin" ? " (admin)" : ""}
+                        {e2.display_name}{e2.role === "admin" ? " (admin)" : ""}
                       </option>
                     ))}
                 </select>
