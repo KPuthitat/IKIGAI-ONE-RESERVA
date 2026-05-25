@@ -130,9 +130,16 @@ export default function ReadinessForm({
   const [textValues, setTextValues] = useState<Record<number, string>>(() =>
     Object.fromEntries(items.map((it) => {
       const prev = prevByLabel.get(it.label);
-      const restored = prev && (it.kind === "text" || it.kind === "amount")
-        ? (prev.note ?? "")
-        : "";
+      let restored = "";
+      if (prev && (it.kind === "text" || it.kind === "amount")) {
+        restored = prev.note ?? "";
+        // See ShiftCloseForm prefill-bug-fix note: amount items are
+        // saved with comma grouping but <input type="number"> can't
+        // display them. Strip on the way back into the input.
+        if (it.kind === "amount") {
+          restored = restored.replace(/,/g, "");
+        }
+      }
       return [it.id, restored];
     }))
   );

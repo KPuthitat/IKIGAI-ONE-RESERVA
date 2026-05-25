@@ -127,9 +127,19 @@ export default function ShiftCloseForm({
   const [textValues, setTextValues] = useState<Record<number, string>>(() =>
     Object.fromEntries(checklistItems.map((it) => {
       const prev = prevByLabel.get(it.label);
-      const restored = prev && (it.kind === "text" || it.kind === "amount")
-        ? (prev.note ?? "")
-        : "";
+      let restored = "";
+      if (prev && (it.kind === "text" || it.kind === "amount")) {
+        restored = prev.note ?? "";
+        // PREFILL BUG FIX (2026-05): amount items were saved with
+        // Thai-style comma grouping ("1,000.00") by formatBahtAmount.
+        // The amount renderer uses <input type="number"> which
+        // refuses formatted strings and silently shows empty → admin
+        // approved the unlock but staff still saw blank amount fields.
+        // Strip commas on the way back into the input.
+        if (it.kind === "amount") {
+          restored = restored.replace(/,/g, "");
+        }
+      }
       return [it.id, restored];
     }))
   );
