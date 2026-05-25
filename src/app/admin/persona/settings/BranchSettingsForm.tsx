@@ -34,6 +34,9 @@ export default function BranchSettingsForm({
   clockQrToken,
   clockQrEnabled,
   requireServiceCharge,
+  requireYesterdayClosing,
+  requireMorningOpening,
+  requireTodayClosing,
   attendanceSummaryTime,
   shiftNotifyTime,
   branchName
@@ -48,6 +51,9 @@ export default function BranchSettingsForm({
   clockQrToken: string | null;
   clockQrEnabled: boolean;
   requireServiceCharge: boolean;
+  requireYesterdayClosing: boolean;
+  requireMorningOpening: boolean;
+  requireTodayClosing: boolean;
   attendanceSummaryTime: string | null;
   shiftNotifyTime: string | null;
   branchName: string;
@@ -75,6 +81,12 @@ export default function BranchSettingsForm({
   // field that feeds the staff-share calculator. When OFF, the
   // field is hidden and admin backfills back-office.
   const [svcRequired, setSvcRequired] = useState<boolean>(requireServiceCharge);
+  // Required-financial-checklist toggles (2026-05-25). DEFAULT ON in
+  // schema so every existing branch picks them up; admin flips off
+  // when not needed (e.g. cashless-only branch).
+  const [yClosingReq, setYClosingReq] = useState<boolean>(requireYesterdayClosing);
+  const [mOpeningReq, setMOpeningReq] = useState<boolean>(requireMorningOpening);
+  const [tClosingReq, setTClosingReq] = useState<boolean>(requireTodayClosing);
   // Daily attendance summary time (TC-6) — HH:MM Bangkok. Empty
   // string = disable feature. Recommended value = branch's typical
   // shift start time + 1 hour, but admin is free to pick anything.
@@ -106,6 +118,9 @@ export default function BranchSettingsForm({
     (qrToken || null) === (clockQrToken || null) &&
     qrOn === clockQrEnabled &&
     svcRequired === requireServiceCharge &&
+    yClosingReq === requireYesterdayClosing &&
+    mOpeningReq === requireMorningOpening &&
+    tClosingReq === requireTodayClosing &&
     (summaryTime || null) === (attendanceSummaryTime || null) &&
     (shiftNotify || null) === (shiftNotifyTime || null);
 
@@ -136,6 +151,9 @@ export default function BranchSettingsForm({
           clock_qr_token: qrToken.trim() || null,
           clock_qr_enabled: qrOn,
           require_service_charge: svcRequired,
+          require_yesterday_closing: yClosingReq,
+          require_morning_opening: mOpeningReq,
+          require_today_closing: tClosingReq,
           attendance_summary_time: summaryTime.trim() || null,
           shift_notify_time: shiftNotify.trim() || null
         })
@@ -485,6 +503,34 @@ export default function BranchSettingsForm({
         <p className="text-[11px] text-slate-500">
           {t("admin.persona.settings.shiftClose.svcRequiredHint")}
         </p>
+
+        {/* ── Required financial-amount checklists (2026-05-25) ── */}
+        <div className="border-t border-slate-200 pt-3 mt-2 space-y-2">
+          <h3 className="text-sm font-bold text-slate-800">
+            {t("admin.persona.settings.amounts.title")}
+          </h3>
+          <p className="text-[11px] text-slate-500">
+            {t("admin.persona.settings.amounts.help")}
+          </p>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Switch checked={yClosingReq} onChange={setYClosingReq} accent="emerald" />
+            <span className="text-sm text-slate-700">
+              {t("admin.persona.settings.amounts.yesterdayClosing")}
+            </span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Switch checked={mOpeningReq} onChange={setMOpeningReq} accent="emerald" />
+            <span className="text-sm text-slate-700">
+              {t("admin.persona.settings.amounts.morningOpening")}
+            </span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Switch checked={tClosingReq} onChange={setTClosingReq} accent="emerald" />
+            <span className="text-sm text-slate-700">
+              {t("admin.persona.settings.amounts.todayClosing")}
+            </span>
+          </label>
+        </div>
       </div>
 
       {/* ── Daily attendance summary (TC-6) ──

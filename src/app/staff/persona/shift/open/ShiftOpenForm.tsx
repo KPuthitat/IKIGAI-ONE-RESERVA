@@ -49,6 +49,8 @@ function formatBahtAmount(raw: string): string {
 
 export default function ShiftOpenForm({
   branchId, branchName, openerName, today, yesterdayClosingHint, checklistItems,
+  requireYesterdayClosing = true,
+  requireMorningOpening = true,
   previousData = null
 }: {
   branchId: number;
@@ -57,10 +59,15 @@ export default function ShiftOpenForm({
   today: string;
   yesterdayClosingHint: number | null;
   checklistItems: ChecklistItem[];
+  /** Per-branch toggles for the mandatory financial fields at the
+   *  top of the form. Both default ON; admin can flip per branch
+   *  via /admin/persona/settings if the branch doesn't need a
+   *  given amount (e.g. cashless-only branch). */
+  requireYesterdayClosing?: boolean;
+  requireMorningOpening?: boolean;
   /** Most recent superseded report's parsed `data` JSON, if any.
    *  Passed in when admin previously granted an unlock so the form
-   *  re-renders pre-filled with what the staff typed before. Matched
-   *  against the current checklist by label. */
+   *  re-renders pre-filled with what the staff typed before. */
   previousData?: Record<string, unknown> | null;
 }) {
   const router = useRouter();
@@ -382,31 +389,38 @@ export default function ShiftOpenForm({
           </div>
         </div>
 
-        <div>
-          <label className="label">
-            {t("staff.persona.shift.open.field.yesterdayClosing")}
-            {yesterdayClosingHint != null && (
-              <span className="ml-2 text-[10px] text-emerald-700 font-medium">
-                · {t("staff.persona.shift.open.prefilled")}
-              </span>
-            )}
-          </label>
-          <input type="number" inputMode="decimal" min={0} step="0.01"
-            className="input"
-            value={yesterdayAmount}
-            placeholder="0.00"
-            onChange={(e) => setYesterdayAmount(e.target.value)} />
-        </div>
+        {/* Yesterday-closing / morning-opening — required-by-default
+            per-branch toggles (2026-05-25). Admin can flip off when
+            irrelevant (e.g. cashless-only branch). */}
+        {requireYesterdayClosing && (
+          <div>
+            <label className="label">
+              {t("staff.persona.shift.open.field.yesterdayClosing")}
+              {yesterdayClosingHint != null && (
+                <span className="ml-2 text-[10px] text-emerald-700 font-medium">
+                  · {t("staff.persona.shift.open.prefilled")}
+                </span>
+              )}
+            </label>
+            <input type="number" inputMode="decimal" min={0} step="0.01"
+              className="input"
+              value={yesterdayAmount}
+              placeholder="0.00"
+              onChange={(e) => setYesterdayAmount(e.target.value)} />
+          </div>
+        )}
 
-        <div>
-          <label className="label">{t("staff.persona.shift.open.field.morningDrawer")} *</label>
-          <input type="number" inputMode="decimal" min={0} step="0.01"
-            required
-            className="input"
-            value={morningAmount}
-            placeholder="0.00"
-            onChange={(e) => setMorningAmount(e.target.value)} />
-        </div>
+        {requireMorningOpening && (
+          <div>
+            <label className="label">{t("staff.persona.shift.open.field.morningDrawer")} *</label>
+            <input type="number" inputMode="decimal" min={0} step="0.01"
+              required
+              className="input"
+              value={morningAmount}
+              placeholder="0.00"
+              onChange={(e) => setMorningAmount(e.target.value)} />
+          </div>
+        )}
       </div>
 
       {checklistItems.length > 0 ? (

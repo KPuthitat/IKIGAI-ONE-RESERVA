@@ -59,6 +59,11 @@ const Body = z.object({
   // amount at the top (feeds the staff-share calculator). Added
   // 2026-05-23. Default off — existing branches stay unchanged.
   require_service_charge: z.boolean().optional(),
+  // Required-financial-checklist toggles (2026-05-25). Default ON
+  // for every branch via the schema; admin can flip per branch.
+  require_yesterday_closing: z.boolean().optional(),
+  require_morning_opening: z.boolean().optional(),
+  require_today_closing: z.boolean().optional(),
 
   // Daily attendance summary (TC-6) — HH:MM Bangkok at which the
   // cron should post the 4-category roll-call to the executive group.
@@ -142,6 +147,18 @@ export async function POST(req: Request) {
   if (parsed.data.require_service_charge !== undefined) {
     sets.push("require_service_charge = ?");
     vals.push(parsed.data.require_service_charge ? 1 : 0);
+  }
+  if (parsed.data.require_yesterday_closing !== undefined) {
+    sets.push("require_yesterday_closing = ?");
+    vals.push(parsed.data.require_yesterday_closing ? 1 : 0);
+  }
+  if (parsed.data.require_morning_opening !== undefined) {
+    sets.push("require_morning_opening = ?");
+    vals.push(parsed.data.require_morning_opening ? 1 : 0);
+  }
+  if (parsed.data.require_today_closing !== undefined) {
+    sets.push("require_today_closing = ?");
+    vals.push(parsed.data.require_today_closing ? 1 : 0);
   }
   // attendance_summary_time: normalise + reset dedupe column on change.
   // When admin changes the summary time (or enables/disables the

@@ -38,6 +38,7 @@ function formatBahtAmount(raw: string): string {
 export default function ShiftCloseForm({
   branchId, branchName, closerName, checklistItems,
   requireServiceCharge = false,
+  requireTodayClosing = true,
   previousData = null
 }: {
   branchId: number;
@@ -46,18 +47,19 @@ export default function ShiftCloseForm({
   checklistItems: ChecklistItem[];
   /** When the branch admin has flipped require_service_charge ON,
    *  the staff form shows a mandatory "ยอดเซอร์วิสชาร์จวันนี้"
-   *  field at the top that feeds the staff-share calculator. When
-   *  OFF (default), the field is hidden — admin backfills the
-   *  monthly total back-office. Replaces the old always-shown
-   *  closing-drawer + service-charge pair; closing-drawer is now
-   *  fully expressible via the admin checklist. */
+   *  field at the top. */
   requireServiceCharge?: boolean;
+  /** When the branch admin has flipped require_today_closing ON
+   *  (default), the staff form shows "ยอดเงินปิดกะวันนี้" as a
+   *  mandatory top-level amount field — was removed 2026-05-23
+   *  and brought back as a per-branch toggle 2026-05-25 per
+   *  owner direction. The data lands in
+   *  daily_reports.data.closing_drawer_amount for downstream
+   *  reports / payroll reconciliation. */
+  requireTodayClosing?: boolean;
   /** Most recent superseded report's parsed `data` JSON, if any.
    *  Passed in when admin previously granted an unlock so the form
-   *  re-renders pre-filled with what the staff typed before — much
-   *  better UX than forcing them to re-key everything just to fix
-   *  one number. Matched against the current checklist by label
-   *  (labels are user-facing + stable; ids change if admin edits). */
+   *  re-renders pre-filled with what the staff typed before. */
   previousData?: Record<string, unknown> | null;
 }) {
   const router = useRouter();
@@ -88,6 +90,14 @@ export default function ShiftCloseForm({
     }
     return m;
   })();
+
+  // Today's closing drawer amount — shown when requireTodayClosing
+  // is on (default true). Persists into daily_reports.data.closing_
+  // drawer_amount, surfaced on the LINE Flex card + admin reports.
+  const [closingAmount, setClosingAmount] = useState<string>(() => {
+    const v = previousData?.closing_drawer_amount;
+    return typeof v === "number" ? String(v) : "";
+  });
 
   // Service Charge collected from POS today. Only shown + required
   // when requireServiceCharge prop is true. Persisted into
@@ -209,6 +219,14 @@ export default function ShiftCloseForm({
     }
     // Service charge — only validate when admin requires it. Empty
     // when required = block submit with friendly message.
+    if (requireTodayClosing && parseAmount(closingAmount) == null) {
+      setMsg({
+        kind: "err",
+        text: t("staff.persona.shift.close.field.closingAmountRequired")
+      });
+      setBusy(false);
+      return;
+    }
     if (requireServiceCharge && parseAmount(svcAmount) == null) {
       setMsg({
         kind: "err",
@@ -220,10 +238,10 @@ export default function ShiftCloseForm({
     setErrorIds({});
     setBusy(true);
     try {
-      // closing_drawer_amount removed from the form 2026-05-23 —
-      // admin now models that as a checklist amount item if needed.
-      // We still send null so the API stores the column explicitly.
-      const closingParsed = null;
+      // closing_drawer_amount — back as a top-level required field
+      // (2026-05-25). Null when the toggle is off so existing flow
+      // for branches that opt out still works.
+      const closingParsed = requireTodayClosing ? parseAmount(closingAmount) : null;
       const svcParsed = parseAmount(svcAmount);
       // Flatten parents-then-children; mark child rows with is_child=true
       // so the LINE Flex renderer indents them under their parent.
@@ -370,12 +388,27 @@ export default function ShiftCloseForm({
             row for closing-drawer with their preferred label). The
             duplicate top-level + checklist version was confusing. */}
 
+        {/* Today's closing drawer — required-by-default per-branch
+            toggle (2026-05-25). Sits above the SVC field because
+            it's the most-used metric for end-of-day reconciliation. */}
+        {requireTodayClosing && (
+          <div>
+            <label className="label">{t("staff.persona.shift.close.field.closingAmount")} *</label>
+            <input type="number" inputMode="decimal" min={0} step="0.01"
+              required
+              className="input"
+              value={closingAmount}
+              placeholder="0.00"
+              onChange={(e) => setClosingAmount(e.target.value)} />
+            <p className="text-[10px] text-slate-400 mt-1">
+              {t("staff.persona.shift.close.field.closingAmountHint")}
+            </p>
+          </div>
+        )}
+
         {/* Service Charge — only when branch admin has flipped the
             require_service_charge toggle on. Feeds the staff-share
-            calculator at /admin/persona/service-charge. When the
-            toggle is off, this field is hidden and admin backfills
-            the monthly total themselves. Required-when-shown so the
-            calculator never receives a half-filled month. */}
+            calculator at /admin/persona/service-charge. */}
         {requireServiceCharge && (
           <div>
             <label className="label">{t("staff.persona.shift.close.field.svcAmount")} *</label>

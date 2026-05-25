@@ -67,6 +67,9 @@ export default function PersonaSettingsPage() {
         clockQrToken={branch.clock_qr_token}
         clockQrEnabled={branch.clock_qr_enabled === 1}
         requireServiceCharge={branch.require_service_charge === 1}
+        requireYesterdayClosing={branch.require_yesterday_closing === 1}
+        requireMorningOpening={branch.require_morning_opening === 1}
+        requireTodayClosing={branch.require_today_closing === 1}
         attendanceSummaryTime={branch.attendance_summary_time}
         shiftNotifyTime={branch.shift_notify_time}
         branchName={branch.name}

@@ -130,6 +130,7 @@ export default function ShiftClosePage() {
         branchName={branch.name}
         closerName={nameWithPrefix(user.title_prefix, user.display_name)}
         requireServiceCharge={branch.require_service_charge === 1}
+        requireTodayClosing={branch.require_today_closing === 1}
         previousData={previousData}
         checklistItems={checklist
           .map((c) => ({

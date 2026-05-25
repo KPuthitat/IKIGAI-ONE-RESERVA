@@ -96,36 +96,36 @@ export default function BookingSocialProof({
   }
 
   return (
-    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 px-4 py-3 space-y-2.5">
-      {/* Weekly headline — the social-proof message itself. Bold,
-          warm copy. Uses guest count when guests > 0 so the number
-          feels larger ("84 ที่นั่ง" reads stronger than "28 จอง"
-          for small absolute counts). */}
-      <div className="flex items-start gap-2">
-        <span aria-hidden className="text-lg leading-none mt-0.5">🌿</span>
-        <div className="text-sm text-emerald-900 leading-snug">
-          <div className="font-bold">
-            {t("booking.proof.weeklyHeadline", {
-              bookings: data.weekly.bookings,
-              guests: data.weekly.guests
-            })}
-          </div>
-          <div className="text-[11px] text-emerald-700/80 mt-0.5">
-            {t("booking.proof.weeklySubtitle")}
-          </div>
+    // 2026-05-25 owner direction: make this widget more prominent +
+    // centered. Punched-up styling — thicker border, stronger
+    // emerald ring + shadow, centered text, headline at text-base.
+    <div className="rounded-2xl border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-emerald-100/60 px-4 py-4 space-y-3 shadow-sm text-center">
+      {/* Weekly headline — the social-proof message itself. Bigger
+          font, centered, with the leaf icon above the headline for
+          a more poster-like feel. */}
+      <div>
+        <span aria-hidden className="text-2xl leading-none block mb-1">🌿</span>
+        <div className="text-base font-bold text-emerald-900 leading-snug">
+          {t("booking.proof.weeklyHeadline", {
+            bookings: data.weekly.bookings,
+            guests: data.weekly.guests
+          })}
+        </div>
+        <div className="text-xs text-emerald-700/80 mt-1">
+          {t("booking.proof.weeklySubtitle")}
         </div>
       </div>
 
       {/* Per-slot scarcity — only render when there's something
           interesting to say (at least one popular or full slot today). */}
       {(popularSlots.length > 0 || fullSlots.length > 0) && (
-        <div className="border-t border-emerald-200/60 pt-2 space-y-1">
+        <div className="border-t border-emerald-300/60 pt-2.5 space-y-1.5">
           {popularSlots.length > 0 && (
-            <div className="text-[11px] text-emerald-800/90 font-medium">
+            <div className="text-xs text-emerald-800/90 font-bold">
               🔥 {t("booking.proof.popularLabel")}
             </div>
           )}
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+          <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs">
             {popularSlots.slice(0, 4).map((s) => {
               const hint = slotHint(s);
               return (
@@ -136,7 +136,7 @@ export default function BookingSocialProof({
               );
             })}
             {popularSlots.length === 0 && fullSlots.length > 0 && (
-              <span className="text-rose-600">
+              <span className="text-rose-600 font-medium">
                 {t("booking.proof.fullSlots")}:{" "}
                 {fullSlots.slice(0, 4).map((s) => s.time).join(", ")}
               </span>

@@ -1172,6 +1172,26 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN require_service_charge INTEGER NOT NULL DEFAULT 0");
   }
 
+  // Required-financial-checklist toggles (added 2026-05). Owner direction:
+  // bring the 4 amount fields back to the top of every shift report
+  // as mandatory per-branch checklists, with an admin toggle to turn
+  // each off when not relevant. Other free-form checklist items go
+  // below these.
+  //   require_yesterday_closing — shift_open: "ยอดเงินปิดกะเมื่อวาน"
+  //   require_morning_opening   — shift_open: "ยอดเงินเปิดกะเช้านี้"
+  //   require_today_closing     — shift_close: "ยอดเงินปิดกะวันนี้"
+  // DEFAULT 1 so every existing branch picks them up immediately;
+  // admin can flip off per branch.
+  if (!bnames2.has("require_yesterday_closing")) {
+    db.exec("ALTER TABLE branches ADD COLUMN require_yesterday_closing INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!bnames2.has("require_morning_opening")) {
+    db.exec("ALTER TABLE branches ADD COLUMN require_morning_opening INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!bnames2.has("require_today_closing")) {
+    db.exec("ALTER TABLE branches ADD COLUMN require_today_closing INTEGER NOT NULL DEFAULT 1");
+  }
+
   // Daily attendance summary (TC-6) — per-branch HH:MM time at which
   // the cron job posts a 4-category roll-call to the executive group:
   //   • มาตรงเวลา (on time, within 5-min grace)
@@ -2684,6 +2704,9 @@ export type Branch = {
   // calculator). When 0 (default), the field is hidden and admin
   // backfills back-office. Added 2026-05-23.
   require_service_charge: number;      // 0/1
+  require_yesterday_closing: number;   // 0/1
+  require_morning_opening: number;     // 0/1
+  require_today_closing: number;       // 0/1
   // Daily attendance summary (TC-6) — see migration block above.
   attendance_summary_time: string | null;           // HH:MM Bangkok, NULL = disabled
   attendance_summary_last_sent_date: string | null; // YYYY-MM-DD dedupe key

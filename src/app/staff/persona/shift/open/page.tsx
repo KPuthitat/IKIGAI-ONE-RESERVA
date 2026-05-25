@@ -175,6 +175,8 @@ export default function ShiftOpenPage() {
         openerName={nameWithPrefix(user.title_prefix, user.display_name)}
         today={today}
         yesterdayClosingHint={yesterdayClosingHint}
+        requireYesterdayClosing={branch.require_yesterday_closing === 1}
+        requireMorningOpening={branch.require_morning_opening === 1}
         previousData={previousData}
         checklistItems={checklist
           .map((c) => ({
