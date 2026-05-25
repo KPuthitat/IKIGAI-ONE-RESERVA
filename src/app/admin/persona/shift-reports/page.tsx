@@ -221,6 +221,12 @@ export default function AdminShiftReportsPage() {
   const onLeave = attendanceRows.filter((r) => r.category === "on_leave");
   const notYet = attendanceRows.filter((r) => r.category === "not_yet");
   const absent = attendanceRows.filter((r) => r.category === "absent");
+  // Owner direction 2026-05: branches with no active employees
+  // (or everyone on weekly off + no leave today) shouldn't see an
+  // empty attendance summary card. We just suppress the section
+  // entirely — the cron also short-circuits when the roster is
+  // empty so the executive group never receives a blank report.
+  const hasAttendance = attendanceRows.length > 0;
 
   return (
     <div className="space-y-6">
@@ -237,7 +243,10 @@ export default function AdminShiftReportsPage() {
       {/* ── Section 1: Attendance summary — added 2026-05-25 per
           owner direction. Same data the cron sends to LINE at the
           configured time, but always visible here too + inline
-          "send again" button so admin can re-fire when needed. */}
+          "send again" button so admin can re-fire when needed.
+          Hidden entirely when the branch has no active staff —
+          matches the cron logic that skips empty branches. */}
+      {hasAttendance && (
       <section>
         <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
           <h2 className="text-lg font-bold text-slate-800">
@@ -332,6 +341,7 @@ export default function AdminShiftReportsPage() {
           อัปเดตทุกครั้งที่รีเฟรชหน้านี้ · ส่งเข้ากลุ่ม executive อัตโนมัติเวลา {branch.attendance_summary_time || "—"}
         </p>
       </section>
+      )}
 
       {/* ── Section 2 + 3: Shift report status + edit requests
           ShiftReportsClient renders 2 independent inner sections,
