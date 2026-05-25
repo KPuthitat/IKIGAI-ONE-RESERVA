@@ -151,15 +151,9 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       {/* STAFF / ADMIN switch — all breakpoints, admins only. */}
       {isAdminUser && <AdminModeToggle />}
       <div className="md:hidden space-y-3">
-        {activeBranch && (
-          <div className="flex justify-start">
-            <TodaysBranchPill
-              branchName={activeBranch.name}
-              hasChoice={hasBranchChoice}
-              pickerPath="/staff/branch-picker"
-            />
-          </div>
-        )}
+        {/* Branch pill moved into sidebar brand area 2026-05-25 —
+            see Sidebar's brand prop below. Removes the duplicate
+            that used to sit here in the mobile footer. */}
         <div className="text-xs text-white/60 truncate">
           {nameWithPrefix(user.title_prefix, user.display_name)}
         </div>
@@ -186,7 +180,22 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       )}
       <Sidebar
         sections={sections}
-        brand={<StaffSidebarBrand />}
+        brand={
+          <div className="space-y-2">
+            <StaffSidebarBrand />
+            {/* Branch pill under brand (2026-05-25 — same change as
+                admin layout for consistency). Sidebar carries the
+                branch context so staff can switch without scanning
+                the topbar. */}
+            {activeBranch && (
+              <TodaysBranchPill
+                branchName={activeBranch.name}
+                hasChoice={hasBranchChoice}
+                pickerPath="/staff/branch-picker"
+              />
+            )}
+          </div>
+        }
         footer={mobileSidebarFooter}
       />
       <div className="flex-1 flex flex-col min-w-0">
@@ -198,15 +207,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           <div className="px-4 py-3 pl-16 flex items-center gap-2 sm:gap-3">
             <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <HeaderBrand role="staff" />
-              {activeBranch && (
-                <div className="hidden md:block">
-                  <TodaysBranchPill
-                    branchName={activeBranch.name}
-                    hasChoice={hasBranchChoice}
-                    pickerPath="/staff/branch-picker"
-                  />
-                </div>
-              )}
+              {/* Branch pill moved into sidebar brand 2026-05-25. */}
             </div>
             <div className="hidden md:block text-xs text-white/60 truncate max-w-[180px] flex-shrink-0">
               {nameWithPrefix(user.title_prefix, user.display_name)}

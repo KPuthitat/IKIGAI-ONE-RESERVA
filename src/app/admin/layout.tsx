@@ -229,15 +229,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <AdminModeToggle />
       )}
       <div className="md:hidden space-y-3">
-        {activeBranch && (
-          <div className="flex justify-start">
-            <TodaysBranchPill
-              branchName={activeBranch.name}
-              hasChoice={hasBranchChoice}
-              pickerPath="/admin/branch-picker"
-            />
-          </div>
-        )}
+        {/* Branch pill removed from mobile sidebar footer 2026-05-25
+            — it's now in the sidebar brand area (visible to all
+            viewport sizes), so the footer-duplicate is redundant. */}
         <div className="text-xs text-white/60 truncate">
           {nameWithPrefix(user.title_prefix, user.display_name)} · {t(lang, "role.adminShort")}
         </div>
@@ -264,7 +258,22 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       )}
       <Sidebar
         sections={sections}
-        brand={<AdminSidebarBrand />}
+        brand={
+          <div className="space-y-2">
+            <AdminSidebarBrand />
+            {/* Branch pill under brand (2026-05-25 per owner direction
+                — moved from desktop topbar). Always visible in the
+                sidebar so admin can swap branches at any point
+                without hunting in the topbar. */}
+            {activeBranch && (
+              <TodaysBranchPill
+                branchName={activeBranch.name}
+                hasChoice={hasBranchChoice}
+                pickerPath="/admin/branch-picker"
+              />
+            )}
+          </div>
+        }
         footer={mobileSidebarFooter}
       />
       <div className="flex-1 flex flex-col min-w-0">
@@ -279,15 +288,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="px-4 py-3 pl-16 flex items-center gap-2 sm:gap-3">
             <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <HeaderBrand role="admin" />
-              {activeBranch && (
-                <div className="hidden md:block">
-                  <TodaysBranchPill
-                    branchName={activeBranch.name}
-                    hasChoice={hasBranchChoice}
-                    pickerPath="/admin/branch-picker"
-                  />
-                </div>
-              )}
+              {/* Branch pill moved into sidebar 2026-05-25 — see
+                  sidebar brand slot above. Topbar now carries only
+                  brand + user info + lang / logout. */}
             </div>
             <div className="hidden md:block text-xs text-white/60 truncate max-w-[200px] flex-shrink-0">
               {nameWithPrefix(user.title_prefix, user.display_name)} · {t(lang, "role.adminShort")}
