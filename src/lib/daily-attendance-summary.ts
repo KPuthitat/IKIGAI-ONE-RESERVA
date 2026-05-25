@@ -121,7 +121,7 @@ export function buildDailyAttendanceRoster(
   //    stays focused on people who were supposed to be at work.
   //    Approved leave still surfaces so admins know the off day was
   //    pre-approved time off rather than a no-shift gap.
-  return staff.flatMap((s) => {
+  return staff.flatMap((s): DailySummaryRow[] => {
     const inTs = inByUser.get(s.user_id) ?? null;
     const leaveType = leaveByUser.get(s.user_id) ?? null;
     const rosterStart = rosterShiftByUser.get(s.user_id) ?? null;
