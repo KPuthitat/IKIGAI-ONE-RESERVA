@@ -1505,11 +1505,14 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
   const headerColor = args.headerColor || COLOR_INK_700;
 
   const bubble = {
-    // "mega" gives the body extra horizontal room so long Thai
-    // checklist labels wrap to fewer lines. "kilo" was tight on
-    // narrow phones and contributed to the truncation issue.
+    // 2026-05-27: all Flex bubbles bumped to "giga" (was "mega")
+    // for consistent full-width presentation across every notification
+    // surface. Owner direction — long Thai labels were still wrapping
+    // awkwardly on narrow phones at the mega size; giga fixes it
+    // uniformly and matches the existing shift / approval / summary
+    // cards that were already giga.
     type: "bubble",
-    size: "mega",
+    size: "giga",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor,
@@ -1804,7 +1807,7 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
   const headerColor = args.headerColor || COLOR_INK_700;
 
   const bubble = {
-    type: "bubble", size: "mega",
+    type: "bubble", size: "giga",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor, paddingAll: "20px",
@@ -1964,7 +1967,7 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
   const headerColor = args.headerColor || COLOR_INK_700;
 
   const bubble = {
-    type: "bubble", size: "mega",
+    type: "bubble", size: "giga",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor, paddingAll: "20px",
@@ -2065,7 +2068,7 @@ export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMe
   const headerColor = args.headerColor || COLOR_INK_700;
   const bubble = {
     type: "bubble",
-    size: "mega",
+    size: "giga",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor,
@@ -2167,7 +2170,7 @@ export function shiftUnlockDecisionFlex(args: ShiftUnlockDecisionArgs): LineFlex
 
   const bubble = {
     type: "bubble",
-    size: "mega",
+    size: "giga",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor,
@@ -2314,7 +2317,7 @@ export function attendanceSummaryFlex(args: AttendanceSummaryArgs): LineFlexMess
   }
 
   const bubble = {
-    type: "bubble", size: "mega",
+    type: "bubble", size: "giga",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor, paddingAll: "20px",
@@ -2975,7 +2978,7 @@ export function dailyAttendanceSummaryFlex(
   }
 
   const bubble = {
-    type: "bubble", size: "mega",
+    type: "bubble", size: "giga",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor, paddingAll: "20px",

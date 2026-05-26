@@ -55,10 +55,20 @@ export async function POST(req: Request) {
     .get(user.activeBranchId) as Branch | undefined;
   if (!branch) return NextResponse.json({ error: "branch_not_found" }, { status: 404 });
 
-  // Resolve the calling admin's own LINE userId — most cards push DM
-  // to the caller so they can verify on their own phone.
-  const me = db.prepare("SELECT line_user_id FROM users WHERE id = ?")
-    .get(user.id) as { line_user_id: string | null } | undefined;
+  // Resolve the calling admin's own LINE userId + display info — most
+  // cards push DM to the caller so they can verify on their own phone.
+  // Pull nickname + prefix too so the DM cards greet by real name
+  // (e.g. "สวัสดีครับ พี่ภู") instead of the generic "พี่ฮูก" placeholder.
+  // PDPA-safe because these cards never leave the caller's own LINE.
+  const me = db.prepare(`
+    SELECT line_user_id, display_name, nickname_th, title_prefix
+    FROM users WHERE id = ?
+  `).get(user.id) as {
+    line_user_id: string | null;
+    display_name: string;
+    nickname_th: string | null;
+    title_prefix: string | null;
+  } | undefined;
 
   const platform = getPlatformChannel();
   if (!isChannelReady(platform) || !platform?.channel_token) {
@@ -104,13 +114,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, sent_to: "self_dm" });
   }
 
-  // PDPA — every mock card uses placeholder names, NEVER real users
-  // from the DB. Earlier rev pulled user.display_name into the
-  // attendance-summary mock, which meant the test card showed real
-  // staff data in the executive group when admin clicked the button.
-  const MOCK_NAME = "พนักงานทดสอบ";
-  const MOCK_PREFIX: string | null = null;        // no prefix on mock data
-  const MOCK_NICKNAME = "พี่ฮูก";                 // greeting calls "พี่ พี่ฮูก"
+  // PDPA — the attendance_summary kind goes to the EXECUTIVE GROUP,
+  // so its mock rows always use placeholder names (no real staff data
+  // leaks to a group chat). The shift / clock-in kinds DM the caller
+  // only — they can safely use the caller's own name + nickname so
+  // the preview feels like a real notification on their phone.
+  const MOCK_NAME = me?.display_name || "พนักงานทดสอบ";
+  const MOCK_PREFIX: string | null = me?.title_prefix ?? null;
+  const MOCK_NICKNAME = me?.nickname_th?.trim() || "พี่ฮูก";
 
   try {
     switch (kind) {
