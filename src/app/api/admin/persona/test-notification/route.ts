@@ -104,14 +104,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, sent_to: "self_dm" });
   }
 
+  // PDPA — every mock card uses placeholder names, NEVER real users
+  // from the DB. Earlier rev pulled user.display_name into the
+  // attendance-summary mock, which meant the test card showed real
+  // staff data in the executive group when admin clicked the button.
+  const MOCK_NAME = "พนักงานทดสอบ";
+  const MOCK_PREFIX: string | null = null;        // no prefix on mock data
+  const MOCK_NICKNAME = "พี่ฮูก";                 // greeting calls "พี่ พี่ฮูก"
+
   try {
     switch (kind) {
       case "shift_work":
         return await pushToMe(personaShiftReminderFlex({
           branchName: branch.name,
           dateLabel: friendlyDate,
-          displayName: user.display_name,
-          titlePrefix: user.title_prefix,
+          displayName: MOCK_NAME,
+          titlePrefix: MOCK_PREFIX,
+          nickname: MOCK_NICKNAME,
           kind: "work",
           shifts: [
             { position: "บาริสต้า", start: "08:00", end: "16:00" }
@@ -125,8 +134,9 @@ export async function POST(req: Request) {
         return await pushToMe(personaShiftReminderFlex({
           branchName: branch.name,
           dateLabel: friendlyDate,
-          displayName: user.display_name,
-          titlePrefix: user.title_prefix,
+          displayName: MOCK_NAME,
+          titlePrefix: MOCK_PREFIX,
+          nickname: MOCK_NICKNAME,
           kind: "day_off",
           shifts: [],
           leaveTypeLabel: null,
@@ -138,8 +148,9 @@ export async function POST(req: Request) {
         return await pushToMe(personaShiftReminderFlex({
           branchName: branch.name,
           dateLabel: friendlyDate,
-          displayName: user.display_name,
-          titlePrefix: user.title_prefix,
+          displayName: MOCK_NAME,
+          titlePrefix: MOCK_PREFIX,
+          nickname: MOCK_NICKNAME,
           kind: "on_leave",
           shifts: [],
           leaveTypeLabel: "ลาป่วย",
@@ -150,7 +161,7 @@ export async function POST(req: Request) {
       case "clock_in": {
         const nowIso = new Date().toISOString();
         const clockFlex = personaClockInFlex({
-          displayName: user.display_name,
+          displayName: MOCK_NAME,
           clockInIsoTs: nowIso,
           branchName: branch.name,
           lunchStart: branch.lunch_break_start ?? "12:00",
@@ -163,25 +174,25 @@ export async function POST(req: Request) {
       }
 
       case "attendance_summary": {
-        // Build a realistic-looking mock roster with one row per
-        // category so admin sees the full Flex layout.
+        // All 5 rows use placeholder names so the executive group
+        // never sees real staff data on a test fire.
         const mock = dailyAttendanceSummaryFlex({
           branchName: branch.name,
           reportDate: todayBkk,
           rows: [
-            { displayName: user.display_name, titlePrefix: user.title_prefix,
+            { displayName: "ทดสอบ ตรงเวลา", titlePrefix: null,
               category: "on_time", inTs: new Date().toISOString(),
               minutesLate: 0, leaveType: null },
-            { displayName: "ทดสอบ มาสาย", titlePrefix: "นาย",
+            { displayName: "ทดสอบ มาสาย", titlePrefix: null,
               category: "late", inTs: new Date().toISOString(),
               minutesLate: 12, leaveType: null },
-            { displayName: "ทดสอบ ลางาน", titlePrefix: "นางสาว",
+            { displayName: "ทดสอบ ลางาน", titlePrefix: null,
               category: "on_leave", inTs: null,
               minutesLate: 0, leaveType: "sick" },
-            { displayName: "ทดสอบ รอ", titlePrefix: "นาย",
+            { displayName: "ทดสอบ รอ", titlePrefix: null,
               category: "not_yet", inTs: null,
               minutesLate: 0, leaveType: null },
-            { displayName: "ทดสอบ ขาด", titlePrefix: "นาย",
+            { displayName: "ทดสอบ ขาด", titlePrefix: null,
               category: "absent", inTs: null,
               minutesLate: 0, leaveType: null }
           ],
