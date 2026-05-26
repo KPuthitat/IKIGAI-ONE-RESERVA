@@ -303,7 +303,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
         </header>
-        <main className="flex-1 w-full p-4 max-w-6xl mx-auto">{children}</main>
+        {/* 2026-05-27: bumped max-w-6xl → max-w-screen-2xl (1152 → 1536 px)
+            so data-heavy tables (employees, leave list, payroll) don't
+            wrap Thai names onto 2 lines on common desktop widths.
+            Long-form text pages can still narrow themselves inside with
+            their own max-w wrapper if they want. */}
+        <main className="flex-1 w-full p-4 max-w-screen-2xl mx-auto">{children}</main>
         {/* Desktop only — on mobile this info moves into the sidebar
             bottom (see mobileSidebarFooter) so the page isn't crowded. */}
         <div className="hidden md:block mt-auto">
