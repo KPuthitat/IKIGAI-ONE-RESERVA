@@ -1543,6 +1543,24 @@ function runMigrations(db: Database.Database): void {
   if (!rrColsT.some((c) => c.name === "current_tier")) {
     db.exec("ALTER TABLE resignation_requests ADD COLUMN current_tier INTEGER");
   }
+  // branch_id on resignation_requests (added 2026-05-27 hotfix). The
+  // tier-escalation cron sweep joins by branch_id; without this
+  // column on resignation_requests the sweep threw SqliteError every
+  // tick. Backfill from each requester's primary user_branches row
+  // for any existing rows so the cron query stops short-circuiting.
+  if (!rrColsT.some((c) => c.name === "branch_id")) {
+    db.exec("ALTER TABLE resignation_requests ADD COLUMN branch_id INTEGER REFERENCES branches(id)");
+    db.exec(`
+      UPDATE resignation_requests
+      SET branch_id = (
+        SELECT ub.branch_id FROM user_branches ub
+        WHERE ub.user_id = resignation_requests.user_id
+        ORDER BY ub.is_primary DESC, ub.branch_id ASC
+        LIMIT 1
+      )
+      WHERE branch_id IS NULL
+    `);
+  }
 
   // Phase 1C v9: replaces_id for resignation_requests
   const rrcols = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;

@@ -99,12 +99,12 @@ export async function POST(req: Request) {
         (user_id, proposed_last_day, computed_min_last_day, reason, evidence_filename,
          is_special_request, status, ref_no, created_at,
          current_approver_user_id, escalated_to_level, last_escalated_at, approval_history,
-         current_tier)
-      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, NULL, 0, ?, '[]', ?)
+         current_tier, branch_id)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, NULL, 0, ?, '[]', ?, ?)
     `).run(
       user.id, proposed, minLastDay, reason, evidenceFilename,
       isSpecial ? 1 : 0, refNo, nowIso,
-      nowIso, initialTier
+      nowIso, initialTier, user.activeBranchId
     );
     db.prepare(
       "UPDATE users SET resignation_unlocked_at = NULL, resignation_unlocked_by = NULL WHERE id = ?"
