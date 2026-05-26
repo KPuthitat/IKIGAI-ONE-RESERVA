@@ -7,6 +7,7 @@ import { apiUrl } from "@/lib/url";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
+import { fmtMoney } from "@/lib/format";
 import ConfirmModal from "@/app/components/ConfirmModal";
 import { nameWithPrefix } from "@/lib/name";
 
@@ -82,9 +83,10 @@ function fmtMin(min: number): string {
   return `${h}h ${m}m`;
 }
 
-function fmtMoney(v: number): string {
-  return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+// fmtMoney moved to @/lib/format (2026-05) — single source of truth
+// so display drift between payslip / summary / period-detail can't
+// happen again. Import below ensures all three surfaces share an
+// identical 2dp shape.
 
 export type AddableStaff = {
   id: number;
@@ -496,11 +498,11 @@ export default function PeriodDetailClient({
                     </div>
                     <div className="text-xs text-slate-400">
                       {l.employment_type === "pt" && l.hourly_rate_snapshot != null && (
-                        <span>{l.hourly_rate_snapshot.toFixed(0)} {t(lang, "admin.persona.employees.bahtPerHour")}</span>
+                        <span>{fmtMoney(l.hourly_rate_snapshot)} {t(lang, "admin.persona.employees.bahtPerHour")}</span>
                       )}
                       {l.employment_type === "ft" && l.monthly_salary_snapshot != null && (
                         <span>
-                          {l.monthly_salary_snapshot.toLocaleString()} ฿ /
+                          {fmtMoney(l.monthly_salary_snapshot)} ฿ /
                           {l.pay_cycle_snapshot === "weekly"
                             ? t(lang, "admin.persona.employees.cycleWeekly")
                             : t(lang, "admin.persona.employees.cycleMonthly")}

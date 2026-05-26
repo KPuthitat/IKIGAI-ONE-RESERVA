@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { nameWithPrefix } from "@/lib/name";
+import { fmtMoney } from "@/lib/format";
 import Switch from "@/app/components/Switch";
 
 export type EmployeeRow = {
@@ -152,7 +153,7 @@ export default function EmployeesClient({
       if (r == null) return <span className="text-amber-600 text-xs">{t("admin.persona.employees.payRateUnset")}{taxBadge}</span>;
       return (
         <span>
-          <span className="font-medium">{r.toFixed(0)}</span>{" "}
+          <span className="font-medium">{fmtMoney(r)}</span>{" "}
           <span className="text-xs text-slate-500">{t("admin.persona.employees.bahtPerHour")}</span>
           {taxBadge}
         </span>
@@ -166,7 +167,7 @@ export default function EmployeesClient({
         : t("admin.persona.employees.cycleMonthly");
       return (
         <span>
-          <span className="font-medium">{s.toLocaleString()}</span>
+          <span className="font-medium">{fmtMoney(s)}</span>
           <span className="text-xs text-slate-500"> /{cycleLabel}</span>
           {taxBadge}
         </span>
@@ -895,10 +896,11 @@ function EditModal({
                 <div>
                   <label className="label">{t("admin.persona.employees.field.hourlyRate")}</label>
                   <div className="flex items-center gap-2">
-                    <input className="input" type="number" step="1" min="0"
+                    <input className="input" type="number" step="0.01" min="0"
+                      inputMode="decimal"
                       value={hourlyRate}
                       onChange={(e) => setHourlyRate(e.target.value)}
-                      placeholder="50" />
+                      placeholder="50.00" />
                     <span className="text-sm text-slate-500 whitespace-nowrap">
                       {t("admin.persona.employees.bahtPerHour")}
                     </span>
@@ -913,7 +915,8 @@ function EditModal({
                   <div>
                     <label className="label">{t("admin.persona.employees.field.monthlySalary")}</label>
                     <div className="flex items-center gap-2">
-                      <input className="input" type="number" step="1" min="0"
+                      <input className="input" type="number" step="0.01" min="0"
+                        inputMode="decimal"
                         value={monthlySalary}
                         onChange={(e) => setMonthlySalary(e.target.value)} />
                       <span className="text-sm text-slate-500">บาท</span>

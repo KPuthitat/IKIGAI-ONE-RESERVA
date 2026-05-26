@@ -5,6 +5,7 @@ import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
+import { fmtMoney } from "@/lib/format";
 import PayPeriodPicker, { type ExistingPeriod } from "./PayPeriodPicker";
 
 export const dynamic = "force-dynamic";
@@ -251,10 +252,10 @@ export default function PayrollHubPage() {
                       <td className="py-2 pr-3 text-slate-700">{formatBkkDate(p.pay_date, lang)}</td>
                       <td className="py-2 pr-3 text-right text-slate-600">{p.line_count}</td>
                       <td className="py-2 pr-3 text-right">
-                        {p.total_gross != null ? p.total_gross.toLocaleString() : "—"}
+                        {p.total_gross != null ? fmtMoney(p.total_gross) : "—"}
                       </td>
                       <td className="py-2 pr-3 text-right font-medium">
-                        {p.total_net != null ? p.total_net.toLocaleString() : "—"}
+                        {p.total_net != null ? fmtMoney(p.total_net) : "—"}
                       </td>
                       <td className="py-2 pr-3">
                         <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${badge.cls}`}>

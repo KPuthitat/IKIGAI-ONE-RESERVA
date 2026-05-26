@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import { fmtMoney } from "@/lib/format";
 
 export type PayrollSettings = {
   ot_mode: "flat" | "legal";
@@ -127,7 +128,8 @@ export default function PayrollSettingsClient({
             <label className="block">
               <span className="label">{t(lang, "admin.persona.payroll.settings.otFlatRate")}</span>
               <div className="flex items-center gap-2 mt-1">
-                <input type="number" step="1" min="0" className="input max-w-[120px]"
+                <input type="number" step="0.01" min="0" inputMode="decimal"
+                  className="input max-w-[120px]"
                   value={otFlat} onChange={(e) => setOtFlat(e.target.value)} />
                 <span className="text-sm text-slate-500">
                   {t(lang, "admin.persona.payroll.settings.bahtPer15min")}
@@ -135,7 +137,7 @@ export default function PayrollSettingsClient({
               </div>
             </label>
             <p className="text-xs text-emerald-700">
-              ≈ {otFlatPerHour.toLocaleString()} {t(lang, "admin.persona.employees.bahtPerHour")}
+              ≈ {fmtMoney(otFlatPerHour)} {t(lang, "admin.persona.employees.bahtPerHour")}
             </p>
           </div>
         )}
@@ -231,7 +233,8 @@ export default function PayrollSettingsClient({
           <div>
             <label className="label">{t(lang, "admin.persona.payroll.settings.ssoCap")}</label>
             <div className="flex items-center gap-2">
-              <input type="number" step="1" min="0" className="input max-w-[120px]"
+              <input type="number" step="0.01" min="0" inputMode="decimal"
+                className="input max-w-[120px]"
                 value={ssoCap} onChange={(e) => setSsoCap(e.target.value)} />
               <span className="text-sm text-slate-500">บาท / เดือน</span>
             </div>
@@ -272,7 +275,8 @@ export default function PayrollSettingsClient({
         <div>
           <label className="label">{t(lang, "admin.persona.payroll.settings.ptDefaultRate")}</label>
           <div className="flex items-center gap-2">
-            <input type="number" step="1" min="0" className="input max-w-[120px]"
+            <input type="number" step="0.01" min="0" inputMode="decimal"
+              className="input max-w-[120px]"
               value={ptDefault} onChange={(e) => setPtDefault(e.target.value)} />
             <span className="text-sm text-slate-500">
               {t(lang, "admin.persona.employees.bahtPerHour")}

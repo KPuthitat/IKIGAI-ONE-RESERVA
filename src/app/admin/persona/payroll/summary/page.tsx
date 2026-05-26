@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
+import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
 
 export const dynamic = "force-dynamic";
@@ -50,11 +51,8 @@ function monthLabel(yearMonth: string, lang: Lang): string {
   return `${months[m - 1]} ${yearDisplay}`;
 }
 
-function fmtMoney(v: number): string {
-  return v.toLocaleString(undefined, {
-    minimumFractionDigits: 2, maximumFractionDigits: 2
-  });
-}
+// fmtMoney moved to @/lib/format (2026-05) — imported above so every
+// payroll surface shares an identical 2dp shape.
 
 // Per-employee aggregate row across all periods that pay in the month
 type EmpRow = {

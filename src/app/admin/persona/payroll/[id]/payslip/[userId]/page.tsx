@@ -7,6 +7,7 @@ import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
+import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
 import PayslipPrintButton from "./PayslipPrintButton";
 
@@ -60,11 +61,8 @@ type EmployeeProfile = {
   title_prefix: string | null;
 };
 
-function fmtMoney(v: number): string {
-  return v.toLocaleString(undefined, {
-    minimumFractionDigits: 2, maximumFractionDigits: 2
-  });
-}
+// fmtMoney moved to @/lib/format (2026-05) — imported above so every
+// payroll surface shares an identical 2dp shape.
 
 function fmtMin(min: number, lang: Lang): string {
   const h = Math.floor(min / 60);
