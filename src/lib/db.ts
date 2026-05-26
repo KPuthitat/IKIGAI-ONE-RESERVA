@@ -1347,6 +1347,29 @@ function runMigrations(db: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_shift_codes_branch_code
       ON shift_codes(branch_id, code);
   `);
+  // 2026-05: shift_codes.kind enum — 'work' (default — current behaviour)
+  // or 'day_off' (admin marks an explicit weekly off day in the roster
+  // so the shift-reminder Flex fires "วันหยุดของพี่" instead of going
+  // silent). On_leave is computed at notify time from leave_requests,
+  // not a shift kind, so we don't need a third enum value here.
+  const scCols = db.prepare("PRAGMA table_info(shift_codes)")
+    .all() as Array<{ name: string }>;
+  if (!scCols.some((c) => c.name === "kind")) {
+    db.exec("ALTER TABLE shift_codes ADD COLUMN kind TEXT NOT NULL DEFAULT 'work'");
+  }
+  // Seed each branch with a 'day_off' shift code if it doesn't already
+  // have one — admin can rename / recolour, but a default is helpful so
+  // the roster UI works out of the box.
+  db.exec(`
+    INSERT INTO shift_codes
+      (branch_id, code, name, start_time, end_time, color, display_order, kind)
+    SELECT b.id, 'OFF', 'วันหยุด', '00:00', '00:00', '#94a3b8', 999, 'day_off'
+    FROM branches b
+    WHERE NOT EXISTS (
+      SELECT 1 FROM shift_codes sc
+      WHERE sc.branch_id = b.id AND sc.kind = 'day_off'
+    )
+  `);
   db.exec(`
     CREATE TABLE IF NOT EXISTS roster_positions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

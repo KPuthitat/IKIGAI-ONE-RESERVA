@@ -2440,6 +2440,189 @@ function leaveTypeLabelTh(type: string | null): string {
   }
 }
 
+// ── PERSONA: per-shift personal LINE reminder Flex (2026-05) ──────
+//
+// One owl-themed card sent each morning (or on-demand) to a single
+// staff member's personal LINE OA chat. Three modes based on the
+// recipient's status for the date:
+//   • work     — listing position(s) + start/end times
+//   • day_off  — "เป็นวันหยุดของพี่นะครับ พักผ่อนเยอะๆ"
+//   • on_leave — surfacing the approved leave type
+//
+// Owl voice: warm, junior-assistant tone. Rotates one of N greeting
+// openings by day-of-month so the daily card doesn't read identically
+// every morning.
+
+export type ShiftReminderArgs = {
+  branchName: string;
+  dateLabel: string;                       // human-friendly: "วันจันทร์ที่ 26 พ.ค. 2569"
+  displayName: string;
+  titlePrefix: string | null;
+  kind: "work" | "day_off" | "on_leave";
+  shifts: Array<{ position: string; start: string; end: string }>;
+  leaveTypeLabel: string | null;           // pre-localised — e.g. "ลาป่วย"
+  headerColor?: string | null;
+  /** YYYY-MM-DD — used to seed the greeting rotation so the same
+   *  card-day always picks the same opener (consistent across
+   *  refresh / re-send within the day). */
+  dateBkk: string;
+};
+
+/** Deterministic day-seeded greeting picker. Same shape as HookFab's
+ *  rotating intro: hash of date string mod N. */
+function pickShiftGreeting(dateBkk: string, kind: "work" | "day_off" | "on_leave"): string {
+  let h = 0;
+  for (let i = 0; i < dateBkk.length; i++) {
+    h = ((h << 5) - h + dateBkk.charCodeAt(i)) | 0;
+  }
+  const idx = Math.abs(h);
+  const WORK = [
+    "สวัสดีตอนเช้าครับพี่",
+    "อรุณสวัสดิ์ครับพี่",
+    "สวัสดีครับพี่ น้องฮูกแวะมาทักทาย",
+    "หวัดดีครับพี่ น้องฮูกขออนุญาตรายงานเวรประจำวัน",
+    "สวัสดีครับพี่ พร้อมเริ่มวันใหม่กันเลย"
+  ];
+  const OFF = [
+    "สวัสดีตอนเช้าครับพี่ วันนี้พี่พักผ่อนเต็มที่นะครับ",
+    "อรุณสวัสดิ์ครับพี่ วันนี้น้องดูแลร้านให้ พี่พักได้สบายใจ",
+    "สวัสดีครับพี่ วันนี้เป็นวันของพี่ ขอให้พี่มีความสุข",
+    "หวัดดีครับพี่ วันนี้พักนะครับ น้องฝากรอยยิ้มไว้ให้พี่"
+  ];
+  const LEAVE = [
+    "สวัสดีครับพี่ น้องฮูกแจ้งเรื่องวันลาของพี่นะครับ",
+    "สวัสดีครับพี่ บันทึกการลาของพี่เรียบร้อย น้องดูแลให้แล้ว",
+    "หวัดดีครับพี่ การลาของพี่ผ่านการอนุมัติแล้วครับ",
+    "สวัสดีครับพี่ น้องขอให้พี่หายไวๆ / กลับมาสดชื่นนะครับ"
+  ];
+  const list = kind === "work" ? WORK : kind === "day_off" ? OFF : LEAVE;
+  return list[idx % list.length];
+}
+
+/** Closing line — short, encouraging, varies per kind. */
+function pickShiftClosing(kind: "work" | "day_off" | "on_leave"): string {
+  if (kind === "work") return "อย่าลืมลงเวลาเข้างานนะครับ น้องเอาใจช่วย 🦉";
+  if (kind === "day_off") return "ขอให้พี่มีวันหยุดที่ดีนะครับ 🦉💛";
+  return "หากต้องการเปลี่ยนแปลงข้อมูล ติดต่อหัวหน้าโดยตรงครับ 🦉";
+}
+
+export function personaShiftReminderFlex(args: ShiftReminderArgs): LineFlexMessage {
+  const headerColor = args.headerColor || COLOR_INK_700;
+  const greeting = pickShiftGreeting(args.dateBkk, args.kind);
+  const closing = pickShiftClosing(args.kind);
+  // Banner colour + icon vary per kind so the recipient knows at
+  // a glance which kind of day it is.
+  const bannerByKind = {
+    work:    { color: "#10b981", icon: "✨", label: "เวรประจำวันของพี่" },
+    day_off: { color: "#f59e0b", icon: "🌙", label: "วันหยุดของพี่" },
+    on_leave:{ color: "#0ea5e9", icon: "📅", label: `วันลา${args.leaveTypeLabel ? " · " + args.leaveTypeLabel : ""}` }
+  } as const;
+  const banner = bannerByKind[args.kind];
+
+  const nameDisplay = args.titlePrefix
+    ? `${args.titlePrefix}${args.displayName}`
+    : args.displayName;
+
+  // Body rows — only the work kind has a shift list.
+  const shiftRows = args.kind === "work" && args.shifts.length > 0
+    ? args.shifts.map((s) => ({
+        type: "box", layout: "horizontal", spacing: "sm",
+        contents: [
+          { type: "text", text: s.position, size: "sm", color: COLOR_LABEL, flex: 4, wrap: true },
+          {
+            type: "text",
+            text: `${s.start}–${s.end} น.`,
+            size: "sm", color: COLOR_TEXT_DARK, weight: "bold",
+            flex: 5, align: "end", wrap: true
+          }
+        ]
+      }))
+    : [];
+
+  const bubble = {
+    type: "bubble",
+    size: "kilo",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: headerColor,
+      paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "น้องฮูก · ผู้ช่วย", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", spacing: "sm", margin: "md",
+          contents: [
+            { type: "text", text: "🦉", color: "#ffffff", size: "xl", flex: 0 },
+            { type: "text", text: args.dateLabel, color: "#ffffff", size: "sm", weight: "bold", wrap: true }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md",
+      paddingAll: "20px",
+      contents: [
+        // Greeting line — warm opener with the recipient's name.
+        {
+          type: "text",
+          text: `${greeting}${nameDisplay ? ` ${nameDisplay}` : ""}`,
+          size: "sm", color: COLOR_TEXT_DARK, wrap: true
+        },
+        // Branch pill
+        {
+          type: "text",
+          text: args.branchName,
+          size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "xs"
+        },
+        // Coloured banner — kind indicator + icon.
+        {
+          type: "box", layout: "vertical",
+          paddingAll: "12px", margin: "md",
+          backgroundColor: banner.color + "20", // 20% alpha
+          cornerRadius: "8px",
+          borderWidth: "1px",
+          borderColor: banner.color,
+          contents: [
+            {
+              type: "text",
+              text: `${banner.icon} ${banner.label}`,
+              size: "sm", color: banner.color, weight: "bold", wrap: true, align: "center"
+            }
+          ]
+        },
+        // Work kind only — list of shifts.
+        ...(shiftRows.length > 0 ? [
+          { type: "separator", margin: "md", color: COLOR_DIVIDER },
+          { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: shiftRows }
+        ] : []),
+        // Closing line
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        {
+          type: "text",
+          text: closing,
+          size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "md"
+        }
+      ]
+    },
+    styles: {
+      header: { backgroundColor: headerColor },
+      body: { backgroundColor: "#ffffff" }
+    }
+  };
+
+  const altText = args.kind === "work"
+    ? `เวรประจำวัน · ${args.branchName} · ${args.dateLabel}`
+    : args.kind === "day_off"
+      ? `วันหยุดของพี่ · ${args.dateLabel}`
+      : `วันลา · ${args.leaveTypeLabel ?? ""} · ${args.dateLabel}`;
+  return { type: "flex", altText, contents: bubble };
+}
+
 export function dailyAttendanceSummaryFlex(
   args: DailyAttendanceSummaryArgs
 ): LineFlexMessage {
