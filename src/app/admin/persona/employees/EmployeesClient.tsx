@@ -44,6 +44,10 @@ export type EmployeeRow = {
   // both = "top of chain" / "use system default".
   reports_to_user_id: number | null;
   escalation_hours: number | null;
+  // 2026-05-27 — flag to hide from every operational list (employees
+  // table by default, roster picker, payroll run, approval-chain
+  // candidates, etc.). Admin can flip via checkbox in edit modal.
+  is_test_account: number;
 };
 
 export type BranchLite = { id: number; name: string };
@@ -458,6 +462,12 @@ function EditModal({
   const [reportsToUserId, setReportsToUserId] = useState<string>(
     employee.reports_to_user_id == null ? "" : String(employee.reports_to_user_id)
   );
+  // Test-account flag — checkbox in the modal. When true, the row is
+  // hidden from every operational list (employees table by default,
+  // roster, payroll, approval-chain, etc.).
+  const [isTestAccount, setIsTestAccount] = useState<boolean>(
+    employee.is_test_account === 1
+  );
   // PIN — 4 digits. Empty = leave unchanged. "clear" toggles → send "" to API.
   const [pin, setPin] = useState("");
   const [clearPin, setClearPin] = useState(false);
@@ -586,7 +596,8 @@ function EditModal({
         // get cleaned up next time admin saves the row.
         shift_start_time: null,
         reports_to_user_id: reportsToUserId === "" ? null : Number(reportsToUserId),
-        escalation_hours: null
+        escalation_hours: null,
+        is_test_account: isTestAccount ? 1 : 0
       };
       // PIN — only include if admin is setting/clearing it
       if (clearPin) {
@@ -672,6 +683,30 @@ function EditModal({
             </p>
           </div>
         )}
+
+        {/* Test-account flag — when checked, this row is excluded
+            from every operational list (employees table by default,
+            roster picker, payroll generation, approval-chain
+            candidates, daily attendance summary). Pre-flagged on
+            first migration for usernames "admin" / "test*" / display
+            names containing "ทดสอบ". Admin can flip it any time. */}
+        <label className="flex items-start gap-2 cursor-pointer bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={isTestAccount}
+            onChange={(e) => setIsTestAccount(e.target.checked)}
+          />
+          <div className="text-xs">
+            <div className="font-semibold text-amber-800">
+              บัญชีทดสอบ — ซ่อนจากรายการพนักงานปกติ
+            </div>
+            <div className="text-amber-700 mt-0.5 text-[11px] leading-snug">
+              ใช้สำหรับทดสอบระบบ + ตั้งค่า super admin เท่านั้น
+              ไม่นับรวมในตารางเวร เงินเดือน อนุมัติคำขอลา ฯลฯ
+            </div>
+          </div>
+        </label>
 
         {/* ชื่อเล่น (nickname) is filled by the staff themselves on
             /staff/persona/profile — admin form no longer duplicates

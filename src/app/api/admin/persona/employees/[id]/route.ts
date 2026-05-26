@@ -34,6 +34,8 @@ const Body = z.object({
   // of the escalation window (system default kicks in when null).
   reports_to_user_id: z.number().int().positive().nullable().optional(),
   escalation_hours:   z.number().int().min(1).max(720).nullable().optional(),
+  // 2026-05-27 — test-account flag. 1 = hide from operational lists.
+  is_test_account:    z.number().int().min(0).max(1).optional(),
   // PIN — 4 digits to set, "" to clear, omit to keep
   pin: z.string().regex(/^\d{4}$/).or(z.literal("")).optional(),
 
@@ -164,6 +166,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // Chain-of-command — null = top of chain / use system default.
   addField("reports_to_user_id");
   addField("escalation_hours");
+  // Test-account flag — 0/1 boolean. Hide from operational lists when 1.
+  addField("is_test_account");
 
   // ── Phase A profile (TC-P) ────────────────────────────────────
   // Plain string fields — same pattern as the existing payroll

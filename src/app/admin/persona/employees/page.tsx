@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
@@ -10,10 +11,17 @@ export const dynamic = "force-dynamic";
 // Per-branch since 2026-05 (Phase 2): the list shows only employees
 // assigned to the admin's currently-active branch (via user_branches).
 // One employee can sit in multiple branches and will appear in each.
-export default function AdminEmployeesPage() {
+export default function AdminEmployeesPage({
+  searchParams
+}: {
+  searchParams: { show_test?: string };
+}) {
   const user = requireAdmin();
   const lang = getLang();
   const db = getDb();
+  // Show test accounts only when explicitly toggled via ?show_test=1.
+  // Default: hide them so the list shows only operational staff.
+  const showTest = searchParams.show_test === "1";
 
   if (!user.activeBranchId) {
     return (
@@ -40,12 +48,13 @@ export default function AdminEmployeesPage() {
            u.employee_code, u.national_id, u.bank_name, u.bank_account,
            u.tax_id, u.sso_id, u.hourly_rate, u.monthly_salary, u.pay_cycle,
            u.salary_tax_mode, u.line_user_id, u.shift_start_time,
-           u.reports_to_user_id, u.escalation_hours,
+           u.reports_to_user_id, u.escalation_hours, u.is_test_account,
            CASE WHEN u.pin_hash IS NULL THEN 0 ELSE 1 END AS has_pin,
            CASE WHEN u.resignation_unlocked_at IS NULL THEN 0 ELSE 1 END AS resign_unlocked
     FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
     WHERE u.status != 'disabled'
+      ${showTest ? "" : "AND u.is_test_account = 0"}
     ORDER BY
       -- Sort by employee_code (admin uses this as the canonical staff
       -- key in payroll). Empty / NULL codes drop to the bottom so the
@@ -54,6 +63,13 @@ export default function AdminEmployeesPage() {
       u.employee_code COLLATE NOCASE,
       u.display_name COLLATE NOCASE
   `).all(branch.id) as EmployeeRow[];
+
+  // Quick count of hidden test accounts so admin knows they exist.
+  const testCount = (db.prepare(`
+    SELECT COUNT(*) AS n FROM users u
+    INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.status != 'disabled' AND u.is_test_account = 1
+  `).get(branch.id) as { n: number }).n;
 
   // All branches + every listed employee's memberships — drives the
   // "สิทธิ์เข้าสาขา" editor in the edit modal. editableBranchIds
@@ -92,6 +108,30 @@ export default function AdminEmployeesPage() {
         branchId={branch.id}
         canCreateAdmin={user.role === "super_admin"}
       />
+      {/* Test-account visibility toggle. Hidden by default so the
+          operational list stays clean; admin can flip the link to
+          show + manage test accounts when needed. Count gives a hint
+          they exist even when hidden. */}
+      {(testCount > 0 || showTest) && (
+        <div className="text-xs text-slate-500 flex items-center gap-2">
+          {showTest ? (
+            <>
+              <span className="text-amber-700 font-semibold">
+                แสดงบัญชีทดสอบด้วย ({testCount} บัญชี)
+              </span>
+              <Link href="/admin/persona/employees"
+                className="text-brand hover:underline">
+                ← ซ่อน
+              </Link>
+            </>
+          ) : (
+            <Link href="/admin/persona/employees?show_test=1"
+              className="text-slate-500 hover:text-brand">
+              · มีบัญชีทดสอบที่ซ่อนอยู่ {testCount} บัญชี — กดเพื่อแสดง
+            </Link>
+          )}
+        </div>
+      )}
       <EmployeesClient
         employees={employees}
         allBranches={allBranches}

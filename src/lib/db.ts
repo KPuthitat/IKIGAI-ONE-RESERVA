@@ -1663,6 +1663,27 @@ function runMigrations(db: Database.Database): void {
   // pay_cycle = 'weekly' (จันทร์) | 'monthly' (สิ้นเดือน). Default null = ยังไม่ตั้ง.
   const ucols3 = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
   const unames3 = new Set(ucols3.map((c) => c.name));
+  // is_test_account (2026-05-27) — flag to hide the row from every
+  // operational list (employees table, payroll run, roster picker,
+  // approval-chain config, daily attendance summary, etc.). Owner
+  // direction: test accounts must NEVER mix with real staff in any
+  // production view. They stay visible on test-notification +
+  // super-admin config screens for system testing.
+  //
+  // Backfill heuristic: any account whose username is exactly "admin",
+  // starts with "test", or whose display_name contains the Thai word
+  // "ทดสอบ" is auto-flagged on first migration run. Admin can flip
+  // the bit later via the employee edit modal checkbox.
+  if (!unames3.has("is_test_account")) {
+    db.exec("ALTER TABLE users ADD COLUMN is_test_account INTEGER NOT NULL DEFAULT 0");
+    db.exec(`
+      UPDATE users
+      SET is_test_account = 1
+      WHERE LOWER(username) = 'admin'
+         OR LOWER(username) LIKE 'test%'
+         OR display_name LIKE '%ทดสอบ%'
+    `);
+  }
   if (!unames3.has("employee_code")) db.exec("ALTER TABLE users ADD COLUMN employee_code TEXT");
   if (!unames3.has("national_id"))   db.exec("ALTER TABLE users ADD COLUMN national_id TEXT");
   if (!unames3.has("bank_name"))     db.exec("ALTER TABLE users ADD COLUMN bank_name TEXT");
