@@ -757,36 +757,25 @@ function EditModal({
                 different days. Lateness now reads from roster
                 directly via effectiveShiftStartByUserForDate(). */}
 
-            {/* Chain-of-command (2026-05). Routes leave / resignation
-                approvals up a per-user hierarchy. Top-of-chain (super_
-                admin or "no manager") leaves the field blank.
-                Escalation window is system-wide (see
-                /admin/system-settings) — admin no longer overrides
-                per user.  */}
-            <div>
-              <label className="label">
-                {t("admin.persona.employees.field.reportsTo")}
-              </label>
-              <select
-                className="input"
-                value={reportsToUserId}
-                onChange={(e) => setReportsToUserId(e.target.value)}
-              >
-                <option value="">
-                  — {t("admin.persona.employees.reportsTo.none")} —
-                </option>
-                {allEmployees
-                  .filter((e2) => e2.id !== employee.id)
-                  .map((e2) => (
-                    <option key={e2.id} value={e2.id}>
-                      {e2.display_name}{e2.role === "admin" ? " (admin)" : ""}
-                    </option>
-                  ))}
-              </select>
-              <p className="text-xs text-slate-500 mt-1">
-                {t("admin.persona.employees.reportsToHint")}
-              </p>
-            </div>
+            {/* Chain-of-command moved to branch-level config (2026-05).
+                The per-user "หัวหน้าโดยตรง" dropdown that used to live
+                here has been replaced by /admin/persona/approval-chain
+                where admin sets a tier 1 (supervisors) + tier 2
+                (executives) roster for the whole branch. Removing the
+                input here so no admin tries to set both — single source
+                of truth. State + save body still send reports_to_user_id
+                unchanged from what was loaded, so the API contract
+                doesn't break for older clients (column stays in DB
+                in case we need to roll back). */}
+            <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+              <span className="font-semibold text-slate-600">สายบังคับบัญชา:</span>{" "}
+              ตั้งระดับสาขาที่หน้า{" "}
+              <Link href="/admin/persona/approval-chain"
+                className="text-brand hover:underline font-medium">
+                สายบังคับบัญชา
+              </Link>{" "}
+              — ไม่ต้องกำหนดรายบุคคลที่นี่
+            </p>
           </div>
         )}
 
