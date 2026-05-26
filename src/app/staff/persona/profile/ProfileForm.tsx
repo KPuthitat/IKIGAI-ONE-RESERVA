@@ -132,6 +132,7 @@ export default function ProfileForm({
         height_cm:       f.height_cm.trim() === "" ? null : Number(f.height_cm),
         weight_kg:       f.weight_kg.trim() === "" ? null : Number(f.weight_kg),
         personal_notes:  f.personal_notes || null,
+        national_id:     f.national_id || null,
         personal_email:  f.personal_email || null,
         corporate_email: f.corporate_email || null,
         mobile_phone:    f.mobile_phone || null,
@@ -294,6 +295,21 @@ export default function ProfileForm({
               onChange={(e) => update("weight_kg", e.target.value)} />
           </Field>
         </Grid>
+        {/* National ID — staff fills it themselves so admin doesn't
+            have to ask. Tax ID and SSO ID default to this same number
+            in Thailand, so we only collect this one. PDPA-sensitive
+            field; only stored, never displayed in notifications. */}
+        <div className="mt-3">
+          <label className="label">{t("staff.persona.profile.field.nationalId")}</label>
+          <input className="input" type="text" inputMode="numeric" maxLength={13}
+            value={f.national_id} disabled={locked}
+            style={UPPER_STYLE}
+            onChange={(e) => update("national_id", e.target.value.toUpperCase())}
+            placeholder="13 DIGITS" />
+          <p className="text-[10px] text-slate-400 mt-1">
+            {t("staff.persona.profile.field.nationalIdHint")}
+          </p>
+        </div>
         <div className="mt-3">
           <label className="label">{t("staff.persona.profile.field.personalNotes")}</label>
           <textarea className="input" rows={2} maxLength={2000}

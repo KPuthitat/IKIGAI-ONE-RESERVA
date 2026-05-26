@@ -29,6 +29,11 @@ const Body = z.object({
   height_cm:       z.number().min(0).max(300).nullable().optional(),
   weight_kg:       z.number().min(0).max(500).nullable().optional(),
   personal_notes:  z.string().max(2000).nullable().optional(),
+  // National ID — 13 digits in Thailand, optional foreign passport
+  // fallback. PDPA-sensitive; only collected so payroll & SSO docs
+  // can quote it. Strict regex would reject foreign passports, so we
+  // just cap length and let admin sanity-check.
+  national_id:     z.string().max(20).nullable().optional(),
   personal_email:  z.string().max(120).nullable().optional(),
   mobile_phone:    z.string().max(40).nullable().optional(),
   work_phone:      z.string().max(40).nullable().optional(),
@@ -86,7 +91,9 @@ export async function PATCH(req: Request) {
   addStr("marital_status");addStr("military_status");
   addStr("blood_type");
   addStr("height_cm");     addStr("weight_kg");
-  addStr("personal_notes");addStr("personal_email");
+  addStr("personal_notes");
+  addStr("national_id");
+  addStr("personal_email");
   addStr("mobile_phone");  addStr("work_phone");
   addStr("line_id");
   addStr("house_address"); addStr("house_subdistrict");

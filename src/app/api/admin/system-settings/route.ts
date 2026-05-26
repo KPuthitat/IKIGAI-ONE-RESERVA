@@ -18,15 +18,11 @@ import { updateSystemSettings, logPersonaAction } from "@/lib/db";
 // require an active admin session.
 
 const Body = z.object({
-  // LINE channel access token — opaque base64 from the LINE Developers
-  // console. We don't validate its format because LINE has rotated
-  // token shapes a few times; just accept any non-empty string and
-  // let LINE's own API reject malformed ones on first push.
   global_line_channel_token: z.string().max(500).optional(),
-  // LINE group ID — starts with 'C' followed by 32 hex chars. We do
-  // a loose check (starts with C, 33 chars total) rather than strict
-  // regex because the prefix has changed historically.
-  global_staff_group_id: z.string().max(100).optional()
+  global_staff_group_id: z.string().max(100).optional(),
+  // Escalation window in hours — 1h to 30 days. Comes off the wire
+  // as a digit string (client uses FormData-style serialisation).
+  default_escalation_hours: z.string().regex(/^\d{1,3}$/).optional()
 });
 
 export async function POST(req: Request) {
@@ -60,7 +56,22 @@ export async function POST(req: Request) {
     }
   }
 
-  updateSystemSettings(parsed.data, user.id);
+  // Escalation hours comes off the wire as a digit string; coerce to
+  // INTEGER + clamp here (server-side defence in depth — client also
+  // clamps in SystemSettingsForm). Missing key = leave column alone.
+  const dbPatch: Parameters<typeof updateSystemSettings>[0] = {};
+  if (parsed.data.global_line_channel_token !== undefined) {
+    dbPatch.global_line_channel_token = parsed.data.global_line_channel_token;
+  }
+  if (parsed.data.global_staff_group_id !== undefined) {
+    dbPatch.global_staff_group_id = parsed.data.global_staff_group_id;
+  }
+  if (parsed.data.default_escalation_hours !== undefined) {
+    const h = parseInt(parsed.data.default_escalation_hours, 10);
+    dbPatch.default_escalation_hours = Math.max(1, Math.min(720, h));
+  }
+
+  updateSystemSettings(dbPatch, user.id);
 
   // Activity log — captures every change to system-wide config.
   // ref_id is null because the entity changed is the singleton row.

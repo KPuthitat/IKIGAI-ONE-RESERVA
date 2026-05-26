@@ -15,6 +15,20 @@ const config: Config = {
           "ui-sans-serif",
           "system-ui",
           "sans-serif"
+        ],
+        // 2026-05: `font-mono` previously resolved to Tailwind's
+        // default ui-monospace stack (Menlo/Consolas/etc.), which
+        // overrode LINE Seed Sans TH for every numeric display —
+        // payslip totals, ref numbers, money values. Owner noticed
+        // the inconsistency on the admin payslip pages. Repointing
+        // mono → LineSeed gives us back the brand font; columnar
+        // alignment is still achieved via the `tabular-nums` utility
+        // (font-variant-numeric: tabular-nums) at each call site.
+        mono: [
+          "var(--font-lineseed)",
+          "ui-sans-serif",
+          "system-ui",
+          "sans-serif"
         ]
       },
       colors: {

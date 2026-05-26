@@ -450,16 +450,12 @@ function EditModal({
   const [payCycle, setPayCycle] = useState<"weekly" | "monthly" | "">(employee.pay_cycle ?? "");
   const [taxMode, setTaxMode] = useState<"sso" | "wht">(employee.salary_tax_mode ?? "sso");
   const [lineUserId, setLineUserId] = useState<string>(employee.line_user_id ?? "");
-  // Expected shift start "HH:MM" — drives late-detection. Empty = unset (no
-  // lateness computed for this staff member). Admin can set per-employee
-  // since shifts vary (kitchen 09:00, FOH 10:30, etc.).
-  const [shiftStartTime, setShiftStartTime] = useState<string>(employee.shift_start_time ?? "");
-  // Chain-of-command — direct manager + per-user escalation window.
+  // shift_start_time + escalation_hours per-user fields removed
+  // 2026-05 (UI deleted in this commit). API still accepts them,
+  // and the save body sends null to clear stale rows.
+  // Chain-of-command — direct manager only.
   const [reportsToUserId, setReportsToUserId] = useState<string>(
     employee.reports_to_user_id == null ? "" : String(employee.reports_to_user_id)
-  );
-  const [escalationHours, setEscalationHours] = useState<string>(
-    employee.escalation_hours == null ? "" : String(employee.escalation_hours)
   );
   // PIN — 4 digits. Empty = leave unchanged. "clear" toggles → send "" to API.
   const [pin, setPin] = useState("");
@@ -583,9 +579,13 @@ function EditModal({
         pay_cycle: payCycle || null,
         salary_tax_mode: taxMode,
         line_user_id: lineUserId.trim() || null,
-        shift_start_time: shiftStartTime.trim() === "" ? null : shiftStartTime.trim(),
+        // shift_start_time + escalation_hours UI removed 2026-05;
+        // the API still accepts them so older clients keep working,
+        // but we explicitly clear to null here so any pre-set values
+        // get cleaned up next time admin saves the row.
+        shift_start_time: null,
         reports_to_user_id: reportsToUserId === "" ? null : Number(reportsToUserId),
-        escalation_hours: escalationHours.trim() === "" ? null : Number(escalationHours)
+        escalation_hours: null
       };
       // PIN — only include if admin is setting/clearing it
       if (clearPin) {
@@ -676,7 +676,17 @@ function EditModal({
           <div>
             <label className="label">คำนำหน้าชื่อ</label>
             <select className="input" value={titlePrefix}
-              onChange={(e) => setTitlePrefix(e.target.value)}>
+              onChange={(e) => {
+                const next = e.target.value;
+                setTitlePrefix(next);
+                // 2026-05: gender is derivable from the Thai title
+                // prefix — admin no longer picks it separately. Only
+                // sets when blank or matches the previous prefix's
+                // implied gender (so admin can still override
+                // intentionally).
+                if (next === "นาย") setGender("male");
+                else if (next === "นาง" || next === "นางสาว") setGender("female");
+              }}>
               <option value="">— ไม่ระบุ —</option>
               <option value="นาย">นาย</option>
               <option value="นาง">นาง</option>
@@ -744,71 +754,41 @@ function EditModal({
             <h4 className="text-sm font-semibold text-slate-700 mb-2">
               {t("admin.persona.employees.section.schedule")}
             </h4>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">
-                  {t("admin.persona.employees.field.shiftStartTime")}
-                </label>
-                <input
-                  type="time"
-                  className="input"
-                  value={shiftStartTime}
-                  onChange={(e) => setShiftStartTime(e.target.value)}
-                  step={60}
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  {t("admin.persona.employees.shiftStartTimeHint")}
-                </p>
-              </div>
-            </div>
+            {/* shift_start_time field removed 2026-05 per owner
+                direction — per-staff fixed time wasn't accurate
+                anyway since the roster assigns different shifts on
+                different days. Lateness now reads from roster
+                directly via effectiveShiftStartByUserForDate(). */}
 
             {/* Chain-of-command (2026-05). Routes leave / resignation
                 approvals up a per-user hierarchy. Top-of-chain (super_
                 admin or "no manager") leaves the field blank.
-                Escalation hours = how long this person may hold a
-                request before it auto-routes to their manager. */}
-            <div className="grid grid-cols-2 gap-3 mt-3">
-              <div>
-                <label className="label">
-                  {t("admin.persona.employees.field.reportsTo")}
-                </label>
-                <select
-                  className="input"
-                  value={reportsToUserId}
-                  onChange={(e) => setReportsToUserId(e.target.value)}
-                >
-                  <option value="">
-                    — {t("admin.persona.employees.reportsTo.none")} —
-                  </option>
-                  {allEmployees
-                    .filter((e2) => e2.id !== employee.id)
-                    .map((e2) => (
-                      <option key={e2.id} value={e2.id}>
-                        {e2.display_name}{e2.role === "admin" ? " (admin)" : ""}
-                      </option>
-                    ))}
-                </select>
-                <p className="text-xs text-slate-500 mt-1">
-                  {t("admin.persona.employees.reportsToHint")}
-                </p>
-              </div>
-              <div>
-                <label className="label">
-                  {t("admin.persona.employees.field.escalationHours")}
-                </label>
-                <input
-                  type="number"
-                  className="input"
-                  value={escalationHours}
-                  onChange={(e) => setEscalationHours(e.target.value)}
-                  min={1}
-                  max={720}
-                  placeholder={t("admin.persona.employees.escalationHoursPlaceholder")}
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  {t("admin.persona.employees.escalationHoursHint")}
-                </p>
-              </div>
+                Escalation window is system-wide (see
+                /admin/system-settings) — admin no longer overrides
+                per user.  */}
+            <div>
+              <label className="label">
+                {t("admin.persona.employees.field.reportsTo")}
+              </label>
+              <select
+                className="input"
+                value={reportsToUserId}
+                onChange={(e) => setReportsToUserId(e.target.value)}
+              >
+                <option value="">
+                  — {t("admin.persona.employees.reportsTo.none")} —
+                </option>
+                {allEmployees
+                  .filter((e2) => e2.id !== employee.id)
+                  .map((e2) => (
+                    <option key={e2.id} value={e2.id}>
+                      {e2.display_name}{e2.role === "admin" ? " (admin)" : ""}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-xs text-slate-500 mt-1">
+                {t("admin.persona.employees.reportsToHint")}
+              </p>
             </div>
           </div>
         )}
@@ -836,18 +816,52 @@ function EditModal({
                     style={{ textTransform: "uppercase" }}
                     onChange={(e) => setNationalId(e.target.value.toUpperCase())}
                     inputMode="numeric" maxLength={13} placeholder="13 DIGITS" />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {t("admin.persona.employees.nationalIdHint")}
+                  </p>
                 </div>
+                {/* Tax ID + SSO ID — in Thailand these are almost always
+                    the same 13-digit national ID. Leaving them blank is
+                    fine; payroll views fall back to national_id. The
+                    "ใช้เลขบัตร" button copies it in for admins who
+                    prefer the explicit value visible on screen. */}
                 <div>
                   <label className="label">{t("admin.persona.employees.field.taxId")}</label>
-                  <input className="input" type="text" value={taxId}
-                    style={{ textTransform: "uppercase" }}
-                    onChange={(e) => setTaxId(e.target.value.toUpperCase())} />
+                  <div className="flex gap-2">
+                    <input className="input flex-1" type="text" value={taxId}
+                      style={{ textTransform: "uppercase" }}
+                      onChange={(e) => setTaxId(e.target.value.toUpperCase())}
+                      placeholder={nationalId ? nationalId : "—"} />
+                    {nationalId && taxId !== nationalId && (
+                      <button type="button"
+                        className="btn-secondary text-[10px] px-2 whitespace-nowrap"
+                        onClick={() => setTaxId(nationalId)}>
+                        {t("admin.persona.employees.useNationalId")}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {t("admin.persona.employees.taxIdHint")}
+                  </p>
                 </div>
                 <div>
                   <label className="label">{t("admin.persona.employees.field.ssoId")}</label>
-                  <input className="input" type="text" value={ssoId}
-                    style={{ textTransform: "uppercase" }}
-                    onChange={(e) => setSsoId(e.target.value.toUpperCase())} />
+                  <div className="flex gap-2">
+                    <input className="input flex-1" type="text" value={ssoId}
+                      style={{ textTransform: "uppercase" }}
+                      onChange={(e) => setSsoId(e.target.value.toUpperCase())}
+                      placeholder={nationalId ? nationalId : "—"} />
+                    {nationalId && ssoId !== nationalId && (
+                      <button type="button"
+                        className="btn-secondary text-[10px] px-2 whitespace-nowrap"
+                        onClick={() => setSsoId(nationalId)}>
+                        {t("admin.persona.employees.useNationalId")}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {t("admin.persona.employees.ssoIdHint")}
+                  </p>
                 </div>
               </div>
             </div>

@@ -70,6 +70,17 @@ input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
   font-family: inherit;
 }
 
+/* 2026-05: numeric font pairing. The tailwind config repoints
+   `font-mono` → LINE Seed Sans TH (the original ui-monospace was
+   off-brand). We implicitly pair it with tabular-nums here so
+   numeric columns (payslip totals, ref_no, money values) line up
+   without every call site having to remember the second utility.
+   To opt out, append `[font-variant-numeric:normal]` arbitrary
+   value or use Tailwind's `proportional-nums` class. */
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Buttons (rounded 10px, bold weight, no easing — matches payroll) ── */
 .btn {
   @apply inline-flex items-center justify-center px-5 py-2.5 rounded-[10px]

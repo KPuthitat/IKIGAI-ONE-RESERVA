@@ -47,6 +47,7 @@ export default function SystemSettingsPage() {
       <SystemSettingsForm
         token={settings.global_line_channel_token}
         groupId={settings.global_staff_group_id}
+        defaultEscalationHours={settings.default_escalation_hours ?? 24}
       />
     </div>
   );

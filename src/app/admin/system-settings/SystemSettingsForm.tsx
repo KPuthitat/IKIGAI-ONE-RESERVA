@@ -22,10 +22,12 @@ import { useLang } from "@/lib/LangProvider";
 
 export default function SystemSettingsForm({
   token,
-  groupId
+  groupId,
+  defaultEscalationHours
 }: {
   token: string | null;
   groupId: string | null;
+  defaultEscalationHours: number;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -38,6 +40,11 @@ export default function SystemSettingsForm({
   const [tokenInput, setTokenInput] = useState("");
   const [tokenRevealed, setTokenRevealed] = useState(false);
   const [groupInput, setGroupInput] = useState(groupId ?? "");
+  // System-wide escalation window for leave / resignation approvals.
+  // Used when an approver doesn't decide within this many hours —
+  // the cron sweep reassigns to their manager. Previously was a
+  // per-user field on the employee form; consolidated here 2026-05.
+  const [escHoursInput, setEscHoursInput] = useState(String(defaultEscalationHours));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -54,6 +61,12 @@ export default function SystemSettingsForm({
       }
       // Group ID is always sent (empty string = clear).
       body.global_staff_group_id = groupInput.trim();
+
+      // Escalation window — always sent. Client clamps to 1–720h
+      // (1 hour to 30 days) so a typo doesn't disable escalation
+      // by sending 0; server validates as well.
+      const escH = Math.max(1, Math.min(720, parseInt(escHoursInput, 10) || 24));
+      body.default_escalation_hours = String(escH);
 
       const res = await fetch(apiUrl("/api/admin/system-settings"), {
         method: "POST",
@@ -136,6 +149,36 @@ export default function SystemSettingsForm({
           />
           <p className="text-[10px] text-slate-400 mt-1">
             {t("admin.systemSettings.lineOa.groupIdHint")}
+          </p>
+        </div>
+      </div>
+
+      {/* Approval escalation — system-wide default window */}
+      <div className="card space-y-3">
+        <div>
+          <h2 className="font-bold text-slate-800 text-sm">
+            {t("admin.systemSettings.escalation.title")}
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            {t("admin.systemSettings.escalation.help")}
+          </p>
+        </div>
+        <div>
+          <label className="label">
+            {t("admin.systemSettings.escalation.hoursLabel")}
+          </label>
+          <input
+            type="number"
+            className="input"
+            value={escHoursInput}
+            onChange={(e) => setEscHoursInput(e.target.value)}
+            min={1}
+            max={720}
+            step={1}
+            inputMode="numeric"
+          />
+          <p className="text-[10px] text-slate-400 mt-1">
+            {t("admin.systemSettings.escalation.hoursHint")}
           </p>
         </div>
       </div>

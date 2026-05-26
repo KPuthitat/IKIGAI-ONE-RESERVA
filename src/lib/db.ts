@@ -1500,6 +1500,11 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "last_cron_run_at")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN last_cron_run_at TEXT");
   }
+  // SSO contribution settings (2026-05-26). Thailand defaults are
+  // (SSO rate + cap live in payroll_settings table — adjust those via
+  //  /admin/persona/payroll/settings, not here. We tried adding a
+  //  duplicate copy on system_settings but it just causes drift between
+  //  the two sources of truth. Single source = payroll_settings.)
 
   // Phase 1C v9: replaces_id for resignation_requests
   const rrcols = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;
@@ -2630,6 +2635,7 @@ export function getSystemSettings(): SystemSettings {
       id: 1,
       global_line_channel_token: null,
       global_staff_group_id: null,
+      default_escalation_hours: 24,
       updated_at: null,
       updated_by: null
     };
@@ -2644,6 +2650,10 @@ export function updateSystemSettings(
   patch: {
     global_line_channel_token?: string | null;
     global_staff_group_id?: string | null;
+    // System-wide escalation window (hours) used by approval-chain
+    // when an approver doesn't decide in time. Per-user override was
+    // removed 2026-05 — this is now the single source of truth.
+    default_escalation_hours?: number | null;
   },
   updatedBy: number
 ): void {
@@ -2666,6 +2676,14 @@ export function updateSystemSettings(
   if (Object.prototype.hasOwnProperty.call(patch, "global_staff_group_id")) {
     sets.push("global_staff_group_id = ?");
     vals.push(norm(patch.global_staff_group_id ?? null));
+  }
+  // Clamp 1–720 again at the DB boundary so a buggy caller can't
+  // disable escalation by sending 0. Column is NOT NULL with default
+  // 24, so we never write null here.
+  if (Object.prototype.hasOwnProperty.call(patch, "default_escalation_hours") && patch.default_escalation_hours != null) {
+    const v = Math.max(1, Math.min(720, Math.round(Number(patch.default_escalation_hours))));
+    sets.push("default_escalation_hours = ?");
+    vals.push(v);
   }
   if (sets.length === 0) return;
   sets.push("updated_at = ?", "updated_by = ?");
@@ -2756,6 +2774,10 @@ export type SystemSettings = {
   id: 1;
   global_line_channel_token: string | null;
   global_staff_group_id: string | null;
+  // Hours an approver has before their pending leave/resignation
+  // requests escalate up the chain-of-command. INTEGER, NOT NULL,
+  // default 24. Set via /admin/system-settings.
+  default_escalation_hours: number;
   updated_at: string | null;
   updated_by: number | null;
 };
