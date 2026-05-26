@@ -144,6 +144,65 @@ export function setBranchTierMembers(
   tx();
 }
 
+/** Sweep one approval-bearing table and bump any tier-1 row whose
+ *  supervisor hasn't decided within the escalation window. Tier-2
+ *  rows are NOT escalated (already at the top — they sit until
+ *  someone in tier 2 acts). Returns the list of (request_id, branch_id)
+ *  tuples so the caller can fire LINE notifications to tier 2.
+ *
+ *  Operates on { leave_requests | resignation_requests }. Their
+ *  column layout is identical for these fields. */
+export function escalateStaleTier1(
+  table: "leave_requests" | "resignation_requests",
+  hours: number
+): { reassigned: number; events: Array<{ requestId: number; branchId: number }> } {
+  const db = getDb();
+  const nowMs = Date.now();
+  const rows = db.prepare(`
+    SELECT id, branch_id, last_escalated_at, created_at
+    FROM ${table}
+    WHERE status = 'pending'
+      AND current_tier = 1
+      AND branch_id IS NOT NULL
+  `).all() as Array<{
+    id: number;
+    branch_id: number;
+    last_escalated_at: string | null;
+    created_at: string;
+  }>;
+
+  let reassigned = 0;
+  const events: Array<{ requestId: number; branchId: number }> = [];
+  const nowIso = new Date().toISOString();
+  const upd = db.prepare(`
+    UPDATE ${table}
+    SET current_tier = 2,
+        last_escalated_at = ?
+    WHERE id = ?
+  `);
+  for (const r of rows) {
+    const ageMs = nowMs - new Date(r.last_escalated_at ?? r.created_at).getTime();
+    if (ageMs < hours * 3_600_000) continue;
+    upd.run(nowIso, r.id);
+    reassigned += 1;
+    events.push({ requestId: r.id, branchId: r.branch_id });
+  }
+  return { reassigned, events };
+}
+
+/** Read the system-wide escalation window. Wrapper so callers don't
+ *  have to import from approval-chain just for this — keeps imports
+ *  consistent now that tier logic lives in this file. */
+export function getSystemEscalationHours(): number {
+  const sys = getDb().prepare(
+    "SELECT default_escalation_hours FROM system_settings WHERE id = 1"
+  ).get() as { default_escalation_hours: number | null } | undefined;
+  if (sys && typeof sys.default_escalation_hours === "number" && sys.default_escalation_hours > 0) {
+    return sys.default_escalation_hours;
+  }
+  return 24;
+}
+
 /** LINE-notification recipients list — every active user in the tier
  *  EXCEPT the requester. Returned as line_user_id only (caller pushes
  *  to LINE OA). Users without a bound LINE account are silently

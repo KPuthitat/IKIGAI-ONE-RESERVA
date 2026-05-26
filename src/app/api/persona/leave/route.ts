@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { buildInitialApprovalFields } from "@/lib/approval-chain";
+import { isBranchChainReady, pickInitialTier } from "@/lib/approval-tiers";
 import { notifyLeaveEvent } from "@/lib/approval-notify";
 import {
   ALL_LEAVE_TYPES, getEligibleLeaveTypesForUser, saveLeaveAttachment,
@@ -164,10 +164,24 @@ export async function POST(req: Request) {
     }
   }
 
-  // Pick the initial approver from the chain-of-command (added 2026-05).
-  // Direct manager first, fallback to super_admin. The cron sweep
-  // escalates if they don't decide within their escalation window.
-  const chain = buildInitialApprovalFields(user.id);
+  // Branch-level chain of command (2026-05-26). The branch must have
+  // at least 1 supervisor + 1 executive configured at
+  // /admin/persona/approval-chain or we reject the submission with a
+  // clear error. Owner direction: NO super_admin fallback — better
+  // for staff to get an error message than to route to the wrong
+  // approver because the branch wasn't set up yet.
+  if (!isBranchChainReady(user.activeBranchId)) {
+    return NextResponse.json(
+      {
+        error: "approval_chain_not_configured",
+        message: "สาขายังไม่ได้ตั้งสายบังคับบัญชา — กรุณาแจ้งแอดมินตั้งค่าที่หน้า /admin/persona/approval-chain ก่อน"
+      },
+      { status: 409 }
+    );
+  }
+  // Self-skip: a requester who is themselves a supervisor (tier 1)
+  // starts at tier 2. pickInitialTier handles this.
+  const initialTier = pickInitialTier(user.activeBranchId, user.id);
 
   const nowIso = new Date().toISOString();
   const refNo = generateRefNo("leave_requests");
@@ -175,14 +189,14 @@ export async function POST(req: Request) {
     INSERT INTO leave_requests
       (user_id, type, date_from, date_to, days, hours, reason, evidence_filename,
        status, created_by, is_special_request, replaces_id, ref_no, branch_id, created_at,
-       current_approver_user_id, escalated_to_level, last_escalated_at, approval_history)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       current_approver_user_id, escalated_to_level, last_escalated_at, approval_history,
+       current_tier)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, NULL, 0, ?, '[]', ?)
   `).run(
     user.id, type, date_from, date_to, days, hours, reason,
     evidenceFilename, user.id, isSpecial ? 1 : 0, replacesId, refNo,
     user.activeBranchId, nowIso,
-    chain.current_approver_user_id, chain.escalated_to_level,
-    chain.last_escalated_at, chain.approval_history
+    nowIso, initialTier
   );
 
   // Fire-and-forget owl notification — DM primary approver +

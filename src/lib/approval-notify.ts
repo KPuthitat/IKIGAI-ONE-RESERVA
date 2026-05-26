@@ -1,22 +1,26 @@
-// Leave-approval notification helper (2026-05).
+// Leave-approval notification helper (2026-05, tier-based rewrite).
 //
 // Pushes owl-themed Flex cards to every stakeholder when one of these
-// events fires on a leave_requests row:
+// events fires on a leave_requests row. Recipients are derived from
+// the branch's tier roster (NOT from the requester's per-user chain
+// as in the previous version):
 //
-//   submitted   → primary approver (A) gets the "action required" card,
-//                 A's manager (backup B) gets an FYI card so they know
-//                 something's brewing in the chain
-//   approved    → requester gets the good-news card, backup gets the
-//                 close-the-loop "no action needed" card
-//   rejected    → requester gets the bad-news card, backup gets the
-//                 close-the-loop card
-//   escalated   → the new primary (B, one step up) gets "your turn"
-//                 card, the old primary (A) gets "you missed it" card
+//   submitted     → all members of current_tier (typically tier 1).
+//                   "Action required — please open and decide."
+//   tier_advanced → all members of the NEW current_tier (after a
+//                   tier-1 approve bumped it to tier 2). Cards say
+//                   "Past tier 1, now your turn."
+//   approved      → requester (final approval at tier 2). Plus a
+//                   close-the-loop FYI to the other tier members
+//                   so they know no further action is needed.
+//   rejected      → requester (final rejection at any tier).
+//   escalated     → all members of tier 2 (auto-escalation from
+//                   tier-1 timeout). Card has an extra-urgent banner.
 //
-// All cards go through the IKIGAI OS *platform* OA (the same one
-// staff added as a friend for clock-in confirmations). Recipients
-// without line_user_id are silently skipped — there's no fallback
-// to email or SMS in this iteration.
+// All cards go through the IKIGAI OS platform OA (same one staff
+// added as a friend for clock-in confirmations). Recipients without
+// line_user_id are silently skipped — there's no fallback to email
+// or SMS in this iteration.
 //
 // Each push is fire-and-forget at the caller's level (we never throw);
 // individual failures are console.warned. We don't write to
@@ -26,12 +30,14 @@
 import { getDb } from "./db";
 import { getPlatformChannel, isChannelReady } from "./messaging-channels";
 import { sendLinePush, personaApprovalNotifyFlex } from "./line";
+import { getTierLineRecipients, type TierLevel } from "./approval-tiers";
 
 export type LeaveApprovalEvent =
-  | "submitted"
-  | "approved"
-  | "rejected"
-  | "escalated";
+  | "submitted"        // → notify current tier
+  | "tier_advanced"    // → notify new (higher) tier after tier-1 approve
+  | "approved"         // → notify requester (final at tier 2)
+  | "rejected"         // → notify requester
+  | "escalated";       // → notify tier 2 after timeout bump
 
 type LeaveRow = {
   id: number;
@@ -41,7 +47,7 @@ type LeaveRow = {
   date_to: string;
   reason: string | null;
   decision_note: string | null;
-  current_approver_user_id: number | null;
+  current_tier: number | null;
   branch_id: number | null;
 };
 
@@ -51,19 +57,18 @@ type UserRow = {
   nickname_th: string | null;
   title_prefix: string | null;
   line_user_id: string | null;
-  reports_to_user_id: number | null;
 };
 
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
 
-function userLabel(u: UserRow): string {
+function userLabel(u: { display_name: string; nickname_th: string | null; title_prefix: string | null }): string {
   const prefix = u.title_prefix ?? "";
   const nick = u.nickname_th?.trim();
   if (nick) return `${prefix}${u.display_name} (${nick})`.trim();
   return `${prefix}${u.display_name}`.trim();
 }
 
-function recipientGreetingName(u: UserRow): string {
+function recipientGreetingName(u: { display_name: string; nickname_th: string | null }): string {
   return u.nickname_th?.trim() || u.display_name;
 }
 
@@ -81,18 +86,17 @@ function leaveLabelTh(type: string): string {
   return m[type] ?? type;
 }
 
-/** Push a single Flex to a recipient via the platform OA. Silently
- *  skip when the recipient has no line_user_id. Returns true on
- *  success, false on any failure (caller may log). */
+/** Push a single Flex to one recipient via the platform OA. Skip if
+ *  no line_user_id. Returns true on success. */
 async function pushOne(
   token: string,
-  recipient: UserRow | undefined,
+  lineUserId: string | null,
   flex: ReturnType<typeof personaApprovalNotifyFlex>
 ): Promise<boolean> {
-  if (!recipient?.line_user_id?.trim()) return false;
+  if (!lineUserId?.trim()) return false;
   try {
     const res = await sendLinePush(token, {
-      to: recipient.line_user_id,
+      to: lineUserId,
       messages: [flex]
     });
     if (!res.ok) {
@@ -106,39 +110,15 @@ async function pushOne(
   }
 }
 
-/** Resolve a user row + their direct manager. Returns null when the
- *  user_id doesn't exist (defensive — caller should ignore). */
-function loadUserWithManager(userId: number): {
-  user: UserRow | null;
-  manager: UserRow | null;
-} {
-  const db = getDb();
-  const user = db.prepare(`
-    SELECT id, display_name, nickname_th, title_prefix, line_user_id,
-           reports_to_user_id
-    FROM users WHERE id = ?
-  `).get(userId) as UserRow | undefined;
-  if (!user) return { user: null, manager: null };
-  let manager: UserRow | null = null;
-  if (user.reports_to_user_id) {
-    manager = db.prepare(`
-      SELECT id, display_name, nickname_th, title_prefix, line_user_id,
-             reports_to_user_id
-      FROM users WHERE id = ? AND status != 'disabled'
-    `).get(user.reports_to_user_id) as UserRow | null ?? null;
-  }
-  return { user, manager };
-}
-
 /** Send the appropriate set of LINE Flex cards for one event on a
- *  leave request. Caller can fire-and-forget (`.catch(...)`). */
+ *  leave request. Caller fire-and-forget. */
 export async function notifyLeaveEvent(args: {
   requestId: number;
   event: LeaveApprovalEvent;
-  /** For "escalated" — the user_id we just escalated FROM (the
-   *  approver who didn't act). The TO side is the new value
-   *  already saved in current_approver_user_id at call time. */
-  escalatedFromUserId?: number | null;
+  /** For "approved"/"rejected" — caller may pass the tier where the
+   *  decision was actually made, so the close-the-loop FYI goes to
+   *  the right cohort. Defaults to the request's current_tier. */
+  decidedTier?: TierLevel;
 }): Promise<void> {
   const platform = getPlatformChannel();
   if (!isChannelReady(platform) || !platform?.channel_token) return;
@@ -147,19 +127,20 @@ export async function notifyLeaveEvent(args: {
   const db = getDb();
   const row = db.prepare(`
     SELECT id, user_id, type, date_from, date_to, reason, decision_note,
-           current_approver_user_id, branch_id
+           current_tier, branch_id
     FROM leave_requests WHERE id = ?
   `).get(args.requestId) as LeaveRow | undefined;
-  if (!row) return;
+  if (!row || !row.branch_id) return;
 
-  const requesterResolved = loadUserWithManager(row.user_id);
-  const requester = requesterResolved.user;
+  const requester = db.prepare(`
+    SELECT id, display_name, nickname_th, title_prefix, line_user_id
+    FROM users WHERE id = ?
+  `).get(row.user_id) as UserRow | undefined;
   if (!requester) return;
+
   const requesterLabel = userLabel(requester);
   const leaveTypeLabel = leaveLabelTh(row.type);
 
-  // CTA destinations — primary/backup → admin leave page; requester
-  // → their own staff leave page.
   const ctaPrimary = {
     url: `${PUBLIC_BASE}/admin/persona/leave?focus=${row.id}`,
     label: "เปิดหน้าอนุมัติ"
@@ -178,29 +159,38 @@ export async function notifyLeaveEvent(args: {
     decisionNote: row.decision_note
   };
 
+  // Tier currently sitting on the request. May be null on legacy
+  // rows submitted before the tier migration — we skip notifying
+  // those gracefully.
+  const tier = (row.current_tier as TierLevel | null) ?? null;
+
   switch (args.event) {
     case "submitted": {
-      // A = current approver (initial assignee); B = A's manager.
-      if (!row.current_approver_user_id) return;
-      const aResolved = loadUserWithManager(row.current_approver_user_id);
-      const a = aResolved.user;
-      const b = aResolved.manager;
-      // Primary
-      if (a) {
-        await pushOne(token, a, personaApprovalNotifyFlex({
+      // Notify everyone in the current tier (excluding requester).
+      if (!tier) return;
+      const recipients = getTierLineRecipients(row.branch_id, tier, requester.id);
+      for (const r of recipients) {
+        await pushOne(token, r.line_user_id, personaApprovalNotifyFlex({
           ...baseDetail,
           variant: "submitted_primary",
-          recipientName: recipientGreetingName(a),
+          recipientName: recipientGreetingName(r),
           ctaUrl: ctaPrimary.url,
           ctaLabel: ctaPrimary.label
         }));
       }
-      // Backup
-      if (b) {
-        await pushOne(token, b, personaApprovalNotifyFlex({
+      return;
+    }
+    case "tier_advanced": {
+      // After a tier-1 approve, the request is now at tier 2.
+      // Notify all tier-2 members (minus the requester, in case
+      // they're on the executive list too via self-skip).
+      if (!tier) return;
+      const recipients = getTierLineRecipients(row.branch_id, tier, requester.id);
+      for (const r of recipients) {
+        await pushOne(token, r.line_user_id, personaApprovalNotifyFlex({
           ...baseDetail,
-          variant: "submitted_backup",
-          recipientName: recipientGreetingName(b),
+          variant: "submitted_primary",
+          recipientName: recipientGreetingName(r),
           ctaUrl: ctaPrimary.url,
           ctaLabel: ctaPrimary.label
         }));
@@ -209,26 +199,24 @@ export async function notifyLeaveEvent(args: {
     }
     case "approved":
     case "rejected": {
-      // Requester gets the news.
-      await pushOne(token, requester, personaApprovalNotifyFlex({
+      // Requester gets the verdict.
+      await pushOne(token, requester.line_user_id, personaApprovalNotifyFlex({
         ...baseDetail,
         variant: args.event === "approved" ? "approved_requester" : "rejected_requester",
         recipientName: recipientGreetingName(requester),
         ctaUrl: ctaSelf.url,
         ctaLabel: ctaSelf.label
       }));
-      // Backup (the original primary's manager) closes the loop.
-      // We look it up from the requester's chain: requester → A → B.
-      // At this point the request might already be decided so
-      // current_approver might still be A; the backup is A's manager.
-      if (requester.reports_to_user_id) {
-        const aResolved = loadUserWithManager(requester.reports_to_user_id);
-        const b = aResolved.manager;
-        if (b) {
-          await pushOne(token, b, personaApprovalNotifyFlex({
+      // Close-the-loop FYI to the other members of the tier where
+      // the decision happened (so they don't keep checking).
+      const closeLoopTier = args.decidedTier ?? tier;
+      if (closeLoopTier) {
+        const others = getTierLineRecipients(row.branch_id, closeLoopTier, requester.id);
+        for (const r of others) {
+          await pushOne(token, r.line_user_id, personaApprovalNotifyFlex({
             ...baseDetail,
             variant: args.event === "approved" ? "approved_backup" : "rejected_backup",
-            recipientName: recipientGreetingName(b),
+            recipientName: recipientGreetingName(r),
             ctaUrl: ctaPrimary.url,
             ctaLabel: ctaPrimary.label
           }));
@@ -237,30 +225,19 @@ export async function notifyLeaveEvent(args: {
       return;
     }
     case "escalated": {
-      // New primary = current_approver_user_id (post-escalation);
-      // Old primary = escalatedFromUserId.
-      if (!row.current_approver_user_id) return;
-      const newPrimary = loadUserWithManager(row.current_approver_user_id).user;
-      if (newPrimary) {
-        await pushOne(token, newPrimary, personaApprovalNotifyFlex({
+      // Auto-escalation from tier-1 timeout. The request's current_
+      // tier has already been bumped to 2 by the cron; notify all of
+      // them with the "your turn now" card variant.
+      if (!tier) return;
+      const recipients = getTierLineRecipients(row.branch_id, tier, requester.id);
+      for (const r of recipients) {
+        await pushOne(token, r.line_user_id, personaApprovalNotifyFlex({
           ...baseDetail,
           variant: "escalated_new",
-          recipientName: recipientGreetingName(newPrimary),
+          recipientName: recipientGreetingName(r),
           ctaUrl: ctaPrimary.url,
           ctaLabel: ctaPrimary.label
         }));
-      }
-      if (args.escalatedFromUserId) {
-        const oldPrimary = loadUserWithManager(args.escalatedFromUserId).user;
-        if (oldPrimary) {
-          await pushOne(token, oldPrimary, personaApprovalNotifyFlex({
-            ...baseDetail,
-            variant: "escalated_old",
-            recipientName: recipientGreetingName(oldPrimary),
-            ctaUrl: ctaPrimary.url,
-            ctaLabel: ctaPrimary.label
-          }));
-        }
       }
       return;
     }

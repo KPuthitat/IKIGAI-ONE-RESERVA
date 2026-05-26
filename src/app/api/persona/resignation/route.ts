@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { computeMinLastWorkingDay, saveLeaveAttachment, generateRefNo } from "@/lib/leave";
-import { buildInitialApprovalFields } from "@/lib/approval-chain";
+import { isBranchChainReady, pickInitialTier } from "@/lib/approval-tiers";
 
 // POST /api/persona/resignation — staff submit
 // กฎ: ต้องลาออกล่วงหน้าอย่างน้อย 1 รอบเงินเดือน (= สิ้นเดือนถัดจากเดือนที่ยื่น)
@@ -10,6 +10,11 @@ import { buildInitialApprovalFields } from "@/lib/approval-chain";
 export async function POST(req: Request) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  // Resignation flows through the same branch-level tier chain as
+  // leave. Without an active branch we can't pick the chain so reject.
+  if (!user.activeBranchId) {
+    return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
+  }
 
   const ct = req.headers.get("content-type") || "";
   if (!ct.includes("multipart/form-data")) {
@@ -73,21 +78,33 @@ export async function POST(req: Request) {
 
   const nowIso = new Date().toISOString();
   const refNo = generateRefNo("resignation_requests");
-  // Chain-of-command initial assignment (added 2026-05). Direct
-  // manager first, cron escalates after escalation_hours of inaction.
-  const chain = buildInitialApprovalFields(user.id);
+  // Branch-level chain of command (2026-05-26). Same gate as the
+  // leave submission endpoint — refuse if the branch hasn't set up
+  // both tiers. Note resignation_requests doesn't carry branch_id
+  // today (it's a future migration); we read it from the requester's
+  // active branch session.
+  if (!isBranchChainReady(user.activeBranchId)) {
+    return NextResponse.json(
+      {
+        error: "approval_chain_not_configured",
+        message: "สาขายังไม่ได้ตั้งสายบังคับบัญชา — กรุณาแจ้งแอดมินตั้งค่าที่หน้า /admin/persona/approval-chain ก่อน"
+      },
+      { status: 409 }
+    );
+  }
+  const initialTier = pickInitialTier(user.activeBranchId, user.id);
   const tx = db.transaction(() => {
     const r = db.prepare(`
       INSERT INTO resignation_requests
         (user_id, proposed_last_day, computed_min_last_day, reason, evidence_filename,
          is_special_request, status, ref_no, created_at,
-         current_approver_user_id, escalated_to_level, last_escalated_at, approval_history)
-      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+         current_approver_user_id, escalated_to_level, last_escalated_at, approval_history,
+         current_tier)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, NULL, 0, ?, '[]', ?)
     `).run(
       user.id, proposed, minLastDay, reason, evidenceFilename,
       isSpecial ? 1 : 0, refNo, nowIso,
-      chain.current_approver_user_id, chain.escalated_to_level,
-      chain.last_escalated_at, chain.approval_history
+      nowIso, initialTier
     );
     db.prepare(
       "UPDATE users SET resignation_unlocked_at = NULL, resignation_unlocked_by = NULL WHERE id = ?"

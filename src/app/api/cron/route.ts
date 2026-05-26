@@ -31,7 +31,7 @@ import {
 } from "@/lib/shift-notify";
 import { reportError } from "@/lib/error-reporter";
 import { expireOldRedemptions } from "@/lib/redemption";
-import { escalateStaleRequests } from "@/lib/approval-chain";
+import { escalateStaleTier1, getSystemEscalationHours } from "@/lib/approval-tiers";
 import { notifyLeaveEvent } from "@/lib/approval-notify";
 
 export async function POST(req: Request) {
@@ -195,24 +195,24 @@ async function runCron(): Promise<NextResponse> {
     reportError(e, "cron redemption-expiry", {});
   }
 
-  // Chain-of-command escalation sweep (added 2026-05). Any pending
-  // leave/resignation request whose current approver has held it
-  // beyond their escalation window gets reassigned to the next
-  // person up the chain. Idempotent — runs every cron tick.
+  // Tier-1 escalation sweep (2026-05 tier-based rewrite). Any pending
+  // leave/resignation row sitting at tier 1 longer than the system-
+  // wide escalation window gets bumped to tier 2; tier 2 rows are
+  // already at the top so they're not escalated further (they sit
+  // until an executive acts). Idempotent — runs every cron tick.
   let escalatedLeave = 0;
   let escalatedResign = 0;
+  const escHours = getSystemEscalationHours();
   try {
-    const l = escalateStaleRequests("leave_requests");
+    const l = escalateStaleTier1("leave_requests", escHours);
     escalatedLeave = l.reassigned;
-    // Fire owl notifications for each leave that just escalated —
-    // DM the new primary ("your turn") and the old primary
-    // ("you missed it"). Fire-and-forget, individual failures don't
-    // affect the cron summary.
+    // Fire owl notifications to all tier-2 members of each branch
+    // where a request just escalated. Fire-and-forget — individual
+    // failures don't affect the cron summary.
     for (const ev of l.events) {
       notifyLeaveEvent({
         requestId: ev.requestId,
-        event: "escalated",
-        escalatedFromUserId: ev.fromUserId
+        event: "escalated"
       }).catch((e) => console.warn("leave notify (escalated) failed", e));
     }
   } catch (e) {
@@ -220,7 +220,7 @@ async function runCron(): Promise<NextResponse> {
     reportError(e, "cron leave-escalation", {});
   }
   try {
-    const r = escalateStaleRequests("resignation_requests");
+    const r = escalateStaleTier1("resignation_requests", escHours);
     escalatedResign = r.reassigned;
     // Resignation notifications follow the same pattern but the
     // helper is leave-specific for now — track as #38 to extend it.
