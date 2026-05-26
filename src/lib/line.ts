@@ -264,7 +264,7 @@ export function personaClockInFlex(args: ClockInCardArgs): LineFlexMessage {
 
   const bubble = {
     type: "bubble",
-    size: "kilo",
+    size: "giga",
     // ── Header: branch CI colour (falls back to ink navy) with
     // IKIGAI OS / PERSONA branding bar ──
     header: {
@@ -522,7 +522,7 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
 
   const bubble = {
     type: "bubble",
-    size: "kilo",
+    size: "giga",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor,
@@ -740,7 +740,7 @@ export function cancelledBookingFlex(args: CancelledBookingCardArgs): LineFlexMe
 
   const bubble = {
     type: "bubble",
-    size: "kilo",
+    size: "giga",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor,
@@ -895,7 +895,7 @@ export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
 
   const bubble = {
     type: "bubble",
-    size: "kilo",
+    size: "giga",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor,
@@ -2458,6 +2458,10 @@ export type ShiftReminderArgs = {
   dateLabel: string;                       // human-friendly: "วันจันทร์ที่ 26 พ.ค. 2569"
   displayName: string;
   titlePrefix: string | null;
+  /** Thai nickname (ชื่อเล่น) when set — used in the greeting
+   *  ("สวัสดีครับพี่ <ชื่อเล่น>") so the card feels personal.
+   *  Falls back silently to displayName when blank/null. */
+  nickname?: string | null;
   kind: "work" | "day_off" | "on_leave";
   shifts: Array<{ position: string; start: string; end: string }>;
   leaveTypeLabel: string | null;           // pre-localised — e.g. "ลาป่วย"
@@ -2519,20 +2523,27 @@ export function personaShiftReminderFlex(args: ShiftReminderArgs): LineFlexMessa
   } as const;
   const banner = bannerByKind[args.kind];
 
-  const nameDisplay = args.titlePrefix
-    ? `${args.titlePrefix}${args.displayName}`
-    : args.displayName;
+  // Preferred salutation order: nickname (warm) → full name with
+  // prefix (formal) → bare displayName. Owner direction 2026-05:
+  // the owl greets with the staff's ชื่อเล่น so it feels personal,
+  // not corporate.
+  const nameDisplay = (args.nickname && args.nickname.trim())
+    ? args.nickname.trim()
+    : args.titlePrefix
+      ? `${args.titlePrefix}${args.displayName}`
+      : args.displayName;
 
-  // Body rows — only the work kind has a shift list.
+  // Body rows — only the work kind has a shift list. Bumped to "md"
+  // size since the bubble is now giga (wider).
   const shiftRows = args.kind === "work" && args.shifts.length > 0
     ? args.shifts.map((s) => ({
         type: "box", layout: "horizontal", spacing: "sm",
         contents: [
-          { type: "text", text: s.position, size: "sm", color: COLOR_LABEL, flex: 4, wrap: true },
+          { type: "text", text: s.position, size: "md", color: COLOR_LABEL, flex: 4, wrap: true },
           {
             type: "text",
             text: `${s.start}–${s.end} น.`,
-            size: "sm", color: COLOR_TEXT_DARK, weight: "bold",
+            size: "md", color: COLOR_TEXT_DARK, weight: "bold",
             flex: 5, align: "end", wrap: true
           }
         ]
@@ -2541,7 +2552,7 @@ export function personaShiftReminderFlex(args: ShiftReminderArgs): LineFlexMessa
 
   const bubble = {
     type: "bubble",
-    size: "kilo",
+    size: "giga",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor,
@@ -2550,62 +2561,65 @@ export function personaShiftReminderFlex(args: ShiftReminderArgs): LineFlexMessa
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
-            { type: "text", text: "น้องฮูก · ผู้ช่วย", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
+            { type: "text", text: "น้องฮูก · ผู้ช่วย", color: "#cbd5e1", size: "xs", align: "end", flex: 1 }
           ]
         },
         {
           type: "box", layout: "baseline", spacing: "sm", margin: "md",
           contents: [
-            { type: "text", text: "🦉", color: "#ffffff", size: "xl", flex: 0 },
-            { type: "text", text: args.dateLabel, color: "#ffffff", size: "sm", weight: "bold", wrap: true }
+            { type: "text", text: "🦉", color: "#ffffff", size: "xxl", flex: 0 },
+            { type: "text", text: args.dateLabel, color: "#ffffff", size: "md", weight: "bold", wrap: true }
           ]
         }
       ]
     },
     body: {
       type: "box", layout: "vertical", spacing: "md",
-      paddingAll: "20px",
+      paddingAll: "24px",
       contents: [
-        // Greeting line — warm opener with the recipient's name.
+        // Greeting line — warm opener with the recipient's name
+        // (prefers ชื่อเล่น). One size up now that we're using a
+        // giga bubble.
         {
           type: "text",
           text: `${greeting}${nameDisplay ? ` ${nameDisplay}` : ""}`,
-          size: "sm", color: COLOR_TEXT_DARK, wrap: true
+          size: "md", color: COLOR_TEXT_DARK, weight: "bold", wrap: true
         },
         // Branch pill
         {
           type: "text",
           text: args.branchName,
-          size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "xs"
+          size: "sm", color: COLOR_TEXT_MUTED, wrap: true, margin: "xs"
         },
-        // Coloured banner — kind indicator + icon.
+        // Coloured banner — kind indicator + icon. Bigger padding +
+        // larger text on the wider bubble.
         {
           type: "box", layout: "vertical",
-          paddingAll: "12px", margin: "md",
+          paddingAll: "16px", margin: "md",
           backgroundColor: banner.color + "20", // 20% alpha
-          cornerRadius: "8px",
+          cornerRadius: "10px",
           borderWidth: "1px",
           borderColor: banner.color,
           contents: [
             {
               type: "text",
               text: `${banner.icon} ${banner.label}`,
-              size: "sm", color: banner.color, weight: "bold", wrap: true, align: "center"
+              size: "lg", color: banner.color, weight: "bold", wrap: true, align: "center"
             }
           ]
         },
         // Work kind only — list of shifts.
         ...(shiftRows.length > 0 ? [
           { type: "separator", margin: "md", color: COLOR_DIVIDER },
-          { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: shiftRows }
+          { type: "box", layout: "vertical", spacing: "md", margin: "md", contents: shiftRows }
         ] : []),
         // Closing line
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
         {
           type: "text",
           text: closing,
-          size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "md"
+          size: "sm", color: COLOR_TEXT_MUTED, wrap: true, margin: "md"
         }
       ]
     },
@@ -2799,7 +2813,7 @@ export function disciplinaryWarningFlex(args: DisciplinaryFlexArgs): LineFlexMes
     "หนังสือเตือนครั้งสุดท้าย";
   const headerColor = args.headerColor || "#7f1d1d"; // rose-900
   const bubble = {
-    type: "bubble", size: "kilo",
+    type: "bubble", size: "giga",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor, paddingAll: "20px",
@@ -2901,7 +2915,7 @@ export function rosterPublishedFlex(args: RosterPublishedFlexArgs): LineFlexMess
     ? `ทางบริษัทได้เผยแพร่ตารางปฏิบัติงานประจำเดือน${monthName}แล้ว หากมีข้อสงสัย หรือต้องการเปลี่ยนแปลงตารางการทำงาน ให้ติดต่อกับหัวหน้างานของคุณ`
     : `ทางบริษัทได้ปรับปรุงตารางปฏิบัติงานประจำเดือน${monthName} กรุณาตรวจสอบอีกครั้ง หากมีข้อสงสัย หรือต้องการเปลี่ยนแปลงตารางการทำงาน ให้ติดต่อกับหัวหน้างานของคุณ`;
   const bubble = {
-    type: "bubble", size: "kilo",
+    type: "bubble", size: "giga",
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor, paddingAll: "20px",

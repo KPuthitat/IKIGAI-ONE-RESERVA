@@ -42,11 +42,11 @@ export type ShiftLine = { position: string; start: string; end: string };
 
 export type ShiftRecipient =
   | { kind: "work"; userId: number; displayName: string; titlePrefix: string | null;
-      lineUserId: string; shifts: ShiftLine[] }
+      nickname: string | null; lineUserId: string; shifts: ShiftLine[] }
   | { kind: "day_off"; userId: number; displayName: string; titlePrefix: string | null;
-      lineUserId: string }
+      nickname: string | null; lineUserId: string }
   | { kind: "on_leave"; userId: number; displayName: string; titlePrefix: string | null;
-      lineUserId: string; leaveType: string };
+      nickname: string | null; lineUserId: string; leaveType: string };
 
 /** Build per-recipient classification for dateBkk at branch.
  *  Includes only staff with line_user_id bound (can't DM otherwise).
@@ -59,8 +59,13 @@ export function buildShiftRecipients(
   const db = getDb();
 
   // 1) All staff at branch with LINE — these are the candidates.
+  //    nickname_th is the Thai short name (ชื่อเล่น) admin sets per
+  //    employee — used for the warm "สวัสดีครับพี่ <ชื่อเล่น>" opener
+  //    on the shift card so it feels personal. Falls back to
+  //    displayName when nickname is blank.
   const staffRows = db.prepare(`
-    SELECT u.id AS user_id, u.display_name, u.title_prefix, u.line_user_id
+    SELECT u.id AS user_id, u.display_name, u.title_prefix, u.nickname_th,
+           u.line_user_id
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
     WHERE ub.branch_id = ?
@@ -70,7 +75,8 @@ export function buildShiftRecipients(
     ORDER BY u.display_name COLLATE NOCASE ASC
   `).all(branchId) as Array<{
     user_id: number; display_name: string;
-    title_prefix: string | null; line_user_id: string;
+    title_prefix: string | null; nickname_th: string | null;
+    line_user_id: string;
   }>;
   if (staffRows.length === 0) return [];
 
@@ -126,12 +132,14 @@ export function buildShiftRecipients(
   const out: ShiftRecipient[] = [];
   for (const s of staffRows) {
     const leaveType = leaveByUser.get(s.user_id) ?? null;
+    const nickname = s.nickname_th?.trim() || null;
     if (leaveType) {
       out.push({
         kind: "on_leave",
         userId: s.user_id,
         displayName: s.display_name,
         titlePrefix: s.title_prefix,
+        nickname,
         lineUserId: s.line_user_id,
         leaveType
       });
@@ -144,6 +152,7 @@ export function buildShiftRecipients(
         userId: s.user_id,
         displayName: s.display_name,
         titlePrefix: s.title_prefix,
+        nickname,
         lineUserId: s.line_user_id,
         shifts: roster.shifts
       });
@@ -152,14 +161,13 @@ export function buildShiftRecipients(
     // Owner direction 2026-05: an empty roster cell = "วันหยุด
     // ประจำสัปดาห์" by default. Sends the warm day-off card
     // ("วันนี้เป็นวันของพี่") to every active staff who isn't
-    // working and isn't on leave today. Explicit OFF in the
-    // roster reaches the same branch — both produce a day_off
-    // card with the same warm copy.
+    // working and isn't on leave today.
     out.push({
       kind: "day_off",
       userId: s.user_id,
       displayName: s.display_name,
       titlePrefix: s.title_prefix,
+      nickname,
       lineUserId: s.line_user_id
     });
   }
@@ -202,6 +210,7 @@ export async function sendShiftNotifications(
       dateLabel: friendlyDate,
       displayName: rec.displayName,
       titlePrefix: rec.titlePrefix,
+      nickname: rec.nickname,
       kind: rec.kind,
       shifts: rec.kind === "work" ? rec.shifts : [],
       leaveTypeLabel: rec.kind === "on_leave" ? leaveLabelTh(rec.leaveType) : null,
