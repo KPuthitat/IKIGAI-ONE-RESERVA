@@ -94,6 +94,19 @@ export default function ProfileForm({
   const update = <K extends keyof typeof f>(k: K, v: typeof f[K]) =>
     setF((prev) => ({ ...prev, [k]: v }));
 
+  // 2026-05 owner direction: identifiers + English-only fields should
+  // auto-uppercase. Thai characters have no upper/lower distinction so
+  // toUpperCase() is a no-op for those — safe to apply broadly.
+  // Exclusions live next to each input directly (email / line_id /
+  // free-text notes keep their case).
+  const upperHandler = (k: keyof typeof f) =>
+    (e: React.ChangeEvent<HTMLInputElement>) =>
+      update(k, e.target.value.toUpperCase() as typeof f[typeof k]);
+  // CSS-only visual transform for instant feedback while typing — pairs
+  // with upperHandler above. Also applied to date inputs so their
+  // browser-rendered DD/MM/YYYY placeholder reads uppercase.
+  const UPPER_STYLE: React.CSSProperties = { textTransform: "uppercase" };
+
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -203,30 +216,31 @@ export default function ProfileForm({
           </Field>
           <Field label={t("staff.persona.profile.field.firstNameTh")}>
             <input className="input" value={f.first_name_th} disabled={locked}
-              onChange={(e) => update("first_name_th", e.target.value)} />
+              style={UPPER_STYLE} onChange={upperHandler("first_name_th")} />
           </Field>
           <Field label={t("staff.persona.profile.field.lastNameTh")}>
             <input className="input" value={f.last_name_th} disabled={locked}
-              onChange={(e) => update("last_name_th", e.target.value)} />
+              style={UPPER_STYLE} onChange={upperHandler("last_name_th")} />
           </Field>
           <Field label={t("staff.persona.profile.field.firstNameEn")}>
             <input className="input" value={f.first_name_en} disabled={locked}
-              onChange={(e) => update("first_name_en", e.target.value)} />
+              style={UPPER_STYLE} onChange={upperHandler("first_name_en")} />
           </Field>
           <Field label={t("staff.persona.profile.field.lastNameEn")}>
             <input className="input" value={f.last_name_en} disabled={locked}
-              onChange={(e) => update("last_name_en", e.target.value)} />
+              style={UPPER_STYLE} onChange={upperHandler("last_name_en")} />
           </Field>
           <Field label={t("staff.persona.profile.field.nicknameTh")}>
             <input className="input" value={f.nickname_th} disabled={locked}
-              onChange={(e) => update("nickname_th", e.target.value)} />
+              style={UPPER_STYLE} onChange={upperHandler("nickname_th")} />
           </Field>
           <Field label={t("staff.persona.profile.field.nicknameEn")}>
             <input className="input" value={f.nickname_en} disabled={locked}
-              onChange={(e) => update("nickname_en", e.target.value)} />
+              style={UPPER_STYLE} onChange={upperHandler("nickname_en")} />
           </Field>
           <Field label={t("staff.persona.profile.field.dob")}>
             <input type="date" className="input" value={f.dob} disabled={locked}
+              style={UPPER_STYLE}
               onChange={(e) => update("dob", e.target.value)} />
           </Field>
           <Field label={t("staff.persona.profile.field.bloodType")}>
@@ -239,15 +253,15 @@ export default function ProfileForm({
           </Field>
           <Field label={t("staff.persona.profile.field.nationality")}>
             <input className="input" value={f.nationality} disabled={locked}
-              onChange={(e) => update("nationality", e.target.value)} />
+              style={UPPER_STYLE} onChange={upperHandler("nationality")} />
           </Field>
           <Field label={t("staff.persona.profile.field.race")}>
             <input className="input" value={f.race} disabled={locked}
-              onChange={(e) => update("race", e.target.value)} />
+              style={UPPER_STYLE} onChange={upperHandler("race")} />
           </Field>
           <Field label={t("staff.persona.profile.field.religion")}>
             <input className="input" value={f.religion} disabled={locked}
-              onChange={(e) => update("religion", e.target.value)} />
+              style={UPPER_STYLE} onChange={upperHandler("religion")} />
           </Field>
           <Field label={t("staff.persona.profile.field.maritalStatus")}>
             <select className="input" value={f.marital_status} disabled={locked}
@@ -293,13 +307,13 @@ export default function ProfileForm({
         <Grid>
           <Field label={t("staff.persona.profile.field.mobilePhone")}>
             <input className="input" inputMode="tel" value={f.mobile_phone}
-              disabled={locked}
-              onChange={(e) => update("mobile_phone", e.target.value)} />
+              disabled={locked} style={UPPER_STYLE}
+              onChange={upperHandler("mobile_phone")} />
           </Field>
           <Field label={t("staff.persona.profile.field.workPhone")}>
             <input className="input" inputMode="tel" value={f.work_phone}
-              disabled={locked}
-              onChange={(e) => update("work_phone", e.target.value)} />
+              disabled={locked} style={UPPER_STYLE}
+              onChange={upperHandler("work_phone")} />
           </Field>
           <Field label={t("staff.persona.profile.field.personalEmail")}>
             <input className="input" type="email" value={f.personal_email}
@@ -325,24 +339,24 @@ export default function ProfileForm({
           <Grid>
             <Field label={t("staff.persona.profile.field.address")} colSpan={2}>
               <input className="input" value={f.house_address} disabled={locked}
-                onChange={(e) => update("house_address", e.target.value)} />
+                style={UPPER_STYLE} onChange={upperHandler("house_address")} />
             </Field>
             <Field label={t("staff.persona.profile.field.subdistrict")}>
               <input className="input" value={f.house_subdistrict} disabled={locked}
-                onChange={(e) => update("house_subdistrict", e.target.value)} />
+                style={UPPER_STYLE} onChange={upperHandler("house_subdistrict")} />
             </Field>
             <Field label={t("staff.persona.profile.field.district")}>
               <input className="input" value={f.house_district} disabled={locked}
-                onChange={(e) => update("house_district", e.target.value)} />
+                style={UPPER_STYLE} onChange={upperHandler("house_district")} />
             </Field>
             <Field label={t("staff.persona.profile.field.province")}>
               <input className="input" value={f.house_province} disabled={locked}
-                onChange={(e) => update("house_province", e.target.value)} />
+                style={UPPER_STYLE} onChange={upperHandler("house_province")} />
             </Field>
             <Field label={t("staff.persona.profile.field.postcode")}>
               <input className="input" inputMode="numeric" maxLength={5}
-                value={f.house_postcode} disabled={locked}
-                onChange={(e) => update("house_postcode", e.target.value)} />
+                value={f.house_postcode} disabled={locked} style={UPPER_STYLE}
+                onChange={upperHandler("house_postcode")} />
             </Field>
           </Grid>
         </div>
@@ -360,24 +374,24 @@ export default function ProfileForm({
             <Grid>
               <Field label={t("staff.persona.profile.field.address")} colSpan={2}>
                 <input className="input" value={f.contact_address} disabled={locked}
-                  onChange={(e) => update("contact_address", e.target.value)} />
+                  style={UPPER_STYLE} onChange={upperHandler("contact_address")} />
               </Field>
               <Field label={t("staff.persona.profile.field.subdistrict")}>
                 <input className="input" value={f.contact_subdistrict} disabled={locked}
-                  onChange={(e) => update("contact_subdistrict", e.target.value)} />
+                  style={UPPER_STYLE} onChange={upperHandler("contact_subdistrict")} />
               </Field>
               <Field label={t("staff.persona.profile.field.district")}>
                 <input className="input" value={f.contact_district} disabled={locked}
-                  onChange={(e) => update("contact_district", e.target.value)} />
+                  style={UPPER_STYLE} onChange={upperHandler("contact_district")} />
               </Field>
               <Field label={t("staff.persona.profile.field.province")}>
                 <input className="input" value={f.contact_province} disabled={locked}
-                  onChange={(e) => update("contact_province", e.target.value)} />
+                  style={UPPER_STYLE} onChange={upperHandler("contact_province")} />
               </Field>
               <Field label={t("staff.persona.profile.field.postcode")}>
                 <input className="input" inputMode="numeric" maxLength={5}
-                  value={f.contact_postcode} disabled={locked}
-                  onChange={(e) => update("contact_postcode", e.target.value)} />
+                  value={f.contact_postcode} disabled={locked} style={UPPER_STYLE}
+                  onChange={upperHandler("contact_postcode")} />
               </Field>
             </Grid>
           )}
@@ -390,16 +404,16 @@ export default function ProfileForm({
           <Grid>
             <Field label={t("staff.persona.profile.field.emergencyName")}>
               <input className="input" value={f.emergency_name} disabled={locked}
-                onChange={(e) => update("emergency_name", e.target.value)} />
+                style={UPPER_STYLE} onChange={upperHandler("emergency_name")} />
             </Field>
             <Field label={t("staff.persona.profile.field.emergencyRelationship")}>
               <input className="input" value={f.emergency_relationship} disabled={locked}
-                onChange={(e) => update("emergency_relationship", e.target.value)} />
+                style={UPPER_STYLE} onChange={upperHandler("emergency_relationship")} />
             </Field>
             <Field label={t("staff.persona.profile.field.emergencyPhone")}>
               <input className="input" inputMode="tel" value={f.emergency_phone}
-                disabled={locked}
-                onChange={(e) => update("emergency_phone", e.target.value)} />
+                disabled={locked} style={UPPER_STYLE}
+                onChange={upperHandler("emergency_phone")} />
             </Field>
           </Grid>
         </div>
@@ -410,8 +424,8 @@ export default function ProfileForm({
         <Section title={t("staff.persona.profile.section.employment")}>
           <Grid>
             <Field label={t("staff.persona.profile.field.jobTitle")}>
-              <input className="input" value={f.job_title}
-                onChange={(e) => update("job_title", e.target.value)} />
+              <input className="input" value={f.job_title} style={UPPER_STYLE}
+                onChange={upperHandler("job_title")} />
             </Field>
             <Field label={t("staff.persona.profile.field.supervisor")}>
               <select className="input"
@@ -433,6 +447,7 @@ export default function ProfileForm({
             </Field>
             <Field label={t("staff.persona.profile.field.contractEndDate")}>
               <input type="date" className="input" value={f.contract_end_date}
+                style={UPPER_STYLE}
                 onChange={(e) => update("contract_end_date", e.target.value)} />
             </Field>
             <Field label={t("staff.persona.profile.field.hireMode")}>
@@ -462,7 +477,7 @@ export default function ProfileForm({
             </Field>
             <Field label={t("staff.persona.profile.field.driverLicenseNo")}>
               <input className="input" value={f.driver_license_no}
-                onChange={(e) => update("driver_license_no", e.target.value)} />
+                style={UPPER_STYLE} onChange={upperHandler("driver_license_no")} />
             </Field>
           </Grid>
           <div className="mt-3 space-y-2">

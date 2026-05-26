@@ -690,7 +690,8 @@ function EditModal({
               className="input"
               value={nicknameTh}
               maxLength={60}
-              onChange={(e) => setNicknameTh(e.target.value)}
+              style={{ textTransform: "uppercase" }}
+              onChange={(e) => setNicknameTh(e.target.value.toUpperCase())}
               placeholder="เช่น ตูน ปุ๋ย เปิ้ล"
             />
             <p className="text-[10px] text-slate-400 mt-1">
@@ -723,6 +724,7 @@ function EditModal({
           <input
             type="date" className="input"
             value={hireDate}
+            style={{ textTransform: "uppercase" }}
             onChange={(e) => setHireDate(e.target.value)}
           />
           <p className="text-xs text-slate-500 mt-1">
@@ -824,24 +826,28 @@ function EditModal({
                 <div>
                   <label className="label">{t("admin.persona.employees.field.employeeCode")}</label>
                   <input className="input" type="text" value={employeeCode}
-                    onChange={(e) => setEmployeeCode(e.target.value)}
-                    placeholder="e.g. NM001" />
+                    style={{ textTransform: "uppercase" }}
+                    onChange={(e) => setEmployeeCode(e.target.value.toUpperCase())}
+                    placeholder="E.G. NM001" />
                 </div>
                 <div>
                   <label className="label">{t("admin.persona.employees.field.nationalId")}</label>
                   <input className="input" type="text" value={nationalId}
-                    onChange={(e) => setNationalId(e.target.value)}
-                    inputMode="numeric" maxLength={13} placeholder="13 digits" />
+                    style={{ textTransform: "uppercase" }}
+                    onChange={(e) => setNationalId(e.target.value.toUpperCase())}
+                    inputMode="numeric" maxLength={13} placeholder="13 DIGITS" />
                 </div>
                 <div>
                   <label className="label">{t("admin.persona.employees.field.taxId")}</label>
                   <input className="input" type="text" value={taxId}
-                    onChange={(e) => setTaxId(e.target.value)} />
+                    style={{ textTransform: "uppercase" }}
+                    onChange={(e) => setTaxId(e.target.value.toUpperCase())} />
                 </div>
                 <div>
                   <label className="label">{t("admin.persona.employees.field.ssoId")}</label>
                   <input className="input" type="text" value={ssoId}
-                    onChange={(e) => setSsoId(e.target.value)} />
+                    style={{ textTransform: "uppercase" }}
+                    onChange={(e) => setSsoId(e.target.value.toUpperCase())} />
                 </div>
               </div>
             </div>
@@ -854,13 +860,15 @@ function EditModal({
                 <div>
                   <label className="label">{t("admin.persona.employees.field.bankName")}</label>
                   <input className="input" type="text" value={bankName}
-                    onChange={(e) => setBankName(e.target.value)}
+                    style={{ textTransform: "uppercase" }}
+                    onChange={(e) => setBankName(e.target.value.toUpperCase())}
                     placeholder="KTB / SCB / BBL ..." />
                 </div>
                 <div>
                   <label className="label">{t("admin.persona.employees.field.bankAccount")}</label>
                   <input className="input" type="text" value={bankAccount}
-                    onChange={(e) => setBankAccount(e.target.value)} />
+                    style={{ textTransform: "uppercase" }}
+                    onChange={(e) => setBankAccount(e.target.value.toUpperCase())} />
                 </div>
               </div>
             </div>
