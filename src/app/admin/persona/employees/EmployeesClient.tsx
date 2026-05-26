@@ -19,6 +19,7 @@ export type EmployeeRow = {
   // out at the page-server query level so they never reach this client.
   status: "active" | "pending_invite" | "disabled";
   title_prefix: string | null;
+  nickname_th: string | null;
   gender: "male" | "female" | null;
   employment_type: "pt" | "ft" | null;
   hire_date: string | null;
@@ -236,13 +237,14 @@ export default function EmployeesClient({
               <th className="py-2 pr-3">{t("admin.persona.employees.col.hireDate")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.payRate")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.pin")}</th>
+              <th className="py-2 pr-3">พร้อมแจ้งเตือน</th>
               <th className="py-2 pr-3 w-20"></th>
             </tr>
           </thead>
           <tbody>
             {visibleEmployees.length === 0 && (
               <tr>
-                <td colSpan={9} className="py-8 text-center text-sm text-slate-400">
+                <td colSpan={10} className="py-8 text-center text-sm text-slate-400">
                   {t("admin.persona.employees.noMatch")}
                 </td>
               </tr>
@@ -284,6 +286,42 @@ export default function EmployeesClient({
                     {u.has_pin
                       ? <span className="text-emerald-600">✓</span>
                       : <span className="text-slate-300">—</span>}
+                  </td>
+                  {/* Notify-readiness chip — green when LINE bound +
+                      nickname set (greeting works), amber when LINE
+                      bound but no nickname, red when no LINE (can't
+                      DM at all). Saves admin from opening every row
+                      to find who still needs to bind LINE. */}
+                  <td className="py-2 pr-3">
+                    {(() => {
+                      const hasLine = !!u.line_user_id?.trim();
+                      const hasNick = !!u.nickname_th?.trim();
+                      if (hasLine && hasNick) {
+                        return (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold whitespace-nowrap">
+                            ✓ ครบ
+                          </span>
+                        );
+                      }
+                      if (hasLine && !hasNick) {
+                        return (
+                          <span
+                            className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold whitespace-nowrap"
+                            title="ผูก LINE แล้ว แต่ยังไม่มีชื่อเล่น — น้องฮูกจะทักด้วยชื่อจริง"
+                          >
+                            ⚠ ขาดชื่อเล่น
+                          </span>
+                        );
+                      }
+                      return (
+                        <span
+                          className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-bold whitespace-nowrap"
+                          title="ยังไม่ผูก LINE — ไม่ได้รับการแจ้งเตือนทาง LINE"
+                        >
+                          ✗ ยังไม่ผูก LINE
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="py-2 pr-3 text-right">
                     <div className="flex flex-col items-end gap-1">
@@ -390,6 +428,9 @@ function EditModal({
   }
 
   const [titlePrefix, setTitlePrefix] = useState<string>(employee.title_prefix ?? "");
+  // ชื่อเล่น (Thai nickname) — drives the warm "สวัสดีครับพี่ <ชื่อเล่น>"
+  // greeting on the owl shift-reminder Flex. Optional but recommended.
+  const [nicknameTh, setNicknameTh] = useState<string>(employee.nickname_th ?? "");
   const [gender, setGender] = useState<"male" | "female" | "">(employee.gender ?? "");
   const [employmentType, setEmploymentType] = useState<"pt" | "ft" | "">(employee.employment_type ?? "");
   const [hireDate, setHireDate] = useState<string>(employee.hire_date ?? "");
@@ -527,6 +568,7 @@ function EditModal({
     try {
       const body: Record<string, string | number | number[] | null> = {
         title_prefix: titlePrefix || null,
+        nickname_th: nicknameTh.trim() || null,
         gender: gender || null,
         employment_type: employmentType || null,
         hire_date: hireDate || null,
@@ -630,15 +672,31 @@ function EditModal({
           </div>
         )}
 
-        <div>
-          <label className="label">คำนำหน้าชื่อ</label>
-          <select className="input" value={titlePrefix}
-            onChange={(e) => setTitlePrefix(e.target.value)}>
-            <option value="">— ไม่ระบุ —</option>
-            <option value="นาย">นาย</option>
-            <option value="นาง">นาง</option>
-            <option value="นางสาว">นางสาว</option>
-          </select>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">คำนำหน้าชื่อ</label>
+            <select className="input" value={titlePrefix}
+              onChange={(e) => setTitlePrefix(e.target.value)}>
+              <option value="">— ไม่ระบุ —</option>
+              <option value="นาย">นาย</option>
+              <option value="นาง">นาง</option>
+              <option value="นางสาว">นางสาว</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">ชื่อเล่น</label>
+            <input
+              type="text"
+              className="input"
+              value={nicknameTh}
+              maxLength={60}
+              onChange={(e) => setNicknameTh(e.target.value)}
+              placeholder="เช่น ตูน ปุ๋ย เปิ้ล"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              ใช้ในการ์ดแจ้งเตือนน้องฮูก เช่น &quot;สวัสดีครับพี่ ตูน&quot;
+            </p>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
