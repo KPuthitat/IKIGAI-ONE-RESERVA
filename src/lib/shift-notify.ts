@@ -38,7 +38,22 @@ function leaveLabelTh(type: string | null): string {
   return m[type] ?? "ลางาน";
 }
 
-export type ShiftLine = { position: string; start: string; end: string };
+// 2026-05-27: expanded from { position, start, end } to include the
+// shift CODE (e.g. "NPF", "A") and the position's free-text job
+// description. The Flex card now renders them as three distinct rows:
+//   green box   = positionTitle (the duty assignment, e.g. "PASTA")
+//   shiftCode line = code + time on opposite sides
+//   description = subtle italic-ish job description below
+// All three already live in the DB (roster_positions.title /
+// roster_positions.description / shift_codes.code) — we just weren't
+// surfacing them before.
+export type ShiftLine = {
+  positionTitle: string;
+  positionDescription: string | null;
+  shiftCode: string;
+  start: string;
+  end: string;
+};
 
 export type ShiftRecipient =
   | { kind: "work"; userId: number; displayName: string; titlePrefix: string | null;
@@ -84,9 +99,16 @@ export function buildShiftRecipients(
   const staffIds = staffRows.map((s) => s.user_id);
   const placeholders = staffIds.map(() => "?").join(",");
 
-  // 2) Roster assignments for today (with shift_code kind + times).
+  // 2) Roster assignments for today (with shift_code kind + times +
+  //    code label + position description so the Flex card can render
+  //    them as separate rows — green-box position name, code+time
+  //    line, italic job-description line).
   const rosterRows = db.prepare(`
-    SELECT a.user_id, sc.kind, p.title AS position, p.display_order AS pos_order,
+    SELECT a.user_id, sc.kind,
+           p.title AS position_title,
+           p.description AS position_description,
+           p.display_order AS pos_order,
+           sc.code AS shift_code,
            sc.start_time, sc.end_time
     FROM roster_assignments a
     JOIN roster_positions p ON p.id = a.position_id
@@ -97,7 +119,9 @@ export function buildShiftRecipients(
     ORDER BY p.display_order ASC
   `).all(branchId, dateBkk, ...staffIds) as Array<{
     user_id: number; kind: string;
-    position: string; pos_order: number;
+    position_title: string; position_description: string | null;
+    pos_order: number;
+    shift_code: string;
     start_time: string; end_time: string;
   }>;
   type RosterAgg = { dayOff: boolean; shifts: ShiftLine[] };
@@ -111,7 +135,13 @@ export function buildShiftRecipients(
     if (r.kind === "day_off") {
       agg.dayOff = true;
     } else {
-      agg.shifts.push({ position: r.position, start: r.start_time, end: r.end_time });
+      agg.shifts.push({
+        positionTitle: r.position_title,
+        positionDescription: r.position_description,
+        shiftCode: r.shift_code,
+        start: r.start_time,
+        end: r.end_time
+      });
     }
   }
 

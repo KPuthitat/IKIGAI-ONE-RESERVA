@@ -2466,7 +2466,18 @@ export type ShiftReminderArgs = {
    *  Falls back silently to displayName when blank/null. */
   nickname?: string | null;
   kind: "work" | "day_off" | "on_leave";
-  shifts: Array<{ position: string; start: string; end: string }>;
+  // 2026-05-27: shifts now carry the full breakdown — duty position
+  // title for the green banner, shift CODE (e.g. "NPF") + time for
+  // the row below, and the position's job-description text for the
+  // small line under that. Each shift = one (banner + row + desc)
+  // block stacked vertically when a staff has multiple assignments.
+  shifts: Array<{
+    positionTitle: string;
+    positionDescription: string | null;
+    shiftCode: string;
+    start: string;
+    end: string;
+  }>;
   leaveTypeLabel: string | null;           // pre-localised — e.g. "ลาป่วย"
   headerColor?: string | null;
   /** YYYY-MM-DD — used to seed the greeting rotation so the same
@@ -2475,74 +2486,119 @@ export type ShiftReminderArgs = {
   dateBkk: string;
 };
 
-/** Deterministic day-seeded greeting picker. Same shape as HookFab's
- *  rotating intro: hash of date string mod N. */
-function pickShiftGreeting(dateBkk: string, kind: "work" | "day_off" | "on_leave"): string {
+/** Deterministic day-seeded greeting picker. The `{NAME}` token is
+ *  replaced by the recipient's nickname so the name attaches directly
+ *  to "พี่" with no space — owner direction: "สวัสดีครับพี่เกฟ" not
+ *  "สวัสดีครับพี่ เกฟ". Falls back to bare "พี่" when no nickname. */
+function pickShiftGreeting(
+  dateBkk: string,
+  kind: "work" | "day_off" | "on_leave",
+  nameDisplay: string
+): string {
   let h = 0;
   for (let i = 0; i < dateBkk.length; i++) {
     h = ((h << 5) - h + dateBkk.charCodeAt(i)) | 0;
   }
   const idx = Math.abs(h);
   const WORK = [
-    "สวัสดีตอนเช้าครับพี่",
-    "อรุณสวัสดิ์ครับพี่",
-    "สวัสดีครับพี่ น้องฮูกแวะมาทักทาย",
-    "หวัดดีครับพี่ น้องฮูกขออนุญาตรายงานเวรประจำวัน",
-    "สวัสดีครับพี่ พร้อมเริ่มวันใหม่กันเลย"
+    "สวัสดีครับพี่{NAME} น้องฮูกแวะมาทักทาย",
+    "อรุณสวัสดิ์ครับพี่{NAME} น้องฮูกแวะมาทักทาย",
+    "สวัสดีตอนเช้าครับพี่{NAME} น้องฮูกแวะมาทักทาย",
+    "หวัดดีครับพี่{NAME} น้องฮูกขออนุญาตรายงานเวรประจำวัน",
+    "สวัสดีครับพี่{NAME} น้องฮูกพร้อมเริ่มวันใหม่ไปกับพี่"
   ];
   const OFF = [
-    "สวัสดีตอนเช้าครับพี่ วันนี้พี่พักผ่อนเต็มที่นะครับ",
-    "อรุณสวัสดิ์ครับพี่ วันนี้น้องดูแลร้านให้ พี่พักได้สบายใจ",
-    "สวัสดีครับพี่ วันนี้เป็นวันของพี่ ขอให้พี่มีความสุข",
-    "หวัดดีครับพี่ วันนี้พักนะครับ น้องฝากรอยยิ้มไว้ให้พี่"
+    "สวัสดีตอนเช้าครับพี่{NAME} วันนี้พักผ่อนเต็มที่นะครับ",
+    "อรุณสวัสดิ์ครับพี่{NAME} วันนี้น้องดูแลร้านให้ พี่พักได้สบายใจ",
+    "สวัสดีครับพี่{NAME} วันนี้เป็นวันของพี่ ขอให้พี่มีความสุข",
+    "หวัดดีครับพี่{NAME} วันนี้พักนะครับ น้องฝากรอยยิ้มไว้ให้พี่"
   ];
   const LEAVE = [
-    "สวัสดีครับพี่ น้องฮูกแจ้งเรื่องวันลาของพี่นะครับ",
-    "สวัสดีครับพี่ บันทึกการลาของพี่เรียบร้อย น้องดูแลให้แล้ว",
-    "หวัดดีครับพี่ การลาของพี่ผ่านการอนุมัติแล้วครับ",
-    "สวัสดีครับพี่ น้องขอให้พี่หายไวๆ / กลับมาสดชื่นนะครับ"
+    "สวัสดีครับพี่{NAME} น้องฮูกแจ้งเรื่องวันลาของพี่นะครับ",
+    "สวัสดีครับพี่{NAME} บันทึกการลาของพี่เรียบร้อย น้องดูแลให้แล้ว",
+    "หวัดดีครับพี่{NAME} การลาของพี่ผ่านการอนุมัติแล้วครับ",
+    "สวัสดีครับพี่{NAME} น้องขอให้พี่หายไวๆ กลับมาสดชื่นนะครับ"
   ];
   const list = kind === "work" ? WORK : kind === "day_off" ? OFF : LEAVE;
-  return list[idx % list.length];
+  // Attach name with NO space after "พี่" — "พี่เกฟ" not "พี่ เกฟ".
+  // Empty nameDisplay → strip the placeholder cleanly so the line
+  // reads "สวัสดีครับพี่ น้องฮูกแวะมาทักทาย" as the polite fallback.
+  return list[idx % list.length].replace("{NAME}", nameDisplay || "");
 }
 
-/** Closing line — short, encouraging, varies per kind. */
+/** Closing line — short, encouraging, varies per kind. Owner asked
+ *  to dial back the cartoon emoji (no owl / heart / moon icons here);
+ *  the only emoji-ish marks that survived are functional check/cross
+ *  glyphs used elsewhere on decision cards. */
 function pickShiftClosing(kind: "work" | "day_off" | "on_leave"): string {
-  if (kind === "work") return "อย่าลืมลงเวลาเข้างานนะครับ น้องเอาใจช่วย 🦉";
-  if (kind === "day_off") return "ขอให้พี่มีวันหยุดที่ดีนะครับ 🦉💛";
-  return "หากต้องการเปลี่ยนแปลงข้อมูล ติดต่อหัวหน้าโดยตรงครับ 🦉";
+  if (kind === "work") return "อย่าลืมลงเวลาเข้างานนะครับ น้องเอาใจช่วย";
+  if (kind === "day_off") return "ขอให้พี่มีวันหยุดที่ดีนะครับ";
+  return "หากต้องการเปลี่ยนแปลงข้อมูล ติดต่อหัวหน้าโดยตรงครับ";
 }
 
 export function personaShiftReminderFlex(args: ShiftReminderArgs): LineFlexMessage {
   const headerColor = args.headerColor || COLOR_INK_700;
-  const greeting = pickShiftGreeting(args.dateBkk, args.kind);
+  // Preferred salutation: nickname (warm). Owner direction: the name
+  // attaches DIRECTLY to "พี่" with no space — "พี่เกฟ" not "พี่ เกฟ"
+  // — so we pass the bare nickname for the greeting picker to splice
+  // in. When no nickname is on file we deliberately pass "" (NOT the
+  // display_name) — concatenating "Mr. Phuthitat" or "นาย ภูทิกัต"
+  // after "พี่" produces awkward strings; the greeting picker
+  // gracefully degrades to "สวัสดีครับพี่ น้องฮูกแวะมาทักทาย" which
+  // is polite + grammatical.
+  const nameForGreeting = (args.nickname && args.nickname.trim()) || "";
+  const greeting = pickShiftGreeting(args.dateBkk, args.kind, nameForGreeting);
   const closing = pickShiftClosing(args.kind);
-  // Banner colour + icon vary per kind so the recipient knows at
-  // a glance which kind of day it is.
-  const bannerByKind = {
-    work:    { color: "#10b981", icon: "✨", label: "เวรประจำวันของพี่" },
-    day_off: { color: "#f59e0b", icon: "🌙", label: "วันหยุดของพี่" },
-    on_leave:{ color: "#0ea5e9", icon: "📅", label: `วันลา${args.leaveTypeLabel ? " · " + args.leaveTypeLabel : ""}` }
+
+  // Banner colour varies per kind so the recipient knows at a glance
+  // which kind of day it is. Owner 2026-05-27 asked to drop the
+  // decorative emoji prefixes (✨🌙📅) — the colour + label alone
+  // carries the meaning, the icons just felt noisy. The work-kind
+  // label is now the duty POSITION title (e.g. "PASTA") instead of
+  // the generic "เวรประจำวันของพี่" — one card per shift block.
+  const bannerColorByKind = {
+    work:    "#10b981",
+    day_off: "#f59e0b",
+    on_leave: "#0ea5e9"
   } as const;
-  const banner = bannerByKind[args.kind];
+  const bannerColor = bannerColorByKind[args.kind];
 
-  // Preferred salutation order: nickname (warm) → full name with
-  // prefix (formal) → bare displayName. Owner direction 2026-05:
-  // the owl greets with the staff's ชื่อเล่น so it feels personal,
-  // not corporate.
-  const nameDisplay = (args.nickname && args.nickname.trim())
-    ? args.nickname.trim()
-    : args.titlePrefix
-      ? `${args.titlePrefix}${args.displayName}`
-      : args.displayName;
-
-  // Body rows — only the work kind has a shift list. Bumped to "md"
-  // size since the bubble is now giga (wider).
-  const shiftRows = args.kind === "work" && args.shifts.length > 0
-    ? args.shifts.map((s) => ({
-        type: "box", layout: "horizontal", spacing: "sm",
+  // Build the work-kind blocks. Each shift gets its own (banner +
+  // code+time row + description). Day-off / on-leave only show a
+  // single banner with the generic label since they have no shifts.
+  const shiftBlocks: Array<Record<string, unknown>> = [];
+  if (args.kind === "work" && args.shifts.length > 0) {
+    args.shifts.forEach((s, idx) => {
+      // Spacer between consecutive shift blocks so they don't fuse.
+      if (idx > 0) {
+        shiftBlocks.push({ type: "separator", margin: "md", color: COLOR_DIVIDER });
+      }
+      // Green banner — position title (large, centered).
+      shiftBlocks.push({
+        type: "box", layout: "vertical",
+        paddingAll: "16px", margin: "md",
+        backgroundColor: bannerColor + "20",
+        cornerRadius: "10px",
+        borderWidth: "1px",
+        borderColor: bannerColor,
         contents: [
-          { type: "text", text: s.position, size: "md", color: COLOR_LABEL, flex: 4, wrap: true },
+          {
+            type: "text",
+            text: s.positionTitle,
+            size: "xl", color: bannerColor, weight: "bold",
+            wrap: true, align: "center"
+          }
+        ]
+      });
+      // Code + time row.
+      shiftBlocks.push({
+        type: "box", layout: "horizontal", spacing: "sm", margin: "md",
+        contents: [
+          {
+            type: "text", text: s.shiftCode,
+            size: "md", color: COLOR_TEXT_DARK, weight: "bold",
+            flex: 4, wrap: true
+          },
           {
             type: "text",
             text: `${s.start}–${s.end} น.`,
@@ -2550,8 +2606,40 @@ export function personaShiftReminderFlex(args: ShiftReminderArgs): LineFlexMessa
             flex: 5, align: "end", wrap: true
           }
         ]
-      }))
-    : [];
+      });
+      // Job description — small + muted so it doesn't compete with
+      // the code+time row visually. Skipped silently when blank.
+      if (s.positionDescription && s.positionDescription.trim()) {
+        shiftBlocks.push({
+          type: "text",
+          text: s.positionDescription.trim(),
+          size: "sm", color: COLOR_TEXT_MUTED, wrap: true, margin: "sm"
+        });
+      }
+    });
+  } else {
+    // No-shift kinds — single banner with generic label, matches the
+    // pre-rewrite layout.
+    const fallbackLabel = args.kind === "day_off"
+      ? "วันหยุดของพี่"
+      : `วันลา${args.leaveTypeLabel ? " · " + args.leaveTypeLabel : ""}`;
+    shiftBlocks.push({
+      type: "box", layout: "vertical",
+      paddingAll: "16px", margin: "md",
+      backgroundColor: bannerColor + "20",
+      cornerRadius: "10px",
+      borderWidth: "1px",
+      borderColor: bannerColor,
+      contents: [
+        {
+          type: "text",
+          text: fallbackLabel,
+          size: "lg", color: bannerColor, weight: "bold",
+          wrap: true, align: "center"
+        }
+      ]
+    });
+  }
 
   const bubble = {
     type: "bubble",
@@ -2561,19 +2649,23 @@ export function personaShiftReminderFlex(args: ShiftReminderArgs): LineFlexMessa
       backgroundColor: headerColor,
       paddingAll: "20px",
       contents: [
+        // Top-row labels — owner direction 2026-05-27: right-side
+        // label now reads "ทักทายจากน้องฮูก" (was "น้องฮูก · ผู้ช่วย")
+        // — clearer about what the card IS, not who it's from.
         {
           type: "box", layout: "horizontal",
           contents: [
             { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
-            { type: "text", text: "น้องฮูก · ผู้ช่วย", color: "#cbd5e1", size: "xs", align: "end", flex: 1 }
+            { type: "text", text: "ทักทายจากน้องฮูก", color: "#cbd5e1", size: "xs", align: "end", flex: 1 }
           ]
         },
+        // Date — owl emoji removed (owner asked to cut decorative
+        // cartoon glyphs from the card); plain date in white bold
+        // looks cleaner against the navy header.
         {
-          type: "box", layout: "baseline", spacing: "sm", margin: "md",
-          contents: [
-            { type: "text", text: "🦉", color: "#ffffff", size: "xxl", flex: 0 },
-            { type: "text", text: args.dateLabel, color: "#ffffff", size: "md", weight: "bold", wrap: true }
-          ]
+          type: "text",
+          text: args.dateLabel,
+          color: "#ffffff", size: "lg", weight: "bold", wrap: true, margin: "md"
         }
       ]
     },
@@ -2581,12 +2673,12 @@ export function personaShiftReminderFlex(args: ShiftReminderArgs): LineFlexMessa
       type: "box", layout: "vertical", spacing: "md",
       paddingAll: "24px",
       contents: [
-        // Greeting line — warm opener with the recipient's name
-        // (prefers ชื่อเล่น). One size up now that we're using a
-        // giga bubble.
+        // Greeting line — name attached directly to "พี่" via the
+        // greeting picker so the wrapping reads as one cohesive
+        // phrase ("สวัสดีครับพี่เกฟ น้องฮูกแวะมาทักทาย").
         {
           type: "text",
-          text: `${greeting}${nameDisplay ? ` ${nameDisplay}` : ""}`,
+          text: greeting,
           size: "md", color: COLOR_TEXT_DARK, weight: "bold", wrap: true
         },
         // Branch pill
@@ -2595,28 +2687,10 @@ export function personaShiftReminderFlex(args: ShiftReminderArgs): LineFlexMessa
           text: args.branchName,
           size: "sm", color: COLOR_TEXT_MUTED, wrap: true, margin: "xs"
         },
-        // Coloured banner — kind indicator + icon. Bigger padding +
-        // larger text on the wider bubble.
-        {
-          type: "box", layout: "vertical",
-          paddingAll: "16px", margin: "md",
-          backgroundColor: banner.color + "20", // 20% alpha
-          cornerRadius: "10px",
-          borderWidth: "1px",
-          borderColor: banner.color,
-          contents: [
-            {
-              type: "text",
-              text: `${banner.icon} ${banner.label}`,
-              size: "lg", color: banner.color, weight: "bold", wrap: true, align: "center"
-            }
-          ]
-        },
-        // Work kind only — list of shifts.
-        ...(shiftRows.length > 0 ? [
-          { type: "separator", margin: "md", color: COLOR_DIVIDER },
-          { type: "box", layout: "vertical", spacing: "md", margin: "md", contents: shiftRows }
-        ] : []),
+        // Shift blocks (built above) — green-banner + code+time +
+        // description per shift for the work kind, single banner
+        // for day_off / on_leave.
+        ...shiftBlocks,
         // Closing line
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
         {
@@ -2744,6 +2818,9 @@ function approvalBannerFor(variant: ApprovalNotifyArgs["variant"]): {
 function approvalGreetingTh(recipientName: string, variant: ApprovalNotifyArgs["variant"]): string {
   // Same hash trick used in shift greeter — but keyed by variant so
   // sequential events on the same request get distinct openers.
+  // 2026-05-27 — attach name DIRECTLY to "พี่" with no space, matching
+  // the shift card. Blank recipientName degrades gracefully to plain
+  // "สวัสดีครับพี่" (polite + grammatical Thai opener).
   let h = 0;
   for (let i = 0; i < variant.length; i++) {
     h = ((h << 5) - h + variant.charCodeAt(i)) | 0;
@@ -2754,7 +2831,7 @@ function approvalGreetingTh(recipientName: string, variant: ApprovalNotifyArgs["
     "หวัดดีครับพี่",
     "ขออภัยที่รบกวนพี่"
   ];
-  return `${POOL[idx % POOL.length]} ${recipientName}`;
+  return `${POOL[idx % POOL.length]}${recipientName || ""}`;
 }
 
 export function personaApprovalNotifyFlex(args: ApprovalNotifyArgs): LineFlexMessage {
@@ -2827,19 +2904,21 @@ export function personaApprovalNotifyFlex(args: ApprovalNotifyArgs): LineFlexMes
       backgroundColor: headerColor,
       paddingAll: "20px",
       contents: [
+        // Approval card header — matches the shift-reminder card
+        // structure since 2026-05-27 (right label = "ทักทายจาก
+        // น้องฮูก", no owl emoji in the title row). Owner direction:
+        // dial back cartoon glyphs; the navy header + bold title
+        // carries enough weight already.
         {
           type: "box", layout: "horizontal",
           contents: [
             { type: "text", text: "IKIGAI OS · PERSONA", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
-            { type: "text", text: "น้องฮูก · ผู้ช่วย", color: "#cbd5e1", size: "xs", align: "end", flex: 1 }
+            { type: "text", text: "ทักทายจากน้องฮูก", color: "#cbd5e1", size: "xs", align: "end", flex: 1 }
           ]
         },
         {
-          type: "box", layout: "baseline", spacing: "sm", margin: "md",
-          contents: [
-            { type: "text", text: "🦉", color: "#ffffff", size: "xxl", flex: 0 },
-            { type: "text", text: "เรื่องการลา", color: "#ffffff", size: "md", weight: "bold", wrap: true }
-          ]
+          type: "text", text: "เรื่องการลา",
+          color: "#ffffff", size: "lg", weight: "bold", wrap: true, margin: "md"
         }
       ]
     },

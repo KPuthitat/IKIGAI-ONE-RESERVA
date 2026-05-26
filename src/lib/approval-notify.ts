@@ -69,7 +69,12 @@ function userLabel(u: { display_name: string; nickname_th: string | null; title_
 }
 
 function recipientGreetingName(u: { display_name: string; nickname_th: string | null }): string {
-  return u.nickname_th?.trim() || u.display_name;
+  // 2026-05-27: return "" (NOT display_name) when no nickname on file.
+  // approvalGreetingTh now concatenates this directly after "พี่" with
+  // no space — falling back to a full display_name like "Mr. Phuthitat"
+  // produced awkward "สวัสดีครับพี่Mr. Phuthitat" strings. Empty string
+  // degrades to plain "สวัสดีครับพี่" which is polite Thai.
+  return u.nickname_th?.trim() || "";
 }
 
 function leaveLabelTh(type: string): string {

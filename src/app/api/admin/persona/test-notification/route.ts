@@ -121,7 +121,11 @@ export async function POST(req: Request) {
   // the preview feels like a real notification on their phone.
   const MOCK_NAME = me?.display_name || "พนักงานทดสอบ";
   const MOCK_PREFIX: string | null = me?.title_prefix ?? null;
-  const MOCK_NICKNAME = me?.nickname_th?.trim() || "พี่ฮูก";
+  // 2026-05-27: empty fallback is fine — the greeting picker handles
+  // a blank nickname by stripping the {NAME} placeholder cleanly so
+  // the line reads "สวัสดีครับพี่ น้องฮูกแวะมาทักทาย" instead of the
+  // old double-พี่ glitch ("สวัสดีครับพี่พี่ฮูก ...").
+  const MOCK_NICKNAME = me?.nickname_th?.trim() || "";
 
   try {
     switch (kind) {
@@ -133,9 +137,18 @@ export async function POST(req: Request) {
           titlePrefix: MOCK_PREFIX,
           nickname: MOCK_NICKNAME,
           kind: "work",
-          shifts: [
-            { position: "บาริสต้า", start: "08:00", end: "16:00" }
-          ],
+          // Sample shift mirrors the real roster shape — title in the
+          // green banner, code on the row below, free-text description
+          // below that. Mock uses one of the seeded positions
+          // ("PASTA") so admin sees the actual layout, not a generic
+          // "บาริสต้า" placeholder.
+          shifts: [{
+            positionTitle: "PASTA",
+            positionDescription: "ดูแลและผลิตเส้นตามที่ได้รับมอบหมาย รวมถึงดูแลความสะอาดของพื้นที่ทำงาน",
+            shiftCode: "NPF",
+            start: "08:00",
+            end: "16:00"
+          }],
           leaveTypeLabel: null,
           headerColor: branch.brand_color,
           dateBkk: todayBkk
