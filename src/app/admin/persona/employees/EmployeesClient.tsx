@@ -673,42 +673,38 @@ function EditModal({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label">คำนำหน้าชื่อ</label>
-            <select className="input" value={titlePrefix}
-              onChange={(e) => {
-                const next = e.target.value;
-                setTitlePrefix(next);
-                // 2026-05: gender is derivable from the Thai title
-                // prefix — admin no longer picks it separately. Only
-                // sets when blank or matches the previous prefix's
-                // implied gender (so admin can still override
-                // intentionally).
-                if (next === "นาย") setGender("male");
-                else if (next === "นาง" || next === "นางสาว") setGender("female");
-              }}>
-              <option value="">— ไม่ระบุ —</option>
-              <option value="นาย">นาย</option>
-              <option value="นาง">นาง</option>
-              <option value="นางสาว">นางสาว</option>
-            </select>
-          </div>
-          <div>
-            <label className="label">ชื่อเล่น</label>
-            <input
-              type="text"
-              className="input"
-              value={nicknameTh}
-              maxLength={60}
-              style={{ textTransform: "uppercase" }}
-              onChange={(e) => setNicknameTh(e.target.value.toUpperCase())}
-              placeholder="เช่น ตูน ปุ๋ย เปิ้ล"
-            />
-            <p className="text-[10px] text-slate-400 mt-1">
-              ใช้ในการ์ดแจ้งเตือนน้องฮูก เช่น &quot;สวัสดีครับพี่ ตูน&quot;
-            </p>
-          </div>
+        {/* ชื่อเล่น (nickname) is filled by the staff themselves on
+            /staff/persona/profile — admin form no longer duplicates
+            that input. The value is still preserved (state + sent in
+            save body unchanged) so older code paths that read
+            employee.nickname_th keep working. Displayed read-only
+            beside the title prefix for admin visibility. 2026-05. */}
+        <div>
+          <label className="label">คำนำหน้าชื่อ</label>
+          <select className="input max-w-[200px]" value={titlePrefix}
+            onChange={(e) => {
+              const next = e.target.value;
+              setTitlePrefix(next);
+              // 2026-05: gender is derivable from the Thai title
+              // prefix — admin no longer picks it separately. Only
+              // sets when blank or matches the previous prefix's
+              // implied gender (so admin can still override
+              // intentionally).
+              if (next === "นาย") setGender("male");
+              else if (next === "นาง" || next === "นางสาว") setGender("female");
+            }}>
+            <option value="">— ไม่ระบุ —</option>
+            <option value="นาย">นาย</option>
+            <option value="นาง">นาง</option>
+            <option value="นางสาว">นางสาว</option>
+          </select>
+        </div>
+        <div className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+          <span className="font-semibold text-slate-600">ชื่อเล่น:</span>{" "}
+          <span className="text-slate-700">{nicknameTh || "—"}</span>
+          <span className="ml-2 text-slate-400">
+            · พนักงานกรอกเองที่หน้าโปรไฟล์
+          </span>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -803,67 +799,49 @@ function EditModal({
               <h4 className="text-sm font-semibold text-slate-700 mb-2">
                 {t("admin.persona.employees.section.identity")}
               </h4>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">{t("admin.persona.employees.field.employeeCode")}</label>
-                  <input className="input" type="text" value={employeeCode}
-                    style={{ textTransform: "uppercase" }}
-                    onChange={(e) => setEmployeeCode(e.target.value.toUpperCase())}
-                    placeholder="E.G. NM001" />
+              {/* Employee code is admin-controlled (assigned at hire);
+                  the other three (national_id / tax_id / sso_id) are
+                  filled by the staff themselves on /staff/persona/profile.
+                  Admin used to duplicate those inputs here, which
+                  caused two problems: (1) two sources of truth that
+                  could drift, (2) admin had to retype information the
+                  staff already provided. Removed 2026-05 in favour
+                  of a read-only summary below + "ดู/แก้ที่หน้าโปรไฟล์
+                  พนักงาน" link. State for those fields is preserved
+                  so the save body keeps working unchanged. */}
+              <div className="max-w-[280px]">
+                <label className="label">{t("admin.persona.employees.field.employeeCode")}</label>
+                <input className="input" type="text" value={employeeCode}
+                  style={{ textTransform: "uppercase" }}
+                  onChange={(e) => setEmployeeCode(e.target.value.toUpperCase())}
+                  placeholder="E.G. NM001" />
+              </div>
+              <div className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 mt-3 space-y-1">
+                <div className="font-semibold text-slate-600 uppercase tracking-[0.5px] text-[10px]">
+                  พนักงานกรอกเอง (โปรไฟล์ส่วนตัว)
                 </div>
                 <div>
-                  <label className="label">{t("admin.persona.employees.field.nationalId")}</label>
-                  <input className="input" type="text" value={nationalId}
-                    style={{ textTransform: "uppercase" }}
-                    onChange={(e) => setNationalId(e.target.value.toUpperCase())}
-                    inputMode="numeric" maxLength={13} placeholder="13 DIGITS" />
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    {t("admin.persona.employees.nationalIdHint")}
-                  </p>
-                </div>
-                {/* Tax ID + SSO ID — in Thailand these are almost always
-                    the same 13-digit national ID. Leaving them blank is
-                    fine; payroll views fall back to national_id. The
-                    "ใช้เลขบัตร" button copies it in for admins who
-                    prefer the explicit value visible on screen. */}
-                <div>
-                  <label className="label">{t("admin.persona.employees.field.taxId")}</label>
-                  <div className="flex gap-2">
-                    <input className="input flex-1" type="text" value={taxId}
-                      style={{ textTransform: "uppercase" }}
-                      onChange={(e) => setTaxId(e.target.value.toUpperCase())}
-                      placeholder={nationalId ? nationalId : "—"} />
-                    {nationalId && taxId !== nationalId && (
-                      <button type="button"
-                        className="btn-secondary text-[10px] px-2 whitespace-nowrap"
-                        onClick={() => setTaxId(nationalId)}>
-                        {t("admin.persona.employees.useNationalId")}
-                      </button>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    {t("admin.persona.employees.taxIdHint")}
-                  </p>
+                  <span className="font-semibold text-slate-600">เลขบัตรประชาชน:</span>{" "}
+                  <span className="text-slate-700">{nationalId || "—"}</span>
                 </div>
                 <div>
-                  <label className="label">{t("admin.persona.employees.field.ssoId")}</label>
-                  <div className="flex gap-2">
-                    <input className="input flex-1" type="text" value={ssoId}
-                      style={{ textTransform: "uppercase" }}
-                      onChange={(e) => setSsoId(e.target.value.toUpperCase())}
-                      placeholder={nationalId ? nationalId : "—"} />
-                    {nationalId && ssoId !== nationalId && (
-                      <button type="button"
-                        className="btn-secondary text-[10px] px-2 whitespace-nowrap"
-                        onClick={() => setSsoId(nationalId)}>
-                        {t("admin.persona.employees.useNationalId")}
-                      </button>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    {t("admin.persona.employees.ssoIdHint")}
-                  </p>
+                  <span className="font-semibold text-slate-600">เลขผู้เสียภาษี:</span>{" "}
+                  <span className="text-slate-700">
+                    {taxId || (nationalId ? `${nationalId} (ใช้เลขบัตร)` : "—")}
+                  </span>
                 </div>
+                <div>
+                  <span className="font-semibold text-slate-600">เลขประกันสังคม:</span>{" "}
+                  <span className="text-slate-700">
+                    {ssoId || (nationalId ? `${nationalId} (ใช้เลขบัตร)` : "—")}
+                  </span>
+                </div>
+                <Link
+                  href={`/admin/persona/employees/${employee.id}`}
+                  className="inline-block mt-1 text-brand hover:underline text-[10px]"
+                >
+                  → ดู / แก้ในหน้าโปรไฟล์เต็ม
+                </Link>
               </div>
             </div>
 
