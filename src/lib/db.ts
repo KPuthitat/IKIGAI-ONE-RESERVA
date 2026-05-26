@@ -1506,6 +1506,44 @@ function runMigrations(db: Database.Database): void {
   //  duplicate copy on system_settings but it just causes drift between
   //  the two sources of truth. Single source = payroll_settings.)
 
+  // ── Branch-level approval tiers (2026-05-26) ──────────────────────
+  //
+  // Replaces the per-user reports_to_user_id chain with a 2-tier
+  // structure configured per branch:
+  //   tier 1 = supervisors (any 1 approves → bumps to tier 2)
+  //   tier 2 = executives  (any 1 approves → request approved)
+  // Owner direction was: chain should be branch-level, not per-user.
+  // The old reports_to_user_id column is kept in users for backward
+  // compatibility but no UI writes to it anymore.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS branch_approval_tiers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      tier_level INTEGER NOT NULL,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (branch_id, tier_level, user_id)
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_bat_branch_tier
+      ON branch_approval_tiers (branch_id, tier_level);
+  `);
+
+  // current_tier tracks where a pending leave/resignation request is
+  // in the approval pipeline. NULL on rows submitted before the
+  // migration — those still use the legacy current_approver_user_id
+  // path. New rows submitted after the migration must have current_tier
+  // set (the submission API enforces it).
+  const lrColsT = db.prepare("PRAGMA table_info(leave_requests)").all() as Array<{ name: string }>;
+  if (!lrColsT.some((c) => c.name === "current_tier")) {
+    db.exec("ALTER TABLE leave_requests ADD COLUMN current_tier INTEGER");
+  }
+  const rrColsT = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;
+  if (!rrColsT.some((c) => c.name === "current_tier")) {
+    db.exec("ALTER TABLE resignation_requests ADD COLUMN current_tier INTEGER");
+  }
+
   // Phase 1C v9: replaces_id for resignation_requests
   const rrcols = db.prepare("PRAGMA table_info(resignation_requests)").all() as Array<{ name: string }>;
   if (!rrcols.some((c) => c.name === "replaces_id")) {
