@@ -149,19 +149,19 @@ export function buildShiftRecipients(
       });
       continue;
     }
-    if (roster?.dayOff) {
-      out.push({
-        kind: "day_off",
-        userId: s.user_id,
-        displayName: s.display_name,
-        titlePrefix: s.title_prefix,
-        lineUserId: s.line_user_id
-      });
-      continue;
-    }
-    // Neither leave, work, nor explicit day_off → skip (truly off,
-    // we have no way to tell if it's their weekly off vs admin
-    // forgot to assign them).
+    // Owner direction 2026-05: an empty roster cell = "วันหยุด
+    // ประจำสัปดาห์" by default. Sends the warm day-off card
+    // ("วันนี้เป็นวันของพี่") to every active staff who isn't
+    // working and isn't on leave today. Explicit OFF in the
+    // roster reaches the same branch — both produce a day_off
+    // card with the same warm copy.
+    out.push({
+      kind: "day_off",
+      userId: s.user_id,
+      displayName: s.display_name,
+      titlePrefix: s.title_prefix,
+      lineUserId: s.line_user_id
+    });
   }
   return out;
 }
