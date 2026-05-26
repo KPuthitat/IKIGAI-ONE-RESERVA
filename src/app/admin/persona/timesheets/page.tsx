@@ -71,8 +71,11 @@ export default function TimesheetsPage({
     SELECT DISTINCT u.id, u.username, u.display_name, u.title_prefix
     FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.id IN (SELECT DISTINCT user_id FROM time_entries WHERE branch_id = ?)
-       OR u.pin_hash IS NOT NULL
+    WHERE u.is_test_account = 0
+      AND (
+        u.id IN (SELECT DISTINCT user_id FROM time_entries WHERE branch_id = ?)
+        OR u.pin_hash IS NOT NULL
+      )
     ORDER BY CASE WHEN u.employment_type = 'ft' THEN 0 WHEN u.employment_type = 'pt' THEN 1 ELSE 2 END,
              u.display_name
   `).all(branch.id, branch.id) as UserOption[];

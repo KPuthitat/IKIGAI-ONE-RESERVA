@@ -85,7 +85,7 @@ export function buildDailyAttendanceRoster(
     WHERE ub.branch_id = ?
       AND u.role IN ('staff', 'admin')
       AND u.status = 'active'
-      AND (u.username IS NULL OR LOWER(u.username) NOT LIKE 'test%')
+      AND u.is_test_account = 0
     ORDER BY u.display_name COLLATE NOCASE ASC
   `).all(branchId) as RosterRow[];
   if (staff.length === 0) return [];

@@ -76,6 +76,7 @@ export default function QuotaReportPage({
     SELECT id, display_name, title_prefix, gender, employment_type
     FROM users
     WHERE role = 'staff' AND employment_type IS NOT NULL
+      AND is_test_account = 0
   `;
   const staffParams: Array<string | number> = [];
   if (userIdFilter) {
@@ -144,7 +145,8 @@ export default function QuotaReportPage({
 
   // Staff list for dropdown (full list, not just filtered)
   const staffList = db.prepare(`
-    SELECT id, display_name, title_prefix FROM users WHERE role = 'staff'
+    SELECT id, display_name, title_prefix FROM users
+    WHERE role = 'staff' AND is_test_account = 0
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
   `).all() as StaffOpt[];

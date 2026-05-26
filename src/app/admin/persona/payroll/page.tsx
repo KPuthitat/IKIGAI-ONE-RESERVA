@@ -60,6 +60,7 @@ export default function PayrollHubPage() {
     SELECT COUNT(*) AS n FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
     WHERE u.role = 'staff' AND u.employment_type = 'pt'
+      AND u.is_test_account = 0
       AND (u.hourly_rate IS NULL OR u.hourly_rate = 0)
   `).get(branch.id) as Counter).n;
 
@@ -67,6 +68,7 @@ export default function PayrollHubPage() {
     SELECT COUNT(*) AS n FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
     WHERE u.role = 'staff' AND u.employment_type = 'ft'
+      AND u.is_test_account = 0
       AND (u.monthly_salary IS NULL OR u.monthly_salary = 0 OR u.pay_cycle IS NULL)
   `).get(branch.id) as Counter).n;
 
@@ -74,6 +76,7 @@ export default function PayrollHubPage() {
     SELECT COUNT(*) AS n FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
     WHERE u.role = 'staff' AND u.employment_type IS NOT NULL
+      AND u.is_test_account = 0
   `).get(branch.id) as Counter).n;
 
   const settings = db.prepare(`

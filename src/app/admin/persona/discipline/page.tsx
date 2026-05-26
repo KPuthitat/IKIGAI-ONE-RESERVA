@@ -26,7 +26,7 @@ export default function AdminDisciplinePage() {
     SELECT u.id, u.display_name, u.title_prefix, u.username, u.employment_type
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
-    WHERE ub.branch_id = ? AND u.role = 'staff'
+    WHERE ub.branch_id = ? AND u.role = 'staff' AND u.is_test_account = 0
     ORDER BY u.display_name COLLATE NOCASE
   `).all(branch.id) as Array<{
     id: number; display_name: string; title_prefix: string | null; username: string; employment_type: string | null;

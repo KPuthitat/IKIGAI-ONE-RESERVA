@@ -48,6 +48,7 @@ export default function ApprovalChainPage() {
     FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
     WHERE u.status != 'disabled'
+      AND u.is_test_account = 0
       AND u.role IN ('staff', 'admin', 'super_admin')
     ORDER BY u.display_name
   `).all(branchId) as EligibleUser[];

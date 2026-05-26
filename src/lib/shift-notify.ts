@@ -70,6 +70,7 @@ export function buildShiftRecipients(
     JOIN user_branches ub ON ub.user_id = u.id
     WHERE ub.branch_id = ?
       AND u.role IN ('staff', 'admin')
+      AND u.is_test_account = 0
       AND u.line_user_id IS NOT NULL
       AND TRIM(u.line_user_id) <> ''
     ORDER BY u.display_name COLLATE NOCASE ASC

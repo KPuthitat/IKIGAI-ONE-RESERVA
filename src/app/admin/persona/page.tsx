@@ -72,25 +72,27 @@ export default function AdminPersonaDashboard() {
   ).get() as Counter).n;
 
   // Staff counts — only people assigned to this branch via user_branches.
+  // is_test_account = 0 filter (2026-05-27) excludes test/admin accounts
+  // from operational dashboards.
   const ptCount = (db.prepare(`
     SELECT COUNT(*) AS n FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.role = 'staff' AND u.employment_type = 'pt'
+    WHERE u.role = 'staff' AND u.employment_type = 'pt' AND u.is_test_account = 0
   `).get(branch.id) as Counter).n;
   const ftCount = (db.prepare(`
     SELECT COUNT(*) AS n FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.role = 'staff' AND u.employment_type = 'ft'
+    WHERE u.role = 'staff' AND u.employment_type = 'ft' AND u.is_test_account = 0
   `).get(branch.id) as Counter).n;
   const unsetCount = (db.prepare(`
     SELECT COUNT(*) AS n FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.role = 'staff' AND u.employment_type IS NULL
+    WHERE u.role = 'staff' AND u.employment_type IS NULL AND u.is_test_account = 0
   `).get(branch.id) as Counter).n;
   const resigUnlocked = (db.prepare(`
     SELECT COUNT(*) AS n FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.resignation_unlocked_at IS NOT NULL
+    WHERE u.resignation_unlocked_at IS NOT NULL AND u.is_test_account = 0
   `).get(branch.id) as Counter).n;
   const clockedInToday = (db.prepare(`
     SELECT COUNT(DISTINCT user_id) AS n FROM time_entries

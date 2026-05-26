@@ -48,6 +48,7 @@ export function getBranchTierMembers(
     INNER JOIN users u ON u.id = t.user_id
     WHERE t.branch_id = ? AND t.tier_level = ?
       AND u.status != 'disabled'
+      AND u.is_test_account = 0
     ORDER BY u.display_name
   `).all(branchId, tier) as TierMember[];
 }
@@ -97,6 +98,7 @@ export function isEligibleApprover(
     INNER JOIN users u ON u.id = t.user_id
     WHERE t.branch_id = ? AND t.tier_level = ? AND t.user_id = ?
       AND u.status != 'disabled'
+      AND u.is_test_account = 0
   `).get(branchId, tier, userId);
   return !!row;
 }
@@ -219,6 +221,7 @@ export function getTierLineRecipients(
     INNER JOIN users u ON u.id = t.user_id
     WHERE t.branch_id = ? AND t.tier_level = ?
       AND u.status != 'disabled'
+      AND u.is_test_account = 0
       AND u.id != ?
       AND u.line_user_id IS NOT NULL
   `).all(branchId, tier, excludeUserId) as Array<{

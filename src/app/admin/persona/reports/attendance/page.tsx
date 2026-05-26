@@ -104,6 +104,7 @@ export default function AttendanceReportPage({
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
     WHERE u.role = 'staff' AND u.employment_type IS NOT NULL
+      AND u.is_test_account = 0
   `;
   const staffParams: Array<string | number> = [activeBranchId];
   if (userIdFilter) {
@@ -198,7 +199,7 @@ export default function AttendanceReportPage({
     SELECT u.id, u.display_name, u.title_prefix
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.role = 'staff'
+    WHERE u.role = 'staff' AND u.is_test_account = 0
     ORDER BY CASE WHEN u.employment_type = 'ft' THEN 0 WHEN u.employment_type = 'pt' THEN 1 ELSE 2 END,
              u.display_name
   `).all(activeBranchId) as StaffOpt[];

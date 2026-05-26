@@ -80,6 +80,7 @@ export default function AdminRosterPage({
     WHERE ub.branch_id = ?
       AND u.role IN ('staff','admin')
       AND u.status != 'disabled'
+      AND u.is_test_account = 0
     ORDER BY u.display_name COLLATE NOCASE
   `).all(branch.id) as StaffOption[];
 

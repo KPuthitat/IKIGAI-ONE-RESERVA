@@ -71,7 +71,8 @@ export default function MonthlyTimesheetPage({
            u.employment_type, u.shift_start_time
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
-    WHERE ub.branch_id = ? AND u.role IN ('staff','admin') AND u.status != 'disabled'
+    WHERE ub.branch_id = ? AND u.role IN ('staff','admin')
+      AND u.status != 'disabled' AND u.is_test_account = 0
     ORDER BY u.display_name COLLATE NOCASE
   `).all(branch.id) as EmployeeRow[];
 
