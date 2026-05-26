@@ -74,6 +74,15 @@ export default function AdminEmployeeProfilePage({
       ORDER BY display_name`
   ).all() as ProfileSupervisor[];
 
+  // "ยังไม่ได้กรอก" check — the full profile fields (first_name_th
+  // etc.) sit on users alongside the on-boarding display_name. A
+  // brand-new employee that hasn't logged in to fill their profile
+  // shows blanks across the board, which previously looked like a
+  // display bug. Surface a clear notice so admin knows it's a
+  // data-not-filled situation, not a UI failure.
+  const notFilled = !row.first_name_th && !row.last_name_th
+    && !row.dob && !row.mobile_phone;
+
   return (
     <div className="space-y-4">
       <div>
@@ -88,6 +97,24 @@ export default function AdminEmployeeProfilePage({
           {t(lang, "admin.persona.employees.fullProfileHint")}
         </p>
       </div>
+
+      {notFilled && (
+        <div className="card border-l-4 border-amber-400 bg-amber-50/50">
+          <div className="font-bold text-amber-900">
+            ⚠ พนักงานคนนี้ยังไม่ได้กรอกข้อมูลส่วนตัว
+          </div>
+          <p className="text-sm text-amber-800/90 mt-1 leading-relaxed">
+            ชื่อในระบบตอนสร้างบัญชี: <span className="font-bold">{row.display_name}</span>
+            {row.username && <> · <span className="font-mono text-xs">@{row.username}</span></>}
+          </p>
+          <p className="text-xs text-amber-800/70 mt-2">
+            ฟอร์มทั้งหมดจึงว่างเปล่า ไม่ใช่ระบบแสดงผลผิดพลาด — แอดมิน
+            สามารถกรอกแทนพนักงานได้ที่นี่ หรือให้พนักงาน login เข้า
+            /staff/persona/profile แล้วกรอกเองได้
+          </p>
+        </div>
+      )}
+
       <ProfileForm mode="admin" profile={row} supervisors={supervisors} />
     </div>
   );

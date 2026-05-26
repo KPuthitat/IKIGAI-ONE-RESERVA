@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { buildInitialApprovalFields } from "@/lib/approval-chain";
+import { notifyLeaveEvent } from "@/lib/approval-notify";
 import {
   ALL_LEAVE_TYPES, getEligibleLeaveTypesForUser, saveLeaveAttachment,
   analyzeLongLeave, detectWeekendExtension, getPublicHolidaySet, generateRefNo,
@@ -183,6 +184,14 @@ export async function POST(req: Request) {
     chain.current_approver_user_id, chain.escalated_to_level,
     chain.last_escalated_at, chain.approval_history
   );
+
+  // Fire-and-forget owl notification — DM primary approver +
+  // backup-in-chain. Failures logged at the helper level; the API
+  // response doesn't depend on push success.
+  notifyLeaveEvent({
+    requestId: Number(result.lastInsertRowid),
+    event: "submitted"
+  }).catch((e) => console.warn("leave notify (submitted) failed", e));
 
   return NextResponse.json({ ok: true, id: result.lastInsertRowid, ref_no: refNo });
 }

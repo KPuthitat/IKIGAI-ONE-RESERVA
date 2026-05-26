@@ -32,6 +32,7 @@ import {
 import { reportError } from "@/lib/error-reporter";
 import { expireOldRedemptions } from "@/lib/redemption";
 import { escalateStaleRequests } from "@/lib/approval-chain";
+import { notifyLeaveEvent } from "@/lib/approval-notify";
 
 export async function POST(req: Request) {
   const token = req.headers.get("x-cron-token");
@@ -203,6 +204,17 @@ async function runCron(): Promise<NextResponse> {
   try {
     const l = escalateStaleRequests("leave_requests");
     escalatedLeave = l.reassigned;
+    // Fire owl notifications for each leave that just escalated —
+    // DM the new primary ("your turn") and the old primary
+    // ("you missed it"). Fire-and-forget, individual failures don't
+    // affect the cron summary.
+    for (const ev of l.events) {
+      notifyLeaveEvent({
+        requestId: ev.requestId,
+        event: "escalated",
+        escalatedFromUserId: ev.fromUserId
+      }).catch((e) => console.warn("leave notify (escalated) failed", e));
+    }
   } catch (e) {
     console.error("leave escalation sweep error", e);
     reportError(e, "cron leave-escalation", {});
@@ -210,6 +222,8 @@ async function runCron(): Promise<NextResponse> {
   try {
     const r = escalateStaleRequests("resignation_requests");
     escalatedResign = r.reassigned;
+    // Resignation notifications follow the same pattern but the
+    // helper is leave-specific for now — track as #38 to extend it.
   } catch (e) {
     console.error("resignation escalation sweep error", e);
     reportError(e, "cron resignation-escalation", {});

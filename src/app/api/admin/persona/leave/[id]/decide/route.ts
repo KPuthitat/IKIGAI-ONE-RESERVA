@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { notifyLeaveEvent } from "@/lib/approval-notify";
 
 const Body = z.object({
   decision: z.enum(["approved", "rejected", "revision_requested"]),
@@ -51,6 +52,16 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     SET status = ?, decided_by = ?, decided_at = ?, decision_note = ?
     WHERE id = ?
   `).run(parsed.data.decision, user.id, nowIso, parsed.data.note ?? null, id);
+
+  // Fire-and-forget owl notification — requester + chain backup.
+  // Skips 'revision_requested' (non-terminal — staff edits then
+  // resubmits, the "submitted" event fires again on insert).
+  if (parsed.data.decision === "approved" || parsed.data.decision === "rejected") {
+    notifyLeaveEvent({
+      requestId: id,
+      event: parsed.data.decision
+    }).catch((e) => console.warn("leave notify (decision) failed", e));
+  }
 
   return NextResponse.json({ ok: true, status: parsed.data.decision });
 }

@@ -46,16 +46,16 @@ export function pickInitialApprover(requesterUserId: number): ApprovalAssignment
   // Direct manager — must still exist + be active for us to route to them.
   if (requester?.reports_to_user_id) {
     const mgr = db.prepare(
-      "SELECT id, active FROM users WHERE id = ?"
-    ).get(requester.reports_to_user_id) as { id: number; active: number } | undefined;
-    if (mgr && mgr.active) {
+      "SELECT id, status FROM users WHERE id = ?"
+    ).get(requester.reports_to_user_id) as { id: number; status: string } | undefined;
+    if (mgr && mgr.status !== "disabled") {
       return { approver_user_id: mgr.id, level: 0, reason: "initial" };
     }
   }
 
   // Fallback to any super_admin so the request doesn't orphan.
   const su = db.prepare(
-    "SELECT id FROM users WHERE role = 'super_admin' AND active = 1 ORDER BY id LIMIT 1"
+    "SELECT id FROM users WHERE role = 'super_admin' AND status != 'disabled' ORDER BY id LIMIT 1"
   ).get() as { id: number } | undefined;
   if (!su) throw new Error("No super_admin available to take the approval");
   return { approver_user_id: su.id, level: 0, reason: "fallback" };
@@ -87,11 +87,11 @@ export function escalateOneStep(
       break;
     }
     const mgr = db.prepare(
-      "SELECT id, active, role FROM users WHERE id = ?"
+      "SELECT id, status, role FROM users WHERE id = ?"
     ).get(next.reports_to_user_id) as
-      | { id: number; active: number; role: string }
+      | { id: number; status: string; role: string }
       | undefined;
-    if (!mgr || !mgr.active) {
+    if (!mgr || mgr.status === "disabled") {
       // Skip deactivated manager and walk further up.
       cursor = next.reports_to_user_id;
       continue;
@@ -104,7 +104,7 @@ export function escalateOneStep(
   }
   // Last-resort: any super_admin.
   const su = db.prepare(
-    "SELECT id FROM users WHERE role = 'super_admin' AND active = 1 AND id != ? ORDER BY id LIMIT 1"
+    "SELECT id FROM users WHERE role = 'super_admin' AND status != 'disabled' AND id != ? ORDER BY id LIMIT 1"
   ).get(currentApproverUserId) as { id: number } | undefined;
   if (!su) return null;
   return { approver_user_id: su.id, level: currentLevel + 1, reason: "fallback" };
@@ -146,16 +146,26 @@ export function appendApprovalHistory(
   return JSON.stringify(arr);
 }
 
+/** One escalation that just happened — caller (cron) uses this list
+ *  to fire LINE notifications afterwards. */
+export type EscalationEvent = {
+  requestId: number;
+  fromUserId: number;
+  toUserId: number;
+};
+
 /** Sweep one approval-bearing table and escalate any pending row
  *  whose current_approver hasn't decided within their escalation
- *  window. Returns counts so cron can log a summary.
+ *  window. Returns counts so cron can log a summary, plus the list
+ *  of (request_id, from_user_id, to_user_id) tuples so cron can
+ *  push notifications to each pair after the DB commits.
  *
  *  Operates on { leave_requests | resignation_requests }. The
  *  column layout is identical thanks to the matching migrations
  *  in db.ts. */
 export function escalateStaleRequests(
   table: "leave_requests" | "resignation_requests"
-): { reassigned: number; topped_out: number } {
+): { reassigned: number; topped_out: number; events: EscalationEvent[] } {
   const db = getDb();
   const nowMs = Date.now();
   const rows = db.prepare(`
@@ -175,6 +185,7 @@ export function escalateStaleRequests(
 
   let reassigned = 0;
   let toppedOut = 0;
+  const events: EscalationEvent[] = [];
   for (const r of rows) {
     const ageMs = nowMs - new Date(r.last_escalated_at ?? r.created_at).getTime();
     const hours = getEscalationHours(r.current_approver_user_id);
@@ -200,8 +211,13 @@ export function escalateStaleRequests(
       WHERE id = ?
     `).run(next.approver_user_id, next.level, nowIso, nextHistory, r.id);
     reassigned += 1;
+    events.push({
+      requestId: r.id,
+      fromUserId: r.current_approver_user_id,
+      toUserId: next.approver_user_id
+    });
   }
-  return { reassigned, topped_out: toppedOut };
+  return { reassigned, topped_out: toppedOut, events };
 }
 
 /** Helper for the request-creation path. Builds the four fields the

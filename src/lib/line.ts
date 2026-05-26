@@ -2637,6 +2637,269 @@ export function personaShiftReminderFlex(args: ShiftReminderArgs): LineFlexMessa
   return { type: "flex", altText, contents: bubble };
 }
 
+// ── PERSONA: leave-approval workflow notifications (2026-05) ──────
+//
+// One Flex card per event. Six audiences map to four events:
+//   submitted   → primary (action) + backup (FYI)
+//   approved    → requester (good news) + backup (close-the-loop)
+//   rejected    → requester (bad news) + backup (close-the-loop)
+//   escalated   → new primary (action) + old primary (you missed)
+//
+// Each card uses the owl mascot + warm copy. Body shows requester
+// name + leave type + date range. A CTA button deep-links the
+// recipient to the approver page (primary/backup recipients) or to
+// the staff leave page (requester recipients).
+
+export type ApprovalNotifyArgs = {
+  /** "submitted_primary" — A receives "you must approve"
+   *  "submitted_backup"  — B receives "FYI A is handling"
+   *  "approved_requester"
+   *  "approved_backup"
+   *  "rejected_requester"
+   *  "rejected_backup"
+   *  "escalated_new"      — B receives "now your turn"
+   *  "escalated_old"      — A receives "you missed it" */
+  variant:
+    | "submitted_primary" | "submitted_backup"
+    | "approved_requester" | "approved_backup"
+    | "rejected_requester" | "rejected_backup"
+    | "escalated_new" | "escalated_old";
+  /** Recipient's name for the personalised greeting. Prefers nickname. */
+  recipientName: string;
+  /** Requester display label — "นายสมชาย (ปุย)" — pre-formatted. */
+  requesterLabel: string;
+  /** "ลาป่วย" / "ลากิจ" / etc., already localised. */
+  leaveTypeLabel: string;
+  /** YYYY-MM-DD strings — same as DB. */
+  dateFrom: string;
+  dateTo: string;
+  /** Optional free-text reason from the request. */
+  reason: string | null;
+  /** Decision note when event is approved/rejected. */
+  decisionNote?: string | null;
+  /** Deep link CTA — UI page the recipient should open. */
+  ctaUrl: string;
+  ctaLabel: string;
+  headerColor?: string | null;
+};
+
+function approvalBannerFor(variant: ApprovalNotifyArgs["variant"]): {
+  color: string; icon: string; title: string; subtitle: string;
+} {
+  switch (variant) {
+    case "submitted_primary":
+      return {
+        color: "#0ea5e9", icon: "📩",
+        title: "มีคำขอลาใหม่รอพี่อนุมัติ",
+        subtitle: "น้องฮูกส่งต่อมาให้พี่ดูครับ"
+      };
+    case "submitted_backup":
+      return {
+        color: "#94a3b8", icon: "👀",
+        title: "FYI — มีคำขอลาเข้ามาในระบบ",
+        subtitle: "น้องส่งให้หัวหน้าตรงดูก่อน พี่เป็น backup ในสาย"
+      };
+    case "approved_requester":
+      return {
+        color: "#10b981", icon: "✓",
+        title: "คำขอลาของพี่ได้รับการอนุมัติแล้ว",
+        subtitle: "น้องฮูกขอแสดงความยินดี ขอให้พักผ่อนเยอะๆ"
+      };
+    case "approved_backup":
+      return {
+        color: "#10b981", icon: "✓",
+        title: "คำขอลาได้รับการอนุมัติแล้ว",
+        subtitle: "ไม่ต้องดำเนินการอะไรเพิ่ม น้องแจ้งให้ทราบเฉยๆ"
+      };
+    case "rejected_requester":
+      return {
+        color: "#dc2626", icon: "✗",
+        title: "คำขอลาของพี่ไม่ผ่านการอนุมัติ",
+        subtitle: "ติดต่อหัวหน้าโดยตรงเพื่อสอบถามเพิ่มเติม"
+      };
+    case "rejected_backup":
+      return {
+        color: "#dc2626", icon: "✗",
+        title: "คำขอลาถูกปฏิเสธโดยหัวหน้าตรง",
+        subtitle: "ไม่ต้องดำเนินการอะไรเพิ่ม น้องแจ้งให้ทราบเฉยๆ"
+      };
+    case "escalated_new":
+      return {
+        color: "#f59e0b", icon: "⏰",
+        title: "ถึงคิวพี่อนุมัติคำขอนี้แล้ว",
+        subtitle: "หัวหน้าตรงไม่ได้ดำเนินการในเวลา ตอนนี้เป็นหน้าที่ของพี่ครับ"
+      };
+    case "escalated_old":
+      return {
+        color: "#94a3b8", icon: "⏰",
+        title: "คำขอนี้ถูกส่งต่อให้หัวหน้าของพี่แล้ว",
+        subtitle: "เกินเวลาดำเนินการที่กำหนด ระบบส่งต่อตามสายอัตโนมัติ"
+      };
+  }
+}
+
+function approvalGreetingTh(recipientName: string, variant: ApprovalNotifyArgs["variant"]): string {
+  // Same hash trick used in shift greeter — but keyed by variant so
+  // sequential events on the same request get distinct openers.
+  let h = 0;
+  for (let i = 0; i < variant.length; i++) {
+    h = ((h << 5) - h + variant.charCodeAt(i)) | 0;
+  }
+  const idx = Math.abs(h);
+  const POOL = [
+    "สวัสดีครับพี่",
+    "หวัดดีครับพี่",
+    "ขออภัยที่รบกวนพี่"
+  ];
+  return `${POOL[idx % POOL.length]} ${recipientName}`;
+}
+
+export function personaApprovalNotifyFlex(args: ApprovalNotifyArgs): LineFlexMessage {
+  const banner = approvalBannerFor(args.variant);
+  const greeting = approvalGreetingTh(args.recipientName, args.variant);
+  const headerColor = args.headerColor || COLOR_INK_700;
+  const dateLine = args.dateFrom === args.dateTo
+    ? `${args.dateFrom}`
+    : `${args.dateFrom} ถึง ${args.dateTo}`;
+
+  const detailRows: Array<Record<string, unknown>> = [
+    {
+      type: "box", layout: "horizontal", spacing: "sm",
+      contents: [
+        { type: "text", text: "ผู้ขอลา", size: "sm", color: COLOR_LABEL, flex: 3 },
+        { type: "text", text: args.requesterLabel, size: "sm", color: COLOR_TEXT_DARK,
+          weight: "bold", flex: 5, align: "end", wrap: true }
+      ]
+    },
+    {
+      type: "box", layout: "horizontal", spacing: "sm",
+      contents: [
+        { type: "text", text: "ประเภท", size: "sm", color: COLOR_LABEL, flex: 3 },
+        { type: "text", text: args.leaveTypeLabel, size: "sm", color: COLOR_TEXT_DARK,
+          weight: "bold", flex: 5, align: "end", wrap: true }
+      ]
+    },
+    {
+      type: "box", layout: "horizontal", spacing: "sm",
+      contents: [
+        { type: "text", text: "ช่วงวัน", size: "sm", color: COLOR_LABEL, flex: 3 },
+        { type: "text", text: dateLine, size: "sm", color: COLOR_TEXT_DARK,
+          weight: "bold", flex: 5, align: "end", wrap: true }
+      ]
+    }
+  ];
+
+  // Reason / decision note — appended as a soft block when present.
+  const extraBlocks: Array<Record<string, unknown>> = [];
+  if (args.reason && args.reason.trim()) {
+    extraBlocks.push(
+      { type: "separator", margin: "md", color: COLOR_DIVIDER },
+      {
+        type: "box", layout: "vertical", spacing: "xs", margin: "md",
+        contents: [
+          { type: "text", text: "เหตุผล", size: "xs", color: COLOR_LABEL },
+          { type: "text", text: args.reason, size: "sm", color: COLOR_TEXT_DARK, wrap: true }
+        ]
+      }
+    );
+  }
+  if (args.decisionNote && args.decisionNote.trim()) {
+    extraBlocks.push(
+      { type: "separator", margin: "md", color: COLOR_DIVIDER },
+      {
+        type: "box", layout: "vertical", spacing: "xs", margin: "md",
+        contents: [
+          { type: "text", text: "หมายเหตุการตัดสินใจ", size: "xs", color: COLOR_LABEL },
+          { type: "text", text: args.decisionNote, size: "sm", color: COLOR_TEXT_DARK, wrap: true }
+        ]
+      }
+    );
+  }
+
+  const bubble = {
+    type: "bubble",
+    size: "giga",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: headerColor,
+      paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS · PERSONA", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
+            { type: "text", text: "น้องฮูก · ผู้ช่วย", color: "#cbd5e1", size: "xs", align: "end", flex: 1 }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", spacing: "sm", margin: "md",
+          contents: [
+            { type: "text", text: "🦉", color: "#ffffff", size: "xxl", flex: 0 },
+            { type: "text", text: "เรื่องการลา", color: "#ffffff", size: "md", weight: "bold", wrap: true }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md",
+      paddingAll: "24px",
+      contents: [
+        // Greeting
+        { type: "text", text: greeting, size: "md", color: COLOR_TEXT_DARK, weight: "bold", wrap: true },
+        // Banner — title + subtitle inside the kind-coloured chip
+        {
+          type: "box", layout: "vertical",
+          paddingAll: "16px", margin: "md",
+          backgroundColor: banner.color + "20",
+          cornerRadius: "10px",
+          borderWidth: "1px",
+          borderColor: banner.color,
+          contents: [
+            {
+              type: "text",
+              text: `${banner.icon} ${banner.title}`,
+              size: "lg", color: banner.color, weight: "bold", wrap: true, align: "center"
+            },
+            {
+              type: "text",
+              text: banner.subtitle,
+              size: "sm", color: COLOR_TEXT_DARK, wrap: true, align: "center", margin: "xs"
+            }
+          ]
+        },
+        // Detail rows
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: detailRows },
+        // Reason / decision note
+        ...extraBlocks
+      ]
+    },
+    footer: {
+      type: "box", layout: "vertical", paddingAll: "16px", paddingTop: "0px", spacing: "sm",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          color: COLOR_BRAND,
+          height: "sm",
+          action: { type: "uri", label: args.ctaLabel, uri: args.ctaUrl }
+        }
+      ]
+    },
+    styles: {
+      header: { backgroundColor: headerColor },
+      body: { backgroundColor: "#ffffff" },
+      footer: { backgroundColor: "#ffffff", separator: true, separatorColor: COLOR_DIVIDER }
+    }
+  };
+
+  return {
+    type: "flex",
+    altText: `${banner.title} · ${args.requesterLabel} · ${args.leaveTypeLabel}`,
+    contents: bubble
+  };
+}
+
 export function dailyAttendanceSummaryFlex(
   args: DailyAttendanceSummaryArgs
 ): LineFlexMessage {
