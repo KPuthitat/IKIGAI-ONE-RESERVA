@@ -3,8 +3,11 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
-import type { AscendaKpi, AscendaResult, ResultStatus } from "@/lib/ascenda";
-import { evaluateStatus, statusLabelTh } from "@/lib/ascenda";
+// Client component — import from ascenda-types (no DB / better-sqlite3
+// in the browser bundle). The server-side variant @/lib/ascenda
+// transitively pulls getDb which webpack can't resolve for the browser.
+import type { AscendaKpi, AscendaResult, ResultStatus } from "@/lib/ascenda-types";
+import { evaluateStatus, statusLabelTh } from "@/lib/ascenda-types";
 
 // Interactive dashboard wrapper. Server page does the heavy lifting
 // (engine run + queries); this component just renders + handles the

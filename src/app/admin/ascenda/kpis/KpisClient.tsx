@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
-import type { AscendaKpi, KpiKind, KpiScope, TargetOp } from "@/lib/ascenda";
-import { kindLabelTh } from "@/lib/ascenda";
+// Client component — import from ascenda-types so the browser bundle
+// doesn't pull in better-sqlite3 via @/lib/ascenda.
+import type { AscendaKpi, KpiKind, KpiScope, TargetOp } from "@/lib/ascenda-types";
+import { kindLabelTh } from "@/lib/ascenda-types";
 
 // Interactive KPI manager. Inline modal for add/edit, per-row buttons
 // for reorder / toggle active / delete. Uses router.refresh() after
