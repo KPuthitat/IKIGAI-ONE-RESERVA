@@ -77,17 +77,17 @@ export default function AdminPersonaDashboard() {
   const ptCount = (db.prepare(`
     SELECT COUNT(*) AS n FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.role = 'staff' AND u.employment_type = 'pt' AND u.is_test_account = 0
+    WHERE u.role IN ('staff', 'admin') AND u.employment_type = 'pt' AND u.is_test_account = 0
   `).get(branch.id) as Counter).n;
   const ftCount = (db.prepare(`
     SELECT COUNT(*) AS n FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.role = 'staff' AND u.employment_type = 'ft' AND u.is_test_account = 0
+    WHERE u.role IN ('staff', 'admin') AND u.employment_type = 'ft' AND u.is_test_account = 0
   `).get(branch.id) as Counter).n;
   const unsetCount = (db.prepare(`
     SELECT COUNT(*) AS n FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.role = 'staff' AND u.employment_type IS NULL AND u.is_test_account = 0
+    WHERE u.role IN ('staff', 'admin') AND u.employment_type IS NULL AND u.is_test_account = 0
   `).get(branch.id) as Counter).n;
   const resigUnlocked = (db.prepare(`
     SELECT COUNT(*) AS n FROM users u

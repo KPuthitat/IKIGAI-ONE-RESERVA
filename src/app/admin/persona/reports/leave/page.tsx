@@ -94,7 +94,7 @@ export default function LeaveReportPage({
   // Staff dropdown
   const staffList = db.prepare(`
     SELECT id, display_name, title_prefix FROM users
-    WHERE role = 'staff' AND is_test_account = 0
+    WHERE role IN ('staff', 'admin') AND is_test_account = 0
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
   `).all() as StaffOpt[];

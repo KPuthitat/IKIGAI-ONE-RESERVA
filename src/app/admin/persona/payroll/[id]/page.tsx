@@ -71,7 +71,7 @@ export default function PeriodDetailPage({
   const addableStaff = db.prepare(`
     SELECT id, display_name, title_prefix, employment_type
     FROM users
-    WHERE role = 'staff'
+    WHERE role IN ('staff', 'admin')
       AND is_test_account = 0
       AND id NOT IN (SELECT user_id FROM payroll_lines WHERE period_id = ?)
       ${branchFilter}

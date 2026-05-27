@@ -49,14 +49,18 @@ export default function AdminResignationPage({
   `).all() as Array<{ status: string; n: number }>;
   const countMap = Object.fromEntries(counts.map(c => [c.status, c.n])) as Record<string, number>;
 
-  // staff list สำหรับ unlock dropdown
+  // staff list สำหรับ unlock dropdown — 2026-05-28: include admin
+  // role too. Admins are employees in the PERSONA model (they get
+  // rosters, leaves, paychecks, etc.); excluding them here meant
+  // admin-role users couldn't be granted resignation rights.
   const staffList = db.prepare(`
     SELECT u.id, u.username, u.display_name, u.title_prefix,
            u.resignation_unlocked_at,
            uu.display_name AS unlocked_by_name
     FROM users u
     LEFT JOIN users uu ON u.resignation_unlocked_by = uu.id
-    WHERE u.role = 'staff'
+    WHERE u.role IN ('staff', 'admin')
+      AND u.is_test_account = 0
     ORDER BY CASE WHEN u.employment_type = 'ft' THEN 0 WHEN u.employment_type = 'pt' THEN 1 ELSE 2 END,
              u.display_name
   `).all() as Array<{

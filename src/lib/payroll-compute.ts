@@ -575,7 +575,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     SELECT id AS user_id, display_name, employment_type, employee_code,
            hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
     FROM users
-    WHERE role = 'staff' AND employment_type IS NOT NULL
+    WHERE role IN ('staff', 'admin') AND employment_type IS NOT NULL
       AND is_test_account = 0
       AND ${staffWhere}
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
