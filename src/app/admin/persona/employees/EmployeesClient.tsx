@@ -53,17 +53,68 @@ export type EmployeeRow = {
 export type BranchLite = { id: number; name: string };
 
 export default function EmployeesClient({
-  employees, allBranches, grants, editableBranchIds
+  employees, allBranches, grants, editableBranchIds,
+  currentUserId, currentUserRole
 }: {
   employees: EmployeeRow[];
   allBranches: BranchLite[];
   grants: Array<{ user_id: number; branch_id: number }>;
   editableBranchIds: number[];
+  currentUserId: number;
+  currentUserRole: "super_admin" | "admin" | "staff";
 }) {
   const router = useRouter();
   const { t, formatDate } = useLang();
   const [pending, startTransition] = useTransition();
   const [editTarget, setEditTarget] = useState<EmployeeRow | null>(null);
+  const [impersonatingId, setImpersonatingId] = useState<number | null>(null);
+
+  // Start an impersonation session for the given target. The backend
+  // (POST /api/admin/impersonate/[id]) swaps sessions.user_id + sets
+  // the marker cookie. We hard-reload to /admin so every server
+  // component re-reads the session under the new identity, which is
+  // safer than relying on router.refresh() to invalidate every cache.
+  async function impersonate(target: EmployeeRow) {
+    if (!window.confirm(
+      `เข้าระบบในนาม "${target.display_name}"?\n\n` +
+      `จะเห็นทุกอย่างเหมือนเป็นคนนี้ ทั้งบทบาท สาขา สิทธิ์การเข้าถึง\n` +
+      `กดปุ่ม "หยุดดูแทน" บนแถบด้านบนตอนต้องการกลับ — การกระทำทุกอย่างจะถูกบันทึก`
+    )) return;
+    setImpersonatingId(target.id);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/impersonate/${target.id}`), {
+        method: "POST"
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        window.alert(j.message || j.error || "เริ่มเข้าระบบในนามไม่สำเร็จ");
+        setImpersonatingId(null);
+        return;
+      }
+      // Hard reload so the orange banner mounts + every server cache
+      // re-reads the swapped session. Landing on /admin keeps the
+      // operator in admin scope; if the target is staff-only, the
+      // layout will bounce them to /staff.
+      window.location.href = "/admin";
+    } catch {
+      window.alert("เกิดข้อผิดพลาดเครือข่าย");
+      setImpersonatingId(null);
+    }
+  }
+
+  // Visibility rule — mirrors the server-side check so we don't show
+  // a button that will 403.
+  //   super_admin → anyone except themselves
+  //   admin       → staff in their own branch only (we only have the
+  //                  branch list per row, so we approximate by role;
+  //                  the server rejects cross-branch cases cleanly).
+  //   staff       → never (page is gated by requireAdmin anyway).
+  function canImpersonate(target: EmployeeRow): boolean {
+    if (target.id === currentUserId) return false;
+    if (currentUserRole === "super_admin") return true;
+    if (currentUserRole === "admin") return target.role === "staff";
+    return false;
+  }
 
   // ── Filter + sort toolbar ──────────────────────────────────────
   // Search matches across display_name / employee_code / username.
@@ -344,6 +395,19 @@ export default function EmployeesClient({
                       >
                         {t("admin.persona.employees.edit")}
                       </button>
+                      {canImpersonate(u) && (
+                        <button
+                          type="button"
+                          onClick={() => impersonate(u)}
+                          disabled={impersonatingId === u.id}
+                          className="text-xs text-amber-700 hover:underline disabled:opacity-50"
+                          title="ดูระบบในนามพนักงานคนนี้ (ทดสอบ)"
+                        >
+                          {impersonatingId === u.id
+                            ? "กำลังเปลี่ยน…"
+                            : "🎭 เข้าระบบในนามนี้"}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

@@ -137,6 +137,13 @@ export default function AdminEmployeesPage({
         allBranches={allBranches}
         grants={grants}
         editableBranchIds={editableBranchIds}
+        // Pass the current user's id + role so the row-actions column
+        // can hide the "เข้าระบบในนาม" link on the operator's OWN row
+        // and on rows they can't impersonate (admin can only act-as
+        // staff; super_admin can act-as anyone — server enforces both,
+        // this just trims the UI to avoid frustrating clicks).
+        currentUserId={user.id}
+        currentUserRole={user.role}
       />
     </div>
   );
