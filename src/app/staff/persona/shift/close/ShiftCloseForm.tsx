@@ -108,6 +108,11 @@ export default function ShiftCloseForm({
     const v = previousData?.service_charge_amount;
     return typeof v === "number" ? String(v) : "";
   });
+  // 2026-05-27: ASCENDA daily revenue (ยอดขายวันนี้). Optional —
+  // staff can skip; admin backfills via /admin/ascenda/revenue.
+  // Lands in branch_daily_revenue (NOT in daily_reports.data) so the
+  // ASCENDA COL/sales-growth calculators have a clean source.
+  const [dailyRevenue, setDailyRevenue] = useState<string>("");
   const [checked, setChecked] = useState<Record<number, boolean>>(() =>
     Object.fromEntries(checklistItems.map((it) => {
       const prev = prevByLabel.get(it.label);
@@ -322,6 +327,10 @@ export default function ShiftCloseForm({
             // explicit 0 means "we collected nothing today" and is
             // recorded for transparency.
             service_charge_amount: svcParsed,
+            // ASCENDA daily revenue — same null-vs-0 contract as SVC.
+            // null = staff skipped, admin backfills; 0 = explicitly
+            // zero (closed for renovation etc.).
+            daily_revenue: parseAmount(dailyRevenue),
             checklist: checklistPayload
           }
         })
@@ -423,6 +432,21 @@ export default function ShiftCloseForm({
             </p>
           </div>
         )}
+
+        {/* ASCENDA daily revenue — always shown, always optional.
+            Feeds the COL % + sales-growth % auto-calculators. Staff
+            can skip; admin backfills via /admin/ascenda/revenue. */}
+        <div>
+          <label className="label">ยอดขายวันนี้ (บาท)</label>
+          <input type="number" inputMode="decimal" min={0} step="0.01"
+            className="input"
+            value={dailyRevenue}
+            placeholder="0.00 (ไม่บังคับ)"
+            onChange={(e) => setDailyRevenue(e.target.value)} />
+          <p className="text-[10px] text-slate-400 mt-1">
+            ใช้คำนวณ KPI ASCENDA (COL % และยอดขายโต) · เว้นว่างได้ถ้ายังไม่ทราบ
+          </p>
+        </div>
       </div>
 
       {checklistItems.length > 0 ? (

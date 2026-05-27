@@ -200,6 +200,78 @@ export function statusLabelTh(s: ResultStatus): string {
   return "—";
 }
 
+// ── Daily revenue helpers ────────────────────────────────────────
+
+/** Upsert one day of branch revenue. Used by the shift_close hook
+ *  (source='shift_close') and the admin override page
+ *  (source='admin_edit'). The UNIQUE (branch_id, date) constraint
+ *  means INSERT OR REPLACE updates in-place on re-submission. */
+export function upsertBranchDailyRevenue(args: {
+  branchId: number;
+  date: string;            // YYYY-MM-DD
+  revenue: number;
+  userId: number;
+  source: "shift_close" | "admin_edit";
+}): { id: number; created: boolean } {
+  const db = getDb();
+  const existing = db.prepare(
+    "SELECT id FROM branch_daily_revenue WHERE branch_id = ? AND date = ?"
+  ).get(args.branchId, args.date) as { id: number } | undefined;
+  const now = new Date().toISOString();
+  if (existing) {
+    db.prepare(`
+      UPDATE branch_daily_revenue
+      SET revenue = ?, recorded_by = ?, recorded_at = ?, source = ?
+      WHERE id = ?
+    `).run(args.revenue, args.userId, now, args.source, existing.id);
+    return { id: existing.id, created: false };
+  }
+  const r = db.prepare(`
+    INSERT INTO branch_daily_revenue
+      (branch_id, date, revenue, recorded_by, recorded_at, source)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(args.branchId, args.date, args.revenue, args.userId, now, args.source);
+  return { id: Number(r.lastInsertRowid), created: true };
+}
+
+export type DailyRevenueRow = {
+  id: number;
+  branch_id: number;
+  date: string;
+  revenue: number;
+  recorded_by: number | null;
+  recorded_at: string;
+  source: string | null;
+};
+
+/** Recent revenue rows for a branch, newest first. Used by the admin
+ *  override page; caller passes a row limit to bound the result. */
+export function listRecentBranchRevenue(
+  branchId: number,
+  limit: number
+): DailyRevenueRow[] {
+  return getDb().prepare(`
+    SELECT id, branch_id, date, revenue, recorded_by, recorded_at, source
+    FROM branch_daily_revenue
+    WHERE branch_id = ?
+    ORDER BY date DESC
+    LIMIT ?
+  `).all(branchId, limit) as DailyRevenueRow[];
+}
+
+/** Monthly revenue total for a branch over the given period key. Used
+ *  by the COL % calculator + sales-growth comparison. Returns 0 when
+ *  no rows exist for the month (caller can treat as "no data"). */
+export function monthlyBranchRevenue(branchId: number, periodKey: string): number {
+  const row = getDb().prepare(`
+    SELECT COALESCE(SUM(revenue), 0) AS total
+    FROM branch_daily_revenue
+    WHERE branch_id = ?
+      AND substr(date, 1, 7) = ?
+  `).get(branchId, periodKey) as { total: number } | undefined;
+  return row?.total ?? 0;
+}
+
 /** Friendly Thai label for the kind — drives the "ที่มา" column in
  *  the KPI list UI. */
 export function kindLabelTh(k: KpiKind): string {

@@ -7,6 +7,7 @@ import {
 } from "@/lib/line";
 import { todayBkk } from "@/lib/time";
 import { upsertDailyServiceCharge } from "@/lib/service-charge";
+import { upsertBranchDailyRevenue } from "@/lib/ascenda";
 
 // POST /api/persona/daily-report
 //
@@ -75,6 +76,12 @@ const ShiftCloseData = z.object({
   // 0 is allowed (e.g. closed for renovation, but you still ran the
   // shift_close form). Cap at 999_999 baht/day — matches the admin route.
   service_charge_amount: z.number().min(0).max(999_999).nullable().optional(),
+  // 2026-05-27 — daily revenue for ASCENDA. Lands in branch_daily_revenue
+  // (NOT in daily_reports.data — that table is the source of truth for
+  // financial figures, and the ASCENDA COL/sales-growth calculators
+  // read from there). Optional so staff can skip and admin backfills
+  // later via /admin/ascenda/revenue.
+  daily_revenue: z.number().min(0).max(10_000_000).nullable().optional(),
   checklist: z.array(ChecklistEntry).max(50)
 });
 // Readiness reports (11:30 + 16:00) — 2026-05-21 onward driven entirely
@@ -243,6 +250,27 @@ export async function POST(req: Request) {
         // Don't fail the whole report submission on an SVC hiccup;
         // admin can re-enter from /admin/persona/service-charge.
         console.error("svc upsert from shift_close failed", e);
+      }
+    }
+    // ASCENDA daily revenue (2026-05-27). Same fire-and-forget shape
+    // as SVC — a hiccup here can't block the shift_close submission,
+    // admin can backfill from /admin/ascenda/revenue.
+    if (d.daily_revenue != null) {
+      try {
+        const rev = upsertBranchDailyRevenue({
+          branchId: branch.id,
+          date: report_date,
+          revenue: d.daily_revenue,
+          userId: user.id,
+          source: "shift_close"
+        });
+        logPersonaAction(
+          user.id,
+          rev.created ? "ascenda.revenue.create" : "ascenda.revenue.update",
+          rev.id
+        );
+      } catch (e) {
+        console.error("revenue upsert from shift_close failed", e);
       }
     }
   }
