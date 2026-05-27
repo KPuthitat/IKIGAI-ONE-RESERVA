@@ -2484,42 +2484,76 @@ export type ShiftReminderArgs = {
    *  card-day always picks the same opener (consistent across
    *  refresh / re-send within the day). */
   dateBkk: string;
+  /** Optional admin-authored greeting overrides — newline-separated
+   *  lists per kind, fetched from system_settings. Caller is expected
+   *  to pass these in so we don't have to query the DB inside a flex
+   *  builder. NULL/missing = use built-in defaults. */
+  greetingOverrides?: {
+    work?: string | null;
+    day_off?: string | null;
+    on_leave?: string | null;
+  } | null;
 };
 
-/** Deterministic day-seeded greeting picker. The `{NAME}` token is
- *  replaced by the recipient's nickname so the name attaches directly
- *  to "พี่" with no space — owner direction: "สวัสดีครับพี่เกฟ" not
- *  "สวัสดีครับพี่ เกฟ". Falls back to bare "พี่" when no nickname. */
+/** Built-in greeting pools — exported so the admin notification
+ *  customiser can show them as the placeholder/fallback. Each line
+ *  can use `{NAME}` which is spliced in directly after "พี่" with no
+ *  space (owner direction: "พี่เกฟ" not "พี่ เกฟ"). The day-seeded
+ *  picker below rotates through these (or the admin override) so the
+ *  card looks varied without being random. */
+export const DEFAULT_SHIFT_GREETINGS = {
+  work: [
+    "สวัสดีครับพี่{NAME} น้องฮูกแวะมาทักทาย",
+    "อรุณสวัสดิ์ครับพี่{NAME} น้องฮูกแวะมาทักทาย",
+    "สวัสดีตอนเช้าครับพี่{NAME} น้องฮูกแวะมาทักทาย",
+    "หวัดดีครับพี่{NAME} น้องฮูกขออนุญาตรายงานเวรประจำวัน",
+    "สวัสดีครับพี่{NAME} น้องฮูกพร้อมเริ่มวันใหม่ไปกับพี่"
+  ],
+  day_off: [
+    "สวัสดีตอนเช้าครับพี่{NAME} วันนี้พักผ่อนเต็มที่นะครับ",
+    "อรุณสวัสดิ์ครับพี่{NAME} วันนี้น้องดูแลร้านให้ พี่พักได้สบายใจ",
+    "สวัสดีครับพี่{NAME} วันนี้เป็นวันของพี่ ขอให้พี่มีความสุข",
+    "หวัดดีครับพี่{NAME} วันนี้พักนะครับ น้องฝากรอยยิ้มไว้ให้พี่"
+  ],
+  on_leave: [
+    "สวัสดีครับพี่{NAME} น้องฮูกแจ้งเรื่องวันลาของพี่นะครับ",
+    "สวัสดีครับพี่{NAME} บันทึกการลาของพี่เรียบร้อย น้องดูแลให้แล้ว",
+    "หวัดดีครับพี่{NAME} การลาของพี่ผ่านการอนุมัติแล้วครับ",
+    "สวัสดีครับพี่{NAME} น้องขอให้พี่หายไวๆ กลับมาสดชื่นนะครับ"
+  ]
+} as const;
+
+/** Parse newline-separated greetings from system_settings. Empty
+ *  lines and pure-whitespace lines are dropped so an admin can use
+ *  blank lines for readability in the textarea without polluting the
+ *  rotation. Returns null when the override is empty/missing so the
+ *  caller knows to fall back to defaults. */
+function parseGreetingOverride(raw: string | null | undefined): string[] | null {
+  if (!raw) return null;
+  const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  return lines.length > 0 ? lines : null;
+}
+
 function pickShiftGreeting(
   dateBkk: string,
   kind: "work" | "day_off" | "on_leave",
-  nameDisplay: string
+  nameDisplay: string,
+  /** Optional admin-authored overrides per kind. NULL/empty falls
+   *  back to DEFAULT_SHIFT_GREETINGS. Lets callers pass the cached
+   *  system_settings row rather than re-querying on every send. */
+  overrides?: {
+    work?: string | null;
+    day_off?: string | null;
+    on_leave?: string | null;
+  }
 ): string {
   let h = 0;
   for (let i = 0; i < dateBkk.length; i++) {
     h = ((h << 5) - h + dateBkk.charCodeAt(i)) | 0;
   }
   const idx = Math.abs(h);
-  const WORK = [
-    "สวัสดีครับพี่{NAME} น้องฮูกแวะมาทักทาย",
-    "อรุณสวัสดิ์ครับพี่{NAME} น้องฮูกแวะมาทักทาย",
-    "สวัสดีตอนเช้าครับพี่{NAME} น้องฮูกแวะมาทักทาย",
-    "หวัดดีครับพี่{NAME} น้องฮูกขออนุญาตรายงานเวรประจำวัน",
-    "สวัสดีครับพี่{NAME} น้องฮูกพร้อมเริ่มวันใหม่ไปกับพี่"
-  ];
-  const OFF = [
-    "สวัสดีตอนเช้าครับพี่{NAME} วันนี้พักผ่อนเต็มที่นะครับ",
-    "อรุณสวัสดิ์ครับพี่{NAME} วันนี้น้องดูแลร้านให้ พี่พักได้สบายใจ",
-    "สวัสดีครับพี่{NAME} วันนี้เป็นวันของพี่ ขอให้พี่มีความสุข",
-    "หวัดดีครับพี่{NAME} วันนี้พักนะครับ น้องฝากรอยยิ้มไว้ให้พี่"
-  ];
-  const LEAVE = [
-    "สวัสดีครับพี่{NAME} น้องฮูกแจ้งเรื่องวันลาของพี่นะครับ",
-    "สวัสดีครับพี่{NAME} บันทึกการลาของพี่เรียบร้อย น้องดูแลให้แล้ว",
-    "หวัดดีครับพี่{NAME} การลาของพี่ผ่านการอนุมัติแล้วครับ",
-    "สวัสดีครับพี่{NAME} น้องขอให้พี่หายไวๆ กลับมาสดชื่นนะครับ"
-  ];
-  const list = kind === "work" ? WORK : kind === "day_off" ? OFF : LEAVE;
+  const override = parseGreetingOverride(overrides?.[kind]);
+  const list = override ?? (DEFAULT_SHIFT_GREETINGS[kind] as readonly string[]);
   // Attach name with NO space after "พี่" — "พี่เกฟ" not "พี่ เกฟ".
   // Empty nameDisplay → strip the placeholder cleanly so the line
   // reads "สวัสดีครับพี่ น้องฮูกแวะมาทักทาย" as the polite fallback.
@@ -2547,7 +2581,12 @@ export function personaShiftReminderFlex(args: ShiftReminderArgs): LineFlexMessa
   // gracefully degrades to "สวัสดีครับพี่ น้องฮูกแวะมาทักทาย" which
   // is polite + grammatical.
   const nameForGreeting = (args.nickname && args.nickname.trim()) || "";
-  const greeting = pickShiftGreeting(args.dateBkk, args.kind, nameForGreeting);
+  const greeting = pickShiftGreeting(
+    args.dateBkk,
+    args.kind,
+    nameForGreeting,
+    args.greetingOverrides ?? undefined
+  );
   const closing = pickShiftClosing(args.kind);
 
   // Banner colour varies per kind so the recipient knows at a glance

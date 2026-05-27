@@ -16,7 +16,7 @@
 //
 // Dedupe: shift_notify_last_sent_date stamped once per day per branch.
 
-import { getDb, type Branch } from "./db";
+import { getDb, getSystemSettings, type Branch } from "./db";
 import { getPlatformChannel, isChannelReady } from "./messaging-channels";
 import { sendLinePush, personaShiftReminderFlex } from "./line";
 
@@ -233,6 +233,15 @@ export async function sendShiftNotifications(
   }
   const recipients = buildShiftRecipients(branch.id, dateBkk);
   const friendlyDate = thaiFriendlyDate(dateBkk);
+  // Fetch once per send-batch — the greeting picker reads these
+  // newline-separated overrides per kind. NULL/empty falls back to
+  // DEFAULT_SHIFT_GREETINGS inside lib/line.ts.
+  const ss = getSystemSettings();
+  const greetingOverrides = {
+    work: ss.shift_greetings_work,
+    day_off: ss.shift_greetings_day_off,
+    on_leave: ss.shift_greetings_on_leave
+  };
   let sent = 0;
   let skipped = 0;
   for (const rec of recipients) {
@@ -246,7 +255,8 @@ export async function sendShiftNotifications(
       shifts: rec.kind === "work" ? rec.shifts : [],
       leaveTypeLabel: rec.kind === "on_leave" ? leaveLabelTh(rec.leaveType) : null,
       headerColor: branch.brand_color,
-      dateBkk
+      dateBkk,
+      greetingOverrides
     });
     try {
       const res = await sendLinePush(platform.channel_token, {

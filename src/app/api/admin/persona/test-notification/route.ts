@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
-import { getDb, type Branch } from "@/lib/db";
+import { getDb, getSystemSettings, type Branch } from "@/lib/db";
 import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
 import {
   sendLinePush,
@@ -127,6 +127,17 @@ export async function POST(req: Request) {
   // old double-พี่ glitch ("สวัสดีครับพี่พี่ฮูก ...").
   const MOCK_NICKNAME = me?.nickname_th?.trim() || "";
 
+  // Pass the admin's saved greeting overrides through so the test
+  // card reflects exactly what staff will see. The shape mirrors what
+  // sendShiftNotifications builds — null on a kind means "use default
+  // pool" inside pickShiftGreeting.
+  const ss = getSystemSettings();
+  const greetingOverrides = {
+    work: ss.shift_greetings_work,
+    day_off: ss.shift_greetings_day_off,
+    on_leave: ss.shift_greetings_on_leave
+  };
+
   try {
     switch (kind) {
       case "shift_work":
@@ -151,7 +162,8 @@ export async function POST(req: Request) {
           }],
           leaveTypeLabel: null,
           headerColor: branch.brand_color,
-          dateBkk: todayBkk
+          dateBkk: todayBkk,
+          greetingOverrides
         }));
 
       case "shift_day_off":
@@ -165,7 +177,8 @@ export async function POST(req: Request) {
           shifts: [],
           leaveTypeLabel: null,
           headerColor: branch.brand_color,
-          dateBkk: todayBkk
+          dateBkk: todayBkk,
+          greetingOverrides
         }));
 
       case "shift_on_leave":
@@ -179,7 +192,8 @@ export async function POST(req: Request) {
           shifts: [],
           leaveTypeLabel: "ลาป่วย",
           headerColor: branch.brand_color,
-          dateBkk: todayBkk
+          dateBkk: todayBkk,
+          greetingOverrides
         }));
 
       case "clock_in": {

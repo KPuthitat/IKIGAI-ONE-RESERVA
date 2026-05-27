@@ -35,6 +35,11 @@ export default function NotificationsPage() {
       </div>
       <NotificationsClient
         resignationUnlockMessage={ss.resignation_unlock_message ?? ""}
+        shiftGreetings={{
+          work: ss.shift_greetings_work ?? "",
+          day_off: ss.shift_greetings_day_off ?? "",
+          on_leave: ss.shift_greetings_on_leave ?? ""
+        }}
       />
     </div>
   );

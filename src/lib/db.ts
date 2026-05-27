@@ -1510,6 +1510,20 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "resignation_unlock_message")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN resignation_unlock_message TEXT");
   }
+  // Shift-reminder greeting overrides (2026-05-28). Each column stores
+  // newline-separated greetings for one shift kind; the {NAME}
+  // placeholder is replaced with the recipient's nickname (no space
+  // after "พี่"). NULL = use the built-in defaults in
+  // pickShiftGreeting(). Owner edits via /admin/persona/notifications.
+  if (!ssCols.some((c) => c.name === "shift_greetings_work")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN shift_greetings_work TEXT");
+  }
+  if (!ssCols.some((c) => c.name === "shift_greetings_day_off")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN shift_greetings_day_off TEXT");
+  }
+  if (!ssCols.some((c) => c.name === "shift_greetings_on_leave")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN shift_greetings_on_leave TEXT");
+  }
   // Cron heartbeat (2026-05-25) — stamped by every successful POST
   // /api/cron call. Lets admin diagnose "is the external cron job
   // actually pinging us?" without SSH'ing into the VPS. NULL = never
@@ -2888,6 +2902,9 @@ export function getSystemSettings(): SystemSettings {
       default_escalation_hours: 24,
       improper_resignation_consequences: null,
       resignation_unlock_message: null,
+      shift_greetings_work: null,
+      shift_greetings_day_off: null,
+      shift_greetings_on_leave: null,
       updated_at: null,
       updated_by: null
     };
@@ -2913,6 +2930,11 @@ export function updateSystemSettings(
     // Body of the LINE card sent when admin opens a staff's
     // resignation gate. `{ADMIN}` placeholder replaced at send time.
     resignation_unlock_message?: string | null;
+    // Shift-reminder greeting overrides — newline-separated. NULL
+    // (omit field) leaves unchanged; "" clears back to defaults.
+    shift_greetings_work?: string | null;
+    shift_greetings_day_off?: string | null;
+    shift_greetings_on_leave?: string | null;
   },
   updatedBy: number
 ): void {
@@ -2956,6 +2978,16 @@ export function updateSystemSettings(
     // to the built-in default body.
     const raw = (patch.resignation_unlock_message ?? "").trim();
     vals.push(raw === "" ? null : raw);
+  }
+  // Shift-reminder greeting overrides — store as-is (preserving the
+  // newlines that separate lines); empty → NULL so the picker falls
+  // back to the built-in 4–5 default greetings per kind.
+  for (const col of ["shift_greetings_work", "shift_greetings_day_off", "shift_greetings_on_leave"] as const) {
+    if (Object.prototype.hasOwnProperty.call(patch, col)) {
+      sets.push(`${col} = ?`);
+      const raw = (patch[col] ?? "").trim();
+      vals.push(raw === "" ? null : raw);
+    }
   }
   if (sets.length === 0) return;
   sets.push("updated_at = ?", "updated_by = ?");
@@ -3058,6 +3090,13 @@ export type SystemSettings = {
   // gate. `{ADMIN}` placeholder is replaced with the operator's
   // display_name. NULL/empty = use the built-in default.
   resignation_unlock_message: string | null;
+  // Shift-reminder greeting overrides — newline-separated list per
+  // kind. NULL/empty = fall back to pickShiftGreeting() defaults.
+  // `{NAME}` placeholder is replaced with the recipient's nickname
+  // with NO space after "พี่" (owner direction).
+  shift_greetings_work: string | null;
+  shift_greetings_day_off: string | null;
+  shift_greetings_on_leave: string | null;
   updated_at: string | null;
   updated_by: number | null;
 };
