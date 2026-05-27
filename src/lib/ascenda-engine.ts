@@ -78,23 +78,27 @@ function calcAttendancePct(branchId: number, periodKey: string): number | null {
     leaveByUser.set(l.user_id, arr);
   }
 
-  // First clock-in time per (user, date) for the period at this
-  // branch. Used to detect absent (no row) + late (row > planned + 5).
+  // First clock-in (type='in') per (user, date) for the period at
+  // this branch. Used to detect absent (no row) + late (row > planned
+  // + 5). The time_entries table uses `ts` + `type` columns — earlier
+  // versions of this file used the wrong column names (`in_ts`) and
+  // crashed the page; corrected to match daily-attendance-summary.ts.
   const clockIns = db.prepare(`
     SELECT user_id,
-           substr(in_ts, 1, 10) AS d,
-           MIN(in_ts) AS in_ts
+           substr(ts, 1, 10) AS d,
+           MIN(ts) AS ts
     FROM time_entries
     WHERE branch_id = ?
-      AND substr(in_ts, 1, 10) >= ?
-      AND substr(in_ts, 1, 10) <= ?
-    GROUP BY user_id, substr(in_ts, 1, 10)
+      AND type = 'in'
+      AND substr(ts, 1, 10) >= ?
+      AND substr(ts, 1, 10) <= ?
+    GROUP BY user_id, substr(ts, 1, 10)
   `).all(branchId, firstDay, lastDay) as Array<{
-    user_id: number; d: string; in_ts: string;
+    user_id: number; d: string; ts: string;
   }>;
   const clockKey = (u: number, d: string) => `${u}:${d}`;
   const clockByKey = new Map<string, string>();
-  for (const c of clockIns) clockByKey.set(clockKey(c.user_id, c.d), c.in_ts);
+  for (const c of clockIns) clockByKey.set(clockKey(c.user_id, c.d), c.ts);
 
   let misses = 0;
   for (const a of assignments) {
