@@ -88,6 +88,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // from inside INVENTA itself (its own sidebar section + the
         // toolbar) — not duplicated at module level here.
         { href: "/staff/inventa", label: "INVENTA" },
+        { href: "/admin/ascenda", label: "ASCENDA" },
         // System-wide entries — only super_admin can manage these,
         // so hide them from regular admins to keep the sidebar clean.
         // The pages still enforce requireSuperAdmin() server-side as

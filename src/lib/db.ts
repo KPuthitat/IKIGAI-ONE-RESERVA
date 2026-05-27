@@ -2618,6 +2618,145 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_staff_credits_kind
       ON staff_credits(kind, created_at);
   `);
+
+  // ── ASCENDA — KPI / OKR evaluation (2026-05-27) ────────────────────
+  //
+  // Three tables drive the module:
+  //   ascenda_kpis            — the criteria definitions admin can
+  //                              add/remove/reweight. `kind` selects
+  //                              which calculator (or "manual") feeds
+  //                              the actual value; `scope` decides
+  //                              whether each branch gets its own
+  //                              evaluation or one company-wide row.
+  //   ascenda_results         — one row per (kpi, branch?, period).
+  //                              period_key = "YYYY-MM" for monthly
+  //                              progression; quarter/year summaries
+  //                              are aggregated on the fly from these.
+  //   branch_daily_revenue    — daily revenue input, fed from the
+  //                              shift_close checklist (Phase 3) plus
+  //                              manual admin edits. Used by the
+  //                              auto-calculated COL % and sales
+  //                              growth % KPIs.
+  //
+  // Owner direction (2026-05-27):
+  //   • Per-KPI scope (branch vs company) — some KPIs evaluated per
+  //     branch (attendance, accidents, COG, COL), some aggregated
+  //     company-wide (sales growth).
+  //   • Monthly progression with quarter + year rollups computed at
+  //     view time (no separate quarter/year rows in the DB).
+  //   • Weighted scoring: each branch's monthly score = Σ (kpi_weight
+  //     × pass?1:0) ÷ Σ kpi_weight × 100. Display as percentage.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ascenda_kpis (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      scope TEXT NOT NULL CHECK (scope IN ('branch','company')),
+      kind TEXT NOT NULL,
+      -- Enum identifying calculator + data source:
+      --   'attendance_pct'    auto from time_entries + leave_requests
+      --   'incident_count'    manual count
+      --   'wrong_order_count' manual count
+      --   'complaint_count'   manual count
+      --   'cog_pct'           manual percentage
+      --   'col_pct_auto'      auto from roster × rate ÷ rev_avg_3m
+      --   'sales_growth_pct'  auto from monthly revenue
+      --   'manual_number'     generic numeric (admin enters)
+      --   'manual_pct'        generic percentage (admin enters)
+      title TEXT NOT NULL,
+      description TEXT,
+      unit TEXT,
+      -- '%', 'ครั้ง', 'บาท' — display suffix only.
+      target_value REAL,
+      target_op TEXT CHECK (target_op IN ('lte','gte','eq')),
+      -- lte = actual ≤ target = pass (cost/error caps)
+      -- gte = actual ≥ target = pass (sales growth)
+      weight INTEGER NOT NULL DEFAULT 1,
+      -- Higher = counts more toward the rolled-up branch score.
+      display_order INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT,
+      updated_by INTEGER REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ascenda_kpis_scope_active
+      ON ascenda_kpis (scope, active, display_order);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ascenda_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kpi_id INTEGER NOT NULL REFERENCES ascenda_kpis(id) ON DELETE CASCADE,
+      branch_id INTEGER REFERENCES branches(id) ON DELETE CASCADE,
+      -- NULL for company-scope KPIs; non-null for branch-scope rows.
+      period_key TEXT NOT NULL,
+      -- YYYY-MM (e.g. "2026-05"). Quarter/year views aggregate these.
+      actual_value REAL,
+      status TEXT CHECK (status IN ('pass','fail','na','pending')),
+      notes TEXT,
+      computed_by_system INTEGER NOT NULL DEFAULT 0,
+      -- 1 = auto-filled by the engine (attendance/COL/sales) and so
+      --     the row regenerates when source data changes
+      -- 0 = manual entry (incidents/complaints/orders/COG) — engine
+      --     leaves these alone unless admin clears them first.
+      recorded_by INTEGER REFERENCES users(id),
+      recorded_at TEXT,
+      UNIQUE (kpi_id, branch_id, period_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ascenda_results_period
+      ON ascenda_results (period_key);
+    CREATE INDEX IF NOT EXISTS idx_ascenda_results_branch_period
+      ON ascenda_results (branch_id, period_key);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS branch_daily_revenue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      revenue REAL NOT NULL,
+      recorded_by INTEGER REFERENCES users(id),
+      recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      source TEXT,
+      -- 'shift_close' (set by Phase 3 hook) | 'admin_edit' | NULL.
+      UNIQUE (branch_id, date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_branch_revenue_branch_date
+      ON branch_daily_revenue (branch_id, date);
+  `);
+
+  // Seed the 7 default KPIs the owner specified. Idempotent — only
+  // inserts when ascenda_kpis is empty so editing/removing seeded
+  // rows in production doesn't bring them back on next boot.
+  const kpiCount = (db.prepare(
+    "SELECT COUNT(*) AS n FROM ascenda_kpis"
+  ).get() as { n: number }).n;
+  if (kpiCount === 0) {
+    const ins = db.prepare(`
+      INSERT INTO ascenda_kpis
+        (scope, kind, title, description, unit, target_value, target_op, weight, display_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    // Branch-scope KPIs (1-6) — each branch evaluated separately.
+    ins.run("branch", "attendance_pct", "อัตราการขาด/ลา/มาสาย",
+      "เปอร์เซ็นต์ของชั่วโมงที่ทีมขาด ลา หรือมาสาย เทียบกับชั่วโมงที่วางแผนไว้",
+      "%", 10, "lte", 2, 1);
+    ins.run("branch", "incident_count", "อุบัติเหตุในที่ทำงาน",
+      "จำนวนครั้งของอุบัติเหตุที่เกิดขึ้นในที่ทำงาน รวมพนักงานบาดเจ็บและทรัพย์สินเสียหาย",
+      "ครั้ง", 0, "lte", 3, 2);
+    ins.run("branch", "wrong_order_count", "ออเดอร์ผิด / ปฏิเสธลูกค้า",
+      "จำนวนครั้งของออเดอร์ที่ทำผิดสเป็คหรือปฏิเสธคำสั่งของลูกค้า",
+      "ครั้ง", 0, "lte", 2, 3);
+    ins.run("branch", "complaint_count", "ข้อร้องเรียนจากลูกค้า",
+      "จำนวนข้อร้องเรียนที่เข้ามาจากลูกค้าทุกช่องทาง (LINE / Google / ฯลฯ)",
+      "ครั้ง", 0, "lte", 2, 4);
+    ins.run("branch", "cog_pct", "ต้นทุนวัตถุดิบ (COG)",
+      "Cost of Goods — เปอร์เซ็นต์ของต้นทุนวัตถุดิบเทียบกับยอดขาย เป้า ≤ 35%",
+      "%", 35, "lte", 2, 5);
+    ins.run("branch", "col_pct_auto", "ต้นทุนแรงงาน (COL)",
+      "Cost of Labour — คำนวณอัตโนมัติจากชั่วโมงตามตารางเวร × ค่าตอบแทน ÷ รายได้เฉลี่ย 3 เดือนหลังสุด เป้า ≤ 20%",
+      "%", 20, "lte", 2, 6);
+    // Company-scope KPI (7) — one evaluation across all branches.
+    ins.run("company", "sales_growth_pct", "ยอดขายเฉลี่ยโต",
+      "เปรียบเทียบยอดขายเฉลี่ยรายเดือนกับเดือนก่อนหน้า เป้า ≥ 20%",
+      "%", 20, "gte", 3, 7);
+  }
 }
 
 /** One row in the daily attendance roster — used by the group
