@@ -62,7 +62,7 @@ export function getKpi(id: number): AscendaKpi | null {
 
 export function listResultsForPeriod(periodKey: string): AscendaResult[] {
   return getDb().prepare(`
-    SELECT id, kpi_id, branch_id, period_key, actual_value, status,
+    SELECT id, kpi_id, branch_id, company_id, period_key, actual_value, status,
            notes, computed_by_system, recorded_by, recorded_at
     FROM ascenda_results
     WHERE period_key = ?

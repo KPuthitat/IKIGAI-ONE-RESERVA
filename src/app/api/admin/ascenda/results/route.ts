@@ -19,6 +19,10 @@ import {
 const Body = z.object({
   kpi_id: z.number().int().positive(),
   branch_id: z.number().int().positive().nullable(),
+  // 2026-05-27 — company-scope KPIs now carry a company_id so each
+  // company gets its own row. Pair rule: branch-scope sends branch_id
+  // + company_id=null; company-scope sends company_id + branch_id=null.
+  company_id: z.number().int().positive().nullable().optional(),
   period_key: z.string().regex(/^\d{4}-\d{2}$/),
   // Owner can clear a row by sending null (sets actual_value = NULL
   // → status = "pending" so the dashboard cell goes back to "—").
@@ -41,6 +45,7 @@ export async function PUT(req: Request) {
     );
   }
   const { kpi_id, branch_id, period_key, actual_value, notes } = parsed.data;
+  const company_id = parsed.data.company_id ?? null;
 
   const kpi = getKpi(kpi_id);
   if (!kpi) return NextResponse.json({ error: "kpi_not_found" }, { status: 404 });
@@ -67,14 +72,26 @@ export async function PUT(req: Request) {
         { status: 400 }
       );
     }
+    if (company_id != null) {
+      return NextResponse.json(
+        { error: "company_not_allowed", message: "เกณฑ์ระดับสาขาต้องไม่ระบุ company_id" },
+        { status: 400 }
+      );
+    }
     if (!userHasBranch(user, branch_id)) {
       return NextResponse.json({ error: "branch_forbidden" }, { status: 403 });
     }
   } else {
-    // company scope — branch_id must be null.
+    // company scope — branch_id must be null, company_id required.
     if (branch_id != null) {
       return NextResponse.json(
         { error: "branch_not_allowed", message: "เกณฑ์ระดับบริษัทต้องไม่ระบุ branch_id" },
+        { status: 400 }
+      );
+    }
+    if (company_id == null) {
+      return NextResponse.json(
+        { error: "company_required", message: "เกณฑ์ระดับบริษัทต้องระบุ company_id" },
         { status: 400 }
       );
     }
@@ -84,13 +101,18 @@ export async function PUT(req: Request) {
   const now = new Date().toISOString();
   const db = getDb();
 
-  // Look up existing — NULL-aware (NULL ≠ NULL in SQLite UNIQUE).
+  // Look up existing — NULL-aware on BOTH branch_id and company_id
+  // (SQLite UNIQUE treats NULL as distinct so we can't rely on the
+  // inline constraint to dedupe — see the migration comment).
+  const params: Array<number | string> = [kpi_id, period_key];
+  if (branch_id != null) params.push(branch_id);
+  if (company_id != null) params.push(company_id);
   const existing = db.prepare(`
     SELECT id FROM ascenda_results
     WHERE kpi_id = ? AND period_key = ?
       ${branch_id == null ? "AND branch_id IS NULL" : "AND branch_id = ?"}
-  `).get(...(branch_id == null ? [kpi_id, period_key] : [kpi_id, period_key, branch_id])) as
-    | { id: number } | undefined;
+      ${company_id == null ? "AND company_id IS NULL" : "AND company_id = ?"}
+  `).get(...params) as { id: number } | undefined;
 
   let id: number;
   let created = false;
@@ -106,10 +128,10 @@ export async function PUT(req: Request) {
   } else {
     const r = db.prepare(`
       INSERT INTO ascenda_results
-        (kpi_id, branch_id, period_key, actual_value, status, notes,
+        (kpi_id, branch_id, company_id, period_key, actual_value, status, notes,
          computed_by_system, recorded_by, recorded_at)
-      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
-    `).run(kpi_id, branch_id, period_key, actual_value, status,
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+    `).run(kpi_id, branch_id, company_id, period_key, actual_value, status,
       notes ?? null, user.id, now);
     id = Number(r.lastInsertRowid);
     created = true;

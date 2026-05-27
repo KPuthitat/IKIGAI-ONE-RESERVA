@@ -2705,6 +2705,23 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_ascenda_results_branch_period
       ON ascenda_results (branch_id, period_key);
   `);
+  // company_id (2026-05-27 owner direction): company-scope KPIs
+  // evaluated PER company, not aggregated to one global row. Owner
+  // wording: "ASCENDA มีผลกับทุกบริษัท ทุกสาขา แต่ให้พิจารณาแยกกัน"
+  // — every company + every branch is in scope, but evaluated
+  // separately. Branch-scope rows already split per branch; this
+  // column lets company-scope rows split per company.
+  //   branch-scope row → branch_id set, company_id NULL
+  //   company-scope row → branch_id NULL, company_id set
+  // Uniqueness is enforced manually in the upsert path (NULL ≠ NULL
+  // in SQLite UNIQUE means the inline constraint above wouldn't
+  // dedupe company-scope rows across companies — the lookup-first
+  // pattern in the API/engine handles it without a table rebuild).
+  const arCols = db.prepare("PRAGMA table_info(ascenda_results)").all() as Array<{ name: string }>;
+  if (!arCols.some((c) => c.name === "company_id")) {
+    db.exec("ALTER TABLE ascenda_results ADD COLUMN company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_ascenda_results_company_period ON ascenda_results (company_id, period_key)");
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS branch_daily_revenue (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -39,6 +39,11 @@ export type AscendaResult = {
   id: number;
   kpi_id: number;
   branch_id: number | null;
+  // 2026-05-27 — company-scope rows now carry the company_id so each
+  // company gets its own evaluation. Branch-scope rows leave it NULL
+  // (the branch is the unit) and company-scope rows leave branch_id
+  // NULL instead.
+  company_id: number | null;
   period_key: string;
   actual_value: number | null;
   status: ResultStatus | null;

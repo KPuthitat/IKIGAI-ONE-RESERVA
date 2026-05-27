@@ -27,6 +27,7 @@ type BranchScore = {
 export default function DashboardClient({
   periodKey,
   branches,
+  companies,
   branchKpis,
   companyKpis,
   results,
@@ -35,6 +36,7 @@ export default function DashboardClient({
 }: {
   periodKey: string;
   branches: Array<{ id: number; name: string }>;
+  companies: Array<{ id: number; name: string }>;
   branchKpis: AscendaKpi[];
   companyKpis: AscendaKpi[];
   results: AscendaResult[];
@@ -43,24 +45,36 @@ export default function DashboardClient({
 }) {
   const router = useRouter();
   const [edit, setEdit] = useState<
-    | { kpi: AscendaKpi; branchId: number | null; current: AscendaResult | null }
+    | {
+        kpi: AscendaKpi;
+        branchId: number | null;
+        companyId: number | null;
+        current: AscendaResult | null;
+      }
     | null
   >(null);
 
   const autoSet = useMemo(() => new Set(autoKindIds), [autoKindIds]);
 
-  // Index results by (kpi_id, branch_id) for O(1) cell lookup.
-  // Company-scope cells use "_" as the branch_id key.
+  // Index results by (kpi_id, branch_id, company_id) for O(1) cell
+  // lookup. Composite key handles both scope kinds — branch-scope
+  // rows have company_id=null and vice versa, so the key shape
+  // distinguishes them cleanly.
   const resultMap = useMemo(() => {
     const m = new Map<string, AscendaResult>();
-    for (const r of results) m.set(`${r.kpi_id}:${r.branch_id ?? "_"}`, r);
+    for (const r of results) {
+      m.set(`${r.kpi_id}:b${r.branch_id ?? "_"}:c${r.company_id ?? "_"}`, r);
+    }
     return m;
   }, [results]);
 
-  function onCellClick(kpi: AscendaKpi, branchId: number | null) {
+  const keyFor = (kpiId: number, branchId: number | null, companyId: number | null) =>
+    `${kpiId}:b${branchId ?? "_"}:c${companyId ?? "_"}`;
+
+  function onCellClick(kpi: AscendaKpi, branchId: number | null, companyId: number | null) {
     if (autoSet.has(kpi.id)) return; // auto cells are read-only
-    const current = resultMap.get(`${kpi.id}:${branchId ?? "_"}`) ?? null;
-    setEdit({ kpi, branchId, current });
+    const current = resultMap.get(keyFor(kpi.id, branchId, companyId)) ?? null;
+    setEdit({ kpi, branchId, companyId, current });
   }
 
   return (
@@ -71,20 +85,63 @@ export default function DashboardClient({
         ))}
       </div>
 
-      {companyKpis.length > 0 && (
-        <div className="card space-y-3 mt-4">
-          <div className="font-bold text-slate-700 text-sm uppercase tracking-[0.5px]">
+      {/* ระดับบริษัท — one column per company, evaluated separately.
+          Owner direction 2026-05-27: every company gets its own
+          assessment row rather than aggregating to one global. */}
+      {companyKpis.length > 0 && companies.length > 0 && (
+        <div className="card overflow-x-auto mt-4">
+          <div className="font-bold text-slate-700 text-sm uppercase tracking-[0.5px] mb-3">
             ระดับบริษัท
           </div>
-          {companyKpis.map((k) => (
-            <KpiRow
-              key={k.id}
-              kpi={k}
-              result={resultMap.get(`${k.id}:_`) ?? null}
-              isAuto={autoSet.has(k.id)}
-              onClick={() => onCellClick(k, null)}
-            />
-          ))}
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-slate-200 text-left">
+                <th className="py-2 pr-3 font-semibold text-slate-600 min-w-[200px]">เกณฑ์</th>
+                <th className="py-2 pr-3 font-semibold text-slate-600 text-center w-16">น้ำหนัก</th>
+                {companies.map((c) => (
+                  <th key={c.id}
+                    className="py-2 pr-3 font-semibold text-slate-600 text-center min-w-[160px]">
+                    {c.name}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {companyKpis.map((k) => {
+                const isAuto = autoSet.has(k.id);
+                return (
+                  <tr key={k.id} className="border-b border-slate-100 last:border-b-0">
+                    <td className="py-2 pr-3">
+                      <div className="font-medium text-slate-800 flex items-center gap-1.5">
+                        {k.title}
+                        {isAuto && (
+                          <span className="text-[9px] bg-slate-200 text-slate-600 rounded px-1 py-0.5">
+                            อัตโนมัติ
+                          </span>
+                        )}
+                      </div>
+                      {k.target_value != null && k.target_op && (
+                        <div className="text-[10px] text-slate-400">
+                          เป้า {k.target_op === "lte" ? "≤" : k.target_op === "gte" ? "≥" : "="}
+                          {" "}{k.target_value}{k.unit ?? ""}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 text-center text-slate-500">×{k.weight}</td>
+                    {companies.map((c) => {
+                      const r = resultMap.get(keyFor(k.id, null, c.id)) ?? null;
+                      return (
+                        <td key={c.id} className="py-2 pr-3 text-center">
+                          <Cell kpi={k} result={r} isAuto={isAuto}
+                            onClick={() => onCellClick(k, null, c.id)} />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -128,11 +185,11 @@ export default function DashboardClient({
                   </td>
                   <td className="py-2 pr-3 text-center text-slate-500">×{k.weight}</td>
                   {branches.map((b) => {
-                    const r = resultMap.get(`${k.id}:${b.id}`) ?? null;
+                    const r = resultMap.get(keyFor(k.id, b.id, null)) ?? null;
                     return (
                       <td key={b.id} className="py-2 pr-3 text-center">
                         <Cell kpi={k} result={r} isAuto={isAuto}
-                          onClick={() => onCellClick(k, b.id)} />
+                          onClick={() => onCellClick(k, b.id, null)} />
                       </td>
                     );
                   })}
@@ -154,6 +211,7 @@ export default function DashboardClient({
         <EditModal
           kpi={edit.kpi}
           branchId={edit.branchId}
+          companyId={edit.companyId}
           periodKey={periodKey}
           current={edit.current}
           onClose={() => setEdit(null)}
@@ -295,10 +353,11 @@ function KpiRow({
 }
 
 function EditModal({
-  kpi, branchId, periodKey, current, onClose, onSaved
+  kpi, branchId, companyId, periodKey, current, onClose, onSaved
 }: {
   kpi: AscendaKpi;
   branchId: number | null;
+  companyId: number | null;
   periodKey: string;
   current: AscendaResult | null;
   onClose: () => void;
@@ -334,6 +393,7 @@ function EditModal({
         body: JSON.stringify({
           kpi_id: kpi.id,
           branch_id: branchId,
+          company_id: companyId,
           period_key: periodKey,
           actual_value: actual,
           notes: notes.trim() || null

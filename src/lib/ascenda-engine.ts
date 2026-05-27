@@ -200,19 +200,24 @@ function calcColPct(branchId: number, periodKey: string): number | null {
 }
 
 /** Sales growth % = (this-month total revenue / last-month total
- *  revenue − 1) × 100. Totals are summed across every branch (this
- *  is the only company-scope KPI today). Returns null when either
- *  month has zero revenue. */
-function calcSalesGrowthPct(periodKey: string): number | null {
+ *  revenue − 1) × 100. 2026-05-27 owner direction: evaluate PER
+ *  COMPANY (sum only that company's branches) instead of one global
+ *  number. Returns null when either month has zero revenue for that
+ *  company. */
+function calcSalesGrowthPctForCompany(
+  companyId: number,
+  periodKey: string
+): number | null {
   const db = getDb();
   const trailing = recentPeriodKeys(periodKey, 2);
-  // trailing = [prevMonth, periodKey]
   const [prevKey, curKey] = trailing;
   const sumFor = (k: string) => (db.prepare(`
-    SELECT COALESCE(SUM(revenue), 0) AS total
-    FROM branch_daily_revenue
-    WHERE substr(date, 1, 7) = ?
-  `).get(k) as { total: number }).total;
+    SELECT COALESCE(SUM(r.revenue), 0) AS total
+    FROM branch_daily_revenue r
+    INNER JOIN branches b ON b.id = r.branch_id
+    WHERE b.company_id = ?
+      AND substr(r.date, 1, 7) = ?
+  `).get(companyId, k) as { total: number }).total;
   const curTotal = sumFor(curKey);
   const prevTotal = sumFor(prevKey);
   if (prevTotal === 0 || curTotal === 0) return null;
@@ -224,30 +229,47 @@ function calcSalesGrowthPct(periodKey: string): number | null {
 /** Run every auto-kind KPI for the period and upsert the results.
  *  Idempotent — safe to call from a page-load server component on
  *  every render. Returns the number of rows touched so callers can
- *  log if they want a heartbeat. */
+ *  log if they want a heartbeat.
+ *  2026-05-27: company-scope KPIs now iterate per company (was one
+ *  global row); branch-scope unchanged. */
 export function runAutoCalculators(periodKey: string): number {
   const db = getDb();
   const branches = db.prepare(
     "SELECT id FROM branches WHERE status != 'closed'"
+  ).all() as Array<{ id: number }>;
+  const companies = db.prepare(
+    "SELECT id FROM companies WHERE active = 1"
   ).all() as Array<{ id: number }>;
 
   const allKpis = listKpis(undefined, true).filter((k) => isAutoKind(k.kind));
   if (allKpis.length === 0) return 0;
 
   let touched = 0;
-  const upsert = (kpi: AscendaKpi, branchId: number | null, value: number | null) => {
+  // Upsert one (kpi × branch/company × period) row. Exactly one of
+  // branchId / companyId is non-null per call — caller chooses based
+  // on the KPI's scope. Uniqueness is enforced via an explicit
+  // existing-row lookup (NULL ≠ NULL in SQLite UNIQUE means the
+  // inline constraint can't distinguish two company-scope rows for
+  // different companies on its own).
+  const upsert = (
+    kpi: AscendaKpi,
+    branchId: number | null,
+    companyId: number | null,
+    value: number | null
+  ) => {
     const status = evaluateStatus(value, kpi.target_value, kpi.target_op);
     const now = new Date().toISOString();
-    // INSERT OR REPLACE via the UNIQUE (kpi_id, branch_id, period_key)
-    // index. Caveat: in SQLite NULL ≠ NULL for UNIQUE, so company-
-    // scope rows (branch_id NULL) can duplicate — we guard against
-    // that with an explicit existing-row lookup.
+    const branchClause = branchId == null ? "AND branch_id IS NULL" : "AND branch_id = ?";
+    const companyClause = companyId == null ? "AND company_id IS NULL" : "AND company_id = ?";
+    const params: Array<number | string> = [kpi.id, periodKey];
+    if (branchId != null) params.push(branchId);
+    if (companyId != null) params.push(companyId);
     const existing = db.prepare(`
       SELECT id FROM ascenda_results
       WHERE kpi_id = ? AND period_key = ?
-        ${branchId == null ? "AND branch_id IS NULL" : "AND branch_id = ?"}
-    `).get(...(branchId == null ? [kpi.id, periodKey] : [kpi.id, periodKey, branchId])) as
-      | { id: number } | undefined;
+        ${branchClause}
+        ${companyClause}
+    `).get(...params) as { id: number } | undefined;
     if (existing) {
       db.prepare(`
         UPDATE ascenda_results
@@ -258,29 +280,31 @@ export function runAutoCalculators(periodKey: string): number {
     } else {
       db.prepare(`
         INSERT INTO ascenda_results
-          (kpi_id, branch_id, period_key, actual_value, status,
+          (kpi_id, branch_id, company_id, period_key, actual_value, status,
            computed_by_system, recorded_at)
-        VALUES (?, ?, ?, ?, ?, 1, ?)
-      `).run(kpi.id, branchId, periodKey, value, status, now);
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+      `).run(kpi.id, branchId, companyId, periodKey, value, status, now);
     }
     touched += 1;
   };
 
   for (const kpi of allKpis) {
     if (kpi.scope === "company") {
-      // Only sales_growth_pct fits here today; the calculator chooses
-      // based on kind. If a future company-scope auto KPI shows up,
-      // add a case to the switch.
-      let v: number | null = null;
-      if (kpi.kind === "sales_growth_pct") v = calcSalesGrowthPct(periodKey);
-      upsert(kpi, null, v);
+      // Per-company iteration. sales_growth_pct is the only company-
+      // scope auto kind today; add cases here as new ones land.
+      for (const c of companies) {
+        let v: number | null = null;
+        if (kpi.kind === "sales_growth_pct") {
+          v = calcSalesGrowthPctForCompany(c.id, periodKey);
+        }
+        upsert(kpi, null, c.id, v);
+      }
     } else {
       for (const b of branches) {
         let v: number | null = null;
         if (kpi.kind === "attendance_pct")  v = calcAttendancePct(b.id, periodKey);
         else if (kpi.kind === "col_pct_auto") v = calcColPct(b.id, periodKey);
-        else if (kpi.kind === "sales_growth_pct") v = calcSalesGrowthPct(periodKey);
-        upsert(kpi, b.id, v);
+        upsert(kpi, b.id, null, v);
       }
     }
   }

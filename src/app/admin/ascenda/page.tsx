@@ -42,6 +42,14 @@ export default function AdminAscendaPage({
   const branches = db.prepare(
     "SELECT id, name FROM branches WHERE status != 'closed' ORDER BY display_order, name"
   ).all() as BranchRow[];
+  // 2026-05-27 — owner direction "ASCENDA มีผลกับทุกบริษัท ทุกสาขา
+  // แต่ให้พิจารณาแยกกัน": company-scope KPIs are evaluated per
+  // company, not aggregated. Pull the company list so the client can
+  // render a per-company column block parallel to the per-branch
+  // matrix.
+  const companies = db.prepare(
+    "SELECT id, name_th AS name FROM companies WHERE active = 1 ORDER BY id"
+  ).all() as Array<{ id: number; name: string }>;
 
   const branchKpis = listKpis("branch", true);
   const companyKpis = listKpis("company", true);
@@ -111,6 +119,7 @@ export default function AdminAscendaPage({
       <DashboardClient
         periodKey={periodKey}
         branches={branches}
+        companies={companies}
         branchKpis={branchKpis}
         companyKpis={companyKpis}
         results={results}
