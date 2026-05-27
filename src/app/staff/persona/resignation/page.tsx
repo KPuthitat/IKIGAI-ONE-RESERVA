@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, getSystemSettings } from "@/lib/db";
 import { computeMinLastWorkingDay } from "@/lib/leave";
 import ResignationClient, { type ResignationRow } from "./ResignationClient";
 
@@ -29,6 +29,10 @@ export default function StaffResignationPage() {
   const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const minLastDay = computeMinLastWorkingDay(todayBkk);
   const hasPending = requests.some((r) => r.status === "pending");
+  // 2026-05-27 — pull the owner-authored "ลาออกไม่ถูกระเบียบ" text
+  // so the form can warn the staff up-front. Empty/null = skip the
+  // warning block.
+  const improperText = getSystemSettings().improper_resignation_consequences;
 
   return (
     <ResignationClient
@@ -37,6 +41,7 @@ export default function StaffResignationPage() {
       minLastDay={minLastDay}
       hasPending={hasPending}
       isUnlocked={isUnlocked}
+      improperResignationConsequences={improperText}
     />
   );
 }

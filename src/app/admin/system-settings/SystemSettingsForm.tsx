@@ -23,11 +23,13 @@ import { useLang } from "@/lib/LangProvider";
 export default function SystemSettingsForm({
   token,
   groupId,
-  defaultEscalationHours
+  defaultEscalationHours,
+  improperResignationConsequences
 }: {
   token: string | null;
   groupId: string | null;
   defaultEscalationHours: number;
+  improperResignationConsequences: string;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -45,6 +47,9 @@ export default function SystemSettingsForm({
   // the cron sweep reassigns to their manager. Previously was a
   // per-user field on the employee form; consolidated here 2026-05.
   const [escHoursInput, setEscHoursInput] = useState(String(defaultEscalationHours));
+  // Free-text policy for improper resignation. Owner sets once,
+  // shown on both staff resignation form + admin decide modal.
+  const [improperText, setImproperText] = useState(improperResignationConsequences);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -67,6 +72,11 @@ export default function SystemSettingsForm({
       // by sending 0; server validates as well.
       const escH = Math.max(1, Math.min(720, parseInt(escHoursInput, 10) || 24));
       body.default_escalation_hours = String(escH);
+
+      // Improper-resignation consequences (free text). Always sent —
+      // empty string = "clear it" so the staff form omits the warning
+      // block. Server trims + nullifies an empty value.
+      body.improper_resignation_consequences = improperText;
 
       const res = await fetch(apiUrl("/api/admin/system-settings"), {
         method: "POST",
@@ -181,6 +191,33 @@ export default function SystemSettingsForm({
             {t("admin.systemSettings.escalation.hoursHint")}
           </p>
         </div>
+      </div>
+
+      {/* Improper-resignation policy text (2026-05-27).
+          Owner writes once; shown on staff resignation form +
+          beside admin's forfeit-SVC checkbox on approval. */}
+      <div className="card space-y-3">
+        <div>
+          <h2 className="font-bold text-slate-800 text-sm">
+            หมายเหตุ — ลาออกไม่ถูกระเบียบจะเสียสิทธิ์อะไรบ้าง
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            ข้อความนี้จะแสดงในแบบฟอร์มลาออกของพนักงาน + ตอนแอดมินพิจารณา ติ๊ก
+            &quot;ลาออกไม่ถูกระเบียบ&quot; เพื่อให้ทั้งสองฝ่ายเห็นกติกาตรงกัน
+            เว้นว่าง = ไม่แสดง
+          </p>
+        </div>
+        <textarea
+          className="input"
+          rows={5}
+          maxLength={2000}
+          value={improperText}
+          onChange={(e) => setImproperText(e.target.value)}
+          placeholder="เช่น&#10;· เสียสิทธิ์รับเงินส่วนแบ่ง Service Charge เดือนสุดท้าย&#10;· ไม่ได้รับโบนัสปลายปี&#10;· อาจต้องชดใช้เงินค่าฝึกอบรมตามที่ระบุในสัญญา"
+        />
+        <p className="text-[10px] text-slate-400 text-right">
+          {improperText.length} / 2000
+        </p>
       </div>
 
       {/* Routing status — informational summary */}

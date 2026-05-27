@@ -1,5 +1,5 @@
 import { requireAdmin } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, getSystemSettings } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import ResignationAdminClient, { type ResignationAdminRow } from "./ResignationAdminClient";
@@ -80,6 +80,7 @@ export default function AdminResignationPage({
         countMap={countMap}
         requests={requests}
         staffList={staffList}
+        improperResignationConsequences={getSystemSettings().improper_resignation_consequences}
       />
     </div>
   );

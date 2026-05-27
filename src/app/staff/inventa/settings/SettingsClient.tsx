@@ -224,6 +224,42 @@ function SupplierBody({
   const [cycle, setCycle] = useState("");
   const [lead, setLead] = useState("");
   const [busy, setBusy] = useState(false);
+  // 2026-05-27: inline-edit state. editingId points at the row in
+  // edit mode (only one row editable at a time so the visual stays
+  // simple); edit{Name,Cycle,Lead} hold the form values pre-saved
+  // from that row. The PATCH endpoint at
+  // /api/inventa/suppliers/[id] was already in place — only the UI
+  // was missing.
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editCycle, setEditCycle] = useState("");
+  const [editLead, setEditLead] = useState("");
+
+  function startEdit(s: InventaSupplier) {
+    setEditingId(s.id);
+    setEditName(s.name);
+    setEditCycle(s.order_cycle ?? "");
+    setEditLead(s.lead_time ?? "");
+  }
+  async function saveEdit() {
+    if (editingId == null || !editName.trim()) return;
+    setBusy(true);
+    try {
+      const res = await fetch(apiUrl(`/api/inventa/suppliers/${editingId}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName.trim(),
+          order_cycle: editCycle.trim() || null,
+          lead_time: editLead.trim() || null
+        })
+      });
+      if (res.ok) {
+        setEditingId(null);
+        onChanged();
+      }
+    } finally { setBusy(false); }
+  }
 
   async function add() {
     if (!name.trim()) return;
@@ -268,19 +304,55 @@ function SupplierBody({
         </button>
       </div>
       <div className="divide-y divide-slate-100">
-        {suppliers.map((s) => (
-          <div key={s.id} className="py-2 flex items-start justify-between gap-2">
-            <div>
-              <div className="font-medium text-slate-800 text-sm">{s.name}</div>
-              <div className="text-xs text-slate-500">
-                {s.order_cycle ? `${t("inv.sup.order")}: ${s.order_cycle}` : ""}
-                {s.lead_time ? ` · ${t("inv.sup.deliver")}: ${s.lead_time}` : ""}
+        {suppliers.map((s) => {
+          const isEditing = editingId === s.id;
+          if (isEditing) {
+            return (
+              <div key={s.id} className="py-2 space-y-2 bg-amber-50 rounded -mx-1 px-1">
+                <input className="input text-sm" value={editName}
+                  placeholder={t("inv.sup.namePh")}
+                  onChange={(e) => setEditName(e.target.value)} />
+                <div className="grid grid-cols-2 gap-2">
+                  <input className="input text-sm" value={editCycle}
+                    placeholder={t("inv.sup.cyclePh")}
+                    onChange={(e) => setEditCycle(e.target.value)} />
+                  <input className="input text-sm" value={editLead}
+                    placeholder={t("inv.sup.leadPh")}
+                    onChange={(e) => setEditLead(e.target.value)} />
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setEditingId(null)}
+                    disabled={busy}
+                    className="flex-1 py-1.5 rounded-lg border border-slate-200 text-xs">
+                    ยกเลิก
+                  </button>
+                  <button type="button" onClick={saveEdit}
+                    disabled={busy || !editName.trim()}
+                    className="flex-1 py-1.5 rounded-lg bg-brand text-white text-xs font-bold disabled:opacity-50">
+                    บันทึก
+                  </button>
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div key={s.id} className="py-2 flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-slate-800 text-sm">{s.name}</div>
+                <div className="text-xs text-slate-500">
+                  {s.order_cycle ? `${t("inv.sup.order")}: ${s.order_cycle}` : ""}
+                  {s.lead_time ? ` · ${t("inv.sup.deliver")}: ${s.lead_time}` : ""}
+                </div>
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                <button type="button" onClick={() => startEdit(s)}
+                  className="text-xs text-brand hover:underline">แก้ไข</button>
+                <button type="button" onClick={() => del(s.id, s.name)}
+                  className="text-xs text-rose-600 hover:underline">{t("inv.btn.delete")}</button>
               </div>
             </div>
-            <button type="button" onClick={() => del(s.id, s.name)}
-              className="text-xs text-rose-600 hover:underline">{t("inv.btn.delete")}</button>
-          </div>
-        ))}
+          );
+        })}
         {suppliers.length === 0 && (
           <div className="py-4 text-center text-slate-400 text-sm">
             {t("inv.sup.none")}

@@ -1493,6 +1493,16 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "default_escalation_hours")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN default_escalation_hours INTEGER NOT NULL DEFAULT 24");
   }
+  // improper_resignation_consequences (2026-05-27) — owner-authored
+  // free-text shown to staff when they file a resignation, and to
+  // admin when they tick "forfeit SVC" on approval. Single canonical
+  // wording so the company speaks with one voice across both
+  // surfaces. NULL on first migration; admin fills via
+  // /admin/system-settings. The decide endpoint persists the SVC
+  // forfeit flag itself — this column is the EXPLANATION text.
+  if (!ssCols.some((c) => c.name === "improper_resignation_consequences")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN improper_resignation_consequences TEXT");
+  }
   // Cron heartbeat (2026-05-25) — stamped by every successful POST
   // /api/cron call. Lets admin diagnose "is the external cron job
   // actually pinging us?" without SSH'ing into the VPS. NULL = never
@@ -2869,6 +2879,7 @@ export function getSystemSettings(): SystemSettings {
       global_line_channel_token: null,
       global_staff_group_id: null,
       default_escalation_hours: 24,
+      improper_resignation_consequences: null,
       updated_at: null,
       updated_by: null
     };
@@ -2887,6 +2898,10 @@ export function updateSystemSettings(
     // when an approver doesn't decide in time. Per-user override was
     // removed 2026-05 — this is now the single source of truth.
     default_escalation_hours?: number | null;
+    // Owner-authored policy text for improper-resignation
+    // consequences. Free-form Thai/English; rendered as-is on staff
+    // resignation form + admin decide modal.
+    improper_resignation_consequences?: string | null;
   },
   updatedBy: number
 ): void {
@@ -2917,6 +2932,12 @@ export function updateSystemSettings(
     const v = Math.max(1, Math.min(720, Math.round(Number(patch.default_escalation_hours))));
     sets.push("default_escalation_hours = ?");
     vals.push(v);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "improper_resignation_consequences")) {
+    sets.push("improper_resignation_consequences = ?");
+    // Free-text; empty → NULL so the staff form skips the section.
+    const raw = (patch.improper_resignation_consequences ?? "").trim();
+    vals.push(raw === "" ? null : raw);
   }
   if (sets.length === 0) return;
   sets.push("updated_at = ?", "updated_by = ?");
@@ -3011,6 +3032,10 @@ export type SystemSettings = {
   // requests escalate up the chain-of-command. INTEGER, NOT NULL,
   // default 24. Set via /admin/system-settings.
   default_escalation_hours: number;
+  // Owner-authored free text: "การลาออกไม่ถูกระเบียบจะเสียสิทธิ์
+  // อะไรบ้าง". Shown to staff on the resignation form + to admin
+  // beside the forfeit_svc checkbox on approval.
+  improper_resignation_consequences: string | null;
   updated_at: string | null;
   updated_by: number | null;
 };

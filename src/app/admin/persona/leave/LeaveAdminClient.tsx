@@ -379,6 +379,11 @@ function DecisionModal({
   // leave flow leaves these undefined so the checkbox stays hidden.
   forfeitSvc?: boolean;
   onForfeitSvcChange?: (v: boolean) => void;
+  // Owner-authored "ลาออกไม่ถูกระเบียบเสียสิทธิ์อะไรบ้าง" text from
+  // system_settings. When forfeitSvc is checked we render this as a
+  // collapsible reminder block so admin reads the policy before
+  // finalizing. Empty/null = nothing extra shown.
+  improperResignationConsequences?: string | null;
 }) {
   const promptKey =
     decision === "approved" ? `${nsPrompt}.notePromptApprove` :
@@ -412,19 +417,32 @@ function DecisionModal({
             decision is "approved" (forfeiting an SVC on a rejected
             request is meaningless). */}
         {decision === "approved" && onForfeitSvcChange && (
-          <label className="flex items-start gap-2 cursor-pointer text-sm text-slate-700 select-none pt-1">
-            <span className="mt-0.5">
-              <Switch checked={!!forfeitSvc} onChange={onForfeitSvcChange} disabled={busy} />
-            </span>
-            <span>
-              <span className="font-bold text-rose-700">
-                {translate("admin.persona.resignation.forfeitSvc.label")}
+          <>
+            <label className="flex items-start gap-2 cursor-pointer text-sm text-slate-700 select-none pt-1">
+              <span className="mt-0.5">
+                <Switch checked={!!forfeitSvc} onChange={onForfeitSvcChange} disabled={busy} />
               </span>
-              <span className="block text-[11px] text-slate-500 mt-0.5">
-                {translate("admin.persona.resignation.forfeitSvc.hint")}
+              <span>
+                <span className="font-bold text-rose-700">
+                  {translate("admin.persona.resignation.forfeitSvc.label")}
+                </span>
+                <span className="block text-[11px] text-slate-500 mt-0.5">
+                  {translate("admin.persona.resignation.forfeitSvc.hint")}
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+            {/* Policy text reminder — appears when forfeit is ticked
+                so admin can re-read what the staff is forfeiting
+                before clicking through. */}
+            {forfeitSvc && improperResignationConsequences?.trim() && (
+              <div className="rounded-lg bg-rose-50 border-l-4 border-rose-400 p-3 text-xs text-slate-700 whitespace-pre-line">
+                <div className="font-bold text-rose-700 mb-1">
+                  เกณฑ์การลาออกไม่ถูกระเบียบ (ตามที่ตั้งในระบบ)
+                </div>
+                {improperResignationConsequences}
+              </div>
+            )}
+          </>
         )}
         <div className="flex gap-2 pt-1">
           <button

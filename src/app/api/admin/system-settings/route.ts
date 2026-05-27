@@ -22,7 +22,10 @@ const Body = z.object({
   global_staff_group_id: z.string().max(100).optional(),
   // Escalation window in hours — 1h to 30 days. Comes off the wire
   // as a digit string (client uses FormData-style serialisation).
-  default_escalation_hours: z.string().regex(/^\d{1,3}$/).optional()
+  default_escalation_hours: z.string().regex(/^\d{1,3}$/).optional(),
+  // Free-text policy: "การลาออกไม่ถูกระเบียบจะเสียสิทธิ์อะไรบ้าง".
+  // Capped at 2000 chars — enough for a bullet list of consequences.
+  improper_resignation_consequences: z.string().max(2000).optional()
 });
 
 export async function POST(req: Request) {
@@ -69,6 +72,9 @@ export async function POST(req: Request) {
   if (parsed.data.default_escalation_hours !== undefined) {
     const h = parseInt(parsed.data.default_escalation_hours, 10);
     dbPatch.default_escalation_hours = Math.max(1, Math.min(720, h));
+  }
+  if (parsed.data.improper_resignation_consequences !== undefined) {
+    dbPatch.improper_resignation_consequences = parsed.data.improper_resignation_consequences;
   }
 
   updateSystemSettings(dbPatch, user.id);

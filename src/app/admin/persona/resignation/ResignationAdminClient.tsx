@@ -48,12 +48,17 @@ export default function ResignationAdminClient({
   currentStatus,
   countMap,
   requests,
-  staffList
+  staffList,
+  improperResignationConsequences
 }: {
   currentStatus: StatusFilter;
   countMap: Record<string, number>;
   requests: ResignationAdminRow[];
   staffList: StaffUnlockOption[];
+  /** Owner-authored "ลาออกไม่ถูกระเบียบเสียสิทธิ์อะไรบ้าง" text from
+   *  system_settings — passed straight through to DecisionModal so
+   *  admin sees the policy when ticking the forfeit-SVC switch. */
+  improperResignationConsequences: string | null;
 }) {
   const router = useRouter();
   const { t, formatDate } = useLang();
@@ -374,6 +379,7 @@ export default function ResignationAdminClient({
           nsPrompt="admin.persona.resignation"
           forfeitSvc={forfeitSvc}
           onForfeitSvcChange={setForfeitSvc}
+          improperResignationConsequences={improperResignationConsequences}
         />
       )}
       {ConfirmDialog}

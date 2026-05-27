@@ -29,13 +29,16 @@ export default function ResignationClient({
   todayBkk,
   minLastDay,
   hasPending,
-  isUnlocked
+  isUnlocked,
+  improperResignationConsequences
 }: {
   requests: ResignationRow[];
   todayBkk: string;
   minLastDay: string;
   hasPending: boolean;
   isUnlocked: boolean;
+  /** Owner-authored policy text. NULL/empty = skip the warning. */
+  improperResignationConsequences: string | null;
 }) {
   const router = useRouter();
   const { t, formatDate } = useLang();
@@ -130,6 +133,21 @@ export default function ResignationClient({
           <li>{t("staff.persona.resignation.rule.specialTrack")}</li>
         </ul>
       </div>
+
+      {/* Improper-resignation consequences — only renders when admin
+          has authored the text at /admin/system-settings. Rendered
+          with whitespace-pre-line so admin can use line breaks for
+          a bullet list without HTML. */}
+      {improperResignationConsequences && improperResignationConsequences.trim() && (
+        <div className="card border-l-4 border-rose-400 bg-rose-50">
+          <h2 className="font-semibold text-slate-800 mb-2">
+            ⚠️ หากลาออกไม่ถูกระเบียบ จะเสียสิทธิ์
+          </h2>
+          <div className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">
+            {improperResignationConsequences}
+          </div>
+        </div>
+      )}
 
       {/* Locked state — ยังไม่ได้รับการเปิดสิทธิ์ */}
       {!isUnlocked && !hasPending && (
