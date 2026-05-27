@@ -171,9 +171,14 @@ export default function ResignationAdminClient({
 
   return (
     <>
+      {/* Improper-resignation policy editor — kept inline because
+          this is where admins reach for it when reviewing a request.
+          The LINE unlock-card customizer moved to
+          /admin/persona/notifications (single hub for all card text
+          editors with previews); a link to it sits at the top of the
+          PolicyEditor's expanded view so admin doesn't lose track. */}
       <PolicyEditor
         initialImproper={improperResignationConsequences ?? ""}
-        initialUnlockMsg={resignationUnlockMessage ?? ""}
       />
 
       {/* Unlock card — admin เปิดสิทธิ์ลาออกให้พนักงาน */}
@@ -408,18 +413,16 @@ export default function ResignationAdminClient({
 // admin clicks "ตั้งค่าข้อความ" to expand + edit.
 
 function PolicyEditor({
-  initialImproper, initialUnlockMsg
+  initialImproper
 }: {
   initialImproper: string;
-  initialUnlockMsg: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [improper, setImproper] = useState(initialImproper);
-  const [unlockMsg, setUnlockMsg] = useState(initialUnlockMsg);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const dirty = improper !== initialImproper || unlockMsg !== initialUnlockMsg;
+  const dirty = improper !== initialImproper;
 
   async function save() {
     setBusy(true);
@@ -431,8 +434,7 @@ function PolicyEditor({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            improper_resignation_consequences: improper,
-            resignation_unlock_message: unlockMsg
+            improper_resignation_consequences: improper
           })
         }
       );
@@ -457,10 +459,10 @@ function PolicyEditor({
         className="w-full flex items-center justify-between text-left">
         <div>
           <div className="font-semibold text-slate-800 text-sm">
-            ตั้งค่าข้อความ — นโยบายการลาออก
+            ตั้งค่าข้อความ — ลาออกไม่ถูกระเบียบเสียสิทธิ์อะไรบ้าง
           </div>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            ข้อความเตือนพนักงาน + ข้อความ LINE ตอนเปิดสิทธิ์ลาออก
+            ข้อความเตือนที่แสดงในแบบฟอร์มลาออกของพนักงาน + ตอนแอดมินติ๊ก &quot;ลาออกไม่ถูกระเบียบ&quot;
           </p>
         </div>
         <span className="text-slate-400 text-xs">{open ? "▲ ปิด" : "▼ แก้ไข"}</span>
@@ -473,7 +475,7 @@ function PolicyEditor({
               หมายเหตุ — ลาออกไม่ถูกระเบียบจะเสียสิทธิ์อะไรบ้าง
             </label>
             <p className="text-[10px] text-slate-500 mt-0.5 mb-1.5">
-              แสดงในแบบฟอร์มลาออกของพนักงาน + ตอนแอดมินติ๊ก &quot;ลาออกไม่ถูกระเบียบ&quot; · เว้นว่าง = ไม่แสดง
+              เว้นว่าง = ไม่แสดง
             </p>
             <textarea
               className="input"
@@ -484,24 +486,6 @@ function PolicyEditor({
               placeholder="เช่น&#10;· เสียสิทธิ์รับเงินส่วนแบ่ง Service Charge เดือนสุดท้าย&#10;· ไม่ได้รับโบนัสปลายปี&#10;· อาจต้องชดใช้เงินค่าฝึกอบรมตามที่ระบุในสัญญา"
             />
             <p className="text-[10px] text-slate-400 text-right">{improper.length} / 2000</p>
-          </div>
-
-          <div>
-            <label className="label">
-              ข้อความแจ้งเตือน LINE — เมื่อแอดมินเปิดสิทธิ์ลาออก
-            </label>
-            <p className="text-[10px] text-slate-500 mt-0.5 mb-1.5">
-              ใช้ <code className="text-[10px] bg-slate-100 px-1 rounded">{"{ADMIN}"}</code> แทนชื่อแอดมินที่กดเปิด · เว้นว่าง = ใช้ข้อความเริ่มต้นของระบบ
-            </p>
-            <textarea
-              className="input"
-              rows={4}
-              maxLength={1000}
-              value={unlockMsg}
-              onChange={(e) => setUnlockMsg(e.target.value)}
-              placeholder="{ADMIN} เพิ่งเปิดสิทธิ์ยื่นใบลาออกให้พี่แล้วครับ — ถ้าพี่ต้องการยื่น สามารถเข้าไปกรอกแบบฟอร์มได้ที่ปุ่มด้านล่าง"
-            />
-            <p className="text-[10px] text-slate-400 text-right">{unlockMsg.length} / 1000</p>
           </div>
 
           {msg && (
@@ -518,6 +502,14 @@ function PolicyEditor({
             className="btn-primary w-full text-sm py-2.5">
             {busy ? "กำลังบันทึก…" : dirty ? "บันทึกการเปลี่ยนแปลง" : "ไม่มีการเปลี่ยนแปลง"}
           </button>
+
+          <div className="text-[11px] text-slate-500 pt-2 border-t border-slate-100">
+            ✦ ปรับแต่งข้อความ LINE ที่ส่งตอนเปิดสิทธิ์ลาออก ได้ที่หน้า{" "}
+            <Link href="/admin/persona/notifications"
+              className="text-brand hover:underline font-medium">
+              ปรับแต่งการ์ดแจ้งเตือน
+            </Link>
+          </div>
         </div>
       )}
     </div>
