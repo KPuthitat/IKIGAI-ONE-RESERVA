@@ -364,7 +364,8 @@ export default function LeaveAdminClient({
 
 function DecisionModal({
   decision, note, onChange, onConfirm, onCancel, busy, translate, nsPrompt,
-  forfeitSvc, onForfeitSvcChange
+  forfeitSvc, onForfeitSvcChange,
+  improperResignationConsequences
 }: {
   decision: "approved" | "rejected" | "revision_requested";
   note: string;

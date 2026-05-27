@@ -51,9 +51,17 @@ export default function ResignationClient({
   const [isSpecial, setIsSpecial] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // 2026-05-27 — acknowledgement of the "ลาออกไม่ถูกระเบียบ" policy.
+  // Required-to-submit ONLY when admin has authored the policy text;
+  // skipped silently when the text is empty/null (no policy = no
+  // acknowledgement needed).
+  const requiresImproperAck = !!(improperResignationConsequences && improperResignationConsequences.trim());
+  const [acknowledged, setAcknowledged] = useState(false);
 
   const isEarlierThanMin = proposed < minLastDay;
-  const submitDisabled = busy || hasPending || (isEarlierThanMin && !isSpecial);
+  const submitDisabled = busy || hasPending
+    || (isEarlierThanMin && !isSpecial)
+    || (requiresImproperAck && !acknowledged);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -137,15 +145,27 @@ export default function ResignationClient({
       {/* Improper-resignation consequences — only renders when admin
           has authored the text at /admin/system-settings. Rendered
           with whitespace-pre-line so admin can use line breaks for
-          a bullet list without HTML. */}
-      {improperResignationConsequences && improperResignationConsequences.trim() && (
-        <div className="card border-l-4 border-rose-400 bg-rose-50">
-          <h2 className="font-semibold text-slate-800 mb-2">
+          a bullet list without HTML. The "ฉันรับทราบ" checkbox
+          gates the submit button so staff has to actually read it. */}
+      {requiresImproperAck && (
+        <div className="card border-l-4 border-rose-400 bg-rose-50 space-y-3">
+          <h2 className="font-semibold text-slate-800">
             ⚠️ หากลาออกไม่ถูกระเบียบ จะเสียสิทธิ์
           </h2>
           <div className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">
             {improperResignationConsequences}
           </div>
+          <label className="flex items-start gap-2 cursor-pointer pt-2 border-t border-rose-200">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={acknowledged}
+              onChange={(e) => setAcknowledged(e.target.checked)}
+            />
+            <span className="text-sm font-semibold text-rose-800">
+              ฉันรับทราบเงื่อนไขข้างต้นแล้ว
+            </span>
+          </label>
         </div>
       )}
 
