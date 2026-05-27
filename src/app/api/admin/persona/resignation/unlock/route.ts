@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, getSystemSettings } from "@/lib/db";
 import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
-import { sendLinePush, personaResignationUnlockedFlex } from "@/lib/line";
+import {
+  sendLinePush,
+  personaResignationUnlockedFlex,
+  renderResignationUnlockBody
+} from "@/lib/line";
 
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
 
@@ -44,21 +48,23 @@ export async function POST(req: Request) {
     ).run(nowIso, user.id, parsed.data.user_id);
 
     // Owl notification — 2026-05-27. DM the staff so they know the
-    // gate just opened. Fire-and-forget: a LINE hiccup must not roll
-    // back the DB write. Silently skip when the platform OA isn't
-    // configured or the staff has no LINE bound.
+    // gate just opened. Body text is owner-authored at /admin/system
+    // -settings (resignation_unlock_message column) with `{ADMIN}`
+    // substituted to the operator's display_name; NULL/empty falls
+    // back to the built-in default. Fire-and-forget: a LINE hiccup
+    // must not roll back the DB write. Silent skip when no LINE
+    // binding or no platform OA.
     if (target.line_user_id?.trim()) {
       const platform = getPlatformChannel();
       if (isChannelReady(platform) && platform?.channel_token) {
         const recipientName = (target.nickname_th?.trim() || target.display_name || "").trim();
+        const customMessage = getSystemSettings().resignation_unlock_message;
+        const bodyMessage = renderResignationUnlockBody(customMessage, user.display_name);
         const flex = personaResignationUnlockedFlex({
           recipientName,
           unlockedByName: user.display_name,
+          bodyMessage,
           resignationUrl: `${PUBLIC_BASE}/staff/persona/resignation`,
-          // Branch colour comes from the admin's active branch — the
-          // owl card matches whichever branch they were sitting in
-          // when they flipped the switch. Not branch-critical so we
-          // tolerate a null colour (renders with the default navy).
           headerColor: null
         });
         sendLinePush(platform.channel_token, {

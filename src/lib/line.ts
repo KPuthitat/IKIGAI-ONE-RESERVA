@@ -3233,11 +3233,29 @@ export type ResignationUnlockedFlexArgs = {
   /** Admin who flipped the toggle — printed so the staff knows who
    *  to talk to if they think it's a mistake. */
   unlockedByName: string;
+  /** Body paragraph — owner-authored at /admin/system-settings. The
+   *  caller already substituted any `{ADMIN}` placeholder before
+   *  passing it here. Empty/null = use the built-in default body. */
+  bodyMessage?: string | null;
   /** Deep link to /staff/persona/resignation. */
   resignationUrl: string;
   /** Branch CI colour for the header bar. */
   headerColor?: string | null;
 };
+
+const DEFAULT_RESIGNATION_UNLOCK_BODY =
+  "{ADMIN} เพิ่งเปิดสิทธิ์ยื่นใบลาออกให้พี่แล้วครับ — ถ้าพี่ต้องการยื่น สามารถเข้าไปกรอกแบบฟอร์มได้ที่ปุ่มด้านล่าง";
+
+/** Apply the {ADMIN} placeholder substitution. Exported so the
+ *  unlock endpoint (and any other caller) reuses the exact same
+ *  rule + default fallback. */
+export function renderResignationUnlockBody(
+  template: string | null | undefined,
+  adminName: string
+): string {
+  const t = (template ?? "").trim() || DEFAULT_RESIGNATION_UNLOCK_BODY;
+  return t.replace(/\{ADMIN\}/g, adminName);
+}
 
 export function personaResignationUnlockedFlex(
   args: ResignationUnlockedFlexArgs
@@ -3272,7 +3290,11 @@ export function personaResignationUnlockedFlex(
         },
         {
           type: "text",
-          text: `${args.unlockedByName} เพิ่งเปิดสิทธิ์ยื่นใบลาออกให้พี่แล้วครับ — ถ้าพี่ต้องการยื่น สามารถเข้าไปกรอกแบบฟอร์มได้ที่ปุ่มด้านล่าง`,
+          // bodyMessage has already been placeholder-substituted by
+          // the caller (renderResignationUnlockBody). Falls back to
+          // the default template + the admin name if not supplied.
+          text: (args.bodyMessage && args.bodyMessage.trim())
+            || DEFAULT_RESIGNATION_UNLOCK_BODY.replace(/\{ADMIN\}/g, args.unlockedByName),
           size: "sm", color: COLOR_TEXT_DARK, wrap: true, margin: "sm"
         },
         { type: "separator", margin: "md", color: COLOR_DIVIDER },

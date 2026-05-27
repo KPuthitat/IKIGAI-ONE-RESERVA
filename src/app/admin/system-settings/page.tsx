@@ -49,6 +49,7 @@ export default function SystemSettingsPage() {
         groupId={settings.global_staff_group_id}
         defaultEscalationHours={settings.default_escalation_hours ?? 24}
         improperResignationConsequences={settings.improper_resignation_consequences ?? ""}
+        resignationUnlockMessage={settings.resignation_unlock_message ?? ""}
       />
     </div>
   );

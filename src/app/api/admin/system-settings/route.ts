@@ -25,7 +25,12 @@ const Body = z.object({
   default_escalation_hours: z.string().regex(/^\d{1,3}$/).optional(),
   // Free-text policy: "การลาออกไม่ถูกระเบียบจะเสียสิทธิ์อะไรบ้าง".
   // Capped at 2000 chars — enough for a bullet list of consequences.
-  improper_resignation_consequences: z.string().max(2000).optional()
+  improper_resignation_consequences: z.string().max(2000).optional(),
+  // Body text of the LINE Flex card sent when admin opens a staff's
+  // resignation gate. {ADMIN} placeholder replaced at send time with
+  // the admin's display_name. 1000-char cap is generous; the card
+  // body wraps but you don't want War and Peace in a notification.
+  resignation_unlock_message: z.string().max(1000).optional()
 });
 
 export async function POST(req: Request) {
@@ -75,6 +80,9 @@ export async function POST(req: Request) {
   }
   if (parsed.data.improper_resignation_consequences !== undefined) {
     dbPatch.improper_resignation_consequences = parsed.data.improper_resignation_consequences;
+  }
+  if (parsed.data.resignation_unlock_message !== undefined) {
+    dbPatch.resignation_unlock_message = parsed.data.resignation_unlock_message;
   }
 
   updateSystemSettings(dbPatch, user.id);

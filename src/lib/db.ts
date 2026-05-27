@@ -1503,6 +1503,13 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "improper_resignation_consequences")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN improper_resignation_consequences TEXT");
   }
+  // resignation_unlock_message (2026-05-27) — text body of the LINE
+  // Flex card that fires when admin opens a staff's resignation gate.
+  // Placeholders {ADMIN} = name of the admin who flipped the toggle.
+  // Falls back to a sensible default when NULL.
+  if (!ssCols.some((c) => c.name === "resignation_unlock_message")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN resignation_unlock_message TEXT");
+  }
   // Cron heartbeat (2026-05-25) — stamped by every successful POST
   // /api/cron call. Lets admin diagnose "is the external cron job
   // actually pinging us?" without SSH'ing into the VPS. NULL = never
@@ -2880,6 +2887,7 @@ export function getSystemSettings(): SystemSettings {
       global_staff_group_id: null,
       default_escalation_hours: 24,
       improper_resignation_consequences: null,
+      resignation_unlock_message: null,
       updated_at: null,
       updated_by: null
     };
@@ -2902,6 +2910,9 @@ export function updateSystemSettings(
     // consequences. Free-form Thai/English; rendered as-is on staff
     // resignation form + admin decide modal.
     improper_resignation_consequences?: string | null;
+    // Body of the LINE card sent when admin opens a staff's
+    // resignation gate. `{ADMIN}` placeholder replaced at send time.
+    resignation_unlock_message?: string | null;
   },
   updatedBy: number
 ): void {
@@ -2937,6 +2948,13 @@ export function updateSystemSettings(
     sets.push("improper_resignation_consequences = ?");
     // Free-text; empty → NULL so the staff form skips the section.
     const raw = (patch.improper_resignation_consequences ?? "").trim();
+    vals.push(raw === "" ? null : raw);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "resignation_unlock_message")) {
+    sets.push("resignation_unlock_message = ?");
+    // Free-text; empty → NULL so the unlock notification falls back
+    // to the built-in default body.
+    const raw = (patch.resignation_unlock_message ?? "").trim();
     vals.push(raw === "" ? null : raw);
   }
   if (sets.length === 0) return;
@@ -3036,6 +3054,10 @@ export type SystemSettings = {
   // อะไรบ้าง". Shown to staff on the resignation form + to admin
   // beside the forfeit_svc checkbox on approval.
   improper_resignation_consequences: string | null;
+  // LINE Flex body that fires when admin opens a staff's resignation
+  // gate. `{ADMIN}` placeholder is replaced with the operator's
+  // display_name. NULL/empty = use the built-in default.
+  resignation_unlock_message: string | null;
   updated_at: string | null;
   updated_by: number | null;
 };
