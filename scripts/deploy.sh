@@ -144,18 +144,19 @@ pm2 save
 
 echo "==> [6/6] verifying"
 # Boot wait — on the 1 vCPU droplet, Next.js + better-sqlite3 + the
-# migrations chain can take 30-60s before the new process binds to
+# migrations chain can take 60-120s before the new process binds to
 # port 3010, especially after migrations that touch large tables.
 # The old `sleep 5 + check once` pattern false-alarmed every deploy
 # ("✗ nothing is listening on :3010") even though the process came
-# up healthy a few seconds later. 30s polling was also still tight
-# — 2026-05-27 bumped to 90s after a stretch of deploys where the
-# tier-approval + is_test_account migrations pushed boot past 30s.
-# Poll once a second; exit the loop as soon as the port is bound
-# by the PM2-managed pid.
+# up healthy a few seconds later.
+#   30s → 90s   on 2026-05-27 (tier-approval + is_test_account)
+#   90s → 120s  on 2026-05-27 (ASCENDA tables + seed)
+# If you bump again, also consider scaling the droplet — but the
+# real boot time is ~60-100s observed, so 120s gives generous
+# headroom without delaying a true-failure case too long.
 NEW_PM2_PID="$(pm2 pid "$PM2_APP" 2>/dev/null | tr -d '[:space:]' | grep -oE '^[0-9]+$' || echo '')"
 BOUND_PID=""
-for i in $(seq 1 90); do
+for i in $(seq 1 120); do
   BOUND_PID="$(lsof -ti :"${PORT}" -sTCP:LISTEN 2>/dev/null | head -n1 || echo '')"
   if [[ -n "$BOUND_PID" && "$BOUND_PID" == "$NEW_PM2_PID" ]]; then
     echo "    bound on :${PORT} after ${i}s"
@@ -165,7 +166,7 @@ for i in $(seq 1 90); do
 done
 
 if [[ -z "$BOUND_PID" ]]; then
-  echo "    ✗ nothing is listening on :${PORT} after 90s — check pm2 logs ${PM2_APP}"
+  echo "    ✗ nothing is listening on :${PORT} after 120s — check pm2 logs ${PM2_APP}"
   exit 2
 fi
 
