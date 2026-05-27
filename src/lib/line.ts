@@ -3220,6 +3220,85 @@ export function disciplinaryWarningFlex(args: DisciplinaryFlexArgs): LineFlexMes
   };
 }
 
+// ── Resignation unlocked notice (2026-05-27) ─────────────────────
+//
+// When admin opens a staff's "สิทธิ์ยื่นลาออก" via the resignation
+// admin page, the staff gets this DM through the platform OA. Short
+// + warm — it just lets them know the gate is open + links to the
+// form. Same giga + owl-voice contract as other persona cards.
+
+export type ResignationUnlockedFlexArgs = {
+  /** Recipient nickname (preferred) or display_name. */
+  recipientName: string;
+  /** Admin who flipped the toggle — printed so the staff knows who
+   *  to talk to if they think it's a mistake. */
+  unlockedByName: string;
+  /** Deep link to /staff/persona/resignation. */
+  resignationUrl: string;
+  /** Branch CI colour for the header bar. */
+  headerColor?: string | null;
+};
+
+export function personaResignationUnlockedFlex(
+  args: ResignationUnlockedFlexArgs
+): LineFlexMessage {
+  const headerColor = args.headerColor || COLOR_INK_700;
+  const bubble = {
+    type: "bubble", size: "giga",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: headerColor, paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS · PERSONA", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
+            { type: "text", text: "ทักทายจากน้องฮูก", color: "#cbd5e1", size: "xs", align: "end", flex: 1 }
+          ]
+        },
+        {
+          type: "text", text: "เปิดสิทธิ์ยื่นลาออกแล้ว",
+          color: "#ffffff", size: "lg", weight: "bold", wrap: true, margin: "md"
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "24px",
+      contents: [
+        {
+          type: "text",
+          text: `สวัสดีครับพี่${args.recipientName ? args.recipientName : ""}`,
+          size: "md", color: COLOR_TEXT_DARK, weight: "bold", wrap: true
+        },
+        {
+          type: "text",
+          text: `${args.unlockedByName} เพิ่งเปิดสิทธิ์ยื่นใบลาออกให้พี่แล้วครับ — ถ้าพี่ต้องการยื่น สามารถเข้าไปกรอกแบบฟอร์มได้ที่ปุ่มด้านล่าง`,
+          size: "sm", color: COLOR_TEXT_DARK, wrap: true, margin: "sm"
+        },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        {
+          type: "text",
+          text: "หากเปลี่ยนใจไม่ต้องการยื่น ก็ไม่ต้องทำอะไรครับ สิทธิ์นี้จะอยู่จนกว่าพี่จะกรอกหรือแอดมินจะปิดอีกครั้ง",
+          size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "sm"
+        }
+      ]
+    },
+    footer: {
+      type: "box", layout: "vertical", spacing: "sm", paddingAll: "12px",
+      contents: [{
+        type: "button", style: "primary", color: headerColor,
+        action: { type: "uri", label: "เปิดแบบฟอร์มยื่นลาออก", uri: args.resignationUrl }
+      }]
+    },
+    styles: { header: { backgroundColor: headerColor } }
+  };
+  return {
+    type: "flex",
+    altText: `เปิดสิทธิ์ยื่นลาออก · ${args.recipientName}`,
+    contents: bubble
+  };
+}
+
 // ── Roster published / updated Flex (TC-R) ────────────────────────
 //
 // One-line announcement card the supervisor sends when the monthly
