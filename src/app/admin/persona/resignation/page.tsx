@@ -75,13 +75,19 @@ export default function AdminResignationPage({
           {t(lang, "admin.persona.resignation.subtitle")}
         </p>
       </div>
-      <ResignationAdminClient
-        currentStatus={status}
-        countMap={countMap}
-        requests={requests}
-        staffList={staffList}
-        improperResignationConsequences={getSystemSettings().improper_resignation_consequences}
-      />
+      {(() => {
+        const ss = getSystemSettings();
+        return (
+          <ResignationAdminClient
+            currentStatus={status}
+            countMap={countMap}
+            requests={requests}
+            staffList={staffList}
+            improperResignationConsequences={ss.improper_resignation_consequences}
+            resignationUnlockMessage={ss.resignation_unlock_message}
+          />
+        );
+      })()}
     </div>
   );
 }

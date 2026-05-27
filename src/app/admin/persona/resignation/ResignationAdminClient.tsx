@@ -49,7 +49,8 @@ export default function ResignationAdminClient({
   countMap,
   requests,
   staffList,
-  improperResignationConsequences
+  improperResignationConsequences,
+  resignationUnlockMessage
 }: {
   currentStatus: StatusFilter;
   countMap: Record<string, number>;
@@ -59,6 +60,9 @@ export default function ResignationAdminClient({
    *  system_settings — passed straight through to DecisionModal so
    *  admin sees the policy when ticking the forfeit-SVC switch. */
   improperResignationConsequences: string | null;
+  /** LINE body fired when admin opens a staff's resignation gate.
+   *  Editable inline at the top of this page. */
+  resignationUnlockMessage: string | null;
 }) {
   const router = useRouter();
   const { t, formatDate } = useLang();
@@ -167,6 +171,11 @@ export default function ResignationAdminClient({
 
   return (
     <>
+      <PolicyEditor
+        initialImproper={improperResignationConsequences ?? ""}
+        initialUnlockMsg={resignationUnlockMessage ?? ""}
+      />
+
       {/* Unlock card — admin เปิดสิทธิ์ลาออกให้พนักงาน */}
       <div className="card border-l-4 border-amber-400 bg-amber-50">
         <h2 className="font-semibold text-slate-800 mb-2">
@@ -384,5 +393,133 @@ export default function ResignationAdminClient({
       )}
       {ConfirmDialog}
     </>
+  );
+}
+
+// ── Policy editor (2026-05-28) ─────────────────────────────────────
+//
+// Two HR-policy strings the owner wants to author next to where the
+// resignation requests actually surface. Saves via the dedicated
+// PATCH /api/admin/persona/resignation/settings endpoint (admin-role,
+// not super_admin gated) so branch admins can edit without bouncing
+// to /admin/system-settings.
+//
+// Render: collapsed by default so the page header stays scannable;
+// admin clicks "ตั้งค่าข้อความ" to expand + edit.
+
+function PolicyEditor({
+  initialImproper, initialUnlockMsg
+}: {
+  initialImproper: string;
+  initialUnlockMsg: string;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [improper, setImproper] = useState(initialImproper);
+  const [unlockMsg, setUnlockMsg] = useState(initialUnlockMsg);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const dirty = improper !== initialImproper || unlockMsg !== initialUnlockMsg;
+
+  async function save() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch(
+        apiUrl("/api/admin/persona/resignation/settings"),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            improper_resignation_consequences: improper,
+            resignation_unlock_message: unlockMsg
+          })
+        }
+      );
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        setMsg({ kind: "err", text: j.message || j.error || "บันทึกไม่สำเร็จ" });
+        return;
+      }
+      setMsg({ kind: "ok", text: "บันทึกแล้ว" });
+      router.refresh();
+    } catch {
+      setMsg({ kind: "err", text: "เกิดข้อผิดพลาดเครือข่าย" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <button type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between text-left">
+        <div>
+          <div className="font-semibold text-slate-800 text-sm">
+            ตั้งค่าข้อความ — นโยบายการลาออก
+          </div>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            ข้อความเตือนพนักงาน + ข้อความ LINE ตอนเปิดสิทธิ์ลาออก
+          </p>
+        </div>
+        <span className="text-slate-400 text-xs">{open ? "▲ ปิด" : "▼ แก้ไข"}</span>
+      </button>
+
+      {open && (
+        <div className="mt-4 space-y-4 pt-4 border-t border-slate-100">
+          <div>
+            <label className="label">
+              หมายเหตุ — ลาออกไม่ถูกระเบียบจะเสียสิทธิ์อะไรบ้าง
+            </label>
+            <p className="text-[10px] text-slate-500 mt-0.5 mb-1.5">
+              แสดงในแบบฟอร์มลาออกของพนักงาน + ตอนแอดมินติ๊ก &quot;ลาออกไม่ถูกระเบียบ&quot; · เว้นว่าง = ไม่แสดง
+            </p>
+            <textarea
+              className="input"
+              rows={5}
+              maxLength={2000}
+              value={improper}
+              onChange={(e) => setImproper(e.target.value)}
+              placeholder="เช่น&#10;· เสียสิทธิ์รับเงินส่วนแบ่ง Service Charge เดือนสุดท้าย&#10;· ไม่ได้รับโบนัสปลายปี&#10;· อาจต้องชดใช้เงินค่าฝึกอบรมตามที่ระบุในสัญญา"
+            />
+            <p className="text-[10px] text-slate-400 text-right">{improper.length} / 2000</p>
+          </div>
+
+          <div>
+            <label className="label">
+              ข้อความแจ้งเตือน LINE — เมื่อแอดมินเปิดสิทธิ์ลาออก
+            </label>
+            <p className="text-[10px] text-slate-500 mt-0.5 mb-1.5">
+              ใช้ <code className="text-[10px] bg-slate-100 px-1 rounded">{"{ADMIN}"}</code> แทนชื่อแอดมินที่กดเปิด · เว้นว่าง = ใช้ข้อความเริ่มต้นของระบบ
+            </p>
+            <textarea
+              className="input"
+              rows={4}
+              maxLength={1000}
+              value={unlockMsg}
+              onChange={(e) => setUnlockMsg(e.target.value)}
+              placeholder="{ADMIN} เพิ่งเปิดสิทธิ์ยื่นใบลาออกให้พี่แล้วครับ — ถ้าพี่ต้องการยื่น สามารถเข้าไปกรอกแบบฟอร์มได้ที่ปุ่มด้านล่าง"
+            />
+            <p className="text-[10px] text-slate-400 text-right">{unlockMsg.length} / 1000</p>
+          </div>
+
+          {msg && (
+            <div className={`text-sm text-center ${
+              msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"
+            }`}>
+              {msg.kind === "ok" ? "✓ " : "✗ "}{msg.text}
+            </div>
+          )}
+
+          <button type="button"
+            onClick={save}
+            disabled={busy || !dirty}
+            className="btn-primary w-full text-sm py-2.5">
+            {busy ? "กำลังบันทึก…" : dirty ? "บันทึกการเปลี่ยนแปลง" : "ไม่มีการเปลี่ยนแปลง"}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
