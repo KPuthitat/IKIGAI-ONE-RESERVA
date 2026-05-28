@@ -42,6 +42,65 @@ HOST_BIND="127.0.0.1"   # matches ecosystem.config.js HOSTNAME
 
 cd "$APP_DIR"
 
+# ── Deploy window pre-flight (2026-05-28) ────────────────────────
+# Owner direction: never silently deploy within 15 min of any
+# branch's shift entry/exit time — pretty much guarantees a staff
+# member will hit the maintenance page during clock-in. The
+# /api/deploy-window endpoint checks today's roster across all
+# branches and returns { safe, warnings, nextSafeAt }.
+#
+# Behaviour:
+#   • safe=true → proceed silently
+#   • safe=false + stdin is a TTY → list warnings + prompt y/n
+#   • safe=false + non-interactive (e.g. CI) → bail with exit 4
+#   • FORCE=1 env var → skip the check entirely (use sparingly)
+#   • Endpoint unreachable (Next.js already down) → warn + proceed
+#     because blocking on "can't even check" defeats emergency
+#     recovery deploys.
+if [[ "${FORCE:-0}" != "1" ]]; then
+  echo "==> [0/6] checking deploy window (±15 min of shift edges)"
+  WINDOW_JSON="$(curl -s --max-time 5 "http://${HOST_BIND}:${PORT}/api/deploy-window" 2>/dev/null || echo '')"
+  if [[ -z "$WINDOW_JSON" ]]; then
+    echo "    ⚠  could not reach /api/deploy-window (Next.js down?) — skipping check"
+  else
+    SAFE="$(echo "$WINDOW_JSON" | grep -oE '"safe":(true|false)' | head -n1 | cut -d':' -f2 || echo 'true')"
+    if [[ "$SAFE" == "false" ]]; then
+      echo ""
+      echo "    ⛔ DEPLOY WINDOW WARNING — within 15 min of a shift edge:"
+      # Extract warnings array entries via grep — avoids jq dep.
+      echo "$WINDOW_JSON" \
+        | grep -oE '"warnings":\[[^]]*\]' \
+        | grep -oE '"[^"]+"' \
+        | grep -v '"warnings"' \
+        | sed 's/^"/      • /' | sed 's/"$//'
+      NEXT="$(echo "$WINDOW_JSON" | grep -oE '"nextSafeAt":"[^"]+"' | cut -d'"' -f4 || echo '')"
+      if [[ -n "$NEXT" ]]; then
+        echo ""
+        echo "    Next safe deploy window starts: $NEXT"
+      fi
+      echo ""
+      if [[ -t 0 ]]; then
+        # Interactive — ask the operator.
+        read -r -p "    Deploy anyway? [y/N] " REPLY
+        case "$REPLY" in
+          y|Y|yes|YES)
+            echo "    → proceeding (operator override)"
+            ;;
+          *)
+            echo "    → aborted. Try again later or run with FORCE=1 to skip the check."
+            exit 4
+            ;;
+        esac
+      else
+        echo "    → non-interactive shell, refusing. Set FORCE=1 to override."
+        exit 4
+      fi
+    else
+      echo "    ✓ safe window — no shift edges within ±15 min"
+    fi
+  fi
+fi
+
 echo "==> [1/6] git pull origin main"
 git pull origin main
 
