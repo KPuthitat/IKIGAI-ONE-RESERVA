@@ -1771,11 +1771,16 @@ export type ShiftCloseCardArgs = {
   closerName: string;
   closingDrawerAmount: number | null;
   /** Service charge collected today — only relevant when the branch
-   *  has require_service_charge ON. Rendered as a separate kv row
-   *  under "ยอดเงินปิดงาน" so admin reading the LINE card sees the
-   *  SVC number without scrolling through the checklist. null when
-   *  the branch doesn't collect SVC or staff didn't fill it. */
+   *  has require_service_charge ON. Rendered as a headline figure at
+   *  the top of the body (2026-05-28 — was a kvRow before, owner
+   *  asked for the 3 default money fields to be visually prominent
+   *  like the custom is_headline_amount items). null when the branch
+   *  doesn't collect SVC or staff didn't fill it. */
   serviceChargeAmount?: number | null;
+  /** Daily sales revenue (ASCENDA feed) — added 2026-05-28 as a
+   *  headline figure on the close report. null when the branch has
+   *  require_daily_revenue OFF or staff skipped it. */
+  dailyRevenue?: number | null;
   // Same shape as ShiftOpenCardArgs.checklist — see that doc block.
   // Optional is_child + description fields propagate from admin rows
   // and are tolerated here so callers can pass a single normalized
@@ -1801,10 +1806,43 @@ export type ShiftCloseCardArgs = {
 
 export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
   const dateStr = formatThaiDate(args.reportDate);
-  const fmtBaht = (n: number | null) =>
-    n == null ? "—" : `${n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท`;
-
   const headerColor = args.headerColor || COLOR_INK_700;
+
+  // Default-figure headlines (2026-05-28). Owner direction: the 3
+  // mandatory money fields (closing drawer / service charge / daily
+  // revenue) should appear as headline figures at the top of the
+  // report — same visual treatment as the custom is_headline_amount
+  // items below them. Build a synthetic headline array from the three
+  // values when each is present, then concat with any admin-defined
+  // headlines from the checklist. Order = closing → SVC → revenue →
+  // custom headlines (so the most important number — closing drawer —
+  // renders biggest at the top).
+  const defaultHeadlines: Array<{ label: string; amount: string }> = [];
+  if (args.closingDrawerAmount != null) {
+    defaultHeadlines.push({
+      label: "ยอดเงินปิดงาน",
+      amount: args.closingDrawerAmount.toLocaleString("th-TH", {
+        minimumFractionDigits: 0, maximumFractionDigits: 2
+      })
+    });
+  }
+  if (args.serviceChargeAmount != null) {
+    defaultHeadlines.push({
+      label: "เซอร์วิสชาร์จวันนี้",
+      amount: args.serviceChargeAmount.toLocaleString("th-TH", {
+        minimumFractionDigits: 0, maximumFractionDigits: 2
+      })
+    });
+  }
+  if (args.dailyRevenue != null) {
+    defaultHeadlines.push({
+      label: "ยอดขายวันนี้",
+      amount: args.dailyRevenue.toLocaleString("th-TH", {
+        minimumFractionDigits: 0, maximumFractionDigits: 2
+      })
+    });
+  }
+  const mergedHeadlines = [...defaultHeadlines, ...(args.headlines ?? [])];
 
   const bubble = {
     type: "bubble", size: "giga",
@@ -1834,24 +1872,18 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
         { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
         { type: "text", text: dateStr, size: "xs", color: COLOR_TEXT_MUTED, margin: "xs", wrap: true },
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        // Just the submitter — closing/SVC/revenue moved into the
+        // headline block below per owner direction 2026-05-28 so the
+        // 3 default money fields share the same prominent visual
+        // treatment as custom is_headline_amount checklist items.
         {
           type: "box", layout: "vertical", spacing: "sm", margin: "md",
           contents: [
-            kvRow("ผู้ส่งรายการ", args.closerName),
-            kvRow("ยอดเงินปิดงาน", fmtBaht(args.closingDrawerAmount),
-              { valueColor: COLOR_BRAND, valueWeight: "bold" }),
-            // Service-charge — only render when admin is collecting
-            // it AND staff filled it in. Suppressed when null so the
-            // card doesn't read "เซอร์วิสชาร์จ —" on branches that
-            // don't collect it.
-            ...(args.serviceChargeAmount != null
-              ? [kvRow("เซอร์วิสชาร์จวันนี้", fmtBaht(args.serviceChargeAmount),
-                  { valueColor: COLOR_BRAND, valueWeight: "bold" })]
-              : [])
+            kvRow("ผู้ส่งรายการ", args.closerName)
           ]
         },
-        ...(headlineFlexBlock(args.headlines ?? [])
-          ? [headlineFlexBlock(args.headlines ?? []) as Record<string, unknown>]
+        ...(headlineFlexBlock(mergedHeadlines)
+          ? [headlineFlexBlock(mergedHeadlines) as Record<string, unknown>]
           : []),
         ...checklistFlexBlock(args.checklist)
       ]

@@ -39,6 +39,7 @@ export default function ShiftCloseForm({
   branchId, branchName, closerName, checklistItems,
   requireServiceCharge = false,
   requireTodayClosing = true,
+  requireDailyRevenue = true,
   previousData = null
 }: {
   branchId: number;
@@ -57,6 +58,13 @@ export default function ShiftCloseForm({
    *  daily_reports.data.closing_drawer_amount for downstream
    *  reports / payroll reconciliation. */
   requireTodayClosing?: boolean;
+  /** When the branch admin has flipped require_daily_revenue ON
+   *  (default true 2026-05-28), the staff form shows an optional
+   *  "ยอดขายวันนี้" field. Feeds branch_daily_revenue (ASCENDA COL %
+   *  + sales growth) AND appears as a headline figure on the
+   *  shift-close LINE Flex report. Optional — admin can backfill via
+   *  /admin/ascenda/revenue if staff don't have the number at close. */
+  requireDailyRevenue?: boolean;
   /** Most recent superseded report's parsed `data` JSON, if any.
    *  Passed in when admin previously granted an unlock so the form
    *  re-renders pre-filled with what the staff typed before. */
@@ -433,20 +441,24 @@ export default function ShiftCloseForm({
           </div>
         )}
 
-        {/* ASCENDA daily revenue — always shown, always optional.
-            Feeds the COL % + sales-growth % auto-calculators. Staff
-            can skip; admin backfills via /admin/ascenda/revenue. */}
-        <div>
-          <label className="label">ยอดขายวันนี้ (บาท)</label>
-          <input type="number" inputMode="decimal" min={0} step="0.01"
-            className="input"
-            value={dailyRevenue}
-            placeholder="0.00 (ไม่บังคับ)"
-            onChange={(e) => setDailyRevenue(e.target.value)} />
-          <p className="text-[10px] text-slate-400 mt-1">
-            ใช้คำนวณ KPI ASCENDA (COL % และยอดขายโต) · เว้นว่างได้ถ้ายังไม่ทราบ
-          </p>
-        </div>
+        {/* ASCENDA daily revenue — per-branch toggle (2026-05-28).
+            Optional when shown. Feeds the COL % + sales-growth %
+            auto-calculators AND appears as a headline figure on the
+            LINE Flex report. Staff can skip; admin backfills via
+            /admin/ascenda/revenue. */}
+        {requireDailyRevenue && (
+          <div>
+            <label className="label">ยอดขายวันนี้ (บาท)</label>
+            <input type="number" inputMode="decimal" min={0} step="0.01"
+              className="input"
+              value={dailyRevenue}
+              placeholder="0.00 (ไม่บังคับ)"
+              onChange={(e) => setDailyRevenue(e.target.value)} />
+            <p className="text-[10px] text-slate-400 mt-1">
+              ใช้คำนวณ KPI ASCENDA (COL % และยอดขายโต) · เว้นว่างได้ถ้ายังไม่ทราบ
+            </p>
+          </div>
+        )}
       </div>
 
       {checklistItems.length > 0 ? (

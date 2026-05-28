@@ -37,6 +37,7 @@ export default function BranchSettingsForm({
   requireYesterdayClosing,
   requireMorningOpening,
   requireTodayClosing,
+  requireDailyRevenue,
   attendanceSummaryTime,
   shiftNotifyTime,
   branchName
@@ -54,6 +55,7 @@ export default function BranchSettingsForm({
   requireYesterdayClosing: boolean;
   requireMorningOpening: boolean;
   requireTodayClosing: boolean;
+  requireDailyRevenue: boolean;
   attendanceSummaryTime: string | null;
   shiftNotifyTime: string | null;
   branchName: string;
@@ -87,6 +89,11 @@ export default function BranchSettingsForm({
   const [yClosingReq, setYClosingReq] = useState<boolean>(requireYesterdayClosing);
   const [mOpeningReq, setMOpeningReq] = useState<boolean>(requireMorningOpening);
   const [tClosingReq, setTClosingReq] = useState<boolean>(requireTodayClosing);
+  // require_daily_revenue toggle (2026-05-28). When ON, the shift_close
+  // form shows the optional "ยอดขายวันนี้" field which feeds
+  // branch_daily_revenue + appears as a headline figure on the LINE
+  // Flex card. OFF = field hidden, admin backfills via /admin/ascenda.
+  const [dailyRevReq, setDailyRevReq] = useState<boolean>(requireDailyRevenue);
   // Daily attendance summary time (TC-6) — HH:MM Bangkok. Empty
   // string = disable feature. Recommended value = branch's typical
   // shift start time + 1 hour, but admin is free to pick anything.
@@ -121,6 +128,7 @@ export default function BranchSettingsForm({
     yClosingReq === requireYesterdayClosing &&
     mOpeningReq === requireMorningOpening &&
     tClosingReq === requireTodayClosing &&
+    dailyRevReq === requireDailyRevenue &&
     (summaryTime || null) === (attendanceSummaryTime || null) &&
     (shiftNotify || null) === (shiftNotifyTime || null);
 
@@ -154,6 +162,7 @@ export default function BranchSettingsForm({
           require_yesterday_closing: yClosingReq,
           require_morning_opening: mOpeningReq,
           require_today_closing: tClosingReq,
+          require_daily_revenue: dailyRevReq,
           attendance_summary_time: summaryTime.trim() || null,
           shift_notify_time: shiftNotify.trim() || null
         })
@@ -528,6 +537,16 @@ export default function BranchSettingsForm({
             <Switch checked={tClosingReq} onChange={setTClosingReq} accent="emerald" />
             <span className="text-sm text-slate-700">
               {t("admin.persona.settings.amounts.todayClosing")}
+            </span>
+          </label>
+          {/* require_daily_revenue (2026-05-28) — feeds branch_daily_revenue
+              + appears as a headline figure on the shift_close LINE Flex
+              card alongside closing/SVC. Optional even when ON — staff
+              can skip and admin backfills via /admin/ascenda/revenue. */}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Switch checked={dailyRevReq} onChange={setDailyRevReq} accent="emerald" />
+            <span className="text-sm text-slate-700">
+              ยอดขายวันนี้ (ASCENDA — บนรายงาน)
             </span>
           </label>
         </div>

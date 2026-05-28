@@ -64,6 +64,10 @@ const Body = z.object({
   require_yesterday_closing: z.boolean().optional(),
   require_morning_opening: z.boolean().optional(),
   require_today_closing: z.boolean().optional(),
+  // 2026-05-28: per-branch toggle for the "ยอดขายวันนี้" field on
+  // the shift_close form. ON = staff see + can fill, OFF = field
+  // hidden and admin backfills via /admin/ascenda/revenue.
+  require_daily_revenue: z.boolean().optional(),
 
   // Daily attendance summary (TC-6) — HH:MM Bangkok at which the
   // cron should post the 4-category roll-call to the executive group.
@@ -159,6 +163,10 @@ export async function POST(req: Request) {
   if (parsed.data.require_today_closing !== undefined) {
     sets.push("require_today_closing = ?");
     vals.push(parsed.data.require_today_closing ? 1 : 0);
+  }
+  if (parsed.data.require_daily_revenue !== undefined) {
+    sets.push("require_daily_revenue = ?");
+    vals.push(parsed.data.require_daily_revenue ? 1 : 0);
   }
   // attendance_summary_time: normalise + reset dedupe column on change.
   // When admin changes the summary time (or enables/disables the

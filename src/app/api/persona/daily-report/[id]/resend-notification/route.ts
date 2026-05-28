@@ -142,12 +142,20 @@ export async function POST(
       service_charge_amount?: number | null;
       checklist: ChecklistEntry[];
     };
+    // 2026-05-28: daily revenue is stored in branch_daily_revenue
+    // (NOT in daily_reports.data) so we look it up by branch+date on
+    // resend. NULL when staff skipped it that day — same behaviour
+    // as the auto-flow which sets `dailyRevenue: null`.
+    const revRow = db.prepare(
+      "SELECT revenue FROM branch_daily_revenue WHERE branch_id = ? AND date = ?"
+    ).get(row.branch_id, row.report_date) as { revenue: number } | undefined;
     flex = shiftCloseFlex({
       branchName: branch.name,
       reportDate: row.report_date,
       closerName: row.opener_name,
       closingDrawerAmount: d.closing_drawer_amount,
       serviceChargeAmount: d.service_charge_amount ?? null,
+      dailyRevenue: revRow?.revenue ?? null,
       checklist: normalizeChecklist(d.checklist ?? []),
       headlines: headlinesFor(d.checklist ?? []),
       isRevision,

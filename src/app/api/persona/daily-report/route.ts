@@ -333,6 +333,12 @@ export async function POST(req: Request) {
       closerName: user.display_name,
       closingDrawerAmount: d.closing_drawer_amount,
       serviceChargeAmount: d.service_charge_amount ?? null,
+      // 2026-05-28: pass daily revenue through so the Flex card's
+      // headline block features it alongside closing + SVC. Source
+      // of truth is branch_daily_revenue (set elsewhere in this
+      // handler) — we forward the in-flight value to the renderer
+      // without persisting it in daily_reports.data.
+      dailyRevenue: d.daily_revenue ?? null,
       checklist: normalizeChecklist(d.checklist),
       headlines: headlinesFor(d.checklist),
       isRevision,

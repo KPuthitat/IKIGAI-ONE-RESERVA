@@ -1191,6 +1191,15 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("require_today_closing")) {
     db.exec("ALTER TABLE branches ADD COLUMN require_today_closing INTEGER NOT NULL DEFAULT 1");
   }
+  // require_daily_revenue (2026-05-28) — toggles the "ยอดขายวันนี้"
+  // field on the shift_close form. DEFAULT 1 so every branch picks it
+  // up immediately. Feeds branch_daily_revenue (ASCENDA COL %, sales
+  // growth) AND now appears as a headline figure at the top of the
+  // shift-close report flex card so admins reading the LINE group see
+  // the headline numbers (closing/SVC/revenue) at a glance.
+  if (!bnames2.has("require_daily_revenue")) {
+    db.exec("ALTER TABLE branches ADD COLUMN require_daily_revenue INTEGER NOT NULL DEFAULT 1");
+  }
 
   // Daily attendance summary (TC-6) — per-branch HH:MM time at which
   // the cron job posts a 4-category roll-call to the executive group:
@@ -3059,6 +3068,7 @@ export type Branch = {
   require_yesterday_closing: number;   // 0/1
   require_morning_opening: number;     // 0/1
   require_today_closing: number;       // 0/1
+  require_daily_revenue: number;       // 0/1 — shift_close "ยอดขายวันนี้"
   // Daily attendance summary (TC-6) — see migration block above.
   attendance_summary_time: string | null;           // HH:MM Bangkok, NULL = disabled
   attendance_summary_last_sent_date: string | null; // YYYY-MM-DD dedupe key
