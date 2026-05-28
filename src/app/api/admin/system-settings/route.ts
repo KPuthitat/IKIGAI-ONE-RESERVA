@@ -30,7 +30,11 @@ const Body = z.object({
   // resignation gate. {ADMIN} placeholder replaced at send time with
   // the admin's display_name. 1000-char cap is generous; the card
   // body wraps but you don't want War and Peace in a notification.
-  resignation_unlock_message: z.string().max(1000).optional()
+  resignation_unlock_message: z.string().max(1000).optional(),
+  // Maintenance banner text. Empty string = banner OFF (saved as
+  // NULL inside updateSystemSettings). Any non-empty text = banner
+  // ON. 500-char cap is enough for a deploy-window notice.
+  maintenance_message: z.string().max(500).optional()
 });
 
 export async function POST(req: Request) {
@@ -83,6 +87,9 @@ export async function POST(req: Request) {
   }
   if (parsed.data.resignation_unlock_message !== undefined) {
     dbPatch.resignation_unlock_message = parsed.data.resignation_unlock_message;
+  }
+  if (parsed.data.maintenance_message !== undefined) {
+    dbPatch.maintenance_message = parsed.data.maintenance_message;
   }
 
   updateSystemSettings(dbPatch, user.id);

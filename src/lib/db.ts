@@ -1533,6 +1533,15 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "shift_greetings_on_leave")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN shift_greetings_on_leave TEXT");
   }
+  // Maintenance banner (2026-05-28). Admin-toggleable sticky banner at
+  // the top of every staff + admin page. NULL/empty = banner OFF.
+  // Non-empty = banner ON with the stored text. Lets the owner flip a
+  // "ระบบกำลังอัพเดท..." message at deploy time so staff don't panic
+  // when a request blips an error mid-deploy. Read by both layouts +
+  // edited at /admin/system-settings.
+  if (!ssCols.some((c) => c.name === "maintenance_message")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN maintenance_message TEXT");
+  }
   // Cron heartbeat (2026-05-25) — stamped by every successful POST
   // /api/cron call. Lets admin diagnose "is the external cron job
   // actually pinging us?" without SSH'ing into the VPS. NULL = never
@@ -2981,6 +2990,7 @@ export function getSystemSettings(): SystemSettings {
       shift_greetings_work: null,
       shift_greetings_day_off: null,
       shift_greetings_on_leave: null,
+      maintenance_message: null,
       updated_at: null,
       updated_by: null
     };
@@ -3011,6 +3021,9 @@ export function updateSystemSettings(
     shift_greetings_work?: string | null;
     shift_greetings_day_off?: string | null;
     shift_greetings_on_leave?: string | null;
+    // Maintenance banner text. NULL/empty = banner OFF; any text =
+    // banner ON. Omit field to leave unchanged.
+    maintenance_message?: string | null;
   },
   updatedBy: number
 ): void {
@@ -3064,6 +3077,13 @@ export function updateSystemSettings(
       const raw = (patch[col] ?? "").trim();
       vals.push(raw === "" ? null : raw);
     }
+  }
+  // Maintenance banner — empty trims to NULL so the banner stays
+  // hidden when admin "saves blank" to dismiss it.
+  if (Object.prototype.hasOwnProperty.call(patch, "maintenance_message")) {
+    sets.push("maintenance_message = ?");
+    const raw = (patch.maintenance_message ?? "").trim();
+    vals.push(raw === "" ? null : raw);
   }
   if (sets.length === 0) return;
   sets.push("updated_at = ?", "updated_by = ?");
@@ -3174,6 +3194,11 @@ export type SystemSettings = {
   shift_greetings_work: string | null;
   shift_greetings_day_off: string | null;
   shift_greetings_on_leave: string | null;
+  /** Maintenance banner text. NULL/empty = banner OFF. Non-empty =
+   *  banner ON with this text, rendered sticky at top of every staff
+   *  + admin page so the team knows a deploy is in progress and
+   *  blip-errors are expected, not real outages. */
+  maintenance_message: string | null;
   updated_at: string | null;
   updated_by: number | null;
 };

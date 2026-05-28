@@ -23,11 +23,13 @@ import { useLang } from "@/lib/LangProvider";
 export default function SystemSettingsForm({
   token,
   groupId,
-  defaultEscalationHours
+  defaultEscalationHours,
+  maintenanceMessage
 }: {
   token: string | null;
   groupId: string | null;
   defaultEscalationHours: number;
+  maintenanceMessage: string;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -45,6 +47,11 @@ export default function SystemSettingsForm({
   // the cron sweep reassigns to their manager. Previously was a
   // per-user field on the employee form; consolidated here 2026-05.
   const [escHoursInput, setEscHoursInput] = useState(String(defaultEscalationHours));
+  // Maintenance banner (2026-05-28). Empty string = banner OFF on
+  // save (server normalises to NULL). Any text = banner ON. Owner
+  // flips this immediately before pushing deploy.sh so the team
+  // sees the message and doesn't panic-reload mid-deploy.
+  const [maintenanceInput, setMaintenanceInput] = useState(maintenanceMessage);
   // (Resignation-policy textareas moved 2026-05-28 to
   // /admin/persona/resignation — that's the menu where admins
   // already manage resignation requests, so the policy authoring
@@ -71,6 +78,9 @@ export default function SystemSettingsForm({
       // by sending 0; server validates as well.
       const escH = Math.max(1, Math.min(720, parseInt(escHoursInput, 10) || 24));
       body.default_escalation_hours = String(escH);
+
+      // Maintenance banner — always sent (empty string = banner off).
+      body.maintenance_message = maintenanceInput;
 
       // (Resignation-policy fields moved to /admin/persona/resignation
       // 2026-05-28 — this form no longer sends them.)
@@ -196,6 +206,53 @@ export default function SystemSettingsForm({
           columns live on system_settings, but admins author them as
           part of HR policy + manage the requests right next door —
           asking them to bounce to system-settings was friction. */}
+
+      {/* Maintenance banner — owner-toggled deploy notice */}
+      <div className="card space-y-3">
+        <div>
+          <h2 className="font-bold text-slate-800 text-sm">
+            🛠️ แบนเนอร์แจ้งช่วง deploy / maintenance
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            พิมพ์ข้อความ → กดบันทึก → แบนเนอร์สีฟ้าจะขึ้นบนหัวทุกหน้า ทั้งฝั่งพนักงาน + แอดมิน
+            <br />
+            ใช้ตอนกำลังจะ deploy เพื่อให้พนักงานรู้ว่าระบบกำลังอัพเดท จะเจอ error สั้นๆ ได้ ไม่ใช่ระบบพัง
+            <br />
+            <span className="font-medium">เคลียร์ข้อความ + กดบันทึก = ปิดแบนเนอร์</span>
+          </p>
+        </div>
+        <div>
+          <label className="label">ข้อความบนแบนเนอร์</label>
+          <textarea
+            className="input text-sm"
+            rows={3}
+            maxLength={500}
+            value={maintenanceInput}
+            onChange={(e) => setMaintenanceInput(e.target.value)}
+            placeholder="ตัวอย่าง: ระบบกำลังอัพเดท ใช้งานได้ตามปกติ ถ้าเจอ error ขอให้รอ 1-2 นาทีแล้วลองใหม่ครับ"
+          />
+          <p className="text-[10px] text-slate-400 text-right">
+            {maintenanceInput.length} / 500
+          </p>
+        </div>
+        {/* Live preview — render the actual banner inline so admin can
+            see what staff will see before saving. */}
+        {maintenanceInput.trim() && (
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.5px] font-bold text-slate-500 mb-1.5">
+              พรีวิว
+            </div>
+            <div className="rounded-lg overflow-hidden border border-slate-200 shadow-sm">
+              <div className="bg-sky-600 text-white px-3 py-2 flex items-center gap-3 text-xs sm:text-sm">
+                <span className="text-base flex-shrink-0">🛠️</span>
+                <div className="flex-1 min-w-0 whitespace-pre-line">
+                  {maintenanceInput.trim()}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Routing status — informational summary */}
       <div className="card text-xs space-y-1.5 bg-slate-50 border-slate-200">

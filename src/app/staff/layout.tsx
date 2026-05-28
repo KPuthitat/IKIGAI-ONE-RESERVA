@@ -1,5 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, getSystemSettings } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import LogoutButton from "../admin/LogoutButton";
@@ -13,6 +13,7 @@ import StaffSidebarBrand from "./StaffSidebarBrand";
 import TodaysBranchPill from "../TodaysBranchPill";
 import HookFab from "../components/HookFab";
 import ImpersonationBanner from "../components/ImpersonationBanner";
+import MaintenanceBanner from "../components/MaintenanceBanner";
 import { currentImpersonationContext } from "@/lib/impersonation";
 import { nameWithPrefix } from "@/lib/name";
 
@@ -136,6 +137,17 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   ];
 
   const impCtx = currentImpersonationContext();
+  // Maintenance banner — owner-toggled at /admin/system-settings. We
+  // read system_settings.maintenance_message here so the banner shows
+  // on every staff page automatically. NULL/empty = banner hidden.
+  // Wrapped in try/catch to survive a fresh-deploy boot where the
+  // column hasn't migrated yet.
+  let maintenanceMsg: string | null = null;
+  try {
+    maintenanceMsg = getSystemSettings().maintenance_message ?? null;
+  } catch {
+    maintenanceMsg = null;
+  }
 
   // Mobile-only sidebar footer — pill / username / lang / logout
   // moved here so the mobile topbar can stay just the brand.
@@ -172,6 +184,10 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen flex bg-slate-100">
+      {/* Maintenance banner rendered ABOVE the impersonation banner so
+          the more urgent "system updating" message wins eye-catch when
+          both are active simultaneously. */}
+      {maintenanceMsg && <MaintenanceBanner message={maintenanceMsg} />}
       {impCtx && (
         <ImpersonationBanner
           impersonatorName={impCtx.impersonatorName}

@@ -1,5 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, getSystemSettings } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { autoExpireStaleBookings } from "@/lib/stale-bookings";
@@ -14,6 +14,7 @@ import AdminSidebarBrand from "./AdminSidebarBrand";
 import TodaysBranchPill from "../TodaysBranchPill";
 import HookFab from "../components/HookFab";
 import ImpersonationBanner from "../components/ImpersonationBanner";
+import MaintenanceBanner from "../components/MaintenanceBanner";
 import { currentImpersonationContext } from "@/lib/impersonation";
 import { nameWithPrefix } from "@/lib/name";
 
@@ -217,6 +218,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // view + provides a one-click way back to their own session.
   const impCtx = currentImpersonationContext();
 
+  // Maintenance banner — owner-toggled at /admin/system-settings.
+  // Same component renders on the staff side; we duplicate the read
+  // here so the admin layout doesn't have to import staff code.
+  // Wrapped in try/catch to survive a fresh-deploy boot where the
+  // column hasn't migrated yet.
+  let maintenanceMsg: string | null = null;
+  try {
+    maintenanceMsg = getSystemSettings().maintenance_message ?? null;
+  } catch {
+    maintenanceMsg = null;
+  }
+
   // Mobile-only footer for the sidebar: branch pill, lang toggle,
   // logout. Desktop keeps these in the topbar (md+). On mobile the
   // topbar reduces to just the program name so the row never wraps
@@ -254,6 +267,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen flex bg-slate-100">
+      {/* Maintenance banner above impersonation banner — see staff
+          layout for the same ordering rationale. */}
+      {maintenanceMsg && <MaintenanceBanner message={maintenanceMsg} />}
       {impCtx && (
         <ImpersonationBanner
           impersonatorName={impCtx.impersonatorName}
