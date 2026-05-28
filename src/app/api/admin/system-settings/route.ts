@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
-import { updateSystemSettings, logPersonaAction } from "@/lib/db";
+import { updateSystemSettings, logPersonaAction, getSystemSettings } from "@/lib/db";
+import { writeMaintenancePage } from "@/lib/maintenance-page";
 
 // POST /api/admin/system-settings
 //
@@ -103,6 +104,22 @@ export async function POST(req: Request) {
   }
 
   updateSystemSettings(dbPatch, user.id);
+
+  // Regenerate the Nginx-served maintenance page whenever the
+  // message changes. The HTML is self-contained (font + owl baked
+  // in via base64) and lives at /var/www/maintenance/index.html on
+  // prod — Nginx serves it via `error_page 502 503 504` whenever
+  // Next.js is unreachable mid-deploy, so users see something
+  // branded instead of a raw 502/504 / white screen of death.
+  // Non-fatal: a permission issue here doesn't block the save.
+  if (parsed.data.maintenance_message !== undefined) {
+    try {
+      const fresh = getSystemSettings();
+      writeMaintenancePage(fresh.maintenance_message);
+    } catch (e) {
+      console.warn("maintenance page write failed:", e);
+    }
+  }
 
   // Activity log — captures every change to system-wide config.
   // ref_id is null because the entity changed is the singleton row.

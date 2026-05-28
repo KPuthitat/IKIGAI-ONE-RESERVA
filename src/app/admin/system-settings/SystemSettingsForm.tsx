@@ -217,12 +217,19 @@ export default function SystemSettingsForm({
       <div className="card space-y-4">
         <div>
           <h2 className="font-bold text-slate-800 text-sm">
-            🛠️ แบนเนอร์แจ้งช่วง deploy / maintenance
+            🛠️ แบนเนอร์ + หน้า Maintenance
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            ใช้ตอนกำลังจะ deploy เพื่อให้พนักงานรู้ว่าระบบกำลังอัพเดท — เจอ error สั้นๆ ได้ ไม่ใช่ระบบพัง
+            ข้อความเดียวกันใช้ใน <strong>2 ที่</strong>:
             <br />
-            <span className="font-medium">พิมพ์ข้อความครั้งเดียว เก็บไว้ตลอด · ครั้งต่อไปแค่กดเปิด/ปิด</span>
+            <span className="ml-3">• <strong>แบนเนอร์สีฟ้าบนหัวทุกหน้า</strong> — เปิด/ปิดด้วย toggle ด้านล่าง (ใช้เตือนก่อน/หลัง deploy)</span>
+            <br />
+            <span className="ml-3">• <strong>หน้า Maintenance เต็มจอ</strong> — ขึ้นอัตโนมัติเมื่อ Next.js ตาย (ระหว่าง deploy / crash) — Nginx จัดการเอง</span>
+            <br />
+            <a href="/api/maintenance/preview" target="_blank" rel="noopener noreferrer"
+               className="inline-flex items-center gap-1 mt-2 text-brand hover:underline font-medium">
+              เปิดดูตัวอย่างหน้า Maintenance ในแท็บใหม่ →
+            </a>
           </p>
         </div>
 
