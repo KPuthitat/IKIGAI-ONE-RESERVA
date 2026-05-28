@@ -2317,7 +2317,16 @@ function runMigrations(db: Database.Database): void {
     const newDdl = userTableDdl.sql.replace(
       /CHECK\s*\(\s*role\s+IN\s*\([^)]+\)\s*\)/i,
       "CHECK (role IN ('super_admin','admin','staff'))"
-    ).replace(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?["`]?users["`]?\b/i, "CREATE TABLE users_new");
+    ).replace(
+      // Match `CREATE TABLE [IF NOT EXISTS] (users|"users"|`users`)`
+      // explicitly. The previous `["`]?users["`]?\b` pattern failed when
+      // SQLite stored the DDL with quoted name — `\b` couldn't match
+      // between two non-word chars (`"` and ` `), so regex backtracked
+      // to leave the closing quote unconsumed, producing
+      // `CREATE TABLE users_new" (...)` which throws "unrecognized token".
+      /CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(?:"users"|`users`|users)/i,
+      "CREATE TABLE users_new"
+    );
     db.exec("BEGIN");
     try {
       db.exec(newDdl);
@@ -2358,7 +2367,16 @@ function runMigrations(db: Database.Database): void {
         /CHECK\s*\(\s*status\s+IN\s*\([^)]+\)\s*\)/i,
         "CHECK (status IN ('active','pending_invite','disabled','resigned'))"
       )
-      .replace(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?["`]?users["`]?\b/i, "CREATE TABLE users_new");
+      .replace(
+      // Match `CREATE TABLE [IF NOT EXISTS] (users|"users"|`users`)`
+      // explicitly. The previous `["`]?users["`]?\b` pattern failed when
+      // SQLite stored the DDL with quoted name — `\b` couldn't match
+      // between two non-word chars (`"` and ` `), so regex backtracked
+      // to leave the closing quote unconsumed, producing
+      // `CREATE TABLE users_new" (...)` which throws "unrecognized token".
+      /CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(?:"users"|`users`|users)/i,
+      "CREATE TABLE users_new"
+    );
     db.exec("BEGIN");
     try {
       db.exec(newDdl);
@@ -2376,9 +2394,17 @@ function runMigrations(db: Database.Database): void {
   // user's status to 'resigned'. Used by the 1-year purge sweep to
   // pick rows up for deletion. NULL for users who haven't gone
   // through the resignation flow.
+  // Defensive try/catch around ALTER — if the column was added by a
+  // manual SQL fix on prod (and the PRAGMA cache is stale for any
+  // reason), the "duplicate column name" error is benign and we
+  // swallow it so boot doesn't loop-crash. Any other error rethrows.
   const userColsForResign = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
   if (!userColsForResign.some((c) => c.name === "resigned_at")) {
-    db.exec("ALTER TABLE users ADD COLUMN resigned_at TEXT");
+    try {
+      db.exec("ALTER TABLE users ADD COLUMN resigned_at TEXT");
+    } catch (e) {
+      if (!String(e).includes("duplicate column")) throw e;
+    }
   }
 
   // Promote the bootstrap 'admin' account to super_admin so the
