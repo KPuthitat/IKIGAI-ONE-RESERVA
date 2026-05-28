@@ -14,8 +14,15 @@ import {
   notifyCustomer,
   notifyStaff,
   notifyToStaffGroup,
-  dailyAttendanceSummaryFlex
+  dailyAttendanceSummaryFlex,
+  personaResignationTakenFlex,
+  sendLinePush
 } from "@/lib/line";
+import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
+import {
+  sweepResignationsToTake,
+  sweepResignationPurge
+} from "@/lib/resignation-sweep";
 import { purgeOldBookings } from "@/lib/retention";
 import { bookingStartMs } from "@/lib/time";
 import { autoExpireStaleBookings } from "@/lib/stale-bookings";
@@ -229,6 +236,84 @@ async function runCron(): Promise<NextResponse> {
     reportError(e, "cron resignation-escalation", {});
   }
 
+  // Resignation auto-close (2026-05-28). When a user's approved
+  // resignation's proposed_last_day has passed, flip their account
+  // to 'resigned' so login is blocked on the NEXT day. Idempotent —
+  // re-runs are no-ops. Then DM each newly-closed user a Flex card
+  // confirming + pointing them at the admin if they want to come
+  // back. Push uses the platform OA (same channel as clock-in DM /
+  // shift reminder); skipped silently when the token isn't ready.
+  let resignationsClosed = 0;
+  let resignationCloseNotified = 0;
+  try {
+    const { closed, userIds } = sweepResignationsToTake(todayBkk);
+    resignationsClosed = closed;
+    if (userIds.length > 0) {
+      const platform = getPlatformChannel();
+      if (isChannelReady(platform) && platform?.channel_token) {
+        for (const uid of userIds) {
+          try {
+            // Pull display name + LINE id + last_day to render the
+            // card. Joining branches → user_branches gives us a
+            // contact-admin name for the closing line. NULL admin
+            // is fine — the card silently omits that line.
+            const u = db.prepare(`
+              SELECT u.line_user_id,
+                     COALESCE(u.nickname_th, u.display_name) AS recipient_name,
+                     (SELECT MAX(r.proposed_last_day) FROM resignation_requests r
+                       WHERE r.user_id = u.id AND r.status = 'approved') AS last_day,
+                     (SELECT a.display_name FROM user_branches ub
+                       JOIN users a ON a.id != u.id
+                         AND a.role IN ('admin','super_admin')
+                         AND a.status = 'active'
+                         AND EXISTS (
+                           SELECT 1 FROM user_branches ub2
+                            WHERE ub2.user_id = a.id
+                              AND ub2.branch_id = ub.branch_id
+                              AND ub2.is_admin = 1
+                         )
+                       WHERE ub.user_id = u.id
+                       LIMIT 1) AS admin_name
+              FROM users u WHERE u.id = ?
+            `).get(uid) as {
+              line_user_id: string | null;
+              recipient_name: string;
+              last_day: string | null;
+              admin_name: string | null;
+            } | undefined;
+            if (!u?.line_user_id || !u.last_day) continue;
+            const flex = personaResignationTakenFlex({
+              recipientName: u.recipient_name,
+              lastDay: u.last_day,
+              contactAdminName: u.admin_name
+            });
+            const r = await sendLinePush(platform.channel_token, {
+              to: u.line_user_id, messages: [flex]
+            });
+            if (r.ok) resignationCloseNotified += 1;
+          } catch (e) {
+            console.warn("resignation take notify failed for uid", uid, e);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("resignation auto-close sweep error", e);
+    reportError(e, "cron resignation-take", {});
+  }
+
+  // 1-year purge — DELETE users whose status='resigned' AND
+  // resigned_at older than the retention window. Cascades carry
+  // the related rows (sessions/leave/etc) away via FK constraints.
+  let resignationsPurged = 0;
+  try {
+    const { purged } = sweepResignationPurge(todayBkk);
+    resignationsPurged = purged;
+  } catch (e) {
+    console.error("resignation purge sweep error", e);
+    reportError(e, "cron resignation-purge", {});
+  }
+
   // retention cleanup
   const purged = purgeOldBookings();
 
@@ -242,6 +327,9 @@ async function runCron(): Promise<NextResponse> {
     expired_redemptions_walk_ins: expiredWalkIns,
     escalated_leave_requests: escalatedLeave,
     escalated_resignation_requests: escalatedResign,
+    resignations_closed: resignationsClosed,
+    resignations_close_notified: resignationCloseNotified,
+    resignations_purged: resignationsPurged,
     purged_old_bookings: purged
   });
 }

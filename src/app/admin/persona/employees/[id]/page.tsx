@@ -70,7 +70,7 @@ export default function AdminEmployeeProfilePage({
   // cross-branch supervisor can still be selected by the owner.
   const supervisors = db.prepare(
     `SELECT id, display_name, title_prefix FROM users
-      WHERE status != 'disabled' AND is_test_account = 0
+      WHERE status NOT IN ('disabled', 'resigned') AND is_test_account = 0
       ORDER BY display_name`
   ).all() as ProfileSupervisor[];
 

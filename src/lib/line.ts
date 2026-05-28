@@ -3392,6 +3392,86 @@ export function personaResignationUnlockedFlex(
   };
 }
 
+// ── Resignation TAKE notification ─────────────────────────────────
+//
+// Fires when the nightly cron flips a user's status to 'resigned'
+// because their approved resignation's proposed_last_day passed.
+// Short, gentle, owl-voiced — confirms the change and points the
+// staff at the admin if they need to come back to work.
+
+export type ResignationTakenFlexArgs = {
+  recipientName: string;  // e.g. "ตูน" or display_name fallback
+  lastDay: string;        // YYYY-MM-DD — the date they worked last
+  /** Optional — when set we render a "ติดต่อแอดมิน: <name>" line.
+   *  Caller pulls the branch admin off the user's primary branch. */
+  contactAdminName?: string | null;
+  headerColor?: string | null;
+};
+
+export function personaResignationTakenFlex(
+  args: ResignationTakenFlexArgs
+): LineFlexMessage {
+  const headerColor = args.headerColor || COLOR_INK_700;
+  const friendlyLastDay = formatThaiDate(args.lastDay);
+  const bubble = {
+    type: "bubble", size: "giga",
+    header: {
+      type: "box", layout: "vertical",
+      backgroundColor: headerColor, paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS · PERSONA", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
+            { type: "text", text: "ทักทายจากน้องฮูก", color: "#cbd5e1", size: "xs", align: "end", flex: 1 }
+          ]
+        },
+        {
+          type: "text", text: "ขอบคุณสำหรับการทำงานที่ผ่านมาครับ",
+          color: "#ffffff", size: "lg", weight: "bold", wrap: true, margin: "md"
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "24px",
+      contents: [
+        {
+          type: "text",
+          text: `สวัสดีครับพี่${args.recipientName}`,
+          size: "md", color: COLOR_TEXT_DARK, weight: "bold", wrap: true
+        },
+        {
+          type: "text",
+          text: `วันสุดท้ายที่พี่ทำงานคือ ${friendlyLastDay} — ตั้งแต่วันนี้ระบบจะปิดบัญชีของพี่อัตโนมัติครับ`,
+          size: "sm", color: COLOR_TEXT_DARK, wrap: true, margin: "sm"
+        },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        {
+          type: "text",
+          text: "ระบบจะเก็บข้อมูลของพี่ไว้ 1 ปี ก่อนลบอัตโนมัติ ตามนโยบายความเป็นส่วนตัว",
+          size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "sm"
+        },
+        ...(args.contactAdminName ? [{
+          type: "text",
+          text: `หากต้องการกลับเข้าทำงานหรือสอบถาม ติดต่อ: ${args.contactAdminName}`,
+          size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "xs"
+        }] : []),
+        {
+          type: "text",
+          text: "ขอให้พี่โชคดีในเส้นทางใหม่ครับ น้องฮูก 🦉",
+          size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "md"
+        }
+      ]
+    },
+    styles: { header: { backgroundColor: headerColor } }
+  };
+  return {
+    type: "flex",
+    altText: `บัญชีของคุณถูกปิดอัตโนมัติ · ${args.recipientName}`,
+    contents: bubble
+  };
+}
+
 // ── Roster published / updated Flex (TC-R) ────────────────────────
 //
 // One-line announcement card the supervisor sends when the monthly

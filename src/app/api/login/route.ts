@@ -50,13 +50,17 @@ export async function POST(req: Request) {
     }
   }
 
-  // (2) Local users (invite-redeemed)
+  // (2) Local users (invite-redeemed). Look up WITHOUT a status
+  // filter so a 'resigned' or 'disabled' row still gets a password
+  // check + returns the proper account-state error below — instead
+  // of falling through to a generic 401 that doesn't tell the staff
+  // why their working credentials no longer work.
   if (!authedUserId) {
     const local = db.prepare(`
-      SELECT id, password_hash, role, status FROM users
-      WHERE username = ? AND status = 'active'
+      SELECT id, password_hash, role FROM users
+      WHERE username = ?
     `).get(username) as {
-      id: number; password_hash: string; role: UserRole; status: string
+      id: number; password_hash: string; role: UserRole;
     } | undefined;
     if (local && bcrypt.compareSync(password, local.password_hash)) {
       authedUserId = local.id;
@@ -82,6 +86,37 @@ export async function POST(req: Request) {
       { error: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" },
       { status: 401 }
     );
+  }
+
+  // Account-state gate (2026-05-28). Even if credentials matched,
+  // the row may be flagged as resigned (auto-closed by the nightly
+  // sweep after the staff's last working day) or disabled (admin
+  // manually closed it). Show a specific message so the staff knows
+  // who to contact instead of staring at a generic 401.
+  const accountState = db.prepare(
+    "SELECT status, resigned_at FROM users WHERE id = ?"
+  ).get(authedUserId) as { status: string; resigned_at: string | null } | undefined;
+  if (accountState?.status === "resigned") {
+    return NextResponse.json({
+      error: "บัญชีของคุณถูกปิดเนื่องจากครบกำหนดวันลาออกแล้ว",
+      error_code: "account_resigned",
+      message: "หากต้องการกลับเข้าทำงานหรือสอบถามข้อมูล กรุณาติดต่อแอดมินผ่าน LINE OA ของบริษัท",
+      resigned_at: accountState.resigned_at
+    }, { status: 403 });
+  }
+  if (accountState?.status === "disabled") {
+    return NextResponse.json({
+      error: "บัญชีของคุณถูกปิดใช้งาน",
+      error_code: "account_disabled",
+      message: "กรุณาติดต่อแอดมินเพื่อขอเปิดบัญชีอีกครั้ง"
+    }, { status: 403 });
+  }
+  if (accountState?.status === "pending_invite") {
+    return NextResponse.json({
+      error: "บัญชียังไม่ได้ตั้งค่าครั้งแรก",
+      error_code: "account_pending_invite",
+      message: "กรุณากดลิงก์เชิญที่แอดมินส่งให้ผ่าน LINE เพื่อตั้งรหัสผ่านก่อน"
+    }, { status: 403 });
   }
 
   // Role gate vs the tab the form is on. super_admin counts as

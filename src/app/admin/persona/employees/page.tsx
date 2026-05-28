@@ -53,7 +53,7 @@ export default function AdminEmployeesPage({
            CASE WHEN u.resignation_unlocked_at IS NULL THEN 0 ELSE 1 END AS resign_unlocked
     FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.status != 'disabled'
+    WHERE u.status NOT IN ('disabled', 'resigned')
       ${showTest ? "" : "AND u.is_test_account = 0"}
     ORDER BY
       -- Sort by employee_code (admin uses this as the canonical staff
@@ -68,7 +68,7 @@ export default function AdminEmployeesPage({
   const testCount = (db.prepare(`
     SELECT COUNT(*) AS n FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.status != 'disabled' AND u.is_test_account = 1
+    WHERE u.status NOT IN ('disabled', 'resigned') AND u.is_test_account = 1
   `).get(branch.id) as { n: number }).n;
 
   // All branches + every listed employee's memberships — drives the

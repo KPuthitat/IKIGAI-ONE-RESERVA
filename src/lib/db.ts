@@ -2340,6 +2340,47 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE users ADD COLUMN last_login_at TEXT");
   }
 
+  // 2026-05-28: extend users.status CHECK with 'resigned' so the
+  // nightly resignation sweep can flip users when their approved
+  // resignation's proposed_last_day has passed. Same rebuild pattern
+  // used for users.role above — SQLite CHECK constraints are immutable
+  // so the only way to widen is to clone the table.
+  const userTableDdlForStatus = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+  ).get() as { sql: string } | undefined;
+  if (userTableDdlForStatus
+      && /CHECK\s*\(\s*status\s+IN\s*\([^)]*\)/i.test(userTableDdlForStatus.sql)
+      && !/'resigned'/.test(userTableDdlForStatus.sql)) {
+    const userCols2 = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+    const colList = userCols2.map((c) => `"${c.name}"`).join(", ");
+    const newDdl = userTableDdlForStatus.sql
+      .replace(
+        /CHECK\s*\(\s*status\s+IN\s*\([^)]+\)\s*\)/i,
+        "CHECK (status IN ('active','pending_invite','disabled','resigned'))"
+      )
+      .replace(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?["`]?users["`]?\b/i, "CREATE TABLE users_new");
+    db.exec("BEGIN");
+    try {
+      db.exec(newDdl);
+      db.exec(`INSERT INTO users_new (${colList}) SELECT ${colList} FROM users`);
+      db.exec("DROP TABLE users");
+      db.exec("ALTER TABLE users_new RENAME TO users");
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+  }
+
+  // resigned_at — ISO timestamp the cron stamped when it flipped the
+  // user's status to 'resigned'. Used by the 1-year purge sweep to
+  // pick rows up for deletion. NULL for users who haven't gone
+  // through the resignation flow.
+  const userColsForResign = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  if (!userColsForResign.some((c) => c.name === "resigned_at")) {
+    db.exec("ALTER TABLE users ADD COLUMN resigned_at TEXT");
+  }
+
   // Promote the bootstrap 'admin' account to super_admin so the
   // setup wizard / role grants have a starting point. Idempotent
   // (only runs when nobody is currently super_admin).
@@ -3260,7 +3301,12 @@ export type EmployeeProfile = {
   username: string;
   display_name: string;
   role: UserRole;
-  status: "active" | "pending_invite" | "disabled";
+  status: "active" | "pending_invite" | "disabled" | "resigned";
+  /** ISO timestamp the cron stamped when status flipped to 'resigned'
+   *  (proposed_last_day on the approved resignation passed). NULL for
+   *  users who haven't gone through the resignation flow. Drives the
+   *  1-year purge sweep. */
+  resigned_at: string | null;
   // Personal
   title_prefix: string | null;
   first_name_th: string | null;

@@ -17,10 +17,22 @@ export default function LoginForm({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(initialError ?? null);
+  // When the login API returns a 403 with an `error_code` (resigned /
+  // disabled / pending_invite), keep the secondary message so we can
+  // show it in a friendlier callout instead of the plain red one-liner
+  // used for ordinary auth failures. Lets the staff know to contact
+  // an admin instead of guessing at why their password "stopped working".
+  const [accountNotice, setAccountNotice] = useState<{
+    kind: "resigned" | "disabled" | "pending_invite";
+    title: string;
+    message: string;
+    resignedAt?: string | null;
+  } | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    setAccountNotice(null);
     setBusy(true);
     try {
       const res = await fetch(apiUrl("/api/login"), {
@@ -30,6 +42,21 @@ export default function LoginForm({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (data.error_code === "account_resigned"
+            || data.error_code === "account_disabled"
+            || data.error_code === "account_pending_invite") {
+          setAccountNotice({
+            kind: data.error_code === "account_resigned"
+              ? "resigned"
+              : data.error_code === "account_disabled"
+                ? "disabled"
+                : "pending_invite",
+            title: data.error,
+            message: data.message,
+            resignedAt: data.resigned_at ?? null
+          });
+          return;
+        }
         setErr(data.error || t("login.error.generic"));
         return;
       }
@@ -108,6 +135,41 @@ export default function LoginForm({
 
         {err && (
           <div className="text-red-600 text-sm text-center min-h-[18px] mb-2">{err}</div>
+        )}
+
+        {accountNotice && (
+          // Account-state callout. Friendlier than the generic auth
+          // error because the staff did nothing wrong — their account
+          // was closed (resigned) or paused (disabled). The colour
+          // shifts per kind so it doesn't feel as alarming as a red
+          // password-failure box.
+          <div className={`rounded-xl border-2 p-3 mb-3 space-y-1.5 ${
+            accountNotice.kind === "resigned"
+              ? "border-sky-300 bg-sky-50"
+              : accountNotice.kind === "disabled"
+                ? "border-amber-300 bg-amber-50"
+                : "border-violet-300 bg-violet-50"
+          }`}>
+            <div className={`text-sm font-bold ${
+              accountNotice.kind === "resigned"
+                ? "text-sky-800"
+                : accountNotice.kind === "disabled"
+                  ? "text-amber-800"
+                  : "text-violet-800"
+            }`}>
+              {accountNotice.kind === "resigned"
+                ? "🌅 ขอบคุณสำหรับการทำงานที่ผ่านมา"
+                : accountNotice.kind === "disabled"
+                  ? "⛔ บัญชีถูกปิดใช้งาน"
+                  : "✉️ ยังไม่ได้ตั้งค่าครั้งแรก"}
+            </div>
+            <div className="text-xs text-slate-700 leading-relaxed">
+              {accountNotice.title}
+            </div>
+            <div className="text-[11px] text-slate-600 leading-relaxed">
+              {accountNotice.message}
+            </div>
+          </div>
         )}
 
         {busy ? (

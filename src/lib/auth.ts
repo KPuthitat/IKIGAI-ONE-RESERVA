@@ -57,6 +57,17 @@ export function getSessionUser(): SessionUser | null {
     db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
     return null;
   }
+  // Account-state gate (2026-05-28). If the cron flipped this user
+  // to 'resigned' or admin manually 'disabled' them mid-session,
+  // their cookie is now stale — drop the session row so any
+  // subsequent request lands on the login page where the API will
+  // surface the proper "บัญชีคุณถูกปิด" message. Single source of
+  // truth for "is this user allowed in" — checked here so every
+  // route that calls getSessionUser inherits the gate automatically.
+  if (row.status !== "active") {
+    db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
+    return null;
+  }
   // ลำดับการแสดงสาขา — flagship (NAMA = display_order 1) ขึ้นก่อนเสมอ
   // ตามด้วยอัลฟาเบติก (display_order default = 100 สำหรับสาขาอื่น)
   //

@@ -148,7 +148,7 @@ export async function POST(req: Request) {
     SELECT u.id, u.username
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
-    WHERE ub.branch_id = ? AND u.status != 'disabled'
+    WHERE ub.branch_id = ? AND u.status NOT IN ('disabled', 'resigned')
   `).all(user.activeBranchId) as Array<{ id: number; username: string }>;
   const positionByTitle = new Map(positions.map((p) => [p.title.toLowerCase(), p.id]));
   const shiftByCode = new Map(shiftCodes.map((s) => [s.code.toLowerCase(), s.id]));

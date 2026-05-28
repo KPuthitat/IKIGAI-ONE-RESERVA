@@ -47,7 +47,7 @@ export default function ApprovalChainPage() {
     SELECT DISTINCT u.id, u.display_name, u.title_prefix, u.nickname_th, u.role
     FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.status != 'disabled'
+    WHERE u.status NOT IN ('disabled', 'resigned')
       AND u.is_test_account = 0
       AND u.role IN ('staff', 'admin', 'super_admin')
     ORDER BY u.display_name
