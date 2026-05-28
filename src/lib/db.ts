@@ -3288,6 +3288,11 @@ export type User = {
    *  Column is on the users table; rendered via lib/name.nameWithPrefix. */
   title_prefix: string | null;
   role: UserRole;
+  /** Account state — gates login. Added to the lean User type so
+   *  auth.ts can drop sessions for resigned/disabled rows without
+   *  having to cast to EmployeeProfile. Same union as on the rich
+   *  profile type below; keep them in sync. */
+  status: "active" | "pending_invite" | "disabled" | "resigned";
 };
 
 /** Full Phase A employee profile row — superset of `User` with all
