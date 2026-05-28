@@ -49,6 +49,7 @@ export default function SystemSettingsPage() {
         groupId={settings.global_staff_group_id}
         defaultEscalationHours={settings.default_escalation_hours ?? 24}
         maintenanceMessage={settings.maintenance_message ?? ""}
+        maintenanceActive={settings.maintenance_active === 1}
       />
     </div>
   );

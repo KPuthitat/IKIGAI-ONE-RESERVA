@@ -218,14 +218,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // view + provides a one-click way back to their own session.
   const impCtx = currentImpersonationContext();
 
-  // Maintenance banner — owner-toggled at /admin/system-settings.
-  // Same component renders on the staff side; we duplicate the read
-  // here so the admin layout doesn't have to import staff code.
-  // Wrapped in try/catch to survive a fresh-deploy boot where the
-  // column hasn't migrated yet.
+  // Maintenance banner — renders ONLY when both fields are set:
+  //   • maintenance_active = 1 (toggle ON)
+  //   • maintenance_message non-empty (template text exists)
+  // Same logic mirrored in staff layout — see there for full notes.
   let maintenanceMsg: string | null = null;
   try {
-    maintenanceMsg = getSystemSettings().maintenance_message ?? null;
+    const ss = getSystemSettings();
+    if (ss.maintenance_active === 1 && ss.maintenance_message?.trim()) {
+      maintenanceMsg = ss.maintenance_message.trim();
+    }
   } catch {
     maintenanceMsg = null;
   }

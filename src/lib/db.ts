@@ -1533,14 +1533,18 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "shift_greetings_on_leave")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN shift_greetings_on_leave TEXT");
   }
-  // Maintenance banner (2026-05-28). Admin-toggleable sticky banner at
-  // the top of every staff + admin page. NULL/empty = banner OFF.
-  // Non-empty = banner ON with the stored text. Lets the owner flip a
-  // "ระบบกำลังอัพเดท..." message at deploy time so staff don't panic
-  // when a request blips an error mid-deploy. Read by both layouts +
-  // edited at /admin/system-settings.
+  // Maintenance banner (2026-05-28). Two columns so the message is
+  // a persistent TEMPLATE the owner authors ONCE — turning the
+  // banner on/off is then a single toggle click before/after deploy,
+  // not "retype the message every time".
+  //   maintenance_message — template text. Stays in DB always.
+  //   maintenance_active  — 0/1 toggle. Banner only renders when
+  //     BOTH active=1 AND message is non-empty.
   if (!ssCols.some((c) => c.name === "maintenance_message")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN maintenance_message TEXT");
+  }
+  if (!ssCols.some((c) => c.name === "maintenance_active")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN maintenance_active INTEGER NOT NULL DEFAULT 0");
   }
   // Cron heartbeat (2026-05-25) — stamped by every successful POST
   // /api/cron call. Lets admin diagnose "is the external cron job
@@ -2991,6 +2995,7 @@ export function getSystemSettings(): SystemSettings {
       shift_greetings_day_off: null,
       shift_greetings_on_leave: null,
       maintenance_message: null,
+      maintenance_active: 0,
       updated_at: null,
       updated_by: null
     };
@@ -3021,9 +3026,12 @@ export function updateSystemSettings(
     shift_greetings_work?: string | null;
     shift_greetings_day_off?: string | null;
     shift_greetings_on_leave?: string | null;
-    // Maintenance banner text. NULL/empty = banner OFF; any text =
-    // banner ON. Omit field to leave unchanged.
+    // Maintenance banner template text. Persisted even when banner is
+    // off so the owner doesn't have to retype on every deploy.
     maintenance_message?: string | null;
+    // Toggle: 0/1. Banner renders when BOTH this is 1 AND
+    // maintenance_message is non-empty.
+    maintenance_active?: 0 | 1 | boolean;
   },
   updatedBy: number
 ): void {
@@ -3078,12 +3086,17 @@ export function updateSystemSettings(
       vals.push(raw === "" ? null : raw);
     }
   }
-  // Maintenance banner — empty trims to NULL so the banner stays
-  // hidden when admin "saves blank" to dismiss it.
+  // Maintenance banner — message is the template (persisted), active
+  // is the on/off toggle. Both fields are independent so toggling
+  // doesn't wipe the template text.
   if (Object.prototype.hasOwnProperty.call(patch, "maintenance_message")) {
     sets.push("maintenance_message = ?");
     const raw = (patch.maintenance_message ?? "").trim();
     vals.push(raw === "" ? null : raw);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "maintenance_active")) {
+    sets.push("maintenance_active = ?");
+    vals.push(patch.maintenance_active ? 1 : 0);
   }
   if (sets.length === 0) return;
   sets.push("updated_at = ?", "updated_by = ?");
@@ -3194,11 +3207,15 @@ export type SystemSettings = {
   shift_greetings_work: string | null;
   shift_greetings_day_off: string | null;
   shift_greetings_on_leave: string | null;
-  /** Maintenance banner text. NULL/empty = banner OFF. Non-empty =
-   *  banner ON with this text, rendered sticky at top of every staff
-   *  + admin page so the team knows a deploy is in progress and
-   *  blip-errors are expected, not real outages. */
+  /** Maintenance banner template — persistent text the owner authors
+   *  once, kept in DB even when the banner is hidden. Pairs with
+   *  maintenance_active (the on/off toggle) so toggling banner doesn't
+   *  destroy the message. */
   maintenance_message: string | null;
+  /** 0/1 toggle controlling whether the banner actually renders. Owner
+   *  flips this before/after each deploy via /admin/system-settings.
+   *  Banner shows iff active=1 AND message non-empty. */
+  maintenance_active: number;
   updated_at: string | null;
   updated_by: number | null;
 };

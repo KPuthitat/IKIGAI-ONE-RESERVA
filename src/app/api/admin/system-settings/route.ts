@@ -31,10 +31,14 @@ const Body = z.object({
   // the admin's display_name. 1000-char cap is generous; the card
   // body wraps but you don't want War and Peace in a notification.
   resignation_unlock_message: z.string().max(1000).optional(),
-  // Maintenance banner text. Empty string = banner OFF (saved as
-  // NULL inside updateSystemSettings). Any non-empty text = banner
-  // ON. 500-char cap is enough for a deploy-window notice.
-  maintenance_message: z.string().max(500).optional()
+  // Maintenance banner template text. Persisted even when banner is
+  // off — owner authors once, toggles on/off via maintenance_active.
+  // 500-char cap is enough for a deploy-window notice.
+  maintenance_message: z.string().max(500).optional(),
+  // Toggle: "true"/"false" from the form. Coerced to 0/1 in
+  // updateSystemSettings. Banner renders only when this is true AND
+  // message non-empty.
+  maintenance_active: z.union([z.boolean(), z.literal("true"), z.literal("false")]).optional()
 });
 
 export async function POST(req: Request) {
@@ -90,6 +94,12 @@ export async function POST(req: Request) {
   }
   if (parsed.data.maintenance_message !== undefined) {
     dbPatch.maintenance_message = parsed.data.maintenance_message;
+  }
+  if (parsed.data.maintenance_active !== undefined) {
+    // Accept boolean OR the strings "true"/"false" (form serialisation
+    // sometimes coerces booleans to strings). Normalise to 0/1.
+    const v = parsed.data.maintenance_active;
+    dbPatch.maintenance_active = (v === true || v === "true") ? 1 : 0;
   }
 
   updateSystemSettings(dbPatch, user.id);

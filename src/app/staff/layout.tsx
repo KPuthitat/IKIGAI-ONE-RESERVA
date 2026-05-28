@@ -137,14 +137,18 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   ];
 
   const impCtx = currentImpersonationContext();
-  // Maintenance banner — owner-toggled at /admin/system-settings. We
-  // read system_settings.maintenance_message here so the banner shows
-  // on every staff page automatically. NULL/empty = banner hidden.
-  // Wrapped in try/catch to survive a fresh-deploy boot where the
-  // column hasn't migrated yet.
+  // Maintenance banner — renders ONLY when both fields are set:
+  //   • maintenance_active = 1 (owner flipped the toggle ON)
+  //   • maintenance_message non-empty (template text exists)
+  // The two-field split lets the owner author the message ONCE then
+  // just toggle on/off before/after each deploy. Wrapped in
+  // try/catch in case the columns haven't migrated yet on first boot.
   let maintenanceMsg: string | null = null;
   try {
-    maintenanceMsg = getSystemSettings().maintenance_message ?? null;
+    const ss = getSystemSettings();
+    if (ss.maintenance_active === 1 && ss.maintenance_message?.trim()) {
+      maintenanceMsg = ss.maintenance_message.trim();
+    }
   } catch {
     maintenanceMsg = null;
   }

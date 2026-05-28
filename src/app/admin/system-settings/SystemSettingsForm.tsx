@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import Switch from "@/app/components/Switch";
 
 // Client form for editing GLOBAL system settings — IKIGAI OS LINE OA
 // credentials + the cross-branch staff group ID.
@@ -24,12 +25,14 @@ export default function SystemSettingsForm({
   token,
   groupId,
   defaultEscalationHours,
-  maintenanceMessage
+  maintenanceMessage,
+  maintenanceActive
 }: {
   token: string | null;
   groupId: string | null;
   defaultEscalationHours: number;
   maintenanceMessage: string;
+  maintenanceActive: boolean;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -47,11 +50,12 @@ export default function SystemSettingsForm({
   // the cron sweep reassigns to their manager. Previously was a
   // per-user field on the employee form; consolidated here 2026-05.
   const [escHoursInput, setEscHoursInput] = useState(String(defaultEscalationHours));
-  // Maintenance banner (2026-05-28). Empty string = banner OFF on
-  // save (server normalises to NULL). Any text = banner ON. Owner
-  // flips this immediately before pushing deploy.sh so the team
-  // sees the message and doesn't panic-reload mid-deploy.
+  // Maintenance banner (2026-05-28). Two-state model so the owner
+  // authors the message ONCE then just toggles on/off:
+  //   maintenanceInput — template text (persisted always)
+  //   maintenanceOn    — toggle (banner renders iff ON + non-empty)
   const [maintenanceInput, setMaintenanceInput] = useState(maintenanceMessage);
+  const [maintenanceOn, setMaintenanceOn] = useState<boolean>(maintenanceActive);
   // (Resignation-policy textareas moved 2026-05-28 to
   // /admin/persona/resignation — that's the menu where admins
   // already manage resignation requests, so the policy authoring
@@ -79,8 +83,10 @@ export default function SystemSettingsForm({
       const escH = Math.max(1, Math.min(720, parseInt(escHoursInput, 10) || 24));
       body.default_escalation_hours = String(escH);
 
-      // Maintenance banner — always sent (empty string = banner off).
+      // Maintenance banner — both fields always sent. Server stores
+      // them independently so toggling doesn't wipe the template.
       body.maintenance_message = maintenanceInput;
+      body.maintenance_active = maintenanceOn ? "true" : "false";
 
       // (Resignation-policy fields moved to /admin/persona/resignation
       // 2026-05-28 — this form no longer sends them.)
@@ -207,22 +213,54 @@ export default function SystemSettingsForm({
           part of HR policy + manage the requests right next door —
           asking them to bounce to system-settings was friction. */}
 
-      {/* Maintenance banner — owner-toggled deploy notice */}
-      <div className="card space-y-3">
+      {/* Maintenance banner — toggle + persistent template */}
+      <div className="card space-y-4">
         <div>
           <h2 className="font-bold text-slate-800 text-sm">
             🛠️ แบนเนอร์แจ้งช่วง deploy / maintenance
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            พิมพ์ข้อความ → กดบันทึก → แบนเนอร์สีฟ้าจะขึ้นบนหัวทุกหน้า ทั้งฝั่งพนักงาน + แอดมิน
+            ใช้ตอนกำลังจะ deploy เพื่อให้พนักงานรู้ว่าระบบกำลังอัพเดท — เจอ error สั้นๆ ได้ ไม่ใช่ระบบพัง
             <br />
-            ใช้ตอนกำลังจะ deploy เพื่อให้พนักงานรู้ว่าระบบกำลังอัพเดท จะเจอ error สั้นๆ ได้ ไม่ใช่ระบบพัง
-            <br />
-            <span className="font-medium">เคลียร์ข้อความ + กดบันทึก = ปิดแบนเนอร์</span>
+            <span className="font-medium">พิมพ์ข้อความครั้งเดียว เก็บไว้ตลอด · ครั้งต่อไปแค่กดเปิด/ปิด</span>
           </p>
         </div>
+
+        {/* Toggle — primary control. Big, friendly, accent green when
+            ON so the page screams "banner is currently live!" at a
+            glance. */}
+        <div className={`rounded-xl border-2 p-3 transition ${
+          maintenanceOn
+            ? "border-sky-400 bg-sky-50"
+            : "border-slate-200 bg-slate-50"
+        }`}>
+          <label className="flex items-center justify-between gap-3 cursor-pointer">
+            <div className="flex-1 min-w-0">
+              <div className={`text-sm font-bold ${
+                maintenanceOn ? "text-sky-800" : "text-slate-700"
+              }`}>
+                {maintenanceOn
+                  ? "🟢 แบนเนอร์เปิดอยู่ตอนนี้ — พนักงานเห็นข้อความบนหัวทุกหน้า"
+                  : "⚪ แบนเนอร์ปิด — พนักงานไม่เห็นอะไร"}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                {maintenanceInput.trim()
+                  ? "กดสวิตช์เพื่อสลับเปิด/ปิด · ข้อความเก็บไว้ตลอด"
+                  : "⚠️ ต้องพิมพ์ข้อความด้านล่างก่อน ถึงเปิดแล้วถึงจะมีอะไรแสดง"}
+              </div>
+            </div>
+            <Switch
+              checked={maintenanceOn}
+              onChange={setMaintenanceOn}
+              accent="sky"
+            />
+          </label>
+        </div>
+
+        {/* Template text — usually authored once + reused. The toggle
+            above does the day-to-day on/off. */}
         <div>
-          <label className="label">ข้อความบนแบนเนอร์</label>
+          <label className="label">ข้อความที่จะแสดง (template)</label>
           <textarea
             className="input text-sm"
             rows={3}
@@ -235,14 +273,16 @@ export default function SystemSettingsForm({
             {maintenanceInput.length} / 500
           </p>
         </div>
-        {/* Live preview — render the actual banner inline so admin can
-            see what staff will see before saving. */}
+
+        {/* Live preview — only when there's actually a message. */}
         {maintenanceInput.trim() && (
           <div>
             <div className="text-[10px] uppercase tracking-[0.5px] font-bold text-slate-500 mb-1.5">
-              พรีวิว
+              พรีวิว {maintenanceOn ? "(ตอนนี้พนักงานเห็นแบบนี้)" : "(ตอนนี้ยังไม่แสดง — เปิดสวิตช์ด้านบนก่อน)"}
             </div>
-            <div className="rounded-lg overflow-hidden border border-slate-200 shadow-sm">
+            <div className={`rounded-lg overflow-hidden border shadow-sm ${
+              maintenanceOn ? "border-sky-300" : "border-slate-200 opacity-60"
+            }`}>
               <div className="bg-sky-600 text-white px-3 py-2 flex items-center gap-3 text-xs sm:text-sm">
                 <span className="text-base flex-shrink-0">🛠️</span>
                 <div className="flex-1 min-w-0 whitespace-pre-line">
