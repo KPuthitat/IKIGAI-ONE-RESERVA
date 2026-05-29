@@ -26,6 +26,7 @@ import {
   getLastPublish
 } from "@/lib/roster";
 import RosterClient from "./RosterClient";
+import RosterCalendarView from "./RosterCalendarView";
 import NotifyShiftsButton from "./NotifyShiftsButton";
 import CsvImportButton from "./CsvImportButton";
 
@@ -44,9 +45,14 @@ type StaffOption = {
 export default function AdminRosterPage({
   searchParams
 }: {
-  searchParams: { month?: string };
+  searchParams: { month?: string; view?: string };
 }) {
   const user = requireAdmin();
+  // 2026-05-30 — view toggle. Default to the existing grid; admin
+  // opts into calendar view via ?view=calendar. Calendar is
+  // read-only; assign/clear still requires the grid.
+  const view: "grid" | "calendar" =
+    searchParams.view === "calendar" ? "calendar" : "grid";
   const lang = getLang();
   if (!user.activeBranchId) {
     return <div className="card text-sm text-slate-600">{t(lang, "admin.notAssignedBranch")}</div>;
@@ -127,7 +133,7 @@ export default function AdminRosterPage({
         )}
       </div>
 
-      {/* Month picker */}
+      {/* Month picker + view toggle */}
       <div className="card flex items-center gap-2 flex-wrap">
         <span className="text-sm font-bold text-slate-700">
           {t(lang, "admin.persona.roster.month")}:
@@ -135,7 +141,7 @@ export default function AdminRosterPage({
         {monthOptions.map((m) => (
           <Link
             key={m}
-            href={`/admin/persona/roster?month=${m}`}
+            href={`/admin/persona/roster?month=${m}${view === "calendar" ? "&view=calendar" : ""}`}
             className={`text-xs px-2.5 py-1 rounded border ${
               m === month
                 ? "bg-brand text-white border-brand"
@@ -145,6 +151,32 @@ export default function AdminRosterPage({
             {m}
           </Link>
         ))}
+        <span className="flex-1" />
+        {/* View toggle — grid (full editor) vs calendar (read-only,
+            see-at-a-glance overview). Preserves the current month in
+            both URLs. */}
+        <div className="inline-flex rounded-md border border-slate-300 overflow-hidden">
+          <Link
+            href={`/admin/persona/roster?month=${month}`}
+            className={`text-xs px-3 py-1 ${
+              view === "grid"
+                ? "bg-brand text-white"
+                : "bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            📋 ตาราง
+          </Link>
+          <Link
+            href={`/admin/persona/roster?month=${month}&view=calendar`}
+            className={`text-xs px-3 py-1 border-l border-slate-300 ${
+              view === "calendar"
+                ? "bg-brand text-white"
+                : "bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            🗓 ปฏิทิน
+          </Link>
+        </div>
       </div>
 
       {/* Empty-state hints when config is incomplete */}
@@ -166,32 +198,53 @@ export default function AdminRosterPage({
       )}
 
       {shiftCodes.length > 0 && positions.length > 0 && (
-        <RosterClient
-          month={month}
-          daysInMonth={daysInMonth}
-          positions={positions.map((p) => ({
-            id: p.id, title: p.title, description: p.description
-          }))}
-          shiftCodes={shiftCodes.map((s) => ({
-            id: s.id, code: s.code, name: s.name,
-            start_time: s.start_time, end_time: s.end_time,
-            color: s.color
-          }))}
-          staff={staff}
-          assignments={assignments.map((a) => ({
-            id: a.id,
-            date: a.assignment_date,
-            position_id: a.position_id,
-            user_id: a.user_id,
-            user_display_name: a.user_display_name,
-            user_first_name: a.user_first_name,
-            user_last_name: a.user_last_name,
-            shift_code_id: a.shift_code_id,
-            shift_code: a.shift_code,
-            shift_color: a.shift_color,
-            shift_start_time: a.shift_start_time
-          }))}
-        />
+        view === "calendar" ? (
+          <RosterCalendarView
+            month={month}
+            daysInMonth={daysInMonth}
+            positions={positions.map((p) => ({ id: p.id, title: p.title }))}
+            assignments={assignments.map((a) => ({
+              id: a.id,
+              date: a.assignment_date,
+              position_id: a.position_id,
+              user_id: a.user_id,
+              user_display_name: a.user_display_name,
+              user_first_name: a.user_first_name,
+              user_last_name: a.user_last_name,
+              shift_code_id: a.shift_code_id,
+              shift_code: a.shift_code,
+              shift_color: a.shift_color,
+              shift_start_time: a.shift_start_time
+            }))}
+          />
+        ) : (
+          <RosterClient
+            month={month}
+            daysInMonth={daysInMonth}
+            positions={positions.map((p) => ({
+              id: p.id, title: p.title, description: p.description
+            }))}
+            shiftCodes={shiftCodes.map((s) => ({
+              id: s.id, code: s.code, name: s.name,
+              start_time: s.start_time, end_time: s.end_time,
+              color: s.color
+            }))}
+            staff={staff}
+            assignments={assignments.map((a) => ({
+              id: a.id,
+              date: a.assignment_date,
+              position_id: a.position_id,
+              user_id: a.user_id,
+              user_display_name: a.user_display_name,
+              user_first_name: a.user_first_name,
+              user_last_name: a.user_last_name,
+              shift_code_id: a.shift_code_id,
+              shift_code: a.shift_code,
+              shift_color: a.shift_color,
+              shift_start_time: a.shift_start_time
+            }))}
+          />
+        )
       )}
     </div>
   );
