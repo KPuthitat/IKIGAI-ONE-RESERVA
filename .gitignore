@@ -8,3 +8,10 @@ data/*.db-shm
 data/*.db-wal
 *.log
 .DS_Store
+# Build/install artefacts — regenerated on every build / npm install.
+# Tracking them caused the 2026-05-29 deploy to bail at git-pull
+# because they conflicted with the VPS's own regenerated copies.
+tsconfig.tsbuildinfo
+# Local-dev output dir for the Nginx maintenance page (prod uses
+# /var/www/maintenance/ instead).
+maintenance-out/
