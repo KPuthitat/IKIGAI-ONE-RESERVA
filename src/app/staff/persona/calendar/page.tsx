@@ -16,10 +16,16 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import {
   listAssignmentsForUserMonth,
+  listAssignmentsForMonth,
+  listPositions,
   getLastPublish,
   type AssignmentForStaffCalendar
 } from "@/lib/roster";
 import OwlMascot from "../../../components/OwlMascot";
+// Reuse the admin calendar component verbatim — same visual language,
+// same birthday + greeting flow. Staff is in read-only mode by
+// design (the admin component already disables edits).
+import RosterCalendarView from "../../../admin/persona/roster/RosterCalendarView";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +36,16 @@ const DOW_TH = ["อาทิตย์", "จันทร์", "อังคา�
 export default function StaffCalendarPage({
   searchParams
 }: {
-  searchParams: { month?: string };
+  searchParams: { month?: string; view?: string };
 }) {
   const user = requireStaffOrAdmin();
+  // 2026-05-30 — view toggle. Default stays on the list view that
+  // shipped originally; staff opts into the calendar grid via
+  // ?view=calendar. Calendar shows ALL colleagues' assignments
+  // (not just self) so staff can see who they're sharing the shift
+  // with — same data shape the admin calendar consumes.
+  const view: "list" | "calendar" =
+    searchParams.view === "calendar" ? "calendar" : "list";
   const lang = getLang();
   if (!user.activeBranchId) {
     return <div className="card text-sm text-slate-600">{t(lang, "staff.notAssignedBranch")}</div>;
@@ -49,6 +62,37 @@ export default function StaffCalendarPage({
 
   const assignments = listAssignmentsForUserMonth(user.id, branch.id, month);
   const lastPublish = getLastPublish(branch.id, month);
+
+  // For the calendar grid view we also fetch every assignment in the
+  // branch so a staff can see who they're sharing the day with —
+  // same shape the admin grid uses. List view stays user-scoped.
+  const allMonthAssignments = view === "calendar"
+    ? listAssignmentsForMonth(branch.id, month)
+    : [];
+  const positionsLite = view === "calendar"
+    ? listPositions(branch.id).map((p) => ({ id: p.id, title: p.title }))
+    : [];
+
+  // Birthday layer for the calendar view. Same query as the admin
+  // page — month-day slice from dob, scoped to this branch, exclude
+  // disabled/resigned/test accounts.
+  const birthdays = view === "calendar"
+    ? (db.prepare(`
+        SELECT u.id AS user_id, u.display_name, u.nickname_th,
+               substr(u.dob, 6, 5) AS month_day
+        FROM users u
+        INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+        WHERE u.dob IS NOT NULL
+          AND length(u.dob) >= 10
+          AND u.status NOT IN ('disabled', 'resigned')
+          AND u.is_test_account = 0
+      `).all(branch.id) as Array<{
+        user_id: number;
+        display_name: string;
+        nickname_th: string | null;
+        month_day: string;
+      }>)
+    : [];
 
   // Bucket assignments by date (a staff can be in multiple positions
   // on the same day — show them grouped). Explicit element type so
@@ -108,7 +152,7 @@ export default function StaffCalendarPage({
         </div>
       )}
 
-      {/* Month picker */}
+      {/* Month picker + view toggle */}
       <div className="card flex items-center gap-2 flex-wrap">
         <span className="text-sm font-bold text-slate-700">
           {t(lang, "staff.persona.calendar.month")}:
@@ -116,7 +160,7 @@ export default function StaffCalendarPage({
         {monthOptions.map((m) => (
           <Link
             key={m}
-            href={`/staff/persona/calendar?month=${m}`}
+            href={`/staff/persona/calendar?month=${m}${view === "calendar" ? "&view=calendar" : ""}`}
             className={`text-xs px-2.5 py-1 rounded border ${
               m === month
                 ? "bg-brand text-white border-brand"
@@ -126,8 +170,62 @@ export default function StaffCalendarPage({
             {m}
           </Link>
         ))}
+        <span className="flex-1" />
+        {/* View toggle — list (default, scrollable per-day) vs
+            calendar (month grid showing colleagues + birthdays).
+            Preserves the current month when switching. */}
+        <div className="inline-flex rounded-md border border-slate-300 overflow-hidden">
+          <Link
+            href={`/staff/persona/calendar?month=${month}`}
+            className={`text-xs px-3 py-1 ${
+              view === "list"
+                ? "bg-brand text-white"
+                : "bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            📋 รายการ
+          </Link>
+          <Link
+            href={`/staff/persona/calendar?month=${month}&view=calendar`}
+            className={`text-xs px-3 py-1 border-l border-slate-300 ${
+              view === "calendar"
+                ? "bg-brand text-white"
+                : "bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            🗓 ปฏิทิน
+          </Link>
+        </div>
       </div>
 
+      {view === "calendar" ? (
+        <RosterCalendarView
+          month={month}
+          daysInMonth={daysInMonth}
+          positions={positionsLite}
+          assignments={allMonthAssignments.map((a) => ({
+            id: a.id,
+            date: a.assignment_date,
+            position_id: a.position_id,
+            user_id: a.user_id,
+            user_display_name: a.user_display_name,
+            user_first_name: a.user_first_name,
+            user_last_name: a.user_last_name,
+            shift_code_id: a.shift_code_id,
+            shift_code: a.shift_code,
+            shift_color: a.shift_color,
+            shift_start_time: a.shift_start_time
+          }))}
+          birthdays={birthdays.map((b) => ({
+            user_id: b.user_id,
+            display_name: b.display_name,
+            nickname_th: b.nickname_th,
+            month_day: b.month_day,
+            is_self: b.user_id === user.id
+          }))}
+          currentUserId={user.id}
+        />
+      ) : (
       <div className="card">
         <ul className="space-y-2">
           {days.map((d) => {
@@ -194,6 +292,7 @@ export default function StaffCalendarPage({
           })}
         </ul>
       </div>
+      )}
     </div>
   );
 }

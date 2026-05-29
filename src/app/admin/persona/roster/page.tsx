@@ -74,6 +74,29 @@ export default function AdminRosterPage({
   const assignments = listAssignmentsForMonth(branch.id, month);
   const lastPublish = getLastPublish(branch.id, month);
 
+  // Birthday layer (2026-05-30) — every staff in this branch with a
+  // dob on file. We pre-extract MM-DD so the calendar can match by
+  // month-day across years without exposing the year of birth (also
+  // mildly sensitive). is_test_account + resigned/disabled excluded
+  // for the same reason they're excluded everywhere else.
+  const birthdays = db.prepare(`
+    SELECT u.id AS user_id,
+           u.display_name,
+           u.nickname_th,
+           substr(u.dob, 6, 5) AS month_day  -- 'MM-DD' slice from 'YYYY-MM-DD'
+    FROM users u
+    INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.dob IS NOT NULL
+      AND length(u.dob) >= 10
+      AND u.status NOT IN ('disabled', 'resigned')
+      AND u.is_test_account = 0
+  `).all(branch.id) as Array<{
+    user_id: number;
+    display_name: string;
+    nickname_th: string | null;
+    month_day: string;
+  }>;
+
   // Staff pool — anyone assigned to this branch via user_branches.
   // Includes admins (a branch admin still works shifts like any other
   // employee) and excludes disabled accounts. super_admin is the
@@ -216,6 +239,14 @@ export default function AdminRosterPage({
               shift_color: a.shift_color,
               shift_start_time: a.shift_start_time
             }))}
+            birthdays={birthdays.map((b) => ({
+              user_id: b.user_id,
+              display_name: b.display_name,
+              nickname_th: b.nickname_th,
+              month_day: b.month_day,
+              is_self: b.user_id === user.id
+            }))}
+            currentUserId={user.id}
           />
         ) : (
           <RosterClient

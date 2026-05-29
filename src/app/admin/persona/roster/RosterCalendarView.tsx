@@ -43,16 +43,40 @@ type AssignmentRow = {
 
 type PositionLite = { id: number; title: string };
 
+/** Birthday marker rendered on each matching day of the calendar.
+ *  Triggers a greeting modal so colleagues can fire off a quick
+ *  "🎂 สุขสันต์วันเกิด" via the LINE OA. Birthdays roll over yearly
+ *  (we match month-day, not full date) so a 2002-04-15 dob shows on
+ *  April 15 every year. */
+type BirthdayLite = {
+  user_id: number;
+  display_name: string;
+  nickname_th: string | null;
+  /** "MM-DD" — pre-extracted server-side so the client doesn't have
+   *  to parse full dob strings (which also contain age, sensitive). */
+  month_day: string;
+  /** True when the matched person is the current viewer — gates the
+   *  greeting modal so we don't show "send wishes to yourself". */
+  is_self: boolean;
+};
+
 export default function RosterCalendarView({
   month,
   daysInMonth,
   positions,
-  assignments
+  assignments,
+  birthdays,
+  currentUserId
 }: {
   month: string;             // YYYY-MM
   daysInMonth: number;
   positions: PositionLite[];
   assignments: AssignmentRow[];
+  /** Optional — empty array hides the birthday layer entirely. */
+  birthdays?: BirthdayLite[];
+  /** For "don't show greet-yourself button" gate. Required only when
+   *  birthdays are passed. */
+  currentUserId?: number;
 }) {
   const [yyyy, mm] = month.split("-").map(Number);
   // JS Date getDay(): 0 = Sunday, 6 = Saturday. Bangkok week starts
@@ -94,6 +118,70 @@ export default function RosterCalendarView({
   // when a Saturday has full coverage.
   const [openDate, setOpenDate] = useState<string | null>(null);
 
+  // Group birthdays by MM-DD so we can render a 🎂 icon on each
+  // matching cell. People with the same dob land in the same bucket
+  // (rare but possible — 2 staff sharing 5 January, etc.).
+  const birthdaysByMonthDay = useMemo(() => {
+    const m = new Map<string, BirthdayLite[]>();
+    for (const b of birthdays ?? []) {
+      const arr = m.get(b.month_day);
+      if (arr) arr.push(b);
+      else m.set(b.month_day, [b]);
+    }
+    return m;
+  }, [birthdays]);
+
+  // Greeting modal state. null = closed; set to a birthday list to
+  // open the picker. The modal then drives a POST to the LINE-OA
+  // push endpoint.
+  const [greetTarget, setGreetTarget] = useState<BirthdayLite | null>(null);
+  const [greetMsg, setGreetMsg] = useState<string>("");
+  const [greetBusy, setGreetBusy] = useState(false);
+  const [greetStatus, setGreetStatus] = useState<string | null>(null);
+
+  const GREET_PRESETS = [
+    "🎂 สุขสันต์วันเกิดครับ! ขอให้สุขภาพแข็งแรง รวยๆ ปังๆ ทั้งปีนะครับ ✨",
+    "🥳 Happy Birthday! ขอให้สมหวังทุกเรื่องที่ตั้งใจไว้นะครับ 🍰",
+    "🎉 สุขสันต์วันเกิดค่ะ! เป็นเพื่อนร่วมงานที่ดีตลอดมา ขอให้มีความสุขมากๆ นะคะ 💐"
+  ];
+
+  async function sendGreeting(): Promise<void> {
+    if (!greetTarget || !greetMsg.trim()) return;
+    setGreetBusy(true);
+    setGreetStatus(null);
+    try {
+      const res = await fetch("/api/persona/birthday/greet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to_user_id: greetTarget.user_id,
+          message: greetMsg.trim()
+        })
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setGreetStatus(j?.message || j?.error || "ส่งไม่สำเร็จ ลองอีกครั้ง");
+        return;
+      }
+      setGreetStatus("✓ ส่งคำอวยพรแล้ว!");
+      setTimeout(() => {
+        setGreetTarget(null);
+        setGreetMsg("");
+        setGreetStatus(null);
+      }, 1400);
+    } catch {
+      setGreetStatus("เครือข่ายมีปัญหา ลองอีกครั้ง");
+    } finally {
+      setGreetBusy(false);
+    }
+  }
+
+  function openGreet(person: BirthdayLite): void {
+    setGreetTarget(person);
+    setGreetMsg(GREET_PRESETS[0]);
+    setGreetStatus(null);
+  }
+
   function shortName(a: AssignmentRow): string {
     // Prefer first_name_th when present (more recognisable in Thai
     // restaurant rosters than display_name which is often the full
@@ -134,6 +222,8 @@ export default function RosterCalendarView({
           const isWeekend = dow === 0 || dow === 6;
           const overflow = rows.length - MAX_CHIPS_PER_CELL;
           const visible = rows.slice(0, MAX_CHIPS_PER_CELL);
+          // Birthday lookup uses the cell's MM-DD; matches roll yearly.
+          const dayBirthdays = birthdaysByMonthDay.get(cell.date.slice(5)) ?? [];
           return (
             <button
               key={cell.date}
@@ -150,11 +240,18 @@ export default function RosterCalendarView({
                 }`}>
                   {cell.day}
                 </span>
-                {rows.length > 0 && (
-                  <span className="text-[9px] font-bold text-slate-400">
-                    {rows.length}
-                  </span>
-                )}
+                <div className="flex items-center gap-1">
+                  {dayBirthdays.length > 0 && (
+                    <span className="text-[10px]" title={dayBirthdays.map(b => b.display_name).join(", ")}>
+                      🎂
+                    </span>
+                  )}
+                  {rows.length > 0 && (
+                    <span className="text-[9px] font-bold text-slate-400">
+                      {rows.length}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="space-y-0.5">
                 {visible.map((a) => (
@@ -190,7 +287,7 @@ export default function RosterCalendarView({
       {/* Expanded panel for the selected day. Shown below the grid so
           it doesn't disrupt the calendar layout. Mobile users can
           scroll a tiny bit; desktop users see it inline. */}
-      {openDate && byDate.get(openDate) && (
+      {openDate && (byDate.get(openDate) || (birthdaysByMonthDay.get(openDate.slice(5))?.length ?? 0) > 0) && (
         <div className="border-t-2 border-brand bg-rose-50/30 p-4">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-bold text-slate-800">
@@ -203,8 +300,46 @@ export default function RosterCalendarView({
               aria-label="ปิด"
             >×</button>
           </div>
+
+          {/* Birthday section — only when there's at least one match
+              on the selected day. Each non-self entry gets a "ส่งคำ
+              อวยพร" button that opens the greeting modal. */}
+          {(() => {
+            const todayBdays = birthdaysByMonthDay.get(openDate.slice(5)) ?? [];
+            if (todayBdays.length === 0) return null;
+            return (
+              <div className="mb-3 space-y-1.5">
+                {todayBdays.map((b) => {
+                  const isMe = currentUserId != null && b.user_id === currentUserId;
+                  return (
+                    <div
+                      key={b.user_id}
+                      className="flex items-center gap-2 text-xs bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5"
+                    >
+                      <span className="text-base">🎂</span>
+                      <span className="font-bold text-slate-800 flex-1 truncate">
+                        วันเกิด {b.nickname_th?.trim() || b.display_name}
+                      </span>
+                      {isMe ? (
+                        <span className="text-[10px] text-slate-500 font-medium">วันเกิดคุณ 🎉</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openGreet(b)}
+                          className="text-[10px] px-2 py-1 rounded-md bg-brand text-white font-bold hover:bg-brand/90"
+                        >
+                          ส่งคำอวยพร
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
           <div className="space-y-1.5">
-            {byDate.get(openDate)!.map((a) => (
+            {(byDate.get(openDate) ?? []).map((a) => (
               <div
                 key={a.id}
                 className="flex items-center gap-2 text-xs bg-white rounded-md px-2.5 py-1.5 border border-slate-200"
@@ -234,9 +369,118 @@ export default function RosterCalendarView({
       )}
 
       <div className="px-4 py-2 border-t border-slate-200 bg-slate-50/50 text-[10px] text-slate-500">
-        คลิกที่ช่องวันเพื่อดูรายละเอียดทั้งหมด · แก้ไขกะให้สลับไปใช้
-        &quot;มุมมองตาราง&quot; ด้านบน
+        คลิกที่ช่องวันเพื่อดูรายละเอียดทั้งหมด
+        {(birthdays?.length ?? 0) > 0 && " · 🎂 = วันเกิดเพื่อนร่วมงาน คลิกเพื่อส่งคำอวยพร"}
       </div>
+
+      {/* Birthday greeting modal. Renders only when greetTarget is set
+          (= someone tapped "ส่งคำอวยพร" on a non-self birthday entry).
+          Modal lets the user pick a preset or write a custom message,
+          then fires POST /api/persona/birthday/greet which routes the
+          push through the platform OA to the target's LINE userId. */}
+      {greetTarget && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={() => !greetBusy && setGreetTarget(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-md w-full p-5 space-y-3 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🎂</span>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-bold text-slate-800">
+                  ส่งคำอวยพรวันเกิดให้
+                </h3>
+                <p className="text-base font-bold text-brand truncate">
+                  {greetTarget.nickname_th?.trim() || greetTarget.display_name}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => !greetBusy && setGreetTarget(null)}
+                disabled={greetBusy}
+                className="text-slate-400 hover:text-slate-600 text-xl leading-none disabled:opacity-30"
+                aria-label="ปิด"
+              >×</button>
+            </div>
+
+            <div>
+              <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                เลือกแบบสำเร็จรูป
+              </label>
+              <div className="grid grid-cols-1 gap-1.5 mt-1">
+                {GREET_PRESETS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setGreetMsg(p)}
+                    className={`text-left text-xs p-2 rounded-md border transition ${
+                      greetMsg === p
+                        ? "border-brand bg-rose-50/40 text-slate-800"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                ข้อความ (แก้ไขได้)
+              </label>
+              <textarea
+                className="input text-sm mt-1"
+                rows={4}
+                maxLength={500}
+                value={greetMsg}
+                onChange={(e) => setGreetMsg(e.target.value)}
+                placeholder="พิมพ์คำอวยพรเอง..."
+              />
+              <p className="text-[10px] text-slate-400 text-right">
+                {greetMsg.length} / 500
+              </p>
+            </div>
+
+            {greetStatus && (
+              <div className={`text-xs rounded-md p-2 ${
+                greetStatus.startsWith("✓")
+                  ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
+                  : "bg-rose-50 border border-rose-200 text-rose-700"
+              }`}>
+                {greetStatus}
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setGreetTarget(null)}
+                disabled={greetBusy}
+                className="flex-1 btn-secondary text-sm"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={sendGreeting}
+                disabled={greetBusy || !greetMsg.trim()}
+                className="flex-1 btn-primary text-sm disabled:opacity-50"
+              >
+                {greetBusy ? "กำลังส่ง..." : "🎉 ส่งคำอวยพร"}
+              </button>
+            </div>
+
+            <p className="text-[10px] text-slate-400 leading-snug">
+              ข้อความจะถูกส่งผ่าน IKIGAI OS LINE OA ตรงไปยังพนักงานคนนี้
+              · จะไม่ส่งถ้าผู้รับยังไม่ได้ผูก LINE
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
