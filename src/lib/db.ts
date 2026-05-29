@@ -638,7 +638,7 @@ function runMigrations(db: Database.Database): void {
       entry_user_id INTEGER NOT NULL,
       entry_type TEXT NOT NULL,
       entry_ts TEXT NOT NULL,
-      action TEXT NOT NULL CHECK (action IN ('delete','edit','create')),
+      action TEXT NOT NULL CHECK (action IN ('delete','edit','create','cert-approve','cert-reject')),
       admin_id INTEGER NOT NULL REFERENCES users(id),
       reason TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -2396,6 +2396,52 @@ function runMigrations(db: Database.Database): void {
       db.exec(`INSERT INTO users_new (${colList}) SELECT ${colList} FROM users`);
       db.exec("DROP TABLE users");
       db.exec("ALTER TABLE users_new RENAME TO users");
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+  }
+
+  // 2026-05-30: widen time_entries_audit.action CHECK to include
+  // 'cert-approve' and 'cert-reject'. The time-certification approve
+  // route INSERTs into this audit table with action='cert-approve'
+  // — under the legacy CHECK constraint that throws
+  // SQLITE_CONSTRAINT_CHECK, the whole transaction rolls back, and
+  // the admin sees "approve button doesn't work" because nothing
+  // succeeded. Same CHECK-widening pattern as users.role/status above.
+  //
+  // The CREATE TABLE statement at the top of this function now has
+  // the widened CHECK so fresh installs are correct; this block
+  // upgrades existing prod tables in place.
+  const auditTableDdl = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='time_entries_audit'"
+  ).get() as { sql: string } | undefined;
+  if (auditTableDdl
+      && /CHECK\s*\(\s*action\s+IN\s*\([^)]*\)/i.test(auditTableDdl.sql)
+      && !/'cert-approve'/.test(auditTableDdl.sql)) {
+    const auditCols = db.prepare("PRAGMA table_info(time_entries_audit)").all() as Array<{ name: string }>;
+    const colList = auditCols.map((c) => `"${c.name}"`).join(", ");
+    const newDdl = auditTableDdl.sql
+      .replace(
+        /CHECK\s*\(\s*action\s+IN\s*\([^)]+\)\s*\)/i,
+        "CHECK (action IN ('delete','edit','create','cert-approve','cert-reject'))"
+      )
+      .replace(
+        // Same explicit-alternation pattern that fixed the 2026-05-28
+        // users-table rebuild bug. `\b` against `"` is unreliable, so
+        // enumerate quoted / backticked / bare names explicitly.
+        /CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(?:"time_entries_audit"|`time_entries_audit`|time_entries_audit)/i,
+        "CREATE TABLE time_entries_audit_new"
+      );
+    db.exec("BEGIN");
+    try {
+      db.exec(newDdl);
+      db.exec(`INSERT INTO time_entries_audit_new (${colList}) SELECT ${colList} FROM time_entries_audit`);
+      db.exec("DROP TABLE time_entries_audit");
+      db.exec("ALTER TABLE time_entries_audit_new RENAME TO time_entries_audit");
+      // Re-create the index — DROP TABLE drops it implicitly.
+      db.exec("CREATE INDEX IF NOT EXISTS idx_time_audit_created ON time_entries_audit(created_at)");
       db.exec("COMMIT");
     } catch (e) {
       db.exec("ROLLBACK");

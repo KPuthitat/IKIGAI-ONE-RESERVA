@@ -22,9 +22,26 @@ export default function TimeCertificationsClient({
   const { t } = useLang();
   const [busyId, setBusyId] = useState<number | null>(null);
   const [rejectForm, setRejectForm] = useState<{ id: number; note: string } | null>(null);
+  // Per-row error state — keyed by cert id so two pending requests
+  // can show independent errors. Was previously absent: a 4xx/5xx
+  // from the API used to throw silently inside try, leaving the
+  // user with a button that just stopped spinning. The 2026-05-30
+  // SQLITE_CONSTRAINT_CHECK incident is the canonical example —
+  // admin saw "approve doesn't work" with zero feedback.
+  const [errorByCert, setErrorByCert] = useState<Record<number, string>>({});
+
+  function setError(certId: number, message: string | null) {
+    setErrorByCert((prev) => {
+      const next = { ...prev };
+      if (message === null) delete next[certId];
+      else next[certId] = message;
+      return next;
+    });
+  }
 
   async function decide(certId: number, decision: "approved" | "rejected", note?: string) {
     setBusyId(certId);
+    setError(certId, null);
     try {
       const res = await fetch(
         apiUrl(`/api/admin/persona/time-certification/${certId}/decide`),
@@ -37,9 +54,38 @@ export default function TimeCertificationsClient({
           })
         }
       );
-      if (!res.ok) throw new Error("decide failed");
+      if (!res.ok) {
+        // Surface server-side error reason so admin can act on it,
+        // not just "doesn't work". Common cases:
+        //   400 invalid_body       → typically code bug, refresh
+        //   403 branch_forbidden   → admin not assigned to this branch
+        //   404 not_found          → cert was deleted concurrently
+        //   409 already_decided    → race with another admin
+        //   500                    → server fault — surface raw status
+        let detail = `HTTP ${res.status}`;
+        try {
+          const j = await res.json();
+          if (j?.error) detail = String(j.error);
+          if (j?.message) detail = String(j.message);
+        } catch { /* non-JSON body, keep HTTP code */ }
+        const friendly = {
+          unauthenticated: "หมดเวลาเข้าระบบ — กรุณา login ใหม่",
+          forbidden: "บัญชีนี้ไม่มีสิทธิ์อนุมัติ",
+          branch_forbidden: "บัญชีนี้ไม่ได้ดูแลสาขาของคำขอนี้",
+          not_found: "ไม่พบคำขอ — อาจถูกลบไปแล้ว ลองรีเฟรช",
+          already_decided: "คำขอนี้ถูกตัดสินไปแล้ว ลองรีเฟรช",
+          invalid_body: "ข้อมูลที่ส่งไม่ถูกต้อง"
+        }[detail] || `เกิดข้อผิดพลาด (${detail})`;
+        setError(certId, friendly);
+        return;
+      }
       router.refresh();
       setRejectForm(null);
+    } catch (e) {
+      // Network failure (offline, DNS, CORS) — different class from
+      // server-returned errors.
+      setError(certId, "เครือข่ายมีปัญหา — กรุณาลองอีกครั้ง");
+      console.error("[time-cert] decide failed:", e);
     } finally {
       setBusyId(null);
     }
@@ -57,6 +103,7 @@ export default function TimeCertificationsClient({
     <div className="space-y-3">
       {pending.map((r) => {
         const busy = busyId === r.id;
+        const err = errorByCert[r.id];
         return (
           <div key={r.id} className="card border-l-4 border-amber-400 space-y-3">
             <div>
@@ -91,6 +138,19 @@ export default function TimeCertificationsClient({
               </div>
               <div className="text-sm text-slate-800 whitespace-pre-wrap">{r.reason}</div>
             </div>
+
+            {err && (
+              <div className="rounded-md bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700 flex items-start gap-2">
+                <span className="font-bold flex-shrink-0">⚠</span>
+                <span className="flex-1">{err}</span>
+                <button
+                  type="button"
+                  onClick={() => setError(r.id, null)}
+                  className="text-rose-400 hover:text-rose-600 font-bold flex-shrink-0"
+                  aria-label="ปิดข้อความ"
+                >×</button>
+              </div>
+            )}
 
             {rejectForm?.id === r.id ? (
               <div className="space-y-2 bg-rose-50/50 border border-rose-200 rounded-lg p-3">

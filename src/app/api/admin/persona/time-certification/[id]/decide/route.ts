@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
+import { notifyTimeCertDecision } from "@/lib/time-cert-notify";
 
 // POST /api/admin/persona/time-certification/[id]/decide
 //
@@ -111,6 +112,17 @@ export async function POST(
       : "time_certification.reject",
     certId
   );
+
+  // Push a LINE message to the requester so they don't have to
+  // re-check the persona menu to discover the outcome. Fire-and-
+  // forget — a notification failure is not worth surfacing here
+  // (admin's decision already landed in the DB). The helper logs
+  // its own warnings.
+  notifyTimeCertDecision({
+    certId,
+    decision: parsed.data.decision,
+    decisionNote: note
+  }).catch((e) => console.warn("[time-cert] notify failed:", e));
 
   return NextResponse.json({ ok: true, decision: parsed.data.decision });
 }
