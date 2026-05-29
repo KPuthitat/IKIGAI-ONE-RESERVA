@@ -352,6 +352,23 @@ export async function POST(req: Request) {
         closingDrawer: branch.sc_show_drawer_primary === 1,
         serviceCharge: branch.sc_show_svc_primary === 1,
         dailyRevenue: branch.sc_show_revenue_primary === 1
+      },
+      // 2026-05-30 extension — admin can rename + reorder. NULL
+      // labels stay as the hardcoded Thai defaults inside the Flex
+      // builder; orders default to 1/2/3.
+      defaultFieldConfig: {
+        closingDrawer: {
+          label: branch.sc_drawer_label,
+          order: branch.sc_drawer_order
+        },
+        serviceCharge: {
+          label: branch.sc_svc_label,
+          order: branch.sc_svc_order
+        },
+        dailyRevenue: {
+          label: branch.sc_revenue_label,
+          order: branch.sc_revenue_order
+        }
       }
     });
   } else {

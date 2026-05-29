@@ -1068,6 +1068,30 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("sc_show_revenue_primary")) {
     db.exec("ALTER TABLE branches ADD COLUMN sc_show_revenue_primary INTEGER NOT NULL DEFAULT 1");
   }
+  // 2026-05-30 — extend the 3 default fields with custom label +
+  // display order. NULL label = fall back to the hardcoded default
+  // ("ยอดเงินปิดงาน" / "เซอร์วิสชาร์จวันนี้" / "ยอดขายวันนี้").
+  // Display order is a small positive int: lower = renders first.
+  // Defaults preserve the legacy 1 → 2 → 3 sequence so existing
+  // branches see no visible change until they reorder.
+  if (!bnames2.has("sc_drawer_label")) {
+    db.exec("ALTER TABLE branches ADD COLUMN sc_drawer_label TEXT");
+  }
+  if (!bnames2.has("sc_svc_label")) {
+    db.exec("ALTER TABLE branches ADD COLUMN sc_svc_label TEXT");
+  }
+  if (!bnames2.has("sc_revenue_label")) {
+    db.exec("ALTER TABLE branches ADD COLUMN sc_revenue_label TEXT");
+  }
+  if (!bnames2.has("sc_drawer_order")) {
+    db.exec("ALTER TABLE branches ADD COLUMN sc_drawer_order INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!bnames2.has("sc_svc_order")) {
+    db.exec("ALTER TABLE branches ADD COLUMN sc_svc_order INTEGER NOT NULL DEFAULT 2");
+  }
+  if (!bnames2.has("sc_revenue_order")) {
+    db.exec("ALTER TABLE branches ADD COLUMN sc_revenue_order INTEGER NOT NULL DEFAULT 3");
+  }
   // Fallback contact phone — shown to the customer in the "request received,
   // awaiting confirmation" LINE message so they have a way to follow up if
   // admin doesn't get to their pending booking. Optional; if unset the
@@ -3240,6 +3264,15 @@ export type Branch = {
   sc_show_drawer_primary: number;
   sc_show_svc_primary: number;
   sc_show_revenue_primary: number;
+  // 2026-05-30 — custom label (NULL = use hardcoded default) +
+  // display order (lower renders first). Defaults 1/2/3 = legacy
+  // closing → SVC → revenue sequence.
+  sc_drawer_label: string | null;
+  sc_svc_label: string | null;
+  sc_revenue_label: string | null;
+  sc_drawer_order: number;
+  sc_svc_order: number;
+  sc_revenue_order: number;
   // PERSONA Time Clock anti-cheat — see schema migration in getDb().
   latitude: number | null;
   longitude: number | null;

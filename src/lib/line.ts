@@ -1813,6 +1813,17 @@ export type ShiftCloseCardArgs = {
     serviceCharge?: boolean;
     dailyRevenue?: boolean;
   };
+  /** Per-branch label override + display order (extends 2026-05-30
+   *  beyond the boolean toggle). Each entry: label is the wording
+   *  shown in the headline; order is small positive int (lower
+   *  renders first). Missing entries fall back to the hardcoded
+   *  defaults below: ยอดเงินปิดงาน / เซอร์วิสชาร์จวันนี้ / ยอดขายวันนี้
+   *  at orders 1/2/3. */
+  defaultFieldConfig?: {
+    closingDrawer?: { label?: string | null; order?: number };
+    serviceCharge?: { label?: string | null; order?: number };
+    dailyRevenue?: { label?: string | null; order?: number };
+  };
 };
 
 export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
@@ -1834,31 +1845,39 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
   // shown to the user; they just appear inside the regular checklist
   // body rendered by the form, not here.
   const cfg = args.defaultFieldPrimary ?? {};
-  const defaultHeadlines: Array<{ label: string; amount: string }> = [];
+  const labelCfg = args.defaultFieldConfig ?? {};
+  // Build the (visible, order)-tuple list, then sort by order before
+  // dropping into the headline block.
+  const defaultRows: Array<{ order: number; label: string; amount: string }> = [];
   if (args.closingDrawerAmount != null && cfg.closingDrawer !== false) {
-    defaultHeadlines.push({
-      label: "ยอดเงินปิดงาน",
+    defaultRows.push({
+      order: labelCfg.closingDrawer?.order ?? 1,
+      label: labelCfg.closingDrawer?.label?.trim() || "ยอดเงินปิดงาน",
       amount: args.closingDrawerAmount.toLocaleString("th-TH", {
         minimumFractionDigits: 0, maximumFractionDigits: 2
       })
     });
   }
   if (args.serviceChargeAmount != null && cfg.serviceCharge !== false) {
-    defaultHeadlines.push({
-      label: "เซอร์วิสชาร์จวันนี้",
+    defaultRows.push({
+      order: labelCfg.serviceCharge?.order ?? 2,
+      label: labelCfg.serviceCharge?.label?.trim() || "เซอร์วิสชาร์จวันนี้",
       amount: args.serviceChargeAmount.toLocaleString("th-TH", {
         minimumFractionDigits: 0, maximumFractionDigits: 2
       })
     });
   }
   if (args.dailyRevenue != null && cfg.dailyRevenue !== false) {
-    defaultHeadlines.push({
-      label: "ยอดขายวันนี้",
+    defaultRows.push({
+      order: labelCfg.dailyRevenue?.order ?? 3,
+      label: labelCfg.dailyRevenue?.label?.trim() || "ยอดขายวันนี้",
       amount: args.dailyRevenue.toLocaleString("th-TH", {
         minimumFractionDigits: 0, maximumFractionDigits: 2
       })
     });
   }
+  defaultRows.sort((a, b) => a.order - b.order);
+  const defaultHeadlines = defaultRows.map(({ label, amount }) => ({ label, amount }));
   const mergedHeadlines = [...defaultHeadlines, ...(args.headlines ?? [])];
 
   const bubble = {

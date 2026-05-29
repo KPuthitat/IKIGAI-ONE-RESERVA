@@ -77,8 +77,8 @@ export default function ChecklistPage({
           {t(lang, "admin.persona.checklist.subtitle")}
         </p>
       </div>
-      {/* Shift-close-only: 3 toggles that decide which of the default
-          money fields render in the red headline box on the LINE
+      {/* Shift-close-only: 3 toggle + rename + reorder rows that
+          decide how the default money fields appear on the LINE
           card. Rendered above the per-item editor so the prominence
           decision lives next to the items, not buried in a separate
           settings page. */}
@@ -86,9 +86,21 @@ export default function ChecklistPage({
         <ShiftCloseDefaultsToggle
           key={`scd-${branch.id}`}
           initial={{
-            closing_drawer: branch.sc_show_drawer_primary === 1,
-            service_charge: branch.sc_show_svc_primary === 1,
-            daily_revenue:  branch.sc_show_revenue_primary === 1
+            closing_drawer: {
+              in_red_box: branch.sc_show_drawer_primary === 1,
+              label: branch.sc_drawer_label,
+              display_order: branch.sc_drawer_order
+            },
+            service_charge: {
+              in_red_box: branch.sc_show_svc_primary === 1,
+              label: branch.sc_svc_label,
+              display_order: branch.sc_svc_order
+            },
+            daily_revenue: {
+              in_red_box: branch.sc_show_revenue_primary === 1,
+              label: branch.sc_revenue_label,
+              display_order: branch.sc_revenue_order
+            }
           }}
         />
       )}
