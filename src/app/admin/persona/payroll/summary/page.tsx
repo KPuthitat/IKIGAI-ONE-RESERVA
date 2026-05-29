@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/auth";
+import { requirePayrollAccess } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
@@ -89,7 +89,7 @@ export default function PayrollMonthlySummaryPage({
 }: {
   searchParams: { m?: string };
 }) {
-  requireAdmin();
+  requirePayrollAccess();
   const lang = getLang();
   const db = getDb();
 

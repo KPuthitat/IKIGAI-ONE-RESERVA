@@ -1,4 +1,4 @@
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb, getSystemSettings } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -111,7 +111,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/roster", label: t(lang, "admin.persona.nav.roster") },
         { href: "/admin/persona/timesheets", label: t(lang, "admin.persona.nav.timesheets") },
         { href: "/admin/persona/timesheets/monthly", label: t(lang, "admin.persona.nav.monthlyTimesheets") },
-        { href: "/admin/persona/payroll", label: t(lang, "admin.persona.nav.payroll") },
+        // PDPA: payroll entry only shown when this admin has been
+        // granted access. The pages themselves still enforce
+        // requirePayrollAccess server-side as a belt-and-braces check.
+        ...(userCanViewPayroll(user)
+          ? [{ href: "/admin/persona/payroll", label: t(lang, "admin.persona.nav.payroll") }]
+          : []),
         { href: "/admin/persona/service-charge", label: t(lang, "admin.persona.nav.svc") },
         { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },

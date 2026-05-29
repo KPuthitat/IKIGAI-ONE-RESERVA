@@ -1752,6 +1752,16 @@ function runMigrations(db: Database.Database): void {
   if (!unames3.has("salary_tax_mode")) {
     db.exec("ALTER TABLE users ADD COLUMN salary_tax_mode TEXT NOT NULL DEFAULT 'sso'");
   }
+  // 2026-05-30 — PDPA: gate payroll/salary visibility per-admin.
+  //   0 = admin cannot see payroll pages or salary columns
+  //   1 = super_admin has granted this admin payroll access
+  // Default 0 closes the visibility leak immediately on deploy
+  // (admins used to see every employee's monthly_salary in the
+  // employee list). super_admin always sees payroll regardless of
+  // this flag — gate enforced in `userCanViewPayroll()`.
+  if (!unames3.has("can_view_payroll")) {
+    db.exec("ALTER TABLE users ADD COLUMN can_view_payroll INTEGER NOT NULL DEFAULT 0");
+  }
 
   // payroll_settings — singleton (id always = 1)
   // OT modes:
@@ -3407,6 +3417,12 @@ export type User = {
    *  having to cast to EmployeeProfile. Same union as on the rich
    *  profile type below; keep them in sync. */
   status: "active" | "pending_invite" | "disabled" | "resigned";
+  /** PDPA payroll-access flag (2026-05-30). 0/1. Promoted to the
+   *  lean User type so `userCanViewPayroll(sessionUser)` works
+   *  without casting — the gate runs in many places (sidebar,
+   *  payroll page, employee list column) and threading the cast
+   *  everywhere would be noise. super_admin ignores this flag. */
+  can_view_payroll: number;
 };
 
 /** Full Phase A employee profile row — superset of `User` with all

@@ -225,3 +225,35 @@ export function userCanAdminBranch(user: SessionUser, branchId: number): boolean
   if (user.role === "super_admin") return true;
   return user.adminBranchIds.includes(branchId);
 }
+
+/** Payroll / salary visibility gate (PDPA, 2026-05-30).
+ *
+ *  Used to hide:
+ *    - the entire /admin/persona/payroll/* section
+ *    - salary columns (hourly_rate, monthly_salary) in the employee list
+ *    - the same fields in employee detail modals
+ *
+ *  Rule: super_admin always sees it (system owner). Other admins
+ *  only see it when users.can_view_payroll = 1 (granted explicitly
+ *  by super_admin in user management). Staff never see it. The
+ *  default for can_view_payroll is 0, so the gate closes
+ *  automatically on first deploy — every existing admin loses
+ *  access until super_admin re-grants. This is intentional: the
+ *  bug we're fixing is "admin sees everyone's salary by default,"
+ *  and the safest migration is opt-in not opt-out. */
+export function userCanViewPayroll(user: SessionUser | null): boolean {
+  if (!user) return false;
+  if (user.role === "super_admin") return true;
+  if (user.role === "admin") return user.can_view_payroll === 1;
+  return false;
+}
+
+/** Server-route gate: 403 if the caller can't see payroll. Mirrors
+ *  the `requireAdmin()` shape so callers can write:
+ *    const user = requirePayrollAccess();
+ *  and trust they may serve salary fields below. */
+export function requirePayrollAccess(): SessionUser {
+  const u = requireUser();
+  if (userCanViewPayroll(u)) return u;
+  redirect("/admin?error=payroll_no_access");
+}

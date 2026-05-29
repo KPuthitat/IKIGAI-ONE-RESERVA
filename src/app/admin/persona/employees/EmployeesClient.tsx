@@ -48,13 +48,18 @@ export type EmployeeRow = {
   // table by default, roster picker, payroll run, approval-chain
   // candidates, etc.). Admin can flip via checkbox in edit modal.
   is_test_account: number;
+  // 2026-05-30 — PDPA payroll-access grant. 0/1. super_admin sees
+  // this as a toggle in the edit modal for admin-role employees;
+  // when 1, that admin gains access to the payroll pages + salary
+  // columns. Always 0 for staff (they don't see admin pages anyway).
+  can_view_payroll?: number;
 };
 
 export type BranchLite = { id: number; name: string };
 
 export default function EmployeesClient({
   employees, allBranches, grants, editableBranchIds,
-  currentUserId, currentUserRole
+  currentUserId, currentUserRole, canViewPayroll
 }: {
   employees: EmployeeRow[];
   allBranches: BranchLite[];
@@ -62,6 +67,11 @@ export default function EmployeesClient({
   editableBranchIds: number[];
   currentUserId: number;
   currentUserRole: "super_admin" | "admin" | "staff";
+  /** PDPA (2026-05-30) — when false, hide salary inputs in the edit
+   *  modal and the salary blob in row summaries. Server has already
+   *  blanked hourly_rate / monthly_salary / pay_cycle / salary_tax_mode
+   *  on every row before we receive them. */
+  canViewPayroll: boolean;
 }) {
   const router = useRouter();
   const { t, formatDate } = useLang();
@@ -430,6 +440,8 @@ export default function EmployeesClient({
             startTransition(() => router.refresh());
           }}
           onRefresh={() => startTransition(() => router.refresh())}
+          canViewPayroll={canViewPayroll}
+          currentUserRole={currentUserRole}
         />
       )}
     </>
@@ -438,7 +450,7 @@ export default function EmployeesClient({
 
 function EditModal({
   employee, allEmployees, allBranches, currentBranchIds, editableSet,
-  onClose, onSaved, onRefresh
+  onClose, onSaved, onRefresh, canViewPayroll, currentUserRole
 }: {
   employee: EmployeeRow;
   /** Full employee list — drives the "Reports to" dropdown in the
@@ -451,6 +463,13 @@ function EditModal({
   onClose: () => void;
   onSaved: () => void;
   onRefresh: () => void;
+  /** PDPA — when false, hide the pay-rate + tax-mode sections.
+   *  Server has already blanked these fields in `employee`. */
+  canViewPayroll: boolean;
+  /** Whether the current user is super_admin — they get the extra
+   *  "grant payroll access to this admin" toggle, regular admins
+   *  cannot grant the permission. */
+  currentUserRole: "super_admin" | "admin" | "staff";
 }) {
   const { t } = useLang();
 
@@ -531,6 +550,13 @@ function EditModal({
   // roster, payroll, approval-chain, etc.).
   const [isTestAccount, setIsTestAccount] = useState<boolean>(
     employee.is_test_account === 1
+  );
+  // PDPA (2026-05-30) — super_admin only: per-admin payroll access
+  // grant. Toggles users.can_view_payroll. Hidden in the modal when
+  // the current operator isn't super_admin, and gated again on the
+  // server in the PATCH route as defense-in-depth.
+  const [canViewPayrollFlag, setCanViewPayrollFlag] = useState<boolean>(
+    (employee as EmployeeRow & { can_view_payroll?: number }).can_view_payroll === 1
   );
   // PIN — 4 digits. Empty = leave unchanged. "clear" toggles → send "" to API.
   const [pin, setPin] = useState("");
@@ -663,6 +689,13 @@ function EditModal({
         escalation_hours: null,
         is_test_account: isTestAccount ? 1 : 0
       };
+      // PDPA — only super_admin can grant payroll access. Server
+      // ignores this field for non-super_admin operators (the PATCH
+      // route gates it), but conditioning the include here keeps the
+      // request body tidy.
+      if (currentUserRole === "super_admin" && employee.role === "admin") {
+        body.can_view_payroll = canViewPayrollFlag ? 1 : 0;
+      }
       // PIN — only include if admin is setting/clearing it
       if (clearPin) {
         body.pin = "";
@@ -954,6 +987,7 @@ function EditModal({
               </div>
             </div>
 
+            {canViewPayroll && (
             <div className="border-t border-slate-200 pt-4">
               <h4 className="text-sm font-semibold text-slate-700 mb-2">
                 {t("admin.persona.employees.section.payRate")}
@@ -1008,8 +1042,10 @@ function EditModal({
                 </p>
               )}
             </div>
+            )}
 
             {/* Tax mode (in-system SSO vs out-of-system WHT) */}
+            {canViewPayroll && (
             <div className="border-t border-slate-200 pt-4">
               <h4 className="text-sm font-semibold text-slate-700 mb-2">
                 {t("admin.persona.employees.section.taxMode")}
@@ -1049,6 +1085,35 @@ function EditModal({
                 </label>
               </div>
             </div>
+            )}
+
+            {/* PDPA — super_admin can grant per-admin payroll access.
+                Only shown when (a) operator is super_admin AND (b)
+                target user is an admin. Toggling syncs to
+                users.can_view_payroll via the PATCH route. */}
+            {currentUserRole === "super_admin" && employee.role === "admin" && (
+              <div className="border-t border-slate-200 pt-4">
+                <h4 className="text-sm font-semibold text-slate-700 mb-2">
+                  💰 สิทธิ์ดูข้อมูลเงินเดือน
+                </h4>
+                <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg border border-slate-200 hover:bg-slate-50">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4"
+                    checked={canViewPayrollFlag}
+                    onChange={(e) => setCanViewPayrollFlag(e.target.checked)}
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-slate-800">
+                      อนุญาตให้แอดมินคนนี้ดูเงินเดือนของพนักงานทุกคนในสาขาที่ดูแล
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      เปิด = เห็นเมนู &quot;เงินเดือน&quot; + ฟิลด์ค่าจ้าง / ฐานเงินเดือนในรายชื่อพนักงาน · ปิด = ซ่อนทั้งหมด
+                    </div>
+                  </div>
+                </label>
+              </div>
+            )}
           </>
         )}
 

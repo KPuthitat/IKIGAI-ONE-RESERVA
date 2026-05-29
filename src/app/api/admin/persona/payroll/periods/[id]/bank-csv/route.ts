@@ -1,4 +1,4 @@
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { rowsToCsv, type CsvCell } from "@/lib/csv";
 
@@ -19,7 +19,7 @@ type Row = {
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const user = getSessionUser();
   if (!user) return new Response("unauthenticated", { status: 401 });
-  if (user.role !== "admin" && user.role !== "super_admin") return new Response("forbidden", { status: 403 });
+  if (!userCanViewPayroll(user)) return new Response("forbidden", { status: 403 });
 
   const periodId = Number(params.id);
   if (!Number.isInteger(periodId) || periodId <= 0) {

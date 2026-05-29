@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, userCanViewPayroll } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -49,6 +49,7 @@ export default function AdminEmployeesPage({
            u.tax_id, u.sso_id, u.hourly_rate, u.monthly_salary, u.pay_cycle,
            u.salary_tax_mode, u.line_user_id, u.shift_start_time,
            u.reports_to_user_id, u.escalation_hours, u.is_test_account,
+           u.can_view_payroll,
            CASE WHEN u.pin_hash IS NULL THEN 0 ELSE 1 END AS has_pin,
            CASE WHEN u.resignation_unlocked_at IS NULL THEN 0 ELSE 1 END AS resign_unlocked
     FROM users u
@@ -63,6 +64,22 @@ export default function AdminEmployeesPage({
       u.employee_code COLLATE NOCASE,
       u.display_name COLLATE NOCASE
   `).all(branch.id) as EmployeeRow[];
+
+  // PDPA (2026-05-30): admins without payroll access see profile data
+  // but not salary. We blank the four salary-shaped fields here at
+  // the data source rather than threading a flag through every render
+  // path — anything that tries to read them downstream just sees
+  // null, exactly like an unset employee.
+  const canSeePayroll = userCanViewPayroll(user);
+  const safeEmployees: EmployeeRow[] = canSeePayroll
+    ? employees
+    : employees.map((e) => ({
+        ...e,
+        hourly_rate: null,
+        monthly_salary: null,
+        pay_cycle: null,
+        salary_tax_mode: null
+      }));
 
   // Quick count of hidden test accounts so admin knows they exist.
   const testCount = (db.prepare(`
@@ -133,7 +150,7 @@ export default function AdminEmployeesPage({
         </div>
       )}
       <EmployeesClient
-        employees={employees}
+        employees={safeEmployees}
         allBranches={allBranches}
         grants={grants}
         editableBranchIds={editableBranchIds}
@@ -144,6 +161,12 @@ export default function AdminEmployeesPage({
         // this just trims the UI to avoid frustrating clicks).
         currentUserId={user.id}
         currentUserRole={user.role}
+        // PDPA: drives the conditional render of the salary section
+        // inside the edit modal. Server already strips salary fields
+        // from the row data (above), but the modal would still SHOW
+        // empty inputs labelled "ค่าจ้าง" — confusing for admins who
+        // can't see the data. Hiding the inputs entirely is cleaner.
+        canViewPayroll={canSeePayroll}
       />
     </div>
   );

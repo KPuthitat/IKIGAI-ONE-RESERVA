@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/auth";
+import { requirePayrollAccess } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ตั้งค่าเงินเดือน · PERSONA" };
 
 export default function PayrollSettingsPage() {
-  requireAdmin();
+  requirePayrollAccess();
   const lang = getLang();
   const db = getDb();
 

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { requireAdmin } from "@/lib/auth";
+import { requirePayrollAccess } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
@@ -89,7 +89,7 @@ function maskAccount(acc: string | null): string {
 export default function PayslipPage({
   params
 }: { params: { id: string; userId: string } }) {
-  requireAdmin();
+  requirePayrollAccess();
   const lang = getLang();
   const db = getDb();
 

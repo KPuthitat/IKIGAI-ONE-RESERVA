@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/auth";
+import { requirePayrollAccess } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
@@ -36,7 +36,7 @@ function statusBadge(s: string, lang: Lang): { cls: string; label: string } {
 }
 
 export default function PayrollHubPage() {
-  const user = requireAdmin();
+  const user = requirePayrollAccess();
   const lang = getLang();
   const db = getDb();
 

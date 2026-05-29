@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { requireAdmin, getSessionUser } from "@/lib/auth";
+import { requirePayrollAccess, getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "รอบเงินเดือน
 export default function PeriodDetailPage({
   params
 }: { params: { id: string } }) {
-  const user = requireAdmin();
+  const user = requirePayrollAccess();
   const lang = getLang();
   const db = getDb();
 

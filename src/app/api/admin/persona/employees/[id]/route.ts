@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb, logPersonaAction, type UserRole } from "@/lib/db";
 import { revokeOpenInvites } from "@/lib/invites";
 
@@ -36,6 +36,9 @@ const Body = z.object({
   escalation_hours:   z.number().int().min(1).max(720).nullable().optional(),
   // 2026-05-27 — test-account flag. 1 = hide from operational lists.
   is_test_account:    z.number().int().min(0).max(1).optional(),
+  // 2026-05-30 — PDPA payroll-access grant. Only super_admin may set
+  // this; the server gate strips it for everyone else (below).
+  can_view_payroll:   z.number().int().min(0).max(1).optional(),
   // PIN — 4 digits to set, "" to clear, omit to keep
   pin: z.string().regex(/^\d{4}$/).or(z.literal("")).optional(),
 
@@ -106,6 +109,26 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
   }
 
+  // PDPA guard (2026-05-30): admins without payroll access can edit
+  // profile fields freely but must not touch salary. The server is
+  // the ground truth — even if the UI hides those inputs, a
+  // crafted request must not slip through. Strip the salary keys
+  // from the parsed payload silently so the rest of the update
+  // still lands.
+  if (!userCanViewPayroll(user)) {
+    delete parsed.data.hourly_rate;
+    delete parsed.data.monthly_salary;
+    delete parsed.data.pay_cycle;
+    delete parsed.data.salary_tax_mode;
+  }
+  // Only super_admin can grant / revoke payroll-access on another
+  // account. A regular admin trying to flip this for themselves or
+  // a peer must be silently stripped — the privilege escalation
+  // would otherwise be one POST away.
+  if (user.role !== "super_admin") {
+    delete parsed.data.can_view_payroll;
+  }
+
   const db = getDb();
   const target = db.prepare("SELECT id FROM users WHERE id = ?").get(id);
   if (!target) return NextResponse.json({ error: "user_not_found" }, { status: 404 });
@@ -168,6 +191,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("escalation_hours");
   // Test-account flag — 0/1 boolean. Hide from operational lists when 1.
   addField("is_test_account");
+  // PDPA payroll-access grant — only present in parsed.data when
+  // operator is super_admin (stripped above for everyone else).
+  addField("can_view_payroll");
 
   // ── Phase A profile (TC-P) ────────────────────────────────────
   // Plain string fields — same pattern as the existing payroll
