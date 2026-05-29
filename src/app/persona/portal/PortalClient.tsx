@@ -17,6 +17,12 @@ type Phase =
   | "not_bound"   // LINE account not registered in our users table
   | "error";      // unexpected (network, server error, etc.)
 
+// Stable display name + userId we capture from liff.getProfile() the
+// moment LIFF initialises, BEFORE attempting login. Splitting these
+// out from the login-result state lets the user click "I'm new" and
+// jump straight to the share-userId screen without waiting for the
+// auth round-trip to fail.
+
 export default function PortalClient({ liffId }: { liffId: string }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("init");
@@ -42,6 +48,53 @@ export default function PortalClient({ liffId }: { liffId: string }) {
       // the staff can long-press → copy manually.
     }
   }
+
+  // LINE Share Target Picker — pops the native LINE share sheet so
+  // the staff can send their userId straight to the admin without
+  // copy/paste gymnastics. Requires liff.shareTargetPicker; falls
+  // back silently when the LIFF channel isn't allowed to use it
+  // (clipboard copy still works).
+  async function shareUserIdToAdmin(): Promise<void> {
+    if (!lineUserId) return;
+    const liff = typeof window !== "undefined" ? window.liff : undefined;
+    if (!liff?.shareTargetPicker) {
+      // Fallback: just copy. User can paste in any LINE chat.
+      await copyUserId();
+      return;
+    }
+    try {
+      await liff.shareTargetPicker([
+        {
+          type: "text",
+          text:
+            `ขอลงทะเบียนเข้าระบบ IKIGAI OS ครับ\n\n` +
+            `LINE ID: ${lineUserId}\n\n` +
+            `(แอดมินกรุณานำไปวางในช่อง "LINE binding" ของบัญชีพนักงาน)`
+        }
+      ]);
+    } catch (e) {
+      console.warn("[portal] shareTargetPicker failed, falling back to copy:", e);
+      await copyUserId();
+    }
+  }
+
+  // When we land in the not_bound state, auto-copy the userId once so
+  // the staff is one step ahead — they can paste straight into a
+  // chat without hunting for the copy button. Silent fail (insecure
+  // context, old browser) is fine; the visible button is the
+  // explicit path.
+  useEffect(() => {
+    if (phase === "not_bound" && lineUserId && !copied) {
+      navigator.clipboard?.writeText(lineUserId).then(
+        () => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2500);
+        },
+        () => { /* clipboard blocked — user can press the button */ }
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, lineUserId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -207,15 +260,24 @@ export default function PortalClient({ liffId }: { liffId: string }) {
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs break-all select-all font-mono text-slate-700">
                   {lineUserId}
                 </div>
-                <button
-                  type="button"
-                  onClick={copyUserId}
-                  className="w-full py-2 rounded-lg border border-brand text-brand text-xs font-bold hover:bg-rose-50"
-                >
-                  {copied ? "✓ คัดลอกแล้ว" : "📋 คัดลอก LINE ID"}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={copyUserId}
+                    className="flex-1 py-2 rounded-lg border border-brand text-brand text-xs font-bold hover:bg-rose-50"
+                  >
+                    {copied ? "✓ คัดลอกแล้ว" : "📋 คัดลอก"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={shareUserIdToAdmin}
+                    className="flex-1 py-2 rounded-lg bg-brand text-white text-xs font-bold hover:bg-brand/90"
+                  >
+                    📤 ส่งให้แอดมิน
+                  </button>
+                </div>
                 <p className="text-[10px] text-slate-400 leading-snug">
-                  หัวหน้างานนำไปวางในช่อง "LINE binding" ของพนักงาน
+                  หัวหน้างานนำไปวางในช่อง &quot;LINE binding&quot; ของพนักงาน
                   ที่หน้า จัดการพนักงาน แล้วคุณกดปุ่มนี้อีกครั้งจะเข้าได้เลย
                 </p>
               </div>
@@ -231,6 +293,25 @@ export default function PortalClient({ liffId }: { liffId: string }) {
           <div className="w-56 max-w-full mx-auto pt-1">
             <div className="loadbar" />
           </div>
+        )}
+
+        {/* "I'm a new employee" escape hatch — visible while we're
+            still spinning. Lets the user skip the login attempt and
+            jump straight to the userId-share screen. Hidden the
+            moment we land on a definitive phase. Only shows once
+            lineUserId is captured so the share screen has something
+            to display. */}
+        {showSpinner && lineUserId && (
+          <button
+            type="button"
+            onClick={() => {
+              setPhase("not_bound");
+              setMsg("ส่ง LINE ID ด้านล่างให้แอดมิน");
+            }}
+            className="block w-full mt-2 py-2 rounded-lg border border-slate-300 text-slate-600 text-xs font-medium hover:bg-slate-50"
+          >
+            ฉันเป็นพนักงานใหม่ — ขอ LINE ID ให้แอดมินลงทะเบียน
+          </button>
         )}
 
         {showManualLoginCta && (

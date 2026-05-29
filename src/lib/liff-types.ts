@@ -25,6 +25,14 @@ export type LiffSDK = {
   // the userId — needed by the one-tap rich-menu login bridge so the
   // server doesn't have to trust a client-asserted userId.
   getAccessToken: () => string | null;
+  // Native LINE share sheet. Used by /persona/portal to let an
+  // unregistered staff push their userId to an admin chat without
+  // copy/paste gymnastics. Optional on the SDK type: not every LIFF
+  // channel has the shareTargetPicker scope enabled, and the
+  // fallback (clipboard copy) is fine.
+  shareTargetPicker?: (
+    messages: Array<{ type: "text"; text: string }>
+  ) => Promise<void>;
 };
 
 declare global {
