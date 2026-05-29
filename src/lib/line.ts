@@ -1802,6 +1802,17 @@ export type ShiftCloseCardArgs = {
   isRevision?: boolean;
   /** See readinessFlex / shiftOpenFlex headerColor. */
   headerColor?: string | null;
+  /** Per-branch override (2026-05-30): admin's choice of which of
+   *  the three default money fields render in the red headline box.
+   *  Missing or undefined keys default to true (= keep including) so
+   *  callers that don't pass the override behave the same as before.
+   *  Fields excluded here STILL appear in the checklist body — they
+   *  just don't get the dramatic red treatment. */
+  defaultFieldPrimary?: {
+    closingDrawer?: boolean;
+    serviceCharge?: boolean;
+    dailyRevenue?: boolean;
+  };
 };
 
 export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
@@ -1817,8 +1828,14 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
   // headlines from the checklist. Order = closing → SVC → revenue →
   // custom headlines (so the most important number — closing drawer —
   // renders biggest at the top).
+  // Apply the per-branch override: if defaultFieldPrimary.<field> is
+  // explicitly false, skip pushing it into the headline array.
+  // Undefined/missing → push (legacy default). The fields are still
+  // shown to the user; they just appear inside the regular checklist
+  // body rendered by the form, not here.
+  const cfg = args.defaultFieldPrimary ?? {};
   const defaultHeadlines: Array<{ label: string; amount: string }> = [];
-  if (args.closingDrawerAmount != null) {
+  if (args.closingDrawerAmount != null && cfg.closingDrawer !== false) {
     defaultHeadlines.push({
       label: "ยอดเงินปิดงาน",
       amount: args.closingDrawerAmount.toLocaleString("th-TH", {
@@ -1826,7 +1843,7 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
       })
     });
   }
-  if (args.serviceChargeAmount != null) {
+  if (args.serviceChargeAmount != null && cfg.serviceCharge !== false) {
     defaultHeadlines.push({
       label: "เซอร์วิสชาร์จวันนี้",
       amount: args.serviceChargeAmount.toLocaleString("th-TH", {
@@ -1834,7 +1851,7 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
       })
     });
   }
-  if (args.dailyRevenue != null) {
+  if (args.dailyRevenue != null && cfg.dailyRevenue !== false) {
     defaultHeadlines.push({
       label: "ยอดขายวันนี้",
       amount: args.dailyRevenue.toLocaleString("th-TH", {

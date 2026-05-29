@@ -17,6 +17,7 @@ import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
 import ChecklistEditor from "./ChecklistEditor";
+import ShiftCloseDefaultsToggle from "./ShiftCloseDefaultsToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,22 @@ export default function ChecklistPage({
           {t(lang, "admin.persona.checklist.subtitle")}
         </p>
       </div>
+      {/* Shift-close-only: 3 toggles that decide which of the default
+          money fields render in the red headline box on the LINE
+          card. Rendered above the per-item editor so the prominence
+          decision lives next to the items, not buried in a separate
+          settings page. */}
+      {type === "shift_close" && (
+        <ShiftCloseDefaultsToggle
+          key={`scd-${branch.id}`}
+          initial={{
+            closing_drawer: branch.sc_show_drawer_primary === 1,
+            service_charge: branch.sc_show_svc_primary === 1,
+            daily_revenue:  branch.sc_show_revenue_primary === 1
+          }}
+        />
+      )}
+
       {/* key forces React to unmount + remount when the user navigates
           between report types (or branches). Without it, the client
           component's useState seeds from the first initialItems and

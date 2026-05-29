@@ -342,7 +342,17 @@ export async function POST(req: Request) {
       checklist: normalizeChecklist(d.checklist),
       headlines: headlinesFor(d.checklist),
       isRevision,
-      headerColor: branch.brand_color
+      headerColor: branch.brand_color,
+      // Per-branch override (2026-05-30): admin picks which of the
+      // three default money fields render in the red headline box.
+      // Columns default to 1 (= include) so legacy behaviour is
+      // preserved until admin explicitly toggles a field off in the
+      // checklist editor for type=shift_close.
+      defaultFieldPrimary: {
+        closingDrawer: branch.sc_show_drawer_primary === 1,
+        serviceCharge: branch.sc_show_svc_primary === 1,
+        dailyRevenue: branch.sc_show_revenue_primary === 1
+      }
     });
   } else {
     // readiness_1130 / readiness_1600 — fully driven by the admin

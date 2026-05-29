@@ -1045,6 +1045,29 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("extra_button_url")) {
     db.exec("ALTER TABLE branches ADD COLUMN extra_button_url TEXT");
   }
+  // 2026-05-30 — shift_close default-field highlight toggles. Three
+  // money fields (closing drawer, service charge, daily revenue) are
+  // baked into the post-shift summary card. Until now they were ALL
+  // forced into the red headline box regardless, which made the card
+  // look cluttered and gave admin no way to emphasise the one number
+  // that actually matters for their branch ("ยอดขาย is the KPI for
+  // NAMA; ยอดเงินปิดงาน for HYPOPLARAEMIA").
+  //
+  // Each column: 1 = include in the red headline box; 0 = fall
+  // through to the normal checklist body where the row renders bold
+  // (kind='amount') but without the dramatic background.
+  //
+  // Default 1 across the board preserves existing behaviour for any
+  // branch that hasn't touched the new settings yet.
+  if (!bnames2.has("sc_show_drawer_primary")) {
+    db.exec("ALTER TABLE branches ADD COLUMN sc_show_drawer_primary INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!bnames2.has("sc_show_svc_primary")) {
+    db.exec("ALTER TABLE branches ADD COLUMN sc_show_svc_primary INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!bnames2.has("sc_show_revenue_primary")) {
+    db.exec("ALTER TABLE branches ADD COLUMN sc_show_revenue_primary INTEGER NOT NULL DEFAULT 1");
+  }
   // Fallback contact phone — shown to the customer in the "request received,
   // awaiting confirmation" LINE message so they have a way to follow up if
   // admin doesn't get to their pending booking. Optional; if unset the
@@ -3209,6 +3232,14 @@ export type Branch = {
   readiness_morning_time: string;      // HH:MM — used in รอบเช้า card title (e.g. "11:30")
   readiness_afternoon_time: string;    // HH:MM — used in รอบบ่าย card title (e.g. "16:00")
   brand_color: string | null;          // Hex e.g. '#e94560'. NULL = default IKIGAI ink colour.
+  // 2026-05-30 — shift_close default-field highlight toggles.
+  // 1 = render in the red headline box at the top of the
+  // post-shift summary card; 0 = fall through to the normal
+  // checklist body (still bold via kind='amount', just less loud).
+  // All three default 1 to preserve previous behaviour.
+  sc_show_drawer_primary: number;
+  sc_show_svc_primary: number;
+  sc_show_revenue_primary: number;
   // PERSONA Time Clock anti-cheat — see schema migration in getDb().
   latitude: number | null;
   longitude: number | null;
