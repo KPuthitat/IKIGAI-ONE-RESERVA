@@ -84,37 +84,43 @@ export default function LoginForm({
 
   return (
     <>
-      {/* role selector — pill segmented */}
-      <div className="flex gap-0 bg-white/[.08] border border-white/[.15] rounded-xl p-1 mb-4 w-full max-w-sm">
+      {/* role selector — pill segmented.
+          Restyled 2026-05-31 for white-card host: was bg-white/[.08]
+          (semi-transparent on a dark page) — now slate-100 so the
+          unselected option still reads against the card. */}
+      <div className="flex gap-0 bg-slate-100 border border-slate-200 rounded-xl p-1 mb-4 w-full">
         <button
           type="button"
           onClick={() => setRole("staff")}
-          className={`flex-1 py-3 rounded-[9px] text-base font-bold tracking-[1.5px] transition-all ${
+          className={`flex-1 py-2.5 rounded-[9px] text-sm font-bold tracking-[1.5px] transition-all ${
             role === "staff"
               ? "bg-brand text-white shadow-[0_2px_8px_rgba(233,69,96,.4)]"
-              : "text-white/50"
+              : "text-slate-500 hover:text-slate-700"
           }`}
         >STAFF</button>
         <button
           type="button"
           onClick={() => setRole("admin")}
-          className={`flex-1 py-3 rounded-[9px] text-base font-bold tracking-[1.5px] transition-all ${
+          className={`flex-1 py-2.5 rounded-[9px] text-sm font-bold tracking-[1.5px] transition-all ${
             role === "admin"
               ? "bg-brand text-white shadow-[0_2px_8px_rgba(233,69,96,.4)]"
-              : "text-white/50"
+              : "text-slate-500 hover:text-slate-700"
           }`}
         >ADMIN</button>
       </div>
 
       <div
-        className={`text-white/80 text-lg font-light mb-5 text-center ${
+        className={`text-slate-500 text-sm font-medium mb-4 text-center ${
           lang === "en" ? "uppercase tracking-[2px]" : ""
         }`}
       >
         {t("login.forRole", { role: role === "admin" ? t("role.adminShort") : t("role.staffShort") })}
       </div>
 
-      <form onSubmit={submit} className="card w-full max-w-sm">
+      {/* The form is no longer its own card — the parent <div className="card">
+          on login/page.tsx is the only card. Empty form tag for semantics +
+          handler binding. */}
+      <form onSubmit={submit} className="w-full">
         <div className="mb-4">
           <label className="label">{t("login.username")}</label>
           <input
