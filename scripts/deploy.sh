@@ -176,34 +176,26 @@ else
   sleep 1
 fi
 
-echo "==> [4/6] reloading PM2 (graceful, then fallback)"
-# Strategy:
-#   • `pm2 reload ecosystem.config.js` is idempotent — if reserva is
-#     running it does a graceful reload; if missing it starts fresh
-#     from the config. Either way the app entry ends up matching
-#     ecosystem.config.js, which kills the "Process N not found" bug
-#     where PM2's entry pm_id pointed at a long-dead process.
-#   • If reload fails for any reason (corrupted daemon state, etc.)
-#     fall back to delete+start — heavier but always works.
+echo "==> [4/6] restarting PM2 (delete + start)"
+# Strategy (revised 2026-05-31 after a stuck-reload incident):
+#   • `pm2 reload` USED to be the happy path, with delete+start as a
+#     fallback. In fork mode (which we use — see ecosystem.config.js)
+#     reload's semantics are ambiguous: pm2 may signal the old worker
+#     and consider the reload complete before the new one binds, or
+#     in some daemon states keep the old process alive entirely while
+#     reporting "✓". The deploy then reports success while the staff
+#     keep seeing old code.
+#   • Delete+start is unambiguous: old process gone, new process up
+#     from the fresh build. The 1-2s downtime is irrelevant — Nginx
+#     already serves the maintenance page on 502/503/504 during the
+#     gap, so the user sees the owl, not a broken connection.
 #   • --update-env picks up env-var changes from ecosystem.config.js
 #     or .env without a separate cycle.
-if pm2 reload ecosystem.config.js --update-env 2>&1 | tee /tmp/pm2-reload.log; then
-  if grep -qiE "(error|errored)" /tmp/pm2-reload.log; then
-    echo "    reload reported an error — falling back to delete+start"
-    pm2 delete "$PM2_APP" 2>/dev/null || true
-    pm2 start ecosystem.config.js --update-env || {
-      echo "    ✗ fallback pm2 start also failed"
-      exit 3
-    }
-  fi
-else
-  echo "    reload command failed — falling back to delete+start"
-  pm2 delete "$PM2_APP" 2>/dev/null || true
-  pm2 start ecosystem.config.js --update-env || {
-    echo "    ✗ fallback pm2 start also failed"
-    exit 3
-  }
-fi
+pm2 delete "$PM2_APP" 2>/dev/null || true
+pm2 start ecosystem.config.js --only "$PM2_APP" --update-env || {
+  echo "    ✗ pm2 start failed"
+  exit 3
+}
 
 echo "==> [5/6] persisting PM2 state"
 # pm2 save records the current process list so it survives reboot
@@ -219,12 +211,15 @@ echo "==> [6/6] verifying"
 # up healthy a few seconds later.
 #   30s → 90s   on 2026-05-27 (tier-approval + is_test_account)
 #   90s → 120s  on 2026-05-27 (ASCENDA tables + seed)
-# If you bump again, also consider scaling the droplet — but the
-# real boot time is ~60-100s observed, so 120s gives generous
-# headroom without delaying a true-failure case too long.
+#   120s → 240s on 2026-05-31 (INVENTA expansion — false-alarmed at
+#     120s while the process was still loading modules, even though
+#     it eventually bound at ~140s and ran fine)
+# If you bump again, also consider scaling the droplet — observed
+# boot time is ~60-140s, so 240s gives generous headroom without
+# delaying a true-failure case too long.
 NEW_PM2_PID="$(pm2 pid "$PM2_APP" 2>/dev/null | tr -d '[:space:]' | grep -oE '^[0-9]+$' || echo '')"
 BOUND_PID=""
-for i in $(seq 1 120); do
+for i in $(seq 1 240); do
   BOUND_PID="$(lsof -ti :"${PORT}" -sTCP:LISTEN 2>/dev/null | head -n1 || echo '')"
   if [[ -n "$BOUND_PID" && "$BOUND_PID" == "$NEW_PM2_PID" ]]; then
     echo "    bound on :${PORT} after ${i}s"
@@ -234,7 +229,11 @@ for i in $(seq 1 120); do
 done
 
 if [[ -z "$BOUND_PID" ]]; then
-  echo "    ✗ nothing is listening on :${PORT} after 120s — check pm2 logs ${PM2_APP}"
+  echo "    ✗ nothing is listening on :${PORT} after 240s — diagnostics:"
+  echo "    --- pm2 list ---"
+  pm2 list || true
+  echo "    --- pm2 logs ${PM2_APP} (last 30 err lines) ---"
+  pm2 logs "$PM2_APP" --err --lines 30 --nostream || true
   exit 2
 fi
 
