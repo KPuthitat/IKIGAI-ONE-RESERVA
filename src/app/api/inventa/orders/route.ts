@@ -57,17 +57,24 @@ export async function POST(req: Request) {
   const db = getDb();
 
   // Pull the item snapshots in one query (branch-scoped for safety).
+  // Includes cost_price so we can prefer the owner-pinned figure for
+  // unit_cost_at_order — the per-line snapshot used by the supplier
+  // PDF + the LINE approval card.
   const ids = parsed.data.lines.map((l) => l.item_id);
   const placeholders = ids.map(() => "?").join(",");
   const items = db.prepare(`
-    SELECT id, supplier_id, current_qty, safety_stock, unit_cost
+    SELECT id, supplier_id, current_qty, safety_stock,
+           unit_cost, cost_price
     FROM inventa_items
     WHERE active = 1 AND id IN (${placeholders})
       AND (branch_id IS ? OR branch_id = ?)
   `).all(...ids, branchId, branchId) as Array<{
     id: number; supplier_id: number | null;
-    current_qty: number; safety_stock: number; unit_cost: number;
+    current_qty: number; safety_stock: number;
+    unit_cost: number; cost_price: number | null;
   }>;
+  const effectiveCost = (it: typeof items[number]): number =>
+    it.cost_price != null ? it.cost_price : (it.unit_cost ?? 0);
   const itemById = new Map(items.map((i) => [i.id, i]));
   const validLines = parsed.data.lines.filter((l) => itemById.has(l.item_id));
   if (validLines.length === 0) {
@@ -94,7 +101,7 @@ export async function POST(req: Request) {
       const suggested = Math.max(0, it.safety_stock - it.current_qty);
       ins.run(
         orderId, l.item_id, it.supplier_id,
-        it.current_qty, suggested, l.order_qty, it.unit_cost
+        it.current_qty, suggested, l.order_qty, effectiveCost(it)
       );
     }
   });
@@ -108,7 +115,7 @@ export async function POST(req: Request) {
     if (branch) {
       const totalCost = validLines.reduce((s, l) => {
         const it = itemById.get(l.item_id)!;
-        return s + l.order_qty * it.unit_cost;
+        return s + l.order_qty * effectiveCost(it);
       }, 0);
       const flex = {
         type: "flex" as const,

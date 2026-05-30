@@ -17,9 +17,32 @@ export type LowStockItem = {
   pick_freq: PickFreq | null;
   current_qty: number;
   safety_stock: number;
+  /** Moving avg derived from purchase lines; fallback when
+   *  cost_price is null. Kept on the row so a re-tagged item with
+   *  no manual price still shows a sensible estimate. */
   unit_cost: number;
+  /** Owner-pinned cost. Wins over unit_cost for total estimation
+   *  so the budget number on screen stays under the owner's
+   *  control regardless of receipt history. Null = use unit_cost. */
+  cost_price: number | null;
   supplier_name: string | null;
 };
+
+/** Pick the per-unit cost used in PO totals. cost_price wins; if
+ *  null we fall back to the auto-derived unit_cost. Both treated
+ *  as non-negative — the server-side validators enforce that. */
+function effectiveCost(it: LowStockItem): number {
+  return it.cost_price != null ? it.cost_price : (it.unit_cost ?? 0);
+}
+
+/** Format a baht figure with thousands sep + 2dp. Centralised so
+ *  the supplier subtotal, grand total, and the per-line preview all
+ *  share the same look. */
+function fmtBaht(n: number): string {
+  return "฿" + n.toLocaleString("th-TH", {
+    minimumFractionDigits: 2, maximumFractionDigits: 2
+  });
+}
 
 export type OrderRow = {
   id: number;
@@ -93,6 +116,32 @@ export default function OrdersClient({
     .map(([id, q]) => ({ item_id: Number(id), order_qty: Number(q) }))
     .filter((l) => l.order_qty > 0);
 
+  // Live PO totals. Rebuilds on every sel/qty change so the budget
+  // figure tracks the user's keystrokes. Per-supplier subtotal helps
+  // the owner decide whether to defer/split a vendor (#91).
+  const itemById = useMemo(() => {
+    const m = new Map<number, LowStockItem>();
+    for (const it of lowStock) m.set(it.id, it);
+    return m;
+  }, [lowStock]);
+  const totalsBySupplier = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const [idStr, qStr] of Object.entries(sel)) {
+      const it = itemById.get(Number(idStr));
+      if (!it) continue;
+      const qty = Number(qStr) || 0;
+      if (qty <= 0) continue;
+      const key = it.supplier_name ?? t("inv.ord.noSupplier");
+      m.set(key, (m.get(key) ?? 0) + qty * effectiveCost(it));
+    }
+    return m;
+  }, [sel, itemById, t]);
+  const grandTotal = useMemo(() => {
+    let n = 0;
+    for (const v of totalsBySupplier.values()) n += v;
+    return n;
+  }, [totalsBySupplier]);
+
   async function submit() {
     if (chosen.length === 0) { setErr(t("inv.ord.selectMin")); return; }
     setBusy(true); setErr(null);
@@ -134,49 +183,95 @@ export default function OrdersClient({
           </p>
         )}
 
-        {groups.map(([supplier, items]) => (
-          <div key={supplier} className="space-y-1.5">
-            <div className="text-[11px] tracking-[1px] text-slate-400 uppercase">
-              {supplier}
-            </div>
-            {items.map((it) => {
-              const checked = it.id in sel;
-              const bin = binCode(it.grid_row, it.grid_col, it.pick_freq);
-              return (
-                <div key={it.id}
-                  className={"flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2 " +
-                    (checked ? "bg-rose-50/40" : "")}>
-                  <label className="flex items-center gap-2 flex-1 min-w-[180px] cursor-pointer">
-                    <input type="checkbox" checked={checked}
-                      onChange={() => toggle(it)} />
-                    <span className="text-sm">
-                      <span className="font-medium text-slate-800">{it.name}</span>
-                      {bin && <span className="ml-1 text-[11px] text-slate-400">[{bin}]</span>}
-                      <span className="block text-[11px] text-slate-500">
-                        {t("inv.ord.onhand")} {it.current_qty} / {t("inv.ord.repoint")} {it.safety_stock}
-                        {it.unit ? ` ${it.unit}` : ""} · {t("inv.ord.cost")} ฿{it.unit_cost}
-                      </span>
-                    </span>
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <span className="text-[11px] text-slate-500">{t("inv.ord.order")}</span>
-                    <input
-                      className="input !w-20 !py-1 text-sm text-right"
-                      inputMode="numeric"
-                      value={checked ? sel[it.id] : String(suggested(it))}
-                      disabled={!checked}
-                      onChange={(e) => setQty(it.id, e.target.value)}
-                    />
-                    <span className="text-[11px] text-slate-500">{it.unit ?? t("inv.ord.unit")}</span>
-                  </div>
+        {groups.map(([supplier, items]) => {
+          const subtotal = totalsBySupplier.get(supplier) ?? 0;
+          return (
+            <div key={supplier} className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] tracking-[1px] text-slate-400 uppercase">
+                  {supplier}
                 </div>
-              );
-            })}
-          </div>
-        ))}
+                {subtotal > 0 && (
+                  <div className="text-[11px] text-emerald-700 font-semibold">
+                    {t("inv.ord.subtotal")}: {fmtBaht(subtotal)}
+                  </div>
+                )}
+              </div>
+              {items.map((it) => {
+                const checked = it.id in sel;
+                const bin = binCode(it.grid_row, it.grid_col, it.pick_freq);
+                const cost = effectiveCost(it);
+                const qty = checked ? (Number(sel[it.id]) || 0) : 0;
+                const lineTotal = qty * cost;
+                // Show which cost was used (manual vs auto) so the
+                // owner can spot when a line falls back to the
+                // moving avg and decide whether to pin a cost_price.
+                const costSrc = it.cost_price != null
+                  ? t("inv.ord.costSrcManual")
+                  : t("inv.ord.costSrcAvg");
+                return (
+                  <div key={it.id}
+                    className={"flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2 " +
+                      (checked ? "bg-rose-50/40" : "")}>
+                    <label className="flex items-center gap-2 flex-1 min-w-[180px] cursor-pointer">
+                      <input type="checkbox" checked={checked}
+                        onChange={() => toggle(it)} />
+                      <span className="text-sm">
+                        <span className="font-medium text-slate-800">{it.name}</span>
+                        {bin && <span className="ml-1 text-[11px] text-slate-400">[{bin}]</span>}
+                        <span className="block text-[11px] text-slate-500">
+                          {t("inv.ord.onhand")} {it.current_qty} / {t("inv.ord.repoint")} {it.safety_stock}
+                          {it.unit ? ` ${it.unit}` : ""} · {t("inv.ord.cost")} ฿{cost.toFixed(2)}
+                          <span className="text-slate-400"> ({costSrc})</span>
+                        </span>
+                      </span>
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[11px] text-slate-500">{t("inv.ord.order")}</span>
+                      <input
+                        className="input !w-20 !py-1 text-sm text-right"
+                        inputMode="numeric"
+                        value={checked ? sel[it.id] : String(suggested(it))}
+                        disabled={!checked}
+                        onChange={(e) => setQty(it.id, e.target.value)}
+                      />
+                      <span className="text-[11px] text-slate-500">{it.unit ?? t("inv.ord.unit")}</span>
+                    </div>
+                    {/* Per-line live preview — appears only when the
+                        row is selected so the unchecked rows stay
+                        quiet. Right-aligned to match qty column. */}
+                    {checked && lineTotal > 0 && (
+                      <div className="w-full text-right text-[11px] text-slate-600 -mt-0.5">
+                        = {fmtBaht(lineTotal)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
 
         {lowStock.length > 0 && (
           <div className="border-t border-slate-100 pt-3 space-y-2">
+            {/* Grand-total budget bar (#91). Sticks visually right
+                above the submit row so the figure stays in the
+                owner's peripheral vision as they tick items. */}
+            {chosen.length > 0 && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-baseline justify-between gap-3">
+                <div>
+                  <div className="text-[11px] text-emerald-700 uppercase tracking-[1px] font-bold">
+                    {t("inv.ord.estTotal")}
+                  </div>
+                  <div className="text-[10px] text-emerald-700/70 mt-0.5">
+                    {t("inv.ord.estTotalHint", { n: chosen.length })}
+                  </div>
+                </div>
+                <div className="text-2xl font-bold text-emerald-700 tabular-nums">
+                  {fmtBaht(grandTotal)}
+                </div>
+              </div>
+            )}
             <textarea className="input text-sm" rows={2} value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder={t("inv.ord.notePh")} />
