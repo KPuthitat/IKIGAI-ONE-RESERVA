@@ -4,6 +4,7 @@ import { getDb, OCCASION_KINDS, type Branch, type Booking } from "@/lib/db";
 import { notifyCustomerPending, notifyStaff } from "@/lib/line";
 import { generateBookingRef } from "@/lib/reserva-ref";
 import { assignRedemptionForNewRow, normalisePhone } from "@/lib/redemption";
+import { onBookingCreated as insignaOnBookingCreated } from "@/lib/insigna";
 
 // Customer-facing booking endpoint.
 //
@@ -119,6 +120,29 @@ export async function POST(req: Request) {
   const id = result.lastInsertRowid as number;
 
   const booking = db.prepare("SELECT * FROM bookings WHERE id = ?").get(id) as Booking;
+
+  // INSIGNA push (privacy wall enforced inside the bridge). Customer
+  // bookings flow through line_user_id or normalised phone; the
+  // bridge hashes either into a pseudonymous customer_hash before
+  // any data lands in insigna_* tables. status='pending_review' on
+  // this path means no visit is opened yet — that happens when
+  // admin flips status to seated.
+  insignaOnBookingCreated({
+    reservation_id: booking.ref_no || `id:${booking.id}`,
+    line_user_id: booking.line_user_id,
+    phone: booking.customer_phone || null,
+    booked_at: new Date(booking.created_at).toISOString(),
+    scheduled_at: new Date(`${booking.booking_date}T${booking.booking_time}:00+07:00`).toISOString(),
+    party_size: booking.party_size,
+    channel: "LINE",  // /api/bookings is the LIFF customer route
+    special_occasion: booking.occasion ?? null,
+    status: "pending_review",
+    acquisition_source: booking.source ?? null,
+    party_type: booking.party_size === 1 ? "SOLO"
+              : booking.party_size === 2 ? "COUPLE"
+              : booking.party_size >= 5 ? "FAMILY"
+              : "FRIENDS"
+  });
 
   // Notify (fire-and-forget; ไม่ block response). Customer gets a plain
   // text acknowledgement only — the Flex card is sent later when admin
