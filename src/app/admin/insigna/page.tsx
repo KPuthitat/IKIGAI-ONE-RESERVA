@@ -18,6 +18,7 @@ import {
   churnRiskList,
   marketingHeadline
 } from "@/lib/insigna";
+import Sandbox from "./Sandbox";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "INSIGNA · IKIGAI OS" };
@@ -42,7 +43,7 @@ function shortHash(h: string): string {
 }
 
 export default function InsignaDashboard() {
-  requireAdmin();
+  const user = requireAdmin();
   const db = getDb();
 
   // ── Top counters ──────────────────────────────────────────
@@ -109,6 +110,9 @@ export default function InsignaDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Sandbox — only super_admin can fire test events */}
+      {user.role === "super_admin" && <Sandbox />}
 
       {/* Top counters — 5-wide on desktop, 2 on mobile */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
