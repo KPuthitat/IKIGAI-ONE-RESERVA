@@ -90,6 +90,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // toolbar) — not duplicated at module level here.
         { href: "/staff/inventa", label: "INVENTA" },
         { href: "/admin/ascenda", label: "ASCENDA" },
+        { href: "/admin/insigna", label: "INSIGNA" },
         // System-wide entries — only super_admin can manage these,
         // so hide them from regular admins to keep the sidebar clean.
         // The pages still enforce requireSuperAdmin() server-side as
