@@ -51,6 +51,15 @@ export default function InventaClient({
   const [, startTransition] = useTransition();
   const [q, setQ] = useState("");
   const [freqFilter, setFreqFilter] = useState<PickFreq | "">("");
+  // 2026-05-31 (#89): catalogue gains filter-by-category +
+  // filter-by-supplier dropdowns and a sort menu. State stays
+  // local — small enough volume (≤500 items per branch) that
+  // sort+filter happens in memo, no URL sync needed.
+  const [catFilter, setCatFilter] = useState<string>("");
+  const [supFilter, setSupFilter] = useState<string>("");
+  const [sortBy, setSortBy] = useState<
+    "name" | "code" | "qty_asc" | "qty_desc" | "cost_desc" | "low_first"
+  >("name");
   const [edit, setEdit] = useState<Item | null>(null);
   const [adding, setAdding] = useState<Partial<Item> | null>(null);
   const [showSuppliers, setShowSuppliers] = useState(false);
@@ -61,17 +70,58 @@ export default function InventaClient({
 
   const refresh = () => startTransition(() => router.refresh());
 
+  // Categories ↔ codes lookup so the catalogue can render the
+  // category abbrev (e.g. "PAIN") instead of the full Thai name
+  // when one is set. Falls back to the long form when null.
+  const categoryCodeByName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const l of lookups) {
+      if (l.kind === "category" && l.code) m.set(l.value, l.code);
+    }
+    return m;
+  }, [lookups]);
+  const categoryList = useMemo(
+    () => lookups.filter((l) => l.kind === "category"),
+    [lookups]
+  );
+
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return items.filter((i) => {
+    const out = items.filter((i) => {
       if (freqFilter && i.pick_freq !== freqFilter) return false;
+      if (catFilter && (i.category ?? "") !== catFilter) return false;
+      if (supFilter && String(i.supplier_id ?? "") !== supFilter) return false;
       if (!term) return true;
       return [
         i.name, i.generic_name, i.item_code, i.barcode,
         i.category, i.storage_location
       ].some((v) => (v ?? "").toLowerCase().includes(term));
     });
-  }, [items, q, freqFilter]);
+    // Sort. low_first lifts at-or-below safety_stock items to the
+    // top — the most common "what should I deal with now" view.
+    const cmp = {
+      name: (a: Item, b: Item) => a.name.localeCompare(b.name, "th"),
+      code: (a: Item, b: Item) =>
+        (a.item_code ?? "").localeCompare(b.item_code ?? "", "th"),
+      qty_asc: (a: Item, b: Item) => a.current_qty - b.current_qty,
+      qty_desc: (a: Item, b: Item) => b.current_qty - a.current_qty,
+      cost_desc: (a: Item, b: Item) =>
+        (b.cost_price ?? b.unit_cost ?? 0) - (a.cost_price ?? a.unit_cost ?? 0),
+      low_first: (a: Item, b: Item) => {
+        const la = isLowStock(a.current_qty, a.safety_stock) ? 0 : 1;
+        const lb = isLowStock(b.current_qty, b.safety_stock) ? 0 : 1;
+        if (la !== lb) return la - lb;
+        return a.name.localeCompare(b.name, "th");
+      }
+    }[sortBy];
+    return [...out].sort(cmp);
+  }, [items, q, freqFilter, catFilter, supFilter, sortBy]);
+
+  const activeFilterCount =
+    (catFilter ? 1 : 0) + (supFilter ? 1 : 0) + (freqFilter ? 1 : 0);
+  function clearFilters() {
+    setCatFilter(""); setSupFilter(""); setFreqFilter("");
+  }
 
   // Scan: USB scanners type the code then send Enter. Look it up — a
   // hit opens the edit modal (adjust qty/details); a miss opens the
@@ -195,6 +245,58 @@ export default function InventaClient({
             })}
           </div>
         </div>
+
+        {/* Filter + sort menu (#89). Native selects so the touch
+            target stays accessible on mobile without pulling in a
+            popover lib. The clear-all chip only appears when there's
+            something to clear so the bar stays calm by default. */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <label className="flex items-center gap-1">
+            <span className="text-slate-500">{t("inv.flt.cat")}</span>
+            <select className="input !py-1 !px-2 !w-auto text-xs"
+              value={catFilter}
+              onChange={(e) => setCatFilter(e.target.value)}>
+              <option value="">{t("inv.filter.all")}</option>
+              {categoryList.map((c) => (
+                <option key={c.id} value={c.value}>
+                  {c.code ? `${c.code} · ${c.value}` : c.value}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1">
+            <span className="text-slate-500">{t("inv.flt.sup")}</span>
+            <select className="input !py-1 !px-2 !w-auto text-xs"
+              value={supFilter}
+              onChange={(e) => setSupFilter(e.target.value)}>
+              <option value="">{t("inv.filter.all")}</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={String(s.id)}>
+                  {s.code ? `${s.code} · ${s.name}` : s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1 ml-auto">
+            <span className="text-slate-500">{t("inv.sort.label")}</span>
+            <select className="input !py-1 !px-2 !w-auto text-xs"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
+              <option value="name">{t("inv.sort.name")}</option>
+              <option value="code">{t("inv.sort.code")}</option>
+              <option value="low_first">{t("inv.sort.lowFirst")}</option>
+              <option value="qty_asc">{t("inv.sort.qtyAsc")}</option>
+              <option value="qty_desc">{t("inv.sort.qtyDesc")}</option>
+              <option value="cost_desc">{t("inv.sort.costDesc")}</option>
+            </select>
+          </label>
+          {activeFilterCount > 0 && (
+            <button type="button" onClick={clearFilters}
+              className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50">
+              {t("inv.flt.clear", { n: activeFilterCount })}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="card overflow-x-auto">
@@ -227,16 +329,39 @@ export default function InventaClient({
                       {i.storage_location || t("inv.dash")}
                     </div>
                   </td>
+                  {/* Two-line cell (#89): item_code is the primary
+                      anchor (bold uppercase, larger), the name reads
+                      as a secondary descriptor below it. When no
+                      item_code is set, the name promotes up so the
+                      cell never goes blank. Generic name is kept as
+                      a third subtle line for drug lookups. */}
                   <td className="py-2 pr-3">
-                    <div className="font-medium text-slate-800">{i.name}</div>
-                    {i.generic_name && (
-                      <div className="text-xs text-slate-400">{i.generic_name}</div>
-                    )}
-                    {i.item_code && (
-                      <div className="text-[10px] text-slate-400">{i.item_code}</div>
+                    {i.item_code ? (
+                      <>
+                        <div className="font-bold uppercase tracking-wide text-slate-900 text-sm leading-tight">
+                          {i.item_code}
+                        </div>
+                        <div className="text-xs text-slate-600 leading-tight">{i.name}</div>
+                        {i.generic_name && (
+                          <div className="text-[10px] text-slate-400 leading-tight">{i.generic_name}</div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div className="font-bold text-slate-800 text-sm leading-tight">{i.name}</div>
+                        {i.generic_name && (
+                          <div className="text-[10px] text-slate-400 leading-tight">{i.generic_name}</div>
+                        )}
+                      </>
                     )}
                   </td>
-                  <td className="py-2 pr-3 text-slate-600 text-xs">{i.category ?? t("inv.dash")}</td>
+                  <td className="py-2 pr-3 text-slate-600 text-xs">
+                    {/* Category column uses the abbrev when known —
+                        less visual noise once admin pins codes. */}
+                    {i.category
+                      ? (categoryCodeByName.get(i.category) ?? i.category)
+                      : t("inv.dash")}
+                  </td>
                   <td className="py-2 pr-3 text-slate-600 text-xs">{i.supplier_name ?? t("inv.dash")}</td>
                   <td className="py-2 pr-3 text-slate-600 text-xs">{i.unit ?? t("inv.dash")}</td>
                   <td className="py-2 pr-3 text-right text-slate-700">
