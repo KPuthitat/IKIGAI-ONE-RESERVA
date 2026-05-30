@@ -4,6 +4,7 @@ import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, type Booking, type Branch } from "@/lib/db";
 import { isTableFree } from "@/lib/table-allocator";
 import { notifyCustomer } from "@/lib/line";
+import { onBookingStatusChanged as insignaOnBookingStatusChanged } from "@/lib/insigna";
 
 // POST /api/admin/bookings/[id]/confirm
 //
@@ -101,6 +102,21 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // (e.g., booking was entered by phone with no LINE binding) — admin
   // would need to follow up via SMS/call in that case.
   notifyCustomer(branch, updated, "created").catch((e) => console.error("notify error", e));
+
+  // INSIGNA: this confirm flow promotes pending_review → confirmed.
+  // INSIGNA's reservation row was inserted with status='CONFIRMED' at
+  // create time (the shadow defaults to CONFIRMED — pending_review
+  // doesn't exist in INSIGNA's enum), so this call is mostly a no-op
+  // for the row itself, but we still fire it for the audit trail
+  // (one event_type='reservation.status' row marks the admin action).
+  try {
+    insignaOnBookingStatusChanged({
+      reservation_id: updated.ref_no || `id:${updated.id}`,
+      new_status: "confirmed"
+    });
+  } catch (e) {
+    console.warn("[insigna] confirm sync failed:", e);
+  }
 
   return NextResponse.json({ ok: true, status: "confirmed" });
 }

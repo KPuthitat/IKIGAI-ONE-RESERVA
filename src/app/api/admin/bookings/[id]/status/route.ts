@@ -3,6 +3,12 @@ import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, type Booking, type Branch } from "@/lib/db";
 import { notifyCustomerCancelled } from "@/lib/line";
+import {
+  onBookingStatusChanged as insignaOnBookingStatusChanged,
+  hashLineUserId,
+  hashPhone,
+  generateAnonymousHash
+} from "@/lib/insigna";
 
 // Admin status transitions for a booking. The cancel branch optionally
 // accepts a `cancel_reason` (preset key or free text) which we store on
@@ -59,6 +65,49 @@ export async function POST(
         console.error("notify cancel error", e)
       );
     }
+  }
+
+  // ── INSIGNA status sync ────────────────────────────────────
+  // Translate the booking-side status into INSIGNA's narrower enum
+  // (CONFIRMED / CANCELLED / NOSHOW / COMPLETED). Pass visit_args
+  // when transitioning to 'seated' so the bridge can open an
+  // INSIGNA visit row in the same call (the visit lifecycle starts
+  // here, not at booking-create time on the customer LIFF path).
+  //
+  // The customer_hash is recomputed here from line_user_id / phone
+  // because the bridge needs a hash to anchor the visit. Same hash
+  // boundary as onBookingCreated — we never store the identifier.
+  try {
+    let visit_args: Parameters<typeof insignaOnBookingStatusChanged>[0]["visit_args"] = undefined;
+    if (parsed.data.status === "seated") {
+      // Derive customer_hash with the same precedence the bridge uses
+      // (LINE > phone > anonymous) so the visit row points at the
+      // SAME customer the reservation row points at.
+      let customer_hash: string;
+      if (booking.line_user_id) {
+        customer_hash = hashLineUserId(booking.line_user_id);
+      } else if (booking.customer_phone && booking.customer_phone.replace(/\D+/g, "").length >= 9) {
+        customer_hash = hashPhone(booking.customer_phone);
+      } else {
+        customer_hash = generateAnonymousHash();
+      }
+      visit_args = {
+        customer_hash,
+        party_size: booking.party_size,
+        party_type: booking.party_size === 1 ? "SOLO"
+                  : booking.party_size === 2 ? "COUPLE"
+                  : booking.party_size >= 5 ? "FAMILY"
+                  : "FRIENDS",
+        table_id: booking.table_id != null ? String(booking.table_id) : null
+      };
+    }
+    insignaOnBookingStatusChanged({
+      reservation_id: booking.ref_no || `id:${booking.id}`,
+      new_status: parsed.data.status,
+      visit_args
+    });
+  } catch (e) {
+    console.warn("[insigna] status sync failed:", e);
   }
 
   return NextResponse.json({ ok: true });
