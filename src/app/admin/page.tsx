@@ -58,6 +58,30 @@ export default function AdminHomePage() {
           <p className="text-slate-500 text-sm mt-1">{t(lang, "portal.ascenda.adminDesc")}</p>
           <p className="mt-4 text-slate-400 font-bold text-sm">{t(lang, "portal.previewModule")}</p>
         </Link>
+
+        {/* INSIGNA — privacy-first marketing intelligence. NEW pill so
+            admins notice the addition; description in Thai mirrors the
+            spec's purpose without claiming features that aren't built
+            yet (Phase 2 AI swaps are still pending). */}
+        <Link href="/admin/insigna" className="card hover:shadow-2xl transition group block">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="text-[11px] tracking-[1px] text-slate-400">
+              {t(lang, "portal.label.module")}
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-700">
+              NEW
+            </span>
+          </div>
+          <h2 className="text-2xl font-bold text-slate-800 group-hover:text-brand transition-colors">
+            INSIGNA
+          </h2>
+          <p className="text-slate-500 text-sm mt-1">
+            ระบบวิเคราะห์ลูกค้า · persona · churn · attribution · privacy-first
+          </p>
+          <p className="mt-4 text-brand font-bold text-sm">
+            {t(lang, "portal.openBackend")}
+          </p>
+        </Link>
       </div>
     </div>
   );
