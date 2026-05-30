@@ -27,6 +27,10 @@ const Body = z.object({
   last_purchase_price: z.number().min(0).nullable().optional(),
   last_purchase_units: z.number().min(0).nullable().optional(),
   unit_cost: z.number().min(0).nullable().optional(),
+  // 2026-05: ราคาทุน entered manually. Kept distinct from unit_cost
+  // (legacy moving avg from purchase lines) so the owner can pin a
+  // budget price independent of receipts. PO totals read this first.
+  cost_price: z.number().min(0).nullable().optional(),
   price_opd: z.number().min(0).nullable().optional(),
   price_ipd: z.number().min(0).nullable().optional(),
   price_uc: z.number().min(0).nullable().optional(),
@@ -91,16 +95,17 @@ export async function POST(req: Request) {
   const info = db.prepare(`
     INSERT INTO inventa_items
       (branch_id, item_code, barcode, name, generic_name, cgd_code,
-       category, storage_location, item_type, unit, unit_cost,
+       category, storage_location, item_type, unit, unit_cost, cost_price,
        last_purchase_price, last_purchase_units, price_opd, price_ipd,
        price_uc, supplier_id, grid_row, grid_col, pick_freq,
        safety_stock, current_qty, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     user.activeBranchId ?? null,
     d.item_code ?? null, d.barcode ?? null, d.name.trim(),
     d.generic_name ?? null, d.cgd_code ?? null, d.category ?? null,
     d.storage_location ?? null, d.item_type, d.unit ?? null, unitCost,
+    d.cost_price ?? null,
     d.last_purchase_price ?? null, d.last_purchase_units ?? null,
     d.price_opd ?? null, d.price_ipd ?? null, d.price_uc ?? null,
     d.supplier_id ?? null, d.grid_row ?? null, d.grid_col ?? null,

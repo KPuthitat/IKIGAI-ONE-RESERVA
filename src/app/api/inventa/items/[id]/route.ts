@@ -21,6 +21,7 @@ const Body = z.object({
   last_purchase_price: z.number().min(0).nullable().optional(),
   last_purchase_units: z.number().min(0).nullable().optional(),
   unit_cost: z.number().min(0).nullable().optional(),
+  cost_price: z.number().min(0).nullable().optional(),
   price_opd: z.number().min(0).nullable().optional(),
   price_ipd: z.number().min(0).nullable().optional(),
   price_uc: z.number().min(0).nullable().optional(),
@@ -67,6 +68,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   set("storage_location", d.storage_location);
   set("item_type", d.item_type);
   set("unit", d.unit);
+  set("cost_price", d.cost_price);
   set("price_opd", d.price_opd);
   set("price_ipd", d.price_ipd);
   set("price_uc", d.price_uc);

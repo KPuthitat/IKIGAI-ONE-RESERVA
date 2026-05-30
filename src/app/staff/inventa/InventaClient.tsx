@@ -23,6 +23,7 @@ type Item = {
   item_type: ItemType;
   unit: string | null;
   unit_cost: number;
+  cost_price: number | null;
   last_purchase_price: number | null;
   last_purchase_units: number | null;
   price_opd: number | null;
@@ -326,6 +327,7 @@ function ItemModal({
     item_type: (base.item_type ?? "drug") as ItemType,
     unit: base.unit ?? "",
     unit_cost: base.unit_cost != null ? String(base.unit_cost) : "",
+    cost_price: base.cost_price != null ? String(base.cost_price) : "",
     storage_location: base.storage_location ?? "",
     supplier_id: base.supplier_id != null ? String(base.supplier_id) : "",
     grid_row: base.grid_row ?? "",
@@ -360,6 +362,7 @@ function ItemModal({
         item_type: f.item_type,
         unit: f.unit.trim() || null,
         unit_cost: f.unit_cost ? Number(f.unit_cost) : 0,
+        cost_price: f.cost_price ? Number(f.cost_price) : null,
         storage_location: f.storage_location.trim() || null,
         supplier_id: f.supplier_id ? Number(f.supplier_id) : null,
         grid_row: f.grid_row || null,
@@ -502,12 +505,34 @@ function ItemModal({
               {unitOpts.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
+          {/* ราคาทุน — the headline cost the owner wants to control.
+              Highlighted with an emerald left border + ฿ prefix so it
+              reads as "the money figure to watch", visually distinct
+              from the auto-derived unit_cost row below. PO totals
+              estimate from this first; unit_cost is the fallback. */}
           <div>
+            <label className="label flex items-center gap-1">
+              <span className="text-emerald-700">฿</span>
+              {t("inv.f.costPrice")}
+            </label>
+            <input className="input border-l-4 border-l-emerald-500 font-semibold"
+              type="number" min="0" step="0.01"
+              value={f.cost_price}
+              onChange={(e) => up("cost_price", e.target.value)}
+              placeholder={t("inv.f.costPricePh")} />
+            <p className="text-[10px] text-slate-400 mt-1">
+              {t("inv.f.costPriceHint")}
+            </p>
+          </div>
+          <div className="col-span-2">
             <label className="label">{t("inv.f.cost")}</label>
             <input className="input" type="number" min="0" step="0.0001"
               value={f.unit_cost}
               onChange={(e) => up("unit_cost", e.target.value)}
               placeholder={t("inv.f.costPh")} />
+            <p className="text-[10px] text-slate-400 mt-1">
+              {t("inv.f.costHint")}
+            </p>
           </div>
           <div>
             <label className="label">{t("inv.f.onhand")}</label>
