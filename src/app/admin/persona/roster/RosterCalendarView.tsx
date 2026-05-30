@@ -66,7 +66,9 @@ export default function RosterCalendarView({
   positions,
   assignments,
   birthdays,
-  currentUserId
+  currentUserId,
+  dayDetailAllAssignments,
+  selfFocusMode = false
 }: {
   month: string;             // YYYY-MM
   daysInMonth: number;
@@ -77,6 +79,17 @@ export default function RosterCalendarView({
   /** For "don't show greet-yourself button" gate. Required only when
    *  birthdays are passed. */
   currentUserId?: number;
+  /** Optional second assignment set (2026-05-31). When passed, the
+   *  expanded-day panel reveals a "ดูเพื่อนร่วมงานในวันนี้" toggle
+   *  that pulls in rows from this superset. Staff calendars pass
+   *  their own shifts as `assignments` (rendered in cells) AND the
+   *  whole branch roster here (lazy-revealed). Admin pages leave
+   *  this undefined so the toggle never appears. */
+  dayDetailAllAssignments?: AssignmentRow[];
+  /** Tells the renderer "this is staff-focused — show OFF on empty
+   *  days, headline copy implies single-person view". Cosmetic only;
+   *  data filtering is the caller's job. */
+  selfFocusMode?: boolean;
 }) {
   const [yyyy, mm] = month.split("-").map(Number);
   // JS Date getDay(): 0 = Sunday, 6 = Saturday. Bangkok week starts
@@ -117,6 +130,30 @@ export default function RosterCalendarView({
   // Desktop also benefits — eight chips per cell is too many to fit
   // when a Saturday has full coverage.
   const [openDate, setOpenDate] = useState<string | null>(null);
+
+  // Colleague-reveal state (staff calendar). When false, the day
+  // panel only shows the staff's own shifts (from `assignments`).
+  // Toggling reveals the colleague rows from
+  // `dayDetailAllAssignments` for the SAME date. Resets when the
+  // user moves to a different day.
+  const [showColleagues, setShowColleagues] = useState(false);
+  function openDayPanel(date: string): void {
+    setShowColleagues(false);
+    setOpenDate((d) => (d === date ? null : date));
+  }
+
+  // Map ALL assignments by date for the colleague reveal. Only
+  // computed when the prop is passed (admin pages leave it
+  // undefined; this then short-circuits to an empty map).
+  const allByDate = useMemo(() => {
+    const m = new Map<string, AssignmentRow[]>();
+    for (const a of dayDetailAllAssignments ?? []) {
+      const arr = m.get(a.date);
+      if (arr) arr.push(a);
+      else m.set(a.date, [a]);
+    }
+    return m;
+  }, [dayDetailAllAssignments]);
 
   // Group birthdays by MM-DD so we can render a 🎂 icon on each
   // matching cell. People with the same dob land in the same bucket
@@ -224,29 +261,42 @@ export default function RosterCalendarView({
           const visible = rows.slice(0, MAX_CHIPS_PER_CELL);
           // Birthday lookup uses the cell's MM-DD; matches roll yearly.
           const dayBirthdays = birthdaysByMonthDay.get(cell.date.slice(5)) ?? [];
+          // In self-focus mode (staff view), an empty cell IS the
+          // staff's day off — show "OFF" subtly top-right so the
+          // calendar reads at a glance, matching the iOS reference.
+          const isOff = selfFocusMode && rows.length === 0;
           return (
             <button
               key={cell.date}
               type="button"
-              onClick={() => setOpenDate((d) => (d === cell.date ? null : cell.date))}
+              onClick={() => openDayPanel(cell.date)}
               className={`min-h-[88px] text-left p-1.5 border-r border-b border-slate-100 transition relative
-                ${rows.length === 0 ? "bg-white" : "bg-rose-50/30"}
+                ${rows.length === 0
+                  ? (isOff ? "bg-slate-50/60" : "bg-white")
+                  : "bg-rose-50/30"}
                 ${isToday ? "ring-2 ring-brand ring-inset z-[1]" : ""}
                 hover:bg-rose-50/60`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className={`text-[11px] font-bold ${
-                  isWeekend ? "text-rose-500" : "text-slate-700"
+                  isOff ? "text-slate-400"
+                  : isWeekend ? "text-rose-500"
+                  : "text-slate-700"
                 }`}>
                   {cell.day}
                 </span>
                 <div className="flex items-center gap-1">
+                  {isOff && (
+                    <span className="text-[8px] uppercase tracking-wider font-bold text-slate-400">
+                      OFF
+                    </span>
+                  )}
                   {dayBirthdays.length > 0 && (
                     <span className="text-[10px]" title={dayBirthdays.map(b => b.display_name).join(", ")}>
                       🎂
                     </span>
                   )}
-                  {rows.length > 0 && (
+                  {rows.length > 0 && !selfFocusMode && (
                     <span className="text-[9px] font-bold text-slate-400">
                       {rows.length}
                     </span>
@@ -287,11 +337,23 @@ export default function RosterCalendarView({
       {/* Expanded panel for the selected day. Shown below the grid so
           it doesn't disrupt the calendar layout. Mobile users can
           scroll a tiny bit; desktop users see it inline. */}
-      {openDate && (byDate.get(openDate) || (birthdaysByMonthDay.get(openDate.slice(5))?.length ?? 0) > 0) && (
+      {openDate && (
+        // Panel renders when ANY of these is true:
+        //   - the day has own shifts to show
+        //   - it's a birthday match
+        //   - it's an OFF day in self-focus mode (so the user can
+        //     still tap to see "you're off · or see colleagues")
+        byDate.get(openDate)
+        || (birthdaysByMonthDay.get(openDate.slice(5))?.length ?? 0) > 0
+        || (selfFocusMode && dayDetailAllAssignments)
+      ) && (
         <div className="border-t-2 border-brand bg-rose-50/30 p-4">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-bold text-slate-800">
-              วันที่ {openDate} ({byDate.get(openDate)?.length ?? 0} กะ)
+              วันที่ {openDate}
+              {selfFocusMode
+                ? ((byDate.get(openDate)?.length ?? 0) > 0 ? " · เข้างาน" : " · วันหยุด")
+                : ` (${byDate.get(openDate)?.length ?? 0} กะ)`}
             </h3>
             <button
               type="button"
@@ -338,38 +400,116 @@ export default function RosterCalendarView({
             );
           })()}
 
-          <div className="space-y-1.5">
-            {(byDate.get(openDate) ?? []).map((a) => (
-              <div
-                key={a.id}
-                className="flex items-center gap-2 text-xs bg-white rounded-md px-2.5 py-1.5 border border-slate-200"
-              >
-                <span
-                  className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ background: a.shift_color || "#e94560" }}
-                />
-                <span className="font-medium text-slate-800 flex-1 truncate">
-                  {a.user_display_name}
-                </span>
-                <span className="text-slate-500 text-[10px]">
-                  {positionTitleById.get(a.position_id) ?? ""}
-                </span>
-                <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">
-                  {a.shift_code}
-                </span>
-                {a.shift_start_time && (
-                  <span className="text-[10px] text-slate-500 font-mono">
-                    {a.shift_start_time}
+          {/* Own shifts for the day. In self-focus mode this is just
+              the user's own row(s). When the day has NO own shift
+              but the user opened the panel anyway (e.g. tapped an
+              OFF cell), show a quiet "วันหยุด" line + still allow
+              the colleague-toggle to reveal who's working. */}
+          {(byDate.get(openDate) ?? []).length > 0 ? (
+            <div className="space-y-1.5">
+              {(byDate.get(openDate) ?? []).map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-center gap-2 text-xs bg-white rounded-md px-2.5 py-1.5 border border-slate-200"
+                >
+                  <span
+                    className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ background: a.shift_color || "#e94560" }}
+                  />
+                  <span className="font-medium text-slate-800 flex-1 truncate">
+                    {a.user_display_name}
                   </span>
+                  <span className="text-slate-500 text-[10px]">
+                    {positionTitleById.get(a.position_id) ?? ""}
+                  </span>
+                  <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">
+                    {a.shift_code}
+                  </span>
+                  {a.shift_start_time && (
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {a.shift_start_time}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : selfFocusMode ? (
+            <div className="text-xs text-slate-500 italic py-2">
+              วันนี้คุณไม่ได้เข้างาน 🛋️
+            </div>
+          ) : null}
+
+          {/* Colleague reveal (staff calendar). Shown only when
+              dayDetailAllAssignments is passed AND there are
+              colleagues on this day beyond the user's own shift. */}
+          {dayDetailAllAssignments && (() => {
+            const ownIds = new Set((byDate.get(openDate) ?? []).map((a) => a.id));
+            const allDayRows = allByDate.get(openDate) ?? [];
+            const colleagues = allDayRows.filter((a) => !ownIds.has(a.id));
+            if (colleagues.length === 0) return null;
+            return (
+              <div className="mt-3 pt-3 border-t border-slate-200">
+                {!showColleagues ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowColleagues(true)}
+                    className="w-full text-xs py-2 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50 font-medium"
+                  >
+                    👥 ดูเพื่อนร่วมงานในวันนี้ ({colleagues.length} คน) ▼
+                  </button>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                        👥 เพื่อนร่วมงานในวันนี้ ({colleagues.length})
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => setShowColleagues(false)}
+                        className="text-[10px] text-slate-400 hover:text-slate-600"
+                      >
+                        ซ่อน ▲
+                      </button>
+                    </div>
+                    <div className="space-y-1.5">
+                      {colleagues.map((a) => (
+                        <div
+                          key={a.id}
+                          className="flex items-center gap-2 text-xs bg-slate-50 rounded-md px-2.5 py-1.5"
+                        >
+                          <span
+                            className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ background: a.shift_color || "#94a3b8" }}
+                          />
+                          <span className="font-medium text-slate-700 flex-1 truncate">
+                            {a.user_display_name}
+                          </span>
+                          <span className="text-slate-500 text-[10px]">
+                            {positionTitleById.get(a.position_id) ?? ""}
+                          </span>
+                          <span className="font-mono text-[10px] bg-white px-1.5 py-0.5 rounded">
+                            {a.shift_code}
+                          </span>
+                          {a.shift_start_time && (
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {a.shift_start_time}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
-            ))}
-          </div>
+            );
+          })()}
         </div>
       )}
 
       <div className="px-4 py-2 border-t border-slate-200 bg-slate-50/50 text-[10px] text-slate-500">
-        คลิกที่ช่องวันเพื่อดูรายละเอียดทั้งหมด
+        {selfFocusMode
+          ? "ช่อง OFF = วันหยุด · คลิกวันเพื่อดูรายละเอียด + เพื่อนร่วมงาน"
+          : "คลิกที่ช่องวันเพื่อดูรายละเอียดทั้งหมด"}
         {(birthdays?.length ?? 0) > 0 && " · 🎂 = วันเกิดเพื่อนร่วมงาน คลิกเพื่อส่งคำอวยพร"}
       </div>
 

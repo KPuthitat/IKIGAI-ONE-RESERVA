@@ -203,7 +203,28 @@ export default function StaffCalendarPage({
           month={month}
           daysInMonth={daysInMonth}
           positions={positionsLite}
-          assignments={allMonthAssignments.map((a) => ({
+          // 2026-05-31: cell grid shows ONLY this user's own shifts
+          // (vs the admin calendar which shows everyone). Colleague
+          // rows for the same date are passed separately via
+          // `dayDetailAllAssignments` and lazy-revealed on tap.
+          assignments={allMonthAssignments
+            .filter((a) => a.user_id === user.id)
+            .map((a) => ({
+              id: a.id,
+              date: a.assignment_date,
+              position_id: a.position_id,
+              user_id: a.user_id,
+              user_display_name: a.user_display_name,
+              user_first_name: a.user_first_name,
+              user_last_name: a.user_last_name,
+              shift_code_id: a.shift_code_id,
+              shift_code: a.shift_code,
+              shift_color: a.shift_color,
+              shift_start_time: a.shift_start_time
+            }))}
+          // The whole-branch superset — drives the "ดูเพื่อนร่วมงาน
+          // ในวันนี้" toggle inside each expanded-day panel.
+          dayDetailAllAssignments={allMonthAssignments.map((a) => ({
             id: a.id,
             date: a.assignment_date,
             position_id: a.position_id,
@@ -216,6 +237,7 @@ export default function StaffCalendarPage({
             shift_color: a.shift_color,
             shift_start_time: a.shift_start_time
           }))}
+          selfFocusMode={true}
           birthdays={birthdays.map((b) => ({
             user_id: b.user_id,
             display_name: b.display_name,
