@@ -120,6 +120,15 @@ git pull origin main
 # doesn't retain stale entries.
 echo "==> [2/6] clean rebuild (rm -rf .next + npm run build)"
 rm -rf .next node_modules/.cache
+# 2026-05-30: feature growth (calendar views + flex previews + new
+# admin tooling) pushed the build past Node's default ~1.5GB heap
+# ceiling on this 1GB-RAM droplet, killing it mid type-check with
+# "FATAL ERROR: Ineffective mark-compacts near heap limit".
+# Allowing 2GB lets the build complete using the 2GB swap file we
+# provisioned out-of-band (free -h on prod confirms Swap: 2.0Gi).
+# Honour any externally-set NODE_OPTIONS by appending; otherwise
+# set our minimum.
+export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=2048"
 npm run build
 
 # Snapshot the PID PM2 thinks reserva is — anything else on the port
