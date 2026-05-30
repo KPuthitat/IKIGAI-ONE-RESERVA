@@ -216,15 +216,18 @@ export function endVisit(
   // job. Errors are caught so a persona/churn computation failure
   // can never undo the visit close.
   try {
-    // Dynamic import keeps the cycle clean: persona.ts and churn.ts
-    // both depend on visit data we just wrote here, so we don't
-    // want them in the top-level module graph of visits.ts.
+    // Dynamic require keeps the cycle clean: persona/churn/attribution
+    // all depend on visit data we just wrote here, so we don't want
+    // them in the top-level module graph of visits.ts.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { recomputePersonaTag } = require("./persona") as typeof import("./persona");
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { recomputeChurnScore } = require("./churn") as typeof import("./churn");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { computeAttribution } = require("./attribution") as typeof import("./attribution");
     recomputePersonaTag(row.customer_hash);
     recomputeChurnScore(row.customer_hash);
+    computeAttribution(visit_token);
   } catch (e) {
     console.warn("[insigna] post-visit recompute failed:", e);
   }

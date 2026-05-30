@@ -80,3 +80,23 @@ export {
   recomputeAllChurn,
   listHighChurnRisk
 } from "./churn";
+
+// Marketing campaigns (Phase 9). Slug-keyed upsert + touchpoint
+// ingestion + per-campaign performance read.
+export {
+  upsertCampaign,
+  setCampaignSpend,
+  listCampaigns,
+  addTouchpoint,
+  getCampaignPerformance,
+  type InsignaCampaign
+} from "./campaigns";
+
+// Multi-model attribution (Phase 10). computeAttribution fires
+// automatically from endVisit; channelPerformance powers the
+// channel comparison view.
+export {
+  computeAttribution,
+  channelPerformance,
+  type AttributionModel
+} from "./attribution";
