@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { todayBkk } from "@/lib/time";
+import ShiftCloseFlexPreview from "./ShiftCloseFlexPreview";
 
 // Post-shift checklist (เช็คลิสต์หลังเลิกงาน). Mirrors ShiftOpenForm
 // without the "yesterday's closing" prefill — the closing-drawer
@@ -35,17 +37,30 @@ function formatBahtAmount(raw: string): string {
   });
 }
 
+// Per-branch knobs that drive the live Flex preview. Each field
+// optionally carries a custom label + display_order + the boolean
+// "render in red box" toggle. NULL/missing → component falls back
+// to the same hardcoded defaults the server-side card uses.
+type DefaultFieldConfig = {
+  closing_drawer: { label: string | null; display_order: number; in_red_box: boolean };
+  service_charge: { label: string | null; display_order: number; in_red_box: boolean };
+  daily_revenue:  { label: string | null; display_order: number; in_red_box: boolean };
+};
+
 export default function ShiftCloseForm({
   branchId, branchName, closerName, checklistItems,
   requireServiceCharge = false,
   requireTodayClosing = true,
   requireDailyRevenue = true,
-  previousData = null
+  previousData = null,
+  defaultFieldConfig
 }: {
   branchId: number;
   branchName: string;
   closerName: string;
   checklistItems: ChecklistItem[];
+  /** Optional — when omitted, the preview uses hardcoded defaults. */
+  defaultFieldConfig?: DefaultFieldConfig;
   /** When the branch admin has flipped require_service_charge ON,
    *  the staff form shows a mandatory "ยอดเซอร์วิสชาร์จวันนี้"
    *  field at the top. */
@@ -795,6 +810,29 @@ export default function ShiftCloseForm({
         </div>
       )}
 
+      {/* Live preview — shows the LINE Flex card that will be POSTed
+          to the staff group on submit. Updates as the user types
+          amounts and ticks checklist items. Hidden via collapse so
+          first-time users aren't overwhelmed; the toggle remembers
+          state within the form (resets on page reload, which is
+          acceptable). */}
+      <PreviewBlock
+        branchName={branchName}
+        closerName={closerName}
+        closingAmount={closingAmount}
+        svcAmount={svcAmount}
+        dailyRevenue={dailyRevenue}
+        requireServiceCharge={requireServiceCharge}
+        requireTodayClosing={requireTodayClosing}
+        requireDailyRevenue={requireDailyRevenue}
+        checklistItems={checklistItems}
+        checked={checked}
+        notes={notes}
+        textValues={textValues}
+        choices={choices}
+        config={defaultFieldConfig}
+      />
+
       {msg && (
         <div className={`text-sm text-center ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
           {msg.kind === "ok" ? "✓ " : "✗ "}{msg.text}
@@ -808,5 +846,113 @@ export default function ShiftCloseForm({
           : t("staff.persona.shift.close.submit")}
       </button>
     </form>
+  );
+}
+
+/** Inline collapsible "see what's about to be sent" preview block.
+ *  Pulled out as a sub-component so the main form's render stays
+ *  readable; all state lives one level up and is forwarded as props.
+ *  Keeps its own collapsed/expanded boolean — independent of the
+ *  parent's submit/validation lifecycle. */
+function PreviewBlock(props: {
+  branchName: string;
+  closerName: string;
+  closingAmount: string;
+  svcAmount: string;
+  dailyRevenue: string;
+  requireServiceCharge: boolean;
+  requireTodayClosing: boolean;
+  requireDailyRevenue: boolean;
+  checklistItems: ChecklistItem[];
+  checked: Record<number, boolean>;
+  notes: Record<number, string>;
+  textValues: Record<number, string>;
+  choices: Record<number, string | null>;
+  config?: DefaultFieldConfig;
+}) {
+  const [open, setOpen] = useState(false);
+
+  // Build the default-field rows the preview consumes.
+  const cfg = props.config;
+  const defaultFields = [
+    {
+      key: "closing_drawer" as const,
+      amount: props.requireTodayClosing && props.closingAmount.trim()
+        ? Number(props.closingAmount.replace(/,/g, ""))
+        : null,
+      label: cfg?.closing_drawer.label?.trim() || "ยอดเงินปิดงาน",
+      display_order: cfg?.closing_drawer.display_order ?? 1,
+      in_red_box: cfg?.closing_drawer.in_red_box ?? true
+    },
+    {
+      key: "service_charge" as const,
+      amount: props.requireServiceCharge && props.svcAmount.trim()
+        ? Number(props.svcAmount.replace(/,/g, ""))
+        : null,
+      label: cfg?.service_charge.label?.trim() || "เซอร์วิสชาร์จวันนี้",
+      display_order: cfg?.service_charge.display_order ?? 2,
+      in_red_box: cfg?.service_charge.in_red_box ?? true
+    },
+    {
+      key: "daily_revenue" as const,
+      amount: props.requireDailyRevenue && props.dailyRevenue.trim()
+        ? Number(props.dailyRevenue.replace(/,/g, ""))
+        : null,
+      label: cfg?.daily_revenue.label?.trim() || "ยอดขายวันนี้",
+      display_order: cfg?.daily_revenue.display_order ?? 3,
+      in_red_box: cfg?.daily_revenue.in_red_box ?? true
+    }
+  ].map((f) => ({
+    ...f,
+    amount: f.amount != null && Number.isFinite(f.amount) ? f.amount : null
+  }));
+
+  // Build checklist rows mirroring what the server-side card
+  // receives. Skip section dividers (they're not on the card).
+  const checklist = props.checklistItems
+    .filter((it) => it.kind !== "section")
+    .map((it) => {
+      // textValues holds BOTH text and amount kinds (see line 169);
+      // choice values live in `choices`. notes covers checkbox skip
+      // reasons. Mirror the precedence the server-side normaliser
+      // uses so the preview reads the same as what'll be POSTed.
+      const note =
+        it.kind === "text" || it.kind === "amount"
+          ? (props.textValues[it.id] ?? "")
+          : it.kind === "choice"
+            ? (props.choices[it.id] ?? "")
+            : (props.notes[it.id] ?? "");
+      return {
+        label: it.label,
+        checked: it.kind === "checkbox" || !it.kind
+          ? !!props.checked[it.id]
+          : !!(note && note.trim()),
+        note: note?.trim() || null,
+        kind: it.kind
+      };
+    });
+
+  return (
+    <div className="border-2 border-dashed border-slate-300 rounded-xl p-2 bg-slate-50/30">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between text-sm font-bold text-slate-700 hover:text-brand px-2 py-1.5"
+      >
+        <span>🦉 ดูตัวอย่างการ์ดที่จะส่งเข้ากลุ่ม</span>
+        <span className="text-xs">{open ? "▼ ซ่อน" : "▶ ดู"}</span>
+      </button>
+      {open && (
+        <div className="mt-2">
+          <ShiftCloseFlexPreview
+            branchName={props.branchName}
+            closerName={props.closerName}
+            reportDate={todayBkk()}
+            defaultFields={defaultFields}
+            checklist={checklist}
+          />
+        </div>
+      )}
+    </div>
   );
 }

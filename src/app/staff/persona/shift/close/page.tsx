@@ -133,6 +133,27 @@ export default function ShiftClosePage() {
         requireTodayClosing={branch.require_today_closing === 1}
         requireDailyRevenue={branch.require_daily_revenue === 1}
         previousData={previousData}
+        // Per-branch headline label + order + in-red-box knobs.
+        // The form forwards these into the live FlexPreview so the
+        // staff sees what the LINE Flex card will actually look like
+        // (custom labels + chosen order) before they hit submit.
+        defaultFieldConfig={{
+          closing_drawer: {
+            label: branch.sc_drawer_label,
+            display_order: branch.sc_drawer_order,
+            in_red_box: branch.sc_show_drawer_primary === 1
+          },
+          service_charge: {
+            label: branch.sc_svc_label,
+            display_order: branch.sc_svc_order,
+            in_red_box: branch.sc_show_svc_primary === 1
+          },
+          daily_revenue: {
+            label: branch.sc_revenue_label,
+            display_order: branch.sc_revenue_order,
+            in_red_box: branch.sc_show_revenue_primary === 1
+          }
+        }}
         checklistItems={checklist
           .map((c) => ({
             id: c.id,
