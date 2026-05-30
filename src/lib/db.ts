@@ -2826,6 +2826,16 @@ function runMigrations(db: Database.Database): void {
       ON inventa_item_lots(expiry_date) WHERE expiry_date IS NOT NULL;
   `);
 
+  // Branches gain an idempotency stamp for the daily INVENTA expiry
+  // alert (#92). Same once-per-day-per-branch pattern as the
+  // attendance summary — the cron tick checks the stored date vs
+  // today and short-circuits when they match.
+  const bnamesInv = db.prepare("PRAGMA table_info(branches)")
+    .all() as Array<{ name: string }>;
+  if (!bnamesInv.some((c) => c.name === "inventa_expiry_alert_last_sent_date")) {
+    db.exec("ALTER TABLE branches ADD COLUMN inventa_expiry_alert_last_sent_date TEXT");
+  }
+
   // INVENTA ships with NO preset lookups. Each business defines its
   // own categories / units / storage locations / colour-band meaning
   // from /staff/inventa/settings, so the dropdowns start empty rather

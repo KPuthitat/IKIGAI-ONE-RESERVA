@@ -16,18 +16,28 @@ export default function InventaPage() {
   const db = getDb();
   const branchId = user.activeBranchId ?? null;
 
+  // earliest_expiry: per item, the soonest still-positive-qty lot's
+  // expiry. Drives the row tinting on the client (#93). Items with
+  // no lots tracked at all have NULL, treated as "no_expiry".
   const items = db.prepare(`
-    SELECT i.*, s.name AS supplier_name
+    SELECT i.*, s.name AS supplier_name,
+           (SELECT MIN(l.expiry_date)
+              FROM inventa_item_lots l
+              WHERE l.item_id = i.id AND l.qty > 0 AND l.expiry_date IS NOT NULL
+           ) AS earliest_expiry
     FROM inventa_items i
     LEFT JOIN inventa_suppliers s ON s.id = i.supplier_id
     WHERE i.active = 1 AND (i.branch_id IS ? OR i.branch_id = ?)
     ORDER BY i.grid_row, i.grid_col, i.name
-  `).all(branchId, branchId) as (InventaItem & { supplier_name: string | null })[];
+  `).all(branchId, branchId) as (InventaItem & {
+    supplier_name: string | null;
+    earliest_expiry: string | null;
+  })[];
 
   const suppliers = db.prepare(`
     SELECT * FROM inventa_suppliers
     WHERE active = 1 AND branch_id = ?
-    ORDER BY name
+    ORDER BY display_order ASC, name ASC
   `).all(branchId) as InventaSupplier[];
 
   // Per-branch only — no global/shared lookups.

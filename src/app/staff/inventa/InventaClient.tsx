@@ -1,14 +1,15 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import BarcodeScanner from "@/app/components/BarcodeScanner";
 import {
-  PICK_FREQ_META, isLowStock,
-  type PickFreq, type ItemType, type InventaSupplier, type InventaLookup
+  PICK_FREQ_META, isLowStock, expiryBucket,
+  type PickFreq, type ItemType, type InventaSupplier, type InventaLookup,
+  type InventaItemLot, type ExpiryBucket
 } from "@/lib/inventa";
 
 type Item = {
@@ -36,6 +37,11 @@ type Item = {
   pick_freq: PickFreq | null;
   safety_stock: number;
   current_qty: number;
+  /** Soonest lot expiry across this item's still-positive-qty lots,
+   *  or null when no lots are tracked or none are dated. Drives the
+   *  row tinting (#93) so expired/critical items are obvious in the
+   *  catalogue without opening the modal. */
+  earliest_expiry: string | null;
 };
 
 export default function InventaClient({
@@ -317,9 +323,23 @@ export default function InventaClient({
             {filtered.map((i) => {
               const low = isLowStock(i.current_qty, i.safety_stock);
               const fm = i.pick_freq ? PICK_FREQ_META[i.pick_freq] : null;
+              // Row tone (#93). Expired wins — it's the most urgent
+              // and the darkest tone signals "do not dispense".
+              // Critical (≤30d) is a soft amber tint. Low-stock
+              // keeps the existing rose tint. Otherwise hover-only.
+              const bucket = expiryBucket(i.earliest_expiry);
+              const rowTone =
+                bucket === "expired"
+                  ? "bg-red-100/80 ring-1 ring-red-300"
+                  : bucket === "critical"
+                  ? "bg-amber-50"
+                  : low
+                  ? "bg-rose-50/50"
+                  : "hover:bg-slate-50";
+              const textTone = bucket === "expired" ? "text-red-900" : "";
               return (
                 <tr key={i.id}
-                  className={`border-b last:border-0 ${low ? "bg-rose-50/50" : "hover:bg-slate-50"}`}>
+                  className={`border-b last:border-0 ${rowTone} ${textTone}`}>
                   <td className="py-2 pr-3 whitespace-nowrap">
                     {fm && (
                       <span title={fm.label}
@@ -367,9 +387,23 @@ export default function InventaClient({
                   <td className="py-2 pr-3 text-right text-slate-700">
                     {i.unit_cost ? i.unit_cost.toLocaleString(undefined, { maximumFractionDigits: 4 }) : t("inv.dash")}
                   </td>
-                  <td className={`py-2 pr-3 text-right font-bold ${low ? "text-rose-600" : "text-slate-800"}`}>
+                  <td className={`py-2 pr-3 text-right font-bold ${
+                    bucket === "expired" ? "text-red-900"
+                    : low ? "text-rose-600"
+                    : "text-slate-800"
+                  }`}>
                     {i.current_qty}
                     {low && <span className="ml-1 text-[10px] font-normal">{t("inv.low")}</span>}
+                    {bucket === "expired" && (
+                      <span className="ml-1 inline-block text-[9px] font-bold uppercase tracking-wide bg-red-900 text-red-50 px-1.5 py-0.5 rounded">
+                        {t("inv.expired")}
+                      </span>
+                    )}
+                    {bucket === "critical" && (
+                      <span className="ml-1 inline-block text-[9px] font-bold uppercase tracking-wide bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded">
+                        {t("inv.expiringSoon")}
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 pr-3 text-right">
                     <button type="button" onClick={() => setEdit(i)}
@@ -681,6 +715,16 @@ function ItemModal({
             </select>
           </div>
         </div>
+
+        {/* Lots & expiry — only available once the item exists
+            (adding lots before creating the item has nothing to
+            link against). Collapsible so it stays out of the way
+            during quick edits. */}
+        {item && (
+          <div className="border-t border-slate-200 pt-3">
+            <LotsSection itemId={item.id} unitLabel={item.unit ?? ""} />
+          </div>
+        )}
 
         {err && <div className="text-rose-600 text-sm">✗ {err}</div>}
 
@@ -1002,5 +1046,155 @@ function ImportModal({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Lots & expiry section (#92) ────────────────────────────────────
+// Per-item lot register. Lots track receipts + expiry; the item-
+// level current_qty stays the source of truth for "how much do we
+// have" (lots don't enforce sum). Each row carries an expiry bucket
+// chip rendered with the same colour vocabulary as the catalogue
+// row tint (#93) so staff who learn the meaning in one place
+// recognise it in the other.
+
+/** Tailwind classes for each expiry bucket. The "expired" tone is
+ *  intentionally the darkest — that's the row the staff should
+ *  pull off the shelf immediately. */
+const EXPIRY_BUCKET_META: Record<ExpiryBucket, { chip: string; label: string; }> = {
+  expired:    { chip: "bg-red-900 text-red-50 border border-red-950",         label: "หมดอายุแล้ว" },
+  critical:   { chip: "bg-amber-200 text-amber-900 border border-amber-300",  label: "ภายใน 30 วัน" },
+  warn:       { chip: "bg-yellow-100 text-yellow-800 border border-yellow-200", label: "ภายใน 90 วัน" },
+  ok:         { chip: "bg-emerald-100 text-emerald-700 border border-emerald-200", label: "ปลอดภัย" },
+  no_expiry:  { chip: "bg-slate-100 text-slate-500 border border-slate-200",  label: "ไม่มีวันหมดอายุ" }
+};
+
+function LotsSection({ itemId, unitLabel }: { itemId: number; unitLabel: string }) {
+  const { t } = useLang();
+  const [lots, setLots] = useState<InventaItemLot[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // Add-lot row state. lot_number / expiry_date both optional —
+  // sometimes the supplier doesn't print a lot code but the box
+  // still has an expiry stamp, sometimes the opposite.
+  const [lot, setLot] = useState("");
+  const [exp, setExp] = useState("");
+  const [qty, setQty] = useState("");
+
+  async function reload() {
+    setLoading(true);
+    try {
+      const res = await fetch(apiUrl(`/api/inventa/items/${itemId}/lots`));
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.ok) setLots(j.lots ?? []);
+    } finally { setLoading(false); }
+  }
+  useEffect(() => { void reload(); }, [itemId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function add() {
+    if (!qty) return;
+    setBusy(true);
+    try {
+      const res = await fetch(apiUrl(`/api/inventa/items/${itemId}/lots`), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lot_number: lot.trim() || null,
+          expiry_date: exp || null,
+          qty: Number(qty) || 0
+        })
+      });
+      if (res.ok) { setLot(""); setExp(""); setQty(""); await reload(); }
+    } finally { setBusy(false); }
+  }
+  async function del(lotId: number) {
+    if (!confirm(t("inv.lot.delConfirm"))) return;
+    setBusy(true);
+    try {
+      const res = await fetch(apiUrl(`/api/inventa/items/${itemId}/lots/${lotId}`),
+        { method: "DELETE" });
+      if (res.ok) await reload();
+    } finally { setBusy(false); }
+  }
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  return (
+    <details className="group">
+      <summary className="cursor-pointer list-none select-none flex items-center justify-between">
+        <span className="text-xs font-bold text-slate-700">
+          {t("inv.lot.title")}
+          <span className="ml-2 text-[10px] font-normal text-slate-400">
+            ({lots.length})
+          </span>
+        </span>
+        <span className="text-slate-400 transition-transform group-open:rotate-90">›</span>
+      </summary>
+      <div className="mt-2 space-y-2">
+        {/* Existing lots */}
+        {loading && lots.length === 0 && (
+          <div className="text-xs text-slate-400 text-center py-2">{t("inv.lot.loading")}</div>
+        )}
+        {!loading && lots.length === 0 && (
+          <div className="text-xs text-slate-400 text-center py-2">{t("inv.lot.none")}</div>
+        )}
+        {lots.map((l) => {
+          const bucket = expiryBucket(l.expiry_date, todayIso);
+          const meta = EXPIRY_BUCKET_META[bucket];
+          return (
+            <div key={l.id}
+              className={
+                "flex items-center gap-2 rounded-lg border p-2 " +
+                (bucket === "expired"
+                  ? "bg-red-50 border-red-300"
+                  : bucket === "critical"
+                  ? "bg-amber-50 border-amber-200"
+                  : "border-slate-200")
+              }>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={"text-[10px] px-1.5 py-0.5 rounded-md font-bold " + meta.chip}>
+                    {meta.label}
+                  </span>
+                  {l.expiry_date && (
+                    <span className="text-xs text-slate-600 tabular-nums">
+                      {l.expiry_date}
+                    </span>
+                  )}
+                  <span className="text-xs text-slate-500">
+                    × {l.qty}{unitLabel ? ` ${unitLabel}` : ""}
+                  </span>
+                </div>
+                {l.lot_number && (
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    Lot: {l.lot_number}
+                  </div>
+                )}
+              </div>
+              <button type="button" disabled={busy}
+                onClick={() => del(l.id)}
+                className="text-[10px] text-rose-600 hover:underline">
+                {t("inv.btn.delete")}
+              </button>
+            </div>
+          );
+        })}
+
+        {/* Add-lot form */}
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 grid grid-cols-2 gap-2">
+          <input className="input text-sm col-span-2" value={lot}
+            placeholder={t("inv.lot.lotPh")}
+            onChange={(e) => setLot(e.target.value)} />
+          <input className="input text-sm" type="date" value={exp}
+            onChange={(e) => setExp(e.target.value)} />
+          <input className="input text-sm" type="number" min="0" value={qty}
+            placeholder={t("inv.lot.qtyPh", { unit: unitLabel || t("inv.ord.unit") })}
+            onChange={(e) => setQty(e.target.value)} />
+          <button type="button" onClick={add}
+            disabled={busy || !qty}
+            className="col-span-2 py-1.5 rounded-lg bg-brand text-white text-xs font-bold disabled:opacity-50">
+            {t("inv.lot.add")}
+          </button>
+        </div>
+      </div>
+    </details>
   );
 }

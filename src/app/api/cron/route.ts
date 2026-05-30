@@ -44,6 +44,12 @@ import {
   rollupYesterday as insignaRollupYesterday,
   recomputeAllChurn as insignaRecomputeAllChurn
 } from "@/lib/insigna";
+import {
+  buildExpiringLotsForBranch,
+  isExpiryAlertDue,
+  markExpiryAlertSent,
+  expiryAlertFlex
+} from "@/lib/inventa-expiry-alert";
 
 export async function POST(req: Request) {
   const token = req.headers.get("x-cron-token");
@@ -352,6 +358,32 @@ async function runCron(): Promise<NextResponse> {
     console.warn("[cron] INSIGNA nightly job failed (non-fatal):", e);
   }
 
+  // ── INVENTA expiry alerts (#92) ─────────────────────────────
+  // Once per day per branch, scan inventa_item_lots for expired
+  // or critical (≤30d) lots and Flex-message the staff group.
+  // Gated at 09:00 Bangkok-local — early enough that the morning
+  // crew sees it before the order cutoff, late enough that it
+  // doesn't fire while management is still asleep. Idempotent
+  // via branches.inventa_expiry_alert_last_sent_date.
+  let inventaExpiryAlertsSent = 0;
+  if (nowHhmmBkk >= "09:00") {
+    for (const branch of branches) {
+      try {
+        if (!isExpiryAlertDue(branch, todayBkk)) continue;
+        const lots = buildExpiringLotsForBranch(branch.id, todayBkk);
+        // Even with zero expiring lots, stamp the date so we don't
+        // re-scan every 5 minutes for the rest of the day.
+        markExpiryAlertSent(branch.id, todayBkk);
+        if (lots.length === 0) continue;
+        await notifyToStaffGroup(branch, expiryAlertFlex(branch, lots), "branch");
+        inventaExpiryAlertsSent++;
+      } catch (e) {
+        console.warn("[cron] inventa expiry alert failed", branch.id, e);
+        reportError(e, "cron inventa expiry alert", { branchId: branch.id });
+      }
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     reminders_sent: remindersSent,
@@ -367,7 +399,8 @@ async function runCron(): Promise<NextResponse> {
     resignations_purged: resignationsPurged,
     purged_old_bookings: purged,
     insigna_rollup: insignaRollup,
-    insigna_churn: insignaChurn
+    insigna_churn: insignaChurn,
+    inventa_expiry_alerts_sent: inventaExpiryAlertsSent
   });
 }
 
