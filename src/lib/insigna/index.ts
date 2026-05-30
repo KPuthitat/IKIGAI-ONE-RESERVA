@@ -100,3 +100,29 @@ export {
   channelPerformance,
   type AttributionModel
 } from "./attribution";
+
+// Analytics read surface (Phase 11). Powers the admin marketing
+// dashboard — pure read functions, no side effects.
+export {
+  personaDistribution,
+  cohortRetention,
+  churnRiskList,
+  marketingHeadline
+} from "./analytics";
+
+// Referral codes (Phase 12). Owner mints; friend redeems; the
+// redemption is logged so attribution later credits the owner's
+// channel for the friend's visits.
+export {
+  createReferralCode,
+  redeemReferralCode,
+  getReferralStats
+} from "./referrals";
+
+// Daily rollup (Phase 13). rollupYesterday() is the cron entry;
+// rollupDay(date) is the manual-recompute entry for late-arriving
+// spend imports.
+export {
+  rollupDay,
+  rollupYesterday
+} from "./rollup";
