@@ -187,6 +187,22 @@ input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
   animation: ikigai-loadbar 1.15s ease-in-out infinite;
 }
 
+/* ── Owl mascot gentle float ──
+   Used on the login splash and any "waiting" screen where the owl
+   is the centrepiece. 3.6s cycle is slow enough to feel calm; the
+   8px peak keeps it lively without crossing into "distracting". */
+@keyframes owl-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+.animate-owl-float {
+  animation: owl-float 3.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-owl-float { animation: none; }
+}
+
+
 /* Hide the scrollbar without losing the scroll behaviour — used by
    the wheel time picker so the column reads as a single visual band
    instead of having a thin grey rail next to it. */

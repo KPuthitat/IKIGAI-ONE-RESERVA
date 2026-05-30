@@ -120,6 +120,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "login.error.forbidden": "บัญชีนี้ไม่มีสิทธิ์เข้าฝั่งผู้ดูแล",
     "login.error.missing": "ข้อมูลไม่ครบ",
     "login.error.generic": "เข้าระบบไม่สำเร็จ",
+    "login.helpHint": "เข้าระบบไม่ได้? กดน้องฮูกช่วยเหลือในแอป หรือสอบถามแอดมินของสาขา",
 
     // Admin / Staff portal
     "portal.chooseModule": "เลือกโปรแกรมที่ต้องการใช้งาน",
@@ -2514,6 +2515,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "login.error.forbidden": "This account does not have administrator access",
     "login.error.missing": "Missing fields",
     "login.error.generic": "Sign-in failed",
+    "login.helpHint": "Need help signing in? Tap the owl helper inside the app, or ask your branch admin.",
 
     // Admin / Staff portal
     "portal.chooseModule": "Choose a program to use",
