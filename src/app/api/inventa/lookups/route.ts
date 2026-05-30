@@ -13,6 +13,9 @@ import { getDb } from "@/lib/db";
 const Body = z.object({
   kind: z.enum(["row", "storage", "unit", "category"]),
   value: z.string().trim().min(1).max(200),
+  /** Short abbreviation shown as the bold first line on the
+   *  catalogue + filter chips. Optional — falls back to value. */
+  code: z.string().trim().max(12).nullable().optional(),
   sort_order: z.number().int().optional()
 });
 
@@ -55,9 +58,19 @@ export async function POST(req: Request) {
   if (branchId == null) {
     return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
   }
-  const info = getDb().prepare(`
-    INSERT INTO inventa_lookups (branch_id, kind, value, sort_order)
-    VALUES (?, ?, ?, ?)
-  `).run(branchId, d.kind, d.value.trim(), d.sort_order ?? 100);
+  const db = getDb();
+  // Auto-assign sort_order if not provided so new rows land below
+  // any existing ones of the same kind. Step of 10 leaves headroom
+  // for manual ↑↓ moves without needing a global recompact.
+  const nextOrder = d.sort_order ?? (() => {
+    const row = db.prepare(
+      "SELECT COALESCE(MAX(sort_order), 0) AS m FROM inventa_lookups WHERE branch_id = ? AND kind = ?"
+    ).get(branchId, d.kind) as { m: number };
+    return (row.m ?? 0) + 10;
+  })();
+  const info = db.prepare(`
+    INSERT INTO inventa_lookups (branch_id, kind, value, code, sort_order)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(branchId, d.kind, d.value.trim(), d.code?.trim() || null, nextOrder);
   return NextResponse.json({ ok: true, id: Number(info.lastInsertRowid) });
 }

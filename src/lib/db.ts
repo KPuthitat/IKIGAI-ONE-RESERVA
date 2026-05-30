@@ -2757,6 +2757,75 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE inventa_items ADD COLUMN storage_location TEXT");
   }
 
+  // ── 2026-05-31 INVENTA expansion ────────────────────────────
+  // Owner direction: catalogue listings were getting dense — adding
+  // a short `code` to every taxonomy (categories, locations,
+  // suppliers) lets us render two-line cells (CODE big / full name
+  // small) and surface filter/sort menus by code. display_order
+  // (suppliers) joins the existing inventa_lookups.sort_order in
+  // letting admin reorder via ↑↓ buttons in the settings UI.
+  //
+  // Code is intentionally OPTIONAL — legacy rows pass through with
+  // NULL code, the UI falls back to the full name. Once admin opens
+  // the row to edit, they're prompted to fill it in.
+
+  // inventa_lookups: code column (kind ∈ {row, storage, unit, category})
+  const lookupCols = db.prepare("PRAGMA table_info(inventa_lookups)")
+    .all() as Array<{ name: string }>;
+  if (!lookupCols.some((c) => c.name === "code")) {
+    db.exec("ALTER TABLE inventa_lookups ADD COLUMN code TEXT");
+  }
+
+  // inventa_items: cost_price (ราคาทุน) — the owner wanted ราคาทุน
+  // tracked explicitly per item, separate from unit_cost (which is the
+  // moving avg recomputed on each receipt) and definitely separate
+  // from any selling price column. PO totals on the create-PO screen
+  // estimate from cost_price (falling back to unit_cost when null).
+  if (!invCols.some((c) => c.name === "cost_price")) {
+    db.exec("ALTER TABLE inventa_items ADD COLUMN cost_price REAL");
+  }
+
+  // inventa_suppliers: code + display_order
+  const supplierCols = db.prepare("PRAGMA table_info(inventa_suppliers)")
+    .all() as Array<{ name: string }>;
+  if (!supplierCols.some((c) => c.name === "code")) {
+    db.exec("ALTER TABLE inventa_suppliers ADD COLUMN code TEXT");
+  }
+  if (!supplierCols.some((c) => c.name === "display_order")) {
+    db.exec("ALTER TABLE inventa_suppliers ADD COLUMN display_order INTEGER NOT NULL DEFAULT 100");
+  }
+
+  // inventa_item_lots — per-receipt lot tracking with expiry.
+  // Multi-lot per item so the clinic can spot "Vitamin B is overstocked
+  // because lot A expires next month AND lot B was just received".
+  // Pragmatic v1 choice: lots track receipts + expiry; current_qty on
+  // inventa_items remains the source of truth for "how much do we have"
+  // (lots don't enforce sum). Operationally this matches how the team
+  // counts: they count totals, not per-lot, so anchoring to current_qty
+  // avoids breaking the existing count flow.
+  //
+  // expiry_date is YYYY-MM-DD (date-only). qty is per smallest unit
+  // (same scale as items.current_qty). lot_number is admin-typed; not
+  // unique (different items can share a lot number from the same
+  // supplier).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inventa_item_lots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES inventa_items(id) ON DELETE CASCADE,
+      lot_number TEXT,
+      expiry_date TEXT,
+      qty INTEGER NOT NULL DEFAULT 0,
+      received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      note TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_inventa_item_lots_item
+      ON inventa_item_lots(item_id);
+    CREATE INDEX IF NOT EXISTS idx_inventa_item_lots_expiry
+      ON inventa_item_lots(expiry_date) WHERE expiry_date IS NOT NULL;
+  `);
+
   // INVENTA ships with NO preset lookups. Each business defines its
   // own categories / units / storage locations / colour-band meaning
   // from /staff/inventa/settings, so the dropdowns start empty rather

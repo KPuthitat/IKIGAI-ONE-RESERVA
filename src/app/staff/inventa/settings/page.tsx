@@ -42,7 +42,7 @@ export default function InventaSettingsPage() {
   const suppliers = db.prepare(`
     SELECT * FROM inventa_suppliers
     WHERE active = 1 AND branch_id = ?
-    ORDER BY name
+    ORDER BY display_order ASC, name ASC
   `).all(branchId) as InventaSupplier[];
 
   return (

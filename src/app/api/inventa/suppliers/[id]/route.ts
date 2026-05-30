@@ -9,6 +9,7 @@ import { getDb } from "@/lib/db";
 
 const Body = z.object({
   name: z.string().trim().min(1).max(200).optional(),
+  code: z.string().trim().max(12).nullable().optional(),
   order_cycle: z.string().max(200).nullable().optional(),
   lead_time: z.string().max(200).nullable().optional(),
   contact: z.string().max(200).nullable().optional(),
@@ -40,6 +41,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (v !== undefined) { fields.push(`${c} = ?`); vals.push(v ?? null); }
   };
   if (d.name !== undefined) set("name", d.name.trim());
+  if (d.code !== undefined) set("code", d.code ? d.code.trim() : null);
   set("order_cycle", d.order_cycle);
   set("lead_time", d.lead_time);
   set("contact", d.contact);

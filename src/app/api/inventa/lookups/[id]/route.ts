@@ -12,6 +12,7 @@ import { getDb } from "@/lib/db";
 
 const Body = z.object({
   value: z.string().trim().min(1).max(200).optional(),
+  code: z.string().trim().max(12).nullable().optional(),
   sort_order: z.number().int().optional()
 });
 
@@ -35,8 +36,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!row) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const fields: string[] = [];
-  const vals: Array<string | number> = [];
+  const vals: Array<string | number | null> = [];
   if (d.value !== undefined) { fields.push("value = ?"); vals.push(d.value.trim()); }
+  if (d.code !== undefined) { fields.push("code = ?"); vals.push(d.code ? d.code.trim() : null); }
   if (d.sort_order !== undefined) { fields.push("sort_order = ?"); vals.push(d.sort_order); }
   if (fields.length === 0) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });

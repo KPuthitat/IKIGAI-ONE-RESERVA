@@ -52,6 +52,10 @@ export type InventaLookup = {
   branch_id: number | null;
   kind: LookupKind;
   value: string;
+  /** Short abbreviation used as a prefix in item codes / labels (e.g.
+   *  category "ยาแก้ปวด" → code "PAIN"). Optional — older rows have
+   *  null, and the UI falls back to displaying `value` only. */
+  code: string | null;
   sort_order: number;
   active: number;
 };
@@ -96,6 +100,14 @@ export type InventaSupplier = {
   id: number;
   branch_id: number | null;
   name: string;
+  /** Short abbreviation (e.g. "ZUE" for Zuellig Pharma). Optional;
+   *  used as a code prefix on auto-generated item_codes + on the
+   *  supplier picker chip so staff can recognise vendors quickly. */
+  code: string | null;
+  /** Manual sort order — lower = higher in the list. Used by the
+   *  ▲▼ buttons on the suppliers tab so the most-used vendor can
+   *  be pinned to the top regardless of created_at. Default 100. */
+  display_order: number;
   order_cycle: string | null;
   lead_time: string | null;
   contact: string | null;
@@ -103,6 +115,45 @@ export type InventaSupplier = {
   active: number;
   created_at: string;
 };
+
+/** A single received-on-date lot inside one inventa_item. Multiple
+ *  lots per item let us track expiry per batch — when stock is
+ *  consumed we deduct from the oldest lot first (FEFO). */
+export type InventaItemLot = {
+  id: number;
+  item_id: number;
+  lot_number: string | null;
+  /** ISO date string (YYYY-MM-DD), or null if the item has no expiry
+   *  (durable equipment etc.). */
+  expiry_date: string | null;
+  qty: number;
+  received_at: string;
+  note: string | null;
+  created_by: number | null;
+  created_at: string;
+};
+
+/** Days-until-expiry buckets used by the cron alert + the catalogue
+ *  styling. Each lot lands in exactly one bucket based on the diff
+ *  between today and expiry_date. */
+export type ExpiryBucket = "expired" | "critical" | "warn" | "ok" | "no_expiry";
+
+/** Returns the expiry bucket for one lot. `today` defaults to the
+ *  current ISO date so tests can pin a deterministic clock. */
+export function expiryBucket(
+  expiry_date: string | null | undefined,
+  today: string = new Date().toISOString().slice(0, 10)
+): ExpiryBucket {
+  if (!expiry_date) return "no_expiry";
+  const t = new Date(today + "T00:00:00Z").getTime();
+  const e = new Date(expiry_date + "T00:00:00Z").getTime();
+  if (!isFinite(t) || !isFinite(e)) return "no_expiry";
+  const days = Math.floor((e - t) / 86_400_000);
+  if (days < 0) return "expired";
+  if (days <= 30) return "critical";
+  if (days <= 90) return "warn";
+  return "ok";
+}
 
 export type InventaItem = {
   id: number;
@@ -117,6 +168,12 @@ export type InventaItem = {
   item_type: ItemType;
   unit: string | null;
   unit_cost: number;
+  /** Per-smallest-unit *cost* used as the baseline for PO totals and
+   *  margin calculations. Separate from `unit_cost` (legacy avg)
+   *  because the owner wanted ราคาทุน entered manually + clearly
+   *  distinct from any selling-price column. Null = not entered yet,
+   *  callers should fall back to `unit_cost` for estimation. */
+  cost_price: number | null;
   last_purchase_price: number | null;
   last_purchase_units: number | null;
   price_opd: number | null;
