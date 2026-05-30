@@ -4,6 +4,7 @@ import "./globals.css";
 import { LangProvider } from "@/lib/LangProvider";
 import { getLang } from "@/lib/lang-server";
 import TitleUppercase from "./components/TitleUppercase";
+import ChunkErrorAutoReload from "./components/ChunkErrorAutoReload";
 
 // Self-hosted LINE Seed Sans TH wired through next/font/local. The
 // font files live under /public/fonts/. We point at them via a
@@ -81,6 +82,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang={lang} className={lineSeed.variable}>
       <body className={lineSeed.className}>
         <TitleUppercase />
+        <ChunkErrorAutoReload />
         <LangProvider lang={lang}>{children}</LangProvider>
       </body>
     </html>
