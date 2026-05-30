@@ -110,6 +110,37 @@ export default function CountClient({
     } finally { setBusy(false); }
   }
 
+  // 2026-05-31: bulk-prefill every uncounted item with its current
+  // on-hand qty. Confirms first because in heavy use this can flip
+  // 100s of rows from "not counted" to "counted = current_qty" in one
+  // tap — the staff should explicitly choose to do it.
+  async function prefillFromCurrentQty() {
+    if (!session) return;
+    const remaining = total - done;
+    if (remaining <= 0) {
+      setMsg("ทุกรายการนับครบแล้ว — ไม่มีอะไรให้กรอกเพิ่ม");
+      return;
+    }
+    if (!confirm(
+      `จะใช้ "จำนวนคงเหลือปัจจุบัน" เป็นค่าเริ่มต้นกับ ${remaining} รายการที่ยังไม่ได้นับ\n` +
+      `รายการที่นับไปแล้วจะไม่ถูกแก้ · หลังจากนี้คุณยังกดแก้ตัวเลขเป็นรายๆ ได้`
+    )) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/inventa/counts/${session.id}/prefill`), {
+        method: "POST"
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) {
+        setMsg(j?.error ?? "ไม่สำเร็จ ลองอีกครั้ง");
+        return;
+      }
+      setMsg(`✓ เติม ${j.prefilled ?? 0} รายการจากจำนวนคงเหลือปัจจุบัน`);
+      refresh();
+    } finally { setBusy(false); }
+  }
+
   if (!session) {
     return (
       <div className="card text-center space-y-3 py-8">
@@ -156,6 +187,28 @@ export default function CountClient({
             {t("inv.cnt.submit")}
           </button>
         </div>
+
+        {/* "ใช้จำนวนคงเหลือปัจจุบัน" shortcut. Sits on its own row so
+            staff can see the count of remaining items + reasoning hint
+            before tapping. Hidden when nothing is left to fill. */}
+        {total - done > 0 && (
+          <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 flex-wrap">
+            <div className="text-xs text-amber-900 flex-1 min-w-0">
+              <span className="font-bold">💡 ลัด — เติมตัวเลขจากคลังปัจจุบัน</span>
+              <div className="text-[11px] text-amber-700/80 mt-0.5">
+                ใช้กับรายการที่ยังไม่เปลี่ยน · นับเพิ่มเฉพาะของที่จริงๆ ต่างจากระบบ
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={prefillFromCurrentQty}
+              disabled={busy}
+              className="text-xs px-3 py-2 rounded-md bg-amber-500 text-white font-bold hover:bg-amber-600 disabled:opacity-50 flex-shrink-0"
+            >
+              ใช้คงเหลือปัจจุบัน ({total - done})
+            </button>
+          </div>
+        )}
         {msg && <div className="text-sm text-rose-600">{msg}</div>}
       </div>
 
