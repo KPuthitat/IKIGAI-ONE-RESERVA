@@ -40,6 +40,10 @@ import { reportError } from "@/lib/error-reporter";
 import { expireOldRedemptions } from "@/lib/redemption";
 import { escalateStaleTier1, getSystemEscalationHours } from "@/lib/approval-tiers";
 import { notifyLeaveEvent } from "@/lib/approval-notify";
+import {
+  rollupYesterday as insignaRollupYesterday,
+  recomputeAllChurn as insignaRecomputeAllChurn
+} from "@/lib/insigna";
 
 export async function POST(req: Request) {
   const token = req.headers.get("x-cron-token");
@@ -317,6 +321,37 @@ async function runCron(): Promise<NextResponse> {
   // retention cleanup
   const purged = purgeOldBookings();
 
+  // ── INSIGNA nightly jobs ────────────────────────────────────
+  // Daily rollup + bulk churn recompute. Both are idempotent (the
+  // rollup uses UPSERT on date+channel; churn rewrites churn_risk_score).
+  // Gated to once per cron call when the Bangkok hour is past
+  // midnight + INSIGNA_SALT is configured — we run on the first tick
+  // after 00:30 local each day. Stored as the previous-day rollup so
+  // re-runs are harmless.
+  //
+  // The "ran today?" flag is the most recent rollup_date row; if
+  // it's already yesterday's date, we skip. No separate cron-state
+  // table needed.
+  let insignaRollup = { date: "", rows_written: 0 };
+  let insignaChurn = { processed: 0, high_risk: 0 };
+  try {
+    const nowBkk = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    if (nowBkk.getUTCHours() >= 0 && nowBkk.getUTCHours() < 5 && process.env.INSIGNA_SALT) {
+      const lastDate = (getDb().prepare(
+        "SELECT MAX(rollup_date) AS d FROM insigna_daily_marketing_rollup"
+      ).get() as { d: string | null }).d;
+      const yesterdayBkk = new Date(Date.UTC(
+        nowBkk.getUTCFullYear(), nowBkk.getUTCMonth(), nowBkk.getUTCDate() - 1
+      )).toISOString().slice(0, 10);
+      if (lastDate !== yesterdayBkk) {
+        insignaRollup = insignaRollupYesterday();
+        insignaChurn = insignaRecomputeAllChurn();
+      }
+    }
+  } catch (e) {
+    console.warn("[cron] INSIGNA nightly job failed (non-fatal):", e);
+  }
+
   return NextResponse.json({
     ok: true,
     reminders_sent: remindersSent,
@@ -330,7 +365,9 @@ async function runCron(): Promise<NextResponse> {
     resignations_closed: resignationsClosed,
     resignations_close_notified: resignationCloseNotified,
     resignations_purged: resignationsPurged,
-    purged_old_bookings: purged
+    purged_old_bookings: purged,
+    insigna_rollup: insignaRollup,
+    insigna_churn: insignaChurn
   });
 }
 

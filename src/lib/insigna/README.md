@@ -61,7 +61,7 @@ There is no operational reason to rotate unless the salt leaks.
 The "every env has a different salt" rule already isolates dev /
 staging / prod blast radius.
 
-## What's implemented (Phase 1-4)
+## What's implemented (Phase 1-13)
 
 - ✅ Schema migration + PII lint
 - ✅ Hash service (LINE / phone / anonymous + rate-limiting)
@@ -69,19 +69,68 @@ staging / prod blast radius.
 - ✅ Reservation sync + status updates
 - ✅ Visit lifecycle: start / orders / menu interactions / end
 - ✅ Ingestion audit on every state-changing call
+- ✅ **Phase 5** — Feedback service (+ AI sentiment stub for Phase 2)
+- ✅ **Phase 7** — Persona tagging (rule-based, runs inline at endVisit)
+- ✅ **Phase 8** — Churn risk scoring (median-gap based)
+- ✅ **Phase 9** — Marketing campaigns + touchpoints
+- ✅ **Phase 10** — Multi-model attribution (5 models, all computed per visit)
+- ✅ **Phase 11** — Analytics endpoints (persona-distribution, cohort-retention, channel-performance, marketing-headline)
+- ✅ **Phase 12** — Referral codes (mint + redeem + leaderboard)
+- ✅ **Phase 13** — Daily marketing rollup (cron-wired to /api/cron after midnight ICT)
 
-## What's stubbed (later phases)
+## What's stubbed (Phase 2 swap)
 
-- ⏳ Phase 5 — Feedback service + AI sentiment stub
-- ⏳ Phase 6 — Read endpoints (recommendations)
-- ⏳ Phase 7 — Persona tagging job (rule-based)
-- ⏳ Phase 8 — Churn detection job
-- ⏳ Phase 9-10 — Marketing campaigns + multi-model attribution
-- ⏳ Phase 11 — Analytics endpoints
-- ⏳ Phase 12 — Referral codes
-- ⏳ Phase 13 — Daily rollup
-- ⏳ Phase 14 — Docs + tests
+The three AI surfaces in `feedback.ts` return placeholders today. Each
+function's doc-block contains the exact Claude prompt template to use
+when Phase 2 lands:
 
-The PII wall already protects against the highest-impact regression
-risk; the remaining phases extend INSIGNA's value but don't change
-the wall.
+- `analyzeFeedbackSentiment(comment)` — sentiment + theme extraction
+- `synthesizePersonaDescription(hash)` — rich persona prose
+- `generateDailyBriefing(date)` — pre-shift briefing for staff
+
+Swap is a pure implementation change — same function signature, same
+call sites.
+
+## Pipeline diagram
+
+```
+Booking write
+  │
+  ▼
+[booking-bridge.ts]      ← hash boundary
+  │   - hashLineUserId / hashPhone / generateAnonymousHash
+  │
+  ├──► upsertCustomer
+  ├──► syncReservation
+  └──► startVisit (if status=seated)
+
+      ↓ ... admin records orders / menu interactions ...
+
+[endVisit fires]
+  │
+  ├──► recomputePersonaTag   (inline, single customer)
+  ├──► recomputeChurnScore   (inline, single customer)
+  └──► computeAttribution    (inline, 5 models, all touchpoints)
+
+      ↓ ... nightly ...
+
+[/api/cron]  (00:00-05:00 ICT)
+  │
+  ├──► rollupYesterday()     (per-channel daily aggregate)
+  └──► recomputeAllChurn()   (bulk refresh of last_visit_at deltas)
+```
+
+## Read surface for the admin dashboard
+
+All under `import { ... } from "@/lib/insigna"`:
+
+| Function | Use |
+|---|---|
+| `getCustomerProfile(hash)` | Staff pre-visit briefing |
+| `personaDistribution({from, to})` | Marketing overview pie |
+| `cohortRetention({cohort_month})` | Retention curve (1-6 months out) |
+| `channelPerformance({from, to, model})` | Channel comparison table |
+| `marketingHeadline({from, to})` | Spend / revenue / ROAS / CAC headline |
+| `churnRiskList({threshold, limit})` | Outreach list |
+| `getReferralStats(owner_hash)` | Referral leaderboard |
+| `getCampaignPerformance({campaign_id, model})` | Campaign deep-dive |
