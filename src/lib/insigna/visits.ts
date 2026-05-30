@@ -210,7 +210,22 @@ export function endVisit(
     payload: { visit_token }
   });
 
-  // Persona + churn recompute jobs land in Phase 7-8 (lib/insigna/
-  // persona.ts + churn.ts). Hooking the trigger here so the wiring
-  // is in place when those land — for now both are no-ops.
+  // Phase 7+8 hook (2026-05-30): recompute persona + churn for this
+  // customer. Both are cheap (single-customer scope, no joins) so
+  // running them inline keeps the data fresh without a separate
+  // job. Errors are caught so a persona/churn computation failure
+  // can never undo the visit close.
+  try {
+    // Dynamic import keeps the cycle clean: persona.ts and churn.ts
+    // both depend on visit data we just wrote here, so we don't
+    // want them in the top-level module graph of visits.ts.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { recomputePersonaTag } = require("./persona") as typeof import("./persona");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { recomputeChurnScore } = require("./churn") as typeof import("./churn");
+    recomputePersonaTag(row.customer_hash);
+    recomputeChurnScore(row.customer_hash);
+  } catch (e) {
+    console.warn("[insigna] post-visit recompute failed:", e);
+  }
 }

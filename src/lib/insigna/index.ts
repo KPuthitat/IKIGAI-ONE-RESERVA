@@ -54,3 +54,29 @@ export {
   onBookingCreated,
   onBookingStatusChanged
 } from "./booking-bridge";
+
+// Feedback service (Phase 5) + AI stubs (Phase 2 hooks).
+export {
+  submitFeedback,
+  analyzeFeedbackSentiment,
+  synthesizePersonaDescription,
+  generateDailyBriefing,
+  type InsignaFeedback,
+  type SubmitFeedbackArgs
+} from "./feedback";
+
+// Persona tagging (Phase 7). recomputePersonaTag fires automatically
+// from endVisit; the bulk recompute is exposed for the nightly job.
+export {
+  recomputePersonaTag,
+  recomputeAllPersonas
+} from "./persona";
+
+// Churn risk scoring (Phase 8). Same pattern: per-customer recompute
+// runs inline on endVisit; the bulk recompute drives the nightly
+// outreach list (listHighChurnRisk).
+export {
+  recomputeChurnScore,
+  recomputeAllChurn,
+  listHighChurnRisk
+} from "./churn";
