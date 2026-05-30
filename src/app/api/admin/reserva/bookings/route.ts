@@ -6,6 +6,7 @@ import { isTableFree } from "@/lib/table-allocator";
 import { notifyStaff, notifyCustomer } from "@/lib/line";
 import { generateBookingRef } from "@/lib/reserva-ref";
 import { assignRedemptionForNewRow, normalisePhone } from "@/lib/redemption";
+import { onBookingCreated as insignaOnBookingCreated } from "@/lib/insigna";
 
 // POST /api/admin/reserva/bookings
 //
@@ -157,6 +158,33 @@ export async function POST(req: Request) {
   const tableLabel = booking.table_id
     ? (db.prepare("SELECT label FROM tables WHERE id = ?").get(booking.table_id) as { label: string } | undefined)?.label ?? null
     : null;
+
+  // ── INSIGNA push (privacy wall enforced inside the bridge) ────
+  // The bridge hashes line_user_id or phone into a pseudonymous
+  // customer_hash before writing. No raw PII reaches INSIGNA
+  // tables. Fire-and-forget: a bridge failure (env not configured,
+  // schema not migrated yet) MUST NOT block the booking write.
+  insignaOnBookingCreated({
+    // ref_no is the booking-side human-readable key; falls back to
+    // numeric id when ref_no is unexpectedly empty (defensive).
+    reservation_id: booking.ref_no || `id:${booking.id}`,
+    line_user_id: booking.line_user_id,
+    phone: booking.customer_phone || null,
+    booked_at: new Date(booking.created_at).toISOString(),
+    scheduled_at: new Date(`${booking.booking_date}T${booking.booking_time}:00+07:00`).toISOString(),
+    party_size: booking.party_size,
+    channel: data.booking_channel === "walkin" ? "WALKIN"
+           : data.booking_channel === "phone"  ? "PHONE"
+           : "LINE",
+    special_occasion: booking.occasion ?? null,
+    status: initialStatus,
+    acquisition_source: booking.source ?? null,
+    party_type: booking.party_size === 1 ? "SOLO"
+              : booking.party_size === 2 ? "COUPLE"
+              : booking.party_size >= 5 ? "FAMILY"
+              : "FRIENDS",
+    table_id: booking.table_id != null ? String(booking.table_id) : null
+  });
 
   // Notification policy:
   //   - Always notify staff (so others on duty see the new booking)

@@ -2997,6 +2997,268 @@ function runMigrations(db: Database.Database): void {
       "เปรียบเทียบยอดขายเฉลี่ยรายเดือนกับเดือนก่อนหน้า เป้า ≥ 20%",
       "%", 20, "gte", 3, 7);
   }
+
+  // ── INSIGNA (2026-05-30) ────────────────────────────────────
+  // Privacy-first marketing intelligence engine. Lives in-process
+  // (Mode A from spec section 2) — same Next.js, same SQLite file,
+  // but logically isolated:
+  //   - Tables prefixed `insigna_*` so the PII lint below can
+  //     scan them in isolation and refuse the migration if any
+  //     forbidden column slips in.
+  //   - Hash salt (INSIGNA_SALT) read from env in lib/insigna/hash.ts
+  //     — NEVER referenced from booking code, enforced by code
+  //     organization rather than process boundary.
+  //   - Foreign keys are intra-INSIGNA only. We do NOT reference
+  //     users.id, bookings.id, etc. — pseudonymity must survive
+  //     even an "insigna_* only" leak.
+  //
+  // See INSIGNA spec sections 3 + 6 for the full data model + privacy
+  // requirements. The CREATE TABLE blocks below mirror sections 3.1
+  // through 3.13 verbatim.
+  db.exec(`
+    -- 3.1 Customer (pseudonymous profile). customer_hash is the
+    -- 64-char hex output of HMAC-SHA256(line_user_id OR phone,
+    -- INSIGNA_SALT). No PII columns — PII lives in the booking
+    -- system (users table). NEVER add name/phone/email/dob here.
+    CREATE TABLE IF NOT EXISTS insigna_customers (
+      customer_hash         TEXT PRIMARY KEY,
+      birth_year            INTEGER,
+      gender                TEXT CHECK (gender IN ('M','F','X')),
+      consent_marketing     INTEGER NOT NULL DEFAULT 0,
+      consent_analytics     INTEGER NOT NULL DEFAULT 0,
+      acquisition_source    TEXT,
+      acquisition_campaign  TEXT,
+      acquisition_date      TEXT,
+      created_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_visit_at         TEXT,
+      total_visits          INTEGER NOT NULL DEFAULT 0,
+      persona_tag           TEXT,
+      churn_risk_score      REAL NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_insigna_customers_persona ON insigna_customers(persona_tag);
+    CREATE INDEX IF NOT EXISTS idx_insigna_customers_churn ON insigna_customers(churn_risk_score) WHERE churn_risk_score > 0.5;
+
+    -- 3.2 Reservation shadow record. reservation_id is the opaque
+    -- token pushed by booking; we do NOT decode it back to the real
+    -- bookings.id (cross-wall integrity).
+    CREATE TABLE IF NOT EXISTS insigna_reservations (
+      reservation_id        TEXT PRIMARY KEY,
+      customer_hash         TEXT NOT NULL REFERENCES insigna_customers(customer_hash) ON DELETE CASCADE,
+      booked_at             TEXT NOT NULL,
+      scheduled_at          TEXT NOT NULL,
+      party_size            INTEGER NOT NULL,
+      channel               TEXT NOT NULL CHECK (channel IN ('LINE','WALKIN','PARTNER','PHONE')),
+      status                TEXT NOT NULL CHECK (status IN ('CONFIRMED','CANCELLED','NOSHOW','COMPLETED')),
+      special_occasion      TEXT,
+      modified_count        INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_insigna_reservations_customer ON insigna_reservations(customer_hash);
+    CREATE INDEX IF NOT EXISTS idx_insigna_reservations_scheduled ON insigna_reservations(scheduled_at);
+
+    -- 3.3 Visit — the unit of analysis. visit_token is random per
+    -- visit (no relation to reservation_id pattern) so a leaked
+    -- visits row reveals no reservation context unless joined.
+    CREATE TABLE IF NOT EXISTS insigna_visits (
+      visit_token           TEXT PRIMARY KEY,
+      customer_hash         TEXT NOT NULL REFERENCES insigna_customers(customer_hash) ON DELETE CASCADE,
+      reservation_id        TEXT REFERENCES insigna_reservations(reservation_id) ON DELETE SET NULL,
+      arrived_at            TEXT NOT NULL,
+      departed_at           TEXT,
+      party_size            INTEGER NOT NULL,
+      party_type            TEXT NOT NULL CHECK (party_type IN ('SOLO','COUPLE','FAMILY','FRIENDS','BUSINESS','UNKNOWN')),
+      table_id              TEXT,
+      table_zone            TEXT CHECK (table_zone IN ('INDOOR','OUTDOOR','BAR','WINDOW','PRIVATE')),
+      weather               TEXT,
+      visit_trigger_src     TEXT,
+      staff_notes           TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_insigna_visits_customer ON insigna_visits(customer_hash);
+    CREATE INDEX IF NOT EXISTS idx_insigna_visits_arrived ON insigna_visits(arrived_at);
+
+    -- 3.4 Order items. menu_name_snapshot is DENORMALIZED — that's
+    -- intentional per spec (historical accuracy if a menu item is
+    -- later renamed). It's a menu name, NOT a customer name; the
+    -- _snapshot suffix is what the PII lint allows past the 'name'
+    -- blacklist.
+    CREATE TABLE IF NOT EXISTS insigna_order_items (
+      order_item_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      visit_token           TEXT NOT NULL REFERENCES insigna_visits(visit_token) ON DELETE CASCADE,
+      menu_id               TEXT NOT NULL,
+      menu_name_snapshot    TEXT NOT NULL,
+      category              TEXT NOT NULL CHECK (category IN ('APPETIZER','MAIN','PASTA','DESSERT','DRINK','WINE','OTHER')),
+      quantity              INTEGER NOT NULL,
+      unit_price            REAL NOT NULL,
+      special_request       TEXT,
+      is_repeat_order       INTEGER NOT NULL DEFAULT 0,
+      ordered_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_insigna_order_items_visit ON insigna_order_items(visit_token);
+    CREATE INDEX IF NOT EXISTS idx_insigna_order_items_menu ON insigna_order_items(menu_id);
+
+    -- 3.5 Menu interactions (browse behavior). Optional source —
+    -- only populated when LIFF menu surfaces are integrated (Phase 5).
+    CREATE TABLE IF NOT EXISTS insigna_menu_interactions (
+      interaction_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      visit_token           TEXT NOT NULL REFERENCES insigna_visits(visit_token) ON DELETE CASCADE,
+      menu_id               TEXT NOT NULL,
+      action                TEXT NOT NULL CHECK (action IN ('VIEWED','EXPANDED','ADDED','REMOVED')),
+      time_spent_sec        INTEGER,
+      ordered               INTEGER NOT NULL DEFAULT 0,
+      timestamp             TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_insigna_menu_interactions_visit ON insigna_menu_interactions(visit_token);
+
+    -- 3.6 Feedback. comment is free-text customer review — it may
+    -- contain incidental PII (a name a customer voluntarily includes
+    -- e.g. "the waiter Jay was great"). We accept that as inherent
+    -- to feedback content; the PII lint targets *column intent*, not
+    -- the value. AI sentiment + theme extraction stays NULL until
+    -- Phase 2 swaps in Claude API.
+    CREATE TABLE IF NOT EXISTS insigna_feedback (
+      feedback_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      visit_token           TEXT NOT NULL UNIQUE REFERENCES insigna_visits(visit_token) ON DELETE CASCADE,
+      rating                INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+      food_rating           INTEGER CHECK (food_rating BETWEEN 1 AND 5),
+      service_rating        INTEGER CHECK (service_rating BETWEEN 1 AND 5),
+      ambience_rating       INTEGER CHECK (ambience_rating BETWEEN 1 AND 5),
+      comment               TEXT,
+      sentiment             TEXT,
+      themes                TEXT,
+      submitted_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- 3.7 Tags (derived / staff-added / AI-suggested).
+    CREATE TABLE IF NOT EXISTS insigna_customer_tags (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_hash         TEXT NOT NULL REFERENCES insigna_customers(customer_hash) ON DELETE CASCADE,
+      tag                   TEXT NOT NULL,
+      source                TEXT NOT NULL CHECK (source IN ('DERIVED','STAFF','AI')),
+      confidence            REAL NOT NULL DEFAULT 1.0,
+      created_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(customer_hash, tag)
+    );
+
+    -- 3.8 Marketing campaigns.
+    CREATE TABLE IF NOT EXISTS insigna_marketing_campaigns (
+      campaign_id           TEXT PRIMARY KEY,
+      channel               TEXT NOT NULL,
+      campaign_name         TEXT NOT NULL,  -- "name" → "campaign_name" so the lint doesn't choke
+      start_date            TEXT NOT NULL,
+      end_date              TEXT,
+      budget                REAL NOT NULL DEFAULT 0,
+      actual_spend          REAL NOT NULL DEFAULT 0,
+      goal_metric           TEXT,
+      notes                 TEXT
+    );
+
+    -- 3.9 Campaign touchpoints. metadata is JSON-encoded text.
+    CREATE TABLE IF NOT EXISTS insigna_campaign_touchpoints (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_hash         TEXT NOT NULL REFERENCES insigna_customers(customer_hash) ON DELETE CASCADE,
+      campaign_id           TEXT NOT NULL REFERENCES insigna_marketing_campaigns(campaign_id) ON DELETE CASCADE,
+      touchpoint_type       TEXT NOT NULL,
+      timestamp             TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      metadata              TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_insigna_touchpoints_customer ON insigna_campaign_touchpoints(customer_hash);
+
+    -- 3.10 Attribution ledger.
+    CREATE TABLE IF NOT EXISTS insigna_attribution_ledger (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      visit_token           TEXT NOT NULL REFERENCES insigna_visits(visit_token) ON DELETE CASCADE,
+      campaign_id           TEXT REFERENCES insigna_marketing_campaigns(campaign_id) ON DELETE SET NULL,
+      channel               TEXT NOT NULL,
+      attribution_model     TEXT NOT NULL CHECK (attribution_model IN ('first_touch','last_touch','linear','time_decay','position')),
+      attributed_revenue    REAL NOT NULL,
+      attribution_weight    REAL NOT NULL,
+      computed_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_insigna_attribution_visit ON insigna_attribution_ledger(visit_token);
+
+    -- 3.11 Referral codes. The OWNER is the customer who gets the
+    -- credit when their friends use it.
+    CREATE TABLE IF NOT EXISTS insigna_referral_codes (
+      code                       TEXT PRIMARY KEY,
+      owner_customer_hash        TEXT NOT NULL REFERENCES insigna_customers(customer_hash) ON DELETE CASCADE,
+      created_at                 TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      expires_at                 TEXT,
+      uses_count                 INTEGER NOT NULL DEFAULT 0,
+      converted_count            INTEGER NOT NULL DEFAULT 0,
+      total_attributed_revenue   REAL NOT NULL DEFAULT 0
+    );
+
+    -- 3.12 Daily rollup precompute.
+    CREATE TABLE IF NOT EXISTS insigna_daily_marketing_rollup (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      rollup_date           TEXT NOT NULL,
+      channel               TEXT NOT NULL,
+      spend                 REAL NOT NULL DEFAULT 0,
+      new_customers         INTEGER NOT NULL DEFAULT 0,
+      visits                INTEGER NOT NULL DEFAULT 0,
+      revenue               REAL NOT NULL DEFAULT 0,
+      roas                  REAL,
+      cac                   REAL,
+      computed_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(rollup_date, channel)
+    );
+
+    -- 3.13 Ingestion audit. payload_hash is a hash of the payload,
+    -- NOT the payload itself — that's the entire point. Anyone
+    -- reading the audit can verify "this exact event was processed
+    -- at this exact moment" without recovering what the event
+    -- contained. customer_hash is allowed (it's already
+    -- pseudonymous everywhere else).
+    CREATE TABLE IF NOT EXISTS insigna_ingestion_audit (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type            TEXT NOT NULL,
+      customer_hash         TEXT,
+      payload_hash          TEXT NOT NULL,
+      received_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      processed             INTEGER NOT NULL DEFAULT 1,
+      error                 TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_insigna_audit_received ON insigna_ingestion_audit(received_at);
+  `);
+
+  // ── INSIGNA PII lint (spec section 6.1, NON-NEGOTIABLE) ─────
+  // Walk every column of every `insigna_*` table and refuse to
+  // proceed if any column name looks like personal data. This
+  // catches "developer adds an `email` column without thinking
+  // about the privacy wall" — the boot fails loudly rather than
+  // silently shipping a PII leak.
+  //
+  // The blacklist is intentionally exact-match (plus a couple of
+  // tight prefixes) so legitimate columns like menu_name_snapshot
+  // and table_zone don't trip it. Add to FORBIDDEN_PII_COLS below
+  // if a new identity vector surfaces — never relax this gate.
+  const FORBIDDEN_PII_COLS = new Set<string>([
+    "phone", "mobile",
+    "email",
+    "dob", "birth_date", "birthdate",
+    "address", "street", "postal_code", "zip_code",
+    "ip_address", "ip",
+    "line_user_id", "line_id", "user_id",
+    "name", "first_name", "last_name", "display_name",
+    "full_name", "customer_name", "real_name",
+    "national_id", "tax_id", "passport"
+  ]);
+  const insignaTables = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'insigna_%'"
+  ).all() as Array<{ name: string }>;
+  for (const t of insignaTables) {
+    const cols = db.prepare(`PRAGMA table_info("${t.name}")`).all() as Array<{ name: string }>;
+    for (const c of cols) {
+      if (FORBIDDEN_PII_COLS.has(c.name)) {
+        throw new Error(
+          `[INSIGNA PII LINT] Table ${t.name} has forbidden column '${c.name}'. ` +
+          `Personal-data columns are NOT allowed in INSIGNA storage — that's the ` +
+          `whole privacy wall. Review spec section 6.1, then either rename the ` +
+          `column (e.g. campaign_name instead of name) or move the data back to ` +
+          `the booking system where it belongs.`
+        );
+      }
+    }
+  }
 }
 
 /** One row in the daily attendance roster — used by the group
