@@ -207,9 +207,10 @@ export default function InsignaDashboard() {
           ) : (
             <div className="space-y-1.5">
               {churn.map((c) => (
-                <div
+                <Link
                   key={c.customer_hash}
-                  className="flex items-center gap-2 text-xs p-2 rounded-md bg-rose-50/40 border border-rose-100"
+                  href={`/admin/insigna/customers/${c.customer_hash}`}
+                  className="flex items-center gap-2 text-xs p-2 rounded-md bg-rose-50/40 border border-rose-100 hover:bg-rose-100/60 transition"
                 >
                   <span className="font-mono text-slate-500">
                     {shortHash(c.customer_hash)}
@@ -221,7 +222,7 @@ export default function InsignaDashboard() {
                   <span className="font-bold text-rose-600">
                     {(c.churn_risk_score * 100).toFixed(0)}%
                   </span>
-                </div>
+                </Link>
               ))}
             </div>
           )}
@@ -323,9 +324,12 @@ export default function InsignaDashboard() {
                   {e.event_type}
                 </span>
                 {e.customer_hash && (
-                  <span className="font-mono text-slate-500 text-[10px]">
+                  <Link
+                    href={`/admin/insigna/customers/${e.customer_hash}`}
+                    className="font-mono text-slate-500 text-[10px] hover:text-brand"
+                  >
                     {shortHash(e.customer_hash)}
-                  </span>
+                  </Link>
                 )}
               </div>
             ))}
