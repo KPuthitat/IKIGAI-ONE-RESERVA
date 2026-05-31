@@ -64,6 +64,10 @@ const Payload = z.object({
   position_id: z.number().int().positive(),
   pdpa_consent: z.literal(true), // hard gate
   truth_declaration_accepted: z.literal(true),
+  /** LINE userId — only set when the form is opened via LIFF (the
+   *  IKIGAI Recruit OA). Web-form applicants send null. Capturing
+   *  here lets the stage-change push reach the candidate directly. */
+  line_user_id: z.string().max(80).nullable().optional(),
   // Identity
   title_prefix: z.string().max(20).optional().default(""),
   first_name_th: z.string().trim().min(1).max(80),
@@ -197,7 +201,8 @@ export async function POST(req: Request) {
   if (candidateId == null) {
     const info = db.prepare(`
       INSERT INTO recruita_candidates
-        (dedupe_hash, title_prefix, first_name_th, last_name_th,
+        (dedupe_hash, line_user_id,
+         title_prefix, first_name_th, last_name_th,
          first_name_en, last_name_en, nickname_th,
          dob, gender, nationality, race, marital_status,
          military_status, religion, national_id_encrypted,
@@ -208,9 +213,10 @@ export async function POST(req: Request) {
          emergency_name, emergency_relationship, emergency_phone,
          education_json, experience_json, skills_language_json,
          skills_other, references_json)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       dedupeHash,
+      d.line_user_id || null,
       d.title_prefix || null,
       d.first_name_th, d.last_name_th,
       d.first_name_en || null, d.last_name_en || null, d.nickname_th || null,
@@ -235,6 +241,15 @@ export async function POST(req: Request) {
   } else {
     // Same applicant returning — refresh the editable fields so
     // pipeline filters see current values; keep created_at stable.
+    // line_user_id is set ONLY when null (don't overwrite a known
+    // binding with a new LIFF session's userId — which can happen
+    // if the candidate later opens the form in a different LINE
+    // session somehow).
+    if (d.line_user_id) {
+      db.prepare(
+        "UPDATE recruita_candidates SET line_user_id = ? WHERE id = ? AND line_user_id IS NULL"
+      ).run(d.line_user_id, candidateId);
+    }
     db.prepare(`
       UPDATE recruita_candidates SET
         title_prefix = COALESCE(?, title_prefix),

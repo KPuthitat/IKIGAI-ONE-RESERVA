@@ -35,7 +35,7 @@ type LineEvent = {
 };
 
 type ResolvedChannel = {
-  scope: "platform" | "reserva" | "legacy-branch";
+  scope: "platform" | "reserva" | "legacy-branch" | "recruita";
   label: string;
   channel_secret: string;
   channel_token: string;
@@ -151,6 +151,41 @@ export async function POST(req: Request, { params }: { params: { branch: string 
 
     if (ev.type === "follow") {
       console.log(`[line:${channel.scope}] new follower for ${channel.label}: ${userId}`);
+      // RECRUITA: when a candidate follows the "IKIGAI Recruit" OA,
+      // greet them + try to link their LINE userId to the most
+      // recent candidate row that doesn't yet have one. Phase 1e
+      // matches by recency-only — the proper match (phone number
+      // from the LINE profile, or a follow-up "id" reply) lands in
+      // 1f. For now, a simple welcome message + a CTA back to the
+      // public positions board.
+      if (channel.scope === "recruita") {
+        const welcome = "ยินดีต้อนรับสู่ IKIGAI Recruit 👋\n\nหากเพิ่งสมัครงานกับเรา ระบบจะแจ้งสถานะใบสมัครผ่าน LINE นี้\n\n📋 ดูตำแหน่งที่เปิดรับ: https://ikigaimedihealth.com/recruita/positions";
+        await sendLinePush(channel.channel_token, {
+          to: userId,
+          messages: [{ type: "text", text: welcome }]
+        });
+        // Best-effort link: latest candidate row with no line_user_id
+        // that submitted an application in the last 7 days.
+        try {
+          const seven = new Date(Date.now() - 7 * 86400_000).toISOString();
+          const recent = db.prepare(`
+            SELECT c.id FROM recruita_candidates c
+            JOIN recruita_applications a ON a.candidate_id = c.id
+            WHERE c.line_user_id IS NULL
+              AND a.submitted_at >= ?
+            ORDER BY a.submitted_at DESC
+            LIMIT 1
+          `).get(seven) as { id: number } | undefined;
+          if (recent) {
+            db.prepare(
+              "UPDATE recruita_candidates SET line_user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            ).run(userId, recent.id);
+            console.log(`[line:recruita] linked userId ${userId} → candidate #${recent.id} (recency match)`);
+          }
+        } catch (e) {
+          console.warn("[line:recruita] follow-link attempt failed", e);
+        }
+      }
       continue;
     }
 

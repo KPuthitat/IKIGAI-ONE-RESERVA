@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Script from "next/script";
 import { apiUrl } from "@/lib/url";
 import type { CustomQuestion } from "@/lib/recruita";
+import "@/lib/liff-types";
 
 // Public application form — owner's existing Google Form ported to
 // our own pipeline, plus the per-position custom_questions admin
@@ -127,7 +129,8 @@ function blankState(): FormState {
 }
 
 export default function ApplyClient({
-  positionId, positionTitle, positionCode, branchName, department, customQuestions
+  positionId, positionTitle, positionCode, branchName, department,
+  customQuestions, liffId
 }: {
   positionId: number;
   positionTitle: string;
@@ -135,6 +138,7 @@ export default function ApplyClient({
   branchName: string | null;
   department: string | null;
   customQuestions: CustomQuestion[];
+  liffId: string | null;
 }) {
   const router = useRouter();
   const draftKey = `${DRAFT_KEY_PREFIX}${positionId}`;
@@ -145,6 +149,35 @@ export default function ApplyClient({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const draftLoaded = useRef(false);
+  // LINE userId captured by the LIFF SDK on mount. Sent with the
+  // submission so the candidate row links to their LINE account
+  // and the stage-change push reaches them. Null on web-form
+  // applicants and when LIFF init fails (gracefully degrades).
+  const [lineUserId, setLineUserId] = useState<string | null>(null);
+  const liffReady = useRef(false);
+
+  async function initLiff() {
+    if (!liffId || liffReady.current) return;
+    liffReady.current = true;
+    try {
+      const w = window as unknown as { liff?: { init: (a: { liffId: string }) => Promise<void>; isLoggedIn: () => boolean; login: () => void; getProfile: () => Promise<{ userId: string }>; getContext?: () => { type?: string } | null } };
+      if (!w.liff) return;
+      await w.liff.init({ liffId });
+      // In external browser, login() redirects → callback. In LIFF
+      // (LINE in-app), isLoggedIn() is already true.
+      if (!w.liff.isLoggedIn()) {
+        // Don't auto-redirect on the web form — applicants may want
+        // to fill it out without a LINE account. We only bind when
+        // we're already inside LIFF (LINE in-app browser).
+        const ctx = w.liff.getContext?.();
+        if (ctx?.type === "utou" || ctx?.type === "group" || ctx?.type === "external") return;
+      }
+      const profile = await w.liff.getProfile();
+      if (profile?.userId) setLineUserId(profile.userId);
+    } catch (e) {
+      console.warn("[recruita] LIFF init failed:", e);
+    }
+  }
 
   // Load draft on mount
   useEffect(() => {
@@ -222,7 +255,9 @@ export default function ApplyClient({
       fd.append("payload", JSON.stringify({
         position_id: positionId,
         ...f,
-        // localStorage strings are fine for the wire — server casts.
+        // LIFF-detected LINE userId (null on plain web form). Server
+        // links the candidate row when present.
+        line_user_id: lineUserId,
       }));
       if (photo)  fd.append("photo", photo);
       if (resume) fd.append("resume", resume);
@@ -249,6 +284,21 @@ export default function ApplyClient({
 
   return (
     <form onSubmit={submit} className="space-y-4">
+      {/* LIFF SDK — loads only when liffId is set. onLoad fires
+          initLiff which captures profile.userId silently. */}
+      {liffId && (
+        <Script src="https://static.line-scdn.net/liff/edge/2/sdk.js"
+          strategy="afterInteractive"
+          onLoad={initLiff} />
+      )}
+
+      {/* Tiny info badge when LIFF binding is active */}
+      {lineUserId && (
+        <div className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 text-center">
+          🔗 ผูก LINE สำเร็จ — เราจะแจ้งสถานะใบสมัครให้คุณผ่าน LINE
+        </div>
+      )}
+
       {/* Header */}
       <div className="card text-center space-y-2">
         <div className="text-xs font-bold text-slate-500 uppercase tracking-[2px]">

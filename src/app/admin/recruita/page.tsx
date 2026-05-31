@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireSuperAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { STAGE_META, type ApplicationStage } from "@/lib/recruita";
+import { getRecruitaChannel, isChannelReady } from "@/lib/messaging-channels";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "RECRUITA · IKIGAI OS" };
@@ -55,11 +56,22 @@ export default function RecruitaLanding() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">RECRUITA</h1>
-        <p className="text-sm text-slate-500">
-          ระบบรับสมัครงาน · ภาพรวม pipeline + การจัดการตำแหน่ง
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">RECRUITA</h1>
+          <p className="text-sm text-slate-500">
+            ระบบรับสมัครงาน · ภาพรวม pipeline + การจัดการตำแหน่ง
+          </p>
+        </div>
+        <Link href="/admin/recruita/settings"
+          className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
+          ⚙️ ตั้งค่า LINE OA
+          {isChannelReady(getRecruitaChannel()) ? (
+            <span className="ml-1 text-emerald-600 font-bold">✓</span>
+          ) : (
+            <span className="ml-1 text-amber-600 font-bold">○</span>
+          )}
+        </Link>
       </div>
 
       {/* Top counters */}

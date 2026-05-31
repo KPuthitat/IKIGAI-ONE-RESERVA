@@ -17,7 +17,7 @@ import { encryptSecret, decryptSecret } from "./secret-vault";
 
 export type MessagingChannel = {
   id: number;
-  scope: "platform" | "reserva";
+  scope: "platform" | "reserva" | "recruita";
   code: string;
   label: string;
   branch_id: number | null;
@@ -29,6 +29,7 @@ export type MessagingChannel = {
 };
 
 const PLATFORM_CODE = "ikigai-os";
+const RECRUITA_CODE = "ikigai-recruit";
 
 /** Decrypt the secret/token fields on a row read from the DB. All
  *  read paths funnel through here so downstream callers see plaintext
@@ -46,6 +47,17 @@ export function getPlatformChannel(): MessagingChannel | null {
   const row = getDb().prepare(
     "SELECT * FROM messaging_channels WHERE code = ? LIMIT 1"
   ).get(PLATFORM_CODE) as MessagingChannel | undefined;
+  return decryptRow(row) ?? null;
+}
+
+/** The IKIGAI Recruit OA (singleton). Separate channel so the
+ *  candidate-facing notification stream doesn't bleed into the staff
+ *  channel. Returns the row even when credentials are empty so the
+ *  admin UI always has something to render. */
+export function getRecruitaChannel(): MessagingChannel | null {
+  const row = getDb().prepare(
+    "SELECT * FROM messaging_channels WHERE code = ? LIMIT 1"
+  ).get(RECRUITA_CODE) as MessagingChannel | undefined;
   return decryptRow(row) ?? null;
 }
 

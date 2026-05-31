@@ -1894,6 +1894,67 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE messaging_channels ADD COLUMN liff_id TEXT");
   }
 
+  // ── 2026-06-01 RECRUITA OA support ─────────────────────────────
+  // RECRUITA uses a separate LINE OA ("IKIGAI Recruit") for the
+  // candidate-facing flow so the message blasts to applicants don't
+  // bleed into the main IKIGAI OS staff channel. Schema needs:
+  //   1. CHECK constraint widened to accept scope='recruita'
+  //   2. Seed row code='ikigai-recruit' so the admin UI always has
+  //      a target to fill in.
+  //
+  // The original CHECK only allowed 'platform' | 'reserva'. SQLite
+  // doesn't support ALTER on CHECK, so we rebuild the table when the
+  // constraint is missing. Detected by trying a no-op test insert
+  // inside a savepoint — cheaper than parsing sqlite_master and
+  // safer than regex on stored DDL.
+  let scopeCheckOk = false;
+  try {
+    db.exec("SAVEPOINT scope_check");
+    db.prepare(
+      "INSERT INTO messaging_channels (scope, code, label) VALUES ('recruita', '__probe__', '__probe__')"
+    ).run();
+    db.exec("ROLLBACK TO SAVEPOINT scope_check");
+    db.exec("RELEASE SAVEPOINT scope_check");
+    scopeCheckOk = true;
+  } catch {
+    try { db.exec("ROLLBACK TO SAVEPOINT scope_check"); db.exec("RELEASE SAVEPOINT scope_check"); }
+    catch { /* probe already rolled back */ }
+  }
+  if (!scopeCheckOk) {
+    // Rebuild — copy rows into a new table that allows 'recruita',
+    // drop the old one, rename. PRAGMA foreign_keys is on per
+    // top-of-file, so we briefly turn it off to keep the swap simple.
+    db.exec("PRAGMA foreign_keys = OFF");
+    db.exec(`
+      CREATE TABLE messaging_channels_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scope TEXT NOT NULL CHECK (scope IN ('platform','reserva','recruita')),
+        code TEXT UNIQUE NOT NULL,
+        label TEXT NOT NULL,
+        branch_id INTEGER REFERENCES branches(id),
+        channel_secret TEXT,
+        channel_token TEXT,
+        liff_id TEXT,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_by INTEGER REFERENCES users(id)
+      );
+      INSERT INTO messaging_channels_new
+        (id, scope, code, label, branch_id, channel_secret, channel_token,
+         liff_id, updated_at, updated_by)
+      SELECT id, scope, code, label, branch_id, channel_secret, channel_token,
+             liff_id, updated_at, updated_by
+      FROM messaging_channels;
+      DROP TABLE messaging_channels;
+      ALTER TABLE messaging_channels_new RENAME TO messaging_channels;
+    `);
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+
+  db.exec(`
+    INSERT OR IGNORE INTO messaging_channels (scope, code, label)
+      VALUES ('recruita', 'ikigai-recruit', 'IKIGAI Recruit');
+  `);
+
   // Auto-seed one row per branch (code = branch.slug, scope='reserva') so
   // the admin UI always has something to render. Idempotent — INSERT OR
   // IGNORE on the unique 'code' column.
