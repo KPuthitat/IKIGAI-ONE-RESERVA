@@ -10,7 +10,8 @@ import type {
 type StageMeta = Record<ApplicationStage, { label: string; chip: string }>;
 
 type AppShape = {
-  id: number; stage: ApplicationStage; submitted_at: string;
+  id: number; candidate_id: number; position_id: number;
+  stage: ApplicationStage; submitted_at: string;
   expected_salary: number | null; earliest_start_date: string | null;
   why_join: string | null; goals: string | null;
   info_source: string | null; can_travel: number | null;
@@ -19,6 +20,9 @@ type AppShape = {
   last_workplace: string | null; last_position: string | null;
   last_tenure: string | null; last_salary: string | null;
   last_reason_left: string | null;
+  /** Set once the hire bridge runs — points at users.id in PERSONA. */
+  hired_user_id: number | null;
+  hired_at: string | null;
 };
 
 type CandidateShape = {
@@ -58,7 +62,20 @@ type DocShape = {
 
 type PositionShape = {
   id: number; title: string; code: string | null;
+  branch_id: number | null;
   branch_name: string | null; department: string | null;
+};
+
+type Branch = { id: number; name: string };
+type Supervisor = { id: number; display_name: string };
+
+type HireResult = {
+  user_id: number;
+  invite_id: number;
+  url: string;
+  liff_url: string | null;
+  direct_url: string;
+  expires_at: string;
 };
 
 const ALL_STAGES: ApplicationStage[] = [
@@ -89,7 +106,8 @@ const LICENSE_LABEL: Record<string, string> = {
 export default function ApplicationDetailClient({
   application, candidate, nationalIdPlain, position, documents,
   education, experience, languages,
-  customQuestions, customAnswers, stageMeta
+  customQuestions, customAnswers, stageMeta,
+  branches, supervisors
 }: {
   application: AppShape;
   candidate: CandidateShape;
@@ -102,12 +120,16 @@ export default function ApplicationDetailClient({
   customQuestions: CustomQuestion[];
   customAnswers: CustomAnswers;
   stageMeta: StageMeta;
+  branches: Branch[];
+  supervisors: Supervisor[];
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
   const [showId, setShowId] = useState(false);
   const [stage, setStage] = useState<ApplicationStage>(application.stage);
+  const [showHire, setShowHire] = useState(false);
+  const [hireResult, setHireResult] = useState<HireResult | null>(null);
 
   const name = [candidate.title_prefix, candidate.first_name_th, candidate.last_name_th]
     .filter(Boolean).join(" ") || "—";
@@ -173,6 +195,46 @@ export default function ApplicationDetailClient({
           })}
         </div>
       </div>
+
+      {/* Hire bridge — appears only when not yet hired. Stage doesn't
+          have to be 'accepted' to enable; admin may want to fast-track
+          (e.g. interview → hire directly). */}
+      {stage !== "hired" && !hireResult && (
+        <div className="card bg-emerald-50 border-2 border-emerald-200 space-y-2">
+          <h2 className="font-bold text-emerald-900 text-sm flex items-center gap-2">
+            🎉 พร้อมรับเข้าทำงาน?
+          </h2>
+          <p className="text-xs text-emerald-800 leading-relaxed">
+            กดปุ่มด้านล่างเพื่อสร้างบัญชี PERSONA ให้พนักงานใหม่ทันที — ระบบจะ:
+          </p>
+          <ul className="text-xs text-emerald-800 list-disc list-inside space-y-0.5">
+            <li>สร้าง user ใน PERSONA โดยใช้ข้อมูลจากใบสมัครทุก field (ไม่ต้องคีย์ใหม่)</li>
+            <li>ผูกเข้าสาขาที่เลือก + ลงตำแหน่งงานให้</li>
+            <li>เปลี่ยน stage ใบสมัครนี้เป็น "รับเข้าทำงาน" อัตโนมัติ</li>
+            <li>ส่ง invite link ให้แชร์กับพนักงานใหม่ตั้งรหัสผ่าน + ผูก LINE</li>
+          </ul>
+          <button type="button" onClick={() => setShowHire(true)}
+            disabled={busy}
+            className="btn-primary w-full text-base py-3 mt-2">
+            ✓ รับเข้าทำงาน
+          </button>
+        </div>
+      )}
+
+      {/* Already hired — show the link to the new PERSONA user */}
+      {(stage === "hired" || hireResult) && application.hired_user_id != null && (
+        <div className="card bg-emerald-50 border-2 border-emerald-200 space-y-2">
+          <h2 className="font-bold text-emerald-900 text-sm">
+            ✓ รับเข้าทำงานแล้ว
+          </h2>
+          <p className="text-xs text-emerald-800">
+            user_id ใน PERSONA: <span className="font-mono">#{application.hired_user_id ?? hireResult?.user_id}</span>
+          </p>
+          {hireResult && (
+            <InviteLinkBox result={hireResult} />
+          )}
+        </div>
+      )}
 
       {/* Quick contact */}
       <div className="card grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
@@ -364,6 +426,24 @@ export default function ApplicationDetailClient({
         </Card>
       )}
 
+      {/* Hire dialog */}
+      {showHire && (
+        <HireDialog
+          application={application}
+          candidate={candidate}
+          position={position}
+          branches={branches}
+          supervisors={supervisors}
+          onClose={() => setShowHire(false)}
+          onHired={(res) => {
+            setHireResult(res);
+            setStage("hired");
+            setShowHire(false);
+            startTransition(() => router.refresh());
+          }}
+        />
+      )}
+
       {/* PDPA audit */}
       <Card title="PDPA Audit">
         <div className="text-xs space-y-1 text-slate-600">
@@ -461,4 +541,244 @@ function renderAnswer(q: CustomQuestion, ans: unknown): React.ReactNode {
     );
   }
   return <span className="text-slate-400 italic">—</span>;
+}
+
+// ── Hire dialog — bridge to PERSONA ────────────────────────────────
+function HireDialog({
+  application, candidate, position, branches, supervisors, onClose, onHired
+}: {
+  application: AppShape;
+  candidate: CandidateShape;
+  position: PositionShape;
+  branches: Branch[];
+  supervisors: Supervisor[];
+  onClose: () => void;
+  onHired: (res: HireResult) => void;
+}) {
+  // Default branch — the one the position is pinned to, else first
+  // branch in the list. Admin can override.
+  const defaultBranch = position.branch_id ?? branches[0]?.id ?? null;
+  const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10);
+
+  const [branchId, setBranchId] = useState<string>(
+    defaultBranch != null ? String(defaultBranch) : ""
+  );
+  const [employmentType, setEmploymentType] = useState<"ft" | "pt">("ft");
+  const [employmentStatus, setEmploymentStatus] = useState<"probation" | "permanent">("probation");
+  const [hireMode, setHireMode] = useState<"monthly" | "daily" | "hourly">("monthly");
+  const [hireDate, setHireDate] = useState(todayBkk);
+  const [salary, setSalary] = useState(
+    application.expected_salary != null ? String(application.expected_salary) : ""
+  );
+  const [hourlyRate, setHourlyRate] = useState("");
+  const [jobTitle, setJobTitle] = useState(position.title);
+  const [supervisorId, setSupervisorId] = useState<string>("");
+  const [employeeCode, setEmployeeCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const candidateName = [
+    candidate.title_prefix, candidate.first_name_th, candidate.last_name_th
+  ].filter(Boolean).join(" ") || "—";
+
+  async function confirm() {
+    setErr(null);
+    if (!branchId) { setErr("กรุณาเลือกสาขา"); return; }
+    if (!hireDate) { setErr("กรุณาระบุวันที่เริ่มงาน"); return; }
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/recruita/applications/${application.id}/hire`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branch_id: Number(branchId),
+          employment_type: employmentType,
+          employment_status: employmentStatus,
+          hire_mode: hireMode,
+          hire_date: hireDate,
+          monthly_salary: salary ? Number(salary) : null,
+          hourly_rate: hourlyRate ? Number(hourlyRate) : null,
+          job_title: jobTitle.trim() || undefined,
+          supervisor_user_id: supervisorId ? Number(supervisorId) : null,
+          employee_code: employeeCode.trim() || null
+        })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        setErr(j.error ?? "รับเข้าทำงานไม่สำเร็จ");
+        return;
+      }
+      onHired({
+        user_id: Number(j.user_id),
+        invite_id: Number(j.invite_id),
+        url: String(j.url),
+        liff_url: j.liff_url ?? null,
+        direct_url: String(j.direct_url),
+        expires_at: String(j.expires_at)
+      });
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-bold text-slate-800 text-lg">รับ {candidateName} เข้าทำงาน</h3>
+        <p className="text-xs text-slate-500">
+          ระบบจะสร้าง user ใน PERSONA + carry ข้อมูลจากใบสมัครครบทุก field
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="label">สาขา *</label>
+            <select className="input" value={branchId}
+              onChange={(e) => setBranchId(e.target.value)}>
+              <option value="">— เลือกสาขา —</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">ตำแหน่งงาน</label>
+            <input className="input" value={jobTitle}
+              onChange={(e) => setJobTitle(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">รูปแบบงาน *</label>
+            <select className="input" value={employmentType}
+              onChange={(e) => setEmploymentType(e.target.value as "ft" | "pt")}>
+              <option value="ft">Full-time</option>
+              <option value="pt">Part-time</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">สถานะการจ้าง</label>
+            <select className="input" value={employmentStatus}
+              onChange={(e) => setEmploymentStatus(e.target.value as "probation" | "permanent")}>
+              <option value="probation">ทดลองงาน</option>
+              <option value="permanent">ประจำ</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">วิธีคิดค่าจ้าง</label>
+            <select className="input" value={hireMode}
+              onChange={(e) => setHireMode(e.target.value as "monthly" | "daily" | "hourly")}>
+              <option value="monthly">รายเดือน</option>
+              <option value="daily">รายวัน</option>
+              <option value="hourly">รายชั่วโมง</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">วันเริ่มงาน *</label>
+            <input className="input" type="date" value={hireDate}
+              onChange={(e) => setHireDate(e.target.value)} />
+          </div>
+          {hireMode === "monthly" && (
+            <div className="sm:col-span-2">
+              <label className="label">เงินเดือน (฿)</label>
+              <input className="input" type="number" min="0" value={salary}
+                onChange={(e) => setSalary(e.target.value)} />
+              {application.expected_salary != null && (
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  💡 ผู้สมัครตั้งความคาดหวังไว้ที่ ฿{application.expected_salary.toLocaleString("th-TH")}
+                </p>
+              )}
+            </div>
+          )}
+          {(hireMode === "hourly" || hireMode === "daily") && (
+            <div className="sm:col-span-2">
+              <label className="label">
+                {hireMode === "hourly" ? "ค่าจ้างต่อชั่วโมง (฿)" : "ค่าจ้างต่อวัน (฿)"}
+              </label>
+              <input className="input" type="number" min="0" value={hourlyRate}
+                onChange={(e) => setHourlyRate(e.target.value)} />
+            </div>
+          )}
+          <div>
+            <label className="label">รหัสพนักงาน (ถ้ามี)</label>
+            <input className="input" value={employeeCode}
+              onChange={(e) => setEmployeeCode(e.target.value)}
+              placeholder="เช่น EMP-014" />
+          </div>
+          <div>
+            <label className="label">หัวหน้างาน</label>
+            <select className="input" value={supervisorId}
+              onChange={(e) => setSupervisorId(e.target.value)}>
+              <option value="">— ยังไม่กำหนด —</option>
+              {supervisors.map((s) => (
+                <option key={s.id} value={s.id}>{s.display_name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {err && <div className="text-rose-600 text-sm">✗ {err}</div>}
+
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+          ⚠️ การกระทำนี้สร้าง user ใน PERSONA ทันที — หลังจากนี้ขั้นตอนการเลิกจ้าง
+          จะต้องผ่านระบบ resignation ปกติ ตรวจสอบข้อมูลให้แน่ใจก่อนยืนยัน
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button type="button" onClick={onClose} disabled={busy}
+            className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700">
+            ยกเลิก
+          </button>
+          <button type="button" onClick={confirm} disabled={busy}
+            className="flex-1 py-2.5 rounded-lg bg-emerald-600 text-white font-bold disabled:opacity-50">
+            {busy ? "กำลังสร้าง user…" : "✓ ยืนยันรับเข้าทำงาน"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Invite link display (after successful hire) ───────────────────
+function InviteLinkBox({ result }: { result: HireResult }) {
+  const [copied, setCopied] = useState<"liff" | "direct" | null>(null);
+
+  async function copy(text: string, kind: "liff" | "direct") {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(kind);
+      setTimeout(() => setCopied(null), 1500);
+    } catch { /* ignore */ }
+  }
+
+  return (
+    <div className="space-y-2 mt-2">
+      <p className="text-xs font-bold text-emerald-900">
+        📨 แชร์ลิงก์ด้านล่างให้พนักงานใหม่เพื่อตั้งรหัสผ่าน + ผูก LINE
+      </p>
+      <p className="text-[10px] text-slate-500">
+        ลิงก์หมดอายุ {new Date(result.expires_at).toLocaleString("th-TH")}
+      </p>
+      {result.liff_url && (
+        <div className="bg-white border border-slate-200 rounded p-2 text-xs space-y-1">
+          <div className="font-bold text-slate-700">🔗 ลิงก์ LINE (แนะนำ — ผูก LINE อัตโนมัติ)</div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 truncate font-mono text-[10px] text-slate-600">{result.liff_url}</code>
+            <button type="button" onClick={() => copy(result.liff_url!, "liff")}
+              className="text-[10px] px-2 py-1 rounded bg-brand text-white font-bold">
+              {copied === "liff" ? "✓ คัดลอกแล้ว" : "คัดลอก"}
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="bg-white border border-slate-200 rounded p-2 text-xs space-y-1">
+        <div className="font-bold text-slate-700">🌐 ลิงก์เบราว์เซอร์ปกติ (สำรอง)</div>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 truncate font-mono text-[10px] text-slate-600">{result.direct_url}</code>
+          <button type="button" onClick={() => copy(result.direct_url, "direct")}
+            className="text-[10px] px-2 py-1 rounded bg-slate-600 text-white font-bold">
+            {copied === "direct" ? "✓ คัดลอกแล้ว" : "คัดลอก"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

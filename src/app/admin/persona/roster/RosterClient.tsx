@@ -87,6 +87,16 @@ export default function RosterClient({
   const [publishKind, setPublishKind] = useState<"publish" | "edit">("publish");
   const [publishNote, setPublishNote] = useState("");
 
+  // 2026-05-31: focus-employee filter. Owner request — when admin is
+  // tracking "who got scheduled when", the noise of 13 other names
+  // is overwhelming. Picking one staff dims every other cell (and
+  // the bottom totals row) so the admin sees just that person's
+  // pattern across the month. Stored as numeric user id once picked;
+  // typed text uses fuzzy match against display_name to populate the
+  // suggestion list, then click commits to focusUserId.
+  const [focusQuery, setFocusQuery] = useState("");
+  const [focusUserId, setFocusUserId] = useState<number | null>(null);
+
   // Position visibility is configured server-side on
   // /admin/persona/roster/positions (per-position active toggle), so
   // there's no per-user filter chip here anymore. listPositions on
@@ -221,8 +231,102 @@ export default function RosterClient({
     return d.getUTCDay();
   };
 
+  // Focus filter — fuzzy match against display_name. Only shown when
+  // admin is typing (focusQuery non-empty) AND no explicit user
+  // pinned yet. Picking from the dropdown sets focusUserId and clears
+  // the query so the input collapses back to "พนักงานที่มุ่งเน้น" mode.
+  const focusSuggestions = useMemo(() => {
+    const q = focusQuery.trim().toLowerCase();
+    if (!q || focusUserId != null) return [];
+    return staff
+      .filter((s) => {
+        const hay = [s.display_name, s.first_name_th, s.last_name_th]
+          .filter(Boolean).join(" ").toLowerCase();
+        return hay.includes(q);
+      })
+      .slice(0, 8);
+  }, [focusQuery, focusUserId, staff]);
+
+  const focusedStaff = useMemo(() =>
+    focusUserId != null ? staff.find((s) => s.id === focusUserId) ?? null : null,
+    [focusUserId, staff]
+  );
+  const focusedShiftDates = useMemo(() => {
+    if (focusUserId == null) return new Set<string>();
+    return new Set(
+      assignments.filter((a) => a.user_id === focusUserId).map((a) => a.date)
+    );
+  }, [focusUserId, assignments]);
+
+  function clearFocus() {
+    setFocusUserId(null);
+    setFocusQuery("");
+  }
+  function pickFocus(userId: number) {
+    setFocusUserId(userId);
+    setFocusQuery("");
+  }
+
+  /** True when the cell should look "in focus" — i.e. either no
+   *  focus active, or the assignment matches the focused user. */
+  function inFocus(a: Assignment | undefined): boolean {
+    if (focusUserId == null) return true;
+    return !!a && a.user_id === focusUserId;
+  }
+
   return (
     <>
+      {/* Focus-employee bar — type a name, dim everyone else. */}
+      <div className="card relative space-y-2">
+        {focusedStaff ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-slate-500">📌 มุ่งเน้นที่:</span>
+            <span className="text-sm font-bold bg-amber-100 text-amber-900 px-3 py-1 rounded-md">
+              {focusedStaff.display_name}
+            </span>
+            <span className="text-xs text-slate-500">
+              ลงตารางไปแล้ว <b className="text-slate-800">{focusedShiftDates.size}</b> วันในเดือนนี้
+              <span className="ml-1 text-slate-400">
+                · พนักงานคนอื่นจางลงเพื่อให้สแกนง่าย
+              </span>
+            </span>
+            <button type="button" onClick={clearFocus}
+              className="ml-auto text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50">
+              ✕ ล้างการมุ่งเน้น
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <label className="label !mb-1">
+              🔍 ค้นชื่อพนักงาน เพื่อมุ่งเน้นเฉพาะคนนี้
+            </label>
+            <input className="input"
+              value={focusQuery}
+              onChange={(e) => setFocusQuery(e.target.value)}
+              placeholder="พิมพ์ชื่อ เช่น นาย ก." />
+            {focusSuggestions.length > 0 && (
+              <div className="absolute z-20 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg w-full left-0 sm:max-w-md">
+                {focusSuggestions.map((s) => (
+                  <button key={s.id} type="button"
+                    onClick={() => pickFocus(s.id)}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 border-b border-slate-100 last:border-0">
+                    <div className="font-bold text-slate-800">{s.display_name}</div>
+                    {(s.first_name_th || s.last_name_th) && (
+                      <div className="text-[11px] text-slate-500">
+                        {[s.first_name_th, s.last_name_th].filter(Boolean).join(" ")}
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-slate-400">
+              เลือกเพื่อให้ระบบจางชื่อพนักงานคนอื่นในตาราง — สแกนวันลงเวรของคนเดียวง่ายขึ้น
+            </p>
+          </div>
+        )}
+      </div>
+
       <div className="card overflow-x-auto">
         <table className="text-xs border-collapse min-w-full">
           <thead>
@@ -262,8 +366,20 @@ export default function RosterClient({
                 </td>
                 {dates.map((d) => {
                   const a = byCell.get(d)?.get(p.id);
+                  const focused = inFocus(a);
                   return (
-                    <td key={d} className="border border-slate-200 p-0 align-middle">
+                    <td key={d}
+                      className={`border border-slate-200 p-0 align-middle transition-opacity ${
+                        focusUserId != null && !focused
+                          ? "opacity-25 grayscale"
+                          : ""
+                      } ${
+                        // Ring around cells the focused person actually
+                        // owns — makes their pattern pop even more.
+                        focusUserId != null && focused && a
+                          ? "ring-2 ring-amber-400 ring-inset relative z-[1]"
+                          : ""
+                      }`}>
                       <button
                         type="button"
                         onClick={() => setEditing({ date: d, positionId: p.id })}
@@ -342,13 +458,27 @@ export default function RosterClient({
           {t("admin.persona.roster.legend.staffTotals")}
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-          {staffTotals.map((s) => (
-            <div key={s.id} className="text-sm flex justify-between border-b border-slate-100 pb-1">
-              <span className="text-slate-700 truncate">{s.name}</span>
-              <span className="font-mono font-bold text-slate-800">{s.count}</span>
-            </div>
-          ))}
+          {staffTotals.map((s) => {
+            const focused = focusUserId == null || s.id === focusUserId;
+            return (
+              <button key={s.id} type="button"
+                onClick={() => focusUserId === s.id ? clearFocus() : pickFocus(s.id)}
+                className={`text-sm flex justify-between border-b border-slate-100 pb-1 text-left transition ${
+                  focused ? "" : "opacity-25"
+                } ${
+                  focusUserId === s.id
+                    ? "bg-amber-50 -mx-1 px-1 rounded"
+                    : "hover:bg-slate-50 -mx-1 px-1 rounded"
+                }`}>
+                <span className="text-slate-700 truncate">{s.name}</span>
+                <span className="font-mono font-bold text-slate-800">{s.count}</span>
+              </button>
+            );
+          })}
         </div>
+        <p className="text-[11px] text-slate-400 mt-2">
+          💡 คลิกชื่อพนักงานเพื่อมุ่งเน้น/ล้างการมุ่งเน้น
+        </p>
       </div>
 
       {/* Publish button */}

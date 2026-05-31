@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSuperAdmin } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, type Branch } from "@/lib/db";
 import { decryptSecret } from "@/lib/secret-vault";
 import {
   STAGE_META, parseCustomQuestions, parseCustomAnswers,
@@ -82,6 +82,7 @@ type DocRow = {
 
 type PositionRow = {
   id: number; title: string; code: string | null;
+  branch_id: number | null;
   branch_name: string | null; department: string | null;
   custom_questions: string;
 };
@@ -102,7 +103,7 @@ export default function ApplicationDetailPage(
   ).get(app.candidate_id) as CandidateRow | undefined;
   if (!candidate) notFound();
   const position = db.prepare(`
-    SELECT p.id, p.title, p.code, p.department, p.custom_questions,
+    SELECT p.id, p.title, p.code, p.department, p.branch_id, p.custom_questions,
            b.name AS branch_name
     FROM recruita_positions p
     LEFT JOIN branches b ON b.id = p.branch_id
@@ -112,6 +113,19 @@ export default function ApplicationDetailPage(
   const docs = db.prepare(
     "SELECT id, kind, original_filename, mime_type, size_bytes, uploaded_at FROM recruita_documents WHERE candidate_id = ? ORDER BY uploaded_at"
   ).all(candidate.id) as DocRow[];
+
+  // Bridge → PERSONA needs: branches list (for override + reassign)
+  // and supervisor candidates (active employees who can manage staff).
+  const branches = db.prepare(
+    "SELECT id, name FROM branches ORDER BY name"
+  ).all() as Pick<Branch, "id" | "name">[];
+  const supervisors = db.prepare(`
+    SELECT id, display_name
+    FROM users
+    WHERE status NOT IN ('disabled', 'resigned')
+      AND role IN ('admin', 'super_admin', 'staff')
+    ORDER BY display_name
+  `).all() as Array<{ id: number; display_name: string }>;
 
   const customQuestions = parseCustomQuestions(position.custom_questions);
   const customAnswers = parseCustomAnswers(app.custom_answers);
@@ -151,6 +165,8 @@ export default function ApplicationDetailPage(
         customQuestions={customQuestions}
         customAnswers={customAnswers}
         stageMeta={STAGE_META}
+        branches={branches}
+        supervisors={supervisors}
       />
     </div>
   );
