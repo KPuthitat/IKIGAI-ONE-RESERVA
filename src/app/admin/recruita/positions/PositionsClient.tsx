@@ -26,6 +26,7 @@ type Position = {
 };
 
 type Branch = { id: number; name: string };
+type PersonaTitle = { title: string; description: string | null };
 
 const STATUS_META: Record<Position["status"], { label: string; chip: string }> = {
   open:   { label: "เปิดรับ", chip: "bg-emerald-100 text-emerald-700" },
@@ -45,11 +46,25 @@ function fmtSalary(min: number | null, max: number | null): string {
   return `฿${(min ?? max ?? 0).toLocaleString("th-TH")}+`;
 }
 
+/** Case-insensitive match against the PERSONA roster_positions
+ *  catalogue. Trims whitespace on both sides — admin's typed value
+ *  and the catalogue title are normalised the same way the server
+ *  query de-duped them. */
+function isExistingPersonaTitle(
+  candidate: string,
+  catalogue: PersonaTitle[]
+): boolean {
+  const needle = candidate.trim().toLowerCase();
+  if (!needle) return false;
+  return catalogue.some((p) => p.title.trim().toLowerCase() === needle);
+}
+
 export default function PositionsClient({
-  positions, branches
+  positions, branches, personaTitles
 }: {
   positions: Position[];
   branches: Branch[];
+  personaTitles: PersonaTitle[];
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -207,6 +222,7 @@ export default function PositionsClient({
       {showNew && (
         <NewPositionDialog
           branches={branches}
+          personaTitles={personaTitles}
           onClose={() => setShowNew(false)}
           onCreated={(id) => {
             setShowNew(false);
@@ -219,9 +235,10 @@ export default function PositionsClient({
 }
 
 function NewPositionDialog({
-  branches, onClose, onCreated
+  branches, personaTitles, onClose, onCreated
 }: {
   branches: Branch[];
+  personaTitles: PersonaTitle[];
   onClose: () => void;
   onCreated: (id: number) => void;
 }) {
@@ -264,10 +281,36 @@ function NewPositionDialog({
           สร้างเป็น "ร่าง" ก่อน — ใส่ JD/คำถามได้ในหน้าแก้ไข เปิดรับเมื่อพร้อม
         </p>
         <div>
-          <label className="label">ชื่อตำแหน่ง *</label>
+          <label className="label flex items-center justify-between">
+            <span>ชื่อตำแหน่ง *</span>
+            {title.trim() && (
+              isExistingPersonaTitle(title, personaTitles) ? (
+                <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                  ✓ มีใน PERSONA
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                  ใหม่ — ไม่มีใน PERSONA
+                </span>
+              )
+            )}
+          </label>
           <input className="input" value={title}
+            list="recruita-persona-titles"
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="เช่น พยาบาลวิชาชีพ Part-time" />
+            placeholder="เลือกจากตำแหน่งที่มีอยู่ใน PERSONA หรือพิมพ์ใหม่" />
+          {personaTitles.length > 0 && (
+            <datalist id="recruita-persona-titles">
+              {personaTitles.map((p) => (
+                <option key={p.title} value={p.title}>
+                  {p.description ? `— ${p.description}` : ""}
+                </option>
+              ))}
+            </datalist>
+          )}
+          <p className="text-[10px] text-slate-400 mt-1">
+            💡 พิมพ์เพื่อค้นหาตำแหน่งใน PERSONA · หรือพิมพ์ตำแหน่งใหม่ที่ยังไม่เคยมี
+          </p>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>

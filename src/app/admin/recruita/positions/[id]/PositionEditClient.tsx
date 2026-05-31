@@ -26,6 +26,19 @@ type Position = {
 };
 
 type Branch = { id: number; name: string };
+type PersonaTitle = { title: string; description: string | null };
+
+/** Case-insensitive lookup against the PERSONA roster_positions
+ *  catalogue — drives the "ใหม่ — ไม่มีใน PERSONA" badge so admin
+ *  spots when they're introducing a brand-new title. */
+function isExistingPersonaTitle(
+  candidate: string,
+  catalogue: PersonaTitle[]
+): boolean {
+  const needle = candidate.trim().toLowerCase();
+  if (!needle) return false;
+  return catalogue.some((p) => p.title.trim().toLowerCase() === needle);
+}
 
 /** Mint a stable 16-hex-char ID on the client. Using
  *  crypto.getRandomValues so it works in modern browsers without
@@ -45,10 +58,11 @@ const TYPE_LABEL: Record<CustomQuestionType, string> = {
 };
 
 export default function PositionEditClient({
-  position, branches
+  position, branches, personaTitles
 }: {
   position: Position;
   branches: Branch[];
+  personaTitles: PersonaTitle[];
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -196,9 +210,32 @@ export default function PositionEditClient({
         <h2 className="font-bold text-slate-800 text-sm">ข้อมูลพื้นฐาน</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="label">ชื่อตำแหน่ง *</label>
+            <label className="label flex items-center justify-between">
+              <span>ชื่อตำแหน่ง *</span>
+              {title.trim() && (
+                isExistingPersonaTitle(title, personaTitles) ? (
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                    ✓ มีใน PERSONA
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                    ใหม่ — ไม่มีใน PERSONA
+                  </span>
+                )
+              )}
+            </label>
             <input className="input" value={title}
+              list="recruita-edit-persona-titles"
               onChange={(e) => setTitle(e.target.value)} />
+            {personaTitles.length > 0 && (
+              <datalist id="recruita-edit-persona-titles">
+                {personaTitles.map((p) => (
+                  <option key={p.title} value={p.title}>
+                    {p.description ? `— ${p.description}` : ""}
+                  </option>
+                ))}
+              </datalist>
+            )}
           </div>
           <div>
             <label className="label">รหัส</label>

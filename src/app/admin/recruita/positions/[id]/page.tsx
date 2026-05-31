@@ -50,6 +50,22 @@ export default function RecruitaPositionEditPage(
     "SELECT id, name FROM branches ORDER BY name"
   ).all() as Pick<Branch, "id" | "name">[];
 
+  // Same PERSONA title catalogue as the list page so editing a
+  // position has the same autocomplete + "ใหม่" badge UX.
+  const personaTitlesRaw = db.prepare(`
+    SELECT title, description, branch_id
+    FROM roster_positions
+    ORDER BY title COLLATE NOCASE
+  `).all() as Array<{ title: string; description: string | null; branch_id: number }>;
+  const seen = new Set<string>();
+  const personaTitles: Array<{ title: string; description: string | null }> = [];
+  for (const r of personaTitlesRaw) {
+    const key = r.title.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    personaTitles.push({ title: r.title.trim(), description: r.description });
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -68,7 +84,8 @@ export default function RecruitaPositionEditPage(
           </p>
         </div>
       </div>
-      <PositionEditClient position={position} branches={branches} />
+      <PositionEditClient position={position} branches={branches}
+        personaTitles={personaTitles} />
     </div>
   );
 }

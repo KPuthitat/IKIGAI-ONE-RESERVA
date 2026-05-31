@@ -58,6 +58,26 @@ export default function RecruitaPositionsPage() {
     "SELECT id, name FROM branches ORDER BY name"
   ).all() as Pick<Branch, "id" | "name">[];
 
+  // Pull existing PERSONA roster positions so the "+ ตำแหน่งใหม่"
+  // dialog can autocomplete against titles already in use elsewhere
+  // in the org. De-duped by lowercase title so multiple branches with
+  // the same role (e.g. "พยาบาลวิชาชีพ" at NAMA + AT-HOME) collapse to
+  // one suggestion. Inactive positions still surface — admin may be
+  // rehiring for a role that's currently dormant.
+  const personaTitlesRaw = db.prepare(`
+    SELECT title, description, branch_id
+    FROM roster_positions
+    ORDER BY title COLLATE NOCASE
+  `).all() as Array<{ title: string; description: string | null; branch_id: number }>;
+  const seen = new Set<string>();
+  const personaTitles: Array<{ title: string; description: string | null }> = [];
+  for (const r of personaTitlesRaw) {
+    const key = r.title.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    personaTitles.push({ title: r.title.trim(), description: r.description });
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -66,7 +86,8 @@ export default function RecruitaPositionsPage() {
           จัดการตำแหน่งงานที่เปิดรับสมัคร · เปิด/ปิดรับสมัคร · กำหนดคำถามเฉพาะตำแหน่ง
         </p>
       </div>
-      <PositionsClient positions={positions} branches={branches} />
+      <PositionsClient positions={positions} branches={branches}
+        personaTitles={personaTitles} />
     </div>
   );
 }
