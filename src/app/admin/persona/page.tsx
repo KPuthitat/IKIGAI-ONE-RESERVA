@@ -152,6 +152,25 @@ export default function AdminPersonaDashboard() {
       </div>
 
       {/* Action items */}
+      {/* HR Dashboard banner — links to the executive overview that
+          aggregates everything (headcount / turnover / leave / age /
+          gender / contracts expiring). 2026-05-31. */}
+      <Link href="/admin/persona/dashboard"
+        className="card hover:shadow-md transition flex items-center justify-between gap-3 bg-gradient-to-r from-sky-50 to-emerald-50 border-2 border-sky-200 group">
+        <div className="flex items-center gap-3">
+          <div className="text-3xl">📊</div>
+          <div>
+            <div className="font-bold text-slate-800 group-hover:text-brand transition-colors">
+              HR Dashboard
+            </div>
+            <div className="text-xs text-slate-500">
+              ภาพรวมบุคลากรในองค์กร · ลาออก / เข้าใหม่ / การลา / ครบสัญญา
+            </div>
+          </div>
+        </div>
+        <div className="text-brand font-bold text-2xl">→</div>
+      </Link>
+
       <div>
         <h2 className="text-sm font-semibold text-slate-600 mb-2">
           {t(lang, "admin.persona.dashboard.actionItems")}
