@@ -82,6 +82,30 @@ export default function AdminHomePage() {
             {t(lang, "portal.openBackend")}
           </p>
         </Link>
+
+        {/* RECRUITA — recruitment intake + pipeline. NEW pill matches
+            the INSIGNA treatment because RECRUITA is the next module
+            admins should notice. Description stays short — the
+            module itself owns the longer story on its landing. */}
+        <Link href="\admin\recruita" className="card hover:shadow-2xl transition group block">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="text-[11px] tracking-[1px] text-slate-400">
+              {t(lang, "portal.label.module")}
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-700">
+              NEW
+            </span>
+          </div>
+          <h2 className="text-2xl font-bold text-slate-800 group-hover:text-brand transition-colors">
+            RECRUITA
+          </h2>
+          <p className="text-slate-500 text-sm mt-1">
+            ระบบรับสมัครงาน · ตำแหน่ง · ใบสมัคร · pipeline → bridge เข้า PERSONA
+          </p>
+          <p className="mt-4 text-brand font-bold text-sm">
+            {t(lang, "portal.openBackend")}
+          </p>
+        </Link>
       </div>
     </div>
   );
