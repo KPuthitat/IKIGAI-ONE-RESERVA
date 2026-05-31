@@ -214,22 +214,43 @@ echo "==> [6/6] verifying"
 #   120s → 240s on 2026-05-31 (INVENTA expansion — false-alarmed at
 #     120s while the process was still loading modules, even though
 #     it eventually bound at ~140s and ran fine)
-# If you bump again, also consider scaling the droplet — observed
-# boot time is ~60-140s, so 240s gives generous headroom without
-# delaying a true-failure case too long.
+#   240s → 360s on 2026-05-31 (RECRUITA + hire-bridge). The 240s
+#     ceiling already wasn't enough — observed cold-start ran past
+#     it twice this same day. 6 minutes is the new generous headroom.
+# If you bump again, scale the droplet.
+#
+# Strategy refresh: the old check required BOUND_PID == NEW_PM2_PID,
+# but on some PM2 fork-mode spawns `pm2 pid` returns the wrapper pid
+# while lsof reports the child node pid that actually owns the
+# socket. That mismatch caused the script to keep looping past the
+# real bind moment. The new check is:
+#   "treat as bound" the moment SOMETHING is listening on :PORT
+#   AND a HEAD curl to localhost:PORT returns 200/307. That's what
+#   the smoke test cared about anyway — proving the server answers
+#   real HTTP, not a specific pid equality. The pid mismatch is then
+#   reported as a non-fatal note (rare orphan case).
 NEW_PM2_PID="$(pm2 pid "$PM2_APP" 2>/dev/null | tr -d '[:space:]' | grep -oE '^[0-9]+$' || echo '')"
 BOUND_PID=""
-for i in $(seq 1 240); do
+HTTP_STATUS="000"
+for i in $(seq 1 360); do
   BOUND_PID="$(lsof -ti :"${PORT}" -sTCP:LISTEN 2>/dev/null | head -n1 || echo '')"
-  if [[ -n "$BOUND_PID" && "$BOUND_PID" == "$NEW_PM2_PID" ]]; then
-    echo "    bound on :${PORT} after ${i}s"
-    break
+  if [[ -n "$BOUND_PID" ]]; then
+    # Port has a listener — probe with curl to confirm it's really
+    # answering HTTP. Don't trust lsof alone; pm2's intermediate
+    # bootstrap process can hold the socket briefly before next-server
+    # is actually ready to respond.
+    HTTP_STATUS="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
+      "http://${HOST_BIND}:${PORT}" || echo '000')"
+    if [[ "$HTTP_STATUS" == "200" || "$HTTP_STATUS" == "307" ]]; then
+      echo "    bound + answering on :${PORT} after ${i}s (HTTP ${HTTP_STATUS})"
+      break
+    fi
   fi
   sleep 1
 done
 
 if [[ -z "$BOUND_PID" ]]; then
-  echo "    ✗ nothing is listening on :${PORT} after 240s — diagnostics:"
+  echo "    ✗ nothing is listening on :${PORT} after 360s — diagnostics:"
   echo "    --- pm2 list ---"
   pm2 list || true
   echo "    --- pm2 logs ${PM2_APP} (last 30 err lines) ---"
@@ -237,23 +258,21 @@ if [[ -z "$BOUND_PID" ]]; then
   exit 2
 fi
 
-if [[ "$BOUND_PID" != "$NEW_PM2_PID" ]]; then
-  echo "    ✗ :${PORT} held by pid ${BOUND_PID} but PM2 ${PM2_APP} is pid ${NEW_PM2_PID}"
-  echo "      (re-run the script, or kill -9 ${BOUND_PID} manually)"
+if [[ "$HTTP_STATUS" != "200" && "$HTTP_STATUS" != "307" ]]; then
+  echo "    ✗ :${PORT} bound (pid ${BOUND_PID}) but HTTP ${HTTP_STATUS} — diagnostics:"
+  pm2 logs "$PM2_APP" --err --lines 30 --nostream || true
   exit 2
 fi
 
-# Quick smoke test — Next.js should answer with a redirect to /login
-# for the root URL. A 5xx or no response means the new process
-# bound but didn't fully boot.
-HTTP_STATUS="$(curl -s -o /dev/null -w '%{http_code}' \
-  "http://${HOST_BIND}:${PORT}" || echo '000')"
-echo "    PM2 ${PM2_APP} = pid ${NEW_PM2_PID}, :${PORT} bound, HTTP ${HTTP_STATUS}"
-
-if [[ "$HTTP_STATUS" == "307" || "$HTTP_STATUS" == "200" ]]; then
-  echo "==> ✓ deploy complete"
-  exit 0
+# Soft warn on pid mismatch — the listener answers HTTP correctly, so
+# the deploy is fine; the mismatch usually means PM2's pid metadata
+# lags briefly behind the actual fork. Worth surfacing as a note so
+# operators can spot the rare orphan case.
+if [[ -n "$NEW_PM2_PID" && "$BOUND_PID" != "$NEW_PM2_PID" ]]; then
+  echo "    ⚠ :${PORT} bound by pid ${BOUND_PID} but pm2 reports pid ${NEW_PM2_PID}"
+  echo "      (usually fine — PM2 fork wrapper vs node child)"
 fi
 
-echo "    ✗ unexpected HTTP status ${HTTP_STATUS} — check pm2 logs ${PM2_APP}"
-exit 2
+echo "    PM2 ${PM2_APP} = pid ${NEW_PM2_PID:-?}, :${PORT} bound by ${BOUND_PID}, HTTP ${HTTP_STATUS}"
+echo "==> ✓ deploy complete"
+exit 0
