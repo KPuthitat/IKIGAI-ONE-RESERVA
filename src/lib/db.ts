@@ -2843,6 +2843,169 @@ function runMigrations(db: Database.Database): void {
   // that still carry the old seed clear it via the super_admin
   // "ล้างข้อมูล INVENTA" tool — see /api/inventa/admin/reset.)
 
+  // ── RECRUITA — recruitment module (2026-05-31, Phase 0) ──────
+  // Standalone module: applicants come through a separate LINE OA
+  // ("IKIGAI RECRUIT") and don't touch the main users table until
+  // hire. Once admin clicks "รับเข้าทำงาน" on an application, a
+  // bridge transaction creates the PERSONA users row + carries
+  // every field listed in EmployeeProfile (1:1 map → no re-entry).
+  //
+  // Table layout:
+  //   recruita_positions     — open positions admin maintains
+  //   recruita_candidates    — one row per real person (deduped by
+  //                              national_id or email+phone)
+  //   recruita_applications  — one row per (candidate × position)
+  //                              attempt; this is where stage lives
+  //   recruita_documents     — encrypted file refs (photo / resume /
+  //                              ID copy / education cert / …)
+  //
+  // Per-position custom questions live on positions.custom_questions
+  // as JSON; answers on applications.custom_answers as JSON. Four
+  // types supported: text / single / multi / rating — admin defines
+  // the shape, the LIFF form renders dynamically.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS recruita_positions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER REFERENCES branches(id),
+      code TEXT,                    -- optional short code, e.g. "BAR-01"
+      title TEXT NOT NULL,          -- public-facing title
+      department TEXT,
+      employment_type TEXT,         -- 'ft' | 'pt' | 'contract'
+      jd_summary TEXT,              -- one-liner shown on listing
+      jd_full TEXT,                 -- full markdown JD on detail page
+      requirements TEXT,            -- markdown/free text
+      benefits TEXT,                -- markdown/free text
+      salary_min REAL,
+      salary_max REAL,
+      vacancies INTEGER NOT NULL DEFAULT 1,
+      /** JSON array of custom questions admin defined for this role.
+       *  Shape: [{ id, order, required, type, label, hint?, config? }]
+       *  type ∈ 'text'|'single'|'multi'|'rating'.
+       *  config carries type-specific fields (options, scale, etc.). */
+      custom_questions TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'open', -- 'open' | 'closed' | 'draft'
+      opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      closed_at TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_recruita_positions_status
+      ON recruita_positions(status, branch_id);
+
+    CREATE TABLE IF NOT EXISTS recruita_candidates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      /** Deduplication key — sha256(national_id) when provided, else
+       *  sha256(lower(email)+normalized_phone). Lets us recognise the
+       *  same person applying to multiple positions without revealing
+       *  their PII in queries. */
+      dedupe_hash TEXT,
+      /** LINE userId of the applicant once they enter via LIFF.
+       *  NULL for web-form applicants (Phase 0). */
+      line_user_id TEXT,
+      -- Personal (matches EmployeeProfile shape so bridge is direct)
+      title_prefix TEXT,
+      first_name_th TEXT,
+      last_name_th TEXT,
+      first_name_en TEXT,
+      last_name_en TEXT,
+      nickname_th TEXT,
+      nickname_en TEXT,
+      dob TEXT,                      -- YYYY-MM-DD
+      gender TEXT,                   -- 'male' | 'female'
+      nationality TEXT,
+      marital_status TEXT,
+      military_status TEXT,
+      religion TEXT,
+      /** Encrypted via secret-vault (enc:v1:…). Plaintext never
+       *  hits the DB — see secret-vault.ts. */
+      national_id_encrypted TEXT,
+      -- Contact
+      personal_email TEXT,
+      mobile_phone TEXT,
+      line_id TEXT,
+      house_address TEXT,
+      house_subdistrict TEXT,
+      house_district TEXT,
+      house_province TEXT,
+      house_postcode TEXT,
+      contact_address TEXT,
+      contact_subdistrict TEXT,
+      contact_district TEXT,
+      contact_province TEXT,
+      contact_postcode TEXT,
+      contact_same_as_house INTEGER NOT NULL DEFAULT 1,
+      emergency_name TEXT,
+      emergency_relationship TEXT,
+      emergency_phone TEXT,
+      -- Structured history (JSON arrays — flexible row counts)
+      /** [{ level, institution, faculty, major, year_finished, gpa }] */
+      education_json TEXT NOT NULL DEFAULT '[]',
+      /** [{ company, position, started, ended, salary, reason_left }] */
+      experience_json TEXT NOT NULL DEFAULT '[]',
+      /** [{ language, level }] — e.g. {language:'TH', level:'native'} */
+      skills_language_json TEXT NOT NULL DEFAULT '[]',
+      /** Free-form list, one per line */
+      skills_other TEXT,
+      /** [{ name, relationship, phone }] — required 2 by convention */
+      references_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_recruita_candidates_dedupe
+      ON recruita_candidates(dedupe_hash) WHERE dedupe_hash IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_recruita_candidates_line
+      ON recruita_candidates(line_user_id) WHERE line_user_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS recruita_applications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      candidate_id INTEGER NOT NULL REFERENCES recruita_candidates(id) ON DELETE CASCADE,
+      position_id INTEGER NOT NULL REFERENCES recruita_positions(id),
+      /** Lifecycle stage. Phase 0 only writes 'applied'; later phases
+       *  advance via the kanban + bridge. */
+      stage TEXT NOT NULL DEFAULT 'applied',
+        -- 'applied' | 'screening' | 'interview' | 'offered'
+        -- | 'accepted' | 'hired' | 'rejected' | 'withdrawn'
+      expected_salary REAL,
+      earliest_start_date TEXT,
+      why_join TEXT,               -- free-text "ทำไมอยากร่วมงาน"
+      /** JSON object — { [questionId]: answerValue }. answerValue type
+       *  follows the question type: string for text/single, string[]
+       *  for multi, number for rating. */
+      custom_answers TEXT NOT NULL DEFAULT '{}',
+      /** PDPA: consent timestamp + originating IP. Required to submit. */
+      consent_at TEXT,
+      consent_ip TEXT,
+      consent_user_agent TEXT,
+      /** When the bridge fires, hired_user_id points at the new
+       *  users row so we can navigate from RECRUITA → PERSONA. */
+      hired_user_id INTEGER REFERENCES users(id),
+      hired_at TEXT,
+      hired_by INTEGER REFERENCES users(id),
+      submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_recruita_applications_stage
+      ON recruita_applications(stage, position_id);
+    CREATE INDEX IF NOT EXISTS idx_recruita_applications_candidate
+      ON recruita_applications(candidate_id);
+
+    CREATE TABLE IF NOT EXISTS recruita_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      candidate_id INTEGER NOT NULL REFERENCES recruita_candidates(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,            -- 'photo' | 'resume' | 'id_copy' | 'education_cert' | 'house_reg' | 'other'
+      original_filename TEXT,
+      mime_type TEXT,
+      size_bytes INTEGER,
+      /** Path on disk under /var/www/reserva/data/recruita/<candidateId>/
+       *  Filename is randomised so URL guessing fails. */
+      stored_path TEXT NOT NULL,
+      uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_recruita_documents_candidate
+      ON recruita_documents(candidate_id, kind);
+  `);
+
   // Walk-in visits (added 2026-05-24) — staff records anyone who walks
   // in without a booking. Mirrors a slice of `bookings`: phone is the
   // identity key used to decide "first-time vs returning". Walk-ins
