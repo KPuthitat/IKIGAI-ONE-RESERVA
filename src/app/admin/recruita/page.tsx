@@ -74,7 +74,7 @@ export default function RecruitaLanding() {
       </div>
 
       {/* Quick links */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Link href="/admin/recruita/positions"
           className="card hover:shadow-md transition group">
           <div className="text-[11px] tracking-[1px] text-slate-400 mb-1">จัดการ</div>
@@ -86,6 +86,17 @@ export default function RecruitaLanding() {
           </p>
           <p className="mt-3 text-brand text-sm font-bold">→ เปิด</p>
         </Link>
+        <Link href="/admin/recruita/pipeline"
+          className="card hover:shadow-md transition group bg-gradient-to-br from-amber-50 to-emerald-50">
+          <div className="text-[11px] tracking-[1px] text-slate-400 mb-1">มุมมอง</div>
+          <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand">
+            Pipeline
+          </h2>
+          <p className="text-sm text-slate-500 mt-1">
+            Kanban · ลากการ์ดระหว่าง stage · ภาพรวม pipeline ทั้งหมด
+          </p>
+          <p className="mt-3 text-brand text-sm font-bold">→ เปิด</p>
+        </Link>
         <Link href="/admin/recruita/applications"
           className="card hover:shadow-md transition group">
           <div className="text-[11px] tracking-[1px] text-slate-400 mb-1">จัดการ</div>
@@ -93,7 +104,7 @@ export default function RecruitaLanding() {
             ใบสมัคร
           </h2>
           <p className="text-sm text-slate-500 mt-1">
-            ดูใบสมัครที่เข้ามา · ค้นหา · กรองตามตำแหน่ง/สถานะ
+            List view · ค้นหา · กรองตามตำแหน่ง/สถานะ
           </p>
           <p className="mt-3 text-brand text-sm font-bold">→ เปิด</p>
         </Link>
