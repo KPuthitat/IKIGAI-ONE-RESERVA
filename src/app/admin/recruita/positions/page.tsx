@@ -1,0 +1,72 @@
+import type { Metadata } from "next";
+import { requireSuperAdmin } from "@/lib/auth";
+import { getDb, type Branch } from "@/lib/db";
+import PositionsClient from "./PositionsClient";
+
+export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "RECRUITA · ตำแหน่งงาน" };
+
+// /admin/recruita/positions — list every open / draft / closed
+// position. Super-admin only because recruitment criteria touch
+// employment terms (salary range, JD) that aren't appropriate for
+// branch-level admins to edit.
+
+type Row = {
+  id: number;
+  branch_id: number | null;
+  branch_name: string | null;
+  code: string | null;
+  title: string;
+  department: string | null;
+  employment_type: "ft" | "pt" | "contract" | null;
+  jd_summary: string | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  vacancies: number;
+  status: "open" | "closed" | "draft";
+  opened_at: string;
+  closed_at: string | null;
+  application_count: number;
+  hired_count: number;
+  custom_questions: string;
+};
+
+export default function RecruitaPositionsPage() {
+  requireSuperAdmin();
+  const db = getDb();
+  const positions = db.prepare(`
+    SELECT p.id, p.branch_id, b.name AS branch_name,
+           p.code, p.title, p.department, p.employment_type,
+           p.jd_summary, p.salary_min, p.salary_max, p.vacancies,
+           p.status, p.opened_at, p.closed_at, p.custom_questions,
+           (SELECT COUNT(*) FROM recruita_applications a
+              WHERE a.position_id = p.id) AS application_count,
+           (SELECT COUNT(*) FROM recruita_applications a
+              WHERE a.position_id = p.id AND a.stage = 'hired') AS hired_count
+    FROM recruita_positions p
+    LEFT JOIN branches b ON b.id = p.branch_id
+    ORDER BY
+      CASE p.status
+        WHEN 'open' THEN 0
+        WHEN 'draft' THEN 1
+        WHEN 'closed' THEN 2
+      END,
+      p.opened_at DESC
+  `).all() as Row[];
+
+  const branches = db.prepare(
+    "SELECT id, name FROM branches ORDER BY name"
+  ).all() as Pick<Branch, "id" | "name">[];
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-800">RECRUITA · ตำแหน่งงาน</h1>
+        <p className="text-sm text-slate-500">
+          จัดการตำแหน่งงานที่เปิดรับสมัคร · เปิด/ปิดรับสมัคร · กำหนดคำถามเฉพาะตำแหน่ง
+        </p>
+      </div>
+      <PositionsClient positions={positions} branches={branches} />
+    </div>
+  );
+}

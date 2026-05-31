@@ -3006,6 +3006,66 @@ function runMigrations(db: Database.Database): void {
       ON recruita_documents(candidate_id, kind);
   `);
 
+  // ── 2026-05-31 RECRUITA additive fields ──────────────────────
+  // Surfaced after reviewing the owner's existing Google Form
+  // ("ระบบให้ข้อมูลสำหรับสมัครงานออนไลน์", 191 responses). These
+  // are universal (apply to every position) so they live on the
+  // canonical tables. Role-specific things like "หัตถการทางการ
+  // แพทย์" stay as per-position custom_questions JSON instead.
+  //
+  // Split rationale:
+  //   • candidate-level → identity / lifestyle / history that
+  //     follows the person across positions
+  //   • application-level → answers about THIS specific job
+  //     attempt (e.g., expected income for this role, where
+  //     they heard about THIS opening, truth declaration tied
+  //     to THIS submission)
+  const cCols = db.prepare("PRAGMA table_info(recruita_candidates)")
+    .all() as Array<{ name: string }>;
+  const addCandidate = (col: string, ddl: string) => {
+    if (!cCols.some((c) => c.name === col)) {
+      db.exec(`ALTER TABLE recruita_candidates ADD COLUMN ${col} ${ddl}`);
+    }
+  };
+  // Distinct from `nationality` (สัญชาติ vs เชื้อชาติ on the form)
+  addCandidate("race", "TEXT");
+  // 'family' | 'own_home' | 'rental' | 'dormitory' | 'other'
+  addCandidate("housing_type", "TEXT");
+  // 'has_license' | 'no_license' | 'not_applicable' — for nurse /
+  // medical-tech / public-health roles only
+  addCandidate("professional_license_status", "TEXT");
+  // 0/1 from "เคยป่วยหนัก/โรคติดต่อร้ายแรงมาก่อนหรือไม่"
+  addCandidate("prior_illness", "INTEGER");
+  addCandidate("prior_illness_detail", "TEXT");
+  // "ถ้าเคยสมัครกับบริษัทมาก่อน เคยสมัครเมื่อไหร่"
+  addCandidate("prior_application_at", "TEXT");
+  // "เขียนชื่อ/โทร/อาชีพของผู้อ้างถึง 1 คน (ไม่ใช่ญาติ/นายจ้าง)"
+  addCandidate("referee_external_text", "TEXT");
+
+  const aCols = db.prepare("PRAGMA table_info(recruita_applications)")
+    .all() as Array<{ name: string }>;
+  const addApplication = (col: string, ddl: string) => {
+    if (!aCols.some((c) => c.name === col)) {
+      db.exec(`ALTER TABLE recruita_applications ADD COLUMN ${col} ${ddl}`);
+    }
+  };
+  // "ทราบข่าวสารการสมัครจากช่องทางใด"
+  addApplication("info_source", "TEXT");
+  // 0/1 from "สามารถไปปฏิบัติงานต่างจังหวัดได้หรือไม่"
+  addApplication("can_travel", "INTEGER");
+  // "คุณมีความคาดหวัง/เป้าหมายอะไรกับการสมัครเข้ามาทำงานกับเรา"
+  addApplication("goals", "TEXT");
+  // 0/1 — Section 8 of the form, "ยอมรับ รับรองความถูกต้อง"
+  addApplication("truth_declaration_accepted", "INTEGER");
+  // Snapshot of last work experience pulled out of the JSON for
+  // pipeline filtering (admin often wants "applicants whose last
+  // role was X" without parsing JSON in SQL).
+  addApplication("last_workplace", "TEXT");
+  addApplication("last_position", "TEXT");
+  addApplication("last_tenure", "TEXT");
+  addApplication("last_salary", "TEXT");
+  addApplication("last_reason_left", "TEXT");
+
   // Walk-in visits (added 2026-05-24) — staff records anyone who walks
   // in without a booking. Mirrors a slice of `bookings`: phone is the
   // identity key used to decide "first-time vs returning". Walk-ins

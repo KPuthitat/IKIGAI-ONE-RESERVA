@@ -6,7 +6,15 @@
 // every personal/contact field so the new employee never re-enters
 // data. See db.ts for the table layout.
 
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
+
+/** Stable random id for a CustomQuestion row. Client + server both
+ *  use it; the value is opaque (we don't lookup or reference it
+ *  outside its parent JSON blob). 16 hex chars = 64 bits — plenty
+ *  for the few questions per position scale we operate at. */
+export function genQuestionId(): string {
+  return randomBytes(8).toString("hex");
+}
 
 // ── Custom-question schema ──────────────────────────────────────
 // Admin defines per-position questions. Four supported types:
@@ -19,7 +27,12 @@ import { createHash } from "crypto";
 // cleanly in recruita_positions.custom_questions and survives
 // admin edits without migration churn.
 
-export type CustomQuestionType = "text" | "single" | "multi" | "rating";
+export type CustomQuestionType =
+  | "text"    // free text
+  | "single"  // radio / dropdown
+  | "multi"   // checkbox group; supports "Other: ___" via config.allow_other
+  | "rating"  // 1..N stars/numbers
+  | "grid";   // rows × cols matrix (e.g. language ability × proficiency)
 
 export type CustomQuestion = {
   /** Stable id (uuid-like) used as the key in custom_answers. Never
@@ -38,9 +51,15 @@ export type CustomQuestion = {
     max_length?: number;
     // single / multi:
     options?: Array<{ value: string; label: string }>;
+    /** multi only — render an "Other: ___" row that captures free
+     *  text alongside the boxes. Matches Google Forms semantics. */
+    allow_other?: boolean;
     // rating:
     scale?: number;       // default 5
     icon?: "star" | "number";
+    // grid (matrix):
+    rows?: Array<{ value: string; label: string }>;
+    cols?: Array<{ value: string; label: string }>;
   };
 };
 
@@ -49,8 +68,9 @@ export type CustomQuestion = {
 export type CustomAnswer =
   | { type: "text"; value: string }
   | { type: "single"; value: string }
-  | { type: "multi"; value: string[] }
-  | { type: "rating"; value: number };
+  | { type: "multi"; value: string[]; other?: string | null }
+  | { type: "rating"; value: number }
+  | { type: "grid"; value: Record<string, string> };  // { rowValue: colValue }
 
 export type CustomAnswers = Record<string, CustomAnswer>;
 
@@ -67,7 +87,7 @@ export function parseCustomQuestions(json: string | null | undefined): CustomQue
         q && typeof q === "object"
         && typeof q.id === "string"
         && typeof q.type === "string"
-        && ["text", "single", "multi", "rating"].includes(q.type)
+        && ["text", "single", "multi", "rating", "grid"].includes(q.type)
         && typeof q.label === "string")
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   } catch {
@@ -184,10 +204,29 @@ export type RecruitaCandidate = {
   dob: string | null;
   gender: "male" | "female" | null;
   nationality: string | null;
+  /** เชื้อชาติ — distinct from nationality (สัญชาติ). Both kept
+   *  because the existing recruitment form (and Thai HR docs) ask
+   *  them separately. */
+  race: string | null;
   marital_status: string | null;
   military_status: string | null;
   religion: string | null;
   national_id_encrypted: string | null;
+  /** 'family' | 'own_home' | 'rental' | 'dormitory' | 'other' */
+  housing_type: string | null;
+  /** 'has_license' | 'no_license' | 'not_applicable' — for the
+   *  medical roster (nurse / med-tech / public health). Other
+   *  positions ignore this. */
+  professional_license_status: string | null;
+  /** "เคยป่วยหนัก/โรคติดต่อร้ายแรงมาก่อนหรือไม่" + detail */
+  prior_illness: number | null;        // 0/1
+  prior_illness_detail: string | null;
+  /** "ถ้าเคยสมัครกับบริษัทมาก่อน เคยสมัครเมื่อไหร่" — free text;
+   *  applicant may write "2566", "ปี 2024", "ปลายปีที่แล้ว", etc. */
+  prior_application_at: string | null;
+  /** Free text describing the 1 non-relative, non-prior-employer
+   *  reference (name + phone + occupation in one block). */
+  referee_external_text: string | null;
   personal_email: string | null;
   mobile_phone: string | null;
   line_id: string | null;
@@ -226,6 +265,24 @@ export type RecruitaApplication = {
   consent_at: string | null;
   consent_ip: string | null;
   consent_user_agent: string | null;
+  /** "ทราบข่าวสารการสมัครจากช่องทางใด" — used for source
+   *  attribution in the recruitment dashboard. Free text in v1;
+   *  later we'll switch to a dropdown so analytics roll up. */
+  info_source: string | null;
+  /** 0/1 from "สามารถไปปฏิบัติงานต่างจังหวัดได้หรือไม่" */
+  can_travel: number | null;
+  /** "คุณมีความคาดหวัง/เป้าหมายอะไรกับการสมัครเข้ามาทำงานกับเรา" */
+  goals: string | null;
+  /** 0/1 — Section 8 (truth declaration). Required to submit. */
+  truth_declaration_accepted: number | null;
+  /** Snapshot of latest work experience pulled out of the JSON so
+   *  pipeline filters can run in SQL ("show me everyone whose
+   *  last role was 'พยาบาล'") without parsing JSON per row. */
+  last_workplace: string | null;
+  last_position: string | null;
+  last_tenure: string | null;
+  last_salary: string | null;
+  last_reason_left: string | null;
   hired_user_id: number | null;
   hired_at: string | null;
   hired_by: number | null;
