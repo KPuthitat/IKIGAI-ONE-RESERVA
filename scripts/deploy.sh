@@ -232,11 +232,21 @@ echo "==> [6/6] verifying"
 NEW_PM2_PID="$(pm2 pid "$PM2_APP" 2>/dev/null | tr -d '[:space:]' | grep -oE '^[0-9]+$' || echo '')"
 BOUND_PID=""
 HTTP_STATUS="000"
+# 2026-06-01: switched from lsof to ss for the listener probe.
+# On this DigitalOcean droplet lsof returns empty for :3010 even
+# when the port is genuinely listening — observed three deploys
+# in a row where lsof said "nothing" but ss said the port was held
+# by next-server and curl returned 307. ss is part of iproute2 and
+# is the canonical tool on modern Linux; lsof has its own
+# namespace traversal quirks. The ss line we parse looks like:
+#   LISTEN 0 511 127.0.0.1:3010 0.0.0.0:* users:(("next-server (v1)",pid=1234,fd=19))
+# The grep+sed extracts the pid out of users:((...)).
 for i in $(seq 1 360); do
-  BOUND_PID="$(lsof -ti :"${PORT}" -sTCP:LISTEN 2>/dev/null | head -n1 || echo '')"
-  if [[ -n "$BOUND_PID" ]]; then
+  BOUND_LINE="$(ss -tlnp 2>/dev/null | grep -E ":${PORT}\s" | head -n1 || true)"
+  if [[ -n "$BOUND_LINE" ]]; then
+    BOUND_PID="$(echo "$BOUND_LINE" | grep -oE 'pid=[0-9]+' | head -n1 | cut -d= -f2)"
     # Port has a listener — probe with curl to confirm it's really
-    # answering HTTP. Don't trust lsof alone; pm2's intermediate
+    # answering HTTP. Don't trust ss alone; pm2's intermediate
     # bootstrap process can hold the socket briefly before next-server
     # is actually ready to respond.
     HTTP_STATUS="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
