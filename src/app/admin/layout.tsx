@@ -91,6 +91,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/staff/inventa", label: "INVENTA" },
         { href: "/admin/ascenda", label: "ASCENDA" },
         { href: "/admin/insigna", label: "INSIGNA" },
+        { href: "/admin/recruita", label: "RECRUITA" },
         // System-wide entries — only super_admin can manage these,
         // so hide them from regular admins to keep the sidebar clean.
         // The pages still enforce requireSuperAdmin() server-side as
@@ -192,6 +193,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // now native PERSONA pages. /admin/persona/legacy still
         // resolves by URL for ~2 weeks during transition, can be
         // deleted afterwards.
+      ]
+    },
+    {
+      label: "RECRUITA",
+      pathPrefix: "/admin/recruita",
+      items: [
+        { href: "/admin/recruita", label: t(lang, "admin.recruita.nav.landing") },
+        { href: "/admin/recruita/positions", label: t(lang, "admin.recruita.nav.positions") },
+        { href: "/admin/recruita/pipeline", label: t(lang, "admin.recruita.nav.pipeline") },
+        { href: "/admin/recruita/applications", label: t(lang, "admin.recruita.nav.applications") },
+        { href: "/admin/recruita/dashboard", label: t(lang, "admin.recruita.nav.dashboard") },
+        { href: "/admin/recruita/settings", label: t(lang, "admin.recruita.nav.settings") }
       ]
     },
     {

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { requireSuperAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import { STAGE_META, type ApplicationStage } from "@/lib/recruita";
 import PipelineClient from "./PipelineClient";
 
@@ -30,6 +32,7 @@ type PositionOpt = {
 
 export default function PipelinePage() {
   requireSuperAdmin();
+  const lang = getLang();
   const db = getDb();
 
   const cards = db.prepare(`
@@ -69,9 +72,11 @@ export default function PipelinePage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">RECRUITA · Pipeline</h1>
+        <h1 className="text-2xl font-bold text-slate-800">
+          RECRUITA · <span className="font-medium text-slate-600">{t(lang, "admin.recruita.pipeline.title")}</span>
+        </h1>
         <p className="text-sm text-slate-500">
-          ลากการ์ดระหว่างขั้นตอน · หรือคลิก stage chip เพื่อเปลี่ยน · 8 สถานะตามวงจรการคัดเลือก
+          {t(lang, "admin.recruita.pipeline.subtitle")}
         </p>
       </div>
       <PipelineClient cards={cards} positions={positions} stageMeta={STAGE_META} />

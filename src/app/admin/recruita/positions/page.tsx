@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { requireSuperAdmin } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import PositionsClient from "./PositionsClient";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +35,7 @@ type Row = {
 
 export default function RecruitaPositionsPage() {
   requireSuperAdmin();
+  const lang = getLang();
   const db = getDb();
   const positions = db.prepare(`
     SELECT p.id, p.branch_id, b.name AS branch_name,
@@ -81,9 +84,11 @@ export default function RecruitaPositionsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">RECRUITA · ตำแหน่งงาน</h1>
+        <h1 className="text-2xl font-bold text-slate-800">
+          RECRUITA · <span className="font-medium text-slate-600">{t(lang, "admin.recruita.positions.title")}</span>
+        </h1>
         <p className="text-sm text-slate-500">
-          จัดการตำแหน่งงานที่เปิดรับสมัคร · เปิด/ปิดรับสมัคร · กำหนดคำถามเฉพาะตำแหน่ง
+          {t(lang, "admin.recruita.positions.subtitle")}
         </p>
       </div>
       <PositionsClient positions={positions} branches={branches}

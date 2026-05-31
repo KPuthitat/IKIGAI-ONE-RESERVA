@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireSuperAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import type { ApplicationStage } from "@/lib/recruita";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +46,7 @@ export default function RecruitaDashboard({
   searchParams
 }: { searchParams: { days?: string; position?: string } }) {
   requireSuperAdmin();
+  const lang = getLang();
   const db = getDb();
 
   const days = Math.max(7, Math.min(3650,
@@ -180,9 +183,11 @@ export default function RecruitaDashboard({
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">RECRUITA · Analytics</h1>
+        <h1 className="text-2xl font-bold text-slate-800">
+          RECRUITA · <span className="font-medium text-slate-600">{t(lang, "admin.recruita.dashboard.title")}</span>
+        </h1>
         <p className="text-sm text-slate-500">
-          ภาพรวมการสรรหา · ช่วง {PERIOD_OPTIONS.find((p) => p.days === days)?.label ?? `${days} วัน`} · {positionName}
+          {t(lang, "admin.recruita.dashboard.subtitle")} · {PERIOD_OPTIONS.find((p) => p.days === days)?.label ?? `${days} วัน`} · {positionName}
         </p>
       </div>
 

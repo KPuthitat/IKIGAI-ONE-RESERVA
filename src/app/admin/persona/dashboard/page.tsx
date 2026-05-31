@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "HR Dashboard · PERSONA" };
@@ -37,6 +39,7 @@ export default function HRDashboard({
   searchParams
 }: { searchParams: { days?: string; branch?: string } }) {
   requireAdmin();
+  const lang = getLang();
   const db = getDb();
 
   const days = Math.max(7, Math.min(3650,
@@ -242,9 +245,11 @@ export default function HRDashboard({
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">HR Dashboard</h1>
+        <h1 className="text-2xl font-bold text-slate-800">
+          {t(lang, "admin.persona.dashboard.hrTitle")}
+        </h1>
         <p className="text-sm text-slate-500">
-          ภาพรวมบุคลากรในองค์กร · ช่วง {PERIOD_OPTIONS.find((p) => p.days === days)?.label ?? `${days} วัน`} · {branchName}
+          {t(lang, "admin.persona.dashboard.hrSubtitle")} · {PERIOD_OPTIONS.find((p) => p.days === days)?.label ?? `${days} วัน`} · {branchName}
         </p>
       </div>
 

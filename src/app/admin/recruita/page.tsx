@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireSuperAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import { STAGE_META, type ApplicationStage } from "@/lib/recruita";
 import { getRecruitaChannel, isChannelReady } from "@/lib/messaging-channels";
 
@@ -17,6 +19,7 @@ type StageCount = { stage: ApplicationStage; count: number };
 
 export default function RecruitaLanding() {
   requireSuperAdmin();
+  const lang = getLang();
   const db = getDb();
 
   const positionStats = db.prepare(`
@@ -58,14 +61,16 @@ export default function RecruitaLanding() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">RECRUITA</h1>
+          <h1 className="text-2xl font-bold text-slate-800">
+            RECRUITA · <span className="font-medium text-slate-600">{t(lang, "admin.recruita.title")}</span>
+          </h1>
           <p className="text-sm text-slate-500">
-            ระบบรับสมัครงาน · ภาพรวม pipeline + การจัดการตำแหน่ง
+            {t(lang, "admin.recruita.subtitle")}
           </p>
         </div>
         <Link href="/admin/recruita/settings"
           className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
-          ⚙️ ตั้งค่า LINE OA
+          ⚙️ {t(lang, "admin.recruita.nav.settings")}
           {isChannelReady(getRecruitaChannel()) ? (
             <span className="ml-1 text-emerald-600 font-bold">✓</span>
           ) : (

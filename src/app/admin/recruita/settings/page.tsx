@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { requireSuperAdmin } from "@/lib/auth";
 import { getRecruitaChannel } from "@/lib/messaging-channels";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import SettingsClient from "./SettingsClient";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +16,7 @@ export const metadata: Metadata = { title: "RECRUITA · ตั้งค่า LI
 
 export default function RecruitaSettingsPage() {
   requireSuperAdmin();
+  const lang = getLang();
   const channel = getRecruitaChannel();
   if (!channel) {
     return (
@@ -31,9 +34,11 @@ export default function RecruitaSettingsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">RECRUITA · ตั้งค่า LINE OA</h1>
+        <h1 className="text-2xl font-bold text-slate-800">
+          RECRUITA · <span className="font-medium text-slate-600">{t(lang, "admin.recruita.settings.title")}</span>
+        </h1>
         <p className="text-sm text-slate-500">
-          เชื่อมต่อ <b>IKIGAI Recruit</b> OA สำหรับการแจ้งเตือนผู้สมัครงาน
+          {t(lang, "admin.recruita.settings.subtitle")}
         </p>
       </div>
       <SettingsClient

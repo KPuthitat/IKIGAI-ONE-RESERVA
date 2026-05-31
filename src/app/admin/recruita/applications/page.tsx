@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { requireSuperAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getLang } from "@/lib/lang-server";
+import { t } from "@/lib/i18n";
 import type { ApplicationStage } from "@/lib/recruita";
 import ApplicationsListClient from "./ApplicationsListClient";
 
@@ -34,6 +36,7 @@ type PositionOption = {
 
 export default function ApplicationsListPage() {
   requireSuperAdmin();
+  const lang = getLang();
   const db = getDb();
   const rows = db.prepare(`
     SELECT a.id, a.candidate_id, a.position_id, a.stage, a.submitted_at,
@@ -62,9 +65,11 @@ export default function ApplicationsListPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">RECRUITA · ใบสมัคร</h1>
+        <h1 className="text-2xl font-bold text-slate-800">
+          RECRUITA · <span className="font-medium text-slate-600">{t(lang, "admin.recruita.applications.title")}</span>
+        </h1>
         <p className="text-sm text-slate-500">
-          ใบสมัครทั้งหมด · ค้นชื่อ/เบอร์/email · กรองตามตำแหน่ง+สถานะ
+          {t(lang, "admin.recruita.applications.subtitle")}
         </p>
       </div>
       <ApplicationsListClient rows={rows} positions={positions} />
