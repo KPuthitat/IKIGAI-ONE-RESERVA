@@ -430,9 +430,9 @@ export default function ApplyClient({
             <input className="input" value={f.nickname_th}
               onChange={(e) => up("nickname_th", e.target.value)} />
           </Field>
-          <Field label="วัน/เดือน/ปี เกิด *">
-            <input className="input" type="date" value={f.dob}
-              onChange={(e) => up("dob", e.target.value)} />
+          <Field label="วัน/เดือน/ปี เกิด *"
+            hint="รูปแบบ DD/MM/YYYY · ถ้าจำวันไม่แม่นยำ ใส่วันที่ 1 ของเดือนได้">
+            <DateInput value={f.dob} onChange={(v) => up("dob", v)} required />
           </Field>
           <Field label="สัญชาติ *">
             <input className="input" value={f.nationality}
@@ -533,8 +533,9 @@ export default function ApplyClient({
                   <option value="phd">ปริญญาเอก</option>
                 </select>
               </Field>
-              <Field label="ปีที่จบ">
-                <input className="input" value={row.year_finished}
+              <Field label="ปีที่จบ (พ.ศ.)">
+                <input className="input" inputMode="numeric"
+                  value={row.year_finished}
                   onChange={(e) => setEdu(i, { year_finished: e.target.value })}
                   placeholder="เช่น 2566" />
               </Field>
@@ -588,12 +589,15 @@ export default function ApplyClient({
                 onChange={(e) => setExp(i, { company: e.target.value })} /></Field>
               <Field label="ตำแหน่ง"><input className="input" value={row.position}
                 onChange={(e) => setExp(i, { position: e.target.value })} /></Field>
-              <Field label="เริ่มงาน (ปี/เดือน)"><input className="input" value={row.started}
-                onChange={(e) => setExp(i, { started: e.target.value })}
-                placeholder="เช่น 2564/05" /></Field>
-              <Field label="ออกจากงาน"><input className="input" value={row.ended}
-                onChange={(e) => setExp(i, { ended: e.target.value })}
-                placeholder="ปัจจุบัน / 2566/12" /></Field>
+              <Field label="เริ่มงาน"
+                hint="รูปแบบ DD/MM/YYYY · ถ้าจำวันไม่แม่นยำ ใส่วันที่ 1 ของเดือนได้">
+                <DateInput value={row.started}
+                  onChange={(v) => setExp(i, { started: v })} />
+              </Field>
+              <Field label="ออกจากงาน" hint="DD/MM/YYYY (เว้นว่าง = ยังทำอยู่)">
+                <DateInput value={row.ended}
+                  onChange={(v) => setExp(i, { ended: v })} />
+              </Field>
               <Field label="เงินเดือน/ค่าจ้าง"><input className="input" value={row.salary}
                 onChange={(e) => setExp(i, { salary: e.target.value })} /></Field>
               <Field label="สาเหตุที่ออก"><input className="input" value={row.reason_left}
@@ -672,9 +676,9 @@ export default function ApplyClient({
             <input className="input" type="number" min="0" value={f.expected_salary}
               onChange={(e) => up("expected_salary", e.target.value)} />
           </Field>
-          <Field label="วันที่พร้อมเริ่มงาน">
-            <input className="input" type="date" value={f.earliest_start_date}
-              onChange={(e) => up("earliest_start_date", e.target.value)} />
+          <Field label="วันที่พร้อมเริ่มงาน" hint="รูปแบบ DD/MM/YYYY">
+            <DateInput value={f.earliest_start_date}
+              onChange={(v) => up("earliest_start_date", v)} />
           </Field>
           <Field label="ไปต่างจังหวัดได้ไหม">
             <select className="input" value={f.can_travel}
@@ -717,10 +721,10 @@ export default function ApplyClient({
                 onChange={(e) => up("prior_illness_detail", e.target.value)} />
             </Field>
           )}
-          <Field label="เคยสมัครงานกับเราเมื่อ" hint="ถ้าเคยสมัคร ใส่ปี/เดือน">
-            <input className="input" value={f.prior_application_at}
-              onChange={(e) => up("prior_application_at", e.target.value)}
-              placeholder="เช่น 2566" />
+          <Field label="เคยสมัครงานกับเราเมื่อ"
+            hint="รูปแบบ DD/MM/YYYY · ถ้าจำวันไม่แม่นยำ ใส่วันที่ 1 ของเดือนได้">
+            <DateInput value={f.prior_application_at}
+              onChange={(v) => up("prior_application_at", v)} />
           </Field>
         </Grid2>
       </Section>
@@ -811,6 +815,107 @@ function Field({
       {hint && <p className="text-[10px] text-slate-400 mt-0.5">{hint}</p>}
     </div>
   );
+}
+
+// ── DateInput — DD/MM/YYYY masked text input ───────────────────────
+//
+// We don't use native <input type="date"> because:
+//   1. The display format depends on the user's OS locale — Thai
+//      users on an English-locale phone see MM/DD/YYYY which the
+//      owner explicitly didn't want.
+//   2. The native picker is keyboard-driven, which on Android opens
+//      a fullscreen widget that hides the rest of the form context.
+//
+// This input renders DD/MM/YYYY consistently. We store ISO YYYY-MM-DD
+// in FormState so the API + DB keep their existing shape — convert
+// in both directions on the boundary.
+//
+// Partial inputs (just a day, just day+month) yield "" upstream — the
+// FormState only flips to a real value when the user has typed all
+// three segments AND they round-trip to a valid Date. Owner spec:
+// "if the candidate doesn't know the day, use day 1" — that's a copy
+// hint we surface as `hint` text; the field itself doesn't substitute.
+function DateInput({
+  value, onChange, required
+}: {
+  /** Stored format: YYYY-MM-DD or "" */
+  value: string;
+  /** Receives YYYY-MM-DD on a complete valid date, "" otherwise. */
+  onChange: (iso: string) => void;
+  required?: boolean;
+}) {
+  // Track the typed string separately so partial input ("12/") still
+  // renders while the user keeps typing. Sync with the canonical
+  // value when it changes externally (draft restore, prefill, etc.).
+  const initialDisplay = isoToDDMMYYYY(value);
+  const [display, setDisplay] = useState(initialDisplay);
+  const lastValueRef = useRef(value);
+  useEffect(() => {
+    if (value !== lastValueRef.current) {
+      lastValueRef.current = value;
+      setDisplay(isoToDDMMYYYY(value));
+    }
+  }, [value]);
+
+  function handle(raw: string) {
+    // Keep only digits, then re-insert slashes at fixed positions —
+    // this way users can type 01012000 and get 01/01/2000 with no
+    // friction, and pasting "01-01-2000" / "01.01.2000" still works.
+    const digits = raw.replace(/\D/g, "").slice(0, 8);
+    let formatted = digits;
+    if (digits.length > 4) {
+      formatted = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+    } else if (digits.length > 2) {
+      formatted = `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    }
+    setDisplay(formatted);
+    lastValueRef.current = ddmmyyyyToIso(formatted);
+    onChange(lastValueRef.current);
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      placeholder="DD/MM/YYYY"
+      className="input font-mono"
+      value={display}
+      onChange={(e) => handle(e.target.value)}
+      required={required} />
+  );
+}
+
+/** Convert YYYY-MM-DD → DD/MM/YYYY. Returns "" on anything else
+ *  (incl. partial / invalid). */
+function isoToDDMMYYYY(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((iso ?? "").trim());
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+}
+
+/** Convert DD/MM/YYYY → YYYY-MM-DD. Returns "" on anything other
+ *  than a fully-formed, calendar-valid date. */
+function ddmmyyyyToIso(s: string): string {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((s ?? "").trim());
+  if (!m) return "";
+  const dd = Number(m[1]);
+  const mm = Number(m[2]);
+  const yyyy = Number(m[3]);
+  if (mm < 1 || mm > 12) return "";
+  if (dd < 1 || dd > 31) return "";
+  // Calendar sanity check — catches 31/02, 31/04, leap-year etc.
+  const probe = new Date(yyyy, mm - 1, dd);
+  if (
+    probe.getFullYear() !== yyyy ||
+    probe.getMonth() !== mm - 1 ||
+    probe.getDate() !== dd
+  ) return "";
+  // Sane year range — avoid auto-formed garbage from typos. 1900 lets
+  // the oldest legitimate applicant through; +5y catches "earliest
+  // start date" looking ahead without letting 9999 type-os save.
+  const nowY = new Date().getFullYear();
+  if (yyyy < 1900 || yyyy > nowY + 5) return "";
+  return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
 function FileField({
