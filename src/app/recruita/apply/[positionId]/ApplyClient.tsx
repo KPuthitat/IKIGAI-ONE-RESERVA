@@ -159,6 +159,9 @@ export default function ApplyClient({
   // applicants and when LIFF init fails (gracefully degrades).
   const [lineUserId, setLineUserId] = useState<string | null>(null);
   const liffReady = useRef(false);
+  // Returning-candidate prefill state
+  const prefillFetched = useRef(false);
+  const [welcomeBack, setWelcomeBack] = useState(false);
 
   async function initLiff() {
     if (!liffId || liffReady.current) return;
@@ -233,6 +236,47 @@ export default function ApplyClient({
       if (prof.userId) setLineUserId(prof.userId);
     } catch { /* ignore — best-effort */ }
   }, [draftKey]);
+
+  // Returning-candidate prefill: when lineUserId becomes known,
+  // fetch their previous data and pre-populate the form — but ONLY
+  // if there is no in-progress draft for this specific position.
+  // A draft means they already started editing this form, so we
+  // respect that rather than overwriting their work.
+  useEffect(() => {
+    if (!lineUserId || prefillFetched.current) return;
+    prefillFetched.current = true;
+
+    // Respect existing draft (position-specific)
+    try {
+      if (localStorage.getItem(draftKey)) return;
+    } catch { /* storage unavailable — proceed anyway */ }
+
+    fetch(apiUrl(`/api/recruita/candidates/prefill?line_user_id=${encodeURIComponent(lineUserId)}`))
+      .then((r) => {
+        if (r.status === 204) return null;  // first-time applicant
+        if (!r.ok) return null;
+        return r.json() as Promise<{ candidate?: Partial<FormState> }>;
+      })
+      .then((data) => {
+        const c = data?.candidate;
+        if (!c) return;
+        setF((prev) => ({
+          ...prev,
+          ...c,
+          // Keep array fields only when non-empty; fall back to the
+          // existing blank-row defaults so the form never renders with zero rows.
+          education:       (c.education       as FormState["education"]       | undefined)?.length ? c.education as FormState["education"]       : prev.education,
+          experience:      (c.experience      as FormState["experience"]      | undefined)?.length ? c.experience as FormState["experience"]      : prev.experience,
+          skills_language: (c.skills_language as FormState["skills_language"] | undefined)?.length ? c.skills_language as FormState["skills_language"] : prev.skills_language,
+          // Never prefill consent or custom answers
+          pdpa_consent: false,
+          truth_declaration_accepted: false,
+          custom: {}
+        }));
+        setWelcomeBack(true);
+      })
+      .catch(() => { /* prefill is best-effort */ });
+  }, [lineUserId, draftKey]);
 
   // Save draft on every change (debounced via animation frame)
   useEffect(() => {
@@ -343,10 +387,28 @@ export default function ApplyClient({
           onLoad={initLiff} />
       )}
 
-      {/* Tiny info badge when LIFF binding is active */}
-      {lineUserId && (
+      {/* Welcome-back banner — shown when prefill was applied */}
+      {welcomeBack && (
+        <div className="bg-sky-50 border border-sky-200 rounded-xl px-4 py-3 text-sm text-sky-800 space-y-1">
+          <div className="font-bold">ยินดีต้อนรับกลับมา!</div>
+          <div className="text-xs leading-relaxed text-sky-700">
+            เราพบข้อมูลใบสมัครเก่าของคุณและกรอกไว้ให้แล้ว —
+            ตรวจสอบและแก้ไขให้ครบก่อนกดส่ง
+          </div>
+          <button
+            type="button"
+            onClick={() => setWelcomeBack(false)}
+            className="text-[10px] text-sky-500 hover:text-sky-700 underline"
+          >
+            ปิดข้อความนี้
+          </button>
+        </div>
+      )}
+
+      {/* Tiny info badge when LIFF binding is active (and no welcome-back) */}
+      {lineUserId && !welcomeBack && (
         <div className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 text-center">
-          🔗 ผูก LINE สำเร็จ — เราจะแจ้งสถานะใบสมัครให้คุณผ่าน LINE
+          ผูก LINE สำเร็จ — เราจะแจ้งสถานะใบสมัครให้คุณผ่าน LINE
         </div>
       )}
 

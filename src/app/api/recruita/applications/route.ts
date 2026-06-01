@@ -247,6 +247,22 @@ export async function POST(req: Request) {
   const yn = (v: string): number | null =>
     v === "yes" ? 1 : v === "no" ? 0 : null;
 
+  // Secondary dedupe: if hash lookup missed (different email/phone than
+  // before) but we know the LINE userId, see if this person already
+  // has a candidate row. This covers the "returning candidate via LIFF"
+  // path where the form pre-filled their old data but they tweaked a
+  // field like email — the hash would no longer match, but the LINE
+  // binding is still authoritative.
+  if (candidateId == null && effectiveLineUserId) {
+    const byLine = db.prepare(
+      "SELECT id FROM recruita_candidates WHERE line_user_id = ?"
+    ).get(effectiveLineUserId) as { id: number } | undefined;
+    if (byLine) {
+      candidateId = byLine.id;
+      console.info(`[recruita] dedupe: matched candidate #${byLine.id} by line_user_id`);
+    }
+  }
+
   // ── Insert / update candidate ─────────────────────────────
   if (candidateId == null) {
     const info = db.prepare(`
