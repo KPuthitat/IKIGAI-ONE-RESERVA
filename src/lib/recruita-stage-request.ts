@@ -16,7 +16,7 @@
 
 import { getDb } from "./db";
 import type { ApplicationStage } from "./recruita";
-import { notifyStageChange } from "./recruita-notify";
+import { notifyStageChange, notifyExecGroupStageChange } from "./recruita-notify";
 
 /** How long a pending request stays valid before it's auto-expired. */
 const REQUEST_TTL_HOURS = 24;
@@ -168,6 +168,10 @@ export async function approveStageRequest(args: {
   // direct-stage endpoint behaviour.
   void notifyStageChange(req.application_id).catch((e) => {
     console.warn("[recruita] notifyStageChange after approval failed:", e);
+  });
+  // Also notify the exec group so owners follow pipeline movement.
+  void notifyExecGroupStageChange(req.application_id).catch((e) => {
+    console.warn("[recruita] notifyExecGroupStageChange after approval failed:", e);
   });
 
   return { ok: true, toStage: req.to_stage };

@@ -50,7 +50,7 @@ function brandHeader(title: string, subtitle: string): Record<string, unknown> {
       {
         type: "box", layout: "horizontal",
         contents: [
-          { type: "text", text: "IKIGAI Recruit", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+          { type: "text", text: "IKIGAI RECRUIT", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
           { type: "text", text: "RECRUITA", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
         ]
       },
@@ -240,18 +240,14 @@ function newApplicationFlexForExec(args: {
   };
 }
 
-/** Fire-and-forget push of the "new application" Flex card to the
- *  exec group chat (configured via system_settings.recruita_exec_group_id).
- *  Routed through the IKIGAI OS platform OA so it lands in the same
- *  chat ecosystem owners already use for PERSONA/ASCENDA — no need
- *  to add the RECRUITA candidate-facing OA as a group friend. Silent
- *  no-op when group id or platform OA isn't configured. */
-export async function notifyExecGroupNewApplication(applicationId: number): Promise<void> {
-  // Three things must be set or we just skip. We log each skip path
-  // because "exec group notify silently dropped" is impossible to
-  // diagnose from the candidate side — they don't see the chat at
-  // all. Owner runs `pm2 logs reserva --lines 50 --nostream` after
-  // a test submission to see which gate failed.
+/** Shared gate + send for any exec-group push. Routed through the
+ *  IKIGAI OS platform OA into system_settings.recruita_exec_group_id —
+ *  the same chat owners already use for PERSONA/ASCENDA. Logs each
+ *  skip/failure path because a dropped group push is invisible from
+ *  the candidate side. Silent no-op when group id or platform OA
+ *  isn't configured. Owner runs `pm2 logs reserva --lines 50
+ *  --nostream` to see which gate failed. */
+async function pushToExecGroup(messages: LineMessage[]): Promise<void> {
   const settings = getSystemSettings();
   const groupId = settings.recruita_exec_group_id?.trim();
   if (!groupId) {
@@ -269,7 +265,26 @@ export async function notifyExecGroupNewApplication(applicationId: number): Prom
     );
     return;
   }
+  try {
+    const res = await sendLinePush(platform.channel_token, { to: groupId, messages });
+    if (res.ok) {
+      console.info(`[recruita] exec group notify sent → ${groupId}`);
+    } else {
+      console.warn(
+        `[recruita] exec group notify rejected by LINE: status=${res.status} ` +
+        `error=${res.error ?? "(unknown)"} groupId=${groupId} ` +
+        `(common causes: IKIGAI OS bot is not a member of this group, ` +
+        `or the group id is wrong — should start with C followed by 32 hex)`
+      );
+    }
+  } catch (e) {
+    console.warn("[recruita] exec group notify threw:", e);
+  }
+}
 
+/** Fire-and-forget push of the "new application" Flex card to the exec
+ *  group. Silent no-op when the group/platform OA isn't configured. */
+export async function notifyExecGroupNewApplication(applicationId: number): Promise<void> {
   const db = getDb();
   const row = db.prepare(`
     SELECT a.id, a.submitted_at,
@@ -299,35 +314,102 @@ export async function notifyExecGroupNewApplication(applicationId: number): Prom
 
   const applicantName = [row.title_prefix, row.first_name_th, row.last_name_th]
     .filter(Boolean).join(" ") || "—";
-  const message = newApplicationFlexForExec({
+  await pushToExecGroup([newApplicationFlexForExec({
     applicantName,
     positionTitle: row.position_title,
     branchName: row.branch_name,
     phone: row.mobile_phone,
     applicationNo: formatApplicationNo(row.submitted_at, row.day_seq),
     applicationId: row.id
-  });
+  })]);
+}
 
-  try {
-    const res = await sendLinePush(platform.channel_token, {
-      to: groupId,
-      messages: [message]
-    });
-    if (res.ok) {
-      console.info(
-        `[recruita] exec group notify sent: application #${applicationId} → ${groupId}`
-      );
-    } else {
-      console.warn(
-        `[recruita] exec group notify rejected by LINE: status=${res.status} ` +
-        `error=${res.error ?? "(unknown)"} groupId=${groupId} ` +
-        `(common causes: IKIGAI OS bot is not a member of this group, ` +
-        `or the group id is wrong — should start with C followed by 32 hex)`
-      );
+/** Exec-facing Flex card describing a stage update. */
+function execStageChangeFlex(args: {
+  applicantName: string;
+  positionTitle: string;
+  branchName: string | null;
+  stage: ApplicationStage;
+  applicationNo: string;
+  applicationId: number;
+}): LineMessage {
+  const meta = STAGE_META[args.stage];
+  const altText = `อัปเดตสถานะ: ${args.applicantName} → ${meta.label}`;
+  const rows: Array<Record<string, unknown>> = [
+    infoRow("ผู้สมัคร", args.applicantName),
+    infoRow("ตำแหน่ง", args.positionTitle)
+  ];
+  if (args.branchName) rows.push(infoRow("บริษัท/สาขา", args.branchName));
+  rows.push(infoRow("สถานะใหม่", meta.label));
+  rows.push(infoRow("เลขที่ใบสมัคร", args.applicationNo));
+  return {
+    type: "flex",
+    altText,
+    contents: {
+      type: "bubble",
+      size: "giga",
+      header: brandHeader("อัปเดตสถานะใบสมัคร", `เปลี่ยนเป็น “${meta.label}”`),
+      body: {
+        type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+        backgroundColor: "#ffffff",
+        contents: rows
+      },
+      footer: {
+        type: "box", layout: "vertical", paddingAll: "16px",
+        backgroundColor: "#ffffff",
+        contents: [
+          {
+            type: "button", style: "primary", color: COLOR_BRAND,
+            action: {
+              type: "uri",
+              label: "ดูใบสมัคร",
+              uri: `${PUBLIC_BASE}/admin/recruita/applications/${args.applicationId}`
+            }
+          }
+        ]
+      }
     }
-  } catch (e) {
-    console.warn("[recruita] exec group notify threw:", e);
-  }
+  };
+}
+
+/** Fire-and-forget push to the exec group when an application's stage
+ *  changes, so owners follow pipeline movement — not just new
+ *  applications. Silent no-op when the exec group/platform OA isn't
+ *  configured. */
+export async function notifyExecGroupStageChange(applicationId: number): Promise<void> {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT a.id, a.stage, a.submitted_at,
+           (SELECT COUNT(*) FROM recruita_applications za
+             WHERE date(za.submitted_at, '+7 hours') = date(a.submitted_at, '+7 hours')
+               AND za.id <= a.id) AS day_seq,
+           c.title_prefix, c.first_name_th, c.last_name_th,
+           p.title AS position_title,
+           b.name  AS branch_name
+    FROM recruita_applications a
+    JOIN recruita_candidates c ON c.id = a.candidate_id
+    JOIN recruita_positions p  ON p.id = a.position_id
+    LEFT JOIN branches b ON b.id = p.branch_id
+    WHERE a.id = ?
+  `).get(applicationId) as {
+    id: number; stage: ApplicationStage; submitted_at: string; day_seq: number;
+    title_prefix: string | null;
+    first_name_th: string | null; last_name_th: string | null;
+    position_title: string;
+    branch_name: string | null;
+  } | undefined;
+  if (!row) return;
+
+  const applicantName = [row.title_prefix, row.first_name_th, row.last_name_th]
+    .filter(Boolean).join(" ") || "—";
+  await pushToExecGroup([execStageChangeFlex({
+    applicantName,
+    positionTitle: row.position_title,
+    branchName: row.branch_name,
+    stage: row.stage,
+    applicationNo: formatApplicationNo(row.submitted_at, row.day_seq),
+    applicationId: row.id
+  })]);
 }
 
 /** Fire-and-forget stage-change push to a candidate. Called from

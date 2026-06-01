@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireSuperAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { notifyStageChange } from "@/lib/recruita-notify";
+import { notifyStageChange, notifyExecGroupStageChange } from "@/lib/recruita-notify";
 
 // POST /api/recruita/applications/[id]/stage  { stage: ApplicationStage }
 //
@@ -44,6 +44,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // a LINE outage (or a temporary 429) never blocks the stage write.
   void notifyStageChange(id).catch((e) =>
     console.warn("[recruita-stage] notify failed", e)
+  );
+  // Also let the exec group follow the pipeline movement.
+  void notifyExecGroupStageChange(id).catch((e) =>
+    console.warn("[recruita-stage] exec notify failed", e)
   );
 
   return NextResponse.json({ ok: true });
