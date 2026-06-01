@@ -163,7 +163,7 @@ export default function FormTemplateClient({
       ))}
 
       <div className="card bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
-        <p className="font-bold">ℹ️ หมายเหตุ</p>
+        <p className="font-bold">หมายเหตุ</p>
         <ul className="list-disc list-inside space-y-0.5">
           <li>ส่วน <b>การศึกษา</b> และ <b>ประสบการณ์ทำงาน</b> เป็นแบบหลายแถว — เปิด/ปิดทั้งส่วน (ยังไม่เลือก sub-field รายตัว)</li>
           <li>ฟิลด์มาตรฐาน (key) ไม่สามารถเปลี่ยนได้ — เพราะ map กับคอลัมน์ DB. เปลี่ยนได้แค่ label, required, ลำดับ</li>

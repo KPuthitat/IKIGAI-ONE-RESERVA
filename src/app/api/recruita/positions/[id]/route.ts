@@ -51,6 +51,7 @@ const Body = z.object({
   benefits: z.string().max(10000).nullable().optional(),
   salary_min: z.number().min(0).nullable().optional(),
   salary_max: z.number().min(0).nullable().optional(),
+  salary_type: z.enum(["hourly", "daily", "monthly"]).optional(),
   vacancies: z.number().int().min(0).max(1000).optional(),
   custom_questions: z.array(CustomQuestionSchema).max(100).optional(),
   status: z.enum(["open", "closed", "draft"]).optional()
@@ -128,6 +129,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (d.benefits !== undefined) set("benefits", d.benefits?.trim() || null);
   set("salary_min", d.salary_min);
   set("salary_max", d.salary_max);
+  set("salary_type", d.salary_type);
   set("vacancies", d.vacancies);
   if (d.custom_questions !== undefined) {
     set("custom_questions", JSON.stringify(d.custom_questions));

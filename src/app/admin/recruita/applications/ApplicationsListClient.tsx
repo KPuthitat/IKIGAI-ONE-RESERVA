@@ -114,16 +114,16 @@ export default function ApplicationsListClient({
                   <span className="font-bold text-slate-800">{name}{nick}</span>
                 </div>
                 <div className="text-xs text-slate-500 mt-0.5">
-                  📋 {r.position_code ? `[${r.position_code}] ` : ""}{r.position_title}
-                  {r.branch_name && <> · 📍 {r.branch_name}</>}
+                  {r.position_code ? `[${r.position_code}] ` : ""}{r.position_title}
+                  {r.branch_name && <> · <span className="font-semibold">{r.branch_name}</span></>}
                 </div>
-                <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-3 flex-wrap">
-                  {r.mobile_phone && <span>📞 {r.mobile_phone}</span>}
-                  {r.personal_email && <span>✉ {r.personal_email}</span>}
+                <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-x-3 gap-y-1 flex-wrap">
+                  {r.mobile_phone && <span>{r.mobile_phone}</span>}
+                  {r.personal_email && <span>{r.personal_email}</span>}
                   {r.expected_salary != null && (
-                    <span className="text-emerald-700">💰 ฿{r.expected_salary.toLocaleString("th-TH")}</span>
+                    <span className="text-emerald-700">฿{r.expected_salary.toLocaleString("th-TH")}</span>
                   )}
-                  {r.info_source && <span className="text-slate-400">📣 {r.info_source}</span>}
+                  {r.info_source && <span className="text-slate-400">ทราบจาก: {r.info_source}</span>}
                 </div>
               </div>
               <div className="text-[11px] text-slate-400 flex-shrink-0">

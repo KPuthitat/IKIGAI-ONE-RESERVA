@@ -83,7 +83,7 @@ export default function SettingsClient({
 
       {/* Webhook URL — copy to LINE Developers Console */}
       <div className="card space-y-2">
-        <h2 className="font-bold text-slate-800 text-sm">📡 Webhook URL</h2>
+        <h2 className="font-bold text-slate-800 text-sm">Webhook URL</h2>
         <p className="text-xs text-slate-500">
           คัดลอก URL ด้านล่าง ไปวางที่ <b>LINE Developers Console → Messaging API → Webhook URL</b>
         </p>
@@ -101,7 +101,7 @@ export default function SettingsClient({
 
       {/* Credential form */}
       <div className="card space-y-3">
-        <h2 className="font-bold text-slate-800 text-sm">🔐 ใส่ Credentials</h2>
+        <h2 className="font-bold text-slate-800 text-sm">ใส่ Credentials</h2>
         <p className="text-xs text-slate-500">
           ค่าทั้งหมดอยู่ที่ <b>LINE Developers Console → {label} channel → Messaging API tab</b>
         </p>
@@ -160,7 +160,7 @@ export default function SettingsClient({
 
       {/* Hint card */}
       <div className="card bg-sky-50 border border-sky-200 space-y-2 text-xs">
-        <h3 className="font-bold text-sky-900 text-sm">📝 ขั้นตอนการตั้งค่า OA</h3>
+        <h3 className="font-bold text-sky-900 text-sm">ขั้นตอนการตั้งค่า OA</h3>
         <ol className="list-decimal list-inside space-y-1 text-sky-900 leading-relaxed">
           <li>เข้า <a href="https://developers.line.biz/console/" target="_blank" rel="noopener noreferrer" className="underline">LINE Developers Console</a> เลือก provider ของคุณ</li>
           <li>เลือก channel <b>IKIGAI Recruit</b> (หรือสร้างใหม่ถ้ายังไม่มี → Messaging API)</li>

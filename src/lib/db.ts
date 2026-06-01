@@ -2981,6 +2981,19 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_recruita_positions_status
       ON recruita_positions(status, branch_id);
+  `);
+  // 2026-06-01 — salary_type column on recruita_positions. Owner needs
+  // to advertise hourly / daily / monthly rates because PT roles
+  // (FOH part-timers, kitchen cover shifts) are paid hourly while
+  // career positions are monthly. salary_min/max stay as numeric;
+  // this column drives the unit label in the listing card.
+  // 'monthly' is the default for backward compat — existing rows
+  // were all monthly when only one type was supported.
+  const rpCols = db.prepare("PRAGMA table_info(recruita_positions)").all() as Array<{ name: string }>;
+  if (!rpCols.some((c) => c.name === "salary_type")) {
+    db.exec("ALTER TABLE recruita_positions ADD COLUMN salary_type TEXT NOT NULL DEFAULT 'monthly'");
+  }
+  db.exec(`
 
     CREATE TABLE IF NOT EXISTS recruita_candidates (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

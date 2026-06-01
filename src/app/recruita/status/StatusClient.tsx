@@ -208,9 +208,11 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
                           {row.position_title}
                         </h3>
                       </div>
-                      <div className="flex items-center gap-3 flex-wrap text-xs text-slate-500 mt-1">
-                        {row.branch_name && <span>📍 {row.branch_name}</span>}
-                        {row.department && <span>🏷 {row.department}</span>}
+                      <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-xs text-slate-500 mt-1">
+                        {row.branch_name && (
+                          <span className="font-semibold text-slate-700">{row.branch_name}</span>
+                        )}
+                        {row.department && <span>{row.department}</span>}
                       </div>
                     </div>
                     <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${meta.chip}`}>

@@ -51,6 +51,7 @@ const Body = z.object({
   benefits: z.string().max(10000).nullable().optional(),
   salary_min: z.number().min(0).nullable().optional(),
   salary_max: z.number().min(0).nullable().optional(),
+  salary_type: z.enum(["hourly", "daily", "monthly"]).default("monthly"),
   vacancies: z.number().int().min(0).max(1000).default(1),
   custom_questions: z.array(CustomQuestionSchema).max(100).default([]),
   status: z.enum(["open", "closed", "draft"]).default("open")
@@ -118,9 +119,9 @@ export async function POST(req: Request) {
     INSERT INTO recruita_positions
       (branch_id, code, title, department, employment_type,
        jd_summary, jd_full, requirements, benefits,
-       salary_min, salary_max, vacancies, custom_questions,
+       salary_min, salary_max, salary_type, vacancies, custom_questions,
        status, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     d.branch_id ?? null,
     d.code?.trim() || null,
@@ -133,6 +134,7 @@ export async function POST(req: Request) {
     d.benefits?.trim() || null,
     d.salary_min ?? null,
     d.salary_max ?? null,
+    d.salary_type,
     d.vacancies,
     JSON.stringify(d.custom_questions),
     d.status,

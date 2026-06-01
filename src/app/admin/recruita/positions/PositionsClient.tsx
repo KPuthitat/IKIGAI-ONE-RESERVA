@@ -16,6 +16,7 @@ type Position = {
   jd_summary: string | null;
   salary_min: number | null;
   salary_max: number | null;
+  salary_type: "hourly" | "daily" | "monthly";
   vacancies: number;
   status: "open" | "closed" | "draft";
   opened_at: string;
@@ -38,12 +39,23 @@ const EMP_LABEL: Record<NonNullable<Position["employment_type"]>, string> = {
   ft: "Full-time", pt: "Part-time", contract: "Contract"
 };
 
-function fmtSalary(min: number | null, max: number | null): string {
+const SALARY_UNIT: Record<Position["salary_type"], string> = {
+  monthly: "บาท/เดือน",
+  daily:   "บาท/วัน",
+  hourly:  "บาท/ชม."
+};
+
+function fmtSalary(
+  min: number | null,
+  max: number | null,
+  type: Position["salary_type"]
+): string {
+  const unit = SALARY_UNIT[type];
   if (min == null && max == null) return "—";
   if (min != null && max != null) {
-    return `฿${min.toLocaleString("th-TH")} – ฿${max.toLocaleString("th-TH")}`;
+    return `${min.toLocaleString("th-TH")}–${max.toLocaleString("th-TH")} ${unit}`;
   }
-  return `฿${(min ?? max ?? 0).toLocaleString("th-TH")}+`;
+  return `${(min ?? max ?? 0).toLocaleString("th-TH")}+ ${unit}`;
 }
 
 /** Case-insensitive match against the PERSONA roster_positions
@@ -173,18 +185,22 @@ export default function PositionsClient({
                     {meta.label}
                   </span>
                 </div>
-                <div className="text-xs text-slate-500 mt-1 flex items-center gap-3 flex-wrap">
-                  {p.branch_name && <span>📍 {p.branch_name}</span>}
-                  {p.department && <span>🏷 {p.department}</span>}
-                  {p.employment_type && <span>⏰ {EMP_LABEL[p.employment_type]}</span>}
-                  <span>💰 {fmtSalary(p.salary_min, p.salary_max)}</span>
-                  <span>👥 รับ {p.vacancies} อัตรา</span>
+                <div className="text-xs text-slate-500 mt-1 flex items-center gap-x-3 gap-y-1 flex-wrap">
+                  {p.branch_name && (
+                    <span className="font-semibold text-slate-700">{p.branch_name}</span>
+                  )}
+                  {p.department && <span>{p.department}</span>}
+                  {p.employment_type && <span>{EMP_LABEL[p.employment_type]}</span>}
+                  <span className="text-emerald-700 font-semibold">
+                    {fmtSalary(p.salary_min, p.salary_max, p.salary_type)}
+                  </span>
+                  <span>รับ {p.vacancies} อัตรา</span>
                 </div>
                 {p.jd_summary && (
                   <p className="text-xs text-slate-600 mt-1.5 line-clamp-2">{p.jd_summary}</p>
                 )}
                 <div className="text-[11px] text-slate-400 mt-2 flex items-center gap-3 flex-wrap">
-                  <span>📝 ใบสมัคร {p.application_count} รายการ</span>
+                  <span>ใบสมัคร {p.application_count} รายการ</span>
                   <span>✅ จ้างแล้ว {p.hired_count} คน</span>
                   <span>❓ คำถามเฉพาะตำแหน่ง {customCount} ข้อ</span>
                 </div>

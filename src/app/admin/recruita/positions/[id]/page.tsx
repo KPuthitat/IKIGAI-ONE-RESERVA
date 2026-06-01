@@ -22,6 +22,7 @@ type Row = {
   benefits: string | null;
   salary_min: number | null;
   salary_max: number | null;
+  salary_type: "hourly" | "daily" | "monthly";
   vacancies: number;
   custom_questions: string;
   status: "open" | "closed" | "draft";

@@ -24,6 +24,7 @@ type Row = {
   jd_summary: string | null;
   salary_min: number | null;
   salary_max: number | null;
+  salary_type: "hourly" | "daily" | "monthly";
   vacancies: number;
   status: "open" | "closed" | "draft";
   opened_at: string;
@@ -40,7 +41,8 @@ export default function RecruitaPositionsPage() {
   const positions = db.prepare(`
     SELECT p.id, p.branch_id, b.name AS branch_name,
            p.code, p.title, p.department, p.employment_type,
-           p.jd_summary, p.salary_min, p.salary_max, p.vacancies,
+           p.jd_summary, p.salary_min, p.salary_max, p.salary_type,
+           p.vacancies,
            p.status, p.opened_at, p.closed_at, p.custom_questions,
            (SELECT COUNT(*) FROM recruita_applications a
               WHERE a.position_id = p.id) AS application_count,

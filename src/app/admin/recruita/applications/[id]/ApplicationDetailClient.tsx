@@ -164,9 +164,9 @@ export default function ApplicationDetailClient({
         <h1 className="text-2xl font-bold text-slate-800">{name}</h1>
         {nameEn && <p className="text-sm text-slate-500">{nameEn}{candidate.nickname_th ? ` · ชื่อเล่น ${candidate.nickname_th}` : ""}</p>}
         <p className="text-xs text-slate-500">
-          📋 {position.code ? `[${position.code}] ` : ""}{position.title}
-          {position.branch_name && <> · 📍 {position.branch_name}</>}
-          {position.department && <> · 🏷 {position.department}</>}
+          {position.code ? `[${position.code}] ` : ""}{position.title}
+          {position.branch_name && <> · <span className="font-semibold text-slate-700">{position.branch_name}</span></>}
+          {position.department && <> · {position.department}</>}
         </p>
         <p className="text-[11px] text-slate-400">
           ส่งใบสมัคร {application.submitted_at.slice(0, 16).replace("T", " ")}
@@ -201,8 +201,8 @@ export default function ApplicationDetailClient({
           (e.g. interview → hire directly). */}
       {stage !== "hired" && !hireResult && (
         <div className="card bg-emerald-50 border-2 border-emerald-200 space-y-2">
-          <h2 className="font-bold text-emerald-900 text-sm flex items-center gap-2">
-            🎉 พร้อมรับเข้าทำงาน?
+          <h2 className="font-bold text-emerald-900 text-sm">
+            พร้อมรับเข้าทำงาน?
           </h2>
           <p className="text-xs text-emerald-800 leading-relaxed">
             กดปุ่มด้านล่างเพื่อสร้างบัญชี PERSONA ให้พนักงานใหม่ทันที — ระบบจะ:
@@ -238,12 +238,12 @@ export default function ApplicationDetailClient({
 
       {/* Quick contact */}
       <div className="card grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-        <Row label="📞 มือถือ" value={candidate.mobile_phone}
+        <Row label="มือถือ" value={candidate.mobile_phone}
           link={candidate.mobile_phone ? `tel:${candidate.mobile_phone}` : null} />
-        <Row label="✉ อีเมล" value={candidate.personal_email}
+        <Row label="อีเมล" value={candidate.personal_email}
           link={candidate.personal_email ? `mailto:${candidate.personal_email}` : null} />
         <Row label="LINE ID" value={candidate.line_id} />
-        <Row label="📍 ที่อยู่" value={candidate.house_address} />
+        <Row label="ที่อยู่" value={candidate.house_address} />
       </div>
 
       {/* Personal */}
@@ -391,7 +391,9 @@ export default function ApplicationDetailClient({
               <a key={d.id} href={`/api/recruita/documents/${d.id}`}
                 target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2 text-sm border border-slate-200 rounded-lg p-2 hover:bg-slate-50">
-                <span>{d.kind === "photo" ? "📸" : d.kind === "resume" ? "📄" : "🪪"}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                  {d.kind === "photo" ? "รูป" : d.kind === "resume" ? "CV" : "ID"}
+                </span>
                 <div className="flex-1 min-w-0">
                   <div className="text-slate-800 truncate">
                     {d.original_filename || "(ไม่มีชื่อ)"}

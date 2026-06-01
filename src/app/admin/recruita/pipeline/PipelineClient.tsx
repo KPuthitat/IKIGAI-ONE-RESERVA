@@ -248,10 +248,10 @@ function Card({
         {card.position_code ? `[${card.position_code}] ` : ""}{card.position_title}
       </div>
       {card.branch_name && (
-        <div className="text-[10px] text-slate-400 truncate">📍 {card.branch_name}</div>
+        <div className="text-[10px] text-slate-500 truncate font-semibold">{card.branch_name}</div>
       )}
       <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
-        <span>📅 ส่ง {submitted}d</span>
+        <span>ส่ง {submitted}d</span>
         {inStage !== submitted && <span>· stage {inStage}d</span>}
         {card.expected_salary != null && (
           <span className="text-emerald-700">฿{card.expected_salary.toLocaleString("th-TH")}</span>

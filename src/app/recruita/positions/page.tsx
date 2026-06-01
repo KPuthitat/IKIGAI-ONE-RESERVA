@@ -19,6 +19,7 @@ type Row = {
   jd_summary: string | null;
   salary_min: number | null;
   salary_max: number | null;
+  salary_type: "hourly" | "daily" | "monthly";
   vacancies: number;
   branch_id: number | null;
   branch_name: string | null;
@@ -28,17 +29,31 @@ const EMP_LABEL: Record<NonNullable<Row["employment_type"]>, string> = {
   ft: "Full-time", pt: "Part-time", contract: "Contract"
 };
 
-function fmtSalary(min: number | null, max: number | null): string {
+const SALARY_UNIT: Record<Row["salary_type"], string> = {
+  monthly: "บาท/เดือน",
+  daily:   "บาท/วัน",
+  hourly:  "บาท/ชม."
+};
+
+function fmtSalary(
+  min: number | null,
+  max: number | null,
+  type: Row["salary_type"]
+): string {
+  const unit = SALARY_UNIT[type];
   if (min == null && max == null) return "ตามตกลง";
-  if (min != null && max != null) return `฿${min.toLocaleString("th-TH")} – ฿${max.toLocaleString("th-TH")}`;
-  return `฿${(min ?? max ?? 0).toLocaleString("th-TH")}+`;
+  if (min != null && max != null) {
+    return `${min.toLocaleString("th-TH")}–${max.toLocaleString("th-TH")} ${unit}`;
+  }
+  return `${(min ?? max ?? 0).toLocaleString("th-TH")}+ ${unit}`;
 }
 
 export default function PublicPositionsPage() {
   const db = getDb();
   const positions = db.prepare(`
     SELECT p.id, p.code, p.title, p.department, p.employment_type,
-           p.jd_summary, p.salary_min, p.salary_max, p.vacancies,
+           p.jd_summary, p.salary_min, p.salary_max, p.salary_type,
+           p.vacancies,
            p.branch_id, b.name AS branch_name
     FROM recruita_positions p
     LEFT JOIN branches b ON b.id = p.branch_id
@@ -74,9 +89,12 @@ export default function PublicPositionsPage() {
 
         {[...groups.entries()].map(([branch, list]) => (
           <section key={branch} className="space-y-2">
-            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-[2px] px-1">
-              📍 {branch}
-            </h2>
+            <div className="px-1 pb-1 border-b-2 border-amber-300/60">
+              <h2 className="text-sm font-bold text-slate-800">{branch}</h2>
+              <p className="text-[10px] text-slate-500">
+                {list.length} ตำแหน่ง
+              </p>
+            </div>
             {list.map((p) => (
               <Link key={p.id} href={`/recruita/positions/${p.id}`}
                 className="card flex flex-col gap-1.5 hover:shadow-md transition-shadow">
@@ -91,11 +109,13 @@ export default function PublicPositionsPage() {
                 {p.jd_summary && (
                   <p className="text-xs text-slate-600 line-clamp-2">{p.jd_summary}</p>
                 )}
-                <div className="flex items-center gap-3 flex-wrap text-xs text-slate-500 mt-1">
-                  {p.department && <span>🏷 {p.department}</span>}
-                  {p.employment_type && <span>⏰ {EMP_LABEL[p.employment_type]}</span>}
-                  <span className="text-emerald-700 font-semibold">💰 {fmtSalary(p.salary_min, p.salary_max)}</span>
-                  <span>👥 {p.vacancies} อัตรา</span>
+                <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-xs text-slate-500 mt-1">
+                  {p.department && <span>{p.department}</span>}
+                  {p.employment_type && <span>{EMP_LABEL[p.employment_type]}</span>}
+                  <span className="text-emerald-700 font-semibold">
+                    {fmtSalary(p.salary_min, p.salary_max, p.salary_type)}
+                  </span>
+                  <span>รับ {p.vacancies} อัตรา</span>
                 </div>
               </Link>
             ))}

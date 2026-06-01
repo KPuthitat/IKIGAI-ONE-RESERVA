@@ -302,7 +302,7 @@ export default function ApplyClient({
       {/* Header */}
       <div className="card text-center space-y-2">
         <div className="text-xs font-bold text-slate-500 uppercase tracking-[2px]">
-          📝 ใบสมัครงาน
+          ใบสมัครงาน
         </div>
         <div className="flex items-center justify-center gap-2 flex-wrap">
           {positionCode && (
@@ -677,11 +677,11 @@ export default function ApplyClient({
         <div className="text-[11px] text-slate-500 mb-2">
           📎 ไฟล์ .pdf .jpg .png ขนาดไม่เกิน 10 MB ต่อไฟล์
         </div>
-        <FileField label="📸 รูปถ่าย" file={photo} onChange={setPhoto}
+        <FileField label="รูปถ่าย" file={photo} onChange={setPhoto}
           accept="image/*" />
-        <FileField label="📄 Resume / CV" file={resume} onChange={setResume}
+        <FileField label="Resume / CV" file={resume} onChange={setResume}
           accept=".pdf,image/*" />
-        <FileField label="🪪 สำเนาบัตรประชาชน" file={idCopy} onChange={setIdCopy}
+        <FileField label="สำเนาบัตรประชาชน" file={idCopy} onChange={setIdCopy}
           accept=".pdf,image/*" />
       </Section>
 

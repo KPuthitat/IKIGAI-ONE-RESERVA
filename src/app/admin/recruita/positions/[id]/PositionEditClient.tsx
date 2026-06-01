@@ -20,6 +20,7 @@ type Position = {
   benefits: string | null;
   salary_min: number | null;
   salary_max: number | null;
+  salary_type: "hourly" | "daily" | "monthly";
   vacancies: number;
   custom_questions: string;
   status: "open" | "closed" | "draft";
@@ -83,6 +84,9 @@ export default function PositionEditClient({
   );
   const [salaryMax, setSalaryMax] = useState(
     position.salary_max != null ? String(position.salary_max) : ""
+  );
+  const [salaryType, setSalaryType] = useState<"hourly" | "daily" | "monthly">(
+    position.salary_type ?? "monthly"
   );
   const [vacancies, setVacancies] = useState(String(position.vacancies));
   const [jdSummary, setJdSummary] = useState(position.jd_summary ?? "");
@@ -184,6 +188,7 @@ export default function PositionEditClient({
           employment_type: employmentType || null,
           salary_min: sMin,
           salary_max: sMax,
+          salary_type: salaryType,
           vacancies: Number(vacancies) || 1,
           jd_summary: jdSummary.trim() || null,
           jd_full: jdFull.trim() || null,
@@ -276,12 +281,21 @@ export default function PositionEditClient({
               onChange={(e) => setVacancies(e.target.value)} />
           </div>
           <div>
-            <label className="label">เงินเดือนต่ำสุด (฿)</label>
+            <label className="label">รูปแบบค่าตอบแทน</label>
+            <select className="input" value={salaryType}
+              onChange={(e) => setSalaryType(e.target.value as "hourly" | "daily" | "monthly")}>
+              <option value="monthly">รายเดือน (บาท/เดือน)</option>
+              <option value="daily">รายวัน (บาท/วัน)</option>
+              <option value="hourly">รายชั่วโมง (บาท/ชม.)</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">ค่าตอบแทนต่ำสุด (฿)</label>
             <input className="input" type="number" min="0" value={salaryMin}
               onChange={(e) => setSalaryMin(e.target.value)} />
           </div>
           <div>
-            <label className="label">เงินเดือนสูงสุด (฿)</label>
+            <label className="label">ค่าตอบแทนสูงสุด (฿)</label>
             <input className="input" type="number" min="0" value={salaryMax}
               onChange={(e) => setSalaryMax(e.target.value)} />
           </div>

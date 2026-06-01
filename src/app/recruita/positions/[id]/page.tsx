@@ -17,6 +17,7 @@ type Row = {
   benefits: string | null;
   salary_min: number | null;
   salary_max: number | null;
+  salary_type: "hourly" | "daily" | "monthly";
   vacancies: number;
   branch_name: string | null;
 };
@@ -25,10 +26,23 @@ const EMP_LABEL: Record<NonNullable<Row["employment_type"]>, string> = {
   ft: "Full-time", pt: "Part-time", contract: "Contract"
 };
 
-function fmtSalary(min: number | null, max: number | null): string {
+const SALARY_UNIT: Record<Row["salary_type"], string> = {
+  monthly: "บาท/เดือน",
+  daily:   "บาท/วัน",
+  hourly:  "บาท/ชม."
+};
+
+function fmtSalary(
+  min: number | null,
+  max: number | null,
+  type: Row["salary_type"]
+): string {
+  const unit = SALARY_UNIT[type];
   if (min == null && max == null) return "ตามตกลง";
-  if (min != null && max != null) return `฿${min.toLocaleString("th-TH")} – ฿${max.toLocaleString("th-TH")}`;
-  return `฿${(min ?? max ?? 0).toLocaleString("th-TH")}+`;
+  if (min != null && max != null) {
+    return `${min.toLocaleString("th-TH")}–${max.toLocaleString("th-TH")} ${unit}`;
+  }
+  return `${(min ?? max ?? 0).toLocaleString("th-TH")}+ ${unit}`;
 }
 
 export async function generateMetadata(
@@ -50,7 +64,7 @@ export default function PublicPositionDetailPage(
   const p = db.prepare(`
     SELECT p.id, p.code, p.title, p.department, p.employment_type,
            p.jd_summary, p.jd_full, p.requirements, p.benefits,
-           p.salary_min, p.salary_max, p.vacancies,
+           p.salary_min, p.salary_max, p.salary_type, p.vacancies,
            b.name AS branch_name
     FROM recruita_positions p
     LEFT JOIN branches b ON b.id = p.branch_id
@@ -76,12 +90,16 @@ export default function PublicPositionDetailPage(
             <h1 className="text-2xl font-bold text-slate-800">{p.title}</h1>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap text-sm text-slate-600">
-            {p.branch_name && <span>📍 {p.branch_name}</span>}
-            {p.department && <span>🏷 {p.department}</span>}
-            {p.employment_type && <span>⏰ {EMP_LABEL[p.employment_type]}</span>}
-            <span className="text-emerald-700 font-bold">💰 {fmtSalary(p.salary_min, p.salary_max)}</span>
-            <span>👥 รับ {p.vacancies} อัตรา</span>
+          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-sm text-slate-600">
+            {p.branch_name && (
+              <span className="font-semibold text-slate-800">{p.branch_name}</span>
+            )}
+            {p.department && <span>{p.department}</span>}
+            {p.employment_type && <span>{EMP_LABEL[p.employment_type]}</span>}
+            <span className="text-emerald-700 font-bold">
+              {fmtSalary(p.salary_min, p.salary_max, p.salary_type)}
+            </span>
+            <span>รับ {p.vacancies} อัตรา</span>
           </div>
 
           {p.jd_summary && (
@@ -113,7 +131,7 @@ export default function PublicPositionDetailPage(
         <div className="sticky bottom-2 z-10">
           <Link href={`/recruita/apply/${p.id}`}
             className="btn-primary w-full text-base py-3 shadow-lg block text-center">
-            📝 สมัครงานตำแหน่งนี้
+            สมัครงานตำแหน่งนี้
           </Link>
         </div>
       </main>
