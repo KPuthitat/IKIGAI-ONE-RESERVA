@@ -130,7 +130,7 @@ function blankState(): FormState {
 
 export default function ApplyClient({
   positionId, positionTitle, positionCode, branchName, department,
-  customQuestions, liffId
+  customQuestions, liffId, privacyPolicyUrl
 }: {
   positionId: number;
   positionTitle: string;
@@ -139,6 +139,10 @@ export default function ApplyClient({
   department: string | null;
   customQuestions: CustomQuestion[];
   liffId: string | null;
+  /** Global URL set in /admin/system-settings. Renders as a
+   *  "ดูนโยบายฉบับเต็ม" link below the PDPA consent text. NULL
+   *  hides the link entirely. */
+  privacyPolicyUrl: string | null;
 }) {
   const router = useRouter();
   const draftKey = `${DRAFT_KEY_PREFIX}${positionId}`;
@@ -209,38 +213,25 @@ export default function ApplyClient({
       }
     } catch { /* ignore corrupt draft */ }
 
-    // LIFF prefill — pulled from sessionStorage by LiffCapture at
-    // /recruita/positions (the LIFF endpoint). We only get
-    // userId + displayName from LINE — that's all the SDK exposes —
-    // but it's enough to skip the name fields when the candidate
-    // came in via rich menu.
+    // LIFF userId pickup (no name prefill) — pulled from
+    // sessionStorage by LiffCapture at /recruita/positions.
     //
-    // Only fills fields that are currently EMPTY, so it never
-    // overwrites a draft the candidate already typed.
+    // Owner decision 2026-06-01: only consume userId, not the
+    // displayName. LINE display names are nicknames more often
+    // than legal names ("Tom Cruise 🎬" / "MintCH" / etc.) so
+    // pre-filling first/last/nickname created more "wait, this
+    // isn't me" friction than typing saved. The pictureUrl is
+    // similarly skipped — it's a LINE profile photo, not a
+    // formal-attire ID photo.
+    //
+    // We still want the userId for stage-change pushes, so it's
+    // captured into state and sent with the submission payload.
     try {
       const raw = sessionStorage.getItem("recruita_liff_profile_v1");
       if (!raw) return;
-      const prof = JSON.parse(raw) as {
-        userId?: string;
-        displayName?: string;
-      };
+      const prof = JSON.parse(raw) as { userId?: string };
       if (prof.userId) setLineUserId(prof.userId);
-      const dn = (prof.displayName ?? "").trim();
-      if (!dn) return;
-      // displayName is one string. Best-effort split on the first
-      // space — "เอกชัย ใจดี" → first + last; single-word names
-      // land in first_name only with last_name blank, which is the
-      // common case for English nicknames on LINE.
-      const parts = dn.split(/\s+/);
-      const guessedFirst = parts.shift() ?? "";
-      const guessedLast = parts.join(" ");
-      setF((prev) => ({
-        ...prev,
-        first_name_th: prev.first_name_th || guessedFirst,
-        last_name_th:  prev.last_name_th  || guessedLast,
-        nickname_th:   prev.nickname_th   || guessedFirst
-      }));
-    } catch { /* ignore — prefill is best-effort */ }
+    } catch { /* ignore — best-effort */ }
   }, [draftKey]);
 
   // Save draft on every change (debounced via animation frame)
@@ -373,9 +364,20 @@ export default function ApplyClient({
 
       {/* Section 1 — PDPA */}
       <Section title="1. นโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA)">
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-slate-700 leading-relaxed">
-          ข้อมูลของท่านจะถูกเก็บรักษาเป็นความลับ ตาม พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562
-          โดยกลุ่มบริษัท อิคิไก ฟอร์ออล จะไม่เก็บ/ใช้/เปิดเผยข้อมูลใดๆ ก่อนได้รับความยินยอม
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-slate-700 leading-relaxed space-y-2">
+          <p>
+            ข้อมูลของท่านจะถูกเก็บรักษาเป็นความลับ ตาม พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562
+            โดยกลุ่มบริษัท อิคิไก ฟอร์ออล จะไม่เก็บ/ใช้/เปิดเผยข้อมูลใดๆ ก่อนได้รับความยินยอม
+          </p>
+          {privacyPolicyUrl && (
+            <a
+              href={privacyPolicyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-amber-800 hover:text-amber-900 font-bold underline underline-offset-2">
+              ดูนโยบายฉบับเต็ม →
+            </a>
+          )}
         </div>
         <label className="flex items-start gap-2 text-sm text-slate-700">
           <input type="checkbox" className="mt-1 flex-shrink-0"
@@ -725,8 +727,13 @@ export default function ApplyClient({
 
       {/* Section 10 — Documents */}
       <Section title="10. อัปโหลดเอกสาร">
-        <div className="text-[11px] text-slate-500 mb-2">
-          📎 ไฟล์ .pdf .jpg .png ขนาดไม่เกิน 10 MB ต่อไฟล์
+        <div className="text-[11px] text-slate-500 mb-2 space-y-1">
+          <p>ไฟล์ .pdf .jpg .png ขนาดไม่เกิน 10 MB ต่อไฟล์</p>
+          <p className="text-slate-400">
+            ไฟล์จะถูกเก็บใน server ของ IKIGAI Medihealth
+            (ไม่ส่งต่อให้บุคคลที่สาม) — ลบอัตโนมัติภายใน 30 วัน
+            หากใบสมัครไม่ผ่านการพิจารณา
+          </p>
         </div>
         <FileField label="รูปถ่าย" file={photo} onChange={setPhoto}
           accept="image/*" />

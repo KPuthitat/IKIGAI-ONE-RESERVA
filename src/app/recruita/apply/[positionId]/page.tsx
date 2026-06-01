@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getDb } from "@/lib/db";
+import { getDb, getSystemSettings } from "@/lib/db";
 import { parseCustomQuestions } from "@/lib/recruita";
 import { getRecruitaChannel } from "@/lib/messaging-channels";
 import ApplyClient from "./ApplyClient";
@@ -37,6 +37,11 @@ export default function ApplyPage({ params }: { params: { positionId: string } }
   // applicants (no LIFF id, or LIFF init fails) get null and the
   // form works the same — just without the auto-bind.
   const liffId = getRecruitaChannel()?.liff_id ?? null;
+  // Global privacy-policy URL (single source of truth — see
+  // /admin/system-settings). Passed into the PDPA consent section so
+  // the applicant can review the actual policy text before ticking
+  // consent. NULL/empty = no "ดูนโยบาย" button rendered.
+  const privacyPolicyUrl = getSystemSettings().privacy_policy_url ?? null;
 
   return (
     <div className="min-h-screen bg-amber-50/40 py-6 px-4">
@@ -49,6 +54,7 @@ export default function ApplyPage({ params }: { params: { positionId: string } }
           department={p.department}
           customQuestions={customQuestions}
           liffId={liffId}
+          privacyPolicyUrl={privacyPolicyUrl}
         />
       </main>
     </div>

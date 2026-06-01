@@ -16,9 +16,9 @@
 // configured (channel_token + channel_secret + a LINE userId on the
 // candidate). Caller never has to guard.
 
-import { getDb } from "./db";
+import { getDb, getSystemSettings } from "./db";
 import { sendLinePush } from "./line";
-import { getRecruitaChannel } from "./messaging-channels";
+import { getRecruitaChannel, getPlatformChannel, isChannelReady } from "./messaging-channels";
 import { STAGE_META, type ApplicationStage } from "./recruita";
 
 // Minimal local mirror of line.ts's LinePushPayload — kept local so
@@ -173,6 +173,159 @@ export function stageChangeFlex(args: {
       } : undefined
     }
   };
+}
+
+/** Build a compact Flex card the exec group sees when a new
+ *  application lands. Mirrors the candidate-facing card style but
+ *  surfaces admin-relevant data: candidate name, position, branch,
+ *  phone (so admin can call before clicking through), and a CTA to
+ *  the application detail page. */
+function newApplicationFlexForExec(args: {
+  applicantName: string;
+  positionTitle: string;
+  branchName: string | null;
+  phone: string | null;
+  applicationId: number;
+}): LineMessage {
+  const altText = `ใบสมัครใหม่: ${args.applicantName} · ${args.positionTitle}`;
+  const detailRows: Array<Record<string, unknown>> = [
+    {
+      type: "box", layout: "baseline", margin: "md",
+      contents: [
+        { type: "text", text: "ผู้สมัคร", size: "xs", color: "#888888", flex: 2 },
+        { type: "text", text: args.applicantName, size: "xs", color: "#1a1a2e", weight: "bold", flex: 5, wrap: true }
+      ]
+    },
+    {
+      type: "box", layout: "baseline",
+      contents: [
+        { type: "text", text: "ตำแหน่ง", size: "xs", color: "#888888", flex: 2 },
+        { type: "text", text: args.positionTitle, size: "xs", color: "#1a1a2e", weight: "bold", flex: 5, wrap: true }
+      ]
+    }
+  ];
+  if (args.branchName) {
+    detailRows.push({
+      type: "box", layout: "baseline",
+      contents: [
+        { type: "text", text: "สาขา", size: "xs", color: "#888888", flex: 2 },
+        { type: "text", text: args.branchName, size: "xs", color: "#1a1a2e", flex: 5, wrap: true }
+      ]
+    });
+  }
+  if (args.phone) {
+    detailRows.push({
+      type: "box", layout: "baseline",
+      contents: [
+        { type: "text", text: "เบอร์โทร", size: "xs", color: "#888888", flex: 2 },
+        { type: "text", text: args.phone, size: "xs", color: "#1a1a2e", weight: "bold", flex: 5 }
+      ]
+    });
+  }
+  return {
+    type: "flex",
+    altText,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      header: {
+        type: "box", layout: "vertical", paddingAll: "16px",
+        backgroundColor: "#3b82f6",
+        contents: [
+          { type: "text", text: "IKIGAI Recruit", size: "xxs", color: "#ffffff", weight: "bold" },
+          { type: "text", text: "ใบสมัครใหม่เข้ามาแล้ว", size: "lg", color: "#ffffff", weight: "bold", margin: "xs" }
+        ]
+      },
+      body: {
+        type: "box", layout: "vertical", spacing: "md", paddingAll: "16px",
+        contents: [
+          { type: "separator" },
+          ...detailRows,
+          {
+            type: "box", layout: "baseline",
+            contents: [
+              { type: "text", text: "เลขที่ใบสมัคร", size: "xs", color: "#888888", flex: 2 },
+              { type: "text", text: `#${args.applicationId}`, size: "xs", color: "#1a1a2e", weight: "bold", flex: 5 }
+            ]
+          }
+        ]
+      },
+      footer: {
+        type: "box", layout: "vertical", paddingAll: "12px", spacing: "sm",
+        contents: [
+          {
+            type: "button",
+            style: "primary",
+            color: "#3b82f6",
+            action: {
+              type: "uri",
+              label: "ดูใบสมัคร",
+              uri: `${PUBLIC_BASE}/admin/recruita/applications/${args.applicationId}`
+            }
+          }
+        ]
+      }
+    }
+  };
+}
+
+/** Fire-and-forget push of the "new application" Flex card to the
+ *  exec group chat (configured via system_settings.recruita_exec_group_id).
+ *  Routed through the IKIGAI OS platform OA so it lands in the same
+ *  chat ecosystem owners already use for PERSONA/ASCENDA — no need
+ *  to add the RECRUITA candidate-facing OA as a group friend. Silent
+ *  no-op when group id or platform OA isn't configured. */
+export async function notifyExecGroupNewApplication(applicationId: number): Promise<void> {
+  // Three things must be set or we just skip:
+  //   1. system_settings.recruita_exec_group_id — where to send
+  //   2. global_line_channel_token              — how to send (platform OA)
+  //   3. the application row + its candidate     — what to send
+  const settings = getSystemSettings();
+  const groupId = settings.recruita_exec_group_id?.trim();
+  if (!groupId) return;
+  const platform = getPlatformChannel();
+  if (!isChannelReady(platform) || !platform?.channel_token) return;
+
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT a.id,
+           c.title_prefix, c.first_name_th, c.last_name_th, c.mobile_phone,
+           p.title AS position_title,
+           b.name  AS branch_name
+    FROM recruita_applications a
+    JOIN recruita_candidates c ON c.id = a.candidate_id
+    JOIN recruita_positions p  ON p.id = a.position_id
+    LEFT JOIN branches b ON b.id = p.branch_id
+    WHERE a.id = ?
+  `).get(applicationId) as {
+    id: number;
+    title_prefix: string | null;
+    first_name_th: string | null;
+    last_name_th: string | null;
+    mobile_phone: string | null;
+    position_title: string;
+    branch_name: string | null;
+  } | undefined;
+  if (!row) return;
+
+  const applicantName = [row.title_prefix, row.first_name_th, row.last_name_th]
+    .filter(Boolean).join(" ") || "—";
+  const message = newApplicationFlexForExec({
+    applicantName,
+    positionTitle: row.position_title,
+    branchName: row.branch_name,
+    phone: row.mobile_phone,
+    applicationId: row.id
+  });
+
+  try {
+    await sendLinePush(platform.channel_token, {
+      to: groupId,
+      messages: [message]
+    });
+  } catch (e) {
+    console.warn("[recruita] notifyExecGroupNewApplication failed:", e);
+  }
 }
 
 /** Fire-and-forget stage-change push to a candidate. Called from

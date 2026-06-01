@@ -9,6 +9,7 @@ import {
   buildDedupeHash,
   type CustomAnswers
 } from "@/lib/recruita";
+import { notifyExecGroupNewApplication } from "@/lib/recruita-notify";
 
 // POST /api/recruita/applications — public submit endpoint. No
 // auth required; PDPA consent fields gate the actual write. Body
@@ -364,9 +365,19 @@ export async function POST(req: Request) {
     lastExp?.salary || null, lastExp?.reason_left || null
   );
 
+  const newApplicationId = Number(appInfo.lastInsertRowid);
+
+  // Fire-and-forget exec group notification. Settles on a background
+  // microtask so the candidate sees their /thanks redirect with no
+  // wait on LINE's API. notifyExecGroupNewApplication is a no-op if
+  // the group id or platform OA isn't configured — see its docstring.
+  void notifyExecGroupNewApplication(newApplicationId).catch((e) => {
+    console.warn("[recruita] exec group notify failed:", e);
+  });
+
   return NextResponse.json({
     ok: true,
-    application_id: Number(appInfo.lastInsertRowid),
+    application_id: newApplicationId,
     candidate_id: candidateId
   });
 }

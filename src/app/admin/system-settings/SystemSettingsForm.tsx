@@ -26,13 +26,17 @@ export default function SystemSettingsForm({
   groupId,
   defaultEscalationHours,
   maintenanceMessage,
-  maintenanceActive
+  maintenanceActive,
+  privacyPolicyUrl,
+  recruitaExecGroupId
 }: {
   token: string | null;
   groupId: string | null;
   defaultEscalationHours: number;
   maintenanceMessage: string;
   maintenanceActive: boolean;
+  privacyPolicyUrl: string;
+  recruitaExecGroupId: string;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -56,6 +60,15 @@ export default function SystemSettingsForm({
   //   maintenanceOn    — toggle (banner renders iff ON + non-empty)
   const [maintenanceInput, setMaintenanceInput] = useState(maintenanceMessage);
   const [maintenanceOn, setMaintenanceOn] = useState<boolean>(maintenanceActive);
+  // Privacy policy URL (2026-06-01) — single source of truth used by
+  // every PDPA consent surface. Owner pastes the Canva published-link
+  // (or any public URL) once; consent banners render a "ดูนโยบาย"
+  // button linking to it.
+  const [policyUrlInput, setPolicyUrlInput] = useState(privacyPolicyUrl);
+  // RECRUITA executive group — receives "new application" Flex pushes.
+  // Separate from global_staff_group_id so admin can route hiring
+  // notifications to the owners chat without the staff seeing them.
+  const [recruitaExecInput, setRecruitaExecInput] = useState(recruitaExecGroupId);
   // (Resignation-policy textareas moved 2026-05-28 to
   // /admin/persona/resignation — that's the menu where admins
   // already manage resignation requests, so the policy authoring
@@ -87,6 +100,10 @@ export default function SystemSettingsForm({
       // them independently so toggling doesn't wipe the template.
       body.maintenance_message = maintenanceInput;
       body.maintenance_active = maintenanceOn ? "true" : "false";
+
+      // Always send — empty string clears the value server-side.
+      body.privacy_policy_url = policyUrlInput.trim();
+      body.recruita_exec_group_id = recruitaExecInput.trim();
 
       // (Resignation-policy fields moved to /admin/persona/resignation
       // 2026-05-28 — this form no longer sends them.)
@@ -299,6 +316,62 @@ export default function SystemSettingsForm({
             </div>
           </div>
         )}
+      </div>
+
+      {/* PDPA / Privacy policy — single URL pasted once, reused by
+          every consent surface (recruita apply, booking, walk-in,
+          etc.). Owner authors the policy in Canva / Google Docs;
+          we just link to it. */}
+      <div className="card space-y-3">
+        <div>
+          <h2 className="text-lg font-bold text-slate-800">
+            นโยบายความเป็นส่วนตัว (PDPA)
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            URL ของหน้านโยบายที่จะแสดงให้ผู้ใช้กดดูบนทุกฟอร์มขอ consent
+          </p>
+        </div>
+        <div>
+          <label className="label">URL นโยบาย</label>
+          <input
+            className="input text-sm font-mono"
+            type="url"
+            value={policyUrlInput}
+            onChange={(e) => setPolicyUrlInput(e.target.value)}
+            placeholder="https://www.canva.com/design/..."
+            maxLength={500} />
+          <p className="text-[10px] text-slate-400 mt-1">
+            ปล่อยว่าง = ไม่แสดงปุ่ม &quot;ดูนโยบาย&quot; (เหมือนเดิม).
+            ใช้ลิงก์ Canva published-link, Google Doc public, หรือ URL บนเว็บบริษัทก็ได้
+          </p>
+        </div>
+      </div>
+
+      {/* RECRUITA exec group — receives new-application Flex pushes */}
+      <div className="card space-y-3">
+        <div>
+          <h2 className="text-lg font-bold text-slate-800">
+            RECRUITA · กลุ่ม LINE ผู้บริหาร
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            กลุ่มที่จะได้รับแจ้งเตือนทันที เมื่อมีใบสมัครงานใหม่เข้ามา
+            (ส่งผ่าน IKIGAI OS OA)
+          </p>
+        </div>
+        <div>
+          <label className="label">LINE Group ID</label>
+          <input
+            className="input text-sm font-mono"
+            type="text"
+            value={recruitaExecInput}
+            onChange={(e) => setRecruitaExecInput(e.target.value)}
+            placeholder="Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            maxLength={100} />
+          <p className="text-[10px] text-slate-400 mt-1">
+            ขึ้นต้นด้วย C/R/U ตามด้วย 32 hex characters.
+            ปล่อยว่าง = ไม่ส่งแจ้งเตือน. แยกจาก IKIGAI OS staff group ด้านบน
+          </p>
+        </div>
       </div>
 
       {/* Routing status — informational summary */}

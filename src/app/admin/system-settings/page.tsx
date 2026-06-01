@@ -51,6 +51,8 @@ export default function SystemSettingsPage() {
         defaultEscalationHours={settings.default_escalation_hours ?? 24}
         maintenanceMessage={settings.maintenance_message ?? ""}
         maintenanceActive={settings.maintenance_active === 1}
+        privacyPolicyUrl={settings.privacy_policy_url ?? ""}
+        recruitaExecGroupId={settings.recruita_exec_group_id ?? ""}
       />
 
       {/* RECRUITA LINE OA — global setting (IKIGAI Recruit, shared

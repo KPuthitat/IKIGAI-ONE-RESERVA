@@ -1608,6 +1608,23 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "recruita_form_template_json")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN recruita_form_template_json TEXT");
   }
+  // Privacy policy URL (2026-06-01) — single global URL the admin
+  // pastes once (typically a Canva published-link or PDF on the
+  // company site). Every PDPA consent banner (recruita apply, booking
+  // form, walk-in, etc.) reads from here and renders a "ดูนโยบาย"
+  // button when set. NULL/empty = no button rendered (legacy
+  // behaviour). Plaintext URL — not a secret.
+  if (!ssCols.some((c) => c.name === "privacy_policy_url")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN privacy_policy_url TEXT");
+  }
+  // Executive group LINE id (2026-06-01) — RECRUITA-specific. When
+  // set, new application submissions push a Flex card into this
+  // chat so owners see incoming candidates without polling the
+  // admin UI. Distinct from global_staff_group_id, which is for
+  // PERSONA/ASCENDA cross-branch staff notifications.
+  if (!ssCols.some((c) => c.name === "recruita_exec_group_id")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN recruita_exec_group_id TEXT");
+  }
   // SSO contribution settings (2026-05-26). Thailand defaults are
   // (SSO rate + cap live in payroll_settings table — adjust those via
   //  /admin/persona/payroll/settings, not here. We tried adding a
@@ -3801,6 +3818,12 @@ export function updateSystemSettings(
     // Toggle: 0/1. Banner renders when BOTH this is 1 AND
     // maintenance_message is non-empty.
     maintenance_active?: 0 | 1 | boolean;
+    // Public privacy-policy URL. Empty string → NULL = no "ดูนโยบาย"
+    // button rendered on consent surfaces.
+    privacy_policy_url?: string | null;
+    // LINE group id receiving new-RECRUITA-application pushes.
+    // Empty string → NULL = silent (no push fired).
+    recruita_exec_group_id?: string | null;
   },
   updatedBy: number
 ): void {
@@ -3866,6 +3889,16 @@ export function updateSystemSettings(
   if (Object.prototype.hasOwnProperty.call(patch, "maintenance_active")) {
     sets.push("maintenance_active = ?");
     vals.push(patch.maintenance_active ? 1 : 0);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "privacy_policy_url")) {
+    sets.push("privacy_policy_url = ?");
+    const raw = (patch.privacy_policy_url ?? "").trim();
+    vals.push(raw === "" ? null : raw);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "recruita_exec_group_id")) {
+    sets.push("recruita_exec_group_id = ?");
+    const raw = (patch.recruita_exec_group_id ?? "").trim();
+    vals.push(raw === "" ? null : raw);
   }
   if (sets.length === 0) return;
   sets.push("updated_at = ?", "updated_by = ?");
@@ -4012,6 +4045,16 @@ export type SystemSettings = {
    *  lib/recruita-form-template.ts (which mirrors the original
    *  hardcoded form). Admin edits via /admin/recruita/form-template. */
   recruita_form_template_json?: string | null;
+  /** Public URL of the company's privacy policy / PDPA notice
+   *  (typically a Canva published page or PDF on the website).
+   *  Rendered as a "ดูนโยบาย" button on every consent surface in
+   *  the app when set; consent surfaces hide the button on NULL. */
+  privacy_policy_url?: string | null;
+  /** LINE group id receiving the "new application submitted" Flex
+   *  card pushed via the IKIGAI OS platform OA. NULL/empty = no
+   *  push fired (silent fallback so the form still works on a fresh
+   *  install). */
+  recruita_exec_group_id?: string | null;
   updated_at: string | null;
   updated_by: number | null;
 };

@@ -39,7 +39,15 @@ const Body = z.object({
   // Toggle: "true"/"false" from the form. Coerced to 0/1 in
   // updateSystemSettings. Banner renders only when this is true AND
   // message non-empty.
-  maintenance_active: z.union([z.boolean(), z.literal("true"), z.literal("false")]).optional()
+  maintenance_active: z.union([z.boolean(), z.literal("true"), z.literal("false")]).optional(),
+  // Public URL of the privacy policy / PDPA notice. Owner pastes a
+  // Canva published-link (or any HTTPS URL); consent surfaces link
+  // to it as "ดูนโยบาย". Plaintext, ≤500 chars. Empty = clear.
+  privacy_policy_url: z.string().max(500).optional(),
+  // LINE group id receiving new-application Flex pushes. Same shape
+  // validation as global_staff_group_id but kept separate so admin
+  // can route RECRUITA notifications to a different chat.
+  recruita_exec_group_id: z.string().max(100).optional()
 });
 
 export async function POST(req: Request) {
@@ -101,6 +109,22 @@ export async function POST(req: Request) {
     // sometimes coerces booleans to strings). Normalise to 0/1.
     const v = parsed.data.maintenance_active;
     dbPatch.maintenance_active = (v === true || v === "true") ? 1 : 0;
+  }
+  if (parsed.data.privacy_policy_url !== undefined) {
+    dbPatch.privacy_policy_url = parsed.data.privacy_policy_url.trim();
+  }
+  if (parsed.data.recruita_exec_group_id !== undefined) {
+    const g = parsed.data.recruita_exec_group_id.trim();
+    if (g && !/^[CRU][0-9a-f]{32}$/i.test(g)) {
+      return NextResponse.json(
+        {
+          error: "invalid_recruita_exec_group_id",
+          message: "RECRUITA exec group ID should start with C/R/U followed by 32 hex characters"
+        },
+        { status: 400 }
+      );
+    }
+    dbPatch.recruita_exec_group_id = g;
   }
 
   updateSystemSettings(dbPatch, user.id);
