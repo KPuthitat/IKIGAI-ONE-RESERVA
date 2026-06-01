@@ -3163,24 +3163,15 @@ function runMigrations(db: Database.Database): void {
       WHERE status = 'pending';
   `);
 
-  // 2026-06-01 — admin PIN columns on users. Separate from password
-  // because PINs are short (4-6 digits) and trade strength for
-  // physical-presence verification. The hash uses the same bcryptjs
-  // family as passwords; rate-limit fields let us lock after N
-  // wrong tries to defeat brute-force on a 6-digit space.
-  const usersCols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
-  if (!usersCols.some((c) => c.name === "admin_pin_hash")) {
-    db.exec("ALTER TABLE users ADD COLUMN admin_pin_hash TEXT");
-  }
-  if (!usersCols.some((c) => c.name === "admin_pin_set_at")) {
-    db.exec("ALTER TABLE users ADD COLUMN admin_pin_set_at TEXT");
-  }
-  if (!usersCols.some((c) => c.name === "admin_pin_failed_attempts")) {
-    db.exec("ALTER TABLE users ADD COLUMN admin_pin_failed_attempts INTEGER NOT NULL DEFAULT 0");
-  }
-  if (!usersCols.some((c) => c.name === "admin_pin_locked_until")) {
-    db.exec("ALTER TABLE users ADD COLUMN admin_pin_locked_until TEXT");
-  }
+  // 2026-06-01 NOTE — an earlier draft of this migration added
+  //   users.admin_pin_hash + admin_pin_set_at + admin_pin_failed_attempts
+  //   + admin_pin_locked_until
+  // for a separate "admin PIN" gating RECRUITA stage approvals. The
+  // owner correctly pointed out that users.pin_hash already exists
+  // (4-digit time-clock PIN) and reusing it is the right call. The
+  // dead columns survive on prod from the deploy of commit 054ed55 —
+  // harmless. New databases skip them entirely. lib/admin-pin.ts now
+  // reads users.pin_hash directly.
 
   // ── 2026-05-31 RECRUITA additive fields ──────────────────────
   // Surfaced after reviewing the owner's existing Google Form

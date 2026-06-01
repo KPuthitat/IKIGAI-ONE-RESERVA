@@ -17,7 +17,7 @@ import { approveStageRequest, cancelStageRequest } from "@/lib/recruita-stage-re
 //   locked out of cancelling their own typo.
 
 const ApproveBody = z.object({
-  pin: z.string().regex(/^\d{4,6}$/)
+  pin: z.string().regex(/^\d{4}$/)
 });
 
 const CancelBody = z.object({
@@ -49,14 +49,8 @@ export async function POST(
   if (!pinCheck.ok) {
     if (pinCheck.reason === "no_pin") {
       return NextResponse.json(
-        { error: "no_pin", message: "คุณยังไม่ได้ตั้ง PIN — ตั้งที่ /admin/me/pin ก่อน" },
+        { error: "no_pin", message: "คุณยังไม่ได้ตั้ง PIN — ตั้ง PIN ได้ที่หน้า ลงเวลา (Time Clock) ก่อน" },
         { status: 400 }
-      );
-    }
-    if (pinCheck.reason === "locked") {
-      return NextResponse.json(
-        { error: "locked", message: "PIN ถูกล็อก 15 นาที" },
-        { status: 429 }
       );
     }
     return NextResponse.json(

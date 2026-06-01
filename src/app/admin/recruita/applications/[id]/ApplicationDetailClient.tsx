@@ -178,7 +178,7 @@ export default function ApplicationDetailClient({
    *  "อยู่ระหว่างขออนุมัติ" with approve/cancel buttons. */
   pendingStageRequest: PendingStageRequest | null;
   /** Whether the logged-in admin has a PIN configured. If false we
-   *  disable the request + approve actions and link to /admin/me/pin. */
+   *  disable the request + approve actions and link to /staff/persona. */
   viewerHasPin: boolean;
   /** Logged-in admin's id — used to enforce "approver ≠ requester"
    *  on the client (server enforces it too). 0 when not logged in
@@ -308,7 +308,7 @@ export default function ApplicationDetailClient({
             </button>
           </div>
           {!viewerHasPin && pendingStageRequest.requested_by !== viewerUserId && (
-            <a href="/admin/me/pin" className="text-xs text-rose-600 underline">
+            <a href="/staff/persona" className="text-xs text-rose-600 underline">
               คุณยังไม่ได้ตั้ง PIN — กดที่นี่เพื่อตั้งก่อนอนุมัติ
             </a>
           )}
@@ -317,12 +317,11 @@ export default function ApplicationDetailClient({
         <div className="card bg-rose-50 border-rose-200 space-y-2">
           <h2 className="font-bold text-rose-900 text-sm">ต้องตั้ง PIN ก่อนเปลี่ยนสถานะ</h2>
           <p className="text-xs text-rose-800">
-            การเปลี่ยน stage ต้องได้รับการอนุมัติจากแอดมิน 2 คน
-            แต่ละคนต้องใส่ PIN ของตัวเอง
+            ใช้ PIN ตัวเดียวกับลงเวลา (Time Clock) — ยังไม่ตั้ง ไปตั้งที่หน้าลงเวลาก่อน
           </p>
-          <a href="/admin/me/pin"
+          <a href="/staff/persona"
             className="inline-block text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2 rounded">
-            ตั้ง PIN ของฉัน →
+            ไปหน้าลงเวลา → ตั้ง PIN
           </a>
         </div>
       ) : (
@@ -1162,8 +1161,8 @@ function PinPromptModal({
   const [err, setErr] = useState<string | null>(null);
 
   async function submit() {
-    if (!/^\d{4,6}$/.test(pin)) {
-      setErr("PIN ต้องเป็นตัวเลข 4-6 หลัก");
+    if (!/^\d{4}$/.test(pin)) {
+      setErr("PIN ต้องเป็นตัวเลข 4 หลัก");
       return;
     }
     setBusy(true);
@@ -1189,9 +1188,9 @@ function PinPromptModal({
             inputMode="numeric"
             autoComplete="off"
             autoFocus
-            maxLength={6}
+            maxLength={4}
             value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
             onKeyDown={(e) => { if (e.key === "Enter" && !busy) void submit(); }}
             className="input font-mono text-center text-2xl tracking-[10px]" />
         </div>
