@@ -39,7 +39,7 @@ type LoadState =
   | { kind: "no_liff" }         // LIFF not configured by admin
   | { kind: "outside_line" }    // opened in plain browser, no LINE auth
   | { kind: "loading" }         // have userId, fetching
-  | { kind: "loaded"; rows: AppRow[] }
+  | { kind: "loaded"; rows: AppRow[]; userId: string }
   | { kind: "error"; message: string };
 
 function fmtDate(iso: string): string {
@@ -91,7 +91,11 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
         setState({ kind: "error", message: data.error ?? "lookup_failed" });
         return;
       }
-      setState({ kind: "loaded", rows: data.applications ?? [] });
+      setState({
+        kind: "loaded",
+        rows: data.applications ?? [],
+        userId: profile.userId
+      });
     } catch (e) {
       console.warn("[recruita/status] LIFF init failed:", e);
       setState({ kind: "outside_line" });
@@ -180,10 +184,23 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
               className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg">
               ดูตำแหน่งที่เปิดรับ →
             </Link>
-            <p className="text-[11px] text-slate-400">
-              ถ้าเคยสมัครแล้วแต่ไม่เห็น — อาจเป็นเพราะตอนสมัครไม่ได้ผ่าน LINE OA<br />
-              ติดต่อแอดมินเพื่อขอผูกบัญชี LINE กับใบสมัครของคุณ
-            </p>
+            <div className="text-[11px] text-slate-400 space-y-2 pt-2 border-t border-slate-100">
+              <p>
+                ถ้าเคยสมัครแล้วแต่ไม่เห็น — อาจเป็นเพราะตอนสมัครไม่ได้ผ่าน LINE OA
+              </p>
+              {/* Show the LINE userId so the candidate can copy +
+                  forward to an admin who'll paste it into the
+                  candidate's record manually. No PII risk — userId
+                  is opaque and only meaningful inside our DB. */}
+              <div className="bg-slate-50 rounded-md p-2 border border-slate-200">
+                <p className="text-[10px] text-slate-500 font-bold mb-1 uppercase tracking-wide">
+                  LINE userId ของคุณ (ส่งให้แอดมินผูกใบสมัคร)
+                </p>
+                <code className="text-[10px] font-mono text-slate-700 break-all select-all block">
+                  {state.userId}
+                </code>
+              </div>
+            </div>
           </div>
         )}
 

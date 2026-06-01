@@ -27,6 +27,10 @@ type AppShape = {
 
 type CandidateShape = {
   id: number;
+  /** LINE userId once the candidate has been linked — either via
+   *  LIFF capture during apply, or pasted by an admin in the manual-
+   *  link box on this page. NULL when not linked. */
+  line_user_id: string | null;
   title_prefix: string | null;
   first_name_th: string | null; last_name_th: string | null;
   first_name_en: string | null; last_name_en: string | null;
@@ -245,6 +249,16 @@ export default function ApplicationDetailClient({
         <Row label="LINE ID" value={candidate.line_id} />
         <Row label="ที่อยู่" value={candidate.house_address} />
       </div>
+
+      {/* LINE userId binding — drives whether stage-change pushes
+          reach the candidate AND whether they can see this on
+          /recruita/status. Populated automatically when they apply
+          via LIFF; for direct-URL applicants, admin pastes the
+          userId the candidate copied from the status page. */}
+      <LineLinkBox
+        applicationId={application.id}
+        currentValue={candidate.line_user_id} />
+
 
       {/* Personal */}
       <Card title="ข้อมูลส่วนตัว">
@@ -781,6 +795,113 @@ function InviteLinkBox({ result }: { result: HireResult }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── LINE userId link box ──────────────────────────────────────────
+//
+// Surfaces the candidate's currently-bound LINE userId and lets
+// admin paste a new one (or clear it). Empty input = clear. The
+// API validates the U-prefix shape + rejects duplicates across
+// candidates so we can't accidentally redirect another person's
+// stage-change pushes.
+function LineLinkBox({
+  applicationId, currentValue
+}: {
+  applicationId: number;
+  currentValue: string | null;
+}) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [input, setInput] = useState(currentValue ?? "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  async function save() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/recruita/applications/${applicationId}/link-line`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ line_user_id: input.trim() })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        setMsg({ kind: "err", text: j.message ?? j.error ?? "บันทึกไม่สำเร็จ" });
+        return;
+      }
+      setMsg({ kind: "ok", text: input.trim() ? "✓ ผูก LINE เรียบร้อย" : "✓ ยกเลิกการผูกแล้ว" });
+      setEditing(false);
+      router.refresh();
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="card space-y-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-slate-800 text-sm">LINE userId</h3>
+          <p className="text-[11px] text-slate-500">
+            ใช้ส่งแจ้งเตือนเปลี่ยนสถานะ + ให้ผู้สมัครเห็นใบสมัครในหน้า เช็คสถานะ
+          </p>
+        </div>
+        {!editing && (
+          <button type="button" onClick={() => { setEditing(true); setInput(currentValue ?? ""); }}
+            className="text-xs px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50 font-semibold">
+            {currentValue ? "แก้ไข / ยกเลิก" : "ผูก LINE"}
+          </button>
+        )}
+      </div>
+      {!editing && (
+        <div className="text-xs">
+          {currentValue ? (
+            <code className="font-mono bg-slate-100 px-2 py-1 rounded text-slate-700 break-all">
+              {currentValue}
+            </code>
+          ) : (
+            <span className="text-slate-400 italic">
+              ยังไม่ได้ผูก — ผู้สมัคร copy userId ของตัวเองจากหน้า /recruita/status แล้วส่งให้แอดมิน
+              paste ที่นี่
+            </span>
+          )}
+        </div>
+      )}
+      {editing && (
+        <div className="space-y-2">
+          <input
+            type="text"
+            className="input font-mono text-xs"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            maxLength={80} />
+          <p className="text-[10px] text-slate-400">
+            ขึ้นต้นด้วย U ตามด้วย 32 ตัวอักษร hex. ปล่อยว่าง = ยกเลิกการผูก
+          </p>
+          {msg && (
+            <p className={`text-xs ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
+              {msg.text}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setEditing(false)} disabled={busy}
+              className="flex-1 py-2 rounded border border-slate-300 text-sm font-medium hover:bg-slate-50">
+              ยกเลิก
+            </button>
+            <button type="button" onClick={save} disabled={busy}
+              className="flex-1 py-2 rounded bg-brand text-white text-sm font-bold disabled:opacity-50">
+              {busy ? "กำลังบันทึก…" : "บันทึก"}
+            </button>
+          </div>
+        </div>
+      )}
+      {!editing && msg && (
+        <p className={`text-xs ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
+          {msg.text}
+        </p>
+      )}
     </div>
   );
 }

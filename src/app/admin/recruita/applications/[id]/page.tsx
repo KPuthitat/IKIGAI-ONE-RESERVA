@@ -40,6 +40,9 @@ type AppRow = {
 
 type CandidateRow = {
   id: number;
+  /** LINE userId — set when LIFF captured during apply OR admin
+   *  pasted in the manual link box. Drives stage-change push routing. */
+  line_user_id: string | null;
   title_prefix: string | null;
   first_name_th: string | null; last_name_th: string | null;
   first_name_en: string | null; last_name_en: string | null;
