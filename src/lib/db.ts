@@ -3124,6 +3124,26 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_recruita_documents_candidate
       ON recruita_documents(candidate_id, kind);
 
+    -- 2026-06-01 OA follower tracker. Plain table of userId + the
+    -- channel scope they followed, with a timestamp. Two complementary
+    -- recency-link paths:
+    --   (a) candidate adds OA AFTER applying → existing follow-event
+    --       path matches them to the most-recent unlinked candidate row
+    --   (b) candidate adds OA BEFORE applying → this table lets the
+    --       application-submit path find their userId and link
+    -- Rows expire 30 days after follow (PDPA — we don't need the
+    -- linkage info forever).
+    CREATE TABLE IF NOT EXISTS line_oa_recent_followers (
+      line_user_id TEXT NOT NULL,
+      channel_scope TEXT NOT NULL,
+      followed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      consumed_at TEXT,
+      PRIMARY KEY (line_user_id, channel_scope)
+    );
+    CREATE INDEX IF NOT EXISTS idx_line_followers_recent
+      ON line_oa_recent_followers(channel_scope, followed_at)
+      WHERE consumed_at IS NULL;
+
     -- 2026-06-01 Dual-admin approval for RECRUITA stage transitions.
     -- Owner wanted: every stage change on a candidate's application
     -- requires TWO different admin users to approve, each entering

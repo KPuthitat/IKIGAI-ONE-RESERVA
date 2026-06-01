@@ -113,6 +113,12 @@ export default function ApplicationsListClient({
                     {meta.label}
                   </span>
                   <span className="font-bold text-slate-800">{name}{nick}</span>
+                  {/* PDPA countdown — only for terminal-no-go stages,
+                      where the 30-day purge clock has started ticking
+                      from updated_at (the moment admin set this stage). */}
+                  {(r.stage === "rejected" || r.stage === "withdrawn") && r.updated_at && (
+                    <DaysToPurge updatedAt={r.updated_at} />
+                  )}
                 </div>
                 <div className="text-xs text-slate-500 mt-0.5">
                   {r.position_code ? `[${r.position_code}] ` : ""}{r.position_title}
@@ -135,5 +141,40 @@ export default function ApplicationsListClient({
         })}
       </div>
     </div>
+  );
+}
+
+// ── PDPA countdown ──────────────────────────────────────────────
+// Renders "เหลือ N วันก่อนลบ" for terminal-no-go applications
+// (rejected / withdrawn). Days are computed from the stage-change
+// updated_at, capped at 30. Past zero we show "ลบเมื่อรอบล้างถัดไป"
+// since the actual purge cron runs daily and may have a small lag.
+const PDPA_RETENTION_DAYS = 30;
+
+function DaysToPurge({ updatedAt }: { updatedAt: string }) {
+  const set = new Date(updatedAt).getTime();
+  const elapsed = Math.max(0, (Date.now() - set) / 86_400_000);
+  const left = Math.max(0, Math.ceil(PDPA_RETENTION_DAYS - elapsed));
+  if (left > 7) {
+    return (
+      <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-slate-100 text-slate-500"
+        title={`PDPA: ลบอัตโนมัติ ${PDPA_RETENTION_DAYS} วันหลังตัดสิน`}>
+        เหลือ {left} วันก่อนลบ
+      </span>
+    );
+  }
+  if (left > 0) {
+    return (
+      <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800"
+        title="ใกล้ครบกำหนดลบตาม PDPA">
+        เหลือ {left} วันก่อนลบ
+      </span>
+    );
+  }
+  return (
+    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-rose-100 text-rose-700"
+      title="ครบกำหนด PDPA — รอบล้างถัดไปจะลบทันที">
+      ลบเมื่อรอบล้างถัดไป
+    </span>
   );
 }
