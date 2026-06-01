@@ -892,6 +892,16 @@ function SummaryCard({ label, value, sub, accent }: {
   );
 }
 
+type BreakdownDay = {
+  date: string;
+  pairs: Array<{
+    workIn: string | null;
+    workOut: string | null;
+    durationMinutes: number;
+  }>;
+  totalMinutes: number;
+};
+
 function LineEditModal({
   lang, periodId, line, onClose, onSaved
 }: {
@@ -922,6 +932,38 @@ function LineEditModal({
   const [notes, setNotes] = useState(line.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Daily time-entry breakdown (Phase 1: visibility only).
+  // Lazy-loaded the first time the admin expands the section so we
+  // don't slow down opening the modal for the common case where they
+  // just want to tweak a number and save. Once fetched, kept in state
+  // until the modal closes — re-toggling the disclosure is free.
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [breakdownDays, setBreakdownDays] = useState<BreakdownDay[] | null>(null);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [breakdownErr, setBreakdownErr] = useState<string | null>(null);
+
+  async function loadBreakdown() {
+    if (breakdownDays !== null || breakdownLoading) return;
+    setBreakdownLoading(true);
+    setBreakdownErr(null);
+    try {
+      const res = await fetch(
+        apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}/breakdown`),
+        { headers: { "content-type": "application/json" } }
+      );
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) {
+        setBreakdownErr(j?.error ?? t(lang, "common.error"));
+        return;
+      }
+      setBreakdownDays(j.days as BreakdownDay[]);
+    } catch {
+      setBreakdownErr(t(lang, "common.error"));
+    } finally {
+      setBreakdownLoading(false);
+    }
+  }
 
   async function save(): Promise<void> {
     setBusy(true);
@@ -1063,6 +1105,85 @@ function LineEditModal({
           ⚠ {t(lang, "admin.persona.payroll.detail.overrideHint")}
         </p>
         {err && <p className="text-rose-600 text-sm">✗ {err}</p>}
+
+        {/* Daily time-entry breakdown — collapsed by default, lazy
+            loaded. Admin opens it when they want to see where the
+            totals above came from (Phase 1: read-only view). */}
+        <div className="border-t border-slate-100 pt-3">
+          <button type="button"
+            onClick={() => {
+              const next = !breakdownOpen;
+              setBreakdownOpen(next);
+              if (next) void loadBreakdown();
+            }}
+            className="w-full flex items-center justify-between text-sm font-semibold text-slate-700 hover:text-slate-900">
+            <span>เวลาเข้า-ออกแต่ละวัน (ที่มาของยอด)</span>
+            <span className="text-slate-400 text-xs">{breakdownOpen ? "▲" : "▼"}</span>
+          </button>
+          {breakdownOpen && (
+            <div className="mt-3 space-y-2">
+              {breakdownLoading && (
+                <p className="text-xs text-slate-500">กำลังโหลด…</p>
+              )}
+              {breakdownErr && (
+                <p className="text-xs text-rose-600">✗ {breakdownErr}</p>
+              )}
+              {breakdownDays && breakdownDays.length === 0 && (
+                <p className="text-xs text-slate-500 italic">
+                  ไม่มีบันทึกการเข้า-ออกงานในรอบนี้
+                </p>
+              )}
+              {breakdownDays && breakdownDays.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-100">
+                      <tr className="text-slate-600">
+                        <th className="text-left px-2 py-1.5 font-semibold">วันที่</th>
+                        <th className="text-left px-2 py-1.5 font-semibold">เข้า</th>
+                        <th className="text-left px-2 py-1.5 font-semibold">ออก</th>
+                        <th className="text-right px-2 py-1.5 font-semibold">รวม</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {breakdownDays.map((day) => (
+                        day.pairs.map((p, i) => (
+                          <tr key={`${day.date}-${i}`} className="border-t border-slate-100">
+                            <td className="px-2 py-1.5 font-mono">
+                              {i === 0 ? day.date : ""}
+                            </td>
+                            <td className="px-2 py-1.5 font-mono">
+                              {p.workIn ?? <span className="text-rose-500">— ขาด</span>}
+                            </td>
+                            <td className="px-2 py-1.5 font-mono">
+                              {p.workOut ?? <span className="text-rose-500">— ขาด</span>}
+                            </td>
+                            <td className="px-2 py-1.5 text-right font-mono">
+                              {p.durationMinutes > 0
+                                ? fmtMin(p.durationMinutes)
+                                : <span className="text-slate-300">—</span>}
+                            </td>
+                          </tr>
+                        ))
+                      ))}
+                      <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
+                        <td className="px-2 py-1.5" colSpan={3}>รวมทั้งรอบ</td>
+                        <td className="px-2 py-1.5 text-right font-mono">
+                          {fmtMin(breakdownDays.reduce((s, d) => s + d.totalMinutes, 0))}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="text-[10px] text-slate-400">
+                จำนวนชั่วโมงด้านบนรวมเข้า-ออกตามที่บันทึกจริง — ยังไม่หักพัก/ยังไม่แยก OT.
+                ระบบจะใช้เกณฑ์เหล่านี้คำนวณเป็นชั่วโมงปกติ/OT ตาม payroll settings
+                ของบริษัท ค่าที่ใส่ในช่องด้านบนคือผลลัพธ์สุดท้ายที่ถูกบันทึก
+              </p>
+            </div>
+          )}
+        </div>
+
         <div className="flex gap-2 pt-2">
           <button type="button" onClick={onClose} disabled={busy}
             className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
