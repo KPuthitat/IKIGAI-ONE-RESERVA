@@ -9,7 +9,7 @@ import {
   buildDedupeHash,
   type CustomAnswers
 } from "@/lib/recruita";
-import { notifyExecGroupNewApplication } from "@/lib/recruita-notify";
+import { notifyExecGroupNewApplication, notifyStageChange } from "@/lib/recruita-notify";
 
 // POST /api/recruita/applications — public submit endpoint. No
 // auth required; PDPA consent fields gate the actual write. Body
@@ -438,6 +438,16 @@ export async function POST(req: Request) {
   // the group id or platform OA isn't configured — see its docstring.
   void notifyExecGroupNewApplication(newApplicationId).catch((e) => {
     console.warn("[recruita] exec group notify failed:", e);
+  });
+
+  // Fire-and-forget candidate confirmation push. The application is at
+  // stage 'applied', so notifyStageChange sends the "ระบบได้รับใบสมัคร
+  // ของคุณแล้ว" Flex card — the candidate's first signal that the LINE
+  // binding worked and future updates will arrive here. No-op when the
+  // candidate has no linked line_user_id (plain web form) or the
+  // RECRUITA OA isn't configured.
+  void notifyStageChange(newApplicationId).catch((e) => {
+    console.warn("[recruita] applicant confirmation notify failed:", e);
   });
 
   return NextResponse.json({
