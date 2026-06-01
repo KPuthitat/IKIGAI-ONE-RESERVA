@@ -1600,6 +1600,14 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "last_cron_run_at")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN last_cron_run_at TEXT");
   }
+  // RECRUITA form template (2026-06-01) — JSON describing the
+  // standard application form. Lets admin toggle/rename/reorder the
+  // built-in fields without code changes. NULL = use the hardcoded
+  // default from lib/recruita-form-template.ts. See that file for
+  // the schema and the default value.
+  if (!ssCols.some((c) => c.name === "recruita_form_template_json")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN recruita_form_template_json TEXT");
+  }
   // SSO contribution settings (2026-05-26). Thailand defaults are
   // (SSO rate + cap live in payroll_settings table — adjust those via
   //  /admin/persona/payroll/settings, not here. We tried adding a
@@ -3981,6 +3989,16 @@ export type SystemSettings = {
    *  flips this before/after each deploy via /admin/system-settings.
    *  Banner shows iff active=1 AND message non-empty. */
   maintenance_active: number;
+  /** ISO timestamp of the last /api/cron heartbeat. NULL = never
+   *  pinged since the migration ran. Used by /admin/system-settings to
+   *  surface "is the external cron actually firing?". */
+  last_cron_run_at?: string | null;
+  /** RECRUITA standard form template — JSON describing which fields
+   *  appear on /recruita/apply/[id], their labels, required flag, and
+   *  order. NULL = use the hardcoded DEFAULT_TEMPLATE from
+   *  lib/recruita-form-template.ts (which mirrors the original
+   *  hardcoded form). Admin edits via /admin/recruita/form-template. */
+  recruita_form_template_json?: string | null;
   updated_at: string | null;
   updated_by: number | null;
 };
