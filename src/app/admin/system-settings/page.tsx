@@ -18,6 +18,7 @@ import { getSystemSettings } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import SystemSettingsForm from "./SystemSettingsForm";
+import RecruitaOaSection from "./RecruitaOaSection";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,12 @@ export default function SystemSettingsPage() {
         maintenanceMessage={settings.maintenance_message ?? ""}
         maintenanceActive={settings.maintenance_active === 1}
       />
+
+      {/* RECRUITA LINE OA — global setting (IKIGAI Recruit, shared
+          across all branches). Mounted as a section here so the
+          owner has one canonical place for cross-branch settings
+          instead of hunting under each module's sidebar. */}
+      <RecruitaOaSection />
     </div>
   );
 }

@@ -203,8 +203,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/recruita/positions", label: t(lang, "admin.recruita.nav.positions") },
         { href: "/admin/recruita/pipeline", label: t(lang, "admin.recruita.nav.pipeline") },
         { href: "/admin/recruita/applications", label: t(lang, "admin.recruita.nav.applications") },
-        { href: "/admin/recruita/dashboard", label: t(lang, "admin.recruita.nav.dashboard") },
-        { href: "/admin/recruita/settings", label: t(lang, "admin.recruita.nav.settings") }
+        { href: "/admin/recruita/dashboard", label: t(lang, "admin.recruita.nav.dashboard") }
+        // "ตั้งค่า LINE OA" moved to /admin/system-settings (global,
+        // superadmin only — RECRUITA OA is shared across all branches
+        // so it belongs in the global section, not the module nav).
       ]
     },
     {
