@@ -36,7 +36,7 @@ const STATUS_META: Record<Position["status"], { label: string; chip: string }> =
 };
 
 const EMP_LABEL: Record<NonNullable<Position["employment_type"]>, string> = {
-  ft: "Full-time", pt: "Part-time", contract: "Contract"
+  ft: "เต็มเวลา", pt: "นอกเวลา (PT)", contract: "สัญญาจ้าง"
 };
 
 const SALARY_UNIT: Record<Position["salary_type"], string> = {
@@ -341,9 +341,9 @@ function NewPositionDialog({
             <select className="input" value={employmentType}
               onChange={(e) => setEmploymentType(e.target.value)}>
               <option value="">—</option>
-              <option value="ft">Full-time</option>
-              <option value="pt">Part-time</option>
-              <option value="contract">Contract</option>
+              <option value="ft">เต็มเวลา</option>
+              <option value="pt">นอกเวลา (PT)</option>
+              <option value="contract">สัญญาจ้าง</option>
             </select>
           </div>
         </div>

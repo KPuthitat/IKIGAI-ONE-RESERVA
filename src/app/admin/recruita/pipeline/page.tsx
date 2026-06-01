@@ -19,6 +19,7 @@ export type PipelineCard = {
   stage: ApplicationStage;
   submitted_at: string;
   updated_at: string | null;
+  title_prefix: string | null;
   first_name_th: string | null;
   last_name_th: string | null;
   nickname_th: string | null;
@@ -38,7 +39,7 @@ export default function PipelinePage() {
   const cards = db.prepare(`
     SELECT a.id, a.candidate_id, a.position_id, a.stage,
            a.submitted_at, a.updated_at, a.expected_salary,
-           c.first_name_th, c.last_name_th, c.nickname_th, c.mobile_phone,
+           c.title_prefix, c.first_name_th, c.last_name_th, c.nickname_th, c.mobile_phone,
            p.title AS position_title, p.code AS position_code,
            b.name AS branch_name
     FROM recruita_applications a

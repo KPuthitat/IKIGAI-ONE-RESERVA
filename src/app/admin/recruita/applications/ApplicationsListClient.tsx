@@ -100,7 +100,8 @@ export default function ApplicationsListClient({
         )}
         {filtered.map((r) => {
           const meta = STAGE_META[r.stage];
-          const name = [r.first_name_th, r.last_name_th].filter(Boolean).join(" ") || "—";
+          const name = [r.title_prefix, r.first_name_th, r.last_name_th]
+            .filter(Boolean).join(" ") || "—";
           const nick = r.nickname_th ? ` (${r.nickname_th})` : "";
           return (
             <Link key={r.id} href={`/admin/recruita/applications/${r.id}`}

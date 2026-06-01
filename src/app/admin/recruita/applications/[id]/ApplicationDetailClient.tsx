@@ -106,6 +106,37 @@ const LICENSE_LABEL: Record<string, string> = {
   no_license: "ไม่มีใบประกอบวิชาชีพ",
   not_applicable: "ไม่ได้สมัครตำแหน่งดังกล่าว"
 };
+// Education level + language proficiency — admin detail used to show
+// the raw enum value ("bachelor" / "good") which leaked English into
+// a Thai-mode UI. Map back to the same labels the apply form showed
+// the candidate so what they typed equals what admin sees.
+const EDUCATION_LABEL: Record<string, string> = {
+  primary: "ประถมศึกษา",
+  middle: "มัธยมต้น",
+  high: "มัธยมปลาย",
+  vocational: "ปวช.",
+  diploma: "ปวส. / อนุปริญญา",
+  bachelor: "ปริญญาตรี",
+  master: "ปริญญาโท",
+  doctorate: "ปริญญาเอก"
+};
+const LANG_LEVEL_LABEL: Record<string, string> = {
+  native: "เจ้าของภาษา",
+  fluent: "คล่อง",
+  good: "ดี",
+  basic: "พอใช้",
+  beginner: "เริ่มต้น"
+};
+// Employment-type chips on positions list / detail / pipeline. Owner
+// 2026-06-01: pure-Thai display in TH mode. Loanword Full-time/
+// Part-time felt familiar but inconsistent with the rest of the
+// labels (ตำแหน่ง / สาขา / ค่าตอบแทน etc.) and read as English-y
+// to a customer-facing audience.
+const EMP_TYPE_LABEL: Record<string, string> = {
+  ft: "เต็มเวลา",
+  pt: "นอกเวลา (PT)",
+  contract: "สัญญาจ้าง"
+};
 
 export default function ApplicationDetailClient({
   application, candidate, nationalIdPlain, position, documents,
@@ -294,7 +325,9 @@ export default function ApplicationDetailClient({
           <div className="space-y-2">
             {education.map((row, i) => (
               <div key={i} className="border border-slate-200 rounded-lg p-2 bg-slate-50 text-sm">
-                <div className="font-bold text-slate-800">{row.level || "—"}</div>
+                <div className="font-bold text-slate-800">
+                  {row.level ? (EDUCATION_LABEL[row.level] ?? row.level) : "—"}
+                </div>
                 <div className="text-xs text-slate-600">
                   {row.institution || "—"}
                   {row.faculty && ` · ${row.faculty}`}
@@ -345,7 +378,9 @@ export default function ApplicationDetailClient({
             <div className="flex flex-wrap gap-1.5">
               {languages.map((l, i) => (
                 <span key={i} className="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded">
-                  {l.language || "—"}: <b>{l.level || "—"}</b>
+                  {l.language || "—"}: <b>{
+                    l.level ? (LANG_LEVEL_LABEL[l.level] ?? l.level) : "—"
+                  }</b>
                 </span>
               ))}
             </div>
@@ -666,8 +701,8 @@ function HireDialog({
             <label className="label">รูปแบบงาน *</label>
             <select className="input" value={employmentType}
               onChange={(e) => setEmploymentType(e.target.value as "ft" | "pt")}>
-              <option value="ft">Full-time</option>
-              <option value="pt">Part-time</option>
+              <option value="ft">เต็มเวลา</option>
+              <option value="pt">นอกเวลา (PT)</option>
             </select>
           </div>
           <div>

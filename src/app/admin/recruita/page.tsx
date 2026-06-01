@@ -43,7 +43,7 @@ export default function RecruitaLanding() {
 
   const recent = db.prepare(`
     SELECT a.id, a.stage, a.submitted_at,
-           c.first_name_th, c.last_name_th, c.nickname_th,
+           c.title_prefix, c.first_name_th, c.last_name_th, c.nickname_th,
            p.title AS position_title, p.code AS position_code
     FROM recruita_applications a
     JOIN recruita_candidates c ON c.id = a.candidate_id
@@ -52,6 +52,7 @@ export default function RecruitaLanding() {
     LIMIT 10
   `).all() as Array<{
     id: number; stage: ApplicationStage; submitted_at: string;
+    title_prefix: string | null;
     first_name_th: string | null; last_name_th: string | null;
     nickname_th: string | null;
     position_title: string; position_code: string | null;
@@ -172,7 +173,8 @@ export default function RecruitaLanding() {
           <div className="divide-y divide-slate-100">
             {recent.map((r) => {
               const meta = STAGE_META[r.stage];
-              const name = [r.first_name_th, r.last_name_th].filter(Boolean).join(" ") || "—";
+              const name = [r.title_prefix, r.first_name_th, r.last_name_th]
+                .filter(Boolean).join(" ") || "—";
               const nick = r.nickname_th ? ` (${r.nickname_th})` : "";
               return (
                 <Link key={r.id} href={`/admin/recruita/applications/${r.id}`}

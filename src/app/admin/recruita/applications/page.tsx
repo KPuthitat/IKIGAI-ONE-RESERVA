@@ -18,6 +18,7 @@ export type ApplicationRow = {
   branch_name: string | null;
   stage: ApplicationStage;
   submitted_at: string;
+  title_prefix: string | null;
   first_name_th: string | null;
   last_name_th: string | null;
   nickname_th: string | null;
@@ -41,7 +42,7 @@ export default function ApplicationsListPage() {
   const rows = db.prepare(`
     SELECT a.id, a.candidate_id, a.position_id, a.stage, a.submitted_at,
            a.expected_salary, a.info_source,
-           c.first_name_th, c.last_name_th, c.nickname_th,
+           c.title_prefix, c.first_name_th, c.last_name_th, c.nickname_th,
            c.mobile_phone, c.personal_email,
            p.title AS position_title, p.code AS position_code,
            b.name AS branch_name

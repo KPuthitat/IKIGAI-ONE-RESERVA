@@ -224,7 +224,7 @@ function Card({
 }) {
   const [picking, setPicking] = useState(false);
 
-  const name = [card.first_name_th, card.last_name_th]
+  const name = [card.title_prefix, card.first_name_th, card.last_name_th]
     .filter(Boolean).join(" ") || "—";
   const nick = card.nickname_th ? ` (${card.nickname_th})` : "";
   const submitted = daysSince(card.submitted_at);
