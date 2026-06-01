@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getDb } from "@/lib/db";
+import { getRecruitaChannel } from "@/lib/messaging-channels";
+import LiffCapture from "./LiffCapture";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ตำแหน่งที่เปิดรับ · IKIGAI Recruit" };
@@ -49,6 +51,14 @@ function fmtSalary(
 }
 
 export default function PublicPositionsPage() {
+  // Read the apply-LIFF id so we can mount <LiffCapture> below. This
+  // is the single OAuth-consuming hop after liff.line.me — see the
+  // header comment in LiffCapture.tsx for why it must live here and
+  // not in ApplyClient. The channel may not be configured yet on a
+  // fresh DB, in which case we just render the page without LIFF.
+  const channel = getRecruitaChannel();
+  const liffId = channel?.liff_id ?? null;
+
   const db = getDb();
   const positions = db.prepare(`
     SELECT p.id, p.code, p.title, p.department, p.employment_type,
@@ -72,6 +82,7 @@ export default function PublicPositionsPage() {
 
   return (
     <div className="min-h-screen bg-amber-50/40 py-6 px-4">
+      <LiffCapture liffId={liffId} />
       <main className="max-w-2xl mx-auto space-y-4">
         <div className="text-center space-y-1">
           <h1 className="text-2xl font-bold text-slate-800">ร่วมงานกับเรา</h1>

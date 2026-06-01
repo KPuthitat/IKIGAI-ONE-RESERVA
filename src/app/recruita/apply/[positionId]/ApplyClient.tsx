@@ -208,6 +208,39 @@ export default function ApplyClient({
         setF((prev) => ({ ...prev, ...parsed }));
       }
     } catch { /* ignore corrupt draft */ }
+
+    // LIFF prefill — pulled from sessionStorage by LiffCapture at
+    // /recruita/positions (the LIFF endpoint). We only get
+    // userId + displayName from LINE — that's all the SDK exposes —
+    // but it's enough to skip the name fields when the candidate
+    // came in via rich menu.
+    //
+    // Only fills fields that are currently EMPTY, so it never
+    // overwrites a draft the candidate already typed.
+    try {
+      const raw = sessionStorage.getItem("recruita_liff_profile_v1");
+      if (!raw) return;
+      const prof = JSON.parse(raw) as {
+        userId?: string;
+        displayName?: string;
+      };
+      if (prof.userId) setLineUserId(prof.userId);
+      const dn = (prof.displayName ?? "").trim();
+      if (!dn) return;
+      // displayName is one string. Best-effort split on the first
+      // space — "เอกชัย ใจดี" → first + last; single-word names
+      // land in first_name only with last_name blank, which is the
+      // common case for English nicknames on LINE.
+      const parts = dn.split(/\s+/);
+      const guessedFirst = parts.shift() ?? "";
+      const guessedLast = parts.join(" ");
+      setF((prev) => ({
+        ...prev,
+        first_name_th: prev.first_name_th || guessedFirst,
+        last_name_th:  prev.last_name_th  || guessedLast,
+        nickname_th:   prev.nickname_th   || guessedFirst
+      }));
+    } catch { /* ignore — prefill is best-effort */ }
   }, [draftKey]);
 
   // Save draft on every change (debounced via animation frame)
