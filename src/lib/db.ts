@@ -1617,6 +1617,14 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "privacy_policy_url")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN privacy_policy_url TEXT");
   }
+  // RECRUITA inline PDPA notice (2026-06-01) — the consent text shown
+  // INSIDE the apply form (not a link out). Admin authors it in
+  // /admin/system-settings. NULL/empty = render the built-in
+  // DEFAULT_RECRUITA_PDPA_TEXT from lib/recruita.ts. Plaintext, with
+  // newlines preserved on render.
+  if (!ssCols.some((c) => c.name === "recruita_pdpa_text")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN recruita_pdpa_text TEXT");
+  }
   // Executive group LINE id (2026-06-01) — RECRUITA-specific. When
   // set, new application submissions push a Flex card into this
   // chat so owners see incoming candidates without polling the
@@ -3892,6 +3900,9 @@ export function updateSystemSettings(
     // LINE group id receiving new-RECRUITA-application pushes.
     // Empty string → NULL = silent (no push fired).
     recruita_exec_group_id?: string | null;
+    // Inline PDPA text for the apply form. Empty → NULL = use the
+    // built-in default. Newlines preserved.
+    recruita_pdpa_text?: string | null;
   },
   updatedBy: number
 ): void {
@@ -3966,6 +3977,13 @@ export function updateSystemSettings(
   if (Object.prototype.hasOwnProperty.call(patch, "recruita_exec_group_id")) {
     sets.push("recruita_exec_group_id = ?");
     const raw = (patch.recruita_exec_group_id ?? "").trim();
+    vals.push(raw === "" ? null : raw);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "recruita_pdpa_text")) {
+    sets.push("recruita_pdpa_text = ?");
+    // Preserve the body as-is (trim outer whitespace only); empty → NULL
+    // so the form falls back to DEFAULT_RECRUITA_PDPA_TEXT.
+    const raw = (patch.recruita_pdpa_text ?? "").trim();
     vals.push(raw === "" ? null : raw);
   }
   if (sets.length === 0) return;
@@ -4123,6 +4141,10 @@ export type SystemSettings = {
    *  push fired (silent fallback so the form still works on a fresh
    *  install). */
   recruita_exec_group_id?: string | null;
+  /** Inline PDPA consent text shown on the RECRUITA apply form.
+   *  NULL/empty = render the built-in DEFAULT_RECRUITA_PDPA_TEXT.
+   *  Plaintext; newlines preserved on render. */
+  recruita_pdpa_text?: string | null;
   updated_at: string | null;
   updated_by: number | null;
 };

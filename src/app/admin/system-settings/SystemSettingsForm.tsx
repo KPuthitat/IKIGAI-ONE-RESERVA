@@ -28,7 +28,8 @@ export default function SystemSettingsForm({
   maintenanceMessage,
   maintenanceActive,
   privacyPolicyUrl,
-  recruitaExecGroupId
+  recruitaExecGroupId,
+  recruitaPdpaText
 }: {
   token: string | null;
   groupId: string | null;
@@ -37,6 +38,7 @@ export default function SystemSettingsForm({
   maintenanceActive: boolean;
   privacyPolicyUrl: string;
   recruitaExecGroupId: string;
+  recruitaPdpaText: string;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -69,6 +71,9 @@ export default function SystemSettingsForm({
   // Separate from global_staff_group_id so admin can route hiring
   // notifications to the owners chat without the staff seeing them.
   const [recruitaExecInput, setRecruitaExecInput] = useState(recruitaExecGroupId);
+  // Inline PDPA consent text for the RECRUITA apply form. Empty =
+  // the form renders the built-in DEFAULT_RECRUITA_PDPA_TEXT.
+  const [pdpaTextInput, setPdpaTextInput] = useState(recruitaPdpaText);
   // (Resignation-policy textareas moved 2026-05-28 to
   // /admin/persona/resignation — that's the menu where admins
   // already manage resignation requests, so the policy authoring
@@ -104,6 +109,7 @@ export default function SystemSettingsForm({
       // Always send — empty string clears the value server-side.
       body.privacy_policy_url = policyUrlInput.trim();
       body.recruita_exec_group_id = recruitaExecInput.trim();
+      body.recruita_pdpa_text = pdpaTextInput;
 
       // (Resignation-policy fields moved to /admin/persona/resignation
       // 2026-05-28 — this form no longer sends them.)
@@ -332,7 +338,7 @@ export default function SystemSettingsForm({
           </p>
         </div>
         <div>
-          <label className="label">URL นโยบาย</label>
+          <label className="label">URL นโยบาย (ทางเลือก)</label>
           <input
             className="input text-sm font-mono"
             type="url"
@@ -343,6 +349,20 @@ export default function SystemSettingsForm({
           <p className="text-[10px] text-slate-400 mt-1">
             ปล่อยว่าง = ไม่แสดงปุ่ม &quot;ดูนโยบาย&quot; (เหมือนเดิม).
             ใช้ลิงก์ Canva published-link, Google Doc public, หรือ URL บนเว็บบริษัทก็ได้
+          </p>
+        </div>
+        <div>
+          <label className="label">ข้อความ PDPA ในใบสมัครงาน (RECRUITA)</label>
+          <textarea
+            className="input text-sm leading-relaxed"
+            rows={9}
+            value={pdpaTextInput}
+            onChange={(e) => setPdpaTextInput(e.target.value)}
+            placeholder="ปล่อยว่าง = ใช้ข้อความมาตรฐานในระบบ"
+            maxLength={5000} />
+          <p className="text-[10px] text-slate-400 mt-1">
+            ข้อความนี้แสดง<b>ในหน้าใบสมัครงานโดยตรง</b> (ผู้สมัครไม่ต้องเปิดลิงก์ออกนอกระบบ).
+            ขึ้นบรรทัดใหม่ได้ตามต้องการ · ปล่อยว่าง = ใช้ข้อความมาตรฐานที่ระบบเตรียมไว้
           </p>
         </div>
       </div>

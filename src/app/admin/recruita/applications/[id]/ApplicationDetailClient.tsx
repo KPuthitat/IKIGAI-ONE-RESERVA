@@ -7,6 +7,7 @@ import PinPromptModal from "@/app/components/PinPromptModal";
 import type {
   ApplicationStage, CustomQuestion, CustomAnswers
 } from "@/lib/recruita";
+import { infoSourceLabel } from "@/lib/recruita";
 
 type StageMeta = Record<ApplicationStage, { label: string; chip: string }>;
 
@@ -618,7 +619,7 @@ export default function ApplicationDetailClient({
           <Row label="พร้อมเริ่มงาน" value={application.earliest_start_date} />
           <Row label="ไปต่างจังหวัด"
             value={application.can_travel === 1 ? "ได้" : application.can_travel === 0 ? "ไม่ได้" : null} />
-          <Row label="ทราบข่าวจาก" value={application.info_source} />
+          <Row label="ทราบข่าวจาก" value={application.info_source ? infoSourceLabel(application.info_source) : null} />
         </Grid2>
         {application.why_join && <Row label="ทำไมอยากร่วมงาน" value={application.why_join} />}
         {application.goals && <Row label="เป้าหมาย" value={application.goals} />}

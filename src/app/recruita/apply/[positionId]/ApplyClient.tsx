@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Script from "next/script";
 import { apiUrl } from "@/lib/url";
 import type { CustomQuestion } from "@/lib/recruita";
+import { INFO_SOURCE_OPTIONS, DEFAULT_RECRUITA_PDPA_TEXT } from "@/lib/recruita";
 import "@/lib/liff-types";
 
 // Public application form — owner's existing Google Form ported to
@@ -130,7 +131,7 @@ function blankState(): FormState {
 
 export default function ApplyClient({
   positionId, positionTitle, positionCode, branchName, department,
-  customQuestions, liffId, privacyPolicyUrl
+  customQuestions, liffId, privacyPolicyUrl, pdpaText
 }: {
   positionId: number;
   positionTitle: string;
@@ -143,6 +144,9 @@ export default function ApplyClient({
    *  "ดูนโยบายฉบับเต็ม" link below the PDPA consent text. NULL
    *  hides the link entirely. */
   privacyPolicyUrl: string | null;
+  /** Inline PDPA consent text authored in /admin/system-settings.
+   *  NULL = render the built-in DEFAULT_RECRUITA_PDPA_TEXT. */
+  pdpaText: string | null;
 }) {
   const router = useRouter();
   const draftKey = `${DRAFT_KEY_PREFIX}${positionId}`;
@@ -322,6 +326,11 @@ export default function ApplyClient({
     if (!f.truth_declaration_accepted) { setErr("กรุณายืนยันรับรองความถูกต้องของข้อมูล"); return; }
     if (!f.first_name_th.trim() || !f.last_name_th.trim()) { setErr("กรุณากรอกชื่อ-นามสกุล (ภาษาไทย)"); return; }
     if (!f.mobile_phone.trim()) { setErr("กรุณากรอกเบอร์โทรศัพท์มือถือ"); return; }
+    // Education years must be Common Era (reject พ.ศ. / malformed)
+    for (const edu of f.education) {
+      const ye = ceYearError(edu.year_finished);
+      if (ye) { setErr(`ปีที่จบการศึกษา: ${ye}`); return; }
+    }
     // Required custom questions
     for (const q of customQuestions) {
       if (!q.required) continue;
@@ -436,10 +445,9 @@ export default function ApplyClient({
       {/* Section 1 — PDPA */}
       <Section title="1. นโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA)">
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-slate-700 leading-relaxed space-y-2">
-          <p>
-            ข้อมูลของท่านจะถูกเก็บรักษาเป็นความลับ ตาม พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562
-            โดยกลุ่มบริษัท อิคิไก ฟอร์ออล จะไม่เก็บ/ใช้/เปิดเผยข้อมูลใดๆ ก่อนได้รับความยินยอม
-          </p>
+          <div className="max-h-56 overflow-y-auto whitespace-pre-line pr-1">
+            {pdpaText && pdpaText.trim() ? pdpaText : DEFAULT_RECRUITA_PDPA_TEXT}
+          </div>
           {privacyPolicyUrl && (
             <a
               href={privacyPolicyUrl}
@@ -582,7 +590,9 @@ export default function ApplyClient({
 
       {/* Section 4 — Education */}
       <Section title="4. ประวัติการศึกษา">
-        {f.education.map((row, i) => (
+        {f.education.map((row, i) => {
+          const eduYearErr = ceYearError(row.year_finished);
+          return (
           <div key={i} className="border border-slate-200 rounded-lg p-3 bg-slate-50 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-600">รายการที่ {i + 1}</span>
@@ -604,11 +614,14 @@ export default function ApplyClient({
                   <option value="phd">ปริญญาเอก</option>
                 </select>
               </Field>
-              <Field label="ปีที่จบ (พ.ศ.)">
-                <input className="input" inputMode="numeric"
+              <Field label="ปีที่จบ (ค.ศ.)">
+                <input className="input" inputMode="numeric" maxLength={4}
                   value={row.year_finished}
-                  onChange={(e) => setEdu(i, { year_finished: e.target.value })}
-                  placeholder="เช่น 2566" />
+                  onChange={(e) => setEdu(i, { year_finished: e.target.value.replace(/\D/g, "").slice(0, 4) })}
+                  placeholder="เช่น 2023" />
+                {eduYearErr && (
+                  <p className="text-[11px] text-rose-600 mt-1">{eduYearErr}</p>
+                )}
               </Field>
               <Field label="สถาบัน">
                 <input className="input" value={row.institution}
@@ -628,7 +641,8 @@ export default function ApplyClient({
               </Field>
             </Grid2>
           </div>
-        ))}
+          );
+        })}
         <button type="button" onClick={addEdu}
           className="text-xs text-brand hover:underline">+ เพิ่มประวัติการศึกษา</button>
 
@@ -760,9 +774,13 @@ export default function ApplyClient({
             </select>
           </Field>
           <Field label="ทราบข่าวการรับสมัครจาก">
-            <input className="input" value={f.info_source}
-              onChange={(e) => up("info_source", e.target.value)}
-              placeholder="เช่น LINE / Facebook / เพื่อน / โปสเตอร์" />
+            <select className="input" value={f.info_source}
+              onChange={(e) => up("info_source", e.target.value)}>
+              <option value="">—</option>
+              {INFO_SOURCE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
           </Field>
         </Grid2>
         <Field label="ทำไมอยากร่วมงานกับเรา">
@@ -920,11 +938,14 @@ function DateInput({
   // value when it changes externally (draft restore, prefill, etc.).
   const initialDisplay = isoToDDMMYYYY(value);
   const [display, setDisplay] = useState(initialDisplay);
+  // Inline warning when the typed year looks like พ.ศ. (Buddhist era).
+  const [yearWarn, setYearWarn] = useState<string | null>(null);
   const lastValueRef = useRef(value);
   useEffect(() => {
     if (value !== lastValueRef.current) {
       lastValueRef.current = value;
       setDisplay(isoToDDMMYYYY(value));
+      setYearWarn(null);
     }
   }, [value]);
 
@@ -940,20 +961,43 @@ function DateInput({
       formatted = `${digits.slice(0, 2)}/${digits.slice(2)}`;
     }
     setDisplay(formatted);
+    // Buddhist-era guard: a complete date whose year is far past the
+    // present is almost certainly พ.ศ. (543 ahead of ค.ศ.). Surface a
+    // hint to convert; ddmmyyyyToIso already returns "" for it so we
+    // never store a Buddhist year.
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(formatted);
+    if (m) {
+      const yyyy = Number(m[3]);
+      const nowY = new Date().getFullYear();
+      if (yyyy > nowY + 5) {
+        setYearWarn(`ปี ${yyyy} เป็น พ.ศ.? — กรอกเป็น ค.ศ. (เช่น ${yyyy - 543})`);
+      } else if (yyyy < 1900) {
+        setYearWarn("ปีไม่ถูกต้อง");
+      } else {
+        setYearWarn(null);
+      }
+    } else {
+      setYearWarn(null);
+    }
     lastValueRef.current = ddmmyyyyToIso(formatted);
     onChange(lastValueRef.current);
   }
 
   return (
-    <input
-      type="text"
-      inputMode="numeric"
-      autoComplete="off"
-      placeholder="DD/MM/YYYY"
-      className="input font-mono"
-      value={display}
-      onChange={(e) => handle(e.target.value)}
-      required={required} />
+    <>
+      <input
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        placeholder="DD/MM/YYYY"
+        className="input font-mono"
+        value={display}
+        onChange={(e) => handle(e.target.value)}
+        required={required} />
+      {yearWarn && (
+        <p className="text-[11px] text-rose-600 mt-1">{yearWarn}</p>
+      )}
+    </>
   );
 }
 
@@ -987,6 +1031,22 @@ function ddmmyyyyToIso(s: string): string {
   const nowY = new Date().getFullYear();
   if (yyyy < 1900 || yyyy > nowY + 5) return "";
   return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+/** Validate a standalone 4-digit YEAR field (e.g. graduation year) as
+ *  Common Era. Returns a Thai error string, or null when valid/empty.
+ *  A พ.ศ. year is 543 ahead of ค.ศ., so anything past the current
+ *  year is almost certainly Buddhist-era and we ask the user to
+ *  convert. */
+function ceYearError(raw: string): string | null {
+  const v = (raw ?? "").trim();
+  if (!v) return null;
+  if (!/^\d{4}$/.test(v)) return "กรอกปีเป็นตัวเลข 4 หลัก (ค.ศ.)";
+  const y = Number(v);
+  const nowY = new Date().getFullYear();
+  if (y > nowY) return `ปี ${y} เป็น พ.ศ.? — กรอกเป็น ค.ศ. เช่น ${y - 543}`;
+  if (y < 1940) return "ปีเก่าเกินไป — ตรวจสอบอีกครั้ง";
+  return null;
 }
 
 function FileField({

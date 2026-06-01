@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { STAGE_META, type ApplicationStage } from "@/lib/recruita";
+import { STAGE_META, infoSourceLabel, type ApplicationStage } from "@/lib/recruita";
 import type { ApplicationRow } from "./page";
 
 type PositionOption = {
@@ -130,7 +130,7 @@ export default function ApplicationsListClient({
                   {r.expected_salary != null && (
                     <span className="text-emerald-700">฿{r.expected_salary.toLocaleString("th-TH")}</span>
                   )}
-                  {r.info_source && <span className="text-slate-400">ทราบจาก: {r.info_source}</span>}
+                  {r.info_source && <span className="text-slate-400">ทราบจาก: {infoSourceLabel(r.info_source)}</span>}
                 </div>
               </div>
               <div className="text-[11px] text-slate-400 flex-shrink-0">

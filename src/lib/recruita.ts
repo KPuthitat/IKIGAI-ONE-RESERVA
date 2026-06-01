@@ -122,6 +122,51 @@ export type ApplicationStage =
   | "rejected"     // not moving forward
   | "withdrawn";   // candidate pulled out
 
+// ── Info source (where did you hear about us) ───────────────────
+// Stable value keys (English) + Thai labels. Stored as the KEY in
+// recruita_applications.info_source so the dashboard rolls up
+// cleanly ("facebook" + "เฟสบุ๊ค" no longer split the count). The
+// apply form renders these as a dropdown; legacy free-text rows from
+// before the dropdown still display via infoSourceLabel()'s fallback.
+
+export const INFO_SOURCE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "line",      label: "LINE / LINE OA" },
+  { value: "facebook",  label: "Facebook" },
+  { value: "instagram", label: "Instagram" },
+  { value: "tiktok",    label: "TikTok" },
+  { value: "jobboard",  label: "เว็บหางาน (JobThai ฯลฯ)" },
+  { value: "referral",  label: "เพื่อน / คนรู้จักแนะนำ" },
+  { value: "poster",    label: "ป้าย / โปสเตอร์หน้าร้าน" },
+  { value: "walk_in",   label: "เดินเข้ามาสอบถามเอง" },
+  { value: "other",     label: "อื่นๆ" }
+];
+
+const INFO_SOURCE_LABELS: Record<string, string> = Object.fromEntries(
+  INFO_SOURCE_OPTIONS.map((o) => [o.value, o.label])
+);
+
+/** Human label for an info_source value. Falls back to the raw value
+ *  (covers legacy free-text rows) and "ไม่ระบุ" for empty. */
+export function infoSourceLabel(value: string | null | undefined): string {
+  const v = (value ?? "").trim();
+  if (!v) return "ไม่ระบุ";
+  return INFO_SOURCE_LABELS[v] ?? v;
+}
+
+// ── Default PDPA notice (recruitment) ───────────────────────────
+// Rendered inline in the apply form's consent section when the admin
+// hasn't authored their own text in /admin/system-settings. Editable
+// there → stored in system_settings.recruita_pdpa_text. Newlines are
+// preserved on render (whitespace-pre-line).
+
+export const DEFAULT_RECRUITA_PDPA_TEXT = `บริษัทในเครือ IKIGAI ONE เก็บรวบรวมข้อมูลส่วนบุคคลในใบสมัครนี้ (เช่น ชื่อ-นามสกุล เลขบัตรประชาชน ข้อมูลติดต่อ ประวัติการศึกษาและการทำงาน) เพื่อใช้พิจารณารับสมัครงานเท่านั้น
+
+• ข้อมูลถูกเก็บเป็นความลับตาม พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562 (PDPA)
+• เลขบัตรประชาชนถูกเข้ารหัสในระบบ
+• หากไม่ได้รับการพิจารณา ข้อมูลจะถูกลบภายใน 30 วัน
+• ท่านมีสิทธิ์ขอเข้าถึง แก้ไข หรือลบข้อมูลของท่านได้ทุกเมื่อ
+• เราจะไม่เปิดเผยข้อมูลของท่านแก่บุคคลภายนอกเพื่อการตลาด`;
+
 export const STAGE_META: Record<ApplicationStage, { label: string; chip: string }> = {
   applied:   { label: "ใหม่",         chip: "bg-slate-100 text-slate-700" },
   screening: { label: "คัดกรอง",      chip: "bg-sky-100 text-sky-700" },

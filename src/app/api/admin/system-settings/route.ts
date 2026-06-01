@@ -47,7 +47,10 @@ const Body = z.object({
   // LINE group id receiving new-application Flex pushes. Same shape
   // validation as global_staff_group_id but kept separate so admin
   // can route RECRUITA notifications to a different chat.
-  recruita_exec_group_id: z.string().max(100).optional()
+  recruita_exec_group_id: z.string().max(100).optional(),
+  // Inline PDPA consent text for the apply form. 5000-char cap is
+  // generous for a full notice. Empty = clear (form uses default).
+  recruita_pdpa_text: z.string().max(5000).optional()
 });
 
 export async function POST(req: Request) {
@@ -125,6 +128,9 @@ export async function POST(req: Request) {
       );
     }
     dbPatch.recruita_exec_group_id = g;
+  }
+  if (parsed.data.recruita_pdpa_text !== undefined) {
+    dbPatch.recruita_pdpa_text = parsed.data.recruita_pdpa_text;
   }
 
   updateSystemSettings(dbPatch, user.id);

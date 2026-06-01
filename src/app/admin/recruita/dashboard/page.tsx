@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import type { ApplicationStage } from "@/lib/recruita";
+import { infoSourceLabel } from "@/lib/recruita";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "RECRUITA · Analytics" };
@@ -133,6 +134,11 @@ export default function RecruitaDashboard({
     ORDER BY count DESC
     LIMIT 10
   `).all(periodStart, ...paramsPosition) as Array<{ label: string; count: number }>;
+  // Map stable value keys → human labels for display. Legacy free-text
+  // rows pass through unchanged via infoSourceLabel()'s fallback.
+  for (const r of sourceRows) {
+    if (r.label !== "ไม่ระบุ") r.label = infoSourceLabel(r.label);
+  }
 
   // ── Current stage distribution (all-time, scoped by position) ─
   const stageRows = db.prepare(`
