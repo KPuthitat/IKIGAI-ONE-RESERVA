@@ -276,15 +276,28 @@ function newApplicationFlexForExec(args: {
  *  to add the RECRUITA candidate-facing OA as a group friend. Silent
  *  no-op when group id or platform OA isn't configured. */
 export async function notifyExecGroupNewApplication(applicationId: number): Promise<void> {
-  // Three things must be set or we just skip:
-  //   1. system_settings.recruita_exec_group_id — where to send
-  //   2. global_line_channel_token              — how to send (platform OA)
-  //   3. the application row + its candidate     — what to send
+  // Three things must be set or we just skip. We log each skip path
+  // because "exec group notify silently dropped" is impossible to
+  // diagnose from the candidate side — they don't see the chat at
+  // all. Owner runs `pm2 logs reserva --lines 50 --nostream` after
+  // a test submission to see which gate failed.
   const settings = getSystemSettings();
   const groupId = settings.recruita_exec_group_id?.trim();
-  if (!groupId) return;
+  if (!groupId) {
+    console.info(
+      "[recruita] exec group notify skipped: recruita_exec_group_id is empty " +
+      "(set it at /admin/system-settings → RECRUITA · กลุ่ม LINE ผู้บริหาร)"
+    );
+    return;
+  }
   const platform = getPlatformChannel();
-  if (!isChannelReady(platform) || !platform?.channel_token) return;
+  if (!isChannelReady(platform) || !platform?.channel_token) {
+    console.info(
+      "[recruita] exec group notify skipped: IKIGAI OS platform OA not " +
+      "configured (set Channel Token + Secret in /admin/system-settings)"
+    );
+    return;
+  }
 
   const db = getDb();
   const row = db.prepare(`
@@ -319,12 +332,24 @@ export async function notifyExecGroupNewApplication(applicationId: number): Prom
   });
 
   try {
-    await sendLinePush(platform.channel_token, {
+    const res = await sendLinePush(platform.channel_token, {
       to: groupId,
       messages: [message]
     });
+    if (res.ok) {
+      console.info(
+        `[recruita] exec group notify sent: application #${applicationId} → ${groupId}`
+      );
+    } else {
+      console.warn(
+        `[recruita] exec group notify rejected by LINE: status=${res.status} ` +
+        `error=${res.error ?? "(unknown)"} groupId=${groupId} ` +
+        `(common causes: IKIGAI OS bot is not a member of this group, ` +
+        `or the group id is wrong — should start with C followed by 32 hex)`
+      );
+    }
   } catch (e) {
-    console.warn("[recruita] notifyExecGroupNewApplication failed:", e);
+    console.warn("[recruita] exec group notify threw:", e);
   }
 }
 
