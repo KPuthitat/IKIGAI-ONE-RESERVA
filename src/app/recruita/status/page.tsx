@@ -17,6 +17,10 @@ export const metadata: Metadata = { title: "เช็คสถานะใบส
 
 export default function StatusPage() {
   const channel = getRecruitaChannel();
-  const liffId = channel?.liff_id ?? null;
+  // Prefer the status-specific LIFF id (different endpoint URL),
+  // fall back to the shared liff_id when only one is configured.
+  // Both must be under the same LINE Login channel so getProfile()
+  // returns the same userId regardless of which one launched the page.
+  const liffId = channel?.liff_id_status || channel?.liff_id || null;
   return <StatusClient liffId={liffId} />;
 }

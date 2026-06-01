@@ -1893,6 +1893,16 @@ function runMigrations(db: Database.Database): void {
   if (!mcCols.some((c) => c.name === "liff_id")) {
     db.exec("ALTER TABLE messaging_channels ADD COLUMN liff_id TEXT");
   }
+  // 2026-06-01 — RECRUITA needs a second LIFF id because the apply
+  // page (LIFF #1) and the status page (LIFF #2) live at different
+  // endpoint URLs but should both authenticate the same candidate.
+  // Both LIFF apps live under the same LINE Login channel → same
+  // userId — but each LIFF id is tied to its endpoint by LINE. Older
+  // channels (platform/reserva) only need one, so this column is
+  // nullable and unused there.
+  if (!mcCols.some((c) => c.name === "liff_id_status")) {
+    db.exec("ALTER TABLE messaging_channels ADD COLUMN liff_id_status TEXT");
+  }
 
   // ── 2026-06-01 RECRUITA OA support ─────────────────────────────
   // RECRUITA uses a separate LINE OA ("IKIGAI Recruit") for the
@@ -1925,6 +1935,15 @@ function runMigrations(db: Database.Database): void {
     // drop the old one, rename. PRAGMA foreign_keys is on per
     // top-of-file, so we briefly turn it off to keep the swap simple.
     db.exec("PRAGMA foreign_keys = OFF");
+    // Re-read the column list — by now liff_id and liff_id_status may
+    // have been added by the ALTERs above. Using the stale `mcCols`
+    // snapshot here would falsely report liff_id_status as missing
+    // and silently drop it during rebuild.
+    const liveCols = db.prepare("PRAGMA table_info(messaging_channels)").all() as Array<{ name: string }>;
+    const hasStatusCol = liveCols.some((c) => c.name === "liff_id_status");
+    const statusCreate = hasStatusCol ? "liff_id_status TEXT," : "";
+    const statusInsertCols = hasStatusCol ? ", liff_id_status" : "";
+    const statusSelectCols = hasStatusCol ? ", liff_id_status" : "";
     db.exec(`
       CREATE TABLE messaging_channels_new (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1935,14 +1954,15 @@ function runMigrations(db: Database.Database): void {
         channel_secret TEXT,
         channel_token TEXT,
         liff_id TEXT,
+        ${statusCreate}
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_by INTEGER REFERENCES users(id)
       );
       INSERT INTO messaging_channels_new
         (id, scope, code, label, branch_id, channel_secret, channel_token,
-         liff_id, updated_at, updated_by)
+         liff_id, updated_at, updated_by${statusInsertCols})
       SELECT id, scope, code, label, branch_id, channel_secret, channel_token,
-             liff_id, updated_at, updated_by
+             liff_id, updated_at, updated_by${statusSelectCols}
       FROM messaging_channels;
       DROP TABLE messaging_channels;
       ALTER TABLE messaging_channels_new RENAME TO messaging_channels;

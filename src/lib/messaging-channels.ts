@@ -23,7 +23,8 @@ export type MessagingChannel = {
   branch_id: number | null;
   channel_secret: string | null;     // plaintext after decryptRow (DB stores "enc:v1:" blob)
   channel_token: string | null;      // plaintext after decryptRow
-  liff_id: string | null;            // LIFF app ID for the booking page (RESERVA only)
+  liff_id: string | null;            // LIFF app ID for the apply page (RECRUITA) or booking page (RESERVA)
+  liff_id_status: string | null;     // LIFF app ID for the candidate status page (RECRUITA only)
   updated_at: string;
   updated_by: number | null;
 };
@@ -91,6 +92,7 @@ export function setChannelCreds(args: {
   channel_token?: string | undefined;
   channel_secret?: string | undefined;
   liff_id?: string | undefined;
+  liff_id_status?: string | undefined;
   updated_by: number | null;
 }): { ok: true } | { ok: false; error: "not_found" } {
   const db = getDb();
@@ -115,6 +117,11 @@ export function setChannelCreds(args: {
     // claim URL). Leave plaintext.
     sets.push("liff_id = ?");
     const v = args.liff_id.trim();
+    vals.push(v === "" ? null : v);
+  }
+  if (args.liff_id_status !== undefined) {
+    sets.push("liff_id_status = ?");
+    const v = args.liff_id_status.trim();
     vals.push(v === "" ? null : v);
   }
   if (sets.length === 0) return { ok: true };

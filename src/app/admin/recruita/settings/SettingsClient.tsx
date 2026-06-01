@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
 export default function SettingsClient({
-  code, label, hasSecret, hasToken, liffId, webhookUrl
+  code, label, hasSecret, hasToken, liffId, liffIdStatus, webhookUrl
 }: {
   code: string;
   label: string;
   hasSecret: boolean;
   hasToken: boolean;
   liffId: string;
+  liffIdStatus: string;
   webhookUrl: string;
 }) {
   const router = useRouter();
@@ -19,6 +20,7 @@ export default function SettingsClient({
   const [secret, setSecret] = useState("");
   const [token, setToken] = useState("");
   const [liff, setLiff] = useState(liffId);
+  const [liffStatus, setLiffStatus] = useState(liffIdStatus);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -40,6 +42,7 @@ export default function SettingsClient({
       if (secret.trim()) body.channel_secret = secret.trim();
       if (token.trim()) body.channel_token = token.trim();
       if (liff !== liffId) body.liff_id = liff.trim();
+      if (liffStatus !== liffIdStatus) body.liff_id_status = liffStatus.trim();
       if (Object.keys(body).length === 0) {
         setMsg("ไม่มีค่าใหม่ที่จะบันทึก");
         return;
@@ -68,7 +71,8 @@ export default function SettingsClient({
         <div className="flex gap-2 flex-wrap">
           <Pill ok={hasSecret} label="Channel Secret" />
           <Pill ok={hasToken} label="Access Token" />
-          <Pill ok={!!liffId} label={`LIFF ID${liffId ? ` (${liffId})` : ""}`} />
+          <Pill ok={!!liffId} label={`LIFF (สมัครงาน)${liffId ? ` · ${liffId}` : ""}`} />
+          <Pill ok={!!liffIdStatus} label={`LIFF (เช็คสถานะ)${liffIdStatus ? ` · ${liffIdStatus}` : ""}`} />
         </div>
         <p className="text-[11px] text-slate-500">
           {hasSecret && hasToken
@@ -123,12 +127,25 @@ export default function SettingsClient({
         </div>
 
         <div>
-          <label className="label">LIFF ID (ถ้ามี LIFF app)</label>
+          <label className="label">LIFF ID — สำหรับปุ่ม &quot;สมัครงาน&quot;</label>
           <input className="input font-mono text-xs"
             value={liff} onChange={(e) => setLiff(e.target.value)}
             placeholder="เช่น 1234567890-AbCdEfGh" />
           <p className="text-[10px] text-slate-400 mt-0.5">
-            LIFF ใช้สำหรับให้ผู้สมัครกดเปิดฟอร์มจาก rich menu แล้วระบบเก็บ LINE userId อัตโนมัติ
+            LIFF app ที่ตั้ง endpoint = <code>/recruita/positions</code> หรือ <code>/recruita/apply/[id]</code>
+            <br />ใช้เก็บ LINE userId ของผู้สมัครตอนกรอกฟอร์ม
+          </p>
+        </div>
+
+        <div>
+          <label className="label">LIFF ID — สำหรับปุ่ม &quot;เช็คสถานะ&quot;</label>
+          <input className="input font-mono text-xs"
+            value={liffStatus} onChange={(e) => setLiffStatus(e.target.value)}
+            placeholder="เช่น 1234567890-XyZpQrSt" />
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            LIFF app ที่ตั้ง endpoint = <code>/recruita/status</code>
+            <br />ผู้สมัครกดปุ่มนี้แล้วเห็นสถานะใบสมัครของตัวเอง
+            <br /><span className="text-amber-600">ใส่แค่ ID ล้วน เช่น <code>2010245034-x1TBNhAv</code> ห้ามใส่ URL เต็ม</span>
           </p>
         </div>
 

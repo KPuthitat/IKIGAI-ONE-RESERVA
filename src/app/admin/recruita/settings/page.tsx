@@ -47,6 +47,7 @@ export default function RecruitaSettingsPage() {
         hasSecret={!!channel.channel_secret}
         hasToken={!!channel.channel_token}
         liffId={channel.liff_id ?? ""}
+        liffIdStatus={channel.liff_id_status ?? ""}
         webhookUrl={webhookUrl} />
     </div>
   );
