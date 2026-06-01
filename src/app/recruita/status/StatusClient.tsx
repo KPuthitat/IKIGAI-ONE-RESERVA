@@ -57,6 +57,52 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
   );
   const liffStarted = useRef(false);
 
+  // Self-service phone-link form (shown when LINE account has no apps yet)
+  const [linkPhone, setLinkPhone] = useState("");
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkErr, setLinkErr] = useState<string | null>(null);
+  const [linkDone, setLinkDone] = useState(false); // linked but 0 apps
+
+  async function handleLink() {
+    if (state.kind !== "loaded") return;
+    const phone = linkPhone.trim();
+    if (!phone) return;
+    setLinkBusy(true);
+    setLinkErr(null);
+    try {
+      const r = await fetch(apiUrl("/api/recruita/my-applications/link"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ line_user_id: state.userId, mobile_phone: phone })
+      });
+      const data = (await r.json()) as {
+        ok: boolean;
+        error?: string;
+        applications?: AppRow[];
+      };
+      if (!data.ok) {
+        if (data.error === "not_found") {
+          setLinkErr("ไม่พบข้อมูลการสมัครที่ตรงกับหมายเลขนี้ — กรุณาตรวจสอบเบอร์ที่ใช้สมัคร");
+        } else if (data.error === "already_linked") {
+          setLinkErr("หมายเลขนี้ถูกผูกกับบัญชี LINE อื่นแล้ว กรุณาติดต่อแอดมิน");
+        } else {
+          setLinkErr("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+        }
+        return;
+      }
+      const apps = data.applications ?? [];
+      if (apps.length > 0) {
+        setState({ kind: "loaded", rows: apps, userId: state.userId });
+      } else {
+        setLinkDone(true);
+      }
+    } catch {
+      setLinkErr("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setLinkBusy(false);
+    }
+  }
+
   async function bootLiff() {
     if (!liffId || liffStarted.current) return;
     liffStarted.current = true;
@@ -171,12 +217,60 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
           </div>
         )}
 
-        {state.kind === "loaded" && state.rows.length === 0 && (
-          <div className="card text-center py-10 space-y-4">
-            <div className="text-slate-500">
+        {state.kind === "loaded" && state.rows.length === 0 && !linkDone && (
+          <div className="card py-8 space-y-4">
+            <div className="text-center space-y-1">
               <p className="text-base font-semibold text-slate-700">ยังไม่มีใบสมัคร</p>
-              <p className="text-xs mt-1">
+              <p className="text-xs text-slate-500">
                 บัญชี LINE นี้ยังไม่ได้ผูกกับใบสมัครในระบบ
+              </p>
+            </div>
+            <div className="text-center">
+              <Link
+                href="/recruita/positions"
+                className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg">
+                ดูตำแหน่งที่เปิดรับ →
+              </Link>
+            </div>
+
+            {/* Self-service link: returning candidate who applied before LINE binding */}
+            <div className="border-t border-slate-100 pt-4 space-y-3">
+              <div className="text-center">
+                <p className="text-xs font-semibold text-slate-700">เคยสมัครงานแล้วแต่ไม่เห็นใบสมัคร?</p>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  กรอกเบอร์โทรศัพท์ที่ใช้ตอนสมัคร เพื่อเชื่อมใบสมัครกับ LINE ของคุณ
+                </p>
+              </div>
+              <input
+                type="tel"
+                inputMode="numeric"
+                placeholder="เบอร์โทรศัพท์ เช่น 0812345678"
+                value={linkPhone}
+                onChange={e => { setLinkPhone(e.target.value); setLinkErr(null); }}
+                onKeyDown={e => { if (e.key === "Enter") handleLink(); }}
+                disabled={linkBusy}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
+              />
+              {linkErr && (
+                <p className="text-xs text-rose-600 text-center">{linkErr}</p>
+              )}
+              <button
+                onClick={handleLink}
+                disabled={linkBusy || linkPhone.trim().replace(/\D/g, "").length < 9}
+                className="w-full bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors">
+                {linkBusy ? "กำลังค้นหา…" : "เชื่อมใบสมัคร"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {state.kind === "loaded" && state.rows.length === 0 && linkDone && (
+          <div className="card text-center py-10 space-y-4">
+            <p className="text-2xl">✓</p>
+            <div>
+              <p className="text-base font-semibold text-emerald-700">เชื่อมบัญชีสำเร็จแล้ว</p>
+              <p className="text-xs text-slate-500 mt-1">
+                พบข้อมูลของคุณในระบบแล้ว แต่ยังไม่มีใบสมัครในขณะนี้
               </p>
             </div>
             <Link
@@ -184,23 +278,6 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
               className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg">
               ดูตำแหน่งที่เปิดรับ →
             </Link>
-            <div className="text-[11px] text-slate-400 space-y-2 pt-2 border-t border-slate-100">
-              <p>
-                ถ้าเคยสมัครแล้วแต่ไม่เห็น — อาจเป็นเพราะตอนสมัครไม่ได้ผ่าน LINE OA
-              </p>
-              {/* Show the LINE userId so the candidate can copy +
-                  forward to an admin who'll paste it into the
-                  candidate's record manually. No PII risk — userId
-                  is opaque and only meaningful inside our DB. */}
-              <div className="bg-slate-50 rounded-md p-2 border border-slate-200">
-                <p className="text-[10px] text-slate-500 font-bold mb-1 uppercase tracking-wide">
-                  LINE userId ของคุณ (ส่งให้แอดมินผูกใบสมัคร)
-                </p>
-                <code className="text-[10px] font-mono text-slate-700 break-all select-all block">
-                  {state.userId}
-                </code>
-              </div>
-            </div>
           </div>
         )}
 
