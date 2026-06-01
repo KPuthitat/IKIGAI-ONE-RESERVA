@@ -28,8 +28,7 @@ export default function SystemSettingsForm({
   maintenanceMessage,
   maintenanceActive,
   privacyPolicyUrl,
-  recruitaExecGroupId,
-  recruitaPdpaText
+  recruitaExecGroupId
 }: {
   token: string | null;
   groupId: string | null;
@@ -38,7 +37,6 @@ export default function SystemSettingsForm({
   maintenanceActive: boolean;
   privacyPolicyUrl: string;
   recruitaExecGroupId: string;
-  recruitaPdpaText: string;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -71,9 +69,6 @@ export default function SystemSettingsForm({
   // Separate from global_staff_group_id so admin can route hiring
   // notifications to the owners chat without the staff seeing them.
   const [recruitaExecInput, setRecruitaExecInput] = useState(recruitaExecGroupId);
-  // Inline PDPA consent text for the RECRUITA apply form. Empty =
-  // the form renders the built-in DEFAULT_RECRUITA_PDPA_TEXT.
-  const [pdpaTextInput, setPdpaTextInput] = useState(recruitaPdpaText);
   // (Resignation-policy textareas moved 2026-05-28 to
   // /admin/persona/resignation — that's the menu where admins
   // already manage resignation requests, so the policy authoring
@@ -109,7 +104,6 @@ export default function SystemSettingsForm({
       // Always send — empty string clears the value server-side.
       body.privacy_policy_url = policyUrlInput.trim();
       body.recruita_exec_group_id = recruitaExecInput.trim();
-      body.recruita_pdpa_text = pdpaTextInput;
 
       // (Resignation-policy fields moved to /admin/persona/resignation
       // 2026-05-28 — this form no longer sends them.)
@@ -351,20 +345,9 @@ export default function SystemSettingsForm({
             ใช้ลิงก์ Canva published-link, Google Doc public, หรือ URL บนเว็บบริษัทก็ได้
           </p>
         </div>
-        <div>
-          <label className="label">ข้อความ PDPA ในใบสมัครงาน (RECRUITA)</label>
-          <textarea
-            className="input text-sm leading-relaxed"
-            rows={9}
-            value={pdpaTextInput}
-            onChange={(e) => setPdpaTextInput(e.target.value)}
-            placeholder="ปล่อยว่าง = ใช้ข้อความมาตรฐานในระบบ"
-            maxLength={5000} />
-          <p className="text-[10px] text-slate-400 mt-1">
-            ข้อความนี้แสดง<b>ในหน้าใบสมัครงานโดยตรง</b> (ผู้สมัครไม่ต้องเปิดลิงก์ออกนอกระบบ).
-            ขึ้นบรรทัดใหม่ได้ตามต้องการ · ปล่อยว่าง = ใช้ข้อความมาตรฐานที่ระบบเตรียมไว้
-          </p>
-        </div>
+        <p className="text-[10px] text-slate-400">
+          ส่วนนโยบาย PDPA แบบ<b>รูปภาพ</b>สำหรับใบสมัครงาน ตั้งค่าได้ที่การ์ดด้านล่าง
+        </p>
       </div>
 
       {/* RECRUITA exec group — receives new-application Flex pushes */}
@@ -394,25 +377,6 @@ export default function SystemSettingsForm({
         </div>
       </div>
 
-      {/* Routing status — informational summary */}
-      <div className="card text-xs space-y-1.5 bg-slate-50 border-slate-200">
-        <div className="font-bold text-slate-600 uppercase tracking-[0.5px] text-[10px]">
-          {t("admin.systemSettings.routingStatus.title")}
-        </div>
-        <RoutingRow
-          label={t("admin.systemSettings.routingStatus.persona")}
-          active={!!(token && groupId)}
-          activeLabel={t("admin.systemSettings.routingStatus.viaGlobal")}
-          inactiveLabel={t("admin.systemSettings.routingStatus.viaBranch")}
-        />
-        <RoutingRow
-          label={t("admin.systemSettings.routingStatus.bookings")}
-          active={false}
-          activeLabel={t("admin.systemSettings.routingStatus.viaGlobal")}
-          inactiveLabel={t("admin.systemSettings.routingStatus.alwaysBranch")}
-        />
-      </div>
-
       {msg && (
         <div className={`text-sm text-center ${
           msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"
@@ -430,33 +394,5 @@ export default function SystemSettingsForm({
         {busy ? t("common.submitting") : t("common.save")}
       </button>
     </form>
-  );
-}
-
-// Small status row showing where each notification type currently
-// routes. Helps admin visualise the effect of toggling the global
-// OA before staff start asking "why didn't I get the message?".
-function RoutingRow({
-  label,
-  active,
-  activeLabel,
-  inactiveLabel
-}: {
-  label: string;
-  active: boolean;
-  activeLabel: string;
-  inactiveLabel: string;
-}) {
-  return (
-    <div className="flex justify-between items-center gap-2">
-      <span className="text-slate-700">{label}</span>
-      <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
-        active
-          ? "bg-emerald-100 text-emerald-700"
-          : "bg-slate-200 text-slate-600"
-      }`}>
-        {active ? activeLabel : inactiveLabel}
-      </span>
-    </div>
   );
 }

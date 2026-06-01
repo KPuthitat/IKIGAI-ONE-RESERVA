@@ -131,7 +131,7 @@ function blankState(): FormState {
 
 export default function ApplyClient({
   positionId, positionTitle, positionCode, branchName, department,
-  customQuestions, liffId, privacyPolicyUrl, pdpaText
+  customQuestions, liffId, privacyPolicyUrl, pdpaImageUrl
 }: {
   positionId: number;
   positionTitle: string;
@@ -144,9 +144,11 @@ export default function ApplyClient({
    *  "ดูนโยบายฉบับเต็ม" link below the PDPA consent text. NULL
    *  hides the link entirely. */
   privacyPolicyUrl: string | null;
-  /** Inline PDPA consent text authored in /admin/system-settings.
-   *  NULL = render the built-in DEFAULT_RECRUITA_PDPA_TEXT. */
-  pdpaText: string | null;
+  /** URL of the admin-uploaded PDPA policy image (served from
+   *  /api/recruita/pdpa-image). When set, the consent section shows a
+   *  "เปิดดูนโยบาย" button instead of the default text. NULL = no
+   *  image → fall back to DEFAULT_RECRUITA_PDPA_TEXT. */
+  pdpaImageUrl: string | null;
 }) {
   const router = useRouter();
   const draftKey = `${DRAFT_KEY_PREFIX}${positionId}`;
@@ -445,17 +447,34 @@ export default function ApplyClient({
       {/* Section 1 — PDPA */}
       <Section title="1. นโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA)">
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-slate-700 leading-relaxed space-y-2">
-          <div className="max-h-56 overflow-y-auto whitespace-pre-line pr-1">
-            {pdpaText && pdpaText.trim() ? pdpaText : DEFAULT_RECRUITA_PDPA_TEXT}
-          </div>
-          {privacyPolicyUrl && (
-            <a
-              href={privacyPolicyUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-amber-800 hover:text-amber-900 font-bold underline underline-offset-2">
-              ดูนโยบายฉบับเต็ม →
-            </a>
+          {pdpaImageUrl ? (
+            // Admin uploaded a policy image — open it in a new tab.
+            <>
+              <p>กรุณาอ่านนโยบายคุ้มครองข้อมูลส่วนบุคคลก่อนให้ความยินยอม</p>
+              <a
+                href={pdpaImageUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-lg">
+                เปิดดูนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) →
+              </a>
+            </>
+          ) : (
+            // No image — show the built-in default text + optional link.
+            <>
+              <div className="max-h-56 overflow-y-auto whitespace-pre-line pr-1">
+                {DEFAULT_RECRUITA_PDPA_TEXT}
+              </div>
+              {privacyPolicyUrl && (
+                <a
+                  href={privacyPolicyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-amber-800 hover:text-amber-900 font-bold underline underline-offset-2">
+                  ดูนโยบายฉบับเต็ม →
+                </a>
+              )}
+            </>
           )}
         </div>
         <label className="flex items-start gap-2 text-sm text-slate-700">

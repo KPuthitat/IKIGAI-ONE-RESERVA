@@ -19,6 +19,7 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import SystemSettingsForm from "./SystemSettingsForm";
 import RecruitaOaSection from "./RecruitaOaSection";
+import PdpaImageUploader from "./PdpaImageUploader";
 
 export const dynamic = "force-dynamic";
 
@@ -53,8 +54,11 @@ export default function SystemSettingsPage() {
         maintenanceActive={settings.maintenance_active === 1}
         privacyPolicyUrl={settings.privacy_policy_url ?? ""}
         recruitaExecGroupId={settings.recruita_exec_group_id ?? ""}
-        recruitaPdpaText={settings.recruita_pdpa_text ?? ""}
       />
+
+      {/* RECRUITA PDPA policy image — admin uploads an image of the
+          privacy notice; the apply form links candidates to it. */}
+      <PdpaImageUploader hasImage={!!settings.recruita_pdpa_image_path} />
 
       {/* RECRUITA LINE OA — global setting (IKIGAI Recruit, shared
           across all branches). Mounted as a section here so the

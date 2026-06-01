@@ -43,9 +43,14 @@ export default function ApplyPage({ params }: { params: { positionId: string } }
   // consent. NULL/empty = no "ดูนโยบาย" button rendered.
   const settings = getSystemSettings();
   const privacyPolicyUrl = settings.privacy_policy_url ?? null;
-  // Inline PDPA notice authored in /admin/system-settings. NULL =
-  // ApplyClient renders the built-in DEFAULT_RECRUITA_PDPA_TEXT.
-  const pdpaText = settings.recruita_pdpa_text ?? null;
+  // PDPA policy image uploaded in /admin/system-settings. When set,
+  // ApplyClient shows a "เปิดดูนโยบาย" button linking here; NULL =
+  // fall back to the built-in DEFAULT_RECRUITA_PDPA_TEXT. The
+  // ?v=<updated_at> param busts the serve route's 5-min cache when
+  // the admin replaces the image.
+  const pdpaImageUrl = settings.recruita_pdpa_image_path
+    ? `/api/recruita/pdpa-image?v=${encodeURIComponent(settings.updated_at ?? "")}`
+    : null;
 
   return (
     <div className="min-h-screen bg-amber-50/40 py-6 px-4">
@@ -59,7 +64,7 @@ export default function ApplyPage({ params }: { params: { positionId: string } }
           customQuestions={customQuestions}
           liffId={liffId}
           privacyPolicyUrl={privacyPolicyUrl}
-          pdpaText={pdpaText}
+          pdpaImageUrl={pdpaImageUrl}
         />
       </main>
     </div>

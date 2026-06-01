@@ -1625,6 +1625,18 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "recruita_pdpa_text")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN recruita_pdpa_text TEXT");
   }
+  // RECRUITA PDPA policy image (2026-06-02) — admin uploads an image
+  // (PNG/JPG/WebP) of the privacy notice instead of typing dense text.
+  // The apply form renders a "เปิดดูนโยบาย" button linking to the
+  // public serve route. We store the absolute file path (under
+  // data/recruita/_pdpa/, outside www-root) + its mime. NULL = no
+  // image → apply form falls back to DEFAULT_RECRUITA_PDPA_TEXT.
+  if (!ssCols.some((c) => c.name === "recruita_pdpa_image_path")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN recruita_pdpa_image_path TEXT");
+  }
+  if (!ssCols.some((c) => c.name === "recruita_pdpa_image_mime")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN recruita_pdpa_image_mime TEXT");
+  }
   // Executive group LINE id (2026-06-01) — RECRUITA-specific. When
   // set, new application submissions push a Flex card into this
   // chat so owners see incoming candidates without polling the
@@ -4145,6 +4157,11 @@ export type SystemSettings = {
    *  NULL/empty = render the built-in DEFAULT_RECRUITA_PDPA_TEXT.
    *  Plaintext; newlines preserved on render. */
   recruita_pdpa_text?: string | null;
+  /** Absolute path + mime of the uploaded PDPA policy image shown on
+   *  the RECRUITA apply form (served via /api/recruita/pdpa-image).
+   *  NULL = no image → form falls back to the default text. */
+  recruita_pdpa_image_path?: string | null;
+  recruita_pdpa_image_mime?: string | null;
   updated_at: string | null;
   updated_by: number | null;
 };
