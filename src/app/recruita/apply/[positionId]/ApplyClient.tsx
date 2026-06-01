@@ -316,7 +316,7 @@ export default function ApplyClient({
           {[branchName, department].filter(Boolean).join(" · ")}
         </div>
         <p className="text-[11px] text-slate-400 mt-2">
-          🔒 ระบบบันทึกร่างอัตโนมัติ — รีเฟรชหน้าได้ ข้อมูลจะไม่หาย
+          ระบบบันทึกร่างอัตโนมัติ — รีเฟรชหน้าได้ ข้อมูลจะไม่หาย
         </p>
       </div>
 
@@ -415,7 +415,7 @@ export default function ApplyClient({
             </Field>
           )}
           <Field label="เลขบัตรประจำตัวประชาชน *"
-            hint="🔒 เข้ารหัสในระบบ (PDPA)">
+            hint="เข้ารหัสในระบบ (PDPA)">
             <input className="input" inputMode="numeric"
               maxLength={13} value={f.national_id}
               onChange={(e) => up("national_id", e.target.value.replace(/\D/g, ""))} />
@@ -720,7 +720,7 @@ export default function ApplyClient({
       <div className="sticky bottom-2 z-10">
         <button type="submit" disabled={busy}
           className="btn-primary w-full text-base py-3 shadow-lg disabled:opacity-50">
-          {busy ? "กำลังส่งใบสมัคร…" : "📨 ส่งใบสมัคร"}
+          {busy ? "กำลังส่งใบสมัคร…" : "ส่งใบสมัคร"}
         </button>
       </div>
     </form>

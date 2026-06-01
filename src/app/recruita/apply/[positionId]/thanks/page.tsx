@@ -19,7 +19,7 @@ export default function ApplyThanksPage(
           ariaLabel="ส่งใบสมัครสำเร็จ"
           className="mx-auto block" />
         <h1 className="text-xl font-bold text-slate-800">
-          ส่งใบสมัครเรียบร้อย 🎉
+          ส่งใบสมัครเรียบร้อย
         </h1>
         {searchParams.aid && (
           <p className="text-xs text-slate-400 font-mono">
