@@ -23,7 +23,7 @@ type Row = {
 };
 
 const EMP_LABEL: Record<NonNullable<Row["employment_type"]>, string> = {
-  ft: "เต็มเวลา", pt: "นอกเวลา (PT)", contract: "สัญญาจ้าง"
+  ft: "พนักงานประจำ", pt: "พนักงานพาร์ทไทม์", contract: "พนักงานสัญญาจ้างระยะสั้น"
 };
 
 const SALARY_UNIT: Record<Row["salary_type"], string> = {

@@ -35,11 +35,11 @@ function pct(n: number, total: number): string {
 const FUNNEL_STEPS: Array<{
   key: ApplicationStage; label: string; downstream: ApplicationStage[];
 }> = [
-  { key: "applied",   label: "📩 ใบสมัครเข้า",  downstream: ["screening","interview","offered","accepted","hired"] },
-  { key: "screening", label: "🔍 ผ่านคัดกรอง",  downstream: ["interview","offered","accepted","hired"] },
-  { key: "interview", label: "🗣 สัมภาษณ์",      downstream: ["offered","accepted","hired"] },
-  { key: "offered",   label: "📨 เสนองาน",      downstream: ["accepted","hired"] },
-  { key: "hired",     label: "✅ รับเข้าทำงาน",  downstream: [] }
+  { key: "applied",   label: "ใบสมัครเข้า",  downstream: ["screening","interview","offered","accepted","hired"] },
+  { key: "screening", label: "ผ่านคัดกรอง",  downstream: ["interview","offered","accepted","hired"] },
+  { key: "interview", label: "สัมภาษณ์",      downstream: ["offered","accepted","hired"] },
+  { key: "offered",   label: "เสนองาน",      downstream: ["accepted","hired"] },
+  { key: "hired",     label: "รับเข้าทำงาน",  downstream: [] }
 ];
 
 export default function RecruitaDashboard({
@@ -240,7 +240,7 @@ export default function RecruitaDashboard({
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KPI label="ใบสมัครทั้งหมด" value={totalApps} icon="📩" />
+        <KPI label="ใบสมัครทั้งหมด" value={totalApps} />
         <KPI label="รับเข้าทำงาน" value={hiredCount}
           hint={totalApps > 0 ? pct(hiredCount, totalApps) : "0%"} tone="emerald" />
         <KPI label="เวลาเฉลี่ยจ้าง"
@@ -254,7 +254,7 @@ export default function RecruitaDashboard({
 
       {/* Funnel */}
       <div className="card space-y-3">
-        <h2 className="font-bold text-slate-800 text-sm">🌀 Conversion Funnel</h2>
+        <h2 className="font-bold text-slate-800 text-sm">Conversion Funnel</h2>
         {totalAtTop === 0 ? (
           <EmptyChart />
         ) : (
@@ -298,7 +298,7 @@ export default function RecruitaDashboard({
         )}
         {totalAtTop > 0 && (
           <div className="bg-slate-50 rounded-lg p-2 text-xs text-slate-600 mt-2">
-            🎯 <b>อัตราการแปลงรวม:</b> {pct(hiredCount, totalAtTop)} (
+            <b>อัตราการแปลงรวม:</b> {pct(hiredCount, totalAtTop)} (
               จาก {totalAtTop} ใบสมัคร เหลือ {hiredCount} คนที่ได้งาน)
           </div>
         )}
@@ -306,7 +306,7 @@ export default function RecruitaDashboard({
 
       {/* Stage + Source */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <ChartCard title="📊 Stage ปัจจุบันของใบสมัครทั้งหมด">
+        <ChartCard title="Stage ปัจจุบันของใบสมัครทั้งหมด">
           {stageRows.length === 0
             ? <EmptyChart />
             : <DonutChart rows={stageRows.map((r) => ({
@@ -314,7 +314,7 @@ export default function RecruitaDashboard({
                 count: r.count
               }))} />}
         </ChartCard>
-        <ChartCard title="📣 ที่มาของผู้สมัคร (Source Attribution)">
+        <ChartCard title="ที่มาของผู้สมัคร (Source Attribution)">
           {sourceRows.length === 0
             ? <EmptyChart />
             : <BarChart rows={sourceRows} color="#06b6d4" />}
@@ -324,7 +324,7 @@ export default function RecruitaDashboard({
       {/* Per-position fill rate */}
       <div className="card space-y-2">
         <h2 className="font-bold text-slate-800 text-sm">
-          🎯 อัตราการเติมเต็มต่อตำแหน่ง (Fill Rate)
+          อัตราการเติมเต็มต่อตำแหน่ง (Fill Rate)
         </h2>
         {fillRows.length === 0 ? (
           <EmptyChart />
@@ -347,7 +347,7 @@ export default function RecruitaDashboard({
                     style={{ width: `${Math.min(100, r.fill_pct)}%` }} />
                 </div>
                 <div className="text-[10px] text-slate-400 mt-0.5">
-                  📩 ใบสมัคร {r.app_count} ใน {days} วัน
+                  ใบสมัคร {r.app_count} ใน {days} วัน
                 </div>
               </div>
             ))}
@@ -356,7 +356,7 @@ export default function RecruitaDashboard({
       </div>
 
       {/* Monthly applications */}
-      <ChartCard title="📅 ใบสมัครเข้ามา · 12 เดือนล่าสุด">
+      <ChartCard title="ใบสมัครเข้ามา · 12 เดือนล่าสุด">
         <MonthlyBars rows={monthlyApps} />
       </ChartCard>
     </div>
@@ -365,9 +365,9 @@ export default function RecruitaDashboard({
 
 // ── KPI counter card ──────────────────────────────────────────
 function KPI({
-  label, value, hint, icon, tone
+  label, value, hint, tone
 }: {
-  label: string; value: number; hint?: string; icon?: string;
+  label: string; value: number; hint?: string;
   tone?: "emerald" | "amber" | "sky" | "rose";
 }) {
   const toneCls = tone === "emerald" ? "text-emerald-700"
@@ -377,8 +377,8 @@ function KPI({
     : "text-slate-800";
   return (
     <div className="card">
-      <div className="text-[11px] text-slate-500 uppercase tracking-[1px] flex items-center gap-1">
-        {icon} {label}
+      <div className="text-[11px] text-slate-500 uppercase tracking-[1px]">
+        {label}
       </div>
       <div className={`text-3xl font-bold mt-1 tabular-nums ${toneCls}`}>
         {typeof value === "number" && Number.isFinite(value)

@@ -270,9 +270,9 @@ export default function PositionEditClient({
             <select className="input" value={employmentType}
               onChange={(e) => setEmploymentType(e.target.value)}>
               <option value="">— ไม่ระบุ —</option>
-              <option value="ft">เต็มเวลา</option>
-              <option value="pt">นอกเวลา (PT)</option>
-              <option value="contract">สัญญาจ้าง</option>
+              <option value="ft">พนักงานประจำ</option>
+              <option value="pt">พนักงานพาร์ทไทม์</option>
+              <option value="contract">พนักงานสัญญาจ้างระยะสั้น</option>
             </select>
           </div>
           <div>

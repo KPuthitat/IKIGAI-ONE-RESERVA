@@ -133,9 +133,9 @@ const LANG_LEVEL_LABEL: Record<string, string> = {
 // labels (ตำแหน่ง / สาขา / ค่าตอบแทน etc.) and read as English-y
 // to a customer-facing audience.
 const EMP_TYPE_LABEL: Record<string, string> = {
-  ft: "เต็มเวลา",
-  pt: "นอกเวลา (PT)",
-  contract: "สัญญาจ้าง"
+  ft: "พนักงานประจำ",
+  pt: "พนักงานพาร์ทไทม์",
+  contract: "พนักงานสัญญาจ้างระยะสั้น"
 };
 
 // Server-derived shape from getActivePendingRequest(). We model it
@@ -906,8 +906,8 @@ function HireDialog({
             <label className="label">รูปแบบงาน *</label>
             <select className="input" value={employmentType}
               onChange={(e) => setEmploymentType(e.target.value as "ft" | "pt")}>
-              <option value="ft">เต็มเวลา</option>
-              <option value="pt">นอกเวลา (PT)</option>
+              <option value="ft">พนักงานประจำ</option>
+              <option value="pt">พนักงานพาร์ทไทม์</option>
             </select>
           </div>
           <div>

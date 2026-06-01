@@ -36,7 +36,13 @@ const STATUS_META: Record<Position["status"], { label: string; chip: string }> =
 };
 
 const EMP_LABEL: Record<NonNullable<Position["employment_type"]>, string> = {
-  ft: "เต็มเวลา", pt: "นอกเวลา (PT)", contract: "สัญญาจ้าง"
+  // Owner spec 2026-06-01:
+  //   FT       = พนักงานประจำ (career hire, monthly salary)
+  //   PT       = พนักงานพาร์ทไทม์ (hourly cover shifts)
+  //   contract = พนักงานสัญญาจ้างระยะสั้น (fixed-term project hire)
+  // Earlier draft used "เต็มเวลา / นอกเวลา" which doesn't carry the
+  // employment-status meaning the owner wanted.
+  ft: "พนักงานประจำ", pt: "พนักงานพาร์ทไทม์", contract: "พนักงานสัญญาจ้างระยะสั้น"
 };
 
 const SALARY_UNIT: Record<Position["salary_type"], string> = {
@@ -341,9 +347,9 @@ function NewPositionDialog({
             <select className="input" value={employmentType}
               onChange={(e) => setEmploymentType(e.target.value)}>
               <option value="">—</option>
-              <option value="ft">เต็มเวลา</option>
-              <option value="pt">นอกเวลา (PT)</option>
-              <option value="contract">สัญญาจ้าง</option>
+              <option value="ft">พนักงานประจำ</option>
+              <option value="pt">พนักงานพาร์ทไทม์</option>
+              <option value="contract">พนักงานสัญญาจ้างระยะสั้น</option>
             </select>
           </div>
         </div>
