@@ -6,6 +6,7 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { STAGE_META, type ApplicationStage } from "@/lib/recruita";
 import { getRecruitaChannel, isChannelReady } from "@/lib/messaging-channels";
+import { formatApplicationNo, formatBkkDateTime } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "RECRUITA · IKIGAI OS" };
@@ -43,6 +44,9 @@ export default function RecruitaLanding() {
 
   const recent = db.prepare(`
     SELECT a.id, a.stage, a.submitted_at,
+           (SELECT COUNT(*) FROM recruita_applications za
+             WHERE date(za.submitted_at, '+7 hours') = date(a.submitted_at, '+7 hours')
+               AND za.id <= a.id) AS day_seq,
            c.title_prefix, c.first_name_th, c.last_name_th, c.nickname_th,
            p.title AS position_title, p.code AS position_code
     FROM recruita_applications a
@@ -51,7 +55,7 @@ export default function RecruitaLanding() {
     ORDER BY a.submitted_at DESC
     LIMIT 10
   `).all() as Array<{
-    id: number; stage: ApplicationStage; submitted_at: string;
+    id: number; stage: ApplicationStage; submitted_at: string; day_seq: number;
     title_prefix: string | null;
     first_name_th: string | null; last_name_th: string | null;
     nickname_th: string | null;
@@ -180,13 +184,13 @@ export default function RecruitaLanding() {
                 <Link key={r.id} href={`/admin/recruita/applications/${r.id}`}
                   className="block py-2 hover:bg-slate-50 -mx-2 px-2 rounded">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-slate-800 text-sm">#{r.id}</span>
+                    <span className="font-bold text-slate-800 text-sm font-mono">{formatApplicationNo(r.submitted_at, r.day_seq)}</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${meta.chip}`}>
                       {meta.label}
                     </span>
                     <span className="text-sm text-slate-700">{name}{nick}</span>
                     <span className="text-xs text-slate-400 ml-auto">
-                      {r.submitted_at.slice(0, 16).replace("T", " ")}
+                      {formatBkkDateTime(r.submitted_at)}
                     </span>
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5">

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { STAGE_META, infoSourceLabel, type ApplicationStage } from "@/lib/recruita";
+import { formatApplicationNo, formatBkkDateTime } from "@/lib/time";
 import type { ApplicationRow } from "./page";
 
 type PositionOption = {
@@ -108,7 +109,7 @@ export default function ApplicationsListClient({
               className="card hover:shadow-md transition flex flex-col sm:flex-row gap-2 sm:items-center">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-bold text-slate-700 text-sm">#{r.id}</span>
+                  <span className="font-bold text-slate-700 text-sm font-mono">{formatApplicationNo(r.submitted_at, r.day_seq)}</span>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${meta.chip}`}>
                     {meta.label}
                   </span>
@@ -134,7 +135,7 @@ export default function ApplicationsListClient({
                 </div>
               </div>
               <div className="text-[11px] text-slate-400 flex-shrink-0">
-                {r.submitted_at.slice(0, 16).replace("T", " ")}
+                {formatBkkDateTime(r.submitted_at)}
               </div>
             </Link>
           );

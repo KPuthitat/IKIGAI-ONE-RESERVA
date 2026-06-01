@@ -10,6 +10,7 @@ import {
   STAGE_META, parseCustomQuestions, parseCustomAnswers,
   type ApplicationStage
 } from "@/lib/recruita";
+import { formatApplicationNo } from "@/lib/time";
 import ApplicationDetailClient from "./ApplicationDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -103,6 +104,13 @@ export default function ApplicationDetailPage(
     "SELECT * FROM recruita_applications WHERE id = ?"
   ).get(id) as AppRow | undefined;
   if (!app) notFound();
+  // Per-Thai-day sequence → #YYYYMMDD00x application number.
+  const daySeq = (db.prepare(`
+    SELECT COUNT(*) AS n FROM recruita_applications za
+    WHERE date(za.submitted_at, '+7 hours') = date(?, '+7 hours')
+      AND za.id <= ?
+  `).get(app.submitted_at, app.id) as { n: number }).n;
+  const applicationNo = formatApplicationNo(app.submitted_at, daySeq);
   const candidate = db.prepare(
     "SELECT * FROM recruita_candidates WHERE id = ?"
   ).get(app.candidate_id) as CandidateRow | undefined;
@@ -168,6 +176,7 @@ export default function ApplicationDetailPage(
       </Link>
       <ApplicationDetailClient
         application={app}
+        applicationNo={applicationNo}
         candidate={candidate}
         nationalIdPlain={nationalIdPlain}
         position={position}

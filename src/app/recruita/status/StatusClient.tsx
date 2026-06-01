@@ -5,6 +5,7 @@ import Link from "next/link";
 import Script from "next/script";
 import { apiUrl } from "@/lib/url";
 import { STAGE_META, type ApplicationStage } from "@/lib/recruita";
+import { formatApplicationNo, bkkDateIso, bkkHHMM, formatLongDate } from "@/lib/time";
 import "@/lib/liff-types";
 
 // Candidate-facing application-status page.
@@ -28,10 +29,24 @@ type AppRow = {
   application_id: number;
   stage: ApplicationStage;
   submitted_at: string;
+  day_seq: number;
   position_title: string;
   position_code: string | null;
   branch_name: string | null;
   department: string | null;
+};
+
+// Candidate-friendly one-liner per stage — shown under each card so the
+// applicant understands what's happening / what's next.
+const STAGE_DESC: Record<ApplicationStage, string> = {
+  applied:   "ใบสมัครเข้าระบบแล้ว รอเจ้าหน้าที่คัดกรอง",
+  screening: "อยู่ระหว่างการคัดกรองคุณสมบัติ",
+  interview: "ผ่านการคัดกรอง — รอนัดหมาย/อยู่ระหว่างสัมภาษณ์",
+  offered:   "มีข้อเสนองานสำหรับคุณ รอการตอบรับ",
+  accepted:  "คุณได้ตอบรับข้อเสนอแล้ว",
+  hired:     "รับเข้าทำงานแล้ว — ยินดีต้อนรับสู่ทีม!",
+  rejected:  "ขอบคุณที่สมัคร — ครั้งนี้ยังไม่ได้ไปต่อ",
+  withdrawn: "ใบสมัครถูกถอนแล้ว"
 };
 
 type LoadState =
@@ -41,15 +56,6 @@ type LoadState =
   | { kind: "loading" }         // have userId, fetching
   | { kind: "loaded"; rows: AppRow[]; userId: string }
   | { kind: "error"; message: string };
-
-function fmtDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString("th-TH", { year: "numeric", month: "long", day: "numeric" });
-  } catch {
-    return iso;
-  }
-}
 
 export default function StatusClient({ liffId }: { liffId: string | null }) {
   const [state, setState] = useState<LoadState>(
@@ -62,6 +68,39 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
   const [linkBusy, setLinkBusy] = useState(false);
   const [linkErr, setLinkErr] = useState<string | null>(null);
   const [linkDone, setLinkDone] = useState(false); // linked but 0 apps
+
+  // Self-delete (only for 'applied' apps, before an admin acts on them)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
+
+  async function handleDelete(applicationId: number) {
+    if (state.kind !== "loaded") return;
+    setDeletingId(applicationId);
+    setDeleteErr(null);
+    try {
+      const r = await fetch(apiUrl(`/api/recruita/my-applications/${applicationId}`), {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ line_user_id: state.userId })
+      });
+      const data = (await r.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      if (!r.ok || !data.ok) {
+        setDeleteErr(data.message ?? "ลบไม่สำเร็จ — ลองใหม่อีกครั้ง");
+        return;
+      }
+      setState((prev) =>
+        prev.kind === "loaded"
+          ? { ...prev, rows: prev.rows.filter((x) => x.application_id !== applicationId) }
+          : prev
+      );
+      setConfirmDeleteId(null);
+    } catch {
+      setDeleteErr("เกิดข้อผิดพลาด กรุณาลองใหม่");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function handleLink() {
     if (state.kind !== "loaded") return;
@@ -288,20 +327,23 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
             </p>
             {state.rows.map((row) => {
               const meta = STAGE_META[row.stage];
+              const appNo = formatApplicationNo(row.submitted_at, row.day_seq);
+              const canDelete = row.stage === "applied";
               return (
                 <div key={row.application_id} className="card space-y-2">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] font-mono font-bold text-slate-500">{appNo}</span>
                         {row.position_code && (
                           <span className="text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">
                             {row.position_code}
                           </span>
                         )}
-                        <h3 className="font-bold text-slate-800 leading-tight">
-                          {row.position_title}
-                        </h3>
                       </div>
+                      <h3 className="font-bold text-slate-800 leading-tight mt-1">
+                        {row.position_title}
+                      </h3>
                       <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-xs text-slate-500 mt-1">
                         {row.branch_name && (
                           <span className="font-semibold text-slate-700">{row.branch_name}</span>
@@ -313,9 +355,52 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
                       {meta.label}
                     </span>
                   </div>
-                  <div className="border-t border-slate-100 pt-2 text-[11px] text-slate-400">
-                    ส่งใบสมัครเมื่อ {fmtDate(row.submitted_at)}
+
+                  {/* Stage description — what's happening / what's next */}
+                  <div className="text-xs text-slate-600 bg-slate-50 rounded-md px-2.5 py-1.5">
+                    {STAGE_DESC[row.stage]}
                   </div>
+
+                  <div className="border-t border-slate-100 pt-2 flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[11px] text-slate-400">
+                      ส่งเมื่อ {formatLongDate(bkkDateIso(row.submitted_at), "th")} · {bkkHHMM(row.submitted_at)} น.
+                    </span>
+                    {canDelete && confirmDeleteId !== row.application_id && (
+                      <button
+                        type="button"
+                        onClick={() => { setConfirmDeleteId(row.application_id); setDeleteErr(null); }}
+                        className="text-[11px] text-rose-600 hover:text-rose-800 underline">
+                        ลบใบสมัคร
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Inline delete confirm — only while still 'applied' */}
+                  {canDelete && confirmDeleteId === row.application_id && (
+                    <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 space-y-2">
+                      <p className="text-xs text-rose-800">
+                        ลบใบสมัครนี้? หลังลบแล้วคุณสามารถสมัครใหม่ได้
+                        (ลบได้เฉพาะก่อนเจ้าหน้าที่เริ่มพิจารณาเท่านั้น)
+                      </p>
+                      {deleteErr && <p className="text-xs text-rose-600">{deleteErr}</p>}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(row.application_id)}
+                          disabled={deletingId === row.application_id}
+                          className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2 rounded-lg">
+                          {deletingId === row.application_id ? "กำลังลบ…" : "ยืนยันลบ"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(null)}
+                          disabled={deletingId === row.application_id}
+                          className="flex-1 bg-white border border-slate-300 text-slate-700 text-xs font-semibold px-3 py-2 rounded-lg">
+                          ยกเลิก
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

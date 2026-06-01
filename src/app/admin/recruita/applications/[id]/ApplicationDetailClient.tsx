@@ -8,6 +8,7 @@ import type {
   ApplicationStage, CustomQuestion, CustomAnswers
 } from "@/lib/recruita";
 import { infoSourceLabel } from "@/lib/recruita";
+import { formatBkkDateTime } from "@/lib/time";
 
 type StageMeta = Record<ApplicationStage, { label: string; chip: string }>;
 
@@ -155,13 +156,15 @@ export type PendingStageRequest = {
 };
 
 export default function ApplicationDetailClient({
-  application, candidate, nationalIdPlain, position, documents,
+  application, applicationNo, candidate, nationalIdPlain, position, documents,
   education, experience, languages,
   customQuestions, customAnswers, stageMeta,
   branches, supervisors,
   pendingStageRequest, viewerHasPin, viewerUserId
 }: {
   application: AppShape;
+  /** Pre-formatted #YYYYMMDD00x display number (computed server-side). */
+  applicationNo: string;
   candidate: CandidateShape;
   nationalIdPlain: string | null;
   position: PositionShape;
@@ -236,7 +239,7 @@ export default function ApplicationDetailClient({
       {/* Header */}
       <div className="card space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-slate-400 font-mono">#{application.id}</span>
+          <span className="text-xs text-slate-400 font-mono">{applicationNo}</span>
           <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${stageMeta[stage].chip}`}>
             {stageMeta[stage].label}
           </span>
@@ -249,7 +252,7 @@ export default function ApplicationDetailClient({
           {position.department && <> · {position.department}</>}
         </p>
         <p className="text-[11px] text-slate-400">
-          ส่งใบสมัคร {application.submitted_at.slice(0, 16).replace("T", " ")}
+          ส่งใบสมัคร {formatBkkDateTime(application.submitted_at)}
         </p>
       </div>
 

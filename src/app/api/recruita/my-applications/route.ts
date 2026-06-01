@@ -34,6 +34,7 @@ type Row = {
   application_id: number;
   stage: ApplicationStage;
   submitted_at: string;
+  day_seq: number;
   position_title: string;
   position_code: string | null;
   branch_name: string | null;
@@ -53,6 +54,9 @@ export async function POST(req: Request) {
     SELECT a.id            AS application_id,
            a.stage         AS stage,
            a.submitted_at  AS submitted_at,
+           (SELECT COUNT(*) FROM recruita_applications za
+             WHERE date(za.submitted_at, '+7 hours') = date(a.submitted_at, '+7 hours')
+               AND za.id <= a.id) AS day_seq,
            p.title         AS position_title,
            p.code          AS position_code,
            p.department    AS department,

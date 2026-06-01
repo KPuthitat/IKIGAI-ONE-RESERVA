@@ -90,3 +90,59 @@ export function formatMonthDay(d: string, lang: "th" | "en"): string {
   }
   return `${dd} ${EN_MONTHS_FULL[m - 1]}`;
 }
+
+// ── UTC (SQLite) → Bangkok display helpers ───────────────────────────
+// SQLite CURRENT_TIMESTAMP / datetime('now') store UTC as
+// "YYYY-MM-DD HH:MM:SS" (no timezone suffix). These helpers parse that
+// as UTC and render the Bangkok (UTC+7, no DST) wall-clock — so a
+// timestamp reads correctly whether it's rendered on the UTC prod
+// server OR on a client device in another timezone.
+
+function bkkShift(ts: string | null | undefined): Date | null {
+  if (!ts) return null;
+  let s = String(ts).trim().replace(" ", "T");
+  // Assume UTC when there's no timezone suffix (SQLite's default).
+  if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) s += "Z";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  // Shift so the UTC getters now read Bangkok wall-clock.
+  return new Date(d.getTime() + BKK_OFFSET_MINUTES * 60_000);
+}
+
+/** "YYYY-MM-DD HH:MM" in Bangkok from a UTC SQLite timestamp. */
+export function formatBkkDateTime(ts: string | null | undefined): string {
+  const d = bkkShift(ts);
+  if (!d) return ts ? String(ts) : "";
+  return d.toISOString().slice(0, 16).replace("T", " ");
+}
+
+/** "YYYY-MM-DD" in Bangkok — feed into formatLongDate for Thai display. */
+export function bkkDateIso(ts: string | null | undefined): string {
+  const d = bkkShift(ts);
+  return d ? d.toISOString().slice(0, 10) : "";
+}
+
+/** "HH:MM" in Bangkok. */
+export function bkkHHMM(ts: string | null | undefined): string {
+  const d = bkkShift(ts);
+  return d ? d.toISOString().slice(11, 16) : "";
+}
+
+/** "YYYYMMDD" in Bangkok — the date prefix for an application number. */
+export function bkkYmd(ts: string | null | undefined): string {
+  const d = bkkShift(ts);
+  return d ? d.toISOString().slice(0, 10).replace(/-/g, "") : "";
+}
+
+/** Application display number: #YYYYMMDD + a 3-digit same-Thai-day
+ *  sequence. e.g. formatApplicationNo("2026-06-01 17:38:00", 1)
+ *  → "#20260602001" (that UTC time is 00:38 on 2 Jun in Bangkok). The
+ *  daySeq is computed in SQL (count of same-day apps with id ≤ this). */
+export function formatApplicationNo(
+  submittedAtUtc: string | null | undefined,
+  daySeq: number
+): string {
+  const ymd = bkkYmd(submittedAtUtc);
+  const seq = String(Math.max(1, daySeq || 1)).padStart(3, "0");
+  return ymd ? `#${ymd}${seq}` : `#${seq}`;
+}

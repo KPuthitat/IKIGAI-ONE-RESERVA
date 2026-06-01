@@ -20,6 +20,7 @@ import { getDb, getSystemSettings } from "./db";
 import { sendLinePush } from "./line";
 import { getRecruitaChannel, getPlatformChannel, isChannelReady } from "./messaging-channels";
 import { STAGE_META, type ApplicationStage } from "./recruita";
+import { formatApplicationNo } from "./time";
 
 // Minimal local mirror of line.ts's LinePushPayload — kept local so
 // we don't have to widen the line.ts module surface for one caller.
@@ -28,6 +29,47 @@ type LineMessage =
   | { type: "flex"; altText: string; contents: Record<string, unknown> };
 
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
+
+// IKIGAI OS CI palette — keep in sync with tailwind.config.ts + line.ts
+// so RECRUITA cards look like the rest of the system (PERSONA / RESERVA).
+const COLOR_INK = "#1a1a2e";
+const COLOR_BRAND = "#e94560";
+const COLOR_BRAND_LIGHT = "#ff6b85";
+const COLOR_TEXT_DARK = "#1a1a2e";
+const COLOR_LABEL = "#64748b";
+const COLOR_MUTED = "#94a3b8";
+const COLOR_DIVIDER = "#e2e8f0";
+
+/** Navy header with the "IKIGAI Recruit · RECRUITA" brand bar, matching
+ *  the PERSONA/RESERVA Flex cards. */
+function brandHeader(title: string, subtitle: string): Record<string, unknown> {
+  return {
+    type: "box", layout: "vertical", backgroundColor: COLOR_INK,
+    paddingAll: "20px", paddingTop: "18px", paddingBottom: "18px",
+    contents: [
+      {
+        type: "box", layout: "horizontal",
+        contents: [
+          { type: "text", text: "IKIGAI Recruit", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+          { type: "text", text: "RECRUITA", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+        ]
+      },
+      { type: "text", text: title, color: "#ffffff", size: "lg", weight: "bold", margin: "md", wrap: true },
+      { type: "text", text: subtitle, color: COLOR_MUTED, size: "xs", margin: "xs", wrap: true }
+    ]
+  };
+}
+
+/** A label : value row for the white card body. */
+function infoRow(label: string, value: string): Record<string, unknown> {
+  return {
+    type: "box", layout: "horizontal", spacing: "sm",
+    contents: [
+      { type: "text", text: label, size: "sm", color: COLOR_LABEL, flex: 4 },
+      { type: "text", text: value, size: "sm", color: COLOR_TEXT_DARK, flex: 6, weight: "bold", align: "end", wrap: true }
+    ]
+  };
+}
 
 /** Push a Flex/text message bundle to a candidate. Skips silently
  *  when the OA isn't configured. Returns the same shape sendLinePush()
@@ -96,33 +138,33 @@ function stageCopy(stage: ApplicationStage, positionTitle: string): StageCopy {
 export function stageChangeFlex(args: {
   applicantName: string;
   positionTitle: string;
+  branchName: string | null;
   stage: ApplicationStage;
-  applicationId: number;
+  applicationNo: string;
 }): LineMessage {
   const meta = STAGE_META[args.stage];
   const copy = stageCopy(args.stage, args.positionTitle);
   const altText = `${meta.label} · ${args.positionTitle}`;
 
+  const bodyRows: Array<Record<string, unknown>> = [
+    { type: "text", text: copy.headline, size: "sm", color: COLOR_TEXT_DARK, wrap: true },
+    { type: "separator", margin: "md", color: COLOR_DIVIDER },
+    infoRow("สถานะ", meta.label),
+    infoRow("ตำแหน่ง", args.positionTitle)
+  ];
+  if (args.branchName) bodyRows.push(infoRow("บริษัท/สาขา", args.branchName));
+  bodyRows.push(infoRow("เลขที่ใบสมัคร", args.applicationNo));
+
   const footerContents: Array<Record<string, unknown>> = [];
   if (copy.cta) {
     footerContents.push({
-      type: "button",
-      style: "primary",
-      color: copy.tone,
+      type: "button", style: "primary", color: COLOR_BRAND,
       action: { type: "uri", label: copy.cta.label, uri: copy.cta.url }
     });
   }
-  // Always offer "ดูสถานะใบสมัคร" so the candidate can re-open the
-  // public detail page (when implemented). For v1 we link back to
-  // the position listing — better than nothing.
   footerContents.push({
-    type: "button",
-    style: "secondary",
-    action: {
-      type: "uri",
-      label: "ดูตำแหน่งงานอื่น",
-      uri: `${PUBLIC_BASE}/recruita/positions`
-    }
+    type: "button", style: "secondary", height: "sm",
+    action: { type: "uri", label: "ดูตำแหน่งงานอื่น", uri: `${PUBLIC_BASE}/recruita/positions` }
   });
 
   return {
@@ -130,47 +172,18 @@ export function stageChangeFlex(args: {
     altText,
     contents: {
       type: "bubble",
-      size: "mega",
-      header: {
-        type: "box", layout: "vertical", paddingAll: "16px",
-        backgroundColor: copy.tone,
-        contents: [
-          { type: "text", text: "IKIGAI Recruit", size: "xxs", color: "#ffffff", weight: "bold" },
-          { type: "text", text: meta.label, size: "lg", color: "#ffffff", weight: "bold", margin: "xs" }
-        ]
-      },
+      size: "giga",
+      header: brandHeader(meta.label, args.positionTitle),
       body: {
-        type: "box", layout: "vertical", spacing: "md", paddingAll: "16px",
-        contents: [
-          { type: "text", text: copy.headline, size: "sm", color: "#1a1a2e", wrap: true },
-          { type: "separator", margin: "md" },
-          {
-            type: "box", layout: "baseline", margin: "md",
-            contents: [
-              { type: "text", text: "ผู้สมัคร", size: "xs", color: "#888888", flex: 2 },
-              { type: "text", text: args.applicantName, size: "xs", color: "#1a1a2e", weight: "bold", flex: 5, wrap: true }
-            ]
-          },
-          {
-            type: "box", layout: "baseline",
-            contents: [
-              { type: "text", text: "ตำแหน่ง", size: "xs", color: "#888888", flex: 2 },
-              { type: "text", text: args.positionTitle, size: "xs", color: "#1a1a2e", weight: "bold", flex: 5, wrap: true }
-            ]
-          },
-          {
-            type: "box", layout: "baseline",
-            contents: [
-              { type: "text", text: "เลขที่ใบสมัคร", size: "xs", color: "#888888", flex: 2 },
-              { type: "text", text: `#${args.applicationId}`, size: "xs", color: "#1a1a2e", weight: "bold", flex: 5 }
-            ]
-          }
-        ]
+        type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+        backgroundColor: "#ffffff",
+        contents: bodyRows
       },
-      footer: footerContents.length > 0 ? {
-        type: "box", layout: "vertical", paddingAll: "12px", spacing: "sm",
+      footer: {
+        type: "box", layout: "vertical", paddingAll: "16px", spacing: "sm",
+        backgroundColor: "#ffffff",
         contents: footerContents
-      } : undefined
+      }
     }
   };
 }
@@ -185,78 +198,36 @@ function newApplicationFlexForExec(args: {
   positionTitle: string;
   branchName: string | null;
   phone: string | null;
+  applicationNo: string;
   applicationId: number;
 }): LineMessage {
   const altText = `ใบสมัครใหม่: ${args.applicantName} · ${args.positionTitle}`;
-  const detailRows: Array<Record<string, unknown>> = [
-    {
-      type: "box", layout: "baseline", margin: "md",
-      contents: [
-        { type: "text", text: "ผู้สมัคร", size: "xs", color: "#888888", flex: 2 },
-        { type: "text", text: args.applicantName, size: "xs", color: "#1a1a2e", weight: "bold", flex: 5, wrap: true }
-      ]
-    },
-    {
-      type: "box", layout: "baseline",
-      contents: [
-        { type: "text", text: "ตำแหน่ง", size: "xs", color: "#888888", flex: 2 },
-        { type: "text", text: args.positionTitle, size: "xs", color: "#1a1a2e", weight: "bold", flex: 5, wrap: true }
-      ]
-    }
+  const rows: Array<Record<string, unknown>> = [
+    infoRow("ผู้สมัคร", args.applicantName),
+    infoRow("ตำแหน่ง", args.positionTitle)
   ];
-  if (args.branchName) {
-    detailRows.push({
-      type: "box", layout: "baseline",
-      contents: [
-        { type: "text", text: "สาขา", size: "xs", color: "#888888", flex: 2 },
-        { type: "text", text: args.branchName, size: "xs", color: "#1a1a2e", flex: 5, wrap: true }
-      ]
-    });
-  }
-  if (args.phone) {
-    detailRows.push({
-      type: "box", layout: "baseline",
-      contents: [
-        { type: "text", text: "เบอร์โทร", size: "xs", color: "#888888", flex: 2 },
-        { type: "text", text: args.phone, size: "xs", color: "#1a1a2e", weight: "bold", flex: 5 }
-      ]
-    });
-  }
+  if (args.branchName) rows.push(infoRow("บริษัท/สาขา", args.branchName));
+  if (args.phone) rows.push(infoRow("เบอร์โทร", args.phone));
+  rows.push(infoRow("เลขที่ใบสมัคร", args.applicationNo));
+
   return {
     type: "flex",
     altText,
     contents: {
       type: "bubble",
-      size: "mega",
-      header: {
-        type: "box", layout: "vertical", paddingAll: "16px",
-        backgroundColor: "#3b82f6",
-        contents: [
-          { type: "text", text: "IKIGAI Recruit", size: "xxs", color: "#ffffff", weight: "bold" },
-          { type: "text", text: "ใบสมัครใหม่เข้ามาแล้ว", size: "lg", color: "#ffffff", weight: "bold", margin: "xs" }
-        ]
-      },
+      size: "giga",
+      header: brandHeader("ใบสมัครใหม่เข้ามาแล้ว", "มีผู้สมัครงานส่งใบสมัครเข้ามา"),
       body: {
-        type: "box", layout: "vertical", spacing: "md", paddingAll: "16px",
-        contents: [
-          { type: "separator" },
-          ...detailRows,
-          {
-            type: "box", layout: "baseline",
-            contents: [
-              { type: "text", text: "เลขที่ใบสมัคร", size: "xs", color: "#888888", flex: 2 },
-              { type: "text", text: `#${args.applicationId}`, size: "xs", color: "#1a1a2e", weight: "bold", flex: 5 }
-            ]
-          }
-        ]
+        type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+        backgroundColor: "#ffffff",
+        contents: rows
       },
       footer: {
-        type: "box", layout: "vertical", paddingAll: "12px", spacing: "sm",
+        type: "box", layout: "vertical", paddingAll: "16px",
+        backgroundColor: "#ffffff",
         contents: [
           {
-            type: "button",
-            style: "primary",
-            color: "#3b82f6",
+            type: "button", style: "primary", color: COLOR_BRAND,
             action: {
               type: "uri",
               label: "ดูใบสมัคร",
@@ -301,7 +272,10 @@ export async function notifyExecGroupNewApplication(applicationId: number): Prom
 
   const db = getDb();
   const row = db.prepare(`
-    SELECT a.id,
+    SELECT a.id, a.submitted_at,
+           (SELECT COUNT(*) FROM recruita_applications za
+             WHERE date(za.submitted_at, '+7 hours') = date(a.submitted_at, '+7 hours')
+               AND za.id <= a.id) AS day_seq,
            c.title_prefix, c.first_name_th, c.last_name_th, c.mobile_phone,
            p.title AS position_title,
            b.name  AS branch_name
@@ -312,6 +286,8 @@ export async function notifyExecGroupNewApplication(applicationId: number): Prom
     WHERE a.id = ?
   `).get(applicationId) as {
     id: number;
+    submitted_at: string;
+    day_seq: number;
     title_prefix: string | null;
     first_name_th: string | null;
     last_name_th: string | null;
@@ -328,6 +304,7 @@ export async function notifyExecGroupNewApplication(applicationId: number): Prom
     positionTitle: row.position_title,
     branchName: row.branch_name,
     phone: row.mobile_phone,
+    applicationNo: formatApplicationNo(row.submitted_at, row.day_seq),
     applicationId: row.id
   });
 
@@ -359,19 +336,26 @@ export async function notifyExecGroupNewApplication(applicationId: number): Prom
 export async function notifyStageChange(applicationId: number): Promise<void> {
   const db = getDb();
   const row = db.prepare(`
-    SELECT a.id, a.stage,
+    SELECT a.id, a.stage, a.submitted_at,
+           (SELECT COUNT(*) FROM recruita_applications za
+             WHERE date(za.submitted_at, '+7 hours') = date(a.submitted_at, '+7 hours')
+               AND za.id <= a.id) AS day_seq,
            c.line_user_id,
            c.title_prefix, c.first_name_th, c.last_name_th,
-           p.title AS position_title
+           p.title AS position_title,
+           b.name  AS branch_name
     FROM recruita_applications a
     JOIN recruita_candidates c ON c.id = a.candidate_id
     JOIN recruita_positions p  ON p.id = a.position_id
+    LEFT JOIN branches b ON b.id = p.branch_id
     WHERE a.id = ?
   `).get(applicationId) as {
-    id: number; stage: ApplicationStage; line_user_id: string | null;
+    id: number; stage: ApplicationStage; submitted_at: string; day_seq: number;
+    line_user_id: string | null;
     title_prefix: string | null;
     first_name_th: string | null; last_name_th: string | null;
     position_title: string;
+    branch_name: string | null;
   } | undefined;
   if (!row || !row.line_user_id) return;
 
@@ -380,8 +364,9 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
   const message = stageChangeFlex({
     applicantName,
     positionTitle: row.position_title,
+    branchName: row.branch_name,
     stage: row.stage,
-    applicationId: row.id
+    applicationNo: formatApplicationNo(row.submitted_at, row.day_seq)
   });
   await pushToCandidate(row.line_user_id, [message]);
 }
