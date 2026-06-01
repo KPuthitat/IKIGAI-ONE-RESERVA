@@ -3123,7 +3123,64 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_recruita_documents_candidate
       ON recruita_documents(candidate_id, kind);
+
+    -- 2026-06-01 Dual-admin approval for RECRUITA stage transitions.
+    -- Owner wanted: every stage change on a candidate's application
+    -- requires TWO different admin users to approve, each entering
+    -- their own PIN. The first admin's click no longer commits the
+    -- change — it just opens a "pending" request that the second
+    -- admin must approve. Prevents both fat-finger drops and
+    -- single-actor abuse (e.g. one admin secretly rejecting a
+    -- candidate they don't like).
+    --
+    -- Lifecycle:
+    --   requested → approved      (stage committed, notification fires)
+    --   requested → cancelled    (admin1 or any super_admin aborts)
+    --   requested → expired      (24h passed without 2nd approval)
+    CREATE TABLE IF NOT EXISTS recruita_stage_change_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      application_id INTEGER NOT NULL REFERENCES recruita_applications(id) ON DELETE CASCADE,
+      from_stage TEXT NOT NULL,
+      to_stage TEXT NOT NULL,
+      requested_by INTEGER NOT NULL REFERENCES users(id),
+      requested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      approver_user_id INTEGER REFERENCES users(id),
+      approver_at TEXT,
+      cancelled_by INTEGER REFERENCES users(id),
+      cancelled_at TEXT,
+      cancel_reason TEXT,
+      /** 24h soft-expire — a request that's been sitting too long is
+       *  probably stale (interviewer left, plan changed). Status flips
+       *  to 'expired' at read time; admin can re-create. */
+      expires_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','approved','cancelled','expired'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_recruita_stagereq_app
+      ON recruita_stage_change_requests(application_id, status);
+    CREATE INDEX IF NOT EXISTS idx_recruita_stagereq_pending
+      ON recruita_stage_change_requests(status, expires_at)
+      WHERE status = 'pending';
   `);
+
+  // 2026-06-01 — admin PIN columns on users. Separate from password
+  // because PINs are short (4-6 digits) and trade strength for
+  // physical-presence verification. The hash uses the same bcryptjs
+  // family as passwords; rate-limit fields let us lock after N
+  // wrong tries to defeat brute-force on a 6-digit space.
+  const usersCols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  if (!usersCols.some((c) => c.name === "admin_pin_hash")) {
+    db.exec("ALTER TABLE users ADD COLUMN admin_pin_hash TEXT");
+  }
+  if (!usersCols.some((c) => c.name === "admin_pin_set_at")) {
+    db.exec("ALTER TABLE users ADD COLUMN admin_pin_set_at TEXT");
+  }
+  if (!usersCols.some((c) => c.name === "admin_pin_failed_attempts")) {
+    db.exec("ALTER TABLE users ADD COLUMN admin_pin_failed_attempts INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!usersCols.some((c) => c.name === "admin_pin_locked_until")) {
+    db.exec("ALTER TABLE users ADD COLUMN admin_pin_locked_until TEXT");
+  }
 
   // ── 2026-05-31 RECRUITA additive fields ──────────────────────
   // Surfaced after reviewing the owner's existing Google Form

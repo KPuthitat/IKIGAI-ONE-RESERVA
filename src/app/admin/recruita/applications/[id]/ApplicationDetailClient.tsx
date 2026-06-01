@@ -138,11 +138,26 @@ const EMP_TYPE_LABEL: Record<string, string> = {
   contract: "สัญญาจ้าง"
 };
 
+// Server-derived shape from getActivePendingRequest(). We model it
+// locally so the client doesn't import server-only modules.
+export type PendingStageRequest = {
+  id: number;
+  application_id: number;
+  from_stage: ApplicationStage;
+  to_stage: ApplicationStage;
+  requested_by: number;
+  requested_at: string;
+  expires_at: string;
+  requester_name: string | null;
+  requester_prefix: string | null;
+};
+
 export default function ApplicationDetailClient({
   application, candidate, nationalIdPlain, position, documents,
   education, experience, languages,
   customQuestions, customAnswers, stageMeta,
-  branches, supervisors
+  branches, supervisors,
+  pendingStageRequest, viewerHasPin, viewerUserId
 }: {
   application: AppShape;
   candidate: CandidateShape;
@@ -157,6 +172,18 @@ export default function ApplicationDetailClient({
   stageMeta: StageMeta;
   branches: Branch[];
   supervisors: Supervisor[];
+  /** Pending stage-change request loaded server-side. NULL means
+   *  this application has no live request — the "เปลี่ยนสถานะ"
+   *  card renders the stage-pick UI. When set, the card flips to
+   *  "อยู่ระหว่างขออนุมัติ" with approve/cancel buttons. */
+  pendingStageRequest: PendingStageRequest | null;
+  /** Whether the logged-in admin has a PIN configured. If false we
+   *  disable the request + approve actions and link to /admin/me/pin. */
+  viewerHasPin: boolean;
+  /** Logged-in admin's id — used to enforce "approver ≠ requester"
+   *  on the client (server enforces it too). 0 when not logged in
+   *  (which the page redirect already filters out, but keep typed). */
+  viewerUserId: number;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -166,11 +193,27 @@ export default function ApplicationDetailClient({
   const [showHire, setShowHire] = useState(false);
   const [hireResult, setHireResult] = useState<HireResult | null>(null);
 
+  // Dual-admin stage flow state. Owner 2026-06-01: every stage change
+  // requires two different admins, each entering their PIN.
+  //   - requestStageTarget: when set, opens the "Admin A enters PIN
+  //     to request" modal targeting that stage.
+  //   - approveModalOpen: when true, opens the "Admin B enters PIN
+  //     to approve the current pending request" modal.
+  //   - cancelModalOpen: when true, opens the cancel-request prompt
+  //     (no PIN — only the requester or a super_admin can cancel).
+  const [requestStageTarget, setRequestStageTarget] = useState<ApplicationStage | null>(null);
+  const [approveModalOpen, setApproveModalOpen] = useState(false);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+
   const name = [candidate.title_prefix, candidate.first_name_th, candidate.last_name_th]
     .filter(Boolean).join(" ") || "—";
   const nameEn = [candidate.first_name_en, candidate.last_name_en]
     .filter(Boolean).join(" ");
 
+  // Legacy direct-stage write — kept for the hire-bridge code path
+  // that still flips stage='hired' as part of its own atomic
+  // transaction. Stage CHANGES through the user-facing buttons now
+  // go through the request/approve flow below.
   async function setStageOnServer(s: ApplicationStage) {
     setBusy(true);
     try {
@@ -208,28 +251,191 @@ export default function ApplicationDetailClient({
         </p>
       </div>
 
-      {/* Stage controls */}
-      <div className="card space-y-2">
-        <h2 className="font-bold text-slate-800 text-sm">เปลี่ยนสถานะ</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-          {ALL_STAGES.map((s) => {
-            const m = stageMeta[s];
-            const active = s === stage;
-            return (
-              <button key={s} type="button"
-                onClick={() => setStageOnServer(s)}
-                disabled={busy || active}
-                className={`text-xs py-2 rounded-md border font-bold ${
-                  active
-                    ? `${m.chip} ring-2 ring-offset-1 ring-slate-400`
-                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                } disabled:cursor-default`}>
-                {m.label}
+      {/* Stage controls — dual-admin gated.
+          Three states:
+            1. pendingStageRequest !== null
+               → render approve/cancel banner. Approver must be a
+                 different user from requester (server enforces too).
+            2. !viewerHasPin → render "Set PIN first" prompt with link.
+            3. Otherwise → render the stage buttons. Each click opens
+               the request modal asking for PIN.
+      */}
+      {pendingStageRequest ? (
+        <div className="card space-y-3 border-amber-300 bg-amber-50">
+          <div>
+            <h2 className="font-bold text-amber-900 text-sm">
+              อยู่ระหว่างขออนุมัติเปลี่ยนสถานะ
+            </h2>
+            <p className="text-xs text-amber-800 mt-1">
+              ผู้ขอ:&nbsp;
+              <span className="font-bold">
+                {[pendingStageRequest.requester_prefix, pendingStageRequest.requester_name]
+                  .filter(Boolean).join(" ") || "—"}
+              </span>
+              &nbsp;· เปลี่ยน&nbsp;
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${stageMeta[pendingStageRequest.from_stage].chip}`}>
+                {stageMeta[pendingStageRequest.from_stage].label}
+              </span>
+              &nbsp;→&nbsp;
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${stageMeta[pendingStageRequest.to_stage].chip}`}>
+                {stageMeta[pendingStageRequest.to_stage].label}
+              </span>
+            </p>
+            <p className="text-[10px] text-amber-700 mt-1">
+              คำขอเลขที่ #{pendingStageRequest.id} ·
+              สิ้นสุดเวลาอนุมัติ {pendingStageRequest.expires_at.slice(0, 16).replace("T", " ")}
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            {pendingStageRequest.requested_by !== viewerUserId && (
+              <button type="button"
+                onClick={() => setApproveModalOpen(true)}
+                disabled={busy || !viewerHasPin}
+                className="flex-1 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50">
+                ✓ อนุมัติ (ใส่ PIN)
               </button>
-            );
-          })}
+            )}
+            {pendingStageRequest.requested_by === viewerUserId && (
+              <div className="flex-1 py-2.5 rounded-lg bg-slate-100 text-slate-600 text-sm text-center">
+                คุณเป็นผู้ขอ — ต้องให้แอดมินคนอื่นอนุมัติ
+              </div>
+            )}
+            <button type="button"
+              onClick={() => setCancelModalOpen(true)}
+              disabled={busy}
+              className="flex-1 py-2.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-bold">
+              ยกเลิกคำขอ
+            </button>
+          </div>
+          {!viewerHasPin && pendingStageRequest.requested_by !== viewerUserId && (
+            <a href="/admin/me/pin" className="text-xs text-rose-600 underline">
+              คุณยังไม่ได้ตั้ง PIN — กดที่นี่เพื่อตั้งก่อนอนุมัติ
+            </a>
+          )}
         </div>
-      </div>
+      ) : !viewerHasPin ? (
+        <div className="card bg-rose-50 border-rose-200 space-y-2">
+          <h2 className="font-bold text-rose-900 text-sm">ต้องตั้ง PIN ก่อนเปลี่ยนสถานะ</h2>
+          <p className="text-xs text-rose-800">
+            การเปลี่ยน stage ต้องได้รับการอนุมัติจากแอดมิน 2 คน
+            แต่ละคนต้องใส่ PIN ของตัวเอง
+          </p>
+          <a href="/admin/me/pin"
+            className="inline-block text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2 rounded">
+            ตั้ง PIN ของฉัน →
+          </a>
+        </div>
+      ) : (
+        <div className="card space-y-2">
+          <h2 className="font-bold text-slate-800 text-sm">เปลี่ยนสถานะ</h2>
+          <p className="text-[11px] text-slate-500">
+            การกดปุ่ม = ขออนุมัติ. ต้องมีแอดมินคนที่ 2 อนุมัติด้วย PIN
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+            {ALL_STAGES.map((s) => {
+              const m = stageMeta[s];
+              const active = s === stage;
+              return (
+                <button key={s} type="button"
+                  onClick={() => setRequestStageTarget(s)}
+                  disabled={busy || active}
+                  className={`text-xs py-2 rounded-md border font-bold ${
+                    active
+                      ? `${m.chip} ring-2 ring-offset-1 ring-slate-400`
+                      : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  } disabled:cursor-default`}>
+                  {m.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {requestStageTarget && (
+        <PinPromptModal
+          title="ขออนุมัติเปลี่ยนสถานะ"
+          description={
+            <>
+              จาก <b>{stageMeta[stage].label}</b> ไป
+              {" "}<b>{stageMeta[requestStageTarget].label}</b>
+              <br />ใส่ PIN ของคุณเพื่อสร้างคำขอ
+            </>
+          }
+          submitLabel="ส่งคำขอ"
+          onClose={() => setRequestStageTarget(null)}
+          onSubmit={async (pin) => {
+            const res = await fetch(
+              apiUrl(`/api/recruita/applications/${application.id}/stage-request`),
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ to_stage: requestStageTarget, pin })
+              }
+            );
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || !j.ok) {
+              return { ok: false, message: j.message ?? j.error ?? "ส่งคำขอไม่สำเร็จ" };
+            }
+            setRequestStageTarget(null);
+            startTransition(() => router.refresh());
+            return { ok: true };
+          }} />
+      )}
+
+      {approveModalOpen && pendingStageRequest && (
+        <PinPromptModal
+          title="อนุมัติการเปลี่ยนสถานะ"
+          description={
+            <>
+              อนุมัติเปลี่ยน <b>{stageMeta[pendingStageRequest.from_stage].label}</b>
+              {" "}→ <b>{stageMeta[pendingStageRequest.to_stage].label}</b>
+              <br />ใส่ PIN ของคุณเพื่อยืนยัน
+            </>
+          }
+          submitLabel="อนุมัติ"
+          onClose={() => setApproveModalOpen(false)}
+          onSubmit={async (pin) => {
+            const res = await fetch(
+              apiUrl(`/api/recruita/applications/${application.id}/stage-request/${pendingStageRequest.id}`),
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ pin })
+              }
+            );
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || !j.ok) {
+              return { ok: false, message: j.message ?? j.error ?? "อนุมัติไม่สำเร็จ" };
+            }
+            setApproveModalOpen(false);
+            setStage(pendingStageRequest.to_stage);
+            startTransition(() => router.refresh());
+            return { ok: true };
+          }} />
+      )}
+
+      {cancelModalOpen && pendingStageRequest && (
+        <CancelPromptModal
+          onClose={() => setCancelModalOpen(false)}
+          onConfirm={async (reason) => {
+            const res = await fetch(
+              apiUrl(`/api/recruita/applications/${application.id}/stage-request/${pendingStageRequest.id}`),
+              {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reason })
+              }
+            );
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || !j.ok) {
+              return { ok: false, message: j.error ?? "ยกเลิกไม่สำเร็จ" };
+            }
+            setCancelModalOpen(false);
+            startTransition(() => router.refresh());
+            return { ok: true };
+          }} />
+      )}
 
       {/* Hire bridge — appears only when not yet hired. Stage doesn't
           have to be 'accepted' to enable; admin may want to fast-track
@@ -937,6 +1143,126 @@ function LineLinkBox({
           {msg.text}
         </p>
       )}
+    </div>
+  );
+}
+
+// ── PIN prompt modal — shared by "request" + "approve" actions ────
+function PinPromptModal({
+  title, description, submitLabel, onSubmit, onClose
+}: {
+  title: string;
+  description: React.ReactNode;
+  submitLabel: string;
+  onSubmit: (pin: string) => Promise<{ ok: true } | { ok: false; message: string }>;
+  onClose: () => void;
+}) {
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    if (!/^\d{4,6}$/.test(pin)) {
+      setErr("PIN ต้องเป็นตัวเลข 4-6 หลัก");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await onSubmit(pin);
+      if (!res.ok) setErr(res.message);
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-3"
+        onClick={(e) => e.stopPropagation()}>
+        <div>
+          <h3 className="font-bold text-slate-800">{title}</h3>
+          <div className="text-xs text-slate-600 mt-1 leading-relaxed">{description}</div>
+        </div>
+        <div>
+          <label className="label">PIN</label>
+          <input
+            type="password"
+            inputMode="numeric"
+            autoComplete="off"
+            autoFocus
+            maxLength={6}
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={(e) => { if (e.key === "Enter" && !busy) void submit(); }}
+            className="input font-mono text-center text-2xl tracking-[10px]" />
+        </div>
+        {err && <p className="text-rose-600 text-xs">✗ {err}</p>}
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} disabled={busy}
+            className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
+            ยกเลิก
+          </button>
+          <button type="button" onClick={submit} disabled={busy || pin.length < 4}
+            className="flex-1 py-2.5 rounded-lg bg-brand text-white text-sm font-bold disabled:opacity-50">
+            {busy ? "กำลังส่ง…" : submitLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Cancel prompt — no PIN, just an optional reason ───────────────
+function CancelPromptModal({
+  onConfirm, onClose
+}: {
+  onConfirm: (reason: string) => Promise<{ ok: true } | { ok: false; message: string }>;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await onConfirm(reason.trim());
+      if (!res.ok) setErr(res.message);
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-3"
+        onClick={(e) => e.stopPropagation()}>
+        <div>
+          <h3 className="font-bold text-slate-800">ยกเลิกคำขอเปลี่ยน stage</h3>
+          <p className="text-xs text-slate-600 mt-1">
+            สามารถสร้างคำขอใหม่ได้ทีหลัง — เหตุผลจะถูกเก็บใน audit log
+          </p>
+        </div>
+        <div>
+          <label className="label">เหตุผล (ไม่บังคับ)</label>
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            maxLength={500}
+            className="input text-sm"
+            placeholder="เช่น ขอข้อมูลเพิ่มเติมก่อนตัดสินใจ" />
+        </div>
+        {err && <p className="text-rose-600 text-xs">✗ {err}</p>}
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} disabled={busy}
+            className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
+            ปิด
+          </button>
+          <button type="button" onClick={submit} disabled={busy}
+            className="flex-1 py-2.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold disabled:opacity-50">
+            {busy ? "กำลังยกเลิก…" : "ยกเลิกคำขอ"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

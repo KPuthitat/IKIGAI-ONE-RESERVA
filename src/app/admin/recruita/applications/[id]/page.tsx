@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireSuperAdmin } from "@/lib/auth";
+import { requireSuperAdmin, getSessionUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { decryptSecret } from "@/lib/secret-vault";
+import { getActivePendingRequest, type StageRequestRow } from "@/lib/recruita-stage-request";
+import { hasAdminPin } from "@/lib/admin-pin";
 import {
   STAGE_META, parseCustomQuestions, parseCustomAnswers,
   type ApplicationStage
@@ -150,6 +152,14 @@ export default function ApplicationDetailPage(
     catch { return []; }
   })();
 
+  // Pending stage-change request (if any) + the viewer's PIN status.
+  // The client uses these to render the "ขออนุมัติเปลี่ยน stage" vs
+  // "อนุมัติ" vs "ตั้ง PIN ก่อน" branches without a second round-trip.
+  const sessionUser = getSessionUser();
+  const pendingRequest = getActivePendingRequest(id);
+  const viewerHasPin = sessionUser ? hasAdminPin(sessionUser.id) : false;
+  const viewerUserId = sessionUser?.id ?? 0;
+
   return (
     <div className="space-y-4">
       <Link href="/admin/recruita/applications"
@@ -170,6 +180,9 @@ export default function ApplicationDetailPage(
         stageMeta={STAGE_META}
         branches={branches}
         supervisors={supervisors}
+        pendingStageRequest={pendingRequest}
+        viewerHasPin={viewerHasPin}
+        viewerUserId={viewerUserId}
       />
     </div>
   );
