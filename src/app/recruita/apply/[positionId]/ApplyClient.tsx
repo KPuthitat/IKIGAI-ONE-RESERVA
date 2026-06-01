@@ -159,19 +159,37 @@ export default function ApplyClient({
   async function initLiff() {
     if (!liffId || liffReady.current) return;
     liffReady.current = true;
+
+    // ── Safety guards — don't trigger LIFF OAuth unless we're SURE
+    //    we entered through a LIFF URL. The old version called
+    //    liff.init() unconditionally, which on internal Next.js
+    //    navigation (e.g. user clicked a position link from
+    //    /recruita/positions, landing here without liff.state) made
+    //    the SDK redirect to access.line.me to re-establish auth
+    //    context — and that redirect returned 400 because there was
+    //    no fresh OAuth grant to consume. Net result: "page loads
+    //    briefly then 400" reported by the owner 2026-06-01.
+    //
+    //    Two guards, both must pass:
+    //      a) UA contains "Line/" — page is open inside LINE's
+    //         in-app browser (not Safari/Chrome).
+    //      b) URL still carries liff.state — we are the FIRST page
+    //         after the liff.line.me hop, not a soft-nav target.
+    //
+    //    Failing either guard means it's safer to render the form
+    //    as a plain web form. The candidate still gets bound to
+    //    their LINE userId later via the recency-link path in the
+    //    webhook (matching applications submitted within 24h of
+    //    them adding the OA as a friend).
+    const inLineApp = /Line\/[\d.]+/i.test(navigator.userAgent);
+    if (!inLineApp) return;
+    if (!window.location.search.includes("liff.state")) return;
+
     try {
       const w = window as unknown as { liff?: { init: (a: { liffId: string }) => Promise<void>; isLoggedIn: () => boolean; login: () => void; getProfile: () => Promise<{ userId: string }>; getContext?: () => { type?: string } | null } };
       if (!w.liff) return;
       await w.liff.init({ liffId });
-      // In external browser, login() redirects → callback. In LIFF
-      // (LINE in-app), isLoggedIn() is already true.
-      if (!w.liff.isLoggedIn()) {
-        // Don't auto-redirect on the web form — applicants may want
-        // to fill it out without a LINE account. We only bind when
-        // we're already inside LIFF (LINE in-app browser).
-        const ctx = w.liff.getContext?.();
-        if (ctx?.type === "utou" || ctx?.type === "group" || ctx?.type === "external") return;
-      }
+      if (!w.liff.isLoggedIn()) return;
       const profile = await w.liff.getProfile();
       if (profile?.userId) setLineUserId(profile.userId);
     } catch (e) {
