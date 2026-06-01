@@ -311,7 +311,16 @@ export default function ApplyClient({
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) {
-        setErr(j.error ?? "ส่งใบสมัครไม่สำเร็จ");
+        // Server returns { error, message, field, detail } on Zod
+        // failures (see api/recruita/applications/route.ts). Prefer
+        // the human-readable `message` so the user sees "ช่อง dob
+        // ไม่ถูกต้อง" instead of "invalid_body". Log full detail to
+        // console so ops can see the full Zod tree if needed.
+        if (j.detail) {
+          // eslint-disable-next-line no-console
+          console.warn("[recruita/apply] validation detail:", j.detail);
+        }
+        setErr(j.message ?? j.error ?? "ส่งใบสมัครไม่สำเร็จ");
         return;
       }
       // Clear draft on success

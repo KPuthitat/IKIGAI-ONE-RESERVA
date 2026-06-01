@@ -159,8 +159,23 @@ export async function POST(req: Request) {
 
   const parsed = Payload.safeParse(parsedJson);
   if (!parsed.success) {
+    // Surface the first failing field path + message in a form the
+    // candidate-facing UI can render directly — "invalid_body" alone
+    // is useless when the form has 40+ fields and the gate is a
+    // single regex on (say) prior_application_at. We still ship the
+    // full flatten() under `detail` for ops debugging.
+    const first = parsed.error.issues[0];
+    const pathStr = first?.path.join(".") || "(unknown)";
+    const message = first
+      ? `ข้อมูลในช่อง ${pathStr} ไม่ถูกต้อง — ${first.message}`
+      : "ข้อมูลในแบบฟอร์มไม่ถูกต้อง";
     return NextResponse.json(
-      { error: "invalid_body", detail: parsed.error.flatten() },
+      {
+        error: "invalid_body",
+        message,
+        field: pathStr,
+        detail: parsed.error.flatten()
+      },
       { status: 400 }
     );
   }
