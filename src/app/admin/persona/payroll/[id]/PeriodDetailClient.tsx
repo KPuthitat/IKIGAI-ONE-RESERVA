@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
@@ -933,37 +933,39 @@ function LineEditModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Daily time-entry breakdown (Phase 1: visibility only).
-  // Lazy-loaded the first time the admin expands the section so we
-  // don't slow down opening the modal for the common case where they
-  // just want to tweak a number and save. Once fetched, kept in state
-  // until the modal closes — re-toggling the disclosure is free.
-  const [breakdownOpen, setBreakdownOpen] = useState(false);
+  // Daily time-entry breakdown — owner spec 2026-06-01 promoted this
+  // from a collapsible footer to the primary view of the modal. Fires
+  // on mount so the admin sees "where the totals came from" the moment
+  // the dialog opens. The aggregate-numbers form below is now a
+  // SUMMARY editor, not the main thing.
   const [breakdownDays, setBreakdownDays] = useState<BreakdownDay[] | null>(null);
-  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [breakdownLoading, setBreakdownLoading] = useState(true);
   const [breakdownErr, setBreakdownErr] = useState<string | null>(null);
 
-  async function loadBreakdown() {
-    if (breakdownDays !== null || breakdownLoading) return;
-    setBreakdownLoading(true);
-    setBreakdownErr(null);
-    try {
-      const res = await fetch(
-        apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}/breakdown`),
-        { headers: { "content-type": "application/json" } }
-      );
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j?.ok) {
-        setBreakdownErr(j?.error ?? t(lang, "common.error"));
-        return;
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}/breakdown`),
+          { headers: { "content-type": "application/json" } }
+        );
+        const j = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok || !j?.ok) {
+          setBreakdownErr(j?.error ?? t(lang, "common.error"));
+          return;
+        }
+        setBreakdownDays(j.days as BreakdownDay[]);
+      } catch {
+        if (!cancelled) setBreakdownErr(t(lang, "common.error"));
+      } finally {
+        if (!cancelled) setBreakdownLoading(false);
       }
-      setBreakdownDays(j.days as BreakdownDay[]);
-    } catch {
-      setBreakdownErr(t(lang, "common.error"));
-    } finally {
-      setBreakdownLoading(false);
-    }
-  }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function save(): Promise<void> {
     setBusy(true);
@@ -1006,11 +1008,119 @@ function LineEditModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-2xl w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
         <div>
           <h3 className="font-semibold text-slate-800">{t(lang, "admin.persona.payroll.detail.editLine")}</h3>
           <p className="text-sm text-slate-500">{nameWithPrefix(line.title_prefix, line.display_name)}</p>
+          {line.hourly_rate_snapshot != null && (
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              อัตราค่าตอบแทน: {fmtMoney(line.hourly_rate_snapshot)} บาท/ชม.
+            </p>
+          )}
+        </div>
+
+        {/* Daily time-entry breakdown — PRIMARY view per owner spec
+            2026-06-01. Shows where each day's pay comes from before
+            asking the admin to confirm aggregate totals. */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h4 className="font-bold text-slate-800 text-sm">
+              เวลาเข้า-ออกแต่ละวัน (ที่มาของยอด)
+            </h4>
+            {breakdownDays && (
+              <span className="text-[10px] text-slate-400">
+                {breakdownDays.length} วันที่มีการลงเวลา
+              </span>
+            )}
+          </div>
+          {breakdownLoading && (
+            <p className="text-xs text-slate-500">กำลังโหลด…</p>
+          )}
+          {breakdownErr && (
+            <p className="text-xs text-rose-600">✗ {breakdownErr}</p>
+          )}
+          {breakdownDays && breakdownDays.length === 0 && (
+            <p className="text-xs text-slate-500 italic bg-slate-50 rounded p-3 text-center">
+              ไม่มีบันทึกเวลาเข้า-ออกในรอบนี้
+              — กรอกค่าตอบแทนตามตกลงในส่วนสรุปด้านล่าง
+            </p>
+          )}
+          {breakdownDays && breakdownDays.length > 0 && (
+            <div className="overflow-x-auto -mx-2">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-100">
+                  <tr className="text-slate-600">
+                    <th className="text-left px-2 py-1.5 font-semibold">วันที่</th>
+                    <th className="text-left px-2 py-1.5 font-semibold">เข้า</th>
+                    <th className="text-left px-2 py-1.5 font-semibold">ออก</th>
+                    <th className="text-right px-2 py-1.5 font-semibold">รวม</th>
+                    {line.hourly_rate_snapshot != null && (
+                      <th className="text-right px-2 py-1.5 font-semibold">เงิน</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {breakdownDays.map((day) => (
+                    day.pairs.map((p, i) => {
+                      const pay = (line.hourly_rate_snapshot != null && p.durationMinutes > 0)
+                        ? (p.durationMinutes / 60) * line.hourly_rate_snapshot
+                        : null;
+                      return (
+                        <tr key={`${day.date}-${i}`} className="border-t border-slate-100">
+                          <td className="px-2 py-1.5 font-mono whitespace-nowrap">
+                            {i === 0 ? day.date : ""}
+                          </td>
+                          <td className="px-2 py-1.5 font-mono">
+                            {p.workIn ?? <span className="text-rose-500">— ขาด</span>}
+                          </td>
+                          <td className="px-2 py-1.5 font-mono">
+                            {p.workOut ?? <span className="text-rose-500">— ขาด</span>}
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-mono">
+                            {p.durationMinutes > 0
+                              ? fmtMin(p.durationMinutes)
+                              : <span className="text-slate-300">—</span>}
+                          </td>
+                          {line.hourly_rate_snapshot != null && (
+                            <td className="px-2 py-1.5 text-right font-mono">
+                              {pay != null ? fmtMoney(pay) : <span className="text-slate-300">—</span>}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                  ))}
+                  <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
+                    <td className="px-2 py-1.5" colSpan={3}>รวมทั้งรอบ</td>
+                    <td className="px-2 py-1.5 text-right font-mono">
+                      {fmtMin(breakdownDays.reduce((s, d) => s + d.totalMinutes, 0))}
+                    </td>
+                    {line.hourly_rate_snapshot != null && (
+                      <td className="px-2 py-1.5 text-right font-mono">
+                        {fmtMoney(
+                          (breakdownDays.reduce((s, d) => s + d.totalMinutes, 0) / 60)
+                          * line.hourly_rate_snapshot
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="text-[10px] text-slate-400">
+            ค่าเงินด้านบนคำนวณตรงจากเวลาที่ลง × อัตราชม. โดยยังไม่หักพัก/ไม่แยก OT.
+            ส่วน &quot;สรุปค่าตอบแทน&quot; ด้านล่างคือยอดสุดท้ายที่ระบบจะบันทึก
+            — แอดมินปรับได้ตามจริง
+          </p>
+        </div>
+
+        <div className="border-t-2 border-slate-200 pt-2">
+          <h4 className="font-bold text-slate-800 text-sm">สรุปค่าตอบแทน (แก้ไขได้)</h4>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            ปรับตัวเลขด้านล่างถ้าจะให้ระบบบันทึกยอดต่างจากที่คำนวณ
+          </p>
         </div>
 
         {/* Mode toggle */}
@@ -1105,84 +1215,6 @@ function LineEditModal({
           ⚠ {t(lang, "admin.persona.payroll.detail.overrideHint")}
         </p>
         {err && <p className="text-rose-600 text-sm">✗ {err}</p>}
-
-        {/* Daily time-entry breakdown — collapsed by default, lazy
-            loaded. Admin opens it when they want to see where the
-            totals above came from (Phase 1: read-only view). */}
-        <div className="border-t border-slate-100 pt-3">
-          <button type="button"
-            onClick={() => {
-              const next = !breakdownOpen;
-              setBreakdownOpen(next);
-              if (next) void loadBreakdown();
-            }}
-            className="w-full flex items-center justify-between text-sm font-semibold text-slate-700 hover:text-slate-900">
-            <span>เวลาเข้า-ออกแต่ละวัน (ที่มาของยอด)</span>
-            <span className="text-slate-400 text-xs">{breakdownOpen ? "▲" : "▼"}</span>
-          </button>
-          {breakdownOpen && (
-            <div className="mt-3 space-y-2">
-              {breakdownLoading && (
-                <p className="text-xs text-slate-500">กำลังโหลด…</p>
-              )}
-              {breakdownErr && (
-                <p className="text-xs text-rose-600">✗ {breakdownErr}</p>
-              )}
-              {breakdownDays && breakdownDays.length === 0 && (
-                <p className="text-xs text-slate-500 italic">
-                  ไม่มีบันทึกการเข้า-ออกงานในรอบนี้
-                </p>
-              )}
-              {breakdownDays && breakdownDays.length > 0 && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead className="bg-slate-100">
-                      <tr className="text-slate-600">
-                        <th className="text-left px-2 py-1.5 font-semibold">วันที่</th>
-                        <th className="text-left px-2 py-1.5 font-semibold">เข้า</th>
-                        <th className="text-left px-2 py-1.5 font-semibold">ออก</th>
-                        <th className="text-right px-2 py-1.5 font-semibold">รวม</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {breakdownDays.map((day) => (
-                        day.pairs.map((p, i) => (
-                          <tr key={`${day.date}-${i}`} className="border-t border-slate-100">
-                            <td className="px-2 py-1.5 font-mono">
-                              {i === 0 ? day.date : ""}
-                            </td>
-                            <td className="px-2 py-1.5 font-mono">
-                              {p.workIn ?? <span className="text-rose-500">— ขาด</span>}
-                            </td>
-                            <td className="px-2 py-1.5 font-mono">
-                              {p.workOut ?? <span className="text-rose-500">— ขาด</span>}
-                            </td>
-                            <td className="px-2 py-1.5 text-right font-mono">
-                              {p.durationMinutes > 0
-                                ? fmtMin(p.durationMinutes)
-                                : <span className="text-slate-300">—</span>}
-                            </td>
-                          </tr>
-                        ))
-                      ))}
-                      <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
-                        <td className="px-2 py-1.5" colSpan={3}>รวมทั้งรอบ</td>
-                        <td className="px-2 py-1.5 text-right font-mono">
-                          {fmtMin(breakdownDays.reduce((s, d) => s + d.totalMinutes, 0))}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <p className="text-[10px] text-slate-400">
-                จำนวนชั่วโมงด้านบนรวมเข้า-ออกตามที่บันทึกจริง — ยังไม่หักพัก/ยังไม่แยก OT.
-                ระบบจะใช้เกณฑ์เหล่านี้คำนวณเป็นชั่วโมงปกติ/OT ตาม payroll settings
-                ของบริษัท ค่าที่ใส่ในช่องด้านบนคือผลลัพธ์สุดท้ายที่ถูกบันทึก
-              </p>
-            </div>
-          )}
-        </div>
 
         <div className="flex gap-2 pt-2">
           <button type="button" onClick={onClose} disabled={busy}
