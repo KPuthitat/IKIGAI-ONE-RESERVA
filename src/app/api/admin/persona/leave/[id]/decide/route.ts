@@ -4,10 +4,13 @@ import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { notifyLeaveEvent } from "@/lib/approval-notify";
 import { canActOnRequestTiered, type TierLevel } from "@/lib/approval-tiers";
+import { verifyAdminPin } from "@/lib/admin-pin";
 
 const Body = z.object({
   decision: z.enum(["approved", "rejected", "revision_requested"]),
-  note: z.string().max(500).optional()
+  note: z.string().max(500).optional(),
+  /** PIN required for approved + rejected decisions (high-trust ops). */
+  pin: z.string().optional()
 });
 
 // POST /api/admin/persona/leave/[id]/decide — admin approve/reject
@@ -73,6 +76,25 @@ export async function POST(req: Request, { params }: { params: { id: string } })
           tier
         },
         { status: 403 }
+      );
+    }
+  }
+
+  // PIN gate — required for approve + reject (terminal/irreversible decisions).
+  // revision_requested is reversible (staff can resubmit) so no PIN needed.
+  if (parsed.data.decision === "approved" || parsed.data.decision === "rejected") {
+    const pinStr = (parsed.data.pin ?? "").trim();
+    if (!pinStr) {
+      return NextResponse.json(
+        { error: "pin_required", message: "ต้องใส่ PIN ก่อนอนุมัติหรือปฏิเสธ" },
+        { status: 400 }
+      );
+    }
+    const pinCheck = verifyAdminPin(user.id, pinStr);
+    if (!pinCheck.ok) {
+      return NextResponse.json(
+        { error: pinCheck.reason, message: pinCheck.reason === "no_pin" ? "ยังไม่ได้ตั้ง PIN" : "PIN ไม่ถูกต้อง" },
+        { status: 401 }
       );
     }
   }

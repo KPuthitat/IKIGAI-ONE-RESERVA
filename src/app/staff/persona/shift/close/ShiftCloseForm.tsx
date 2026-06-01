@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { todayBkk } from "@/lib/time";
+import PinPromptModal from "@/app/components/PinPromptModal";
 import ShiftCloseFlexPreview from "./ShiftCloseFlexPreview";
 
 // Post-shift checklist (เช็คลิสต์หลังเลิกงาน). Mirrors ShiftOpenForm
@@ -197,6 +198,9 @@ export default function ShiftCloseForm({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [done, setDone] = useState(false);
+  // PIN gate state — holds the pending submit payload while the PIN modal is open.
+  const [pinOpen, setPinOpen] = useState(false);
+  const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null);
 
   function toggleAll(value: boolean) {
     setChecked((prev) => ({
@@ -217,6 +221,8 @@ export default function ShiftCloseForm({
     return n;
   }
 
+  /** Build and validate the payload, then open the PIN modal.
+   *  Actual POST happens in submitWithPin() after PIN is entered. */
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
@@ -337,42 +343,55 @@ export default function ShiftCloseForm({
         }
       }
 
-      const res = await fetch(apiUrl("/api/persona/daily-report"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "shift_close",
-          branch_id: branchId,
-          data: {
-            closing_drawer_amount: closingParsed,
-            // Send SVC only when staff actually filled it. null on the
-            // server means "don't touch daily_service_charge"; an
-            // explicit 0 means "we collected nothing today" and is
-            // recorded for transparency.
-            service_charge_amount: svcParsed,
-            // ASCENDA daily revenue — same null-vs-0 contract as SVC.
-            // null = staff skipped, admin backfills; 0 = explicitly
-            // zero (closed for renovation etc.).
-            daily_revenue: parseAmount(dailyRevenue),
-            checklist: checklistPayload
-          }
-        })
+      // Validation passed — open PIN modal with pending payload.
+      // The actual POST runs in submitWithPin() after PIN entry.
+      setPendingPayload({
+        type: "shift_close",
+        branch_id: branchId,
+        data: {
+          closing_drawer_amount: closingParsed,
+          service_charge_amount: svcParsed,
+          daily_revenue: parseAmount(dailyRevenue),
+          checklist: checklistPayload
+        }
       });
-      const j = await res.json().catch(() => ({}));
-      if (res.status === 409 && j.error === "already_submitted") {
-        router.refresh();
-        return;
-      }
-      if (!res.ok || !j.ok) {
-        setMsg({ kind: "err", text: t("common.error") });
-        return;
-      }
-      setDone(true);
-      router.refresh();
+      setPinOpen(true);
     } catch {
       setMsg({ kind: "err", text: t("common.error") });
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Called by PinPromptModal after PIN entry — adds pin to payload and POSTs. */
+  async function submitWithPin(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    if (!pendingPayload) return { ok: false, message: "ไม่มีข้อมูลที่จะส่ง" };
+    try {
+      const res = await fetch(apiUrl("/api/persona/daily-report"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...pendingPayload, pin })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.status === 409 && j.error === "already_submitted") {
+        router.refresh();
+        setPinOpen(false);
+        return { ok: true };
+      }
+      if (!res.ok || !j.ok) {
+        const pinErr = j?.error === "wrong_pin" || j?.error === "pin_invalid"
+          ? "PIN ไม่ถูกต้อง"
+          : j?.error === "no_pin"
+            ? "ยังไม่ได้ตั้ง PIN — ไปตั้งที่หน้าลงเวลาก่อน"
+            : j?.message ?? t("common.error");
+        return { ok: false, message: pinErr };
+      }
+      setPinOpen(false);
+      setDone(true);
+      router.refresh();
+      return { ok: true };
+    } catch {
+      return { ok: false, message: t("common.error") };
     }
   }
 
@@ -845,6 +864,21 @@ export default function ShiftCloseForm({
           ? t("staff.persona.shift.open.submitting")
           : t("staff.persona.shift.close.submit")}
       </button>
+
+      {pinOpen && (
+        <PinPromptModal
+          title="ยืนยันตัวตนก่อนส่งรายงาน"
+          description={
+            <span>
+              ใส่ PIN 4 หลักของคุณเพื่อยืนยันการปิดกะ{" "}
+              <span className="font-bold text-slate-800">{branchName}</span>
+            </span>
+          }
+          submitLabel="ส่งรายงานปิดกะ"
+          onClose={() => setPinOpen(false)}
+          onSubmit={submitWithPin}
+        />
+      )}
     </form>
   );
 }

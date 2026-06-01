@@ -8,6 +8,7 @@ import {
 import { todayBkk } from "@/lib/time";
 import { upsertDailyServiceCharge } from "@/lib/service-charge";
 import { upsertBranchDailyRevenue } from "@/lib/ascenda";
+import { verifyAdminPin } from "@/lib/admin-pin";
 
 // POST /api/persona/daily-report
 //
@@ -104,7 +105,10 @@ const ReadinessData = z.object({
 const Body = z.object({
   type: z.enum(["shift_open", "shift_close", "readiness_1130", "readiness_1600"]),
   branch_id: z.number().int().positive(),
-  data: z.unknown()    // narrowed per-type below
+  data: z.unknown(),    // narrowed per-type below
+  /** PIN required only for shift_close — confirms staff identity before
+   *  submitting the closing report (amounts + checklist). */
+  pin: z.string().optional()
 });
 
 // Type-aware data validator. Returns the parsed data on success, or
@@ -135,8 +139,28 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  const { type, branch_id, data } = parsed.data;
+  const { type, branch_id, data, pin } = parsed.data;
   const report_date = todayBkk();
+
+  // PIN gate — only for shift_close (the financially significant report).
+  // shift_open and readiness reports are informational and don't carry
+  // cash amounts, so we don't burden staff with PIN entry for those.
+  if (type === "shift_close") {
+    const pinStr = (pin ?? "").trim();
+    if (!pinStr) {
+      return NextResponse.json(
+        { error: "pin_required", message: "ต้องใส่ PIN ก่อนส่งรายงานปิดกะ" },
+        { status: 400 }
+      );
+    }
+    const pinCheck = verifyAdminPin(user.id, pinStr);
+    if (!pinCheck.ok) {
+      return NextResponse.json(
+        { error: pinCheck.reason, message: pinCheck.reason === "no_pin" ? "ยังไม่ได้ตั้ง PIN — ไปตั้งที่หน้าลงเวลา" : "PIN ไม่ถูกต้อง" },
+        { status: 401 }
+      );
+    }
+  }
 
   // Authorization: staff can only submit reports for branches they're
   // assigned to. Stops a curious staff from spoofing a different

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import PinPromptModal from "@/app/components/PinPromptModal";
 import type {
   ApplicationStage, CustomQuestion, CustomAnswers
 } from "@/lib/recruita";
@@ -1142,70 +1143,6 @@ function LineLinkBox({
           {msg.text}
         </p>
       )}
-    </div>
-  );
-}
-
-// ── PIN prompt modal — shared by "request" + "approve" actions ────
-function PinPromptModal({
-  title, description, submitLabel, onSubmit, onClose
-}: {
-  title: string;
-  description: React.ReactNode;
-  submitLabel: string;
-  onSubmit: (pin: string) => Promise<{ ok: true } | { ok: false; message: string }>;
-  onClose: () => void;
-}) {
-  const [pin, setPin] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function submit() {
-    if (!/^\d{4}$/.test(pin)) {
-      setErr("PIN ต้องเป็นตัวเลข 4 หลัก");
-      return;
-    }
-    setBusy(true);
-    setErr(null);
-    try {
-      const res = await onSubmit(pin);
-      if (!res.ok) setErr(res.message);
-    } finally { setBusy(false); }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-3"
-        onClick={(e) => e.stopPropagation()}>
-        <div>
-          <h3 className="font-bold text-slate-800">{title}</h3>
-          <div className="text-xs text-slate-600 mt-1 leading-relaxed">{description}</div>
-        </div>
-        <div>
-          <label className="label">PIN</label>
-          <input
-            type="password"
-            inputMode="numeric"
-            autoComplete="off"
-            autoFocus
-            maxLength={4}
-            value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-            onKeyDown={(e) => { if (e.key === "Enter" && !busy) void submit(); }}
-            className="input font-mono text-center text-2xl tracking-[10px]" />
-        </div>
-        {err && <p className="text-rose-600 text-xs">✗ {err}</p>}
-        <div className="flex gap-2">
-          <button type="button" onClick={onClose} disabled={busy}
-            className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
-            ยกเลิก
-          </button>
-          <button type="button" onClick={submit} disabled={busy || pin.length < 4}
-            className="flex-1 py-2.5 rounded-lg bg-brand text-white text-sm font-bold disabled:opacity-50">
-            {busy ? "กำลังส่ง…" : submitLabel}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

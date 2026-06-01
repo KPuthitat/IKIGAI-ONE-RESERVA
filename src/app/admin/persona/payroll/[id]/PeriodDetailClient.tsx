@@ -9,6 +9,7 @@ import { t } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import ConfirmModal from "@/app/components/ConfirmModal";
+import PinPromptModal from "@/app/components/PinPromptModal";
 import { nameWithPrefix } from "@/lib/name";
 
 export type PeriodDetail = {
@@ -121,7 +122,9 @@ export default function PeriodDetailClient({
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [editLine, setEditLine] = useState<PayrollLineRow | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmFinalize, setConfirmFinalize] = useState(false);
+  // confirmFinalize is now replaced by pinFinalizeOpen — the PIN modal
+  // captures the PIN and sends it together with the finalize action.
+  const [pinFinalizeOpen, setPinFinalizeOpen] = useState(false);
   const [confirmPay, setConfirmPay] = useState(false);
   const [unpayOpen, setUnpayOpen] = useState(false);
   const [addStaffOpen, setAddStaffOpen] = useState(false);
@@ -133,12 +136,16 @@ export default function PeriodDetailClient({
   const isFinalized = period.status === "finalized";
   const isPaid = period.status === "paid";
 
-  async function performAction(action: "recompute" | "finalize" | "unfinalize" | "mark_paid"): Promise<void> {
+  async function performAction(
+    action: "recompute" | "finalize" | "unfinalize" | "mark_paid",
+    pin?: string
+  ): Promise<void> {
     setBusy(action);
     setMsg(null);
     try {
       const body: Record<string, unknown> = { action };
       if (action === "mark_paid") body.paid_at = paidAt;
+      if (action === "finalize" && pin) body.pin = pin;
       const res = await fetch(apiUrl(`/api/admin/persona/payroll/periods/${period.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -304,7 +311,7 @@ export default function PeriodDetailClient({
           )}
           {isDraft && (
             <>
-              <button type="button" onClick={() => setConfirmFinalize(true)}
+              <button type="button" onClick={() => setPinFinalizeOpen(true)}
                 disabled={busy !== null} className="btn-primary text-sm">
                 {busy === "finalize" ? "..." : "✓ " + t(lang, "admin.persona.payroll.action.finalize")}
               </button>
@@ -636,20 +643,29 @@ export default function PeriodDetailClient({
         onCancel={() => setConfirmDelete(false)}
       />
 
-      <ConfirmModal
-        open={confirmFinalize}
-        title={t(lang, "admin.persona.payroll.confirmFinalizeTitle")}
-        body={<p>{t(lang, "admin.persona.payroll.confirmFinalize")}</p>}
-        confirmLabel={t(lang, "admin.persona.payroll.action.finalize")}
-        cancelLabel={t(lang, "common.cancel")}
-        variant="default"
-        busy={busy === "finalize"}
-        onConfirm={async () => {
-          await performAction("finalize");
-          setConfirmFinalize(false);
-        }}
-        onCancel={() => setConfirmFinalize(false)}
-      />
+      {pinFinalizeOpen && (
+        <PinPromptModal
+          title={t(lang, "admin.persona.payroll.confirmFinalizeTitle")}
+          description={<p className="text-xs text-slate-600">{t(lang, "admin.persona.payroll.confirmFinalize")}</p>}
+          submitLabel={t(lang, "admin.persona.payroll.action.finalize")}
+          onClose={() => setPinFinalizeOpen(false)}
+          onSubmit={async (pin) => {
+            const res = await fetch(apiUrl(`/api/admin/persona/payroll/periods/${period.id}`), {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "finalize", pin })
+            });
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || !j.ok) {
+              return { ok: false, message: j.message ?? j.error ?? t(lang, "common.error") };
+            }
+            setPinFinalizeOpen(false);
+            setMsg({ kind: "ok", text: t(lang, "admin.persona.payroll.action.finalizeDone" as any) });
+            startTransition(() => router.refresh());
+            return { ok: true };
+          }}
+        />
+      )}
 
       <ConfirmModal
         open={confirmPay}

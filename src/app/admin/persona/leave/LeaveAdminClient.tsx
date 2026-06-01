@@ -89,10 +89,15 @@ export default function LeaveAdminClient({
   type DecideTarget = { id: number; decision: "approved" | "rejected" | "revision_requested" };
   const [decideTarget, setDecideTarget] = useState<DecideTarget | null>(null);
   const [decideNote, setDecideNote] = useState("");
+  // PIN state — required for approved + rejected decisions (#139 PIN gate)
+  const [decidePin, setDecidePin] = useState("");
+  const [decidePinErr, setDecidePinErr] = useState<string | null>(null);
 
   function decide(id: number, decision: DecideTarget["decision"]) {
     setDecideTarget({ id, decision });
     setDecideNote("");
+    setDecidePin("");
+    setDecidePinErr(null);
   }
 
   async function confirmDecide() {
@@ -107,24 +112,49 @@ export default function LeaveAdminClient({
       });
       return;
     }
+    // PIN required for approve + reject
+    if (decision === "approved" || decision === "rejected") {
+      if (!/^\d{4}$/.test(decidePin)) {
+        setDecidePinErr("PIN ต้องเป็นตัวเลข 4 หลัก");
+        return;
+      }
+    }
+    setDecidePinErr(null);
     setBusyId(id);
     try {
+      const body: Record<string, unknown> = {
+        decision,
+        note: decideNote.trim() || undefined
+      };
+      if (decision === "approved" || decision === "rejected") {
+        body.pin = decidePin;
+      }
       const res = await fetch(apiUrl(`/api/admin/persona/leave/${id}/decide`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, note: decideNote.trim() || undefined })
+        body: JSON.stringify(body)
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) {
         setDecideTarget(null);
         startTransition(() => router.refresh());
       } else {
-        alert({
-          title: t("common.error"),
-          body: <p>{j?.error ?? t("common.error")}</p>,
-          variant: "danger",
-          okLabel: t("common.confirm")
-        });
+        // Surface PIN errors inline in the modal instead of alert dialog
+        const pinErr = j?.error === "wrong_pin" || j?.error === "pin_invalid"
+          ? "PIN ไม่ถูกต้อง"
+          : j?.error === "no_pin" || j?.error === "user_pin_not_set"
+            ? "ยังไม่ได้ตั้ง PIN — ไปตั้งที่หน้าลงเวลา"
+            : null;
+        if (pinErr) {
+          setDecidePinErr(pinErr);
+        } else {
+          alert({
+            title: t("common.error"),
+            body: <p>{j?.message ?? j?.error ?? t("common.error")}</p>,
+            variant: "danger",
+            okLabel: t("common.confirm")
+          });
+        }
       }
     } catch {
       alert({
@@ -350,6 +380,9 @@ export default function LeaveAdminClient({
           decision={decideTarget.decision}
           note={decideNote}
           onChange={setDecideNote}
+          pin={decidePin}
+          onPinChange={(v) => { setDecidePin(v); setDecidePinErr(null); }}
+          pinErr={decidePinErr}
           onConfirm={confirmDecide}
           onCancel={() => setDecideTarget(null)}
           busy={busyId === decideTarget.id}
@@ -363,13 +396,19 @@ export default function LeaveAdminClient({
 }
 
 function DecisionModal({
-  decision, note, onChange, onConfirm, onCancel, busy, translate, nsPrompt,
+  decision, note, onChange,
+  pin, onPinChange, pinErr,
+  onConfirm, onCancel, busy, translate, nsPrompt,
   forfeitSvc, onForfeitSvcChange,
   improperResignationConsequences
 }: {
   decision: "approved" | "rejected" | "revision_requested";
   note: string;
   onChange: (v: string) => void;
+  /** PIN value — required for approve/reject. Omit for revision_requested. */
+  pin?: string;
+  onPinChange?: (v: string) => void;
+  pinErr?: string | null;
   onConfirm: () => void;
   onCancel: () => void;
   busy: boolean;
@@ -386,6 +425,7 @@ function DecisionModal({
   // finalizing. Empty/null = nothing extra shown.
   improperResignationConsequences?: string | null;
 }) {
+  const needsPin = decision === "approved" || decision === "rejected";
   const promptKey =
     decision === "approved" ? `${nsPrompt}.notePromptApprove` :
     decision === "rejected" ? `${nsPrompt}.notePromptReject` :
@@ -445,6 +485,35 @@ function DecisionModal({
             )}
           </>
         )}
+        {/* PIN field — approve + reject only (terminal decisions) */}
+        {needsPin && (
+          <div>
+            <label className="label">PIN (4 หลัก)</label>
+            <input
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={4}
+              value={pin ?? ""}
+              onChange={(e) => onPinChange?.(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              onKeyDown={(e) => { if (e.key === "Enter" && !busy) onConfirm(); }}
+              className={`input font-mono text-center text-2xl tracking-[10px] ${pinErr ? "border-rose-400" : ""}`}
+            />
+            {pinErr && (
+              <p className="text-rose-600 text-xs font-medium mt-1">
+                ✗{" "}
+                {pinErr.includes("ยังไม่ได้ตั้ง") ? (
+                  <span>
+                    {pinErr.split("—")[0]}—{" "}
+                    <a href="/staff/persona" className="underline text-rose-700 hover:text-rose-800">
+                      ไปตั้งที่หน้าลงเวลา
+                    </a>
+                  </span>
+                ) : pinErr}
+              </p>
+            )}
+          </div>
+        )}
         <div className="flex gap-2 pt-1">
           <button
             type="button"
@@ -457,7 +526,7 @@ function DecisionModal({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={busy}
+            disabled={busy || (needsPin && (pin ?? "").length < 4)}
             className={`flex-1 py-2.5 rounded-lg text-white text-sm font-bold ${buttonClass} disabled:opacity-50`}
           >
             {busy ? translate("common.submitting") : buttonLabel}

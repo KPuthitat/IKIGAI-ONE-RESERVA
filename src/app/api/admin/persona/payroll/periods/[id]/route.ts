@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import bcrypt from "bcryptjs";
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { computePayrollPeriod } from "@/lib/payroll-compute";
+import { verifyAdminPin } from "@/lib/admin-pin";
 
 // PATCH /api/admin/persona/payroll/periods/[id] — recompute, finalize, mark paid, unpay, update notes
 // DELETE /api/admin/persona/payroll/periods/[id] — delete (only if draft)
@@ -13,7 +13,7 @@ const PatchBody = z.object({
   notes: z.string().max(500).optional(),
   pay_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   paid_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),  // backdated paid date
-  pin: z.string().optional(),                                    // for unpay
+  pin: z.string().optional(),                                    // for finalize + unpay
   reason: z.string().max(500).optional()                         // for unpay
 });
 
@@ -54,6 +54,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (d.action === "finalize") {
     if (period.status !== "draft") {
       return NextResponse.json({ error: "must_be_draft" }, { status: 400 });
+    }
+    // PIN gate — same pattern as unpay.
+    const pinStr = (d.pin ?? "").trim();
+    if (!pinStr) {
+      return NextResponse.json({ error: "pin_required", message: "ต้องใส่ PIN ก่อน finalize" }, { status: 400 });
+    }
+    const pinCheck = verifyAdminPin(user.id, pinStr);
+    if (!pinCheck.ok) {
+      return NextResponse.json(
+        { error: pinCheck.reason, message: pinCheck.reason === "no_pin" ? "ยังไม่ได้ตั้ง PIN" : "PIN ไม่ถูกต้อง" },
+        { status: 401 }
+      );
     }
     db.prepare(`
       UPDATE payroll_periods
@@ -107,14 +119,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (!pin) return NextResponse.json({ error: "pin_required" }, { status: 400 });
     if (!reason) return NextResponse.json({ error: "reason_required" }, { status: 400 });
 
-    const userRow = db.prepare(`
-      SELECT pin_hash FROM users WHERE id = ?
-    `).get(user.id) as { pin_hash: string | null } | undefined;
-    if (!userRow?.pin_hash) {
-      return NextResponse.json({ error: "user_pin_not_set" }, { status: 400 });
-    }
-    if (!bcrypt.compareSync(pin, userRow.pin_hash)) {
-      return NextResponse.json({ error: "pin_invalid" }, { status: 401 });
+    const unpayPinCheck = verifyAdminPin(user.id, pin);
+    if (!unpayPinCheck.ok) {
+      return NextResponse.json(
+        { error: unpayPinCheck.reason === "no_pin" ? "user_pin_not_set" : "pin_invalid" },
+        { status: unpayPinCheck.reason === "no_pin" ? 400 : 401 }
+      );
     }
 
     db.prepare(`
