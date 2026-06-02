@@ -18,7 +18,7 @@
 
 import { getDb, getSystemSettings } from "./db";
 import { sendLinePush } from "./line";
-import { getRecruitaChannel, getPlatformChannel, isChannelReady } from "./messaging-channels";
+import { getRecruitaChannel } from "./messaging-channels";
 import { STAGE_META, type ApplicationStage } from "./recruita";
 import { formatApplicationNo } from "./time";
 
@@ -240,13 +240,14 @@ function newApplicationFlexForExec(args: {
   };
 }
 
-/** Shared gate + send for any exec-group push. Routed through the
- *  IKIGAI OS platform OA into system_settings.recruita_exec_group_id —
- *  the same chat owners already use for PERSONA/ASCENDA. Logs each
- *  skip/failure path because a dropped group push is invisible from
- *  the candidate side. Silent no-op when group id or platform OA
- *  isn't configured. Owner runs `pm2 logs reserva --lines 50
- *  --nostream` to see which gate failed. */
+/** Shared gate + send for any exec-group push. Routed through the SAME
+ *  OA as candidate notifications — the "IKIGAI Recruit" OA — so the
+ *  whole RECRUITA module runs on one bot: owners just invite the IKIGAI
+ *  Recruit OA to the exec group (the join event prints the group id to
+ *  paste into settings). Logs each skip/failure path because a dropped
+ *  group push is invisible from the candidate side. Silent no-op when
+ *  group id or the OA token isn't configured. Owner runs `pm2 logs
+ *  reserva --lines 50 --nostream` to see which gate failed. */
 async function pushToExecGroup(messages: LineMessage[]): Promise<void> {
   const settings = getSystemSettings();
   const groupId = settings.recruita_exec_group_id?.trim();
@@ -257,23 +258,23 @@ async function pushToExecGroup(messages: LineMessage[]): Promise<void> {
     );
     return;
   }
-  const platform = getPlatformChannel();
-  if (!isChannelReady(platform) || !platform?.channel_token) {
+  const ch = getRecruitaChannel();
+  if (!ch?.channel_token) {
     console.info(
-      "[recruita] exec group notify skipped: IKIGAI OS platform OA not " +
-      "configured (set Channel Token + Secret in /admin/system-settings)"
+      "[recruita] exec group notify skipped: IKIGAI Recruit OA not configured " +
+      "(set Channel Access Token at /admin/system-settings → RECRUITA · ตั้งค่า LINE OA)"
     );
     return;
   }
   try {
-    const res = await sendLinePush(platform.channel_token, { to: groupId, messages });
+    const res = await sendLinePush(ch.channel_token, { to: groupId, messages });
     if (res.ok) {
       console.info(`[recruita] exec group notify sent → ${groupId}`);
     } else {
       console.warn(
         `[recruita] exec group notify rejected by LINE: status=${res.status} ` +
         `error=${res.error ?? "(unknown)"} groupId=${groupId} ` +
-        `(common causes: IKIGAI OS bot is not a member of this group, ` +
+        `(common causes: the IKIGAI Recruit bot is not a member of this group, ` +
         `or the group id is wrong — should start with C followed by 32 hex)`
       );
     }
