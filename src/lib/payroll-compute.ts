@@ -51,7 +51,7 @@ export type EmployeePayrollSnapshot = {
 };
 
 // PT premium multiplier on public holidays (per company rule)
-const PT_HOLIDAY_MULTIPLIER = 1.5;
+export const PT_HOLIDAY_MULTIPLIER = 1.5;
 
 export type ComputedLine = {
   user_id: number;
@@ -155,20 +155,32 @@ export function pairShifts(entries: Entry[]): { shifts: Shift[]; unpaired: numbe
 export const PT_GRACE_MINUTES = 5;
 
 // A scheduled shift window for one (user, date), as UTC ISO strings.
-export type ScheduledShift = { startTs: string; endTs: string };
+// breakStartTs/breakEndTs is the gate's lunch/break window (shift_codes
+// break_start/break_end). When present, the overlap with the worked
+// window is deducted as unpaid break — "หักเวลาพักตามกะ".
+export type ScheduledShift = {
+  startTs: string;
+  endTs: string;
+  breakStartTs?: string | null;
+  breakEndTs?: string | null;
+};
 
 export type GracedShift = {
   startTs: string;        // effective in (UTC ISO)
   endTs: string;          // effective out (UTC ISO)
-  durationMinutes: number;
+  grossMinutes: number;   // effective window length, before break
+  breakMinutes: number;   // scheduled break overlapping the window (deducted)
+  workedMinutes: number;  // grossMinutes − breakMinutes (paid working time)
   lateMinutes: number;    // minutes the clock-in was late beyond grace (0 if on-time/early)
   earlyMinutes: number;   // minutes the clock-out was early beyond grace (0 if full/late)
 };
 
 /**
- * Apply the PT clock-time grace + shift-boundary cap to one raw shift.
+ * Apply the PT clock-time grace + shift-boundary cap to one raw shift,
+ * then deduct the scheduled break that falls inside the worked window.
  * When `scheduled` is null (no roster assignment for the day) the raw
- * clock times are returned unchanged — we have no box to clamp against.
+ * clock times are returned unchanged with no break — we have no box to
+ * clamp against, so the caller falls back to threshold-based deductBreak.
  */
 export function applyPtGrace(
   shift: { startTs: string; endTs: string },
@@ -177,10 +189,13 @@ export function applyPtGrace(
   const inMs = new Date(shift.startTs).getTime();
   const outMs = new Date(shift.endTs).getTime();
   if (!scheduled) {
+    const gross = Math.max(0, (outMs - inMs) / 60000);
     return {
       startTs: shift.startTs,
       endTs: shift.endTs,
-      durationMinutes: Math.max(0, (outMs - inMs) / 60000),
+      grossMinutes: gross,
+      breakMinutes: 0,
+      workedMinutes: gross,
       lateMinutes: 0,
       earlyMinutes: 0
     };
@@ -209,10 +224,25 @@ export function applyPtGrace(
     earlyMinutes = (schEnd - outMs) / 60000;
   }
 
+  const grossMinutes = Math.max(0, (effOut - effIn) / 60000);
+
+  // Deduct the portion of the scheduled break that overlaps the worked
+  // window. If the staff left during the break (effOut inside break) we
+  // only subtract the overlapping slice — never more than was worked.
+  let breakMinutes = 0;
+  if (scheduled.breakStartTs && scheduled.breakEndTs) {
+    const bS = new Date(scheduled.breakStartTs).getTime();
+    const bE = new Date(scheduled.breakEndTs).getTime();
+    const overlap = Math.min(effOut, bE) - Math.max(effIn, bS);
+    if (overlap > 0) breakMinutes = overlap / 60000;
+  }
+
   return {
     startTs: new Date(effIn).toISOString(),
     endTs: new Date(effOut).toISOString(),
-    durationMinutes: Math.max(0, (effOut - effIn) / 60000),
+    grossMinutes,
+    breakMinutes,
+    workedMinutes: Math.max(0, grossMinutes - breakMinutes),
     lateMinutes: Math.max(0, lateMinutes),
     earlyMinutes: Math.max(0, earlyMinutes)
   };
@@ -403,16 +433,28 @@ export function computeLineForEmployee(args: {
 
     // PT: clamp the worked window to the scheduled shift box ±5-min
     // grace (no pay before start / after end; lateness & early-out
-    // counted from actuals). FT keeps the raw clock duration since its
-    // base pay is salary-driven, not minute-driven.
-    let effDurationMin = s.durationMinutes;
-    if (e.employment_type === "pt" && scheduledByDate) {
-      const sched = pickScheduled(scheduledByDate.get(shiftDate) ?? [], s);
-      if (sched) effDurationMin = applyPtGrace(s, sched).durationMinutes;
+    // counted from actuals) AND deduct the scheduled break. FT keeps
+    // the raw clock duration since its base pay is salary-driven.
+    let grossMin = s.durationMinutes;   // before break (for shift_minutes col)
+    let workedMinutes: number;
+    let deducted: number;
+
+    const sched = (e.employment_type === "pt" && scheduledByDate)
+      ? pickScheduled(scheduledByDate.get(shiftDate) ?? [], s)
+      : null;
+    if (sched) {
+      const g = applyPtGrace(s, sched);
+      grossMin = g.grossMinutes;
+      deducted = g.breakMinutes;
+      workedMinutes = g.workedMinutes;
+    } else {
+      // No roster for this day (or FT) → legacy threshold-based break.
+      const db = deductBreak(s.durationMinutes, settings);
+      workedMinutes = db.workedMinutes;
+      deducted = db.deducted;
     }
 
-    shiftMin += effDurationMin;
-    const { workedMinutes, deducted } = deductBreak(effDurationMin, settings);
+    shiftMin += grossMin;
     breakDeducted += deducted;
     const split = splitRegularOt(workedMinutes);
     regularMin += split.regular;
@@ -679,13 +721,16 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     return d.toISOString().slice(0, 10);
   };
   const rosterRows = db.prepare(`
-    SELECT ra.user_id, ra.assignment_date, sc.start_time, sc.end_time
+    SELECT ra.user_id, ra.assignment_date,
+           sc.start_time, sc.end_time, sc.break_start, sc.break_end
     FROM roster_assignments ra
     JOIN shift_codes sc ON sc.id = ra.shift_code_id
     WHERE ra.assignment_date >= ? AND ra.assignment_date <= ?
       AND sc.kind = 'work'
   `).all(period.period_start, period.period_end) as Array<{
-    user_id: number; assignment_date: string; start_time: string; end_time: string;
+    user_id: number; assignment_date: string;
+    start_time: string; end_time: string;
+    break_start: string | null; break_end: string | null;
   }>;
   const scheduledByUser = new Map<number, Map<string, ScheduledShift[]>>();
   for (const r of rosterRows) {
@@ -694,10 +739,17 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     const startTs = new Date(`${r.assignment_date}T${r.start_time}:00+07:00`).toISOString();
     const endDate = r.end_time < r.start_time ? addDayYmd(r.assignment_date) : r.assignment_date;
     const endTs = new Date(`${endDate}T${r.end_time}:00+07:00`).toISOString();
+    let breakStartTs: string | null = null;
+    let breakEndTs: string | null = null;
+    if (r.break_start && r.break_end && r.break_start !== r.break_end) {
+      breakStartTs = new Date(`${r.assignment_date}T${r.break_start}:00+07:00`).toISOString();
+      const bEndDate = r.break_end < r.break_start ? addDayYmd(r.assignment_date) : r.assignment_date;
+      breakEndTs = new Date(`${bEndDate}T${r.break_end}:00+07:00`).toISOString();
+    }
     let byDate = scheduledByUser.get(r.user_id);
     if (!byDate) { byDate = new Map(); scheduledByUser.set(r.user_id, byDate); }
     const list = byDate.get(r.assignment_date) ?? [];
-    list.push({ startTs, endTs });
+    list.push({ startTs, endTs, breakStartTs, breakEndTs });
     byDate.set(r.assignment_date, list);
   }
 

@@ -916,10 +916,18 @@ type BreakdownDay = {
     durationMinutes: number;
     schedIn: string | null;
     schedOut: string | null;
+    breakMinutes: number;
     effectiveMinutes: number;
+    otMinutes: number;
+    otPay: number;
+    pay: number;
   }>;
   totalMinutes: number;
   effectiveMinutes: number;
+  breakMinutes: number;
+  otMinutes: number;
+  otPay: number;
+  pay: number;
 };
 
 function LineEditModal({
@@ -1038,7 +1046,7 @@ function LineEditModal({
   return (
     <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-2xl w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-4xl w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
         <div>
           <h3 className="font-semibold text-slate-800">{t(lang, "admin.persona.payroll.detail.editLine")}</h3>
@@ -1077,92 +1085,112 @@ function LineEditModal({
             </p>
           )}
           {breakdownDays && breakdownDays.length > 0 && (() => {
-            const isPt = line.employment_type === "pt";
-            // For PT, the paid minutes are the graced/clamped effective
-            // minutes; for everyone else it's the raw clocked duration.
-            const paidMin = (p: BreakdownDay["pairs"][number]) =>
-              isPt ? p.effectiveMinutes : p.durationMinutes;
-            const totalPaid = breakdownDays.reduce(
-              (s, d) => s + (isPt ? d.effectiveMinutes : d.totalMinutes), 0
-            );
+            const showMoney = line.hourly_rate_snapshot != null;
+            const clampedPair = (p: BreakdownDay["pairs"][number]) =>
+              p.durationMinutes > 0 &&
+              (p.effectiveMinutes + p.otMinutes + p.breakMinutes) !== p.durationMinutes;
+            const tot = breakdownDays.reduce((s, d) => ({
+              work: s.work + d.effectiveMinutes,
+              brk: s.brk + d.breakMinutes,
+              ot: s.ot + d.otMinutes,
+              otPay: s.otPay + d.otPay,
+              pay: s.pay + d.pay
+            }), { work: 0, brk: 0, ot: 0, otPay: 0, pay: 0 });
             return (
+            <>
             <div className="overflow-x-auto -mx-2">
-              <table className="w-full text-xs">
+              <table className="w-full text-xs whitespace-nowrap">
                 <thead className="bg-slate-100">
                   <tr className="text-slate-600">
                     <th className="text-left px-2 py-1.5 font-semibold">วันที่</th>
-                    <th className="text-left px-2 py-1.5 font-semibold">เข้า–ออก</th>
-                    <th className="text-left px-2 py-1.5 font-semibold">ตามกะ</th>
-                    <th className="text-right px-2 py-1.5 font-semibold">{isPt ? "จ่ายจริง" : "รวม"}</th>
-                    {line.hourly_rate_snapshot != null && (
-                      <th className="text-right px-2 py-1.5 font-semibold">เงิน</th>
-                    )}
+                    <th className="text-left px-2 py-1.5 font-semibold">บันทึกเวลาเข้าออก</th>
+                    <th className="text-left px-2 py-1.5 font-semibold">เวลาเข้าออกงาน</th>
+                    <th className="text-right px-2 py-1.5 font-semibold">เวลาพัก</th>
+                    <th className="text-right px-2 py-1.5 font-semibold">ชั่วโมงทำงาน</th>
+                    <th className="text-right px-2 py-1.5 font-semibold">ทำงานล่วงเวลา</th>
+                    {showMoney && <th className="text-right px-2 py-1.5 font-semibold">ค่าล่วงเวลา</th>}
+                    {showMoney && <th className="text-right px-2 py-1.5 font-semibold">ค่าตอบแทน</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {breakdownDays.map((day) => (
-                    day.pairs.map((p, i) => {
-                      const minutes = paidMin(p);
-                      const clamped = isPt && minutes !== p.durationMinutes && p.durationMinutes > 0;
-                      const pay = (line.hourly_rate_snapshot != null && minutes > 0)
-                        ? (minutes / 60) * line.hourly_rate_snapshot
-                        : null;
-                      return (
-                        <tr key={`${day.date}-${i}`} className="border-t border-slate-100">
-                          <td className="px-2 py-1.5 font-mono whitespace-nowrap">
-                            {i === 0 ? day.date : ""}
-                          </td>
-                          <td className="px-2 py-1.5 font-mono whitespace-nowrap">
-                            {p.workIn ?? <span className="text-rose-500">ขาด</span>}
-                            <span className="text-slate-300">–</span>
-                            {p.workOut ?? <span className="text-rose-500">ขาด</span>}
-                          </td>
-                          <td className="px-2 py-1.5 font-mono whitespace-nowrap text-slate-500">
-                            {p.schedIn && p.schedOut
-                              ? `${p.schedIn}–${p.schedOut}`
-                              : <span className="text-slate-300">—</span>}
-                          </td>
-                          <td className="px-2 py-1.5 text-right font-mono">
-                            {minutes > 0
-                              ? <>
-                                  {fmtMin(minutes)}
-                                  {clamped && (
-                                    <span className="block text-[9px] text-slate-400 line-through">
-                                      {fmtMin(p.durationMinutes)}
-                                    </span>
-                                  )}
-                                </>
-                              : <span className="text-slate-300">—</span>}
-                          </td>
-                          {line.hourly_rate_snapshot != null && (
-                            <td className="px-2 py-1.5 text-right font-mono">
-                              {pay != null ? fmtMoney(pay) : <span className="text-slate-300">—</span>}
-                            </td>
+                    day.pairs.map((p, i) => (
+                      <tr key={`${day.date}-${i}`} className="border-t border-slate-100">
+                        <td className="px-2 py-1.5 font-mono">
+                          {i === 0 ? day.date : ""}
+                        </td>
+                        <td className="px-2 py-1.5 font-mono">
+                          {p.workIn ?? <span className="text-rose-500">ขาด</span>}
+                          <span className="text-slate-300">–</span>
+                          {p.workOut ?? <span className="text-rose-500">ขาด</span>}
+                          {clampedPair(p) && (
+                            <span className="block text-[9px] text-slate-400">
+                              ลงจริง {fmtMin(p.durationMinutes)}
+                            </span>
                           )}
-                        </tr>
-                      );
-                    })
+                        </td>
+                        <td className="px-2 py-1.5 font-mono text-slate-500">
+                          {p.schedIn && p.schedOut
+                            ? `${p.schedIn}–${p.schedOut}`
+                            : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">
+                          {p.breakMinutes > 0 ? fmtMin(p.breakMinutes) : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono">
+                          {p.effectiveMinutes > 0 ? fmtMin(p.effectiveMinutes) : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono">
+                          {p.otMinutes > 0 ? fmtMin(p.otMinutes) : <span className="text-slate-300">—</span>}
+                        </td>
+                        {showMoney && (
+                          <td className="px-2 py-1.5 text-right font-mono">
+                            {p.otPay > 0 ? fmtMoney(p.otPay) : <span className="text-slate-300">—</span>}
+                          </td>
+                        )}
+                        {showMoney && (
+                          <td className="px-2 py-1.5 text-right font-mono">
+                            {p.pay > 0 ? fmtMoney(p.pay) : <span className="text-slate-300">—</span>}
+                          </td>
+                        )}
+                      </tr>
+                    ))
                   ))}
                   <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
-                    <td className="px-2 py-1.5" colSpan={3}>รวมทั้งรอบ</td>
-                    <td className="px-2 py-1.5 text-right font-mono">
-                      {fmtMin(totalPaid)}
+                    <td className="px-2 py-1.5" colSpan={3}>รวมทั้งหมด</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-slate-500">
+                      {tot.brk > 0 ? fmtMin(tot.brk) : "—"}
                     </td>
-                    {line.hourly_rate_snapshot != null && (
-                      <td className="px-2 py-1.5 text-right font-mono">
-                        {fmtMoney((totalPaid / 60) * line.hourly_rate_snapshot)}
-                      </td>
+                    <td className="px-2 py-1.5 text-right font-mono">{fmtMin(tot.work)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{tot.ot > 0 ? fmtMin(tot.ot) : "—"}</td>
+                    {showMoney && (
+                      <td className="px-2 py-1.5 text-right font-mono">{tot.otPay > 0 ? fmtMoney(tot.otPay) : "—"}</td>
+                    )}
+                    {showMoney && (
+                      <td className="px-2 py-1.5 text-right font-mono">{fmtMoney(tot.pay)}</td>
                     )}
                   </tr>
                 </tbody>
               </table>
             </div>
+            {showMoney && (
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs bg-rose-50/60 rounded-lg px-3 py-2 border border-rose-100">
+                <span className="text-slate-600">
+                  คำนวณชั่วโมงทำงานรวม: <b className="text-slate-800">{fmtMin(tot.work)}</b>
+                  {tot.ot > 0 && <> + ล่วงเวลา <b className="text-slate-800">{fmtMin(tot.ot)}</b></>}
+                </span>
+                <span className="text-slate-600">
+                  คำนวณค่าตอบแทนรวม: <b className="text-brand">{fmtMoney(tot.pay)}</b>
+                </span>
+              </div>
+            )}
+            </>
             );
           })()}
-          <p className="text-[10px] text-slate-400">
+          <p className="text-[10px] text-slate-400 leading-relaxed">
             {line.employment_type === "pt"
-              ? <>&quot;จ่ายจริง&quot; = เวลาที่นับจ่ายหลังปัดเข้ากรอบกะ (เข้าก่อน/สายไม่เกิน 5 นาที = เริ่มตามกะ · ออกหลัง/ก่อนเลิกไม่เกิน 5 นาที = เลิกตามกะ). ค่าเงินยังไม่หักพัก/ไม่แยก OT — ยอดสุดท้ายอยู่ที่ &quot;สรุปค่าตอบแทน&quot; ด้านล่าง</>
-              : <>ค่าเงินด้านบนคำนวณตรงจากเวลาที่ลง × อัตราชม. โดยยังไม่หักพัก/ไม่แยก OT. ส่วน &quot;สรุปค่าตอบแทน&quot; ด้านล่างคือยอดสุดท้ายที่ระบบจะบันทึก — แอดมินปรับได้ตามจริง</>}
+              ? <>&quot;ชั่วโมงทำงาน&quot; = เวลาหลังปัดเข้ากรอบกะ (เข้าก่อน/สายไม่เกิน 5 นาที = เริ่มตามกะ · ออกหลัง/ก่อนเลิกไม่เกิน 5 นาที = เลิกตามกะ) แล้วหักเวลาพักตามกะ. ส่วนเกิน 8 ชม./วัน นับเป็นทำงานล่วงเวลา</>
+              : <>ค่าตอบแทนของพนักงานประจำคิดจากเงินเดือน ไม่ใช่ชั่วโมง — ตารางนี้แสดงเวลาเพื่ออ้างอิงเท่านั้น</>}
           </p>
         </div>
 
