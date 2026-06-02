@@ -30,6 +30,23 @@ type LineMessage =
 
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
 
+// IKIGAI OS Portal LIFF — taps from the exec group open this, which
+// auto-logs-in the admin via LINE (see /persona/portal) then redirects
+// to `next`. So "ตรวจสอบใบสมัคร" lands them straight on the application.
+const PORTAL_LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID_PORTAL ?? "";
+
+/** URL for the exec "ตรวจสอบใบสมัคร" button. Routes through the IKIGAI OS
+ *  Portal LIFF (auto-login) when configured, then deep-links to the
+ *  application detail page. Falls back to the plain admin URL (which
+ *  bounces through /login if there's no session) when the portal LIFF
+ *  id isn't set. */
+function reviewUrl(applicationId: number): string {
+  const target = `/admin/recruita/applications/${applicationId}`;
+  return PORTAL_LIFF_ID
+    ? `https://liff.line.me/${PORTAL_LIFF_ID}?next=${encodeURIComponent(target)}`
+    : `${PUBLIC_BASE}${target}`;
+}
+
 // IKIGAI OS CI palette — keep in sync with tailwind.config.ts + line.ts
 // so RECRUITA cards look like the rest of the system (PERSONA / RESERVA).
 const COLOR_INK = "#1a1a2e";
@@ -230,8 +247,8 @@ function newApplicationFlexForExec(args: {
             type: "button", style: "primary", color: COLOR_BRAND,
             action: {
               type: "uri",
-              label: "ดูใบสมัคร",
-              uri: `${PUBLIC_BASE}/admin/recruita/applications/${args.applicationId}`
+              label: "ตรวจสอบใบสมัคร",
+              uri: reviewUrl(args.applicationId)
             }
           }
         ]
@@ -365,8 +382,8 @@ function execStageChangeFlex(args: {
             type: "button", style: "primary", color: COLOR_BRAND,
             action: {
               type: "uri",
-              label: "ดูใบสมัคร",
-              uri: `${PUBLIC_BASE}/admin/recruita/applications/${args.applicationId}`
+              label: "ตรวจสอบใบสมัคร",
+              uri: reviewUrl(args.applicationId)
             }
           }
         ]
@@ -442,7 +459,17 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
     position_title: string;
     branch_name: string | null;
   } | undefined;
-  if (!row || !row.line_user_id) return;
+  if (!row) {
+    console.info(`[recruita] candidate notify skipped: application #${applicationId} not found`);
+    return;
+  }
+  if (!row.line_user_id) {
+    console.info(
+      `[recruita] candidate notify skipped: app #${applicationId} has no linked LINE userId ` +
+      `(applicant didn't open the form via the IKIGAI Recruit LIFF / not bound yet)`
+    );
+    return;
+  }
 
   const applicantName = [row.title_prefix, row.first_name_th, row.last_name_th]
     .filter(Boolean).join(" ") || "—";
@@ -453,5 +480,20 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
     stage: row.stage,
     applicationNo: formatApplicationNo(row.submitted_at, row.day_seq)
   });
-  await pushToCandidate(row.line_user_id, [message]);
+  const res = await pushToCandidate(row.line_user_id, [message]);
+  if (res.ok) {
+    console.info(`[recruita] candidate notify sent → app #${applicationId}`);
+  } else if (res.skipped) {
+    console.info(
+      "[recruita] candidate notify skipped: IKIGAI Recruit OA token not configured " +
+      "(set it at /admin/system-settings → RECRUITA · ตั้งค่า LINE OA)"
+    );
+  } else {
+    console.warn(
+      `[recruita] candidate notify rejected by LINE: status=${res.status} ` +
+      `error=${res.error ?? "(unknown)"} ` +
+      `(the applicant may not have added the IKIGAI Recruit OA as a friend — ` +
+      `LINE blocks push messages to users who haven't added the OA)`
+    );
+  }
 }

@@ -23,6 +23,28 @@ type Phase =
 // jump straight to the share-userId screen without waiting for the
 // auth round-trip to fail.
 
+// Where to land after a successful auto-login. Reads a `next` query
+// param (used by deep-links such as the RECRUITA exec "ตรวจสอบใบสมัคร"
+// button) and validates it's an internal absolute path — never an
+// external URL (open-redirect guard). LIFF sometimes wraps the original
+// query inside `liff.state`, so we check there too. Defaults to /staff.
+function safeNextTarget(): string {
+  if (typeof window === "undefined") return "/staff";
+  const sp = new URLSearchParams(window.location.search);
+  let raw = sp.get("next");
+  if (!raw) {
+    const state = sp.get("liff.state");
+    if (state) {
+      try {
+        const inner = new URLSearchParams(state.startsWith("?") ? state.slice(1) : state);
+        raw = inner.get("next");
+      } catch { /* ignore malformed liff.state */ }
+    }
+  }
+  // Internal path only: must start with a single "/" (block "//host").
+  return raw && /^\/(?!\/)/.test(raw) ? raw : "/staff";
+}
+
 export default function PortalClient({ liffId }: { liffId: string }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("init");
@@ -172,12 +194,12 @@ export default function PortalClient({ liffId }: { liffId: string }) {
         if (res.ok) {
           setPhase("ok");
           setMsg("เข้าระบบสำเร็จ กำลังพาไปหน้าหลัก");
-          // Always land on the module picker (/staff) first — the user
-          // chooses PERSONA / RESERVA from there. Admins are employees
-          // first; they opt into management via the Admin Console
-          // toggle in the sidebar. super_admin doesn't reach here
-          // (no LINE binding — logs in via /login).
-          setTimeout(() => router.replace("/staff"), 600);
+          // Honour a `next` deep-link target (e.g. the RECRUITA exec
+          // "ตรวจสอบใบสมัคร" button → application detail). Defaults to
+          // the /staff module picker. Admins are employees first; they
+          // opt into management via the Admin Console toggle.
+          const next = safeNextTarget();
+          setTimeout(() => router.replace(next), 600);
           return;
         }
 
