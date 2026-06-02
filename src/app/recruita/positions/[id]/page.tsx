@@ -99,7 +99,9 @@ export default function PublicPositionDetailPage(
             <span className="text-emerald-700 font-bold">
               {fmtSalary(p.salary_min, p.salary_max, p.salary_type)}
             </span>
-            <span>รับ {p.vacancies} อัตรา</span>
+            <span className="font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
+              รับ {p.vacancies} อัตรา
+            </span>
           </div>
 
           {p.jd_summary && (

@@ -103,6 +103,20 @@ export default function PositionsClient({
     closed: positions.filter((p) => p.status === "closed").length
   };
 
+  // Group by branch (null → "ทุกสาขา") so the admin list reads the same
+  // way as the public /recruita/positions page — consistent layout +
+  // no "some rows show a branch, some don't" confusion.
+  const groups: Array<[string, Position[]]> = (() => {
+    const m = new Map<string, Position[]>();
+    for (const p of filtered) {
+      const key = p.branch_name ?? "ทุกสาขา";
+      const arr = m.get(key) ?? [];
+      arr.push(p);
+      m.set(key, arr);
+    }
+    return [...m.entries()];
+  })();
+
   async function quickClose(id: number, title: string) {
     if (!confirm(`ปิดรับสมัครตำแหน่ง "${title}" ?`)) return;
     setBusy(true);
@@ -162,8 +176,8 @@ export default function PositionsClient({
         </button>
       </div>
 
-      {/* List */}
-      <div className="space-y-2">
+      {/* List — grouped by branch (same layout as the public page) */}
+      <div className="space-y-4">
         {filtered.length === 0 && (
           <div className="card text-sm text-slate-400 text-center py-8">
             {filter === "all"
@@ -171,73 +185,80 @@ export default function PositionsClient({
               : "ไม่มีตำแหน่งในกลุ่มนี้"}
           </div>
         )}
-        {filtered.map((p) => {
-          const meta = STATUS_META[p.status];
-          const customCount = (() => {
-            try { return JSON.parse(p.custom_questions).length || 0; }
-            catch { return 0; }
-          })();
-          return (
-            <div key={p.id} className="card flex flex-col sm:flex-row gap-3 sm:items-start">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {p.code && (
-                    <span className="text-xs font-bold uppercase tracking-wide bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                      {p.code}
-                    </span>
-                  )}
-                  <h3 className="font-bold text-slate-800">{p.title}</h3>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${meta.chip}`}>
-                    {meta.label}
-                  </span>
-                </div>
-                <div className="text-xs text-slate-500 mt-1 flex items-center gap-x-3 gap-y-1 flex-wrap">
-                  {p.branch_name && (
-                    <span className="font-semibold text-slate-700">{p.branch_name}</span>
-                  )}
-                  {p.department && <span>{p.department}</span>}
-                  {p.employment_type && <span>{EMP_LABEL[p.employment_type]}</span>}
-                  <span className="text-emerald-700 font-semibold">
-                    {fmtSalary(p.salary_min, p.salary_max, p.salary_type)}
-                  </span>
-                  <span>รับ {p.vacancies} อัตรา</span>
-                </div>
-                {p.jd_summary && (
-                  <p className="text-xs text-slate-600 mt-1.5 line-clamp-2">{p.jd_summary}</p>
-                )}
-                <div className="text-[11px] text-slate-400 mt-2 flex items-center gap-3 flex-wrap">
-                  <span>ใบสมัคร {p.application_count} รายการ</span>
-                  <span>✅ จ้างแล้ว {p.hired_count} คน</span>
-                  <span>❓ คำถามเฉพาะตำแหน่ง {customCount} ข้อ</span>
-                </div>
-              </div>
-              <div className="flex sm:flex-col gap-2 flex-shrink-0 text-xs">
-                <Link href={`/admin/recruita/positions/${p.id}`}
-                  className="px-3 py-1.5 rounded-lg bg-brand text-white font-bold text-center">
-                  แก้ไข
-                </Link>
-                {p.status === "open" ? (
-                  <button type="button" disabled={busy}
-                    onClick={() => quickClose(p.id, p.title)}
-                    className="px-3 py-1.5 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50">
-                    ปิดรับ
-                  </button>
-                ) : (
-                  <button type="button" disabled={busy}
-                    onClick={() => quickOpen(p.id)}
-                    className="px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50">
-                    เปิดรับ
-                  </button>
-                )}
-                <button type="button" disabled={busy}
-                  onClick={() => del(p.id, p.title)}
-                  className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50">
-                  ลบ
-                </button>
-              </div>
+        {groups.map(([branch, list]) => (
+          <section key={branch} className="space-y-2">
+            <div className="px-1 pb-1 border-b-2 border-amber-300/60">
+              <h2 className="text-sm font-bold text-slate-800">{branch}</h2>
+              <p className="text-[10px] text-slate-500">{list.length} ตำแหน่ง</p>
             </div>
-          );
-        })}
+            {list.map((p) => {
+              const meta = STATUS_META[p.status];
+              const customCount = (() => {
+                try { return JSON.parse(p.custom_questions).length || 0; }
+                catch { return 0; }
+              })();
+              return (
+                <div key={p.id} className="card flex flex-col sm:flex-row gap-3 sm:items-start">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {p.code && (
+                        <span className="text-xs font-bold uppercase tracking-wide bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                          {p.code}
+                        </span>
+                      )}
+                      <h3 className="font-bold text-slate-800">{p.title}</h3>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${meta.chip}`}>
+                        {meta.label}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1 flex items-center gap-x-3 gap-y-1 flex-wrap">
+                      {p.department && <span>{p.department}</span>}
+                      {p.employment_type && <span>{EMP_LABEL[p.employment_type]}</span>}
+                      <span className="text-emerald-700 font-semibold">
+                        {fmtSalary(p.salary_min, p.salary_max, p.salary_type)}
+                      </span>
+                      <span className="font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
+                        รับ {p.vacancies} อัตรา
+                      </span>
+                    </div>
+                    {p.jd_summary && (
+                      <p className="text-xs text-slate-600 mt-1.5 line-clamp-2">{p.jd_summary}</p>
+                    )}
+                    <div className="text-[11px] text-slate-400 mt-2 flex items-center gap-3 flex-wrap">
+                      <span>ใบสมัคร {p.application_count} รายการ</span>
+                      <span>✅ จ้างแล้ว {p.hired_count} คน</span>
+                      <span>❓ คำถามเฉพาะตำแหน่ง {customCount} ข้อ</span>
+                    </div>
+                  </div>
+                  <div className="flex sm:flex-col gap-2 flex-shrink-0 text-xs">
+                    <Link href={`/admin/recruita/positions/${p.id}`}
+                      className="px-3 py-1.5 rounded-lg bg-brand text-white font-bold text-center">
+                      แก้ไข
+                    </Link>
+                    {p.status === "open" ? (
+                      <button type="button" disabled={busy}
+                        onClick={() => quickClose(p.id, p.title)}
+                        className="px-3 py-1.5 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50">
+                        ปิดรับ
+                      </button>
+                    ) : (
+                      <button type="button" disabled={busy}
+                        onClick={() => quickOpen(p.id)}
+                        className="px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+                        เปิดรับ
+                      </button>
+                    )}
+                    <button type="button" disabled={busy}
+                      onClick={() => del(p.id, p.title)}
+                      className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50">
+                      ลบ
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </section>
+        ))}
       </div>
 
       {/* New position dialog */}
