@@ -102,11 +102,20 @@ export default function CountClient({
     if (!session) return;
     if (!confirm(t("inv.cnt.submitConfirm", { done, total }))) return;
     setBusy(true);
+    setMsg(null);
     try {
       const res = await fetch(apiUrl(`/api/inventa/counts/${session.id}/submit`), {
         method: "POST"
       });
-      if (res.ok) refresh();
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) {
+        setMsg(j?.error ?? t("inv.cnt.saveFail"));
+        return;
+      }
+      // Saved (line qtys were already live-updated). Send the user
+      // straight to the reorder/PO builder — it lists every item now
+      // at/below its reorder point, grouped by supplier, ready to order.
+      router.push("/staff/inventa/orders");
     } finally { setBusy(false); }
   }
 

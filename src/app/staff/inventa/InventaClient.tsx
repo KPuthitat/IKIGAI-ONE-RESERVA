@@ -12,6 +12,27 @@ import {
   type InventaItemLot, type ExpiryBucket
 } from "@/lib/inventa";
 
+// Deterministic colour per category code/name so categories read as
+// distinct chips (e.g. ATB vs ARI). No colour column on lookups — we
+// hash the label into a fixed Tailwind palette (stable across renders).
+const CAT_COLORS = [
+  "bg-sky-100 text-sky-800",
+  "bg-emerald-100 text-emerald-800",
+  "bg-amber-100 text-amber-800",
+  "bg-violet-100 text-violet-800",
+  "bg-rose-100 text-rose-800",
+  "bg-teal-100 text-teal-800",
+  "bg-indigo-100 text-indigo-800",
+  "bg-orange-100 text-orange-800",
+  "bg-pink-100 text-pink-800",
+  "bg-cyan-100 text-cyan-800"
+];
+function catColor(label: string): string {
+  let h = 0;
+  for (let i = 0; i < label.length; i++) h = (h * 31 + label.charCodeAt(i)) >>> 0;
+  return CAT_COLORS[h % CAT_COLORS.length];
+}
+
 type Item = {
   id: number;
   item_code: string | null;
@@ -83,6 +104,15 @@ export default function InventaClient({
     const m = new Map<string, string>();
     for (const l of lookups) {
       if (l.kind === "category" && l.code) m.set(l.value, l.code);
+    }
+    return m;
+  }, [lookups]);
+  // Same for storage: show the short code (e.g. "D4") instead of the
+  // full shelf name ("ชั้นวางยา D4") when a code is set.
+  const storageCodeByName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const l of lookups) {
+      if (l.kind === "storage" && l.code) m.set(l.value, l.code);
     }
     return m;
   }, [lookups]);
@@ -346,7 +376,9 @@ export default function InventaClient({
                         className={`inline-block w-3.5 h-3.5 rounded-full align-middle ${fm.dot}`} />
                     )}
                     <div className="text-[11px] text-slate-500 mt-0.5">
-                      {i.storage_location || t("inv.dash")}
+                      {i.storage_location
+                        ? (storageCodeByName.get(i.storage_location) ?? i.storage_location)
+                        : t("inv.dash")}
                     </div>
                   </td>
                   {/* Two-line cell (#89): item_code is the primary
@@ -375,12 +407,17 @@ export default function InventaClient({
                       </>
                     )}
                   </td>
-                  <td className="py-2 pr-3 text-slate-600 text-xs">
-                    {/* Category column uses the abbrev when known —
-                        less visual noise once admin pins codes. */}
-                    {i.category
-                      ? (categoryCodeByName.get(i.category) ?? i.category)
-                      : t("inv.dash")}
+                  <td className="py-2 pr-3 text-xs">
+                    {/* Category as a colour chip — uses the abbrev code
+                        when set (e.g. ATB / ARI), colour hashed from the
+                        label so each category is visually distinct. */}
+                    {i.category ? (
+                      <span className={`inline-block font-bold px-1.5 py-0.5 rounded ${catColor(categoryCodeByName.get(i.category) ?? i.category)}`}>
+                        {categoryCodeByName.get(i.category) ?? i.category}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">{t("inv.dash")}</span>
+                    )}
                   </td>
                   <td className="py-2 pr-3 text-slate-600 text-xs">{i.supplier_name ?? t("inv.dash")}</td>
                   <td className="py-2 pr-3 text-slate-600 text-xs">{i.unit ?? t("inv.dash")}</td>
