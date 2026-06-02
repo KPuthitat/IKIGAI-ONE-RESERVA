@@ -95,7 +95,12 @@ export type FormTemplate = {
 // ApplyClient.tsx. When the admin hasn't saved overrides yet, this is
 // what the form renders.
 
-export const TEMPLATE_VERSION = 1;
+// v2 (2026-06-02): reconciled DEFAULT_TEMPLATE labels + required flags to
+// match the live apply form, and wired the template into ApplyClient.
+// Any template saved under v1 (when the editor wasn't wired to the form)
+// is ignored in favour of this default so the form never shows stale
+// labels — admin re-customises on top of the correct baseline.
+export const TEMPLATE_VERSION = 2;
 
 export const DEFAULT_TEMPLATE: FormTemplate = {
   version: TEMPLATE_VERSION,
@@ -107,20 +112,20 @@ export const DEFAULT_TEMPLATE: FormTemplate = {
       enabled: true,
       display_order: 10,
       fields: [
-        { key: "title_prefix",   label_th: "คำนำหน้า",          label_en: "Title",             enabled: true, required: true,  display_order: 10 },
-        { key: "first_name_th",  label_th: "ชื่อ (ไทย)",         label_en: "First name (TH)",   enabled: true, required: true,  display_order: 20 },
-        { key: "last_name_th",   label_th: "นามสกุล (ไทย)",      label_en: "Last name (TH)",    enabled: true, required: true,  display_order: 30 },
-        { key: "first_name_en",  label_th: "ชื่อ (อังกฤษ)",       label_en: "First name (EN)",   enabled: true, required: false, display_order: 40 },
-        { key: "last_name_en",   label_th: "นามสกุล (อังกฤษ)",    label_en: "Last name (EN)",    enabled: true, required: false, display_order: 50 },
-        { key: "nickname_th",    label_th: "ชื่อเล่น",           label_en: "Nickname",          enabled: true, required: false, display_order: 60 },
-        { key: "dob",            label_th: "วันเกิด",            label_en: "Date of birth",      enabled: true, required: true,  display_order: 70 },
-        { key: "gender",         label_th: "เพศ",                label_en: "Gender",             enabled: true, required: true,  display_order: 80 },
-        { key: "nationality",    label_th: "สัญชาติ",            label_en: "Nationality",        enabled: true, required: true,  display_order: 90 },
-        { key: "race",           label_th: "เชื้อชาติ",          label_en: "Race",               enabled: true, required: false, display_order: 100 },
-        { key: "marital_status", label_th: "สถานภาพสมรส",        label_en: "Marital status",     enabled: true, required: false, display_order: 110 },
-        { key: "military_status", label_th: "สถานภาพทางทหาร",     label_en: "Military status",    enabled: true, required: false, display_order: 120 },
-        { key: "religion",       label_th: "ศาสนา",              label_en: "Religion",           enabled: true, required: false, display_order: 130 },
-        { key: "national_id",    label_th: "เลขบัตรประชาชน",     label_en: "National ID",        enabled: true, required: true,  display_order: 140 }
+        { key: "title_prefix",   label_th: "คำนำหน้า",            label_en: "Title",             enabled: true, required: true,  display_order: 10 },
+        { key: "first_name_th",  label_th: "ชื่อจริง (ไทย)",       label_en: "First name (TH)",   enabled: true, required: true,  display_order: 20 },
+        { key: "last_name_th",   label_th: "นามสกุล (ไทย)",        label_en: "Last name (TH)",    enabled: true, required: true,  display_order: 30 },
+        { key: "first_name_en",  label_th: "First name (EN)",      label_en: "First name (EN)",   enabled: true, required: false, display_order: 40 },
+        { key: "last_name_en",   label_th: "Last name (EN)",       label_en: "Last name (EN)",    enabled: true, required: false, display_order: 50 },
+        { key: "nickname_th",    label_th: "ชื่อเล่น",             label_en: "Nickname",          enabled: true, required: false, display_order: 60 },
+        { key: "dob",            label_th: "วัน/เดือน/ปี เกิด",     label_en: "Date of birth",     enabled: true, required: true,  display_order: 70 },
+        { key: "gender",         label_th: "เพศ",                  label_en: "Gender",            enabled: true, required: true,  display_order: 80 },
+        { key: "nationality",    label_th: "สัญชาติ",              label_en: "Nationality",       enabled: true, required: true,  display_order: 90 },
+        { key: "race",           label_th: "เชื้อชาติ",            label_en: "Race",              enabled: true, required: false, display_order: 100 },
+        { key: "marital_status", label_th: "สถานภาพ",              label_en: "Marital status",    enabled: true, required: false, display_order: 110 },
+        { key: "military_status", label_th: "ภาวะทางทหาร",          label_en: "Military status",   enabled: true, required: false, display_order: 120 },
+        { key: "religion",       label_th: "ศาสนา",                label_en: "Religion",          enabled: true, required: false, display_order: 130 },
+        { key: "national_id",    label_th: "เลขบัตรประจำตัวประชาชน", label_en: "National ID",      enabled: true, required: true,  display_order: 140 }
       ]
     },
     {
@@ -130,11 +135,11 @@ export const DEFAULT_TEMPLATE: FormTemplate = {
       enabled: true,
       display_order: 20,
       fields: [
-        { key: "personal_email", label_th: "อีเมล",              label_en: "Email",              enabled: true, required: true,  display_order: 10 },
-        { key: "mobile_phone",   label_th: "เบอร์มือถือ",        label_en: "Mobile phone",       enabled: true, required: true,  display_order: 20 },
+        { key: "mobile_phone",   label_th: "เบอร์โทรศัพท์มือถือ",  label_en: "Mobile phone",       enabled: true, required: true,  display_order: 10 },
+        { key: "personal_email", label_th: "อีเมล",              label_en: "Email",              enabled: true, required: false, display_order: 20 },
         { key: "line_id",        label_th: "LINE ID",            label_en: "LINE ID",            enabled: true, required: false, display_order: 30 },
-        { key: "house_address",  label_th: "ที่อยู่ปัจจุบัน",     label_en: "Current address",    enabled: true, required: true,  display_order: 40 },
-        { key: "housing_type",   label_th: "ประเภทที่พัก",        label_en: "Housing type",       enabled: true, required: false, display_order: 50 }
+        { key: "housing_type",   label_th: "ลักษณะที่อยู่",        label_en: "Housing type",       enabled: true, required: false, display_order: 40 },
+        { key: "house_address",  label_th: "ที่อยู่ปัจจุบัน",     label_en: "Current address",    enabled: true, required: true,  display_order: 50 }
       ]
     },
     {
@@ -154,7 +159,7 @@ export const DEFAULT_TEMPLATE: FormTemplate = {
       enabled: true,
       display_order: 40,
       fields: [
-        { key: "professional_license_status", label_th: "สถานะใบประกอบวิชาชีพ", label_en: "License status", enabled: true, required: false, display_order: 10 }
+        { key: "professional_license_status", label_th: "มีใบประกอบวิชาชีพหรือไม่ (พยาบาล/เทคนิคการแพทย์/สาธารณสุข)", label_en: "License status", enabled: true, required: false, display_order: 10 }
       ]
     },
     {
@@ -172,7 +177,7 @@ export const DEFAULT_TEMPLATE: FormTemplate = {
       enabled: true,
       display_order: 60,
       fields: [
-        { key: "skills_other", label_th: "ทักษะอื่นๆ", label_en: "Other skills", enabled: true, required: false, display_order: 10 }
+        { key: "skills_other", label_th: "ทักษะพิเศษอื่นๆ", label_en: "Other skills", enabled: true, required: false, display_order: 10 }
       ]
     },
     {
@@ -182,7 +187,7 @@ export const DEFAULT_TEMPLATE: FormTemplate = {
       enabled: true,
       display_order: 70,
       fields: [
-        { key: "introduction", label_th: "เล่าเกี่ยวกับตัวคุณ", label_en: "About yourself", enabled: true, required: false, display_order: 10 }
+        { key: "introduction", label_th: "แนะนำตัวเองเพิ่มเติม", label_en: "About yourself", enabled: true, required: false, display_order: 10 }
       ]
     },
     {
@@ -192,10 +197,10 @@ export const DEFAULT_TEMPLATE: FormTemplate = {
       enabled: true,
       display_order: 80,
       fields: [
-        { key: "emergency_name",         label_th: "ชื่อผู้ติดต่อฉุกเฉิน",  label_en: "Emergency contact name",       enabled: true, required: true,  display_order: 10 },
-        { key: "emergency_relationship", label_th: "ความสัมพันธ์",          label_en: "Relationship",                 enabled: true, required: true,  display_order: 20 },
-        { key: "emergency_phone",        label_th: "เบอร์โทร",              label_en: "Phone",                        enabled: true, required: true,  display_order: 30 },
-        { key: "referee_external_text",  label_th: "ผู้รับรองภายนอก",        label_en: "External referees",            enabled: true, required: false, display_order: 40 }
+        { key: "emergency_name",         label_th: "ชื่อ-นามสกุล (ติดต่อฉุกเฉิน)", label_en: "Emergency contact name",  enabled: true, required: false, display_order: 10 },
+        { key: "emergency_relationship", label_th: "ความสัมพันธ์",          label_en: "Relationship",                 enabled: true, required: false, display_order: 20 },
+        { key: "emergency_phone",        label_th: "เบอร์โทร (ติดต่อฉุกเฉิน)", label_en: "Phone",                     enabled: true, required: false, display_order: 30 },
+        { key: "referee_external_text",  label_th: "บุคคลอ้างอิง (ไม่ใช่ญาติ/นายจ้างเดิม)", label_en: "External referees", enabled: true, required: false, display_order: 40 }
       ]
     },
     {
@@ -205,13 +210,13 @@ export const DEFAULT_TEMPLATE: FormTemplate = {
       enabled: true,
       display_order: 90,
       fields: [
-        { key: "expected_salary",      label_th: "เงินเดือนที่คาดหวัง",   label_en: "Expected salary",   enabled: true, required: false, display_order: 10 },
-        { key: "earliest_start_date",  label_th: "วันที่เริ่มงานได้เร็วสุด", label_en: "Earliest start date", enabled: true, required: false, display_order: 20 },
-        { key: "goals",                label_th: "เป้าหมายในการทำงาน",    label_en: "Career goals",       enabled: true, required: false, display_order: 30 },
-        { key: "why_join",             label_th: "ทำไมจึงสนใจร่วมงานกับเรา", label_en: "Why join us",       enabled: true, required: false, display_order: 40 },
-        { key: "info_source",          label_th: "ทราบข่าวรับสมัครจาก",   label_en: "How did you hear about us", enabled: true, required: false, display_order: 50 },
-        { key: "can_travel",           label_th: "สะดวกเดินทาง/ย้ายที่ทำงาน", label_en: "Willing to travel", enabled: true, required: false, display_order: 60 },
-        { key: "prior_illness",        label_th: "โรคประจำตัว",          label_en: "Prior illness",      enabled: true, required: false, display_order: 70 },
+        { key: "expected_salary",      label_th: "เงินเดือนที่คาดหวัง (บาท)", label_en: "Expected salary",   enabled: true, required: false, display_order: 10 },
+        { key: "earliest_start_date",  label_th: "วันที่พร้อมเริ่มงาน",     label_en: "Earliest start date", enabled: true, required: false, display_order: 20 },
+        { key: "can_travel",           label_th: "ไปต่างจังหวัดได้ไหม",     label_en: "Willing to travel", enabled: true, required: false, display_order: 30 },
+        { key: "info_source",          label_th: "ทราบข่าวการรับสมัครจาก",  label_en: "How did you hear about us", enabled: true, required: false, display_order: 40 },
+        { key: "why_join",             label_th: "ทำไมอยากร่วมงานกับเรา",   label_en: "Why join us",       enabled: true, required: false, display_order: 50 },
+        { key: "goals",                label_th: "ความคาดหวัง/เป้าหมาย",    label_en: "Career goals",       enabled: true, required: false, display_order: 60 },
+        { key: "prior_illness",        label_th: "เคยป่วยหนัก/โรคติดต่อร้ายแรงไหม", label_en: "Prior illness", enabled: true, required: false, display_order: 70 },
         { key: "prior_illness_detail", label_th: "รายละเอียดโรคประจำตัว", label_en: "Illness detail",     enabled: true, required: false, display_order: 80 },
         { key: "prior_application_at", label_th: "เคยสมัครงานกับเราเมื่อใด", label_en: "Prior application date", enabled: true, required: false, display_order: 90 }
       ]
@@ -246,6 +251,12 @@ export function getFormTemplate(): FormTemplate {
     const parsed = JSON.parse(row.recruita_form_template_json) as unknown;
     if (!isValidTemplate(parsed)) {
       console.warn("[recruita] form template shape invalid — falling back to default");
+      return DEFAULT_TEMPLATE;
+    }
+    // A template saved under an older version predates a label/required
+    // reconcile — ignore it so the form never renders stale config.
+    if (parsed.version !== TEMPLATE_VERSION) {
+      console.info(`[recruita] form template v${parsed.version} < v${TEMPLATE_VERSION} — using default`);
       return DEFAULT_TEMPLATE;
     }
     return parsed;

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getDb, getSystemSettings } from "@/lib/db";
 import { parseCustomQuestions } from "@/lib/recruita";
 import { getRecruitaChannel } from "@/lib/messaging-channels";
+import { getFormTemplate } from "@/lib/recruita-form-template";
 import ApplyClient from "./ApplyClient";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,18 @@ export default function ApplyPage({ params }: { params: { positionId: string } }
     ? `/api/recruita/pdpa-image?v=${encodeURIComponent(settings.updated_at ?? "")}`
     : null;
 
+  // Admin-editable form template → per-field { enabled, required, label }.
+  // ApplyClient reads this to hide / rename / require standard fields.
+  // Default template mirrors the form, so an un-customised template
+  // renders the form exactly as before.
+  const template = getFormTemplate();
+  const fieldCfg: Record<string, { enabled: boolean; required: boolean; label: string }> = {};
+  for (const sec of template.sections) {
+    for (const fld of sec.fields) {
+      fieldCfg[fld.key] = { enabled: fld.enabled, required: fld.required, label: fld.label_th };
+    }
+  }
+
   return (
     <div className="min-h-screen bg-amber-50/40 py-6 px-4">
       <main className="max-w-2xl mx-auto">
@@ -65,6 +78,7 @@ export default function ApplyPage({ params }: { params: { positionId: string } }
           liffId={liffId}
           privacyPolicyUrl={privacyPolicyUrl}
           pdpaImageUrl={pdpaImageUrl}
+          fieldCfg={fieldCfg}
         />
       </main>
     </div>

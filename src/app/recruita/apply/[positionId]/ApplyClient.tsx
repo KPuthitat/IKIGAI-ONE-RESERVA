@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, createContext, useContext } from "react";
 import { useRouter } from "next/navigation";
 import Script from "next/script";
 import { apiUrl } from "@/lib/url";
@@ -99,19 +99,24 @@ const EMPTY_EXP: ExperienceRow = {
 const EMPTY_LANG: LanguageRow = { language: "", level: "" };
 const EMPTY_REF: ReferenceRow = { name: "", relationship: "", phone: "" };
 
-// Required identity/contact fields (those marked * on the form). On
-// submit we highlight any left empty with a red border so the
-// applicant sees exactly what's missing instead of a vague error.
-const REQUIRED_TEXT_FIELDS: ReadonlyArray<{ key: keyof FormState; label: string }> = [
-  { key: "title_prefix",  label: "คำนำหน้า" },
-  { key: "gender",        label: "เพศ" },
-  { key: "first_name_th", label: "ชื่อจริง (ไทย)" },
-  { key: "last_name_th",  label: "นามสกุล (ไทย)" },
-  { key: "dob",           label: "วันเกิด" },
-  { key: "nationality",   label: "สัญชาติ" },
-  { key: "national_id",   label: "เลขบัตรประชาชน" },
-  { key: "mobile_phone",  label: "เบอร์โทรศัพท์มือถือ" },
-  { key: "house_address", label: "ที่อยู่ปัจจุบัน" }
+// Per-field config from the admin form template (enabled/required/label).
+// Threaded to <Field> via context so each standard field can hide /
+// rename / require itself. The default template mirrors the live form,
+// so an un-customised template renders the form exactly as before.
+type FieldCfg = Record<string, { enabled: boolean; required: boolean; label: string }>;
+const FieldCfgContext = createContext<FieldCfg>({});
+
+// Simple string-valued FormState fields the template can mark required —
+// used to compute the missing-required (red border) set on submit.
+const STRING_FIELD_KEYS: ReadonlyArray<keyof FormState> = [
+  "title_prefix", "first_name_th", "last_name_th", "first_name_en", "last_name_en",
+  "nickname_th", "dob", "gender", "nationality", "race", "marital_status",
+  "military_status", "religion", "national_id",
+  "personal_email", "mobile_phone", "line_id", "house_address", "housing_type",
+  "professional_license_status", "skills_other", "introduction",
+  "emergency_name", "emergency_relationship", "emergency_phone", "referee_external_text",
+  "expected_salary", "earliest_start_date", "goals", "why_join", "info_source",
+  "can_travel", "prior_illness", "prior_illness_detail", "prior_application_at"
 ];
 
 function blankState(): FormState {
@@ -146,7 +151,7 @@ function blankState(): FormState {
 
 export default function ApplyClient({
   positionId, positionTitle, positionCode, branchName, department,
-  customQuestions, liffId, privacyPolicyUrl, pdpaImageUrl
+  customQuestions, liffId, privacyPolicyUrl, pdpaImageUrl, fieldCfg
 }: {
   positionId: number;
   positionTitle: string;
@@ -155,6 +160,9 @@ export default function ApplyClient({
   department: string | null;
   customQuestions: CustomQuestion[];
   liffId: string | null;
+  /** Per-field config from the admin form template (hide/rename/require
+   *  standard fields). Empty object = use built-in defaults. */
+  fieldCfg: FieldCfg;
   /** Global URL set in /admin/system-settings. Renders as a
    *  "ดูนโยบายฉบับเต็ม" link below the PDPA consent text. NULL
    *  hides the link entirely. */
@@ -354,7 +362,9 @@ export default function ApplyClient({
     // Collect ALL missing required fields in one pass so we can show
     // red borders on every one at once (not just the first).
     const miss = new Set<string>();
-    for (const { key } of REQUIRED_TEXT_FIELDS) {
+    for (const key of STRING_FIELD_KEYS) {
+      const c = fieldCfg[key];
+      if (!c || !c.enabled || !c.required) continue; // only enabled+required count
       const v = f[key];
       if (typeof v === "string" && !v.trim()) miss.add(key as string);
     }
@@ -432,6 +442,7 @@ export default function ApplyClient({
   }
 
   return (
+    <FieldCfgContext.Provider value={fieldCfg}>
     <form onSubmit={submit} className="space-y-4">
       {/* LIFF SDK — loads only when liffId is set. onLoad fires
           initLiff which captures profile.userId silently. */}
@@ -540,7 +551,7 @@ export default function ApplyClient({
       {/* Section 2 — Personal */}
       <Section title="2. ข้อมูลส่วนตัว">
         <Grid2>
-          <Field label="คำนำหน้า *" invalid={missing.has("title_prefix")}>
+          <Field k="title_prefix" fb="คำนำหน้า" invalid={missing.has("title_prefix")}>
             <select className="input" value={f.title_prefix}
               onChange={(e) => up("title_prefix", e.target.value)}>
               <option value="">—</option>
@@ -549,7 +560,7 @@ export default function ApplyClient({
               <option value="นาง">นาง</option>
             </select>
           </Field>
-          <Field label="เพศ *" invalid={missing.has("gender")}>
+          <Field k="gender" fb="เพศ" invalid={missing.has("gender")}>
             <select className="input" value={f.gender}
               onChange={(e) => up("gender", e.target.value)}>
               <option value="">—</option>
@@ -558,43 +569,43 @@ export default function ApplyClient({
               <option value="other">อื่นๆ</option>
             </select>
           </Field>
-          <Field label="ชื่อจริง (ไทย) *" invalid={missing.has("first_name_th")}>
+          <Field k="first_name_th" fb="ชื่อจริง (ไทย)" invalid={missing.has("first_name_th")}>
             <input className="input" value={f.first_name_th}
               onChange={(e) => up("first_name_th", e.target.value)} />
           </Field>
-          <Field label="นามสกุล (ไทย) *" invalid={missing.has("last_name_th")}>
+          <Field k="last_name_th" fb="นามสกุล (ไทย)" invalid={missing.has("last_name_th")}>
             <input className="input" value={f.last_name_th}
               onChange={(e) => up("last_name_th", e.target.value)} />
           </Field>
-          <Field label="First name (EN)">
+          <Field k="first_name_en" fb="First name (EN)" invalid={missing.has("first_name_en")}>
             <input className="input" value={f.first_name_en}
               onChange={(e) => up("first_name_en", e.target.value)} />
           </Field>
-          <Field label="Last name (EN)">
+          <Field k="last_name_en" fb="Last name (EN)" invalid={missing.has("last_name_en")}>
             <input className="input" value={f.last_name_en}
               onChange={(e) => up("last_name_en", e.target.value)} />
           </Field>
-          <Field label="ชื่อเล่น">
+          <Field k="nickname_th" fb="ชื่อเล่น" invalid={missing.has("nickname_th")}>
             <input className="input" value={f.nickname_th}
               onChange={(e) => up("nickname_th", e.target.value)} />
           </Field>
-          <Field label="วัน/เดือน/ปี เกิด *" invalid={missing.has("dob")}
+          <Field k="dob" fb="วัน/เดือน/ปี เกิด" invalid={missing.has("dob")}
             hint="รูปแบบ DD/MM/YYYY · ถ้าจำวันไม่แม่นยำ ใส่วันที่ 1 ของเดือนได้">
             <DateInput value={f.dob} onChange={(v) => up("dob", v)} required />
           </Field>
-          <Field label="สัญชาติ *" invalid={missing.has("nationality")}>
+          <Field k="nationality" fb="สัญชาติ" invalid={missing.has("nationality")}>
             <input className="input" value={f.nationality}
               onChange={(e) => up("nationality", e.target.value)} />
           </Field>
-          <Field label="เชื้อชาติ">
+          <Field k="race" fb="เชื้อชาติ" invalid={missing.has("race")}>
             <input className="input" value={f.race}
               onChange={(e) => up("race", e.target.value)} />
           </Field>
-          <Field label="ศาสนา">
+          <Field k="religion" fb="ศาสนา" invalid={missing.has("religion")}>
             <input className="input" value={f.religion}
               onChange={(e) => up("religion", e.target.value)} />
           </Field>
-          <Field label="สถานภาพ">
+          <Field k="marital_status" fb="สถานภาพ" invalid={missing.has("marital_status")}>
             <select className="input" value={f.marital_status}
               onChange={(e) => up("marital_status", e.target.value)}>
               <option value="">—</option>
@@ -605,7 +616,7 @@ export default function ApplyClient({
             </select>
           </Field>
           {f.gender === "male" && (
-            <Field label="ภาวะทางทหาร">
+            <Field k="military_status" fb="ภาวะทางทหาร" invalid={missing.has("military_status")}>
               <select className="input" value={f.military_status}
                 onChange={(e) => up("military_status", e.target.value)}>
                 <option value="">—</option>
@@ -615,7 +626,7 @@ export default function ApplyClient({
               </select>
             </Field>
           )}
-          <Field label="เลขบัตรประจำตัวประชาชน *" invalid={missing.has("national_id")}
+          <Field k="national_id" fb="เลขบัตรประจำตัวประชาชน" invalid={missing.has("national_id")}
             hint="เข้ารหัสในระบบ (PDPA)">
             <input className="input" inputMode="numeric"
               maxLength={13} value={f.national_id}
@@ -627,19 +638,19 @@ export default function ApplyClient({
       {/* Section 3 — Contact */}
       <Section title="3. ติดต่อ">
         <Grid2>
-          <Field label="เบอร์โทรศัพท์มือถือ *" invalid={missing.has("mobile_phone")}>
+          <Field k="mobile_phone" fb="เบอร์โทรศัพท์มือถือ" invalid={missing.has("mobile_phone")}>
             <input className="input" type="tel" value={f.mobile_phone}
               onChange={(e) => up("mobile_phone", e.target.value)} />
           </Field>
-          <Field label="อีเมล">
+          <Field k="personal_email" fb="อีเมล" invalid={missing.has("personal_email")}>
             <input className="input" type="email" value={f.personal_email}
               onChange={(e) => up("personal_email", e.target.value)} />
           </Field>
-          <Field label="LINE ID">
+          <Field k="line_id" fb="LINE ID" invalid={missing.has("line_id")}>
             <input className="input" value={f.line_id}
               onChange={(e) => up("line_id", e.target.value)} />
           </Field>
-          <Field label="ลักษณะที่อยู่">
+          <Field k="housing_type" fb="ลักษณะที่อยู่" invalid={missing.has("housing_type")}>
             <select className="input" value={f.housing_type}
               onChange={(e) => up("housing_type", e.target.value)}>
               <option value="">—</option>
@@ -651,7 +662,7 @@ export default function ApplyClient({
             </select>
           </Field>
         </Grid2>
-        <Field label="ที่อยู่ปัจจุบัน *" invalid={missing.has("house_address")}>
+        <Field k="house_address" fb="ที่อยู่ปัจจุบัน" invalid={missing.has("house_address")}>
           <textarea className="input" rows={2} value={f.house_address}
             onChange={(e) => up("house_address", e.target.value)} />
         </Field>
@@ -715,7 +726,8 @@ export default function ApplyClient({
         <button type="button" onClick={addEdu}
           className="text-xs text-brand hover:underline">+ เพิ่มประวัติการศึกษา</button>
 
-        <Field label="มีใบประกอบวิชาชีพหรือไม่ (พยาบาล/เทคนิคการแพทย์/สาธารณสุข)"
+        <Field k="professional_license_status" fb="มีใบประกอบวิชาชีพหรือไม่ (พยาบาล/เทคนิคการแพทย์/สาธารณสุข)"
+          invalid={missing.has("professional_license_status")}
           hint="เฉพาะตำแหน่งที่ต้องใช้ใบประกอบ">
           <select className="input" value={f.professional_license_status}
             onChange={(e) => up("professional_license_status", e.target.value)}>
@@ -789,11 +801,11 @@ export default function ApplyClient({
           <button type="button" onClick={addLang}
             className="text-xs text-brand hover:underline">+ เพิ่มภาษา</button>
         </div>
-        <Field label="ทักษะพิเศษอื่นๆ" hint="คอมพิวเตอร์, ขับรถ, ฯลฯ">
+        <Field k="skills_other" fb="ทักษะพิเศษอื่นๆ" invalid={missing.has("skills_other")} hint="คอมพิวเตอร์, ขับรถ, ฯลฯ">
           <textarea className="input" rows={2} value={f.skills_other}
             onChange={(e) => up("skills_other", e.target.value)} />
         </Field>
-        <Field label="แนะนำตัวเองเพิ่มเติม">
+        <Field k="introduction" fb="แนะนำตัวเองเพิ่มเติม" invalid={missing.has("introduction")}>
           <textarea className="input" rows={3} value={f.introduction}
             onChange={(e) => up("introduction", e.target.value)} />
         </Field>
@@ -803,20 +815,21 @@ export default function ApplyClient({
       <Section title="7. บุคคลอ้างอิง & ติดต่อฉุกเฉิน">
         <div className="text-xs font-bold text-slate-600">ติดต่อฉุกเฉิน</div>
         <Grid2>
-          <Field label="ชื่อ-นามสกุล">
+          <Field k="emergency_name" fb="ชื่อ-นามสกุล (ติดต่อฉุกเฉิน)" invalid={missing.has("emergency_name")}>
             <input className="input" value={f.emergency_name}
               onChange={(e) => up("emergency_name", e.target.value)} />
           </Field>
-          <Field label="ความสัมพันธ์">
+          <Field k="emergency_relationship" fb="ความสัมพันธ์" invalid={missing.has("emergency_relationship")}>
             <input className="input" value={f.emergency_relationship}
               onChange={(e) => up("emergency_relationship", e.target.value)} />
           </Field>
-          <Field label="เบอร์โทร">
+          <Field k="emergency_phone" fb="เบอร์โทร (ติดต่อฉุกเฉิน)" invalid={missing.has("emergency_phone")}>
             <input className="input" type="tel" value={f.emergency_phone}
               onChange={(e) => up("emergency_phone", e.target.value)} />
           </Field>
         </Grid2>
-        <Field label="บุคคลอ้างอิง (1 คน ที่ไม่ใช่ญาติ/นายจ้างเดิม)"
+        <Field k="referee_external_text" fb="บุคคลอ้างอิง (ไม่ใช่ญาติ/นายจ้างเดิม)"
+          invalid={missing.has("referee_external_text")}
           hint="ชื่อ + เบอร์ + อาชีพ + ความสัมพันธ์ที่รู้จัก">
           <textarea className="input" rows={3} value={f.referee_external_text}
             onChange={(e) => up("referee_external_text", e.target.value)} />
@@ -826,15 +839,15 @@ export default function ApplyClient({
       {/* Section 8 — Expectations */}
       <Section title="8. ความคาดหวังในการทำงาน">
         <Grid2>
-          <Field label="เงินเดือนที่คาดหวัง (บาท)">
+          <Field k="expected_salary" fb="เงินเดือนที่คาดหวัง (บาท)" invalid={missing.has("expected_salary")}>
             <input className="input" type="number" min="0" value={f.expected_salary}
               onChange={(e) => up("expected_salary", e.target.value)} />
           </Field>
-          <Field label="วันที่พร้อมเริ่มงาน" hint="รูปแบบ DD/MM/YYYY">
+          <Field k="earliest_start_date" fb="วันที่พร้อมเริ่มงาน" invalid={missing.has("earliest_start_date")} hint="รูปแบบ DD/MM/YYYY">
             <DateInput value={f.earliest_start_date}
               onChange={(v) => up("earliest_start_date", v)} />
           </Field>
-          <Field label="ไปต่างจังหวัดได้ไหม">
+          <Field k="can_travel" fb="ไปต่างจังหวัดได้ไหม" invalid={missing.has("can_travel")}>
             <select className="input" value={f.can_travel}
               onChange={(e) => up("can_travel", e.target.value)}>
               <option value="">—</option>
@@ -842,7 +855,7 @@ export default function ApplyClient({
               <option value="no">ไม่ได้</option>
             </select>
           </Field>
-          <Field label="ทราบข่าวการรับสมัครจาก">
+          <Field k="info_source" fb="ทราบข่าวการรับสมัครจาก" invalid={missing.has("info_source")}>
             <select className="input" value={f.info_source}
               onChange={(e) => up("info_source", e.target.value)}>
               <option value="">—</option>
@@ -852,11 +865,11 @@ export default function ApplyClient({
             </select>
           </Field>
         </Grid2>
-        <Field label="ทำไมอยากร่วมงานกับเรา">
+        <Field k="why_join" fb="ทำไมอยากร่วมงานกับเรา" invalid={missing.has("why_join")}>
           <textarea className="input" rows={3} value={f.why_join}
             onChange={(e) => up("why_join", e.target.value)} />
         </Field>
-        <Field label="ความคาดหวัง/เป้าหมาย">
+        <Field k="goals" fb="ความคาดหวัง/เป้าหมาย" invalid={missing.has("goals")}>
           <textarea className="input" rows={3} value={f.goals}
             onChange={(e) => up("goals", e.target.value)} />
         </Field>
@@ -865,7 +878,7 @@ export default function ApplyClient({
       {/* Section 9 — Health & history */}
       <Section title="9. ประวัติสุขภาพ & ประวัติการสมัคร">
         <Grid2>
-          <Field label="เคยป่วยหนัก/โรคติดต่อร้ายแรงไหม">
+          <Field k="prior_illness" fb="เคยป่วยหนัก/โรคติดต่อร้ายแรงไหม" invalid={missing.has("prior_illness")}>
             <select className="input" value={f.prior_illness}
               onChange={(e) => up("prior_illness", e.target.value)}>
               <option value="">—</option>
@@ -874,12 +887,13 @@ export default function ApplyClient({
             </select>
           </Field>
           {f.prior_illness === "yes" && (
-            <Field label="ระบุชื่อโรค">
+            <Field k="prior_illness_detail" fb="ระบุชื่อโรค" invalid={missing.has("prior_illness_detail")}>
               <input className="input" value={f.prior_illness_detail}
                 onChange={(e) => up("prior_illness_detail", e.target.value)} />
             </Field>
           )}
-          <Field label="เคยสมัครงานกับเราเมื่อ"
+          <Field k="prior_application_at" fb="เคยสมัครงานกับเราเมื่อ"
+            invalid={missing.has("prior_application_at")}
             hint="รูปแบบ DD/MM/YYYY · ถ้าจำวันไม่แม่นยำ ใส่วันที่ 1 ของเดือนได้">
             <DateInput value={f.prior_application_at}
               onChange={(v) => up("prior_application_at", v)} />
@@ -897,12 +911,18 @@ export default function ApplyClient({
             หากใบสมัครไม่ผ่านการพิจารณา
           </p>
         </div>
-        <FileField label="รูปถ่าย" file={photo} onChange={setPhoto}
-          accept="image/*" />
-        <FileField label="Resume / CV" file={resume} onChange={setResume}
-          accept=".pdf,image/*" />
-        <FileField label="สำเนาบัตรประชาชน" file={idCopy} onChange={setIdCopy}
-          accept=".pdf,image/*" />
+        {(fieldCfg["doc_photo"]?.enabled ?? true) && (
+          <FileField label={fieldCfg["doc_photo"]?.label?.trim() || "รูปถ่าย"} file={photo} onChange={setPhoto}
+            accept="image/*" />
+        )}
+        {(fieldCfg["doc_resume"]?.enabled ?? true) && (
+          <FileField label={fieldCfg["doc_resume"]?.label?.trim() || "Resume / CV"} file={resume} onChange={setResume}
+            accept=".pdf,image/*" />
+        )}
+        {(fieldCfg["doc_id_copy"]?.enabled ?? true) && (
+          <FileField label={fieldCfg["doc_id_copy"]?.label?.trim() || "สำเนาบัตรประชาชน"} file={idCopy} onChange={setIdCopy}
+            accept=".pdf,image/*" />
+        )}
       </Section>
 
       {/* Section 11 — Custom questions */}
@@ -963,6 +983,7 @@ export default function ApplyClient({
         </button>
       </div>
     </form>
+    </FieldCfgContext.Provider>
   );
 }
 
@@ -983,11 +1004,29 @@ function Grid2({ children }: { children: React.ReactNode }) {
 }
 
 function Field({
-  label, hint, invalid, children
-}: { label: string; hint?: string; invalid?: boolean; children: React.ReactNode }) {
+  k, fb, label, hint, invalid, children
+}: {
+  /** Template field key. When set, the field reads enabled/label/
+   *  required from the admin form template (via context). */
+  k?: string;
+  /** Fallback label when the template has no override. */
+  fb?: string;
+  /** Static label (legacy / non-template fields). */
+  label?: string;
+  hint?: string;
+  invalid?: boolean;
+  children: React.ReactNode;
+}) {
+  const cfg = useContext(FieldCfgContext);
+  const c = k ? cfg[k] : undefined;
+  // Hidden by the template → render nothing.
+  if (k && c && !c.enabled) return null;
+  const shownLabel = k
+    ? ((c?.label?.trim() || fb || "") + (c?.required ? " *" : ""))
+    : (label ?? "");
   return (
     <div data-invalid={invalid ? "true" : undefined}>
-      <label className="label">{label}</label>
+      <label className="label">{shownLabel}</label>
       <div className={invalid ? "rounded-lg ring-2 ring-rose-400" : ""}>
         {children}
       </div>
