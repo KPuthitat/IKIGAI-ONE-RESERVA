@@ -130,11 +130,19 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       console.log(`[line:${channel.scope}] OA joined group ${groupId} for ${channel.label}`);
       // Reply in the group with the ID so admin (who's in the group) can
       // copy it. Push to group (1 msg) — counts toward LINE quota but
-      // happens once per group ever. Channel-aware so RECRUITA points to
-      // the exec-group setting, RESERVA to the staff-group setting.
-      const reply = channel.scope === "recruita"
-        ? `เพิ่ม OA เข้ากลุ่มเรียบร้อย\n\nGroup ID:\n${groupId}\n\nคัดลอก Group ID ด้านบนไปใส่ที่\nตั้งค่าระบบ → "RECRUITA · กลุ่ม LINE ผู้บริหาร"\n\nหลังตั้งค่าแล้ว กลุ่มนี้จะได้รับแจ้งเตือนเมื่อมีใบสมัครใหม่ และทุกครั้งที่สถานะเปลี่ยน`
-        : `เพิ่ม OA เข้ากลุ่มเรียบร้อย\n\nGroup ID:\n${groupId}\n\nกรุณาคัดลอก Group ID ด้านบนนี้ไปใส่ในหน้าตั้งค่าของระบบ\n(/admin/reserva/settings → "กลุ่ม LINE พนักงาน")\n\nหลังจากตั้งค่าแล้ว ระบบจะส่งการแจ้งเตือนการจองใหม่เข้ากลุ่มนี้แทนการส่งหาพนักงานรายคน`;
+      // happens once per group ever. Scope-aware: the IKIGAI OS platform
+      // OA serves BOTH the PERSONA staff group and the RECRUITA exec
+      // group; RESERVA branch OAs serve booking staff groups. The
+      // candidate-facing IKIGAI Recruit OA isn't used for group pushes,
+      // so steer it back to IKIGAI OS.
+      let reply: string;
+      if (channel.scope === "recruita") {
+        reply = `ℹ️ กลุ่มผู้บริหารรับสมัครงานใช้บอท IKIGAI OS (ไม่ใช่ IKIGAI Recruit)\nกรุณาเชิญบอท IKIGAI OS เข้ากลุ่มนี้แทน\n\nGroup ID:\n${groupId}`;
+      } else if (channel.scope === "platform") {
+        reply = `เพิ่ม OA เข้ากลุ่มเรียบร้อย\n\nGroup ID:\n${groupId}\n\nคัดลอก Group ID ด้านบนไปใส่ที่ ตั้งค่าระบบ ตามประเภทกลุ่ม:\n• กลุ่มพนักงาน (PERSONA) → กลุ่ม LINE พนักงานรวม\n• กลุ่มผู้บริหารรับสมัครงาน → "RECRUITA · กลุ่ม LINE ผู้บริหาร"`;
+      } else {
+        reply = `เพิ่ม OA เข้ากลุ่มเรียบร้อย\n\nGroup ID:\n${groupId}\n\nกรุณาคัดลอก Group ID ด้านบนนี้ไปใส่ในหน้าตั้งค่าของระบบ\n(/admin/reserva/settings → "กลุ่ม LINE พนักงาน")\n\nหลังจากตั้งค่าแล้ว ระบบจะส่งการแจ้งเตือนการจองใหม่เข้ากลุ่มนี้แทนการส่งหาพนักงานรายคน`;
+      }
       await sendLinePush(channel.channel_token, {
         to: groupId,
         messages: [{ type: "text", text: reply }]

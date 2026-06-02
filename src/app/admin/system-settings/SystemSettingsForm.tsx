@@ -358,7 +358,7 @@ export default function SystemSettingsForm({
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             กลุ่มที่จะได้รับแจ้งเตือนเมื่อมีใบสมัครใหม่ + ทุกครั้งที่สถานะเปลี่ยน
-            (ส่งผ่าน <b>IKIGAI Recruit OA</b> ตัวเดียวกับที่แจ้งเตือนผู้สมัคร)
+            (ส่งผ่าน <b>IKIGAI OS OA</b> เพื่อเก็บโควต้าข้อความของ IKIGAI Recruit ไว้ให้ผู้สมัคร)
           </p>
         </div>
         <div>
@@ -372,7 +372,7 @@ export default function SystemSettingsForm({
             maxLength={100} />
           <p className="text-[10px] text-slate-400 mt-1">
             ขึ้นต้นด้วย C/R/U ตามด้วย 32 hex characters. ปล่อยว่าง = ไม่ส่งแจ้งเตือน.
-            <br /><b>เชิญบอท IKIGAI Recruit เข้ากลุ่มนี้ก่อน</b> — บอทจะพิมพ์ Group ID ออกมาให้ก๊อปมาใส่
+            <br /><b>เชิญบอท IKIGAI OS เข้ากลุ่มนี้ก่อน</b> (ตัวเดียวกับที่แจ้งพนักงาน PERSONA) — บอทจะพิมพ์ Group ID ออกมาให้
           </p>
         </div>
       </div>
