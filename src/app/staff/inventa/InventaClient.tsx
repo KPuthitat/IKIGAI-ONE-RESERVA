@@ -230,6 +230,15 @@ export default function InventaClient({
             className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
             {t("inv.btn.suppliers")} ({suppliers.length})
           </button>
+          {/* Settings promoted out of the collapsed tools (owner
+              2026-06-03 — "ตั้งค่าหายาก"). Super-admin only; this is
+              where categories / units / storage / suppliers live. */}
+          {isSuperAdmin && (
+            <Link href="/staff/inventa/settings"
+              className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center font-bold">
+              ⚙ {t("inv.nav.settings")}
+            </Link>
+          )}
         </div>
 
         {/* Secondary tools — collapsed by default so the bar stays
@@ -244,12 +253,6 @@ export default function InventaClient({
               className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center">
               {t("inv.nav.qr")}
             </Link>
-            {isSuperAdmin && (
-              <Link href="/staff/inventa/settings"
-                className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center">
-                {t("inv.nav.settings")}
-              </Link>
-            )}
           </div>
         </details>
 
@@ -479,6 +482,7 @@ export default function InventaClient({
           seed={adding ?? undefined}
           suppliers={suppliers}
           lookups={lookups}
+          isSuperAdmin={isSuperAdmin}
           onClose={() => { setEdit(null); setAdding(null); }}
           onSaved={() => { setEdit(null); setAdding(null); refresh(); }}
         />
@@ -497,12 +501,13 @@ export default function InventaClient({
 
 // ── Item add/edit modal ────────────────────────────────────────────
 function ItemModal({
-  item, seed, suppliers, lookups, onClose, onSaved
+  item, seed, suppliers, lookups, isSuperAdmin, onClose, onSaved
 }: {
   item: Item | null;
   seed?: Partial<Item>;
   suppliers: InventaSupplier[];
   lookups: InventaLookup[];
+  isSuperAdmin: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -511,7 +516,34 @@ function ItemModal({
     lookups.filter((l) => l.kind === kind).map((l) => l.value);
   const storageOpts = opts("storage");
   const unitOpts = opts("unit");
-  const categoryOpts = opts("category");
+  // Category list is local state so an inline "+ เพิ่มหมวดหมู่" shows
+  // up immediately without closing the modal (owner 2026-06-03).
+  const [categoryOpts, setCategoryOpts] = useState<string[]>(opts("category"));
+  const [addingCat, setAddingCat] = useState(false);
+
+  // Add a new category lookup inline (super_admin only — matches the
+  // /api/inventa/lookups POST guard). Then select it.
+  async function addCategoryInline() {
+    const value = window.prompt("ชื่อหมวดหมู่ใหม่");
+    if (!value || !value.trim()) return;
+    setAddingCat(true);
+    try {
+      const res = await fetch(apiUrl("/api/inventa/lookups"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "category", value: value.trim() })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        const v = value.trim();
+        setCategoryOpts((p) => (p.includes(v) ? p : [...p, v]));
+        up("category", v);
+      } else {
+        window.alert(j?.error === "super_admin_only"
+          ? "เพิ่มหมวดหมู่ได้เฉพาะผู้ดูแลระบบสูงสุด"
+          : "เพิ่มหมวดหมู่ไม่สำเร็จ");
+      }
+    } finally { setAddingCat(false); }
+  }
 
   const base: Partial<Item> = item ?? seed ?? {};
   const [f, setF] = useState({
@@ -642,11 +674,19 @@ function ItemModal({
           </div>
           <div className="col-span-2">
             <label className="label">{t("inv.f.category")}</label>
-            <select className="input" value={f.category}
-              onChange={(e) => up("category", e.target.value)}>
-              <option value="">{t("inv.cat.choose")}</option>
-              {categoryOpts.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <div className="flex gap-2">
+              <select className="input flex-1" value={f.category}
+                onChange={(e) => up("category", e.target.value)}>
+                <option value="">{t("inv.cat.choose")}</option>
+                {categoryOpts.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              {isSuperAdmin && (
+                <button type="button" onClick={addCategoryInline} disabled={addingCat}
+                  className="px-3 rounded-lg border border-brand text-brand text-sm font-bold hover:bg-rose-50 whitespace-nowrap disabled:opacity-50">
+                  + เพิ่ม
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -732,8 +772,22 @@ function ItemModal({
           </div>
           <div>
             <label className="label">{t("inv.f.onhand")}</label>
-            <input className="input" type="number" min="0" value={f.current_qty}
-              onChange={(e) => up("current_qty", e.target.value)} />
+            {item ? (
+              // Editing an existing item → qty is read-only here; the
+              // real adjustment path is a stock-count round (owner
+              // 2026-06-03). Avoids accidental edits from the catalogue.
+              <>
+                <div className="input bg-slate-50 text-slate-700 flex items-center">
+                  {f.current_qty || "0"}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  ปรับจำนวนที่ &quot;รอบเช็คสต๊อค&quot;
+                </p>
+              </>
+            ) : (
+              <input className="input" type="number" min="0" value={f.current_qty}
+                onChange={(e) => up("current_qty", e.target.value)} />
+            )}
           </div>
           <div>
             <label className="label">{t("inv.f.safety")}</label>

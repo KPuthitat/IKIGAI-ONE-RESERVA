@@ -2966,6 +2966,18 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE inventa_suppliers ADD COLUMN display_order INTEGER NOT NULL DEFAULT 100");
   }
 
+  // inventa_counts: reopen tracking (owner 2026-06-03). A submitted
+  // count round can be reopened for correction with a PIN; we stamp who
+  // did it + when so the round's history is auditable.
+  const countCols = db.prepare("PRAGMA table_info(inventa_counts)")
+    .all() as Array<{ name: string }>;
+  if (!countCols.some((c) => c.name === "reopened_at")) {
+    db.exec("ALTER TABLE inventa_counts ADD COLUMN reopened_at TEXT");
+  }
+  if (!countCols.some((c) => c.name === "reopened_by")) {
+    db.exec("ALTER TABLE inventa_counts ADD COLUMN reopened_by INTEGER REFERENCES users(id)");
+  }
+
   // inventa_item_lots — per-receipt lot tracking with expiry.
   // Multi-lot per item so the clinic can spot "Vitamin B is overstocked
   // because lot A expires next month AND lot B was just received".

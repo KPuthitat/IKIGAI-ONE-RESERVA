@@ -24,11 +24,42 @@ export default function InventaCountPage() {
     ORDER BY grid_row, grid_col, name
   `).all(branchId, branchId) as CountItem[];
 
-  const session = db.prepare(`
-    SELECT id, count_date FROM inventa_counts
+  // UTC 'YYYY-MM-DD HH:MM:SS' (or ISO) → BKK 'YYYY-MM-DD HH:MM' for display.
+  const bkkDateTime = (s: string | null): string | null => {
+    if (!s) return null;
+    const iso = s.includes("T") ? s : s.replace(" ", "T") + "Z";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return s;
+    return new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 16).replace("T", " ");
+  };
+
+  const openRow = db.prepare(`
+    SELECT id, count_date, created_at, reopened_at FROM inventa_counts
     WHERE status = 'open' AND (branch_id IS ? OR branch_id = ?)
     ORDER BY id DESC LIMIT 1
-  `).get(branchId, branchId) as { id: number; count_date: string } | undefined;
+  `).get(branchId, branchId) as
+    { id: number; count_date: string; created_at: string; reopened_at: string | null } | undefined;
+
+  const session = openRow
+    ? {
+        id: openRow.id,
+        count_date: openRow.count_date,
+        opened_at: bkkDateTime(openRow.reopened_at ?? openRow.created_at),
+        reopened: openRow.reopened_at != null
+      }
+    : null;
+
+  // Most recent SUBMITTED round — shown when nothing is open so the
+  // staff can reopen it (PIN) instead of always starting fresh.
+  const subRow = db.prepare(`
+    SELECT id, count_date, submitted_at FROM inventa_counts
+    WHERE status = 'submitted' AND (branch_id IS ? OR branch_id = ?)
+    ORDER BY id DESC LIMIT 1
+  `).get(branchId, branchId) as
+    { id: number; count_date: string; submitted_at: string | null } | undefined;
+  const lastSubmitted = subRow
+    ? { id: subRow.id, count_date: subRow.count_date, submitted_at: bkkDateTime(subRow.submitted_at) }
+    : null;
 
   let countedMap: Record<number, number> = {};
   if (session) {
@@ -46,7 +77,8 @@ export default function InventaCountPage() {
       </div>
       <CountClient
         items={items}
-        session={session ?? null}
+        session={session}
+        lastSubmitted={lastSubmitted}
         initialCounted={countedMap}
       />
     </div>

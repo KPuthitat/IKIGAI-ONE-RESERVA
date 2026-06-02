@@ -5,7 +5,20 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import BarcodeScanner from "@/app/components/BarcodeScanner";
+import PinPromptModal from "@/app/components/PinPromptModal";
 import { PICK_FREQ_META, type PickFreq } from "@/lib/inventa";
+
+export type CountSession = {
+  id: number;
+  count_date: string;
+  opened_at?: string | null;
+  reopened?: boolean;
+};
+export type LastSubmitted = {
+  id: number;
+  count_date: string;
+  submitted_at: string | null;
+};
 
 export type CountItem = {
   id: number;
@@ -22,10 +35,11 @@ export type CountItem = {
 };
 
 export default function CountClient({
-  items, session, initialCounted
+  items, session, lastSubmitted = null, initialCounted
 }: {
   items: CountItem[];
-  session: { id: number; count_date: string } | null;
+  session: CountSession | null;
+  lastSubmitted?: LastSubmitted | null;
   initialCounted: Record<number, number>;
 }) {
   const router = useRouter();
@@ -40,7 +54,30 @@ export default function CountClient({
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [reopenPin, setReopenPin] = useState(false);
   const scanRef = useRef<HTMLInputElement>(null);
+
+  // Reopen the last submitted round for correction (PIN-gated + logged).
+  async function reopenLast(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    if (!lastSubmitted) return { ok: false, message: "ไม่พบรอบที่ปิดไป" };
+    const res = await fetch(apiUrl(`/api/inventa/counts/${lastSubmitted.id}/reopen`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin })
+    });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok && j?.ok) {
+      setReopenPin(false);
+      refresh();
+      return { ok: true };
+    }
+    const map: Record<string, string> = {
+      another_open: "มีรอบที่เปิดอยู่แล้ว",
+      not_submitted: "รอบนี้ไม่ได้อยู่ในสถานะปิด",
+      not_found: "ไม่พบรอบนี้"
+    };
+    return { ok: false, message: map[j?.error] ?? j?.error ?? "ไม่สำเร็จ" };
+  }
 
   const total = items.length;
   const done = Object.keys(counted).length;
@@ -152,13 +189,44 @@ export default function CountClient({
 
   if (!session) {
     return (
-      <div className="card text-center space-y-3 py-8">
-        <p className="text-slate-600">{t("inv.cnt.noSession")}</p>
-        <button type="button" onClick={startSession} disabled={busy}
-          className="px-6 py-2.5 rounded-lg bg-brand text-white font-bold disabled:opacity-50">
-          {busy ? t("inv.cnt.opening") : t("inv.cnt.start")}
-        </button>
-      </div>
+      <>
+        <div className="card text-center space-y-3 py-8">
+          <p className="text-slate-600">{t("inv.cnt.noSession")}</p>
+          <button type="button" onClick={startSession} disabled={busy}
+            className="px-6 py-2.5 rounded-lg bg-brand text-white font-bold disabled:opacity-50">
+            {busy ? t("inv.cnt.opening") : t("inv.cnt.start")}
+          </button>
+        </div>
+
+        {/* Reopen the previous round (PIN) — so a mistake found after
+            submit doesn't force a brand-new round. */}
+        {lastSubmitted && (
+          <div className="card space-y-2 border border-amber-200 bg-amber-50/60">
+            <div className="text-sm font-bold text-slate-800">รอบล่าสุดที่ปิดไปแล้ว</div>
+            <div className="text-xs text-slate-600">
+              วันที่นับ <b>{lastSubmitted.count_date}</b>
+              {lastSubmitted.submitted_at && <> · ปิดรอบเมื่อ {lastSubmitted.submitted_at} น.</>}
+            </div>
+            <button type="button" onClick={() => setReopenPin(true)}
+              className="w-full py-2.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold">
+              🔓 เปิดรอบนี้อีกครั้งเพื่อแก้ไข (ใส่ PIN)
+            </button>
+            <p className="text-[11px] text-amber-700/80">
+              ตัวเลขที่นับไว้ยังอยู่ครบ · ระบบจะบันทึก log ว่าใครเปิดรอบใหม่
+            </p>
+          </div>
+        )}
+
+        {reopenPin && lastSubmitted && (
+          <PinPromptModal
+            title="เปิดรอบเช็คสต๊อคอีกครั้ง"
+            description={<>ยืนยันเปิดรอบวันที่ <b>{lastSubmitted.count_date}</b> อีกครั้งเพื่อแก้ไข — จะถูกบันทึก log</>}
+            submitLabel="เปิดรอบ"
+            onSubmit={reopenLast}
+            onClose={() => setReopenPin(false)}
+          />
+        )}
+      </>
     );
   }
 
@@ -168,6 +236,11 @@ export default function CountClient({
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="text-sm text-slate-600">
             {t("inv.cnt.roundDate")} <span className="font-bold text-slate-800">{session.count_date}</span>
+            {session.opened_at && (
+              <span className="block text-[11px] text-slate-400">
+                {session.reopened ? "เปิดรอบใหม่เมื่อ" : "เปิดรอบเมื่อ"} {session.opened_at} น.
+              </span>
+            )}
           </div>
           <div className="text-sm">
             {t("inv.cnt.counted")} <span className="font-bold text-brand">{done}</span> / {total}

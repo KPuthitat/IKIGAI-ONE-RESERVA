@@ -12,6 +12,7 @@ import Sidebar, { type SidebarSection } from "../components/Sidebar";
 import StaffSidebarBrand from "./StaffSidebarBrand";
 import TodaysBranchPill from "../TodaysBranchPill";
 import HookFab from "../components/HookFab";
+import RefreshButton from "../components/RefreshButton";
 import ImpersonationBanner from "../components/ImpersonationBanner";
 import MaintenanceBanner from "../components/MaintenanceBanner";
 import { currentImpersonationContext } from "@/lib/impersonation";
@@ -234,6 +235,9 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
             <div className="hidden md:block text-xs text-white/60 truncate max-w-[180px] flex-shrink-0">
               {nameWithPrefix(user.title_prefix, user.display_name)}
             </div>
+            {/* Refresh — all breakpoints (web-app users have no browser
+                reload button). */}
+            <RefreshButton variant="dark" />
             <div className="hidden md:flex items-center gap-2 flex-shrink-0">
               <LangToggle variant="dark" />
               <LogoutButton />

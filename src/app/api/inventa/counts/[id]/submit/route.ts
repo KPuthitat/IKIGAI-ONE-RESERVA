@@ -85,9 +85,37 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
       ORDER BY (i.current_qty - i.safety_stock) ASC, i.name ASC
     `).all(branchId, branchId) as LowStockRow[];
 
-    if (lowStock.length > 0 && branchId != null) {
+    if (branchId != null) {
       const branch = db.prepare("SELECT * FROM branches WHERE id = ?").get(branchId) as Branch | undefined;
-      if (branch) {
+      if (branch && lowStock.length === 0) {
+        // Nothing below the reorder point — still tell the group the
+        // round is done so the purchaser knows there's nothing to order.
+        const okFlex = {
+          type: "flex" as const,
+          altText: `✅ นับสต๊อกเสร็จ · ${branch.name} — ไม่มีของต่ำกว่าขั้นต่ำ`,
+          contents: {
+            type: "bubble" as const, size: "kilo",
+            header: {
+              type: "box", layout: "vertical", paddingAll: "16px",
+              backgroundColor: "#1a1a2e",
+              contents: [
+                { type: "text", text: "INVENTA · นับสต๊อกเสร็จ", size: "xxs", color: "#86efac", weight: "bold" },
+                { type: "text", text: "✅ ไม่มีของต่ำกว่าคลังขั้นต่ำ", size: "md", color: "#ffffff", weight: "bold", margin: "xs", wrap: true }
+              ]
+            },
+            body: {
+              type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
+              contents: [
+                { type: "text", text: branch.name, weight: "bold", size: "sm", color: "#1a1a2e" },
+                { type: "text", text: `ผู้นับ: ${user.display_name} · รอบนี้ยังไม่ต้องสั่งซื้อเพิ่ม`, size: "xs", color: "#888888", wrap: true, margin: "xs" }
+              ]
+            }
+          }
+        };
+        void notifyToStaffGroup(branch, okFlex, "branch").catch((e) =>
+          console.warn("[inventa-count-submit] ok notify failed", e)
+        );
+      } else if (branch) {
         const groups = groupBySupplier(lowStock);
         // Cap items per supplier in the Flex card to keep it
         // scrollable in LINE (1000 chars per text node, ~14 row
