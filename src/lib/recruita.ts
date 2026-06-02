@@ -168,7 +168,7 @@ export const DEFAULT_RECRUITA_PDPA_TEXT = `บริษัทในเครื�
 • เราจะไม่เปิดเผยข้อมูลของท่านแก่บุคคลภายนอกเพื่อการตลาด`;
 
 export const STAGE_META: Record<ApplicationStage, { label: string; chip: string }> = {
-  applied:   { label: "ใหม่",         chip: "bg-slate-100 text-slate-700" },
+  applied:   { label: "ใบสมัครใหม่",   chip: "bg-slate-100 text-slate-700" },
   screening: { label: "คัดกรอง",      chip: "bg-sky-100 text-sky-700" },
   interview: { label: "สัมภาษณ์",     chip: "bg-amber-100 text-amber-700" },
   offered:   { label: "เสนองาน",      chip: "bg-violet-100 text-violet-700" },
