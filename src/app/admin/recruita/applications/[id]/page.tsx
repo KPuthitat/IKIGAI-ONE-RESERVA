@@ -36,6 +36,9 @@ type AppRow = {
   last_tenure: string | null;
   last_salary: string | null;
   last_reason_left: string | null;
+  interview_at: string | null;
+  interview_location: string | null;
+  interview_note: string | null;
   hired_user_id: number | null;
   hired_at: string | null;
   submitted_at: string;

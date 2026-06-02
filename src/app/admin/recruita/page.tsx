@@ -62,6 +62,29 @@ export default function RecruitaLanding() {
     position_title: string; position_code: string | null;
   }>;
 
+  // Upcoming interviews (today onward) — a lightweight "calendar".
+  // interview_at is a naive Bangkok-local "YYYY-MM-DDTHH:MM" so we
+  // compare against the start of today in Bangkok.
+  const todayBkk = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  const interviews = db.prepare(`
+    SELECT a.id, a.interview_at, a.interview_location,
+           c.title_prefix, c.first_name_th, c.last_name_th, c.nickname_th,
+           p.title AS position_title, b.name AS branch_name
+    FROM recruita_applications a
+    JOIN recruita_candidates c ON c.id = a.candidate_id
+    JOIN recruita_positions p  ON p.id = a.position_id
+    LEFT JOIN branches b ON b.id = p.branch_id
+    WHERE a.interview_at IS NOT NULL AND a.interview_at >= ?
+    ORDER BY a.interview_at ASC
+    LIMIT 10
+  `).all(`${todayBkk}T00:00`) as Array<{
+    id: number; interview_at: string; interview_location: string | null;
+    title_prefix: string | null;
+    first_name_th: string | null; last_name_th: string | null;
+    nickname_th: string | null;
+    position_title: string; branch_name: string | null;
+  }>;
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -167,6 +190,36 @@ export default function RecruitaLanding() {
           </div>
         )}
       </div>
+
+      {/* Upcoming interviews — lightweight calendar */}
+      {interviews.length > 0 && (
+        <div className="card space-y-2">
+          <h2 className="font-bold text-slate-800 text-sm">นัดสัมภาษณ์ที่จะถึง</h2>
+          <div className="divide-y divide-slate-100">
+            {interviews.map((iv) => {
+              const name = [iv.title_prefix, iv.first_name_th, iv.last_name_th]
+                .filter(Boolean).join(" ") || "—";
+              const nick = iv.nickname_th ? ` (${iv.nickname_th})` : "";
+              return (
+                <Link key={iv.id} href={`/admin/recruita/applications/${iv.id}`}
+                  className="block py-2 hover:bg-slate-50 -mx-2 px-2 rounded">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                      {iv.interview_at.replace("T", " ")} น.
+                    </span>
+                    <span className="text-sm text-slate-700">{name}{nick}</span>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    {iv.position_title}
+                    {iv.branch_name && <> · <span className="font-semibold text-slate-700">{iv.branch_name}</span></>}
+                    {iv.interview_location && <> · {iv.interview_location}</>}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Recent activity */}
       <div className="card space-y-2">

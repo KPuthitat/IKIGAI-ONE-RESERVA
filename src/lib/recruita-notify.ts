@@ -20,7 +20,7 @@ import { getDb, getSystemSettings } from "./db";
 import { sendLinePush } from "./line";
 import { getRecruitaChannel, getPlatformChannel, isChannelReady } from "./messaging-channels";
 import { STAGE_META, type ApplicationStage } from "./recruita";
-import { formatApplicationNo } from "./time";
+import { formatApplicationNo, formatLongDate } from "./time";
 
 // Minimal local mirror of line.ts's LinePushPayload — kept local so
 // we don't have to widen the line.ts module surface for one caller.
@@ -494,6 +494,96 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
       `error=${res.error ?? "(unknown)"} ` +
       `(the applicant may not have added the IKIGAI Recruit OA as a friend — ` +
       `LINE blocks push messages to users who haven't added the OA)`
+    );
+  }
+}
+
+/** Format a naive Bangkok-local "YYYY-MM-DDTHH:MM" into Thai text. */
+function fmtInterviewWhen(at: string): string {
+  const [d, t] = at.split("T");
+  const time = (t ?? "").slice(0, 5);
+  const datePart = /^\d{4}-\d{2}-\d{2}$/.test(d ?? "") ? formatLongDate(d, "th") : (d ?? at);
+  return time ? `${datePart} เวลา ${time} น.` : datePart;
+}
+
+/** Candidate-facing Flex card announcing a scheduled interview. */
+function interviewScheduledFlex(args: {
+  positionTitle: string;
+  branchName: string | null;
+  interviewAt: string;
+  location: string | null;
+  note: string | null;
+  applicationNo: string;
+}): LineMessage {
+  const rows: Array<Record<string, unknown>> = [
+    { type: "text", text: "ทีมงานนัดหมายสัมภาษณ์งานกับคุณ", size: "sm", color: COLOR_TEXT_DARK, wrap: true },
+    { type: "separator", margin: "md", color: COLOR_DIVIDER },
+    infoRow("วันเวลา", fmtInterviewWhen(args.interviewAt)),
+    infoRow("ตำแหน่ง", args.positionTitle)
+  ];
+  if (args.branchName) rows.push(infoRow("บริษัท/สาขา", args.branchName));
+  if (args.location) rows.push(infoRow("สถานที่", args.location));
+  if (args.note) rows.push(infoRow("หมายเหตุ", args.note));
+  rows.push(infoRow("เลขที่ใบสมัคร", args.applicationNo));
+  return {
+    type: "flex",
+    altText: `นัดสัมภาษณ์ ${fmtInterviewWhen(args.interviewAt)} · ${args.positionTitle}`,
+    contents: {
+      type: "bubble",
+      size: "giga",
+      header: brandHeader("นัดหมายสัมภาษณ์", args.positionTitle),
+      body: {
+        type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+        backgroundColor: "#ffffff",
+        contents: rows
+      }
+    }
+  };
+}
+
+/** Fire-and-forget push to the candidate when an interview is scheduled
+ *  (or rescheduled). No-op without a linked LINE userId / configured OA
+ *  / a set interview time. */
+export async function notifyInterviewScheduled(applicationId: number): Promise<void> {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT a.id, a.submitted_at, a.interview_at, a.interview_location, a.interview_note,
+           (SELECT COUNT(*) FROM recruita_applications za
+             WHERE date(za.submitted_at, '+7 hours') = date(a.submitted_at, '+7 hours')
+               AND za.id <= a.id) AS day_seq,
+           c.line_user_id,
+           p.title AS position_title,
+           b.name  AS branch_name
+    FROM recruita_applications a
+    JOIN recruita_candidates c ON c.id = a.candidate_id
+    JOIN recruita_positions p  ON p.id = a.position_id
+    LEFT JOIN branches b ON b.id = p.branch_id
+    WHERE a.id = ?
+  `).get(applicationId) as {
+    id: number; submitted_at: string; day_seq: number;
+    interview_at: string | null;
+    interview_location: string | null;
+    interview_note: string | null;
+    line_user_id: string | null;
+    position_title: string;
+    branch_name: string | null;
+  } | undefined;
+  if (!row || !row.line_user_id || !row.interview_at) return;
+
+  const message = interviewScheduledFlex({
+    positionTitle: row.position_title,
+    branchName: row.branch_name,
+    interviewAt: row.interview_at,
+    location: row.interview_location,
+    note: row.interview_note,
+    applicationNo: formatApplicationNo(row.submitted_at, row.day_seq)
+  });
+  const res = await pushToCandidate(row.line_user_id, [message]);
+  if (res.ok) {
+    console.info(`[recruita] interview notify sent → app #${applicationId}`);
+  } else if (!res.skipped) {
+    console.warn(
+      `[recruita] interview notify rejected by LINE: status=${res.status} error=${res.error ?? "(unknown)"}`
     );
   }
 }

@@ -23,6 +23,10 @@ type AppShape = {
   last_workplace: string | null; last_position: string | null;
   last_tenure: string | null; last_salary: string | null;
   last_reason_left: string | null;
+  /** Interview schedule (naive Bangkok-local "YYYY-MM-DDTHH:MM"). */
+  interview_at: string | null;
+  interview_location: string | null;
+  interview_note: string | null;
   /** Set once the hire bridge runs — points at users.id in PERSONA. */
   hired_user_id: number | null;
   hired_at: string | null;
@@ -255,6 +259,15 @@ export default function ApplicationDetailClient({
           ส่งใบสมัคร {formatBkkDateTime(application.submitted_at)}
         </p>
       </div>
+
+      {/* Interview scheduling — admin sets a date/time; the candidate
+          gets a LINE push (if linked). Independent of the stage flow. */}
+      <InterviewSection
+        applicationId={application.id}
+        initialAt={application.interview_at}
+        initialLocation={application.interview_location}
+        initialNote={application.interview_note}
+      />
 
       {/* Stage controls — dual-admin gated.
           Three states:
@@ -726,6 +739,94 @@ export default function ApplicationDetailClient({
           )}
         </div>
       </Card>
+    </div>
+  );
+}
+
+function InterviewSection({
+  applicationId, initialAt, initialLocation, initialNote
+}: {
+  applicationId: number;
+  initialAt: string | null;
+  initialLocation: string | null;
+  initialNote: string | null;
+}) {
+  const router = useRouter();
+  const [at, setAt] = useState(initialAt ?? "");
+  const [location, setLocation] = useState(initialLocation ?? "");
+  const [note, setNote] = useState(initialNote ?? "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  async function save() {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(at)) {
+      setMsg({ kind: "err", text: "กรุณาเลือกวันและเวลาสัมภาษณ์" });
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/recruita/applications/${applicationId}/interview`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interview_at: at, location: location.trim(), note: note.trim() })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        setMsg({ kind: "err", text: j.message ?? j.error ?? "บันทึกไม่สำเร็จ" });
+        return;
+      }
+      setMsg({ kind: "ok", text: "✓ บันทึกแล้ว + แจ้งผู้สมัครทาง LINE (ถ้าผูก LINE ไว้)" });
+      router.refresh();
+    } catch {
+      setMsg({ kind: "err", text: "เกิดข้อผิดพลาด ลองใหม่อีกครั้ง" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card space-y-3">
+      <div>
+        <h2 className="font-bold text-slate-800 text-sm">นัดสัมภาษณ์</h2>
+        <p className="text-[11px] text-slate-500 mt-0.5">
+          เลือกวัน-เวลา แล้วระบบจะส่งแจ้งเตือนให้ผู้สมัครทาง LINE (ถ้าผูก LINE ไว้)
+        </p>
+      </div>
+      {initialAt && (
+        <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1">
+          นัดปัจจุบัน: {initialAt.replace("T", " ")} น.
+          {initialLocation ? ` · ${initialLocation}` : ""}
+        </p>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div>
+          <label className="label">วัน-เวลา</label>
+          <input type="datetime-local" className="input text-sm"
+            value={at} onChange={(e) => setAt(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">สถานที่ (ทางเลือก)</label>
+          <input className="input text-sm" value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder="เช่น สาขา NAMA / Google Meet" maxLength={300} />
+        </div>
+      </div>
+      <div>
+        <label className="label">หมายเหตุถึงผู้สมัคร (ทางเลือก)</label>
+        <input className="input text-sm" value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="เช่น เตรียมเอกสาร / แต่งกายสุภาพ" maxLength={500} />
+      </div>
+      {msg && (
+        <p className={`text-xs ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
+          {msg.text}
+        </p>
+      )}
+      <button type="button" onClick={save} disabled={busy}
+        className="btn-primary w-full text-sm py-2.5 disabled:opacity-50">
+        {busy ? "กำลังบันทึก…" : initialAt ? "อัปเดตนัดสัมภาษณ์ + แจ้งผู้สมัคร" : "บันทึกนัดสัมภาษณ์ + แจ้งผู้สมัคร"}
+      </button>
     </div>
   );
 }

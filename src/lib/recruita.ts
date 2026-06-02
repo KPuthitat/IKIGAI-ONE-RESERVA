@@ -328,6 +328,11 @@ export type RecruitaApplication = {
   last_tenure: string | null;
   last_salary: string | null;
   last_reason_left: string | null;
+  /** Interview schedule. interview_at = naive Bangkok local datetime
+   *  "YYYY-MM-DDTHH:MM" (no timezone). NULL = not scheduled. */
+  interview_at: string | null;
+  interview_location: string | null;
+  interview_note: string | null;
   hired_user_id: number | null;
   hired_at: string | null;
   hired_by: number | null;

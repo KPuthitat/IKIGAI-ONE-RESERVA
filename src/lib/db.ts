@@ -3272,6 +3272,13 @@ function runMigrations(db: Database.Database): void {
   addApplication("last_tenure", "TEXT");
   addApplication("last_salary", "TEXT");
   addApplication("last_reason_left", "TEXT");
+  // Interview scheduling (2026-06-02). interview_at is a NAIVE Bangkok
+  // local datetime "YYYY-MM-DDTHH:MM" (same convention as bookings — no
+  // timezone), set by admin from a datetime-local picker. location/note
+  // are free text shown to the candidate in the scheduling push.
+  addApplication("interview_at", "TEXT");
+  addApplication("interview_location", "TEXT");
+  addApplication("interview_note", "TEXT");
 
   // Walk-in visits (added 2026-05-24) — staff records anyone who walks
   // in without a booking. Mirrors a slice of `bookings`: phone is the
