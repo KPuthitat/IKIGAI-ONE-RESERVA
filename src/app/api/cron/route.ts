@@ -24,6 +24,7 @@ import {
   sweepResignationPurge
 } from "@/lib/resignation-sweep";
 import { purgeOldBookings } from "@/lib/retention";
+import { purgeOldRecruitaApplications } from "@/lib/recruita-retention";
 import { bookingStartMs } from "@/lib/time";
 import { autoExpireStaleBookings } from "@/lib/stale-bookings";
 import {
@@ -327,6 +328,18 @@ async function runCron(): Promise<NextResponse> {
   // retention cleanup
   const purged = purgeOldBookings();
 
+  // RECRUITA PDPA retention — delete rejected/withdrawn applications
+  // (+ orphaned candidates & their uploaded files) 30 days after they
+  // reached that terminal stage. Matches the admin "เหลือ X วันก่อนลบ"
+  // countdown. Best-effort: a failure here never blocks the rest of cron.
+  let recruitaPurged = { apps: 0, candidates: 0, files: 0 };
+  try {
+    recruitaPurged = await purgeOldRecruitaApplications();
+  } catch (e) {
+    console.error("recruita PDPA purge error", e);
+    reportError(e, "cron recruita-purge", {});
+  }
+
   // ── INSIGNA nightly jobs ────────────────────────────────────
   // Daily rollup + bulk churn recompute. Both are idempotent (the
   // rollup uses UPSERT on date+channel; churn rewrites churn_risk_score).
@@ -398,6 +411,7 @@ async function runCron(): Promise<NextResponse> {
     resignations_close_notified: resignationCloseNotified,
     resignations_purged: resignationsPurged,
     purged_old_bookings: purged,
+    recruita_pdpa_purged: recruitaPurged,
     insigna_rollup: insignaRollup,
     insigna_churn: insignaChurn,
     inventa_expiry_alerts_sent: inventaExpiryAlertsSent

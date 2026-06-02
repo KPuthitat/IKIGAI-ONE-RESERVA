@@ -5,24 +5,26 @@ import type { ApplicationStage } from "@/lib/recruita";
 
 // POST /api/recruita/my-applications/link
 //
-// Self-service endpoint: a returning candidate who applied before the
-// LINE-binding feature existed can link their existing candidate row to
-// their current LINE account by providing their registered phone number.
+// Phone SEARCH for the candidate-facing status page. Primary identity
+// is the LINE binding (LIFF auto-detect); this is the fallback for when
+// someone opens the page outside LINE, or their LINE isn't linked yet.
 //
-// Rules:
-//   • candidate found + line_user_id IS NULL         → link + return apps
-//   • candidate found + line_user_id = same userId   → already linked (idempotent) + return apps
-//   • candidate found + line_user_id = DIFFERENT uid → reject (prevent account takeover)
-//   • candidate not found                            → not_found (don't leak existence)
+// Behaviour:
+//   • find the candidate by their registered phone number
+//   • if a LINE userId is supplied AND the candidate isn't bound yet,
+//     bind it opportunistically (so future stage pushes reach them) —
+//     but NEVER re-bind a candidate already linked to another LINE
+//     account (no takeover; we just show their applications)
+//   • always return the matching applications (search semantics)
 //
-// Phone matching is normalised on both sides (strip non-digits) to
-// handle stored values like "082-345-6789" vs input "0823456789".
+// line_user_id is OPTIONAL — present only when the page was opened via
+// LIFF. Phone matching is normalised on both sides (strip non-digits)
+// so stored "082-345-6789" matches input "0823456789".
 //
-// Returns { ok: true, applications: [...] } on success
-//      or { ok: false, error: "not_found" | "already_linked" }
+// Returns { ok: true, applications: [...] } or { ok: false, error: "not_found" }.
 
 const BodySchema = z.object({
-  line_user_id: z.string().regex(/^U[0-9a-fA-F]{32}$/),
+  line_user_id: z.string().regex(/^U[0-9a-fA-F]{32}$/).optional(),
   mobile_phone: z.string().min(9).max(20)
 });
 
@@ -67,16 +69,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
   }
 
-  if (
-    candidate.line_user_id !== null &&
-    candidate.line_user_id !== body.line_user_id
-  ) {
-    // Phone is already claimed by a different LINE account.
-    return NextResponse.json({ ok: false, error: "already_linked" }, { status: 409 });
-  }
-
-  // Link if not already set
-  if (candidate.line_user_id === null) {
+  // Opportunistic bind: only when we have a LINE userId AND this
+  // candidate isn't already linked to someone. Search never claims an
+  // account that's already bound to a different LINE user — it just
+  // returns their applications below.
+  if (body.line_user_id && candidate.line_user_id === null) {
     db.prepare(`
       UPDATE recruita_candidates
       SET line_user_id = ?, updated_at = datetime('now')

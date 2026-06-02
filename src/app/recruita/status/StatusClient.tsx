@@ -10,20 +10,11 @@ import "@/lib/liff-types";
 
 // Candidate-facing application-status page.
 //
-// Lifecycle:
-//   1. <Script> loads LIFF SDK from LINE's CDN.
-//   2. onLoad → liff.init({ liffId }) → if logged-in, getProfile()
-//      → setLineUserId(profile.userId).
-//   3. With a userId in hand, POST /api/recruita/my-applications
-//      and render the result.
-//
-// We deliberately render meaningful UI in every state:
-//   - "กำลังเชื่อมต่อ LINE…" while LIFF initialises.
-//   - "เปิดผ่าน LINE OA เท่านั้น" when LIFF is misconfigured or the
-//     user is on a desktop browser without LINE.
-//   - "ยังไม่มีใบสมัคร" with a CTA to /recruita/positions when the
-//     LINE account isn't linked to any candidate row.
-//   - The actual stage cards when we have data.
+// Primary identity = the LINE binding (LIFF auto-detects the userId and
+// we show that account's applications). The phone-number box is a
+// SEARCH fallback — for when the page is opened outside LINE, or the
+// LINE account isn't linked yet. A search binds opportunistically when
+// a LINE userId is present so future stage pushes reach the candidate.
 
 type AppRow = {
   application_id: number;
@@ -51,10 +42,10 @@ const STAGE_DESC: Record<ApplicationStage, string> = {
 
 type LoadState =
   | { kind: "boot" }            // before LIFF init
-  | { kind: "no_liff" }         // LIFF not configured by admin
+  | { kind: "no_liff" }         // LIFF not configured / SDK absent
   | { kind: "outside_line" }    // opened in plain browser, no LINE auth
   | { kind: "loading" }         // have userId, fetching
-  | { kind: "loaded"; rows: AppRow[]; userId: string }
+  | { kind: "loaded"; rows: AppRow[]; userId: string | null }  // userId null = found via phone search, not LINE
   | { kind: "error"; message: string };
 
 export default function StatusClient({ liffId }: { liffId: string | null }) {
@@ -63,26 +54,30 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
   );
   const liffStarted = useRef(false);
 
-  // Self-service phone-link form (shown when LINE account has no apps yet)
-  const [linkPhone, setLinkPhone] = useState("");
-  const [linkBusy, setLinkBusy] = useState(false);
-  const [linkErr, setLinkErr] = useState<string | null>(null);
-  const [linkDone, setLinkDone] = useState(false); // linked but 0 apps
+  // LIFF-detected LINE userId (null when not opened via LINE). Used to
+  // bind opportunistically on phone-search + to authorise self-delete.
+  const [lineUserId, setLineUserId] = useState<string | null>(null);
 
-  // Self-delete (only for 'applied' apps, before an admin acts on them)
+  // Phone search (fallback when not opened via LINE, or LINE has no apps)
+  const [searchPhone, setSearchPhone] = useState("");
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchErr, setSearchErr] = useState<string | null>(null);
+
+  // Self-delete (only for 'applied' apps + LINE-bound accounts)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
 
   async function handleDelete(applicationId: number) {
-    if (state.kind !== "loaded") return;
+    if (state.kind !== "loaded" || !state.userId) return;
+    const uid = state.userId;
     setDeletingId(applicationId);
     setDeleteErr(null);
     try {
       const r = await fetch(apiUrl(`/api/recruita/my-applications/${applicationId}`), {
         method: "DELETE",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ line_user_id: state.userId })
+        body: JSON.stringify({ line_user_id: uid })
       });
       const data = (await r.json().catch(() => ({}))) as { ok?: boolean; message?: string };
       if (!r.ok || !data.ok) {
@@ -102,43 +97,39 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
     }
   }
 
-  async function handleLink() {
-    if (state.kind !== "loaded") return;
-    const phone = linkPhone.trim();
+  async function handleSearch() {
+    const phone = searchPhone.trim();
     if (!phone) return;
-    setLinkBusy(true);
-    setLinkErr(null);
+    setSearchBusy(true);
+    setSearchErr(null);
     try {
       const r = await fetch(apiUrl("/api/recruita/my-applications/link"), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ line_user_id: state.userId, mobile_phone: phone })
+        body: JSON.stringify({
+          mobile_phone: phone,
+          ...(lineUserId ? { line_user_id: lineUserId } : {})
+        })
       });
-      const data = (await r.json()) as {
-        ok: boolean;
-        error?: string;
-        applications?: AppRow[];
-      };
+      const data = (await r.json()) as { ok: boolean; error?: string; applications?: AppRow[] };
       if (!data.ok) {
-        if (data.error === "not_found") {
-          setLinkErr("ไม่พบข้อมูลการสมัครที่ตรงกับหมายเลขนี้ — กรุณาตรวจสอบเบอร์ที่ใช้สมัคร");
-        } else if (data.error === "already_linked") {
-          setLinkErr("หมายเลขนี้ถูกผูกกับบัญชี LINE อื่นแล้ว กรุณาติดต่อแอดมิน");
-        } else {
-          setLinkErr("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
-        }
+        setSearchErr(
+          data.error === "not_found"
+            ? "ไม่พบใบสมัครที่ตรงกับเบอร์นี้ — ตรวจสอบเบอร์ที่ใช้สมัครอีกครั้ง"
+            : "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง"
+        );
         return;
       }
       const apps = data.applications ?? [];
       if (apps.length > 0) {
-        setState({ kind: "loaded", rows: apps, userId: state.userId });
+        setState({ kind: "loaded", rows: apps, userId: lineUserId });
       } else {
-        setLinkDone(true);
+        setSearchErr("ไม่พบใบสมัครจากเบอร์นี้ — อาจยังไม่เคยสมัคร หรือใช้เบอร์อื่น");
       }
     } catch {
-      setLinkErr("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+      setSearchErr("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
     } finally {
-      setLinkBusy(false);
+      setSearchBusy(false);
     }
   }
 
@@ -152,8 +143,6 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
     }
     try {
       await w.liff.init({ liffId });
-      // Outside LINE / not logged in → ask LIFF to login. In LINE
-      // in-app browser this is a no-op (already logged in).
       if (!w.liff.isLoggedIn()) {
         // Trigger LINE login redirect. After consent the user lands
         // back here and bootLiff runs again with isLoggedIn() true.
@@ -165,6 +154,7 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
         setState({ kind: "outside_line" });
         return;
       }
+      setLineUserId(profile.userId);
       setState({ kind: "loading" });
       const r = await fetch(apiUrl("/api/recruita/my-applications"), {
         method: "POST",
@@ -176,26 +166,33 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
         setState({ kind: "error", message: data.error ?? "lookup_failed" });
         return;
       }
-      setState({
-        kind: "loaded",
-        rows: data.applications ?? [],
-        userId: profile.userId
-      });
+      setState({ kind: "loaded", rows: data.applications ?? [], userId: profile.userId });
     } catch (e) {
       console.warn("[recruita/status] LIFF init failed:", e);
       setState({ kind: "outside_line" });
     }
   }
 
-  // If LIFF id is present but the SDK script has already loaded
-  // (e.g. client navigated here from another page), kick off init
-  // ourselves on mount.
+  // If LIFF id is present but the SDK script already loaded, kick off
+  // init ourselves on mount.
   useEffect(() => {
     if (!liffId) return;
     const w = window as unknown as { liff?: typeof window.liff };
     if (w.liff) bootLiff();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liffId]);
+
+  // Reusable phone-search box — rendered as a fallback in the non-LINE
+  // states and the "no applications" state.
+  const searchBox = (
+    <PhoneSearchBox
+      phone={searchPhone}
+      onPhone={(v) => { setSearchPhone(v); setSearchErr(null); }}
+      busy={searchBusy}
+      err={searchErr}
+      onSearch={handleSearch}
+    />
+  );
 
   return (
     <div className="min-h-screen bg-amber-50/40 py-6 px-4">
@@ -227,25 +224,27 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
         )}
 
         {state.kind === "no_liff" && (
-          <div className="card text-center text-slate-600 py-10 space-y-3">
-            <p className="text-base font-semibold text-slate-700">
-              ระบบเช็คสถานะยังไม่พร้อมใช้งาน
-            </p>
-            <p className="text-xs text-slate-500">
-              ผู้ดูแลระบบยังไม่ได้ตั้งค่า LIFF — กรุณาติดต่อแอดมินผ่าน LINE OA
-            </p>
+          <div className="card py-8 space-y-4">
+            <div className="text-center space-y-1">
+              <p className="text-base font-semibold text-slate-700">ค้นหาสถานะใบสมัคร</p>
+              <p className="text-xs text-slate-500">
+                เปิดผ่าน LINE OA &quot;IKIGAI Recruit&quot; เพื่อดูอัตโนมัติ
+                หรือค้นหาด้วยเบอร์โทรด้านล่าง
+              </p>
+            </div>
+            <div className="border-t border-slate-100 pt-4">{searchBox}</div>
           </div>
         )}
 
         {state.kind === "outside_line" && (
-          <div className="card text-center text-slate-600 py-10 space-y-3">
-            <p className="text-base font-semibold text-slate-700">
-              เปิดหน้านี้ผ่านแอป LINE
-            </p>
-            <p className="text-xs text-slate-500">
-              เพื่อยืนยันตัวตนและดูสถานะใบสมัคร กรุณาเปิดลิงก์นี้จาก<br />
-              Rich Menu ใน LINE OA &quot;IKIGAI Recruit&quot;
-            </p>
+          <div className="card py-8 space-y-4">
+            <div className="text-center space-y-1">
+              <p className="text-base font-semibold text-slate-700">เปิดผ่านแอป LINE เพื่อดูอัตโนมัติ</p>
+              <p className="text-xs text-slate-500">
+                หรือถ้าไม่ได้เปิดผ่าน LINE — ค้นหาใบสมัครด้วยเบอร์โทรที่ใช้สมัครได้เลย
+              </p>
+            </div>
+            <div className="border-t border-slate-100 pt-4">{searchBox}</div>
           </div>
         )}
 
@@ -256,12 +255,12 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
           </div>
         )}
 
-        {state.kind === "loaded" && state.rows.length === 0 && !linkDone && (
+        {state.kind === "loaded" && state.rows.length === 0 && (
           <div className="card py-8 space-y-4">
             <div className="text-center space-y-1">
               <p className="text-base font-semibold text-slate-700">ยังไม่มีใบสมัคร</p>
               <p className="text-xs text-slate-500">
-                บัญชี LINE นี้ยังไม่ได้ผูกกับใบสมัครในระบบ
+                บัญชี LINE นี้ยังไม่มีใบสมัครในระบบ
               </p>
             </div>
             <div className="text-center">
@@ -271,52 +270,12 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
                 ดูตำแหน่งที่เปิดรับ →
               </Link>
             </div>
-
-            {/* Self-service link: returning candidate who applied before LINE binding */}
             <div className="border-t border-slate-100 pt-4 space-y-3">
-              <div className="text-center">
-                <p className="text-xs font-semibold text-slate-700">เคยสมัครงานแล้วแต่ไม่เห็นใบสมัคร?</p>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  กรอกเบอร์โทรศัพท์ที่ใช้ตอนสมัคร เพื่อเชื่อมใบสมัครกับ LINE ของคุณ
-                </p>
-              </div>
-              <input
-                type="tel"
-                inputMode="numeric"
-                placeholder="เบอร์โทรศัพท์ เช่น 0812345678"
-                value={linkPhone}
-                onChange={e => { setLinkPhone(e.target.value); setLinkErr(null); }}
-                onKeyDown={e => { if (e.key === "Enter") handleLink(); }}
-                disabled={linkBusy}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
-              />
-              {linkErr && (
-                <p className="text-xs text-rose-600 text-center">{linkErr}</p>
-              )}
-              <button
-                onClick={handleLink}
-                disabled={linkBusy || linkPhone.trim().replace(/\D/g, "").length < 9}
-                className="w-full bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors">
-                {linkBusy ? "กำลังค้นหา…" : "เชื่อมใบสมัคร"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {state.kind === "loaded" && state.rows.length === 0 && linkDone && (
-          <div className="card text-center py-10 space-y-4">
-            <p className="text-2xl">✓</p>
-            <div>
-              <p className="text-base font-semibold text-emerald-700">เชื่อมบัญชีสำเร็จแล้ว</p>
-              <p className="text-xs text-slate-500 mt-1">
-                พบข้อมูลของคุณในระบบแล้ว แต่ยังไม่มีใบสมัครในขณะนี้
+              <p className="text-[11px] text-slate-500 text-center">
+                เคยสมัครแล้วแต่ไม่เห็น? ค้นหาด้วยเบอร์ที่ใช้สมัคร
               </p>
+              {searchBox}
             </div>
-            <Link
-              href="/recruita/positions"
-              className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg">
-              ดูตำแหน่งที่เปิดรับ →
-            </Link>
           </div>
         )}
 
@@ -328,7 +287,9 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
             {state.rows.map((row) => {
               const meta = STAGE_META[row.stage];
               const appNo = formatApplicationNo(row.submitted_at, row.day_seq);
-              const canDelete = row.stage === "applied";
+              // Deletable only while still 'applied' AND the viewer is
+              // LINE-bound (we authorise self-delete by line_user_id).
+              const canDelete = row.stage === "applied" && state.userId != null;
               return (
                 <div key={row.application_id} className="card space-y-2">
                   <div className="flex items-start justify-between gap-3">
@@ -414,6 +375,47 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
           </section>
         )}
       </main>
+    </div>
+  );
+}
+
+// Phone-number SEARCH box — shared across the non-LINE / no-application
+// states. Looks up applications by the phone used at apply time.
+function PhoneSearchBox({
+  phone, onPhone, busy, err, onSearch
+}: {
+  phone: string;
+  onPhone: (v: string) => void;
+  busy: boolean;
+  err: string | null;
+  onSearch: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="text-center">
+        <p className="text-xs font-semibold text-slate-700">ค้นหาใบสมัครด้วยเบอร์โทรศัพท์</p>
+        <p className="text-[11px] text-slate-500 mt-1">
+          กรอกเบอร์ที่ใช้ตอนสมัคร เพื่อดูสถานะใบสมัครของคุณ
+        </p>
+      </div>
+      <input
+        type="tel"
+        inputMode="numeric"
+        placeholder="เบอร์โทรศัพท์ เช่น 0812345678"
+        value={phone}
+        onChange={(e) => onPhone(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") onSearch(); }}
+        disabled={busy}
+        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
+      />
+      {err && <p className="text-xs text-rose-600 text-center">{err}</p>}
+      <button
+        type="button"
+        onClick={onSearch}
+        disabled={busy || phone.trim().replace(/\D/g, "").length < 9}
+        className="w-full bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors">
+        {busy ? "กำลังค้นหา…" : "ค้นหาใบสมัคร"}
+      </button>
     </div>
   );
 }
