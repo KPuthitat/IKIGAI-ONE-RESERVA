@@ -99,6 +99,21 @@ const EMPTY_EXP: ExperienceRow = {
 const EMPTY_LANG: LanguageRow = { language: "", level: "" };
 const EMPTY_REF: ReferenceRow = { name: "", relationship: "", phone: "" };
 
+// Required identity/contact fields (those marked * on the form). On
+// submit we highlight any left empty with a red border so the
+// applicant sees exactly what's missing instead of a vague error.
+const REQUIRED_TEXT_FIELDS: ReadonlyArray<{ key: keyof FormState; label: string }> = [
+  { key: "title_prefix",  label: "คำนำหน้า" },
+  { key: "gender",        label: "เพศ" },
+  { key: "first_name_th", label: "ชื่อจริง (ไทย)" },
+  { key: "last_name_th",  label: "นามสกุล (ไทย)" },
+  { key: "dob",           label: "วันเกิด" },
+  { key: "nationality",   label: "สัญชาติ" },
+  { key: "national_id",   label: "เลขบัตรประชาชน" },
+  { key: "mobile_phone",  label: "เบอร์โทรศัพท์มือถือ" },
+  { key: "house_address", label: "ที่อยู่ปัจจุบัน" }
+];
+
 function blankState(): FormState {
   return {
     pdpa_consent: false,
@@ -294,11 +309,24 @@ export default function ApplyClient({
     return () => clearTimeout(t);
   }, [f, draftKey]);
 
+  // Keys of required fields left empty at the last submit attempt →
+  // drives the red borders. Cleared per-field as the user fills them.
+  const [missing, setMissing] = useState<Set<string>>(new Set());
+  function clearMissing(key: string) {
+    setMissing((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  }
   function up<K extends keyof FormState>(k: K, v: FormState[K]) {
     setF((p) => ({ ...p, [k]: v }));
+    clearMissing(k as string);
   }
   function upCustom(qid: string, v: unknown) {
     setF((p) => ({ ...p, custom: { ...p.custom, [qid]: v } }));
+    clearMissing(`custom_${qid}`);
   }
 
   // Row helpers
@@ -323,16 +351,15 @@ export default function ApplyClient({
     e.preventDefault();
     setErr(null);
 
-    // Quick gating — PDPA + truth declaration + key identity
-    if (!f.pdpa_consent) { setErr("กรุณายินยอมนโยบายคุ้มครองข้อมูลส่วนบุคคลก่อนส่งใบสมัคร"); return; }
-    if (!f.truth_declaration_accepted) { setErr("กรุณายืนยันรับรองความถูกต้องของข้อมูล"); return; }
-    if (!f.first_name_th.trim() || !f.last_name_th.trim()) { setErr("กรุณากรอกชื่อ-นามสกุล (ภาษาไทย)"); return; }
-    if (!f.mobile_phone.trim()) { setErr("กรุณากรอกเบอร์โทรศัพท์มือถือ"); return; }
-    // Education years must be Common Era (reject พ.ศ. / malformed)
-    for (const edu of f.education) {
-      const ye = ceYearError(edu.year_finished);
-      if (ye) { setErr(`ปีที่จบการศึกษา: ${ye}`); return; }
+    // Collect ALL missing required fields in one pass so we can show
+    // red borders on every one at once (not just the first).
+    const miss = new Set<string>();
+    for (const { key } of REQUIRED_TEXT_FIELDS) {
+      const v = f[key];
+      if (typeof v === "string" && !v.trim()) miss.add(key as string);
     }
+    if (!f.pdpa_consent) miss.add("pdpa_consent");
+    if (!f.truth_declaration_accepted) miss.add("truth_declaration_accepted");
     // Required custom questions
     for (const q of customQuestions) {
       if (!q.required) continue;
@@ -341,7 +368,23 @@ export default function ApplyClient({
         || (typeof ans === "string" && !ans.trim())
         || (Array.isArray(ans) && ans.length === 0)
         || (typeof ans === "object" && ans !== null && Object.keys(ans).length === 0);
-      if (empty) { setErr(`กรุณาตอบ: ${q.label}`); return; }
+      if (empty) miss.add(`custom_${q.id}`);
+    }
+    if (miss.size > 0) {
+      setMissing(miss);
+      setErr(`ยังกรอกไม่ครบ — มี ${miss.size} ช่องที่จำเป็นแต่ยังว่าง (ดูช่องกรอบสีแดง)`);
+      // Let React paint the red borders, then scroll to the first one.
+      setTimeout(() => {
+        document.querySelector('[data-invalid="true"]')
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 60);
+      return;
+    }
+    setMissing(new Set());
+    // Education years must be Common Era (reject พ.ศ. / malformed)
+    for (const edu of f.education) {
+      const ye = ceYearError(edu.year_finished);
+      if (ye) { setErr(`ปีที่จบการศึกษา: ${ye}`); return; }
     }
 
     setBusy(true);
@@ -477,12 +520,19 @@ export default function ApplyClient({
             </>
           )}
         </div>
-        <label className="flex items-start gap-2 text-sm text-slate-700">
+        <label
+          data-invalid={missing.has("pdpa_consent") ? "true" : undefined}
+          className={`flex items-start gap-2 text-sm text-slate-700 rounded-lg p-2 ${
+            missing.has("pdpa_consent") ? "ring-2 ring-rose-400 bg-rose-50" : ""
+          }`}>
           <input type="checkbox" className="mt-1 flex-shrink-0"
             checked={f.pdpa_consent}
             onChange={(e) => up("pdpa_consent", e.target.checked)} />
           <span>
             <b>ยินยอม</b> ให้บริษัทเก็บรวบรวม ใช้ และเปิดเผยข้อมูลส่วนบุคคลตามวัตถุประสงค์ที่ระบุ
+            {missing.has("pdpa_consent") && (
+              <span className="block text-[10px] text-rose-500 font-bold mt-0.5">⚠ ต้องติ๊กยินยอมก่อนส่ง</span>
+            )}
           </span>
         </label>
       </Section>
@@ -490,7 +540,7 @@ export default function ApplyClient({
       {/* Section 2 — Personal */}
       <Section title="2. ข้อมูลส่วนตัว">
         <Grid2>
-          <Field label="คำนำหน้า *">
+          <Field label="คำนำหน้า *" invalid={missing.has("title_prefix")}>
             <select className="input" value={f.title_prefix}
               onChange={(e) => up("title_prefix", e.target.value)}>
               <option value="">—</option>
@@ -499,7 +549,7 @@ export default function ApplyClient({
               <option value="นาง">นาง</option>
             </select>
           </Field>
-          <Field label="เพศ *">
+          <Field label="เพศ *" invalid={missing.has("gender")}>
             <select className="input" value={f.gender}
               onChange={(e) => up("gender", e.target.value)}>
               <option value="">—</option>
@@ -508,11 +558,11 @@ export default function ApplyClient({
               <option value="other">อื่นๆ</option>
             </select>
           </Field>
-          <Field label="ชื่อจริง (ไทย) *">
+          <Field label="ชื่อจริง (ไทย) *" invalid={missing.has("first_name_th")}>
             <input className="input" value={f.first_name_th}
               onChange={(e) => up("first_name_th", e.target.value)} />
           </Field>
-          <Field label="นามสกุล (ไทย) *">
+          <Field label="นามสกุล (ไทย) *" invalid={missing.has("last_name_th")}>
             <input className="input" value={f.last_name_th}
               onChange={(e) => up("last_name_th", e.target.value)} />
           </Field>
@@ -528,11 +578,11 @@ export default function ApplyClient({
             <input className="input" value={f.nickname_th}
               onChange={(e) => up("nickname_th", e.target.value)} />
           </Field>
-          <Field label="วัน/เดือน/ปี เกิด *"
+          <Field label="วัน/เดือน/ปี เกิด *" invalid={missing.has("dob")}
             hint="รูปแบบ DD/MM/YYYY · ถ้าจำวันไม่แม่นยำ ใส่วันที่ 1 ของเดือนได้">
             <DateInput value={f.dob} onChange={(v) => up("dob", v)} required />
           </Field>
-          <Field label="สัญชาติ *">
+          <Field label="สัญชาติ *" invalid={missing.has("nationality")}>
             <input className="input" value={f.nationality}
               onChange={(e) => up("nationality", e.target.value)} />
           </Field>
@@ -565,7 +615,7 @@ export default function ApplyClient({
               </select>
             </Field>
           )}
-          <Field label="เลขบัตรประจำตัวประชาชน *"
+          <Field label="เลขบัตรประจำตัวประชาชน *" invalid={missing.has("national_id")}
             hint="เข้ารหัสในระบบ (PDPA)">
             <input className="input" inputMode="numeric"
               maxLength={13} value={f.national_id}
@@ -577,7 +627,7 @@ export default function ApplyClient({
       {/* Section 3 — Contact */}
       <Section title="3. ติดต่อ">
         <Grid2>
-          <Field label="เบอร์โทรศัพท์มือถือ *">
+          <Field label="เบอร์โทรศัพท์มือถือ *" invalid={missing.has("mobile_phone")}>
             <input className="input" type="tel" value={f.mobile_phone}
               onChange={(e) => up("mobile_phone", e.target.value)} />
           </Field>
@@ -601,7 +651,7 @@ export default function ApplyClient({
             </select>
           </Field>
         </Grid2>
-        <Field label="ที่อยู่ปัจจุบัน *">
+        <Field label="ที่อยู่ปัจจุบัน *" invalid={missing.has("house_address")}>
           <textarea className="input" rows={2} value={f.house_address}
             onChange={(e) => up("house_address", e.target.value)} />
         </Field>
@@ -858,11 +908,21 @@ export default function ApplyClient({
       {/* Section 11 — Custom questions */}
       {customQuestions.length > 0 && (
         <Section title="11. คำถามเฉพาะตำแหน่ง">
-          {customQuestions.map((q) => (
-            <CustomQuestionField key={q.id} q={q}
-              value={f.custom[q.id]}
-              onChange={(v) => upCustom(q.id, v)} />
-          ))}
+          {customQuestions.map((q) => {
+            const invalid = missing.has(`custom_${q.id}`);
+            return (
+              <div key={q.id}
+                data-invalid={invalid ? "true" : undefined}
+                className={invalid ? "rounded-lg ring-2 ring-rose-400 p-2" : ""}>
+                <CustomQuestionField q={q}
+                  value={f.custom[q.id]}
+                  onChange={(v) => upCustom(q.id, v)} />
+                {invalid && (
+                  <p className="text-[10px] text-rose-500 font-bold mt-0.5">⚠ จำเป็นต้องตอบข้อนี้</p>
+                )}
+              </div>
+            );
+          })}
         </Section>
       )}
 
@@ -873,11 +933,20 @@ export default function ApplyClient({
           หากปรากฏภายหลังว่า ข้อความใดไม่เป็นความจริง บริษัทมีสิทธิ์เลิกจ้างข้าพเจ้าได้
           โดยไม่ต้องจ่ายเงินชดเชยหรือค่าเสียหายใดๆ ทั้งสิ้น
         </div>
-        <label className="flex items-start gap-2 text-sm text-slate-700">
+        <label
+          data-invalid={missing.has("truth_declaration_accepted") ? "true" : undefined}
+          className={`flex items-start gap-2 text-sm text-slate-700 rounded-lg p-2 ${
+            missing.has("truth_declaration_accepted") ? "ring-2 ring-rose-400 bg-rose-50" : ""
+          }`}>
           <input type="checkbox" className="mt-1 flex-shrink-0"
             checked={f.truth_declaration_accepted}
             onChange={(e) => up("truth_declaration_accepted", e.target.checked)} />
-          <span><b>ยอมรับ</b> รับรองความถูกต้องของข้อมูลทั้งหมด</span>
+          <span>
+            <b>ยอมรับ</b> รับรองความถูกต้องของข้อมูลทั้งหมด
+            {missing.has("truth_declaration_accepted") && (
+              <span className="block text-[10px] text-rose-500 font-bold mt-0.5">⚠ ต้องติ๊กยอมรับก่อนส่ง</span>
+            )}
+          </span>
         </label>
       </Section>
 
@@ -914,12 +983,17 @@ function Grid2({ children }: { children: React.ReactNode }) {
 }
 
 function Field({
-  label, hint, children
-}: { label: string; hint?: string; children: React.ReactNode }) {
+  label, hint, invalid, children
+}: { label: string; hint?: string; invalid?: boolean; children: React.ReactNode }) {
   return (
-    <div>
+    <div data-invalid={invalid ? "true" : undefined}>
       <label className="label">{label}</label>
-      {children}
+      <div className={invalid ? "rounded-lg ring-2 ring-rose-400" : ""}>
+        {children}
+      </div>
+      {invalid && (
+        <p className="text-[10px] text-rose-500 font-bold mt-0.5">⚠ จำเป็นต้องกรอกช่องนี้</p>
+      )}
       {hint && <p className="text-[10px] text-slate-400 mt-0.5">{hint}</p>}
     </div>
   );
