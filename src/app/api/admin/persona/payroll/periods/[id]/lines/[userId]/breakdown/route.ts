@@ -54,6 +54,9 @@ type DayPair = {
   // ค่าล่วงเวลา for this day (THB), and ค่าตอบแทน (regular + OT pay).
   otPay: number;
   pay: number;
+  // True when this row comes from an admin per-day override
+  // (payroll_line_days), not the raw time-clock.
+  edited: boolean;
 };
 
 type Period = {
@@ -159,9 +162,20 @@ export async function GET(
     scheduledByDate.set(r.assignment_date, list);
   }
 
+  // Per-day overrides (payroll_line_days) — admin corrections that win
+  // over the time-clock for a given date.
+  const overrideRows = db.prepare(`
+    SELECT work_date, clock_in, clock_out
+    FROM payroll_line_days WHERE period_id = ? AND user_id = ?
+  `).all(periodId, userId) as Array<{
+    work_date: string; clock_in: string | null; clock_out: string | null;
+  }>;
+  const overrideByDate = new Map<string, { clock_in: string | null; clock_out: string | null }>();
+  for (const r of overrideRows) overrideByDate.set(r.work_date, { clock_in: r.clock_in, clock_out: r.clock_out });
+
   // Build a fully-populated pair from a raw in/out couple — replicating
   // the engine: grace clamp → scheduled break → regular/OT split → pay.
-  function buildPair(inTs: string, outTs: string | null): DayPair {
+  function buildPair(inTs: string, outTs: string | null, edited = false): DayPair {
     const date = bkkDate(inTs);
     const sched = pickScheduled(scheduledByDate.get(date) ?? [], { startTs: inTs });
     const rawMin = outTs
@@ -197,8 +211,17 @@ export async function GET(
       effectiveMinutes: split.regular,
       otMinutes: split.ot,
       otPay: Math.round(otPay * 100) / 100,
-      pay: Math.round((regularPay + otPay) * 100) / 100
+      pay: Math.round((regularPay + otPay) * 100) / 100,
+      edited
     };
+  }
+
+  // Build a pair from a per-day override (HH:MM strings on work_date).
+  function buildOverridePair(date: string, clockIn: string, clockOut: string): DayPair {
+    const inTs = new Date(`${date}T${clockIn}:00+07:00`).toISOString();
+    const endDate = clockOut < clockIn ? addDayYmd(date) : date;
+    const outTs = new Date(`${endDate}T${clockOut}:00+07:00`).toISOString();
+    return buildPair(inTs, outTs, true);
   }
 
   // Pull all entries within the period (inclusive on both ends).
@@ -225,13 +248,14 @@ export async function GET(
     otMinutes: number;           // ทำงานล่วงเวลา
     otPay: number;               // ค่าล่วงเวลา
     pay: number;                 // ค่าตอบแทน (regular + OT)
+    edited: boolean;             // has an admin per-day override
   };
   const days = new Map<string, Day>();
   function ensureDay(date: string): Day {
     let d = days.get(date);
     if (!d) {
       d = { date, pairs: [], totalMinutes: 0, effectiveMinutes: 0,
-            breakMinutes: 0, otMinutes: 0, otPay: 0, pay: 0 };
+            breakMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: false };
       days.set(date, d);
     }
     return d;
@@ -245,21 +269,22 @@ export async function GET(
     day.otMinutes += p.otMinutes;
     day.otPay += p.otPay;
     day.pay += p.pay;
+    if (p.edited) day.edited = true;
   }
 
   let openIn: EntryRow | null = null;
   for (const e of entries) {
+    // Dates with an admin override are rebuilt from the override below —
+    // skip the time-clock pairs for those days entirely.
     if (e.type === "in") {
-      // If we already had an unmatched "in", flush it as an orphan
-      // before starting a new one — admin needs to see both.
-      if (openIn) pushPair(buildPair(openIn.ts, null));
+      if (openIn && !overrideByDate.has(bkkDate(openIn.ts))) pushPair(buildPair(openIn.ts, null));
       openIn = e;
     } else {
       // type === "out"
       if (openIn) {
-        pushPair(buildPair(openIn.ts, e.ts));
+        if (!overrideByDate.has(bkkDate(openIn.ts))) pushPair(buildPair(openIn.ts, e.ts));
         openIn = null;
-      } else {
+      } else if (!overrideByDate.has(bkkDate(e.ts))) {
         // Orphan out — clock-out with no clock-in. Surface it under
         // its own day so admin sees the broken pair.
         const day = ensureDay(bkkDate(e.ts));
@@ -274,14 +299,33 @@ export async function GET(
           effectiveMinutes: 0,
           otMinutes: 0,
           otPay: 0,
-          pay: 0
+          pay: 0,
+          edited: false
         });
       }
     }
   }
   // Trailing unmatched "in" (still on shift at period end / forgot
-  // to clock out) — flush as orphan too.
-  if (openIn) pushPair(buildPair(openIn.ts, null));
+  // to clock out) — flush as orphan too (unless overridden).
+  if (openIn && !overrideByDate.has(bkkDate(openIn.ts))) pushPair(buildPair(openIn.ts, null));
+
+  // Now lay down the admin per-day overrides — each wins over the
+  // time-clock for its date.
+  for (const [date, o] of overrideByDate) {
+    const day = ensureDay(date);
+    day.edited = true;
+    if (o.clock_in && o.clock_out) {
+      pushPair(buildOverridePair(date, o.clock_in, o.clock_out));
+    } else {
+      // Cleared/absent override with no usable times — show an empty
+      // edited row so the admin sees the day is intentionally zeroed.
+      day.pairs.push({
+        date, workIn: null, workOut: null, durationMinutes: 0,
+        schedIn: null, schedOut: null, breakMinutes: 0,
+        effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: true
+      });
+    }
+  }
 
   const sortedDays = [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
   return NextResponse.json({

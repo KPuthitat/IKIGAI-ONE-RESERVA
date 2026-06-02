@@ -2164,6 +2164,29 @@ function runMigrations(db: Database.Database): void {
       ON payroll_line_audit(period_id, target_user_id);
   `);
 
+  // payroll_line_days — per-day clock-in/out OVERRIDES, payroll-scoped
+  // (owner 2026-06-03). When an admin edits a day's recorded time in the
+  // payroll modal we store it here, NOT on time_entries — the staff's
+  // real attendance log is never mutated. Recompute merges these over
+  // the auto time-clock data: a (period,user,date) row replaces whatever
+  // the time-clock said for that day. NULL clock_in/clock_out = that day
+  // has no paid shift (e.g. marked absent). Times are 'HH:MM' BKK local.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payroll_line_days (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_id INTEGER NOT NULL REFERENCES payroll_periods(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL,
+      work_date TEXT NOT NULL,          -- YYYY-MM-DD (BKK)
+      clock_in TEXT,                    -- 'HH:MM' or NULL
+      clock_out TEXT,                   -- 'HH:MM' or NULL
+      edited_by INTEGER REFERENCES users(id),
+      edited_at TEXT,
+      UNIQUE (period_id, user_id, work_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_payroll_line_days_pu
+      ON payroll_line_days(period_id, user_id);
+  `);
+
   // Phase 1D v2 — add new columns to existing payroll_lines if upgrading
   const plCols = db.prepare("PRAGMA table_info(payroll_lines)").all() as Array<{ name: string }>;
   const plNames = new Set(plCols.map((c) => c.name));

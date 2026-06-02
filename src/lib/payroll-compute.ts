@@ -109,7 +109,14 @@ export function countMondaysInMonth(dateInMonth: string): number {
 
 type Entry = { user_id: number; ts: string; type: "in" | "out" };
 
-type Shift = { startTs: string; endTs: string; durationMinutes: number };
+export type Shift = { startTs: string; endTs: string; durationMinutes: number };
+
+// YYYY-MM-DD + 1 calendar day (UTC-safe; dates are date-only strings).
+function addDayYmd(ymd: string): string {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
 
 /**
  * Pair clock-in / clock-out events into shifts. Discards unpaired ins.
@@ -265,6 +272,59 @@ export function pickScheduled(
     Math.abs(new Date(best.startTs).getTime() - inMs)
       ? c : best
   );
+}
+
+// ── Per-day clock overrides (payroll_line_days) ─────────────────────
+//
+// An admin can correct a day's clock-in/out inside the payroll modal.
+// We store that as a payroll-scoped override (never on time_entries),
+// then merge it over the auto time-clock data at compute time: a row
+// for (date) wins over whatever the time-clock recorded for that date.
+
+export type DayOverrideRow = {
+  work_date: string;        // YYYY-MM-DD (BKK)
+  clock_in: string | null;  // 'HH:MM' (BKK local) or NULL
+  clock_out: string | null; // 'HH:MM' or NULL
+};
+
+/**
+ * Turn per-day override rows into a Map<date, Shift|null>:
+ *   • both times present → a Shift (out<in ⇒ overnight, rolls a day)
+ *   • either missing      → null  = "this day has no paid shift"
+ * The presence of a key (even mapping to null) means the day is
+ * admin-controlled and the auto shift for that date must be dropped.
+ */
+export function overridesToShiftMap(rows: DayOverrideRow[]): Map<string, Shift | null> {
+  const m = new Map<string, Shift | null>();
+  for (const r of rows) {
+    if (r.clock_in && r.clock_out) {
+      const startTs = new Date(`${r.work_date}T${r.clock_in}:00+07:00`).toISOString();
+      const endDate = r.clock_out < r.clock_in ? addDayYmd(r.work_date) : r.work_date;
+      const endTs = new Date(`${endDate}T${r.clock_out}:00+07:00`).toISOString();
+      const dur = (new Date(endTs).getTime() - new Date(startTs).getTime()) / 60000;
+      m.set(r.work_date, dur > 0 ? { startTs, endTs, durationMinutes: dur } : null);
+    } else {
+      m.set(r.work_date, null);
+    }
+  }
+  return m;
+}
+
+/**
+ * Merge per-day overrides over auto (time-clock-derived) shifts. Any
+ * date present in the override map drops the auto shift(s) for that day
+ * and substitutes the override's shift (or nothing, when null).
+ */
+export function mergeDayOverrides(
+  autoShifts: Shift[],
+  overrideMap: Map<string, Shift | null>
+): Shift[] {
+  if (overrideMap.size === 0) return autoShifts;
+  const result = autoShifts.filter((s) => !overrideMap.has(bkkDate(s.startTs)));
+  for (const sh of overrideMap.values()) {
+    if (sh) result.push(sh);
+  }
+  return result;
 }
 
 // ── Break deduction ─────────────────────────────────────────────────
@@ -715,11 +775,6 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   // user → BKK assignment date → list of windows. Anchored at +07:00;
   // an end_time ≤ start_time means the shift crosses midnight, so the
   // end anchor rolls to the next calendar day.
-  const addDayYmd = (ymd: string): string => {
-    const d = new Date(`${ymd}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + 1);
-    return d.toISOString().slice(0, 10);
-  };
   const rosterRows = db.prepare(`
     SELECT ra.user_id, ra.assignment_date,
            sc.start_time, sc.end_time, sc.break_start, sc.break_end
@@ -795,6 +850,21 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     entriesByUser.get(e.user_id)!.push(e);
   }
 
+  // Per-day clock overrides (payroll_line_days) — admin corrections that
+  // win over the time-clock for specific days. Grouped by user.
+  const overrideRows = db.prepare(`
+    SELECT user_id, work_date, clock_in, clock_out
+    FROM payroll_line_days WHERE period_id = ?
+  `).all(periodId) as Array<{
+    user_id: number; work_date: string; clock_in: string | null; clock_out: string | null;
+  }>;
+  const overridesByUser = new Map<number, DayOverrideRow[]>();
+  for (const r of overrideRows) {
+    const list = overridesByUser.get(r.user_id) ?? [];
+    list.push({ work_date: r.work_date, clock_in: r.clock_in, clock_out: r.clock_out });
+    overridesByUser.set(r.user_id, list);
+  }
+
   // Approved leave overlapping period (count days within period)
   const leaves = db.prepare(`
     SELECT user_id, date_from, date_to, days
@@ -857,11 +927,18 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     let computed = 0;
     let skipped = 0;
     for (const emp of staff) {
-      // In manual mode, do NOT pull time_entries / leaves — admin will fill in
+      // In manual mode, do NOT pull time_entries / leaves — the admin
+      // enters each day's clock-in/out, which lands as a per-day override.
       const userEntries = period.data_source === "manual"
         ? []
         : entriesByUser.get(emp.user_id) ?? [];
-      const { shifts, unpaired } = pairShifts(userEntries);
+      const auto = pairShifts(userEntries);
+      // Merge admin per-day overrides over the auto shifts (override
+      // date wins). In manual mode auto is empty, so shifts come purely
+      // from overrides.
+      const overrideMap = overridesToShiftMap(overridesByUser.get(emp.user_id) ?? []);
+      const shifts = mergeDayOverrides(auto.shifts, overrideMap);
+      const unpaired = auto.unpaired;
       const leaveDays = period.data_source === "manual"
         ? 0
         : leaveDaysByUser.get(emp.user_id) ?? 0;
@@ -875,10 +952,9 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         periodEnd: period.period_end,
         settings,
         holidaySet,
-        // PT grace only — in manual mode there are no shifts to clamp.
-        scheduledByDate: period.data_source === "manual"
-          ? undefined
-          : scheduledByUser.get(emp.user_id)
+        // Grace + scheduled-break apply in both modes when a roster
+        // exists (the rule is independent of where the time came from).
+        scheduledByDate: scheduledByUser.get(emp.user_id)
       });
 
       insertLine.run(
@@ -911,4 +987,166 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   });
 
   return tx();
+}
+
+/**
+ * Recompute ONE employee's line from clock sources (time_entries +
+ * payroll_line_days overrides + roster), preserving the admin-entered
+ * money extras (service_charge / other_additions / other_deductions)
+ * and leave_days already on the line. Used after a per-day clock edit
+ * so the totals refresh without recomputing the whole period.
+ *
+ * Only valid while the period is 'draft'. Throws otherwise.
+ */
+export function recomputeLine(
+  db: Database.Database, periodId: number, userId: number
+): void {
+  const period = db.prepare(`
+    SELECT id, cycle, data_source, period_start, period_end, status
+    FROM payroll_periods WHERE id = ?
+  `).get(periodId) as {
+    id: number; cycle: "weekly" | "monthly";
+    data_source: "auto" | "manual";
+    period_start: string; period_end: string; status: string;
+  } | undefined;
+  if (!period) throw new Error("period_not_found");
+  if (period.status !== "draft") throw new Error("period_not_draft");
+
+  const existing = db.prepare(`
+    SELECT employee_code, display_name, employment_type,
+           pay_cycle_snapshot, hourly_rate_snapshot, monthly_salary_snapshot,
+           salary_tax_mode_snapshot,
+           service_charge, other_additions, other_deductions, leave_days
+    FROM payroll_lines WHERE period_id = ? AND user_id = ?
+  `).get(periodId, userId) as {
+    employee_code: string | null; display_name: string;
+    employment_type: "pt" | "ft" | null;
+    pay_cycle_snapshot: "weekly" | "monthly" | null;
+    hourly_rate_snapshot: number | null; monthly_salary_snapshot: number | null;
+    salary_tax_mode_snapshot: "sso" | "wht" | null;
+    service_charge: number; other_additions: number; other_deductions: number;
+    leave_days: number;
+  } | undefined;
+  if (!existing) throw new Error("line_not_found");
+
+  const fresh = db.prepare(`
+    SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
+    FROM users WHERE id = ?
+  `).get(userId) as {
+    employment_type: "pt" | "ft" | null; hourly_rate: number | null;
+    monthly_salary: number | null; pay_cycle: "weekly" | "monthly" | null;
+    salary_tax_mode: "sso" | "wht" | null;
+  } | undefined;
+
+  const settings = db.prepare(`
+    SELECT ot_mode, ot_flat_per_15min,
+           break_threshold_minutes, break_deduction_minutes,
+           long_shift_threshold_minutes, long_shift_break_minutes,
+           sso_rate, sso_cap, pt_default_hourly_rate, wht_rate
+    FROM payroll_settings WHERE id = 1
+  `).get() as PayrollSettings;
+
+  const fromIso = new Date(`${period.period_start}T00:00:00+07:00`).toISOString();
+  const toIso = new Date(`${period.period_end}T23:59:59+07:00`).toISOString();
+
+  const holidays = db.prepare(`
+    SELECT date FROM public_holidays WHERE date >= ? AND date <= ?
+  `).all(period.period_start, period.period_end) as Array<{ date: string }>;
+  const holidaySet = new Set(holidays.map((h) => h.date));
+
+  // Roster (work shifts) for this user → scheduled windows + break.
+  const rosterRows = db.prepare(`
+    SELECT ra.assignment_date, sc.start_time, sc.end_time, sc.break_start, sc.break_end
+    FROM roster_assignments ra
+    JOIN shift_codes sc ON sc.id = ra.shift_code_id
+    WHERE ra.user_id = ? AND ra.assignment_date >= ? AND ra.assignment_date <= ?
+      AND sc.kind = 'work'
+  `).all(userId, period.period_start, period.period_end) as Array<{
+    assignment_date: string; start_time: string; end_time: string;
+    break_start: string | null; break_end: string | null;
+  }>;
+  const scheduledByDate = new Map<string, ScheduledShift[]>();
+  for (const r of rosterRows) {
+    if (!r.start_time || !r.end_time || r.start_time === r.end_time) continue;
+    const startTs = new Date(`${r.assignment_date}T${r.start_time}:00+07:00`).toISOString();
+    const endDate = r.end_time < r.start_time ? addDayYmd(r.assignment_date) : r.assignment_date;
+    const endTs = new Date(`${endDate}T${r.end_time}:00+07:00`).toISOString();
+    let breakStartTs: string | null = null;
+    let breakEndTs: string | null = null;
+    if (r.break_start && r.break_end && r.break_start !== r.break_end) {
+      breakStartTs = new Date(`${r.assignment_date}T${r.break_start}:00+07:00`).toISOString();
+      const bEndDate = r.break_end < r.break_start ? addDayYmd(r.assignment_date) : r.assignment_date;
+      breakEndTs = new Date(`${bEndDate}T${r.break_end}:00+07:00`).toISOString();
+    }
+    const list = scheduledByDate.get(r.assignment_date) ?? [];
+    list.push({ startTs, endTs, breakStartTs, breakEndTs });
+    scheduledByDate.set(r.assignment_date, list);
+  }
+
+  const userEntries = period.data_source === "manual"
+    ? []
+    : db.prepare(`
+        SELECT user_id, ts, type FROM time_entries
+        WHERE user_id = ? AND ts >= ? AND ts <= ?
+      `).all(userId, fromIso, toIso) as Entry[];
+  const auto = pairShifts(userEntries);
+  const overrideRows = db.prepare(`
+    SELECT work_date, clock_in, clock_out
+    FROM payroll_line_days WHERE period_id = ? AND user_id = ?
+  `).all(periodId, userId) as DayOverrideRow[];
+  const shifts = mergeDayOverrides(auto.shifts, overridesToShiftMap(overrideRows));
+
+  const employee: EmployeePayrollSnapshot = {
+    user_id: userId,
+    display_name: existing.display_name,
+    employment_type: fresh?.employment_type ?? existing.employment_type,
+    employee_code: existing.employee_code,
+    hourly_rate: fresh?.hourly_rate ?? existing.hourly_rate_snapshot,
+    monthly_salary: fresh?.monthly_salary ?? existing.monthly_salary_snapshot,
+    pay_cycle: fresh?.pay_cycle ?? existing.pay_cycle_snapshot,
+    salary_tax_mode: fresh?.salary_tax_mode ?? existing.salary_tax_mode_snapshot
+  };
+
+  const computed = computeLineForEmployee({
+    employee, shifts, unpaired: auto.unpaired,
+    leaveDays: existing.leave_days,
+    cycle: period.cycle, periodEnd: period.period_end,
+    settings, holidaySet, scheduledByDate
+  });
+
+  // Preserve admin money extras; recompute gross/SSO/tax/net to include them.
+  const svc = existing.service_charge;
+  const add = existing.other_additions;
+  const ded = existing.other_deductions;
+  const gross = computed.base_pay + computed.ot_pay + svc + add;
+  const taxMode = employee.salary_tax_mode ?? "sso";
+  let sso = 0;
+  let tax = 0;
+  if (gross > 0) {
+    if (taxMode === "wht") tax = computeWht(gross, settings);
+    else sso = computeSso(gross, period.cycle, settings);
+  }
+  const net = gross - sso - tax - ded;
+
+  db.prepare(`
+    UPDATE payroll_lines
+    SET shift_minutes = ?, break_deducted_minutes = ?,
+        regular_minutes = ?, ot_minutes = ?, holiday_minutes = ?,
+        days_worked = ?, unpaired_clockins = ?,
+        base_pay = ?, ot_pay = ?, gross_pay = ?,
+        sso_amount = ?, tax_amount = ?, net_pay = ?,
+        hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
+        pay_cycle_snapshot = ?, salary_tax_mode_snapshot = ?,
+        overridden = 1, updated_at = CURRENT_TIMESTAMP
+    WHERE period_id = ? AND user_id = ?
+  `).run(
+    computed.shift_minutes, computed.break_deducted_minutes,
+    computed.regular_minutes, computed.ot_minutes, computed.holiday_minutes,
+    computed.days_worked, computed.unpaired_clockins,
+    round2(computed.base_pay), round2(computed.ot_pay), round2(gross),
+    round2(sso), round2(tax), round2(net),
+    employee.hourly_rate, employee.monthly_salary,
+    employee.pay_cycle, taxMode,
+    periodId, userId
+  );
 }
