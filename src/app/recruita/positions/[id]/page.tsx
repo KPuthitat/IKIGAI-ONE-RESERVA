@@ -130,7 +130,7 @@ export default function PublicPositionDetailPage(
 
         <div className="sticky bottom-2 z-10">
           <Link href={`/recruita/apply/${p.id}`}
-            className="btn-primary w-full text-base py-3 shadow-lg block text-center">
+            className="btn-primary w-full text-xl font-bold py-4 shadow-lg block text-center">
             สมัครงานตำแหน่งนี้
           </Link>
         </div>

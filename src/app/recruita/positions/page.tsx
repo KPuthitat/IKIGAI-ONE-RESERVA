@@ -87,7 +87,7 @@ export default function PublicPositionsPage() {
         <div className="text-center space-y-1">
           <h1 className="text-2xl font-bold text-slate-800">ร่วมงานกับเรา</h1>
           <p className="text-sm text-slate-500">
-            กลุ่มบริษัท อิคิไก ฟอร์ออล · ตำแหน่งที่เปิดรับสมัคร {positions.length} ตำแหน่ง
+            ตำแหน่งที่เปิดรับสมัคร ทั้งหมด {positions.length} ตำแหน่ง
           </p>
         </div>
 

@@ -208,9 +208,9 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
 
       <main className="max-w-2xl mx-auto space-y-4">
         <div className="text-center space-y-1">
-          <h1 className="text-2xl font-bold text-slate-800">เช็คสถานะใบสมัคร</h1>
+          <h1 className="text-2xl font-bold text-slate-800">ตรวจสอบสถานะใบสมัคร</h1>
           <p className="text-sm text-slate-500">
-            My Application · IKIGAI Recruit
+            MY APPLICATION · IKIGAI RECRUIT
           </p>
         </div>
 
