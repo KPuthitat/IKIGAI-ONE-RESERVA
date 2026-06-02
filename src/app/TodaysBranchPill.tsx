@@ -22,9 +22,25 @@ export default function TodaysBranchPill({
   hasChoice: boolean;
   pickerPath: string;
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const pathname = usePathname() || "";
   if (pathname === pickerPath || pathname.startsWith(pickerPath + "/")) return null;
+
+  // RECRUITA is a company-wide module — applications are NOT scoped to
+  // the selected branch (the branch is decided at hire time, when the
+  // candidate is bridged into PERSONA at the position's branch). Show
+  // an "all branches" badge instead of the active-branch pill so admins
+  // aren't misled into thinking a NAMA applicant "belongs" to whatever
+  // branch happens to be selected.
+  if (pathname.startsWith("/admin/recruita")) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[11px] bg-white/[.10] border border-white/[.20] rounded-full px-2.5 py-0.5">
+        <span className="text-white font-bold">{lang === "en" ? "All branches" : "ทุกสาขา"}</span>
+        <span className="text-white/50">· {lang === "en" ? "company-wide" : "ส่วนกลาง"}</span>
+      </span>
+    );
+  }
+
   if (!branchName) return null;
 
   // 2026-05-25 final layout — revert to original inline pill but
