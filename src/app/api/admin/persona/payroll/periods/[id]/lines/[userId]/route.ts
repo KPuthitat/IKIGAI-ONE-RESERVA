@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, logPersonaAction } from "@/lib/db";
+import { verifyAdminPin } from "@/lib/admin-pin";
 import {
   computeLineFromMinutes, computeSso, computeWht,
   type EmployeePayrollSnapshot, type PayrollSettings
@@ -32,7 +33,10 @@ const Body = z.object({
   service_charge: z.number().min(0).optional(),
   other_additions: z.number().min(0).optional(),
   other_deductions: z.number().min(0).optional(),
-  notes: z.string().max(500).optional()
+  notes: z.string().max(500).optional(),
+  // PIN gate — required for any manual edit to a payroll line (money
+  // data). Verified against the admin's own users.pin_hash.
+  admin_pin: z.string().optional()
 });
 
 export async function PATCH(
@@ -55,6 +59,18 @@ export async function PATCH(
   }
   const d = parsed.data;
 
+  // PIN gate — editing a payroll line touches money, so require the
+  // admin to re-prove presence with their 4-digit PIN. (Owner spec
+  // 2026-06-02.) Done BEFORE any DB work so a bad PIN changes nothing.
+  if (!d.admin_pin) {
+    return NextResponse.json({ error: "pin_required" }, { status: 400 });
+  }
+  const pinStatus = verifyAdminPin(user.id, d.admin_pin);
+  if (!pinStatus.ok) {
+    const code = pinStatus.reason === "no_pin" ? 400 : 403;
+    return NextResponse.json({ error: pinStatus.reason }, { status: code });
+  }
+
   const db = getDb();
   const period = db.prepare(`
     SELECT status, cycle, period_end FROM payroll_periods WHERE id = ?
@@ -72,7 +88,7 @@ export async function PATCH(
            regular_minutes, ot_minutes, holiday_minutes,
            days_worked, leave_days, unpaired_clockins,
            base_pay, ot_pay, service_charge, other_additions, other_deductions,
-           sso_amount, tax_amount
+           gross_pay, net_pay, sso_amount, tax_amount
     FROM payroll_lines WHERE period_id = ? AND user_id = ?
   `).get(periodId, userId) as {
     user_id: number;
@@ -87,9 +103,22 @@ export async function PATCH(
     days_worked: number; leave_days: number; unpaired_clockins: number;
     base_pay: number; ot_pay: number; service_charge: number;
     other_additions: number; other_deductions: number;
+    gross_pay: number; net_pay: number;
     sso_amount: number; tax_amount: number;
   } | undefined;
   if (!line) return NextResponse.json({ error: "line_not_found" }, { status: 404 });
+
+  // "Before" snapshot for the audit trail — captured prior to any write.
+  const beforeSnapshot = {
+    regular_minutes: line.regular_minutes, ot_minutes: line.ot_minutes,
+    holiday_minutes: line.holiday_minutes, days_worked: line.days_worked,
+    leave_days: line.leave_days,
+    base_pay: line.base_pay, ot_pay: line.ot_pay,
+    service_charge: line.service_charge, other_additions: line.other_additions,
+    other_deductions: line.other_deductions,
+    gross_pay: line.gross_pay, sso_amount: line.sso_amount,
+    tax_amount: line.tax_amount, net_pay: line.net_pay
+  };
 
   // Decide mode: (a) time-based if any time field provided; (b) money-based otherwise
   const timeFieldsProvided =
@@ -234,6 +263,28 @@ export async function PATCH(
       periodId, userId
     );
   }
+
+  // Audit trail — read the stored row back so the "after" snapshot is
+  // exactly what was persisted, then append an immutable audit row.
+  const after = db.prepare(`
+    SELECT regular_minutes, ot_minutes, holiday_minutes, days_worked, leave_days,
+           base_pay, ot_pay, service_charge, other_additions, other_deductions,
+           gross_pay, sso_amount, tax_amount, net_pay
+    FROM payroll_lines WHERE period_id = ? AND user_id = ?
+  `).get(periodId, userId);
+  db.prepare(`
+    INSERT INTO payroll_line_audit
+      (period_id, target_user_id, admin_id, mode, before_json, after_json, note, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    periodId, userId, user.id,
+    timeFieldsProvided ? "hours" : "amount",
+    JSON.stringify(beforeSnapshot),
+    JSON.stringify(after ?? {}),
+    d.notes ?? null,
+    new Date().toISOString()
+  );
+  logPersonaAction(user.id, "payroll.line.edit", periodId);
 
   return NextResponse.json({ ok: true });
 }

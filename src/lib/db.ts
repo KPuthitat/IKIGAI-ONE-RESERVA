@@ -2142,6 +2142,28 @@ function runMigrations(db: Database.Database): void {
       ON payroll_lines(user_id);
   `);
 
+  // payroll_line_audit — accountability trail for manual edits to a
+  // payroll line (owner 2026-06-02: "แอดมินแก้ได้ แต่ต้องกด PIN แล้ว
+  // บันทึก log การแก้ไขไว้ด้วย"). Every PIN-verified edit appends one
+  // row with the full before/after JSON of the line's editable fields,
+  // who did it, and an optional note. Money data → never silently
+  // mutated.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payroll_line_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_id INTEGER NOT NULL,
+      target_user_id INTEGER NOT NULL,
+      admin_id INTEGER NOT NULL REFERENCES users(id),
+      mode TEXT NOT NULL,              -- 'hours' | 'amount'
+      before_json TEXT NOT NULL,
+      after_json TEXT NOT NULL,
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_payroll_line_audit_period
+      ON payroll_line_audit(period_id, target_user_id);
+  `);
+
   // Phase 1D v2 — add new columns to existing payroll_lines if upgrading
   const plCols = db.prepare("PRAGMA table_info(payroll_lines)").all() as Array<{ name: string }>;
   const plNames = new Set(plCols.map((c) => c.name));

@@ -137,6 +137,106 @@ export function pairShifts(entries: Entry[]): { shifts: Shift[]; unpaired: numbe
   return { shifts, unpaired };
 }
 
+// ── PT grace window vs scheduled shift ──────────────────────────────
+//
+// Part-time pay is anchored to the SCHEDULED shift, not the raw clock.
+// Owner rule (2026-06-02):
+//   • clock-in ≤ 5 min AFTER scheduled start  → treat as on-time (use start)
+//   • clock-in BEFORE scheduled start (early)  → no pay before start (use start)
+//   • clock-in > 5 min after start (late)      → pay from actual clock-in
+//   • clock-out ≤ 5 min BEFORE scheduled end   → treat as full (use end)
+//   • clock-out AFTER scheduled end (overtime) → cap at end (OT handled
+//                                                separately, not auto-derived)
+//   • clock-out > 5 min before end (early out) → pay to actual clock-out
+//
+// In short: pay is capped to the shift box [start, end], with a ±5-min
+// grace at each boundary. Applies to PT only (FT base is salary).
+
+export const PT_GRACE_MINUTES = 5;
+
+// A scheduled shift window for one (user, date), as UTC ISO strings.
+export type ScheduledShift = { startTs: string; endTs: string };
+
+export type GracedShift = {
+  startTs: string;        // effective in (UTC ISO)
+  endTs: string;          // effective out (UTC ISO)
+  durationMinutes: number;
+  lateMinutes: number;    // minutes the clock-in was late beyond grace (0 if on-time/early)
+  earlyMinutes: number;   // minutes the clock-out was early beyond grace (0 if full/late)
+};
+
+/**
+ * Apply the PT clock-time grace + shift-boundary cap to one raw shift.
+ * When `scheduled` is null (no roster assignment for the day) the raw
+ * clock times are returned unchanged — we have no box to clamp against.
+ */
+export function applyPtGrace(
+  shift: { startTs: string; endTs: string },
+  scheduled: ScheduledShift | null
+): GracedShift {
+  const inMs = new Date(shift.startTs).getTime();
+  const outMs = new Date(shift.endTs).getTime();
+  if (!scheduled) {
+    return {
+      startTs: shift.startTs,
+      endTs: shift.endTs,
+      durationMinutes: Math.max(0, (outMs - inMs) / 60000),
+      lateMinutes: 0,
+      earlyMinutes: 0
+    };
+  }
+  const schStart = new Date(scheduled.startTs).getTime();
+  const schEnd = new Date(scheduled.endTs).getTime();
+  const graceMs = PT_GRACE_MINUTES * 60000;
+
+  // Effective in: clamp to scheduled start unless late beyond grace
+  let effIn: number;
+  let lateMinutes = 0;
+  if (inMs <= schStart + graceMs) {
+    effIn = schStart;
+  } else {
+    effIn = inMs;
+    lateMinutes = (inMs - schStart) / 60000;
+  }
+
+  // Effective out: clamp to scheduled end unless early beyond grace
+  let effOut: number;
+  let earlyMinutes = 0;
+  if (outMs >= schEnd - graceMs) {
+    effOut = schEnd;
+  } else {
+    effOut = outMs;
+    earlyMinutes = (schEnd - outMs) / 60000;
+  }
+
+  return {
+    startTs: new Date(effIn).toISOString(),
+    endTs: new Date(effOut).toISOString(),
+    durationMinutes: Math.max(0, (effOut - effIn) / 60000),
+    lateMinutes: Math.max(0, lateMinutes),
+    earlyMinutes: Math.max(0, earlyMinutes)
+  };
+}
+
+/**
+ * Pick the scheduled window that best matches an actual shift when a
+ * (user, date) has more than one roster assignment — choose the one
+ * whose scheduled start is nearest the actual clock-in.
+ */
+export function pickScheduled(
+  candidates: ScheduledShift[],
+  shift: { startTs: string }
+): ScheduledShift | null {
+  if (!candidates.length) return null;
+  if (candidates.length === 1) return candidates[0];
+  const inMs = new Date(shift.startTs).getTime();
+  return candidates.reduce((best, c) =>
+    Math.abs(new Date(c.startTs).getTime() - inMs) <
+    Math.abs(new Date(best.startTs).getTime() - inMs)
+      ? c : best
+  );
+}
+
 // ── Break deduction ─────────────────────────────────────────────────
 
 export function deductBreak(
@@ -271,8 +371,14 @@ export function computeLineForEmployee(args: {
   periodEnd: string;          // YYYY-MM-DD (used for FT-weekly division)
   settings: PayrollSettings;
   holidaySet: Set<string>;    // YYYY-MM-DD dates that count as PT premium days
+  // PT grace: scheduled shift windows for this employee, keyed by the
+  // BKK calendar date (YYYY-MM-DD) of the assignment. When provided and
+  // the employee is part-time, each clocked shift is clamped to its
+  // scheduled box ±5-min grace (see applyPtGrace). Omit / leave empty to
+  // fall back to raw clock times (legacy behaviour, e.g. no roster).
+  scheduledByDate?: Map<string, ScheduledShift[]>;
 }): ComputedLine {
-  const { employee: e, shifts, unpaired, leaveDays, cycle, periodEnd, settings, holidaySet } = args;
+  const { employee: e, shifts, unpaired, leaveDays, cycle, periodEnd, settings, holidaySet, scheduledByDate } = args;
 
   // Determine effective hourly rate (used for legal OT mode + display)
   const ptRate = e.hourly_rate ?? settings.pt_default_hourly_rate;
@@ -293,14 +399,25 @@ export function computeLineForEmployee(args: {
   const daysSet = new Set<string>();
 
   for (const s of shifts) {
-    shiftMin += s.durationMinutes;
-    const { workedMinutes, deducted } = deductBreak(s.durationMinutes, settings);
+    const shiftDate = bkkDate(s.startTs);
+
+    // PT: clamp the worked window to the scheduled shift box ±5-min
+    // grace (no pay before start / after end; lateness & early-out
+    // counted from actuals). FT keeps the raw clock duration since its
+    // base pay is salary-driven, not minute-driven.
+    let effDurationMin = s.durationMinutes;
+    if (e.employment_type === "pt" && scheduledByDate) {
+      const sched = pickScheduled(scheduledByDate.get(shiftDate) ?? [], s);
+      if (sched) effDurationMin = applyPtGrace(s, sched).durationMinutes;
+    }
+
+    shiftMin += effDurationMin;
+    const { workedMinutes, deducted } = deductBreak(effDurationMin, settings);
     breakDeducted += deducted;
     const split = splitRegularOt(workedMinutes);
     regularMin += split.regular;
     otMin += split.ot;
 
-    const shiftDate = bkkDate(s.startTs);
     daysSet.add(shiftDate);
     const isHoliday = holidaySet.has(shiftDate);
 
@@ -552,6 +669,38 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   `).all(period.period_start, period.period_end) as Array<{ date: string }>;
   const holidaySet = new Set(holidays.map((h) => h.date));
 
+  // Scheduled shifts (work kind only) for PT grace clamping — keyed by
+  // user → BKK assignment date → list of windows. Anchored at +07:00;
+  // an end_time ≤ start_time means the shift crosses midnight, so the
+  // end anchor rolls to the next calendar day.
+  const addDayYmd = (ymd: string): string => {
+    const d = new Date(`${ymd}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+  };
+  const rosterRows = db.prepare(`
+    SELECT ra.user_id, ra.assignment_date, sc.start_time, sc.end_time
+    FROM roster_assignments ra
+    JOIN shift_codes sc ON sc.id = ra.shift_code_id
+    WHERE ra.assignment_date >= ? AND ra.assignment_date <= ?
+      AND sc.kind = 'work'
+  `).all(period.period_start, period.period_end) as Array<{
+    user_id: number; assignment_date: string; start_time: string; end_time: string;
+  }>;
+  const scheduledByUser = new Map<number, Map<string, ScheduledShift[]>>();
+  for (const r of rosterRows) {
+    // Degenerate / day-off-like rows (start == end) carry no real window.
+    if (!r.start_time || !r.end_time || r.start_time === r.end_time) continue;
+    const startTs = new Date(`${r.assignment_date}T${r.start_time}:00+07:00`).toISOString();
+    const endDate = r.end_time < r.start_time ? addDayYmd(r.assignment_date) : r.assignment_date;
+    const endTs = new Date(`${endDate}T${r.end_time}:00+07:00`).toISOString();
+    let byDate = scheduledByUser.get(r.user_id);
+    if (!byDate) { byDate = new Map(); scheduledByUser.set(r.user_id, byDate); }
+    const list = byDate.get(r.assignment_date) ?? [];
+    list.push({ startTs, endTs });
+    byDate.set(r.assignment_date, list);
+  }
+
   // Eligible staff depend on (cycle, target):
   //   weekly + 'pt'  → PT only
   //   weekly + 'ft'  → FT-weekly only
@@ -673,7 +822,11 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         cycle: period.cycle,
         periodEnd: period.period_end,
         settings,
-        holidaySet
+        holidaySet,
+        // PT grace only — in manual mode there are no shifts to clamp.
+        scheduledByDate: period.data_source === "manual"
+          ? undefined
+          : scheduledByUser.get(emp.user_id)
       });
 
       insertLine.run(

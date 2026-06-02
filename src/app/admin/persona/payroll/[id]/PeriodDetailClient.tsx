@@ -914,8 +914,12 @@ type BreakdownDay = {
     workIn: string | null;
     workOut: string | null;
     durationMinutes: number;
+    schedIn: string | null;
+    schedOut: string | null;
+    effectiveMinutes: number;
   }>;
   totalMinutes: number;
+  effectiveMinutes: number;
 };
 
 function LineEditModal({
@@ -948,6 +952,9 @@ function LineEditModal({
   const [notes, setNotes] = useState(line.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // PIN gate — the save button opens this; the actual PATCH only fires
+  // after the admin enters a valid 4-digit PIN (owner spec 2026-06-02).
+  const [pinOpen, setPinOpen] = useState(false);
 
   // Daily time-entry breakdown — owner spec 2026-06-01 promoted this
   // from a collapsible footer to the primary view of the modal. Fires
@@ -983,46 +990,53 @@ function LineEditModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function save(): Promise<void> {
-    setBusy(true);
+  function buildBody(): Record<string, unknown> {
+    return mode === "hours"
+      ? {
+          regular_minutes: Math.round(Number(regHrs) * 60),
+          ot_minutes: Math.round(Number(otHrs) * 60),
+          holiday_minutes: Math.round(Number(holidayHrs) * 60),
+          leave_days: Number(leaveDays),
+          days_worked: Number(daysWorked),
+          service_charge: Number(svc),
+          other_additions: Number(otherAdd),
+          other_deductions: Number(otherDed),
+          notes
+        }
+      : {
+          base_pay: Number(basePay),
+          ot_pay: Number(otPay),
+          service_charge: Number(svc),
+          other_additions: Number(otherAdd),
+          other_deductions: Number(otherDed),
+          notes
+        };
+  }
+
+  // Fired by the PIN modal once a 4-digit PIN is entered. Returns the
+  // {ok}|{ok:false,message} shape PinPromptModal expects so a wrong PIN
+  // can be retried inline without losing the form.
+  async function doSave(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
     setErr(null);
     try {
-      const body = mode === "hours"
-        ? {
-            regular_minutes: Math.round(Number(regHrs) * 60),
-            ot_minutes: Math.round(Number(otHrs) * 60),
-            holiday_minutes: Math.round(Number(holidayHrs) * 60),
-            leave_days: Number(leaveDays),
-            days_worked: Number(daysWorked),
-            service_charge: Number(svc),
-            other_additions: Number(otherAdd),
-            other_deductions: Number(otherDed),
-            notes
-          }
-        : {
-            base_pay: Number(basePay),
-            ot_pay: Number(otPay),
-            service_charge: Number(svc),
-            other_additions: Number(otherAdd),
-            other_deductions: Number(otherDed),
-            notes
-          };
       const res = await fetch(apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify({ ...buildBody(), admin_pin: pin })
       });
       const j = await res.json().catch(() => ({}));
-      if (j?.ok) onSaved();
-      else setErr(j?.error ?? t(lang, "common.error"));
+      if (res.ok && j?.ok) {
+        onSaved();
+        return { ok: true };
+      }
+      return { ok: false, message: j?.error ?? t(lang, "common.error") };
     } catch {
-      setErr(t(lang, "common.error"));
-    } finally {
-      setBusy(false);
+      return { ok: false, message: t(lang, "common.error") };
     }
   }
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-2xl w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
@@ -1062,15 +1076,24 @@ function LineEditModal({
               — กรอกค่าตอบแทนตามตกลงในส่วนสรุปด้านล่าง
             </p>
           )}
-          {breakdownDays && breakdownDays.length > 0 && (
+          {breakdownDays && breakdownDays.length > 0 && (() => {
+            const isPt = line.employment_type === "pt";
+            // For PT, the paid minutes are the graced/clamped effective
+            // minutes; for everyone else it's the raw clocked duration.
+            const paidMin = (p: BreakdownDay["pairs"][number]) =>
+              isPt ? p.effectiveMinutes : p.durationMinutes;
+            const totalPaid = breakdownDays.reduce(
+              (s, d) => s + (isPt ? d.effectiveMinutes : d.totalMinutes), 0
+            );
+            return (
             <div className="overflow-x-auto -mx-2">
               <table className="w-full text-xs">
                 <thead className="bg-slate-100">
                   <tr className="text-slate-600">
                     <th className="text-left px-2 py-1.5 font-semibold">วันที่</th>
-                    <th className="text-left px-2 py-1.5 font-semibold">เข้า</th>
-                    <th className="text-left px-2 py-1.5 font-semibold">ออก</th>
-                    <th className="text-right px-2 py-1.5 font-semibold">รวม</th>
+                    <th className="text-left px-2 py-1.5 font-semibold">เข้า–ออก</th>
+                    <th className="text-left px-2 py-1.5 font-semibold">ตามกะ</th>
+                    <th className="text-right px-2 py-1.5 font-semibold">{isPt ? "จ่ายจริง" : "รวม"}</th>
                     {line.hourly_rate_snapshot != null && (
                       <th className="text-right px-2 py-1.5 font-semibold">เงิน</th>
                     )}
@@ -1079,23 +1102,36 @@ function LineEditModal({
                 <tbody>
                   {breakdownDays.map((day) => (
                     day.pairs.map((p, i) => {
-                      const pay = (line.hourly_rate_snapshot != null && p.durationMinutes > 0)
-                        ? (p.durationMinutes / 60) * line.hourly_rate_snapshot
+                      const minutes = paidMin(p);
+                      const clamped = isPt && minutes !== p.durationMinutes && p.durationMinutes > 0;
+                      const pay = (line.hourly_rate_snapshot != null && minutes > 0)
+                        ? (minutes / 60) * line.hourly_rate_snapshot
                         : null;
                       return (
                         <tr key={`${day.date}-${i}`} className="border-t border-slate-100">
                           <td className="px-2 py-1.5 font-mono whitespace-nowrap">
                             {i === 0 ? day.date : ""}
                           </td>
-                          <td className="px-2 py-1.5 font-mono">
-                            {p.workIn ?? <span className="text-rose-500">— ขาด</span>}
+                          <td className="px-2 py-1.5 font-mono whitespace-nowrap">
+                            {p.workIn ?? <span className="text-rose-500">ขาด</span>}
+                            <span className="text-slate-300">–</span>
+                            {p.workOut ?? <span className="text-rose-500">ขาด</span>}
                           </td>
-                          <td className="px-2 py-1.5 font-mono">
-                            {p.workOut ?? <span className="text-rose-500">— ขาด</span>}
+                          <td className="px-2 py-1.5 font-mono whitespace-nowrap text-slate-500">
+                            {p.schedIn && p.schedOut
+                              ? `${p.schedIn}–${p.schedOut}`
+                              : <span className="text-slate-300">—</span>}
                           </td>
                           <td className="px-2 py-1.5 text-right font-mono">
-                            {p.durationMinutes > 0
-                              ? fmtMin(p.durationMinutes)
+                            {minutes > 0
+                              ? <>
+                                  {fmtMin(minutes)}
+                                  {clamped && (
+                                    <span className="block text-[9px] text-slate-400 line-through">
+                                      {fmtMin(p.durationMinutes)}
+                                    </span>
+                                  )}
+                                </>
                               : <span className="text-slate-300">—</span>}
                           </td>
                           {line.hourly_rate_snapshot != null && (
@@ -1110,25 +1146,23 @@ function LineEditModal({
                   <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
                     <td className="px-2 py-1.5" colSpan={3}>รวมทั้งรอบ</td>
                     <td className="px-2 py-1.5 text-right font-mono">
-                      {fmtMin(breakdownDays.reduce((s, d) => s + d.totalMinutes, 0))}
+                      {fmtMin(totalPaid)}
                     </td>
                     {line.hourly_rate_snapshot != null && (
                       <td className="px-2 py-1.5 text-right font-mono">
-                        {fmtMoney(
-                          (breakdownDays.reduce((s, d) => s + d.totalMinutes, 0) / 60)
-                          * line.hourly_rate_snapshot
-                        )}
+                        {fmtMoney((totalPaid / 60) * line.hourly_rate_snapshot)}
                       </td>
                     )}
                   </tr>
                 </tbody>
               </table>
             </div>
-          )}
+            );
+          })()}
           <p className="text-[10px] text-slate-400">
-            ค่าเงินด้านบนคำนวณตรงจากเวลาที่ลง × อัตราชม. โดยยังไม่หักพัก/ไม่แยก OT.
-            ส่วน &quot;สรุปค่าตอบแทน&quot; ด้านล่างคือยอดสุดท้ายที่ระบบจะบันทึก
-            — แอดมินปรับได้ตามจริง
+            {line.employment_type === "pt"
+              ? <>&quot;จ่ายจริง&quot; = เวลาที่นับจ่ายหลังปัดเข้ากรอบกะ (เข้าก่อน/สายไม่เกิน 5 นาที = เริ่มตามกะ · ออกหลัง/ก่อนเลิกไม่เกิน 5 นาที = เลิกตามกะ). ค่าเงินยังไม่หักพัก/ไม่แยก OT — ยอดสุดท้ายอยู่ที่ &quot;สรุปค่าตอบแทน&quot; ด้านล่าง</>
+              : <>ค่าเงินด้านบนคำนวณตรงจากเวลาที่ลง × อัตราชม. โดยยังไม่หักพัก/ไม่แยก OT. ส่วน &quot;สรุปค่าตอบแทน&quot; ด้านล่างคือยอดสุดท้ายที่ระบบจะบันทึก — แอดมินปรับได้ตามจริง</>}
           </p>
         </div>
 
@@ -1231,18 +1265,38 @@ function LineEditModal({
           ⚠ {t(lang, "admin.persona.payroll.detail.overrideHint")}
         </p>
         {err && <p className="text-rose-600 text-sm">✗ {err}</p>}
+        <p className="text-[11px] text-slate-400">
+          🔒 การบันทึกต้องยืนยันด้วย PIN และระบบจะเก็บ log การแก้ไขไว้
+        </p>
 
         <div className="flex gap-2 pt-2">
           <button type="button" onClick={onClose} disabled={busy}
             className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
             {t(lang, "common.cancel")}
           </button>
-          <button type="button" onClick={save} disabled={busy}
+          <button type="button" onClick={() => { setBusy(false); setPinOpen(true); }} disabled={busy}
             className="flex-1 py-2.5 rounded-lg bg-brand hover:opacity-90 text-white text-sm font-bold disabled:opacity-50">
-            {busy ? t(lang, "common.submitting") : t(lang, "common.save")}
+            {t(lang, "common.save")}
           </button>
         </div>
       </div>
     </div>
+
+    {pinOpen && (
+      <PinPromptModal
+        title={t(lang, "admin.persona.payroll.detail.editLine")}
+        description={
+          <>
+            ยืนยันการแก้ไขเงินเดือนของ{" "}
+            <b>{nameWithPrefix(line.title_prefix, line.display_name)}</b>{" "}
+            ด้วย PIN ของคุณ — การแก้ไขจะถูกบันทึก log ไว้
+          </>
+        }
+        submitLabel={t(lang, "common.save")}
+        onSubmit={doSave}
+        onClose={() => setPinOpen(false)}
+      />
+    )}
+    </>
   );
 }
