@@ -70,7 +70,7 @@ export async function POST(req: Request) {
           footer: {
             type: "box", layout: "vertical", paddingAll: "16px",
             contents: [
-              { type: "button", style: "primary", color: "#e94560",
+              { type: "button", style: "primary", color: "#a06820",
                 action: { type: "uri", label: "ตรวจสอบ/อนุมัติ", uri: `${PUBLIC_BASE}/admin/persona/ot-approvals` } }
             ]
           }

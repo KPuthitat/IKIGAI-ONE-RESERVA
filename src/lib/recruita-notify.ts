@@ -49,9 +49,9 @@ function reviewUrl(applicationId: number): string {
 
 // IKIGAI OS CI palette — keep in sync with tailwind.config.ts + line.ts
 // so RECRUITA cards look like the rest of the system (PERSONA / RESERVA).
-const COLOR_INK = "#1a1a2e";
-const COLOR_BRAND = "#e94560";
-const COLOR_BRAND_LIGHT = "#ff6b85";
+const COLOR_INK = "#281a0e";
+const COLOR_BRAND = "#a06820";
+const COLOR_BRAND_LIGHT = "#d6a14d";
 const COLOR_TEXT_DARK = "#1a1a2e";
 const COLOR_LABEL = "#64748b";
 const COLOR_MUTED = "#94a3b8";

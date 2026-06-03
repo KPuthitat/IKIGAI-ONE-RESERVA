@@ -86,7 +86,7 @@ input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
   @apply inline-flex items-center justify-center px-5 py-2.5 rounded-[10px]
          font-bold transition-opacity disabled:opacity-50 disabled:cursor-not-allowed;
 }
-.btn-primary { @apply btn bg-brand text-white shadow-[0_2px_8px_rgba(233,69,96,.4)] hover:opacity-90 active:opacity-80; }
+.btn-primary { @apply btn bg-brand text-white shadow-[0_2px_8px_rgba(160,104,32,.4)] hover:opacity-90 active:opacity-80; }
 .btn-secondary { @apply btn bg-white border-[1.5px] border-slate-200 text-slate-700 hover:bg-slate-50; }
 .btn-danger { @apply btn bg-red-600 text-white hover:opacity-90; }
 .btn-success { @apply btn bg-emerald-600 text-white hover:opacity-90; }
@@ -167,7 +167,7 @@ input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
   width: 100%;
   overflow: hidden;
   border-radius: 9999px;
-  background: rgba(233, 69, 96, 0.12);
+  background: rgba(160, 104, 32, 0.12);
 }
 .loadbar::after {
   content: "";
@@ -179,11 +179,11 @@ input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
   border-radius: 9999px;
   background: linear-gradient(
     90deg,
-    rgba(233, 69, 96, 0.15),
-    #e94560,
-    rgba(233, 69, 96, 0.15)
+    rgba(160, 104, 32, 0.15),
+    #a06820,
+    rgba(160, 104, 32, 0.15)
   );
-  box-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+  box-shadow: 0 0 10px rgba(160, 104, 32, 0.5);
   animation: ikigai-loadbar 1.15s ease-in-out infinite;
 }
 

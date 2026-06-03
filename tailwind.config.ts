@@ -32,22 +32,27 @@ const config: Config = {
         ]
       },
       colors: {
-        // primary accent (red-pink)
+        // Primary accent — warm caramel/amber, matched to น้องฮูก on the
+        // login page (owner 2026-06-03, "ปรับสี CI ให้เหมือนน้องฮูก").
+        // Replaces the old red-pink #e94560. DEFAULT is dark enough for
+        // white button text + small text-brand to stay legible.
         brand: {
-          DEFAULT: "#e94560",
-          dark: "#c8203c",
-          light: "#ff6b85"
+          DEFAULT: "#a06820",
+          dark: "#7a4f16",
+          light: "#d6a14d"
         },
-        // deep navy gradient stops
+        // Header / sidebar gradient stops — warm espresso brown, mirroring
+        // the owl's outline + coffee cup (was deep navy). White text on it
+        // stays high-contrast. Used everywhere via bg-ink-gradient.
         ink: {
-          900: "#0f3460",
-          800: "#16213e",
-          700: "#1a1a2e"
+          900: "#4e351f",
+          800: "#3a2716",
+          700: "#281a0e"
         }
       },
       backgroundImage: {
         "ink-gradient":
-          "linear-gradient(160deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)"
+          "linear-gradient(160deg, #281a0e 0%, #3a2716 60%, #4e351f 100%)"
       },
       boxShadow: {
         card: "0 20px 60px rgba(0,0,0,.3)"

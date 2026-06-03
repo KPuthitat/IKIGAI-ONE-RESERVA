@@ -21,7 +21,7 @@ export default function LangToggle({
         onClick={() => setLang(target)}
         className={`px-3 py-1 text-xs font-bold tracking-[1px] rounded-md transition-all ${
           active
-            ? "bg-brand text-white shadow-[0_2px_8px_rgba(233,69,96,.4)]"
+            ? "bg-brand text-white shadow-[0_2px_8px_rgba(160,104,32,.4)]"
             : inactiveCls
         }`}
       >{target === "th" ? "TH" : "EN"}</button>

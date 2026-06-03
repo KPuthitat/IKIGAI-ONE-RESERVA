@@ -297,7 +297,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   );
 
   return (
-    <div className="min-h-screen flex bg-slate-100">
+    <div className="min-h-screen flex bg-amber-50">
       {/* Maintenance banner above impersonation banner — see staff
           layout for the same ordering rationale. */}
       {maintenanceMsg && <MaintenanceBanner message={maintenanceMsg} />}

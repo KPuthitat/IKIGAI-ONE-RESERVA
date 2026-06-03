@@ -83,7 +83,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
             type: "box", layout: "vertical", paddingAll: "16px",
             contents: [
               {
-                type: "button", style: "primary", color: "#e94560",
+                type: "button", style: "primary", color: "#a06820",
                 action: {
                   type: "uri",
                   label: "เข้าไปตรวจสอบ",

@@ -185,10 +185,10 @@ export type ClockInCardArgs = {
 };
 
 // IKIGAI OS CI palette — keep in sync with tailwind.config.ts
-const COLOR_INK_900 = "#0f3460";
-const COLOR_INK_700 = "#1a1a2e";
-const COLOR_BRAND = "#e94560";
-const COLOR_BRAND_LIGHT = "#ff6b85";
+const COLOR_INK_900 = "#4e351f";
+const COLOR_INK_700 = "#281a0e";
+const COLOR_BRAND = "#a06820";
+const COLOR_BRAND_LIGHT = "#d6a14d";
 const COLOR_TEXT_DARK = "#1a1a2e";
 const COLOR_TEXT_MUTED = "#94a3b8";
 const COLOR_LABEL = "#64748b";

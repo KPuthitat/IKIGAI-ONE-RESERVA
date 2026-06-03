@@ -28,15 +28,17 @@ export default function LoginPage({
   return (
     <div className="min-h-screen flex flex-col bg-amber-50/40">
       <main className="flex-1 flex flex-col items-center justify-center px-4 py-8">
-        <div className="card max-w-md w-full text-center space-y-3">
+        <div className="card max-w-md w-full text-center space-y-3 pt-10">
+          {/* Static owl — extra top padding (pt-10) gives น้องฮูก more
+              headroom above the card edge (owner 2026-06-03). */}
           <OwlMascot
             size={140}
             mood="smile"
-            ariaLabel="IKIGAI OS"
+            ariaLabel="IKIGAI OS PORTAL"
             className="mx-auto block"
           />
           <div className="brand-wordmark text-slate-800 text-[32px] leading-none">
-            IKIGAI OS
+            IKIGAI OS PORTAL
           </div>
 
           {/* Form lives inside the same card — keeps the visual
