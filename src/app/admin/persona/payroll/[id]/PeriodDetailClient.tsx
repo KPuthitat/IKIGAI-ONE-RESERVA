@@ -938,8 +938,12 @@ type BreakdownDay = {
     clock_in: string | null; clock_out: string | null;
     sched_in: string | null; sched_out: string | null;
     break_min: number | null; worked_min: number | null;
-    ot_min: number | null; ot_pay: number | null;
+    ot_min: number | null; ot_pay: number | null; ot_until: string | null;
   } | null;
+  // OT "until" time in effect (override ?? approved request), and the
+  // approved request alone (for the "ขออนุมัติถึง …" hint).
+  otUntil: string | null;
+  otApprovedUntil: string | null;
 };
 
 function LineEditModal({
@@ -961,15 +965,27 @@ function LineEditModal({
   // recomputes. selectedDate drives the inline panel below the table.
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selDay, setSelDay] = useState<BreakdownDay | null>(null);
+  // Per-day inputs — PREFILLED with the day's current effective values
+  // (override ?? computed) so the panel mirrors the table. Editing is
+  // gated: fields stay locked until the admin verifies their PIN, then
+  // only the fields they actually changed are saved as overrides.
   const [dayIn, setDayIn] = useState("");
   const [dayOut, setDayOut] = useState("");
-  // Per-day FIELD override inputs (blank = use computed). Worked/OT in hours.
   const [daySchedIn, setDaySchedIn] = useState("");
   const [daySchedOut, setDaySchedOut] = useState("");
-  const [dayBreak, setDayBreak] = useState("");   // minutes
-  const [dayWorked, setDayWorked] = useState(""); // hours
-  const [dayOt, setDayOt] = useState("");         // hours
-  const [dayOtPay, setDayOtPay] = useState("");   // baht
+  const [dayBreak, setDayBreak] = useState("");      // minutes
+  const [dayWorked, setDayWorked] = useState("");    // hours
+  const [dayOtUntil, setDayOtUntil] = useState("");  // HH:MM (approved OT until)
+  const [dayOtPay, setDayOtPay] = useState("");      // baht
+  // Snapshot of the prefilled values (dirty detection) + which fields
+  // already carried a saved override (always resent on save).
+  const [dayInit, setDayInit] = useState<Record<string, string>>({});
+  const [dayHad, setDayHad] = useState<Record<string, boolean>>({});
+  // PIN gate: fields are read-only until unlocked; dayPin holds the
+  // verified PIN so "บันทึก" can resend it without re-prompting.
+  const [dayUnlocked, setDayUnlocked] = useState(false);
+  const [dayPin, setDayPin] = useState("");
+  const [daySaving, setDaySaving] = useState(false);
   const [dayPinOpen, setDayPinOpen] = useState(false);
   const [dayMsg, setDayMsg] = useState<string | null>(null);
   // Period bounds (from the breakdown response) bound the add-a-day picker.
@@ -1031,26 +1047,41 @@ function LineEditModal({
   }
 
   const hrStr = (min: number | null | undefined) =>
-    min == null ? "" : (min / 60).toFixed(2).replace(/\.?0+$/, "");
+    min == null || min <= 0 ? "" : (min / 60).toFixed(2).replace(/\.?0+$/, "");
 
-  // Open the per-day editor for a day, prefilling the inputs from any
-  // SAVED overrides (blank fields = use computed; placeholders show the
-  // computed value).
+  // Open the per-day editor for a day. Every input is PREFILLED with the
+  // value currently in effect (saved override ?? the table's computed
+  // value) so the panel mirrors the row above. Fields start locked.
   function pickDay(day: BreakdownDay) {
     const ov = day.override;
     const spanIn = day.pairs.find((p) => p.workIn)?.workIn ?? "";
     const spanOut = [...day.pairs].reverse().find((p) => p.workOut)?.workOut ?? "";
+    const sp = day.pairs.find((p) => p.schedIn);
+    const vIn = ov?.clock_in ?? spanIn;
+    const vOut = ov?.clock_out ?? spanOut;
+    const vSchedIn = ov?.sched_in ?? sp?.schedIn ?? "";
+    const vSchedOut = ov?.sched_out ?? sp?.schedOut ?? "";
+    const vBreak = day.breakMinutes > 0 ? String(day.breakMinutes) : "";
+    const vWorked = hrStr(day.effectiveMinutes);
+    const vOtUntil = day.otUntil ?? "";
+    const vOtPay = day.otPay > 0 ? String(day.otPay) : "";
     setSelectedDate(day.date);
     setSelDay(day);
-    setDayIn(ov?.clock_in ?? spanIn);
-    setDayOut(ov?.clock_out ?? spanOut);
-    setDaySchedIn(ov?.sched_in ?? "");
-    setDaySchedOut(ov?.sched_out ?? "");
-    setDayBreak(ov?.break_min != null ? String(ov.break_min) : "");
-    setDayWorked(hrStr(ov?.worked_min));
-    setDayOt(hrStr(ov?.ot_min));
-    setDayOtPay(ov?.ot_pay != null ? String(ov.ot_pay) : "");
-    setDayMsg(null);
+    setDayIn(vIn); setDayOut(vOut);
+    setDaySchedIn(vSchedIn); setDaySchedOut(vSchedOut);
+    setDayBreak(vBreak); setDayWorked(vWorked);
+    setDayOtUntil(vOtUntil); setDayOtPay(vOtPay);
+    setDayInit({ in: vIn, out: vOut, schedIn: vSchedIn, schedOut: vSchedOut,
+      brk: vBreak, worked: vWorked, otUntil: vOtUntil, otPay: vOtPay });
+    setDayHad({
+      clock: ov?.clock_in != null,
+      sched: ov?.sched_in != null,
+      brk: ov?.break_min != null,
+      worked: ov?.worked_min != null,
+      otUntil: ov?.ot_until != null,
+      otPay: ov?.ot_pay != null
+    });
+    setDayUnlocked(false); setDayPin(""); setDayMsg(null);
   }
 
   function selectDateByValue(date: string) {
@@ -1059,22 +1090,74 @@ function LineEditModal({
     // A date not yet in the breakdown (no activity) — start blank.
     setSelectedDate(date); setSelDay(null);
     setDayIn(""); setDayOut(""); setDaySchedIn(""); setDaySchedOut("");
-    setDayBreak(""); setDayWorked(""); setDayOt(""); setDayOtPay("");
-    setDayMsg(null);
+    setDayBreak(""); setDayWorked(""); setDayOtUntil(""); setDayOtPay("");
+    setDayInit({ in: "", out: "", schedIn: "", schedOut: "",
+      brk: "", worked: "", otUntil: "", otPay: "" });
+    setDayHad({ clock: false, sched: false, brk: false, worked: false, otUntil: false, otPay: false });
+    setDayUnlocked(false); setDayPin(""); setDayMsg(null);
   }
 
-  // Fired by the per-day PIN modal. Saves the override + recomputes,
-  // then refreshes the table in place (modal stays open for more edits).
-  async function doSaveDay(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
-    if (!selectedDate) return { ok: false, message: t(lang, "common.error") };
-    if ((!dayIn) !== (!dayOut)) {
-      return { ok: false, message: "ต้องกรอกทั้งเวลาเข้าและออก (หรือเว้นว่างทั้งคู่)" };
+  // "แก้ไข (ใส่ PIN)" → verify the PIN up front, then unlock the fields.
+  // The actual save re-verifies server-side; this is just the gate.
+  async function verifyAndUnlock(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/verify-pin`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        setDayPin(pin);
+        setDayUnlocked(true);
+        setDayPinOpen(false);
+        return { ok: true };
+      }
+      const map: Record<string, string> = {
+        wrong_pin: "PIN ไม่ถูกต้อง",
+        no_pin: "คุณยังไม่ได้ตั้ง PIN",
+        user_not_found: t(lang, "common.error")
+      };
+      return { ok: false, message: map[j?.error] ?? t(lang, "common.error") };
+    } catch {
+      return { ok: false, message: t(lang, "common.error") };
     }
-    if ((!daySchedIn) !== (!daySchedOut)) {
-      return { ok: false, message: "ต้องกรอกทั้งเวลาเข้าและเลิกงานตามกะ (หรือเว้นว่างทั้งคู่)" };
-    }
+  }
+
+  // Save the day. clock in/out is always sent (it defines the worked
+  // shift the field overrides attach to); the other fields are sent only
+  // when the admin changed them (or they were already pinned) so an
+  // untouched value keeps auto-computing. Uses the PIN captured at unlock.
+  async function doSaveDay(): Promise<void> {
+    if (!selectedDate) return;
     const numOrNull = (v: string) => (v.trim() === "" ? null : Number(v));
     const hrToMin = (v: string) => (v.trim() === "" ? null : Math.round(Number(v) * 60));
+
+    const clockDirty = dayIn !== dayInit.in || dayOut !== dayInit.out;
+    const schedDirty = daySchedIn !== dayInit.schedIn || daySchedOut !== dayInit.schedOut;
+    const breakDirty = dayBreak !== dayInit.brk;
+    const workedDirty = dayWorked !== dayInit.worked;
+    const otUntilDirty = dayOtUntil !== dayInit.otUntil;
+    const otPayDirty = dayOtPay !== dayInit.otPay;
+    const anyDirty = clockDirty || schedDirty || breakDirty || workedDirty || otUntilDirty || otPayDirty;
+    const hadAny = selDay?.override != null;
+
+    if (!anyDirty && !hadAny) {
+      setDayMsg("ไม่มีการเปลี่ยนแปลง");
+      return;
+    }
+    if ((!dayIn) !== (!dayOut)) {
+      setDayMsg("ต้องกรอกทั้งเวลาเข้าและออก (หรือเว้นว่างทั้งคู่)");
+      return;
+    }
+    const sendSched = schedDirty || dayHad.sched;
+    if (sendSched && ((!daySchedIn) !== (!daySchedOut))) {
+      setDayMsg("ต้องกรอกทั้งเวลาเข้าและเลิกงาน (หรือเว้นว่างทั้งคู่)");
+      return;
+    }
+
+    setDaySaving(true);
+    setDayMsg(null);
     try {
       const res = await fetch(
         apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}/day`),
@@ -1085,29 +1168,73 @@ function LineEditModal({
             work_date: selectedDate,
             clock_in: dayIn || null,
             clock_out: dayOut || null,
-            sched_in: daySchedIn || null,
-            sched_out: daySchedOut || null,
-            break_min: numOrNull(dayBreak),
-            worked_min: hrToMin(dayWorked),
-            ot_min: hrToMin(dayOt),
-            ot_pay: numOrNull(dayOtPay),
-            admin_pin: pin
+            sched_in: sendSched ? (daySchedIn || null) : null,
+            sched_out: sendSched ? (daySchedOut || null) : null,
+            break_min: (breakDirty || dayHad.brk) ? numOrNull(dayBreak) : null,
+            worked_min: (workedDirty || dayHad.worked) ? hrToMin(dayWorked) : null,
+            ot_until: (otUntilDirty || dayHad.otUntil) ? (dayOtUntil || null) : null,
+            ot_pay: (otPayDirty || dayHad.otPay) ? numOrNull(dayOtPay) : null,
+            admin_pin: dayPin
           })
         }
       );
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) {
         setDirty(true);
-        setDayPinOpen(false);
         setSelectedDate(null);
         setSelDay(null);
         setDayMsg("บันทึกแล้ว");
         await loadBreakdown();
-        return { ok: true };
+      } else {
+        const map: Record<string, string> = {
+          wrong_pin: "PIN ไม่ถูกต้อง", no_pin: "คุณยังไม่ได้ตั้ง PIN",
+          need_both_times: "ต้องกรอกทั้งเวลาเข้าและออก",
+          need_both_sched: "ต้องกรอกทั้งเวลาเข้าและเลิกงาน",
+          must_be_draft: "รอบนี้ไม่ใช่ฉบับร่างแล้ว"
+        };
+        setDayMsg(map[j?.error] ?? j?.error ?? t(lang, "common.error"));
       }
-      return { ok: false, message: j?.error ?? t(lang, "common.error") };
     } catch {
-      return { ok: false, message: t(lang, "common.error") };
+      setDayMsg(t(lang, "common.error"));
+    } finally {
+      setDaySaving(false);
+    }
+  }
+
+  // Drop this day's override entirely (revert to the system-computed
+  // value). Sends all-null with the captured PIN.
+  async function clearDayOverride(): Promise<void> {
+    if (!selectedDate) return;
+    setDaySaving(true);
+    setDayMsg(null);
+    try {
+      const res = await fetch(
+        apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}/day`),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            work_date: selectedDate,
+            clock_in: null, clock_out: null, sched_in: null, sched_out: null,
+            break_min: null, worked_min: null, ot_until: null, ot_pay: null,
+            admin_pin: dayPin
+          })
+        }
+      );
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        setDirty(true);
+        setSelectedDate(null);
+        setSelDay(null);
+        setDayMsg("ล้างการแก้ไขแล้ว ใช้ค่าที่ระบบคำนวณ");
+        await loadBreakdown();
+      } else {
+        setDayMsg(j?.error ?? t(lang, "common.error"));
+      }
+    } catch {
+      setDayMsg(t(lang, "common.error"));
+    } finally {
+      setDaySaving(false);
     }
   }
 
@@ -1319,74 +1446,98 @@ function LineEditModal({
           </div>
           {!selectedDate && (
             <p className="text-[11px] text-slate-500">
-              กดที่วันในตารางด้านบนเพื่อแก้ไข — ถ้าค่าไหนไม่ถูกต้อง กรอกทับช่องนั้น (เว้นว่าง = ใช้ค่าที่ระบบคำนวณ) แล้วใส่ PIN เพื่อบันทึก
+              กดที่วันในตารางด้านบนเพื่อดูค่าที่ใช้อยู่ — ถ้าจะแก้ ใส่ PIN ก่อน แล้วแก้เฉพาะช่องที่ผิด (ช่องที่ไม่แตะจะคำนวณอัตโนมัติตามเดิม)
             </p>
           )}
           {selectedDate && (() => {
-            const ph = (v: number | null | undefined, hrs = false) =>
-              v == null ? "" : hrs ? (v / 60).toFixed(2).replace(/\.?0+$/, "") : String(v);
             const schedPair = selDay?.pairs.find((p) => p.schedIn);
+            const locked = !dayUnlocked;
+            const cancelEdit = () => {
+              if (selDay) pickDay(selDay);
+              else selectDateByValue(selectedDate);
+            };
             return (
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-slate-800">วันที่ {selectedDate}</span>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-sm font-bold text-slate-800">
+                  วันที่ {selectedDate}
+                  {locked
+                    ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 font-normal">อ่านอย่างเดียว</span>
+                    : <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-normal">แก้ไขได้</span>}
+                </span>
                 <button type="button" onClick={() => { setSelectedDate(null); setSelDay(null); }}
                   className="text-xs text-slate-400 hover:text-slate-600">ปิด</button>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">บันทึกเวลาเข้า</label>
-                  <input type="time" className="input" value={dayIn} onChange={(e) => setDayIn(e.target.value)} />
+                  <input type="time" className="input" disabled={locked} value={dayIn} onChange={(e) => setDayIn(e.target.value)} />
                 </div>
                 <div>
                   <label className="label">บันทึกเวลาออก</label>
-                  <input type="time" className="input" value={dayOut} onChange={(e) => setDayOut(e.target.value)} />
+                  <input type="time" className="input" disabled={locked} value={dayOut} onChange={(e) => setDayOut(e.target.value)} />
                 </div>
                 <div>
                   <label className="label">เวลาเข้างาน (กะ)</label>
-                  <input type="time" className="input" value={daySchedIn} onChange={(e) => setDaySchedIn(e.target.value)} />
+                  <input type="time" className="input" disabled={locked} value={daySchedIn} onChange={(e) => setDaySchedIn(e.target.value)} />
                 </div>
                 <div>
                   <label className="label">เวลาเลิกงาน (กะ)</label>
-                  <input type="time" className="input" value={daySchedOut} onChange={(e) => setDaySchedOut(e.target.value)} />
+                  <input type="time" className="input" disabled={locked} value={daySchedOut} onChange={(e) => setDaySchedOut(e.target.value)} />
                 </div>
                 <div>
                   <label className="label">เวลาพัก (นาที)</label>
-                  <input type="number" min="0" step="1" className="input" value={dayBreak}
-                    placeholder={ph(selDay?.breakMinutes)} onChange={(e) => setDayBreak(e.target.value)} />
+                  <input type="number" min="0" step="1" className="input" disabled={locked} value={dayBreak}
+                    onChange={(e) => setDayBreak(e.target.value)} />
                 </div>
                 <div>
                   <label className="label">ชั่วโมงทำงาน (ชม.)</label>
-                  <input type="number" min="0" step="0.25" className="input" value={dayWorked}
-                    placeholder={ph(selDay?.effectiveMinutes, true)} onChange={(e) => setDayWorked(e.target.value)} />
+                  <input type="number" min="0" step="0.25" className="input" disabled={locked} value={dayWorked}
+                    onChange={(e) => setDayWorked(e.target.value)} />
                 </div>
                 <div>
-                  <label className="label">ทำงานล่วงเวลา (ชม.)</label>
-                  <input type="number" min="0" step="0.25" className="input" value={dayOt}
-                    placeholder={ph(selDay?.otMinutes, true)} onChange={(e) => setDayOt(e.target.value)} />
+                  <label className="label">ทำงานล่วงเวลา (อนุมัติถึงเวลา)</label>
+                  <input type="time" className="input" disabled={locked} value={dayOtUntil}
+                    onChange={(e) => setDayOtUntil(e.target.value)} />
                 </div>
                 <div>
                   <label className="label">ค่าล่วงเวลา (บาท)</label>
-                  <input type="number" min="0" step="0.01" className="input" value={dayOtPay}
-                    placeholder={selDay?.otPay ? String(selDay.otPay) : ""} onChange={(e) => setDayOtPay(e.target.value)} />
+                  <input type="number" min="0" step="0.01" className="input" disabled={locked} value={dayOtPay}
+                    onChange={(e) => setDayOtPay(e.target.value)} />
                 </div>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                เว้นว่าง = ใช้ค่าที่ระบบคำนวณ (ตัวเลขจางคือค่าที่คำนวณได้) · กรอกทับเฉพาะช่องที่ต้องการแก้
+                ทุกช่องแสดงค่าที่ใช้อยู่ปัจจุบัน — แก้เฉพาะช่องที่ผิด ช่องที่ไม่แตะจะคำนวณอัตโนมัติตามเดิม
                 {schedPair?.schedIn && <> · กะตามระบบ {schedPair.schedIn}–{schedPair.schedOut}</>}
-                <br />การบันทึกต้องยืนยันด้วยรหัส PIN และเก็บ log โดยไม่กระทบบันทึกเวลาจริงของพนักงาน
+                <br />
+                ทำงานล่วงเวลา: {selDay?.otApprovedUntil
+                  ? <>มีการขออนุมัติถึง <b>{selDay.otApprovedUntil}</b> น. — ระบบใช้เวลานี้คำนวณให้ แก้ได้ถ้าไม่ตรง</>
+                  : <>ยังไม่มีการขออนุมัติล่วงเวลา — ใส่เวลาที่อนุมัติให้ได้ถ้ามี</>}
+                <br />การแก้ไขต้องยืนยันด้วยรหัส PIN และเก็บ log โดยไม่กระทบบันทึกเวลาจริงของพนักงาน
               </p>
-              <div className="flex gap-2">
-                <button type="button"
-                  onClick={() => { setDayIn(""); setDayOut(""); setDaySchedIn(""); setDaySchedOut(""); setDayBreak(""); setDayWorked(""); setDayOt(""); setDayOtPay(""); }}
-                  className="px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm">
-                  ล้างทั้งหมด
-                </button>
+              {locked ? (
                 <button type="button" onClick={() => setDayPinOpen(true)}
-                  className="flex-1 py-2 rounded-lg bg-brand hover:opacity-90 text-white text-sm font-bold">
-                  บันทึก (ใส่ PIN)
+                  className="w-full py-2 rounded-lg bg-brand hover:opacity-90 text-white text-sm font-bold">
+                  แก้ไข (ใส่ PIN)
                 </button>
-              </div>
+              ) : (
+                <div className="flex gap-2 flex-wrap">
+                  <button type="button" onClick={cancelEdit} disabled={daySaving}
+                    className="px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm disabled:opacity-50">
+                    ยกเลิก
+                  </button>
+                  {selDay?.override && (
+                    <button type="button" onClick={clearDayOverride} disabled={daySaving}
+                      className="px-3 py-2 rounded-lg border border-rose-300 text-rose-600 text-sm disabled:opacity-50">
+                      ล้างการแก้ไข (ใช้ค่าระบบ)
+                    </button>
+                  )}
+                  <button type="button" onClick={doSaveDay} disabled={daySaving}
+                    className="flex-1 py-2 rounded-lg bg-brand hover:opacity-90 text-white text-sm font-bold disabled:opacity-50">
+                    {daySaving ? "กำลังบันทึก…" : "บันทึก"}
+                  </button>
+                </div>
+              )}
             </div>
             );
           })()}
@@ -1404,18 +1555,17 @@ function LineEditModal({
 
     {dayPinOpen && selectedDate && (
       <PinPromptModal
-        title="ยืนยันการแก้เวลารายวัน"
+        title="ใส่ PIN เพื่อแก้ไข"
         description={
           <>
-            แก้เวลาเข้า-ออกของ{" "}
+            แก้ไขรายวันของ{" "}
             <b>{nameWithPrefix(line.title_prefix, line.display_name)}</b>{" "}
-            วันที่ <b>{selectedDate}</b>
-            {dayIn && dayOut ? <> เป็น <b>{dayIn}–{dayOut}</b></> : <> (ล้างค่า กลับไปใช้เวลาที่ระบบบันทึก)</>}
-            {" "}— ระบบจะเก็บ log การแก้ไข
+            วันที่ <b>{selectedDate}</b> — ใส่ PIN ของคุณเพื่อปลดล็อก
+            การแก้ไขจะถูกเก็บ log และไม่กระทบบันทึกเวลาจริงของพนักงาน
           </>
         }
-        submitLabel="บันทึก"
-        onSubmit={doSaveDay}
+        submitLabel="ปลดล็อก"
+        onSubmit={verifyAndUnlock}
         onClose={() => setDayPinOpen(false)}
       />
     )}

@@ -2238,8 +2238,13 @@ function runMigrations(db: Database.Database): void {
   addPld("sched_out", "TEXT");     // 'HH:MM' override of the gate end
   addPld("break_min", "INTEGER");  // override break minutes
   addPld("worked_min", "INTEGER"); // override regular working minutes
-  addPld("ot_min", "INTEGER");     // override OT minutes
+  addPld("ot_min", "INTEGER");     // (legacy) override OT minutes — superseded by ot_until
   addPld("ot_pay", "REAL");        // override OT pay (THB)
+  // 2026-06-03b: OT is no longer typed as hours — the admin enters the
+  // approved "until" time (HH:MM) and the engine extends the worked
+  // window to it, then the 8h split decides regular vs OT rate. Falls
+  // back to the approved ot_requests row when this is null.
+  addPld("ot_until", "TEXT");      // 'HH:MM' approved OT until-time override
 
   // Phase 1D v2 — add new columns to existing payroll_lines if upgrading
   const plCols = db.prepare("PRAGMA table_info(payroll_lines)").all() as Array<{ name: string }>;

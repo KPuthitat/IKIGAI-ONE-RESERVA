@@ -180,11 +180,11 @@ export async function GET(
     clock_in: string | null; clock_out: string | null;
     sched_in: string | null; sched_out: string | null;
     break_min: number | null; worked_min: number | null;
-    ot_min: number | null; ot_pay: number | null;
+    ot_min: number | null; ot_pay: number | null; ot_until: string | null;
   };
   const overrideRows = db.prepare(`
     SELECT work_date, clock_in, clock_out,
-           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay
+           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until
     FROM payroll_line_days WHERE period_id = ? AND user_id = ?
   `).all(periodId, userId) as Array<{ work_date: string } & FieldOv>;
   const overrideByDate = new Map<string, { clock_in: string | null; clock_out: string | null }>();
@@ -225,10 +225,11 @@ export async function GET(
       sched = { startTs: sStart, endTs: sEnd, breakStartTs: sched?.breakStartTs ?? null, breakEndTs: sched?.breakEndTs ?? null };
     }
 
-    // Approved OT extends the worked window past the scheduled end.
+    // Approved OT extends the worked window past the scheduled end. An
+    // admin per-day ot_until override wins over the approved request.
     let otUntilTs: string | null = null;
     if (isPt && sched) {
-      const reqUntil = approvedOtByDate.get(date);
+      const reqUntil = ov?.ot_until ?? approvedOtByDate.get(date);
       if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
         otUntilTs = new Date(`${date}T${reqUntil}:00+07:00`).toISOString();
       }
@@ -365,14 +366,23 @@ export async function GET(
     // Raw saved overrides for this day (null fields = not overridden) —
     // so the edit panel can prefill exactly what was pinned.
     override: FieldOv | null;
+    // OT "until" time (HH:MM) in effect for the day: the admin override
+    // when set, otherwise the approved ot_requests row. The edit panel
+    // prefills the OT field from this. otApprovedUntil is the approved
+    // request alone (for the "ขออนุมัติถึง …" hint).
+    otUntil: string | null;
+    otApprovedUntil: string | null;
   };
   const days = new Map<string, Day>();
   function ensureDay(date: string): Day {
     let d = days.get(date);
     if (!d) {
+      const approved = approvedOtByDate.get(date) ?? null;
       d = { date, pairs: [], totalMinutes: 0, effectiveMinutes: 0,
             breakMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: false,
-            override: fieldOvByDate.get(date) ?? null };
+            override: fieldOvByDate.get(date) ?? null,
+            otUntil: (fieldOvByDate.get(date)?.ot_until ?? approved) || null,
+            otApprovedUntil: approved };
       days.set(date, d);
     }
     return d;

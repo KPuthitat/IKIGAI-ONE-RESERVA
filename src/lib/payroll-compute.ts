@@ -314,8 +314,12 @@ export type DayFieldOverride = {
   sched_out?: string | null;   // 'HH:MM' override of the gate end
   break_min?: number | null;   // override break minutes
   worked_min?: number | null;  // override regular working minutes
-  ot_min?: number | null;      // override OT minutes
+  ot_min?: number | null;      // (legacy) override OT minutes — superseded by ot_until
   ot_pay?: number | null;      // override OT pay (THB)
+  // Approved OT "until" time (HH:MM) — extends the worked window past the
+  // scheduled end so the 8h split credits the excess as OT. When null we
+  // fall back to the approved ot_requests row for the day.
+  ot_until?: string | null;
 };
 
 /**
@@ -554,9 +558,10 @@ export function computeLineForEmployee(args: {
     // Approved OT extends the worked window past the scheduled end up to
     // the requested "until" time. The 8h split below then credits any
     // excess as OT rate (≤8h total stays regular rate, even past the end).
+    // An admin per-day ot_until override wins over the approved request.
     let otUntilTs: string | null = null;
-    if (e.employment_type === "pt" && sched && approvedOtByDate) {
-      const reqUntil = approvedOtByDate.get(shiftDate);
+    if (e.employment_type === "pt" && sched) {
+      const reqUntil = ov?.ot_until ?? approvedOtByDate?.get(shiftDate);
       if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
         otUntilTs = new Date(`${shiftDate}T${reqUntil}:00+07:00`).toISOString();
       }
@@ -928,12 +933,13 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   // win over the time-clock for specific days. Grouped by user.
   const overrideRows = db.prepare(`
     SELECT user_id, work_date, clock_in, clock_out,
-           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay
+           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until
     FROM payroll_line_days WHERE period_id = ?
   `).all(periodId) as Array<{
     user_id: number; work_date: string; clock_in: string | null; clock_out: string | null;
     sched_in: string | null; sched_out: string | null;
-    break_min: number | null; worked_min: number | null; ot_min: number | null; ot_pay: number | null;
+    break_min: number | null; worked_min: number | null; ot_min: number | null;
+    ot_pay: number | null; ot_until: string | null;
   }>;
   const overridesByUser = new Map<number, DayOverrideRow[]>();
   const fieldOverridesByUser = new Map<number, Map<string, DayFieldOverride>>();
@@ -945,7 +951,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     if (!fm) { fm = new Map(); fieldOverridesByUser.set(r.user_id, fm); }
     fm.set(r.work_date, {
       sched_in: r.sched_in, sched_out: r.sched_out, break_min: r.break_min,
-      worked_min: r.worked_min, ot_min: r.ot_min, ot_pay: r.ot_pay
+      worked_min: r.worked_min, ot_min: r.ot_min, ot_pay: r.ot_pay, ot_until: r.ot_until
     });
   }
 
@@ -1194,12 +1200,13 @@ export function recomputeLine(
   const auto = pairShifts(userEntries);
   const overrideRows = db.prepare(`
     SELECT work_date, clock_in, clock_out,
-           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay
+           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until
     FROM payroll_line_days WHERE period_id = ? AND user_id = ?
   `).all(periodId, userId) as Array<{
     work_date: string; clock_in: string | null; clock_out: string | null;
     sched_in: string | null; sched_out: string | null;
-    break_min: number | null; worked_min: number | null; ot_min: number | null; ot_pay: number | null;
+    break_min: number | null; worked_min: number | null; ot_min: number | null;
+    ot_pay: number | null; ot_until: string | null;
   }>;
   const shifts = mergeDayOverrides(
     auto.shifts,
@@ -1211,7 +1218,7 @@ export function recomputeLine(
   for (const r of overrideRows) {
     fieldOverridesByDate.set(r.work_date, {
       sched_in: r.sched_in, sched_out: r.sched_out, break_min: r.break_min,
-      worked_min: r.worked_min, ot_min: r.ot_min, ot_pay: r.ot_pay
+      worked_min: r.worked_min, ot_min: r.ot_min, ot_pay: r.ot_pay, ot_until: r.ot_until
     });
   }
 

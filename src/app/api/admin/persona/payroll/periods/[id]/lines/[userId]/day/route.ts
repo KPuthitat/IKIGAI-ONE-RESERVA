@@ -32,6 +32,10 @@ const Body = z.object({
   worked_min: z.number().int().min(0).max(1440).nullable().optional(),
   ot_min: z.number().int().min(0).max(1440).nullable().optional(),
   ot_pay: z.number().min(0).max(1_000_000).nullable().optional(),
+  // Approved OT "until" time (HH:MM) — extends the worked window so the
+  // 8h split credits the excess as OT. null = clear (fall back to the
+  // approved ot_requests row).
+  ot_until: z.string().regex(HHMM).nullable().optional(),
   admin_pin: z.string().optional()
 });
 
@@ -62,6 +66,7 @@ export async function PATCH(
   const workedMin = d.worked_min ?? null;
   const otMin = d.ot_min ?? null;
   const otPay = d.ot_pay ?? null;
+  const otUntil = d.ot_until || null;
   // Both-or-neither: a half-filled pair is ambiguous.
   if ((clockIn === null) !== (clockOut === null)) {
     return NextResponse.json({ error: "need_both_times" }, { status: 400 });
@@ -101,7 +106,8 @@ export async function PATCH(
   const beforeSnapshot = { work_date: d.work_date, line };
 
   const allNull = !clockIn && !clockOut && !schedIn && !schedOut
-    && breakMin === null && workedMin === null && otMin === null && otPay === null;
+    && breakMin === null && workedMin === null && otMin === null && otPay === null
+    && otUntil === null;
 
   try {
     db.transaction(() => {
@@ -115,9 +121,9 @@ export async function PATCH(
         db.prepare(`
           INSERT INTO payroll_line_days
             (period_id, user_id, work_date, clock_in, clock_out,
-             sched_in, sched_out, break_min, worked_min, ot_min, ot_pay,
+             sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until,
              edited_by, edited_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT (period_id, user_id, work_date) DO UPDATE SET
             clock_in = excluded.clock_in,
             clock_out = excluded.clock_out,
@@ -127,11 +133,12 @@ export async function PATCH(
             worked_min = excluded.worked_min,
             ot_min = excluded.ot_min,
             ot_pay = excluded.ot_pay,
+            ot_until = excluded.ot_until,
             edited_by = excluded.edited_by,
             edited_at = excluded.edited_at
         `).run(
           periodId, userId, d.work_date, clockIn, clockOut,
-          schedIn, schedOut, breakMin, workedMin, otMin, otPay,
+          schedIn, schedOut, breakMin, workedMin, otMin, otPay, otUntil,
           user.id, new Date().toISOString()
         );
       }
@@ -158,7 +165,8 @@ export async function PATCH(
     JSON.stringify({
       work_date: d.work_date, clock_in: clockIn, clock_out: clockOut,
       sched_in: schedIn, sched_out: schedOut, break_min: breakMin,
-      worked_min: workedMin, ot_min: otMin, ot_pay: otPay, line: after ?? {}
+      worked_min: workedMin, ot_min: otMin, ot_pay: otPay, ot_until: otUntil,
+      line: after ?? {}
     }),
     `แก้ไขรายวัน ${d.work_date}`,
     new Date().toISOString()
