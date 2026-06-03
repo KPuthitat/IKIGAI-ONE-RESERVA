@@ -42,6 +42,9 @@ export default function InventaOrdersPage() {
            (SELECT COUNT(*) FROM inventa_order_lines l WHERE l.order_id = o.id) AS line_count,
            (SELECT COALESCE(SUM(l.order_qty * l.unit_cost_at_order), 0)
               FROM inventa_order_lines l WHERE l.order_id = o.id) AS total_cost,
+           (SELECT s.name FROM inventa_order_lines l
+              JOIN inventa_suppliers s ON s.id = l.supplier_id
+              WHERE l.order_id = o.id LIMIT 1) AS supplier_name,
            cu.display_name AS created_by_name,
            au.display_name AS approved_by_name
     FROM inventa_orders o

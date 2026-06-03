@@ -81,66 +81,97 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "no_valid_items" }, { status: 400 });
   }
 
+  // Split into one purchase order PER SUPPLIER so each PO can be sent
+  // to its vendor without mixing (owner 2026-06-03). Items with no
+  // supplier go into their own "(ไม่ระบุผู้จำหน่าย)" order.
+  const bySupplier = new Map<number | null, typeof validLines>();
+  for (const l of validLines) {
+    const sup = itemById.get(l.item_id)!.supplier_id;
+    const arr = bySupplier.get(sup) ?? [];
+    arr.push(l);
+    bySupplier.set(sup, arr);
+  }
+
   const nowIso = new Date().toISOString();
-  let orderId = 0;
+  const createdIds: number[] = [];
   const txn = db.transaction(() => {
-    const r = db.prepare(`
+    const insOrder = db.prepare(`
       INSERT INTO inventa_orders
         (branch_id, status, note, created_by, created_at, sent_at)
       VALUES (?, 'sent', ?, ?, ?, ?)
-    `).run(branchId, parsed.data.note ?? null, user.id, nowIso, nowIso);
-    orderId = Number(r.lastInsertRowid);
-    const ins = db.prepare(`
+    `);
+    const insLine = db.prepare(`
       INSERT INTO inventa_order_lines
         (order_id, item_id, supplier_id, qty_on_hand, suggested_qty,
          order_qty, unit_cost_at_order)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    for (const l of validLines) {
-      const it = itemById.get(l.item_id)!;
-      const suggested = Math.max(0, it.safety_stock - it.current_qty);
-      ins.run(
-        orderId, l.item_id, it.supplier_id,
-        it.current_qty, suggested, l.order_qty, effectiveCost(it)
-      );
+    for (const [sup, lines] of bySupplier) {
+      const r = insOrder.run(branchId, parsed.data.note ?? null, user.id, nowIso, nowIso);
+      const orderId = Number(r.lastInsertRowid);
+      createdIds.push(orderId);
+      for (const l of lines) {
+        const it = itemById.get(l.item_id)!;
+        const suggested = Math.max(0, it.safety_stock - it.current_qty);
+        insLine.run(
+          orderId, l.item_id, sup,
+          it.current_qty, suggested, l.order_qty, effectiveCost(it)
+        );
+      }
     }
   });
   txn();
 
-  // Fire-and-forget LINE notification to the branch group so
-  // management sees the request and can approve it.
+  // Fire-and-forget LINE notification — ONE combined card listing each
+  // supplier's PO so management isn't spammed (saves quota).
   try {
     const branch = db.prepare("SELECT * FROM branches WHERE id = ?")
       .get(branchId) as Branch | undefined;
     if (branch) {
-      const totalCost = validLines.reduce((s, l) => {
-        const it = itemById.get(l.item_id)!;
-        return s + l.order_qty * effectiveCost(it);
-      }, 0);
+      const supIds = [...bySupplier.keys()].filter((s): s is number => s != null);
+      const supNames = new Map<number, string>();
+      if (supIds.length) {
+        const ph = supIds.map(() => "?").join(",");
+        for (const row of db.prepare(
+          `SELECT id, name FROM inventa_suppliers WHERE id IN (${ph})`
+        ).all(...supIds) as Array<{ id: number; name: string }>) {
+          supNames.set(row.id, row.name);
+        }
+      }
+      const supplierRows = [...bySupplier.entries()].map(([sup, lines]) => {
+        const subtotal = lines.reduce((s, l) =>
+          s + l.order_qty * effectiveCost(itemById.get(l.item_id)!), 0);
+        const name = sup != null ? (supNames.get(sup) ?? "—") : "(ไม่ระบุผู้จำหน่าย)";
+        return {
+          type: "box", layout: "baseline", margin: "sm",
+          contents: [
+            { type: "text", text: name, size: "sm", color: "#333333", flex: 5, wrap: true },
+            { type: "text",
+              text: `฿${subtotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`,
+              size: "sm", color: "#1a1a2e", weight: "bold", align: "end", flex: 3 }
+          ]
+        };
+      });
+      const grandTotal = validLines.reduce((s, l) =>
+        s + l.order_qty * effectiveCost(itemById.get(l.item_id)!), 0);
       const flex = {
         type: "flex" as const,
-        altText: `ใบสั่งซื้อใหม่ ${branch.name} · ${validLines.length} รายการ`,
+        altText: `ขออนุมัติสั่งซื้อ ${createdIds.length} ใบ · ${branch.name}`,
         contents: {
-          type: "bubble",
+          type: "bubble" as const,
           body: {
             type: "box", layout: "vertical", spacing: "sm",
             contents: [
               { type: "text", text: "ขออนุมัติสั่งซื้อ (INVENTA)", weight: "bold", size: "lg" },
-              { type: "text", text: branch.name, size: "sm", color: "#888888" },
+              { type: "text", text: `${branch.name} · ${createdIds.length} ใบ (แยกตามผู้จำหน่าย)`, size: "sm", color: "#888888", wrap: true },
               { type: "separator", margin: "md" },
-              { type: "box", layout: "baseline", margin: "md", contents: [
-                { type: "text", text: "จำนวนรายการ", size: "sm", color: "#555555", flex: 3 },
-                { type: "text", text: `${validLines.length}`, size: "sm", align: "end", flex: 2 }
+              ...supplierRows,
+              { type: "separator", margin: "md" },
+              { type: "box", layout: "baseline", margin: "sm", contents: [
+                { type: "text", text: "รวมทั้งหมด (ทุน)", size: "sm", color: "#555555", flex: 3 },
+                { type: "text", text: `฿${grandTotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`, size: "sm", weight: "bold", align: "end", flex: 2 }
               ]},
-              { type: "box", layout: "baseline", contents: [
-                { type: "text", text: "มูลค่ารวม (ทุน)", size: "sm", color: "#555555", flex: 3 },
-                { type: "text", text: `฿${totalCost.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`, size: "sm", align: "end", flex: 2 }
-              ]},
-              { type: "box", layout: "baseline", contents: [
-                { type: "text", text: "ผู้ขอ", size: "sm", color: "#555555", flex: 3 },
-                { type: "text", text: user.display_name, size: "sm", align: "end", flex: 2 }
-              ]},
-              { type: "text", text: `เลขที่ใบสั่ง #${orderId} — เปิดในระบบเพื่ออนุมัติ`, size: "xs", color: "#888888", margin: "md", wrap: true }
+              { type: "text", text: `ผู้ขอ: ${user.display_name} — เปิดในระบบเพื่ออนุมัติ`, size: "xs", color: "#888888", margin: "md", wrap: true }
             ]
           }
         }
@@ -151,5 +182,5 @@ export async function POST(req: Request) {
     /* notification must never block order creation */
   }
 
-  return NextResponse.json({ ok: true, id: orderId });
+  return NextResponse.json({ ok: true, ids: createdIds, id: createdIds[0] ?? null });
 }

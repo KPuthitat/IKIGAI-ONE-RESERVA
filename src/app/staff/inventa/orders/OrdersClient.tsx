@@ -55,6 +55,7 @@ export type OrderRow = {
   total_cost: number;
   created_by_name: string | null;
   approved_by_name: string | null;
+  supplier_name: string | null;
 };
 
 const STATUS_CLS: Record<OrderRow["status"], string> = {
@@ -80,6 +81,7 @@ export default function OrdersClient({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
 
   const groups = useMemo(() => {
     const m = new Map<string, LowStockItem[]>();
@@ -144,7 +146,7 @@ export default function OrdersClient({
 
   async function submit() {
     if (chosen.length === 0) { setErr(t("inv.ord.selectMin")); return; }
-    setBusy(true); setErr(null);
+    setBusy(true); setErr(null); setOkMsg(null);
     try {
       const res = await fetch(apiUrl("/api/inventa/orders"), {
         method: "POST",
@@ -153,7 +155,18 @@ export default function OrdersClient({
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(j.error ?? t("inv.ord.sendFail")); return; }
-      router.push(`/staff/inventa/orders/${j.id}`);
+      const ids: number[] = Array.isArray(j.ids) ? j.ids : (j.id ? [j.id] : []);
+      if (ids.length === 1) {
+        // Single supplier → go straight to its PO.
+        router.push(`/staff/inventa/orders/${ids[0]}`);
+        return;
+      }
+      // Multiple suppliers → split into separate POs; stay here and show
+      // them in "ใบสั่งซื้อล่าสุด".
+      setSel({});
+      setNote("");
+      setOkMsg(`สร้างใบสั่งซื้อ ${ids.length} ใบ (แยกตามผู้จำหน่าย) แล้ว — เปิดแต่ละใบเพื่อพิมพ์/ส่ง`);
+      router.refresh();
     } catch {
       setErr(t("inv.ord.sendFail"));
     } finally {
@@ -187,13 +200,14 @@ export default function OrdersClient({
           const subtotal = totalsBySupplier.get(supplier) ?? 0;
           return (
             <div key={supplier} className="space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-[11px] tracking-[1px] text-slate-400 uppercase">
+              <div className="flex items-center justify-between gap-2 bg-ink-gradient text-white rounded-lg px-3 py-2 mt-1">
+                <div className="text-sm font-bold truncate">
                   {supplier}
+                  <span className="ml-2 text-[11px] font-normal text-white/70">{items.length} รายการ</span>
                 </div>
                 {subtotal > 0 && (
-                  <div className="text-[11px] text-emerald-700 font-semibold">
-                    {t("inv.ord.subtotal")}: {fmtBaht(subtotal)}
+                  <div className="text-xs font-bold flex-shrink-0">
+                    {fmtBaht(subtotal)}
                   </div>
                 )}
               </div>
@@ -292,6 +306,11 @@ export default function OrdersClient({
 
       {/* ── Recent orders ───────────────────────────────────────── */}
       <div className="card space-y-2">
+        {okMsg && (
+          <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+            {okMsg}
+          </div>
+        )}
         <h2 className="font-bold text-slate-800 text-sm">
           {t("inv.ord.recent", { n: orders.length })}
         </h2>
@@ -303,6 +322,9 @@ export default function OrdersClient({
             <Link key={o.id} href={`/staff/inventa/orders/${o.id}`}
               className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 hover:bg-slate-50 -mx-1 px-1 rounded">
               <span className="font-bold text-slate-700 text-sm">#{o.id}</span>
+              {o.supplier_name && (
+                <span className="text-xs font-medium text-slate-700">{o.supplier_name}</span>
+              )}
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_CLS[o.status]}`}>
                 {t(`inv.ord.st.${o.status}`)}
               </span>
