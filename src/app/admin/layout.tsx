@@ -99,7 +99,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // a belt-and-braces second check.
         ...(isSuperAdmin ? [
           { href: "/admin/system-settings", label: t(lang, "admin.systemSettings.title") },
-          { href: "/admin/companies", label: t(lang, "admin.companies.title") }
+          { href: "/admin/companies", label: t(lang, "admin.companies.title") },
+          // Notification quota is system-wide (every module shares the
+          // LINE push allowance) → surfaced here in the global section
+          // rather than buried under PERSONA (owner 2026-06-03).
+          { href: "/admin/persona/messaging/quota", label: t(lang, "admin.persona.nav.messagingQuota") }
         ] : []),
         { href: "/help", label: t(lang, "owl.help.menu") }
       ]
@@ -186,7 +190,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/admin/persona/reports", label: t(lang, "admin.persona.nav.reports") },
         { href: "/admin/persona/messaging", label: t(lang, "admin.persona.nav.messaging") },
-        { href: "/admin/persona/messaging/quota", label: t(lang, "admin.persona.nav.messagingQuota") },
+        // Notification quota moved to the global section (top of sidebar)
+        // — it's shared across all modules (owner 2026-06-03).
         { href: "/admin/persona/notifications", label: "ปรับแต่งการ์ดแจ้งเตือน" },
         { href: "/admin/persona/test-notifications", label: "ทดสอบการแจ้งเตือน" },
         { href: "/admin/persona/settings", label: t(lang, "admin.persona.nav.settings") }
