@@ -13,6 +13,7 @@ export type HolidayRow = {
   name_th: string;
   name_en: string;
   is_workday: number;
+  pt_special: number;
 };
 
 export default function HolidaysClient({
@@ -96,6 +97,7 @@ export default function HolidaysClient({
                 <th className="py-2 pr-3">{t("admin.persona.holidays.col.nameTh")}</th>
                 <th className="py-2 pr-3">{t("admin.persona.holidays.col.nameEn")}</th>
                 <th className="py-2 pr-3">{t("admin.persona.holidays.col.workday")}</th>
+                <th className="py-2 pr-3">วันพิเศษ PT</th>
                 <th className="py-2 pr-3 w-32"></th>
               </tr>
             </thead>
@@ -112,6 +114,13 @@ export default function HolidaysClient({
                     {h.is_workday
                       ? <span className="text-xs px-2 py-0.5 rounded font-medium bg-sky-100 text-sky-700">
                           {t("admin.persona.holidays.isWorkday")}
+                        </span>
+                      : <span className="text-xs text-slate-400">—</span>}
+                  </td>
+                  <td className="py-2 pr-3">
+                    {h.pt_special
+                      ? <span className="text-xs px-2 py-0.5 rounded font-medium bg-violet-100 text-violet-700">
+                          ×1.5
                         </span>
                       : <span className="text-xs text-slate-400">—</span>}
                   </td>
@@ -167,6 +176,7 @@ function HolidayModal({
   const [nameTh, setNameTh] = useState(existing?.name_th ?? "");
   const [nameEn, setNameEn] = useState(existing?.name_en ?? "");
   const [isWorkday, setIsWorkday] = useState(Boolean(existing?.is_workday));
+  const [ptSpecial, setPtSpecial] = useState(Boolean(existing?.pt_special));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -179,7 +189,7 @@ function HolidayModal({
       const res = await fetch(apiUrl("/api/admin/persona/holidays"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, name_th: nameTh, name_en: nameEn, is_workday: isWorkday })
+        body: JSON.stringify({ date, name_th: nameTh, name_en: nameEn, is_workday: isWorkday, pt_special: ptSpecial })
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) onSaved();
@@ -225,6 +235,18 @@ function HolidayModal({
           </span>
           <span className="text-slate-700">
             {t("admin.persona.holidays.isWorkdayLabel")}
+          </span>
+        </label>
+
+        <label className="flex items-start gap-2 text-sm cursor-pointer">
+          <span className="mt-0.5">
+            <Switch checked={ptSpecial} onChange={setPtSpecial} />
+          </span>
+          <span className="text-slate-700">
+            วันพิเศษพนักงานพาร์ทไทม์ (จ่ายค่าตอบแทน 1.5 เท่า)
+            <span className="block text-[11px] text-slate-400">
+              แยกจากวันหยุดราชการ — บริษัทกำหนด ~13 วัน/ปี · วันหยุดราชการทั่วไปไม่ได้เรทพิเศษ
+            </span>
           </span>
         </label>
 

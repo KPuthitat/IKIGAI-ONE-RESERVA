@@ -19,7 +19,7 @@ export default function AdminHolidaysPage({
   const year = searchParams.year || currentYear;
 
   const holidays = db.prepare(`
-    SELECT date, name_th, name_en, is_workday
+    SELECT date, name_th, name_en, is_workday, pt_special
     FROM public_holidays
     WHERE substr(date, 1, 4) = ?
     ORDER BY date ASC

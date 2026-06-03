@@ -773,9 +773,12 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   const toIso = new Date(`${period.period_end}T23:59:59+07:00`).toISOString();
 
   // Public holidays in period — for PT premium 1.5x
+  // PT 1.5× premium applies ONLY on designated "วันพิเศษ" (pt_special=1),
+  // NOT on every public holiday (owner 2026-06-03). Public holidays are
+  // now informational only.
   const holidays = db.prepare(`
     SELECT date FROM public_holidays
-    WHERE date >= ? AND date <= ?
+    WHERE date >= ? AND date <= ? AND pt_special = 1
   `).all(period.period_start, period.period_end) as Array<{ date: string }>;
   const holidaySet = new Set(holidays.map((h) => h.date));
 
@@ -1057,8 +1060,10 @@ export function recomputeLine(
   const fromIso = new Date(`${period.period_start}T00:00:00+07:00`).toISOString();
   const toIso = new Date(`${period.period_end}T23:59:59+07:00`).toISOString();
 
+  // PT 1.5× premium = designated วันพิเศษ only (pt_special=1).
   const holidays = db.prepare(`
-    SELECT date FROM public_holidays WHERE date >= ? AND date <= ?
+    SELECT date FROM public_holidays
+    WHERE date >= ? AND date <= ? AND pt_special = 1
   `).all(period.period_start, period.period_end) as Array<{ date: string }>;
   const holidaySet = new Set(holidays.map((h) => h.date));
 

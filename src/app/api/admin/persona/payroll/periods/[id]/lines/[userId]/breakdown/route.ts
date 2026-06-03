@@ -130,11 +130,14 @@ export async function GET(
   `).get() as PayrollSettings;
   const ptRate = emp?.hourly_rate ?? settings.pt_default_hourly_rate;
 
-  // Public holidays in range → PT premium 1.5× (same as the engine).
-  const holidays = db.prepare(`
-    SELECT date FROM public_holidays WHERE date >= ? AND date <= ?
-  `).all(period.period_start, period.period_end) as Array<{ date: string }>;
-  const holidaySet = new Set(holidays.map((h) => h.date));
+  // วันพิเศษ (pt_special=1) → PT premium 1.5× (same as the engine).
+  // Public holidays (all rows) are info-only — they drive the "วันหยุด"
+  // status row, NOT pay (owner 2026-06-03).
+  const phRows = db.prepare(`
+    SELECT date, pt_special FROM public_holidays WHERE date >= ? AND date <= ?
+  `).all(period.period_start, period.period_end) as Array<{ date: string; pt_special: number }>;
+  const holidaySet = new Set(phRows.filter((h) => h.pt_special === 1).map((h) => h.date));
+  const publicHolidaySet = new Set(phRows.map((h) => h.date));
 
   // Scheduled work shifts in the period, keyed by BKK assignment date.
   // Same anchoring rule as the pay engine (lib/payroll-compute.ts).
@@ -391,7 +394,7 @@ export async function GET(
   for (let d = period.period_start; d <= period.period_end; d = addDayYmd(d)) {
     if (days.has(d)) continue;
     const label = leaveByDate.get(d)
-      ?? (dayOffSet.has(d) || holidaySet.has(d) ? "วันหยุด" : null);
+      ?? (dayOffSet.has(d) || publicHolidaySet.has(d) ? "วันหยุด" : null);
     if (!label) continue;
     const day = ensureDay(d);
     day.pairs.push({

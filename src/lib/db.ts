@@ -865,6 +865,15 @@ function runMigrations(db: Database.Database): void {
   if (!phcols.some((c) => c.name === "is_workday")) {
     db.exec("ALTER TABLE public_holidays ADD COLUMN is_workday INTEGER NOT NULL DEFAULT 0");
   }
+  // 2026-06-03: pt_special — owner rule. PT staff don't get traditional
+  // public holidays; instead the company designates ~13 "วันพิเศษ" a
+  // year that pay PT at the 1.5× special rate. These are SEPARATE from
+  // public holidays (which are now info-only: "วันลูกค้าเยอะ"). The PT
+  // premium reads ONLY pt_special=1; a date can be a public holiday,
+  // a pt_special day, both, or neither.
+  if (!phcols.some((c) => c.name === "pt_special")) {
+    db.exec("ALTER TABLE public_holidays ADD COLUMN pt_special INTEGER NOT NULL DEFAULT 0");
+  }
   // Seed Thai public holidays — ON CONFLICT DO NOTHING เพื่อไม่ทับค่าที่แอดมินแก้
   // วันลูนาร์เป็นค่าประมาณ — แอดมินปรับผ่าน /admin/persona/holidays ได้
   const seedHoliday = db.prepare(`
