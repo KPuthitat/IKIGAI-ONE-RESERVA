@@ -29,7 +29,7 @@ export default function OtApprovalsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">อนุมัติทำงานล่วงเวลา (OT)</h1>
+        <h1 className="text-2xl font-bold text-slate-800">อนุมัติการทำงานล่วงเวลา</h1>
         <p className="text-sm text-slate-500">
           คำขอ OT จากพนักงาน — อนุมัติแล้วระบบจะนำไปคิดในคอลัมน์ &quot;ทำงานล่วงเวลา&quot; ตอนคำนวณเงินเดือน
         </p>

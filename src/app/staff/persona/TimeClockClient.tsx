@@ -518,10 +518,16 @@ function ClockAction({
       if (data.action === "in" || data.action === "out") {
         setActualAction(data.action);
       }
-      // OT prompt — PT clocked out AFTER their scheduled shift end.
+      // OT prompt — PT clocked out past their scheduled shift end by
+      // more than the 5-min grace (so the time would otherwise be cut at
+      // the scheduled end). The pay engine pays it at the regular rate up
+      // to 8h and the OT rate only beyond 8h.
       if (data.action === "out" && isPartTime && scheduledEnd) {
-        const nowHHMM = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(11, 16);
-        if (nowHHMM > scheduledEnd) {
+        const bkkNow = new Date(Date.now() + 7 * 60 * 60 * 1000);
+        const nowMins = bkkNow.getUTCHours() * 60 + bkkNow.getUTCMinutes();
+        const [eh, em] = scheduledEnd.split(":").map(Number);
+        const schedMins = (eh || 0) * 60 + (em || 0);
+        if (nowMins > schedMins + 5) {
           setOtStep("ask");
           setOtUntil("");
           setOtErr(null);

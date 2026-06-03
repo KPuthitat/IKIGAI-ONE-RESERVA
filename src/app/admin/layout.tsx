@@ -125,7 +125,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           ? [{ href: "/admin/persona/payroll", label: t(lang, "admin.persona.nav.payroll") }]
           : []),
         { href: "/admin/persona/service-charge", label: t(lang, "admin.persona.nav.svc") },
-        { href: "/admin/persona/ot-approvals", label: "อนุมัติ OT" },
+        { href: "/admin/persona/ot-approvals", label: "อนุมัติการทำงานล่วงเวลา" },
         { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
         { href: "/admin/persona/holidays", label: t(lang, "admin.persona.nav.holidays") },

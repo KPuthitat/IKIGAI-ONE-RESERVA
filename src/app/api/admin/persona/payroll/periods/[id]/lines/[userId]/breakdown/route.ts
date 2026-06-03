@@ -207,13 +207,22 @@ export async function GET(
     const rawMin = outTs ? Math.max(0, floorMin(outTs) - floorMin(inTs)) : 0;
     const holiday = isPt && holidaySet.has(date);
 
+    // Approved OT extends the worked window past the scheduled end.
+    let otUntilTs: string | null = null;
+    if (isPt && sched) {
+      const reqUntil = approvedOtByDate.get(date);
+      if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
+        otUntilTs = new Date(`${date}T${reqUntil}:00+07:00`).toISOString();
+      }
+    }
+
     let breakMinutes = 0;
     let workedMin = rawMin;       // after break, before OT split
     let lateMin = 0;
     let earlyMin = 0;
     if (outTs) {
       if (isPt && sched) {
-        const g = applyPtGrace({ startTs: inTs, endTs: outTs }, sched);
+        const g = applyPtGrace({ startTs: inTs, endTs: outTs }, sched, otUntilTs);
         breakMinutes = Math.round(g.breakMinutes);
         workedMin = Math.round(g.workedMinutes);
         lateMin = Math.round(g.lateMinutes);
@@ -224,20 +233,10 @@ export async function GET(
         workedMin = Math.round(db2.workedMinutes);
       }
     }
+    // ≤8h total stays regular rate (even past the scheduled end via an
+    // approved OT); only the excess beyond 8h is OT rate.
     const split = splitRegularOt(workedMin);
-
-    // Approved OT (PT) = min(actual out, requested_until) − scheduled end.
-    let approvedOt = 0;
-    if (isPt && sched && outTs) {
-      const reqUntil = approvedOtByDate.get(date);
-      if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
-        const reqUntilMs = new Date(`${date}T${reqUntil}:00+07:00`).getTime();
-        const actualOutMs = floorMin(outTs) * 60000;
-        const schedEndMs = new Date(sched.endTs).getTime();
-        approvedOt = Math.max(0, Math.round((Math.min(actualOutMs, reqUntilMs) - schedEndMs) / 60000));
-      }
-    }
-    const otMin = split.ot + approvedOt;
+    const otMin = split.ot;
 
     const mult = holiday ? 1.5 : 1;
     const regularPay = isPt ? (split.regular / 60) * ptRate * mult : 0;

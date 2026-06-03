@@ -195,7 +195,13 @@ export type GracedShift = {
  */
 export function applyPtGrace(
   shift: { startTs: string; endTs: string },
-  scheduled: ScheduledShift | null
+  scheduled: ScheduledShift | null,
+  // Approved OT: when set, the worked window may EXTEND past the
+  // scheduled end up to this time (UTC ISO). The extra minutes become
+  // part of workedMinutes; the caller's regular/OT split (8h threshold)
+  // then decides regular vs OT rate. Without it, the window caps at the
+  // scheduled end as usual.
+  otUntilTs?: string | null
 ): GracedShift {
   // Floor to whole minutes — the clock stores seconds, but pay is
   // reckoned in minutes (matching the HH:MM the editor shows). Without
@@ -229,15 +235,20 @@ export function applyPtGrace(
     lateMinutes = (inMs - schStart) / 60000;
   }
 
-  // Effective out: clamp to scheduled end unless early beyond grace
+  // Effective out: clamp to the out-cap unless early beyond grace. The
+  // out-cap is the scheduled end normally, OR an approved OT "until"
+  // time when the staff worked past their shift (lets the window extend
+  // so the 8h split can credit the excess as OT).
+  const outCap = otUntilTs ? Math.max(schEnd, new Date(otUntilTs).getTime()) : schEnd;
   let effOut: number;
   let earlyMinutes = 0;
-  if (outMs >= schEnd - graceMs) {
-    effOut = schEnd;
+  if (outMs >= outCap - graceMs) {
+    effOut = outCap;
   } else {
     effOut = outMs;
-    earlyMinutes = (schEnd - outMs) / 60000;
   }
+  // "Early" is measured against the SCHEDULED end (status display only).
+  if (effOut < schEnd) earlyMinutes = (schEnd - effOut) / 60000;
 
   const grossMinutes = Math.max(0, (effOut - effIn) / 60000);
 
@@ -515,8 +526,20 @@ export function computeLineForEmployee(args: {
     const sched = (e.employment_type === "pt" && scheduledByDate)
       ? pickScheduled(scheduledByDate.get(shiftDate) ?? [], s)
       : null;
+
+    // Approved OT extends the worked window past the scheduled end up to
+    // the requested "until" time. The 8h split below then credits any
+    // excess as OT rate (≤8h total stays regular rate, even past the end).
+    let otUntilTs: string | null = null;
+    if (e.employment_type === "pt" && sched && approvedOtByDate) {
+      const reqUntil = approvedOtByDate.get(shiftDate);
+      if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
+        otUntilTs = new Date(`${shiftDate}T${reqUntil}:00+07:00`).toISOString();
+      }
+    }
+
     if (sched) {
-      const g = applyPtGrace(s, sched);
+      const g = applyPtGrace(s, sched, otUntilTs);
       grossMin = g.grossMinutes;
       deducted = g.breakMinutes;
       workedMinutes = g.workedMinutes;
@@ -533,20 +556,6 @@ export function computeLineForEmployee(args: {
     regularMin += split.regular;
     otMin += split.ot;
 
-    // Approved OT (PT) — credited on top of the shift-box pay. OT
-    // minutes = min(actual clock-out, requested_until) − scheduled end.
-    let approvedOtMin = 0;
-    if (e.employment_type === "pt" && sched && approvedOtByDate) {
-      const reqUntil = approvedOtByDate.get(shiftDate);
-      if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
-        const reqUntilMs = new Date(`${shiftDate}T${reqUntil}:00+07:00`).getTime();
-        const actualOutMs = Math.floor(new Date(s.endTs).getTime() / 60000) * 60000;
-        const schedEndMs = new Date(sched.endTs).getTime();
-        approvedOtMin = Math.max(0, (Math.min(actualOutMs, reqUntilMs) - schedEndMs) / 60000);
-      }
-    }
-    otMin += approvedOtMin;
-
     daysSet.add(shiftDate);
     const isHoliday = holidaySet.has(shiftDate);
 
@@ -559,8 +568,7 @@ export function computeLineForEmployee(args: {
       // PT: holiday premium 1.5x on both base + OT
       const mult = isHoliday ? PT_HOLIDAY_MULTIPLIER : 1;
       ptBasePay += (split.regular / 60) * ptRate * mult;
-      ptOtPay += computeOtPay(split.ot, ptRate, settings, mult)
-               + computeOtPay(approvedOtMin, ptRate, settings, mult);
+      ptOtPay += computeOtPay(split.ot, ptRate, settings, mult);
     } else if (e.employment_type === "ft") {
       // FT: OT only (base is salary). No holiday premium per company rule.
       ftOtPay += computeOtPay(split.ot, ftHourlyEquivalent, settings, 1);

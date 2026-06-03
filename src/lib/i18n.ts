@@ -929,7 +929,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "staff.persona.ot.untilLabel": "ขอทำงานล่วงเวลาถึงกี่โมง",
     "staff.persona.ot.warnAfter": "กรุณากดบันทึกเวลาออกงานหลังเวลาที่ขอไว้ — ระบบจ่ายตามเวลาที่ทำจริง",
     "staff.persona.ot.skip": "ข้าม",
-    "staff.persona.ot.submit": "ส่งคำขอ OT",
+    "staff.persona.ot.submit": "ส่งคำขอทำงานล่วงเวลา",
     "staff.persona.ot.needTime": "กรุณาระบุเวลาที่ขอ",
     "staff.persona.antiCheatHint": "ระบบจะตรวจ GPS / คิวอาร์ ที่ {branch} ก่อนรับลงเวลา — กดปุ่มเข้า/ออก แล้วทำตามขั้นบนหน้า PIN",
     "staff.persona.gatesPending": "ทำขั้นด้านบนให้เสร็จก่อน ถึงจะกด PIN ได้",

@@ -49,14 +49,14 @@ export async function POST(req: Request) {
     if (branch) {
       const flex = {
         type: "flex" as const,
-        altText: `ขออนุมัติ OT · ${user.display_name} · ${work_date}`,
+        altText: `ขออนุมัติทำงานล่วงเวลา · ${user.display_name} · ${work_date}`,
         contents: {
           type: "bubble" as const, size: "kilo",
           header: {
             type: "box", layout: "vertical", paddingAll: "16px", backgroundColor: "#1a1a2e",
             contents: [
               { type: "text", text: "PERSONA · คำขอทำงานล่วงเวลา", size: "xxs", color: "#fda4af", weight: "bold" },
-              { type: "text", text: "รออนุมัติ OT", size: "md", color: "#ffffff", weight: "bold", margin: "xs" }
+              { type: "text", text: "รออนุมัติการทำงานล่วงเวลา", size: "md", color: "#ffffff", weight: "bold", margin: "xs" }
             ]
           },
           body: {
