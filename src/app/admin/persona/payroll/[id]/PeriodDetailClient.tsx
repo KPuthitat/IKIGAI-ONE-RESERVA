@@ -925,6 +925,7 @@ type BreakdownDay = {
     lateMin: number;
     earlyMin: number;
     holiday: boolean;
+    statusLabel: string | null;
   }>;
   totalMinutes: number;
   effectiveMinutes: number;
@@ -1227,24 +1228,36 @@ function LineEditModal({
                           )}
                         </td>
                         <td className="px-2 py-1.5 font-mono">
-                          {p.workIn ?? <span className="text-rose-500">ขาด</span>}
-                          <span className="text-slate-300">–</span>
-                          {p.workOut ?? <span className="text-rose-500">ขาด</span>}
-                          {clampedPair(p) && (
-                            <span className="block text-[9px] text-slate-400">
-                              ลงเวลาจริง {fmtMin(p.durationMinutes)}
-                            </span>
-                          )}
-                          {(p.lateMin > 0 || p.earlyMin > 0) && (
-                            <span className="block text-[9px] font-sans">
-                              {p.lateMin > 0 && (
-                                <span className="text-rose-600">มาสาย {p.lateMin} น.</span>
+                          {p.statusLabel ? (
+                            <span className={`text-[10px] font-sans px-1.5 py-0.5 rounded ${
+                              p.statusLabel === "ขาดงาน"
+                                ? "bg-rose-100 text-rose-700"
+                                : p.statusLabel === "วันหยุด"
+                                ? "bg-slate-100 text-slate-600"
+                                : "bg-sky-100 text-sky-700"
+                            }`}>{p.statusLabel}</span>
+                          ) : (
+                            <>
+                              {p.workIn ?? <span className="text-rose-500">ขาด</span>}
+                              <span className="text-slate-300">–</span>
+                              {p.workOut ?? <span className="text-rose-500">ขาด</span>}
+                              {clampedPair(p) && (
+                                <span className="block text-[9px] text-slate-400">
+                                  ลงเวลาจริง {fmtMin(p.durationMinutes)}
+                                </span>
                               )}
-                              {p.lateMin > 0 && p.earlyMin > 0 && " · "}
-                              {p.earlyMin > 0 && (
-                                <span className="text-amber-600">กลับก่อน {p.earlyMin} น.</span>
+                              {(p.lateMin > 0 || p.earlyMin > 0) && (
+                                <span className="block text-[9px] font-sans">
+                                  {p.lateMin > 0 && (
+                                    <span className="text-rose-600">มาสาย {p.lateMin} น.</span>
+                                  )}
+                                  {p.lateMin > 0 && p.earlyMin > 0 && " · "}
+                                  {p.earlyMin > 0 && (
+                                    <span className="text-amber-600">กลับก่อน {p.earlyMin} น.</span>
+                                  )}
+                                </span>
                               )}
-                            </span>
+                            </>
                           )}
                         </td>
                         <td className="px-2 py-1.5 font-mono text-slate-500">

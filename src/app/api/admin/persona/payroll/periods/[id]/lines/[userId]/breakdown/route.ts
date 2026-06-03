@@ -63,6 +63,9 @@ type DayPair = {
   earlyMin: number;
   // True when the day is a public holiday (PT pay ×1.5 applies).
   holiday: boolean;
+  // Non-working-day label for a synthetic row (no clock-in): "วันหยุด"
+  // or the leave-type label (ลาพักร้อน/ลากิจ/ลาป่วย/…). null on normal rows.
+  statusLabel: string | null;
 };
 
 type Period = {
@@ -227,7 +230,8 @@ export async function GET(
       edited,
       lateMin,
       earlyMin,
-      holiday
+      holiday,
+      statusLabel: null
     };
   }
 
@@ -237,6 +241,41 @@ export async function GET(
     const endDate = clockOut < clockIn ? addDayYmd(date) : date;
     const outTs = new Date(`${endDate}T${clockOut}:00+07:00`).toISOString();
     return buildPair(inTs, outTs, true);
+  }
+
+  // ── Non-working days (status rows) ────────────────────────────
+  // Roster day-off + approved leave + public holidays are surfaced as
+  // status rows so the admin can verify the period at a glance even
+  // when there's no clock-in (owner 2026-06-03).
+  const dayOffRows = db.prepare(`
+    SELECT ra.assignment_date AS d
+    FROM roster_assignments ra
+    JOIN shift_codes sc ON sc.id = ra.shift_code_id
+    WHERE ra.user_id = ? AND ra.assignment_date >= ? AND ra.assignment_date <= ?
+      AND sc.kind = 'day_off'
+  `).all(userId, period.period_start, period.period_end) as Array<{ d: string }>;
+  const dayOffSet = new Set(dayOffRows.map((r) => r.d));
+
+  const leaveLabelTh = (type: string): string => ({
+    sick: "ลาป่วย", personal: "ลากิจ", annual: "ลาพักร้อน",
+    pt_emergency: "ลาฉุกเฉิน", maternity: "ลาคลอด", ordination: "ลาอุปสมบท",
+    sterilization: "ลาทำหมัน", military: "ลาเกณฑ์ทหาร", business: "ลาประชุมงาน"
+  } as Record<string, string>)[type] ?? "ลา";
+  const leaveRows = db.prepare(`
+    SELECT type, date_from, date_to FROM leave_requests
+    WHERE user_id = ? AND status = 'approved'
+      AND NOT (date_to < ? OR date_from > ?)
+  `).all(userId, period.period_start, period.period_end) as Array<{
+    type: string; date_from: string; date_to: string;
+  }>;
+  const leaveByDate = new Map<string, string>();
+  for (const lv of leaveRows) {
+    let cur = lv.date_from < period.period_start ? period.period_start : lv.date_from;
+    const end = lv.date_to > period.period_end ? period.period_end : lv.date_to;
+    while (cur <= end) {
+      leaveByDate.set(cur, leaveLabelTh(lv.type));
+      cur = addDayYmd(cur);
+    }
   }
 
   // Pull all entries within the period (inclusive on both ends).
@@ -318,7 +357,8 @@ export async function GET(
           edited: false,
           lateMin: 0,
           earlyMin: 0,
-          holiday: false
+          holiday: false,
+          statusLabel: null
         });
       }
     }
@@ -341,9 +381,25 @@ export async function GET(
         date, workIn: null, workOut: null, durationMinutes: 0,
         schedIn: null, schedOut: null, breakMinutes: 0,
         effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: true,
-        lateMin: 0, earlyMin: 0, holiday: false
+        lateMin: 0, earlyMin: 0, holiday: false, statusLabel: "ขาดงาน"
       });
     }
+  }
+
+  // Emit status rows for non-worked days that are leave / day-off /
+  // public holiday — only when the day has no clock activity already.
+  for (let d = period.period_start; d <= period.period_end; d = addDayYmd(d)) {
+    if (days.has(d)) continue;
+    const label = leaveByDate.get(d)
+      ?? (dayOffSet.has(d) || holidaySet.has(d) ? "วันหยุด" : null);
+    if (!label) continue;
+    const day = ensureDay(d);
+    day.pairs.push({
+      date: d, workIn: null, workOut: null, durationMinutes: 0,
+      schedIn: null, schedOut: null, breakMinutes: 0,
+      effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: false,
+      lateMin: 0, earlyMin: 0, holiday: holidaySet.has(d), statusLabel: label
+    });
   }
 
   const sortedDays = [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
