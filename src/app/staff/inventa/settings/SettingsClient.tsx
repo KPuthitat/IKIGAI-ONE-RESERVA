@@ -6,13 +6,14 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import type { LookupKind, InventaLookup, InventaSupplier } from "@/lib/inventa";
 
-const KINDS: LookupKind[] = ["storage", "unit", "category"];
+const KINDS: LookupKind[] = ["item_type", "category", "storage", "unit"];
 
 // kind → i18n key for its label (no more Thai-only LOOKUP_KIND_META).
 const KIND_KEY: Record<LookupKind, string> = {
   storage: "inv.f.location",
   unit: "inv.f.unit",
   category: "inv.f.category",
+  item_type: "inv.f.itemType",
   row: "inv.f.location"
 };
 

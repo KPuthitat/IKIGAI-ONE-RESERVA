@@ -69,10 +69,10 @@ export async function POST(req: Request) {
   const insert = db.prepare(`
     INSERT INTO inventa_items
       (branch_id, item_code, barcode, name, generic_name, category,
-       storage_location, item_type, unit, unit_cost, supplier_id,
+       storage_location, item_type, item_type_label, unit, unit_cost, supplier_id,
        grid_row, grid_col, pick_freq, safety_stock, current_qty,
        created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `);
 
   let created = 0;
@@ -98,6 +98,9 @@ export async function POST(req: Request) {
         d.category?.trim() || null,
         d.storage_location?.trim() || null,
         itemType(d.item_type),
+        // Configurable label = the raw value the importer typed
+        // ("ยา"/"เวชภัณฑ์"/…), falling back to the legacy Thai label.
+        d.item_type?.trim() || (itemType(d.item_type) === "equipment" ? "วัสดุอุปกรณ์" : "สินค้า"),
         d.unit?.trim() || null,
         num(d.unit_cost, 0),
         supId,

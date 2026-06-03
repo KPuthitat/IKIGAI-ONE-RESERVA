@@ -21,6 +21,9 @@ const Body = z.object({
   category: z.string().max(120).nullable().optional(),
   storage_location: z.string().max(120).nullable().optional(),
   item_type: z.enum(["drug", "equipment"]).default("drug"),
+  // Configurable ประเภทสินค้า (lookup-driven, free-form). The legacy
+  // item_type enum stays for back-compat; this is the user-facing value.
+  item_type_label: z.string().max(120).nullable().optional(),
   unit: z.string().max(40).nullable().optional(),
   // Cost is entered as a purchase line (price ÷ total smallest units);
   // the server derives unit_cost so packs/strips are normalised.
@@ -95,16 +98,16 @@ export async function POST(req: Request) {
   const info = db.prepare(`
     INSERT INTO inventa_items
       (branch_id, item_code, barcode, name, generic_name, cgd_code,
-       category, storage_location, item_type, unit, unit_cost, cost_price,
+       category, storage_location, item_type, item_type_label, unit, unit_cost, cost_price,
        last_purchase_price, last_purchase_units, price_opd, price_ipd,
        price_uc, supplier_id, grid_row, grid_col, pick_freq,
        safety_stock, current_qty, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     user.activeBranchId ?? null,
     d.item_code ?? null, d.barcode ?? null, d.name.trim(),
     d.generic_name ?? null, d.cgd_code ?? null, d.category ?? null,
-    d.storage_location ?? null, d.item_type, d.unit ?? null, unitCost,
+    d.storage_location ?? null, d.item_type, d.item_type_label ?? null, d.unit ?? null, unitCost,
     d.cost_price ?? null,
     d.last_purchase_price ?? null, d.last_purchase_units ?? null,
     d.price_opd ?? null, d.price_ipd ?? null, d.price_uc ?? null,

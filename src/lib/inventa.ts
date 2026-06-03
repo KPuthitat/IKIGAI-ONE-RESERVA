@@ -38,13 +38,14 @@ export const PICK_FREQ_META: Record<PickFreq, {
   }
 };
 
-export type LookupKind = "row" | "storage" | "unit" | "category";
+export type LookupKind = "row" | "storage" | "unit" | "category" | "item_type";
 
 export const LOOKUP_KIND_META: Record<LookupKind, string> = {
   row: "แถว (รหัสขึ้นต้น)",
   storage: "ตำแหน่งจัดเก็บ",
   unit: "หน่วยเล็กสุด (หน่วยขาย)",
-  category: "หมวดหมู่"
+  category: "หมวดหมู่",
+  item_type: "ประเภทสินค้า"
 };
 
 export type InventaLookup = {
@@ -166,6 +167,7 @@ export type InventaItem = {
   category: string | null;
   storage_location: string | null;
   item_type: ItemType;
+  item_type_label: string | null;
   unit: string | null;
   unit_cost: number;
   /** Per-smallest-unit *cost* used as the baseline for PO totals and

@@ -2987,6 +2987,65 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE inventa_counts ADD COLUMN reopened_by INTEGER REFERENCES users(id)");
   }
 
+  // 2026-06-03: configurable ประเภทสินค้า (item_type). Owner wants to
+  // add their own types (ยา / เวชภัณฑ์ / อุปกรณ์สำนักงาน …) instead of the
+  // hard-coded สินค้า/วัสดุอุปกรณ์.
+  //   (a) Widen inventa_lookups.kind CHECK to allow 'item_type'. Safe
+  //       rebuild — small config table, no incoming FKs.
+  //   (b) Add inventa_items.item_type_label (free-form, lookup-driven).
+  //       We DON'T rebuild the core inventa_items table: the legacy
+  //       item_type column + its CHECK stay (back-compat); item_type_label
+  //       is the new user-facing value.
+  const luSql = (db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='inventa_lookups'"
+  ).get() as { sql: string } | undefined)?.sql ?? "";
+  if (luSql && !luSql.includes("item_type")) {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE inventa_lookups_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          branch_id INTEGER REFERENCES branches(id),
+          kind TEXT NOT NULL
+            CHECK (kind IN ('row','storage','unit','category','item_type')),
+          value TEXT NOT NULL,
+          sort_order INTEGER NOT NULL DEFAULT 100,
+          active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          code TEXT
+        );
+        INSERT INTO inventa_lookups_new
+          (id, branch_id, kind, value, sort_order, active, created_at, code)
+          SELECT id, branch_id, kind, value, sort_order, active, created_at, code
+          FROM inventa_lookups;
+        DROP TABLE inventa_lookups;
+        ALTER TABLE inventa_lookups_new RENAME TO inventa_lookups;
+        CREATE INDEX IF NOT EXISTS idx_inventa_lookups_kind
+          ON inventa_lookups(kind, active);
+      `);
+    })();
+  }
+  const invCols2 = db.prepare("PRAGMA table_info(inventa_items)")
+    .all() as Array<{ name: string }>;
+  if (!invCols2.some((c) => c.name === "item_type_label")) {
+    db.exec("ALTER TABLE inventa_items ADD COLUMN item_type_label TEXT");
+    db.exec(`
+      UPDATE inventa_items
+      SET item_type_label = CASE item_type
+            WHEN 'equipment' THEN 'วัสดุอุปกรณ์' ELSE 'สินค้า' END
+      WHERE item_type_label IS NULL
+    `);
+  }
+  // Seed each branch's default item types (idempotent).
+  db.exec(`
+    INSERT INTO inventa_lookups (branch_id, kind, value, sort_order)
+    SELECT b.id, 'item_type', v.val, v.ord
+    FROM branches b
+    CROSS JOIN (SELECT 'สินค้า' AS val, 10 AS ord UNION ALL SELECT 'วัสดุอุปกรณ์', 20) v
+    WHERE NOT EXISTS (
+      SELECT 1 FROM inventa_lookups l WHERE l.branch_id = b.id AND l.kind = 'item_type'
+    )
+  `);
+
   // inventa_item_lots — per-receipt lot tracking with expiry.
   // Multi-lot per item so the clinic can spot "Vitamin B is overstocked
   // because lot A expires next month AND lot B was just received".

@@ -11,7 +11,7 @@ import { getDb } from "@/lib/db";
 // keeps its own categories / units / storage locations.
 
 const Body = z.object({
-  kind: z.enum(["row", "storage", "unit", "category"]),
+  kind: z.enum(["row", "storage", "unit", "category", "item_type"]),
   value: z.string().trim().min(1).max(200),
   /** Short abbreviation shown as the bold first line on the
    *  catalogue + filter chips. Optional — falls back to value. */

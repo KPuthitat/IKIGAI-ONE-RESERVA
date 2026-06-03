@@ -43,6 +43,7 @@ type Item = {
   category: string | null;
   storage_location: string | null;
   item_type: ItemType;
+  item_type_label: string | null;
   unit: string | null;
   unit_cost: number;
   cost_price: number | null;
@@ -542,6 +543,7 @@ function ItemModal({
     lookups.filter((l) => l.kind === kind).map((l) => l.value);
   const storageOpts = opts("storage");
   const unitOpts = opts("unit");
+  const itemTypeOpts = opts("item_type");
   // Category list is local state so an inline "+ เพิ่มหมวดหมู่" shows
   // up immediately without closing the modal (owner 2026-06-03).
   const [categoryOpts, setCategoryOpts] = useState<string[]>(opts("category"));
@@ -579,6 +581,7 @@ function ItemModal({
     generic_name: base.generic_name ?? "",
     category: base.category ?? "",
     item_type: (base.item_type ?? "drug") as ItemType,
+    item_type_label: base.item_type_label ?? "",
     unit: base.unit ?? "",
     unit_cost: base.unit_cost != null ? String(base.unit_cost) : "",
     cost_price: base.cost_price != null ? String(base.cost_price) : "",
@@ -614,6 +617,7 @@ function ItemModal({
         generic_name: f.generic_name.trim() || null,
         category: f.category.trim() || null,
         item_type: f.item_type,
+        item_type_label: f.item_type_label.trim() || null,
         unit: f.unit.trim() || null,
         unit_cost: f.unit_cost ? Number(f.unit_cost) : 0,
         cost_price: f.cost_price ? Number(f.cost_price) : null,
@@ -663,12 +667,15 @@ function ItemModal({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="label">{t("inv.f.type")} *</label>
-            <select className="input" value={f.item_type}
-              onChange={(e) => up("item_type", e.target.value)}>
-              <option value="drug">{t("inv.type.goods")}</option>
-              <option value="equipment">{t("inv.type.material")}</option>
+            <label className="label">{t("inv.f.itemType")}</label>
+            <select className="input" value={f.item_type_label}
+              onChange={(e) => up("item_type_label", e.target.value)}>
+              <option value="">{t("inv.dash")}</option>
+              {itemTypeOpts.map((it) => <option key={it} value={it}>{it}</option>)}
             </select>
+            <p className="text-[10px] text-slate-400 mt-1">
+              เพิ่ม/แก้ประเภทได้ที่หน้า &quot;ตั้งค่า&quot;
+            </p>
           </div>
           <div>
             <label className="label">{t("inv.f.barcode")}</label>
