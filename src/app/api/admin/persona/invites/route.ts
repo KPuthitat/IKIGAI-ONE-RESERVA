@@ -76,10 +76,14 @@ export async function POST(req: Request) {
         d.employment_type ?? null, d.job_title ?? null, d.employee_code ?? null
       );
       userId = Number(r.lastInsertRowid);
-      // Link to the requested branch via user_branches.
+      // Link to the requested branch via user_branches. An admin onboard
+      // also gets is_admin=1 on that branch — otherwise role='admin' with
+      // zero admin-branches makes requireAdmin treat them as staff and the
+      // sidebar's view-switch never appears (bug fixed 2026-06-03). Mirrors
+      // what the branch-admin grant route does.
       db.prepare(
-        "INSERT INTO user_branches (user_id, branch_id) VALUES (?, ?)"
-      ).run(userId, d.branch_id);
+        "INSERT INTO user_branches (user_id, branch_id, is_admin) VALUES (?, ?, ?)"
+      ).run(userId, d.branch_id, d.role === "admin" ? 1 : 0);
     } catch (e) {
       if (String(e).includes("UNIQUE")) {
         return NextResponse.json({ error: "duplicate_user" }, { status: 409 });

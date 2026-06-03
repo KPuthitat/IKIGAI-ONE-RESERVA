@@ -16,6 +16,40 @@ import "@/lib/liff-types";
 
 const DRAFT_KEY_PREFIX = "recruita_draft_";
 
+// Downscale + re-encode an image File to a modest JPEG before upload.
+// Phone photos are commonly 3–8 MB, which trips the reverse-proxy body
+// limit and the upload silently 413s ("ส่งใบสมัครไม่สำเร็จ"). Shrinking to
+// ≤1600px / JPEG q0.82 lands well under a megabyte and also normalises
+// HEIC / empty-type files to image/jpeg so the server's mime allow-list
+// accepts them. Non-images (PDF résumé) pass straight through. Any decode
+// failure falls back to the original file so we never block a submit.
+async function downscaleImage(file: File, maxDim = 1600, quality = 0.82): Promise<File> {
+  if (!file.type.startsWith("image/")) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", quality)
+    );
+    if (!blob) return file;
+    // Keep the original only if it's already a smaller JPEG.
+    if (file.type === "image/jpeg" && blob.size >= file.size) return file;
+    const base = file.name.replace(/\.[^.]+$/, "") || "image";
+    return new File([blob], `${base}.jpg`, { type: "image/jpeg" });
+  } catch {
+    return file;
+  }
+}
+
 type EducationRow = {
   level: string;
   institution: string;
@@ -409,9 +443,16 @@ export default function ApplyClient({
         // links the candidate row when present.
         line_user_id: lineUserId,
       }));
-      if (photo)  fd.append("photo", photo);
-      if (resume) fd.append("resume", resume);
-      if (idCopy) fd.append("id_copy", idCopy);
+      // Shrink image attachments client-side so a multi-MB phone photo
+      // doesn't 413 at the proxy. PDFs pass through untouched.
+      const [outPhoto, outResume, outIdCopy] = await Promise.all([
+        photo ? downscaleImage(photo) : Promise.resolve(null),
+        resume ? downscaleImage(resume) : Promise.resolve(null),
+        idCopy ? downscaleImage(idCopy) : Promise.resolve(null)
+      ]);
+      if (outPhoto)  fd.append("photo", outPhoto);
+      if (outResume) fd.append("resume", outResume);
+      if (outIdCopy) fd.append("id_copy", outIdCopy);
 
       const res = await fetch(apiUrl("/api/recruita/applications"), {
         method: "POST",

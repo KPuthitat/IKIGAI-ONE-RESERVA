@@ -2459,6 +2459,27 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE user_branches ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
   }
 
+  // 2026-06-03: repair admins onboarded via invite BEFORE the invite flow
+  // set is_admin. Their user_branches row defaulted to is_admin=0, so a
+  // role='admin' account ended up with zero admin-branches — requireAdmin
+  // treated them as staff and the sidebar's "มุมมองผู้ดูแลระบบ" switch never
+  // showed. Repair: any active role='admin' user with NO is_admin=1 branch
+  // gets is_admin=1 on every branch they belong to. Idempotent (the
+  // NOT EXISTS clause stops matching once repaired) and scoped to the
+  // broken state, so admins with an intentional per-branch split are left
+  // alone. super_admin is global and isn't role='admin' here.
+  db.exec(`
+    UPDATE user_branches SET is_admin = 1
+    WHERE user_id IN (
+      SELECT u.id FROM users u
+      WHERE u.role = 'admin' AND u.status != 'disabled'
+        AND NOT EXISTS (
+          SELECT 1 FROM user_branches ub2
+          WHERE ub2.user_id = u.id AND ub2.is_admin = 1
+        )
+    )
+  `);
+
   // users — Phase A profile columns. All nullable (existing rows
   // keep working). Idempotent per-column ALTER.
   const phaseAUserCols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
