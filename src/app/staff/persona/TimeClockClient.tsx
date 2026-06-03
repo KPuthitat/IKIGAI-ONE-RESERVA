@@ -7,7 +7,7 @@ import { useLang } from "@/lib/LangProvider";
 
 type TimeEntry = { id: number; type: "in" | "out"; ts: string };
 
-type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error";
+type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask";
 
 type ReplaceState = {
   pin: string;
@@ -34,7 +34,10 @@ export default function TimeClockClient({
   geofenceLat,
   geofenceLng,
   geofenceRadiusMeters,
-  qrEnabled
+  qrEnabled,
+  isPartTime,
+  scheduledEnd,
+  todayBkk
 }: {
   userName: string;
   hasPin: boolean;
@@ -64,6 +67,9 @@ export default function TimeClockClient({
    *  the client shows a camera scanner that must produce a token
    *  matching the branch's clock_qr_token before submission. */
   qrEnabled: boolean;
+  isPartTime: boolean;
+  scheduledEnd: string | null;
+  todayBkk: string;
 }) {
   const router = useRouter();
   const { t, formatDateLong } = useLang();
@@ -156,6 +162,9 @@ export default function TimeClockClient({
               geofenceLng={geofenceLng}
               geofenceRadiusMeters={geofenceRadiusMeters}
               qrEnabled={qrEnabled}
+              isPartTime={isPartTime}
+              scheduledEnd={scheduledEnd}
+              todayBkk={todayBkk}
             />
           )}
         </div>
@@ -236,7 +245,10 @@ function ClockAction({
   geofenceLat,
   geofenceLng,
   geofenceRadiusMeters,
-  qrEnabled
+  qrEnabled,
+  isPartTime,
+  scheduledEnd,
+  todayBkk
 }: {
   action: "in" | "out";
   correctable: boolean;
@@ -247,6 +259,9 @@ function ClockAction({
   geofenceLng: number | null;
   geofenceRadiusMeters: number;
   qrEnabled: boolean;
+  isPartTime: boolean;
+  scheduledEnd: string | null;
+  todayBkk: string;
 }) {
   const { t } = useLang();
   const [phase, setPhase] = useState<Phase>("idle");
@@ -254,6 +269,39 @@ function ClockAction({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [actualAction, setActualAction] = useState<"in" | "out">(action);
   const [replaceState, setReplaceState] = useState<ReplaceState | null>(null);
+
+  // OT prompt (PT clocking out after scheduled end).
+  const [otStep, setOtStep] = useState<"ask" | "enter">("ask");
+  const [otUntil, setOtUntil] = useState("");
+  const [otBusy, setOtBusy] = useState(false);
+  const [otErr, setOtErr] = useState<string | null>(null);
+
+  function finishOt() {
+    setPhase("success");
+    setTimeout(onSuccess, 1500);
+  }
+  async function submitOt() {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(otUntil)) {
+      setOtErr(t("staff.persona.ot.needTime"));
+      return;
+    }
+    setOtBusy(true);
+    setOtErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/persona/ot-requests"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ work_date: todayBkk, requested_until: otUntil })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) finishOt();
+      else setOtErr(j?.error ?? t("common.error"));
+    } catch {
+      setOtErr(t("common.error"));
+    } finally {
+      setOtBusy(false);
+    }
+  }
 
   // GPS state (captured on-demand when geofenceEnabled). Stored as
   // numbers + accuracy so the API can widen the allowed radius by
@@ -470,6 +518,17 @@ function ClockAction({
       if (data.action === "in" || data.action === "out") {
         setActualAction(data.action);
       }
+      // OT prompt — PT clocked out AFTER their scheduled shift end.
+      if (data.action === "out" && isPartTime && scheduledEnd) {
+        const nowHHMM = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(11, 16);
+        if (nowHHMM > scheduledEnd) {
+          setOtStep("ask");
+          setOtUntil("");
+          setOtErr(null);
+          setPhase("ot_ask");
+          return;
+        }
+      }
       setPhase("success");
       setTimeout(onSuccess, 1500);
     } catch {
@@ -547,6 +606,63 @@ function ClockAction({
             {t("staff.persona.replace.use", { time: proposedHHMM })}
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // ── OT prompt (late clock-out, PT) ──────────
+  if (phase === "ot_ask") {
+    return (
+      <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-4 space-y-3 text-left">
+        <div className="text-sm text-slate-800 leading-relaxed">
+          {t("staff.persona.ot.askBody")}
+        </div>
+        {otStep === "ask" ? (
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              onClick={finishOt}
+              className="py-3 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 active:scale-95 transition"
+            >
+              {t("staff.persona.ot.no")}
+            </button>
+            <button
+              onClick={() => { setOtStep("enter"); setOtUntil(scheduledEnd ?? ""); }}
+              className="py-3 rounded-xl bg-brand text-white text-sm font-bold active:scale-95 transition"
+            >
+              {t("staff.persona.ot.yes")}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <label className="text-xs text-slate-600">{t("staff.persona.ot.untilLabel")}</label>
+            <input
+              type="time"
+              value={otUntil}
+              onChange={(e) => setOtUntil(e.target.value)}
+              className="input text-center text-lg"
+            />
+            <p className="text-[11px] text-amber-700">
+              {t("staff.persona.ot.warnAfter")}
+            </p>
+            {otErr && <p className="text-rose-600 text-sm">{otErr}</p>}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                onClick={finishOt}
+                disabled={otBusy}
+                className="py-3 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+              >
+                {t("staff.persona.ot.skip")}
+              </button>
+              <button
+                onClick={submitOt}
+                disabled={otBusy}
+                className="py-3 rounded-xl bg-brand text-white text-sm font-bold disabled:opacity-50"
+              >
+                {otBusy ? t("common.submitting") : t("staff.persona.ot.submit")}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

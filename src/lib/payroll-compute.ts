@@ -475,8 +475,13 @@ export function computeLineForEmployee(args: {
   // scheduled box ±5-min grace (see applyPtGrace). Omit / leave empty to
   // fall back to raw clock times (legacy behaviour, e.g. no roster).
   scheduledByDate?: Map<string, ScheduledShift[]>;
+  // Approved OT requests for this employee, keyed by BKK date → the
+  // "requested until" HH:MM. PT only. OT minutes credited that day =
+  // min(actual clock-out, requested_until) − scheduled end. Requires a
+  // scheduled shift (sched) for the date.
+  approvedOtByDate?: Map<string, string>;
 }): ComputedLine {
-  const { employee: e, shifts, unpaired, leaveDays, cycle, periodEnd, settings, holidaySet, scheduledByDate } = args;
+  const { employee: e, shifts, unpaired, leaveDays, cycle, periodEnd, settings, holidaySet, scheduledByDate, approvedOtByDate } = args;
 
   // Determine effective hourly rate (used for legal OT mode + display)
   const ptRate = e.hourly_rate ?? settings.pt_default_hourly_rate;
@@ -528,6 +533,20 @@ export function computeLineForEmployee(args: {
     regularMin += split.regular;
     otMin += split.ot;
 
+    // Approved OT (PT) — credited on top of the shift-box pay. OT
+    // minutes = min(actual clock-out, requested_until) − scheduled end.
+    let approvedOtMin = 0;
+    if (e.employment_type === "pt" && sched && approvedOtByDate) {
+      const reqUntil = approvedOtByDate.get(shiftDate);
+      if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
+        const reqUntilMs = new Date(`${shiftDate}T${reqUntil}:00+07:00`).getTime();
+        const actualOutMs = Math.floor(new Date(s.endTs).getTime() / 60000) * 60000;
+        const schedEndMs = new Date(sched.endTs).getTime();
+        approvedOtMin = Math.max(0, (Math.min(actualOutMs, reqUntilMs) - schedEndMs) / 60000);
+      }
+    }
+    otMin += approvedOtMin;
+
     daysSet.add(shiftDate);
     const isHoliday = holidaySet.has(shiftDate);
 
@@ -540,7 +559,8 @@ export function computeLineForEmployee(args: {
       // PT: holiday premium 1.5x on both base + OT
       const mult = isHoliday ? PT_HOLIDAY_MULTIPLIER : 1;
       ptBasePay += (split.regular / 60) * ptRate * mult;
-      ptOtPay += computeOtPay(split.ot, ptRate, settings, mult);
+      ptOtPay += computeOtPay(split.ot, ptRate, settings, mult)
+               + computeOtPay(approvedOtMin, ptRate, settings, mult);
     } else if (e.employment_type === "ft") {
       // FT: OT only (base is salary). No holiday premium per company rule.
       ftOtPay += computeOtPay(split.ot, ftHourlyEquivalent, settings, 1);
@@ -918,6 +938,20 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     leaveDaysByUser.set(lv.user_id, (leaveDaysByUser.get(lv.user_id) || 0) + inPeriodDays);
   }
 
+  // Approved OT requests in the period — keyed user → date → requested_until.
+  const otRows = db.prepare(`
+    SELECT user_id, work_date, requested_until FROM ot_requests
+    WHERE status = 'approved' AND work_date >= ? AND work_date <= ?
+  `).all(period.period_start, period.period_end) as Array<{
+    user_id: number; work_date: string; requested_until: string;
+  }>;
+  const approvedOtByUser = new Map<number, Map<string, string>>();
+  for (const r of otRows) {
+    let m = approvedOtByUser.get(r.user_id);
+    if (!m) { m = new Map(); approvedOtByUser.set(r.user_id, m); }
+    m.set(r.work_date, r.requested_until);
+  }
+
   // Wipe existing lines and recompute
   const tx = db.transaction(() => {
     db.prepare("DELETE FROM payroll_lines WHERE period_id = ?").run(periodId);
@@ -965,7 +999,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         holidaySet,
         // Grace + scheduled-break apply in both modes when a roster
         // exists (the rule is independent of where the time came from).
-        scheduledByDate: scheduledByUser.get(emp.user_id)
+        scheduledByDate: scheduledByUser.get(emp.user_id),
+        approvedOtByDate: approvedOtByUser.get(emp.user_id)
       });
 
       insertLine.run(
@@ -1109,6 +1144,16 @@ export function recomputeLine(
   `).all(periodId, userId) as DayOverrideRow[];
   const shifts = mergeDayOverrides(auto.shifts, overridesToShiftMap(overrideRows));
 
+  // Approved OT for this user in the period.
+  const otRows = db.prepare(`
+    SELECT work_date, requested_until FROM ot_requests
+    WHERE user_id = ? AND status = 'approved' AND work_date >= ? AND work_date <= ?
+  `).all(userId, period.period_start, period.period_end) as Array<{
+    work_date: string; requested_until: string;
+  }>;
+  const approvedOtByDate = new Map<string, string>();
+  for (const r of otRows) approvedOtByDate.set(r.work_date, r.requested_until);
+
   const employee: EmployeePayrollSnapshot = {
     user_id: userId,
     display_name: existing.display_name,
@@ -1124,7 +1169,7 @@ export function recomputeLine(
     employee, shifts, unpaired: auto.unpaired,
     leaveDays: existing.leave_days,
     cycle: period.cycle, periodEnd: period.period_end,
-    settings, holidaySet, scheduledByDate
+    settings, holidaySet, scheduledByDate, approvedOtByDate
   });
 
   // Preserve admin money extras; recompute gross/SSO/tax/net to include them.

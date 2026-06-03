@@ -689,6 +689,32 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_leave_dates ON leave_requests(date_from, date_to);
   `);
 
+  // ot_requests — overtime requests (owner 2026-06-03). When a PT staff
+  // clocks out AFTER their scheduled shift end, น้องฮูก asks whether they
+  // had pre-approved OT; if yes they enter the time they requested to
+  // work until. A supervisor/admin must APPROVE before it counts toward
+  // pay. The pay engine then credits OT = min(actual clock-out,
+  // requested_until) − scheduled end (only when approved). One request
+  // per (user, day) — re-submitting updates it.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ot_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      branch_id INTEGER REFERENCES branches(id),
+      work_date TEXT NOT NULL,          -- YYYY-MM-DD (BKK)
+      requested_until TEXT NOT NULL,    -- 'HH:MM' (BKK local)
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','approved','rejected')),
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT,
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, work_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ot_requests_status ON ot_requests(status, work_date);
+    CREATE INDEX IF NOT EXISTS idx_ot_requests_user_date ON ot_requests(user_id, work_date);
+  `);
+
   // Phase 1C v2 migrations — extend users + leave_requests
   const ucols2 = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
   const unames = new Set(ucols2.map((c) => c.name));

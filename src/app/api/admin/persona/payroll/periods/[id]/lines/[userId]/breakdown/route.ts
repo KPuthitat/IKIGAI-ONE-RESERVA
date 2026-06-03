@@ -185,8 +185,19 @@ export async function GET(
   const overrideByDate = new Map<string, { clock_in: string | null; clock_out: string | null }>();
   for (const r of overrideRows) overrideByDate.set(r.work_date, { clock_in: r.clock_in, clock_out: r.clock_out });
 
+  // Approved OT for this user → date → requested_until.
+  const otApprovedRows = db.prepare(`
+    SELECT work_date, requested_until FROM ot_requests
+    WHERE user_id = ? AND status = 'approved' AND work_date >= ? AND work_date <= ?
+  `).all(userId, period.period_start, period.period_end) as Array<{
+    work_date: string; requested_until: string;
+  }>;
+  const approvedOtByDate = new Map<string, string>();
+  for (const r of otApprovedRows) approvedOtByDate.set(r.work_date, r.requested_until);
+
   // Build a fully-populated pair from a raw in/out couple — replicating
-  // the engine: grace clamp → scheduled break → regular/OT split → pay.
+  // the engine: grace clamp → scheduled break → regular/OT split →
+  // approved OT → pay.
   // Whole-minute duration (seconds ignored) — matches the pay engine.
   const floorMin = (ts: string) => Math.floor(new Date(ts).getTime() / 60000);
 
@@ -214,9 +225,23 @@ export async function GET(
       }
     }
     const split = splitRegularOt(workedMin);
+
+    // Approved OT (PT) = min(actual out, requested_until) − scheduled end.
+    let approvedOt = 0;
+    if (isPt && sched && outTs) {
+      const reqUntil = approvedOtByDate.get(date);
+      if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
+        const reqUntilMs = new Date(`${date}T${reqUntil}:00+07:00`).getTime();
+        const actualOutMs = floorMin(outTs) * 60000;
+        const schedEndMs = new Date(sched.endTs).getTime();
+        approvedOt = Math.max(0, Math.round((Math.min(actualOutMs, reqUntilMs) - schedEndMs) / 60000));
+      }
+    }
+    const otMin = split.ot + approvedOt;
+
     const mult = holiday ? 1.5 : 1;
     const regularPay = isPt ? (split.regular / 60) * ptRate * mult : 0;
-    const otPay = isPt ? computeOtPay(split.ot, ptRate, settings, mult) : 0;
+    const otPay = isPt ? computeOtPay(otMin, ptRate, settings, mult) : 0;
 
     return {
       date,
@@ -227,7 +252,7 @@ export async function GET(
       schedOut: sched ? bkkHHMM(sched.endTs) : null,
       breakMinutes,
       effectiveMinutes: split.regular,
-      otMinutes: split.ot,
+      otMinutes: otMin,
       otPay: Math.round(otPay * 100) / 100,
       pay: Math.round((regularPay + otPay) * 100) / 100,
       edited,

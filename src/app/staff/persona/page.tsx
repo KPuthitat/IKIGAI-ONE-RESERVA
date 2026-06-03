@@ -44,9 +44,22 @@ export default function StaffPersonaPage() {
   const firstOutTs = outSorted[0]?.ts ?? null;
 
   // ตรวจว่า user มี PIN หรือยัง
-  const userRow = db.prepare("SELECT pin_hash FROM users WHERE id = ?").get(user.id) as
-    | { pin_hash: string | null } | undefined;
+  const userRow = db.prepare("SELECT pin_hash, employment_type FROM users WHERE id = ?").get(user.id) as
+    | { pin_hash: string | null; employment_type: "pt" | "ft" | null } | undefined;
   const hasPin = Boolean(userRow?.pin_hash);
+
+  // Today's scheduled shift end (work kind) — drives the OT prompt when
+  // a PT staff clocks out after their shift ends (owner 2026-06-03).
+  let scheduledEnd: string | null = null;
+  if (user.activeBranchId) {
+    const sc = db.prepare(`
+      SELECT sc.end_time FROM roster_assignments ra
+      JOIN shift_codes sc ON sc.id = ra.shift_code_id
+      WHERE ra.user_id = ? AND ra.assignment_date = ? AND ra.branch_id = ? AND sc.kind = 'work'
+      ORDER BY sc.end_time DESC LIMIT 1
+    `).get(user.id, todayBkk, user.activeBranchId) as { end_time: string } | undefined;
+    scheduledEnd = sc?.end_time ?? null;
+  }
 
   return (
     <TimeClockClient
@@ -61,6 +74,9 @@ export default function StaffPersonaPage() {
       geofenceLng={branch?.longitude ?? null}
       geofenceRadiusMeters={branch?.geofence_radius_meters ?? 100}
       qrEnabled={branch?.clock_qr_enabled === 1}
+      isPartTime={userRow?.employment_type === "pt"}
+      scheduledEnd={scheduledEnd}
+      todayBkk={todayBkk}
     />
   );
 }
