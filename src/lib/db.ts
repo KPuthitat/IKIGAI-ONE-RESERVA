@@ -2222,6 +2222,25 @@ function runMigrations(db: Database.Database): void {
       ON payroll_line_days(period_id, user_id);
   `);
 
+  // 2026-06-03: per-day FIELD overrides on payroll_line_days. The admin
+  // edits any wrong value in the daily breakdown directly (PIN + log) and
+  // the typed value wins over the computed one. All nullable — null = use
+  // the computed value, so existing payroll is unaffected unless an admin
+  // explicitly overrides a field.
+  const pldCols = db.prepare("PRAGMA table_info(payroll_line_days)")
+    .all() as Array<{ name: string }>;
+  const addPld = (col: string, decl: string) => {
+    if (!pldCols.some((c) => c.name === col)) {
+      db.exec(`ALTER TABLE payroll_line_days ADD COLUMN ${col} ${decl}`);
+    }
+  };
+  addPld("sched_in", "TEXT");      // 'HH:MM' override of the gate start
+  addPld("sched_out", "TEXT");     // 'HH:MM' override of the gate end
+  addPld("break_min", "INTEGER");  // override break minutes
+  addPld("worked_min", "INTEGER"); // override regular working minutes
+  addPld("ot_min", "INTEGER");     // override OT minutes
+  addPld("ot_pay", "REAL");        // override OT pay (THB)
+
   // Phase 1D v2 — add new columns to existing payroll_lines if upgrading
   const plCols = db.prepare("PRAGMA table_info(payroll_lines)").all() as Array<{ name: string }>;
   const plNames = new Set(plCols.map((c) => c.name));

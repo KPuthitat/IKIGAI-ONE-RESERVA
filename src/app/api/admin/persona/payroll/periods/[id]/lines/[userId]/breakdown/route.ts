@@ -175,15 +175,24 @@ export async function GET(
   }
 
   // Per-day overrides (payroll_line_days) — admin corrections that win
-  // over the time-clock for a given date.
+  // over the time-clock for a given date (clock times + field overrides).
+  type FieldOv = {
+    clock_in: string | null; clock_out: string | null;
+    sched_in: string | null; sched_out: string | null;
+    break_min: number | null; worked_min: number | null;
+    ot_min: number | null; ot_pay: number | null;
+  };
   const overrideRows = db.prepare(`
-    SELECT work_date, clock_in, clock_out
+    SELECT work_date, clock_in, clock_out,
+           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay
     FROM payroll_line_days WHERE period_id = ? AND user_id = ?
-  `).all(periodId, userId) as Array<{
-    work_date: string; clock_in: string | null; clock_out: string | null;
-  }>;
+  `).all(periodId, userId) as Array<{ work_date: string } & FieldOv>;
   const overrideByDate = new Map<string, { clock_in: string | null; clock_out: string | null }>();
-  for (const r of overrideRows) overrideByDate.set(r.work_date, { clock_in: r.clock_in, clock_out: r.clock_out });
+  const fieldOvByDate = new Map<string, FieldOv>();
+  for (const r of overrideRows) {
+    overrideByDate.set(r.work_date, { clock_in: r.clock_in, clock_out: r.clock_out });
+    fieldOvByDate.set(r.work_date, r);
+  }
 
   // Approved OT for this user → date → requested_until.
   const otApprovedRows = db.prepare(`
@@ -203,9 +212,18 @@ export async function GET(
 
   function buildPair(inTs: string, outTs: string | null, edited = false): DayPair {
     const date = bkkDate(inTs);
-    const sched = pickScheduled(scheduledByDate.get(date) ?? [], { startTs: inTs });
+    const ov = fieldOvByDate.get(date);
     const rawMin = outTs ? Math.max(0, floorMin(outTs) - floorMin(inTs)) : 0;
     const holiday = isPt && holidaySet.has(date);
+
+    // Scheduled window — per-day override wins over the roster.
+    let sched = pickScheduled(scheduledByDate.get(date) ?? [], { startTs: inTs });
+    if (isPt && ov?.sched_in && ov?.sched_out) {
+      const sStart = new Date(`${date}T${ov.sched_in}:00+07:00`).toISOString();
+      const sEndDate = ov.sched_out < ov.sched_in ? addDayYmd(date) : date;
+      const sEnd = new Date(`${sEndDate}T${ov.sched_out}:00+07:00`).toISOString();
+      sched = { startTs: sStart, endTs: sEnd, breakStartTs: sched?.breakStartTs ?? null, breakEndTs: sched?.breakEndTs ?? null };
+    }
 
     // Approved OT extends the worked window past the scheduled end.
     let otUntilTs: string | null = null;
@@ -233,14 +251,28 @@ export async function GET(
         workedMin = Math.round(db2.workedMinutes);
       }
     }
-    // ≤8h total stays regular rate (even past the scheduled end via an
-    // approved OT); only the excess beyond 8h is OT rate.
+    // Per-day break override (recompute worked from gross − new break).
+    const grossForBreak = outTs && isPt && sched ? workedMin + breakMinutes : rawMin;
+    if (ov?.break_min != null) {
+      breakMinutes = ov.break_min;
+      workedMin = Math.max(0, grossForBreak - ov.break_min);
+    }
+
     const split = splitRegularOt(workedMin);
-    const otMin = split.ot;
+    // Per-day field overrides win over the computed split.
+    const regMin = ov?.worked_min != null ? ov.worked_min : split.regular;
+    const otMin = ov?.ot_min != null ? ov.ot_min : split.ot;
 
     const mult = holiday ? 1.5 : 1;
-    const regularPay = isPt ? (split.regular / 60) * ptRate * mult : 0;
-    const otPay = isPt ? computeOtPay(otMin, ptRate, settings, mult) : 0;
+    const regularPay = isPt ? (regMin / 60) * ptRate * mult : 0;
+    const otPay = isPt
+      ? (ov?.ot_pay != null ? ov.ot_pay : computeOtPay(otMin, ptRate, settings, mult))
+      : 0;
+
+    const hasFieldOv = !!ov && (
+      ov.sched_in != null || ov.break_min != null || ov.worked_min != null ||
+      ov.ot_min != null || ov.ot_pay != null
+    );
 
     return {
       date,
@@ -250,11 +282,11 @@ export async function GET(
       schedIn: sched ? bkkHHMM(sched.startTs) : null,
       schedOut: sched ? bkkHHMM(sched.endTs) : null,
       breakMinutes,
-      effectiveMinutes: split.regular,
+      effectiveMinutes: regMin,
       otMinutes: otMin,
       otPay: Math.round(otPay * 100) / 100,
       pay: Math.round((regularPay + otPay) * 100) / 100,
-      edited,
+      edited: edited || hasFieldOv,
       lateMin,
       earlyMin,
       holiday,
@@ -330,13 +362,17 @@ export async function GET(
     otPay: number;               // ค่าล่วงเวลา
     pay: number;                 // ค่าตอบแทน (regular + OT)
     edited: boolean;             // has an admin per-day override
+    // Raw saved overrides for this day (null fields = not overridden) —
+    // so the edit panel can prefill exactly what was pinned.
+    override: FieldOv | null;
   };
   const days = new Map<string, Day>();
   function ensureDay(date: string): Day {
     let d = days.get(date);
     if (!d) {
       d = { date, pairs: [], totalMinutes: 0, effectiveMinutes: 0,
-            breakMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: false };
+            breakMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: false,
+            override: fieldOvByDate.get(date) ?? null };
       days.set(date, d);
     }
     return d;

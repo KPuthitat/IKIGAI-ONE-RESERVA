@@ -306,6 +306,18 @@ export type DayOverrideRow = {
   clock_out: string | null; // 'HH:MM' or NULL
 };
 
+// Per-day FIELD overrides — when an admin types a value in the daily
+// breakdown, it WINS over the computed one (owner 2026-06-03). Any field
+// null = use the computed value.
+export type DayFieldOverride = {
+  sched_in?: string | null;    // 'HH:MM' override of the gate start
+  sched_out?: string | null;   // 'HH:MM' override of the gate end
+  break_min?: number | null;   // override break minutes
+  worked_min?: number | null;  // override regular working minutes
+  ot_min?: number | null;      // override OT minutes
+  ot_pay?: number | null;      // override OT pay (THB)
+};
+
 /**
  * Turn per-day override rows into a Map<date, Shift|null>:
  *   • both times present → a Shift (out<in ⇒ overnight, rolls a day)
@@ -491,8 +503,11 @@ export function computeLineForEmployee(args: {
   // min(actual clock-out, requested_until) − scheduled end. Requires a
   // scheduled shift (sched) for the date.
   approvedOtByDate?: Map<string, string>;
+  // Per-day FIELD overrides (admin typed a value in the breakdown). Any
+  // present field wins over the computed one.
+  fieldOverridesByDate?: Map<string, DayFieldOverride>;
 }): ComputedLine {
-  const { employee: e, shifts, unpaired, leaveDays, cycle, periodEnd, settings, holidaySet, scheduledByDate, approvedOtByDate } = args;
+  const { employee: e, shifts, unpaired, leaveDays, cycle, periodEnd, settings, holidaySet, scheduledByDate, approvedOtByDate, fieldOverridesByDate } = args;
 
   // Determine effective hourly rate (used for legal OT mode + display)
   const ptRate = e.hourly_rate ?? settings.pt_default_hourly_rate;
@@ -523,9 +538,18 @@ export function computeLineForEmployee(args: {
     let workedMinutes: number;
     let deducted: number;
 
-    const sched = (e.employment_type === "pt" && scheduledByDate)
+    const ov = fieldOverridesByDate?.get(shiftDate);
+
+    // Scheduled window — admin per-day override wins over the roster.
+    let sched = (e.employment_type === "pt" && scheduledByDate)
       ? pickScheduled(scheduledByDate.get(shiftDate) ?? [], s)
       : null;
+    if (e.employment_type === "pt" && ov?.sched_in && ov?.sched_out) {
+      const sStart = new Date(`${shiftDate}T${ov.sched_in}:00+07:00`).toISOString();
+      const sEndDate = ov.sched_out < ov.sched_in ? addDayYmd(shiftDate) : shiftDate;
+      const sEnd = new Date(`${sEndDate}T${ov.sched_out}:00+07:00`).toISOString();
+      sched = { startTs: sStart, endTs: sEnd, breakStartTs: sched?.breakStartTs ?? null, breakEndTs: sched?.breakEndTs ?? null };
+    }
 
     // Approved OT extends the worked window past the scheduled end up to
     // the requested "until" time. The 8h split below then credits any
@@ -550,25 +574,36 @@ export function computeLineForEmployee(args: {
       deducted = db.deducted;
     }
 
+    // Per-day break override (recompute worked from gross − new break).
+    if (ov?.break_min != null) {
+      deducted = ov.break_min;
+      workedMinutes = Math.max(0, grossMin - ov.break_min);
+    }
+
     shiftMin += grossMin;
     breakDeducted += deducted;
     const split = splitRegularOt(workedMinutes);
-    regularMin += split.regular;
-    otMin += split.ot;
+    // Per-day overrides of the final regular / OT minutes win over the
+    // computed split.
+    const dayRegular = ov?.worked_min != null ? ov.worked_min : split.regular;
+    const dayOt = ov?.ot_min != null ? ov.ot_min : split.ot;
+    regularMin += dayRegular;
+    otMin += dayOt;
 
     daysSet.add(shiftDate);
     const isHoliday = holidaySet.has(shiftDate);
 
     if (isHoliday) {
-      holidayMin += workedMinutes;
+      holidayMin += dayRegular + dayOt;
     }
 
     // Per-shift pay computation
     if (e.employment_type === "pt") {
       // PT: holiday premium 1.5x on both base + OT
       const mult = isHoliday ? PT_HOLIDAY_MULTIPLIER : 1;
-      ptBasePay += (split.regular / 60) * ptRate * mult;
-      ptOtPay += computeOtPay(split.ot, ptRate, settings, mult);
+      ptBasePay += (dayRegular / 60) * ptRate * mult;
+      // ค่าล่วงเวลา override (typed baht) wins over the computed OT pay.
+      ptOtPay += ov?.ot_pay != null ? ov.ot_pay : computeOtPay(dayOt, ptRate, settings, mult);
     } else if (e.employment_type === "ft") {
       // FT: OT only (base is salary). No holiday premium per company rule.
       ftOtPay += computeOtPay(split.ot, ftHourlyEquivalent, settings, 1);
@@ -892,16 +927,26 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   // Per-day clock overrides (payroll_line_days) — admin corrections that
   // win over the time-clock for specific days. Grouped by user.
   const overrideRows = db.prepare(`
-    SELECT user_id, work_date, clock_in, clock_out
+    SELECT user_id, work_date, clock_in, clock_out,
+           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay
     FROM payroll_line_days WHERE period_id = ?
   `).all(periodId) as Array<{
     user_id: number; work_date: string; clock_in: string | null; clock_out: string | null;
+    sched_in: string | null; sched_out: string | null;
+    break_min: number | null; worked_min: number | null; ot_min: number | null; ot_pay: number | null;
   }>;
   const overridesByUser = new Map<number, DayOverrideRow[]>();
+  const fieldOverridesByUser = new Map<number, Map<string, DayFieldOverride>>();
   for (const r of overrideRows) {
     const list = overridesByUser.get(r.user_id) ?? [];
     list.push({ work_date: r.work_date, clock_in: r.clock_in, clock_out: r.clock_out });
     overridesByUser.set(r.user_id, list);
+    let fm = fieldOverridesByUser.get(r.user_id);
+    if (!fm) { fm = new Map(); fieldOverridesByUser.set(r.user_id, fm); }
+    fm.set(r.work_date, {
+      sched_in: r.sched_in, sched_out: r.sched_out, break_min: r.break_min,
+      worked_min: r.worked_min, ot_min: r.ot_min, ot_pay: r.ot_pay
+    });
   }
 
   // Approved leave overlapping period (count days within period)
@@ -1008,7 +1053,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         // Grace + scheduled-break apply in both modes when a roster
         // exists (the rule is independent of where the time came from).
         scheduledByDate: scheduledByUser.get(emp.user_id),
-        approvedOtByDate: approvedOtByUser.get(emp.user_id)
+        approvedOtByDate: approvedOtByUser.get(emp.user_id),
+        fieldOverridesByDate: fieldOverridesByUser.get(emp.user_id)
       });
 
       insertLine.run(
@@ -1147,10 +1193,27 @@ export function recomputeLine(
       `).all(userId, fromIso, toIso) as Entry[];
   const auto = pairShifts(userEntries);
   const overrideRows = db.prepare(`
-    SELECT work_date, clock_in, clock_out
+    SELECT work_date, clock_in, clock_out,
+           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay
     FROM payroll_line_days WHERE period_id = ? AND user_id = ?
-  `).all(periodId, userId) as DayOverrideRow[];
-  const shifts = mergeDayOverrides(auto.shifts, overridesToShiftMap(overrideRows));
+  `).all(periodId, userId) as Array<{
+    work_date: string; clock_in: string | null; clock_out: string | null;
+    sched_in: string | null; sched_out: string | null;
+    break_min: number | null; worked_min: number | null; ot_min: number | null; ot_pay: number | null;
+  }>;
+  const shifts = mergeDayOverrides(
+    auto.shifts,
+    overridesToShiftMap(overrideRows.map((r) => ({
+      work_date: r.work_date, clock_in: r.clock_in, clock_out: r.clock_out
+    })))
+  );
+  const fieldOverridesByDate = new Map<string, DayFieldOverride>();
+  for (const r of overrideRows) {
+    fieldOverridesByDate.set(r.work_date, {
+      sched_in: r.sched_in, sched_out: r.sched_out, break_min: r.break_min,
+      worked_min: r.worked_min, ot_min: r.ot_min, ot_pay: r.ot_pay
+    });
+  }
 
   // Approved OT for this user in the period.
   const otRows = db.prepare(`
@@ -1177,7 +1240,7 @@ export function recomputeLine(
     employee, shifts, unpaired: auto.unpaired,
     leaveDays: existing.leave_days,
     cycle: period.cycle, periodEnd: period.period_end,
-    settings, holidaySet, scheduledByDate, approvedOtByDate
+    settings, holidaySet, scheduledByDate, approvedOtByDate, fieldOverridesByDate
   });
 
   // Preserve admin money extras; recompute gross/SSO/tax/net to include them.
