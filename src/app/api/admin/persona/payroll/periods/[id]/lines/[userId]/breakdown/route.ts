@@ -57,6 +57,12 @@ type DayPair = {
   // True when this row comes from an admin per-day override
   // (payroll_line_days), not the raw time-clock.
   edited: boolean;
+  // Attendance status vs the scheduled shift (PT only): minutes the
+  // clock-in was late beyond grace / clock-out was early beyond grace.
+  lateMin: number;
+  earlyMin: number;
+  // True when the day is a public holiday (PT pay ×1.5 applies).
+  holiday: boolean;
 };
 
 type Period = {
@@ -175,20 +181,26 @@ export async function GET(
 
   // Build a fully-populated pair from a raw in/out couple — replicating
   // the engine: grace clamp → scheduled break → regular/OT split → pay.
+  // Whole-minute duration (seconds ignored) — matches the pay engine.
+  const floorMin = (ts: string) => Math.floor(new Date(ts).getTime() / 60000);
+
   function buildPair(inTs: string, outTs: string | null, edited = false): DayPair {
     const date = bkkDate(inTs);
     const sched = pickScheduled(scheduledByDate.get(date) ?? [], { startTs: inTs });
-    const rawMin = outTs
-      ? Math.max(0, Math.round((new Date(outTs).getTime() - new Date(inTs).getTime()) / 60000))
-      : 0;
+    const rawMin = outTs ? Math.max(0, floorMin(outTs) - floorMin(inTs)) : 0;
+    const holiday = isPt && holidaySet.has(date);
 
     let breakMinutes = 0;
     let workedMin = rawMin;       // after break, before OT split
+    let lateMin = 0;
+    let earlyMin = 0;
     if (outTs) {
       if (isPt && sched) {
         const g = applyPtGrace({ startTs: inTs, endTs: outTs }, sched);
         breakMinutes = Math.round(g.breakMinutes);
         workedMin = Math.round(g.workedMinutes);
+        lateMin = Math.round(g.lateMinutes);
+        earlyMin = Math.round(g.earlyMinutes);
       } else {
         const db2 = deductBreak(rawMin, settings);
         breakMinutes = Math.round(db2.deducted);
@@ -196,7 +208,7 @@ export async function GET(
       }
     }
     const split = splitRegularOt(workedMin);
-    const mult = isPt && holidaySet.has(date) ? 1.5 : 1;
+    const mult = holiday ? 1.5 : 1;
     const regularPay = isPt ? (split.regular / 60) * ptRate * mult : 0;
     const otPay = isPt ? computeOtPay(split.ot, ptRate, settings, mult) : 0;
 
@@ -212,7 +224,10 @@ export async function GET(
       otMinutes: split.ot,
       otPay: Math.round(otPay * 100) / 100,
       pay: Math.round((regularPay + otPay) * 100) / 100,
-      edited
+      edited,
+      lateMin,
+      earlyMin,
+      holiday
     };
   }
 
@@ -300,7 +315,10 @@ export async function GET(
           otMinutes: 0,
           otPay: 0,
           pay: 0,
-          edited: false
+          edited: false,
+          lateMin: 0,
+          earlyMin: 0,
+          holiday: false
         });
       }
     }
@@ -322,7 +340,8 @@ export async function GET(
       day.pairs.push({
         date, workIn: null, workOut: null, durationMinutes: 0,
         schedIn: null, schedOut: null, breakMinutes: 0,
-        effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: true
+        effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: true,
+        lateMin: 0, earlyMin: 0, holiday: false
       });
     }
   }

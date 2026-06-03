@@ -134,7 +134,11 @@ export function pairShifts(entries: Entry[]): { shifts: Shift[]; unpaired: numbe
       openIn = e.ts;
     } else {
       if (openIn !== null) {
-        const dur = (new Date(e.ts).getTime() - new Date(openIn).getTime()) / 60000;
+        // Whole-minute precision (seconds are ignored) — keeps pay
+        // deterministic and consistent with the minute-based editor.
+        const dur =
+          Math.floor(new Date(e.ts).getTime() / 60000) -
+          Math.floor(new Date(openIn).getTime() / 60000);
         if (dur > 0) shifts.push({ startTs: openIn, endTs: e.ts, durationMinutes: dur });
         openIn = null;
       }
@@ -193,8 +197,12 @@ export function applyPtGrace(
   shift: { startTs: string; endTs: string },
   scheduled: ScheduledShift | null
 ): GracedShift {
-  const inMs = new Date(shift.startTs).getTime();
-  const outMs = new Date(shift.endTs).getTime();
+  // Floor to whole minutes — the clock stores seconds, but pay is
+  // reckoned in minutes (matching the HH:MM the editor shows). Without
+  // this a clock-in of 11:39:43 counted as 11:39.28 and rounded a
+  // minute off the expected figure (owner 2026-06-03).
+  const inMs = Math.floor(new Date(shift.startTs).getTime() / 60000) * 60000;
+  const outMs = Math.floor(new Date(shift.endTs).getTime() / 60000) * 60000;
   if (!scheduled) {
     const gross = Math.max(0, (outMs - inMs) / 60000);
     return {

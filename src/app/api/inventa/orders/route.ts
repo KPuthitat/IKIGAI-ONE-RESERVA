@@ -145,7 +145,7 @@ export async function POST(req: Request) {
           }
         }
       };
-      void notifyToStaffGroup(branch, flex, "branch").catch(() => {});
+      void notifyToStaffGroup(branch, flex, "global").catch(() => {});
     }
   } catch {
     /* notification must never block order creation */

@@ -516,13 +516,13 @@ export default function PeriodDetailClient({
                         </span>
                       )}
                       {l.holiday_minutes > 0 && (
-                        <span className="ml-2 text-rose-600">★ {fmtMin(l.holiday_minutes)} {t(lang, "admin.persona.payroll.detail.onHoliday")}</span>
+                        <span className="ml-2 text-rose-600">{fmtMin(l.holiday_minutes)} {t(lang, "admin.persona.payroll.detail.onHoliday")}</span>
                       )}
                       {l.unpaired_clockins > 0 && (
-                        <span className="ml-2 text-amber-700">⚠ {l.unpaired_clockins} {t(lang, "admin.persona.payroll.detail.unpairedShort")}</span>
+                        <span className="ml-2 text-amber-700">{l.unpaired_clockins} {t(lang, "admin.persona.payroll.detail.unpairedShort")}</span>
                       )}
                       {l.overridden === 1 && (
-                        <span className="ml-2 text-sky-700">★ {t(lang, "admin.persona.payroll.detail.overridden")}</span>
+                        <span className="ml-2 text-sky-700">{t(lang, "admin.persona.payroll.detail.overridden")}</span>
                       )}
                     </div>
                   </td>
@@ -922,6 +922,9 @@ type BreakdownDay = {
     otPay: number;
     pay: number;
     edited: boolean;
+    lateMin: number;
+    earlyMin: number;
+    holiday: boolean;
   }>;
   totalMinutes: number;
   effectiveMinutes: number;
@@ -1012,6 +1015,27 @@ function LineEditModal({
 
   useEffect(() => { void loadBreakdown(); }, [loadBreakdown]);
 
+  // Recompute this line from current sources (no PIN — read-only inputs).
+  const [recomputing, setRecomputing] = useState(false);
+  async function recompute() {
+    setRecomputing(true);
+    setDayMsg(null);
+    try {
+      const res = await fetch(
+        apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}/recompute`),
+        { method: "POST", headers: { "Content-Type": "application/json" } }
+      );
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        setDirty(true);
+        setDayMsg("คำนวณใหม่เรียบร้อย");
+        await loadBreakdown();
+      } else {
+        setDayMsg(j?.error ?? t(lang, "common.error"));
+      }
+    } finally { setRecomputing(false); }
+  }
+
   // Open the per-day editor for a date, prefilling the current times.
   function pickDay(date: string, workIn: string | null, workOut: string | null) {
     setSelectedDate(date);
@@ -1056,7 +1080,7 @@ function LineEditModal({
         setDirty(true);
         setDayPinOpen(false);
         setSelectedDate(null);
-        setDayMsg("✓ บันทึกแล้ว");
+        setDayMsg("บันทึกแล้ว");
         await loadBreakdown();
         return { ok: true };
       }
@@ -1191,10 +1215,13 @@ function LineEditModal({
                         className={`border-t border-slate-100 cursor-pointer hover:bg-rose-50/40 ${isSel ? "bg-rose-50" : ""}`}>
                         <td className="px-2 py-1.5 font-mono">
                           {i === 0 && (
-                            <span className="inline-flex items-center gap-1">
+                            <span className="inline-flex items-center gap-1 flex-wrap">
                               {day.date}
                               {day.edited && (
-                                <span className="text-[8px] px-1 rounded bg-amber-100 text-amber-700 font-sans">แก้แล้ว</span>
+                                <span className="text-[8px] px-1 rounded bg-amber-100 text-amber-700 font-sans">แก้ไขแล้ว</span>
+                              )}
+                              {p.holiday && (
+                                <span className="text-[8px] px-1 rounded bg-violet-100 text-violet-700 font-sans">วันพิเศษ ×1.5</span>
                               )}
                             </span>
                           )}
@@ -1205,7 +1232,18 @@ function LineEditModal({
                           {p.workOut ?? <span className="text-rose-500">ขาด</span>}
                           {clampedPair(p) && (
                             <span className="block text-[9px] text-slate-400">
-                              ลงจริง {fmtMin(p.durationMinutes)}
+                              ลงเวลาจริง {fmtMin(p.durationMinutes)}
+                            </span>
+                          )}
+                          {(p.lateMin > 0 || p.earlyMin > 0) && (
+                            <span className="block text-[9px] font-sans">
+                              {p.lateMin > 0 && (
+                                <span className="text-rose-600">มาสาย {p.lateMin} น.</span>
+                              )}
+                              {p.lateMin > 0 && p.earlyMin > 0 && " · "}
+                              {p.earlyMin > 0 && (
+                                <span className="text-amber-600">กลับก่อน {p.earlyMin} น.</span>
+                              )}
                             </span>
                           )}
                         </td>
@@ -1278,19 +1316,25 @@ function LineEditModal({
         <div className="border-t-2 border-slate-200 pt-2 space-y-2">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <h4 className="font-bold text-slate-800 text-sm">แก้ไขเวลาเข้า-ออกรายวัน</h4>
-            {periodStart && (
-              <label className="text-[11px] text-slate-500 flex items-center gap-1">
-                เลือก/เพิ่มวัน:
-                <input type="date" className="input !w-auto !py-1 text-xs"
-                  min={periodStart} max={periodEnd} value={selectedDate ?? ""}
-                  onChange={(e) => { if (e.target.value) selectDateByValue(e.target.value); }} />
-              </label>
-            )}
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={recompute} disabled={recomputing}
+                className="text-[11px] px-2.5 py-1 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                {recomputing ? "กำลังคำนวณ…" : "คำนวณใหม่"}
+              </button>
+              {periodStart && (
+                <label className="text-[11px] text-slate-500 flex items-center gap-1">
+                  เลือก/เพิ่มวัน:
+                  <input type="date" className="input !w-auto !py-1 text-xs"
+                    min={periodStart} max={periodEnd} value={selectedDate ?? ""}
+                    onChange={(e) => { if (e.target.value) selectDateByValue(e.target.value); }} />
+                </label>
+              )}
+            </div>
           </div>
           {!selectedDate && (
             <p className="text-[11px] text-slate-500">
-              👆 แตะที่วันในตารางด้านบน เพื่อแก้เวลาเข้า-ออกของวันนั้น
-              {line.employment_type === "pt" && " — ระบบจะคำนวณ พัก/ชั่วโมง/OT/ค่าตอบแทน ให้ใหม่อัตโนมัติ"}
+              เลือกวันจากตารางด้านบนเพื่อแก้ไขเวลาเข้า-ออกของวันนั้น
+              {line.employment_type === "pt" && " ระบบจะคำนวณเวลาพัก ชั่วโมงทำงาน ค่าล่วงเวลา และค่าตอบแทนใหม่โดยอัตโนมัติ"}
             </p>
           )}
           {selectedDate && (
@@ -1298,7 +1342,7 @@ function LineEditModal({
               <div className="flex items-center justify-between">
                 <span className="text-sm font-bold text-slate-800">วันที่ {selectedDate}</span>
                 <button type="button" onClick={() => setSelectedDate(null)}
-                  className="text-xs text-slate-400 hover:text-slate-600">✕ ปิด</button>
+                  className="text-xs text-slate-400 hover:text-slate-600">ปิด</button>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1313,8 +1357,8 @@ function LineEditModal({
                 </div>
               </div>
               <p className="text-[11px] text-slate-400">
-                เว้นว่างทั้งสองช่อง = กลับไปใช้เวลาที่ระบบลงเวลาบันทึกไว้ · เวลาเข้า=ออก = ขาดงาน (ไม่จ่าย)
-                <br />🔒 ต้องยืนยันด้วย PIN และระบบจะเก็บ log การแก้ไข — ไม่กระทบบันทึกเวลาจริงของพนักงาน
+                เว้นว่างทั้งสองช่องเพื่อกลับไปใช้เวลาที่ระบบบันทึกเดิม · กรอกเวลาเข้าเท่ากับเวลาออกหมายถึงขาดงาน (ไม่จ่าย)
+                <br />การบันทึกต้องยืนยันด้วยรหัส PIN และระบบจะเก็บประวัติการแก้ไขไว้ โดยไม่กระทบบันทึกเวลาจริงของพนักงาน
               </p>
               <div className="flex gap-2">
                 <button type="button" onClick={() => { setDayIn(""); setDayOut(""); }}
@@ -1430,17 +1474,17 @@ function LineEditModal({
           <input type="text" className="input" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={500} />
         </div>
         <p className="text-xs text-amber-700">
-          ⚠ {t(lang, "admin.persona.payroll.detail.overrideHint")}
+          {t(lang, "admin.persona.payroll.detail.overrideHint")}
         </p>
-        {err && <p className="text-rose-600 text-sm">✗ {err}</p>}
+        {err && <p className="text-rose-600 text-sm">{err}</p>}
         {dirty ? (
           <p className="text-[11px] text-amber-700">
-            ⚠ มีการแก้เวลารายวันแล้ว — ปิดหน้าต่างแล้วเปิดใหม่ ก่อนปรับยอดรวมเอง เพื่อไม่ให้เขียนทับ
+            มีการแก้ไขเวลารายวันแล้ว กรุณาปิดหน้าต่างแล้วเปิดใหม่ก่อนปรับยอดรวมเอง เพื่อไม่ให้เขียนทับค่าที่คำนวณใหม่
           </p>
         ) : (
           <button type="button" onClick={() => { setBusy(false); setPinOpen(true); }} disabled={busy}
             className="w-full py-2.5 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-sm font-bold disabled:opacity-50">
-            🔒 บันทึกยอดที่ปรับเอง (ใส่ PIN)
+            บันทึกยอดที่ปรับเอง (ยืนยันด้วย PIN)
           </button>
         )}
           </div>

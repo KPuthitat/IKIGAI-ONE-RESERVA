@@ -84,6 +84,7 @@ export default function InventaClient({
   // sort+filter happens in memo, no URL sync needed.
   const [catFilter, setCatFilter] = useState<string>("");
   const [supFilter, setSupFilter] = useState<string>("");
+  const [locFilter, setLocFilter] = useState<string>("");
   const [sortBy, setSortBy] = useState<
     "name" | "code" | "qty_asc" | "qty_desc" | "cost_desc" | "low_first"
   >("name");
@@ -120,6 +121,10 @@ export default function InventaClient({
     () => lookups.filter((l) => l.kind === "category"),
     [lookups]
   );
+  const storageList = useMemo(
+    () => lookups.filter((l) => l.kind === "storage"),
+    [lookups]
+  );
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -127,6 +132,7 @@ export default function InventaClient({
       if (freqFilter && i.pick_freq !== freqFilter) return false;
       if (catFilter && (i.category ?? "") !== catFilter) return false;
       if (supFilter && String(i.supplier_id ?? "") !== supFilter) return false;
+      if (locFilter && (i.storage_location ?? "") !== locFilter) return false;
       if (!term) return true;
       return [
         i.name, i.generic_name, i.item_code, i.barcode,
@@ -151,12 +157,12 @@ export default function InventaClient({
       }
     }[sortBy];
     return [...out].sort(cmp);
-  }, [items, q, freqFilter, catFilter, supFilter, sortBy]);
+  }, [items, q, freqFilter, catFilter, supFilter, locFilter, sortBy]);
 
   const activeFilterCount =
-    (catFilter ? 1 : 0) + (supFilter ? 1 : 0) + (freqFilter ? 1 : 0);
+    (catFilter ? 1 : 0) + (supFilter ? 1 : 0) + (locFilter ? 1 : 0) + (freqFilter ? 1 : 0);
   function clearFilters() {
-    setCatFilter(""); setSupFilter(""); setFreqFilter("");
+    setCatFilter(""); setSupFilter(""); setLocFilter(""); setFreqFilter("");
   }
 
   // Scan: USB scanners type the code then send Enter. Look it up — a
@@ -230,15 +236,6 @@ export default function InventaClient({
             className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
             {t("inv.btn.suppliers")} ({suppliers.length})
           </button>
-          {/* Settings promoted out of the collapsed tools (owner
-              2026-06-03 — "ตั้งค่าหายาก"). Super-admin only; this is
-              where categories / units / storage / suppliers live. */}
-          {isSuperAdmin && (
-            <Link href="/staff/inventa/settings"
-              className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center font-bold">
-              ⚙ {t("inv.nav.settings")}
-            </Link>
-          )}
         </div>
 
         {/* Secondary tools — collapsed by default so the bar stays
@@ -253,6 +250,12 @@ export default function InventaClient({
               className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center">
               {t("inv.nav.qr")}
             </Link>
+            {isSuperAdmin && (
+              <Link href="/staff/inventa/settings"
+                className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-center">
+                {t("inv.nav.settings")}
+              </Link>
+            )}
           </div>
         </details>
 
@@ -316,6 +319,19 @@ export default function InventaClient({
               ))}
             </select>
           </label>
+          <label className="flex items-center gap-1">
+            <span className="text-slate-500">{t("inv.flt.loc")}</span>
+            <select className="input !py-1 !px-2 !w-auto text-xs"
+              value={locFilter}
+              onChange={(e) => setLocFilter(e.target.value)}>
+              <option value="">{t("inv.filter.all")}</option>
+              {storageList.map((s) => (
+                <option key={s.id} value={s.value}>
+                  {s.code ? `${s.code} · ${s.value}` : s.value}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="flex items-center gap-1 ml-auto">
             <span className="text-slate-500">{t("inv.sort.label")}</span>
             <select className="input !py-1 !px-2 !w-auto text-xs"
@@ -342,14 +358,15 @@ export default function InventaClient({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-500 border-b">
-              <th className="py-2 pr-3">{t("inv.col.band")}</th>
+              <th className="py-2 pr-2 w-8">{t("inv.col.band")}</th>
+              <th className="py-2 pr-3 w-14">{t("inv.col.location")}</th>
               <th className="py-2 pr-3">{t("inv.col.name")}</th>
               <th className="py-2 pr-3">{t("inv.col.category")}</th>
               <th className="py-2 pr-3">{t("inv.col.supplier")}</th>
               <th className="py-2 pr-3">{t("inv.col.unit")}</th>
               <th className="py-2 pr-3 text-right">{t("inv.col.cost")}</th>
               <th className="py-2 pr-3 text-right">{t("inv.col.qty")}</th>
-              <th className="py-2 pr-3 w-16"></th>
+              <th className="py-2 pr-3 w-12"></th>
             </tr>
           </thead>
           <tbody>
@@ -373,16 +390,18 @@ export default function InventaClient({
               return (
                 <tr key={i.id}
                   className={`border-b last:border-0 ${rowTone} ${textTone}`}>
-                  <td className="py-2 pr-3 whitespace-nowrap">
-                    {fm && (
+                  <td className="py-2 pr-2 whitespace-nowrap">
+                    {fm ? (
                       <span title={fm.label}
                         className={`inline-block w-3.5 h-3.5 rounded-full align-middle ${fm.dot}`} />
+                    ) : (
+                      <span className="text-slate-300">{t("inv.dash")}</span>
                     )}
-                    <div className="text-[11px] text-slate-500 mt-0.5">
-                      {i.storage_location
-                        ? (storageCodeByName.get(i.storage_location) ?? i.storage_location)
-                        : t("inv.dash")}
-                    </div>
+                  </td>
+                  <td className="py-2 pr-3 whitespace-nowrap text-[11px] text-slate-500">
+                    {i.storage_location
+                      ? (storageCodeByName.get(i.storage_location) ?? i.storage_location)
+                      : t("inv.dash")}
                   </td>
                   {/* Two-line cell (#89): item_code is the primary
                       anchor (bold uppercase, larger), the name reads
@@ -391,6 +410,7 @@ export default function InventaClient({
                       cell never goes blank. Generic name is kept as
                       a third subtle line for drug lookups. */}
                   <td className="py-2 pr-3">
+                    <div className="max-w-[200px] break-words">
                     {i.item_code ? (
                       <>
                         <div className="font-bold uppercase tracking-wide text-slate-900 text-sm leading-tight">
@@ -409,6 +429,7 @@ export default function InventaClient({
                         )}
                       </>
                     )}
+                    </div>
                   </td>
                   <td className="py-2 pr-3 text-xs">
                     {/* Category as a colour chip — uses the abbrev code
@@ -453,7 +474,7 @@ export default function InventaClient({
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={8} className="py-6 text-center text-slate-400 text-sm">
+              <tr><td colSpan={9} className="py-6 text-center text-slate-400 text-sm">
                 {t("inv.empty")}
               </td></tr>
             )}

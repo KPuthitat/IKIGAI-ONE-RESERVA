@@ -209,7 +209,7 @@ export default function CountClient({
             </div>
             <button type="button" onClick={() => setReopenPin(true)}
               className="w-full py-2.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold">
-              🔓 เปิดรอบนี้อีกครั้งเพื่อแก้ไข (ใส่ PIN)
+              เปิดรอบนี้อีกครั้งเพื่อแก้ไข (ใส่ PIN)
             </button>
             <p className="text-[11px] text-amber-700/80">
               ตัวเลขที่นับไว้ยังอยู่ครบ · ระบบจะบันทึก log ว่าใครเปิดรอบใหม่
@@ -276,9 +276,9 @@ export default function CountClient({
         {total - done > 0 && (
           <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 flex-wrap">
             <div className="text-xs text-amber-900 flex-1 min-w-0">
-              <span className="font-bold">💡 ลัด — เติมตัวเลขจากคลังปัจจุบัน</span>
+              <span className="font-bold">ใช้ตัวเลขเดิมจากคลังปัจจุบัน</span>
               <div className="text-[11px] text-amber-700/80 mt-0.5">
-                ใช้กับรายการที่ยังไม่เปลี่ยน · นับเพิ่มเฉพาะของที่จริงๆ ต่างจากระบบ
+                ใช้กับรายการที่ยังไม่เปลี่ยน · นับเพิ่มเฉพาะของที่ต่างจากระบบ
               </div>
             </div>
             <button
@@ -287,7 +287,7 @@ export default function CountClient({
               disabled={busy}
               className="text-xs px-3 py-2 rounded-md bg-amber-500 text-white font-bold hover:bg-amber-600 disabled:opacity-50 flex-shrink-0"
             >
-              ใช้คงเหลือปัจจุบัน ({total - done})
+              ใช้ตัวเลขเดิมจากคลังปัจจุบัน ({total - done})
             </button>
           </div>
         )}

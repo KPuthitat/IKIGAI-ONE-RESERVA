@@ -76,6 +76,10 @@ export default function InventaCountPage() {
         <p className="text-sm text-slate-500">{t(lang, "inv.count.subtitle")}</p>
       </div>
       <CountClient
+        // Remount when the open round changes (e.g. after reopening a
+        // submitted round) so the counted-qty state re-seeds from the
+        // round's saved lines instead of keeping the previous state.
+        key={session ? `c${session.id}` : "none"}
         items={items}
         session={session}
         lastSubmitted={lastSubmitted}
