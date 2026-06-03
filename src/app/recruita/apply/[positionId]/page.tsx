@@ -58,10 +58,13 @@ export default function ApplyPage({ params }: { params: { positionId: string } }
   // Default template mirrors the form, so an un-customised template
   // renders the form exactly as before.
   const template = getFormTemplate();
-  const fieldCfg: Record<string, { enabled: boolean; required: boolean; label: string }> = {};
+  const fieldCfg: Record<string, { enabled: boolean; required: boolean; label: string; label_en: string }> = {};
   for (const sec of template.sections) {
     for (const fld of sec.fields) {
-      fieldCfg[fld.key] = { enabled: fld.enabled, required: fld.required, label: fld.label_th };
+      fieldCfg[fld.key] = {
+        enabled: fld.enabled, required: fld.required,
+        label: fld.label_th, label_en: fld.label_en
+      };
     }
   }
 

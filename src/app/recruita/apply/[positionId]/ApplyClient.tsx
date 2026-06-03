@@ -6,7 +6,18 @@ import Script from "next/script";
 import { apiUrl } from "@/lib/url";
 import type { CustomQuestion } from "@/lib/recruita";
 import { INFO_SOURCE_OPTIONS, DEFAULT_RECRUITA_PDPA_TEXT } from "@/lib/recruita";
+import { useLang } from "@/lib/LangProvider";
+import LangToggle from "@/app/LangToggle";
 import "@/lib/liff-types";
+
+// Active form language drives all the hard-coded copy below. Field
+// LABELS come bilingual from the admin form template (label_th /
+// label_en); everything else (section headers, dropdown options, help,
+// PDPA, buttons, errors) flips via the `tr()` helper / per-component
+// useLang(). Custom (per-position) questions stay in the language the
+// admin authored them — out of scope for the standard EN form.
+type FormLang = "th" | "en";
+const trBy = (lang: FormLang, th: string, en: string) => (lang === "en" ? en : th);
 
 // Public application form — owner's existing Google Form ported to
 // our own pipeline, plus the per-position custom_questions admin
@@ -137,7 +148,7 @@ const EMPTY_REF: ReferenceRow = { name: "", relationship: "", phone: "" };
 // Threaded to <Field> via context so each standard field can hide /
 // rename / require itself. The default template mirrors the live form,
 // so an un-customised template renders the form exactly as before.
-type FieldCfg = Record<string, { enabled: boolean; required: boolean; label: string }>;
+type FieldCfg = Record<string, { enabled: boolean; required: boolean; label: string; label_en: string }>;
 const FieldCfgContext = createContext<FieldCfg>({});
 
 // Simple string-valued FormState fields the template can mark required —
@@ -208,6 +219,15 @@ export default function ApplyClient({
   pdpaImageUrl: string | null;
 }) {
   const router = useRouter();
+  const { lang } = useLang();
+  const tr = (th: string, en: string) => trBy(lang, th, en);
+  // Document-field label: prefer the admin template's bilingual label,
+  // else the built-in fallback for the active language.
+  const docLabel = (key: string, fallback: string) => {
+    const c = fieldCfg[key];
+    const lbl = lang === "en" ? (c?.label_en?.trim() || c?.label?.trim()) : c?.label?.trim();
+    return lbl || fallback;
+  };
   const draftKey = `${DRAFT_KEY_PREFIX}${positionId}`;
   const [f, setF] = useState<FormState>(blankState);
   const [photo, setPhoto] = useState<File | null>(null);
@@ -416,7 +436,10 @@ export default function ApplyClient({
     }
     if (miss.size > 0) {
       setMissing(miss);
-      setErr(`ยังกรอกไม่ครบ — มี ${miss.size} ช่องที่จำเป็นแต่ยังว่าง (ดูช่องกรอบสีแดง)`);
+      setErr(tr(
+        `ยังกรอกไม่ครบ — มี ${miss.size} ช่องที่จำเป็นแต่ยังว่าง (ดูช่องกรอบสีแดง)`,
+        `${miss.size} required field${miss.size > 1 ? "s are" : " is"} still empty (see the red-outlined fields)`
+      ));
       // Let React paint the red borders, then scroll to the first one.
       setTimeout(() => {
         document.querySelector('[data-invalid="true"]')
@@ -427,8 +450,8 @@ export default function ApplyClient({
     setMissing(new Set());
     // Education years must be Common Era (reject พ.ศ. / malformed)
     for (const edu of f.education) {
-      const ye = ceYearError(edu.year_finished);
-      if (ye) { setErr(`ปีที่จบการศึกษา: ${ye}`); return; }
+      const ye = ceYearError(edu.year_finished, lang);
+      if (ye) { setErr(`${tr("ปีที่จบการศึกษา", "Graduation year")}: ${ye}`); return; }
     }
 
     setBusy(true);
@@ -469,14 +492,14 @@ export default function ApplyClient({
           // eslint-disable-next-line no-console
           console.warn("[recruita/apply] validation detail:", j.detail);
         }
-        setErr(j.message ?? j.error ?? "ส่งใบสมัครไม่สำเร็จ");
+        setErr(j.message ?? j.error ?? tr("ส่งใบสมัครไม่สำเร็จ", "Could not submit your application"));
         return;
       }
       // Clear draft on success
       try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
       router.push(`/recruita/apply/${positionId}/thanks?aid=${j.application_id}`);
     } catch {
-      setErr("เกิดข้อผิดพลาดในการส่งใบสมัคร กรุณาลองอีกครั้ง");
+      setErr(tr("เกิดข้อผิดพลาดในการส่งใบสมัคร กรุณาลองอีกครั้ง", "Something went wrong submitting your application. Please try again."));
     } finally {
       setBusy(false);
     }
@@ -493,20 +516,28 @@ export default function ApplyClient({
           onLoad={initLiff} />
       )}
 
+      {/* Language switch — foreigners flip to EN here (owner 2026-06-03).
+          Reuses the app-wide toggle so the choice persists via cookie. */}
+      <div className="flex justify-end">
+        <LangToggle variant="light" />
+      </div>
+
       {/* Welcome-back banner — shown when prefill was applied */}
       {welcomeBack && (
         <div className="bg-sky-50 border border-sky-200 rounded-xl px-4 py-3 text-sm text-sky-800 space-y-1">
-          <div className="font-bold">ยินดีต้อนรับกลับมา!</div>
+          <div className="font-bold">{tr("ยินดีต้อนรับกลับมา!", "Welcome back!")}</div>
           <div className="text-xs leading-relaxed text-sky-700">
-            เราพบข้อมูลใบสมัครเก่าของคุณและกรอกไว้ให้แล้ว —
-            ตรวจสอบและแก้ไขให้ครบก่อนกดส่ง
+            {tr(
+              "เราพบข้อมูลใบสมัครเก่าของคุณและกรอกไว้ให้แล้ว — ตรวจสอบและแก้ไขให้ครบก่อนกดส่ง",
+              "We found your previous application and filled it in — please review and update before submitting."
+            )}
           </div>
           <button
             type="button"
             onClick={() => setWelcomeBack(false)}
             className="text-[10px] text-sky-500 hover:text-sky-700 underline"
           >
-            ปิดข้อความนี้
+            {tr("ปิดข้อความนี้", "Dismiss")}
           </button>
         </div>
       )}
@@ -514,14 +545,15 @@ export default function ApplyClient({
       {/* Tiny info badge when LIFF binding is active (and no welcome-back) */}
       {lineUserId && !welcomeBack && (
         <div className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 text-center">
-          ผูก LINE สำเร็จ — เราจะแจ้งสถานะใบสมัครให้คุณผ่าน LINE
+          {tr("ผูก LINE สำเร็จ — เราจะแจ้งสถานะใบสมัครให้คุณผ่าน LINE",
+            "LINE linked — we'll notify you of your application status via LINE")}
         </div>
       )}
 
       {/* Header */}
       <div className="card text-center space-y-2">
         <div className="text-xs font-bold text-slate-500 uppercase tracking-[2px]">
-          ใบสมัครงาน
+          {tr("ใบสมัครงาน", "Job Application")}
         </div>
         <div className="flex items-center justify-center gap-2 flex-wrap">
           {positionCode && (
@@ -535,23 +567,25 @@ export default function ApplyClient({
           {[branchName, department].filter(Boolean).join(" · ")}
         </div>
         <p className="text-[11px] text-slate-400 mt-2">
-          ระบบบันทึกร่างอัตโนมัติ — รีเฟรชหน้าได้ ข้อมูลจะไม่หาย
+          {tr("ระบบบันทึกร่างอัตโนมัติ — รีเฟรชหน้าได้ ข้อมูลจะไม่หาย",
+            "Your draft saves automatically — you can refresh without losing anything.")}
         </p>
       </div>
 
       {/* Section 1 — PDPA */}
-      <Section title="1. นโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA)">
+      <Section title={tr("1. นโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA)", "1. Personal Data Protection (PDPA)")}>
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-slate-700 leading-relaxed space-y-2">
           {pdpaImageUrl ? (
             // Admin uploaded a policy image — open it in a new tab.
             <>
-              <p>กรุณาอ่านนโยบายคุ้มครองข้อมูลส่วนบุคคลก่อนให้ความยินยอม</p>
+              <p>{tr("กรุณาอ่านนโยบายคุ้มครองข้อมูลส่วนบุคคลก่อนให้ความยินยอม",
+                "Please review the personal data protection policy before giving consent.")}</p>
               <a
                 href={pdpaImageUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-lg">
-                เปิดดูนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) →
+                {tr("เปิดดูนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) →", "Open the privacy policy (PDPA) →")}
               </a>
             </>
           ) : (
@@ -566,7 +600,7 @@ export default function ApplyClient({
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-amber-800 hover:text-amber-900 font-bold underline underline-offset-2">
-                  ดูนโยบายฉบับเต็ม →
+                  {tr("ดูนโยบายฉบับเต็ม →", "Read the full policy →")}
                 </a>
               )}
             </>
@@ -581,33 +615,39 @@ export default function ApplyClient({
             checked={f.pdpa_consent}
             onChange={(e) => up("pdpa_consent", e.target.checked)} />
           <span>
-            <b>ยินยอม</b> ให้บริษัทเก็บรวบรวม ใช้ และเปิดเผยข้อมูลส่วนบุคคลตามวัตถุประสงค์ที่ระบุ
+            {lang === "en" ? (
+              <><b>I consent</b> to the company collecting, using and disclosing my personal data for the stated purposes.</>
+            ) : (
+              <><b>ยินยอม</b> ให้บริษัทเก็บรวบรวม ใช้ และเปิดเผยข้อมูลส่วนบุคคลตามวัตถุประสงค์ที่ระบุ</>
+            )}
             {missing.has("pdpa_consent") && (
-              <span className="block text-[10px] text-rose-500 font-bold mt-0.5">⚠ ต้องติ๊กยินยอมก่อนส่ง</span>
+              <span className="block text-[10px] text-rose-500 font-bold mt-0.5">
+                {tr("⚠ ต้องติ๊กยินยอมก่อนส่ง", "⚠ You must consent before submitting")}
+              </span>
             )}
           </span>
         </label>
       </Section>
 
       {/* Section 2 — Personal */}
-      <Section title="2. ข้อมูลส่วนตัว">
+      <Section title={tr("2. ข้อมูลส่วนตัว", "2. Personal Information")}>
         <Grid2>
           <Field k="title_prefix" fb="คำนำหน้า" invalid={missing.has("title_prefix")}>
             <select className="input" value={f.title_prefix}
               onChange={(e) => up("title_prefix", e.target.value)}>
               <option value="">—</option>
-              <option value="นาย">นาย</option>
-              <option value="นางสาว">นางสาว</option>
-              <option value="นาง">นาง</option>
+              <option value="นาย">{tr("นาย", "Mr.")}</option>
+              <option value="นางสาว">{tr("นางสาว", "Ms.")}</option>
+              <option value="นาง">{tr("นาง", "Mrs.")}</option>
             </select>
           </Field>
           <Field k="gender" fb="เพศ" invalid={missing.has("gender")}>
             <select className="input" value={f.gender}
               onChange={(e) => up("gender", e.target.value)}>
               <option value="">—</option>
-              <option value="male">ชาย</option>
-              <option value="female">หญิง</option>
-              <option value="other">อื่นๆ</option>
+              <option value="male">{tr("ชาย", "Male")}</option>
+              <option value="female">{tr("หญิง", "Female")}</option>
+              <option value="other">{tr("อื่นๆ", "Other")}</option>
             </select>
           </Field>
           <Field k="first_name_th" fb="ชื่อจริง (ไทย)" invalid={missing.has("first_name_th")}>
@@ -631,7 +671,8 @@ export default function ApplyClient({
               onChange={(e) => up("nickname_th", e.target.value)} />
           </Field>
           <Field k="dob" fb="วัน/เดือน/ปี เกิด" invalid={missing.has("dob")}
-            hint="รูปแบบ DD/MM/YYYY · ถ้าจำวันไม่แม่นยำ ใส่วันที่ 1 ของเดือนได้">
+            hint={tr("รูปแบบ DD/MM/YYYY · ถ้าจำวันไม่แม่นยำ ใส่วันที่ 1 ของเดือนได้",
+              "Format DD/MM/YYYY · if unsure of the day, use the 1st of the month")}>
             <DateInput value={f.dob} onChange={(v) => up("dob", v)} required />
           </Field>
           <Field k="nationality" fb="สัญชาติ" invalid={missing.has("nationality")}>
@@ -650,10 +691,10 @@ export default function ApplyClient({
             <select className="input" value={f.marital_status}
               onChange={(e) => up("marital_status", e.target.value)}>
               <option value="">—</option>
-              <option value="single">โสด</option>
-              <option value="married">สมรส</option>
-              <option value="divorced">หย่าร้าง</option>
-              <option value="widowed">หม้าย</option>
+              <option value="single">{tr("โสด", "Single")}</option>
+              <option value="married">{tr("สมรส", "Married")}</option>
+              <option value="divorced">{tr("หย่าร้าง", "Divorced")}</option>
+              <option value="widowed">{tr("หม้าย", "Widowed")}</option>
             </select>
           </Field>
           {f.gender === "male" && (
@@ -661,14 +702,14 @@ export default function ApplyClient({
               <select className="input" value={f.military_status}
                 onChange={(e) => up("military_status", e.target.value)}>
                 <option value="">—</option>
-                <option value="exempt">ได้รับการยกเว้น</option>
-                <option value="reservist">ปลดเป็นทหารกองหนุน</option>
-                <option value="pending">ยังไม่ได้รับการเกณฑ์</option>
+                <option value="exempt">{tr("ได้รับการยกเว้น", "Exempt")}</option>
+                <option value="reservist">{tr("ปลดเป็นทหารกองหนุน", "Discharged (reservist)")}</option>
+                <option value="pending">{tr("ยังไม่ได้รับการเกณฑ์", "Not yet conscripted")}</option>
               </select>
             </Field>
           )}
           <Field k="national_id" fb="เลขบัตรประจำตัวประชาชน" invalid={missing.has("national_id")}
-            hint="เข้ารหัสในระบบ (PDPA)">
+            hint={tr("เข้ารหัสในระบบ (PDPA)", "Encrypted at rest (PDPA)")}>
             <input className="input" inputMode="numeric"
               maxLength={13} value={f.national_id}
               onChange={(e) => up("national_id", e.target.value.replace(/\D/g, ""))} />
@@ -677,7 +718,7 @@ export default function ApplyClient({
       </Section>
 
       {/* Section 3 — Contact */}
-      <Section title="3. ติดต่อ">
+      <Section title={tr("3. ติดต่อ", "3. Contact")}>
         <Grid2>
           <Field k="mobile_phone" fb="เบอร์โทรศัพท์มือถือ" invalid={missing.has("mobile_phone")}>
             <input className="input" type="tel" value={f.mobile_phone}
@@ -695,11 +736,11 @@ export default function ApplyClient({
             <select className="input" value={f.housing_type}
               onChange={(e) => up("housing_type", e.target.value)}>
               <option value="">—</option>
-              <option value="family">อาศัยกับครอบครัว</option>
-              <option value="own_home">บ้านตัวเอง</option>
-              <option value="rental">บ้านเช่า</option>
-              <option value="dormitory">หอพัก</option>
-              <option value="other">อื่นๆ</option>
+              <option value="family">{tr("อาศัยกับครอบครัว", "Living with family")}</option>
+              <option value="own_home">{tr("บ้านตัวเอง", "Own home")}</option>
+              <option value="rental">{tr("บ้านเช่า", "Rented")}</option>
+              <option value="dormitory">{tr("หอพัก", "Dormitory")}</option>
+              <option value="other">{tr("อื่นๆ", "Other")}</option>
             </select>
           </Field>
         </Grid2>
@@ -710,53 +751,53 @@ export default function ApplyClient({
       </Section>
 
       {/* Section 4 — Education */}
-      <Section title="4. ประวัติการศึกษา">
+      <Section title={tr("4. ประวัติการศึกษา", "4. Education")}>
         {f.education.map((row, i) => {
-          const eduYearErr = ceYearError(row.year_finished);
+          const eduYearErr = ceYearError(row.year_finished, lang);
           return (
           <div key={i} className="border border-slate-200 rounded-lg p-3 bg-slate-50 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-600">รายการที่ {i + 1}</span>
+              <span className="text-xs font-bold text-slate-600">{tr("รายการที่", "Entry")} {i + 1}</span>
               {f.education.length > 1 && (
                 <button type="button" onClick={() => delEdu(i)}
-                  className="text-xs text-rose-600 hover:underline">ลบ</button>
+                  className="text-xs text-rose-600 hover:underline">{tr("ลบ", "Remove")}</button>
               )}
             </div>
             <Grid2>
-              <Field label="ระดับ">
+              <Field label={tr("ระดับ", "Level")}>
                 <select className="input" value={row.level}
                   onChange={(e) => setEdu(i, { level: e.target.value })}>
                   <option value="">—</option>
-                  <option value="high_school">มัธยมศึกษาตอนปลาย</option>
-                  <option value="vocational">ปวช.</option>
-                  <option value="diploma">ปวส.</option>
-                  <option value="bachelor">ปริญญาตรี</option>
-                  <option value="master">ปริญญาโท</option>
-                  <option value="phd">ปริญญาเอก</option>
+                  <option value="high_school">{tr("มัธยมศึกษาตอนปลาย", "High school")}</option>
+                  <option value="vocational">{tr("ปวช.", "Vocational certificate")}</option>
+                  <option value="diploma">{tr("ปวส.", "Higher vocational diploma")}</option>
+                  <option value="bachelor">{tr("ปริญญาตรี", "Bachelor's")}</option>
+                  <option value="master">{tr("ปริญญาโท", "Master's")}</option>
+                  <option value="phd">{tr("ปริญญาเอก", "Doctorate")}</option>
                 </select>
               </Field>
-              <Field label="ปีที่จบ (ค.ศ.)">
+              <Field label={tr("ปีที่จบ (ค.ศ.)", "Year finished (CE)")}>
                 <input className="input" inputMode="numeric" maxLength={4}
                   value={row.year_finished}
                   onChange={(e) => setEdu(i, { year_finished: e.target.value.replace(/\D/g, "").slice(0, 4) })}
-                  placeholder="เช่น 2023" />
+                  placeholder={tr("เช่น 2023", "e.g. 2023")} />
                 {eduYearErr && (
                   <p className="text-[11px] text-rose-600 mt-1">{eduYearErr}</p>
                 )}
               </Field>
-              <Field label="สถาบัน">
+              <Field label={tr("สถาบัน", "Institution")}>
                 <input className="input" value={row.institution}
                   onChange={(e) => setEdu(i, { institution: e.target.value })} />
               </Field>
-              <Field label="คณะ">
+              <Field label={tr("คณะ", "Faculty")}>
                 <input className="input" value={row.faculty}
                   onChange={(e) => setEdu(i, { faculty: e.target.value })} />
               </Field>
-              <Field label="สาขาวิชา">
+              <Field label={tr("สาขาวิชา", "Major")}>
                 <input className="input" value={row.major}
                   onChange={(e) => setEdu(i, { major: e.target.value })} />
               </Field>
-              <Field label="เกรดเฉลี่ย">
+              <Field label={tr("เกรดเฉลี่ย", "GPA")}>
                 <input className="input" value={row.gpa}
                   onChange={(e) => setEdu(i, { gpa: e.target.value })} />
               </Field>
@@ -765,84 +806,85 @@ export default function ApplyClient({
           );
         })}
         <button type="button" onClick={addEdu}
-          className="text-xs text-brand hover:underline">+ เพิ่มประวัติการศึกษา</button>
+          className="text-xs text-brand hover:underline">+ {tr("เพิ่มประวัติการศึกษา", "Add education")}</button>
 
         <Field k="professional_license_status" fb="มีใบประกอบวิชาชีพหรือไม่ (พยาบาล/เทคนิคการแพทย์/สาธารณสุข)"
           invalid={missing.has("professional_license_status")}
-          hint="เฉพาะตำแหน่งที่ต้องใช้ใบประกอบ">
+          hint={tr("เฉพาะตำแหน่งที่ต้องใช้ใบประกอบ", "Only for positions that require a license")}>
           <select className="input" value={f.professional_license_status}
             onChange={(e) => up("professional_license_status", e.target.value)}>
             <option value="">—</option>
-            <option value="has_license">มีใบประกอบวิชาชีพ</option>
-            <option value="no_license">ไม่มีใบประกอบวิชาชีพ</option>
-            <option value="not_applicable">ไม่ได้สมัครตำแหน่งดังกล่าว</option>
+            <option value="has_license">{tr("มีใบประกอบวิชาชีพ", "Hold a professional license")}</option>
+            <option value="no_license">{tr("ไม่มีใบประกอบวิชาชีพ", "No professional license")}</option>
+            <option value="not_applicable">{tr("ไม่ได้สมัครตำแหน่งดังกล่าว", "Not applying for such a role")}</option>
           </select>
         </Field>
       </Section>
 
       {/* Section 5 — Experience */}
-      <Section title="5. ประสบการณ์การทำงาน">
+      <Section title={tr("5. ประสบการณ์การทำงาน", "5. Work Experience")}>
         {f.experience.map((row, i) => (
           <div key={i} className="border border-slate-200 rounded-lg p-3 bg-slate-50 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-600">งานล่าสุดที่ {i + 1}</span>
+              <span className="text-xs font-bold text-slate-600">{tr("งานล่าสุดที่", "Job")} {i + 1}</span>
               {f.experience.length > 1 && (
                 <button type="button" onClick={() => delExp(i)}
-                  className="text-xs text-rose-600 hover:underline">ลบ</button>
+                  className="text-xs text-rose-600 hover:underline">{tr("ลบ", "Remove")}</button>
               )}
             </div>
             <Grid2>
-              <Field label="ชื่อบริษัท/สถานที่"><input className="input" value={row.company}
+              <Field label={tr("ชื่อบริษัท/สถานที่", "Company / workplace")}><input className="input" value={row.company}
                 onChange={(e) => setExp(i, { company: e.target.value })} /></Field>
-              <Field label="ตำแหน่ง"><input className="input" value={row.position}
+              <Field label={tr("ตำแหน่ง", "Position")}><input className="input" value={row.position}
                 onChange={(e) => setExp(i, { position: e.target.value })} /></Field>
-              <Field label="เริ่มงาน"
-                hint="รูปแบบ DD/MM/YYYY · ถ้าจำวันไม่แม่นยำ ใส่วันที่ 1 ของเดือนได้">
+              <Field label={tr("เริ่มงาน", "Start date")}
+                hint={tr("รูปแบบ DD/MM/YYYY · ถ้าจำวันไม่แม่นยำ ใส่วันที่ 1 ของเดือนได้",
+                  "Format DD/MM/YYYY · if unsure of the day, use the 1st")}>
                 <DateInput value={row.started}
                   onChange={(v) => setExp(i, { started: v })} />
               </Field>
-              <Field label="ออกจากงาน" hint="DD/MM/YYYY (เว้นว่าง = ยังทำอยู่)">
+              <Field label={tr("ออกจากงาน", "End date")} hint={tr("DD/MM/YYYY (เว้นว่าง = ยังทำอยู่)", "DD/MM/YYYY (blank = still working)")}>
                 <DateInput value={row.ended}
                   onChange={(v) => setExp(i, { ended: v })} />
               </Field>
-              <Field label="เงินเดือน/ค่าจ้าง"><input className="input" value={row.salary}
+              <Field label={tr("เงินเดือน/ค่าจ้าง", "Salary / wage")}><input className="input" value={row.salary}
                 onChange={(e) => setExp(i, { salary: e.target.value })} /></Field>
-              <Field label="สาเหตุที่ออก"><input className="input" value={row.reason_left}
+              <Field label={tr("สาเหตุที่ออก", "Reason for leaving")}><input className="input" value={row.reason_left}
                 onChange={(e) => setExp(i, { reason_left: e.target.value })} /></Field>
             </Grid2>
           </div>
         ))}
         <button type="button" onClick={addExp}
-          className="text-xs text-brand hover:underline">+ เพิ่มประวัติการทำงาน</button>
+          className="text-xs text-brand hover:underline">+ {tr("เพิ่มประวัติการทำงาน", "Add work experience")}</button>
       </Section>
 
       {/* Section 6 — Skills */}
-      <Section title="6. ทักษะ & ภาษา">
+      <Section title={tr("6. ทักษะ & ภาษา", "6. Skills & Languages")}>
         <div className="space-y-2">
-          <div className="text-xs font-bold text-slate-600">ภาษา</div>
+          <div className="text-xs font-bold text-slate-600">{tr("ภาษา", "Languages")}</div>
           {f.skills_language.map((row, i) => (
             <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2">
               <input className="input text-sm" value={row.language}
-                placeholder="ภาษา"
+                placeholder={tr("ภาษา", "Language")}
                 onChange={(e) => setLang(i, { language: e.target.value })} />
               <select className="input text-sm" value={row.level}
                 onChange={(e) => setLang(i, { level: e.target.value })}>
-                <option value="">— ระดับ —</option>
-                <option value="native">เจ้าของภาษา</option>
-                <option value="fluent">ดีมาก</option>
-                <option value="good">ดี</option>
-                <option value="basic">พอใช้</option>
+                <option value="">{tr("— ระดับ —", "— Level —")}</option>
+                <option value="native">{tr("เจ้าของภาษา", "Native")}</option>
+                <option value="fluent">{tr("ดีมาก", "Fluent")}</option>
+                <option value="good">{tr("ดี", "Good")}</option>
+                <option value="basic">{tr("พอใช้", "Basic")}</option>
               </select>
               {f.skills_language.length > 1 && (
                 <button type="button" onClick={() => delLang(i)}
-                  className="text-xs text-rose-600 px-2">ลบ</button>
+                  className="text-xs text-rose-600 px-2">{tr("ลบ", "Remove")}</button>
               )}
             </div>
           ))}
           <button type="button" onClick={addLang}
-            className="text-xs text-brand hover:underline">+ เพิ่มภาษา</button>
+            className="text-xs text-brand hover:underline">+ {tr("เพิ่มภาษา", "Add language")}</button>
         </div>
-        <Field k="skills_other" fb="ทักษะพิเศษอื่นๆ" invalid={missing.has("skills_other")} hint="คอมพิวเตอร์, ขับรถ, ฯลฯ">
+        <Field k="skills_other" fb="ทักษะพิเศษอื่นๆ" invalid={missing.has("skills_other")} hint={tr("คอมพิวเตอร์, ขับรถ, ฯลฯ", "Computer, driving, etc.")}>
           <textarea className="input" rows={2} value={f.skills_other}
             onChange={(e) => up("skills_other", e.target.value)} />
         </Field>
@@ -853,8 +895,8 @@ export default function ApplyClient({
       </Section>
 
       {/* Section 7 — References & emergency */}
-      <Section title="7. บุคคลอ้างอิง & ติดต่อฉุกเฉิน">
-        <div className="text-xs font-bold text-slate-600">ติดต่อฉุกเฉิน</div>
+      <Section title={tr("7. บุคคลอ้างอิง & ติดต่อฉุกเฉิน", "7. References & Emergency Contact")}>
+        <div className="text-xs font-bold text-slate-600">{tr("ติดต่อฉุกเฉิน", "Emergency contact")}</div>
         <Grid2>
           <Field k="emergency_name" fb="ชื่อ-นามสกุล (ติดต่อฉุกเฉิน)" invalid={missing.has("emergency_name")}>
             <input className="input" value={f.emergency_name}
@@ -871,14 +913,14 @@ export default function ApplyClient({
         </Grid2>
         <Field k="referee_external_text" fb="บุคคลอ้างอิง (ไม่ใช่ญาติ/นายจ้างเดิม)"
           invalid={missing.has("referee_external_text")}
-          hint="ชื่อ + เบอร์ + อาชีพ + ความสัมพันธ์ที่รู้จัก">
+          hint={tr("ชื่อ + เบอร์ + อาชีพ + ความสัมพันธ์ที่รู้จัก", "Name + phone + occupation + how you know them")}>
           <textarea className="input" rows={3} value={f.referee_external_text}
             onChange={(e) => up("referee_external_text", e.target.value)} />
         </Field>
       </Section>
 
       {/* Section 8 — Expectations */}
-      <Section title="8. ความคาดหวังในการทำงาน">
+      <Section title={tr("8. ความคาดหวังในการทำงาน", "8. Job Expectations")}>
         <Grid2>
           <Field k="expected_salary" fb="เงินเดือนที่คาดหวัง (บาท)" invalid={missing.has("expected_salary")}>
             <input className="input" type="number" min="0" value={f.expected_salary}
@@ -892,8 +934,8 @@ export default function ApplyClient({
             <select className="input" value={f.can_travel}
               onChange={(e) => up("can_travel", e.target.value)}>
               <option value="">—</option>
-              <option value="yes">ได้</option>
-              <option value="no">ไม่ได้</option>
+              <option value="yes">{tr("ได้", "Yes")}</option>
+              <option value="no">{tr("ไม่ได้", "No")}</option>
             </select>
           </Field>
           <Field k="info_source" fb="ทราบข่าวการรับสมัครจาก" invalid={missing.has("info_source")}>
@@ -917,14 +959,14 @@ export default function ApplyClient({
       </Section>
 
       {/* Section 9 — Health & history */}
-      <Section title="9. ประวัติสุขภาพ & ประวัติการสมัคร">
+      <Section title={tr("9. ประวัติสุขภาพ & ประวัติการสมัคร", "9. Health & Application History")}>
         <Grid2>
           <Field k="prior_illness" fb="เคยป่วยหนัก/โรคติดต่อร้ายแรงไหม" invalid={missing.has("prior_illness")}>
             <select className="input" value={f.prior_illness}
               onChange={(e) => up("prior_illness", e.target.value)}>
               <option value="">—</option>
-              <option value="yes">เคย</option>
-              <option value="no">ไม่เคย</option>
+              <option value="yes">{tr("เคย", "Yes")}</option>
+              <option value="no">{tr("ไม่เคย", "No")}</option>
             </select>
           </Field>
           {f.prior_illness === "yes" && (
@@ -935,7 +977,8 @@ export default function ApplyClient({
           )}
           <Field k="prior_application_at" fb="เคยสมัครงานกับเราเมื่อ"
             invalid={missing.has("prior_application_at")}
-            hint="รูปแบบ DD/MM/YYYY · ถ้าจำวันไม่แม่นยำ ใส่วันที่ 1 ของเดือนได้">
+            hint={tr("รูปแบบ DD/MM/YYYY · ถ้าจำวันไม่แม่นยำ ใส่วันที่ 1 ของเดือนได้",
+              "Format DD/MM/YYYY · if unsure of the day, use the 1st")}>
             <DateInput value={f.prior_application_at}
               onChange={(v) => up("prior_application_at", v)} />
           </Field>
@@ -943,32 +986,33 @@ export default function ApplyClient({
       </Section>
 
       {/* Section 10 — Documents */}
-      <Section title="10. อัปโหลดเอกสาร">
+      <Section title={tr("10. อัปโหลดเอกสาร", "10. Upload Documents")}>
         <div className="text-[11px] text-slate-500 mb-2 space-y-1">
-          <p>ไฟล์ .pdf .jpg .png ขนาดไม่เกิน 10 MB ต่อไฟล์</p>
+          <p>{tr("ไฟล์ .pdf .jpg .png ขนาดไม่เกิน 10 MB ต่อไฟล์", ".pdf .jpg .png files, up to 10 MB each")}</p>
           <p className="text-slate-400">
-            ไฟล์จะถูกเก็บใน server ของ IKIGAI Medihealth
-            (ไม่ส่งต่อให้บุคคลที่สาม) — ลบอัตโนมัติภายใน 30 วัน
-            หากใบสมัครไม่ผ่านการพิจารณา
+            {tr(
+              "ไฟล์จะถูกเก็บใน server ของ IKIGAI Medihealth (ไม่ส่งต่อให้บุคคลที่สาม) — ลบอัตโนมัติภายใน 30 วัน หากใบสมัครไม่ผ่านการพิจารณา",
+              "Files are stored on IKIGAI Medihealth's server (not shared with third parties) and auto-deleted within 30 days if the application is unsuccessful."
+            )}
           </p>
         </div>
         {(fieldCfg["doc_photo"]?.enabled ?? true) && (
-          <FileField label={fieldCfg["doc_photo"]?.label?.trim() || "รูปถ่าย"} file={photo} onChange={setPhoto}
+          <FileField label={docLabel("doc_photo", tr("รูปถ่าย", "Photo"))} file={photo} onChange={setPhoto}
             accept="image/*" />
         )}
         {(fieldCfg["doc_resume"]?.enabled ?? true) && (
-          <FileField label={fieldCfg["doc_resume"]?.label?.trim() || "Resume / CV"} file={resume} onChange={setResume}
+          <FileField label={docLabel("doc_resume", "Resume / CV")} file={resume} onChange={setResume}
             accept=".pdf,image/*" />
         )}
         {(fieldCfg["doc_id_copy"]?.enabled ?? true) && (
-          <FileField label={fieldCfg["doc_id_copy"]?.label?.trim() || "สำเนาบัตรประชาชน"} file={idCopy} onChange={setIdCopy}
+          <FileField label={docLabel("doc_id_copy", tr("สำเนาบัตรประชาชน", "ID card copy"))} file={idCopy} onChange={setIdCopy}
             accept=".pdf,image/*" />
         )}
       </Section>
 
       {/* Section 11 — Custom questions */}
       {customQuestions.length > 0 && (
-        <Section title="11. คำถามเฉพาะตำแหน่ง">
+        <Section title={tr("11. คำถามเฉพาะตำแหน่ง", "11. Position-specific Questions")}>
           {customQuestions.map((q) => {
             const invalid = missing.has(`custom_${q.id}`);
             return (
@@ -979,7 +1023,7 @@ export default function ApplyClient({
                   value={f.custom[q.id]}
                   onChange={(v) => upCustom(q.id, v)} />
                 {invalid && (
-                  <p className="text-[10px] text-rose-500 font-bold mt-0.5">⚠ จำเป็นต้องตอบข้อนี้</p>
+                  <p className="text-[10px] text-rose-500 font-bold mt-0.5">{tr("⚠ จำเป็นต้องตอบข้อนี้", "⚠ This question is required")}</p>
                 )}
               </div>
             );
@@ -988,11 +1032,12 @@ export default function ApplyClient({
       )}
 
       {/* Section 12 — Truth declaration */}
-      <Section title="12. รับรองความถูกต้อง">
+      <Section title={tr("12. รับรองความถูกต้อง", "12. Declaration of Truth")}>
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-slate-700 leading-relaxed">
-          ข้าพเจ้าขอรับรองว่า ข้อความทั้งหมดในใบสมัครนี้เป็นความจริงทุกประการ
-          หากปรากฏภายหลังว่า ข้อความใดไม่เป็นความจริง บริษัทมีสิทธิ์เลิกจ้างข้าพเจ้าได้
-          โดยไม่ต้องจ่ายเงินชดเชยหรือค่าเสียหายใดๆ ทั้งสิ้น
+          {tr(
+            "ข้าพเจ้าขอรับรองว่า ข้อความทั้งหมดในใบสมัครนี้เป็นความจริงทุกประการ หากปรากฏภายหลังว่า ข้อความใดไม่เป็นความจริง บริษัทมีสิทธิ์เลิกจ้างข้าพเจ้าได้ โดยไม่ต้องจ่ายเงินชดเชยหรือค่าเสียหายใดๆ ทั้งสิ้น",
+            "I certify that all statements in this application are true. If any statement is later found to be false, the company has the right to terminate my employment without any severance or compensation."
+          )}
         </div>
         <label
           data-invalid={missing.has("truth_declaration_accepted") ? "true" : undefined}
@@ -1003,9 +1048,15 @@ export default function ApplyClient({
             checked={f.truth_declaration_accepted}
             onChange={(e) => up("truth_declaration_accepted", e.target.checked)} />
           <span>
-            <b>ยอมรับ</b> รับรองความถูกต้องของข้อมูลทั้งหมด
+            {lang === "en" ? (
+              <><b>I accept</b> and certify that all the information is accurate.</>
+            ) : (
+              <><b>ยอมรับ</b> รับรองความถูกต้องของข้อมูลทั้งหมด</>
+            )}
             {missing.has("truth_declaration_accepted") && (
-              <span className="block text-[10px] text-rose-500 font-bold mt-0.5">⚠ ต้องติ๊กยอมรับก่อนส่ง</span>
+              <span className="block text-[10px] text-rose-500 font-bold mt-0.5">
+                {tr("⚠ ต้องติ๊กยอมรับก่อนส่ง", "⚠ You must accept before submitting")}
+              </span>
             )}
           </span>
         </label>
@@ -1020,7 +1071,7 @@ export default function ApplyClient({
       <div className="sticky bottom-2 z-10">
         <button type="submit" disabled={busy}
           className="btn-primary w-full text-base py-3 shadow-lg disabled:opacity-50">
-          {busy ? "กำลังส่งใบสมัคร…" : "ส่งใบสมัคร"}
+          {busy ? tr("กำลังส่งใบสมัคร…", "Submitting…") : tr("ส่งใบสมัคร", "Submit application")}
         </button>
       </div>
     </form>
@@ -1058,12 +1109,18 @@ function Field({
   invalid?: boolean;
   children: React.ReactNode;
 }) {
+  const { lang } = useLang();
   const cfg = useContext(FieldCfgContext);
   const c = k ? cfg[k] : undefined;
   // Hidden by the template → render nothing.
   if (k && c && !c.enabled) return null;
+  // Template fields are bilingual (label_en); fall back to the Thai
+  // label then the call-site `fb` if a translation is missing.
+  const tplLabel = c
+    ? (lang === "en" ? (c.label_en?.trim() || c.label?.trim()) : c.label?.trim())
+    : "";
   const shownLabel = k
-    ? ((c?.label?.trim() || fb || "") + (c?.required ? " *" : ""))
+    ? ((tplLabel || fb || "") + (c?.required ? " *" : ""))
     : (label ?? "");
   return (
     <div data-invalid={invalid ? "true" : undefined}>
@@ -1072,7 +1129,9 @@ function Field({
         {children}
       </div>
       {invalid && (
-        <p className="text-[10px] text-rose-500 font-bold mt-0.5">⚠ จำเป็นต้องกรอกช่องนี้</p>
+        <p className="text-[10px] text-rose-500 font-bold mt-0.5">
+          {trBy(lang, "⚠ จำเป็นต้องกรอกช่องนี้", "⚠ This field is required")}
+        </p>
       )}
       {hint && <p className="text-[10px] text-slate-400 mt-0.5">{hint}</p>}
     </div>
@@ -1106,6 +1165,7 @@ function DateInput({
   onChange: (iso: string) => void;
   required?: boolean;
 }) {
+  const { lang } = useLang();
   // Track the typed string separately so partial input ("12/") still
   // renders while the user keeps typing. Sync with the canonical
   // value when it changes externally (draft restore, prefill, etc.).
@@ -1143,9 +1203,11 @@ function DateInput({
       const yyyy = Number(m[3]);
       const nowY = new Date().getFullYear();
       if (yyyy > nowY + 5) {
-        setYearWarn(`ปี ${yyyy} เป็น พ.ศ.? — กรอกเป็น ค.ศ. (เช่น ${yyyy - 543})`);
+        setYearWarn(trBy(lang,
+          `ปี ${yyyy} เป็น พ.ศ.? — กรอกเป็น ค.ศ. (เช่น ${yyyy - 543})`,
+          `Is ${yyyy} a Buddhist-era year? Use CE (e.g. ${yyyy - 543})`));
       } else if (yyyy < 1900) {
-        setYearWarn("ปีไม่ถูกต้อง");
+        setYearWarn(trBy(lang, "ปีไม่ถูกต้อง", "Invalid year"));
       } else {
         setYearWarn(null);
       }
@@ -1211,14 +1273,15 @@ function ddmmyyyyToIso(s: string): string {
  *  A พ.ศ. year is 543 ahead of ค.ศ., so anything past the current
  *  year is almost certainly Buddhist-era and we ask the user to
  *  convert. */
-function ceYearError(raw: string): string | null {
+function ceYearError(raw: string, lang: FormLang = "th"): string | null {
+  const t = (th: string, en: string) => trBy(lang, th, en);
   const v = (raw ?? "").trim();
   if (!v) return null;
-  if (!/^\d{4}$/.test(v)) return "กรอกปีเป็นตัวเลข 4 หลัก (ค.ศ.)";
+  if (!/^\d{4}$/.test(v)) return t("กรอกปีเป็นตัวเลข 4 หลัก (ค.ศ.)", "Enter a 4-digit Gregorian (CE) year");
   const y = Number(v);
   const nowY = new Date().getFullYear();
-  if (y > nowY) return `ปี ${y} เป็น พ.ศ.? — กรอกเป็น ค.ศ. เช่น ${y - 543}`;
-  if (y < 1940) return "ปีเก่าเกินไป — ตรวจสอบอีกครั้ง";
+  if (y > nowY) return t(`ปี ${y} เป็น พ.ศ.? — กรอกเป็น ค.ศ. เช่น ${y - 543}`, `Is ${y} a Buddhist-era year? Use the CE year, e.g. ${y - 543}`);
+  if (y < 1940) return t("ปีเก่าเกินไป — ตรวจสอบอีกครั้ง", "That year looks too old — please re-check");
   return null;
 }
 
@@ -1230,6 +1293,7 @@ function FileField({
   onChange: (f: File | null) => void;
   accept: string;
 }) {
+  const { lang } = useLang();
   return (
     <div className="mb-2">
       <label className="label">{label}</label>
@@ -1238,14 +1302,14 @@ function FileField({
           {file ? (
             <span className="text-emerald-700">✓ {file.name} ({(file.size / 1024).toFixed(0)} KB)</span>
           ) : (
-            <span>📤 แตะเพื่อเลือกไฟล์</span>
+            <span>{trBy(lang, "📤 แตะเพื่อเลือกไฟล์", "📤 Tap to choose a file")}</span>
           )}
           <input type="file" className="hidden" accept={accept}
             onChange={(e) => onChange(e.target.files?.[0] ?? null)} />
         </label>
         {file && (
           <button type="button" onClick={() => onChange(null)}
-            className="text-xs text-rose-600 px-2">ลบ</button>
+            className="text-xs text-rose-600 px-2">{trBy(lang, "ลบ", "Remove")}</button>
         )}
       </div>
     </div>
