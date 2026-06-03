@@ -4,15 +4,12 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 
-type Role = "admin" | "staff";
-
 export default function LoginForm({
   next,
   error: initialError
 }: { next?: string; error?: string }) {
   const router = useRouter();
-  const { t, lang } = useLang();
-  const [role, setRole] = useState<Role>("staff");
+  const { t } = useLang();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,7 +35,7 @@ export default function LoginForm({
       const res = await fetch(apiUrl("/api/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, role })
+        body: JSON.stringify({ username, password })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -84,38 +81,11 @@ export default function LoginForm({
 
   return (
     <>
-      {/* role selector — pill segmented.
-          Restyled 2026-05-31 for white-card host: was bg-white/[.08]
-          (semi-transparent on a dark page) — now slate-100 so the
-          unselected option still reads against the card. */}
-      <div className="flex gap-0 bg-slate-100 border border-slate-200 rounded-xl p-1 mb-4 w-full">
-        <button
-          type="button"
-          onClick={() => setRole("staff")}
-          className={`flex-1 py-2.5 rounded-[9px] text-sm font-bold tracking-[1.5px] transition-all ${
-            role === "staff"
-              ? "bg-brand text-white shadow-[0_2px_8px_rgba(233,69,96,.4)]"
-              : "text-slate-500 hover:text-slate-700"
-          }`}
-        >STAFF</button>
-        <button
-          type="button"
-          onClick={() => setRole("admin")}
-          className={`flex-1 py-2.5 rounded-[9px] text-sm font-bold tracking-[1.5px] transition-all ${
-            role === "admin"
-              ? "bg-brand text-white shadow-[0_2px_8px_rgba(233,69,96,.4)]"
-              : "text-slate-500 hover:text-slate-700"
-          }`}
-        >ADMIN</button>
-      </div>
-
-      <div
-        className={`text-slate-500 text-sm font-medium mb-4 text-center ${
-          lang === "en" ? "uppercase tracking-[2px]" : ""
-        }`}
-      >
-        {t("login.forRole", { role: role === "admin" ? t("role.adminShort") : t("role.staffShort") })}
-      </div>
+      {/* Login is unified (owner 2026-06-03) — no STAFF / ADMIN picker.
+          Everyone signs in with their own credentials; the session role
+          decides what they can reach. Admins land in employee view and
+          flip to the admin console from the sidebar ("มุมมองผู้ดูแลระบบ"),
+          so the entry point stays a single, unambiguous form. */}
 
       {/* The form is no longer its own card — the parent <div className="card">
           on login/page.tsx is the only card. Empty form tag for semantics +

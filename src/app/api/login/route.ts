@@ -8,8 +8,7 @@ import { consumeEmergencyCred } from "@/lib/emergency-creds";
 
 const Body = z.object({
   username: z.string().min(1),
-  password: z.string().min(1),
-  role: z.enum(["admin", "staff"]).optional()
+  password: z.string().min(1)
 });
 
 export async function POST(req: Request) {
@@ -18,7 +17,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "ข้อมูลไม่ครบ" }, { status: 400 });
   }
-  const { username, password, role: requestedRole } = parsed.data;
+  const { username, password } = parsed.data;
   const db = getDb();
 
   // ─── 3-step authentication ladder ─────────────────────────────
@@ -119,16 +118,12 @@ export async function POST(req: Request) {
     }, { status: 403 });
   }
 
-  // Role gate vs the tab the form is on. super_admin counts as
-  // "admin" for tab purposes — there's no separate super_admin tab.
+  // Login is unified (owner 2026-06-03) — no STAFF / ADMIN tab to match
+  // against. Any valid credential signs in; the session role alone
+  // decides what's reachable. tabRole is still derived for the response
+  // so the client can route super_admin straight to the admin console.
   const tabRole: "admin" | "staff" =
     authedRole === "super_admin" || authedRole === "admin" ? "admin" : "staff";
-  if (requestedRole && requestedRole !== tabRole) {
-    const msg = requestedRole === "admin"
-      ? "บัญชีนี้ไม่มีสิทธิ์เข้าฝั่งผู้ดูแล"
-      : "บัญชีผู้ดูแล กรุณาเลือกแท็บ ADMIN";
-    return NextResponse.json({ error: msg }, { status: 403 });
-  }
 
   // Stamp last_login_at — useful for the admin "inactive users" audit.
   db.prepare("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?")

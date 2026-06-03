@@ -14,11 +14,13 @@ export const metadata: Metadata = { title: "เข้าระบบ" };
 // just change the surrounding chrome. Final form:
 //   • bg-amber-50/40 base (matches /persona/portal)
 //   • Centered white card: static owl 140 → IKIGAI OS wordmark →
-//     STAFF/ADMIN selector → username/password form → submit
+//     username/password form → submit
 //   • LangToggle outside the card (subtler)
 //   • Footer at page bottom
-// No floating animation, no tagline, no welcome line. The form
-// inherits LINE Seed Sans TH via the global body font rule.
+// No floating animation, no tagline, no welcome line. The STAFF/ADMIN
+// picker was removed 2026-06-03 — login is unified; the session role
+// decides access and admins flip to the console from the sidebar. The
+// form inherits LINE Seed Sans TH via the global body font rule.
 
 export default function LoginPage({
   searchParams
