@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
-import { requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 // GET /api/recruita/documents/[id]
@@ -12,7 +12,7 @@ import { getDb } from "@/lib/db";
 // a guessed URL.
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  requireSuperAdmin();
+  requireAdmin();
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });

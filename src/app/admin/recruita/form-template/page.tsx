@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getFormTemplate } from "@/lib/recruita-form-template";
 import { getLang } from "@/lib/lang-server";
 import FormTemplateClient from "./FormTemplateClient";
@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "RECRUITA · ฟอร์มใบส
 // auth + reads the row.
 
 export default function FormTemplatePage() {
-  requireSuperAdmin();
+  requireAdmin();
   const lang = getLang();
   const template = getFormTemplate();
   return <FormTemplateClient template={template} lang={lang} />;

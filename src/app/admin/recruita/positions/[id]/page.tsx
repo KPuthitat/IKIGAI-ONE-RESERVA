@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import PositionEditClient from "./PositionEditClient";
 
@@ -34,7 +34,7 @@ type Row = {
 export default function RecruitaPositionEditPage(
   { params }: { params: { id: string } }
 ) {
-  requireSuperAdmin();
+  requireAdmin();
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) notFound();
   const db = getDb();

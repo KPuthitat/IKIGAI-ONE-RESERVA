@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -35,7 +35,7 @@ type Row = {
 };
 
 export default function RecruitaPositionsPage() {
-  requireSuperAdmin();
+  requireAdmin();
   const lang = getLang();
   const db = getDb();
   const positions = db.prepare(`

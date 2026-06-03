@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 // GET    /api/recruita/positions/[id]        — single position (admin)
@@ -81,7 +81,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ ok: true, position: row });
   }
 
-  requireSuperAdmin();
+  requireAdmin();
   const row = db.prepare(`
     SELECT p.*, b.name AS branch_name
     FROM recruita_positions p
@@ -93,7 +93,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  requireSuperAdmin();
+  requireAdmin();
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });
@@ -151,7 +151,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  requireSuperAdmin();
+  requireAdmin();
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });

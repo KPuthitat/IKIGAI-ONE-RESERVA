@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { saveFormTemplate, type FormTemplate } from "@/lib/recruita-form-template";
 
 // POST /api/recruita/form-template
@@ -37,7 +37,7 @@ const BodySchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = requireSuperAdmin();
+  const user = requireAdmin();
   const parsed = BodySchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(

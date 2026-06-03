@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -46,7 +46,7 @@ const FUNNEL_STEPS: Array<{
 export default function RecruitaDashboard({
   searchParams
 }: { searchParams: { days?: string; position?: string } }) {
-  requireSuperAdmin();
+  requireAdmin();
   const lang = getLang();
   const db = getDb();
 

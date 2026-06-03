@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 // POST /api/recruita/applications/[id]/link-line
@@ -37,7 +37,7 @@ export async function POST(
   req: Request,
   { params }: { params: { id: string } }
 ) {
-  requireSuperAdmin();
+  requireAdmin();
   const applicationId = Number(params.id);
   if (!Number.isInteger(applicationId) || applicationId <= 0) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });

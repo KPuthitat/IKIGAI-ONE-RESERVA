@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { notifyStageChange, notifyExecGroupStageChange } from "@/lib/recruita-notify";
 
@@ -22,7 +22,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  requireSuperAdmin();
+  requireAdmin();
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });

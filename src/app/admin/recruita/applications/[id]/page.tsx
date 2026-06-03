@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireSuperAdmin, getSessionUser } from "@/lib/auth";
+import { requireAdmin, getSessionUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { decryptSecret } from "@/lib/secret-vault";
 import { getActivePendingRequest, type StageRequestRow } from "@/lib/recruita-stage-request";
@@ -99,7 +99,7 @@ type PositionRow = {
 export default function ApplicationDetailPage(
   { params }: { params: { id: string } }
 ) {
-  requireSuperAdmin();
+  requireAdmin();
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) notFound();
   const db = getDb();

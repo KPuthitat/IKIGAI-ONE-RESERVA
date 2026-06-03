@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "RECRUITA · IKIGAI OS" };
 type StageCount = { stage: ApplicationStage; count: number };
 
 export default function RecruitaLanding() {
-  requireSuperAdmin();
+  requireAdmin();
   const lang = getLang();
   const db = getDb();
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 
 // GET  /api/recruita/positions       — list positions (admin)
@@ -79,7 +79,7 @@ export async function GET(req: Request) {
   }
 
   // Admin list — everything including drafts + closed.
-  const user = requireSuperAdmin();
+  const user = requireAdmin();
   const rows = db.prepare(`
     SELECT p.*,
            b.name AS branch_name,
@@ -102,7 +102,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const user = requireSuperAdmin();
+  const user = requireAdmin();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(

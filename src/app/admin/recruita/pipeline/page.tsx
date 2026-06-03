@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -32,7 +32,7 @@ type PositionOpt = {
 };
 
 export default function PipelinePage() {
-  requireSuperAdmin();
+  requireAdmin();
   const lang = getLang();
   const db = getDb();
 
