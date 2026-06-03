@@ -22,7 +22,7 @@ export default function RefreshButton({
       aria-label="รีเฟรชข้อมูล"
       title="รีเฟรชข้อมูล"
       className={
-        "flex-shrink-0 inline-flex items-center justify-center gap-1 h-10 px-3 rounded-lg text-2xl leading-none border " +
+        "flex-shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-lg text-2xl leading-none border " +
         (dark
           ? "text-white border-white/25 bg-white/10 hover:bg-white/20"
           : "text-slate-700 border-slate-300 bg-white hover:bg-slate-100") +
@@ -30,7 +30,6 @@ export default function RefreshButton({
       }
     >
       <span className={pending ? "inline-block animate-spin" : "inline-block"}>⟳</span>
-      <span className="text-xs font-medium hidden sm:inline">รีเฟรช</span>
     </button>
   );
 }

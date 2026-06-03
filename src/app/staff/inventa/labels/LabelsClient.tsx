@@ -26,18 +26,46 @@ function getQR(): QRCodeLib | undefined {
   return (window as unknown as { QRCode?: QRCodeLib }).QRCode;
 }
 
+// Owner 2026-06-03: generating a QR for every item at once hung the page
+// on a large catalogue. Now the staff PICK the items they need (search +
+// tick) and only those QRs are generated.
 export default function LabelsClient({ items }: { items: LabelItem[] }) {
   const { t } = useLang();
   const printable = useMemo(
     () => items.filter((i) => (i.item_code || i.barcode)),
     [items]
   );
-  const skipped = items.length - printable.length;
 
+  const [q, setQ] = useState("");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const [urls, setUrls] = useState<Record<number, string>>({});
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
 
+  const filtered = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    if (!term) return printable;
+    return printable.filter((i) =>
+      [i.name, i.item_code, i.barcode].some((v) => (v ?? "").toLowerCase().includes(term))
+    );
+  }, [printable, q]);
+
+  const chosen = useMemo(
+    () => printable.filter((i) => selected.has(i.id)),
+    [printable, selected]
+  );
+
+  function toggle(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  // Generate QR data URLs only for the chosen items, whenever the
+  // selection changes. Loads the CDN lib lazily on first need.
   useEffect(() => {
+    if (chosen.length === 0) { setStatus("idle"); return; }
     if (typeof document !== "undefined" && !document.querySelector("script[data-qr]")) {
       const s = document.createElement("script");
       s.src = CDN; s.async = true; s.setAttribute("data-qr", "1");
@@ -45,6 +73,7 @@ export default function LabelsClient({ items }: { items: LabelItem[] }) {
     }
     let cancelled = false;
     let tries = 0;
+    setStatus("loading");
     const poll = setInterval(async () => {
       if (cancelled) return;
       tries += 1;
@@ -56,7 +85,7 @@ export default function LabelsClient({ items }: { items: LabelItem[] }) {
       clearInterval(poll);
       try {
         const map: Record<number, string> = {};
-        for (const it of printable) {
+        for (const it of chosen) {
           const code = (it.item_code || it.barcode) as string;
           map[it.id] = await QR.toDataURL(code, { margin: 1, width: 200 });
           if (cancelled) return;
@@ -67,39 +96,80 @@ export default function LabelsClient({ items }: { items: LabelItem[] }) {
       }
     }, 250);
     return () => { cancelled = true; clearInterval(poll); };
-  }, [printable]);
+  }, [chosen]);
 
   return (
     <>
-      <div className="card no-print flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm text-slate-600">
-          {t("inv.lbl.ready", { n: printable.length })}
-          {skipped > 0 && (
-            <span className="text-amber-700">
-              {" "}· {t("inv.lbl.skipped", { n: skipped })}
-            </span>
-          )}
-          {status === "loading" && <span className="text-slate-400"> · {t("inv.lbl.gen")}</span>}
-          {status === "error" && <span className="text-rose-600"> · {t("inv.lbl.genFail")}</span>}
+      {/* Picker — choose which items to print (no-print). */}
+      <div className="card no-print space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-sm text-slate-600">
+            เลือกสินค้าที่ต้องการพิมพ์คิวอาร์โค้ด
+            {selected.size > 0 && <span className="text-brand font-bold"> · เลือกแล้ว {selected.size}</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            {selected.size > 0 && (
+              <button type="button" onClick={() => setSelected(new Set())}
+                className="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50">
+                ล้างที่เลือก
+              </button>
+            )}
+            <button type="button"
+              onClick={() => window.print()}
+              disabled={status !== "ready"}
+              className="text-sm px-5 py-2 rounded-lg bg-brand text-white font-bold disabled:opacity-50">
+              {t("inv.lbl.print")}
+              {status === "loading" && " …"}
+            </button>
+          </div>
         </div>
-        <button type="button"
-          onClick={() => window.print()}
-          disabled={status !== "ready"}
-          className="text-sm px-5 py-2 rounded-lg bg-brand text-white font-bold disabled:opacity-50">
-          {t("inv.lbl.print")}
-        </button>
+        <input className="input" value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder="ค้นหาชื่อ / รหัส / บาร์โค้ด" />
+        <div className="divide-y divide-slate-100 max-h-[40vh] overflow-y-auto rounded-lg border border-slate-200">
+          {filtered.map((i) => {
+            const isSel = selected.has(i.id);
+            return (
+              <button key={i.id} type="button" onClick={() => toggle(i.id)}
+                className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-50 ${isSel ? "bg-rose-50" : ""}`}>
+                <span className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[10px] ${
+                  isSel ? "bg-brand border-brand text-white" : "border-slate-300"
+                }`}>{isSel ? "✓" : ""}</span>
+                <span className="font-mono text-xs text-slate-500 flex-shrink-0">
+                  {i.item_code || i.barcode}
+                </span>
+                <span className="text-sm text-slate-800 truncate">{i.name}</span>
+              </button>
+            );
+          })}
+          {filtered.length === 0 && (
+            <div className="px-3 py-6 text-center text-slate-400 text-sm">
+              {printable.length === 0 ? t("inv.lbl.emptyTitle") : "ไม่พบรายการ"}
+            </div>
+          )}
+        </div>
+        {printable.length === 0 && (
+          <p className="text-xs text-slate-500 leading-relaxed">
+            {t("inv.lbl.emptyHelp")}{" "}
+            <Link href="/staff/inventa" className="text-brand font-bold hover:underline">
+              {t("inv.lbl.goStock")}
+            </Link>
+          </p>
+        )}
+        {status === "error" && (
+          <p className="text-xs text-rose-600">{t("inv.lbl.genFail")}</p>
+        )}
       </div>
 
+      {/* Print sheet — only the chosen items. */}
       <div className="printable">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {printable.map((i) => {
+          {chosen.map((i) => {
             const fm = i.pick_freq ? PICK_FREQ_META[i.pick_freq] : null;
             return (
               <div key={i.id}
                 className="border border-slate-300 rounded-lg p-2 flex flex-col items-center text-center break-inside-avoid">
                 {urls[i.id]
-                  ? <img src={urls[i.id]} alt={i.item_code ?? ""}
-                      className="w-28 h-28" />
+                  ? <img src={urls[i.id]} alt={i.item_code ?? ""} className="w-28 h-28" />
                   : <div className="w-28 h-28 bg-slate-100 rounded" />}
                 <div className="mt-1 text-[11px] font-mono text-slate-700 break-all">
                   {i.item_code || i.barcode}
@@ -115,16 +185,9 @@ export default function LabelsClient({ items }: { items: LabelItem[] }) {
             );
           })}
         </div>
-        {printable.length === 0 && (
-          <div className="text-center text-slate-500 text-sm py-10 no-print space-y-2">
-            <p className="font-medium text-slate-600">{t("inv.lbl.emptyTitle")}</p>
-            <p className="text-xs leading-relaxed max-w-md mx-auto">
-              {t("inv.lbl.emptyHelp")}
-            </p>
-            <Link href="/staff/inventa"
-              className="inline-block mt-1 text-brand font-bold hover:underline">
-              {t("inv.lbl.goStock")}
-            </Link>
+        {chosen.length === 0 && (
+          <div className="text-center text-slate-400 text-sm py-10 no-print">
+            ยังไม่ได้เลือกสินค้า — เลือกจากรายการด้านบนเพื่อสร้างคิวอาร์โค้ด
           </div>
         )}
       </div>

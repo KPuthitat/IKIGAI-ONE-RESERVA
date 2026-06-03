@@ -358,15 +358,16 @@ export default function InventaClient({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-500 border-b">
-              <th className="py-2 pr-2 w-8">{t("inv.col.band")}</th>
-              <th className="py-2 pr-3 w-14">{t("inv.col.location")}</th>
-              <th className="py-2 pr-3">{t("inv.col.name")}</th>
-              <th className="py-2 pr-3">{t("inv.col.category")}</th>
-              <th className="py-2 pr-3">{t("inv.col.supplier")}</th>
-              <th className="py-2 pr-3">{t("inv.col.unit")}</th>
-              <th className="py-2 pr-3 text-right">{t("inv.col.cost")}</th>
-              <th className="py-2 pr-3 text-right">{t("inv.col.qty")}</th>
-              <th className="py-2 pr-3 w-12"></th>
+              {/* Colour band — dot only, header label omitted (self-evident). */}
+              <th className="py-2 pr-2 w-6"></th>
+              <th className="py-2 pr-2 w-12">{t("inv.col.location")}</th>
+              <th className="py-2 pr-3 w-2/5">{t("inv.col.name")}</th>
+              <th className="py-2 pr-2">{t("inv.col.category")}</th>
+              <th className="py-2 pr-2">{t("inv.col.supplier")}</th>
+              <th className="py-2 pr-2">{t("inv.col.unit")}</th>
+              <th className="py-2 pr-2 text-right">{t("inv.col.cost")}</th>
+              <th className="py-2 pr-2 text-right">{t("inv.col.qty")}</th>
+              <th className="py-2 pr-2 w-10"></th>
             </tr>
           </thead>
           <tbody>
@@ -410,7 +411,7 @@ export default function InventaClient({
                       cell never goes blank. Generic name is kept as
                       a third subtle line for drug lookups. */}
                   <td className="py-2 pr-3">
-                    <div className="max-w-[200px] break-words">
+                    <div className="break-words">
                     {i.item_code ? (
                       <>
                         <div className="font-bold uppercase tracking-wide text-slate-900 text-sm leading-tight">
@@ -431,7 +432,7 @@ export default function InventaClient({
                     )}
                     </div>
                   </td>
-                  <td className="py-2 pr-3 text-xs">
+                  <td className="py-2 pr-2 text-xs whitespace-nowrap">
                     {/* Category as a colour chip — uses the abbrev code
                         when set (e.g. ATB / ARI), colour hashed from the
                         label so each category is visually distinct. */}
@@ -443,8 +444,12 @@ export default function InventaClient({
                       <span className="text-slate-400">{t("inv.dash")}</span>
                     )}
                   </td>
-                  <td className="py-2 pr-3 text-slate-600 text-xs">{i.supplier_name ?? t("inv.dash")}</td>
-                  <td className="py-2 pr-3 text-slate-600 text-xs">{i.unit ?? t("inv.dash")}</td>
+                  <td className="py-2 pr-2 text-slate-600 text-xs">
+                    <div className="max-w-[130px] truncate" title={i.supplier_name ?? ""}>
+                      {i.supplier_name ?? t("inv.dash")}
+                    </div>
+                  </td>
+                  <td className="py-2 pr-2 text-slate-600 text-xs whitespace-nowrap">{i.unit ?? t("inv.dash")}</td>
                   <td className="py-2 pr-3 text-right text-slate-700">
                     {i.unit_cost ? i.unit_cost.toLocaleString(undefined, { maximumFractionDigits: 4 }) : t("inv.dash")}
                   </td>
