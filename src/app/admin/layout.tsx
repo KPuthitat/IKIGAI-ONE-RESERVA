@@ -102,7 +102,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // a belt-and-braces second check.
         ...(isSuperAdmin ? [
           { href: "/admin/roles", label: "บทบาทและสิทธิ์" },
-          { href: "/admin/mounjaro-consent", label: "ข้อความยินยอม Mounjaro" },
+          { href: "/admin/mounjaro-consent", label: "ข้อความยินยอมโครงการสุขภาพ" },
           { href: "/admin/system-settings", label: t(lang, "admin.systemSettings.title") },
           { href: "/admin/companies", label: t(lang, "admin.companies.title") },
           // Notification quota is system-wide (every module shares the
@@ -144,9 +144,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/admin/persona/health", label: t(lang, "admin.persona.nav.health") },
         ...(user.clinical_role === "doctor"
-          ? [{ href: "/admin/mounjaro", label: "โครงการ Mounjaro (คลินิก)" }] : []),
+          ? [{ href: "/admin/mounjaro", label: "โครงการ Mounjaro — ดูแลผู้ป่วย (แพทย์)" }] : []),
         ...(user.is_hr_analytics === 1
-          ? [{ href: "/admin/mounjaro-hr", label: "Mounjaro — ภาพรวม (HR)" }] : [])
+          ? [{ href: "/admin/mounjaro-hr", label: "ภาพรวมสุขภาพพนักงาน (HR)" }] : [])
       ]
     },
     // Pre-shift items — admin configures the checklist for each

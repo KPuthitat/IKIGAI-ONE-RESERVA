@@ -67,14 +67,13 @@ export type RoleLite = { id: number; name: string; permissions: string[] };
 
 export default function EmployeesClient({
   employees, allBranches, grants, editableBranchIds,
-  currentUserId, currentUserRole, canViewPayroll,
+  currentUserRole, canViewPayroll,
   allRoles = [], roleIdsByUser = {}
 }: {
   employees: EmployeeRow[];
   allBranches: BranchLite[];
   grants: Array<{ user_id: number; branch_id: number }>;
   editableBranchIds: number[];
-  currentUserId: number;
   currentUserRole: "super_admin" | "admin" | "staff";
   /** PDPA (2026-05-30) — when false, hide salary inputs in the edit
    *  modal and the salary blob in row summaries. Server has already
@@ -91,54 +90,6 @@ export default function EmployeesClient({
   const { t, formatDate } = useLang();
   const [pending, startTransition] = useTransition();
   const [editTarget, setEditTarget] = useState<EmployeeRow | null>(null);
-  const [impersonatingId, setImpersonatingId] = useState<number | null>(null);
-
-  // Start an impersonation session for the given target. The backend
-  // (POST /api/admin/impersonate/[id]) swaps sessions.user_id + sets
-  // the marker cookie. We hard-reload to /admin so every server
-  // component re-reads the session under the new identity, which is
-  // safer than relying on router.refresh() to invalidate every cache.
-  async function impersonate(target: EmployeeRow) {
-    if (!window.confirm(
-      `เข้าระบบในนาม "${target.display_name}"?\n\n` +
-      `จะเห็นทุกอย่างเหมือนเป็นคนนี้ ทั้งบทบาท สาขา สิทธิ์การเข้าถึง\n` +
-      `กดปุ่ม "หยุดดูแทน" บนแถบด้านบนตอนต้องการกลับ — การกระทำทุกอย่างจะถูกบันทึก`
-    )) return;
-    setImpersonatingId(target.id);
-    try {
-      const res = await fetch(apiUrl(`/api/admin/impersonate/${target.id}`), {
-        method: "POST"
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) {
-        window.alert(j.message || j.error || "เริ่มเข้าระบบในนามไม่สำเร็จ");
-        setImpersonatingId(null);
-        return;
-      }
-      // Hard reload so the orange banner mounts + every server cache
-      // re-reads the swapped session. Landing on /admin keeps the
-      // operator in admin scope; if the target is staff-only, the
-      // layout will bounce them to /staff.
-      window.location.href = "/admin";
-    } catch {
-      window.alert("เกิดข้อผิดพลาดเครือข่าย");
-      setImpersonatingId(null);
-    }
-  }
-
-  // Visibility rule — mirrors the server-side check so we don't show
-  // a button that will 403.
-  //   super_admin → anyone except themselves
-  //   admin       → staff in their own branch only (we only have the
-  //                  branch list per row, so we approximate by role;
-  //                  the server rejects cross-branch cases cleanly).
-  //   staff       → never (page is gated by requireAdmin anyway).
-  function canImpersonate(target: EmployeeRow): boolean {
-    if (target.id === currentUserId) return false;
-    if (currentUserRole === "super_admin") return true;
-    if (currentUserRole === "admin") return target.role === "staff";
-    return false;
-  }
 
   // ── Filter + sort toolbar ──────────────────────────────────────
   // Search matches across display_name / employee_code / username.
@@ -419,19 +370,6 @@ export default function EmployeesClient({
                       >
                         {t("admin.persona.employees.edit")}
                       </button>
-                      {canImpersonate(u) && (
-                        <button
-                          type="button"
-                          onClick={() => impersonate(u)}
-                          disabled={impersonatingId === u.id}
-                          className="text-xs text-amber-700 hover:underline disabled:opacity-50"
-                          title="ดูระบบในนามพนักงานคนนี้ (ทดสอบ)"
-                        >
-                          {impersonatingId === u.id
-                            ? "กำลังเปลี่ยน…"
-                            : "🎭 เข้าระบบในนามนี้"}
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -579,9 +517,11 @@ function EditModal({
   const [canViewPayrollFlag, setCanViewPayrollFlag] = useState<boolean>(
     (employee as EmployeeRow & { can_view_payroll?: number }).can_view_payroll === 1
   );
-  // Mounjaro clinical access (super_admin only) — แพทย์/พยาบาล + ใบประกอบ + HR
-  const [clinicalRole, setClinicalRole] = useState<"none" | "doctor" | "nurse">(
-    employee.clinical_role ?? "none"
+  // Employee-health-data access (super_admin only) — a consulting doctor
+  // (license-gated) + an HR aggregate-dashboard viewer. Nurse role was
+  // dropped (owner 2026-06-05); a stored 'nurse' shows as none.
+  const [clinicalRole, setClinicalRole] = useState<"none" | "doctor">(
+    employee.clinical_role === "doctor" ? "doctor" : "none"
   );
   const [licenseNo, setLicenseNo] = useState(employee.license_no ?? "");
   const [hrAnalytics, setHrAnalytics] = useState<boolean>(employee.is_hr_analytics === 1);
@@ -733,16 +673,17 @@ function EditModal({
       if (currentUserRole === "super_admin" && employee.role === "admin") {
         body.can_view_payroll = canViewPayrollFlag ? 1 : 0;
       }
-      // Mounjaro clinical access — super_admin only (any target role: a
-      // doctor/nurse may be staff or admin). Server re-gates to super_admin.
+      // Employee-health-data access — super_admin only (the consulting
+      // doctor may be staff or admin). Server re-gates to super_admin.
       if (currentUserRole === "super_admin") {
-        if (clinicalRole === "doctor" && licenseNo.trim() === "") {
-          setErr("แพทย์ต้องระบุเลขใบประกอบวิชาชีพ");
+        const licenseDigits = licenseNo.replace(/\D/g, ""); // store only the ว. number
+        if (clinicalRole === "doctor" && licenseDigits === "") {
+          setErr("แพทย์ที่ปรึกษาต้องระบุเลขใบประกอบวิชาชีพ (ว.)");
           setBusy(false);
           return;
         }
         body.clinical_role = clinicalRole === "none" ? null : clinicalRole;
-        body.license_no = clinicalRole === "none" ? null : (licenseNo.trim() || null);
+        body.license_no = clinicalRole === "none" ? null : (licenseDigits || null);
         body.is_hr_analytics = hrAnalytics ? 1 : 0;
         // RBAC — replace the full set of module-access roles. Server
         // re-gates to super_admin and writes rbac_user_roles.
@@ -1213,30 +1154,39 @@ function EditModal({
           </div>
         )}
 
-        {/* Mounjaro clinical access — super_admin only, any employee.
-            แพทย์/พยาบาล + เลขใบประกอบ + HR (ภาพรวม). Replaces the old
-            standalone /admin/mounjaro-access menu (owner 2026-06-04). */}
+        {/* Employee-health-data access — super_admin only, any employee.
+            A company should provide a doctor to consult on employee
+            health; only that consulting doctor + the employee see raw
+            data. Executives / HR / supervisors get aggregate dashboards
+            only. (owner 2026-06-05) */}
         {currentUserRole === "super_admin" && (
           <div className="border-t border-slate-200 pt-4 space-y-3">
             <h4 className="text-sm font-semibold text-slate-700">
-              บทบาททางคลินิก — โครงการ Mounjaro
+              สิทธิ์เข้าถึงข้อมูลสุขภาพพนักงาน
             </h4>
+            <p className="text-[11px] text-slate-500 -mt-1">
+              ข้อมูลสุขภาพเข้าถึงได้เฉพาะ <b>แพทย์ที่ปรึกษา</b> และ <b>ตัวพนักงานเอง</b> ·
+              ผู้บริหาร/ฝ่ายบุคคล/หัวหน้างานเห็นเป็น <b>ภาพรวม (dashboard)</b> เท่านั้น
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="label">บทบาท</label>
+                <label className="label">บทบาทด้านสุขภาพ</label>
                 <select className="input" value={clinicalRole}
-                  onChange={(e) => setClinicalRole(e.target.value as "none" | "doctor" | "nurse")}>
+                  onChange={(e) => setClinicalRole(e.target.value as "none" | "doctor")}>
                   <option value="none">— ไม่มี —</option>
-                  <option value="doctor">แพทย์</option>
-                  <option value="nurse">พยาบาล</option>
+                  <option value="doctor">แพทย์ที่ปรึกษา (เข้าถึงข้อมูลสุขภาพ)</option>
                 </select>
               </div>
-              {clinicalRole !== "none" && (
+              {clinicalRole === "doctor" && (
                 <div>
-                  <label className="label">เลขใบประกอบวิชาชีพ{clinicalRole === "doctor" ? " *" : ""}</label>
-                  <input className="input" value={licenseNo}
-                    onChange={(e) => setLicenseNo(e.target.value)}
-                    placeholder={clinicalRole === "doctor" ? "จำเป็น เช่น ว.12345" : "เช่น พย.6789"} />
+                  <label className="label">เลขใบประกอบวิชาชีพ (ว.) *</label>
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm font-semibold text-slate-500">ว.</span>
+                    <input className="input" value={licenseNo} inputMode="numeric"
+                      onChange={(e) => setLicenseNo(e.target.value.replace(/\D/g, ""))}
+                      placeholder="เช่น 12345" />
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">ระบบเก็บเฉพาะตัวเลข · ใช้ยืนยันตัวตนทุกครั้งที่เปิดข้อมูล</p>
                 </div>
               )}
             </div>
@@ -1244,12 +1194,12 @@ function EditModal({
               <input type="checkbox" className="mt-0.5 h-4 w-4"
                 checked={hrAnalytics} onChange={(e) => setHrAnalytics(e.target.checked)} />
               <div className="flex-1">
-                <div className="text-sm font-medium text-slate-800">เห็นภาพรวมโครงการ Mounjaro (HR)</div>
-                <div className="text-xs text-slate-500 mt-1">เห็นสถิติรวมเท่านั้น ไม่เห็นข้อมูลคนไข้รายบุคคล</div>
+                <div className="text-sm font-medium text-slate-800">เห็นภาพรวมสุขภาพพนักงาน (Dashboard)</div>
+                <div className="text-xs text-slate-500 mt-1">เห็นสถิติรวมเท่านั้น ไม่เห็นข้อมูลรายบุคคล (สำหรับผู้บริหาร/ฝ่ายบุคคล)</div>
               </div>
             </label>
             <p className="text-[11px] text-slate-400">
-              แพทย์เห็นเฉพาะคนไข้ของตัวเอง ปลดล็อกด้วยเลขใบประกอบ · พยาบาลยังไม่เห็นข้อมูลคลินิกในเฟสนี้
+              แพทย์ที่ปรึกษาเห็นเฉพาะผู้ป่วยที่ตนดูแล · ปลดล็อกด้วยเลขใบประกอบทุกครั้ง · ทุกการเข้าถึงถูกบันทึก log
             </p>
           </div>
         )}

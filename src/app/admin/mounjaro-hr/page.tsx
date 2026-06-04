@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { getProgramStats, type MjActor } from "@/lib/mounjaro-db";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Mounjaro · ภาพรวม (HR)" };
+export const metadata: Metadata = { title: "ภาพรวมสุขภาพพนักงาน (HR)" };
 
 // HR / management aggregate view — counts only, NO per-person data. Gated
 // to is_hr_analytics or super_admin (both see aggregate; neither sees raw
@@ -30,9 +30,10 @@ export default function MounjaroHrPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">โครงการ Mounjaro — ภาพรวม</h1>
+        <h1 className="text-2xl font-bold text-slate-800">ภาพรวมสุขภาพพนักงาน</h1>
         <p className="text-sm text-slate-500">
-          สถิติภาพรวมเท่านั้น — ไม่มีข้อมูลรายบุคคล (ตามหลักความเป็นส่วนตัวของข้อมูลสุขภาพ)
+          สถิติภาพรวมเท่านั้น — ไม่มีข้อมูลรายบุคคล (ตามหลักความเป็นส่วนตัวของข้อมูลสุขภาพ) ·
+          ปัจจุบันครอบคลุมโครงการ Mounjaro
         </p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">

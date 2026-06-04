@@ -177,12 +177,8 @@ export default function AdminEmployeesPage({
         allBranches={allBranches}
         grants={grants}
         editableBranchIds={editableBranchIds}
-        // Pass the current user's id + role so the row-actions column
-        // can hide the "เข้าระบบในนาม" link on the operator's OWN row
-        // and on rows they can't impersonate (admin can only act-as
-        // staff; super_admin can act-as anyone — server enforces both,
-        // this just trims the UI to avoid frustrating clicks).
-        currentUserId={user.id}
+        // Role drives which super_admin-only sections show in the edit
+        // modal (payroll grant, health-data access, RBAC roles).
         currentUserRole={user.role}
         // RBAC — full role catalog + each employee's current role ids
         // (super_admin only; empty for other admins). Drives the

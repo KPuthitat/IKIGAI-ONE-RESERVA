@@ -113,8 +113,10 @@ function audit(
  *  data scoping below is independent + always enforced. */
 export function verifyClinicalLicense(actor: MjActor, provided: string): boolean {
   if (!isDoctor(actor)) return false;
-  const want = (actor.license_no ?? "").trim();
-  return want.length > 0 && want === (provided ?? "").trim();
+  // Compare digits only — the stored value is the ว. number, but the
+  // doctor may type "ว.12345", "ว. 12345" or "12345" at the unlock gate.
+  const want = (actor.license_no ?? "").replace(/\D/g, "");
+  return want.length > 0 && want === (provided ?? "").replace(/\D/g, "");
 }
 
 // ════════════════════════════════════════════════════════════════════
