@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
+import { hasAdminPin } from "@/lib/admin-pin";
 import {
   getMyEnrollment, getMyClinical, getMySelfLogs, getActiveConsent,
   getMyAuditTrail, type MjActor
@@ -81,6 +82,7 @@ export default function MounjaroSelfPage() {
       selfLogs={logs}
       consent={{ needed: needsConsent, version: activeConsent?.version ?? null, body: activeConsent?.body ?? null }}
       audit={audit}
+      hasPin={hasAdminPin(user.id)}
     />
   );
 }

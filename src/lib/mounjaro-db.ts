@@ -137,11 +137,33 @@ export function getMyEnrollment(actor: MjActor): EnrollmentRow | null {
   return row ?? null;
 }
 
-/** Express interest → create a pending enrollment (idempotent). */
+/** Express interest → create a pending enrollment. Re-joining is allowed
+ *  (owner 2026-06-05): if a withdrawn / completed / portal-erased
+ *  enrollment exists, reopen it as 'pending' instead of failing on the
+ *  UNIQUE(employee_id) constraint. An already active/pending enrollment
+ *  is returned unchanged (idempotent). */
 export function enrollSelf(actor: MjActor): EnrollmentRow {
   const db = getDb();
-  const existing = getMyEnrollment(actor);
-  if (existing) return existing;
+  // Look up ANY row (incl. portal-erased) — one enrollment per employee.
+  const any = db.prepare(
+    "SELECT * FROM mounjaro_enrollments WHERE employee_id = ?"
+  ).get(actor.id) as EnrollmentRow | undefined;
+  if (any) {
+    if (any.status === "active" || any.status === "pending") {
+      return getMyEnrollment(actor) ?? any;
+    }
+    // withdrawn / completed → reopen for the doctor to re-screen. Clear
+    // the erase flag so a "left then changed my mind" employee comes
+    // back to their own (retained) record.
+    db.prepare(`
+      UPDATE mounjaro_enrollments
+      SET status = 'pending', withdrawn_reason = NULL,
+          portal_erased_at = NULL, enrolled_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(any.id);
+    audit(actor.id, "enroll", "enrollment", actor.id);
+    return getMyEnrollment(actor)!;
+  }
   db.prepare(
     "INSERT INTO mounjaro_enrollments (employee_id, status, enrolled_at) VALUES (?, 'pending', CURRENT_TIMESTAMP)"
   ).run(actor.id);
@@ -175,6 +197,36 @@ export function recordConsent(actor: MjActor, version: string): void {
     WHERE employee_id = ?
   `).run(version, actor.id);
   audit(actor.id, "consent", "enrollment", actor.id);
+}
+
+/** Super_admin maintenance of the PDPA consent text.
+ *  - asNewVersion=false → fix the active text in place (typo/wording),
+ *    no re-consent forced.
+ *  - asNewVersion=true  → publish a NEW version (vN+1) and make it active;
+ *    every active enrollment whose consent_version differs is then
+ *    re-prompted (see needsConsent in the self-service page).
+ *  Returns the resulting version label. */
+export function setMounjaroConsent(body: string, asNewVersion: boolean): { version: string } {
+  const db = getDb();
+  const active = db.prepare(
+    "SELECT id, version FROM mounjaro_consent_versions WHERE active = 1 ORDER BY id DESC LIMIT 1"
+  ).get() as { id: number; version: string } | undefined;
+  if (asNewVersion || !active) {
+    const n = (db.prepare(
+      "SELECT COUNT(*) AS c FROM mounjaro_consent_versions"
+    ).get() as { c: number }).c;
+    const version = `v${n + 1}`;
+    const tx = db.transaction(() => {
+      db.prepare("UPDATE mounjaro_consent_versions SET active = 0 WHERE active = 1").run();
+      db.prepare(
+        "INSERT INTO mounjaro_consent_versions (version, body, active) VALUES (?, ?, 1)"
+      ).run(version, body);
+    });
+    tx();
+    return { version };
+  }
+  db.prepare("UPDATE mounjaro_consent_versions SET body = ? WHERE id = ?").run(body, active.id);
+  return { version: active.version };
 }
 
 /** The actor's OWN clinical summary (patient + visits), read-only. Joins

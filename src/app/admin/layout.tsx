@@ -102,6 +102,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // a belt-and-braces second check.
         ...(isSuperAdmin ? [
           { href: "/admin/roles", label: "บทบาทและสิทธิ์" },
+          { href: "/admin/mounjaro-consent", label: "ข้อความยินยอม Mounjaro" },
           { href: "/admin/system-settings", label: t(lang, "admin.systemSettings.title") },
           { href: "/admin/companies", label: t(lang, "admin.companies.title") },
           // Notification quota is system-wide (every module shares the

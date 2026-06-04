@@ -43,17 +43,22 @@ function daysUntil(iso: string | null): number | null {
 }
 
 export default function MounjaroSelfClient({
-  enrollment, patient, visits, selfLogs, consent, audit
+  enrollment, patient, visits, selfLogs, consent, audit, hasPin
 }: {
   enrollment: Enrollment; patient: Patient; visits: Visit[]; selfLogs: SelfLog[];
   consent: ConsentInfo; audit: AuditEntry[];
+  /** Whether the employee has a 4-digit PIN set (everyone onboarded does).
+   *  Drives the PIN field in the destructive-action confirm modal. */
+  hasPin: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [confirmErase, setConfirmErase] = useState(false);
+  // Destructive action awaiting PIN + typed-phrase confirmation.
+  const [destructive, setDestructive] = useState<"withdraw" | "erase" | null>(null);
 
-  async function act(action: "enroll" | "withdraw" | "erase", reason?: string) {
+  // enroll / pending-cancel — no PIN needed (opt-in / harmless).
+  async function act(action: "enroll" | "withdraw", reason?: string) {
     setBusy(action); setMsg(null);
     try {
       const res = await fetch(apiUrl("/api/mounjaro/enrollment"), {
@@ -112,7 +117,7 @@ export default function MounjaroSelfClient({
             ส่งความสนใจเมื่อ {enrollment?.enrolled_at ? new Date(enrollment.enrolled_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "—"}
           </p>
           <button type="button" disabled={busy !== null}
-            onClick={() => act("withdraw", "ยกเลิกคำขอเข้าร่วม")}
+            onClick={() => { if (window.confirm("ยกเลิกคำขอเข้าร่วมโครงการ?")) act("withdraw", "ยกเลิกคำขอเข้าร่วม"); }}
             className="w-full py-2.5 rounded-lg border border-slate-300 text-slate-600 text-sm font-medium disabled:opacity-50">
             ยกเลิกคำขอ
           </button>
@@ -123,7 +128,7 @@ export default function MounjaroSelfClient({
       {status === "active" && (
         <ActiveView patient={patient} visits={visits} selfLogs={selfLogs}
           busy={busy} setBusy={setBusy} setMsg={setMsg}
-          onAct={act} confirmErase={confirmErase} setConfirmErase={setConfirmErase} />
+          onRequestDestructive={(a) => { setMsg(null); setDestructive(a); }} />
       )}
 
       {/* ── WITHDRAWN / COMPLETED ── */}
@@ -144,11 +149,118 @@ export default function MounjaroSelfClient({
           <p className="text-[11px] text-slate-400">
             ข้อมูลเวชระเบียนถูกเก็บรักษาตามกฎหมายที่คลินิกกำหนด — ติดต่อคลินิกหากต้องการสอบถาม
           </p>
+          {status === "withdrawn" && (
+            <div className="pt-1 border-t border-slate-100 mt-1">
+              <p className="text-xs text-slate-600 mb-2">เปลี่ยนใจอยากกลับเข้าร่วมอีกครั้งใช่ไหม?</p>
+              <button type="button" disabled={busy !== null}
+                onClick={() => { if (window.confirm("ส่งคำขอกลับเข้าร่วมโครงการอีกครั้ง? คลินิกจะติดต่อนัดตรวจคัดกรองกลับ")) act("enroll"); }}
+                className="btn-primary w-full py-2.5 disabled:opacity-50">
+                {busy === "enroll" ? "กำลังส่ง…" : "สนใจกลับเข้าร่วมโครงการอีกครั้ง"}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
       {status === "active" && <AuditViewer audit={audit} />}
       {consent.needed && <ConsentModal version={consent.version} body={consent.body} />}
+      {destructive && (
+        <ConfirmDestructiveModal
+          action={destructive}
+          hasPin={hasPin}
+          onClose={() => setDestructive(null)}
+          onDone={() => { setDestructive(null); router.refresh(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Confirm modal for the two irreversible-feeling actions. Requires the
+// employee to (1) type the exact phrase and (2) enter their PIN — so a
+// stray tap can't withdraw them or wipe their portal data.
+function ConfirmDestructiveModal({
+  action, hasPin, onClose, onDone
+}: {
+  action: "withdraw" | "erase";
+  hasPin: boolean;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const phrase = action === "withdraw" ? "ออกจากโครงการ" : "ลบข้อมูล";
+  const title = action === "withdraw" ? "ยืนยันการออกจากโครงการ" : "ยืนยันการลบข้อมูล";
+  const [typed, setTyped] = useState("");
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const phraseOk = typed.trim() === phrase;
+  const pinOk = !hasPin || /^\d{4}$/.test(pin);
+  const canSubmit = phraseOk && pinOk && !busy;
+
+  async function confirm() {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/mounjaro/enrollment"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          reason: action === "withdraw" ? "ขอออกจากโครงการ" : undefined,
+          pin: hasPin ? pin : undefined
+        })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        setErr(j.error === "bad_pin" ? "PIN ไม่ถูกต้อง ลองใหม่อีกครั้ง" : "ทำรายการไม่สำเร็จ ลองใหม่อีกครั้ง");
+        return;
+      }
+      onDone();
+    } catch {
+      setErr("เกิดข้อผิดพลาด ลองใหม่อีกครั้ง");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-3"
+        onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-bold text-rose-700">{title}</h3>
+        <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-xs text-rose-800 leading-relaxed">
+          {action === "withdraw" ? (
+            <>คุณกำลังจะ<b>ออกจากโครงการ</b> — หน้านี้จะหยุดแสดงข้อมูลการรักษา
+              และจะไม่บันทึกอาการได้อีก · <b>กลับเข้าร่วมใหม่ได้</b>ภายหลัง
+              (เวชระเบียนที่แพทย์บันทึกยังถูกเก็บไว้)</>
+          ) : (
+            <>คุณกำลังจะ<b>ลบข้อมูลออกจากพอร์ทัล</b> และยุติการเข้าร่วมโครงการ ·
+              เวชระเบียนที่แพทย์บันทึกจะถูกเก็บตามที่กฎหมายกำหนด (เข้าถึงเฉพาะแพทย์เจ้าของไข้)</>
+          )}
+        </div>
+        <div>
+          <label className="label">พิมพ์คำว่า &quot;{phrase}&quot; เพื่อยืนยัน</label>
+          <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)}
+            placeholder={phrase} autoComplete="off" />
+        </div>
+        {hasPin && (
+          <div>
+            <label className="label">PIN 4 หลักของคุณ</label>
+            <input className="input tracking-[0.5em] text-center" value={pin} inputMode="numeric"
+              maxLength={4} autoComplete="off"
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              placeholder="••••" />
+          </div>
+        )}
+        {err && <p className="text-sm text-rose-600">✗ {err}</p>}
+        <div className="flex gap-2 pt-1">
+          <button type="button" onClick={onClose} disabled={busy}
+            className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium">
+            ยกเลิก
+          </button>
+          <button type="button" onClick={confirm} disabled={!canSubmit}
+            className="flex-1 py-2.5 rounded-lg bg-rose-600 text-white text-sm font-bold disabled:opacity-40">
+            {busy ? "กำลังทำรายการ…" : action === "withdraw" ? "ยืนยันออกจากโครงการ" : "ยืนยันลบข้อมูล"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -234,13 +346,12 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function ActiveView({
-  patient, visits, selfLogs, busy, setBusy, setMsg, onAct, confirmErase, setConfirmErase
+  patient, visits, selfLogs, busy, setBusy, setMsg, onRequestDestructive
 }: {
   patient: Patient; visits: Visit[]; selfLogs: SelfLog[];
   busy: string | null; setBusy: (s: string | null) => void;
   setMsg: (m: { kind: "ok" | "err"; text: string } | null) => void;
-  onAct: (a: "withdraw" | "erase", reason?: string) => void;
-  confirmErase: boolean; setConfirmErase: (b: boolean) => void;
+  onRequestDestructive: (a: "withdraw" | "erase") => void;
 }) {
   const router = useRouter();
   const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
@@ -417,26 +528,20 @@ function ActiveView({
             ดาวน์โหลดข้อมูลของฉัน (JSON)
           </a>
           <button type="button" disabled={busy !== null}
-            onClick={() => onAct("withdraw", "ขอออกจากโครงการ")}
+            onClick={() => onRequestDestructive("withdraw")}
             className="text-xs px-3 py-2 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-50">
             ขอออกจากโครงการ
           </button>
-          {!confirmErase ? (
-            <button type="button" onClick={() => setConfirmErase(true)}
-              className="text-xs px-3 py-2 rounded-lg border border-rose-300 text-rose-600 hover:bg-rose-50">
-              ขอลบข้อมูลของฉัน
-            </button>
-          ) : (
-            <button type="button" disabled={busy !== null}
-              onClick={() => onAct("erase")}
-              className="text-xs px-3 py-2 rounded-lg bg-rose-600 text-white font-bold disabled:opacity-50">
-              ยืนยันลบข้อมูล (กดอีกครั้ง)
-            </button>
-          )}
+          <button type="button" disabled={busy !== null}
+            onClick={() => onRequestDestructive("erase")}
+            className="text-xs px-3 py-2 rounded-lg border border-rose-300 text-rose-600 hover:bg-rose-50 disabled:opacity-50">
+            ขอลบข้อมูลของฉัน
+          </button>
         </div>
         <p className="text-[10px] text-slate-400 leading-relaxed">
-          การลบจะนำข้อมูลออกจากพอร์ทัลและยุติการเข้าร่วมโครงการ — ส่วนเวชระเบียนที่แพทย์บันทึก
-          จะถูกเก็บรักษาตามระยะเวลาที่กฎหมายกำหนด ภายใต้การเข้าถึงเฉพาะแพทย์เจ้าของไข้
+          ทั้งสองรายการต้อง<b>พิมพ์ข้อความยืนยัน + ใส่ PIN</b>ก่อน เพื่อกันเผลอกด ·
+          การลบจะนำข้อมูลออกจากพอร์ทัล — ส่วนเวชระเบียนที่แพทย์บันทึกจะถูกเก็บรักษาตามที่กฎหมายกำหนด
+          ภายใต้การเข้าถึงเฉพาะแพทย์เจ้าของไข้
         </p>
       </div>
     </>
