@@ -23,6 +23,7 @@ const STAGE_ACCENT: Record<ApplicationStage, { bar: string; ring: string }> = {
   applied:   { bar: "bg-slate-300",   ring: "ring-slate-400" },
   screening: { bar: "bg-sky-300",     ring: "ring-sky-400" },
   interview: { bar: "bg-amber-300",   ring: "ring-amber-400" },
+  health_check: { bar: "bg-teal-300", ring: "ring-teal-400" },
   offered:   { bar: "bg-violet-300",  ring: "ring-violet-400" },
   accepted:  { bar: "bg-emerald-300", ring: "ring-emerald-400" },
   hired:     { bar: "bg-emerald-500", ring: "ring-emerald-600" },

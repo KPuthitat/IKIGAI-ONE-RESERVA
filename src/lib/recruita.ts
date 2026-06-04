@@ -113,14 +113,15 @@ export function parseCustomAnswers(json: string | null | undefined): CustomAnswe
 // shape from day one.
 
 export type ApplicationStage =
-  | "applied"      // submitted form
-  | "screening"    // admin reviewing qualifications
-  | "interview"    // interview scheduled / done
-  | "offered"      // offer letter sent
-  | "accepted"     // candidate said yes
-  | "hired"        // bridged into PERSONA, user created
-  | "rejected"     // not moving forward
-  | "withdrawn";   // candidate pulled out
+  | "applied"       // submitted form
+  | "screening"     // admin reviewing qualifications
+  | "interview"     // interview scheduled / done
+  | "health_check"  // passed interview, awaiting medical clearance
+  | "offered"       // offer letter sent
+  | "accepted"      // candidate said yes
+  | "hired"         // bridged into PERSONA, user created
+  | "rejected"      // not moving forward
+  | "withdrawn";    // candidate pulled out
 
 // ── Info source (where did you hear about us) ───────────────────
 // Stable value keys (English) + Thai labels. Stored as the KEY in
@@ -168,10 +169,11 @@ export const DEFAULT_RECRUITA_PDPA_TEXT = `บริษัทในเครื�
 • เราจะไม่เปิดเผยข้อมูลของท่านแก่บุคคลภายนอกเพื่อการตลาด`;
 
 export const STAGE_META: Record<ApplicationStage, { label: string; chip: string }> = {
-  applied:   { label: "ใบสมัครใหม่",   chip: "bg-slate-100 text-slate-700" },
-  screening: { label: "คัดกรอง",      chip: "bg-sky-100 text-sky-700" },
-  interview: { label: "สัมภาษณ์",     chip: "bg-amber-100 text-amber-700" },
-  offered:   { label: "เสนองาน",      chip: "bg-violet-100 text-violet-700" },
+  applied:      { label: "ใบสมัครใหม่",      chip: "bg-slate-100 text-slate-700" },
+  screening:    { label: "คัดกรอง",          chip: "bg-sky-100 text-sky-700" },
+  interview:    { label: "สัมภาษณ์",         chip: "bg-amber-100 text-amber-700" },
+  health_check: { label: "รอผลตรวจสุขภาพ",   chip: "bg-teal-100 text-teal-700" },
+  offered:      { label: "เสนองาน",          chip: "bg-violet-100 text-violet-700" },
   accepted:  { label: "ตอบรับ",       chip: "bg-emerald-100 text-emerald-700" },
   hired:     { label: "รับเข้าทำงาน",  chip: "bg-emerald-200 text-emerald-900 font-bold" },
   rejected:  { label: "ไม่ผ่าน",       chip: "bg-rose-100 text-rose-700" },

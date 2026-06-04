@@ -3476,6 +3476,18 @@ function runMigrations(db: Database.Database): void {
   addApplication("interview_location", "TEXT");
   addApplication("interview_note", "TEXT");
 
+  // Post-interview health check (2026-06-04). After the interview the
+  // candidate must clear a medical check before they can be hired — they
+  // bring their own certificate OR get tested at AT HOME CLINIC, and the
+  // admin records the outcome here. The result file (if any) is stored in
+  // recruita_documents with kind='health_result'. Hiring is blocked until
+  // health_check_status = 'passed'.
+  addApplication("health_check_status", "TEXT");    // 'pending' | 'passed' | 'failed'
+  addApplication("health_check_provider", "TEXT");  // 'self' | 'at_home'
+  addApplication("health_check_at", "TEXT");         // 'YYYY-MM-DD'
+  addApplication("health_check_note", "TEXT");
+  addApplication("health_checked_by", "INTEGER");    // users.id who recorded it
+
   // Walk-in visits (added 2026-05-24) — staff records anyone who walks
   // in without a booking. Mirrors a slice of `bookings`: phone is the
   // identity key used to decide "first-time vs returning". Walk-ins

@@ -125,6 +125,10 @@ function stageCopy(stage: ApplicationStage, positionTitle: string): StageCopy {
       headline: `🗣 ทีมงานต้องการเชิญคุณมาสัมภาษณ์\nสำหรับตำแหน่ง ${positionTitle}`,
       tone: "#f59e0b"
     },
+    health_check: {
+      headline: `ผ่านการสัมภาษณ์แล้ว — ขั้นตอนต่อไปคือตรวจสุขภาพ\nสำหรับตำแหน่ง ${positionTitle}`,
+      tone: "#14b8a6"
+    },
     offered: {
       headline: `📨 ยินดีด้วย! เรามีข้อเสนองานสำหรับคุณ\nสำหรับตำแหน่ง ${positionTitle}`,
       tone: "#8b5cf6"

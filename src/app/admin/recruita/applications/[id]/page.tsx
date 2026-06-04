@@ -39,6 +39,10 @@ type AppRow = {
   interview_at: string | null;
   interview_location: string | null;
   interview_note: string | null;
+  health_check_status: "pending" | "passed" | "failed" | null;
+  health_check_provider: "self" | "at_home" | null;
+  health_check_at: string | null;
+  health_check_note: string | null;
   hired_user_id: number | null;
   hired_at: string | null;
   submitted_at: string;

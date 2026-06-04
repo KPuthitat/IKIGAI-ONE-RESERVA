@@ -73,15 +73,25 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   // Load everything we need in one go
   const app = db.prepare(`
-    SELECT id, candidate_id, position_id, stage, hired_user_id
+    SELECT id, candidate_id, position_id, stage, hired_user_id, health_check_status
     FROM recruita_applications WHERE id = ?
   `).get(id) as {
     id: number; candidate_id: number; position_id: number;
     stage: string; hired_user_id: number | null;
+    health_check_status: string | null;
   } | undefined;
   if (!app) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (app.stage === "hired" || app.hired_user_id != null) {
     return NextResponse.json({ error: "already_hired" }, { status: 409 });
+  }
+  // Medical clearance gate (owner 2026-06-04): no hire until the health
+  // check is recorded as 'passed'. The UI disables the button too, but
+  // the server is the ground truth.
+  if (app.health_check_status !== "passed") {
+    return NextResponse.json({
+      error: "health_check_not_passed",
+      message: "ต้องบันทึกผลตรวจสุขภาพเป็น \"ผ่าน\" ก่อนจึงจะรับเข้าทำงานได้"
+    }, { status: 400 });
   }
 
   const candidate = db.prepare(`

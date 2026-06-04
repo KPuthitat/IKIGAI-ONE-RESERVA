@@ -27,6 +27,12 @@ type AppShape = {
   interview_at: string | null;
   interview_location: string | null;
   interview_note: string | null;
+  /** Post-interview medical check (owner 2026-06-04). Hiring is blocked
+   *  until health_check_status = 'passed'. */
+  health_check_status: "pending" | "passed" | "failed" | null;
+  health_check_provider: "self" | "at_home" | null;
+  health_check_at: string | null;
+  health_check_note: string | null;
   /** Set once the hire bridge runs — points at users.id in PERSONA. */
   hired_user_id: number | null;
   hired_at: string | null;
@@ -90,7 +96,7 @@ type HireResult = {
 };
 
 const ALL_STAGES: ApplicationStage[] = [
-  "applied", "screening", "interview", "offered",
+  "applied", "screening", "interview", "health_check", "offered",
   "accepted", "hired", "rejected", "withdrawn"
 ];
 
@@ -267,6 +273,17 @@ export default function ApplicationDetailClient({
         initialAt={application.interview_at}
         initialLocation={application.interview_location}
         initialNote={application.interview_note}
+      />
+
+      {/* Post-interview health check (owner 2026-06-04) — admin records
+          the medical-clearance result; hiring is blocked until 'passed'. */}
+      <HealthCheckSection
+        applicationId={application.id}
+        status={application.health_check_status}
+        provider={application.health_check_provider}
+        at={application.health_check_at}
+        note={application.health_check_note}
+        resultDoc={documents.find((d) => d.kind === "health_result") ?? null}
       />
 
       {/* Stage controls — dual-admin gated.
@@ -471,9 +488,14 @@ export default function ApplicationDetailClient({
             <li>เปลี่ยน stage ใบสมัครนี้เป็น "รับเข้าทำงาน" อัตโนมัติ</li>
             <li>ส่ง invite link ให้แชร์กับพนักงานใหม่ตั้งรหัสผ่าน + ผูก LINE</li>
           </ul>
+          {application.health_check_status !== "passed" && (
+            <p className="text-xs text-rose-700 font-bold bg-rose-50 border border-rose-200 rounded px-2 py-1.5">
+              ⚠ ต้องบันทึกผลตรวจสุขภาพเป็น &quot;ผ่าน&quot; ก่อนจึงจะรับเข้าทำงานได้ (ดูส่วน &quot;ผลตรวจสุขภาพ&quot; ด้านบน)
+            </p>
+          )}
           <button type="button" onClick={() => setShowHire(true)}
-            disabled={busy}
-            className="btn-primary w-full text-base py-3 mt-2">
+            disabled={busy || application.health_check_status !== "passed"}
+            className="btn-primary w-full text-base py-3 mt-2 disabled:opacity-50 disabled:cursor-not-allowed">
             ✓ รับเข้าทำงาน
           </button>
         </div>
@@ -657,9 +679,11 @@ export default function ApplicationDetailClient({
 
       {/* Documents */}
       <Card title="เอกสารแนบ">
-        {documents.length === 0 ? <Empty /> : (
+        {/* Health-check result has its own section above — keep it out of
+            the generic attachments list so it isn't mislabeled. */}
+        {documents.filter((d) => d.kind !== "health_result").length === 0 ? <Empty /> : (
           <div className="space-y-1.5">
-            {documents.map((d) => (
+            {documents.filter((d) => d.kind !== "health_result").map((d) => (
               <a key={d.id} href={`/api/recruita/documents/${d.id}`}
                 target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2 text-sm border border-slate-200 rounded-lg p-2 hover:bg-slate-50">
@@ -739,6 +763,121 @@ export default function ApplicationDetailClient({
           )}
         </div>
       </Card>
+    </div>
+  );
+}
+
+function HealthCheckSection({
+  applicationId, status, provider, at, note, resultDoc
+}: {
+  applicationId: number;
+  status: "pending" | "passed" | "failed" | null;
+  provider: "self" | "at_home" | null;
+  at: string | null;
+  note: string | null;
+  resultDoc: DocShape | null;
+}) {
+  const router = useRouter();
+  const [st, setSt] = useState<"pending" | "passed" | "failed">(status ?? "pending");
+  const [prov, setProv] = useState<"self" | "at_home">(provider ?? "self");
+  const [date, setDate] = useState(at ?? "");
+  const [n, setN] = useState(note ?? "");
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const badge = status === "passed" ? { t: "ผ่าน", c: "bg-emerald-100 text-emerald-700" }
+    : status === "failed" ? { t: "ไม่ผ่าน", c: "bg-rose-100 text-rose-700" }
+    : status === "pending" ? { t: "รอผล", c: "bg-amber-100 text-amber-700" }
+    : { t: "ยังไม่ได้บันทึก", c: "bg-slate-100 text-slate-500" };
+
+  async function save() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append("status", st);
+      fd.append("provider", prov);
+      fd.append("checked_at", date);
+      fd.append("note", n.trim());
+      if (file) fd.append("result", file);
+      const res = await fetch(apiUrl(`/api/recruita/applications/${applicationId}/health`), {
+        method: "POST", body: fd
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        setMsg({ kind: "err", text: j.message ?? j.error ?? "บันทึกไม่สำเร็จ" });
+        return;
+      }
+      setMsg({ kind: "ok", text: "✓ บันทึกผลตรวจสุขภาพแล้ว" });
+      setFile(null);
+      router.refresh();
+    } catch {
+      setMsg({ kind: "err", text: "เกิดข้อผิดพลาด ลองใหม่อีกครั้ง" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card space-y-3 border-teal-200">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h2 className="font-bold text-slate-800 text-sm">ผลตรวจสุขภาพ</h2>
+        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${badge.c}`}>{badge.t}</span>
+      </div>
+      <p className="text-[11px] text-slate-500 leading-relaxed">
+        หลังสัมภาษณ์ผ่าน ผู้สมัครต้องตรวจสุขภาพ — นำใบรับรองมาเอง หรือตรวจที่ AT HOME CLINIC
+        แล้วบันทึกผลที่นี่ · ต้องเป็น &quot;ผ่าน&quot; จึงจะกดรับเข้าทำงานได้
+      </p>
+      {resultDoc && (
+        <a href={apiUrl(`/api/recruita/documents/${resultDoc.id}`)} target="_blank" rel="noopener"
+          className="inline-block text-xs text-teal-700 underline">
+          📄 ไฟล์ผลตรวจที่บันทึกไว้{resultDoc.original_filename ? ` (${resultDoc.original_filename})` : ""}
+        </a>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div>
+          <label className="label">ผลตรวจ</label>
+          <select className="input text-sm" value={st}
+            onChange={(e) => setSt(e.target.value as "pending" | "passed" | "failed")}>
+            <option value="pending">รอผล</option>
+            <option value="passed">ผ่าน</option>
+            <option value="failed">ไม่ผ่าน</option>
+          </select>
+        </div>
+        <div>
+          <label className="label">ตรวจที่</label>
+          <select className="input text-sm" value={prov}
+            onChange={(e) => setProv(e.target.value as "self" | "at_home")}>
+            <option value="self">ใบรับรองจากภายนอก</option>
+            <option value="at_home">AT HOME CLINIC</option>
+          </select>
+        </div>
+        <div>
+          <label className="label">วันที่ตรวจ</label>
+          <input type="date" className="input text-sm" value={date}
+            onChange={(e) => setDate(e.target.value)} />
+        </div>
+      </div>
+      <div>
+        <label className="label">หมายเหตุ (ทางเลือก)</label>
+        <input className="input text-sm" value={n} maxLength={500}
+          onChange={(e) => setN(e.target.value)}
+          placeholder="เช่น ผลปกติทุกรายการ / รอผลเลือดเพิ่มเติม" />
+      </div>
+      <div>
+        <label className="label">แนบไฟล์ผลตรวจ — PDF/รูป (ทางเลือก)</label>
+        <input type="file" accept=".pdf,image/*" className="text-xs"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        {file && <span className="ml-2 text-[11px] text-emerald-700">{file.name}</span>}
+      </div>
+      {msg && (
+        <p className={`text-xs ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>{msg.text}</p>
+      )}
+      <button type="button" onClick={save} disabled={busy}
+        className="btn-primary w-full text-sm py-2.5 disabled:opacity-50">
+        {busy ? "กำลังบันทึก…" : "บันทึกผลตรวจสุขภาพ"}
+      </button>
     </div>
   );
 }
