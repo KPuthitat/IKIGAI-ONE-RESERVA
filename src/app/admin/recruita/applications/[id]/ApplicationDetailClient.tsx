@@ -1306,22 +1306,33 @@ function LineLinkBox({
   const [input, setInput] = useState(currentValue ?? "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // Set when the API reports the userId is already on another candidate
+  // (409 userid_in_use). Shows the "ย้ายมาผูกที่นี่" confirm button.
+  const [conflict, setConflict] = useState(false);
 
-  async function save() {
+  async function save(force = false) {
     setBusy(true);
     setMsg(null);
+    if (!force) setConflict(false);
     try {
       const res = await fetch(apiUrl(`/api/recruita/applications/${applicationId}/link-line`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ line_user_id: input.trim() })
+        body: JSON.stringify({ line_user_id: input.trim(), force })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) {
+        if (j.error === "userid_in_use") setConflict(true);
         setMsg({ kind: "err", text: j.message ?? j.error ?? "บันทึกไม่สำเร็จ" });
         return;
       }
-      setMsg({ kind: "ok", text: input.trim() ? "✓ ผูก LINE เรียบร้อย" : "✓ ยกเลิกการผูกแล้ว" });
+      setConflict(false);
+      setMsg({
+        kind: "ok",
+        text: j.moved_from
+          ? `✓ ย้าย LINE มาผูกที่ใบสมัครนี้แล้ว (ถอดจาก candidate #${j.moved_from})`
+          : input.trim() ? "✓ ผูก LINE เรียบร้อย" : "✓ ยกเลิกการผูกแล้ว"
+      });
       setEditing(false);
       router.refresh();
     } finally { setBusy(false); }
@@ -1375,15 +1386,23 @@ function LineLinkBox({
             </p>
           )}
           <div className="flex gap-2">
-            <button type="button" onClick={() => setEditing(false)} disabled={busy}
+            <button type="button" onClick={() => { setEditing(false); setConflict(false); }} disabled={busy}
               className="flex-1 py-2 rounded border border-slate-300 text-sm font-medium hover:bg-slate-50">
               ยกเลิก
             </button>
-            <button type="button" onClick={save} disabled={busy}
+            <button type="button" onClick={() => save(false)} disabled={busy}
               className="flex-1 py-2 rounded bg-brand text-white text-sm font-bold disabled:opacity-50">
               {busy ? "กำลังบันทึก…" : "บันทึก"}
             </button>
           </div>
+          {/* Shown when the userId is already on another candidate — one
+              click moves it here (clears the other binding). */}
+          {conflict && (
+            <button type="button" onClick={() => save(true)} disabled={busy}
+              className="w-full py-2 rounded bg-amber-600 text-white text-sm font-bold disabled:opacity-50">
+              ย้ายมาผูกที่นี่ (ยืนยันว่าเป็นบุคคลเดียวกัน)
+            </button>
+          )}
         </div>
       )}
       {!editing && msg && (

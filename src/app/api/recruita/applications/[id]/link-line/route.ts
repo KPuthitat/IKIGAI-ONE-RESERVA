@@ -30,7 +30,14 @@ const Body = z.object({
     .refine(
       (v) => v === "" || /^U[0-9a-f]{32}$/.test(v),
       { message: "LINE userId ต้องขึ้นต้นด้วย U ตามด้วย 32 ตัวอักษร hex (รวม 33 ตัว)" }
-    )
+    ),
+  // When the userId is already bound to a DIFFERENT candidate (e.g. a
+  // stale binding left by the old recency-guess), the first attempt is
+  // rejected with userid_in_use. The admin confirms "same person" and
+  // re-submits with force:true → we MOVE the binding here (clearing it
+  // from the other candidate). A LINE userId belongs to one person, so
+  // it must live on exactly one candidate row.
+  force: z.boolean().optional()
 });
 
 export async function POST(
@@ -60,19 +67,36 @@ export async function POST(
 
   // If admin is BINDING a userId, sanity-check it isn't already
   // attached to a different candidate — that would silently steal
-  // the existing person's notifications. Better to fail loudly.
+  // the existing person's notifications. Fail loudly UNLESS the admin
+  // confirmed the move (force:true), in which case we relocate it.
   if (parsed.data.line_user_id !== "") {
     const dup = db.prepare(
       "SELECT id FROM recruita_candidates WHERE line_user_id = ? AND id != ?"
     ).get(parsed.data.line_user_id, app.candidate_id) as { id: number } | undefined;
-    if (dup) {
+    if (dup && !parsed.data.force) {
       return NextResponse.json(
         {
           error: "userid_in_use",
-          message: `LINE userId นี้ถูกผูกกับ candidate #${dup.id} แล้ว — กรุณายืนยันว่าเป็นบุคคลเดียวกัน`
+          other_candidate_id: dup.id,
+          message: `LINE userId นี้ถูกผูกกับผู้สมัครรายอื่น (candidate #${dup.id}) อยู่แล้ว — ` +
+            `ถ้าเป็นบุคคลเดียวกัน กด "ย้ายมาผูกที่นี่" เพื่อย้ายมาที่ใบสมัครนี้`
         },
         { status: 409 }
       );
+    }
+    if (dup && parsed.data.force) {
+      // Move: clear it from the other candidate(s), then set here — in a
+      // transaction so we never end up with it on two rows or none.
+      const tx = db.transaction(() => {
+        db.prepare(
+          "UPDATE recruita_candidates SET line_user_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE line_user_id = ? AND id != ?"
+        ).run(parsed.data.line_user_id, app.candidate_id);
+        db.prepare(
+          "UPDATE recruita_candidates SET line_user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        ).run(parsed.data.line_user_id, app.candidate_id);
+      });
+      tx();
+      return NextResponse.json({ ok: true, moved_from: dup.id });
     }
   }
 
