@@ -257,3 +257,34 @@ export function requirePayrollAccess(): SessionUser {
   if (userCanViewPayroll(u)) return u;
   redirect("/admin?error=payroll_no_access");
 }
+
+// ── Mounjaro clinical access ───────────────────────────────────────
+/** Only clinical doctors reach raw clinical data (and only their own
+ *  patients — enforced in the mounjaro-db gateway). Nurses / HR /
+ *  super_admin are bounced. */
+export function requireClinicalDoctor(): SessionUser {
+  const u = requireUser();
+  if (u.clinical_role === "doctor") return u;
+  redirect("/staff?error=forbidden");
+}
+export function userIsClinicalDoctor(user: SessionUser | null): boolean {
+  return user?.clinical_role === "doctor";
+}
+export function userIsHrAnalytics(user: SessionUser | null): boolean {
+  return user?.is_hr_analytics === 1;
+}
+
+const MJ_UNLOCK_COOKIE = "mj_unlock";
+/** A doctor must re-enter their license number to unlock clinical data
+ *  each session (presence-proof like a PIN). The unlock route sets an
+ *  httpOnly cookie = the doctor's user id; JS can't forge it. */
+export function isClinicalUnlocked(user: SessionUser): boolean {
+  return cookies().get(MJ_UNLOCK_COOKIE)?.value === String(user.id);
+}
+export function setClinicalUnlocked(userId: number): void {
+  cookies().set(MJ_UNLOCK_COOKIE, String(userId), {
+    httpOnly: true, sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: COOKIE_PATH, maxAge: 8 * 3600
+  });
+}

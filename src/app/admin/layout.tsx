@@ -129,8 +129,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
         { href: "/admin/persona/holidays", label: t(lang, "admin.persona.nav.holidays") },
-        { href: "/admin/persona/discipline", label: t(lang, "admin.persona.nav.discipline") },
-        { href: "/admin/persona/health", label: t(lang, "admin.persona.nav.health") }
+        { href: "/admin/persona/discipline", label: t(lang, "admin.persona.nav.discipline") }
+      ]
+    },
+    // สุขภาพพนักงาน — รวม "ผลตรวจสุขภาพ" (ย้ายมาจาก PERSONA) + โครงการ Mounjaro.
+    // Mounjaro (คลินิก) เห็นเฉพาะแพทย์ · ภาพรวม (HR) เห็นเฉพาะผู้มีสิทธิ์ aggregate.
+    {
+      label: "สุขภาพพนักงาน",
+      items: [
+        { href: "/admin/persona/health", label: t(lang, "admin.persona.nav.health") },
+        ...(user.clinical_role === "doctor"
+          ? [{ href: "/admin/mounjaro", label: "โครงการ Mounjaro (คลินิก)" }] : []),
+        ...(user.is_hr_analytics === 1
+          ? [{ href: "/admin/mounjaro-hr", label: "Mounjaro — ภาพรวม (HR)" }] : [])
       ]
     },
     // Pre-shift items — admin configures the checklist for each

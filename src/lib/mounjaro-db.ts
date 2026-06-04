@@ -19,6 +19,59 @@
 // ⚠️  Do NOT query mounjaro_* tables anywhere else. All access goes here.
 
 import { getDb } from "./db";
+import { computeAlerts, type Alert } from "./mounjaro-alerts";
+
+function pj<T>(s: unknown, fallback: T): T {
+  if (typeof s !== "string") return fallback;
+  try { return JSON.parse(s) as T; } catch { return fallback; }
+}
+
+/** Build the safety-alert input from a patient row + their visits and run
+ *  the rules. Shared by the clinical list (badge) and detail (full list). */
+export function patientAlerts(
+  patient: Record<string, unknown>, visits: Array<Record<string, unknown>>
+): Alert[] {
+  const baseline = pj<Record<string, number>>(patient.baseline_json, {});
+  const contra = pj<Record<string, boolean>>(patient.contraindications_json, {});
+  const meds = pj<Record<string, boolean>>(patient.medications_json, {});
+  const sorted = [...visits].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const last = sorted[sorted.length - 1];
+  if (!last) {
+    // No visit yet — only the static contraindication danger applies.
+    return computeAlerts({
+      baselineHr: null, baselineWeight: baseline.weight ?? null, lastWeight: null,
+      currentDose: null, hr: null, abdomen: 0, vomit: 0, tachy: 0, hypoCount: 0,
+      adherence: null, decision: null,
+      hasContraindication: !!(contra.mtc || contra.men2 || contra.preg || contra.allergy),
+      onInsulinOrSu: !!(meds.insulin || meds.su), weeksAtCurrentDose: 0, visitCount: 0
+    });
+  }
+  const se = pj<Record<string, number>>(last.side_effects_json, {});
+  const curDose = (last.dose as number | null) ?? null;
+  // weeks at current dose = since the start of the trailing run at this dose
+  let firstAtDose = last.date as string | null;
+  for (let k = sorted.length - 1; k >= 0; k--) {
+    if ((sorted[k].dose as number | null) === curDose) firstAtDose = sorted[k].date as string;
+    else break;
+  }
+  const weeks = firstAtDose
+    ? Math.max(0, Math.round((Date.now() - new Date(`${firstAtDose}T00:00:00Z`).getTime()) / (7 * 86400_000)))
+    : 0;
+  return computeAlerts({
+    baselineHr: baseline.hr ?? null, baselineWeight: baseline.weight ?? null,
+    lastWeight: (last.weight as number | null) ?? null, currentDose: curDose,
+    hr: (last.hr as number | null) ?? null,
+    abdomen: se.abdomen ?? 0, vomit: se.vomit ?? 0, tachy: se.tachy ?? 0,
+    hypoCount: (last.hypo_count as number | null) ?? 0,
+    adherence: (last.adherence as AlertAdherence) ?? null,
+    decision: (last.decision as AlertDecision) ?? null,
+    hasContraindication: !!(contra.mtc || contra.men2 || contra.preg || contra.allergy),
+    onInsulinOrSu: !!(meds.insulin || meds.su),
+    weeksAtCurrentDose: weeks, visitCount: sorted.length
+  });
+}
+type AlertAdherence = "full" | "missed1" | "missed2" | "held" | null;
+type AlertDecision = "maintain" | "increase" | "decrease" | "hold" | null;
 
 export type MjActor = {
   id: number;
@@ -312,6 +365,103 @@ export function addVisit(actor: MjActor, patientId: number, data: Record<string,
   );
   audit(actor.id, "add_visit", "visit", Number(info.lastInsertRowid));
   return Number(info.lastInsertRowid);
+}
+
+/** Doctor's patient list enriched for the dashboard — one audited call.
+ *  Computes alert level, latest weight, % loss, week #, next visit. */
+export function listMyPatientsEnriched(actor: MjActor): Array<{
+  id: number; employee_name: string; hn: string | null; enrollment_status: string;
+  dose: number | null; latestWeight: number | null; lossPct: number | null;
+  weekNo: number; nextVisit: string | null; alertLevel: "danger" | "warning" | null;
+  newSelfLog: boolean;
+}> {
+  const patients = listMyPatients(actor); // requires doctor + audits once
+  const db = getDb();
+  return patients.map((p) => {
+    const pid = p.id as number;
+    const visits = db.prepare(
+      "SELECT * FROM mounjaro_visits WHERE patient_id = ? ORDER BY date ASC, id ASC"
+    ).all(pid) as Array<Record<string, unknown>>;
+    const alerts = patientAlerts(p, visits);
+    const baseline = pj<Record<string, number>>(p.baseline_json, {});
+    const last = visits[visits.length - 1];
+    const latestWeight = (last?.weight as number | null) ?? null;
+    const lossPct = (baseline.weight && latestWeight)
+      ? ((baseline.weight - latestWeight) / baseline.weight) * 100 : null;
+    const newSelfLog = !!(db.prepare(
+      "SELECT 1 FROM mounjaro_self_logs WHERE enrollment_id = ? AND doctor_reply IS NULL LIMIT 1"
+    ).get(p.enrollment_id as number));
+    return {
+      id: pid, employee_name: p.employee_name as string, hn: (p.hn as string | null) ?? null,
+      enrollment_status: (p.enrollment_status as string) ?? "active",
+      dose: (last?.dose as number | null) ?? null, latestWeight, lossPct,
+      weekNo: visits.length, nextVisit: (last?.next_visit as string | null) ?? null,
+      alertLevel: alerts.some((a) => a.level === "danger") ? "danger"
+        : alerts.some((a) => a.level === "warning") ? "warning" : null,
+      newSelfLog
+    };
+  });
+}
+
+/** Pending enrollments awaiting intake — name + date only, NO clinical
+ *  data (there is none yet). Any doctor may pick one up via baseline. */
+export function listPendingIntake(actor: MjActor): Array<{
+  enrollment_id: number; employee_name: string; enrolled_at: string | null;
+}> {
+  requireDoctor(actor);
+  const rows = getDb().prepare(`
+    SELECT e.id AS enrollment_id, u.display_name AS employee_name, e.enrolled_at
+    FROM mounjaro_enrollments e JOIN users u ON u.id = e.employee_id
+    WHERE e.status = 'pending' AND e.portal_erased_at IS NULL
+    ORDER BY e.enrolled_at ASC
+  `).all() as Array<{ enrollment_id: number; employee_name: string; enrolled_at: string | null }>;
+  audit(actor.id, "list_intake", "enrollment", null);
+  return rows;
+}
+
+/** Full bundle for ONE of the doctor's own patients (patient + visits +
+ *  self-logs). null when the doctor is not the attending doctor. */
+export function getPatientBundle(actor: MjActor, patientId: number): {
+  patient: Record<string, unknown>; employeeName: string; enrollmentId: number;
+  visits: Array<Record<string, unknown>>; selfLogs: Array<Record<string, unknown>>;
+} | null {
+  requireDoctor(actor);
+  const patient = getDb().prepare(`
+    SELECT p.*, u.display_name AS employee_name, e.id AS enrollment_id
+    FROM mounjaro_patients p
+    JOIN mounjaro_enrollments e ON e.id = p.enrollment_id
+    JOIN users u ON u.id = e.employee_id
+    WHERE p.id = ? AND p.attending_doctor_id = ? AND p.deleted_at IS NULL
+  `).get(patientId, actor.id) as Record<string, unknown> | undefined;
+  audit(actor.id, "read_patient", "patient", patientId);
+  if (!patient) return null;
+  const enrollmentId = patient.enrollment_id as number;
+  const visits = getDb().prepare(
+    "SELECT * FROM mounjaro_visits WHERE patient_id = ? ORDER BY date ASC, id ASC"
+  ).all(patientId) as Array<Record<string, unknown>>;
+  const selfLogs = getDb().prepare(
+    "SELECT * FROM mounjaro_self_logs WHERE enrollment_id = ? ORDER BY date DESC, id DESC"
+  ).all(enrollmentId) as Array<Record<string, unknown>>;
+  return {
+    patient, employeeName: patient.employee_name as string, enrollmentId, visits, selfLogs
+  };
+}
+
+/** Doctor replies to a self-log — only on their own patient's log. */
+export function replySelfLog(actor: MjActor, selfLogId: number, reply: string): void {
+  requireDoctor(actor);
+  const owns = getDb().prepare(`
+    SELECT sl.id FROM mounjaro_self_logs sl
+    JOIN mounjaro_patients p ON p.enrollment_id = sl.enrollment_id
+    WHERE sl.id = ? AND p.attending_doctor_id = ?
+  `).get(selfLogId, actor.id);
+  if (!owns) throw new MounjaroForbidden("not_your_patient");
+  getDb().prepare(`
+    UPDATE mounjaro_self_logs
+    SET doctor_reply = ?, replied_by = ?, replied_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(reply, actor.id, selfLogId);
+  audit(actor.id, "reply_selflog", "self_log", selfLogId);
 }
 
 // ════════════════════════════════════════════════════════════════════

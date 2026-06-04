@@ -137,6 +137,39 @@ type MjActor = import("../src/lib/mounjaro-db").MjActor;
   const auditCount = (db.prepare("SELECT COUNT(*) n FROM mounjaro_audit_log").get() as { n: number }).n;
   ok("audit rows were written", auditCount > 0);
 
+  console.log("\n[7] Safety alert rules");
+  const al = await import("../src/lib/mounjaro-alerts");
+  type AlertInput = import("../src/lib/mounjaro-alerts").AlertInput;
+  const base: AlertInput = {
+    baselineHr: 70, baselineWeight: 100, lastWeight: 90, currentDose: 5,
+    hr: 72, abdomen: 0, vomit: 0, tachy: 0, hypoCount: 0,
+    adherence: "full", decision: "maintain", hasContraindication: false,
+    onInsulinOrSu: false, weeksAtCurrentDose: 2, visitCount: 1
+  };
+  const mk = (o: Partial<AlertInput>): AlertInput => ({ ...base, ...o });
+  const has = (inp: Partial<AlertInput>, code: string) =>
+    al.computeAlerts(mk(inp)).some((a) => a.code === code);
+  const lvl = (inp: Partial<AlertInput>, code: string) =>
+    al.computeAlerts(mk(inp)).find((a) => a.code === code)?.level;
+
+  ok("clean input → no alerts", al.computeAlerts(base).length === 0);
+  ok("contraindication → DANGER", lvl({ hasContraindication: true }, "contraindication") === "danger");
+  ok("HR +16 → DANGER hr_jump", lvl({ hr: 86 }, "hr_jump") === "danger");
+  ok("abdomen ≥2 → DANGER pancreatitis", lvl({ abdomen: 2 }, "abdominal_pain") === "danger");
+  ok("HR +12 → WARNING hr_rising", lvl({ hr: 82 }, "hr_rising") === "warning");
+  ok("HR +12 not danger", !has({ hr: 82 }, "hr_jump"));
+  ok("vomit ≥2 → WARNING", lvl({ vomit: 2 }, "vomiting") === "warning");
+  ok("tachy ≥2 → WARNING", lvl({ tachy: 2 }, "tachycardia") === "warning");
+  ok("hypo + insulin/SU → WARNING", has({ hypoCount: 1, onInsulinOrSu: true }, "hypoglycemia"));
+  ok("hypo WITHOUT insulin/SU → none", !has({ hypoCount: 1, onInsulinOrSu: false }, "hypoglycemia"));
+  ok("adherence held → WARNING", has({ adherence: "held" }, "adherence"));
+  ok("maintain+dose5+>8wk → titrate_up", has({ decision: "maintain", currentDose: 5, weeksAtCurrentDose: 10 }, "titrate_up"));
+  ok("dose15 never titrate_up", !has({ decision: "maintain", currentDose: 15, weeksAtCurrentDose: 20 }, "titrate_up"));
+  ok("dose10+3visits+<5%loss → low_response",
+    has({ currentDose: 10, visitCount: 3, baselineWeight: 100, lastWeight: 97 }, "low_response"));
+  ok("good loss → no low_response",
+    !has({ currentDose: 10, visitCount: 3, baselineWeight: 100, lastWeight: 88 }, "low_response"));
+
   console.log(`\nmounjaro access-control: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
