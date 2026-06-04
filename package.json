@@ -11,6 +11,7 @@
     "check:i18n": "node --import tsx scripts/check-i18n.ts",
     "check:risks": "node scripts/scan-build-risks.mjs",
     "check:types": "npx tsc --noEmit -p tsconfig.json",
+    "test:mounjaro": "node --import tsx scripts/test-mounjaro.ts",
     "db:init": "node --import tsx scripts/init-db.ts",
     "db:seed": "node --import tsx scripts/seed.ts",
     "cron:run": "node --import tsx scripts/cron.ts"

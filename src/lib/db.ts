@@ -1735,7 +1735,7 @@ function runMigrations(db: Database.Database): void {
       SET branch_id = (
         SELECT ub.branch_id FROM user_branches ub
         WHERE ub.user_id = resignation_requests.user_id
-        ORDER BY ub.is_primary DESC, ub.branch_id ASC
+        ORDER BY ub.branch_id ASC
         LIMIT 1
       )
       WHERE branch_id IS NULL
@@ -2881,6 +2881,119 @@ function runMigrations(db: Database.Database): void {
   if (!hcCols.some((c) => c.name === "exam_type")) {
     db.exec("ALTER TABLE health_checkups ADD COLUMN exam_type TEXT NOT NULL DEFAULT 'periodic'");
   }
+
+  // ══════════════════════════════════════════════════════════════════
+  // Mounjaro Employee Wellness — phase 2 (clinical data, owner 2026-06-04)
+  //
+  // SQLite has no row-level security, so isolation is enforced in the
+  // application gateway (src/lib/mounjaro-db.ts) + audited + tested.
+  // Access model (locked in docs/mounjaro-integration-plan.md §14):
+  //   • employee   → only their own rows (via enrollment_id)
+  //   • doctor     → only patients where attending_doctor_id = self,
+  //                  unlocked by their license_no
+  //   • nurse      → NO clinical view (this phase)
+  //   • super_admin/HR → aggregate stats only, never raw clinical rows
+  // JSON columns are TEXT (no jsonb). Soft-delete via deleted_at so the
+  // medical record survives a PDPA erasure (kept under lawful basis).
+  // ══════════════════════════════════════════════════════════════════
+
+  // Clinical access flags on users (super_admin grants; pattern mirrors
+  // can_view_payroll). userCol() is idempotent (PRAGMA-guarded).
+  userCol("clinical_role", "TEXT");                 // 'doctor' | 'nurse' | NULL
+  userCol("license_no", "TEXT");                    // professional license (unlock gate)
+  userCol("is_hr_analytics", "INTEGER NOT NULL DEFAULT 0");
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mounjaro_enrollments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','active','withdrawn','completed')),
+      enrolled_at TEXT, completed_at TEXT,
+      consent_signed_at TEXT, consent_version TEXT,
+      withdrawn_reason TEXT,
+      portal_erased_at TEXT,                  -- PDPA soft-delete (portal side)
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(employee_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS mounjaro_patients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      enrollment_id INTEGER NOT NULL UNIQUE
+        REFERENCES mounjaro_enrollments(id) ON DELETE CASCADE,
+      attending_doctor_id INTEGER REFERENCES users(id),  -- เจ้าของไข้
+      hn TEXT,                                  -- จากระบบแอทโฮมคลินิก (กรอกมือ)
+      baseline_json TEXT,
+      comorbidities_json TEXT,
+      contraindications_json TEXT,
+      medications_json TEXT,
+      notes TEXT, start_date TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT,
+      deleted_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS mounjaro_visits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id INTEGER NOT NULL REFERENCES mounjaro_patients(id) ON DELETE CASCADE,
+      date TEXT,
+      dose REAL CHECK (dose IN (2.5,5,7.5,10,12.5,15)),
+      weight REAL, bp TEXT, hr INTEGER, hba1c REAL, fbs REAL, waist REAL,
+      side_effects_json TEXT,
+      hypo_count INTEGER,
+      adherence TEXT CHECK (adherence IN ('full','missed1','missed2','held')),
+      decision TEXT CHECK (decision IN ('maintain','increase','decrease','hold')),
+      next_visit TEXT, notes TEXT,
+      entered_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS mounjaro_self_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      enrollment_id INTEGER NOT NULL
+        REFERENCES mounjaro_enrollments(id) ON DELETE CASCADE,
+      date TEXT, weight REAL, injection_done INTEGER,
+      side_effect_diary_json TEXT, notes_for_doctor TEXT,
+      doctor_reply TEXT, replied_by INTEGER REFERENCES users(id), replied_at TEXT,
+      logged_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS mounjaro_audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      action TEXT NOT NULL,
+      resource_type TEXT NOT NULL,
+      resource_id INTEGER,
+      ip_address TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS mounjaro_consent_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      version TEXT NOT NULL UNIQUE,
+      body TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mj_enroll_employee ON mounjaro_enrollments(employee_id);
+    CREATE INDEX IF NOT EXISTS idx_mj_patient_doctor  ON mounjaro_patients(attending_doctor_id);
+    CREATE INDEX IF NOT EXISTS idx_mj_visit_patient   ON mounjaro_visits(patient_id);
+    CREATE INDEX IF NOT EXISTS idx_mj_selflog_enroll  ON mounjaro_self_logs(enrollment_id);
+    CREATE INDEX IF NOT EXISTS idx_mj_audit_user      ON mounjaro_audit_log(user_id, created_at DESC);
+
+    -- HR / management aggregate view — NO row identifies a person.
+    DROP VIEW IF EXISTS mounjaro_program_stats;
+    CREATE VIEW mounjaro_program_stats AS
+      SELECT
+        (SELECT COUNT(*) FROM mounjaro_enrollments) AS total_enrolled,
+        (SELECT COUNT(*) FROM mounjaro_enrollments WHERE status='active') AS active_count,
+        (SELECT COUNT(*) FROM mounjaro_enrollments WHERE status='pending') AS pending_count,
+        (SELECT COUNT(*) FROM mounjaro_enrollments WHERE status='withdrawn') AS withdrawn_count,
+        (SELECT COUNT(*) FROM mounjaro_enrollments WHERE status='completed') AS completed_count;
+  `);
 
   // ── INVENTA — clinic stock-count module ──────────────────────────
   // Per-branch drug/equipment inventory. Items live in a physical grid
@@ -4541,6 +4654,14 @@ export type User = {
    *  payroll page, employee list column) and threading the cast
    *  everywhere would be noise. super_admin ignores this flag. */
   can_view_payroll: number;
+  /** Mounjaro Wellness program — clinical access (2026-06-04).
+   *  clinical_role ('doctor'|'nurse') + license_no gate clinical-data
+   *  access (only the attending doctor sees their own patients, unlocked
+   *  with the license number). is_hr_analytics grants aggregate-only
+   *  program stats. Defaults: null / null / 0. */
+  clinical_role: "doctor" | "nurse" | null;
+  license_no: string | null;
+  is_hr_analytics: number;
 };
 
 /** Full Phase A employee profile row — superset of `User` with all
