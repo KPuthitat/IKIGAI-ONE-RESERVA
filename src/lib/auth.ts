@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import crypto from "node:crypto";
-import { getDb, type User, type Branch } from "./db";
+import { getDb, getUserPermissions, type User, type Branch } from "./db";
+import type { RbacPermissionKey } from "./rbac";
 export { hashPassword, verifyPassword } from "./password";
 
 // Shared cookie name — Payroll Express ก็จะอ่าน cookie ตัวนี้ด้วย (SSO bridge)
@@ -18,6 +19,10 @@ export type SessionUser = User & {
   // .is_admin = 1. staff → always empty. Drives the admin branch
   // picker scope and requireAdmin's per-branch gate.
   adminBranchIds: number[];
+  // RBAC (2026-06-04) — union of permission keys from all roles assigned
+  // to this user. Empty for super_admin (it bypasses checks via userCan).
+  // Drives requirePermission() module gates + sidebar link filtering.
+  permissions: string[];
 };
 
 export function createSession(userId: number, activeBranchId: number | null): string {
@@ -110,7 +115,11 @@ export function getSessionUser(): SessionUser | null {
   const isMember = activeBranchId != null && branches.some((b) => b.id === activeBranchId);
   if (!isMember) activeBranchId = branches.length > 0 ? branches[0].id : null;
 
-  return { ...row, branches, activeBranchId, adminBranchIds };
+  // RBAC permission union. super_admin bypasses checks (userCan returns
+  // true regardless) so we skip the query for it.
+  const permissions = row.role === "super_admin" ? [] : getUserPermissions(row.id);
+
+  return { ...row, branches, activeBranchId, adminBranchIds, permissions };
 }
 
 /** Sync user จาก Payroll → local users table (เรียกตอน login สำเร็จ) */
@@ -191,7 +200,49 @@ export function requireAdmin(): SessionUser {
   const u = requireUser();
   if (u.role === "super_admin") return u;
   if (u.role === "admin" && u.adminBranchIds.length > 0) return u;
+  // RBAC (additive): a user granted any admin-module role may enter the
+  // console. Individual modules are still gated by requirePermission(),
+  // so entering /admin alone leaks nothing — they only see the landing
+  // + the modules their roles allow. This clause is purely permissive:
+  // everyone who passed before still passes.
+  if (u.permissions.length > 0) return u;
   redirect("/staff?error=forbidden");
+}
+
+// ── RBAC permission gates (2026-06-04) ─────────────────────────────
+/** Raw permission check — true when the user literally holds the key.
+ *  super_admin always passes. Does NOT apply the legacy fallback. */
+export function userCan(user: SessionUser | null, key: RbacPermissionKey): boolean {
+  if (!user) return false;
+  if (user.role === "super_admin") return true;
+  return user.permissions.includes(key);
+}
+
+/** Module-access check used by the gates + sidebar. Rules:
+ *    • super_admin → every module (god).
+ *    • user with ≥1 RBAC role → RBAC governs strictly (only ticked
+ *      modules). This is how the owner restricts access.
+ *    • user with NO roles → legacy fallback: a full branch-admin sees
+ *      every module (preserves pre-RBAC behaviour for admins created
+ *      after the one-time backfill, so nobody is ever locked out);
+ *      everyone else (plain staff) sees nothing.
+ *  The "no roles ⇒ legacy" rule means: to RESTRICT an admin, assign
+ *  them a narrower role (or set them to staff); to grant a staffer
+ *  module access, assign a role with those modules. */
+export function canModule(user: SessionUser | null, key: RbacPermissionKey): boolean {
+  if (!user) return false;
+  if (user.role === "super_admin") return true;
+  if (user.permissions.length > 0) return user.permissions.includes(key);
+  return user.role === "admin" && user.adminBranchIds.length > 0;
+}
+
+/** Server-route / page gate: requires access to a specific module.
+ *  Authenticated users lacking it bounce to the console landing (where
+ *  requireAdmin sends pure-staff onward to /staff). super_admin passes. */
+export function requirePermission(key: RbacPermissionKey): SessionUser {
+  const u = requireUser();
+  if (canModule(u, key)) return u;
+  redirect("/admin?error=forbidden_module");
 }
 
 /** Allows super_admin only. Used by system-wide settings (companies,

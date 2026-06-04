@@ -12,6 +12,7 @@
     "check:risks": "node scripts/scan-build-risks.mjs",
     "check:types": "npx tsc --noEmit -p tsconfig.json",
     "test:mounjaro": "node --import tsx scripts/test-mounjaro.ts",
+    "test:rbac": "node --import tsx scripts/test-rbac.ts",
     "db:init": "node --import tsx scripts/init-db.ts",
     "db:seed": "node --import tsx scripts/seed.ts",
     "cron:run": "node --import tsx scripts/cron.ts"

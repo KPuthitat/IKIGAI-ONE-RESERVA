@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireAdmin, userCanViewPayroll } from "@/lib/auth";
-import { getDb, type Branch } from "@/lib/db";
+import { getDb, listRbacRoles, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import EmployeesClient, { type EmployeeRow } from "./EmployeesClient";
@@ -111,6 +111,28 @@ export default function AdminEmployeesPage({
       ? allBranches.map((b) => b.id)
       : user.adminBranchIds;
 
+  // RBAC role assignment (2026-06-04) — only super_admin manages roles,
+  // so we only fetch the catalog + current grants for them. Everyone
+  // else gets empty arrays (the assignment section is hidden anyway).
+  const allRoles =
+    user.role === "super_admin"
+      ? listRbacRoles().map((r) => ({
+          id: r.id,
+          name: r.name,
+          permissions: r.permissions
+        }))
+      : [];
+  const roleIdsByUser: Record<number, number[]> = {};
+  if (user.role === "super_admin" && empIds.length > 0) {
+    const roleGrants = db.prepare(
+      `SELECT user_id, role_id FROM rbac_user_roles
+       WHERE user_id IN (${empIds.map(() => "?").join(",")})`
+    ).all(...empIds) as Array<{ user_id: number; role_id: number }>;
+    for (const g of roleGrants) {
+      (roleIdsByUser[g.user_id] ??= []).push(g.role_id);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -162,6 +184,11 @@ export default function AdminEmployeesPage({
         // this just trims the UI to avoid frustrating clicks).
         currentUserId={user.id}
         currentUserRole={user.role}
+        // RBAC — full role catalog + each employee's current role ids
+        // (super_admin only; empty for other admins). Drives the
+        // "บทบาทการเข้าถึงระบบ" assignment section in the edit modal.
+        allRoles={allRoles}
+        roleIdsByUser={roleIdsByUser}
         // PDPA: drives the conditional render of the salary section
         // inside the edit modal. Server already strips salary fields
         // from the row data (above), but the modal would still SHOW

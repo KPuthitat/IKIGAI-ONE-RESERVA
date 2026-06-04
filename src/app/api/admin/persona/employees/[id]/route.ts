@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
-import { getDb, logPersonaAction, type UserRole } from "@/lib/db";
+import { getDb, logPersonaAction, setUserRoles, type UserRole } from "@/lib/db";
 import { revokeOpenInvites } from "@/lib/invites";
 
 // PATCH /api/admin/persona/employees/[id] — admin update profile + payroll fields
@@ -44,6 +44,9 @@ const Body = z.object({
   clinical_role:   z.enum(["doctor", "nurse"]).nullable().optional(),
   license_no:      z.string().max(60).nullable().optional(),
   is_hr_analytics: z.number().int().min(0).max(1).optional(),
+  // 2026-06-04 — RBAC: full set of module-access role ids to assign to
+  // this user (replaces existing). super_admin only; stripped otherwise.
+  role_ids:        z.array(z.number().int().positive()).max(50).optional(),
   // PIN — 4 digits to set, "" to clear, omit to keep
   pin: z.string().regex(/^\d{4}$/).or(z.literal("")).optional(),
 
@@ -136,6 +139,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     delete parsed.data.clinical_role;
     delete parsed.data.license_no;
     delete parsed.data.is_hr_analytics;
+    // RBAC role assignment is super_admin-only as well.
+    delete parsed.data.role_ids;
   }
   // A doctor must carry a license number (their clinical unlock key).
   if ("clinical_role" in parsed.data && parsed.data.clinical_role === "doctor"
@@ -276,12 +281,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   }
 
-  if (fields.length === 0 && data.pin === undefined) {
+  // RBAC role assignment — super_admin only (stripped above otherwise).
+  // Not a users column, so handled separately from the dynamic UPDATE:
+  // it replaces the user's full role set.
+  const hasRoleIds = "role_ids" in data && user.role === "super_admin";
+
+  if (fields.length === 0 && data.pin === undefined && !hasRoleIds) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });
   }
   if (fields.length > 0) {
     vals.push(id);
     db.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`).run(...vals);
+  }
+  if (hasRoleIds) {
+    setUserRoles(id, data.role_ids ?? [], user.id);
   }
   return NextResponse.json({ ok: true });
 }

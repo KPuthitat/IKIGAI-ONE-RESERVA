@@ -8,6 +8,7 @@ import { useLang } from "@/lib/LangProvider";
 import { nameWithPrefix } from "@/lib/name";
 import { fmtMoney } from "@/lib/format";
 import Switch from "@/app/components/Switch";
+import { RBAC_PERMISSIONS } from "@/lib/rbac";
 
 export type EmployeeRow = {
   id: number;
@@ -62,10 +63,12 @@ export type EmployeeRow = {
 };
 
 export type BranchLite = { id: number; name: string };
+export type RoleLite = { id: number; name: string; permissions: string[] };
 
 export default function EmployeesClient({
   employees, allBranches, grants, editableBranchIds,
-  currentUserId, currentUserRole, canViewPayroll
+  currentUserId, currentUserRole, canViewPayroll,
+  allRoles = [], roleIdsByUser = {}
 }: {
   employees: EmployeeRow[];
   allBranches: BranchLite[];
@@ -78,6 +81,11 @@ export default function EmployeesClient({
    *  blanked hourly_rate / monthly_salary / pay_cycle / salary_tax_mode
    *  on every row before we receive them. */
   canViewPayroll: boolean;
+  /** RBAC (2026-06-04) — full role catalog + each employee's current
+   *  role ids. Only populated for super_admin (the assignment section
+   *  in the edit modal is super_admin-only). */
+  allRoles?: RoleLite[];
+  roleIdsByUser?: Record<number, number[]>;
 }) {
   const router = useRouter();
   const { t, formatDate } = useLang();
@@ -448,6 +456,8 @@ export default function EmployeesClient({
           onRefresh={() => startTransition(() => router.refresh())}
           canViewPayroll={canViewPayroll}
           currentUserRole={currentUserRole}
+          allRoles={allRoles}
+          assignedRoleIds={roleIdsByUser[editTarget.id] ?? []}
         />
       )}
     </>
@@ -456,7 +466,8 @@ export default function EmployeesClient({
 
 function EditModal({
   employee, allEmployees, allBranches, currentBranchIds, editableSet,
-  onClose, onSaved, onRefresh, canViewPayroll, currentUserRole
+  onClose, onSaved, onRefresh, canViewPayroll, currentUserRole,
+  allRoles, assignedRoleIds
 }: {
   employee: EmployeeRow;
   /** Full employee list — drives the "Reports to" dropdown in the
@@ -476,6 +487,10 @@ function EditModal({
    *  "grant payroll access to this admin" toggle, regular admins
    *  cannot grant the permission. */
   currentUserRole: "super_admin" | "admin" | "staff";
+  /** RBAC (2026-06-04) — role catalog + this employee's current role
+   *  ids. The assignment section renders for super_admin only. */
+  allRoles: RoleLite[];
+  assignedRoleIds: number[];
 }) {
   const { t } = useLang();
 
@@ -570,6 +585,16 @@ function EditModal({
   );
   const [licenseNo, setLicenseNo] = useState(employee.license_no ?? "");
   const [hrAnalytics, setHrAnalytics] = useState<boolean>(employee.is_hr_analytics === 1);
+  // RBAC (2026-06-04) — module-access roles assigned to this employee
+  // (super_admin only). Replaces the full set on save via role_ids.
+  const [roleSel, setRoleSel] = useState<Set<number>>(new Set(assignedRoleIds));
+  function toggleRole(rid: number) {
+    setRoleSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(rid)) next.delete(rid); else next.add(rid);
+      return next;
+    });
+  }
   // PIN — 4 digits. Empty = leave unchanged. "clear" toggles → send "" to API.
   const [pin, setPin] = useState("");
   const [clearPin, setClearPin] = useState(false);
@@ -719,6 +744,9 @@ function EditModal({
         body.clinical_role = clinicalRole === "none" ? null : clinicalRole;
         body.license_no = clinicalRole === "none" ? null : (licenseNo.trim() || null);
         body.is_hr_analytics = hrAnalytics ? 1 : 0;
+        // RBAC — replace the full set of module-access roles. Server
+        // re-gates to super_admin and writes rbac_user_roles.
+        body.role_ids = [...roleSel];
       }
       // PIN — only include if admin is setting/clearing it
       if (clearPin) {
@@ -1139,6 +1167,50 @@ function EditModal({
               </div>
             )}
           </>
+        )}
+
+        {/* RBAC — module-access roles (super_admin only). Assign which
+            admin modules this employee can reach. Roles are created /
+            edited at /admin/roles. Empty list (no roles defined) hides
+            the section. (owner 2026-06-04) */}
+        {currentUserRole === "super_admin" && allRoles.length > 0 && (
+          <div className="border-t border-slate-200 pt-4 space-y-3">
+            <h4 className="text-sm font-semibold text-slate-700">
+              บทบาทการเข้าถึงระบบ
+            </h4>
+            <p className="text-[11px] text-slate-500">
+              กำหนดว่าพนักงานคนนี้เข้าถึงโมดูลผู้ดูแลใดได้บ้าง · สร้าง/แก้บทบาทที่เมนู
+              &quot;บทบาทและสิทธิ์&quot; · ผู้ดูแลระบบสูงสุดเข้าได้ทุกอย่างเสมอ
+            </p>
+            <div className="space-y-2">
+              {allRoles.map((r) => (
+                <label
+                  key={r.id}
+                  className="flex items-start gap-3 cursor-pointer p-3 rounded-lg border border-slate-200 hover:bg-slate-50"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4"
+                    checked={roleSel.has(r.id)}
+                    onChange={() => toggleRole(r.id)}
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-slate-800">{r.name}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {r.permissions.length === 0
+                        ? "— ยังไม่ได้ให้สิทธิ์โมดูล —"
+                        : r.permissions
+                            .map(
+                              (pk) =>
+                                RBAC_PERMISSIONS.find((c) => c.key === pk)?.module ?? pk
+                            )
+                            .join(" · ")}
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Mounjaro clinical access — super_admin only, any employee.

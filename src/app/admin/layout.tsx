@@ -1,4 +1,4 @@
-import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
+import { getSessionUser, userCanViewPayroll, canModule } from "@/lib/auth";
 import { getDb, getSystemSettings } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -82,22 +82,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       label: t(lang, "sidebar.section.modules"),
       items: [
         { href: "/admin", label: t(lang, "sidebar.modulePicker") },
-        { href: "/admin/persona", label: "PERSONA" },
-        { href: "/admin/reserva", label: "RESERVA" },
+        // Module links are filtered by RBAC (2026-06-04): each appears
+        // only when the user's roles grant that module. super_admin and
+        // roleless full branch-admins see them all (see canModule).
+        ...(canModule(user, "persona.manage") ? [{ href: "/admin/persona", label: "PERSONA" }] : []),
+        ...(canModule(user, "reserva.manage") ? [{ href: "/admin/reserva", label: "RESERVA" }] : []),
         // INVENTA lives under /staff (clinic staff tool; admins are
-        // employees too). Surface it here so it's reachable from the
-        // admin console as well. The INVENTA settings page is reached
-        // from inside INVENTA itself (its own sidebar section + the
-        // toolbar) — not duplicated at module level here.
+        // employees too). Always shown — it's a staff-level tool, not
+        // gated by the admin-module RBAC. The INVENTA settings page is
+        // reached from inside INVENTA itself (its own sidebar section +
+        // the toolbar) — not duplicated at module level here.
         { href: "/staff/inventa", label: "INVENTA" },
-        { href: "/admin/ascenda", label: "ASCENDA" },
-        { href: "/admin/insigna", label: "INSIGNA" },
-        { href: "/admin/recruita", label: "RECRUITA" },
+        ...(canModule(user, "ascenda.view") ? [{ href: "/admin/ascenda", label: "ASCENDA" }] : []),
+        ...(canModule(user, "insigna.view") ? [{ href: "/admin/insigna", label: "INSIGNA" }] : []),
+        ...(canModule(user, "recruita.access") ? [{ href: "/admin/recruita", label: "RECRUITA" }] : []),
         // System-wide entries — only super_admin can manage these,
         // so hide them from regular admins to keep the sidebar clean.
         // The pages still enforce requireSuperAdmin() server-side as
         // a belt-and-braces second check.
         ...(isSuperAdmin ? [
+          { href: "/admin/roles", label: "บทบาทและสิทธิ์" },
           { href: "/admin/system-settings", label: t(lang, "admin.systemSettings.title") },
           { href: "/admin/companies", label: t(lang, "admin.companies.title") },
           // Notification quota is system-wide (every module shares the
@@ -281,10 +285,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="space-y-3">
       {/* STAFF / ADMIN switch — shown to anyone with admin powers:
           super_admin (so the owner can pop into staff mode for
-          testing) and branch-admins (employee first, admin rights
-          second). Plain staff users get no toggle. */}
+          testing), branch-admins (employee first, admin rights
+          second), and — since RBAC (2026-06-04) — any staffer granted
+          an admin-module role. Plain staff get no toggle. */}
       {(user.role === "super_admin" ||
-        (user.role === "admin" && user.adminBranchIds.length > 0)) && (
+        (user.role === "admin" && user.adminBranchIds.length > 0) ||
+        user.permissions.length > 0) && (
         <AdminModeToggle />
       )}
       <div className="md:hidden space-y-3">

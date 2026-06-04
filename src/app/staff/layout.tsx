@@ -178,8 +178,12 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   // includes the super_admin (so the owner can pop into staff mode
   // to test the system) and any branch-admin (employee first, admin
   // rights second). Plain staff (no admin rights) get no switch.
+  // RBAC (2026-06-04): also show the switch to a plain staffer granted
+  // an admin-module role — otherwise they'd have no way to reach the
+  // console their role unlocks.
   const isAdminUser = user.role === "super_admin"
-                   || (user.role === "admin" && user.adminBranchIds.length > 0);
+                   || (user.role === "admin" && user.adminBranchIds.length > 0)
+                   || user.permissions.length > 0;
   const mobileSidebarFooter = (
     <div className="space-y-3">
       {/* STAFF / ADMIN switch — all breakpoints, admins only. */}

@@ -3009,6 +3009,87 @@ function runMigrations(db: Database.Database): void {
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  // RBAC — บทบาท/สิทธิ์การเข้าถึงโมดูล (2026-06-04)
+  // ──────────────────────────────────────────────────────────────────
+  // Generic, owner-definable roles that grant access to admin MODULES
+  // (PERSONA / RESERVA / RECRUITA / INSIGNA / ASCENDA). Layered ADDITIVELY
+  // on top of the existing role/branch gates so nobody loses access:
+  //   • super_admin   → bypasses everything (god) — never needs a role.
+  //   • legacy admins → keep entering the console; backfilled with the
+  //                     "ผู้ดูแลระบบ (ทุกโมดูล)" system role so the new
+  //                     module gates don't bite them.
+  //   • staff         → no roles = no admin access (unchanged). Assign a
+  //                     role to grant specific module access.
+  // Payroll (can_view_payroll), clinical (clinical_role + license_no) and
+  // HR-aggregate (is_hr_analytics) keep their dedicated grants — those are
+  // PDPA-sensitive and stay where they are. The role catalog lives in
+  // src/lib/rbac.ts (shared with the UI). userCan() lives in auth.ts.
+  // ══════════════════════════════════════════════════════════════════
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rbac_roles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      key TEXT UNIQUE,                          -- stable key for system roles; NULL for custom
+      name TEXT NOT NULL,
+      description TEXT,
+      is_system INTEGER NOT NULL DEFAULT 0,     -- 1 = seeded, cannot be deleted
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS rbac_role_permissions (
+      role_id INTEGER NOT NULL REFERENCES rbac_roles(id) ON DELETE CASCADE,
+      permission_key TEXT NOT NULL,
+      PRIMARY KEY (role_id, permission_key)
+    );
+    CREATE TABLE IF NOT EXISTS rbac_user_roles (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role_id INTEGER NOT NULL REFERENCES rbac_roles(id) ON DELETE CASCADE,
+      assigned_by INTEGER REFERENCES users(id),
+      assigned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, role_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_rbac_uroles_user ON rbac_user_roles(user_id);
+    CREATE INDEX IF NOT EXISTS idx_rbac_rperms_role ON rbac_role_permissions(role_id);
+  `);
+
+  // First-run seed + backfill. Guarded by the existence of the system
+  // role: it runs EXACTLY ONCE (when the role is first created), so any
+  // later edits/removals the owner makes in the UI stick across reboots.
+  const legacyAdminRole = db.prepare(
+    "SELECT id FROM rbac_roles WHERE key = 'legacy_admin'"
+  ).get() as { id: number } | undefined;
+  if (!legacyAdminRole) {
+    const info = db.prepare(
+      "INSERT INTO rbac_roles (key, name, description, is_system) VALUES ('legacy_admin', ?, ?, 1)"
+    ).run(
+      "ผู้ดูแลระบบ (ทุกโมดูล)",
+      "บทบาทระบบ — เข้าถึงทุกโมดูลผู้ดูแล (PERSONA / RESERVA / RECRUITA / INSIGNA / ASCENDA) เทียบเท่าผู้ดูแลเดิม"
+    );
+    const roleId = Number(info.lastInsertRowid);
+    // The 5 module permissions (must match RBAC_PERMISSION_KEYS in lib/rbac.ts).
+    for (const perm of [
+      "persona.manage", "reserva.manage", "recruita.access",
+      "insigna.view", "ascenda.view"
+    ]) {
+      db.prepare(
+        "INSERT OR IGNORE INTO rbac_role_permissions (role_id, permission_key) VALUES (?, ?)"
+      ).run(roleId, perm);
+    }
+    // Backfill: every current non-super_admin who passes requireAdmin
+    // (role='admin' with at least one admin branch) gets the all-modules
+    // role — so their effective access is identical post-migration.
+    // super_admin is excluded (it bypasses RBAC entirely).
+    db.prepare(`
+      INSERT OR IGNORE INTO rbac_user_roles (user_id, role_id, assigned_by)
+      SELECT u.id, ?, NULL
+      FROM users u
+      WHERE u.role = 'admin'
+        AND EXISTS (
+          SELECT 1 FROM user_branches ub
+          WHERE ub.user_id = u.id AND ub.is_admin = 1
+        )
+    `).run(roleId);
+  }
+
   // ── INVENTA — clinic stock-count module ──────────────────────────
   // Per-branch drug/equipment inventory. Items live in a physical grid
   // (row A–E × col 1–6) with a pick-frequency colour (R rare / Y med /
@@ -4920,3 +5001,162 @@ export type ShiftChecklistItem = {
 // parseChecklistOptions() moved to ./checklist-options.ts so client
 // components can import it without dragging better-sqlite3 into the
 // browser bundle. Server callers import from there too.
+
+// ══════════════════════════════════════════════════════════════════
+// RBAC helpers — roles, permissions, assignments (2026-06-04)
+// All queries are defensive (tables created by runMigrations on first
+// getDb()). Permission keys are validated against RBAC_PERMISSION_KEYS
+// by the API layer (lib/rbac.ts); these helpers trust their inputs.
+// ══════════════════════════════════════════════════════════════════
+
+export type RbacRole = {
+  id: number;
+  key: string | null;
+  name: string;
+  description: string | null;
+  is_system: number;
+  permissions: string[];
+  user_count: number;
+};
+
+/** All roles with their permission keys + how many users hold each.
+ *  Ordered system-roles-first, then by name. */
+export function listRbacRoles(): RbacRole[] {
+  const db = getDb();
+  const roles = db.prepare(
+    `SELECT id, key, name, description, is_system
+       FROM rbac_roles
+      ORDER BY is_system DESC, name COLLATE NOCASE`
+  ).all() as Array<Omit<RbacRole, "permissions" | "user_count">>;
+  return roles.map((r) => {
+    const perms = db.prepare(
+      "SELECT permission_key FROM rbac_role_permissions WHERE role_id = ?"
+    ).all(r.id) as Array<{ permission_key: string }>;
+    const cnt = db.prepare(
+      "SELECT COUNT(*) AS n FROM rbac_user_roles WHERE role_id = ?"
+    ).get(r.id) as { n: number };
+    return {
+      ...r,
+      permissions: perms.map((p) => p.permission_key),
+      user_count: cnt.n
+    };
+  });
+}
+
+/** Union of permission keys a user holds across all their roles.
+ *  super_admin is handled by userCan() (auth.ts) — this is the raw set. */
+export function getUserPermissions(userId: number): string[] {
+  const db = getDb();
+  try {
+    const rows = db.prepare(
+      `SELECT DISTINCT rp.permission_key
+         FROM rbac_user_roles ur
+         JOIN rbac_role_permissions rp ON rp.role_id = ur.role_id
+        WHERE ur.user_id = ?`
+    ).all(userId) as Array<{ permission_key: string }>;
+    return rows.map((r) => r.permission_key);
+  } catch {
+    // RBAC tables not migrated yet (fresh/old DB) → no extra perms.
+    return [];
+  }
+}
+
+/** Role ids currently assigned to a user. */
+export function getUserRoleIds(userId: number): number[] {
+  const db = getDb();
+  try {
+    const rows = db.prepare(
+      "SELECT role_id FROM rbac_user_roles WHERE user_id = ?"
+    ).all(userId) as Array<{ role_id: number }>;
+    return rows.map((r) => r.role_id);
+  } catch {
+    return [];
+  }
+}
+
+/** Create a custom (non-system) role. Returns the new role id. */
+export function createRbacRole(
+  name: string,
+  description: string | null,
+  permissions: string[]
+): number {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    const info = db.prepare(
+      "INSERT INTO rbac_roles (key, name, description, is_system) VALUES (NULL, ?, ?, 0)"
+    ).run(name.trim(), description?.trim() || null);
+    const roleId = Number(info.lastInsertRowid);
+    for (const p of [...new Set(permissions)]) {
+      db.prepare(
+        "INSERT OR IGNORE INTO rbac_role_permissions (role_id, permission_key) VALUES (?, ?)"
+      ).run(roleId, p);
+    }
+    return roleId;
+  });
+  return tx();
+}
+
+/** Rename + reset the permission set of a role. System roles can be
+ *  edited (their perms/name) but never deleted. */
+export function updateRbacRole(
+  id: number,
+  name: string,
+  description: string | null,
+  permissions: string[]
+): void {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare(
+      "UPDATE rbac_roles SET name = ?, description = ? WHERE id = ?"
+    ).run(name.trim(), description?.trim() || null, id);
+    db.prepare("DELETE FROM rbac_role_permissions WHERE role_id = ?").run(id);
+    for (const p of [...new Set(permissions)]) {
+      db.prepare(
+        "INSERT OR IGNORE INTO rbac_role_permissions (role_id, permission_key) VALUES (?, ?)"
+      ).run(id, p);
+    }
+  });
+  tx();
+}
+
+/** Delete a custom role (+ its permission rows and user assignments).
+ *  System roles are protected. Returns false when blocked. */
+export function deleteRbacRole(id: number): { ok: boolean; reason?: string } {
+  const db = getDb();
+  const role = db.prepare(
+    "SELECT is_system FROM rbac_roles WHERE id = ?"
+  ).get(id) as { is_system: number } | undefined;
+  if (!role) return { ok: false, reason: "not_found" };
+  if (role.is_system === 1) return { ok: false, reason: "system_role" };
+  const tx = db.transaction(() => {
+    db.prepare("DELETE FROM rbac_role_permissions WHERE role_id = ?").run(id);
+    db.prepare("DELETE FROM rbac_user_roles WHERE role_id = ?").run(id);
+    db.prepare("DELETE FROM rbac_roles WHERE id = ?").run(id);
+  });
+  tx();
+  return { ok: true };
+}
+
+/** Replace the full set of roles a user holds (delete + insert in a tx).
+ *  Invalid role ids are ignored (FK-style guard via a membership check). */
+export function setUserRoles(
+  userId: number,
+  roleIds: number[],
+  assignedBy: number | null
+): void {
+  const db = getDb();
+  const valid = new Set(
+    (db.prepare("SELECT id FROM rbac_roles").all() as Array<{ id: number }>)
+      .map((r) => r.id)
+  );
+  const wanted = [...new Set(roleIds)].filter((rid) => valid.has(rid));
+  const tx = db.transaction(() => {
+    db.prepare("DELETE FROM rbac_user_roles WHERE user_id = ?").run(userId);
+    for (const rid of wanted) {
+      db.prepare(
+        "INSERT OR IGNORE INTO rbac_user_roles (user_id, role_id, assigned_by) VALUES (?, ?, ?)"
+      ).run(userId, rid, assignedBy);
+    }
+  });
+  tx();
+}

@@ -1,5 +1,18 @@
 # RBAC — ระบบบทบาท/สิทธิ์ (แบบ empeo) — Integration Plan
 
+> **✅ AS-BUILT (2026-06-04)** — ทำจริงแบบ "ปลอดภัยก่อน": RBAC คุม **สิทธิ์เข้า
+> โมดูลผู้ดูแล 5 ตัว** (persona.manage / reserva.manage / recruita.access /
+> insigna.view / ascenda.view) เท่านั้น เป็นชั้น **เสริม (additive)** บน gate เดิม
+> — ไม่มีใครเสียสิทธิ์ (พิสูจน์ด้วย `scripts/test-rbac.ts` · 17 users, 0 regressions).
+> เงินเดือน (can_view_payroll) / คลินิก (clinical_role+license) / HR (is_hr_analytics)
+> **ยังตั้งแยกในหน้าพนักงานเหมือนเดิม** (อ่อนไหวเป็นพิเศษ — ไม่รวมเข้า RBAC).
+> กฎ `canModule`: super_admin = เทพ · มีบทบาท → ใช้ RBAC ตรง ๆ · ไม่มีบทบาทเลย →
+> fallback (admin+สาขา เห็นทุกโมดูล, ที่เหลือไม่เห็น) เพื่อกันแอดมินที่สร้างหลัง
+> backfill ถูกล็อกออก. ตาราง: `rbac_roles / rbac_role_permissions / rbac_user_roles`.
+> catalog: `src/lib/rbac.ts` · gate: `userCan/canModule/requirePermission` ใน auth.ts
+> · UI จัดการบทบาท: `/admin/roles` (super_admin) · assign: หน้าพนักงาน (super_admin).
+> §2–§6 ด้านล่างเป็นแผนเดิม (เต็มแบบ empeo) เก็บไว้อ้างอิงตอนขยายภายหลัง.
+
 > **เฟส 1 (Design) — ยังไม่แตะโค้ด** · รอเจ้าของตอบ "ผ่าน" ก่อนเริ่มเฟส 2
 > เป้าหมาย: บทบาทกำหนดได้เอง + กำหนดว่าบทบาทไหนเข้าอะไรได้ + assign หลาย
 > บทบาทต่อคน (รวมแพทย์/พยาบาล + เลขใบประกอบ, HR) — เลิกใช้เมนูแยก
