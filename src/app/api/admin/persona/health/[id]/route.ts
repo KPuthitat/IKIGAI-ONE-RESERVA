@@ -17,6 +17,7 @@ const ItemSchema = z.object({
 });
 
 const Body = z.object({
+  exam_type: z.enum(["pre_placement", "periodic", "return_to_work"]).optional(),
   checkup_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   expiry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   clinic_name: z.string().max(200).nullable().optional(),
@@ -58,6 +59,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   function add(col: string, v: string | null | undefined) {
     if (v !== undefined) { fields.push(`${col} = ?`); vals.push(v); }
   }
+  add("exam_type", d.exam_type);
   add("checkup_date", d.checkup_date);
   add("expiry_date", d.expiry_date ?? (("expiry_date" in d) ? null : undefined));
   add("clinic_name", d.clinic_name ?? (("clinic_name" in d) ? null : undefined));

@@ -2869,6 +2869,19 @@ function runMigrations(db: Database.Database): void {
       ON health_checkups(branch_id);
   `);
 
+  // 2026-06-04: occupational-health exam type (owner). Classifies each
+  // employee health record into one of the post-hire exam categories:
+  //   'periodic'        — ตรวจประจำปี (the existing ส.ณ.11 food-handler cert
+  //                       is a periodic exam → existing rows default here)
+  //   'pre_placement'   — ก่อนเริ่มงาน ตามปัจจัยเสี่ยงของตำแหน่ง
+  //   'return_to_work'  — ประเมินกลับเข้าทำงานหลังพัก
+  // (Pre-employment lives in RECRUITA, before the person is an employee.)
+  const hcCols = db.prepare("PRAGMA table_info(health_checkups)")
+    .all() as Array<{ name: string }>;
+  if (!hcCols.some((c) => c.name === "exam_type")) {
+    db.exec("ALTER TABLE health_checkups ADD COLUMN exam_type TEXT NOT NULL DEFAULT 'periodic'");
+  }
+
   // ── INVENTA — clinic stock-count module ──────────────────────────
   // Per-branch drug/equipment inventory. Items live in a physical grid
   // (row A–E × col 1–6) with a pick-frequency colour (R rare / Y med /

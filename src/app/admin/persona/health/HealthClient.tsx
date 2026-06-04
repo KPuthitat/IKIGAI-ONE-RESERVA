@@ -23,6 +23,7 @@ export type HealthRow = {
   role: "admin" | "staff" | "super_admin";
   employment_type: "pt" | "ft" | null;
   checkup_id: number | null;
+  exam_type: string | null;
   checkup_date: string | null;
   expiry_date: string | null;
   overall_result: HealthOverall | null;
@@ -41,6 +42,17 @@ const STATUS_STYLE: Record<CheckupStatus, string> = {
   expired: "bg-rose-100 text-rose-700"
 };
 
+// Occupational-health exam types (owner 2026-06-04). Pre-employment lives
+// in RECRUITA; these three cover post-hire employees.
+type ExamType = "pre_placement" | "periodic" | "return_to_work";
+const EXAM_TYPES: ReadonlyArray<{ value: ExamType; label: string }> = [
+  { value: "periodic", label: "ตรวจประจำปี" },
+  { value: "pre_placement", label: "ก่อนเริ่มงาน (ปัจจัยเสี่ยง)" },
+  { value: "return_to_work", label: "กลับเข้าทำงาน (หลังพัก)" }
+];
+const EXAM_TYPE_LABEL: Record<string, string> =
+  Object.fromEntries(EXAM_TYPES.map((e) => [e.value, e.label]));
+
 function rowStatus(r: HealthRow): CheckupStatus {
   if (!r.checkup_id) return "none";
   return checkupStatus(r.expiry_date);
@@ -58,6 +70,7 @@ export default function HealthClient({ rows }: { rows: HealthRow[] }) {
           <thead>
             <tr className="text-left text-xs text-slate-500 border-b">
               <th className="py-2 pr-3">พนักงาน</th>
+              <th className="py-2 pr-3">ประเภทล่าสุด</th>
               <th className="py-2 pr-3">วันที่ตรวจล่าสุด</th>
               <th className="py-2 pr-3">หมดอายุ</th>
               <th className="py-2 pr-3">สถานะ</th>
@@ -78,6 +91,13 @@ export default function HealthClient({ rows }: { rows: HealthRow[] }) {
                   <td className="py-2 pr-3">
                     <div className="font-medium text-slate-800">{nameWithPrefix(r.title_prefix, r.display_name)}</div>
                     <div className="text-xs text-slate-400">@{r.username}</div>
+                  </td>
+                  <td className="py-2 pr-3">
+                    {r.checkup_id ? (
+                      <span className="text-xs px-2 py-0.5 rounded font-medium bg-teal-100 text-teal-700">
+                        {EXAM_TYPE_LABEL[r.exam_type ?? "periodic"] ?? "ประจำปี"}
+                      </span>
+                    ) : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="py-2 pr-3 text-slate-700">
                     {r.checkup_date ?? "—"}
@@ -107,7 +127,7 @@ export default function HealthClient({ rows }: { rows: HealthRow[] }) {
               );
             })}
             {rows.length === 0 && (
-              <tr><td colSpan={6} className="py-6 text-center text-slate-400 text-sm">
+              <tr><td colSpan={7} className="py-6 text-center text-slate-400 text-sm">
                 ไม่มีพนักงานในสาขานี้
               </td></tr>
             )}
@@ -148,6 +168,9 @@ function CheckupModal({
   const hasExisting = !!row.checkup_id;
   const [editMode, setEditMode] = useState<"new" | "edit">(
     hasExisting ? "edit" : "new"
+  );
+  const [examType, setExamType] = useState<ExamType>(
+    (hasExisting && (row.exam_type as ExamType)) || "periodic"
   );
 
   const today = new Date().toISOString().slice(0, 10);
@@ -190,6 +213,7 @@ function CheckupModal({
 
   function switchMode(m: "new" | "edit") {
     setEditMode(m);
+    setExamType(m === "edit" ? ((row.exam_type as ExamType) || "periodic") : "periodic");
     if (m === "new") {
       setCheckupDate(today);
       setExpiryDate(addOneYear(today));
@@ -228,6 +252,7 @@ function CheckupModal({
     setBusy(true);
     try {
       const body = {
+        exam_type: examType,
         checkup_date: checkupDate,
         expiry_date: expiryDate || null,
         clinic_name: clinic.trim() || null,
@@ -275,10 +300,27 @@ function CheckupModal({
         onClick={(e) => e.stopPropagation()}>
         <div>
           <h3 className="font-semibold text-slate-800">
-            ผลตรวจสุขภาพ — แบบ ส.ณ.11
+            บันทึกผลตรวจสุขภาพ
           </h3>
           <p className="text-sm text-slate-500 mt-0.5">
             {nameWithPrefix(row.title_prefix, row.display_name)} <span className="text-slate-400">@{row.username}</span>
+          </p>
+        </div>
+
+        <div>
+          <label className="label">ประเภทการตรวจ *</label>
+          <select className="input" value={examType}
+            onChange={(e) => setExamType(e.target.value as ExamType)}>
+            {EXAM_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+          <p className="text-[10px] text-slate-400 mt-1">
+            {examType === "periodic"
+              ? "ตรวจประจำปี — รวมใบรับรองผู้สัมผัสอาหาร (ส.ณ.11) มีรายการโรคให้บันทึกด้านล่าง"
+              : examType === "pre_placement"
+                ? "ก่อนเริ่มงาน — ตรวจตามปัจจัยเสี่ยงของตำแหน่ง"
+                : "ประเมินความพร้อมกลับเข้าทำงานหลังหยุดพัก/เจ็บป่วย"}
           </p>
         </div>
 
@@ -337,19 +379,24 @@ function CheckupModal({
             <label className="label">ผลโดยรวม *</label>
             <select className="input" value={overall}
               onChange={(e) => setOverall(e.target.value as HealthOverall)}>
-              <option value="pass">ผ่าน — เหมาะสมเป็นผู้สัมผัสอาหาร</option>
+              <option value="pass">ผ่าน</option>
               <option value="conditional">ผ่านแบบมีเงื่อนไข</option>
               <option value="fail">ไม่ผ่าน</option>
             </select>
           </div>
         </div>
 
-        <div className="border-t border-slate-200 pt-3 space-y-3">
-          <ItemGroup title="โรคต้องห้ามสำหรับผู้สัมผัสอาหาร (แพทย์รับรองว่าไม่เป็น)"
-            items={prohibited} onChange={setItemResult} />
-          <ItemGroup title="การตรวจทางห้องปฏิบัติการ / เพิ่มเติม"
-            items={lab} onChange={setItemResult} />
-        </div>
+        {/* Per-disease checklist is the ส.ณ.11 food-handler form — only
+            meaningful for the periodic exam. Other exam types record the
+            outcome + attach the result file instead. */}
+        {examType === "periodic" && (
+          <div className="border-t border-slate-200 pt-3 space-y-3">
+            <ItemGroup title="โรคต้องห้ามสำหรับผู้สัมผัสอาหาร (แพทย์รับรองว่าไม่เป็น)"
+              items={prohibited} onChange={setItemResult} />
+            <ItemGroup title="การตรวจทางห้องปฏิบัติการ / เพิ่มเติม"
+              items={lab} onChange={setItemResult} />
+          </div>
+        )}
 
         <div>
           <label className="label">ลิงก์ไฟล์สแกนใบรับรอง (ถ้ามี)</label>

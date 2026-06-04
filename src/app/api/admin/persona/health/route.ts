@@ -16,6 +16,7 @@ const ItemSchema = z.object({
 
 const Body = z.object({
   user_id: z.number().int().positive(),
+  exam_type: z.enum(["pre_placement", "periodic", "return_to_work"]).default("periodic"),
   checkup_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   expiry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   clinic_name: z.string().max(200).nullable().optional(),
@@ -51,13 +52,14 @@ export async function POST(req: Request) {
 
   const info = db.prepare(`
     INSERT INTO health_checkups
-      (user_id, branch_id, checkup_date, expiry_date, clinic_name,
+      (user_id, branch_id, exam_type, checkup_date, expiry_date, clinic_name,
        doctor_name, cert_no, overall_result, items_json, attachment_url,
        notes, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     d.user_id,
     user.activeBranchId ?? null,
+    d.exam_type,
     d.checkup_date,
     d.expiry_date ?? null,
     d.clinic_name ?? null,

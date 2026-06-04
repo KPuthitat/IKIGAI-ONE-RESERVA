@@ -822,13 +822,17 @@ function HealthCheckSection({
   return (
     <div className="card space-y-3 border-teal-200">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <h2 className="font-bold text-slate-800 text-sm">ผลตรวจสุขภาพ</h2>
+        <h2 className="font-bold text-slate-800 text-sm">ตรวจสุขภาพก่อนการจ้างงาน (Pre-employment)</h2>
         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${badge.c}`}>{badge.t}</span>
       </div>
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        หลังสัมภาษณ์ผ่าน ผู้สมัครต้องตรวจสุขภาพ — นำใบรับรองมาเอง หรือตรวจที่ AT HOME CLINIC
+        หลังสัมภาษณ์ผ่าน ผู้สมัครต้องตรวจสุขภาพ — นำใบรับรองแพทย์มาเอง หรือตรวจที่ AT HOME CLINIC
         แล้วบันทึกผลที่นี่ · ต้องเป็น &quot;ผ่าน&quot; จึงจะกดรับเข้าทำงานได้
       </p>
+      <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 leading-relaxed">
+        ใบรับรองแพทย์ 5 โรค (ตามที่กฎหมายกำหนด): (1) โรคเรื้อน · (2) วัณโรคในระยะอันตราย ·
+        (3) โรคเท้าช้างในระยะที่ปรากฏอาการ · (4) โรคติดยาเสพติดให้โทษ · (5) โรคพิษสุราเรื้อรัง
+      </div>
       {resultDoc && (
         <a href={apiUrl(`/api/recruita/documents/${resultDoc.id}`)} target="_blank" rel="noopener"
           className="inline-block text-xs text-teal-700 underline">

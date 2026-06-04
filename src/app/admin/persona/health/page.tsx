@@ -31,6 +31,7 @@ export default function AdminHealthPage() {
   const rows = db.prepare(`
     SELECT u.id, u.username, u.display_name, u.title_prefix, u.role, u.employment_type,
            hc.id          AS checkup_id,
+           hc.exam_type   AS exam_type,
            hc.checkup_date AS checkup_date,
            hc.expiry_date  AS expiry_date,
            hc.overall_result AS overall_result,
@@ -64,7 +65,8 @@ export default function AdminHealthPage() {
           <span className="ml-2 text-sm font-medium text-brand">· {branch.name}</span>
         </h1>
         <p className="text-sm text-slate-500">
-          ติดตามใบรับรองแพทย์ผู้สัมผัสอาหาร (แบบ ส.ณ.11) — แจ้งเตือนเมื่อใกล้หมดอายุ
+          บันทึกการตรวจสุขภาพพนักงาน — ก่อนเริ่มงาน (ปัจจัยเสี่ยง) / ประจำปี / กลับเข้าทำงาน
+          (รวมใบรับรองผู้สัมผัสอาหาร ส.ณ.11) · ตารางแสดงรายการล่าสุดของแต่ละคน
         </p>
       </div>
       <HealthClient rows={rows} />
