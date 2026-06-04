@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { nameWithPrefix } from "@/lib/name";
+import { getMyEnrollment, type MjActor } from "@/lib/mounjaro-db";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +17,22 @@ export default function StaffHomePage({
   const lang = getLang();
   const showForbidden = searchParams.error === "forbidden";
 
+  // Invite non-enrolled staff to the Mounjaro program (the menu is hidden
+  // until they have an enrollment, so the banner is the entry point).
+  let mjEnrolled = false;
+  try { mjEnrolled = !!getMyEnrollment(user as MjActor); } catch { mjEnrolled = false; }
+
   return (
     <div className="space-y-6">
+      {!mjEnrolled && (
+        <Link href="/staff/health/mounjaro"
+          className="block rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3 hover:bg-teal-50 transition">
+          <div className="text-sm font-bold text-teal-800">โครงการดูแลน้ำหนัก Mounjaro Employee Wellness</div>
+          <div className="text-xs text-teal-700 mt-0.5">
+            สนใจลดน้ำหนักภายใต้การดูแลของแพทย์ IKIGAI MediHealth? แตะเพื่อดูรายละเอียดและแสดงความสนใจ →
+          </div>
+        </Link>
+      )}
       <div>
         <h1 className="text-2xl font-bold text-slate-800">{t(lang, "portal.chooseModule")}</h1>
         <p className="text-sm text-slate-500 mt-1">

@@ -96,6 +96,17 @@ export function enrollSelf(actor: MjActor): EnrollmentRow {
   return getMyEnrollment(actor)!;
 }
 
+/** Withdraw / cancel — keeps the record visible (status='withdrawn') so the
+ *  employee still sees their summary. PDPA erase (eraseMyData) is separate. */
+export function withdrawSelf(actor: MjActor, reason: string | null): void {
+  getDb().prepare(`
+    UPDATE mounjaro_enrollments
+    SET status = 'withdrawn', withdrawn_reason = ?
+    WHERE employee_id = ? AND portal_erased_at IS NULL
+  `).run(reason ?? null, actor.id);
+  audit(actor.id, "withdraw", "enrollment", actor.id);
+}
+
 export function recordConsent(actor: MjActor, version: string): void {
   getDb().prepare(`
     UPDATE mounjaro_enrollments

@@ -17,6 +17,7 @@ import ImpersonationBanner from "../components/ImpersonationBanner";
 import MaintenanceBanner from "../components/MaintenanceBanner";
 import { currentImpersonationContext } from "@/lib/impersonation";
 import { nameWithPrefix } from "@/lib/name";
+import { getMyEnrollment, type MjActor } from "@/lib/mounjaro-db";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,13 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   } catch {
     myPendingEditCount = 0;
   }
+
+  // Mounjaro Wellness — the health menu appears ONLY for staff who have an
+  // enrollment record (privacy: non-enrolled employees never see it; an
+  // erased enrollment returns null → hidden). Wrapped in try/catch in case
+  // the table isn't migrated yet on a first-deploy boot.
+  let mjEnrolled = false;
+  try { mjEnrolled = !!getMyEnrollment(user as MjActor); } catch { mjEnrolled = false; }
 
   // Sections scoped to each module via pathPrefix.
   const sections: SidebarSection[] = [
@@ -131,6 +139,13 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/walk-in", label: t(lang, "staff.walkIn.title") }
       ]
     },
+    // สุขภาพพนักงาน — เฉพาะคนที่อยู่ในโครงการ Mounjaro
+    ...(mjEnrolled ? [{
+      label: "สุขภาพพนักงาน",
+      items: [
+        { href: "/staff/health/mounjaro", label: "โครงการ Mounjaro" }
+      ]
+    }] : []),
     {
       label: "",
       items: [
