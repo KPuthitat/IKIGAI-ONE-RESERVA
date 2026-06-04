@@ -381,4 +381,43 @@ encrypt ต่างหากจาก reserva.db ไหม (เพิ่มค�
 
 ---
 
-*จบเฟส 1 — รอเจ้าของตอบ "ผ่าน" + คำตอบ Q1-Q10 ก่อนเริ่มเฟส 2*
+## 14. ✅ Discovery Round 2 — การตัดสินใจสุดท้าย (เจ้าของยืนยัน 2026-06-04)
+
+| # | ตัดสินใจ |
+|---|---|
+| Q1 | ใช้ **(ก) RLS-equivalent ที่ app-layer บน SQLite** (gateway ชั้นเดียว + เลขใบประกอบปลดล็อก + audit + เทส) |
+| Q2 | clinical staff = แพทย์ + พยาบาลแอทโฮมคลินิก (มีใบประกอบทั้งคู่) |
+| **Q3 (สำคัญ)** | **แพทย์เห็นเฉพาะคนไข้ของตัวเอง** (attending doctor) · **พยาบาล "ไม่เห็น" clinical** · super_admin ไม่เห็น raw clinical (เห็นแค่ aggregate) · เปิด clinical ต้อง **กรอกเลขใบประกอบวิชาชีพ** |
+| Q4 | HR aggregate dashboard มีไว้ + gate ด้วย flag `is_hr_analytics` แต่ **ยังไม่ assign ใคร** (super_admin ให้สิทธิ์ภายหลัง) |
+| Q5 | **soft-delete ฝั่งพอร์ทัล + เก็บแกนเวชระเบียนตามกฎหมาย + audit** + แจ้งผู้ใช้ถึงข้อจำกัด |
+| Q6 | HN กรอกมือโดยแพทย์ ตอนสร้าง patient record (พนักงานต้องลงทะเบียนเป็นผู้ป่วยที่แอทโฮมคลินิกก่อน) |
+| Q7 | ย้าย "ผลตรวจสุขภาพ" (health_checkups) มาใต้เมนูใหม่ "สุขภาพพนักงาน" |
+| Q8 | พนักงาน **active ทุกสาขา** เข้าร่วมได้ |
+| Q9 | ข้อความ/เวอร์ชัน consent ดูแลโดย **super_admin** ใน system-settings |
+| Q10 | ใช้ **DB เดียว (reserva.db)** + กั้นด้วย gateway + audit (ไม่แยกไฟล์/encrypt ในเฟสนี้) |
+
+### โมเดลการเข้าถึง (อัปเดตตาม Q3) — แทนที่ §3/§6 เดิมในส่วนที่ขัดกัน
+- เพิ่มบนตาราง `users`: `clinical_role TEXT` ('doctor' | 'nurse' | NULL) + `license_no TEXT`
+  (super_admin เป็นคนตั้ง/ยืนยัน)
+- เพิ่มบน `mounjaro_patients`: `attending_doctor_id INTEGER REFERENCES users(id)`
+  (= แพทย์ที่ทำ baseline / เจ้าของไข้)
+- **สิทธิ์เห็น clinical (patients/visits/self_logs):**
+  - **แพทย์ (clinical_role='doctor')** → เฉพาะคนไข้ที่ `attending_doctor_id = ตัวเอง`
+    เท่านั้น และต้องกรอก `license_no` ที่ตรงกับบัญชีเพื่อปลดล็อก (gate แบบ PIN) ทุก session
+  - **พยาบาล (clinical_role='nurse')** → ไม่มีสิทธิ์เห็น clinical (เฟสนี้)
+  - **super_admin** → ไม่เห็น raw clinical; เห็นได้แค่ aggregate (program_stats)
+  - **HR (is_hr_analytics)** → aggregate เท่านั้น
+  - **พนักงาน** → เฉพาะของตัวเอง (ผ่าน enrollment_id)
+- gateway `mounjaro-db.ts` บังคับ scope เหล่านี้ทั้งหมด + audit + เทสพิสูจน์:
+  doctorA ขอคนไข้ของ doctorB → 0/throw · นพยาบาลขอ clinical → forbidden ·
+  HR/super_admin ขอ raw patient → forbidden · employeeA ขอของ employeeB → 0/throw
+
+### enrollment flow (อัปเดตตาม Q6)
+สนใจ (banner หน้า /staff) → สร้าง enrollment `pending` + แจ้งคลินิก →
+พนักงานไปลงทะเบียนเป็นผู้ป่วย + ตรวจคัดกรองที่ **แอทโฮมคลินิก** → แพทย์สร้าง patient
+record (กรอก HN + baseline, ผูก attending_doctor = ตัวเอง) → `active`
+
+---
+
+*จบเฟส 1 — การตัดสินใจครบแล้ว · รอเจ้าของตอบ **"ผ่าน"** เพื่อเริ่มเฟส 2
+(DB schema + gateway + เทส access-control + rollback SQL)*
