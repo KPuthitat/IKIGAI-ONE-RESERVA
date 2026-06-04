@@ -31,15 +31,23 @@ export default function PatientDetailPage({ params }: { params: { patientId: str
       hn={(p.hn as string | null) ?? null}
       startDate={(p.start_date as string | null) ?? null}
       notes={(p.notes as string | null) ?? null}
-      baseline={pj(p.baseline_json, {})}
-      comorbidities={pj(p.comorbidities_json, {})}
-      contraindications={pj(p.contraindications_json, {})}
-      medications={pj(p.medications_json, {})}
+      baseline={pj<Record<string, number | string>>(p.baseline_json, {})}
+      comorbidities={pj<Record<string, boolean>>(p.comorbidities_json, {})}
+      contraindications={pj<Record<string, boolean>>(p.contraindications_json, {})}
+      medications={pj<Record<string, boolean>>(p.medications_json, {})}
       visits={bundle.visits.map((v) => ({
+        id: v.id as number,
         date: (v.date as string | null) ?? null,
         dose: (v.dose as number | null) ?? null,
         weight: (v.weight as number | null) ?? null,
+        bp: (v.bp as string | null) ?? null,
         hr: (v.hr as number | null) ?? null,
+        hba1c: (v.hba1c as number | null) ?? null,
+        fbs: (v.fbs as number | null) ?? null,
+        waist: (v.waist as number | null) ?? null,
+        side_effects: pj<Record<string, number>>(v.side_effects_json, {}),
+        hypo_count: (v.hypo_count as number | null) ?? null,
+        adherence: (v.adherence as string | null) ?? null,
         decision: (v.decision as string | null) ?? null,
         next_visit: (v.next_visit as string | null) ?? null,
         notes: (v.notes as string | null) ?? null

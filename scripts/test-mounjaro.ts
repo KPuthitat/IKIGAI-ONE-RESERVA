@@ -170,6 +170,26 @@ type MjActor = import("../src/lib/mounjaro-db").MjActor;
   ok("good loss → no low_response",
     !has({ currentDose: 10, visitCount: 3, baselineWeight: 100, lastWeight: 88 }, "low_response"));
 
+  console.log("\n[8] Edit / delete mutators — attending-doctor scope");
+  // D1 is NOT the attending doctor for patient A (D2 is) → must be denied.
+  throws("D1 updatePatient(A) → forbidden", () => mj.updatePatientRecord(D1, patAId, {
+    hn: "HACK", baseline: {}, comorbidities: {}, contraindications: {}, medications: {}, notes: null, start_date: null
+  }));
+  throws("D1 softDeletePatient(A) → forbidden", () => mj.softDeletePatient(D1, patAId));
+  const vId = mj.addVisit(D2, patAId, { date: "2026-06-15", dose: 5, weight: 88 });
+  throws("D1 deleteVisit(A's visit) → forbidden", () => mj.deleteVisit(D1, vId));
+  // D2 (attending) can edit / delete.
+  mj.updatePatientRecord(D2, patAId, {
+    hn: "HN-A2", baseline: { weight: 88 }, comorbidities: {}, contraindications: {},
+    medications: {}, notes: "edited", start_date: "2026-06-01"
+  });
+  ok("D2 updatePatient(A) → applied", (mj.getPatientForDoctor(D2, patAId)?.hn as string) === "HN-A2");
+  mj.deleteVisit(D2, vId);
+  ok("D2 deleteVisit → removed", !db.prepare("SELECT 1 FROM mounjaro_visits WHERE id = ?").get(vId));
+  mj.softDeletePatient(D2, patAId);
+  ok("D2 softDelete(A) → hidden from list", !mj.listMyPatients(D2).map((p) => p.id).includes(patAId));
+  ok("D2 softDelete(A) → medical record retained", !!db.prepare("SELECT id FROM mounjaro_patients WHERE id = ?").get(patAId));
+
   console.log(`\nmounjaro access-control: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

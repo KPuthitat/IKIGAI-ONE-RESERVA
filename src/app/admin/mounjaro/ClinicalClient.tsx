@@ -1,9 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+
+// ── Mounjaro clinical dashboard — patient registry ──────────────────
+// Visual language mirrors the IKIGAI MediHealth tracker prototype:
+// navy (#0F1B33) + gold (#B8954F), sharp 2px corners, serif numerals.
+// Privacy model unchanged: a doctor sees ONLY their own patients, must
+// unlock with their license each session, and every read is audited.
 
 type PatientRow = {
   id: number; employee_name: string; hn: string | null; enrollment_status: string;
@@ -11,7 +16,25 @@ type PatientRow = {
   weekNo: number; nextVisit: string | null; alertLevel: "danger" | "warning" | null;
   newSelfLog: boolean;
 };
-type PendingRow = { enrollment_id: number; employee_name: string; enrolled_at: string | null };
+type PendingRow = {
+  enrollment_id: number; employee_name: string; enrolled_at: string | null;
+  gender: string | null; dob: string | null; phone: string | null;
+  height_cm: number | null; weight_kg: number | null;
+};
+
+const inputCls =
+  "w-full px-3 py-2 text-sm border border-[#C9C2B0] rounded-sm bg-white text-[#0F1B33] " +
+  "focus:outline-none focus:border-[#B8954F] focus:ring-2 focus:ring-[#B8954F]/20";
+const labelCls = "text-[12px] font-medium text-slate-500 tracking-wide";
+
+function toBE(d: string | null): string {
+  if (!d) return "—";
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return "—";
+  const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+    "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+  return `${dt.getDate()} ${months[dt.getMonth()]} ${dt.getFullYear() + 543}`;
+}
 
 export default function ClinicalClient({
   mode, patients, pending
@@ -38,86 +61,108 @@ function UnlockGate() {
     } finally { setBusy(false); }
   }
   return (
-    <div className="max-w-md mx-auto space-y-4">
-      <div className="card space-y-3">
-        <h1 className="text-lg font-bold text-slate-800">โครงการ Mounjaro — ข้อมูลทางคลินิก</h1>
-        <p className="text-sm text-slate-600">
-          ข้อมูลผู้ป่วยเป็นข้อมูลอ่อนไหว — กรุณายืนยันตัวตนด้วย<b>เลขใบประกอบวิชาชีพ</b>ของท่านเพื่อเข้าดู
-          (มีผล 8 ชั่วโมง · ทุกการเข้าถึงถูกบันทึก log)
-        </p>
-        <div>
-          <label className="label">เลขใบประกอบวิชาชีพ</label>
-          <input className="input" value={license} autoComplete="off"
-            onChange={(e) => setLicense(e.target.value)} placeholder="เช่น ว.12345" />
+    <div className="max-w-md mx-auto mt-6">
+      <div className="bg-white border border-[#E5E0D5] rounded-sm shadow-sm overflow-hidden">
+        <div className="bg-[#0F1B33] px-6 py-5 border-b-[3px] border-[#B8954F]">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 border-2 border-[#B8954F] flex items-center justify-center font-serif font-semibold text-[#B8954F]">M</div>
+            <div>
+              <h1 className="text-white font-semibold text-[15px]">ระบบติดตามผู้ป่วย Mounjaro</h1>
+              <div className="text-[10px] text-[#D4B675] tracking-[0.12em] uppercase mt-0.5">Tirzepatide Monitoring</div>
+            </div>
+          </div>
         </div>
-        {err && <p className="text-sm text-rose-600">✗ {err}</p>}
-        <button type="button" disabled={busy || license.trim().length === 0} onClick={unlock}
-          className="btn-primary w-full py-2.5 disabled:opacity-50">
-          {busy ? "กำลังตรวจสอบ…" : "ปลดล็อกเข้าดูข้อมูล"}
-        </button>
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-slate-600">
+            ข้อมูลผู้ป่วยเป็นข้อมูลอ่อนไหว — กรุณายืนยันตัวตนด้วย<b>เลขใบประกอบวิชาชีพ</b>ของท่าน
+            (มีผล 8 ชั่วโมง · ทุกการเข้าถึงถูกบันทึก log)
+          </p>
+          <div>
+            <label className={labelCls}>เลขใบประกอบวิชาชีพ</label>
+            <input className={inputCls + " mt-1"} value={license} autoComplete="off"
+              onChange={(e) => setLicense(e.target.value)} placeholder="เช่น ว.12345"
+              onKeyDown={(e) => { if (e.key === "Enter") unlock(); }} />
+          </div>
+          {err && <p className="text-sm text-[#B91C1C]">✗ {err}</p>}
+          <button type="button" disabled={busy || license.trim().length === 0} onClick={unlock}
+            className="w-full py-2.5 bg-[#0F1B33] hover:bg-[#1B2D4F] text-white text-sm font-medium rounded-sm disabled:opacity-50 transition">
+            {busy ? "กำลังตรวจสอบ…" : "ปลดล็อกเข้าดูข้อมูล"}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
+function StatusBadge({ level }: { level: "danger" | "warning" | null }) {
+  if (level === "danger")
+    return <span className="text-[11px] px-2.5 py-0.5 rounded-sm border border-[#B91C1C] bg-[#FEF2F2] text-[#B91C1C] font-medium">เร่งด่วน</span>;
+  if (level === "warning")
+    return <span className="text-[11px] px-2.5 py-0.5 rounded-sm border border-[#B45309] bg-[#FEF3C7] text-[#78350F] font-medium">เฝ้าระวัง</span>;
+  return <span className="text-[11px] px-2.5 py-0.5 rounded-sm border border-[#C9C2B0] bg-[#FAF8F3] text-slate-500 font-medium">ปกติ</span>;
+}
+
 function PatientList({ patients, pending }: { patients: PatientRow[]; pending: PendingRow[] }) {
-  const [intake, setIntake] = useState<PendingRow | null>(null);
+  const router = useRouter();
+  const [intake, setIntake] = useState(false);
+
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">โครงการ Mounjaro — ผู้ป่วยของฉัน</h1>
-        <p className="text-sm text-slate-500">เห็นเฉพาะผู้ป่วยที่ท่านเป็นแพทย์เจ้าของไข้ · ทุกการเข้าถึงถูกบันทึก</p>
+    <div className="space-y-6">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h1 className="text-[20px] font-semibold text-[#0F1B33]">รายชื่อผู้ป่วย</h1>
+          <div className="text-[11px] text-slate-500 tracking-[0.12em] uppercase mt-0.5">Patient Registry · เห็นเฉพาะผู้ป่วยของท่าน</div>
+        </div>
+        <button type="button" onClick={() => setIntake(true)}
+          className="px-4 py-2.5 bg-[#B8954F] hover:bg-[#A38240] text-white text-[13px] font-medium rounded-sm transition whitespace-nowrap">
+          + เพิ่มผู้ป่วยใหม่
+        </button>
       </div>
 
       {pending.length > 0 && (
-        <div className="card border-l-4 border-amber-300 bg-amber-50/50 space-y-2">
-          <h2 className="font-bold text-amber-900 text-sm">รอตรวจคัดกรอง (รับเข้าโครงการ)</h2>
-          {pending.map((p) => (
-            <div key={p.enrollment_id} className="flex items-center justify-between gap-2 text-sm border-b border-amber-200 last:border-0 pb-1.5">
-              <span className="text-slate-800">{p.employee_name}
-                <span className="text-[11px] text-slate-400 ml-2">สนใจเมื่อ {p.enrolled_at?.slice(0, 10) ?? "—"}</span>
-              </span>
-              <button type="button" onClick={() => setIntake(p)}
-                className="text-xs px-3 py-1.5 rounded-md bg-brand text-white font-bold">
-                ทำ baseline + รับเข้าโครงการ
-              </button>
-            </div>
-          ))}
+        <div className="bg-[#F5EFE0] border border-[#D4B675] rounded-sm px-4 py-2.5 text-[13px] text-[#5C4A28]">
+          มีพนักงาน <b>{pending.length}</b> คนสมัครเข้าโครงการ รอรับเข้า —
+          กด <button onClick={() => setIntake(true)} className="underline font-medium">เพิ่มผู้ป่วยใหม่</button> เพื่อทำ baseline
         </div>
       )}
 
-      <div className="card overflow-x-auto">
+      <div className="bg-white border border-[#E5E0D5] rounded-sm shadow-sm overflow-x-auto">
         {patients.length === 0 ? (
-          <p className="text-sm text-slate-400 py-6 text-center">ยังไม่มีผู้ป่วยในความดูแล</p>
+          <div className="text-center py-16 px-8">
+            <div className="font-serif text-5xl text-[#B8954F] mb-4">M</div>
+            <p className="text-sm text-slate-500">ยังไม่มีผู้ป่วยในความดูแล<br />กดปุ่ม &quot;เพิ่มผู้ป่วยใหม่&quot; เพื่อเริ่มต้น</p>
+          </div>
         ) : (
-          <table className="w-full text-sm whitespace-nowrap">
-            <thead><tr className="text-left text-xs text-slate-500 border-b">
-              <th className="py-2 pr-3">HN</th><th className="py-2 pr-3">ชื่อ</th>
-              <th className="py-2 pr-3 text-right">ขนาดยา</th><th className="py-2 pr-3 text-right">สัปดาห์</th>
-              <th className="py-2 pr-3 text-right">น้ำหนักล่าสุด</th><th className="py-2 pr-3 text-right">% ลด</th>
-              <th className="py-2 pr-3">นัดถัดไป</th><th className="py-2 pr-3">แจ้งเตือน</th><th className="py-2 pr-3"></th>
-            </tr></thead>
+          <table className="w-full text-[13px] whitespace-nowrap">
+            <thead>
+              <tr className="bg-[#0F1B33] text-white text-left text-[11px] uppercase tracking-[0.08em]">
+                <th className="py-3 px-5 font-medium">HN</th>
+                <th className="py-3 px-3 font-medium">ชื่อ-สกุล</th>
+                <th className="py-3 px-3 font-medium text-right">ขนาดยาปัจจุบัน</th>
+                <th className="py-3 px-3 font-medium text-right">สัปดาห์ที่</th>
+                <th className="py-3 px-3 font-medium text-right">น้ำหนักล่าสุด</th>
+                <th className="py-3 px-3 font-medium text-right">% ลดลง</th>
+                <th className="py-3 px-3 font-medium">นัดถัดไป</th>
+                <th className="py-3 px-5 font-medium">สถานะ</th>
+              </tr>
+            </thead>
             <tbody>
               {patients.map((p) => (
-                <tr key={p.id} className="border-b last:border-0 hover:bg-slate-50">
-                  <td className="py-2 pr-3 font-mono text-xs">{p.hn ?? "—"}</td>
-                  <td className="py-2 pr-3 font-medium text-slate-800">
+                <tr key={p.id} onClick={() => router.push(`/admin/mounjaro/${p.id}`)}
+                  className="border-b border-[#E5E0D5] last:border-0 hover:bg-[#F5EFE0] cursor-pointer">
+                  <td className="py-3 px-5 font-mono text-xs tabular-nums">{p.hn ?? "—"}</td>
+                  <td className="py-3 px-3 font-medium text-[#0F1B33]">
                     {p.employee_name}
-                    {p.newSelfLog && <span className="ml-1.5 inline-block w-2 h-2 rounded-full bg-sky-500" title="มี self-log ใหม่" />}
+                    {p.newSelfLog && <span className="ml-1.5 inline-block w-2 h-2 rounded-full bg-sky-500 align-middle" title="มีบันทึกใหม่จากผู้ป่วย" />}
                   </td>
-                  <td className="py-2 pr-3 text-right">{p.dose != null ? `${p.dose} mg` : "—"}</td>
-                  <td className="py-2 pr-3 text-right">{p.weekNo || "—"}</td>
-                  <td className="py-2 pr-3 text-right">{p.latestWeight != null ? `${p.latestWeight}` : "—"}</td>
-                  <td className="py-2 pr-3 text-right text-emerald-700">{p.lossPct != null ? `${p.lossPct.toFixed(1)}%` : "—"}</td>
-                  <td className="py-2 pr-3 font-mono text-xs">{p.nextVisit ?? "—"}</td>
-                  <td className="py-2 pr-3">
-                    {p.alertLevel === "danger" ? <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-rose-100 text-rose-700">ต้องรีบดู</span>
-                      : p.alertLevel === "warning" ? <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-700">เฝ้าระวัง</span>
-                      : <span className="text-slate-300 text-xs">ปกติ</span>}
+                  <td className="py-3 px-3 text-right tabular-nums">{p.dose != null ? `${p.dose} mg` : "—"}</td>
+                  <td className="py-3 px-3 text-right tabular-nums">{p.weekNo}</td>
+                  <td className="py-3 px-3 text-right tabular-nums">{p.latestWeight != null ? `${p.latestWeight.toFixed(1)} กก.` : "—"}</td>
+                  <td className="py-3 px-3 text-right tabular-nums" style={{ color: (p.lossPct ?? 0) > 0 ? "#047857" : "#6B7280" }}>
+                    {p.lossPct != null ? `${p.lossPct > 0 ? "−" : ""}${Math.abs(p.lossPct).toFixed(1)}%` : "—"}
                   </td>
-                  <td className="py-2 pr-3 text-right">
-                    <Link href={`/admin/mounjaro/${p.id}`} className="text-xs text-brand hover:underline">เปิด →</Link>
-                  </td>
+                  <td className="py-3 px-3">{toBE(p.nextVisit)}</td>
+                  <td className="py-3 px-5"><StatusBadge level={p.alertLevel} /></td>
                 </tr>
               ))}
             </tbody>
@@ -125,26 +170,91 @@ function PatientList({ patients, pending }: { patients: PatientRow[]; pending: P
         )}
       </div>
 
-      {intake && <BaselineModal pending={intake} onClose={() => setIntake(null)} />}
+      {/* Standard monitoring reference */}
+      <div className="bg-[#F5EFE0] border border-[#D4B675] rounded-sm px-6 py-5">
+        <div className="text-[12px] font-semibold text-[#0F1B33] tracking-[0.08em] uppercase mb-2.5">
+          เกณฑ์การติดตามมาตรฐาน · Standard Monitoring Parameters
+        </div>
+        <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5 text-[13px] text-[#3D3320]">
+          {[
+            ["ทุกครั้งที่นัด:", "น้ำหนัก, BMI, BP, HR, ผลข้างเคียง, adherence"],
+            ["ทุก 4 สัปดาห์:", "ประเมินการ titrate ขนาดยา"],
+            ["ทุก 3 เดือน:", "HbA1c (ถ้าเป็นเบาหวาน), LFT, lipid profile"],
+            ["เฝ้าระวัง:", "HR เพิ่ม >10 bpm, ปวดท้องรุนแรง, hypoglycemia"],
+            ["ข้อห้าม:", "ประวัติ MTC, MEN 2, ตั้งครรภ์, แพ้ tirzepatide"],
+            ["เสริม:", "รอบเอว, ภาวะ dehydration ช่วง titrate"]
+          ].map(([k, v]) => (
+            <li key={k} className="relative pl-4 before:content-['·'] before:absolute before:left-1 before:text-[#B8954F] before:font-bold">
+              <b>{k}</b> {v}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {intake && <IntakeModal pending={pending} onClose={() => setIntake(false)} />}
     </div>
   );
 }
 
-function BaselineModal({ pending, onClose }: { pending: PendingRow; onClose: () => void }) {
+function ageFromDob(dob: string | null): string {
+  if (!dob) return "";
+  const d = new Date(dob);
+  if (isNaN(d.getTime())) return "";
+  const age = Math.floor((Date.now() - d.getTime()) / (365.25 * 86_400_000));
+  return age > 0 && age < 130 ? String(age) : "";
+}
+
+function sexFromGender(g: string | null): string {
+  return g === "male" ? "ชาย" : g === "female" ? "หญิง" : "หญิง";
+}
+
+function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () => void }) {
   const router = useRouter();
   const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  // Prefill from the sole pending employee when there's exactly one; the
+  // doctor picks otherwise.
+  const only = pending.length === 1 ? pending[0] : null;
+  const [enrId, setEnrId] = useState<number | "">(only ? only.enrollment_id : "");
   const [hn, setHn] = useState("");
-  const [b, setB] = useState<Record<string, string>>({});
+  const [age, setAge] = useState(only ? ageFromDob(only.dob) : "");
+  const [sex, setSex] = useState(only ? sexFromGender(only.gender) : "หญิง");
+  const [phone, setPhone] = useState(only?.phone ?? "");
+  const [start, setStart] = useState(today);
+  const [b, setB] = useState<Record<string, string>>(only ? {
+    ...(only.weight_kg != null ? { weight: String(only.weight_kg) } : {}),
+    ...(only.height_cm != null ? { height: String(only.height_cm) } : {})
+  } : {});
+  const [bp, setBp] = useState("");
   const [como, setComo] = useState<Record<string, boolean>>({});
   const [contra, setContra] = useState<Record<string, boolean>>({});
   const [meds, setMeds] = useState<Record<string, boolean>>({});
   const [notes, setNotes] = useState("");
-  const [start, setStart] = useState(today);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const selected = pending.find((p) => p.enrollment_id === enrId) ?? null;
+
+  // Prefill demographics + height/weight from the chosen employee.
+  function pick(id: number | "") {
+    setEnrId(id);
+    const row = pending.find((p) => p.enrollment_id === id);
+    if (!row) return;
+    setAge(ageFromDob(row.dob));
+    setSex(sexFromGender(row.gender));
+    setPhone(row.phone ?? "");
+    setB((prev) => ({
+      ...prev,
+      weight: row.weight_kg != null ? String(row.weight_kg) : prev.weight ?? "",
+      height: row.height_cm != null ? String(row.height_cm) : prev.height ?? ""
+    }));
+  }
+
   const num = (s: string) => (s.trim() === "" ? undefined : Number(s));
   async function save() {
+    if (enrId === "") { setErr("กรุณาเลือกพนักงานที่สมัครเข้าโครงการ"); return; }
+    if (!hn.trim() || !b.weight || !b.height || !b.hr) {
+      setErr("กรุณากรอกข้อมูลที่จำเป็น (HN, น้ำหนัก, ส่วนสูง, HR)"); return;
+    }
     setBusy(true); setErr(null);
     try {
       const baseline: Record<string, number> = {};
@@ -154,62 +264,170 @@ function BaselineModal({ pending, onClose }: { pending: PendingRow; onClose: () 
       const res = await fetch(apiUrl("/api/admin/mounjaro/baseline"), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          enrollment_id: pending.enrollment_id, hn: hn.trim() || undefined,
-          baseline, comorbidities: como, contraindications: contra, medications: meds,
+          enrollment_id: enrId, hn: hn.trim() || undefined,
+          baseline, bp: bp.trim() || undefined,
+          age: age.trim() ? Number(age) : undefined,
+          sex, phone: phone.trim() || undefined,
+          comorbidities: como, contraindications: contra, medications: meds,
           notes: notes.trim() || undefined, start_date: start
         })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr("บันทึกไม่สำเร็จ"); return; }
-      onClose(); router.refresh();
+      onClose();
+      if (j.patient_id) router.push(`/admin/mounjaro/${j.patient_id}`);
+      else router.refresh();
     } finally { setBusy(false); }
   }
 
-  const Num = (k: string, label: string, unit?: string) => (
+  const Num = (k: string, label: string, req?: boolean) => (
     <div>
-      <label className="label">{label}{unit ? ` (${unit})` : ""}</label>
-      <input type="number" step="0.1" className="input" value={b[k] ?? ""}
+      <label className={labelCls}>{label}{req && <span className="text-[#B91C1C]"> *</span>}</label>
+      <input type="number" step="0.1" className={inputCls + " mt-1"} value={b[k] ?? ""}
         onChange={(e) => setB((p) => ({ ...p, [k]: e.target.value }))} />
-    </div>
-  );
-  const Checks = (state: Record<string, boolean>, set: (f: (p: Record<string, boolean>) => Record<string, boolean>) => void,
-    items: Array<[string, string]>) => (
-    <div className="flex flex-wrap gap-2">
-      {items.map(([k, label]) => (
-        <label key={k} className="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-2 py-1 cursor-pointer">
-          <input type="checkbox" checked={!!state[k]} onChange={(e) => set((p) => ({ ...p, [k]: e.target.checked }))} />
-          {label}
-        </label>
-      ))}
     </div>
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-2xl w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}>
-        <h3 className="font-bold text-slate-800">Baseline — {pending.employee_name}</h3>
-        <p className="text-[11px] text-slate-500">ผู้สมัครต้องลงทะเบียนเป็นผู้ป่วยที่ AT HOME CLINIC ก่อน แล้วกรอก HN ที่นี่</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <div><label className="label">HN</label><input className="input" value={hn} onChange={(e) => setHn(e.target.value)} /></div>
-          {Num("weight", "น้ำหนัก", "กก.")}{Num("height", "ส่วนสูง", "ซม.")}
-          {Num("hr", "ชีพจร", "bpm")}{Num("hba1c", "HbA1c", "%")}{Num("fbs", "FBS", "mg/dL")}
-          {Num("waist", "รอบเอว", "ซม.")}{Num("target", "น้ำหนักเป้าหมาย", "กก.")}
-          <div><label className="label">เริ่มโครงการ</label><input type="date" className="input" value={start} onChange={(e) => setStart(e.target.value)} /></div>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[#0F1B33]/60 backdrop-blur-[2px] p-4 sm:p-10 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white w-full max-w-3xl rounded-sm border-t-[3px] border-[#B8954F] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-[#0F1B33] px-6 py-4 flex items-center justify-between">
+          <div>
+            <div className="text-white font-semibold text-[16px]">เพิ่มผู้ป่วยใหม่</div>
+            <div className="text-[10px] text-[#D4B675] tracking-[0.1em] uppercase mt-0.5">New Patient Registration</div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 border border-white/30 text-white text-lg hover:bg-white/10">×</button>
         </div>
-        <div><div className="text-xs font-bold text-slate-600 mb-1">โรคร่วม</div>
-          {Checks(como, setComo, [["dm", "เบาหวาน"], ["htn", "ความดัน"], ["dlp", "ไขมัน"], ["cvd", "หัวใจ"], ["ckd", "ไต"], ["panc", "ตับอ่อน"], ["gb", "ถุงน้ำดี"]])}</div>
-        <div><div className="text-xs font-bold text-rose-600 mb-1">ข้อห้ามใช้ยา (ติ๊กแล้วระบบเตือน DANGER)</div>
-          {Checks(contra, setContra, [["mtc", "MTC"], ["men2", "MEN2"], ["preg", "ตั้งครรภ์"], ["allergy", "แพ้ยา"]])}</div>
-        <div><div className="text-xs font-bold text-slate-600 mb-1">ยาที่ใช้</div>
-          {Checks(meds, setMeds, [["insulin", "Insulin"], ["su", "SU"], ["met", "Metformin"], ["sglt2", "SGLT2"], ["ocp", "ยาคุม"]])}</div>
-        <div><label className="label">หมายเหตุ</label><textarea className="input text-sm" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
-        {err && <p className="text-sm text-rose-600">✗ {err}</p>}
-        <div className="flex gap-2">
-          <button type="button" onClick={onClose} disabled={busy} className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium">ยกเลิก</button>
-          <button type="button" onClick={save} disabled={busy} className="flex-1 btn-primary py-2.5 disabled:opacity-50">{busy ? "กำลังบันทึก…" : "รับเข้าโครงการ"}</button>
+        <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+
+          <Section title="ข้อมูลผู้ป่วย">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-3">
+                <label className={labelCls}>พนักงานที่สมัครเข้าโครงการ <span className="text-[#B91C1C]">*</span></label>
+                {pending.length === 0 ? (
+                  <p className="mt-1 text-sm text-slate-500 bg-[#FAF8F3] border border-[#E5E0D5] rounded-sm px-3 py-2">
+                    ยังไม่มีพนักงานสมัครเข้าโครงการ — ให้พนักงานกดสมัครที่เมนู &quot;สุขภาพพนักงาน&quot; ก่อน
+                  </p>
+                ) : (
+                  <select className={inputCls + " mt-1"} value={enrId}
+                    onChange={(e) => pick(e.target.value === "" ? "" : Number(e.target.value))}>
+                    <option value="">— เลือกพนักงาน —</option>
+                    {pending.map((p) => (
+                      <option key={p.enrollment_id} value={p.enrollment_id}>
+                        {p.employee_name} {p.enrolled_at ? `(สมัคร ${p.enrolled_at.slice(0, 10)})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div>
+                <label className={labelCls}>HN <span className="text-[#B91C1C]">*</span></label>
+                <input className={inputCls + " mt-1"} value={hn} onChange={(e) => setHn(e.target.value)} placeholder="จาก AT HOME CLINIC" />
+              </div>
+              <div>
+                <label className={labelCls}>ชื่อ-สกุล</label>
+                <input className={inputCls + " mt-1 bg-[#FAF8F3] text-slate-500"} value={selected?.employee_name ?? ""} readOnly />
+              </div>
+              <div>
+                <label className={labelCls}>อายุ (ปี)</label>
+                <input type="number" className={inputCls + " mt-1"} value={age} onChange={(e) => setAge(e.target.value)} />
+              </div>
+              <div>
+                <label className={labelCls}>เพศ</label>
+                <select className={inputCls + " mt-1"} value={sex} onChange={(e) => setSex(e.target.value)}>
+                  <option value="หญิง">หญิง</option><option value="ชาย">ชาย</option><option value="อื่นๆ">อื่นๆ</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>เบอร์โทร</label>
+                <input className={inputCls + " mt-1"} value={phone} onChange={(e) => setPhone(e.target.value)} />
+              </div>
+              <div>
+                <label className={labelCls}>วันที่เริ่มยา <span className="text-[#B91C1C]">*</span></label>
+                <input type="date" className={inputCls + " mt-1"} value={start} onChange={(e) => setStart(e.target.value)} />
+              </div>
+            </div>
+          </Section>
+
+          <Section title="ข้อมูลพื้นฐาน (Baseline)">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Num("weight", "น้ำหนัก (กก.)", true)}
+              {Num("height", "ส่วนสูง (ซม.)", true)}
+              {Num("waist", "รอบเอว (ซม.)")}
+              <div>
+                <label className={labelCls}>BP baseline (mmHg)</label>
+                <input className={inputCls + " mt-1"} value={bp} onChange={(e) => setBp(e.target.value)} placeholder="120/80" />
+              </div>
+              {Num("hr", "HR baseline (bpm)", true)}
+              {Num("hba1c", "HbA1c (%)")}
+              {Num("fbs", "FBS (mg/dL)")}
+              {Num("target", "เป้าหมายน้ำหนัก (กก.)")}
+            </div>
+          </Section>
+
+          <Section title="ประวัติโรคและข้อห้าม · Comorbidities & Contraindications">
+            <CheckRow state={como} set={setComo} items={[
+              ["dm", "เบาหวานชนิดที่ 2"], ["htn", "ความดันโลหิตสูง"], ["dlp", "ไขมันในเลือดสูง"],
+              ["cvd", "โรคหัวใจและหลอดเลือด (CVD)"], ["ckd", "โรคไตเรื้อรัง"],
+              ["panc", "ประวัติตับอ่อนอักเสบ"], ["gb", "นิ่วในถุงน้ำดี"]
+            ]} />
+            <div className="mt-3 bg-[#FEF2F2] border-l-[3px] border-[#B91C1C] px-3 py-2.5">
+              <div className="text-[12px] font-semibold text-[#B91C1C] mb-2">ข้อห้ามเด็ดขาด — ห้ามใช้หาก:</div>
+              <CheckRow state={contra} set={setContra} items={[
+                ["mtc", "ประวัติครอบครัว MTC"], ["men2", "MEN 2 syndrome"],
+                ["preg", "ตั้งครรภ์ / วางแผนตั้งครรภ์"], ["allergy", "แพ้ tirzepatide"]
+              ]} />
+            </div>
+          </Section>
+
+          <Section title="ยาที่ใช้ร่วม · Concomitant Medications">
+            <CheckRow state={meds} set={setMeds} items={[
+              ["insulin", "Insulin (เสี่ยงน้ำตาลต่ำ)"], ["su", "Sulfonylurea (เสี่ยงน้ำตาลต่ำ)"],
+              ["met", "Metformin"], ["sglt2", "SGLT2 inhibitor"],
+              ["ocp", "ยาเม็ดคุมกำเนิด (อาจลด efficacy ช่วง titrate)"]
+            ]} />
+            <div className="mt-3">
+              <label className={labelCls}>ยาอื่นๆ / หมายเหตุ</label>
+              <textarea className={inputCls + " mt-1"} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+            </div>
+          </Section>
+
+          {err && <p className="text-sm text-[#B91C1C]">✗ {err}</p>}
+        </div>
+        <div className="px-6 py-4 bg-[#FAF8F3] border-t border-[#E5E0D5] flex justify-end gap-2.5">
+          <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#0F1B33] hover:bg-white">ยกเลิก</button>
+          <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#0F1B33] hover:bg-[#1B2D4F] text-white rounded-sm disabled:opacity-50">
+            {busy ? "กำลังบันทึก…" : "บันทึก"}
+          </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="inline-block text-[12px] font-semibold text-[#0F1B33] uppercase tracking-[0.1em] mb-3.5 pb-2 pr-10 border-b border-[#B8954F]">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function CheckRow({ state, set, items }: {
+  state: Record<string, boolean>;
+  set: (f: (p: Record<string, boolean>) => Record<string, boolean>) => void;
+  items: Array<[string, string]>;
+}) {
+  return (
+    <div className="flex flex-wrap gap-x-5 gap-y-3">
+      {items.map(([k, label]) => (
+        <label key={k} className="flex items-center gap-1.5 text-[13px] cursor-pointer">
+          <input type="checkbox" className="w-4 h-4 accent-[#B8954F]" checked={!!state[k]}
+            onChange={(e) => set((p) => ({ ...p, [k]: e.target.checked }))} />
+          {label}
+        </label>
+      ))}
     </div>
   );
 }

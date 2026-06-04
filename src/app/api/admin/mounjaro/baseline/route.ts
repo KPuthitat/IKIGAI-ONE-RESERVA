@@ -11,10 +11,30 @@ const Body = z.object({
   enrollment_id: z.number().int().positive(),
   hn: z.string().max(40).optional(),
   baseline: z.record(z.number()).default({}),
+  // Non-numeric baseline extras (stored alongside the numeric clinical
+  // values in baseline_json). bp is "120/80"; age/sex/phone are
+  // demographics prefilled from the employee record.
+  bp: z.string().max(20).optional(),
+  age: z.number().int().min(0).max(120).optional(),
+  sex: z.string().max(20).optional(),
+  phone: z.string().max(40).optional(),
   comorbidities: Flags, contraindications: Flags, medications: Flags,
   notes: z.string().max(2000).optional(),
   start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
 });
+
+/** Merge the numeric baseline with the string/demographic extras into the
+ *  single object persisted as baseline_json. */
+function mergeBaseline(d: {
+  baseline: Record<string, number>; bp?: string; age?: number; sex?: string; phone?: string;
+}): Record<string, unknown> {
+  const b: Record<string, unknown> = { ...d.baseline };
+  if (d.bp) b.bp = d.bp;
+  if (d.age != null) b.age = d.age;
+  if (d.sex) b.sex = d.sex;
+  if (d.phone) b.phone = d.phone;
+  return b;
+}
 
 export async function POST(req: Request) {
   const user = getSessionUser();
@@ -28,7 +48,7 @@ export async function POST(req: Request) {
 
   try {
     const id = createPatientRecord(user as MjActor, d.enrollment_id, {
-      hn: d.hn ?? null, baseline: d.baseline, comorbidities: d.comorbidities,
+      hn: d.hn ?? null, baseline: mergeBaseline(d), comorbidities: d.comorbidities,
       contraindications: d.contraindications, medications: d.medications,
       notes: d.notes ?? null, start_date: d.start_date ?? null
     });

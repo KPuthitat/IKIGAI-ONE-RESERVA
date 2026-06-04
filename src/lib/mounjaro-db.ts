@@ -353,6 +353,57 @@ export function createPatientRecord(actor: MjActor, enrollmentId: number, data: 
   return id;
 }
 
+/** Edit an existing patient's baseline / demographics / flags. Scoped to
+ *  the attending doctor + audited. (Powers the "แก้ไข" on the baseline tab.) */
+export function updatePatientRecord(actor: MjActor, patientId: number, data: {
+  hn: string | null; baseline: unknown; comorbidities: unknown;
+  contraindications: unknown; medications: unknown;
+  notes: string | null; start_date: string | null;
+}): void {
+  requireDoctor(actor);
+  const p = getPatientForDoctor(actor, patientId); // attending-doctor scope
+  if (!p) throw new MounjaroForbidden("not_attending");
+  getDb().prepare(`
+    UPDATE mounjaro_patients
+       SET hn = ?, baseline_json = ?, comorbidities_json = ?,
+           contraindications_json = ?, medications_json = ?, notes = ?,
+           start_date = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND attending_doctor_id = ?
+  `).run(
+    data.hn ?? null,
+    JSON.stringify(data.baseline ?? {}), JSON.stringify(data.comorbidities ?? {}),
+    JSON.stringify(data.contraindications ?? {}), JSON.stringify(data.medications ?? {}),
+    data.notes ?? null, data.start_date ?? null, patientId, actor.id
+  );
+  audit(actor.id, "update_patient", "patient", patientId);
+}
+
+/** Soft-delete a patient record (deleted_at). PDPA: the clinical record is
+ *  retained under lawful basis — it's hidden from the doctor's list but not
+ *  destroyed. Scoped to the attending doctor + audited. */
+export function softDeletePatient(actor: MjActor, patientId: number): void {
+  requireDoctor(actor);
+  const p = getPatientForDoctor(actor, patientId);
+  if (!p) throw new MounjaroForbidden("not_attending");
+  getDb().prepare(
+    "UPDATE mounjaro_patients SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND attending_doctor_id = ?"
+  ).run(patientId, actor.id);
+  audit(actor.id, "delete_patient", "patient", patientId);
+}
+
+/** Delete a single visit row — only on the doctor's own patient + audited. */
+export function deleteVisit(actor: MjActor, visitId: number): void {
+  requireDoctor(actor);
+  const owns = getDb().prepare(`
+    SELECT v.id FROM mounjaro_visits v
+    JOIN mounjaro_patients p ON p.id = v.patient_id
+    WHERE v.id = ? AND p.attending_doctor_id = ? AND p.deleted_at IS NULL
+  `).get(visitId, actor.id);
+  if (!owns) throw new MounjaroForbidden("not_your_patient");
+  getDb().prepare("DELETE FROM mounjaro_visits WHERE id = ?").run(visitId);
+  audit(actor.id, "delete_visit", "visit", visitId);
+}
+
 export function addVisit(actor: MjActor, patientId: number, data: Record<string, unknown>): number {
   requireDoctor(actor);
   // attending-doctor scope: the patient must be theirs
@@ -399,11 +450,16 @@ export function listMyPatientsEnriched(actor: MjActor): Array<{
     const newSelfLog = !!(db.prepare(
       "SELECT 1 FROM mounjaro_self_logs WHERE enrollment_id = ? AND doctor_reply IS NULL LIMIT 1"
     ).get(p.enrollment_id as number));
+    // Weeks since the drug start date (matches the tracker's "สัปดาห์ที่").
+    const startStr = p.start_date as string | null;
+    const weekNo = startStr
+      ? Math.max(0, Math.floor((Date.now() - new Date(startStr).getTime()) / (7 * 86_400_000)))
+      : 0;
     return {
       id: pid, employee_name: p.employee_name as string, hn: (p.hn as string | null) ?? null,
       enrollment_status: (p.enrollment_status as string) ?? "active",
       dose: (last?.dose as number | null) ?? null, latestWeight, lossPct,
-      weekNo: visits.length, nextVisit: (last?.next_visit as string | null) ?? null,
+      weekNo, nextVisit: (last?.next_visit as string | null) ?? null,
       alertLevel: alerts.some((a) => a.level === "danger") ? "danger"
         : alerts.some((a) => a.level === "warning") ? "warning" : null,
       newSelfLog
@@ -415,14 +471,23 @@ export function listMyPatientsEnriched(actor: MjActor): Array<{
  *  data (there is none yet). Any doctor may pick one up via baseline. */
 export function listPendingIntake(actor: MjActor): Array<{
   enrollment_id: number; employee_name: string; enrolled_at: string | null;
+  // Prefill (2026-06-04): pull what we already know about the employee so
+  // the doctor's intake form starts filled in; doctor adds the rest.
+  gender: string | null; dob: string | null; phone: string | null;
+  height_cm: number | null; weight_kg: number | null;
 }> {
   requireDoctor(actor);
   const rows = getDb().prepare(`
-    SELECT e.id AS enrollment_id, u.display_name AS employee_name, e.enrolled_at
+    SELECT e.id AS enrollment_id, u.display_name AS employee_name, e.enrolled_at,
+           u.gender, u.dob, u.mobile_phone AS phone, u.height_cm, u.weight_kg
     FROM mounjaro_enrollments e JOIN users u ON u.id = e.employee_id
     WHERE e.status = 'pending' AND e.portal_erased_at IS NULL
     ORDER BY e.enrolled_at ASC
-  `).all() as Array<{ enrollment_id: number; employee_name: string; enrolled_at: string | null }>;
+  `).all() as Array<{
+    enrollment_id: number; employee_name: string; enrolled_at: string | null;
+    gender: string | null; dob: string | null; phone: string | null;
+    height_cm: number | null; weight_kg: number | null;
+  }>;
   audit(actor.id, "list_intake", "enrollment", null);
   return rows;
 }
