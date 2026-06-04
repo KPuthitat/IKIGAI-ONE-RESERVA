@@ -16,7 +16,7 @@ import { notifyStageChange, notifyExecGroupStageChange } from "@/lib/recruita-no
 
 const Body = z.object({
   stage: z.enum([
-    "applied", "screening", "interview", "offered",
+    "applied", "screening", "interview", "health_check", "offered",
     "accepted", "hired", "rejected", "withdrawn"
   ])
 });

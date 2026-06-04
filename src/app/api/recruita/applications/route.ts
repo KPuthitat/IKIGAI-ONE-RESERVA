@@ -207,39 +207,16 @@ export async function POST(req: Request) {
     ?? req.headers.get("x-real-ip") ?? null;
   const consent_user_agent = req.headers.get("user-agent")?.slice(0, 500) ?? null;
 
-  // Pre-apply auto-link: candidate may have added the IKIGAI Recruit
-  // OA BEFORE submitting (followed → browsed → applied via direct URL).
-  // The follow event stashed their userId in line_oa_recent_followers.
-  // If the payload has no line_user_id of its own, claim the most-recent
-  // unclaimed follower from the last 7 days. Single follower window so
-  // we don't accidentally cross-link two simultaneous applicants.
-  // Pairs with the post-apply follow path in api/line/webhook (when
-  // they add the OA AFTER applying).
-  let effectiveLineUserId: string | null = d.line_user_id || null;
-  if (!effectiveLineUserId) {
-    try {
-      const seven = new Date(Date.now() - 7 * 86400_000).toISOString();
-      const follower = db.prepare(`
-        SELECT line_user_id FROM line_oa_recent_followers
-        WHERE channel_scope = 'recruita'
-          AND consumed_at IS NULL
-          AND followed_at >= ?
-        ORDER BY followed_at DESC
-        LIMIT 1
-      `).get(seven) as { line_user_id: string } | undefined;
-      if (follower) {
-        effectiveLineUserId = follower.line_user_id;
-        db.prepare(
-          "UPDATE line_oa_recent_followers SET consumed_at = CURRENT_TIMESTAMP WHERE line_user_id = ? AND channel_scope = 'recruita'"
-        ).run(follower.line_user_id);
-        console.info(
-          `[recruita] pre-apply recency-link: claimed follower ${follower.line_user_id} for the upcoming application`
-        );
-      }
-    } catch (e) {
-      console.warn("[recruita] pre-apply recency-link failed:", e);
-    }
-  }
+  // LINE userId binding (2026-06-05): ONLY from identity-correct sources.
+  // The trustworthy source is the LIFF profile captured when the form is
+  // opened inside the IKIGAI Recruit OA (d.line_user_id). The old
+  // "claim the most-recent unclaimed follower" recency guess was REMOVED:
+  // it cross-linked simultaneous applicants and could push one person's
+  // application-status cards to a DIFFERENT person's LINE (a PDPA leak,
+  // reported 2026-06-05). Web-form applicants (no LIFF) stay unlinked
+  // here; an admin binds them afterwards via the "พิมพ์ ID → ส่งให้แอดมิน
+  // → วาง" flow (link-line route), which is identity-correct.
+  const effectiveLineUserId: string | null = d.line_user_id || null;
 
   // Helpers
   const enc = (s: string) => s ? encryptSecret(s) : null;

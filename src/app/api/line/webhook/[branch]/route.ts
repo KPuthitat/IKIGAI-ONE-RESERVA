@@ -170,46 +170,21 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       // 1f. For now, a simple welcome message + a CTA back to the
       // public positions board.
       if (channel.scope === "recruita") {
+        // Greeting + how to get linked. We do NOT auto-link by recency
+        // anymore (2026-06-05): guessing "the most recent applicant ==
+        // this follower" cross-linked different people and could leak
+        // one applicant's status to another's LINE. Reliable linking is
+        // either (a) applying via this OA's LIFF link — userId captured
+        // automatically — or (b) typing "ID" here, screenshotting, and
+        // sending it to the admin to paste into the application.
         const welcome = "ยินดีต้อนรับสู่ IKIGAI Recruit\n\n" +
-          "หากเพิ่งสมัครงานกับเรา ระบบจะแจ้งสถานะใบสมัครผ่าน LINE นี้อัตโนมัติ — ไม่ต้องส่งข้อมูลเพิ่ม\n\n" +
+          "• ถ้าสมัครงานผ่านลิงก์ในบัญชีนี้ ระบบจะแจ้งสถานะใบสมัครทาง LINE นี้ให้อัตโนมัติ\n" +
+          "• ถ้าสมัครผ่านลิงก์ภายนอกแล้วยังไม่ได้รับแจ้งเตือน ให้พิมพ์คำว่า \"ID\" แล้วส่งภาพให้แอดมินตั้งค่าให้\n\n" +
           "ดูตำแหน่งที่เปิดรับ: https://ikigaimedihealth.com/recruita/positions";
         await sendLinePush(channel.channel_token, {
           to: userId,
           messages: [{ type: "text", text: welcome }]
         });
-        // Best-effort link: latest candidate row with no line_user_id
-        // that submitted an application in the last 7 days. Handles
-        // the "applied via direct URL FIRST, then added the OA"
-        // direction.
-        try {
-          const seven = new Date(Date.now() - 7 * 86400_000).toISOString();
-          const recent = db.prepare(`
-            SELECT c.id FROM recruita_candidates c
-            JOIN recruita_applications a ON a.candidate_id = c.id
-            WHERE c.line_user_id IS NULL
-              AND a.submitted_at >= ?
-            ORDER BY a.submitted_at DESC
-            LIMIT 1
-          `).get(seven) as { id: number } | undefined;
-          if (recent) {
-            db.prepare(
-              "UPDATE recruita_candidates SET line_user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-            ).run(userId, recent.id);
-            console.log(`[line:recruita] linked userId ${userId} → candidate #${recent.id} (post-apply recency match)`);
-          } else {
-            // No candidate to link YET — they might apply later. Stash
-            // this follower so the apply-submit path can pick them up
-            // (see /api/recruita/applications POST handler).
-            db.prepare(`
-              INSERT INTO line_oa_recent_followers (line_user_id, channel_scope, followed_at)
-              VALUES (?, 'recruita', CURRENT_TIMESTAMP)
-              ON CONFLICT(line_user_id, channel_scope) DO UPDATE
-                SET followed_at = CURRENT_TIMESTAMP, consumed_at = NULL
-            `).run(userId);
-          }
-        } catch (e) {
-          console.warn("[line:recruita] follow-link attempt failed", e);
-        }
       }
       continue;
     }
