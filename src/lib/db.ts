@@ -2995,6 +2995,20 @@ function runMigrations(db: Database.Database): void {
         (SELECT COUNT(*) FROM mounjaro_enrollments WHERE status='completed') AS completed_count;
   `);
 
+  // Seed a default active consent version if none exists (super_admin can
+  // add new versions later; a version bump forces re-consent).
+  const hasMjConsent = db.prepare("SELECT 1 FROM mounjaro_consent_versions LIMIT 1").get();
+  if (!hasMjConsent) {
+    db.prepare("INSERT INTO mounjaro_consent_versions (version, body, active) VALUES ('v1', ?, 1)").run(
+      "ข้าพเจ้ายินยอมเข้าร่วมโครงการ Mounjaro Employee Wellness โดยสมัครใจ และยินยอมให้แพทย์/พยาบาล IKIGAI MediHealth (AT HOME CLINIC) เก็บรวบรวม ใช้ และประมวลผลข้อมูลสุขภาพของข้าพเจ้า (น้ำหนัก ผลตรวจ อาการข้างเคียง ฯลฯ) เพื่อการดูแลรักษาและติดตามผลภายใต้โครงการนี้เท่านั้น\n\n" +
+      "• ข้อมูลสุขภาพถือเป็นข้อมูลส่วนบุคคลอ่อนไหวตาม พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล (PDPA)\n" +
+      "• เฉพาะแพทย์เจ้าของไข้เท่านั้นที่เข้าถึงข้อมูลการรักษาของข้าพเจ้าได้ ทุกการเข้าถึงถูกบันทึก\n" +
+      "• ฝ่ายบุคคล/ผู้บริหารเห็นเพียงสถิติภาพรวม ไม่เห็นข้อมูลรายบุคคล\n" +
+      "• ข้าพเจ้าสามารถขอออกจากโครงการ ขอดู หรือขอลบข้อมูลในพอร์ทัลได้ทุกเมื่อ (เวชระเบียนคลินิกเก็บตามที่กฎหมายกำหนด)\n" +
+      "• ข้าพเจ้าเข้าใจว่ายา Tirzepatide (Mounjaro) ต้องใช้ภายใต้การดูแลของแพทย์ และอาจมีผลข้างเคียง"
+    );
+  }
+
   // ── INVENTA — clinic stock-count module ──────────────────────────
   // Per-branch drug/equipment inventory. Items live in a physical grid
   // (row A–E × col 1–6) with a pick-frequency colour (R rare / Y med /

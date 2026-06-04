@@ -18,6 +18,8 @@ type Patient = {
 } | null;
 type Visit = { date: string | null; dose: number | null; weight: number | null; next_visit: string | null };
 type SelfLog = { date: string | null; weight: number | null; injection_done: boolean; doctor_reply: string | null };
+type ConsentInfo = { needed: boolean; version: string | null; body: string | null };
+type AuditEntry = { action: string; by_name: string | null; created_at: string };
 
 const SIDE_EFFECTS: ReadonlyArray<{ key: string; label: string }> = [
   { key: "nausea", label: "คลื่นไส้" },
@@ -41,9 +43,10 @@ function daysUntil(iso: string | null): number | null {
 }
 
 export default function MounjaroSelfClient({
-  enrollment, patient, visits, selfLogs
+  enrollment, patient, visits, selfLogs, consent, audit
 }: {
   enrollment: Enrollment; patient: Patient; visits: Visit[]; selfLogs: SelfLog[];
+  consent: ConsentInfo; audit: AuditEntry[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -141,6 +144,77 @@ export default function MounjaroSelfClient({
           <p className="text-[11px] text-slate-400">
             ข้อมูลเวชระเบียนถูกเก็บรักษาตามกฎหมายที่คลินิกกำหนด — ติดต่อคลินิกหากต้องการสอบถาม
           </p>
+        </div>
+      )}
+
+      {status === "active" && <AuditViewer audit={audit} />}
+      {consent.needed && <ConsentModal version={consent.version} body={consent.body} />}
+    </div>
+  );
+}
+
+function ConsentModal({ version, body }: { version: string | null; body: string | null }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [agree, setAgree] = useState(false);
+  async function accept() {
+    setBusy(true);
+    try {
+      const res = await fetch(apiUrl("/api/mounjaro/consent"), { method: "POST" });
+      if (res.ok) router.refresh();
+    } finally { setBusy(false); }
+  }
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto">
+        <h3 className="font-bold text-slate-800">ความยินยอม (PDPA) — โครงการ Mounjaro {version ? `(${version})` : ""}</h3>
+        <div className="max-h-64 overflow-y-auto whitespace-pre-line text-xs text-slate-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+          {body ?? "—"}
+        </div>
+        <label className="flex items-start gap-2 text-sm text-slate-700">
+          <input type="checkbox" className="mt-1" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+          ข้าพเจ้าได้อ่านและยินยอมตามข้อความข้างต้น
+        </label>
+        <button type="button" onClick={accept} disabled={busy || !agree}
+          className="btn-primary w-full py-2.5 disabled:opacity-50">
+          {busy ? "กำลังบันทึก…" : "ยินยอมและเข้าใช้งาน"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AuditViewer({ audit }: { audit: AuditEntry[] }) {
+  const [open, setOpen] = useState(false);
+  const ACTION_TH: Record<string, string> = {
+    read_own: "คุณเปิดดูข้อมูลตัวเอง", read_patient: "แพทย์เปิดดูข้อมูล",
+    create_patient: "แพทย์สร้างเวชระเบียน", add_visit: "แพทย์บันทึกการนัด",
+    reply_selflog: "แพทย์ตอบบันทึกอาการ", self_log: "คุณบันทึกอาการ",
+    enroll: "สมัครเข้าโครงการ", withdraw: "ออกจากโครงการ", erase: "ขอลบข้อมูล",
+    export: "ดาวน์โหลดข้อมูล", consent: "ให้ความยินยอม"
+  };
+  return (
+    <div className="card">
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between text-sm font-bold text-slate-700">
+        <span>ประวัติการเข้าถึงข้อมูลของฉัน (ใครเปิดดูบ้าง)</span>
+        <span className="text-slate-400">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5 max-h-64 overflow-y-auto">
+          {audit.length === 0 ? (
+            <p className="text-xs text-slate-400">ยังไม่มีบันทึก</p>
+          ) : audit.map((a, i) => (
+            <div key={i} className="text-xs border-b last:border-0 pb-1 flex justify-between gap-2">
+              <span className="text-slate-700">
+                {ACTION_TH[a.action] ?? a.action}
+                {a.by_name && <span className="text-slate-400"> · {a.by_name}</span>}
+              </span>
+              <span className="text-slate-400 font-mono">
+                {new Date(a.created_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>

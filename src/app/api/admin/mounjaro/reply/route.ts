@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, isClinicalUnlocked } from "@/lib/auth";
 import { replySelfLog, isMounjaroForbidden, type MjActor } from "@/lib/mounjaro-db";
+import { notifySelfLogReply } from "@/lib/mounjaro-notify";
 
 // POST /api/admin/mounjaro/reply — doctor replies to one of their
 // patients' self-logs.
@@ -22,6 +23,8 @@ export async function POST(req: Request) {
 
   try {
     replySelfLog(user as MjActor, parsed.data.self_log_id, parsed.data.reply);
+    // Fire-and-forget LINE notify to the employee (best-effort).
+    void notifySelfLogReply(parsed.data.self_log_id).catch(() => { /* ignore */ });
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (isMounjaroForbidden(e)) return NextResponse.json({ error: "forbidden" }, { status: 403 });

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import {
-  getMyEnrollment, getMyClinical, getMySelfLogs, type MjActor
+  getMyEnrollment, getMyClinical, getMySelfLogs, getActiveConsent,
+  getMyAuditTrail, type MjActor
 } from "@/lib/mounjaro-db";
 import MounjaroSelfClient from "./MounjaroSelfClient";
 
@@ -58,12 +59,28 @@ export default function MounjaroSelfPage() {
     doctor_reply: (l.doctor_reply as string | null) ?? null
   }));
 
+  // Consent — re-consent required when the active version differs from
+  // what the employee last signed (or never signed).
+  const activeConsent = getActiveConsent();
+  const needsConsent = !!(enr && enr.status === "active" && activeConsent
+    && enr.consent_version !== activeConsent.version);
+
+  const audit = enr
+    ? getMyAuditTrail(actor).map((a) => ({
+        action: String(a.action ?? ""),
+        by_name: (a.by_name as string | null) ?? null,
+        created_at: String(a.created_at ?? "")
+      }))
+    : [];
+
   return (
     <MounjaroSelfClient
       enrollment={enrollment}
       patient={patient}
       visits={visits}
       selfLogs={logs}
+      consent={{ needed: needsConsent, version: activeConsent?.version ?? null, body: activeConsent?.body ?? null }}
+      audit={audit}
     />
   );
 }

@@ -160,6 +160,14 @@ export function withdrawSelf(actor: MjActor, reason: string | null): void {
   audit(actor.id, "withdraw", "enrollment", actor.id);
 }
 
+/** The current active consent text + version (super_admin maintained). */
+export function getActiveConsent(): { version: string; body: string } | null {
+  const row = getDb().prepare(
+    "SELECT version, body FROM mounjaro_consent_versions WHERE active = 1 ORDER BY id DESC LIMIT 1"
+  ).get() as { version: string; body: string } | undefined;
+  return row ?? null;
+}
+
 export function recordConsent(actor: MjActor, version: string): void {
   getDb().prepare(`
     UPDATE mounjaro_enrollments
