@@ -103,9 +103,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           // Notification quota is system-wide (every module shares the
           // LINE push allowance) → surfaced here in the global section
           // rather than buried under PERSONA (owner 2026-06-03).
-          { href: "/admin/persona/messaging/quota", label: t(lang, "admin.persona.nav.messagingQuota") },
-          // Mounjaro clinical access — grant แพทย์ / พยาบาล / HR (2026-06-04).
-          { href: "/admin/mounjaro-access", label: "สิทธิ์ทางคลินิก (Mounjaro)" }
+          { href: "/admin/persona/messaging/quota", label: t(lang, "admin.persona.nav.messagingQuota") }
         ] : []),
         { href: "/help", label: t(lang, "owl.help.menu") }
       ]

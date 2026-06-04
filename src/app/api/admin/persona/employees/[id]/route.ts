@@ -39,6 +39,11 @@ const Body = z.object({
   // 2026-05-30 — PDPA payroll-access grant. Only super_admin may set
   // this; the server gate strips it for everyone else (below).
   can_view_payroll:   z.number().int().min(0).max(1).optional(),
+  // 2026-06-04 — Mounjaro clinical access (super_admin only; stripped for
+  // everyone else below). doctor requires a license number.
+  clinical_role:   z.enum(["doctor", "nurse"]).nullable().optional(),
+  license_no:      z.string().max(60).nullable().optional(),
+  is_hr_analytics: z.number().int().min(0).max(1).optional(),
   // PIN — 4 digits to set, "" to clear, omit to keep
   pin: z.string().regex(/^\d{4}$/).or(z.literal("")).optional(),
 
@@ -127,6 +132,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // would otherwise be one POST away.
   if (user.role !== "super_admin") {
     delete parsed.data.can_view_payroll;
+    // Clinical access is super_admin-only too — strip for everyone else.
+    delete parsed.data.clinical_role;
+    delete parsed.data.license_no;
+    delete parsed.data.is_hr_analytics;
+  }
+  // A doctor must carry a license number (their clinical unlock key).
+  if ("clinical_role" in parsed.data && parsed.data.clinical_role === "doctor"
+      && !(parsed.data.license_no ?? "").trim()) {
+    return NextResponse.json({ error: "license_required_for_doctor" }, { status: 400 });
+  }
+  // Clearing the clinical role clears the license too.
+  if ("clinical_role" in parsed.data && parsed.data.clinical_role === null) {
+    parsed.data.license_no = null;
   }
 
   const db = getDb();
@@ -194,6 +212,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // PDPA payroll-access grant — only present in parsed.data when
   // operator is super_admin (stripped above for everyone else).
   addField("can_view_payroll");
+  // Mounjaro clinical access (already stripped above for non-super_admin)
+  addField("clinical_role");
+  addField("license_no");
+  addField("is_hr_analytics");
 
   // ── Phase A profile (TC-P) ────────────────────────────────────
   // Plain string fields — same pattern as the existing payroll

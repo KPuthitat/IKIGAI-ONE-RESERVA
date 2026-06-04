@@ -53,6 +53,12 @@ export type EmployeeRow = {
   // when 1, that admin gains access to the payroll pages + salary
   // columns. Always 0 for staff (they don't see admin pages anyway).
   can_view_payroll?: number;
+  // 2026-06-04 — Mounjaro clinical access (super_admin sets in the edit
+  // modal). clinical_role 'doctor'|'nurse' + license_no (the doctor's
+  // unlock key); is_hr_analytics = sees the program's aggregate stats.
+  clinical_role?: "doctor" | "nurse" | null;
+  license_no?: string | null;
+  is_hr_analytics?: number;
 };
 
 export type BranchLite = { id: number; name: string };
@@ -558,6 +564,12 @@ function EditModal({
   const [canViewPayrollFlag, setCanViewPayrollFlag] = useState<boolean>(
     (employee as EmployeeRow & { can_view_payroll?: number }).can_view_payroll === 1
   );
+  // Mounjaro clinical access (super_admin only) — แพทย์/พยาบาล + ใบประกอบ + HR
+  const [clinicalRole, setClinicalRole] = useState<"none" | "doctor" | "nurse">(
+    employee.clinical_role ?? "none"
+  );
+  const [licenseNo, setLicenseNo] = useState(employee.license_no ?? "");
+  const [hrAnalytics, setHrAnalytics] = useState<boolean>(employee.is_hr_analytics === 1);
   // PIN — 4 digits. Empty = leave unchanged. "clear" toggles → send "" to API.
   const [pin, setPin] = useState("");
   const [clearPin, setClearPin] = useState(false);
@@ -695,6 +707,18 @@ function EditModal({
       // request body tidy.
       if (currentUserRole === "super_admin" && employee.role === "admin") {
         body.can_view_payroll = canViewPayrollFlag ? 1 : 0;
+      }
+      // Mounjaro clinical access — super_admin only (any target role: a
+      // doctor/nurse may be staff or admin). Server re-gates to super_admin.
+      if (currentUserRole === "super_admin") {
+        if (clinicalRole === "doctor" && licenseNo.trim() === "") {
+          setErr("แพทย์ต้องระบุเลขใบประกอบวิชาชีพ");
+          setBusy(false);
+          return;
+        }
+        body.clinical_role = clinicalRole === "none" ? null : clinicalRole;
+        body.license_no = clinicalRole === "none" ? null : (licenseNo.trim() || null);
+        body.is_hr_analytics = hrAnalytics ? 1 : 0;
       }
       // PIN — only include if admin is setting/clearing it
       if (clearPin) {
@@ -1115,6 +1139,47 @@ function EditModal({
               </div>
             )}
           </>
+        )}
+
+        {/* Mounjaro clinical access — super_admin only, any employee.
+            แพทย์/พยาบาล + เลขใบประกอบ + HR (ภาพรวม). Replaces the old
+            standalone /admin/mounjaro-access menu (owner 2026-06-04). */}
+        {currentUserRole === "super_admin" && (
+          <div className="border-t border-slate-200 pt-4 space-y-3">
+            <h4 className="text-sm font-semibold text-slate-700">
+              บทบาททางคลินิก — โครงการ Mounjaro
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label">บทบาท</label>
+                <select className="input" value={clinicalRole}
+                  onChange={(e) => setClinicalRole(e.target.value as "none" | "doctor" | "nurse")}>
+                  <option value="none">— ไม่มี —</option>
+                  <option value="doctor">แพทย์</option>
+                  <option value="nurse">พยาบาล</option>
+                </select>
+              </div>
+              {clinicalRole !== "none" && (
+                <div>
+                  <label className="label">เลขใบประกอบวิชาชีพ{clinicalRole === "doctor" ? " *" : ""}</label>
+                  <input className="input" value={licenseNo}
+                    onChange={(e) => setLicenseNo(e.target.value)}
+                    placeholder={clinicalRole === "doctor" ? "จำเป็น เช่น ว.12345" : "เช่น พย.6789"} />
+                </div>
+              )}
+            </div>
+            <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg border border-slate-200 hover:bg-slate-50">
+              <input type="checkbox" className="mt-0.5 h-4 w-4"
+                checked={hrAnalytics} onChange={(e) => setHrAnalytics(e.target.checked)} />
+              <div className="flex-1">
+                <div className="text-sm font-medium text-slate-800">เห็นภาพรวมโครงการ Mounjaro (HR)</div>
+                <div className="text-xs text-slate-500 mt-1">เห็นสถิติรวมเท่านั้น ไม่เห็นข้อมูลคนไข้รายบุคคล</div>
+              </div>
+            </label>
+            <p className="text-[11px] text-slate-400">
+              แพทย์เห็นเฉพาะคนไข้ของตัวเอง ปลดล็อกด้วยเลขใบประกอบ · พยาบาลยังไม่เห็นข้อมูลคลินิกในเฟสนี้
+            </p>
+          </div>
         )}
 
         {/* LINE binding — staff's userId, used to push the clock-in confirmation card */}
