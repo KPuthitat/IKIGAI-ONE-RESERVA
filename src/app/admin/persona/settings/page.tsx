@@ -11,7 +11,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
-import { getDb, type Branch } from "@/lib/db";
+import { getDb, getSystemSettings, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import BranchSettingsForm from "./BranchSettingsForm";
@@ -35,6 +35,7 @@ export default function PersonaSettingsPage() {
   const db = getDb();
   const branch = db.prepare("SELECT * FROM branches WHERE id = ?")
     .get(user.activeBranchId) as Branch | undefined;
+  const hrGroupName = getSystemSettings().recruita_exec_group_name?.trim() || null;
   if (!branch) {
     return <div className="card text-sm text-slate-600">{t(lang, "common.error")}</div>;
   }
@@ -74,6 +75,7 @@ export default function PersonaSettingsPage() {
         attendanceSummaryTime={branch.attendance_summary_time}
         shiftNotifyTime={branch.shift_notify_time}
         pendingDigestTime={branch.pending_digest_time}
+        hrGroupName={hrGroupName}
         branchName={branch.name}
       />
     </div>

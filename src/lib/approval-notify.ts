@@ -172,24 +172,42 @@ export async function notifyLeaveEvent(args: {
 
   switch (args.event) {
     case "submitted": {
-      // Notify everyone in the current tier (excluding requester).
-      if (!tier) return;
-      const recipients = getTierLineRecipients(row.branch_id, tier, requester.id);
-      for (const r of recipients) {
-        await pushOne(token, r.line_user_id, personaApprovalNotifyFlex({
-          ...baseDetail,
-          variant: "submitted_primary",
-          recipientName: recipientGreetingName(r),
-          ctaUrl: ctaPrimary.url,
-          ctaLabel: ctaPrimary.label
-        }));
-      }
+      // Owner 2026-06-06: leave requests are personal — notify the
+      // REQUESTER (acknowledgement only) + HR group (already done at
+      // the API call site via notifyHrLeaveRequest). Do NOT DM the
+      // approval chain: managers are in the HR group and see it there.
+      // If no one approves, the escalation cron bumps to tier 2.
+      const label = leaveLabelTh(row.type);
+      const range = row.date_from === row.date_to
+        ? row.date_from : `${row.date_from} – ${row.date_to}`;
+      await pushOne(token, requester.line_user_id, {
+        type: "flex",
+        altText: `คำขอ${label}ของคุณถูกส่งแล้ว`,
+        contents: {
+          type: "bubble", size: "kilo",
+          body: {
+            type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
+            contents: [
+              { type: "text", text: "คำขอลางานถูกส่งแล้ว", size: "xs", color: "#047857", weight: "bold" },
+              { type: "text", text: `${label} · ${range}`, size: "md", color: "#0F1B33", weight: "bold", margin: "sm", wrap: true },
+              { type: "text", text: "อยู่ระหว่างรออนุมัติจากหัวหน้างานในกลุ่ม HR", size: "sm", color: "#555555", wrap: true, margin: "sm" }
+            ]
+          },
+          footer: {
+            type: "box", layout: "vertical", paddingAll: "12px",
+            contents: [{
+              type: "button", style: "link",
+              action: { type: "uri", label: "ดูประวัติการลา", uri: ctaSelf.url }
+            }]
+          }
+        }
+      } as ReturnType<typeof personaApprovalNotifyFlex>);
       return;
     }
     case "tier_advanced": {
-      // After a tier-1 approve, the request is now at tier 2.
-      // Notify all tier-2 members (minus the requester, in case
-      // they're on the executive list too via self-skip).
+      // After a tier-1 approve, request is now at tier 2. Notify
+      // tier-2 members so they know to action it.
+      // (Kept: tier 2 members may not be in the same HR group line.)
       if (!tier) return;
       const recipients = getTierLineRecipients(row.branch_id, tier, requester.id);
       for (const r of recipients) {

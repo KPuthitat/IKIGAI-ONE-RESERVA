@@ -1739,6 +1739,12 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "recruita_exec_group_id")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN recruita_exec_group_id TEXT");
   }
+  // HR group name label (owner 2026-06-06) — shown next to every
+  // notification setting so admin can see "this goes to XXXX group"
+  // without having to remember which group ID maps to which chat.
+  if (!ssCols.some((c) => c.name === "recruita_exec_group_name")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN recruita_exec_group_name TEXT");
+  }
   // SSO contribution settings (2026-05-26). Thailand defaults are
   // (SSO rate + cap live in payroll_settings table — adjust those via
   //  /admin/persona/payroll/settings, not here. We tried adding a
@@ -4512,9 +4518,11 @@ export function updateSystemSettings(
     // Public privacy-policy URL. Empty string → NULL = no "ดูนโยบาย"
     // button rendered on consent surfaces.
     privacy_policy_url?: string | null;
-    // LINE group id receiving new-RECRUITA-application pushes.
+    // LINE group id receiving new-RECRUITA-application + PERSONA HR pushes.
     // Empty string → NULL = silent (no push fired).
     recruita_exec_group_id?: string | null;
+    // Human-readable name for the exec/HR group (display only, not validated).
+    recruita_exec_group_name?: string | null;
     // Inline PDPA text for the apply form. Empty → NULL = use the
     // built-in default. Newlines preserved.
     recruita_pdpa_text?: string | null;
@@ -4592,6 +4600,11 @@ export function updateSystemSettings(
   if (Object.prototype.hasOwnProperty.call(patch, "recruita_exec_group_id")) {
     sets.push("recruita_exec_group_id = ?");
     const raw = (patch.recruita_exec_group_id ?? "").trim();
+    vals.push(raw === "" ? null : raw);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "recruita_exec_group_name")) {
+    sets.push("recruita_exec_group_name = ?");
+    const raw = (patch.recruita_exec_group_name ?? "").trim();
     vals.push(raw === "" ? null : raw);
   }
   if (Object.prototype.hasOwnProperty.call(patch, "recruita_pdpa_text")) {
@@ -4762,6 +4775,10 @@ export type SystemSettings = {
    *  push fired (silent fallback so the form still works on a fresh
    *  install). */
   recruita_exec_group_id?: string | null;
+  /** Human-readable label for recruita_exec_group_id — shown in the
+   *  PERSONA settings UI so admin can see which group name each
+   *  notification setting routes to without memorising IDs. */
+  recruita_exec_group_name?: string | null;
   /** Inline PDPA consent text shown on the RECRUITA apply form.
    *  NULL/empty = render the built-in DEFAULT_RECRUITA_PDPA_TEXT.
    *  Plaintext; newlines preserved on render. */

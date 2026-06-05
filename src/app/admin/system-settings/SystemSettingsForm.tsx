@@ -28,7 +28,8 @@ export default function SystemSettingsForm({
   maintenanceMessage,
   maintenanceActive,
   privacyPolicyUrl,
-  recruitaExecGroupId
+  recruitaExecGroupId,
+  recruitaExecGroupName
 }: {
   token: string | null;
   groupId: string | null;
@@ -37,6 +38,7 @@ export default function SystemSettingsForm({
   maintenanceActive: boolean;
   privacyPolicyUrl: string;
   recruitaExecGroupId: string;
+  recruitaExecGroupName: string;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -69,6 +71,7 @@ export default function SystemSettingsForm({
   // Separate from global_staff_group_id so admin can route hiring
   // notifications to the owners chat without the staff seeing them.
   const [recruitaExecInput, setRecruitaExecInput] = useState(recruitaExecGroupId);
+  const [recruitaExecNameInput, setRecruitaExecNameInput] = useState(recruitaExecGroupName);
   // (Resignation-policy textareas moved 2026-05-28 to
   // /admin/persona/resignation — that's the menu where admins
   // already manage resignation requests, so the policy authoring
@@ -104,6 +107,7 @@ export default function SystemSettingsForm({
       // Always send — empty string clears the value server-side.
       body.privacy_policy_url = policyUrlInput.trim();
       body.recruita_exec_group_id = recruitaExecInput.trim();
+      body.recruita_exec_group_name = recruitaExecNameInput.trim();
 
       // (Resignation-policy fields moved to /admin/persona/resignation
       // 2026-05-28 — this form no longer sends them.)
@@ -350,30 +354,46 @@ export default function SystemSettingsForm({
         </p>
       </div>
 
-      {/* RECRUITA exec group — receives new-application Flex pushes */}
+      {/* HR / RECRUITA group — receives HR PERSONA alerts + RECRUITA notifications */}
       <div className="card space-y-3">
         <div>
           <h2 className="text-lg font-bold text-slate-800">
-            RECRUITA · กลุ่ม LINE ผู้บริหาร
+            กลุ่ม LINE HR · ผู้บริหาร
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            กลุ่มที่จะได้รับแจ้งเตือนเมื่อมีใบสมัครใหม่ + ทุกครั้งที่สถานะเปลี่ยน
-            (ส่งผ่าน <b>IKIGAI OS OA</b> เพื่อเก็บโควต้าข้อความของ IKIGAI Recruit ไว้ให้ผู้สมัคร)
+            กลุ่มที่รับแจ้งเตือน PERSONA (สรุปการเข้างาน · คำขอลา · คำขอเปลี่ยนกะ · สรุปคำขอค้าง)
+            และ RECRUITA (ใบสมัครใหม่ + สถานะเปลี่ยน) — ส่งผ่าน <b>IKIGAI OS OA</b>
+            <br />ชื่อกลุ่มที่ตั้งไว้จะแสดงในหน้าตั้งค่าการแจ้งเตือน เพื่อให้รู้ว่าส่งไปที่กลุ่มใด
           </p>
         </div>
-        <div>
-          <label className="label">LINE Group ID</label>
-          <input
-            className="input text-sm font-mono"
-            type="text"
-            value={recruitaExecInput}
-            onChange={(e) => setRecruitaExecInput(e.target.value)}
-            placeholder="Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-            maxLength={100} />
-          <p className="text-[10px] text-slate-400 mt-1">
-            ขึ้นต้นด้วย C/R/U ตามด้วย 32 hex characters. ปล่อยว่าง = ไม่ส่งแจ้งเตือน.
-            <br /><b>เชิญบอท IKIGAI OS เข้ากลุ่มนี้ก่อน</b> (ตัวเดียวกับที่แจ้งพนักงาน PERSONA) — บอทจะพิมพ์ Group ID ออกมาให้
-          </p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label className="label">ชื่อกลุ่ม LINE (label)</label>
+            <input
+              className="input text-sm"
+              type="text"
+              value={recruitaExecNameInput}
+              onChange={(e) => setRecruitaExecNameInput(e.target.value)}
+              placeholder="เช่น IKIGAI RECRUIT x HR"
+              maxLength={100} />
+            <p className="text-[10px] text-slate-400 mt-1">
+              ชื่อที่แสดงในหน้าตั้งค่า — ไม่กระทบการทำงาน
+            </p>
+          </div>
+          <div>
+            <label className="label">LINE Group ID</label>
+            <input
+              className="input text-sm font-mono"
+              type="text"
+              value={recruitaExecInput}
+              onChange={(e) => setRecruitaExecInput(e.target.value)}
+              placeholder="Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              maxLength={100} />
+            <p className="text-[10px] text-slate-400 mt-1">
+              ขึ้นต้นด้วย C/R/U ตามด้วย 32 hex. ปล่อยว่าง = ไม่ส่ง.
+              <br /><b>เชิญบอท IKIGAI OS เข้ากลุ่มนี้ก่อน</b> — บอทจะพิมพ์ Group ID ออกมาให้
+            </p>
+          </div>
         </div>
       </div>
 

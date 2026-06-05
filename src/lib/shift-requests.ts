@@ -81,24 +81,26 @@ export function createShiftRequest(
   ).get(actor.id) as { reports_to_user_id: number | null } | undefined;
   const me = db.prepare("SELECT display_name, title_prefix FROM users WHERE id = ?")
     .get(actor.id) as { display_name: string; title_prefix: string | null } | undefined;
-  // Also notify the HR group (IKIGAI RECRUIT x HR) immediately.
+  // Owner 2026-06-06: shift-change is personal — notify requester (DM)
+  // + HR group only. Do NOT DM the manager separately; managers are in
+  // the HR group and will see the request there.
+  const myName = nameWithPrefix(me?.title_prefix ?? null, me?.display_name ?? "พนักงาน");
   void notifyHrShiftRequest({
-    name: nameWithPrefix(me?.title_prefix ?? null, me?.display_name ?? "พนักงาน"),
+    name: myName,
     refNo: ref_no,
     kind: data.kind,
     workDate: data.work_date,
     offDate: data.off_date ?? null
   }).catch((e) => console.warn("[shift-req] HR notify failed", e));
-  if (mgr?.reports_to_user_id) {
-    const label = KIND_TH[data.kind];
-    const when = data.kind === "swap"
-      ? `หยุด ${data.off_date} ทำงานแทน ${data.work_date}`
-      : `ทำงานเพิ่ม ${data.work_date}`;
-    pushToUser(
-      mgr.reports_to_user_id,
-      `คำขอเปลี่ยนเวลางาน — ${label} (${ref_no})\nจาก: ${me?.display_name ?? "พนักงาน"}\n${when}\n\nเปิดอนุมัติที่เมนู PERSONA → คำขอเปลี่ยนเวลางาน`
-    );
-  }
+  // DM the requester — acknowledgement that their request was received.
+  const kindLabel = KIND_TH[data.kind];
+  const when = data.kind === "swap"
+    ? `หยุด ${data.off_date} ทำงานแทน ${data.work_date}`
+    : `ทำงานเพิ่ม ${data.work_date}`;
+  pushToUser(
+    actor.id,
+    `คำขอเปลี่ยนเวลางาน${kindLabel ? " (" + kindLabel + ")" : ""} ${ref_no ? "[" + ref_no + "]" : ""}\n${when}\nส่งคำขอแล้ว — รอหัวหน้างานอนุมัติในกลุ่ม HR`
+  );
   return { id, ref_no };
 }
 

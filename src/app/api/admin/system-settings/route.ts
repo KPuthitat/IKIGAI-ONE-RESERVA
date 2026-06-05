@@ -44,10 +44,10 @@ const Body = z.object({
   // Canva published-link (or any HTTPS URL); consent surfaces link
   // to it as "ดูนโยบาย". Plaintext, ≤500 chars. Empty = clear.
   privacy_policy_url: z.string().max(500).optional(),
-  // LINE group id receiving new-application Flex pushes. Same shape
-  // validation as global_staff_group_id but kept separate so admin
-  // can route RECRUITA notifications to a different chat.
+  // LINE group id receiving new-application Flex pushes + PERSONA HR alerts.
   recruita_exec_group_id: z.string().max(100).optional(),
+  // Human-readable label for the HR group (display only, e.g. "IKIGAI RECRUIT x HR").
+  recruita_exec_group_name: z.string().max(100).optional(),
   // Inline PDPA consent text for the apply form. 5000-char cap is
   // generous for a full notice. Empty = clear (form uses default).
   recruita_pdpa_text: z.string().max(5000).optional()
@@ -128,6 +128,9 @@ export async function POST(req: Request) {
       );
     }
     dbPatch.recruita_exec_group_id = g;
+  }
+  if (parsed.data.recruita_exec_group_name !== undefined) {
+    dbPatch.recruita_exec_group_name = parsed.data.recruita_exec_group_name.trim();
   }
   if (parsed.data.recruita_pdpa_text !== undefined) {
     dbPatch.recruita_pdpa_text = parsed.data.recruita_pdpa_text;

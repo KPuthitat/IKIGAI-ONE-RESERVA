@@ -54,6 +54,7 @@ export default function SystemSettingsPage() {
         maintenanceActive={settings.maintenance_active === 1}
         privacyPolicyUrl={settings.privacy_policy_url ?? ""}
         recruitaExecGroupId={settings.recruita_exec_group_id ?? ""}
+        recruitaExecGroupName={settings.recruita_exec_group_name ?? ""}
       />
 
       {/* RECRUITA PDPA policy image — admin uploads an image of the

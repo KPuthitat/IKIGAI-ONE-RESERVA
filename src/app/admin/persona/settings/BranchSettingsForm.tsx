@@ -23,6 +23,19 @@ const DEFAULT_AFTERNOON = "16:00";
 // fallback Flex header agree visually.
 const DEFAULT_BRAND_COLOR = "#1a1a2e";
 
+/** Small badge showing which LINE group a notification will be sent to.
+ *  Pulls the configured group name from system-settings; if not set, shows
+ *  a neutral placeholder so the admin knows to configure it. */
+function HrGroupChip({ name }: { name: string | null }) {
+  return name
+    ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium whitespace-nowrap">
+        ส่งถึงกลุ่ม: {name}
+      </span>
+    : <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium whitespace-nowrap">
+        ส่งถึงกลุ่ม HR (ตั้งชื่อกลุ่มที่ System Settings)
+      </span>;
+}
+
 export default function BranchSettingsForm({
   morningTime,
   afternoonTime,
@@ -41,6 +54,7 @@ export default function BranchSettingsForm({
   attendanceSummaryTime,
   shiftNotifyTime,
   pendingDigestTime,
+  hrGroupName,
   branchName
 }: {
   morningTime: string;
@@ -60,6 +74,7 @@ export default function BranchSettingsForm({
   attendanceSummaryTime: string | null;
   shiftNotifyTime: string | null;
   pendingDigestTime: string | null;
+  hrGroupName: string | null;  // label from system_settings.recruita_exec_group_name
   branchName: string;
 }) {
   const router = useRouter();
@@ -579,9 +594,10 @@ export default function BranchSettingsForm({
           is the branch's typical shift start + 1 hour. */}
       <div className="card space-y-3">
         <div>
-          <h2 className="font-bold text-slate-800 text-sm">
-            สรุปการเข้างาน (ส่งกลุ่ม IKIGAI RECRUIT x HR)
-          </h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="font-bold text-slate-800 text-sm">สรุปการเข้างาน</h2>
+            <HrGroupChip name={hrGroupName} />
+          </div>
           <p className="text-xs text-slate-500 mt-1">
             ระบบส่งสรุปการเข้างาน 4 ประเภท (ตรงเวลา / สาย / ลา / ขาด) ไปกลุ่ม HR
             ตามเวลาที่ตั้งไว้ — ตั้งค่าได้<b>มากกว่า 1 รอบ</b>ต่อวัน (คั่นด้วยเครื่องหมาย ,)
@@ -660,9 +676,10 @@ export default function BranchSettingsForm({
           pending leave — so nothing falls through the cracks. */}
       <div className="card space-y-3">
         <div>
-          <h2 className="font-bold text-slate-800 text-sm">
-            สรุปคำขอค้างประจำวัน (ไลน์ผู้บริหาร / HR)
-          </h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="font-bold text-slate-800 text-sm">สรุปคำขอค้างประจำวัน</h2>
+            <HrGroupChip name={hrGroupName} />
+          </div>
           <p className="text-xs text-slate-500 mt-1">
             ทุกวันระบบจะสรุปคำขอของพนักงานที่ยังรอดำเนินการ — คำขอเปลี่ยนเวลางาน
             และคำขอลางานที่รออนุมัติ — ส่งเข้ากลุ่มไลน์ผู้บริหาร / HR
