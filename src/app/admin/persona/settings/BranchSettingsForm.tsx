@@ -96,12 +96,19 @@ export default function BranchSettingsForm({
   // branch_daily_revenue + appears as a headline figure on the LINE
   // Flex card. OFF = field hidden, admin backfills via /admin/ascenda.
   const [dailyRevReq, setDailyRevReq] = useState<boolean>(requireDailyRevenue);
-  // Daily attendance summary time (TC-6) — HH:MM Bangkok. Empty
-  // string = disable feature. Recommended value = branch's typical
-  // shift start time + 1 hour, but admin is free to pick anything.
-  const [summaryTime, setSummaryTime] = useState<string>(
-    attendanceSummaryTime || ""
-  );
+  // Daily attendance summary times — comma-separated HH:MM values,
+  // e.g. "08:30,17:00". Routes to the HR group. Legacy single-time
+  // field is kept for backwards compat but superseded by this.
+  const [summaryTimes, setSummaryTimes] = useState<string>(() => {
+    // Prefer the new JSON array field if present
+    if (typeof attendanceSummaryTime === "string" && attendanceSummaryTime.startsWith("[")) {
+      try {
+        const arr = JSON.parse(attendanceSummaryTime) as string[];
+        return arr.join(", ");
+      } catch { /* fall through */ }
+    }
+    return attendanceSummaryTime || "";
+  });
   // Per-shift personal LINE reminder time. Empty = auto off.
   const [shiftNotify, setShiftNotify] = useState<string>(
     shiftNotifyTime || ""
@@ -137,7 +144,7 @@ export default function BranchSettingsForm({
     mOpeningReq === requireMorningOpening &&
     tClosingReq === requireTodayClosing &&
     dailyRevReq === requireDailyRevenue &&
-    (summaryTime || null) === (attendanceSummaryTime || null) &&
+    (summaryTimes || null) === (attendanceSummaryTime || null) &&
     (shiftNotify || null) === (shiftNotifyTime || null) &&
     (pendingDigest || null) === (pendingDigestTime || null);
 
@@ -172,7 +179,9 @@ export default function BranchSettingsForm({
           require_morning_opening: mOpeningReq,
           require_today_closing: tClosingReq,
           require_daily_revenue: dailyRevReq,
-          attendance_summary_time: summaryTime.trim() || null,
+          attendance_summary_times_json: summaryTimes.trim() ? JSON.stringify(
+            summaryTimes.split(",").map((t) => t.trim()).filter((t) => /^\d{2}:\d{2}$/.test(t))
+          ) : null,
           shift_notify_time: shiftNotify.trim() || null,
           pending_digest_time: pendingDigest.trim() || null
         })
@@ -571,37 +580,38 @@ export default function BranchSettingsForm({
       <div className="card space-y-3">
         <div>
           <h2 className="font-bold text-slate-800 text-sm">
-            {t("admin.persona.settings.attendanceSummary.title")}
+            สรุปการเข้างาน (ส่งกลุ่ม IKIGAI RECRUIT x HR)
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            {t("admin.persona.settings.attendanceSummary.help", { branch: branchName })}
+            ระบบส่งสรุปการเข้างาน 4 ประเภท (ตรงเวลา / สาย / ลา / ขาด) ไปกลุ่ม HR
+            ตามเวลาที่ตั้งไว้ — ตั้งค่าได้<b>มากกว่า 1 รอบ</b>ต่อวัน (คั่นด้วยเครื่องหมาย ,)
+            เช่น <code className="bg-slate-100 px-1 rounded text-[11px]">08:30, 17:00</code>
           </p>
         </div>
         <div>
-          <label className="label text-[11px]">
-            {t("admin.persona.settings.attendanceSummary.timeLabel")}
-          </label>
+          <label className="label text-[11px]">เวลาส่งสรุป (HH:MM) — ใส่ได้หลายรอบ คั่นด้วย ,</label>
           <div className="flex items-center gap-2">
             <input
-              type="time"
-              className="input w-36 text-sm"
-              value={summaryTime}
-              onChange={(e) => setSummaryTime(e.target.value)}
+              type="text"
+              className="input flex-1 text-sm"
+              value={summaryTimes}
+              onChange={(e) => setSummaryTimes(e.target.value)}
+              placeholder="เช่น 08:30, 17:00"
             />
-            {summaryTime && (
+            {summaryTimes && (
               <button
                 type="button"
-                onClick={() => setSummaryTime("")}
+                onClick={() => setSummaryTimes("")}
                 className="text-xs text-slate-500 hover:text-brand underline whitespace-nowrap"
               >
-                {t("admin.persona.settings.attendanceSummary.clear")}
+                ปิด
               </button>
             )}
           </div>
           <p className="text-[10px] text-slate-400 mt-1">
-            {summaryTime
-              ? t("admin.persona.settings.attendanceSummary.enabledHint", { time: summaryTime })
-              : t("admin.persona.settings.attendanceSummary.disabledHint")}
+            {summaryTimes.trim()
+              ? `เปิดอยู่ — ส่งกลุ่ม HR ตอน: ${summaryTimes}`
+              : "ปิดอยู่ — ใส่เวลาเพื่อเปิดการส่งสรุปอัตโนมัติ"}
           </p>
         </div>
       </div>

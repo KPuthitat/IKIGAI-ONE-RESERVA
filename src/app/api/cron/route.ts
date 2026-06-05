@@ -14,6 +14,7 @@ import {
   notifyCustomer,
   notifyStaff,
   notifyToStaffGroup,
+  notifyToHrGroup,
   dailyAttendanceSummaryFlex,
   personaResignationTakenFlex,
   sendLinePush
@@ -30,7 +31,9 @@ import { autoExpireStaleBookings } from "@/lib/stale-bookings";
 import {
   buildDailyAttendanceRoster,
   isDailySummaryDue,
-  markDailySummarySent
+  markDailySummarySent,
+  getAttendanceSummaryDueTimes,
+  markAttendanceSummarySentTime
 } from "@/lib/daily-attendance-summary";
 import {
   sendShiftNotifications,
@@ -107,13 +110,49 @@ async function runCron(): Promise<NextResponse> {
   const nowBkk = new Date(Date.now() + 7 * 60 * 60 * 1000);
   const todayBkk = nowBkk.toISOString().slice(0, 10);  // YYYY-MM-DD
   const nowHhmmBkk = nowBkk.toISOString().slice(11, 16); // HH:MM
+  // Multi-time path: check which configured time slots are due for each branch.
+  // Routes to the HR group (recruita_exec_group_id = "IKIGAI RECRUIT x HR").
   for (const branch of branches) {
+    const dueTimes = getAttendanceSummaryDueTimes(branch, nowHhmmBkk, todayBkk);
+    if (dueTimes.length === 0) continue;
+    for (const t of dueTimes) {
+      try {
+        const rows = buildDailyAttendanceRoster(branch.id, todayBkk);
+        if (rows.length > 0) {
+          const flex = dailyAttendanceSummaryFlex({
+            branchName: branch.name,
+            reportDate: todayBkk,
+            rows: rows.map((r) => ({
+              displayName: r.displayName,
+              titlePrefix: r.titlePrefix,
+              category: r.category,
+              inTs: r.inTs,
+              minutesLate: r.minutesLate,
+              leaveType: r.leaveType
+            })),
+            headerColor: branch.brand_color
+          });
+          await notifyToHrGroup(flex);
+          attendanceSummariesSent += 1;
+        }
+        // Stamp this specific time as sent (updates sent_log + last_sent_date).
+        markAttendanceSummarySentTime(branch.id, todayBkk, t);
+      } catch (e) {
+        console.error("daily attendance summary error", branch.slug, t, e);
+        reportError(e, "cron daily-attendance-summary", {
+          branchSlug: branch.slug, branchId: branch.id, date: todayBkk, time: t
+        });
+      }
+    }
+  }
+  // Legacy single-time fallback for branches that haven't re-saved their
+  // settings yet (attendance_summary_times_json is null). Uses the old
+  // isDailySummaryDue / markDailySummarySent path.
+  for (const branch of branches) {
+    if (branch.attendance_summary_times_json) continue; // already handled above
     if (!isDailySummaryDue(branch, nowHhmmBkk, todayBkk)) continue;
     try {
       const rows = buildDailyAttendanceRoster(branch.id, todayBkk);
-      // If the branch has zero staff, mark "sent" anyway so we
-      // don't keep retrying every 5 minutes for a branch with an
-      // empty roster.
       if (rows.length > 0) {
         const flex = dailyAttendanceSummaryFlex({
           branchName: branch.name,
@@ -128,16 +167,14 @@ async function runCron(): Promise<NextResponse> {
           })),
           headerColor: branch.brand_color
         });
-        await notifyToStaffGroup(branch, flex, "global");
+        await notifyToHrGroup(flex);
         attendanceSummariesSent += 1;
       }
       markDailySummarySent(branch.id, todayBkk);
     } catch (e) {
-      console.error("daily attendance summary error", branch.slug, e);
+      console.error("daily attendance summary (legacy) error", branch.slug, e);
       reportError(e, "cron daily-attendance-summary", {
-        branchSlug: branch.slug,
-        branchId: branch.id,
-        date: todayBkk
+        branchSlug: branch.slug, branchId: branch.id, date: todayBkk
       });
     }
   }
@@ -185,7 +222,7 @@ async function runCron(): Promise<NextResponse> {
           digest,
           headerColor: branch.brand_color
         });
-        await notifyToStaffGroup(branch, flex, "global");
+        await notifyToHrGroup(flex);
         pendingDigestsSent += 1;
       }
       markPendingDigestSent(branch.id, todayBkk);

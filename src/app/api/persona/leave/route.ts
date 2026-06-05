@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isBranchChainReady, pickInitialTier } from "@/lib/approval-tiers";
-import { notifyLeaveEvent } from "@/lib/approval-notify";
+import { notifyLeaveEvent, notifyHrLeaveRequest } from "@/lib/approval-notify";
 import {
   ALL_LEAVE_TYPES, getEligibleLeaveTypesForUser, saveLeaveAttachment,
   analyzeLongLeave, detectWeekendExtension, getPublicHolidaySet, generateRefNo,
@@ -219,6 +219,10 @@ export async function POST(req: Request) {
     requestId: Number(result.lastInsertRowid),
     event: "submitted"
   }).catch((e) => console.warn("leave notify (submitted) failed", e));
+  // Also notify the HR group (IKIGAI RECRUIT x HR) so HR sees every
+  // leave request in one place (owner 2026-06-06).
+  notifyHrLeaveRequest(Number(result.lastInsertRowid))
+    .catch((e) => console.warn("leave notify HR failed", e));
 
   return NextResponse.json({ ok: true, id: result.lastInsertRowid, ref_no: refNo });
 }

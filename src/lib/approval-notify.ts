@@ -29,8 +29,9 @@
 
 import { getDb } from "./db";
 import { getPlatformChannel, isChannelReady } from "./messaging-channels";
-import { sendLinePush, personaApprovalNotifyFlex } from "./line";
+import { sendLinePush, personaApprovalNotifyFlex, notifyToHrGroup } from "./line";
 import { getTierLineRecipients, type TierLevel } from "./approval-tiers";
+import { nameWithPrefix } from "./name";
 
 export type LeaveApprovalEvent =
   | "submitted"        // → notify current tier
@@ -247,4 +248,79 @@ export async function notifyLeaveEvent(args: {
       return;
     }
   }
+}
+
+// ── HR group alerts (owner 2026-06-06) ──────────────────────────────
+// Send a brief Flex card to the HR group when a leave or shift-change
+// request is submitted, so HR sees every request in one group.
+const LEAVE_TYPE_HR: Record<string, string> = {
+  sick: "ลาป่วย", personal: "ลากิจส่วนตัว", annual: "ลาพักร้อน",
+  pt_emergency: "ลาฉุกเฉิน (พาร์ทไทม์)", maternity: "ลาคลอด",
+  ordination: "ลาบวช", sterilization: "ลาทำหมัน", military: "ลารับราชการทหาร"
+};
+
+/** Push a compact Flex notification to the HR group when a leave request
+ *  is submitted. Best-effort: never throws, skips if HR group unconfigured. */
+export async function notifyHrLeaveRequest(requestId: number): Promise<void> {
+  try {
+    const row = getDb().prepare(`
+      SELECT l.type, l.date_from, l.date_to, l.days, l.ref_no,
+             u.display_name, u.title_prefix
+      FROM leave_requests l JOIN users u ON u.id = l.user_id
+      WHERE l.id = ?
+    `).get(requestId) as {
+      type: string; date_from: string; date_to: string; days: number;
+      ref_no: string | null; display_name: string; title_prefix: string | null;
+    } | undefined;
+    if (!row) return;
+    const name = nameWithPrefix(row.title_prefix, row.display_name);
+    const label = LEAVE_TYPE_HR[row.type] ?? row.type;
+    const range = row.date_from === row.date_to ? row.date_from : `${row.date_from} – ${row.date_to}`;
+    await notifyToHrGroup({
+      type: "flex",
+      altText: `คำขอลางาน · ${name} · ${label}`,
+      contents: {
+        type: "bubble", size: "kilo",
+        body: {
+          type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
+          contents: [
+            { type: "text", text: "คำขอลางาน · รออนุมัติ", size: "xs", color: "#B45309", weight: "bold" },
+            { type: "text", text: name, size: "md", color: "#0F1B33", weight: "bold", margin: "sm", wrap: true },
+            { type: "text", text: `${label} · ${range} (${row.days} วัน)`, size: "sm", color: "#555555", wrap: true },
+            ...(row.ref_no ? [{ type: "text" as const, text: row.ref_no, size: "xxs" as const, color: "#9a9a9a" }] : [])
+          ]
+        }
+      }
+    });
+  } catch { /* best-effort */ }
+}
+
+/** Push a compact Flex notification to the HR group when a shift-change
+ *  request is submitted. Best-effort. */
+export async function notifyHrShiftRequest(params: {
+  name: string; refNo: string | null; kind: "extra_shift" | "swap";
+  workDate: string; offDate: string | null;
+}): Promise<void> {
+  try {
+    const kindLabel = params.kind === "swap" ? "ขอสลับวันหยุด" : "ขอเพิ่มกะ";
+    const detail = params.kind === "swap"
+      ? `หยุด ${params.offDate} ทำงานแทน ${params.workDate}`
+      : `ทำงานเพิ่ม ${params.workDate}`;
+    await notifyToHrGroup({
+      type: "flex",
+      altText: `คำขอเปลี่ยนเวลางาน · ${params.name} · ${kindLabel}`,
+      contents: {
+        type: "bubble", size: "kilo",
+        body: {
+          type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
+          contents: [
+            { type: "text", text: "คำขอเปลี่ยนเวลางาน · รออนุมัติ", size: "xs", color: "#1a2b50", weight: "bold" },
+            { type: "text", text: params.name, size: "md", color: "#0F1B33", weight: "bold", margin: "sm", wrap: true },
+            { type: "text", text: `${kindLabel} · ${detail}`, size: "sm", color: "#555555", wrap: true },
+            ...(params.refNo ? [{ type: "text" as const, text: params.refNo, size: "xxs" as const, color: "#9a9a9a" }] : [])
+          ]
+        }
+      }
+    });
+  } catch { /* best-effort */ }
 }

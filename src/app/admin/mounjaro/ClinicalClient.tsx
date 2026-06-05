@@ -110,7 +110,7 @@ function StatusBadge({ level }: { level: "danger" | "warning" | null }) {
     return <span className="text-[11px] px-2.5 py-0.5 rounded-sm border border-[#B91C1C] bg-[#FEF2F2] text-[#B91C1C] font-medium">เร่งด่วน</span>;
   if (level === "warning")
     return <span className="text-[11px] px-2.5 py-0.5 rounded-sm border border-[#B45309] bg-[#FEF3C7] text-[#78350F] font-medium">เฝ้าระวัง</span>;
-  return <span className="text-[11px] px-2.5 py-0.5 rounded-sm border border-[#C9C2B0] bg-[#FAF8F3] text-slate-500 font-medium">ปกติ</span>;
+  return <span className="text-[11px] px-2.5 py-0.5 rounded-sm border border-[#C9C2B0] bg-slate-50 text-slate-500 font-medium">ปกติ</span>;
 }
 
 function PatientList({ patients, pending, pendingInvitations }: {
@@ -129,7 +129,7 @@ function PatientList({ patients, pending, pendingInvitations }: {
         </div>
         <div className="flex gap-2.5">
           <button type="button" onClick={() => setInvite(true)}
-            className="px-4 py-2.5 border border-[#B8954F] text-[#B8954F] hover:bg-[#F5EFE0] text-[13px] font-medium rounded-sm transition whitespace-nowrap">
+            className="px-4 py-2.5 border border-[#B8954F] text-[#B8954F] hover:bg-slate-50 text-[13px] font-medium rounded-sm transition whitespace-nowrap">
             + ส่งคำเชิญ
           </button>
           {pending.length > 0 && (
@@ -151,7 +151,7 @@ function PatientList({ patients, pending, pendingInvitations }: {
       )}
 
       {pending.length > 0 && (
-        <div className="bg-[#F5EFE0] border border-[#D4B675] rounded-sm px-4 py-2.5 text-[13px] text-[#5C4A28]">
+        <div className="bg-white border border-[#D4B675] rounded-sm px-4 py-2.5 text-[13px] text-slate-700">
           พนักงานยืนยันรับคำเชิญแล้ว <b>{pending.length}</b> คน รอบันทึก Baseline —
           กด <button onClick={() => setIntake(true)} className="underline font-medium">ทำ Baseline</button> เพื่อเปิดแฟ้มผู้ป่วย
         </div>
@@ -181,7 +181,7 @@ function PatientList({ patients, pending, pendingInvitations }: {
             <tbody>
               {patients.map((p) => (
                 <tr key={p.id} onClick={() => router.push(`/admin/mounjaro/${p.id}`)}
-                  className="border-b border-[#E5E0D5] last:border-0 hover:bg-[#F5EFE0] cursor-pointer">
+                  className="border-b border-[#E5E0D5] last:border-0 hover:bg-slate-50 cursor-pointer">
                   <td className="py-3 px-5 font-mono text-xs tabular-nums">{p.hn ?? "—"}</td>
                   <td className="py-3 px-3 font-medium text-[#0F1B33]">
                     {p.employee_name}
@@ -203,7 +203,7 @@ function PatientList({ patients, pending, pendingInvitations }: {
       </div>
 
       {/* Standard monitoring reference */}
-      <div className="bg-[#F5EFE0] border border-[#D4B675] rounded-sm px-6 py-5">
+      <div className="bg-white border border-[#D4B675] rounded-sm px-6 py-5">
         <div className="text-[12px] font-semibold text-[#0F1B33] tracking-[0.08em] uppercase mb-2.5">
           เกณฑ์การติดตามมาตรฐาน · Standard Monitoring Parameters
         </div>
@@ -329,7 +329,7 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
             <div className="text-white font-semibold text-[16px]">เพิ่มผู้ป่วยใหม่</div>
             <div className="text-[10px] text-[#D4B675] tracking-[0.1em] uppercase mt-0.5">New Patient Registration</div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 border border-white/30 text-white text-lg hover:bg-white/10">×</button>
+          <button onClick={onClose} className="w-8 h-8 border border-white/30 text-white text-lg hover:bg-slate-50/10">×</button>
         </div>
         <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
 
@@ -338,7 +338,7 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
               <div className="lg:col-span-3">
                 <label className={labelCls}>พนักงานที่สมัครเข้าโครงการ <span className="text-[#B91C1C]">*</span></label>
                 {pending.length === 0 ? (
-                  <p className="mt-1 text-sm text-slate-500 bg-[#FAF8F3] border border-[#E5E0D5] rounded-sm px-3 py-2">
+                  <p className="mt-1 text-sm text-slate-500 bg-slate-50 border border-[#E5E0D5] rounded-sm px-3 py-2">
                     ยังไม่มีพนักงานยืนยันรับคำเชิญ — ส่งคำเชิญก่อน แล้วรอพนักงานยืนยัน
                   </p>
                 ) : (
@@ -359,7 +359,7 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
               </div>
               <div>
                 <label className={labelCls}>ชื่อ-สกุล</label>
-                <input className={inputCls + " mt-1 bg-[#FAF8F3] text-slate-500"} value={selected?.employee_name ?? ""} readOnly />
+                <input className={inputCls + " mt-1 bg-slate-50 text-slate-500"} value={selected?.employee_name ?? ""} readOnly />
               </div>
               <div>
                 <label className={labelCls}>อายุ (ปี)</label>
@@ -427,8 +427,8 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
 
           {err && <p className="text-sm text-[#B91C1C]">✗ {err}</p>}
         </div>
-        <div className="px-6 py-4 bg-[#FAF8F3] border-t border-[#E5E0D5] flex justify-end gap-2.5">
-          <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#0F1B33] hover:bg-white">ยกเลิก</button>
+        <div className="px-6 py-4 bg-slate-50 border-t border-[#E5E0D5] flex justify-end gap-2.5">
+          <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#0F1B33] hover:bg-slate-50">ยกเลิก</button>
           <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#0F1B33] hover:bg-[#1B2D4F] text-white rounded-sm disabled:opacity-50">
             {busy ? "กำลังบันทึก…" : "บันทึก"}
           </button>
@@ -514,7 +514,7 @@ function InviteModal({ onClose, onSent }: { onClose: () => void; onSent: () => v
             <div className="text-white font-semibold text-[15px]">ส่งคำเชิญเข้าร่วมโครงการ</div>
             <div className="text-[10px] text-[#D4B675] tracking-[0.1em] uppercase mt-0.5">Send Program Invitation</div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 border border-white/30 text-white text-lg hover:bg-white/10">×</button>
+          <button onClick={onClose} className="w-8 h-8 border border-white/30 text-white text-lg hover:bg-slate-50/10">×</button>
         </div>
         <div className="p-6 space-y-4">
           <p className="text-[13px] text-slate-600">
@@ -526,7 +526,7 @@ function InviteModal({ onClose, onSent }: { onClose: () => void; onSent: () => v
             {loading ? (
               <p className="mt-1 text-sm text-slate-400">กำลังโหลด…</p>
             ) : employees.length === 0 ? (
-              <p className="mt-1 text-sm text-slate-500 bg-[#FAF8F3] border border-[#E5E0D5] rounded-sm px-3 py-2">
+              <p className="mt-1 text-sm text-slate-500 bg-slate-50 border border-[#E5E0D5] rounded-sm px-3 py-2">
                 ไม่มีพนักงานที่สามารถเชิญได้ (ทุกคนอยู่ในโครงการแล้ว)
               </p>
             ) : (
@@ -542,15 +542,15 @@ function InviteModal({ onClose, onSent }: { onClose: () => void; onSent: () => v
             )}
           </div>
           {selected && (
-            <div className="bg-[#F5EFE0] border border-[#D4B675] rounded-sm px-4 py-3 text-[13px] text-[#5C4A28]">
+            <div className="bg-white border border-[#D4B675] rounded-sm px-4 py-3 text-[13px] text-slate-700">
               <b>{selected.title_prefix ? selected.title_prefix + " " : ""}{selected.display_name}</b> จะได้รับแจ้งเตือนทาง LINE
               ให้กดยืนยันเข้าร่วมโครงการ · เมื่อยืนยันแล้วจึงจะปรากฏในรายการรอทำ Baseline
             </div>
           )}
           {err && <p className="text-sm text-[#B91C1C]">✗ {err}</p>}
         </div>
-        <div className="px-6 py-4 bg-[#FAF8F3] border-t border-[#E5E0D5] flex justify-end gap-2.5">
-          <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#0F1B33] hover:bg-white">ยกเลิก</button>
+        <div className="px-6 py-4 bg-slate-50 border-t border-[#E5E0D5] flex justify-end gap-2.5">
+          <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#0F1B33] hover:bg-slate-50">ยกเลิก</button>
           <button onClick={send} disabled={busy || selectedId === "" || loading}
             className="px-5 py-2 text-[13px] bg-[#0F1B33] hover:bg-[#1B2D4F] text-white rounded-sm disabled:opacity-50">
             {busy ? "กำลังส่ง…" : "ส่งคำเชิญ"}

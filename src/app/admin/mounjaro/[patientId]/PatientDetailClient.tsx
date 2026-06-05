@@ -206,7 +206,7 @@ export default function PatientDetailClient(props: {
           <div className="grid grid-cols-3 sm:grid-cols-6">
             {DOSES.map((dose, i) => {
               const idx = DOSES.indexOf(currentDose);
-              const cls = i < idx ? "bg-[#F5EFE0] border-[#B8954F]" : i === idx ? "bg-[#0F1B33] border-[#0F1B33] text-white" : "bg-white border-[#E5E0D5]";
+              const cls = i < idx ? "bg-white border-[#B8954F]" : i === idx ? "bg-[#0F1B33] border-[#0F1B33] text-white" : "bg-white border-[#E5E0D5]";
               return (
                 <div key={dose} className={`text-center py-4 px-2 border ${i > 0 ? "border-l-0 sm:border-l-0" : ""} ${cls}`}>
                   <div className={`text-lg font-bold ${i === idx ? "text-white" : "text-[#0F1B33]"}`}>{dose}</div>
@@ -224,7 +224,7 @@ export default function PatientDetailClient(props: {
               <div><div className="font-semibold">ยังไม่มีการบันทึกนัด</div>เริ่มต้นที่ 2.5 mg เป็นเวลา 4 สัปดาห์ แล้วประเมินการปรับขนาดยา</div>
             </div>
           ) : (
-            <div className="mt-4 bg-[#FAF8F3] border-l-[3px] border-[#B8954F] px-4 py-3">
+            <div className="mt-4 bg-slate-50 border-l-[3px] border-[#B8954F] px-4 py-3">
               <div className="text-[11px] text-slate-500 uppercase tracking-[0.08em] mb-1">การตัดสินใจครั้งล่าสุด</div>
               <div className="font-semibold text-[15px] text-[#0F1B33]">{DECISION_LABEL[last.decision ?? "maintain"] ?? "—"}</div>
               <div className="text-[12px] text-slate-500 mt-0.5">
@@ -288,7 +288,7 @@ export default function PatientDetailClient(props: {
       {/* Tab: Baseline */}
       {tab === "baseline" && (
         <Card title="ข้อมูลพื้นฐาน · Baseline Data"
-          action={<button onClick={() => setShowEdit(true)} className="px-3 py-1.5 text-[12px] border border-[#C9C2B0] rounded-sm text-[#0F1B33] hover:bg-[#FAF8F3]">แก้ไข</button>}>
+          action={<button onClick={() => setShowEdit(true)} className="px-3 py-1.5 text-[12px] border border-[#C9C2B0] rounded-sm text-[#0F1B33] hover:bg-slate-50">แก้ไข</button>}>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-[#E5E0D5] border border-[#E5E0D5] rounded-sm overflow-hidden">
             <Stat label="น้ำหนักเริ่มต้น" value={baseWeight != null ? baseWeight.toFixed(1) : "—"} unit="กก." />
             <Stat label="ส่วนสูง" value={baseHeight != null ? baseHeight.toFixed(0) : "—"} unit="ซม." />
@@ -305,7 +305,7 @@ export default function PatientDetailClient(props: {
             <FlagList title="ข้อห้าม / สัญญาณเตือน" danger labels={flagLabels(contraindications, CONTRA_LABELS)} empty="ไม่พบ" />
           </div>
           {notes && (
-            <div className="mt-5 bg-[#FAF8F3] border-l-[3px] border-[#B8954F] px-4 py-3">
+            <div className="mt-5 bg-slate-50 border-l-[3px] border-[#B8954F] px-4 py-3">
               <div className="text-[11px] text-slate-500 uppercase tracking-[0.08em] mb-1">หมายเหตุ</div>
               <div className="text-[13px] text-[#0F1B33]">{notes}</div>
             </div>
@@ -321,7 +321,7 @@ export default function PatientDetailClient(props: {
 
       {/* Footer actions */}
       <div className="flex justify-end gap-2.5 pt-1">
-        <button onClick={() => window.print()} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#0F1B33] hover:bg-[#FAF8F3]">พิมพ์เอกสาร</button>
+        <button onClick={() => window.print()} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#0F1B33] hover:bg-slate-50">พิมพ์เอกสาร</button>
         <button onClick={deletePatient} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#B91C1C] hover:bg-[#FEF2F2]">ลบผู้ป่วย</button>
       </div>
 
@@ -415,7 +415,7 @@ function FragmentRow({ v, se, patientId, onChange }: { v: Visit; se: string; pat
   }
   void patientId;
   const decCls: Record<string, string> = {
-    maintain: "border-[#C9C2B0] bg-[#FAF8F3] text-slate-500",
+    maintain: "border-[#C9C2B0] bg-slate-50 text-slate-500",
     increase: "border-[#047857] bg-[#ECFDF5] text-[#047857]",
     decrease: "border-[#B45309] bg-[#FEF3C7] text-[#78350F]",
     hold: "border-[#B91C1C] bg-[#FEF2F2] text-[#B91C1C]"
@@ -438,7 +438,7 @@ function FragmentRow({ v, se, patientId, onChange }: { v: Visit; se: string; pat
         </td>
       </tr>
       {v.notes && (
-        <tr><td colSpan={7} className="bg-[#FAF8F3] text-[12px] text-slate-600 px-4 py-2 border-b border-[#E5E0D5]">
+        <tr><td colSpan={7} className="bg-slate-50 text-[12px] text-slate-600 px-4 py-2 border-b border-[#E5E0D5]">
           <b>บันทึก:</b> {v.notes}
         </td></tr>
       )}
@@ -824,7 +824,7 @@ function ModalShell({ title, sub, onClose, footer, children }: {
           <button onClick={onClose} className="w-8 h-8 border border-white/30 text-white text-lg hover:bg-white/10">×</button>
         </div>
         <div className="p-6 max-h-[70vh] overflow-y-auto">{children}</div>
-        <div className="px-6 py-4 bg-[#FAF8F3] border-t border-[#E5E0D5] flex justify-end gap-2.5">{footer}</div>
+        <div className="px-6 py-4 bg-slate-50 border-t border-[#E5E0D5] flex justify-end gap-2.5">{footer}</div>
       </div>
     </div>
   );

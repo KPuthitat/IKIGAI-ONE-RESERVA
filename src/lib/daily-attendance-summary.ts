@@ -208,9 +208,8 @@ export function buildDailyAttendanceRoster(
   });
 }
 
-/** Mark a branch as having sent today's summary so the next cron tick
- *  the same day is a no-op. Caller passes the YYYY-MM-DD that was
- *  actually summarized. */
+/** Mark a branch as having sent today's summary (legacy single-time
+ *  path). Caller passes the YYYY-MM-DD that was actually summarized. */
 export function markDailySummarySent(
   branchId: number,
   dateBkk: string
@@ -220,23 +219,92 @@ export function markDailySummarySent(
   ).run(dateBkk, branchId);
 }
 
-/** Decide whether a branch is due for its daily summary right now.
- *  Pure function — caller pipes in the branch row + current Bangkok
- *  HH:MM + Bangkok date so unit tests don't need to mock the clock.
- *
- *    branch.attendance_summary_time NULL → feature disabled, never due.
- *    last_sent_date == today                → already sent today, skip.
- *    now_hhmm < summary_time                → not time yet.
- *    otherwise                              → due. */
+/** Decide whether a branch is due for its daily summary right now
+ *  (legacy single-time path — kept for backwards compat; the cron now
+ *  uses getAttendanceSummaryDueTimes which supports multiple times). */
 export function isDailySummaryDue(
   branch: Branch,
   nowHhmmBkk: string,
   todayBkk: string
 ): boolean {
+  // If the new multi-time column is set, defer to getAttendanceSummaryDueTimes.
+  if (branch.attendance_summary_times_json) {
+    return getAttendanceSummaryDueTimes(branch, nowHhmmBkk, todayBkk).length > 0;
+  }
   const summaryTime = branch.attendance_summary_time;
   if (!summaryTime || !summaryTime.trim()) return false;
   if (branch.attendance_summary_last_sent_date === todayBkk) return false;
-  // Lexicographic string compare works on zero-padded HH:MM.
   if (nowHhmmBkk < summaryTime) return false;
   return true;
+}
+
+// ── Multiple daily attendance summary times (owner 2026-06-06) ────────
+// Admin configures 1-3 send times per branch (e.g., "08:30,17:00").
+// Attendance summaries route to the HR group (recruita_exec_group_id).
+
+/** Parse the configured send times for a branch.
+ *  Prefers the new times_json column; falls back to the legacy single
+ *  time field so existing branches keep working without a re-save. */
+export function getAttendanceSummaryTimes(branch: Branch): string[] {
+  if (branch.attendance_summary_times_json?.trim()) {
+    try {
+      const arr = JSON.parse(branch.attendance_summary_times_json) as unknown;
+      if (Array.isArray(arr)) return (arr as string[]).filter((t) => /^\d{2}:\d{2}$/.test(t));
+    } catch { /* fall through */ }
+  }
+  // Legacy: single time stored in attendance_summary_time
+  const t = branch.attendance_summary_time?.trim();
+  return t ? [t] : [];
+}
+
+/** Which of the configured times are due right now (>= now, not yet
+ *  sent today). Returns an array of due time strings (may be empty). */
+export function getAttendanceSummaryDueTimes(
+  branch: Branch,
+  nowHhmmBkk: string,
+  todayBkk: string
+): string[] {
+  const times = getAttendanceSummaryTimes(branch);
+  if (times.length === 0) return [];
+
+  // Parse the sent log for today
+  let sentToday: string[] = [];
+  if (branch.attendance_summary_sent_log) {
+    try {
+      const log = JSON.parse(branch.attendance_summary_sent_log) as { date?: string; sent?: string[] };
+      if (log.date === todayBkk && Array.isArray(log.sent)) {
+        sentToday = log.sent;
+      }
+    } catch { /* ignore corrupt log */ }
+  }
+  // Also check the legacy last_sent_date for the single-time path
+  if (branch.attendance_summary_last_sent_date === todayBkk && times.length === 1) {
+    return []; // legacy path already sent today
+  }
+  return times.filter((t) => nowHhmmBkk >= t && !sentToday.includes(t));
+}
+
+/** Mark a specific time slot as sent today.
+ *  Updates the JSON sent log on the branch row. */
+export function markAttendanceSummarySentTime(
+  branchId: number,
+  dateBkk: string,
+  timeSent: string
+): void {
+  const db = getDb();
+  const row = db.prepare("SELECT attendance_summary_sent_log FROM branches WHERE id = ?")
+    .get(branchId) as { attendance_summary_sent_log: string | null } | undefined;
+  let log: { date: string; sent: string[] } = { date: dateBkk, sent: [] };
+  if (row?.attendance_summary_sent_log) {
+    try {
+      const prev = JSON.parse(row.attendance_summary_sent_log) as { date?: string; sent?: string[] };
+      if (prev.date === dateBkk && Array.isArray(prev.sent)) {
+        log = { date: dateBkk, sent: prev.sent };
+      }
+    } catch { /* reset on corrupt */ }
+  }
+  if (!log.sent.includes(timeSent)) log.sent.push(timeSent);
+  db.prepare(
+    "UPDATE branches SET attendance_summary_sent_log = ?, attendance_summary_last_sent_date = ? WHERE id = ?"
+  ).run(JSON.stringify(log), dateBkk, branchId);
 }

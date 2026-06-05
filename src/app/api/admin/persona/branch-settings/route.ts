@@ -69,11 +69,11 @@ const Body = z.object({
   // hidden and admin backfills via /admin/ascenda/revenue.
   require_daily_revenue: z.boolean().optional(),
 
-  // Daily attendance summary (TC-6) — HH:MM Bangkok at which the
-  // cron should post the 4-category roll-call to the executive group.
-  // null = feature disabled for this branch. Empty string from the
-  // form is also treated as null (handled below before save).
+  // Daily attendance summary — legacy single time (kept for backwards compat).
   attendance_summary_time: z.string().regex(TIME_RE, "invalid_time").nullable().optional(),
+  // New multi-time JSON array (supersedes single time when present).
+  // Form sends a JSON string like '["08:30","17:00"]'.
+  attendance_summary_times_json: z.string().nullable().optional(),
   // Per-shift personal LINE reminder time (HH:MM Bangkok). null /
   // empty = auto-send off (manual roster button still works).
   shift_notify_time: z.string().regex(TIME_RE, "invalid_time").nullable().optional(),
@@ -172,10 +172,19 @@ export async function POST(req: Request) {
     sets.push("require_daily_revenue = ?");
     vals.push(parsed.data.require_daily_revenue ? 1 : 0);
   }
-  // attendance_summary_time: normalise + reset dedupe column on change.
-  // When admin changes the summary time (or enables/disables the
-  // feature), clear the last_sent_date so today's summary fires at
-  // the new time even if a stale-dated value sits in the column.
+  // attendance_summary_times_json — new multi-time path (JSON array).
+  // Reset sent_log + last_sent_date on any change so today's summary
+  // fires again if the times were edited.
+  if (Object.prototype.hasOwnProperty.call(parsed.data, "attendance_summary_times_json")) {
+    const raw = parsed.data.attendance_summary_times_json;
+    sets.push("attendance_summary_times_json = ?");
+    vals.push(raw ?? null);
+    sets.push("attendance_summary_sent_log = ?");
+    vals.push(null);
+    sets.push("attendance_summary_last_sent_date = ?");
+    vals.push(null);
+  }
+  // Legacy single-time path — kept for backwards compat.
   if (Object.prototype.hasOwnProperty.call(parsed.data, "attendance_summary_time")) {
     const raw = parsed.data.attendance_summary_time;
     const normalised = raw ? normalizeTime(raw) : null;

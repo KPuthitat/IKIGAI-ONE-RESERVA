@@ -10,6 +10,8 @@
 import { getDb } from "./db";
 import { sendLinePush } from "./line";
 import { getPlatformChannel, isChannelReady } from "./messaging-channels";
+import { notifyHrShiftRequest } from "./approval-notify";
+import { nameWithPrefix } from "./name";
 
 export type ShiftRequestKind = "extra_shift" | "swap";
 export type ShiftRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
@@ -77,8 +79,16 @@ export function createShiftRequest(
   const mgr = db.prepare(
     "SELECT reports_to_user_id FROM users WHERE id = ?"
   ).get(actor.id) as { reports_to_user_id: number | null } | undefined;
-  const me = db.prepare("SELECT display_name FROM users WHERE id = ?")
-    .get(actor.id) as { display_name: string } | undefined;
+  const me = db.prepare("SELECT display_name, title_prefix FROM users WHERE id = ?")
+    .get(actor.id) as { display_name: string; title_prefix: string | null } | undefined;
+  // Also notify the HR group (IKIGAI RECRUIT x HR) immediately.
+  void notifyHrShiftRequest({
+    name: nameWithPrefix(me?.title_prefix ?? null, me?.display_name ?? "พนักงาน"),
+    refNo: ref_no,
+    kind: data.kind,
+    workDate: data.work_date,
+    offDate: data.off_date ?? null
+  }).catch((e) => console.warn("[shift-req] HR notify failed", e));
   if (mgr?.reports_to_user_id) {
     const label = KIND_TH[data.kind];
     const when = data.kind === "swap"

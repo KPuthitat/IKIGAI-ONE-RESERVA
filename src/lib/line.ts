@@ -3694,3 +3694,33 @@ export async function notifyToStaffGroup(
   // fallback chain.
   return notifyDailyReport(branch, flex);
 }
+
+/** Push a notification to the HR group (system_settings.recruita_exec_group_id).
+ *  Used by PERSONA HR notifications: attendance summaries, leave/shift-change
+ *  request alerts, and the pending-requests digest. Shares the same IKIGAI OS
+ *  platform OA as RECRUITA exec pushes — both routes go to "IKIGAI RECRUIT x HR".
+ *  Best-effort: silently skips when the group or OA isn't configured. */
+export async function notifyToHrGroup(
+  flex: LineFlexMessage
+): Promise<void> {
+  const sys = getSystemSettings();
+  const groupId = sys.recruita_exec_group_id?.trim() ?? null;
+  if (!groupId) {
+    console.info("[hr-notify] skipped: recruita_exec_group_id not set");
+    return;
+  }
+  const platform = getPlatformChannel();
+  const token = platform?.channel_token?.trim() ?? null;
+  if (!token) {
+    console.info("[hr-notify] skipped: IKIGAI OS platform OA not configured");
+    return;
+  }
+  try {
+    const res = await sendLinePush(token, { to: groupId, messages: [flex] });
+    if (!res.ok) {
+      console.warn(`[hr-notify] LINE push rejected: ${res.status} ${res.error ?? ""}`);
+    }
+  } catch (e) {
+    console.warn("[hr-notify] push threw:", e);
+  }
+}

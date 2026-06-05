@@ -1371,6 +1371,22 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN pending_digest_last_sent_date TEXT");
   }
 
+  // Multiple daily attendance summaries (owner 2026-06-06): admin can
+  // configure more than one send time per day (e.g., 08:30 and 17:00).
+  // attendance_summary_times_json stores a JSON array of HH:MM strings
+  // (e.g., ["08:30","17:00"]). When set, supersedes the legacy single
+  // attendance_summary_time. attendance_summary_sent_log tracks which
+  // times were already sent today so cron ticks don't re-send:
+  //   {"date":"YYYY-MM-DD","sent":["08:30"]}
+  // All attendance summary notifications route to the HR group
+  // (recruita_exec_group_id) instead of the global exec group.
+  if (!bnames2.has("attendance_summary_times_json")) {
+    db.exec("ALTER TABLE branches ADD COLUMN attendance_summary_times_json TEXT");
+  }
+  if (!bnames2.has("attendance_summary_sent_log")) {
+    db.exec("ALTER TABLE branches ADD COLUMN attendance_summary_sent_log TEXT");
+  }
+
   // TC-4: time certification requests. Staff can't edit a clock
   // entry once the 5-min self-correction window closes — instead
   // they file a certification request here, admin reviews, on
@@ -4681,6 +4697,9 @@ export type Branch = {
   // Daily pending-requests digest (owner 2026-06-05) — see migration block.
   pending_digest_time: string | null;               // HH:MM Bangkok, NULL = digest disabled
   pending_digest_last_sent_date: string | null;     // YYYY-MM-DD dedupe key
+  // Multiple attendance summaries (owner 2026-06-06) — routes to HR group.
+  attendance_summary_times_json: string | null;     // JSON: ["08:30","17:00"]
+  attendance_summary_sent_log: string | null;       // JSON: {"date":"…","sent":["08:30"]}
 };
 
 // Global (non-branch-scoped) configuration. Today it carries the
