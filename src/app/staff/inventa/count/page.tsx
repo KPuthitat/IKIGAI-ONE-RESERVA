@@ -18,11 +18,21 @@ export default function InventaCountPage() {
 
   const items = db.prepare(`
     SELECT id, item_code, barcode, name, generic_name, unit,
-           grid_row, grid_col, pick_freq, current_qty, safety_stock
+           grid_row, grid_col, pick_freq, current_qty, safety_stock,
+           category, item_type
     FROM inventa_items
     WHERE active = 1 AND (branch_id IS ? OR branch_id = ?)
     ORDER BY grid_row, grid_col, name
   `).all(branchId, branchId) as CountItem[];
+
+  // Distinct categories actually present on this branch's items — drives
+  // the count page's category filter (same idea as the catalogue page).
+  const categories = (db.prepare(`
+    SELECT DISTINCT category FROM inventa_items
+    WHERE active = 1 AND (branch_id IS ? OR branch_id = ?)
+      AND category IS NOT NULL AND category != ''
+    ORDER BY category
+  `).all(branchId, branchId) as Array<{ category: string }>).map((r) => r.category);
 
   // UTC 'YYYY-MM-DD HH:MM:SS' (or ISO) → BKK 'YYYY-MM-DD HH:MM' for display.
   const bkkDateTime = (s: string | null): string | null => {
@@ -81,6 +91,7 @@ export default function InventaCountPage() {
         // round's saved lines instead of keeping the previous state.
         key={session ? `c${session.id}` : "none"}
         items={items}
+        categories={categories}
         session={session}
         lastSubmitted={lastSubmitted}
         initialCounted={countedMap}

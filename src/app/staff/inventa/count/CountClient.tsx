@@ -32,12 +32,15 @@ export type CountItem = {
   pick_freq: PickFreq | null;
   current_qty: number;
   safety_stock: number;
+  category: string | null;
+  item_type?: string | null;
 };
 
 export default function CountClient({
-  items, session, lastSubmitted = null, initialCounted
+  items, categories = [], session, lastSubmitted = null, initialCounted
 }: {
   items: CountItem[];
+  categories?: string[];
   session: CountSession | null;
   lastSubmitted?: LastSubmitted | null;
   initialCounted: Record<number, number>;
@@ -52,6 +55,11 @@ export default function CountClient({
   const [qty, setQty] = useState("");
   const [scanCam, setScanCam] = useState(false);
   const [q, setQ] = useState("");
+  // Filters — mirror the catalogue page (pick frequency + category) plus
+  // an "uncounted only" toggle that's handy mid-count.
+  const [freqFilter, setFreqFilter] = useState<PickFreq | "">("");
+  const [catFilter, setCatFilter] = useState("");
+  const [uncountedOnly, setUncountedOnly] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [reopenPin, setReopenPin] = useState(false);
@@ -84,11 +92,15 @@ export default function CountClient({
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    if (!term) return items;
-    return items.filter((i) => [
-      i.name, i.generic_name, i.item_code, i.barcode
-    ].some((v) => (v ?? "").toLowerCase().includes(term)));
-  }, [items, q]);
+    return items.filter((i) => {
+      if (freqFilter && i.pick_freq !== freqFilter) return false;
+      if (catFilter && (i.category ?? "") !== catFilter) return false;
+      if (uncountedOnly && counted[i.id] !== undefined) return false;
+      if (!term) return true;
+      return [i.name, i.generic_name, i.item_code, i.barcode, i.category]
+        .some((v) => (v ?? "").toLowerCase().includes(term));
+    });
+  }, [items, q, freqFilter, catFilter, uncountedOnly, counted]);
 
   function pick(item: CountItem) {
     setSel(item);
@@ -334,6 +346,40 @@ export default function CountClient({
       <div className="card space-y-2">
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)}
           placeholder={t("inv.cnt.searchPh")} />
+
+        {/* Filters — like the catalogue page: pick frequency + category,
+            plus a count-only "เฉพาะที่ยังไม่นับ" toggle. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1">
+            <button type="button" onClick={() => setFreqFilter("")}
+              className={`text-xs px-2.5 py-1 rounded-full border ${freqFilter === "" ? "bg-slate-800 text-white border-slate-800" : "border-slate-300 text-slate-600"}`}>
+              ทั้งหมด
+            </button>
+            {(["R", "Y", "G"] as PickFreq[]).map((f) => {
+              const active = freqFilter === f;
+              return (
+                <button key={f} type="button" onClick={() => setFreqFilter(active ? "" : f)}
+                  className={`text-xs px-2.5 py-1 rounded-full border inline-flex items-center gap-1 ${active ? "bg-slate-800 text-white border-slate-800" : "border-slate-300 text-slate-600"}`}>
+                  <span className={`inline-block w-2.5 h-2.5 rounded-full ${PICK_FREQ_META[f].dot}`} />
+                  {PICK_FREQ_META[f].short}
+                </button>
+              );
+            })}
+          </div>
+          {categories.length > 0 && (
+            <select className="input !w-auto text-sm" value={catFilter}
+              onChange={(e) => setCatFilter(e.target.value)}>
+              <option value="">ทุกหมวด</option>
+              {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )}
+          <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer ml-auto">
+            <input type="checkbox" checked={uncountedOnly} onChange={(e) => setUncountedOnly(e.target.checked)} />
+            เฉพาะที่ยังไม่นับ
+          </label>
+        </div>
+        <div className="text-[11px] text-slate-400">แสดง {filtered.length} / {total} รายการ</div>
+
         <div className="divide-y divide-slate-100 max-h-[50vh] overflow-y-auto">
           {filtered.map((i) => {
             const c = counted[i.id];
