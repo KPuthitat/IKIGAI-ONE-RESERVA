@@ -86,7 +86,7 @@ export function createShiftRequest(
       : `ทำงานเพิ่ม ${data.work_date}`;
     pushToUser(
       mgr.reports_to_user_id,
-      `คำร้อง${label} (${ref_no})\nจาก: ${me?.display_name ?? "พนักงาน"}\n${when}\n\nเปิดอนุมัติที่เมนู PERSONA → คำร้องกะ`
+      `คำขอเปลี่ยนเวลางาน — ${label} (${ref_no})\nจาก: ${me?.display_name ?? "พนักงาน"}\n${when}\n\nเปิดอนุมัติที่เมนู PERSONA → คำขอเปลี่ยนเวลางาน`
     );
   }
   return { id, ref_no };

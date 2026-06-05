@@ -39,15 +39,15 @@ export default function ShiftRequestClient({ requests }: { requests: ShiftReques
         })
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setMsg({ kind: "err", text: "ส่งคำร้องไม่สำเร็จ ลองใหม่อีกครั้ง" }); return; }
-      setMsg({ kind: "ok", text: `ส่งคำร้องแล้ว (${j.ref_no}) — รอหัวหน้าอนุมัติ` });
+      if (!res.ok || !j.ok) { setMsg({ kind: "err", text: "ส่งคำขอไม่สำเร็จ ลองใหม่อีกครั้ง" }); return; }
+      setMsg({ kind: "ok", text: `ส่งคำขอแล้ว (${j.ref_no}) — รอหัวหน้าอนุมัติ` });
       setWorkDate(""); setOffDate(""); setNote("");
       router.refresh();
     } finally { setBusy(false); }
   }
 
   async function cancel(id: number) {
-    if (!window.confirm("ยกเลิกคำร้องนี้?")) return;
+    if (!window.confirm("ยกเลิกคำขอนี้?")) return;
     const res = await fetch(apiUrl(`/api/persona/shift-request/${id}/cancel`), { method: "POST" });
     if (res.ok) router.refresh();
   }
@@ -55,7 +55,7 @@ export default function ShiftRequestClient({ requests }: { requests: ShiftReques
   return (
     <div className="space-y-4 max-w-2xl mx-auto">
       <div>
-        <h1 className="text-xl font-bold text-slate-800">คำร้องเรื่องกะ</h1>
+        <h1 className="text-xl font-bold text-slate-800">คำขอเปลี่ยนเวลางาน</h1>
         <p className="text-sm text-slate-500">
           ขอเพิ่มกะทำงาน หรือขอสลับวันหยุด (หยุดวันหนึ่งแล้วทำงานชดเชยอีกวัน โดยไม่เสียวันลา) —
           หัวหน้างานอนุมัติ แล้วแอดมินจะจัดลงตารางให้
@@ -64,7 +64,7 @@ export default function ShiftRequestClient({ requests }: { requests: ShiftReques
 
       <div className="card space-y-3">
         <div>
-          <label className="label">ประเภทคำร้อง</label>
+          <label className="label">ประเภทคำขอ</label>
           <select className="input" value={kind} onChange={(e) => setKind(e.target.value as "extra_shift" | "swap")}>
             <option value="extra_shift">ขอเพิ่มกะ (ทำงานเพิ่มอีกวัน)</option>
             <option value="swap">ขอสลับวันหยุด (หยุดวันหนึ่ง ทำงานชดเชยอีกวัน)</option>
@@ -91,14 +91,14 @@ export default function ShiftRequestClient({ requests }: { requests: ShiftReques
         </div>
         {msg && <p className={`text-sm ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>{msg.text}</p>}
         <button type="button" onClick={submit} disabled={busy} className="btn-primary w-full py-2.5 disabled:opacity-50">
-          {busy ? "กำลังส่ง…" : "ส่งคำร้อง"}
+          {busy ? "กำลังส่ง…" : "ส่งคำขอ"}
         </button>
       </div>
 
       <div className="card space-y-2">
-        <h2 className="font-bold text-slate-800 text-sm">คำร้องของฉัน</h2>
+        <h2 className="font-bold text-slate-800 text-sm">คำขอของฉัน</h2>
         {requests.length === 0 ? (
-          <p className="text-xs text-slate-400">ยังไม่มีคำร้อง</p>
+          <p className="text-xs text-slate-400">ยังไม่มีคำขอ</p>
         ) : requests.map((r) => {
           const st = STATUS_TH[r.status] ?? STATUS_TH.pending;
           return (

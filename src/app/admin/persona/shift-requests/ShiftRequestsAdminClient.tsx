@@ -29,7 +29,7 @@ export default function ShiftRequestsAdminClient({ pending }: { pending: Row[] }
   }
 
   if (pending.length === 0) {
-    return <div className="card text-sm text-slate-400 text-center py-8">ไม่มีคำร้องที่รออนุมัติ</div>;
+    return <div className="card text-sm text-slate-400 text-center py-8">ไม่มีคำขอที่รออนุมัติ</div>;
   }
 
   return (

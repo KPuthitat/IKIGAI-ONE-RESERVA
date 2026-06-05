@@ -4,7 +4,7 @@ import { listPendingShiftRequests } from "@/lib/shift-requests";
 import ShiftRequestsAdminClient from "./ShiftRequestsAdminClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "คำร้องกะ · PERSONA" };
+export const metadata: Metadata = { title: "คำขอเปลี่ยนเวลางาน · PERSONA" };
 
 // Supervisor/admin review of staff shift-change requests (extra shift /
 // day swap). Approval records the decision + notifies the staff; the
@@ -18,9 +18,9 @@ export default function ShiftRequestsAdminPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">คำร้องเรื่องกะ</h1>
+        <h1 className="text-2xl font-bold text-slate-800">คำขอเปลี่ยนเวลางาน</h1>
         <p className="text-sm text-slate-500">
-          คำร้องขอเพิ่มกะ / สลับวันหยุดที่รออนุมัติ · อนุมัติแล้วระบบจะแจ้งพนักงาน —
+          คำขอขอเพิ่มกะ / สลับวันหยุดที่รออนุมัติ · อนุมัติแล้วระบบจะแจ้งพนักงาน —
           จากนั้นจัดลงตารางงาน (Roster) ให้ด้วย
         </p>
       </div>
