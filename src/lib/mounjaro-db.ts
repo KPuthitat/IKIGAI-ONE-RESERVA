@@ -185,11 +185,13 @@ export function withdrawSelf(actor: MjActor, reason: string | null): void {
   audit(actor.id, "withdraw", "enrollment", actor.id);
 }
 
-/** The current active consent text + version (super_admin maintained). */
-export function getActiveConsent(): { version: string; body: string } | null {
+/** The current active consent text + version + last-updated timestamp.
+ *  version is kept for the re-consent comparison; the UI shows the date,
+ *  not the version label. */
+export function getActiveConsent(): { version: string; body: string; updated_at: string | null } | null {
   const row = getDb().prepare(
-    "SELECT version, body FROM mounjaro_consent_versions WHERE active = 1 ORDER BY id DESC LIMIT 1"
-  ).get() as { version: string; body: string } | undefined;
+    "SELECT version, body, COALESCE(updated_at, created_at) AS updated_at FROM mounjaro_consent_versions WHERE active = 1 ORDER BY id DESC LIMIT 1"
+  ).get() as { version: string; body: string; updated_at: string | null } | undefined;
   return row ?? null;
 }
 
@@ -222,13 +224,15 @@ export function setMounjaroConsent(body: string, asNewVersion: boolean): { versi
     const tx = db.transaction(() => {
       db.prepare("UPDATE mounjaro_consent_versions SET active = 0 WHERE active = 1").run();
       db.prepare(
-        "INSERT INTO mounjaro_consent_versions (version, body, active) VALUES (?, ?, 1)"
+        "INSERT INTO mounjaro_consent_versions (version, body, active, updated_at) VALUES (?, ?, 1, CURRENT_TIMESTAMP)"
       ).run(version, body);
     });
     tx();
     return { version };
   }
-  db.prepare("UPDATE mounjaro_consent_versions SET body = ? WHERE id = ?").run(body, active.id);
+  db.prepare(
+    "UPDATE mounjaro_consent_versions SET body = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).run(body, active.id);
   return { version: active.version };
 }
 

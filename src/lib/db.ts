@@ -3025,6 +3025,17 @@ function runMigrations(db: Database.Database): void {
     if (!slCols.has("diary")) db.exec("ALTER TABLE mounjaro_self_logs ADD COLUMN diary TEXT");
   }
 
+  // Consent "last updated" timestamp (2026-06-05): the editor shows
+  // "อัปเดตล่าสุดเมื่อวันที่ …" instead of a vN label. Versions are kept
+  // internally (re-consent logic compares them) but not surfaced.
+  {
+    const cvCols = new Set(
+      (db.prepare("PRAGMA table_info(mounjaro_consent_versions)").all() as Array<{ name: string }>)
+        .map((c) => c.name)
+    );
+    if (!cvCols.has("updated_at")) db.exec("ALTER TABLE mounjaro_consent_versions ADD COLUMN updated_at TEXT");
+  }
+
   // ══════════════════════════════════════════════════════════════════
   // RBAC — บทบาท/สิทธิ์การเข้าถึงโมดูล (2026-06-04)
   // ──────────────────────────────────────────────────────────────────

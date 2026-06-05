@@ -5,10 +5,9 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
 export default function ConsentEditorClient({
-  initialBody, version
+  initialBody
 }: {
   initialBody: string;
-  version: string | null;
 }) {
   const router = useRouter();
   const [body, setBody] = useState(initialBody);
@@ -39,7 +38,7 @@ export default function ConsentEditorClient({
       setMsg({
         kind: "ok",
         text: asNew
-          ? `✓ เผยแพร่เวอร์ชันใหม่ (${j.version}) — พนักงานที่อยู่ในโครงการจะถูกขอความยินยอมใหม่`
+          ? "✓ อัปเดตข้อความแล้ว — พนักงานที่อยู่ในโครงการจะถูกขอความยินยอมใหม่ครั้งถัดไปที่เปิดหน้า"
           : "✓ บันทึกข้อความแล้ว"
       });
       setAsNew(false);
@@ -68,10 +67,10 @@ export default function ConsentEditorClient({
       <label className="flex items-start gap-2 text-sm text-slate-700 p-3 rounded-lg border border-amber-200 bg-amber-50">
         <input type="checkbox" className="mt-0.5" checked={asNew} onChange={(e) => setAsNew(e.target.checked)} />
         <span>
-          <b>เผยแพร่เป็นเวอร์ชันใหม่</b> (แนะนำเมื่อแก้สาระสำคัญ)
+          <b>ถือเป็นการอัปเดตที่ต้องยินยอมใหม่</b> (แนะนำเมื่อแก้สาระสำคัญ)
           <span className="block text-[11px] text-amber-700 mt-0.5">
             พนักงานที่อยู่ในโครงการทุกคนจะถูกขอ<b>กดยินยอมใหม่</b>ครั้งถัดไปที่เปิดหน้า
-            · ถ้าแค่แก้คำผิด/จัดรูปแบบ ไม่ต้องติ๊ก (ใช้เวอร์ชันเดิม {version ?? "—"})
+            · ถ้าแค่แก้คำผิด/จัดรูปแบบ ไม่ต้องติ๊ก (อัปเดตเฉย ๆ ไม่ต้องยินยอมใหม่)
           </span>
         </span>
       </label>
@@ -86,7 +85,7 @@ export default function ConsentEditorClient({
         disabled={busy || (!dirty && !asNew)}
         className="btn-primary py-2.5 disabled:opacity-50"
       >
-        {busy ? "กำลังบันทึก…" : asNew ? "เผยแพร่เวอร์ชันใหม่" : "บันทึกข้อความ"}
+        {busy ? "กำลังบันทึก…" : asNew ? "บันทึก + ขอยินยอมใหม่" : "บันทึกข้อความ"}
       </button>
     </div>
   );

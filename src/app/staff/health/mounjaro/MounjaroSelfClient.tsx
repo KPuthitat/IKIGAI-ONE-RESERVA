@@ -167,7 +167,7 @@ export default function MounjaroSelfClient({
       )}
 
       {status === "active" && <AuditViewer audit={audit} />}
-      {consent.needed && <ConsentModal version={consent.version} body={consent.body} />}
+      {consent.needed && <ConsentModal body={consent.body} />}
       {destructive && (
         <ConfirmDestructiveModal
           action={destructive}
@@ -269,7 +269,7 @@ function ConfirmDestructiveModal({
   );
 }
 
-function ConsentModal({ version, body }: { version: string | null; body: string | null }) {
+function ConsentModal({ body }: { body: string | null }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [agree, setAgree] = useState(false);
@@ -283,7 +283,7 @@ function ConsentModal({ version, body }: { version: string | null; body: string 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto">
-        <h3 className="font-bold text-slate-800">ความยินยอม (PDPA) — โครงการ Mounjaro {version ? `(${version})` : ""}</h3>
+        <h3 className="font-bold text-slate-800">ความยินยอมเปิดเผยข้อมูลทางสุขภาพ (PDPA)</h3>
         <div className="max-h-64 overflow-y-auto whitespace-pre-line text-xs text-slate-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
           {body ?? "—"}
         </div>
