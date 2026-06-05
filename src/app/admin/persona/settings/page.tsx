@@ -73,6 +73,7 @@ export default function PersonaSettingsPage() {
         requireDailyRevenue={branch.require_daily_revenue === 1}
         attendanceSummaryTime={branch.attendance_summary_time}
         shiftNotifyTime={branch.shift_notify_time}
+        pendingDigestTime={branch.pending_digest_time}
         branchName={branch.name}
       />
     </div>

@@ -40,6 +40,7 @@ export default function BranchSettingsForm({
   requireDailyRevenue,
   attendanceSummaryTime,
   shiftNotifyTime,
+  pendingDigestTime,
   branchName
 }: {
   morningTime: string;
@@ -58,6 +59,7 @@ export default function BranchSettingsForm({
   requireDailyRevenue: boolean;
   attendanceSummaryTime: string | null;
   shiftNotifyTime: string | null;
+  pendingDigestTime: string | null;
   branchName: string;
 }) {
   const router = useRouter();
@@ -104,6 +106,12 @@ export default function BranchSettingsForm({
   const [shiftNotify, setShiftNotify] = useState<string>(
     shiftNotifyTime || ""
   );
+  // Daily pending-requests digest time (owner 2026-06-05) — HH:MM
+  // Bangkok. Empty = digest off. Sends a summary of staff requests
+  // still waiting (shift-change + pending leave) to the exec/HR group.
+  const [pendingDigest, setPendingDigest] = useState<string>(
+    pendingDigestTime || ""
+  );
   // Per-section status text for the geolocate button (success/error
   // feedback after the navigator.geolocation callback returns).
   const [geoStatus, setGeoStatus] = useState<string | null>(null);
@@ -130,7 +138,8 @@ export default function BranchSettingsForm({
     tClosingReq === requireTodayClosing &&
     dailyRevReq === requireDailyRevenue &&
     (summaryTime || null) === (attendanceSummaryTime || null) &&
-    (shiftNotify || null) === (shiftNotifyTime || null);
+    (shiftNotify || null) === (shiftNotifyTime || null) &&
+    (pendingDigest || null) === (pendingDigestTime || null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -164,7 +173,8 @@ export default function BranchSettingsForm({
           require_today_closing: tClosingReq,
           require_daily_revenue: dailyRevReq,
           attendance_summary_time: summaryTime.trim() || null,
-          shift_notify_time: shiftNotify.trim() || null
+          shift_notify_time: shiftNotify.trim() || null,
+          pending_digest_time: pendingDigest.trim() || null
         })
       });
       const j = await res.json().catch(() => ({}));
@@ -630,6 +640,48 @@ export default function BranchSettingsForm({
             {shiftNotify
               ? `เปิดอยู่ — ส่งทุกวันเวลา ${shiftNotify} น. (กดส่งเองได้ที่หน้าตารางมอบหมายงาน)`
               : "ปิดการส่งอัตโนมัติ — ยังกดส่งเองได้ที่หน้าตารางมอบหมายงาน"}
+          </p>
+        </div>
+      </div>
+
+      {/* Daily pending-requests digest (owner 2026-06-05). Sends one
+          card to the executive/HR LINE group summarising staff
+          requests still waiting on someone — shift-change requests +
+          pending leave — so nothing falls through the cracks. */}
+      <div className="card space-y-3">
+        <div>
+          <h2 className="font-bold text-slate-800 text-sm">
+            สรุปคำขอค้างประจำวัน (ไลน์ผู้บริหาร / HR)
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            ทุกวันระบบจะสรุปคำขอของพนักงานที่ยังรอดำเนินการ — คำขอเปลี่ยนเวลางาน
+            และคำขอลางานที่รออนุมัติ — ส่งเข้ากลุ่มไลน์ผู้บริหาร / HR
+            สำหรับสาขา {branchName} เพื่อไม่ให้มีคำขอตกหล่น
+          </p>
+        </div>
+        <div>
+          <label className="label text-[11px]">เวลาส่งสรุป (ทุกวัน)</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="time"
+              className="input w-36 text-sm"
+              value={pendingDigest}
+              onChange={(e) => setPendingDigest(e.target.value)}
+            />
+            {pendingDigest && (
+              <button
+                type="button"
+                onClick={() => setPendingDigest("")}
+                className="text-xs text-slate-500 hover:text-brand underline whitespace-nowrap"
+              >
+                ปิดการส่งสรุป
+              </button>
+            )}
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1">
+            {pendingDigest
+              ? `เปิดอยู่ — ส่งทุกวันเวลา ${pendingDigest} น. (ส่งเฉพาะวันที่มีคำขอค้าง)`
+              : "ปิดอยู่ — ตั้งเวลาเพื่อให้ระบบสรุปคำขอค้างส่งเข้ากลุ่มผู้บริหารทุกวัน"}
           </p>
         </div>
       </div>

@@ -76,7 +76,11 @@ const Body = z.object({
   attendance_summary_time: z.string().regex(TIME_RE, "invalid_time").nullable().optional(),
   // Per-shift personal LINE reminder time (HH:MM Bangkok). null /
   // empty = auto-send off (manual roster button still works).
-  shift_notify_time: z.string().regex(TIME_RE, "invalid_time").nullable().optional()
+  shift_notify_time: z.string().regex(TIME_RE, "invalid_time").nullable().optional(),
+  // Daily pending-requests digest time (HH:MM Bangkok). null / empty =
+  // digest off. When set, the cron posts a summary of staff requests
+  // still waiting (shift-change + pending leave) to the exec/HR group.
+  pending_digest_time: z.string().regex(TIME_RE, "invalid_time").nullable().optional()
 });
 
 export async function POST(req: Request) {
@@ -188,6 +192,16 @@ export async function POST(req: Request) {
     sets.push("shift_notify_time = ?");
     vals.push(normalised);
     sets.push("shift_notify_last_sent_date = ?");
+    vals.push(null);
+  }
+  // pending_digest_time — same normalise + reset-dedupe rule so
+  // changing the time re-arms today's digest.
+  if (Object.prototype.hasOwnProperty.call(parsed.data, "pending_digest_time")) {
+    const raw = parsed.data.pending_digest_time;
+    const normalised = raw ? normalizeTime(raw) : null;
+    sets.push("pending_digest_time = ?");
+    vals.push(normalised);
+    sets.push("pending_digest_last_sent_date = ?");
     vals.push(null);
   }
 

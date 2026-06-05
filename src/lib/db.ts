@@ -1356,6 +1356,21 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN shift_notify_last_sent_date TEXT");
   }
 
+  // Daily pending-requests digest (owner 2026-06-05). Once per day per
+  // branch, at pending_digest_time, push a single LINE card to the
+  // executive/HR group summarising staff requests that are still
+  // waiting on someone: shift-change requests (คำขอเปลี่ยนเวลางาน) and
+  // pending leave (คำขอลางานรออนุมัติ). Catches requests that "fell
+  // through" — nobody actioned them. pending_digest_last_sent_date is
+  // the same-day dedupe key (mirrors attendance_summary_*).
+  //   NULL pending_digest_time = digest disabled for that branch.
+  if (!bnames2.has("pending_digest_time")) {
+    db.exec("ALTER TABLE branches ADD COLUMN pending_digest_time TEXT");
+  }
+  if (!bnames2.has("pending_digest_last_sent_date")) {
+    db.exec("ALTER TABLE branches ADD COLUMN pending_digest_last_sent_date TEXT");
+  }
+
   // TC-4: time certification requests. Staff can't edit a clock
   // entry once the 5-min self-correction window closes — instead
   // they file a certification request here, admin reviews, on
@@ -4582,6 +4597,9 @@ export type Branch = {
   attendance_summary_last_sent_date: string | null; // YYYY-MM-DD dedupe key
   shift_notify_time: string | null;                 // HH:MM Bangkok, NULL = auto disabled
   shift_notify_last_sent_date: string | null;       // YYYY-MM-DD dedupe key
+  // Daily pending-requests digest (owner 2026-06-05) — see migration block.
+  pending_digest_time: string | null;               // HH:MM Bangkok, NULL = digest disabled
+  pending_digest_last_sent_date: string | null;     // YYYY-MM-DD dedupe key
 };
 
 // Global (non-branch-scoped) configuration. Today it carries the

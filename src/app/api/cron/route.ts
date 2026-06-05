@@ -51,6 +51,13 @@ import {
   markExpiryAlertSent,
   expiryAlertFlex
 } from "@/lib/inventa-expiry-alert";
+import {
+  buildPendingDigest,
+  hasPendingItems,
+  pendingDigestFlex,
+  isPendingDigestDue,
+  markPendingDigestSent
+} from "@/lib/pending-digest";
 
 export async function POST(req: Request) {
   const token = req.headers.get("x-cron-token");
@@ -81,6 +88,7 @@ async function runCron(): Promise<NextResponse> {
   let remindersSent = 0;
   let attendanceSummariesSent = 0;
   let shiftNotificationsSent = 0;
+  let pendingDigestsSent = 0;
 
   // ── Daily attendance summary (TC-6) ──────────────────────────────
   // Once per day per branch, at the admin-configured
@@ -151,6 +159,39 @@ async function runCron(): Promise<NextResponse> {
     } catch (e) {
       console.error("shift notify error", branch.slug, e);
       reportError(e, "cron shift-notify", {
+        branchSlug: branch.slug,
+        branchId: branch.id,
+        date: todayBkk
+      });
+    }
+  }
+
+  // ── Daily pending-requests digest (owner 2026-06-05) ─────────────
+  // Once per day per branch, at branches.pending_digest_time, push a
+  // single card to the executive/HR group listing staff requests
+  // still waiting on someone — shift-change requests + pending leave
+  // that "fell through". Same idempotency model: isPendingDigestDue()
+  // short-circuits on the dedupe column. Only pushes when there's at
+  // least one pending item, but stamps the date regardless so an
+  // empty afternoon isn't retried every 5 minutes.
+  for (const branch of branches) {
+    if (!isPendingDigestDue(branch, nowHhmmBkk, todayBkk)) continue;
+    try {
+      const digest = buildPendingDigest(branch.id);
+      if (hasPendingItems(digest)) {
+        const flex = pendingDigestFlex({
+          branchName: branch.name,
+          reportDate: todayBkk,
+          digest,
+          headerColor: branch.brand_color
+        });
+        await notifyToStaffGroup(branch, flex, "global");
+        pendingDigestsSent += 1;
+      }
+      markPendingDigestSent(branch.id, todayBkk);
+    } catch (e) {
+      console.error("pending digest error", branch.slug, e);
+      reportError(e, "cron pending-digest", {
         branchSlug: branch.slug,
         branchId: branch.id,
         date: todayBkk
@@ -402,6 +443,7 @@ async function runCron(): Promise<NextResponse> {
     reminders_sent: remindersSent,
     attendance_summaries_sent: attendanceSummariesSent,
     shift_notifications_sent: shiftNotificationsSent,
+    pending_digests_sent: pendingDigestsSent,
     auto_no_show: autoNoShow,
     expired_redemptions_bookings: expiredBookings,
     expired_redemptions_walk_ins: expiredWalkIns,
