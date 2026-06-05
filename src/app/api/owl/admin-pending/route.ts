@@ -25,7 +25,8 @@ type PendingItem = {
     | "pending_review_bookings"      // new bookings waiting for table + confirm
     | "confirmed_no_table"           // bookings already confirmed but table_id is NULL
     | "shift_unlock_requests"        // staff asking to edit a locked shift report
-    | "leave_requests";              // pending leave approvals
+    | "leave_requests"               // pending leave approvals
+    | "shift_change_requests";       // คำขอเปลี่ยนเวลางาน (extra shift / swap)
   count: number;
   href: string;
 };
@@ -175,6 +176,22 @@ export async function GET() {
         });
       }
     } catch { /* ignore */ }
+
+    // 5. Shift-change requests (คำขอเปลี่ยนเวลางาน — extra shift / swap).
+    try {
+      const row = db.prepare(`
+        SELECT COUNT(*) AS n
+        FROM shift_change_requests
+        WHERE branch_id = ? AND status = 'pending'
+      `).get(branch.id) as { n: number };
+      if (row.n > 0) {
+        items.push({
+          kind: "shift_change_requests",
+          count: row.n,
+          href: "/admin/persona/shift-requests"
+        });
+      }
+    } catch { /* table may not exist on old installs — ignore */ }
 
     if (items.length === 0) continue;  // skip clean branches
     const branchTotal = items.reduce((s, it) => s + it.count, 0);

@@ -23,7 +23,8 @@ type OwlPendingItem = {
     | "pending_review_bookings"
     | "confirmed_no_table"
     | "shift_unlock_requests"
-    | "leave_requests";
+    | "leave_requests"
+    | "shift_change_requests";
   count: number;
   href: string;
 };
@@ -124,11 +125,9 @@ export default function HookFab({
   const [pos, setPos] = useState(DEFAULT_POS);
   useEffect(() => { setPos(loadPosition()); }, []);
 
-  // "งานค้าง" — admin-only digest of pending queues (new bookings,
-  // tables waiting to be assigned, etc.). Fetched on mount + every 60s
-  // while the page is open so the badge dot stays current without
-  // requiring the user to refresh. Skipped for non-admin audiences
-  // (staff/customer get the FAQ-only Owl).
+  // "งานค้าง" — admin-only digest of pending queues. Fetched on mount +
+  // every 60s while the page is open so the badge stays current.
+  // Skipped for non-admin audiences.
   const [pending, setPending] = useState<OwlPendingResponse | null>(null);
   useEffect(() => {
     if (audience !== "admin") return;
@@ -147,6 +146,20 @@ export default function HookFab({
     const id = setInterval(tick, 60_000);
     return () => { cancelled = true; clearInterval(id); };
   }, [audience]);
+
+  // Auto-open (owner 2026-06-06): pop the panel automatically when
+  // the admin arrives and there are pending items — once per browser
+  // session so it doesn't reopen on every navigation. Uses
+  // sessionStorage (cleared on tab close) so the owl feels attentive
+  // without being annoying. Only fires after the first fetch returns.
+  useEffect(() => {
+    if (audience !== "admin" || !pending || pending.total === 0) return;
+    try {
+      if (sessionStorage.getItem("ikigai.owl.auto-opened") === "true") return;
+      sessionStorage.setItem("ikigai.owl.auto-opened", "true");
+    } catch { /* private mode — sessionStorage unavailable, open anyway */ }
+    setOpen(true);
+  }, [pending, audience]);
 
   // Drag bookkeeping — captured on pointerdown, mutated on pointermove.
   // Using a ref instead of state so the move handler doesn't re-render
@@ -293,7 +306,9 @@ export default function HookFab({
           shift_unlock_requests: (n: number) =>
             `${n} edit request${n === 1 ? "" : "s"} on locked shift reports`,
           leave_requests: (n: number) =>
-            `${n} leave request${n === 1 ? "" : "s"} pending approval`
+            `${n} leave request${n === 1 ? "" : "s"} pending approval`,
+          shift_change_requests: (n: number) =>
+            `${n} shift-change request${n === 1 ? "" : "s"} pending approval`
         }
       }
     : {
@@ -314,7 +329,9 @@ export default function HookFab({
           shift_unlock_requests: (n: number) =>
             `คำขอแก้รายงานกะที่ล็อกแล้ว ${n} รายการ`,
           leave_requests: (n: number) =>
-            `คำขอลาที่รออนุมัติ ${n} รายการ`
+            `คำขอลาที่รออนุมัติ ${n} รายการ`,
+          shift_change_requests: (n: number) =>
+            `คำขอเปลี่ยนเวลางานที่รออนุมัติ ${n} รายการ`
         }
       };
 

@@ -144,7 +144,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/admin/persona/health", label: t(lang, "admin.persona.nav.health") },
         ...(user.clinical_role === "doctor"
-          ? [{ href: "/admin/mounjaro", label: "โครงการควบคุมน้ำหนัก — ดูแลผู้ป่วย (แพทย์)" }] : []),
+          ? [{ href: "/admin/mounjaro", label: "โครงการควบคุมน้ำหนัก (แพทย์)" }] : []),
         ...(user.is_hr_analytics === 1
           ? [{ href: "/admin/mounjaro-hr", label: "ภาพรวมสุขภาพพนักงาน (HR)" }] : []),
         // System-level health config — super_admin only (the pages also

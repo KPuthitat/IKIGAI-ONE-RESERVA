@@ -377,8 +377,19 @@ function AlertBox({ level, a }: { level: "danger" | "warning"; a: Alert }) {
 }
 
 const COMO_LABELS: Array<[string, string]> = [["dm", "เบาหวานชนิดที่ 2"], ["htn", "ความดันโลหิตสูง"], ["dlp", "ไขมันในเลือดสูง"], ["cvd", "โรคหัวใจและหลอดเลือด"], ["ckd", "โรคไตเรื้อรัง"], ["panc", "ตับอ่อนอักเสบ"], ["gb", "นิ่วในถุงน้ำดี"]];
-const MED_LABELS: Array<[string, string]> = [["insulin", "อินซูลิน"], ["su", "ยากลุ่มซัลโฟนิลยูเรีย"], ["met", "เมตฟอร์มิน"], ["sglt2", "ยากลุ่มยับยั้ง SGLT2"], ["ocp", "ยาเม็ดคุมกำเนิด"]];
-const CONTRA_LABELS: Array<[string, string]> = [["mtc", "ประวัติมะเร็งต่อมไทรอยด์ชนิดเมดัลลารี"], ["men2", "กลุ่มอาการเนื้องอกต่อมไร้ท่อหลายตำแหน่งชนิดที่ 2 (MEN 2)"], ["preg", "ตั้งครรภ์"], ["allergy", "แพ้ยา tirzepatide"]];
+const MED_LABELS: Array<[string, string]> = [
+  ["insulin", "อินซูลิน"],
+  ["su", "ยากลุ่มซัลโฟนิลยูเรีย (Sulfonylurea)"],
+  ["met", "เมตฟอร์มิน (Metformin)"],
+  ["sglt2", "ยากลุ่มยับยั้ง SGLT-2 (Sodium-Glucose Cotransporter-2)"],
+  ["ocp", "ยาเม็ดคุมกำเนิด"]
+];
+const CONTRA_LABELS: Array<[string, string]> = [
+  ["mtc", "ประวัติมะเร็งต่อมไทรอยด์ชนิดเมดัลลารี (MTC)"],
+  ["men2", "กลุ่มอาการเนื้องอกต่อมไร้ท่อหลายตำแหน่งชนิดที่ 2 (MEN 2)"],
+  ["preg", "ตั้งครรภ์ / วางแผนตั้งครรภ์"],
+  ["allergy", "แพ้ยา Tirzepatide"]
+];
 function flagLabels(state: Record<string, boolean>, labels: Array<[string, string]>): string[] {
   return labels.filter(([k]) => state[k]).map(([, v]) => v);
 }

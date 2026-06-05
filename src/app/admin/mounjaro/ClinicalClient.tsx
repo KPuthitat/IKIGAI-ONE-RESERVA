@@ -125,7 +125,7 @@ function PatientList({ patients, pending, pendingInvitations }: {
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-[20px] font-semibold text-[#0F1B33]">รายชื่อผู้ป่วย</h1>
-          <div className="text-[11px] text-slate-500 tracking-[0.12em] uppercase mt-0.5">Patient Registry · เห็นเฉพาะผู้ป่วยของท่าน</div>
+          <div className="text-[11px] text-slate-500 tracking-[0.12em] uppercase mt-0.5">Patient Registration · เห็นเฉพาะผู้ป่วยของท่าน</div>
         </div>
         <div className="flex gap-2.5">
           <button type="button" onClick={() => setInvite(true)}
@@ -204,20 +204,53 @@ function PatientList({ patients, pending, pendingInvitations }: {
 
       {/* Standard monitoring reference */}
       <div className="bg-white border border-[#D4B675] rounded-sm px-6 py-5">
-        <div className="text-[12px] font-semibold text-[#0F1B33] tracking-[0.08em] uppercase mb-2.5">
+        <div className="text-[12px] font-semibold text-[#0F1B33] tracking-[0.08em] uppercase mb-3">
           เกณฑ์การติดตามมาตรฐาน · Standard Monitoring Parameters
         </div>
-        <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5 text-[13px] text-[#3D3320]">
-          {[
-            ["ทุกครั้งที่นัด:", "น้ำหนัก, BMI, BP, HR, ผลข้างเคียง, adherence"],
-            ["ทุก 4 สัปดาห์:", "ประเมินการ titrate ขนาดยา"],
-            ["ทุก 3 เดือน:", "HbA1c (ถ้าเป็นเบาหวาน), LFT, lipid profile"],
-            ["เฝ้าระวัง:", "HR เพิ่ม >10 bpm, ปวดท้องรุนแรง, hypoglycemia"],
-            ["ข้อห้าม:", "ประวัติ MTC, MEN 2, ตั้งครรภ์, แพ้ tirzepatide"],
-            ["เสริม:", "รอบเอว, ภาวะ dehydration ช่วง titrate"]
-          ].map(([k, v]) => (
-            <li key={k} className="relative pl-4 before:content-['·'] before:absolute before:left-1 before:text-[#B8954F] before:font-bold">
-              <b>{k}</b> {v}
+        <ul className="space-y-3 text-[13px] text-[#3D3320]">
+          {([
+            { label: "ทุกครั้งที่นัด", items: [
+              "น้ำหนัก",
+              "ดัชนีมวลกาย (BMI)",
+              "ความดันโลหิต (BP)",
+              "ชีพจร (HR)",
+              "อาการข้างเคียง",
+              "การปฏิบัติตามคำแนะนำ (Adherence)"
+            ]},
+            { label: "ทุก 4 สัปดาห์", items: [
+              "ประเมินการปรับขนาดยา (Titration)"
+            ]},
+            { label: "ทุก 3 เดือน", items: [
+              "HbA1c — เฉพาะผู้ป่วยเบาหวาน",
+              "การทำงานของตับ (LFT)",
+              "ไขมันในเลือด (Lipid Profile)"
+            ]},
+            { label: "เฝ้าระวัง", items: [
+              "ชีพจรเพิ่มขึ้น >10 ครั้ง/นาที",
+              "ปวดท้องรุนแรง — เฝ้าระวังตับอ่อนอักเสบ",
+              "น้ำตาลในเลือดต่ำ (Hypoglycemia)"
+            ]},
+            { label: "ข้อห้ามเด็ดขาด", items: [
+              "ประวัติมะเร็งต่อมไทรอยด์ชนิดเมดัลลารี (MTC)",
+              "กลุ่มอาการเนื้องอกต่อมไร้ท่อหลายตำแหน่ง ชนิดที่ 2 (MEN 2)",
+              "ตั้งครรภ์ หรือวางแผนตั้งครรภ์",
+              "แพ้ยา Tirzepatide"
+            ]},
+            { label: "ติดตามเพิ่มเติม", items: [
+              "รอบเอว",
+              "ภาวะขาดน้ำ (Dehydration) ช่วงปรับขนาดยา"
+            ]}
+          ] as Array<{ label: string; items: string[] }>).map(({ label, items }) => (
+            <li key={label}>
+              <div className="font-semibold text-[#0F1B33] mb-1">{label}</div>
+              <ul className="space-y-0.5 pl-3">
+                {items.map((item) => (
+                  <li key={item} className="flex items-start gap-1.5 text-[#3D3320]">
+                    <span className="text-[#B8954F] font-bold mt-px flex-shrink-0">–</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
         </ul>
@@ -407,17 +440,21 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
             <div className="mt-3 bg-[#FEF2F2] border-l-[3px] border-[#B91C1C] px-3 py-2.5">
               <div className="text-[12px] font-semibold text-[#B91C1C] mb-2">ข้อห้ามเด็ดขาด — ห้ามใช้หาก:</div>
               <CheckRow state={contra} set={setContra} items={[
-                ["mtc", "ประวัติครอบครัวเป็นมะเร็งต่อมไทรอยด์ชนิดเมดัลลารี"], ["men2", "กลุ่มอาการเนื้องอกต่อมไร้ท่อหลายตำแหน่งชนิดที่ 2 (MEN 2)"],
-                ["preg", "ตั้งครรภ์ / วางแผนตั้งครรภ์"], ["allergy", "แพ้ tirzepatide"]
+                ["mtc", "ประวัติมะเร็งต่อมไทรอยด์ชนิดเมดัลลารี (MTC)"],
+                ["men2", "กลุ่มอาการเนื้องอกต่อมไร้ท่อหลายตำแหน่งชนิดที่ 2 (MEN 2)"],
+                ["preg", "ตั้งครรภ์ / วางแผนตั้งครรภ์"],
+                ["allergy", "แพ้ยา Tirzepatide"]
               ]} />
             </div>
           </Section>
 
           <Section title="ยาที่ใช้ร่วม · Concomitant Medications">
             <CheckRow state={meds} set={setMeds} items={[
-              ["insulin", "Insulin (เสี่ยงน้ำตาลต่ำ)"], ["su", "Sulfonylurea (เสี่ยงน้ำตาลต่ำ)"],
-              ["met", "Metformin"], ["sglt2", "SGLT2 inhibitor"],
-              ["ocp", "ยาเม็ดคุมกำเนิด (อาจลด efficacy ช่วง titrate)"]
+              ["insulin", "อินซูลิน (Insulin) — เสี่ยงน้ำตาลต่ำ"],
+              ["su", "ซัลโฟนิลยูเรีย (Sulfonylurea) — เสี่ยงน้ำตาลต่ำ"],
+              ["met", "เมตฟอร์มิน (Metformin)"],
+              ["sglt2", "ยากลุ่มยับยั้ง SGLT-2 (Sodium-Glucose Cotransporter-2)"],
+              ["ocp", "ยาเม็ดคุมกำเนิด — อาจลดประสิทธิผลช่วงปรับขนาดยา"]
             ]} />
             <div className="mt-3">
               <label className={labelCls}>ยาอื่นๆ / หมายเหตุ</label>
@@ -509,12 +546,14 @@ function InviteModal({ onClose, onSent }: { onClose: () => void; onSent: () => v
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F1B33]/60 backdrop-blur-[2px] p-4" onClick={onClose}>
       <div className="bg-white w-full max-w-md rounded-sm border-t-[3px] border-[#B8954F] shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="bg-[#0F1B33] px-6 py-4 flex items-center justify-between">
-          <div>
+        <div className="bg-[#0F1B33] px-6 py-4 flex items-center gap-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/ahc-logo.png" alt="AHC" className="w-16 h-16 rounded-lg object-contain bg-white/10 p-1 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
             <div className="text-white font-semibold text-[15px]">ส่งคำเชิญเข้าร่วมโครงการ</div>
             <div className="text-[10px] text-[#D4B675] tracking-[0.1em] uppercase mt-0.5">Send Program Invitation</div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 border border-white/30 text-white text-lg hover:bg-slate-50/10">×</button>
+          <button onClick={onClose} className="w-8 h-8 border border-white/30 text-white text-lg hover:bg-white/10 flex-shrink-0">×</button>
         </div>
         <div className="p-6 space-y-4">
           <p className="text-[13px] text-slate-600">
