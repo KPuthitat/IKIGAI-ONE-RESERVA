@@ -18,6 +18,7 @@ type Visit = {
 };
 type SelfLog = {
   id: number; date: string | null; weight: number | null; injection_done: boolean;
+  bp: string | null; hr: number | null; fbs: number | null; diary: string | null;
   notes_for_doctor: string | null; doctor_reply: string | null;
 };
 
@@ -229,7 +230,7 @@ export default function PatientDetailClient(props: {
       {/* Tab: Chart */}
       {tab === "chart" && (
         <Card title="กราฟติดตามผลลัพธ์ · Progress Chart">
-          <ProgressChart baseline={{ weight: baseWeight, hr: num(baseline, "hr") }} startDate={startDate} visits={visits} />
+          <ProgressChart baseline={{ weight: baseWeight, hr: num(baseline, "hr") }} startDate={startDate} visits={visits} selfLogs={selfLogs} />
         </Card>
       )}
 
@@ -386,11 +387,25 @@ function FragmentRow({ v, se, patientId, onChange }: { v: Visit; se: string; pat
 }
 
 // ── SVG progress chart (weight + dose + HR) ─────────────────────────
-function ProgressChart({ baseline, startDate, visits }: {
-  baseline: { weight: number | null; hr: number | null }; startDate: string | null; visits: Visit[];
+function ProgressChart({ baseline, startDate, visits, selfLogs }: {
+  baseline: { weight: number | null; hr: number | null }; startDate: string | null;
+  visits: Visit[]; selfLogs: SelfLog[];
 }) {
-  const pts = [{ date: startDate, weight: baseline.weight, dose: 0, hr: baseline.hr }]
-    .concat(visits.map((v) => ({ date: v.date, weight: v.weight, dose: v.dose ?? 0, hr: v.hr })));
+  type CP = { date: string | null; weight: number | null; dose: number | null; hr: number | null };
+  const raw: CP[] = [
+    { date: startDate, weight: baseline.weight, dose: 0, hr: baseline.hr },
+    ...visits.map((v) => ({ date: v.date, weight: v.weight, dose: v.dose ?? null, hr: v.hr })),
+    ...selfLogs.map((l) => ({ date: l.date, weight: l.weight, dose: null, hr: l.hr }))
+  ].filter((p) => !!p.date);
+  raw.sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : 0));
+  // Forward-fill dose so the gold step line stays continuous across
+  // self-log points (which carry no dose). Daily self-weigh-ins thus
+  // densify the weight line without breaking the dose/HR series.
+  let lastDose = 0;
+  const pts = raw.map((p) => {
+    if (p.dose != null) lastDose = p.dose;
+    return { date: p.date, weight: p.weight, dose: lastDose, hr: p.hr };
+  });
   const n = pts.length;
   const W = 760, H = 300, padL = 44, padR = 44, padT = 16, padB = 36;
   const innerW = W - padL - padR, innerH = H - padT - padB;
@@ -433,10 +448,12 @@ function ProgressChart({ baseline, startDate, visits }: {
             </g>
           );
         })}
-        {/* x labels */}
-        {pts.map((p, i) => (
-          <text key={i} x={xAt(i)} y={H - 10} textAnchor="middle" fontSize={9} fill="#9CA3AF">{toBE(p.date)}</text>
-        ))}
+        {/* x labels — thinned to ~6 so dense daily logs don't overlap */}
+        {pts.map((p, i) => {
+          const step = Math.max(1, Math.ceil(n / 6));
+          if (i !== 0 && i !== n - 1 && i % step !== 0) return null;
+          return <text key={i} x={xAt(i)} y={H - 10} textAnchor="middle" fontSize={9} fill="#9CA3AF">{toBE(p.date)}</text>;
+        })}
         {/* dose (gold, stepped-ish) */}
         {n > 1 && <polyline points={dosePts} fill="none" stroke="#B8954F" strokeWidth={2} />}
         {pts.map((p, i) => <circle key={`d${i}`} cx={xAt(i)} cy={yD(p.dose)} r={3} fill="#B8954F" />)}
@@ -476,7 +493,12 @@ function SelfLogRow({ log, onReplied }: { log: SelfLog; onReplied: () => void })
   return (
     <div className="text-[13px] border-b border-[#E5E0D5] last:border-0 pb-2.5">
       <div className="font-mono text-[12px] text-slate-500">{toBE(log.date)}
-        {log.weight != null && <> · {log.weight} กก.</>}{log.injection_done && <> · ฉีดแล้ว</>}</div>
+        {log.weight != null && <> · {log.weight} กก.</>}
+        {log.bp && <> · BP {log.bp}</>}
+        {log.hr != null && <> · HR {log.hr}</>}
+        {log.fbs != null && <> · DTX {log.fbs}</>}
+        {log.injection_done && <> · ฉีดแล้ว</>}</div>
+      {log.diary && <div className="text-slate-600 mt-0.5">บันทึกประจำวัน: {log.diary}</div>}
       {log.notes_for_doctor && <div className="text-[#0F1B33] mt-0.5">ผู้ป่วย: {log.notes_for_doctor}</div>}
       {log.doctor_reply ? (
         <div className="text-[#047857] bg-[#ECFDF5] rounded-sm px-2 py-1 mt-1">แพทย์: {log.doctor_reply}</div>

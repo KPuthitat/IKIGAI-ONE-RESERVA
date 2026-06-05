@@ -15,7 +15,12 @@ const Body = z.object({
     nausea: Sev, vomit: Sev, diarrhea: Sev, const: Sev,
     abdomen: Sev, tachy: Sev, fatigue: Sev, inject: Sev
   }).partial().default({}),
-  notes_for_doctor: z.string().max(1000).optional()
+  notes_for_doctor: z.string().max(1000).optional(),
+  // Daily vitals + food/exercise diary (2026-06-05).
+  bp: z.string().max(20).optional(),
+  hr: z.number().int().min(0).max(300).nullable().optional(),
+  fbs: z.number().min(0).max(1000).nullable().optional(),
+  diary: z.string().max(2000).optional()
 });
 
 export async function POST(req: Request) {
@@ -32,7 +37,11 @@ export async function POST(req: Request) {
       weight: d.weight ?? null,
       injection_done: d.injection_done,
       side_effect_diary: d.side_effect_diary,
-      notes_for_doctor: d.notes_for_doctor ?? null
+      notes_for_doctor: d.notes_for_doctor ?? null,
+      bp: d.bp ?? null,
+      hr: d.hr ?? null,
+      fbs: d.fbs ?? null,
+      diary: d.diary ?? null
     });
     return NextResponse.json({ ok: true });
   } catch (e) {

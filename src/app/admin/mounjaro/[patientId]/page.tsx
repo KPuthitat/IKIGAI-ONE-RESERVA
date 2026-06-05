@@ -57,6 +57,10 @@ export default function PatientDetailPage({ params }: { params: { patientId: str
         date: (l.date as string | null) ?? null,
         weight: (l.weight as number | null) ?? null,
         injection_done: (l.injection_done as number | null) === 1,
+        bp: (l.bp as string | null) ?? null,
+        hr: (l.hr as number | null) ?? null,
+        fbs: (l.fbs as number | null) ?? null,
+        diary: (l.diary as string | null) ?? null,
         notes_for_doctor: (l.notes_for_doctor as string | null) ?? null,
         doctor_reply: (l.doctor_reply as string | null) ?? null
       }))}

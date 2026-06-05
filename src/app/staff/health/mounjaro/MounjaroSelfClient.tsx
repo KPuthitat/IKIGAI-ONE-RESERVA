@@ -17,7 +17,11 @@ type Patient = {
   baseline: Record<string, number>;
 } | null;
 type Visit = { date: string | null; dose: number | null; weight: number | null; next_visit: string | null };
-type SelfLog = { date: string | null; weight: number | null; injection_done: boolean; doctor_reply: string | null };
+type SelfLog = {
+  date: string | null; weight: number | null; injection_done: boolean;
+  bp: string | null; hr: number | null; fbs: number | null; diary: string | null;
+  doctor_reply: string | null;
+};
 type ConsentInfo = { needed: boolean; version: string | null; body: string | null };
 type AuditEntry = { action: string; by_name: string | null; created_at: string };
 
@@ -363,13 +367,18 @@ function ActiveView({
   const lossPct = (baseW && curW) ? ((baseW - curW) / baseW) * 100 : null;
   const nextDays = daysUntil(latestVisit?.next_visit ?? null);
 
-  // self-log form
+  // self-log form (daily)
   const [date, setDate] = useState(today);
   const [weight, setWeight] = useState("");
   const [injected, setInjected] = useState(false);
+  const [bp, setBp] = useState("");
+  const [hr, setHr] = useState("");
+  const [fbs, setFbs] = useState("");
   const [se, setSe] = useState<Record<string, number>>({});
+  const [diary, setDiary] = useState("");
   const [notes, setNotes] = useState("");
 
+  const numOrNull = (s: string) => (s.trim() === "" ? null : Number(s));
   async function submitLog() {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { setMsg({ kind: "err", text: "เลือกวันที่" }); return; }
     setBusy("log"); setMsg(null);
@@ -377,8 +386,12 @@ function ActiveView({
       const res = await fetch(apiUrl("/api/mounjaro/self-log"), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          date, weight: weight.trim() === "" ? null : Number(weight),
+          date, weight: numOrNull(weight),
           injection_done: injected, side_effect_diary: se,
+          bp: bp.trim() || undefined,
+          hr: numOrNull(hr),
+          fbs: numOrNull(fbs),
+          diary: diary.trim() || undefined,
           notes_for_doctor: notes.trim() || undefined
         })
       });
@@ -388,7 +401,8 @@ function ActiveView({
         return;
       }
       setMsg({ kind: "ok", text: "บันทึกเรียบร้อย — แพทย์จะเห็นข้อมูลของคุณ" });
-      setWeight(""); setInjected(false); setSe({}); setNotes("");
+      setWeight(""); setInjected(false); setBp(""); setHr(""); setFbs("");
+      setSe({}); setDiary(""); setNotes("");
       router.refresh();
     } finally { setBusy(null); }
   }
@@ -418,9 +432,12 @@ function ActiveView({
         </div>
       )}
 
-      {/* Self-log form */}
+      {/* Self-log form (daily) */}
       <div className="card space-y-3">
-        <h2 className="font-bold text-slate-800 text-sm">บันทึกอาการรายสัปดาห์</h2>
+        <h2 className="font-bold text-slate-800 text-sm">บันทึกสุขภาพประจำวัน</h2>
+        <p className="text-[11px] text-slate-500 -mt-1">
+          บันทึกได้ทุกวัน — น้ำหนักและค่าต่าง ๆ จะถูกนำไปสร้างกราฟติดตามผลให้แพทย์ดูแล
+        </p>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">วันที่</label>
@@ -430,6 +447,23 @@ function ActiveView({
             <label className="label">น้ำหนัก (กก.)</label>
             <input type="number" inputMode="decimal" min="0" step="0.1" className="input"
               value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="เช่น 82.5" />
+          </div>
+        </div>
+        {/* Daily vitals (optional) */}
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="label">ความดัน (BP)</label>
+            <input className="input" value={bp} onChange={(e) => setBp(e.target.value)} placeholder="120/80" />
+          </div>
+          <div>
+            <label className="label">ชีพจร (HR)</label>
+            <input type="number" inputMode="numeric" min="0" className="input"
+              value={hr} onChange={(e) => setHr(e.target.value)} placeholder="bpm" />
+          </div>
+          <div>
+            <label className="label">น้ำตาล (DTX/FBS)</label>
+            <input type="number" inputMode="numeric" min="0" className="input"
+              value={fbs} onChange={(e) => setFbs(e.target.value)} placeholder="mg/dL" />
           </div>
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -457,13 +491,19 @@ function ActiveView({
           ))}
         </div>
         <div>
+          <label className="label">บันทึกประจำวัน — อาหาร / การออกกำลังกาย</label>
+          <textarea className="input text-sm" rows={2} value={diary} maxLength={2000}
+            onChange={(e) => setDiary(e.target.value)}
+            placeholder="เช่น มื้อเช้า… มื้อเที่ยง… ออกกำลังกาย เดิน 30 นาที ฯลฯ" />
+        </div>
+        <div>
           <label className="label">บันทึก / คำถามถึงแพทย์</label>
           <textarea className="input text-sm" rows={2} value={notes} maxLength={1000}
             onChange={(e) => setNotes(e.target.value)} placeholder="เช่น อยากปรึกษาเรื่อง…" />
         </div>
         <button type="button" disabled={busy === "log"} onClick={submitLog}
           className="btn-primary w-full py-2.5 disabled:opacity-50">
-          {busy === "log" ? "กำลังบันทึก…" : "บันทึกอาการ"}
+          {busy === "log" ? "กำลังบันทึก…" : "บันทึกข้อมูลวันนี้"}
         </button>
       </div>
 
@@ -504,11 +544,15 @@ function ActiveView({
       {selfLogs.length > 0 && (
         <div className="card space-y-2">
           <h2 className="font-bold text-slate-800 text-sm">บันทึกของฉัน</h2>
-          {selfLogs.slice(0, 8).map((l, i) => (
+          {selfLogs.slice(0, 14).map((l, i) => (
             <div key={i} className="text-xs border-b last:border-0 pb-1.5">
               <span className="font-mono text-slate-500">{l.date}</span>
               {l.weight != null && <> · {l.weight} กก.</>}
+              {l.bp && <> · BP {l.bp}</>}
+              {l.hr != null && <> · HR {l.hr}</>}
+              {l.fbs != null && <> · DTX {l.fbs}</>}
               {l.injection_done && <> · ฉีดยาแล้ว</>}
+              {l.diary && <div className="text-slate-600 mt-0.5">บันทึกประจำวัน: {l.diary}</div>}
               {l.doctor_reply && (
                 <div className="mt-0.5 text-emerald-700 bg-emerald-50 rounded px-2 py-1">
                   แพทย์: {l.doctor_reply}

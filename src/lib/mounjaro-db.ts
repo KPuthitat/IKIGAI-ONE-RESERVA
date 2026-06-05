@@ -256,19 +256,23 @@ export function getMyClinical(actor: MjActor): {
 export function addSelfLog(actor: MjActor, data: {
   date: string; weight: number | null; injection_done: boolean;
   side_effect_diary: unknown; notes_for_doctor: string | null;
+  // Daily vitals + a food/exercise diary (2026-06-05).
+  bp?: string | null; hr?: number | null; fbs?: number | null; diary?: string | null;
 }): void {
   const enr = getMyEnrollment(actor);
   if (!enr || enr.status !== "active") throw new MounjaroForbidden("not_active");
   getDb().prepare(`
     INSERT INTO mounjaro_self_logs
       (enrollment_id, date, weight, injection_done, side_effect_diary_json,
-       notes_for_doctor, logged_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+       notes_for_doctor, bp, hr, fbs, diary, logged_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     enr.id, data.date, data.weight,
     data.injection_done ? 1 : 0,
     JSON.stringify(data.side_effect_diary ?? {}),
-    data.notes_for_doctor ?? null, actor.id
+    data.notes_for_doctor ?? null,
+    data.bp ?? null, data.hr ?? null, data.fbs ?? null, data.diary ?? null,
+    actor.id
   );
   audit(actor.id, "self_log", "enrollment", enr.id);
 }

@@ -3009,6 +3009,22 @@ function runMigrations(db: Database.Database): void {
     );
   }
 
+  // Daily self-log extras (2026-06-05): vitals + a food/exercise diary so
+  // participants can log every day (not only at clinic visits) and the
+  // data can feed the progress chart. PRAGMA-guarded ALTERs — the table
+  // is created above via CREATE TABLE IF NOT EXISTS which never adds
+  // columns to an already-existing table.
+  {
+    const slCols = new Set(
+      (db.prepare("PRAGMA table_info(mounjaro_self_logs)").all() as Array<{ name: string }>)
+        .map((c) => c.name)
+    );
+    if (!slCols.has("bp")) db.exec("ALTER TABLE mounjaro_self_logs ADD COLUMN bp TEXT");
+    if (!slCols.has("hr")) db.exec("ALTER TABLE mounjaro_self_logs ADD COLUMN hr INTEGER");
+    if (!slCols.has("fbs")) db.exec("ALTER TABLE mounjaro_self_logs ADD COLUMN fbs REAL");
+    if (!slCols.has("diary")) db.exec("ALTER TABLE mounjaro_self_logs ADD COLUMN diary TEXT");
+  }
+
   // ══════════════════════════════════════════════════════════════════
   // RBAC — บทบาท/สิทธิ์การเข้าถึงโมดูล (2026-06-04)
   // ──────────────────────────────────────────────────────────────────
