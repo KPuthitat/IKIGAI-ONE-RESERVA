@@ -131,6 +131,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           : []),
         { href: "/admin/persona/service-charge", label: t(lang, "admin.persona.nav.svc") },
         { href: "/admin/persona/ot-approvals", label: "อนุมัติการทำงานล่วงเวลา" },
+        { href: "/admin/persona/shift-requests", label: "คำร้องเรื่องกะ" },
         { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
         { href: "/admin/persona/holidays", label: t(lang, "admin.persona.nav.holidays") },

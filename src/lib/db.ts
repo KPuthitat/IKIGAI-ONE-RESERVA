@@ -715,6 +715,34 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_ot_requests_user_date ON ot_requests(user_id, work_date);
   `);
 
+  // shift_change_requests — staff ask to ADD a working day (PT wanting an
+  // extra shift) or SWAP a day off for another (FT taking a day off
+  // without spending leave, by working a different day). v1 (owner
+  // 2026-06-05): record + notify only — approval does NOT touch the
+  // roster or the pay engine; an admin reflects it in the roster
+  // manually. kind='extra_shift' → only work_date; kind='swap' →
+  // work_date (the day worked instead) + off_date (the day taken off).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shift_change_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      branch_id INTEGER REFERENCES branches(id),
+      kind TEXT NOT NULL CHECK (kind IN ('extra_shift','swap')),
+      work_date TEXT NOT NULL,          -- YYYY-MM-DD (BKK) — day to ADD work
+      off_date TEXT,                    -- swap only — day taken off in exchange
+      note TEXT,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','approved','rejected','cancelled')),
+      ref_no TEXT,
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT,
+      decision_note TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_shiftreq_user_status ON shift_change_requests(user_id, status);
+    CREATE INDEX IF NOT EXISTS idx_shiftreq_branch_status ON shift_change_requests(branch_id, status, work_date);
+  `);
+
   // Phase 1C v2 migrations — extend users + leave_requests
   const ucols2 = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
   const unames = new Set(ucols2.map((c) => c.name));
