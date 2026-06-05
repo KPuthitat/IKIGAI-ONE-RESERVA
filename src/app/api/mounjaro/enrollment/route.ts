@@ -3,10 +3,10 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { hasAdminPin, verifyAdminPin } from "@/lib/admin-pin";
 import {
-  enrollSelf, withdrawSelf, eraseMyData, getMyEnrollment,
+  confirmMyInvitation, withdrawSelf, eraseMyData, getMyEnrollment,
   requestPendingAction, type MjActor
 } from "@/lib/mounjaro-db";
-import { notifyDoctorPendingAction } from "@/lib/mounjaro-notify";
+import { notifyDoctorPendingAction, notifyDoctorEmployeeConfirmed } from "@/lib/mounjaro-notify";
 
 // POST /api/mounjaro/enrollment — employee self-service enrollment lifecycle.
 //   action 'enroll'   → express interest (creates / reopens a pending enrollment)
@@ -60,8 +60,14 @@ export async function POST(req: Request) {
   }
   try {
     if (parsed.data.action === "enroll") {
-      const enr = enrollSelf(actor);
-      return NextResponse.json({ ok: true, status: enr.status });
+      // Confirm the doctor's invitation — self-enrollment is no longer
+      // allowed; an invitation from an attending doctor is required.
+      const confirmed = confirmMyInvitation(actor);
+      if (!confirmed) {
+        return NextResponse.json({ error: "no_invitation" }, { status: 400 });
+      }
+      notifyDoctorEmployeeConfirmed(user.id).catch(() => {});
+      return NextResponse.json({ ok: true, status: "pending" });
     }
     if (parsed.data.action === "withdraw") {
       // Active participant → file a doctor-approval request. Pending

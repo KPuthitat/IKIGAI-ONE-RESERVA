@@ -24,15 +24,10 @@ export default function StaffHomePage({
 
   return (
     <div className="space-y-6">
-      {!mjEnrolled && (
-        <Link href="/staff/health/mounjaro"
-          className="block rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3 hover:bg-teal-50 transition">
-          <div className="text-sm font-bold text-teal-800">โครงการควบคุมน้ำหนัก</div>
-          <div className="text-xs text-teal-700 mt-0.5">
-            สนใจลดน้ำหนักภายใต้การดูแลของแพทย์? แตะเพื่อดูรายละเอียดและแสดงความสนใจ →
-          </div>
-        </Link>
-      )}
+      {/* Banner removed 2026-06-06: enrollment is now doctor-initiated.
+          Staff who are invited will see the health menu and can confirm
+          from /staff/health/mounjaro directly after receiving a LINE
+          notification from the doctor. */}
       <div>
         <h1 className="text-2xl font-bold text-slate-800">{t(lang, "portal.chooseModule")}</h1>
         <p className="text-sm text-slate-500 mt-1">

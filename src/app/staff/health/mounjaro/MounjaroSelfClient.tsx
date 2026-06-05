@@ -12,6 +12,8 @@ type Enrollment = {
   enrolled_at: string | null;
   withdrawn_reason: string | null;
   pendingAction: "withdraw" | "erase" | null;
+  invitedByDoctorId: number | null;
+  employeeConfirmedAt: string | null;
 } | null;
 type Facility = { name: string; logo: string };
 type Patient = {
@@ -83,6 +85,9 @@ export default function MounjaroSelfClient({
   }
 
   const status = enrollment?.status ?? "none";
+  // Doctor-invite states:
+  const isInvited = enrollment?.invitedByDoctorId && !enrollment?.employeeConfirmedAt;
+  const isConfirmedPending = enrollment?.status === "pending" && enrollment?.employeeConfirmedAt;
 
   return (
     <div className="space-y-4 max-w-2xl mx-auto">
@@ -104,41 +109,46 @@ export default function MounjaroSelfClient({
         <div className={`text-sm ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>{msg.text}</div>
       )}
 
-      {/* ── NO ENROLLMENT ── */}
+      {/* ── NO ENROLLMENT — not invited yet ── */}
       {status === "none" && (
         <div className="card space-y-3">
-          <p className="text-sm text-slate-700 leading-relaxed">
-            สนใจเข้าร่วมโครงการลดน้ำหนักด้วยยา Mounjaro (Tirzepatide) ภายใต้การดูแลของแพทย์ใช่ไหม?
-            กดปุ่มด้านล่างเพื่อแสดงความสนใจ คลินิกจะติดต่อนัดตรวจคัดกรองกลับภายใน 3 วันทำการ
-          </p>
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-600 leading-relaxed">
+            ขณะนี้ยังไม่ได้รับคำเชิญจากแพทย์เข้าร่วมโครงการควบคุมน้ำหนัก —
+            หากสนใจ กรุณาติดต่อแพทย์ที่ดูแลเพื่อขอรับคำเชิญ
+          </div>
+        </div>
+      )}
+
+      {/* ── INVITED — waiting for employee to confirm ── */}
+      {isInvited && (
+        <div className="card space-y-3">
+          <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 text-sm text-teal-800 leading-relaxed">
+            <b>แพทย์เชิญคุณเข้าร่วมโครงการควบคุมน้ำหนัก</b> — กดยืนยันด้านล่างเพื่อเข้าร่วม
+            หลังจากนั้นแพทย์จะนัดหมายตรวจ Baseline และเปิดแฟ้มการรักษาให้คุณ
+          </div>
           <button type="button" disabled={busy !== null}
             onClick={() => act("enroll")}
             className="btn-primary w-full py-3 disabled:opacity-50">
-            {busy === "enroll" ? "กำลังส่ง…" : "สนใจเข้าร่วมโครงการ"}
+            {busy === "enroll" ? "กำลังยืนยัน…" : "ยืนยันเข้าร่วมโครงการ"}
           </button>
         </div>
       )}
 
-      {/* ── PENDING ── */}
-      {status === "pending" && (
+      {/* ── CONFIRMED — waiting for doctor's intake ── */}
+      {isConfirmedPending && (
         <div className="card space-y-3">
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 leading-relaxed">
-            รอการนัดตรวจคัดกรอง — {facility.name} จะติดต่อกลับภายใน 3 วันทำการ
-            หลังตรวจคัดกรองและแพทย์รับเข้าโครงการแล้ว หน้านี้จะแสดงข้อมูลการรักษาของคุณ
+            คุณยืนยันรับคำเชิญแล้ว — รอแพทย์นัดหมายตรวจ Baseline และเปิดแฟ้มการรักษา
+            ระบบจะแจ้งเตือนทาง LINE เมื่อพร้อมใช้งาน
           </div>
           <p className="text-[11px] text-slate-500">
-            ส่งความสนใจเมื่อ {enrollment?.enrolled_at ? new Date(enrollment.enrolled_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "—"}
+            ยืนยันเมื่อ {enrollment?.enrolled_at ? new Date(enrollment.enrolled_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "—"}
           </p>
-          <button type="button" disabled={busy !== null}
-            onClick={() => { if (window.confirm("ยกเลิกคำขอเข้าร่วมโครงการ?")) act("withdraw", "ยกเลิกคำขอเข้าร่วม"); }}
-            className="w-full py-2.5 rounded-lg border border-slate-300 text-slate-600 text-sm font-medium disabled:opacity-50">
-            ยกเลิกคำขอ
-          </button>
         </div>
       )}
 
-      {/* ── ACTIVE ── */}
-      {status === "active" && (
+      {/* ── ACTIVE — full view ── */}
+      {status === "active" && !isInvited && !isConfirmedPending && (
         <ActiveView patient={patient} visits={visits} selfLogs={selfLogs}
           busy={busy} setBusy={setBusy} setMsg={setMsg}
           pendingAction={enrollment?.pendingAction ?? null}
@@ -176,8 +186,8 @@ export default function MounjaroSelfClient({
         </div>
       )}
 
-      {status === "active" && <AuditViewer audit={audit} />}
-      {consent.needed && <ConsentModal body={consent.body} logo={facility.logo} />}
+      {status === "active" && !isInvited && !isConfirmedPending && <AuditViewer audit={audit} />}
+      {consent.needed && status === "active" && <ConsentModal body={consent.body} logo={facility.logo} />}
       {destructive && (
         <ConfirmDestructiveModal
           action={destructive}

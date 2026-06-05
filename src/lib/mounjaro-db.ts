@@ -129,11 +129,14 @@ type EnrollmentRow = {
   enrolled_at: string | null; completed_at: string | null;
   consent_signed_at: string | null; consent_version: string | null;
   withdrawn_reason: string | null; portal_erased_at: string | null;
-  // Doctor-approved withdraw/erase (owner 2026-06-05): the employee's
-  // request sits here until the attending doctor approves.
+  // Doctor-approved withdraw/erase (owner 2026-06-05)
   pending_action: "withdraw" | "erase" | null;
   pending_action_reason: string | null;
   pending_action_at: string | null;
+  // Doctor-invite flow (owner 2026-06-06): enrollment is doctor-initiated.
+  invited_by_doctor_id: number | null;
+  invited_at: string | null;
+  employee_confirmed_at: string | null;
 };
 
 /** The actor's OWN enrollment, or null. There is deliberately no
@@ -145,38 +148,119 @@ export function getMyEnrollment(actor: MjActor): EnrollmentRow | null {
   return row ?? null;
 }
 
-/** Express interest → create a pending enrollment. Re-joining is allowed
- *  (owner 2026-06-05): if a withdrawn / completed / portal-erased
- *  enrollment exists, reopen it as 'pending' instead of failing on the
- *  UNIQUE(employee_id) constraint. An already active/pending enrollment
- *  is returned unchanged (idempotent). */
-export function enrollSelf(actor: MjActor): EnrollmentRow {
+// ── Doctor-invite flow (owner 2026-06-06) ──────────────────────────
+// Enrollment is always doctor-initiated. The employee receives a LINE
+// notification and can confirm the invitation on the health portal.
+// Only confirmed invitations appear in the doctor's intake list.
+
+/** Doctor sends an invitation to an employee to join the weight-control
+ *  program. Creates a pending enrollment (or re-activates an old erased /
+ *  withdrawn one). Returns false when the employee is already active or
+ *  has already confirmed a pending invitation (cannot double-invite). */
+export function inviteEmployee(
+  doctor: MjActor, employeeId: number
+): { enrollment_id: number } {
+  requireDoctor(doctor);
   const db = getDb();
-  // Look up ANY row (incl. portal-erased) — one enrollment per employee.
-  const any = db.prepare(
-    "SELECT * FROM mounjaro_enrollments WHERE employee_id = ?"
-  ).get(actor.id) as EnrollmentRow | undefined;
+  const emp = db.prepare("SELECT id FROM users WHERE id = ? AND status = 'active'")
+    .get(employeeId);
+  if (!emp) throw new MounjaroForbidden("employee_not_found");
+
+  const any = db.prepare("SELECT * FROM mounjaro_enrollments WHERE employee_id = ?")
+    .get(employeeId) as EnrollmentRow | undefined;
+
   if (any) {
-    if (any.status === "active" || any.status === "pending") {
-      return getMyEnrollment(actor) ?? any;
+    // Block if actively enrolled
+    if (any.status === "active") throw new MounjaroForbidden("already_active");
+    // Block if the employee already confirmed a previous invite (pending intake)
+    if (any.status === "pending" && !any.portal_erased_at && any.employee_confirmed_at) {
+      throw new MounjaroForbidden("already_confirmed");
     }
-    // withdrawn / completed → reopen for the doctor to re-screen. Clear
-    // the erase flag so a "left then changed my mind" employee comes
-    // back to their own (retained) record.
+    // Re-invite (overwrite previous withdrawn/erased/unconfirmed invite)
     db.prepare(`
       UPDATE mounjaro_enrollments
-      SET status = 'pending', withdrawn_reason = NULL,
-          portal_erased_at = NULL, enrolled_at = CURRENT_TIMESTAMP
+      SET status = 'pending',
+          invited_by_doctor_id = ?, invited_at = CURRENT_TIMESTAMP,
+          employee_confirmed_at = NULL, enrolled_at = NULL,
+          portal_erased_at = NULL, withdrawn_reason = NULL,
+          pending_action = NULL, pending_action_reason = NULL, pending_action_at = NULL
       WHERE id = ?
-    `).run(any.id);
-    audit(actor.id, "enroll", "enrollment", actor.id);
-    return getMyEnrollment(actor)!;
+    `).run(doctor.id, any.id);
+    audit(doctor.id, "invite_employee", "enrollment", any.id);
+    return { enrollment_id: any.id };
   }
-  db.prepare(
-    "INSERT INTO mounjaro_enrollments (employee_id, status, enrolled_at) VALUES (?, 'pending', CURRENT_TIMESTAMP)"
-  ).run(actor.id);
-  audit(actor.id, "enroll", "enrollment", actor.id);
-  return getMyEnrollment(actor)!;
+
+  const info = db.prepare(`
+    INSERT INTO mounjaro_enrollments
+      (employee_id, status, invited_by_doctor_id, invited_at)
+    VALUES (?, 'pending', ?, CURRENT_TIMESTAMP)
+  `).run(employeeId, doctor.id);
+  const enrollment_id = Number(info.lastInsertRowid);
+  audit(doctor.id, "invite_employee", "enrollment", enrollment_id);
+  return { enrollment_id };
+}
+
+/** Employee confirms the doctor's invitation (replaces old self-enroll).
+ *  Returns false when no pending unconfirmed invitation exists. */
+export function confirmMyInvitation(actor: MjActor): boolean {
+  const db = getDb();
+  const enr = db.prepare(`
+    SELECT id FROM mounjaro_enrollments
+    WHERE employee_id = ?
+      AND status = 'pending'
+      AND portal_erased_at IS NULL
+      AND invited_by_doctor_id IS NOT NULL
+      AND employee_confirmed_at IS NULL
+  `).get(actor.id) as { id: number } | undefined;
+  if (!enr) return false;
+  db.prepare(`
+    UPDATE mounjaro_enrollments
+    SET employee_confirmed_at = CURRENT_TIMESTAMP, enrolled_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(enr.id);
+  audit(actor.id, "confirm_invite", "enrollment", enr.id);
+  return true;
+}
+
+/** List employees the doctor can invite (active staff with no current
+ *  pending/active enrollment, or only an erased one). */
+export function listEligibleEmployees(actor: MjActor): Array<{
+  id: number; display_name: string; title_prefix: string | null;
+}> {
+  requireDoctor(actor);
+  return getDb().prepare(`
+    SELECT u.id, u.display_name, u.title_prefix
+    FROM users u
+    WHERE u.role IN ('staff', 'admin')
+      AND u.status = 'active'
+      AND u.is_test_account = 0
+      AND NOT EXISTS (
+        SELECT 1 FROM mounjaro_enrollments e
+        WHERE e.employee_id = u.id
+          AND e.portal_erased_at IS NULL
+          AND (e.status = 'active'
+            OR (e.status = 'pending' AND e.employee_confirmed_at IS NOT NULL))
+      )
+    ORDER BY u.display_name COLLATE NOCASE ASC
+  `).all() as Array<{ id: number; display_name: string; title_prefix: string | null }>;
+}
+
+/** Invitations this doctor sent that the employee hasn't confirmed yet. */
+export function listPendingInvitations(actor: MjActor): Array<{
+  enrollment_id: number; employee_name: string; invited_at: string | null;
+}> {
+  requireDoctor(actor);
+  return getDb().prepare(`
+    SELECT e.id AS enrollment_id, u.display_name AS employee_name, e.invited_at
+    FROM mounjaro_enrollments e JOIN users u ON u.id = e.employee_id
+    WHERE e.invited_by_doctor_id = ?
+      AND e.status = 'pending'
+      AND e.portal_erased_at IS NULL
+      AND e.employee_confirmed_at IS NULL
+    ORDER BY e.invited_at ASC
+  `).all(actor.id) as Array<{
+    enrollment_id: number; employee_name: string; invited_at: string | null;
+  }>;
 }
 
 /** Withdraw / cancel — keeps the record visible (status='withdrawn') so the
@@ -646,7 +730,9 @@ export function listPendingIntake(actor: MjActor): Array<{
     SELECT e.id AS enrollment_id, u.display_name AS employee_name, e.enrolled_at,
            u.gender, u.dob, u.mobile_phone AS phone, u.height_cm, u.weight_kg
     FROM mounjaro_enrollments e JOIN users u ON u.id = e.employee_id
-    WHERE e.status = 'pending' AND e.portal_erased_at IS NULL
+    WHERE e.status = 'pending'
+      AND e.portal_erased_at IS NULL
+      AND e.employee_confirmed_at IS NOT NULL
     ORDER BY e.enrolled_at ASC
   `).all() as Array<{
     enrollment_id: number; employee_name: string; enrolled_at: string | null;

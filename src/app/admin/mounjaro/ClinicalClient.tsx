@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
@@ -21,6 +21,9 @@ type PendingRow = {
   gender: string | null; dob: string | null; phone: string | null;
   height_cm: number | null; weight_kg: number | null;
 };
+type InvitedRow = {
+  enrollment_id: number; employee_name: string; invited_at: string | null;
+};
 
 const inputCls =
   "w-full px-3 py-2 text-sm border border-[#C9C2B0] rounded-sm bg-white text-[#0F1B33] " +
@@ -37,10 +40,15 @@ function toBE(d: string | null): string {
 }
 
 export default function ClinicalClient({
-  mode, patients, pending
-}: { mode: "locked" | "list"; patients: PatientRow[]; pending: PendingRow[] }) {
+  mode, patients, pending, pendingInvitations
+}: {
+  mode: "locked" | "list";
+  patients: PatientRow[];
+  pending: PendingRow[];
+  pendingInvitations: InvitedRow[];
+}) {
   if (mode === "locked") return <UnlockGate />;
-  return <PatientList patients={patients} pending={pending} />;
+  return <PatientList patients={patients} pending={pending} pendingInvitations={pendingInvitations} />;
 }
 
 function UnlockGate() {
@@ -65,7 +73,8 @@ function UnlockGate() {
       <div className="bg-white border border-[#E5E0D5] rounded-sm shadow-sm overflow-hidden">
         <div className="bg-[#0F1B33] px-6 py-5 border-b-[3px] border-[#B8954F]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 border-2 border-[#B8954F] flex items-center justify-center font-bold text-[#B8954F]">M</div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/ahc-logo.png" alt="AHC" className="w-10 h-10 rounded object-contain" />
             <div>
               <h1 className="text-white font-semibold text-[15px]">ระบบติดตามผู้ป่วย โครงการควบคุมน้ำหนัก</h1>
               <div className="text-[10px] text-[#D4B675] tracking-[0.12em] uppercase mt-0.5">Tirzepatide Monitoring</div>
@@ -73,10 +82,12 @@ function UnlockGate() {
           </div>
         </div>
         <div className="p-6 space-y-4">
-          <p className="text-sm text-slate-600">
-            ข้อมูลผู้ป่วยเป็นข้อมูลอ่อนไหว — กรุณายืนยันตัวตนด้วย<b>เลขใบประกอบวิชาชีพ</b>ของท่าน
-            (มีผล 8 ชั่วโมง · ทุกการเข้าถึงถูกบันทึก log)
-          </p>
+          <div>
+            <h2 className="text-[15px] font-semibold text-[#0F1B33]">กรุณายืนยันตัวตน</h2>
+            <p className="text-[11px] text-slate-400 mt-1">
+              (มีผลภายในครั้งละ 8 ชั่วโมง นับจากเวลายืนยัน · ทุกการเข้าถึงข้อมูลผู้ป่วยจะถูกบันทึกไว้ตามระเบียบ)
+            </p>
+          </div>
           <div>
             <label className={labelCls}>เลขใบประกอบวิชาชีพ</label>
             <input className={inputCls + " mt-1"} value={license} autoComplete="off"
@@ -102,35 +113,56 @@ function StatusBadge({ level }: { level: "danger" | "warning" | null }) {
   return <span className="text-[11px] px-2.5 py-0.5 rounded-sm border border-[#C9C2B0] bg-[#FAF8F3] text-slate-500 font-medium">ปกติ</span>;
 }
 
-function PatientList({ patients, pending }: { patients: PatientRow[]; pending: PendingRow[] }) {
+function PatientList({ patients, pending, pendingInvitations }: {
+  patients: PatientRow[]; pending: PendingRow[]; pendingInvitations: InvitedRow[];
+}) {
   const router = useRouter();
   const [intake, setIntake] = useState(false);
+  const [invite, setInvite] = useState(false);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between gap-3">
+      <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-[20px] font-semibold text-[#0F1B33]">รายชื่อผู้ป่วย</h1>
           <div className="text-[11px] text-slate-500 tracking-[0.12em] uppercase mt-0.5">Patient Registry · เห็นเฉพาะผู้ป่วยของท่าน</div>
         </div>
-        <button type="button" onClick={() => setIntake(true)}
-          className="px-4 py-2.5 bg-[#B8954F] hover:bg-[#A38240] text-white text-[13px] font-medium rounded-sm transition whitespace-nowrap">
-          + เพิ่มผู้ป่วยใหม่
-        </button>
+        <div className="flex gap-2.5">
+          <button type="button" onClick={() => setInvite(true)}
+            className="px-4 py-2.5 border border-[#B8954F] text-[#B8954F] hover:bg-[#F5EFE0] text-[13px] font-medium rounded-sm transition whitespace-nowrap">
+            + ส่งคำเชิญ
+          </button>
+          {pending.length > 0 && (
+            <button type="button" onClick={() => setIntake(true)}
+              className="px-4 py-2.5 bg-[#B8954F] hover:bg-[#A38240] text-white text-[13px] font-medium rounded-sm transition whitespace-nowrap">
+              ทำ Baseline ({pending.length})
+            </button>
+          )}
+        </div>
       </div>
+
+      {pendingInvitations.length > 0 && (
+        <div className="bg-[#F0F4FF] border border-[#B8C7E0] rounded-sm px-4 py-2.5 text-[13px] text-[#1E3A5F]">
+          คำเชิญที่ส่งแล้ว รอพนักงานยืนยัน ({pendingInvitations.length} คน): {" "}
+          {pendingInvitations.map((r, i) => (
+            <span key={r.enrollment_id}>{i > 0 ? " · " : ""}<b>{r.employee_name}</b></span>
+          ))}
+        </div>
+      )}
 
       {pending.length > 0 && (
         <div className="bg-[#F5EFE0] border border-[#D4B675] rounded-sm px-4 py-2.5 text-[13px] text-[#5C4A28]">
-          มีพนักงาน <b>{pending.length}</b> คนสมัครเข้าโครงการ รอรับเข้า —
-          กด <button onClick={() => setIntake(true)} className="underline font-medium">เพิ่มผู้ป่วยใหม่</button> เพื่อทำ baseline
+          พนักงานยืนยันรับคำเชิญแล้ว <b>{pending.length}</b> คน รอบันทึก Baseline —
+          กด <button onClick={() => setIntake(true)} className="underline font-medium">ทำ Baseline</button> เพื่อเปิดแฟ้มผู้ป่วย
         </div>
       )}
 
       <div className="bg-white border border-[#E5E0D5] rounded-sm shadow-sm overflow-x-auto">
         {patients.length === 0 ? (
           <div className="text-center py-16 px-8">
-            <div className="text-5xl font-bold text-[#B8954F] mb-4">M</div>
-            <p className="text-sm text-slate-500">ยังไม่มีผู้ป่วยในความดูแล<br />กดปุ่ม &quot;เพิ่มผู้ป่วยใหม่&quot; เพื่อเริ่มต้น</p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/ahc-logo.png" alt="AHC" className="w-16 h-16 rounded object-contain mx-auto mb-4 opacity-60" />
+            <p className="text-sm text-slate-500">ยังไม่มีผู้ป่วยในความดูแล<br />กดปุ่ม &quot;ส่งคำเชิญ&quot; เพื่อเริ่มต้นเชิญพนักงาน</p>
           </div>
         ) : (
           <table className="w-full text-[13px] whitespace-nowrap">
@@ -192,6 +224,7 @@ function PatientList({ patients, pending }: { patients: PatientRow[]; pending: P
       </div>
 
       {intake && <IntakeModal pending={pending} onClose={() => setIntake(false)} />}
+      {invite && <InviteModal onClose={() => setInvite(false)} onSent={() => { setInvite(false); router.refresh(); }} />}
     </div>
   );
 }
@@ -306,7 +339,7 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
                 <label className={labelCls}>พนักงานที่สมัครเข้าโครงการ <span className="text-[#B91C1C]">*</span></label>
                 {pending.length === 0 ? (
                   <p className="mt-1 text-sm text-slate-500 bg-[#FAF8F3] border border-[#E5E0D5] rounded-sm px-3 py-2">
-                    ยังไม่มีพนักงานสมัครเข้าโครงการ — ให้พนักงานกดสมัครที่เมนู &quot;สุขภาพพนักงาน&quot; ก่อน
+                    ยังไม่มีพนักงานยืนยันรับคำเชิญ — ส่งคำเชิญก่อน แล้วรอพนักงานยืนยัน
                   </p>
                 ) : (
                   <select className={inputCls + " mt-1"} value={enrId}
@@ -428,6 +461,102 @@ function CheckRow({ state, set, items }: {
           {label}
         </label>
       ))}
+    </div>
+  );
+}
+
+// ── InviteModal ──────────────────────────────────────────────────────
+// Doctor selects an eligible employee and sends them an invitation.
+// The employee receives a LINE notification and can confirm on the
+// health portal. Only confirmed invitations appear in the intake list.
+type EligibleEmployee = { id: number; display_name: string; title_prefix: string | null };
+
+function InviteModal({ onClose, onSent }: { onClose: () => void; onSent: () => void }) {
+  const [employees, setEmployees] = useState<EligibleEmployee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<number | "">("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(apiUrl("/api/admin/mounjaro/eligible-employees"))
+      .then((r) => r.json())
+      .then((j) => { if (j.ok) setEmployees(j.employees); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function send() {
+    if (selectedId === "") { setErr("กรุณาเลือกพนักงาน"); return; }
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/admin/mounjaro/invite"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employee_id: selectedId })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        const msg = j.error === "already_active" ? "พนักงานคนนี้อยู่ในโครงการแล้ว"
+          : j.error === "already_confirmed" ? "พนักงานคนนี้ยืนยันรับคำเชิญแล้ว รอทำ Baseline"
+          : "ส่งคำเชิญไม่สำเร็จ";
+        setErr(msg); return;
+      }
+      onSent();
+    } finally { setBusy(false); }
+  }
+
+  const selected = employees.find((e) => e.id === selectedId);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F1B33]/60 backdrop-blur-[2px] p-4" onClick={onClose}>
+      <div className="bg-white w-full max-w-md rounded-sm border-t-[3px] border-[#B8954F] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-[#0F1B33] px-6 py-4 flex items-center justify-between">
+          <div>
+            <div className="text-white font-semibold text-[15px]">ส่งคำเชิญเข้าร่วมโครงการ</div>
+            <div className="text-[10px] text-[#D4B675] tracking-[0.1em] uppercase mt-0.5">Send Program Invitation</div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 border border-white/30 text-white text-lg hover:bg-white/10">×</button>
+        </div>
+        <div className="p-6 space-y-4">
+          <p className="text-[13px] text-slate-600">
+            เลือกพนักงานที่ท่านต้องการเชิญเข้าโครงการควบคุมน้ำหนัก —
+            ระบบจะส่งแจ้งเตือนทาง LINE ให้พนักงานกดยืนยัน และนัดหมายตรวจ Baseline
+          </p>
+          <div>
+            <label className={labelCls}>เลือกพนักงาน <span className="text-[#B91C1C]">*</span></label>
+            {loading ? (
+              <p className="mt-1 text-sm text-slate-400">กำลังโหลด…</p>
+            ) : employees.length === 0 ? (
+              <p className="mt-1 text-sm text-slate-500 bg-[#FAF8F3] border border-[#E5E0D5] rounded-sm px-3 py-2">
+                ไม่มีพนักงานที่สามารถเชิญได้ (ทุกคนอยู่ในโครงการแล้ว)
+              </p>
+            ) : (
+              <select className={inputCls + " mt-1"} value={selectedId}
+                onChange={(e) => setSelectedId(e.target.value === "" ? "" : Number(e.target.value))}>
+                <option value="">— เลือกพนักงาน —</option>
+                {employees.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.title_prefix ? e.title_prefix + " " : ""}{e.display_name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          {selected && (
+            <div className="bg-[#F5EFE0] border border-[#D4B675] rounded-sm px-4 py-3 text-[13px] text-[#5C4A28]">
+              <b>{selected.title_prefix ? selected.title_prefix + " " : ""}{selected.display_name}</b> จะได้รับแจ้งเตือนทาง LINE
+              ให้กดยืนยันเข้าร่วมโครงการ · เมื่อยืนยันแล้วจึงจะปรากฏในรายการรอทำ Baseline
+            </div>
+          )}
+          {err && <p className="text-sm text-[#B91C1C]">✗ {err}</p>}
+        </div>
+        <div className="px-6 py-4 bg-[#FAF8F3] border-t border-[#E5E0D5] flex justify-end gap-2.5">
+          <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#0F1B33] hover:bg-white">ยกเลิก</button>
+          <button onClick={send} disabled={busy || selectedId === "" || loading}
+            className="px-5 py-2 text-[13px] bg-[#0F1B33] hover:bg-[#1B2D4F] text-white rounded-sm disabled:opacity-50">
+            {busy ? "กำลังส่ง…" : "ส่งคำเชิญ"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

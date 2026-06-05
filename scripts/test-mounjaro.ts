@@ -82,8 +82,11 @@ type MjActor = import("../src/lib/mounjaro-db").MjActor;
   const HR: MjActor    = { id: hrId, role: "admin", is_hr_analytics: 1 };
   const SUPER: MjActor = { id: superId, role: "super_admin" };
 
-  mj.enrollSelf(A);
-  mj.enrollSelf(B);
+  // New invite flow (2026-06-06): doctor invites → employee confirms
+  mj.inviteEmployee(D2, empAId); // D2 invites emp A
+  mj.inviteEmployee(D1, empBId); // D1 invites emp B
+  mj.confirmMyInvitation(A);     // A confirms
+  mj.confirmMyInvitation(B);     // B confirms
   const enrA = mj.getMyEnrollment(A)!;
   const enrB = mj.getMyEnrollment(B)!;
   // D2 attends employee A; D1 attends employee B.

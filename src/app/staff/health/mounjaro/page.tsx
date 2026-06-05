@@ -35,9 +35,10 @@ export default function MounjaroSelfPage() {
         status: enr.status as "pending" | "active" | "withdrawn" | "completed",
         enrolled_at: enr.enrolled_at,
         withdrawn_reason: enr.withdrawn_reason,
-        // Doctor-approval queue (owner 2026-06-05): a filed withdraw/erase
-        // request the participant is waiting on the doctor for.
-        pendingAction: (enr.pending_action ?? null) as "withdraw" | "erase" | null
+        pendingAction: (enr.pending_action ?? null) as "withdraw" | "erase" | null,
+        // Doctor-invite flow (owner 2026-06-06): invited but not yet confirmed.
+        invitedByDoctorId: enr.invited_by_doctor_id ?? null,
+        employeeConfirmedAt: enr.employee_confirmed_at ?? null
       }
     : null;
 

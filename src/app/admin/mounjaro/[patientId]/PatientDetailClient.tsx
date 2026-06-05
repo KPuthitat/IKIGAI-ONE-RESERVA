@@ -386,9 +386,18 @@ function FlagList({ title, labels, danger, empty }: { title: string; labels: str
   return (
     <div>
       <div className={`text-[12px] font-semibold uppercase tracking-[0.08em] mb-2 ${danger ? "text-[#B91C1C]" : "text-[#0F1B33]"}`}>{title}</div>
-      <div className={`text-[13px] ${labels.length && danger ? "text-[#B91C1C] font-semibold" : "text-[#0F1B33]"}`}>
-        {labels.length ? labels.join(", ") : (empty ?? "—")}
-      </div>
+      {labels.length ? (
+        <ul className={`space-y-1 ${danger ? "text-[#B91C1C] font-semibold" : "text-[#0F1B33]"}`}>
+          {labels.map((l) => (
+            <li key={l} className="flex items-start gap-1.5 text-[13px]">
+              <span className="text-[#B8954F] font-bold mt-px flex-shrink-0">·</span>
+              {l}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="text-[13px] text-slate-400">{empty ?? "—"}</div>
+      )}
     </div>
   );
 }

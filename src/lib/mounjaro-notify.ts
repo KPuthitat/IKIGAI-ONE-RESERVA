@@ -14,6 +14,41 @@ async function pushToEmployee(lineUserId: string, text: string): Promise<void> {
   await sendLinePush(token, { to: lineUserId, messages: [{ type: "text", text }] });
 }
 
+/** Notify the employee that the doctor invited them to the program. */
+export async function notifyEmployeeInvited(employeeId: number): Promise<void> {
+  try {
+    const row = getDb().prepare("SELECT line_user_id FROM users WHERE id = ?")
+      .get(employeeId) as { line_user_id: string | null } | undefined;
+    if (!row?.line_user_id) return;
+    await pushToEmployee(
+      row.line_user_id,
+      "แพทย์ได้ส่งคำเชิญให้คุณเข้าร่วมโครงการควบคุมน้ำหนัก\n\nกรุณาเปิดพอร์ทัล IKIGAI OS → สุขภาพพนักงาน → โครงการควบคุมน้ำหนัก เพื่อยืนยันการเข้าร่วม"
+    );
+  } catch { /* best-effort */ }
+}
+
+/** Notify the attending doctor that the employee confirmed their invitation. */
+export async function notifyDoctorEmployeeConfirmed(employeeId: number): Promise<void> {
+  try {
+    const row = getDb().prepare(`
+      SELECT doc.line_user_id AS doctor_line,
+             emp.display_name AS employee_name, emp.title_prefix AS employee_prefix
+      FROM mounjaro_enrollments e
+      JOIN users doc ON doc.id = e.invited_by_doctor_id
+      JOIN users emp ON emp.id = e.employee_id
+      WHERE e.employee_id = ? AND e.employee_confirmed_at IS NOT NULL
+    `).get(employeeId) as {
+      doctor_line: string | null; employee_name: string; employee_prefix: string | null;
+    } | undefined;
+    if (!row?.doctor_line) return;
+    const who = `${row.employee_prefix ? row.employee_prefix + " " : ""}${row.employee_name}`;
+    await pushToEmployee(
+      row.doctor_line,
+      `${who} ยืนยันรับคำเชิญเข้าร่วมโครงการควบคุมน้ำหนักแล้ว\n\nกรุณาเปิด IKIGAI OS → โครงการควบคุมน้ำหนัก (แพทย์) เพื่อทำ Baseline`
+    );
+  } catch { /* best-effort */ }
+}
+
 /** Notify the employee that the doctor replied to their self-log. */
 export async function notifySelfLogReply(selfLogId: number): Promise<void> {
   try {

@@ -3079,6 +3079,29 @@ function runMigrations(db: Database.Database): void {
     if (!cvCols.has("updated_at")) db.exec("ALTER TABLE mounjaro_consent_versions ADD COLUMN updated_at TEXT");
   }
 
+  // Doctor-invite flow (owner 2026-06-06): enrollment is now always
+  // initiated by a doctor. The employee CANNOT self-enroll; they can
+  // only confirm an invitation sent by the attending doctor.
+  //   invited_by_doctor_id — who sent the invite
+  //   invited_at           — when the invite was sent
+  //   employee_confirmed_at — when the employee accepted
+  // An enrollment without employee_confirmed_at is "waiting for employee
+  // to confirm". Only confirmed enrollments show in the doctor's intake
+  // list. This removes the need for a self-enroll banner on the staff
+  // portal.
+  {
+    const enrCols2 = new Set(
+      (db.prepare("PRAGMA table_info(mounjaro_enrollments)").all() as Array<{ name: string }>)
+        .map((c) => c.name)
+    );
+    if (!enrCols2.has("invited_by_doctor_id"))
+      db.exec("ALTER TABLE mounjaro_enrollments ADD COLUMN invited_by_doctor_id INTEGER REFERENCES users(id)");
+    if (!enrCols2.has("invited_at"))
+      db.exec("ALTER TABLE mounjaro_enrollments ADD COLUMN invited_at TEXT");
+    if (!enrCols2.has("employee_confirmed_at"))
+      db.exec("ALTER TABLE mounjaro_enrollments ADD COLUMN employee_confirmed_at TEXT");
+  }
+
   // ══════════════════════════════════════════════════════════════════
   // Health module — facility config + exam PDF + leave-approval (2026-06-05)
   // ──────────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import { getPatientBundle, patientAlerts, getPendingActionForPatient, type MjAct
 import PatientDetailClient from "./PatientDetailClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "ผู้ป่วย Mounjaro · คลินิก" };
+export const metadata: Metadata = { title: "ผู้ป่วย โครงการควบคุมน้ำหนัก · คลินิก" };
 
 function pj<T>(s: unknown, fb: T): T {
   if (typeof s !== "string") return fb;
