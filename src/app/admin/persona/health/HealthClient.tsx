@@ -32,6 +32,7 @@ export type HealthRow = {
   cert_no: string | null;
   items_json: string | null;
   attachment_url: string | null;
+  file_path: string | null;
   notes: string | null;
 };
 
@@ -208,6 +209,9 @@ function CheckupModal({
   const [attachmentUrl, setAttachmentUrl] =
     useState(editMode === "edit" ? (row.attachment_url ?? "") : "");
   const [notes, setNotes] = useState(editMode === "edit" ? (row.notes ?? "") : "");
+  // Actual exam-result file (PDF/image) to upload after the row is saved.
+  const [file, setFile] = useState<File | null>(null);
+  const hasFile = editMode === "edit" && !!row.file_path;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -281,6 +285,22 @@ function CheckupModal({
       if (!res.ok || !j?.ok) {
         setErr(j?.error ?? "เกิดข้อผิดพลาด");
         return;
+      }
+      // Upload the actual exam file (if chosen) against the saved row.
+      const checkupId: number | null =
+        editMode === "edit" && row.checkup_id ? row.checkup_id
+          : typeof j.id === "number" ? j.id : null;
+      if (file && checkupId) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const up = await fetch(apiUrl(`/api/admin/persona/health/${checkupId}/file`), {
+          method: "POST", body: fd
+        });
+        const uj = await up.json().catch(() => ({}));
+        if (!up.ok || !uj?.ok) {
+          setErr(uj?.message ?? "บันทึกผลแล้ว แต่แนบไฟล์ไม่สำเร็จ — ลองแนบใหม่อีกครั้ง");
+          return;
+        }
       }
       onSaved();
     } finally {
@@ -399,7 +419,22 @@ function CheckupModal({
         )}
 
         <div>
-          <label className="label">ลิงก์ไฟล์สแกนใบรับรอง (ถ้ามี)</label>
+          <label className="label">แนบไฟล์ผลตรวจ (PDF / รูปภาพ)</label>
+          <input type="file" accept="application/pdf,image/*" className="input text-xs"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <p className="text-[10px] text-slate-400 mt-1">
+            {hasFile && !file
+              ? "มีไฟล์แนบอยู่แล้ว — เลือกไฟล์ใหม่เพื่อแทนที่ · พนักงานเปิดดูได้ในเมนูผลตรวจสุขภาพของตัวเอง"
+              : "อัปโหลดไฟล์ผลตรวจจริง (สูงสุด 12 MB) · พนักงานจะเปิดดูได้เฉพาะผลของตัวเอง"}
+          </p>
+          {hasFile && (
+            <a href={apiUrl(`/api/health/exam-file/${row.checkup_id}`)}
+              target="_blank" rel="noopener noreferrer"
+              className="text-xs text-brand hover:underline">ดูไฟล์ปัจจุบัน</a>
+          )}
+        </div>
+        <div>
+          <label className="label">หรือใส่ลิงก์ไฟล์ภายนอก (ถ้ามี)</label>
           <input className="input text-xs" value={attachmentUrl}
             onChange={(e) => setAttachmentUrl(e.target.value)}
             placeholder="https://drive.google.com/..." maxLength={500} />

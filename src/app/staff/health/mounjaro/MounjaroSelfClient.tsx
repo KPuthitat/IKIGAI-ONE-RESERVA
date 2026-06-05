@@ -11,7 +11,9 @@ type Enrollment = {
   status: "pending" | "active" | "withdrawn" | "completed";
   enrolled_at: string | null;
   withdrawn_reason: string | null;
+  pendingAction: "withdraw" | "erase" | null;
 } | null;
+type Facility = { name: string; logo: string };
 type Patient = {
   hn: string | null; start_date: string | null; notes: string | null;
   baseline: Record<string, number>;
@@ -47,13 +49,16 @@ function daysUntil(iso: string | null): number | null {
 }
 
 export default function MounjaroSelfClient({
-  enrollment, patient, visits, selfLogs, consent, audit, hasPin
+  enrollment, patient, visits, selfLogs, consent, audit, hasPin, facility
 }: {
   enrollment: Enrollment; patient: Patient; visits: Visit[]; selfLogs: SelfLog[];
   consent: ConsentInfo; audit: AuditEntry[];
   /** Whether the employee has a 4-digit PIN set (everyone onboarded does).
    *  Drives the PIN field in the destructive-action confirm modal. */
   hasPin: boolean;
+  /** The company's health-consulting clinic (name + logo) — pulled from
+   *  the editable facility config, replacing the old hardcoded AT HOME. */
+  facility: Facility;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -83,11 +88,15 @@ export default function MounjaroSelfClient({
     <div className="space-y-4 max-w-2xl mx-auto">
       <div className="card space-y-1">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h1 className="text-xl font-bold text-slate-800">โครงการ Mounjaro Employee Wellness</h1>
+          <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={facility.logo} alt="" className="w-10 h-10 rounded object-contain bg-slate-50 border border-slate-100" />
+            <h1 className="text-xl font-bold text-slate-800">โครงการควบคุมน้ำหนัก</h1>
+          </div>
           <StatusBadge status={status} />
         </div>
         <p className="text-xs text-slate-500">
-          โครงการดูแลน้ำหนักภายใต้การดูแลของแพทย์ IKIGAI MediHealth (AT HOME CLINIC)
+          โครงการดูแลน้ำหนักภายใต้การดูแลของแพทย์ · {facility.name}
         </p>
       </div>
 
@@ -114,7 +123,7 @@ export default function MounjaroSelfClient({
       {status === "pending" && (
         <div className="card space-y-3">
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 leading-relaxed">
-            รอการนัดตรวจคัดกรอง — คลินิก AT HOME จะติดต่อกลับภายใน 3 วันทำการ
+            รอการนัดตรวจคัดกรอง — {facility.name} จะติดต่อกลับภายใน 3 วันทำการ
             หลังตรวจคัดกรองและแพทย์รับเข้าโครงการแล้ว หน้านี้จะแสดงข้อมูลการรักษาของคุณ
           </div>
           <p className="text-[11px] text-slate-500">
@@ -132,6 +141,7 @@ export default function MounjaroSelfClient({
       {status === "active" && (
         <ActiveView patient={patient} visits={visits} selfLogs={selfLogs}
           busy={busy} setBusy={setBusy} setMsg={setMsg}
+          pendingAction={enrollment?.pendingAction ?? null}
           onRequestDestructive={(a) => { setMsg(null); setDestructive(a); }} />
       )}
 
@@ -167,7 +177,7 @@ export default function MounjaroSelfClient({
       )}
 
       {status === "active" && <AuditViewer audit={audit} />}
-      {consent.needed && <ConsentModal body={consent.body} />}
+      {consent.needed && <ConsentModal body={consent.body} logo={facility.logo} />}
       {destructive && (
         <ConfirmDestructiveModal
           action={destructive}
@@ -231,11 +241,11 @@ function ConfirmDestructiveModal({
         <h3 className="font-bold text-rose-700">{title}</h3>
         <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-xs text-rose-800 leading-relaxed">
           {action === "withdraw" ? (
-            <>คุณกำลังจะ<b>ออกจากโครงการ</b> — หน้านี้จะหยุดแสดงข้อมูลการรักษา
-              และจะไม่บันทึกอาการได้อีก · <b>กลับเข้าร่วมใหม่ได้</b>ภายหลัง
+            <>คุณกำลังจะส่งคำขอ<b>ออกจากโครงการ</b> — คำขอจะถูกส่งให้<b>แพทย์เจ้าของไข้อนุมัติ</b>ก่อน
+              เมื่ออนุมัติแล้วหน้านี้จะหยุดแสดงข้อมูลการรักษา · <b>กลับเข้าร่วมใหม่ได้</b>ภายหลัง
               (เวชระเบียนที่แพทย์บันทึกยังถูกเก็บไว้)</>
           ) : (
-            <>คุณกำลังจะ<b>ลบข้อมูลออกจากพอร์ทัล</b> และยุติการเข้าร่วมโครงการ ·
+            <>คุณกำลังจะส่งคำขอ<b>ลบข้อมูลออกจากพอร์ทัล</b> — คำขอจะถูกส่งให้<b>แพทย์เจ้าของไข้อนุมัติ</b>ก่อน ·
               เวชระเบียนที่แพทย์บันทึกจะถูกเก็บตามที่กฎหมายกำหนด (เข้าถึงเฉพาะแพทย์เจ้าของไข้)</>
           )}
         </div>
@@ -261,7 +271,7 @@ function ConfirmDestructiveModal({
           </button>
           <button type="button" onClick={confirm} disabled={!canSubmit}
             className="flex-1 py-2.5 rounded-lg bg-rose-600 text-white text-sm font-bold disabled:opacity-40">
-            {busy ? "กำลังทำรายการ…" : action === "withdraw" ? "ยืนยันออกจากโครงการ" : "ยืนยันลบข้อมูล"}
+            {busy ? "กำลังส่งคำขอ…" : "ส่งคำขอให้แพทย์อนุมัติ"}
           </button>
         </div>
       </div>
@@ -269,7 +279,7 @@ function ConfirmDestructiveModal({
   );
 }
 
-function ConsentModal({ body }: { body: string | null }) {
+function ConsentModal({ body, logo }: { body: string | null; logo: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [agree, setAgree] = useState(false);
@@ -283,7 +293,11 @@ function ConsentModal({ body }: { body: string | null }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto">
-        <h3 className="font-bold text-slate-800">ความยินยอมเปิดเผยข้อมูลทางสุขภาพ (PDPA)</h3>
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={logo} alt="" className="w-9 h-9 rounded object-contain bg-slate-50 border border-slate-100" />
+          <h3 className="font-bold text-slate-800">ความยินยอมเปิดเผยข้อมูลทางสุขภาพ (PDPA)</h3>
+        </div>
         <div className="max-h-64 overflow-y-auto whitespace-pre-line text-xs text-slate-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
           {body ?? "—"}
         </div>
@@ -350,11 +364,12 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function ActiveView({
-  patient, visits, selfLogs, busy, setBusy, setMsg, onRequestDestructive
+  patient, visits, selfLogs, busy, setBusy, setMsg, pendingAction, onRequestDestructive
 }: {
   patient: Patient; visits: Visit[]; selfLogs: SelfLog[];
   busy: string | null; setBusy: (s: string | null) => void;
   setMsg: (m: { kind: "ok" | "err"; text: string } | null) => void;
+  pendingAction: "withdraw" | "erase" | null;
   onRequestDestructive: (a: "withdraw" | "erase") => void;
 }) {
   const router = useRouter();
@@ -566,27 +581,42 @@ function ActiveView({
       {/* PDPA + leave actions */}
       <div className="card space-y-2">
         <h2 className="font-bold text-slate-800 text-sm">ข้อมูลส่วนตัว & สิทธิของฉัน (PDPA)</h2>
-        <div className="flex flex-wrap gap-2">
-          <a href={apiUrl("/api/mounjaro/export")}
-            className="text-xs px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-            ดาวน์โหลดข้อมูลของฉัน (JSON)
-          </a>
-          <button type="button" disabled={busy !== null}
-            onClick={() => onRequestDestructive("withdraw")}
-            className="text-xs px-3 py-2 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-50">
-            ขอออกจากโครงการ
-          </button>
-          <button type="button" disabled={busy !== null}
-            onClick={() => onRequestDestructive("erase")}
-            className="text-xs px-3 py-2 rounded-lg border border-rose-300 text-rose-600 hover:bg-rose-50 disabled:opacity-50">
-            ขอลบข้อมูลของฉัน
-          </button>
-        </div>
-        <p className="text-[10px] text-slate-400 leading-relaxed">
-          ทั้งสองรายการต้อง<b>พิมพ์ข้อความยืนยัน + ใส่ PIN</b>ก่อน เพื่อกันเผลอกด ·
-          การลบจะนำข้อมูลออกจากพอร์ทัล — ส่วนเวชระเบียนที่แพทย์บันทึกจะถูกเก็บรักษาตามที่กฎหมายกำหนด
-          ภายใต้การเข้าถึงเฉพาะแพทย์เจ้าของไข้
-        </p>
+        {pendingAction ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 leading-relaxed">
+            คุณได้ส่งคำขอ<b>{pendingAction === "erase" ? "ลบข้อมูล" : "ออกจากโครงการ"}</b>แล้ว —
+            อยู่ระหว่าง<b>รอแพทย์อนุมัติ</b> ระบบจะแจ้งผลให้ทราบทางไลน์
+            <div className="mt-2">
+              <a href={apiUrl("/api/mounjaro/export")}
+                className="text-xs px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 inline-block">
+                ดาวน์โหลดข้อมูลของฉัน (JSON)
+              </a>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              <a href={apiUrl("/api/mounjaro/export")}
+                className="text-xs px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
+                ดาวน์โหลดข้อมูลของฉัน (JSON)
+              </a>
+              <button type="button" disabled={busy !== null}
+                onClick={() => onRequestDestructive("withdraw")}
+                className="text-xs px-3 py-2 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-50">
+                ขอออกจากโครงการ
+              </button>
+              <button type="button" disabled={busy !== null}
+                onClick={() => onRequestDestructive("erase")}
+                className="text-xs px-3 py-2 rounded-lg border border-rose-300 text-rose-600 hover:bg-rose-50 disabled:opacity-50">
+                ขอลบข้อมูลของฉัน
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              ทั้งสองรายการต้อง<b>พิมพ์ข้อความยืนยัน + ใส่ PIN</b>ก่อน เพื่อกันเผลอกด ·
+              คำขอจะถูกส่งให้<b>แพทย์เจ้าของไข้อนุมัติ</b>ก่อน · การลบจะนำข้อมูลออกจากพอร์ทัล —
+              ส่วนเวชระเบียนที่แพทย์บันทึกจะถูกเก็บรักษาตามที่กฎหมายกำหนด
+            </p>
+          </>
+        )}
       </div>
     </>
   );

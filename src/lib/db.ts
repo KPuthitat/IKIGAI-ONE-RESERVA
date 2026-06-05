@@ -3080,6 +3080,64 @@ function runMigrations(db: Database.Database): void {
   }
 
   // ══════════════════════════════════════════════════════════════════
+  // Health module — facility config + exam PDF + leave-approval (2026-06-05)
+  // ──────────────────────────────────────────────────────────────────
+  // health_facilities — the company's contracted health-consulting clinic
+  // (was hardcoded "AT HOME CLINIC" everywhere). Admin maintains name +
+  // license + address; the self-portal, consent text and clinical UI pull
+  // the default facility instead of a literal string. Multiple rows are
+  // supported (is_default flags the one used by default).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS health_facilities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      license_no TEXT,
+      address TEXT,
+      logo_path TEXT,                          -- public path, e.g. /ahc-logo.png
+      is_default INTEGER NOT NULL DEFAULT 0,   -- exactly one row = 1
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT
+    );
+  `);
+  // Seed the company's facility once (owner 2026-06-05): แอทโฮมคลินิกเวชกรรม
+  // สาขาบ่อวิน, ใบอนุญาตประกอบกิจการสถานพยาบาลเลขที่ 20101005164. Address left
+  // blank for the admin to fill. Guarded by "no rows yet" so it never
+  // overwrites later admin edits.
+  const hasFacility = db.prepare("SELECT 1 FROM health_facilities LIMIT 1").get();
+  if (!hasFacility) {
+    db.prepare(`
+      INSERT INTO health_facilities (name, license_no, address, logo_path, is_default)
+      VALUES (?, ?, NULL, ?, 1)
+    `).run("แอทโฮมคลินิกเวชกรรม สาขาบ่อวิน", "20101005164", "/ahc-logo.png");
+  }
+
+  // health_checkups: attach the actual exam PDF/image (owner 2026-06-05).
+  // The legacy attachment_url (a Drive link) stays for back-compat; new
+  // uploads land in file_path (+ file_mime) served via an auth-gated route.
+  {
+    const hc2 = new Set(
+      (db.prepare("PRAGMA table_info(health_checkups)").all() as Array<{ name: string }>)
+        .map((c) => c.name)
+    );
+    if (!hc2.has("file_path")) db.exec("ALTER TABLE health_checkups ADD COLUMN file_path TEXT");
+    if (!hc2.has("file_mime")) db.exec("ALTER TABLE health_checkups ADD COLUMN file_mime TEXT");
+  }
+
+  // mounjaro_enrollments: doctor-approved withdraw/erase (owner 2026-06-05).
+  // Leaving the program or erasing portal data is no longer immediate — the
+  // employee files a request (pending_action), the attending doctor
+  // approves, and only then is withdrawSelf/eraseMyData executed.
+  {
+    const enrCols = new Set(
+      (db.prepare("PRAGMA table_info(mounjaro_enrollments)").all() as Array<{ name: string }>)
+        .map((c) => c.name)
+    );
+    if (!enrCols.has("pending_action")) db.exec("ALTER TABLE mounjaro_enrollments ADD COLUMN pending_action TEXT"); // 'withdraw' | 'erase' | NULL
+    if (!enrCols.has("pending_action_reason")) db.exec("ALTER TABLE mounjaro_enrollments ADD COLUMN pending_action_reason TEXT");
+    if (!enrCols.has("pending_action_at")) db.exec("ALTER TABLE mounjaro_enrollments ADD COLUMN pending_action_at TEXT");
+  }
+
+  // ══════════════════════════════════════════════════════════════════
   // RBAC — บทบาท/สิทธิ์การเข้าถึงโมดูล (2026-06-04)
   // ──────────────────────────────────────────────────────────────────
   // Generic, owner-definable roles that grant access to admin MODULES

@@ -129,6 +129,11 @@ type EnrollmentRow = {
   enrolled_at: string | null; completed_at: string | null;
   consent_signed_at: string | null; consent_version: string | null;
   withdrawn_reason: string | null; portal_erased_at: string | null;
+  // Doctor-approved withdraw/erase (owner 2026-06-05): the employee's
+  // request sits here until the attending doctor approves.
+  pending_action: "withdraw" | "erase" | null;
+  pending_action_reason: string | null;
+  pending_action_at: string | null;
 };
 
 /** The actor's OWN enrollment, or null. There is deliberately no
@@ -317,6 +322,99 @@ export function eraseMyData(actor: MjActor): void {
     WHERE id = ?
   `).run(enr.id);
   audit(actor.id, "erase", "enrollment", enr.id);
+}
+
+// ── Doctor-approved withdraw / erase (owner 2026-06-05) ─────────────
+// Leaving the program or erasing portal data is no longer immediate.
+// The employee files a request (still gated by PIN + typed phrase in
+// the UI); it parks on the enrollment as pending_action until the
+// attending doctor approves. Approval runs the real withdrawSelf /
+// eraseMyData; rejection clears the request and the participant stays.
+
+/** Employee files a withdraw/erase request on their ACTIVE enrollment.
+ *  Returns false if there's nothing active to act on. Idempotent — a
+ *  second request of the same kind just refreshes the timestamp. */
+export function requestPendingAction(
+  actor: MjActor, action: "withdraw" | "erase", reason: string | null
+): boolean {
+  const db = getDb();
+  const enr = getMyEnrollment(actor);
+  if (!enr || enr.status !== "active") return false;
+  db.prepare(`
+    UPDATE mounjaro_enrollments
+    SET pending_action = ?, pending_action_reason = ?, pending_action_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(action, reason ?? null, enr.id);
+  audit(actor.id, `request_${action}`, "enrollment", enr.id);
+  return true;
+}
+
+/** The pending withdraw/erase request for one of THIS doctor's patients,
+ *  or null. Scoped: returns null when the patient isn't the doctor's. */
+export function getPendingActionForPatient(
+  actor: MjActor, patientId: number
+): { action: "withdraw" | "erase"; reason: string | null; at: string | null } | null {
+  requireDoctor(actor);
+  const row = getDb().prepare(`
+    SELECT e.pending_action AS action, e.pending_action_reason AS reason,
+           e.pending_action_at AS at
+    FROM mounjaro_patients p
+    JOIN mounjaro_enrollments e ON e.id = p.enrollment_id
+    WHERE p.id = ? AND p.attending_doctor_id = ? AND p.deleted_at IS NULL
+      AND e.pending_action IS NOT NULL
+  `).get(patientId, actor.id) as
+    { action: "withdraw" | "erase"; reason: string | null; at: string | null } | undefined;
+  return row ?? null;
+}
+
+/** Doctor decides a pending withdraw/erase request for their patient.
+ *  approve → runs the real withdraw/erase; reject → clears the request.
+ *  Returns the action that was decided (for notification), or null when
+ *  there was no pending request / the patient isn't this doctor's. */
+export function decidePendingAction(
+  actor: MjActor, patientId: number, decision: "approve" | "reject"
+): { action: "withdraw" | "erase"; employeeId: number } | null {
+  requireDoctor(actor);
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT e.id AS enrollment_id, e.employee_id AS employee_id,
+           e.pending_action AS action
+    FROM mounjaro_patients p
+    JOIN mounjaro_enrollments e ON e.id = p.enrollment_id
+    WHERE p.id = ? AND p.attending_doctor_id = ? AND p.deleted_at IS NULL
+      AND e.pending_action IS NOT NULL
+  `).get(patientId, actor.id) as
+    { enrollment_id: number; employee_id: number; action: "withdraw" | "erase" } | undefined;
+  if (!row) return null;
+
+  if (decision === "reject") {
+    db.prepare(`
+      UPDATE mounjaro_enrollments
+      SET pending_action = NULL, pending_action_reason = NULL, pending_action_at = NULL
+      WHERE id = ?
+    `).run(row.enrollment_id);
+    audit(actor.id, `reject_${row.action}`, "enrollment", row.enrollment_id);
+    return { action: row.action, employeeId: row.employee_id };
+  }
+
+  // approve → execute the real action against the employee's enrollment,
+  // then clear the pending flag. We act by employee_id so the existing
+  // withdrawSelf/eraseMyData (scoped to employee_id) do the work. Only
+  // .id is read by those functions; role is a placeholder to satisfy the
+  // MjActor shape.
+  const target: MjActor = { id: row.employee_id, role: "staff" };
+  if (row.action === "withdraw") {
+    withdrawSelf(target, "อนุมัติโดยแพทย์");
+  } else {
+    eraseMyData(target);
+  }
+  db.prepare(`
+    UPDATE mounjaro_enrollments
+    SET pending_action = NULL, pending_action_reason = NULL, pending_action_at = NULL
+    WHERE id = ?
+  `).run(row.enrollment_id);
+  audit(actor.id, `approve_${row.action}`, "enrollment", row.enrollment_id);
+  return { action: row.action, employeeId: row.employee_id };
 }
 
 /** Who has viewed the actor's own data. */

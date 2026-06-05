@@ -4,7 +4,7 @@ import { listMyPatientsEnriched, listPendingIntake, type MjActor } from "@/lib/m
 import ClinicalClient from "./ClinicalClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Mounjaro · คลินิก" };
+export const metadata: Metadata = { title: "โครงการควบคุมน้ำหนัก · คลินิก" };
 
 // Clinical dashboard — doctors only (their own patients). Locked until the
 // doctor enters their license number this session.

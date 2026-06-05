@@ -67,7 +67,7 @@ function UnlockGate() {
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 border-2 border-[#B8954F] flex items-center justify-center font-bold text-[#B8954F]">M</div>
             <div>
-              <h1 className="text-white font-semibold text-[15px]">ระบบติดตามผู้ป่วย Mounjaro</h1>
+              <h1 className="text-white font-semibold text-[15px]">ระบบติดตามผู้ป่วย โครงการควบคุมน้ำหนัก</h1>
               <div className="text-[10px] text-[#D4B675] tracking-[0.12em] uppercase mt-0.5">Tirzepatide Monitoring</div>
             </div>
           </div>
@@ -322,7 +322,7 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
               </div>
               <div>
                 <label className={labelCls}>HN <span className="text-[#B91C1C]">*</span></label>
-                <input className={inputCls + " mt-1"} value={hn} onChange={(e) => setHn(e.target.value)} placeholder="จาก AT HOME CLINIC" />
+                <input className={inputCls + " mt-1"} value={hn} onChange={(e) => setHn(e.target.value)} placeholder="เลข HN จากคลินิก" />
               </div>
               <div>
                 <label className={labelCls}>ชื่อ-สกุล</label>

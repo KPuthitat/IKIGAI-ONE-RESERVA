@@ -33,7 +33,7 @@ export default function MounjaroHrPage() {
         <h1 className="text-2xl font-bold text-slate-800">ภาพรวมสุขภาพพนักงาน</h1>
         <p className="text-sm text-slate-500">
           สถิติภาพรวมเท่านั้น — ไม่มีข้อมูลรายบุคคล (ตามหลักความเป็นส่วนตัวของข้อมูลสุขภาพ) ·
-          ปัจจุบันครอบคลุมโครงการ Mounjaro
+          ปัจจุบันครอบคลุมโครงการควบคุมน้ำหนัก
         </p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">

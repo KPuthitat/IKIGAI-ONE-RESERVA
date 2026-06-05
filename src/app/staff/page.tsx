@@ -27,9 +27,9 @@ export default function StaffHomePage({
       {!mjEnrolled && (
         <Link href="/staff/health/mounjaro"
           className="block rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3 hover:bg-teal-50 transition">
-          <div className="text-sm font-bold text-teal-800">โครงการดูแลน้ำหนัก Mounjaro Employee Wellness</div>
+          <div className="text-sm font-bold text-teal-800">โครงการควบคุมน้ำหนัก</div>
           <div className="text-xs text-teal-700 mt-0.5">
-            สนใจลดน้ำหนักภายใต้การดูแลของแพทย์ IKIGAI MediHealth? แตะเพื่อดูรายละเอียดและแสดงความสนใจ →
+            สนใจลดน้ำหนักภายใต้การดูแลของแพทย์? แตะเพื่อดูรายละเอียดและแสดงความสนใจ →
           </div>
         </Link>
       )}

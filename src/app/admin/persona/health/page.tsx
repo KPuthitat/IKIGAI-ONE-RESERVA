@@ -40,6 +40,7 @@ export default function AdminHealthPage() {
            hc.cert_no      AS cert_no,
            hc.items_json   AS items_json,
            hc.attachment_url AS attachment_url,
+           hc.file_path    AS file_path,
            hc.notes        AS notes
     FROM users u
     INNER JOIN user_branches ub

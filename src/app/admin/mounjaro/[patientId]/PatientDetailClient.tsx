@@ -71,13 +71,36 @@ export default function PatientDetailClient(props: {
   comorbidities: Record<string, boolean>; contraindications: Record<string, boolean>;
   medications: Record<string, boolean>;
   visits: Visit[]; selfLogs: SelfLog[]; alerts: Alert[];
+  pendingAction: { action: "withdraw" | "erase"; reason: string | null; at: string | null } | null;
 }) {
   const { patientId, employeeName, hn, startDate, notes, baseline,
-    comorbidities, contraindications, medications, visits, selfLogs, alerts } = props;
+    comorbidities, contraindications, medications, visits, selfLogs, alerts, pendingAction } = props;
   const router = useRouter();
   const [tab, setTab] = useState<"titration" | "visits" | "chart" | "baseline">("titration");
   const [showVisit, setShowVisit] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [decidingPending, setDecidingPending] = useState(false);
+
+  async function decidePending(decision: "approve" | "reject") {
+    const verb = pendingAction?.action === "erase" ? "ลบข้อมูล" : "ออกจากโครงการ";
+    const msg = decision === "approve"
+      ? `อนุมัติคำขอ${verb}ของผู้ป่วยรายนี้?`
+      : `ไม่อนุมัติคำขอ${verb}ของผู้ป่วยรายนี้?`;
+    if (!window.confirm(msg)) return;
+    setDecidingPending(true);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/mounjaro/patient/${patientId}/pending-action`), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision })
+      });
+      if (res.ok) {
+        // Approving a withdraw/erase removes the patient from the doctor's
+        // active list → bounce back. Reject just refreshes the banner away.
+        if (decision === "approve") router.push("/admin/mounjaro");
+        else router.refresh();
+      }
+    } finally { setDecidingPending(false); }
+  }
 
   const baseWeight = num(baseline, "weight");
   const baseHeight = num(baseline, "height");
@@ -109,6 +132,34 @@ export default function PatientDetailClient(props: {
           HN {hn ?? "—"} · เริ่มยา {toBE(startDate)}
         </div>
       </div>
+
+      {/* Pending withdraw/erase request — needs the attending doctor's
+          decision (owner 2026-06-05). Shown above clinical alerts. */}
+      {pendingAction && (
+        <div className="px-4 py-3.5 border-l-[3px] border-[#B45309] bg-[#FFFBEB] text-[#78350F] text-[13px] space-y-2">
+          <div className="font-semibold">
+            คำขอรออนุมัติ: {pendingAction.action === "erase" ? "ขอลบข้อมูลออกจากพอร์ทัล" : "ขอออกจากโครงการ"}
+          </div>
+          {pendingAction.reason && <div>เหตุผลจากผู้ป่วย: {pendingAction.reason}</div>}
+          <div className="text-[11px] text-[#92400E]">
+            {pendingAction.action === "erase"
+              ? "เมื่ออนุมัติ ข้อมูลในพอร์ทัลของผู้ป่วยจะถูกซ่อน (เวชระเบียนยังเก็บตามกฎหมาย)"
+              : "เมื่ออนุมัติ ผู้ป่วยจะออกจากโครงการ (กลับเข้าร่วมใหม่ได้ภายหลัง)"}
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button type="button" disabled={decidingPending}
+              onClick={() => decidePending("approve")}
+              className="px-4 py-2 rounded-sm bg-[#B45309] text-white text-[12px] font-bold disabled:opacity-50">
+              อนุมัติคำขอ
+            </button>
+            <button type="button" disabled={decidingPending}
+              onClick={() => decidePending("reject")}
+              className="px-4 py-2 rounded-sm border border-[#B45309] text-[#B45309] text-[12px] font-bold disabled:opacity-50">
+              ไม่อนุมัติ
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Alert banner */}
       {dangers.length === 0 && warnings.length === 0 ? (

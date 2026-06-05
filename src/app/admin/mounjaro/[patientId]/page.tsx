@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { requireClinicalDoctor, isClinicalUnlocked } from "@/lib/auth";
-import { getPatientBundle, patientAlerts, type MjActor } from "@/lib/mounjaro-db";
+import { getPatientBundle, patientAlerts, getPendingActionForPatient, type MjActor } from "@/lib/mounjaro-db";
 import PatientDetailClient from "./PatientDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -23,10 +23,12 @@ export default function PatientDetailPage({ params }: { params: { patientId: str
 
   const p = bundle.patient;
   const alerts = patientAlerts(p, bundle.visits);
+  const pendingAction = getPendingActionForPatient(user as MjActor, id);
 
   return (
     <PatientDetailClient
       patientId={id}
+      pendingAction={pendingAction}
       employeeName={bundle.employeeName}
       hn={(p.hn as string | null) ?? null}
       startDate={(p.start_date as string | null) ?? null}

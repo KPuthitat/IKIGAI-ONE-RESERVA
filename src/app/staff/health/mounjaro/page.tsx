@@ -5,10 +5,11 @@ import {
   getMyEnrollment, getMyClinical, getMySelfLogs, getActiveConsent,
   getMyAuditTrail, type MjActor
 } from "@/lib/mounjaro-db";
+import { getDefaultHealthFacility, facilityName, facilityLogo } from "@/lib/health-facility";
 import MounjaroSelfClient from "./MounjaroSelfClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "โครงการ Mounjaro · IKIGAI OS PORTAL" };
+export const metadata: Metadata = { title: "โครงการควบคุมน้ำหนัก · IKIGAI OS PORTAL" };
 
 // Employee self-service for the Mounjaro Wellness program. All data comes
 // through the gateway scoped to the logged-in employee (their own rows
@@ -33,9 +34,14 @@ export default function MounjaroSelfPage() {
     ? {
         status: enr.status as "pending" | "active" | "withdrawn" | "completed",
         enrolled_at: enr.enrolled_at,
-        withdrawn_reason: enr.withdrawn_reason
+        withdrawn_reason: enr.withdrawn_reason,
+        // Doctor-approval queue (owner 2026-06-05): a filed withdraw/erase
+        // request the participant is waiting on the doctor for.
+        pendingAction: (enr.pending_action ?? null) as "withdraw" | "erase" | null
       }
     : null;
+
+  const facility = getDefaultHealthFacility();
 
   const patient = p
     ? {
@@ -87,6 +93,7 @@ export default function MounjaroSelfPage() {
       consent={{ needed: needsConsent, version: activeConsent?.version ?? null, body: activeConsent?.body ?? null }}
       audit={audit}
       hasPin={hasAdminPin(user.id)}
+      facility={{ name: facilityName(facility), logo: facilityLogo(facility) }}
     />
   );
 }

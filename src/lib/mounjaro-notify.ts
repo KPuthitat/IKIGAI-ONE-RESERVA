@@ -27,7 +27,54 @@ export async function notifySelfLogReply(selfLogId: number): Promise<void> {
     if (!row?.line_user_id) return;
     await pushToEmployee(
       row.line_user_id,
-      "แพทย์ได้ตอบบันทึกอาการของคุณในโครงการ Mounjaro แล้ว — เปิดดูในพอร์ทัล IKIGAI OS"
+      "แพทย์ได้ตอบบันทึกอาการของคุณในโครงการควบคุมน้ำหนักแล้ว — เปิดดูในพอร์ทัล IKIGAI OS"
     );
+  } catch { /* best-effort */ }
+}
+
+const ACTION_TH: Record<string, string> = {
+  withdraw: "ขอออกจากโครงการ",
+  erase: "ขอลบข้อมูลออกจากพอร์ทัล"
+};
+
+/** Notify the attending doctor that an employee filed a withdraw/erase
+ *  request that needs approval (owner 2026-06-05). Best-effort. */
+export async function notifyDoctorPendingAction(
+  employeeId: number, action: "withdraw" | "erase"
+): Promise<void> {
+  try {
+    const row = getDb().prepare(`
+      SELECT doc.line_user_id AS doctor_line,
+             emp.display_name AS employee_name, emp.title_prefix AS employee_prefix
+      FROM mounjaro_enrollments e
+      JOIN mounjaro_patients p ON p.enrollment_id = e.id AND p.deleted_at IS NULL
+      JOIN users doc ON doc.id = p.attending_doctor_id
+      JOIN users emp ON emp.id = e.employee_id
+      WHERE e.employee_id = ?
+    `).get(employeeId) as {
+      doctor_line: string | null; employee_name: string; employee_prefix: string | null;
+    } | undefined;
+    if (!row?.doctor_line) return;
+    const who = `${row.employee_prefix ? row.employee_prefix + " " : ""}${row.employee_name}`;
+    await pushToEmployee(
+      row.doctor_line,
+      `มีคำขอรออนุมัติในโครงการควบคุมน้ำหนัก\nผู้ป่วย: ${who}\nคำขอ: ${ACTION_TH[action]}\n\nเปิดอนุมัติในพอร์ทัล IKIGAI OS → ดูแลผู้ป่วย (แพทย์)`
+    );
+  } catch { /* best-effort */ }
+}
+
+/** Notify the employee of the doctor's decision on their withdraw/erase
+ *  request. Best-effort. */
+export async function notifyEmployeeActionDecision(
+  employeeId: number, action: "withdraw" | "erase", decision: "approve" | "reject"
+): Promise<void> {
+  try {
+    const row = getDb().prepare("SELECT line_user_id FROM users WHERE id = ?")
+      .get(employeeId) as { line_user_id: string | null } | undefined;
+    if (!row?.line_user_id) return;
+    const verdict = decision === "approve"
+      ? `แพทย์อนุมัติคำขอ${ACTION_TH[action]}แล้ว`
+      : `แพทย์ยังไม่อนุมัติคำขอ${ACTION_TH[action]} — กรุณาติดต่อแพทย์เพื่อสอบถามเพิ่มเติม`;
+    await pushToEmployee(row.line_user_id, `${verdict} (โครงการควบคุมน้ำหนัก)`);
   } catch { /* best-effort */ }
 }

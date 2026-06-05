@@ -140,13 +140,17 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/walk-in", label: t(lang, "staff.walkIn.title") }
       ]
     },
-    // สุขภาพพนักงาน — เฉพาะคนที่อยู่ในโครงการ Mounjaro
-    ...(mjEnrolled ? [{
+    // สุขภาพพนักงาน — "ผลตรวจสุขภาพ" เห็นได้ทุกคน (ผลตรวจของตัวเอง);
+    // "โครงการควบคุมน้ำหนัก" เห็นเฉพาะคนที่อยู่ในโครงการ (privacy).
+    {
       label: "สุขภาพพนักงาน",
       items: [
-        { href: "/staff/health/mounjaro", label: "โครงการ Mounjaro" }
+        { href: "/staff/health/exams", label: "ผลตรวจสุขภาพ" },
+        ...(mjEnrolled
+          ? [{ href: "/staff/health/mounjaro", label: "โครงการควบคุมน้ำหนัก" }]
+          : [])
       ]
-    }] : []),
+    },
     {
       label: "",
       items: [
