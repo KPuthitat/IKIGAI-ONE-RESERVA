@@ -286,11 +286,21 @@ function Card({
             </button>
           </div>
         ) : (
-          <button type="button" disabled={busy}
-            onClick={(e) => { e.stopPropagation(); setPicking(true); }}
-            className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${stageMeta[card.stage].chip} hover:ring-1 hover:ring-slate-300`}>
-            {stageMeta[card.stage].label} ▾
-          </button>
+          <div className="flex items-center justify-between gap-2">
+            <button type="button" disabled={busy}
+              onClick={(e) => { e.stopPropagation(); setPicking(true); }}
+              className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${stageMeta[card.stage].chip} hover:ring-1 hover:ring-slate-300`}>
+              {stageMeta[card.stage].label} ▾
+            </button>
+            {/* Shortcut to the full application / history — opens in a new
+                tab so the board (filters + scroll) isn't lost. */}
+            <Link href={`/admin/recruita/applications/${card.id}`}
+              target="_blank" rel="noopener"
+              onClick={(e) => e.stopPropagation()}
+              className="text-[10px] text-brand font-semibold hover:underline whitespace-nowrap">
+              ดูใบสมัคร ↗
+            </Link>
+          </div>
         )}
       </div>
     </div>
