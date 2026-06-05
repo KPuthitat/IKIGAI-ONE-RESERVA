@@ -40,6 +40,16 @@ const TYPES_REQUIRE_EVIDENCE = new Set<LeaveType>([
   "sick", "pt_emergency", "maternity", "sterilization", "ordination", "military"
 ]);
 
+// Types that may be BACKDATED (no pre-approval needed — you can't notify a
+// sudden illness in advance). Mirrors leave_types.requires_pre_approval=0.
+// Server enforces a 14-day window; keep BACKDATE_DAYS in sync with it.
+const TYPES_ALLOW_BACKDATE = new Set<LeaveType>(["sick", "pt_emergency"]);
+const BACKDATE_DAYS = 14;
+function backdateMinStr(): string {
+  return new Date(Date.now() + 7 * 3600_000 - BACKDATE_DAYS * 86_400_000)
+    .toISOString().slice(0, 10);
+}
+
 // Format ชั่วโมงเป็น "X วัน Y ชม." หรือ "X วัน" หรือ "Y ชม." (ไม่ใช้ทศนิยม)
 function fmtRemaining(remainingDaysDecimal: number, t: (k: any) => string): string {
   const totalH = Math.round(remainingDaysDecimal * 8 * 2) / 2;
@@ -146,6 +156,7 @@ export default function LeaveClient({
 
   const fullDays = daysBetween(from, to);
   const evidenceRequired = TYPES_REQUIRE_EVIDENCE.has(type);
+  const allowBackdate = TYPES_ALLOW_BACKDATE.has(type);
 
   // คำนวณชั่วโมงลา (จากช่วงเวลา) − หักช่วงพักกลางวันที่ทับกัน
   const hours = useMemo(() => {
@@ -292,7 +303,10 @@ export default function LeaveClient({
     setErr(null);
     if (!reason.trim()) { setErr(t("staff.persona.leave.err.reason_required")); return; }
     if (from > to) { setErr(t("staff.persona.leave.err.dateRange")); return; }
-    if (from < todayBkkStr()) { setErr(t("staff.persona.leave.err.past_date_not_allowed")); return; }
+    if (from < todayBkkStr()) {
+      if (!allowBackdate) { setErr(t("staff.persona.leave.err.past_date_not_allowed")); return; }
+      if (from < backdateMinStr()) { setErr(t("staff.persona.leave.err.backdate_too_old")); return; }
+    }
     if (evidenceRequired && !file) { setErr(t("staff.persona.leave.err.evidenceRequired")); return; }
     if (fullDayBlockedByFraction) { setErr(t("staff.persona.leave.err.fractionalQuota")); return; }
     if (hardBlockedByOffDay) { setErr(t("staff.persona.leave.err.leave_on_weekly_off_day_not_allowed")); return; }
@@ -417,7 +431,8 @@ export default function LeaveClient({
               <div className="min-w-0">
                 <label className="label">{t("staff.persona.leave.from")}</label>
                 <input
-                  type="date" className="input" value={from} min={todayBkkStr()}
+                  type="date" className="input" value={from}
+                  min={allowBackdate ? backdateMinStr() : todayBkkStr()}
                   onChange={(e) => {
                     setFrom(e.target.value);
                     if (e.target.value > to) setTo(e.target.value);
@@ -427,11 +442,17 @@ export default function LeaveClient({
               <div className="min-w-0">
                 <label className="label">{t("staff.persona.leave.to")}</label>
                 <input
-                  type="date" className="input" value={to} min={from}
+                  type="date" className="input" value={to}
+                  min={allowBackdate ? backdateMinStr() : from}
                   onChange={(e) => setTo(e.target.value)} required
                 />
               </div>
             </div>
+            {allowBackdate && (
+              <p className="text-[11px] text-slate-500 -mt-1">
+                ลาป่วย / ฉุกเฉิน ลงย้อนหลังได้ไม่เกิน {BACKDATE_DAYS} วัน
+              </p>
+            )}
 
             {from === to && (
               <div className="space-y-2">

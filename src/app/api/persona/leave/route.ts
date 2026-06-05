@@ -60,12 +60,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "date_range_invalid" }, { status: 400 });
   }
 
-  // Block past dates (Phase 1C v4 #9 — staff ลาย้อนหลังไม่ได้)
-  const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  if (date_from < todayBkk) {
-    return NextResponse.json({ error: "past_date_not_allowed" }, { status: 400 });
-  }
-
   const days = Number(daysStr);
   const hours = hoursStr ? Number(hoursStr) : null;
   if (!isFinite(days) || days <= 0 || days > 365) {
@@ -86,6 +80,25 @@ export async function POST(req: Request) {
   const matchedType = eligible.find((t) => t.code === type);
   if (!matchedType) {
     return NextResponse.json({ error: "type_not_eligible" }, { status: 403 });
+  }
+
+  // Past-date rule (owner 2026-06-05): types that REQUIRE pre-approval
+  // (annual / personal / etc.) must still be future-dated. Types that do
+  // NOT (sick / pt_emergency) MAY be backdated — you can't notify a
+  // sudden illness in advance — but only within a 14-day window so it
+  // can't be abused to log months-old absences.
+  const BACKDATE_WINDOW_DAYS = 14;
+  const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (date_from < todayBkk) {
+    if (matchedType.requires_pre_approval) {
+      return NextResponse.json({ error: "past_date_not_allowed" }, { status: 400 });
+    }
+    const backDays = Math.floor(
+      (Date.parse(`${todayBkk}T00:00:00Z`) - Date.parse(`${date_from}T00:00:00Z`)) / 86_400_000
+    );
+    if (backDays > BACKDATE_WINDOW_DAYS) {
+      return NextResponse.json({ error: "backdate_too_old" }, { status: 400 });
+    }
   }
 
   // Evidence required check (per type)
