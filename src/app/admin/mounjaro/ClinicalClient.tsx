@@ -65,7 +65,7 @@ function UnlockGate() {
       <div className="bg-white border border-[#E5E0D5] rounded-sm shadow-sm overflow-hidden">
         <div className="bg-[#0F1B33] px-6 py-5 border-b-[3px] border-[#B8954F]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 border-2 border-[#B8954F] flex items-center justify-center font-serif font-semibold text-[#B8954F]">M</div>
+            <div className="w-10 h-10 border-2 border-[#B8954F] flex items-center justify-center font-bold text-[#B8954F]">M</div>
             <div>
               <h1 className="text-white font-semibold text-[15px]">ระบบติดตามผู้ป่วย Mounjaro</h1>
               <div className="text-[10px] text-[#D4B675] tracking-[0.12em] uppercase mt-0.5">Tirzepatide Monitoring</div>
@@ -129,7 +129,7 @@ function PatientList({ patients, pending }: { patients: PatientRow[]; pending: P
       <div className="bg-white border border-[#E5E0D5] rounded-sm shadow-sm overflow-x-auto">
         {patients.length === 0 ? (
           <div className="text-center py-16 px-8">
-            <div className="font-serif text-5xl text-[#B8954F] mb-4">M</div>
+            <div className="text-5xl font-bold text-[#B8954F] mb-4">M</div>
             <p className="text-sm text-slate-500">ยังไม่มีผู้ป่วยในความดูแล<br />กดปุ่ม &quot;เพิ่มผู้ป่วยใหม่&quot; เพื่อเริ่มต้น</p>
           </div>
         ) : (
@@ -374,7 +374,7 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
             <div className="mt-3 bg-[#FEF2F2] border-l-[3px] border-[#B91C1C] px-3 py-2.5">
               <div className="text-[12px] font-semibold text-[#B91C1C] mb-2">ข้อห้ามเด็ดขาด — ห้ามใช้หาก:</div>
               <CheckRow state={contra} set={setContra} items={[
-                ["mtc", "ประวัติครอบครัว MTC"], ["men2", "MEN 2 syndrome"],
+                ["mtc", "ประวัติครอบครัวเป็นมะเร็งต่อมไทรอยด์ชนิดเมดัลลารี"], ["men2", "กลุ่มอาการเนื้องอกต่อมไร้ท่อหลายตำแหน่งชนิดที่ 2 (MEN 2)"],
                 ["preg", "ตั้งครรภ์ / วางแผนตั้งครรภ์"], ["allergy", "แพ้ tirzepatide"]
               ]} />
             </div>

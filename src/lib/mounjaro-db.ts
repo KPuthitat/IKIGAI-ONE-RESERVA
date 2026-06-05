@@ -20,6 +20,7 @@
 
 import { getDb } from "./db";
 import { computeAlerts, type Alert } from "./mounjaro-alerts";
+import { nameWithPrefix } from "./name";
 
 function pj<T>(s: unknown, fallback: T): T {
   if (typeof s !== "string") return fallback;
@@ -341,7 +342,7 @@ export function listMyPatients(actor: MjActor, statusFilter?: string): Array<Rec
   const db = getDb();
   const rows = (statusFilter
     ? db.prepare(`
-        SELECT p.*, e.status AS enrollment_status, u.display_name AS employee_name
+        SELECT p.*, e.status AS enrollment_status, u.display_name AS employee_name, u.title_prefix AS employee_title_prefix
         FROM mounjaro_patients p
         JOIN mounjaro_enrollments e ON e.id = p.enrollment_id
         JOIN users u ON u.id = e.employee_id
@@ -349,7 +350,7 @@ export function listMyPatients(actor: MjActor, statusFilter?: string): Array<Rec
         ORDER BY p.updated_at DESC, p.id DESC
       `).all(actor.id, statusFilter)
     : db.prepare(`
-        SELECT p.*, e.status AS enrollment_status, u.display_name AS employee_name
+        SELECT p.*, e.status AS enrollment_status, u.display_name AS employee_name, u.title_prefix AS employee_title_prefix
         FROM mounjaro_patients p
         JOIN mounjaro_enrollments e ON e.id = p.enrollment_id
         JOIN users u ON u.id = e.employee_id
@@ -510,7 +511,11 @@ export function listMyPatientsEnriched(actor: MjActor): Array<{
       ? Math.max(0, Math.floor((Date.now() - new Date(startStr).getTime()) / (7 * 86_400_000)))
       : 0;
     return {
-      id: pid, employee_name: p.employee_name as string, hn: (p.hn as string | null) ?? null,
+      id: pid,
+      employee_name: nameWithPrefix(
+        (p.employee_title_prefix as string | null) ?? null, p.employee_name as string
+      ),
+      hn: (p.hn as string | null) ?? null,
       enrollment_status: (p.enrollment_status as string) ?? "active",
       dose: (last?.dose as number | null) ?? null, latestWeight, lossPct,
       weekNo, nextVisit: (last?.next_visit as string | null) ?? null,
@@ -554,7 +559,7 @@ export function getPatientBundle(actor: MjActor, patientId: number): {
 } | null {
   requireDoctor(actor);
   const patient = getDb().prepare(`
-    SELECT p.*, u.display_name AS employee_name, e.id AS enrollment_id
+    SELECT p.*, u.display_name AS employee_name, u.title_prefix AS employee_title_prefix, e.id AS enrollment_id
     FROM mounjaro_patients p
     JOIN mounjaro_enrollments e ON e.id = p.enrollment_id
     JOIN users u ON u.id = e.employee_id
@@ -570,7 +575,11 @@ export function getPatientBundle(actor: MjActor, patientId: number): {
     "SELECT * FROM mounjaro_self_logs WHERE enrollment_id = ? ORDER BY date DESC, id DESC"
   ).all(enrollmentId) as Array<Record<string, unknown>>;
   return {
-    patient, employeeName: patient.employee_name as string, enrollmentId, visits, selfLogs
+    patient,
+    employeeName: nameWithPrefix(
+      (patient.employee_title_prefix as string | null) ?? null, patient.employee_name as string
+    ),
+    enrollmentId, visits, selfLogs
   };
 }
 

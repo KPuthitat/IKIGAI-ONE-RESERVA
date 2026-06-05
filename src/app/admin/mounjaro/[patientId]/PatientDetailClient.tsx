@@ -24,7 +24,7 @@ type SelfLog = {
 const DOSES = [2.5, 5, 7.5, 10, 12.5, 15];
 const SE_FIELDS: Array<[string, string]> = [
   ["nausea", "คลื่นไส้"], ["vomit", "อาเจียน"], ["diarrhea", "ท้องเสีย"], ["const", "ท้องผูก"],
-  ["abdomen", "ปวดท้อง ⚠ (เฝ้าระวัง pancreatitis)"], ["tachy", "หัวใจเต้นเร็ว / ใจสั่น"],
+  ["abdomen", "ปวดท้อง (เฝ้าระวังภาวะตับอ่อนอักเสบ)"], ["tachy", "หัวใจเต้นเร็ว / ใจสั่น"],
   ["fatigue", "อ่อนเพลีย"], ["inject", "ปฏิกิริยาบริเวณฉีด"]
 ];
 const DECISION_LABEL: Record<string, string> = {
@@ -112,7 +112,7 @@ export default function PatientDetailClient(props: {
       {/* Alert banner */}
       {dangers.length === 0 && warnings.length === 0 ? (
         <div className="flex gap-3 items-start px-4 py-3.5 border-l-[3px] border-[#047857] bg-[#ECFDF5] text-[#064E3B] text-[13px]">
-          <span className="font-serif font-semibold text-base leading-none mt-0.5">✓</span>
+          <span className="font-semibold text-base leading-none mt-0.5">✓</span>
           <div><div className="font-semibold">ไม่พบสัญญาณเตือน</div>การติดตามอยู่ในเกณฑ์ปกติ</div>
         </div>
       ) : (
@@ -135,11 +135,12 @@ export default function PatientDetailClient(props: {
           sub={last?.next_visit ? `อีก ${Math.max(0, Math.floor((new Date(last.next_visit).getTime() - Date.now()) / 86_400_000))} วัน` : "ยังไม่กำหนด"} />
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-[#E5E0D5] gap-0">
+      {/* Tabs — horizontally scrollable so the 4 labels never wrap /
+          overlap on narrow phones. */}
+      <div className="flex border-b border-[#E5E0D5] gap-1 overflow-x-auto whitespace-nowrap -mx-1 px-1">
         {([["titration", "การปรับขนาดยา"], ["visits", "บันทึกการนัด"], ["chart", "กราฟติดตาม"], ["baseline", "ข้อมูลพื้นฐาน"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={`px-5 py-3 text-[13px] font-medium -mb-px border-b-2 transition ${
+            className={`flex-shrink-0 px-4 py-3 text-[13px] font-medium -mb-px border-b-2 transition ${
               tab === k ? "text-[#0F1B33] border-[#B8954F]" : "text-slate-500 border-transparent hover:text-[#0F1B33]"}`}>
             {label}
           </button>
@@ -156,7 +157,7 @@ export default function PatientDetailClient(props: {
               const cls = i < idx ? "bg-[#F5EFE0] border-[#B8954F]" : i === idx ? "bg-[#0F1B33] border-[#0F1B33] text-white" : "bg-white border-[#E5E0D5]";
               return (
                 <div key={dose} className={`text-center py-4 px-2 border ${i > 0 ? "border-l-0 sm:border-l-0" : ""} ${cls}`}>
-                  <div className={`font-serif text-lg font-semibold ${i === idx ? "text-white" : "text-[#0F1B33]"}`}>{dose}</div>
+                  <div className={`text-lg font-bold ${i === idx ? "text-white" : "text-[#0F1B33]"}`}>{dose}</div>
                   <div className={`text-[10px] ${i === idx ? "text-[#D4B675]" : "text-slate-500"}`}>mg</div>
                   <div className={`text-[10px] uppercase tracking-[0.08em] mt-1.5 ${i === idx ? "text-[#D4B675]" : "text-slate-500"}`}>
                     {i === 0 ? "Starter" : `Step ${i + 1}`}
@@ -167,7 +168,7 @@ export default function PatientDetailClient(props: {
           </div>
           {!last ? (
             <div className="mt-4 flex gap-3 items-start px-4 py-3 border-l-[3px] border-[#B45309] bg-[#FEF3C7] text-[#78350F] text-[13px]">
-              <span className="font-serif font-semibold mt-0.5">i</span>
+              <span className="font-semibold mt-0.5">•</span>
               <div><div className="font-semibold">ยังไม่มีการบันทึกนัด</div>เริ่มต้นที่ 2.5 mg เป็นเวลา 4 สัปดาห์ แล้วประเมินการปรับขนาดยา</div>
             </div>
           ) : (
@@ -287,7 +288,7 @@ function Stat({ label, value, unit, sub, valueColor, small }: {
   return (
     <div className="bg-white px-5 py-4">
       <div className="text-[10px] text-slate-500 uppercase tracking-[0.12em] mb-1.5">{label}</div>
-      <div className={`font-serif font-semibold text-[#0F1B33] tabular-nums ${small ? "text-base" : "text-[22px]"}`} style={valueColor ? { color: valueColor } : undefined}>
+      <div className={`font-bold text-[#0F1B33] tabular-nums ${small ? "text-base" : "text-[22px]"}`} style={valueColor ? { color: valueColor } : undefined}>
         {value}{unit && <span className="text-[12px] text-slate-500 font-normal font-sans ml-1">{unit}</span>}
       </div>
       {sub && <div className="text-[11px] text-slate-500 mt-1">{sub}</div>}
@@ -317,15 +318,15 @@ function AlertBox({ level, a }: { level: "danger" | "warning"; a: Alert }) {
   const cls = level === "danger" ? "border-[#B91C1C] bg-[#FEF2F2] text-[#7F1D1D]" : "border-[#B45309] bg-[#FEF3C7] text-[#78350F]";
   return (
     <div className={`flex gap-3 items-start px-4 py-3.5 border-l-[3px] text-[13px] ${cls}`}>
-      <span className="font-serif font-semibold text-base leading-none mt-0.5">!</span>
+      <span className="font-bold text-base leading-none mt-0.5">!</span>
       <div><div className="font-semibold">{level === "danger" ? "เร่งด่วน" : "เฝ้าระวัง"}</div>{a.message}</div>
     </div>
   );
 }
 
-const COMO_LABELS: Array<[string, string]> = [["dm", "เบาหวานชนิดที่ 2"], ["htn", "ความดันสูง"], ["dlp", "ไขมันสูง"], ["cvd", "CVD"], ["ckd", "CKD"], ["panc", "ตับอ่อนอักเสบ"], ["gb", "นิ่วถุงน้ำดี"]];
-const MED_LABELS: Array<[string, string]> = [["insulin", "Insulin"], ["su", "Sulfonylurea"], ["met", "Metformin"], ["sglt2", "SGLT2i"], ["ocp", "ยาคุม"]];
-const CONTRA_LABELS: Array<[string, string]> = [["mtc", "ประวัติ MTC"], ["men2", "MEN 2"], ["preg", "ตั้งครรภ์"], ["allergy", "แพ้ยา"]];
+const COMO_LABELS: Array<[string, string]> = [["dm", "เบาหวานชนิดที่ 2"], ["htn", "ความดันโลหิตสูง"], ["dlp", "ไขมันในเลือดสูง"], ["cvd", "โรคหัวใจและหลอดเลือด"], ["ckd", "โรคไตเรื้อรัง"], ["panc", "ตับอ่อนอักเสบ"], ["gb", "นิ่วในถุงน้ำดี"]];
+const MED_LABELS: Array<[string, string]> = [["insulin", "อินซูลิน"], ["su", "ยากลุ่มซัลโฟนิลยูเรีย"], ["met", "เมตฟอร์มิน"], ["sglt2", "ยากลุ่มยับยั้ง SGLT2"], ["ocp", "ยาเม็ดคุมกำเนิด"]];
+const CONTRA_LABELS: Array<[string, string]> = [["mtc", "ประวัติมะเร็งต่อมไทรอยด์ชนิดเมดัลลารี"], ["men2", "กลุ่มอาการเนื้องอกต่อมไร้ท่อหลายตำแหน่งชนิดที่ 2 (MEN 2)"], ["preg", "ตั้งครรภ์"], ["allergy", "แพ้ยา tirzepatide"]];
 function flagLabels(state: Record<string, boolean>, labels: Array<[string, string]>): string[] {
   return labels.filter(([k]) => state[k]).map(([, v]) => v);
 }
@@ -703,7 +704,7 @@ function PatientEditModal(props: {
 }
 
 const COMO_FORM: Array<[string, string]> = [["dm", "เบาหวานชนิดที่ 2"], ["htn", "ความดันโลหิตสูง"], ["dlp", "ไขมันในเลือดสูง"], ["cvd", "โรคหัวใจและหลอดเลือด (CVD)"], ["ckd", "โรคไตเรื้อรัง"], ["panc", "ประวัติตับอ่อนอักเสบ"], ["gb", "นิ่วในถุงน้ำดี"]];
-const CONTRA_FORM: Array<[string, string]> = [["mtc", "ประวัติครอบครัว MTC"], ["men2", "MEN 2 syndrome"], ["preg", "ตั้งครรภ์ / วางแผนตั้งครรภ์"], ["allergy", "แพ้ tirzepatide"]];
+const CONTRA_FORM: Array<[string, string]> = [["mtc", "ประวัติครอบครัวเป็นมะเร็งต่อมไทรอยด์ชนิดเมดัลลารี"], ["men2", "กลุ่มอาการเนื้องอกต่อมไร้ท่อหลายตำแหน่งชนิดที่ 2 (MEN 2)"], ["preg", "ตั้งครรภ์ / วางแผนตั้งครรภ์"], ["allergy", "แพ้ยา tirzepatide"]];
 const MED_FORM: Array<[string, string]> = [["insulin", "Insulin (เสี่ยงน้ำตาลต่ำ)"], ["su", "Sulfonylurea (เสี่ยงน้ำตาลต่ำ)"], ["met", "Metformin"], ["sglt2", "SGLT2 inhibitor"], ["ocp", "ยาเม็ดคุมกำเนิด"]];
 
 // ── Shared bits reused from the registry side ───────────────────────
