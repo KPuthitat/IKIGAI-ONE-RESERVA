@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { generatePoPdf, type PoPdfLine } from "@/lib/inventa-po-pdf";
+import { nameWithPrefix } from "@/lib/name";
 
 // GET /api/inventa/orders/[id]/pdf — stream a real A4 PDF of the purchase
 // order (owner 2026-06-06, replaces the broken browser-print preview).
@@ -25,14 +26,16 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   }
   const db = getDb();
   const order = db.prepare(`
-    SELECT o.*, cu.display_name AS created_by_name, au.display_name AS approved_by_name
+    SELECT o.*, cu.display_name AS created_by_name, cu.title_prefix AS created_by_prefix,
+           au.display_name AS approved_by_name, au.title_prefix AS approved_by_prefix
     FROM inventa_orders o
     LEFT JOIN users cu ON cu.id = o.created_by
     LEFT JOIN users au ON au.id = o.approved_by
     WHERE o.id = ?
   `).get(id) as {
     id: number; branch_id: number | null; status: string; note: string | null;
-    created_at: string; created_by_name: string | null; approved_by_name: string | null;
+    created_at: string; created_by_name: string | null; created_by_prefix: string | null;
+    approved_by_name: string | null; approved_by_prefix: string | null;
   } | undefined;
   if (!order) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
@@ -72,8 +75,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       status: STATUS_TH[order.status] ?? order.status,
       createdAtIso: order.created_at,
       note: order.note,
-      requesterName: order.created_by_name,
-      approverName: order.approved_by_name,
+      requesterName: order.created_by_name ? nameWithPrefix(order.created_by_prefix, order.created_by_name) : null,
+      approverName: order.approved_by_name ? nameWithPrefix(order.approved_by_prefix, order.approved_by_name) : null,
       supplierName,
       buyerName: company?.name_th ?? branch?.name ?? "บริษัท",
       buyerAddress: branch?.reg_address || company?.address || "",

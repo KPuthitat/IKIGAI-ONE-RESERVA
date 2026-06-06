@@ -4,6 +4,7 @@ import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, logPersonaAction, type Branch } from "@/lib/db";
 import { generateWarningRef } from "@/lib/discipline";
 import { disciplinaryWarningFlex, notifyToStaffGroup } from "@/lib/line";
+import { nameWithPrefix } from "@/lib/name";
 
 // POST /api/admin/persona/discipline — issue a disciplinary warning
 // to a staff member. Inserts the row, generates a ref_no (D + YYYYMM
@@ -69,13 +70,13 @@ export async function POST(req: Request) {
   // Fire the LINE notification. Route to the global staff group so
   // both the recipient AND the executive group see the issuance —
   // builds the social pressure / transparency the owner asked for.
-  const recipient = db.prepare("SELECT display_name FROM users WHERE id = ?")
-    .get(d.user_id) as { display_name: string } | undefined;
+  const recipient = db.prepare("SELECT display_name, title_prefix FROM users WHERE id = ?")
+    .get(d.user_id) as { display_name: string; title_prefix: string | null } | undefined;
   const baseUrl = (process.env.NEXT_PUBLIC_PUBLIC_BASE_URL || "").replace(/\/$/, "");
   const staffUrl = `${baseUrl || ""}/staff/persona/discipline/${id}`;
   const flex = disciplinaryWarningFlex({
     branchName: branch.name,
-    recipientName: recipient?.display_name ?? "—",
+    recipientName: recipient ? nameWithPrefix(recipient.title_prefix, recipient.display_name) : "—",
     severity: d.severity,
     title: d.title.trim(),
     refNo,

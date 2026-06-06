@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { notifyInventaGroup } from "@/lib/line";
+import { nameWithPrefix } from "@/lib/name";
 
 // POST /api/inventa/expiry-report — staff flag an item's expiry/condition
 // while counting (owner 2026-06-06). Sends a LINE alert to the branch's
@@ -64,7 +65,7 @@ export async function POST(req: Request) {
     if (parsed.data.note) {
       bodyRows.push({ type: "text", text: `หมายเหตุ: ${parsed.data.note}`, size: "sm", color: "#333333", margin: "md", wrap: true });
     }
-    bodyRows.push({ type: "text", text: `แจ้งโดย: ${user.display_name}`, size: "xxs", color: "#aaaaaa", margin: "md" });
+    bodyRows.push({ type: "text", text: `แจ้งโดย: ${nameWithPrefix(user.title_prefix, user.display_name)}`, size: "xxs", color: "#aaaaaa", margin: "md" });
 
     const flex = {
       type: "flex" as const,

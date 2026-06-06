@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { notifyInventaGroup } from "@/lib/line";
+import { nameWithPrefix } from "@/lib/name";
 
 // POST /api/inventa/counts/[id]/submit — close the stock-count round.
 // Items already had current_qty updated as each line was saved, so
@@ -83,7 +84,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
             type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
             contents: [
               { type: "text", text: branch.name, weight: "bold", size: "sm", color: "#1a1a2e" },
-              { type: "text", text: `ผู้นับ: ${user.display_name}`, size: "xs", color: "#888888", margin: "xs" },
+              { type: "text", text: `ผู้นับ: ${nameWithPrefix(user.title_prefix, user.display_name)}`, size: "xs", color: "#888888", margin: "xs" },
               { type: "text", text: summaryLine, size: "sm", color: "#333333", wrap: true, margin: "md" }
             ]
           },

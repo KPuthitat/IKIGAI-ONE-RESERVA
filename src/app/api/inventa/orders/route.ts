@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { notifyInventaGroup } from "@/lib/line";
+import { nameWithPrefix } from "@/lib/name";
 
 // GET  /api/inventa/orders        — recent purchase orders for the
 //                                   caller's active branch.
@@ -168,7 +169,7 @@ export async function POST(req: Request) {
                   { type: "text", text: "รวม (ทุน)", size: "sm", color: "#555555", flex: 3 },
                   { type: "text", text: `฿${o.subtotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`, size: "sm", weight: "bold", align: "end", flex: 2 }
                 ]},
-                { type: "text", text: `ผู้ขอ: ${user.display_name}`, size: "xs", color: "#888888", margin: "md", wrap: true }
+                { type: "text", text: `ผู้ขอ: ${nameWithPrefix(user.title_prefix, user.display_name)}`, size: "xs", color: "#888888", margin: "md", wrap: true }
               ]
             },
             footer: {

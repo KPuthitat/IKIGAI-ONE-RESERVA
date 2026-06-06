@@ -250,8 +250,9 @@ export function listPendingInvitations(actor: MjActor): Array<{
   enrollment_id: number; employee_name: string; invited_at: string | null;
 }> {
   requireDoctor(actor);
-  return getDb().prepare(`
-    SELECT e.id AS enrollment_id, u.display_name AS employee_name, e.invited_at
+  const rows = getDb().prepare(`
+    SELECT e.id AS enrollment_id, u.display_name AS employee_name,
+           u.title_prefix, e.invited_at
     FROM mounjaro_enrollments e JOIN users u ON u.id = e.employee_id
     WHERE e.invited_by_doctor_id = ?
       AND e.status = 'pending'
@@ -259,8 +260,16 @@ export function listPendingInvitations(actor: MjActor): Array<{
       AND e.employee_confirmed_at IS NULL
     ORDER BY e.invited_at ASC
   `).all(actor.id) as Array<{
-    enrollment_id: number; employee_name: string; invited_at: string | null;
+    enrollment_id: number; employee_name: string;
+    title_prefix: string | null; invited_at: string | null;
   }>;
+  // Combine prefix into the displayed name so the invitation banner
+  // matches the rest of the app (owner #8).
+  return rows.map((r) => ({
+    enrollment_id: r.enrollment_id,
+    employee_name: nameWithPrefix(r.title_prefix, r.employee_name),
+    invited_at: r.invited_at
+  }));
 }
 
 /** Withdraw / cancel — keeps the record visible (status='withdrawn') so the

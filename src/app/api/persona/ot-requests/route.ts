@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { notifyToStaffGroup } from "@/lib/line";
+import { nameWithPrefix } from "@/lib/name";
 
 // POST /api/persona/ot-requests — a staff member records that they had
 // pre-approved OT for a day (entered at clock-out when น้องฮูก asks).
@@ -49,7 +50,7 @@ export async function POST(req: Request) {
     if (branch) {
       const flex = {
         type: "flex" as const,
-        altText: `ขออนุมัติทำงานล่วงเวลา · ${user.display_name} · ${work_date}`,
+        altText: `ขออนุมัติทำงานล่วงเวลา · ${nameWithPrefix(user.title_prefix, user.display_name)} · ${work_date}`,
         contents: {
           type: "bubble" as const, size: "kilo",
           header: {
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
           body: {
             type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
             contents: [
-              { type: "text", text: user.display_name, weight: "bold", size: "sm", color: "#1a1a2e" },
+              { type: "text", text: nameWithPrefix(user.title_prefix, user.display_name), weight: "bold", size: "sm", color: "#1a1a2e" },
               { type: "text", text: `${branch.name} · วันที่ ${work_date}`, size: "xs", color: "#888888", margin: "xs" },
               { type: "text", text: `ขอทำงานล่วงเวลาถึง ${requested_until} น.`, size: "sm", color: "#333333", margin: "md" }
             ]

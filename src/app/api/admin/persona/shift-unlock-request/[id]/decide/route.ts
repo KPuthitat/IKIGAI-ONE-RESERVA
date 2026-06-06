@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, logPersonaAction, type Branch } from "@/lib/db";
 import { shiftUnlockDecisionFlex, notifyToStaffGroup } from "@/lib/line";
+import { nameWithPrefix } from "@/lib/name";
 
 // POST /api/admin/persona/shift-unlock-request/[id]/decide
 //
@@ -46,7 +47,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const row = db.prepare(`
     SELECT r.id, r.daily_report_id, r.status, r.requested_by, r.reason,
            dr.branch_id, dr.report_date, dr.user_id AS opener_id,
-           u.display_name AS requester_name,
+           u.display_name AS requester_name, u.title_prefix AS requester_prefix,
            ou.display_name AS opener_name
     FROM shift_unlock_requests r
     LEFT JOIN daily_reports dr ON dr.id = r.daily_report_id
@@ -59,7 +60,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         requested_by: number; reason: string;
         branch_id: number | null; report_date: string | null;
         opener_id: number | null;
-        requester_name: string | null;
+        requester_name: string | null; requester_prefix: string | null;
         opener_name: string | null;
       }
     | undefined;
@@ -126,8 +127,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       const flex = shiftUnlockDecisionFlex({
         branchName: branch.name,
         reportDate: row.report_date,
-        requesterName: row.requester_name,
-        adminName: user.display_name,
+        requesterName: nameWithPrefix(row.requester_prefix, row.requester_name),
+        adminName: nameWithPrefix(user.title_prefix, user.display_name),
         decision: parsed.data.decision,
         decisionNote: note,
         headerColor: branch.brand_color

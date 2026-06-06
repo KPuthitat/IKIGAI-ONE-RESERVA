@@ -9,6 +9,7 @@ import { todayBkk } from "@/lib/time";
 import { upsertDailyServiceCharge } from "@/lib/service-charge";
 import { upsertBranchDailyRevenue } from "@/lib/ascenda";
 import { verifyAdminPin } from "@/lib/admin-pin";
+import { nameWithPrefix } from "@/lib/name";
 
 // POST /api/persona/daily-report
 //
@@ -187,19 +188,20 @@ export async function POST(req: Request) {
   // so the response includes the existing row's metadata instead of
   // a raw SQLITE_CONSTRAINT.
   const existing = db.prepare(`
-    SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name
+    SELECT r.id, r.user_id, r.created_at,
+           u.display_name AS opener_name, u.title_prefix AS opener_prefix
     FROM daily_reports r JOIN users u ON r.user_id = u.id
     WHERE r.type = ? AND r.branch_id = ? AND r.report_date = ?
       AND r.superseded_at IS NULL
   `).get(type, branch.id, report_date) as
-    | { id: number; user_id: number; created_at: string; opener_name: string }
+    | { id: number; user_id: number; created_at: string; opener_name: string; opener_prefix: string | null }
     | undefined;
   if (existing) {
     return NextResponse.json({
       error: "already_submitted",
       existing: {
         id: existing.id,
-        opener_name: existing.opener_name,
+        opener_name: nameWithPrefix(existing.opener_prefix, existing.opener_name),
         created_at: existing.created_at
       }
     }, { status: 409 });

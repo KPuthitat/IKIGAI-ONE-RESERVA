@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { nameWithPrefix } from "@/lib/name";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "HR Dashboard · PERSONA" };
@@ -217,7 +218,7 @@ export default function HRDashboard({
   const in90 = new Date(Date.now() + 90 * 86_400_000)
     .toISOString().slice(0, 10);
   const expiring = db.prepare(`
-    SELECT u.id, u.display_name, u.job_title, u.contract_end_date,
+    SELECT u.id, u.display_name, u.title_prefix, u.job_title, u.contract_end_date,
            b.name AS branch_name
     FROM users u
     LEFT JOIN user_branches ub ON ub.user_id = u.id
@@ -229,7 +230,7 @@ export default function HRDashboard({
     ORDER BY u.contract_end_date ASC
     LIMIT 20
   `).all(todayIso, in90) as Array<{
-    id: number; display_name: string; job_title: string | null;
+    id: number; display_name: string; title_prefix: string | null; job_title: string | null;
     contract_end_date: string; branch_name: string | null;
   }>;
 
@@ -398,7 +399,7 @@ export default function HRDashboard({
                 <Link key={e.id} href={`/admin/persona/staff/${e.id}`}
                   className="flex items-center justify-between py-2 hover:bg-slate-50 -mx-2 px-2 rounded">
                   <div className="min-w-0">
-                    <div className="font-bold text-slate-800 text-sm">{e.display_name}</div>
+                    <div className="font-bold text-slate-800 text-sm">{nameWithPrefix(e.title_prefix, e.display_name)}</div>
                     <div className="text-xs text-slate-500">
                       {e.job_title ?? "—"}{e.branch_name && ` · ${e.branch_name}`}
                     </div>

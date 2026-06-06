@@ -8,6 +8,7 @@ import {
   personaResignationUnlockedFlex,
   renderResignationUnlockBody
 } from "@/lib/line";
+import { nameWithPrefix } from "@/lib/name";
 
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
 
@@ -58,11 +59,12 @@ export async function POST(req: Request) {
       const platform = getPlatformChannel();
       if (isChannelReady(platform) && platform?.channel_token) {
         const recipientName = (target.nickname_th?.trim() || target.display_name || "").trim();
+        const adminName = nameWithPrefix(user.title_prefix, user.display_name);
         const customMessage = getSystemSettings().resignation_unlock_message;
-        const bodyMessage = renderResignationUnlockBody(customMessage, user.display_name);
+        const bodyMessage = renderResignationUnlockBody(customMessage, adminName);
         const flex = personaResignationUnlockedFlex({
           recipientName,
-          unlockedByName: user.display_name,
+          unlockedByName: adminName,
           bodyMessage,
           resignationUrl: `${PUBLIC_BASE}/staff/persona/resignation`,
           headerColor: null
