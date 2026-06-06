@@ -67,11 +67,17 @@ export default function PrintActions({
           {t("inv.po.cancel")}
         </button>
       )}
-      <button type="button"
-        onClick={() => window.print()}
+      {/* Real A4 PDF (owner 2026-06-06) — opens in a new tab so the
+          owner can view, download, or print from the PDF viewer. On
+          mobile this opens the native PDF viewer (much better than the
+          old browser-print preview that overflowed the page). */}
+      <a
+        href={apiUrl(`/api/inventa/orders/${orderId}/pdf`)}
+        target="_blank"
+        rel="noopener noreferrer"
         className="text-xs px-3 py-1.5 rounded-lg bg-brand text-white font-bold hover:opacity-90">
-        {t("inv.lbl.print")}
-      </button>
+        เปิด / ดาวน์โหลด PDF
+      </a>
     </div>
   );
 }

@@ -131,106 +131,97 @@ export default function InventaOrderDetailPage({
         />
       </div>
 
-      {/* Printable PO — one sheet per supplier */}
-      <div className="printable space-y-8">
-        {supplierGroups.map(([supplier, rows], gi) => {
+      {/* On-screen summary (owner 2026-06-06). The authoritative supplier
+          document is the A4 PDF (เปิด/ดาวน์โหลด PDF above) — this view is
+          for quick review + approval. Tables scroll horizontally on
+          mobile (overflow-x-auto) so nothing runs off the screen. */}
+      <div className="card space-y-4">
+        <div className="flex justify-between gap-4 flex-wrap">
+          <div>
+            <div className="text-lg font-bold text-slate-800">{t(lang, "inv.po.docTitle")} #{order.id}</div>
+            <div className="text-xs text-slate-500 mt-1">
+              {t(lang, "inv.po.date")} {order.created_at.slice(0, 10)} · {t(lang, "inv.po.status")} {stLabel(order.status)}
+            </div>
+          </div>
+          <div className="text-right text-xs text-slate-600">
+            <div className="font-bold text-slate-800">{buyerName}</div>
+            {buyerAddr && <div className="max-w-[260px] ml-auto">{buyerAddr}</div>}
+            {company?.tax_id && <div>{t(lang, "inv.po.taxId")} {company.tax_id}
+              {branch?.tax_branch_code ? ` (${t(lang, "inv.po.branchCode")} ${branch.tax_branch_code})` : ""}</div>}
+            {(branch?.contact_phone || company?.phone) &&
+              <div>{t(lang, "inv.po.tel")} {branch?.contact_phone || company?.phone}</div>}
+          </div>
+        </div>
+
+        {supplierGroups.map(([supplier, rows]) => {
           const subtotal = rows.reduce((s, l) => s + l.order_qty * l.unit_cost_at_order, 0);
           return (
-            <div key={supplier}
-              style={{ pageBreakBefore: gi > 0 ? "always" : "auto" }}
-              className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
-              <div className="flex justify-between gap-4 flex-wrap">
-                <div>
-                  <div className="text-lg font-bold text-slate-800">{t(lang, "inv.po.docTitle")}</div>
-                  <div className="text-xs text-slate-500">{t(lang, "inv.po.docTitle")} #{order.id}
-                    {supplierGroups.length > 1 ? `-${gi + 1}` : ""}</div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    {t(lang, "inv.po.date")} {order.created_at.slice(0, 10)} · {t(lang, "inv.po.status")} {stLabel(order.status)}
-                  </div>
-                </div>
-                <div className="text-right text-xs text-slate-600">
-                  <div className="font-bold text-slate-800">{buyerName}</div>
-                  {buyerAddr && <div className="max-w-[260px]">{buyerAddr}</div>}
-                  {company?.tax_id && <div>{t(lang, "inv.po.taxId")} {company.tax_id}
-                    {branch?.tax_branch_code ? ` (${t(lang, "inv.po.branchCode")} ${branch.tax_branch_code})` : ""}</div>}
-                  {(branch?.contact_phone || company?.phone) &&
-                    <div>{t(lang, "inv.po.tel")} {branch?.contact_phone || company?.phone}</div>}
-                </div>
-              </div>
-
+            <div key={supplier} className="space-y-2">
               <div className="text-sm">
                 <span className="text-slate-500">{t(lang, "inv.po.supplierLabel")} </span>
                 <span className="font-bold text-slate-800">{supplier}</span>
               </div>
-
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="border-y border-slate-300 text-left text-xs text-slate-600">
-                    <th className="py-2 pr-2 w-8">#</th>
-                    <th className="py-2 pr-2">{t(lang, "inv.po.colItem")}</th>
-                    <th className="py-2 pr-2">{t(lang, "inv.po.colCode")}</th>
-                    <th className="py-2 pr-2 text-right">{t(lang, "inv.po.colOnhand")}</th>
-                    <th className="py-2 pr-2 text-right">{t(lang, "inv.po.colOrder")}</th>
-                    <th className="py-2 pr-2">{t(lang, "inv.po.colUnit")}</th>
-                    <th className="py-2 pr-2 text-right">{t(lang, "inv.po.colCost")}</th>
-                    <th className="py-2 pl-2 text-right">{t(lang, "inv.po.colTotal")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((l, i) => (
-                    <tr key={l.id} className="border-b border-slate-100 align-top">
-                      <td className="py-1.5 pr-2 text-slate-400">{i + 1}</td>
-                      <td className="py-1.5 pr-2 font-medium text-slate-800">{l.item_name}</td>
-                      <td className="py-1.5 pr-2 text-slate-500">{l.item_code ?? t(lang, "inv.dash")}</td>
-                      <td className="py-1.5 pr-2 text-right text-slate-500">{l.qty_on_hand ?? t(lang, "inv.dash")}</td>
-                      <td className="py-1.5 pr-2 text-right font-bold">{l.order_qty}</td>
-                      <td className="py-1.5 pr-2 text-slate-500">{l.unit ?? t(lang, "inv.dash")}</td>
-                      <td className="py-1.5 pr-2 text-right text-slate-500">
-                        ฿{l.unit_cost_at_order.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
-                      </td>
-                      <td className="py-1.5 pl-2 text-right">
-                        ฿{(l.order_qty * l.unit_cost_at_order).toLocaleString("th-TH", { maximumFractionDigits: 2 })}
+              <div className="overflow-x-auto -mx-2 px-2">
+                <table className="w-full text-sm border-collapse min-w-[640px]">
+                  <thead>
+                    <tr className="border-y border-slate-300 text-left text-xs text-slate-600">
+                      <th className="py-2 pr-2 w-8">#</th>
+                      <th className="py-2 pr-2">{t(lang, "inv.po.colItem")}</th>
+                      <th className="py-2 pr-2">{t(lang, "inv.po.colCode")}</th>
+                      <th className="py-2 pr-2 text-right">{t(lang, "inv.po.colOnhand")}</th>
+                      <th className="py-2 pr-2 text-right">{t(lang, "inv.po.colOrder")}</th>
+                      <th className="py-2 pr-2">{t(lang, "inv.po.colUnit")}</th>
+                      <th className="py-2 pr-2 text-right">{t(lang, "inv.po.colCost")}</th>
+                      <th className="py-2 pl-2 text-right">{t(lang, "inv.po.colTotal")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((l, i) => (
+                      <tr key={l.id} className="border-b border-slate-100 align-top">
+                        <td className="py-1.5 pr-2 text-slate-400">{i + 1}</td>
+                        <td className="py-1.5 pr-2 font-medium text-slate-800">{l.item_name}</td>
+                        <td className="py-1.5 pr-2 text-slate-500">{l.item_code ?? t(lang, "inv.dash")}</td>
+                        <td className="py-1.5 pr-2 text-right text-slate-500">{l.qty_on_hand ?? t(lang, "inv.dash")}</td>
+                        <td className="py-1.5 pr-2 text-right font-bold">{l.order_qty}</td>
+                        <td className="py-1.5 pr-2 text-slate-500">{l.unit ?? t(lang, "inv.dash")}</td>
+                        <td className="py-1.5 pr-2 text-right text-slate-500">
+                          ฿{l.unit_cost_at_order.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-1.5 pl-2 text-right">
+                          ฿{(l.order_qty * l.unit_cost_at_order).toLocaleString("th-TH", { maximumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-slate-300 font-bold">
+                      <td colSpan={7} className="py-2 text-right">{t(lang, "inv.po.subtotal")}</td>
+                      <td className="py-2 pl-2 text-right">
+                        ฿{subtotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-slate-300 font-bold">
-                    <td colSpan={7} className="py-2 text-right">{t(lang, "inv.po.subtotal")}</td>
-                    <td className="py-2 pl-2 text-right">
-                      ฿{subtotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-
-              {order.note && (
-                <div className="text-xs text-slate-600">
-                  <span className="text-slate-400">{t(lang, "inv.po.note")} </span>{order.note}
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-8 pt-8 text-xs text-slate-600">
-                <div className="text-center">
-                  <div className="border-t border-slate-400 pt-1 mt-10">
-                    {t(lang, "inv.po.requester")} — {order.created_by_name ?? t(lang, "inv.dash")}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="border-t border-slate-400 pt-1 mt-10">
-                    {t(lang, "inv.po.approver")} {order.approved_by_name ? `— ${order.approved_by_name}` : ""}
-                  </div>
-                </div>
+                  </tfoot>
+                </table>
               </div>
             </div>
           );
         })}
 
+        {order.note && (
+          <div className="text-xs text-slate-600">
+            <span className="text-slate-400">{t(lang, "inv.po.note")} </span>{order.note}
+          </div>
+        )}
+
         {supplierGroups.length > 1 && (
-          <div className="text-right text-sm font-bold text-slate-800 no-print">
+          <div className="text-right text-sm font-bold text-slate-800 border-t border-slate-200 pt-2">
             {t(lang, "inv.po.grand")} ฿{grandTotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
           </div>
         )}
+
+        <p className="text-[11px] text-slate-400">
+          เอกสารสำหรับส่งผู้จำหน่าย (A4) — กดปุ่ม “เปิด / ดาวน์โหลด PDF” ด้านบน
+        </p>
       </div>
     </div>
   );
