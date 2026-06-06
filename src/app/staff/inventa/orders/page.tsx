@@ -36,6 +36,24 @@ export default function InventaOrdersPage() {
     ORDER BY (s.name IS NULL), s.name COLLATE NOCASE, i.name COLLATE NOCASE
   `).all(branchId, branchId) as LowStockItem[];
 
+  // Full active catalogue (same shape) so staff can ADD items that
+  // aren't low-stock into the same PO (owner 2026-06-06). Clinic
+  // inventories are small, so passing the whole list and filtering
+  // client-side keeps the UX instant without a search round-trip.
+  const catalog = db.prepare(`
+    SELECT i.id, i.name, i.item_code, i.unit,
+           i.grid_row, i.grid_col, i.pick_freq,
+           i.current_qty, i.safety_stock,
+           i.unit_cost, i.cost_price,
+           s.name AS supplier_name
+    FROM inventa_items i
+    LEFT JOIN inventa_suppliers s ON s.id = i.supplier_id
+    WHERE i.active = 1
+      AND (i.branch_id IS ? OR i.branch_id = ?)
+    ORDER BY (s.name IS NULL), s.name COLLATE NOCASE, i.name COLLATE NOCASE
+    LIMIT 2000
+  `).all(branchId, branchId) as LowStockItem[];
+
   const orders = db.prepare(`
     SELECT o.id, o.status, o.note, o.created_at, o.sent_at,
            o.approved_at,
@@ -63,6 +81,7 @@ export default function InventaOrdersPage() {
       </div>
       <OrdersClient
         lowStock={lowStock}
+        catalog={catalog}
         orders={orders}
         canApprove={user.role === "admin" || user.role === "super_admin"}
       />

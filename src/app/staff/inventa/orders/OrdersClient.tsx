@@ -67,9 +67,10 @@ const STATUS_CLS: Record<OrderRow["status"], string> = {
 };
 
 export default function OrdersClient({
-  lowStock, orders, canApprove
+  lowStock, catalog = [], orders, canApprove
 }: {
   lowStock: LowStockItem[];
+  catalog?: LowStockItem[];
   orders: OrderRow[];
   canApprove: boolean;
 }) {
@@ -82,17 +83,50 @@ export default function OrdersClient({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
+  // Extra catalogue items added manually (owner 2026-06-06) — beyond the
+  // "should order" low-stock list. They render in their supplier group
+  // alongside low-stock rows and flow through the same submit.
+  const [extraItems, setExtraItems] = useState<LowStockItem[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addQuery, setAddQuery] = useState("");
+
+  // Low-stock list + any manually-added catalogue items (deduped by id).
+  const allItems = useMemo(() => {
+    const seen = new Set(lowStock.map((i) => i.id));
+    const merged = [...lowStock];
+    for (const e of extraItems) if (!seen.has(e.id)) { merged.push(e); seen.add(e.id); }
+    return merged;
+  }, [lowStock, extraItems]);
 
   const groups = useMemo(() => {
     const m = new Map<string, LowStockItem[]>();
-    for (const it of lowStock) {
+    for (const it of allItems) {
       const k = it.supplier_name ?? t("inv.ord.noSupplier");
       const arr = m.get(k) ?? [];
       arr.push(it);
       m.set(k, arr);
     }
     return [...m.entries()];
-  }, [lowStock, t]);
+  }, [allItems, t]);
+
+  // Catalogue items NOT already shown (low-stock or added), filtered by
+  // the search box. Capped so a big catalogue doesn't render hundreds.
+  const addCandidates = useMemo(() => {
+    const shown = new Set(allItems.map((i) => i.id));
+    const q = addQuery.trim().toLowerCase();
+    return catalog
+      .filter((c) => !shown.has(c.id))
+      .filter((c) => !q ||
+        c.name.toLowerCase().includes(q) ||
+        (c.item_code ?? "").toLowerCase().includes(q))
+      .slice(0, 15);
+  }, [catalog, allItems, addQuery]);
+
+  function addExtra(it: LowStockItem) {
+    setExtraItems((p) => (p.some((e) => e.id === it.id) ? p : [...p, it]));
+    setSel((p) => ({ ...p, [it.id]: p[it.id] ?? String(Math.max(1, suggested(it) || 1)) }));
+    setAddQuery("");
+  }
 
   function suggested(it: LowStockItem): number {
     return Math.max(0, it.safety_stock - it.current_qty);
@@ -110,7 +144,7 @@ export default function OrdersClient({
   }
   function selectAll() {
     const all: Record<number, string> = {};
-    for (const it of lowStock) all[it.id] = String(suggested(it) || 1);
+    for (const it of allItems) all[it.id] = String(suggested(it) || 1);
     setSel(all);
   }
   // Per-supplier select/clear (owner 2026-06-06) — lets staff issue a PO
@@ -145,9 +179,9 @@ export default function OrdersClient({
   // the owner decide whether to defer/split a vendor (#91).
   const itemById = useMemo(() => {
     const m = new Map<number, LowStockItem>();
-    for (const it of lowStock) m.set(it.id, it);
+    for (const it of allItems) m.set(it.id, it);
     return m;
-  }, [lowStock]);
+  }, [allItems]);
   const totalsBySupplier = useMemo(() => {
     const m = new Map<string, number>();
     for (const [idStr, qStr] of Object.entries(sel)) {
@@ -204,7 +238,7 @@ export default function OrdersClient({
           <h2 className="font-bold text-slate-800 text-sm">
             {t("inv.ord.reorder", { n: lowStock.length })}
           </h2>
-          {lowStock.length > 0 && (
+          {allItems.length > 0 && (
             <button type="button" onClick={selectAll}
               className="text-xs text-brand hover:underline">
               {t("inv.ord.selectAll")}
@@ -212,7 +246,7 @@ export default function OrdersClient({
           )}
         </div>
 
-        {lowStock.length === 0 && (
+        {lowStock.length === 0 && extraItems.length === 0 && (
           <p className="text-sm text-slate-400">
             {t("inv.ord.noLow")}
           </p>
@@ -301,7 +335,57 @@ export default function OrdersClient({
           );
         })}
 
-        {lowStock.length > 0 && (
+        {/* ── Add other items (owner 2026-06-06) ──────────────────────
+            Pull any active catalogue item into this PO even if it isn't
+            low-stock. Useful for one-off / planned purchases. */}
+        <div className="border-t border-slate-100 pt-3">
+          {!showAdd ? (
+            <button type="button" onClick={() => setShowAdd(true)}
+              className="text-xs text-brand hover:underline font-medium">
+              + เพิ่มรายการอื่น (นอกเหนือจากที่ควรสั่ง)
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  className="input text-sm flex-1"
+                  placeholder="ค้นหาสินค้าด้วยชื่อหรือรหัส…"
+                  value={addQuery}
+                  onChange={(e) => setAddQuery(e.target.value)}
+                  autoFocus
+                />
+                <button type="button"
+                  onClick={() => { setShowAdd(false); setAddQuery(""); }}
+                  className="text-xs text-slate-500 hover:underline whitespace-nowrap">
+                  ปิด
+                </button>
+              </div>
+              {addQuery.trim() && addCandidates.length === 0 && (
+                <p className="text-xs text-slate-400">ไม่พบสินค้า (อาจอยู่ในรายการด้านบนแล้ว)</p>
+              )}
+              {addCandidates.length > 0 && (
+                <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+                  {addCandidates.map((c) => (
+                    <button type="button" key={c.id}
+                      onClick={() => addExtra(c)}
+                      className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center justify-between gap-2">
+                      <span className="text-sm min-w-0">
+                        <span className="font-medium text-slate-800">{c.name}</span>
+                        {c.item_code && <span className="ml-1 text-[11px] text-slate-400">[{c.item_code}]</span>}
+                        <span className="block text-[11px] text-slate-500">
+                          {c.supplier_name ?? t("inv.ord.noSupplier")} · {t("inv.ord.onhand")} {c.current_qty}{c.unit ? ` ${c.unit}` : ""}
+                        </span>
+                      </span>
+                      <span className="text-brand font-bold text-sm flex-shrink-0">+ เพิ่ม</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {allItems.length > 0 && (
           <div className="border-t border-slate-100 pt-3 space-y-2">
             {/* Grand-total budget bar (#91). Sticks visually right
                 above the submit row so the figure stays in the
