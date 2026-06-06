@@ -34,6 +34,8 @@ export type CountItem = {
   safety_stock: number;
   category: string | null;
   item_type?: string | null;
+  storage_location?: string | null;
+  supplier_name?: string | null;
 };
 
 export default function CountClient({
@@ -59,7 +61,20 @@ export default function CountClient({
   // an "uncounted only" toggle that's handy mid-count.
   const [freqFilter, setFreqFilter] = useState<PickFreq | "">("");
   const [catFilter, setCatFilter] = useState("");
+  // Supplier + location filters (owner 2026-06-06) — match the catalogue
+  // page. Option lists derived from the items present in this round.
+  const [supFilter, setSupFilter] = useState("");
+  const [locFilter, setLocFilter] = useState("");
   const [uncountedOnly, setUncountedOnly] = useState(false);
+
+  const supplierOptions = useMemo(
+    () => [...new Set(items.map((i) => i.supplier_name).filter((s): s is string => !!s))].sort(),
+    [items]
+  );
+  const locationOptions = useMemo(
+    () => [...new Set(items.map((i) => i.storage_location).filter((s): s is string => !!s))].sort(),
+    [items]
+  );
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [reopenPin, setReopenPin] = useState(false);
@@ -95,12 +110,14 @@ export default function CountClient({
     return items.filter((i) => {
       if (freqFilter && i.pick_freq !== freqFilter) return false;
       if (catFilter && (i.category ?? "") !== catFilter) return false;
+      if (supFilter && (i.supplier_name ?? "") !== supFilter) return false;
+      if (locFilter && (i.storage_location ?? "") !== locFilter) return false;
       if (uncountedOnly && counted[i.id] !== undefined) return false;
       if (!term) return true;
       return [i.name, i.generic_name, i.item_code, i.barcode, i.category]
         .some((v) => (v ?? "").toLowerCase().includes(term));
     });
-  }, [items, q, freqFilter, catFilter, uncountedOnly, counted]);
+  }, [items, q, freqFilter, catFilter, supFilter, locFilter, uncountedOnly, counted]);
 
   function pick(item: CountItem) {
     setSel(item);
@@ -147,18 +164,29 @@ export default function CountClient({
     } finally { setBusy(false); }
   }
 
-  async function submit() {
+  // silent=true closes the round WITHOUT pinging the LINE group — for
+  // minor corrections (owner 2026-06-06). silent=false is the normal
+  // "submit + announce + go build the PO" flow.
+  async function submit(silent = false) {
     if (!session) return;
-    if (!confirm(t("inv.cnt.submitConfirm", { done, total }))) return;
+    if (!silent && !confirm(t("inv.cnt.submitConfirm", { done, total }))) return;
+    if (silent && !confirm("บันทึกการนับโดยไม่แจ้งกลุ่มไลน์?")) return;
     setBusy(true);
     setMsg(null);
     try {
-      const res = await fetch(apiUrl(`/api/inventa/counts/${session.id}/submit`), {
-        method: "POST"
-      });
+      const res = await fetch(
+        apiUrl(`/api/inventa/counts/${session.id}/submit${silent ? "?silent=1" : ""}`),
+        { method: "POST" }
+      );
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j?.ok) {
         setMsg(j?.error ?? t("inv.cnt.saveFail"));
+        return;
+      }
+      if (silent) {
+        // Quiet save — stay on the page, just confirm + refresh state.
+        setMsg("บันทึกแล้ว (ไม่แจ้งกลุ่ม)");
+        refresh();
         return;
       }
       // Saved (line qtys were already live-updated). Send the user
@@ -276,7 +304,11 @@ export default function CountClient({
             className="text-sm px-4 py-2 rounded-lg border border-brand text-brand font-bold hover:bg-rose-50">
             {t("inv.btn.scanQr")}
           </button>
-          <button type="button" onClick={submit} disabled={busy}
+          <button type="button" onClick={() => submit(true)} disabled={busy}
+            className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-600 font-bold hover:bg-slate-50 disabled:opacity-50">
+            บันทึกเงียบ
+          </button>
+          <button type="button" onClick={() => submit(false)} disabled={busy}
             className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold disabled:opacity-50">
             {t("inv.cnt.submit")}
           </button>
@@ -371,6 +403,20 @@ export default function CountClient({
               onChange={(e) => setCatFilter(e.target.value)}>
               <option value="">ทุกหมวด</option>
               {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )}
+          {supplierOptions.length > 0 && (
+            <select className="input !w-auto max-w-[42vw] sm:max-w-none text-sm" value={supFilter}
+              onChange={(e) => setSupFilter(e.target.value)}>
+              <option value="">ทุกผู้จำหน่าย</option>
+              {supplierOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
+          {locationOptions.length > 0 && (
+            <select className="input !w-auto max-w-[42vw] sm:max-w-none text-sm" value={locFilter}
+              onChange={(e) => setLocFilter(e.target.value)}>
+              <option value="">ทุกตำแหน่ง</option>
+              {locationOptions.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
           )}
           <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer ml-auto">

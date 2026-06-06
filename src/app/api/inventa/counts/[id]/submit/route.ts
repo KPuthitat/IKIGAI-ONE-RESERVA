@@ -21,6 +21,10 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });
   }
+  // Silent save (owner 2026-06-06): close the round WITHOUT pinging the
+  // LINE group — for minor edits where a fresh announcement would be
+  // noise. Item quantities are already saved live regardless.
+  const silent = new URL(_req.url).searchParams.get("silent") === "1";
   const db = getDb();
   const r = db.prepare(`
     UPDATE inventa_counts
@@ -29,6 +33,10 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   `).run(id);
   if (r.changes === 0) {
     return NextResponse.json({ error: "not_open" }, { status: 409 });
+  }
+
+  if (silent) {
+    return NextResponse.json({ ok: true, silent: true });
   }
 
   // ── Notify the staff group (fire-and-forget) ──────────────────

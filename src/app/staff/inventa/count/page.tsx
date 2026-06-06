@@ -17,12 +17,14 @@ export default function InventaCountPage() {
   const branchId = user.activeBranchId ?? null;
 
   const items = db.prepare(`
-    SELECT id, item_code, barcode, name, generic_name, unit,
-           grid_row, grid_col, pick_freq, current_qty, safety_stock,
-           category, item_type
-    FROM inventa_items
-    WHERE active = 1 AND (branch_id IS ? OR branch_id = ?)
-    ORDER BY grid_row, grid_col, name
+    SELECT i.id, i.item_code, i.barcode, i.name, i.generic_name, i.unit,
+           i.grid_row, i.grid_col, i.pick_freq, i.current_qty, i.safety_stock,
+           i.category, i.item_type, i.storage_location,
+           s.name AS supplier_name
+    FROM inventa_items i
+    LEFT JOIN inventa_suppliers s ON s.id = i.supplier_id
+    WHERE i.active = 1 AND (i.branch_id IS ? OR i.branch_id = ?)
+    ORDER BY i.grid_row, i.grid_col, i.name
   `).all(branchId, branchId) as CountItem[];
 
   // Distinct categories actually present on this branch's items — drives
