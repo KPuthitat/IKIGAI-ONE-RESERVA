@@ -94,6 +94,9 @@ export async function POST(req: Request) {
 
   const nowIso = new Date().toISOString();
   const createdIds: number[] = [];
+  // Track each created PO with its supplier + line subtotal so we can
+  // send ONE approval card PER supplier (owner 2026-06-06).
+  const createdOrders: Array<{ orderId: number; supplierId: number | null; subtotal: number }> = [];
   const txn = db.transaction(() => {
     const insOrder = db.prepare(`
       INSERT INTO inventa_orders
@@ -110,25 +113,30 @@ export async function POST(req: Request) {
       const r = insOrder.run(branchId, parsed.data.note ?? null, user.id, nowIso, nowIso);
       const orderId = Number(r.lastInsertRowid);
       createdIds.push(orderId);
+      let subtotal = 0;
       for (const l of lines) {
         const it = itemById.get(l.item_id)!;
         const suggested = Math.max(0, it.safety_stock - it.current_qty);
+        const cost = effectiveCost(it);
+        subtotal += l.order_qty * cost;
         insLine.run(
           orderId, l.item_id, sup,
-          it.current_qty, suggested, l.order_qty, effectiveCost(it)
+          it.current_qty, suggested, l.order_qty, cost
         );
       }
+      createdOrders.push({ orderId, supplierId: sup, subtotal });
     }
   });
   txn();
 
-  // Fire-and-forget LINE notification — ONE combined card listing each
-  // supplier's PO so management isn't spammed (saves quota).
+  // Fire-and-forget LINE notification — ONE approval card PER supplier
+  // (owner 2026-06-06) so each vendor's PO can be reviewed/forwarded
+  // independently, each with its own "open to approve" deep link.
   try {
     const branch = db.prepare("SELECT * FROM branches WHERE id = ?")
       .get(branchId) as Branch | undefined;
     if (branch) {
-      const supIds = [...bySupplier.keys()].filter((s): s is number => s != null);
+      const supIds = createdOrders.map((o) => o.supplierId).filter((s): s is number => s != null);
       const supNames = new Map<number, string>();
       if (supIds.length) {
         const ph = supIds.map(() => "?").join(",");
@@ -138,57 +146,41 @@ export async function POST(req: Request) {
           supNames.set(row.id, row.name);
         }
       }
-      const supplierRows = [...bySupplier.entries()].map(([sup, lines]) => {
-        const subtotal = lines.reduce((s, l) =>
-          s + l.order_qty * effectiveCost(itemById.get(l.item_id)!), 0);
-        const name = sup != null ? (supNames.get(sup) ?? "—") : "(ไม่ระบุผู้จำหน่าย)";
-        return {
-          type: "box", layout: "baseline", margin: "sm",
-          contents: [
-            { type: "text", text: name, size: "sm", color: "#333333", flex: 5, wrap: true },
-            { type: "text",
-              text: `฿${subtotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`,
-              size: "sm", color: "#1a1a2e", weight: "bold", align: "end", flex: 3 }
-          ]
-        };
-      });
-      const grandTotal = validLines.reduce((s, l) =>
-        s + l.order_qty * effectiveCost(itemById.get(l.item_id)!), 0);
-      // Deep link straight to the approval page. A single PO opens its
-      // detail; multiple POs open the orders list (each approved there).
       const base = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
-      const approveUrl = createdIds.length === 1
-        ? `${base}/staff/inventa/orders/${createdIds[0]}`
-        : `${base}/staff/inventa/orders`;
-      const flex = {
-        type: "flex" as const,
-        altText: `ขออนุมัติสั่งซื้อ ${createdIds.length} ใบ · ${branch.name}`,
-        contents: {
-          type: "bubble" as const,
-          body: {
-            type: "box", layout: "vertical", spacing: "sm",
-            contents: [
-              { type: "text", text: "ขออนุมัติสั่งซื้อ (INVENTA)", weight: "bold", size: "lg" },
-              { type: "text", text: `${branch.name} · ${createdIds.length} ใบ (แยกตามผู้จำหน่าย)`, size: "sm", color: "#888888", wrap: true },
-              { type: "separator", margin: "md" },
-              ...supplierRows,
-              { type: "separator", margin: "md" },
-              { type: "box", layout: "baseline", margin: "sm", contents: [
-                { type: "text", text: "รวมทั้งหมด (ทุน)", size: "sm", color: "#555555", flex: 3 },
-                { type: "text", text: `฿${grandTotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`, size: "sm", weight: "bold", align: "end", flex: 2 }
-              ]},
-              { type: "text", text: `ผู้ขอ: ${user.display_name}`, size: "xs", color: "#888888", margin: "md", wrap: true }
-            ]
-          },
-          footer: {
-            type: "box", layout: "vertical", contents: [
-              { type: "button", style: "primary", color: "#1a1a2e", height: "sm",
-                action: { type: "uri", label: "เปิดเพื่ออนุมัติ", uri: approveUrl } }
-            ]
+      for (const o of createdOrders) {
+        const name = o.supplierId != null ? (supNames.get(o.supplierId) ?? "—") : "(ไม่ระบุผู้จำหน่าย)";
+        const flex = {
+          type: "flex" as const,
+          altText: `ขออนุมัติสั่งซื้อ · ${name} · ${branch.name}`,
+          contents: {
+            type: "bubble" as const,
+            body: {
+              type: "box", layout: "vertical", spacing: "sm",
+              contents: [
+                { type: "text", text: "ขออนุมัติสั่งซื้อ (INVENTA)", weight: "bold", size: "lg" },
+                { type: "text", text: `${branch.name} · PO-${o.orderId}`, size: "xs", color: "#888888" },
+                { type: "separator", margin: "md" },
+                { type: "box", layout: "baseline", margin: "sm", contents: [
+                  { type: "text", text: "ผู้จำหน่าย", size: "sm", color: "#555555", flex: 2 },
+                  { type: "text", text: name, size: "sm", color: "#1a1a2e", weight: "bold", align: "end", flex: 4, wrap: true }
+                ]},
+                { type: "box", layout: "baseline", margin: "sm", contents: [
+                  { type: "text", text: "รวม (ทุน)", size: "sm", color: "#555555", flex: 3 },
+                  { type: "text", text: `฿${o.subtotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`, size: "sm", weight: "bold", align: "end", flex: 2 }
+                ]},
+                { type: "text", text: `ผู้ขอ: ${user.display_name}`, size: "xs", color: "#888888", margin: "md", wrap: true }
+              ]
+            },
+            footer: {
+              type: "box", layout: "vertical", contents: [
+                { type: "button", style: "primary", color: "#1a1a2e", height: "sm",
+                  action: { type: "uri", label: "เปิดเพื่ออนุมัติ", uri: `${base}/staff/inventa/orders/${o.orderId}` } }
+              ]
+            }
           }
-        }
-      };
-      void notifyInventaGroup(branch, flex).catch(() => {});
+        };
+        void notifyInventaGroup(branch, flex).catch(() => {});
+      }
     }
   } catch {
     /* notification must never block order creation */
