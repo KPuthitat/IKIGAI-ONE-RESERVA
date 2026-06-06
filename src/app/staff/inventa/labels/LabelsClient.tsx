@@ -13,6 +13,9 @@ export type LabelItem = {
   grid_row: string | null;
   grid_col: number | null;
   pick_freq: PickFreq | null;
+  category?: string | null;
+  storage_location?: string | null;
+  supplier_name?: string | null;
 };
 
 // QR generator loaded from CDN (same no-dependency pattern as the
@@ -37,17 +40,40 @@ export default function LabelsClient({ items }: { items: LabelItem[] }) {
   );
 
   const [q, setQ] = useState("");
+  // Filters — match the catalogue page (owner 2026-06-06): pick frequency
+  // chips + category / supplier / location selects.
+  const [freqFilter, setFreqFilter] = useState<PickFreq | "">("");
+  const [catFilter, setCatFilter] = useState("");
+  const [supFilter, setSupFilter] = useState("");
+  const [locFilter, setLocFilter] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [urls, setUrls] = useState<Record<number, string>>({});
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
 
+  const categoryOptions = useMemo(
+    () => [...new Set(printable.map((i) => i.category).filter((s): s is string => !!s))].sort(),
+    [printable]
+  );
+  const supplierOptions = useMemo(
+    () => [...new Set(printable.map((i) => i.supplier_name).filter((s): s is string => !!s))].sort(),
+    [printable]
+  );
+  const locationOptions = useMemo(
+    () => [...new Set(printable.map((i) => i.storage_location).filter((s): s is string => !!s))].sort(),
+    [printable]
+  );
+
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    if (!term) return printable;
-    return printable.filter((i) =>
-      [i.name, i.item_code, i.barcode].some((v) => (v ?? "").toLowerCase().includes(term))
-    );
-  }, [printable, q]);
+    return printable.filter((i) => {
+      if (freqFilter && i.pick_freq !== freqFilter) return false;
+      if (catFilter && (i.category ?? "") !== catFilter) return false;
+      if (supFilter && (i.supplier_name ?? "") !== supFilter) return false;
+      if (locFilter && (i.storage_location ?? "") !== locFilter) return false;
+      if (!term) return true;
+      return [i.name, i.item_code, i.barcode].some((v) => (v ?? "").toLowerCase().includes(term));
+    });
+  }, [printable, q, freqFilter, catFilter, supFilter, locFilter]);
 
   const chosen = useMemo(
     () => printable.filter((i) => selected.has(i.id)),
@@ -125,6 +151,56 @@ export default function LabelsClient({ items }: { items: LabelItem[] }) {
         </div>
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)}
           placeholder="ค้นหาชื่อ / รหัส / บาร์โค้ด" />
+
+        {/* Filter bar — same controls as the catalogue page. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1">
+            <button type="button" onClick={() => setFreqFilter("")}
+              className={`text-xs px-2.5 py-1 rounded-full border ${freqFilter === "" ? "bg-slate-800 text-white border-slate-800" : "border-slate-300 text-slate-600"}`}>
+              ทั้งหมด
+            </button>
+            {(["R", "Y", "G"] as PickFreq[]).map((f) => {
+              const active = freqFilter === f;
+              return (
+                <button key={f} type="button" onClick={() => setFreqFilter(active ? "" : f)}
+                  className={`text-xs px-2.5 py-1 rounded-full border inline-flex items-center gap-1 ${active ? "bg-slate-800 text-white border-slate-800" : "border-slate-300 text-slate-600"}`}>
+                  <span className={`inline-block w-2.5 h-2.5 rounded-full ${PICK_FREQ_META[f].dot}`} />
+                  {PICK_FREQ_META[f].short}
+                </button>
+              );
+            })}
+          </div>
+          {categoryOptions.length > 0 && (
+            <select className="input !w-auto max-w-[42vw] sm:max-w-none text-sm" value={catFilter}
+              onChange={(e) => setCatFilter(e.target.value)}>
+              <option value="">ทุกหมวด</option>
+              {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )}
+          {supplierOptions.length > 0 && (
+            <select className="input !w-auto max-w-[42vw] sm:max-w-none text-sm" value={supFilter}
+              onChange={(e) => setSupFilter(e.target.value)}>
+              <option value="">ทุกผู้จำหน่าย</option>
+              {supplierOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
+          {locationOptions.length > 0 && (
+            <select className="input !w-auto max-w-[42vw] sm:max-w-none text-sm" value={locFilter}
+              onChange={(e) => setLocFilter(e.target.value)}>
+              <option value="">ทุกตำแหน่ง</option>
+              {locationOptions.map((l) => <option key={l} value={l}>{l}</option>)}
+            </select>
+          )}
+          {/* Select-all-filtered shortcut — handy after narrowing by a
+              supplier/location to label a whole shelf at once. */}
+          {filtered.length > 0 && (
+            <button type="button" onClick={() => setSelected(new Set(filtered.map((i) => i.id)))}
+              className="text-xs text-brand hover:underline ml-auto">
+              เลือกทั้งหมดที่กรอง ({filtered.length})
+            </button>
+          )}
+        </div>
+
         <div className="divide-y divide-slate-100 max-h-[40vh] overflow-y-auto rounded-lg border border-slate-200">
           {filtered.map((i) => {
             const isSel = selected.has(i.id);

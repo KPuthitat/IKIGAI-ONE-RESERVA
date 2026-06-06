@@ -17,10 +17,12 @@ export default function InventaLabelsPage() {
   const branchId = user.activeBranchId ?? null;
 
   const items = db.prepare(`
-    SELECT id, item_code, barcode, name, grid_row, grid_col, pick_freq
-    FROM inventa_items
-    WHERE active = 1 AND (branch_id IS ? OR branch_id = ?)
-    ORDER BY grid_row, grid_col, name
+    SELECT i.id, i.item_code, i.barcode, i.name, i.grid_row, i.grid_col, i.pick_freq,
+           i.category, i.storage_location, s.name AS supplier_name
+    FROM inventa_items i
+    LEFT JOIN inventa_suppliers s ON s.id = i.supplier_id
+    WHERE i.active = 1 AND (i.branch_id IS ? OR i.branch_id = ?)
+    ORDER BY i.grid_row, i.grid_col, i.name
   `).all(branchId, branchId) as LabelItem[];
 
   return (
