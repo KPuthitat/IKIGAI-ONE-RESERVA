@@ -22,6 +22,12 @@ export default function InventaOrdersPage() {
   const db = getDb();
   const branchId = user.activeBranchId ?? null;
 
+  // Low-stock items, EXCLUDING anything already sitting on an open PO
+  // (status sent/approved). Owner 2026-06-06: a vendor's items that were
+  // just ordered shouldn't keep appearing in "should order" — that's how
+  // the same item gets ordered twice. Once the PO is received/cancelled
+  // the item is eligible again. Staff can still re-add it manually if
+  // they really need more before the PO arrives.
   const lowStock = db.prepare(`
     SELECT i.id, i.name, i.item_code, i.unit,
            i.grid_row, i.grid_col, i.pick_freq,
@@ -33,8 +39,15 @@ export default function InventaOrdersPage() {
     WHERE i.active = 1
       AND (i.branch_id IS ? OR i.branch_id = ?)
       AND i.current_qty <= i.safety_stock
+      AND NOT EXISTS (
+        SELECT 1 FROM inventa_order_lines ol
+        JOIN inventa_orders o ON o.id = ol.order_id
+        WHERE ol.item_id = i.id
+          AND o.status IN ('sent', 'approved')
+          AND (o.branch_id IS ? OR o.branch_id = ?)
+      )
     ORDER BY (s.name IS NULL), s.name COLLATE NOCASE, i.name COLLATE NOCASE
-  `).all(branchId, branchId) as LowStockItem[];
+  `).all(branchId, branchId, branchId, branchId) as LowStockItem[];
 
   // Full active catalogue (same shape) so staff can ADD items that
   // aren't low-stock into the same PO (owner 2026-06-06). Clinic

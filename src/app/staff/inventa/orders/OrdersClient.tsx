@@ -87,8 +87,14 @@ export default function OrdersClient({
   // "should order" low-stock list. They render in their supplier group
   // alongside low-stock rows and flow through the same submit.
   const [extraItems, setExtraItems] = useState<LowStockItem[]>([]);
-  const [showAdd, setShowAdd] = useState(false);
+  // Which "add item" box is open (owner 2026-06-06): a supplier key for a
+  // per-supplier add, or the sentinel OTHER_KEY for the "new supplier"
+  // box. null = all closed. Only one box is open at a time.
+  const OTHER_KEY = "__other__";
+  const [addOpenFor, setAddOpenFor] = useState<string | null>(null);
   const [addQuery, setAddQuery] = useState("");
+  const noSupplierLabel = t("inv.ord.noSupplier");
+  const supplierKey = (it: LowStockItem) => it.supplier_name ?? noSupplierLabel;
 
   // Low-stock list + any manually-added catalogue items (deduped by id).
   const allItems = useMemo(() => {
@@ -101,32 +107,89 @@ export default function OrdersClient({
   const groups = useMemo(() => {
     const m = new Map<string, LowStockItem[]>();
     for (const it of allItems) {
-      const k = it.supplier_name ?? t("inv.ord.noSupplier");
+      const k = it.supplier_name ?? noSupplierLabel;
       const arr = m.get(k) ?? [];
       arr.push(it);
       m.set(k, arr);
     }
     return [...m.entries()];
-  }, [allItems, t]);
+  }, [allItems, noSupplierLabel]);
 
-  // Catalogue items NOT already shown (low-stock or added), filtered by
-  // the search box. Capped so a big catalogue doesn't render hundreds.
+  // Catalogue candidates for the currently-open add box, scoped to its
+  // supplier (owner 2026-06-06): a per-supplier box shows ONLY that
+  // vendor's items; the OTHER box shows items from suppliers not yet in
+  // the builder (so you can start a new vendor group). Excludes items
+  // already shown; matches the search; capped to keep the list short.
+  const groupKeySet = useMemo(() => new Set(groups.map(([k]) => k)), [groups]);
   const addCandidates = useMemo(() => {
+    if (!addOpenFor) return [];
     const shown = new Set(allItems.map((i) => i.id));
     const q = addQuery.trim().toLowerCase();
-    return catalog
-      .filter((c) => !shown.has(c.id))
-      .filter((c) => !q ||
-        c.name.toLowerCase().includes(q) ||
-        (c.item_code ?? "").toLowerCase().includes(q))
-      .slice(0, 15);
-  }, [catalog, allItems, addQuery]);
+    return catalog.filter((c) => {
+      if (shown.has(c.id)) return false;
+      const key = supplierKey(c);
+      if (addOpenFor === OTHER_KEY) { if (groupKeySet.has(key)) return false; }
+      else if (key !== addOpenFor) return false;
+      if (q && !c.name.toLowerCase().includes(q) && !(c.item_code ?? "").toLowerCase().includes(q)) return false;
+      return true;
+    }).slice(0, 15);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalog, allItems, addQuery, addOpenFor, groupKeySet]);
 
   function addExtra(it: LowStockItem) {
     setExtraItems((p) => (p.some((e) => e.id === it.id) ? p : [...p, it]));
     setSel((p) => ({ ...p, [it.id]: p[it.id] ?? String(Math.max(1, suggested(it) || 1)) }));
     setAddQuery("");
   }
+
+  // Render the "add item" control for a given target (supplier key or
+  // OTHER_KEY). A plain render function — NOT a nested component — so the
+  // search input keeps focus across keystrokes. Only the open target
+  // shows its candidate list.
+  const renderAddBox = (targetKey: string, openLabel: string, placeholder: string) => {
+    const open = addOpenFor === targetKey;
+    return (
+      <div className="pt-1.5">
+        {!open ? (
+          <button type="button"
+            onClick={() => { setAddOpenFor(targetKey); setAddQuery(""); }}
+            className="text-xs text-brand hover:underline font-medium">
+            {openLabel}
+          </button>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input className="input text-sm flex-1" placeholder={placeholder}
+                value={addQuery} onChange={(e) => setAddQuery(e.target.value)} autoFocus />
+              <button type="button"
+                onClick={() => { setAddOpenFor(null); setAddQuery(""); }}
+                className="text-xs text-slate-500 hover:underline whitespace-nowrap">ปิด</button>
+            </div>
+            {addQuery.trim() && addCandidates.length === 0 && (
+              <p className="text-xs text-slate-400">ไม่พบสินค้า</p>
+            )}
+            {addCandidates.length > 0 && (
+              <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+                {addCandidates.map((c) => (
+                  <button type="button" key={c.id} onClick={() => addExtra(c)}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center justify-between gap-2">
+                    <span className="text-sm min-w-0">
+                      <span className="font-medium text-slate-800">{c.name}</span>
+                      {c.item_code && <span className="ml-1 text-[11px] text-slate-400">[{c.item_code}]</span>}
+                      <span className="block text-[11px] text-slate-500">
+                        {c.supplier_name ?? noSupplierLabel} · {t("inv.ord.onhand")} {c.current_qty}{c.unit ? ` ${c.unit}` : ""}
+                      </span>
+                    </span>
+                    <span className="text-brand font-bold text-sm flex-shrink-0">+ เพิ่ม</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   function suggested(it: LowStockItem): number {
     return Math.max(0, it.safety_stock - it.current_qty);
@@ -306,8 +369,12 @@ export default function OrdersClient({
                         <span className="font-medium text-slate-800">{it.name}</span>
                         {bin && <span className="ml-1 text-[11px] text-slate-400">[{bin}]</span>}
                         <span className="block text-[11px] text-slate-500">
-                          {t("inv.ord.onhand")} {it.current_qty} / {t("inv.ord.repoint")} {it.safety_stock}
-                          {it.unit ? ` ${it.unit}` : ""} · {t("inv.ord.cost")}{" "}
+                          {/* On-hand qty emphasised (owner 2026-06-06) —
+                              blue + bold + larger so it reads at a glance. */}
+                          {t("inv.ord.onhand")}{" "}
+                          <span className="text-blue-600 font-bold text-sm">{it.current_qty}</span>
+                          {it.unit ? ` ${it.unit}` : ""} / {t("inv.ord.repoint")} {it.safety_stock}
+                          {" "}· {t("inv.ord.cost")}{" "}
                           {costMissing ? (
                             <span className="text-rose-600 font-medium">{t("inv.ord.costMissing")}</span>
                           ) : (
@@ -338,58 +405,17 @@ export default function OrdersClient({
                   </div>
                 );
               })}
+              {/* Per-supplier add — only this vendor's catalogue items
+                  (owner 2026-06-06). Sits at the bottom of the group. */}
+              {renderAddBox(supplier, "+ เพิ่มสินค้าจากผู้จำหน่ายนี้", "ค้นหาสินค้าของผู้จำหน่ายนี้…")}
             </div>
           );
         })}
 
-        {/* ── Add other items (owner 2026-06-06) ──────────────────────
-            Pull any active catalogue item into this PO even if it isn't
-            low-stock. Useful for one-off / planned purchases. */}
+        {/* Add items from a supplier NOT yet in the list (starts a new
+            vendor group). Per-supplier adds live inside each group above. */}
         <div className="border-t border-slate-100 pt-3">
-          {!showAdd ? (
-            <button type="button" onClick={() => setShowAdd(true)}
-              className="text-xs text-brand hover:underline font-medium">
-              + เพิ่มรายการอื่น (นอกเหนือจากที่ควรสั่ง)
-            </button>
-          ) : (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <input
-                  className="input text-sm flex-1"
-                  placeholder="ค้นหาสินค้าด้วยชื่อหรือรหัส…"
-                  value={addQuery}
-                  onChange={(e) => setAddQuery(e.target.value)}
-                  autoFocus
-                />
-                <button type="button"
-                  onClick={() => { setShowAdd(false); setAddQuery(""); }}
-                  className="text-xs text-slate-500 hover:underline whitespace-nowrap">
-                  ปิด
-                </button>
-              </div>
-              {addQuery.trim() && addCandidates.length === 0 && (
-                <p className="text-xs text-slate-400">ไม่พบสินค้า (อาจอยู่ในรายการด้านบนแล้ว)</p>
-              )}
-              {addCandidates.length > 0 && (
-                <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
-                  {addCandidates.map((c) => (
-                    <button type="button" key={c.id}
-                      onClick={() => addExtra(c)}
-                      className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center justify-between gap-2">
-                      <span className="text-sm min-w-0">
-                        <span className="font-medium text-slate-800">{c.name}</span>
-                        {c.item_code && <span className="ml-1 text-[11px] text-slate-400">[{c.item_code}]</span>}
-                        <span className="block text-[11px] text-slate-500">
-                          {c.supplier_name ?? t("inv.ord.noSupplier")} · {t("inv.ord.onhand")} {c.current_qty}{c.unit ? ` ${c.unit}` : ""}
-                        </span>
-                      </span>
-                      <span className="text-brand font-bold text-sm flex-shrink-0">+ เพิ่ม</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {renderAddBox(OTHER_KEY, "+ เพิ่มจากผู้จำหน่ายอื่น (ที่ยังไม่มีในรายการ)", "ค้นหาสินค้าด้วยชื่อหรือรหัส…")}
         </div>
 
         {allItems.length > 0 && (
