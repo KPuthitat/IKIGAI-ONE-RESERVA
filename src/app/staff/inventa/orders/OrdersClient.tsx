@@ -286,9 +286,12 @@ export default function OrdersClient({
                 const cost = effectiveCost(it);
                 const qty = checked ? (Number(sel[it.id]) || 0) : 0;
                 const lineTotal = qty * cost;
-                // Show which cost was used (manual vs auto) so the
-                // owner can spot when a line falls back to the
-                // moving avg and decide whether to pin a cost_price.
+                // Cost source label. cost_price = owner-pinned; else the
+                // value derived from the item's last purchase price. A
+                // zero means neither was ever entered — flag it clearly
+                // so the owner knows which items need a cost (the ฿0.00
+                // wasn't a calc bug; the purchase price is just missing).
+                const costMissing = cost <= 0;
                 const costSrc = it.cost_price != null
                   ? t("inv.ord.costSrcManual")
                   : t("inv.ord.costSrcAvg");
@@ -304,8 +307,12 @@ export default function OrdersClient({
                         {bin && <span className="ml-1 text-[11px] text-slate-400">[{bin}]</span>}
                         <span className="block text-[11px] text-slate-500">
                           {t("inv.ord.onhand")} {it.current_qty} / {t("inv.ord.repoint")} {it.safety_stock}
-                          {it.unit ? ` ${it.unit}` : ""} · {t("inv.ord.cost")} ฿{cost.toFixed(2)}
-                          <span className="text-slate-400"> ({costSrc})</span>
+                          {it.unit ? ` ${it.unit}` : ""} · {t("inv.ord.cost")}{" "}
+                          {costMissing ? (
+                            <span className="text-rose-600 font-medium">{t("inv.ord.costMissing")}</span>
+                          ) : (
+                            <>฿{cost.toFixed(2)}<span className="text-slate-400"> ({costSrc})</span></>
+                          )}
                         </span>
                       </span>
                     </label>
