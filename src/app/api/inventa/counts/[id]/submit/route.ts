@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
-import { notifyToStaffGroup } from "@/lib/line";
+import { notifyInventaGroup } from "@/lib/line";
 
 // POST /api/inventa/counts/[id]/submit — close the stock-count round.
 // Items already had current_qty updated as each line was saved, so
@@ -94,9 +94,9 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
           }
         }
       };
-      // Global routing — the shared staff group. notifyToStaffGroup
-      // falls back to per-branch internally if global isn't configured.
-      void notifyToStaffGroup(branch, flex, "global").catch((e) =>
+      // Route to the branch's INVENTA group (owner 2026-06-06); falls
+      // back to the shared global group when not configured.
+      void notifyInventaGroup(branch, flex).catch((e) =>
         console.warn("[inventa-count-submit] notify failed", e)
       );
     }

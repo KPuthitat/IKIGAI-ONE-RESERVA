@@ -15,6 +15,7 @@ import {
   notifyStaff,
   notifyToStaffGroup,
   notifyToHrGroup,
+  notifyInventaGroup,
   dailyAttendanceSummaryFlex,
   personaResignationTakenFlex,
   sendLinePush
@@ -466,7 +467,7 @@ async function runCron(): Promise<NextResponse> {
         // re-scan every 5 minutes for the rest of the day.
         markExpiryAlertSent(branch.id, todayBkk);
         if (lots.length === 0) continue;
-        await notifyToStaffGroup(branch, expiryAlertFlex(branch, lots), "branch");
+        await notifyInventaGroup(branch, expiryAlertFlex(branch, lots));
         inventaExpiryAlertsSent++;
       } catch (e) {
         console.warn("[cron] inventa expiry alert failed", branch.id, e);

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
-import { notifyToStaffGroup } from "@/lib/line";
+import { notifyInventaGroup } from "@/lib/line";
 
 // GET  /api/inventa/orders        — recent purchase orders for the
 //                                   caller's active branch.
@@ -188,7 +188,7 @@ export async function POST(req: Request) {
           }
         }
       };
-      void notifyToStaffGroup(branch, flex, "global").catch(() => {});
+      void notifyInventaGroup(branch, flex).catch(() => {});
     }
   } catch {
     /* notification must never block order creation */

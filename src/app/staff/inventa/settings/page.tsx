@@ -4,6 +4,7 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import type { InventaLookup, InventaSupplier } from "@/lib/inventa";
 import SettingsClient from "./SettingsClient";
+import InventaGroupForm from "./InventaGroupForm";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +19,10 @@ export default function InventaSettingsPage() {
   const branchId = user.activeBranchId ?? null;
 
   const branch = branchId
-    ? (db.prepare("SELECT name FROM branches WHERE id = ?")
-        .get(branchId) as { name: string } | undefined)
+    ? (db.prepare("SELECT name, inventa_group_id, inventa_group_name FROM branches WHERE id = ?")
+        .get(branchId) as {
+          name: string; inventa_group_id: string | null; inventa_group_name: string | null;
+        } | undefined)
     : undefined;
 
   if (!branchId || !branch) {
@@ -51,6 +54,11 @@ export default function InventaSettingsPage() {
         <h1 className="text-2xl font-bold text-slate-800">{t(lang, "inv.set.title")}</h1>
         <p className="text-sm text-slate-500">{t(lang, "inv.set.subtitle")}</p>
       </div>
+      <InventaGroupForm
+        branchName={branch.name}
+        groupId={branch.inventa_group_id ?? ""}
+        groupName={branch.inventa_group_name ?? ""}
+      />
       <SettingsClient
         lookups={lookups}
         suppliers={suppliers}

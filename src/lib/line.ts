@@ -3695,6 +3695,33 @@ export async function notifyToStaffGroup(
   return notifyDailyReport(branch, flex);
 }
 
+/** Push an INVENTA notification to the branch's own LINE group
+ *  (branches.inventa_group_id) via the platform OA. When the branch
+ *  hasn't configured its own group, falls back to notifyToStaffGroup
+ *  (the shared global group) so nothing is silently dropped.
+ *  (owner 2026-06-06 — clinic-specific stock notifications.) */
+export async function notifyInventaGroup(
+  branch: Branch & { inventa_group_id?: string | null },
+  flex: LineFlexMessage
+): Promise<void> {
+  const groupId = branch.inventa_group_id?.trim() || null;
+  if (groupId) {
+    const platform = getPlatformChannel();
+    const token = platform?.channel_token?.trim() ?? null;
+    if (token) {
+      try {
+        const res = await sendLinePush(token, { to: groupId, messages: [flex] });
+        if (res.ok) return;
+        console.warn(`[inventa-notify] LINE push rejected: ${res.status} ${res.error ?? ""}`);
+      } catch (e) {
+        console.warn("[inventa-notify] push threw:", e);
+      }
+    }
+    // Token missing or push failed → fall through to the global group.
+  }
+  return notifyToStaffGroup(branch, flex, "global");
+}
+
 /** Push a notification to the HR group (system_settings.recruita_exec_group_id).
  *  Used by PERSONA HR notifications: attendance summaries, leave/shift-change
  *  request alerts, and the pending-requests digest. Shares the same IKIGAI OS

@@ -1387,6 +1387,17 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN attendance_summary_sent_log TEXT");
   }
 
+  // Per-branch INVENTA LINE group (owner 2026-06-06). Stock notifications
+  // (PO approval, expiry alerts) should go to the clinic's own group, not
+  // the shared cross-branch group. NULL = fall back to the global group.
+  if (!bnames2.has("inventa_group_id")) {
+    db.exec("ALTER TABLE branches ADD COLUMN inventa_group_id TEXT");
+  }
+  // Optional display label for the INVENTA group (shown in settings UI).
+  if (!bnames2.has("inventa_group_name")) {
+    db.exec("ALTER TABLE branches ADD COLUMN inventa_group_name TEXT");
+  }
+
   // TC-4: time certification requests. Staff can't edit a clock
   // entry once the 5-min self-correction window closes — instead
   // they file a certification request here, admin reviews, on
@@ -4713,6 +4724,9 @@ export type Branch = {
   // Multiple attendance summaries (owner 2026-06-06) — routes to HR group.
   attendance_summary_times_json: string | null;     // JSON: ["08:30","17:00"]
   attendance_summary_sent_log: string | null;       // JSON: {"date":"…","sent":["08:30"]}
+  // Per-branch INVENTA LINE group (owner 2026-06-06). NULL = global group.
+  inventa_group_id: string | null;
+  inventa_group_name: string | null;
 };
 
 // Global (non-branch-scoped) configuration. Today it carries the
