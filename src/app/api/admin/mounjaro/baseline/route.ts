@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, isClinicalUnlocked } from "@/lib/auth";
-import { createPatientRecord, isMounjaroForbidden, type MjActor } from "@/lib/mounjaro-db";
+import { createPatientRecord, setEmployeeTitlePrefixByEnrollment, isMounjaroForbidden, type MjActor } from "@/lib/mounjaro-db";
 
 // POST /api/admin/mounjaro/baseline — a doctor takes a pending enrollment
 // on as their patient: records baseline + flips enrollment to active.
@@ -10,6 +10,9 @@ const Flags = z.record(z.boolean()).default({});
 const Body = z.object({
   enrollment_id: z.number().int().positive(),
   hn: z.string().max(40).optional(),
+  // คำนำหน้า — prefilled from the employee record, editable; persisted to
+  // users.title_prefix (canonical) so the prefix shows everywhere.
+  title_prefix: z.string().max(20).optional(),
   baseline: z.record(z.number()).default({}),
   // Non-numeric baseline extras (stored alongside the numeric clinical
   // values in baseline_json). bp is "120/80"; age/sex/phone are
@@ -47,6 +50,11 @@ export async function POST(req: Request) {
   const d = parsed.data;
 
   try {
+    // Persist a corrected/added title prefix to the employee record first
+    // (canonical), so the patient view + every other surface shows it.
+    if (d.title_prefix !== undefined && d.title_prefix.trim()) {
+      setEmployeeTitlePrefixByEnrollment(d.enrollment_id, d.title_prefix);
+    }
     const id = createPatientRecord(user as MjActor, d.enrollment_id, {
       hn: d.hn ?? null, baseline: mergeBaseline(d), comorbidities: d.comorbidities,
       contraindications: d.contraindications, medications: d.medications,

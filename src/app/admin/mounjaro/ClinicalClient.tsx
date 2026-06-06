@@ -17,7 +17,8 @@ type PatientRow = {
   newSelfLog: boolean;
 };
 type PendingRow = {
-  enrollment_id: number; employee_name: string; enrolled_at: string | null;
+  enrollment_id: number; employee_name: string; title_prefix: string | null;
+  enrolled_at: string | null;
   gender: string | null; dob: string | null; phone: string | null;
   height_cm: number | null; weight_kg: number | null;
 };
@@ -282,6 +283,8 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
   const only = pending.length === 1 ? pending[0] : null;
   const [enrId, setEnrId] = useState<number | "">(only ? only.enrollment_id : "");
   const [hn, setHn] = useState("");
+  // คำนำหน้า — prefilled from the employee record, editable (owner #7).
+  const [prefix, setPrefix] = useState(only?.title_prefix ?? "");
   const [age, setAge] = useState(only ? ageFromDob(only.dob) : "");
   const [sex, setSex] = useState(only ? sexFromGender(only.gender) : "หญิง");
   const [phone, setPhone] = useState(only?.phone ?? "");
@@ -305,6 +308,7 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
     setEnrId(id);
     const row = pending.find((p) => p.enrollment_id === id);
     if (!row) return;
+    setPrefix(row.title_prefix ?? "");
     setAge(ageFromDob(row.dob));
     setSex(sexFromGender(row.gender));
     setPhone(row.phone ?? "");
@@ -331,6 +335,7 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           enrollment_id: enrId, hn: hn.trim() || undefined,
+          title_prefix: prefix.trim() || undefined,
           baseline, bp: bp.trim() || undefined,
           age: age.trim() ? Number(age) : undefined,
           sex, phone: phone.trim() || undefined,
@@ -389,6 +394,15 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
               <div>
                 <label className={labelCls}>HN <span className="text-[#B91C1C]">*</span></label>
                 <input className={inputCls + " mt-1"} value={hn} onChange={(e) => setHn(e.target.value)} placeholder="เลข HN จากคลินิก" />
+              </div>
+              <div>
+                <label className={labelCls}>คำนำหน้า</label>
+                <input className={inputCls + " mt-1"} value={prefix} list="mj-prefix-list"
+                  onChange={(e) => setPrefix(e.target.value)} placeholder="เช่น นางสาว" maxLength={20} />
+                <datalist id="mj-prefix-list">
+                  <option value="นาย" /><option value="นาง" /><option value="นางสาว" />
+                  <option value="เด็กชาย" /><option value="เด็กหญิง" />
+                </datalist>
               </div>
               <div>
                 <label className={labelCls}>ชื่อ-สกุล</label>

@@ -719,15 +719,17 @@ export function listMyPatientsEnriched(actor: MjActor): Array<{
 /** Pending enrollments awaiting intake — name + date only, NO clinical
  *  data (there is none yet). Any doctor may pick one up via baseline. */
 export function listPendingIntake(actor: MjActor): Array<{
-  enrollment_id: number; employee_name: string; enrolled_at: string | null;
-  // Prefill (2026-06-04): pull what we already know about the employee so
-  // the doctor's intake form starts filled in; doctor adds the rest.
+  enrollment_id: number; employee_name: string; title_prefix: string | null;
+  enrolled_at: string | null;
+  // Prefill (2026-06-04 / prefix added 2026-06-06): pull what we already
+  // know about the employee so the doctor's intake form starts filled in.
   gender: string | null; dob: string | null; phone: string | null;
   height_cm: number | null; weight_kg: number | null;
 }> {
   requireDoctor(actor);
   const rows = getDb().prepare(`
-    SELECT e.id AS enrollment_id, u.display_name AS employee_name, e.enrolled_at,
+    SELECT e.id AS enrollment_id, u.display_name AS employee_name,
+           u.title_prefix, e.enrolled_at,
            u.gender, u.dob, u.mobile_phone AS phone, u.height_cm, u.weight_kg
     FROM mounjaro_enrollments e JOIN users u ON u.id = e.employee_id
     WHERE e.status = 'pending'
@@ -735,12 +737,25 @@ export function listPendingIntake(actor: MjActor): Array<{
       AND e.employee_confirmed_at IS NOT NULL
     ORDER BY e.enrolled_at ASC
   `).all() as Array<{
-    enrollment_id: number; employee_name: string; enrolled_at: string | null;
+    enrollment_id: number; employee_name: string; title_prefix: string | null;
+    enrolled_at: string | null;
     gender: string | null; dob: string | null; phone: string | null;
     height_cm: number | null; weight_kg: number | null;
   }>;
   audit(actor.id, "list_intake", "enrollment", null);
   return rows;
+}
+
+/** Set/correct an employee's title prefix (คำนำหน้า) — called from the
+ *  intake form so a doctor can fill a missing prefix while registering
+ *  the patient (owner 2026-06-06). Title prefix is the canonical field
+ *  on users, used everywhere via nameWithPrefix. */
+export function setEmployeeTitlePrefixByEnrollment(enrollmentId: number, prefix: string): void {
+  const db = getDb();
+  const enr = db.prepare("SELECT employee_id FROM mounjaro_enrollments WHERE id = ?")
+    .get(enrollmentId) as { employee_id: number } | undefined;
+  if (!enr) return;
+  db.prepare("UPDATE users SET title_prefix = ? WHERE id = ?").run(prefix.trim() || null, enr.employee_id);
 }
 
 /** Full bundle for ONE of the doctor's own patients (patient + visits +
