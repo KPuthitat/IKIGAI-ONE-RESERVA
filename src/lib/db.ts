@@ -4898,6 +4898,7 @@ export type ShiftCode = {
   display_order: number;
   active: number;
   created_at: string;
+  kind: "work" | "day_off";   // 'work' shift vs explicit day-off marker
 };
 
 export type RosterPosition = {

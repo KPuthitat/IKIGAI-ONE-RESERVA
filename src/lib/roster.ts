@@ -368,6 +368,58 @@ export function monthlyLateStatsRoster(
   };
 }
 
+// ── Shift-change approval helpers (owner 2026-06-06) ─────────────
+// Approving a shift-change request writes straight into the roster.
+// These read helpers feed the approval modal: the staff's regular
+// position, which positions are free on the target date, the staff's
+// existing slot on a swap's off-date, and a default work shift.
+
+/** The position this user is assigned to most often (their "ตำแหน่งประจำ"),
+ *  or null if they've never been rostered. Used as the default slot
+ *  when approving an extra-shift/swap request. */
+export function getRegularPositionId(branchId: number, userId: number): number | null {
+  const row = getDb().prepare(`
+    SELECT position_id, COUNT(*) AS n
+    FROM roster_assignments
+    WHERE branch_id = ? AND user_id = ?
+    GROUP BY position_id
+    ORDER BY n DESC, MAX(assignment_date) DESC
+    LIMIT 1
+  `).get(branchId, userId) as { position_id: number; n: number } | undefined;
+  return row?.position_id ?? null;
+}
+
+/** position_ids already filled on a given date (the occupied slots). */
+export function occupiedPositionIdsOnDate(branchId: number, date: string): number[] {
+  const rows = getDb().prepare(`
+    SELECT DISTINCT position_id FROM roster_assignments
+    WHERE branch_id = ? AND assignment_date = ?
+  `).all(branchId, date) as Array<{ position_id: number }>;
+  return rows.map((r) => r.position_id);
+}
+
+/** The user's roster slot (position_id) on a date, or null. Used to
+ *  clear a swap's off-date. Returns the first if multiple. */
+export function userPositionOnDate(branchId: number, userId: number, date: string): number | null {
+  const row = getDb().prepare(`
+    SELECT position_id FROM roster_assignments
+    WHERE branch_id = ? AND user_id = ? AND assignment_date = ?
+    ORDER BY position_id ASC LIMIT 1
+  `).get(branchId, userId, date) as { position_id: number } | undefined;
+  return row?.position_id ?? null;
+}
+
+/** A sensible default WORK shift code id for the branch (first active
+ *  'work' shift by display order), or null when none configured. */
+export function defaultWorkShiftCodeId(branchId: number): number | null {
+  const row = getDb().prepare(`
+    SELECT id FROM shift_codes
+    WHERE branch_id = ? AND active = 1 AND kind = 'work'
+    ORDER BY display_order ASC, id ASC LIMIT 1
+  `).get(branchId) as { id: number } | undefined;
+  return row?.id ?? null;
+}
+
 // ── Writes ───────────────────────────────────────────────────────
 
 export function upsertAssignment(args: {
