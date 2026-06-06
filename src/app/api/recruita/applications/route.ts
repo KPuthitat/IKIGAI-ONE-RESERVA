@@ -69,8 +69,10 @@ const Payload = z.object({
    *  IKIGAI Recruit OA). Web-form applicants send null. Capturing
    *  here lets the stage-change push reach the candidate directly. */
   line_user_id: z.string().max(80).nullable().optional(),
-  // Identity
-  title_prefix: z.string().max(20).optional().default(""),
+  // Identity — คำนำหน้า is mandatory at the source (owner #9 2026-06-06)
+  // so every candidate (and the employee they become on hire) carries a
+  // title prefix from day one.
+  title_prefix: z.string().trim().min(1).max(20),
   first_name_th: z.string().trim().min(1).max(80),
   last_name_th: z.string().trim().min(1).max(80),
   first_name_en: z.string().max(80).optional().default(""),

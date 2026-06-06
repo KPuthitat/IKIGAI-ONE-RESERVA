@@ -109,9 +109,25 @@ export default function ProfileForm({
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // คำนำหน้า is mandatory (owner #9). Highlight the field when the
+  // employee tries to save without choosing one.
+  const [prefixError, setPrefixError] = useState(false);
+  const prefixMissing = !f.title_prefix.trim();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    // Title prefix is required for everyone — block the save and point
+    // the employee at the empty field rather than writing a NULL prefix.
+    if (prefixMissing) {
+      setPrefixError(true);
+      setMsg({ kind: "err", text: t("staff.persona.profile.prefixRequired") });
+      setTimeout(() => {
+        document.querySelector('[data-prefix-field="true"]')
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 60);
+      return;
+    }
+    setPrefixError(false);
     setBusy(true); setMsg(null);
     try {
       const body: Record<string, unknown> = {
@@ -193,19 +209,31 @@ export default function ProfileForm({
         </div>
       )}
 
+      {/* Nudge existing employees to set their คำนำหน้า — we do NOT
+          backfill prefixes automatically (owner #9). Shown only when
+          the employee can actually edit their own profile. */}
+      {!adminMode && !locked && prefixMissing && (
+        <div className="card bg-sky-50 border-sky-200 text-sm text-sky-800">
+          {t("staff.persona.profile.prefixPrompt")}
+        </div>
+      )}
+
       {/* ── Personal ───────────────────────────────────────── */}
       <Section title={t("staff.persona.profile.section.personal")}>
         <Grid>
-          <Field label={t("staff.persona.profile.field.titlePrefix")}>
-            <select className="input" value={f.title_prefix} disabled={locked}
-              onChange={(e) => update("title_prefix", e.target.value)}>
-              <option value="">—</option>
-              <option value="นาย">นาย</option>
-              <option value="นาง">นาง</option>
-              <option value="นางสาว">นางสาว</option>
-              <option value="ดร.">ดร.</option>
-              <option value="อื่นๆ">อื่นๆ</option>
-            </select>
+          <Field label={t("staff.persona.profile.field.titlePrefix") + " *"}>
+            <div data-prefix-field="true"
+              className={prefixError && prefixMissing ? "rounded-lg ring-2 ring-rose-400" : ""}>
+              <select className="input" value={f.title_prefix} disabled={locked}
+                onChange={(e) => { update("title_prefix", e.target.value); if (e.target.value.trim()) setPrefixError(false); }}>
+                <option value="">—</option>
+                <option value="นาย">นาย</option>
+                <option value="นาง">นาง</option>
+                <option value="นางสาว">นางสาว</option>
+                <option value="ดร.">ดร.</option>
+                <option value="อื่นๆ">อื่นๆ</option>
+              </select>
+            </div>
           </Field>
           <Field label={t("staff.persona.profile.field.gender")}>
             <select className="input" value={f.gender} disabled

@@ -151,6 +151,13 @@ const EMPTY_REF: ReferenceRow = { name: "", relationship: "", phone: "" };
 type FieldCfg = Record<string, { enabled: boolean; required: boolean; label: string; label_en: string }>;
 const FieldCfgContext = createContext<FieldCfg>({});
 
+// Fields the business ALWAYS requires, regardless of what the admin form
+// template says (owner #9 2026-06-06: คำนำหน้า must be captured at the
+// source so every employee record carries the title prefix from day one).
+// These render with a "*" and block submit even if the template tried to
+// hide or un-require them.
+const ALWAYS_REQUIRED_FIELDS: ReadonlySet<string> = new Set(["title_prefix"]);
+
 // Simple string-valued FormState fields the template can mark required —
 // used to compute the missing-required (red border) set on submit.
 const STRING_FIELD_KEYS: ReadonlyArray<keyof FormState> = [
@@ -418,7 +425,8 @@ export default function ApplyClient({
     const miss = new Set<string>();
     for (const key of STRING_FIELD_KEYS) {
       const c = fieldCfg[key];
-      if (!c || !c.enabled || !c.required) continue; // only enabled+required count
+      const forced = ALWAYS_REQUIRED_FIELDS.has(key as string);
+      if (!forced && (!c || !c.enabled || !c.required)) continue; // only enabled+required (or forced) count
       const v = f[key];
       if (typeof v === "string" && !v.trim()) miss.add(key as string);
     }
@@ -1112,15 +1120,18 @@ function Field({
   const { lang } = useLang();
   const cfg = useContext(FieldCfgContext);
   const c = k ? cfg[k] : undefined;
-  // Hidden by the template → render nothing.
-  if (k && c && !c.enabled) return null;
+  // Some fields are always required by the business regardless of the
+  // admin template — they can't be hidden or un-starred (owner #9).
+  const forced = k ? ALWAYS_REQUIRED_FIELDS.has(k) : false;
+  // Hidden by the template → render nothing (unless forced-required).
+  if (k && c && !c.enabled && !forced) return null;
   // Template fields are bilingual (label_en); fall back to the Thai
   // label then the call-site `fb` if a translation is missing.
   const tplLabel = c
     ? (lang === "en" ? (c.label_en?.trim() || c.label?.trim()) : c.label?.trim())
     : "";
   const shownLabel = k
-    ? ((tplLabel || fb || "") + (c?.required ? " *" : ""))
+    ? ((tplLabel || fb || "") + ((c?.required || forced) ? " *" : ""))
     : (label ?? "");
   return (
     <div data-invalid={invalid ? "true" : undefined}>

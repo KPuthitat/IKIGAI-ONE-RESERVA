@@ -73,6 +73,13 @@ export async function PATCH(req: Request) {
   }
   const data = parsed.data;
 
+  // คำนำหน้า is mandatory (owner #9): never let a self-edit blank it out.
+  // Only enforced when the field is actually present in the payload so an
+  // unrelated partial PATCH isn't rejected.
+  if ("title_prefix" in data && !(data.title_prefix ?? "").trim()) {
+    return NextResponse.json({ error: "prefix_required" }, { status: 400 });
+  }
+
   const fields: string[] = [];
   const vals: Array<string | number | null> = [];
   function addStr<K extends keyof typeof data>(k: K) {
