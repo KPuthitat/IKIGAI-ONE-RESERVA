@@ -307,6 +307,13 @@ export async function notifyHrLeaveRequest(requestId: number): Promise<void> {
             { type: "text", text: `${label} · ${range} (${row.days} วัน)`, size: "sm", color: "#555555", wrap: true },
             ...(row.ref_no ? [{ type: "text" as const, text: row.ref_no, size: "xxs" as const, color: "#9a9a9a" }] : [])
           ]
+        },
+        footer: {
+          type: "box", layout: "vertical", paddingAll: "12px",
+          contents: [{
+            type: "button", style: "primary", color: "#0F1B33", height: "sm",
+            action: { type: "uri", label: "เปิดเพื่ออนุมัติ", uri: `${PUBLIC_BASE}/admin/persona/leave?focus=${requestId}` }
+          }]
         }
       }
     });
@@ -337,6 +344,13 @@ export async function notifyHrShiftRequest(params: {
             { type: "text", text: `${kindLabel} · ${detail}`, size: "sm", color: "#555555", wrap: true },
             ...(params.refNo ? [{ type: "text" as const, text: params.refNo, size: "xxs" as const, color: "#9a9a9a" }] : [])
           ]
+        },
+        footer: {
+          type: "box", layout: "vertical", paddingAll: "12px",
+          contents: [{
+            type: "button", style: "primary", color: "#1a2b50", height: "sm",
+            action: { type: "uri", label: "เปิดเพื่ออนุมัติ", uri: `${PUBLIC_BASE}/admin/persona/shift-requests` }
+          }]
         }
       }
     });

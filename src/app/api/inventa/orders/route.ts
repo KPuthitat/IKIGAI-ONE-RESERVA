@@ -154,6 +154,12 @@ export async function POST(req: Request) {
       });
       const grandTotal = validLines.reduce((s, l) =>
         s + l.order_qty * effectiveCost(itemById.get(l.item_id)!), 0);
+      // Deep link straight to the approval page. A single PO opens its
+      // detail; multiple POs open the orders list (each approved there).
+      const base = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
+      const approveUrl = createdIds.length === 1
+        ? `${base}/staff/inventa/orders/${createdIds[0]}`
+        : `${base}/staff/inventa/orders`;
       const flex = {
         type: "flex" as const,
         altText: `ขออนุมัติสั่งซื้อ ${createdIds.length} ใบ · ${branch.name}`,
@@ -171,7 +177,13 @@ export async function POST(req: Request) {
                 { type: "text", text: "รวมทั้งหมด (ทุน)", size: "sm", color: "#555555", flex: 3 },
                 { type: "text", text: `฿${grandTotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`, size: "sm", weight: "bold", align: "end", flex: 2 }
               ]},
-              { type: "text", text: `ผู้ขอ: ${user.display_name} — เปิดในระบบเพื่ออนุมัติ`, size: "xs", color: "#888888", margin: "md", wrap: true }
+              { type: "text", text: `ผู้ขอ: ${user.display_name}`, size: "xs", color: "#888888", margin: "md", wrap: true }
+            ]
+          },
+          footer: {
+            type: "box", layout: "vertical", contents: [
+              { type: "button", style: "primary", color: "#1a1a2e", height: "sm",
+                action: { type: "uri", label: "เปิดเพื่ออนุมัติ", uri: approveUrl } }
             ]
           }
         }
