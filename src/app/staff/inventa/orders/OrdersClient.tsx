@@ -113,6 +113,28 @@ export default function OrdersClient({
     for (const it of lowStock) all[it.id] = String(suggested(it) || 1);
     setSel(all);
   }
+  // Per-supplier select/clear (owner 2026-06-06) — lets staff issue a PO
+  // for just some suppliers now and come back for the rest later. When
+  // every item in the group is already selected, clicking clears the
+  // group; otherwise it selects all of them.
+  function supplierState(items: LowStockItem[]): "all" | "some" | "none" {
+    const picked = items.filter((it) => it.id in sel).length;
+    if (picked === 0) return "none";
+    if (picked === items.length) return "all";
+    return "some";
+  }
+  function toggleSupplier(items: LowStockItem[]) {
+    setSel((p) => {
+      const next = { ...p };
+      const allPicked = items.every((it) => it.id in next);
+      if (allPicked) {
+        for (const it of items) delete next[it.id];
+      } else {
+        for (const it of items) next[it.id] = next[it.id] ?? String(suggested(it) || 1);
+      }
+      return next;
+    });
+  }
 
   const chosen = Object.entries(sel)
     .map(([id, q]) => ({ item_id: Number(id), order_qty: Number(q) }))
@@ -198,13 +220,26 @@ export default function OrdersClient({
 
         {groups.map(([supplier, items]) => {
           const subtotal = totalsBySupplier.get(supplier) ?? 0;
+          const supState = supplierState(items);
           return (
             <div key={supplier} className="space-y-1.5">
               <div className="flex items-center justify-between gap-2 bg-ink-gradient text-white rounded-lg px-3 py-2 mt-1">
-                <div className="text-sm font-bold truncate">
-                  {supplier}
-                  <span className="ml-2 text-[11px] font-normal text-white/70">{items.length} รายการ</span>
-                </div>
+                {/* Per-supplier checkbox — select/clear the whole vendor so
+                    staff can issue a PO for just some suppliers now and
+                    defer the rest (owner 2026-06-06). */}
+                <label className="flex items-center gap-2 min-w-0 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={supState === "all"}
+                    ref={(el) => { if (el) el.indeterminate = supState === "some"; }}
+                    onChange={() => toggleSupplier(items)}
+                    className="flex-shrink-0"
+                  />
+                  <span className="text-sm font-bold truncate">
+                    {supplier}
+                    <span className="ml-2 text-[11px] font-normal text-white/70">{items.length} รายการ</span>
+                  </span>
+                </label>
                 {subtotal > 0 && (
                   <div className="text-xs font-bold flex-shrink-0">
                     {fmtBaht(subtotal)}
