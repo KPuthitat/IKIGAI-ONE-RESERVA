@@ -367,7 +367,7 @@ export default function CountClient({
             })}
           </div>
           {categories.length > 0 && (
-            <select className="input !w-auto text-sm" value={catFilter}
+            <select className="input !w-auto max-w-[42vw] sm:max-w-none text-sm" value={catFilter}
               onChange={(e) => setCatFilter(e.target.value)}>
               <option value="">ทุกหมวด</option>
               {categories.map((c) => <option key={c} value={c}>{c}</option>)}
