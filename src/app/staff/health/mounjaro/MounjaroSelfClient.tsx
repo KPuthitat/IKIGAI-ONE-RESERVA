@@ -3,6 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import {
+  EXERCISE_CATALOG, EXERCISE_LEVELS, RPE_SCALE, getActivity, kcalEstimate,
+  levelLabel, rpeLabel, type ExerciseLevel
+} from "@/lib/exercise-catalog";
 
 // Mounjaro Employee Wellness — employee self-service. Thai (official),
 // mobile-first (the self-log is meant to be filled on a phone).
@@ -28,6 +32,16 @@ type SelfLog = {
 };
 type ConsentInfo = { needed: boolean; version: string | null; body: string | null };
 type AuditEntry = { action: string; by_name: string | null; created_at: string };
+type ExLog = {
+  id: number; date: string; activity_id: string; level: string;
+  duration_min: number; met: number; rpe: number;
+  kcal_est: number | null; low_energy_flag: boolean;
+};
+type ExSummary = {
+  days: number; totalMin: number; totalKcal: number | null;
+  avgRpe: number | null; streak: number; flagCount: number;
+};
+type ExerciseData = { logs: ExLog[]; summary: ExSummary };
 
 const SIDE_EFFECTS: ReadonlyArray<{ key: string; label: string }> = [
   { key: "nausea", label: "คลื่นไส้" },
@@ -51,9 +65,10 @@ function daysUntil(iso: string | null): number | null {
 }
 
 export default function MounjaroSelfClient({
-  enrollment, patient, visits, selfLogs, consent, audit, hasPin, facility
+  enrollment, patient, visits, selfLogs, exercise, consent, audit, hasPin, facility
 }: {
   enrollment: Enrollment; patient: Patient; visits: Visit[]; selfLogs: SelfLog[];
+  exercise: ExerciseData;
   consent: ConsentInfo; audit: AuditEntry[];
   /** Whether the employee has a 4-digit PIN set (everyone onboarded does).
    *  Drives the PIN field in the destructive-action confirm modal. */
@@ -149,7 +164,7 @@ export default function MounjaroSelfClient({
 
       {/* ── ACTIVE — full view ── */}
       {status === "active" && !isInvited && !isConfirmedPending && (
-        <ActiveView patient={patient} visits={visits} selfLogs={selfLogs}
+        <ActiveView patient={patient} visits={visits} selfLogs={selfLogs} exercise={exercise}
           busy={busy} setBusy={setBusy} setMsg={setMsg}
           pendingAction={enrollment?.pendingAction ?? null}
           onRequestDestructive={(a) => { setMsg(null); setDestructive(a); }} />
@@ -374,9 +389,9 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function ActiveView({
-  patient, visits, selfLogs, busy, setBusy, setMsg, pendingAction, onRequestDestructive
+  patient, visits, selfLogs, exercise, busy, setBusy, setMsg, pendingAction, onRequestDestructive
 }: {
-  patient: Patient; visits: Visit[]; selfLogs: SelfLog[];
+  patient: Patient; visits: Visit[]; selfLogs: SelfLog[]; exercise: ExerciseData;
   busy: string | null; setBusy: (s: string | null) => void;
   setMsg: (m: { kind: "ok" | "err"; text: string } | null) => void;
   pendingAction: "withdraw" | "erase" | null;
@@ -532,6 +547,10 @@ function ActiveView({
         </button>
       </div>
 
+      {/* Exercise log (owner #11-16) */}
+      <ExerciseSection exercise={exercise} baselineWeight={baseW} today={today}
+        busy={busy} setBusy={setBusy} setMsg={setMsg} />
+
       {/* Baseline + visit history (read-only) */}
       <div className="card space-y-2">
         <h2 className="font-bold text-slate-800 text-sm">ข้อมูลการรักษา (ดูอย่างเดียว)</h2>
@@ -641,6 +660,210 @@ function Stat({ label, value, sub, accent }: {
       <div className="text-[11px] text-slate-500">{label}</div>
       <div className={`text-lg font-bold mt-0.5 ${c}`}>{value}</div>
       {sub && <div className="text-[10px] text-slate-400 font-mono">{sub}</div>}
+    </div>
+  );
+}
+
+// ── Exercise log (owner #11-16) ─────────────────────────────────────
+// Pick an intensity level → choose an activity → enter duration + a
+// mandatory RPE (Borg CR10) → save. Energy is shown ONLY as an estimate
+// and only when we have a baseline weight; there is no target/deficit.
+function ExerciseSection({
+  exercise, baselineWeight, today, busy, setBusy, setMsg
+}: {
+  exercise: ExerciseData; baselineWeight: number | null; today: string;
+  busy: string | null; setBusy: (s: string | null) => void;
+  setMsg: (m: { kind: "ok" | "err"; text: string } | null) => void;
+}) {
+  const router = useRouter();
+  const { logs, summary } = exercise;
+  const [level, setLevel] = useState<ExerciseLevel>("light");
+  const [activityId, setActivityId] = useState<string>("");
+  const [date, setDate] = useState(today);
+  const [duration, setDuration] = useState<string>("");
+  const [rpe, setRpe] = useState<number | null>(null);
+
+  const activity = activityId ? getActivity(activityId) : null;
+  const durationNum = duration.trim() === "" ? 0 : Number(duration);
+  const kcalPreview = activity
+    ? kcalEstimate(activity.met, baselineWeight, durationNum)
+    : null;
+
+  function pickActivity(id: string) {
+    setActivityId(id);
+    const a = getActivity(id);
+    setDuration(a ? String(a.defaultMin) : "");
+    setRpe(null);
+  }
+
+  const canSave = !!activity && durationNum >= 1 && rpe != null && busy === null;
+
+  async function save() {
+    if (!activity || rpe == null) { setMsg({ kind: "err", text: "เลือกกิจกรรมและระดับความเหนื่อย (RPE)" }); return; }
+    if (!(durationNum >= 1)) { setMsg({ kind: "err", text: "กรอกระยะเวลาเป็นนาที" }); return; }
+    setBusy("exercise"); setMsg(null);
+    try {
+      const res = await fetch(apiUrl("/api/mounjaro/exercise-log"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, activity_id: activity.id, duration_min: Math.round(durationNum), rpe })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        setMsg({ kind: "err", text: j.error === "not_active" ? "บันทึกได้เฉพาะผู้ที่อยู่ในโครงการ" : "บันทึกไม่สำเร็จ" });
+        return;
+      }
+      setMsg({ kind: "ok", text: "บันทึกกิจกรรมเรียบร้อย" });
+      setActivityId(""); setDuration(""); setRpe(null);
+      router.refresh();
+    } finally { setBusy(null); }
+  }
+
+  async function remove(id: number) {
+    setBusy("exercise"); setMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/mounjaro/exercise-log?id=${id}`), { method: "DELETE" });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.ok) router.refresh();
+    } finally { setBusy(null); }
+  }
+
+  const activitiesForLevel = EXERCISE_CATALOG.filter((a) => a.level === level);
+
+  return (
+    <div className="card space-y-3">
+      <div>
+        <h2 className="font-bold text-slate-800 text-sm">บันทึกการออกกำลังกาย</h2>
+        <p className="text-[11px] text-slate-500 mt-0.5">
+          เลือกระดับและกิจกรรมของวันนี้ แล้วประเมินความเหนื่อย (RPE) — บันทึกได้หลายกิจกรรมต่อวัน
+        </p>
+      </div>
+
+      {/* Weekly summary (#14) */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        <ExStat label="วันที่ออกกำลัง" value={`${summary.days} วัน`} />
+        <ExStat label="เวลารวม" value={`${summary.totalMin} นาที`} />
+        <ExStat label="พลังงานโดยประมาณ"
+          value={summary.totalKcal != null ? `~${summary.totalKcal.toLocaleString("th-TH")} kcal` : "—"} />
+        <ExStat label="RPE เฉลี่ย" value={summary.avgRpe != null ? String(summary.avgRpe) : "—"} />
+        <ExStat label="ต่อเนื่อง (streak)" value={`${summary.streak} วัน`} accent="emerald" />
+      </div>
+      <p className="text-[10px] text-slate-400 -mt-1">สรุป 7 วันล่าสุด · พลังงานเป็นค่าโดยประมาณเท่านั้น ไม่ใช่เป้าหมาย</p>
+
+      {/* Level tabs (#11) */}
+      <div className="flex gap-2">
+        {EXERCISE_LEVELS.map((l) => (
+          <button key={l.key} type="button"
+            onClick={() => { setLevel(l.key); setActivityId(""); setRpe(null); }}
+            className={`flex-1 py-2 rounded-lg text-sm font-bold border transition ${
+              level === l.key ? "bg-brand text-white border-brand" : "border-slate-300 text-slate-600"}`}>
+            {l.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Activity chips for the chosen level */}
+      <div className="flex flex-wrap gap-2">
+        {activitiesForLevel.map((a) => (
+          <button key={a.id} type="button" onClick={() => pickActivity(a.id)}
+            className={`text-xs px-3 py-2 rounded-lg border ${
+              activityId === a.id
+                ? "bg-brand/10 border-brand text-brand font-bold"
+                : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            {a.name}
+          </button>
+        ))}
+      </div>
+
+      {/* Selected activity → duration + RPE + estimate (#12, #13) */}
+      {activity && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
+          <div className="font-bold text-slate-800 text-sm">{activity.name}</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">วันที่</label>
+              <input type="date" className="input" value={date} max={today} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">ระยะเวลา (นาที)</label>
+              <input type="number" inputMode="numeric" min="1" max="600" className="input"
+                value={duration} onChange={(e) => setDuration(e.target.value)} placeholder={String(activity.defaultMin)} />
+            </div>
+          </div>
+
+          <div>
+            <label className="label">ระดับความเหนื่อย (RPE 0–10) *</label>
+            <div className="grid grid-cols-11 gap-1">
+              {RPE_SCALE.map((r) => (
+                <button key={r.value} type="button" onClick={() => setRpe(r.value)}
+                  className={`py-1.5 rounded-md text-xs font-bold border ${
+                    rpe === r.value ? "bg-brand text-white border-brand" : "border-slate-300 text-slate-600"}`}>
+                  {r.value}
+                </button>
+              ))}
+            </div>
+            <p className={`text-[11px] mt-1 ${rpe == null ? "text-rose-500 font-semibold" : "text-slate-500"}`}>
+              {rpe == null ? "กรุณาเลือกระดับความเหนื่อย (จำเป็น)" : `${rpe} — ${rpeLabel(rpe)}`}
+            </p>
+          </div>
+
+          {/* Approximate energy (#13) — only when baseline weight is known */}
+          {baselineWeight != null ? (
+            <div className="text-sm text-slate-700">
+              พลังงานโดยประมาณ:{" "}
+              <b className="text-brand">
+                {kcalPreview != null ? `~${Math.round(kcalPreview).toLocaleString("th-TH")} kcal` : "—"}
+              </b>
+              <span className="text-[10px] text-slate-400"> (ประมาณการจากน้ำหนักเริ่มต้น ไม่ใช่ค่าจริง)</span>
+            </div>
+          ) : (
+            <p className="text-[11px] text-slate-400">ยังไม่มีน้ำหนักเริ่มต้นในระบบ จึงยังไม่แสดงพลังงานโดยประมาณ</p>
+          )}
+
+          <button type="button" disabled={!canSave} onClick={save}
+            className="btn-primary w-full py-2.5 disabled:opacity-50">
+            {busy === "exercise" ? "กำลังบันทึก…" : "บันทึกกิจกรรม"}
+          </button>
+        </div>
+      )}
+
+      {/* Recent logged activities */}
+      {logs.length > 0 && (
+        <div className="space-y-1.5 pt-1">
+          <div className="text-xs font-bold text-slate-600">กิจกรรมที่บันทึกล่าสุด</div>
+          {logs.slice(0, 12).map((l) => {
+            const a = getActivity(l.activity_id);
+            return (
+              <div key={l.id} className="flex items-center justify-between gap-2 text-xs border-b last:border-0 pb-1.5">
+                <div className="min-w-0">
+                  <span className="font-mono text-slate-500">{l.date}</span>{" "}
+                  · <span className="text-slate-700">{a?.name ?? l.activity_id}</span>{" "}
+                  <span className="text-[10px] text-slate-400">({levelLabel(l.level)})</span>
+                  <div className="text-[11px] text-slate-500">
+                    {l.duration_min} นาที · RPE {l.rpe}
+                    {l.kcal_est != null && <> · ~{l.kcal_est.toLocaleString("th-TH")} kcal</>}
+                    {l.low_energy_flag && (
+                      <span className="ml-1 text-amber-600">· ออกแรงเบาแต่เหนื่อยมาก</span>
+                    )}
+                  </div>
+                </div>
+                <button type="button" disabled={busy !== null} onClick={() => remove(l.id)}
+                  className="text-[11px] text-rose-500 hover:underline disabled:opacity-50 flex-shrink-0">
+                  ลบ
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExStat({ label, value, accent }: { label: string; value: string; accent?: "emerald" }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center">
+      <div className="text-[10px] text-slate-500 leading-tight">{label}</div>
+      <div className={`text-sm font-bold mt-0.5 ${accent === "emerald" ? "text-emerald-700" : "text-slate-800"}`}>{value}</div>
     </div>
   );
 }

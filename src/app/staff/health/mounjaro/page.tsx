@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { hasAdminPin } from "@/lib/admin-pin";
 import {
   getMyEnrollment, getMyClinical, getMySelfLogs, getActiveConsent,
-  getMyAuditTrail, type MjActor
+  getMyAuditTrail, getMyExercise, type MjActor
 } from "@/lib/mounjaro-db";
 import { getDefaultHealthFacility, facilityName, facilityLogo } from "@/lib/health-facility";
 import MounjaroSelfClient from "./MounjaroSelfClient";
@@ -26,6 +26,9 @@ export default function MounjaroSelfPage() {
   const enr = getMyEnrollment(actor);
   const clinical = enr ? getMyClinical(actor) : { patient: null, visits: [] };
   const selfLogs = enr ? getMySelfLogs(actor) : [];
+  const exercise = enr && enr.status === "active"
+    ? getMyExercise(actor)
+    : { logs: [], summary: { days: 0, totalMin: 0, totalKcal: null, avgRpe: null, streak: 0, flagCount: 0 } };
 
   const p = clinical.patient;
   const baseline = parseJson<Record<string, number>>(p?.baseline_json, {});
@@ -91,6 +94,7 @@ export default function MounjaroSelfPage() {
       patient={patient}
       visits={visits}
       selfLogs={logs}
+      exercise={exercise}
       consent={{ needed: needsConsent, version: activeConsent?.version ?? null, body: activeConsent?.body ?? null }}
       audit={audit}
       hasPin={hasAdminPin(user.id)}
