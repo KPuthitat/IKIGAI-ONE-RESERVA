@@ -37,9 +37,8 @@ export default function LoginPage({
             ariaLabel="IKIGAI OS PORTAL"
             className="mx-auto block"
           />
-          <div className="brand-wordmark text-slate-800 text-[32px] leading-none">
-            IKIGAI OS PORTAL
-          </div>
+          {/* Program wordmark removed per owner 2026-06-06 — the owl
+              alone heads the login card. */}
 
           {/* Form lives inside the same card — keeps the visual
               footprint single instead of stacking "title card" +
