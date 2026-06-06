@@ -3054,10 +3054,32 @@ function runMigrations(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Exercise log (owner #11-16, 2026-06-06). One row per activity the
+    -- participant self-records (multiple per day allowed). met/level are
+    -- snapshotted from exerciseCatalog at log time so historical rows are
+    -- stable even if the catalog changes. kcal_est is NULL when we have no
+    -- baseline weight (shown as "—", never invented).
+    CREATE TABLE IF NOT EXISTS mounjaro_exercise_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      enrollment_id INTEGER NOT NULL
+        REFERENCES mounjaro_enrollments(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      activity_id TEXT NOT NULL,
+      level TEXT NOT NULL,
+      duration_min INTEGER NOT NULL,
+      met REAL NOT NULL,
+      rpe INTEGER NOT NULL,
+      kcal_est REAL,
+      source TEXT NOT NULL DEFAULT 'self-select',
+      logged_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE INDEX IF NOT EXISTS idx_mj_enroll_employee ON mounjaro_enrollments(employee_id);
     CREATE INDEX IF NOT EXISTS idx_mj_patient_doctor  ON mounjaro_patients(attending_doctor_id);
     CREATE INDEX IF NOT EXISTS idx_mj_visit_patient   ON mounjaro_visits(patient_id);
     CREATE INDEX IF NOT EXISTS idx_mj_selflog_enroll  ON mounjaro_self_logs(enrollment_id);
+    CREATE INDEX IF NOT EXISTS idx_mj_exlog_enroll    ON mounjaro_exercise_logs(enrollment_id, date DESC);
     CREATE INDEX IF NOT EXISTS idx_mj_audit_user      ON mounjaro_audit_log(user_id, created_at DESC);
 
     -- HR / management aggregate view — NO row identifies a person.

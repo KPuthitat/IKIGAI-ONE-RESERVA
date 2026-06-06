@@ -21,6 +21,7 @@
 import { getDb } from "./db";
 import { computeAlerts, type Alert } from "./mounjaro-alerts";
 import { nameWithPrefix } from "./name";
+import { getActivity, kcalEstimate, isLowEnergyFlag } from "./exercise-catalog";
 
 function pj<T>(s: unknown, fallback: T): T {
   if (typeof s !== "string") return fallback;
@@ -385,6 +386,166 @@ export function getMySelfLogs(actor: MjActor): Array<Record<string, unknown>> {
   return getDb().prepare(
     "SELECT * FROM mounjaro_self_logs WHERE enrollment_id = ? ORDER BY date DESC, id DESC"
   ).all(enr.id) as Array<Record<string, unknown>>;
+}
+
+// ── Exercise log (owner #11-16, 2026-06-06) ─────────────────────────
+// Self-recorded physical activity. The employee picks an activity from
+// the static exerciseCatalog, enters duration + a mandatory RPE; we
+// snapshot met/level and compute an APPROXIMATE energy figure from their
+// baseline weight (null when unknown). Multiple activities per day are
+// allowed. Doctor reads are doctor-scoped; HR only ever sees aggregates.
+
+export type ExerciseLogRow = {
+  id: number; date: string; activity_id: string; level: string;
+  duration_min: number; met: number; rpe: number;
+  kcal_est: number | null; low_energy_flag: boolean;
+};
+export type ExerciseSummary = {
+  days: number; totalMin: number; totalKcal: number | null;
+  avgRpe: number | null; streak: number; flagCount: number;
+};
+
+function bkkToday(): string {
+  return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+}
+
+/** Baseline weight (kg) for an enrollment's patient record, or null. Used
+ *  only for the approximate energy figure — never invented. */
+function baselineWeightForEnrollment(enrollmentId: number): number | null {
+  const row = getDb().prepare(
+    "SELECT baseline_json FROM mounjaro_patients WHERE enrollment_id = ? AND deleted_at IS NULL"
+  ).get(enrollmentId) as { baseline_json: string | null } | undefined;
+  if (!row) return null;
+  const b = pj<Record<string, number>>(row.baseline_json, {});
+  const w = b.weight;
+  return typeof w === "number" && w > 0 ? w : null;
+}
+
+/** Employee logs one activity. met/level come from the catalog (not the
+ *  client) so they can't be spoofed. kcal is computed from baseline
+ *  weight at log time and frozen on the row. */
+export function addExerciseLog(actor: MjActor, data: {
+  date: string; activityId: string; durationMin: number; rpe: number;
+}): void {
+  const enr = getMyEnrollment(actor);
+  if (!enr || enr.status !== "active") throw new MounjaroForbidden("not_active");
+  const act = getActivity(data.activityId);
+  if (!act) throw new MounjaroForbidden("unknown_activity");
+  const weight = baselineWeightForEnrollment(enr.id);
+  const kcal = kcalEstimate(act.met, weight, data.durationMin);
+  getDb().prepare(`
+    INSERT INTO mounjaro_exercise_logs
+      (enrollment_id, date, activity_id, level, duration_min, met, rpe, kcal_est, source, logged_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'self-select', ?)
+  `).run(
+    enr.id, data.date, act.id, act.level, data.durationMin, act.met, data.rpe,
+    kcal == null ? null : Math.round(kcal), actor.id
+  );
+  audit(actor.id, "exercise_log", "enrollment", enr.id);
+}
+
+/** Delete one of the actor's OWN exercise rows (corrections). Scoped to
+ *  the actor's enrollment so nobody can delete another participant's row. */
+export function deleteMyExerciseLog(actor: MjActor, id: number): boolean {
+  const enr = getMyEnrollment(actor);
+  if (!enr) return false;
+  const res = getDb().prepare(
+    "DELETE FROM mounjaro_exercise_logs WHERE id = ? AND enrollment_id = ?"
+  ).run(id, enr.id);
+  if (res.changes > 0) audit(actor.id, "exercise_log_delete", "enrollment", enr.id);
+  return res.changes > 0;
+}
+
+function mapExerciseRow(r: Record<string, unknown>): ExerciseLogRow {
+  const level = String(r.level ?? "");
+  const rpe = Number(r.rpe ?? 0);
+  return {
+    id: Number(r.id), date: String(r.date ?? ""), activity_id: String(r.activity_id ?? ""),
+    level, duration_min: Number(r.duration_min ?? 0), met: Number(r.met ?? 0), rpe,
+    kcal_est: r.kcal_est == null ? null : Number(r.kcal_est),
+    low_energy_flag: isLowEnergyFlag(level, rpe)
+  };
+}
+
+/** Compute the weekly summary (#14) over the trailing 7 days ending today
+ *  (Bangkok). Streak = consecutive days with ≥1 activity ending today or
+ *  yesterday. Pure over the given rows so the doctor view can reuse it. */
+export function summarizeExercise(rows: ExerciseLogRow[]): ExerciseSummary {
+  const today = bkkToday();
+  const start = new Date(`${today}T00:00:00Z`).getTime() - 6 * 86400_000;
+  const inWeek = rows.filter((r) => {
+    const t = new Date(`${r.date}T00:00:00Z`).getTime();
+    return !Number.isNaN(t) && t >= start;
+  });
+  const days = new Set(inWeek.map((r) => r.date)).size;
+  const totalMin = inWeek.reduce((s, r) => s + r.duration_min, 0);
+  const kcalRows = inWeek.filter((r) => r.kcal_est != null);
+  const totalKcal = kcalRows.length ? kcalRows.reduce((s, r) => s + (r.kcal_est ?? 0), 0) : null;
+  const avgRpe = inWeek.length
+    ? Math.round((inWeek.reduce((s, r) => s + r.rpe, 0) / inWeek.length) * 10) / 10
+    : null;
+  const flagCount = inWeek.filter((r) => r.low_energy_flag).length;
+
+  // Streak — walk back day by day from today while each day has a log.
+  // Tolerate "no log yet today" by allowing the run to start at yesterday.
+  const dated = new Set(rows.map((r) => r.date));
+  const dayStr = (offset: number) =>
+    new Date(new Date(`${today}T00:00:00Z`).getTime() - offset * 86400_000)
+      .toISOString().slice(0, 10);
+  let streak = 0;
+  let offset = dated.has(today) ? 0 : (dated.has(dayStr(1)) ? 1 : -1);
+  if (offset >= 0) {
+    while (dated.has(dayStr(offset))) { streak++; offset++; }
+  }
+  return { days, totalMin, totalKcal, avgRpe, streak, flagCount };
+}
+
+/** The actor's own exercise log rows (newest first) + weekly summary. */
+export function getMyExercise(actor: MjActor): { logs: ExerciseLogRow[]; summary: ExerciseSummary } {
+  const enr = getMyEnrollment(actor);
+  if (!enr) return { logs: [], summary: { days: 0, totalMin: 0, totalKcal: null, avgRpe: null, streak: 0, flagCount: 0 } };
+  const rows = getDb().prepare(
+    "SELECT * FROM mounjaro_exercise_logs WHERE enrollment_id = ? ORDER BY date DESC, id DESC"
+  ).all(enr.id) as Array<Record<string, unknown>>;
+  const logs = rows.map(mapExerciseRow);
+  return { logs, summary: summarizeExercise(logs) };
+}
+
+/** Doctor view of a patient's exercise log — doctor-scoped (#16). Returns
+ *  null if the patient is not under this doctor. */
+export function getPatientExercise(actor: MjActor, patientId: number):
+  { logs: ExerciseLogRow[]; summary: ExerciseSummary } | null {
+  requireDoctor(actor);
+  const owns = getDb().prepare(
+    "SELECT enrollment_id FROM mounjaro_patients WHERE id = ? AND attending_doctor_id = ? AND deleted_at IS NULL"
+  ).get(patientId, actor.id) as { enrollment_id: number } | undefined;
+  if (!owns) return null;
+  const rows = getDb().prepare(
+    "SELECT * FROM mounjaro_exercise_logs WHERE enrollment_id = ? ORDER BY date DESC, id DESC"
+  ).all(owns.enrollment_id) as Array<Record<string, unknown>>;
+  const logs = rows.map(mapExerciseRow);
+  audit(actor.id, "read_exercise", "patient", patientId);
+  return { logs, summary: summarizeExercise(logs) };
+}
+
+/** HR / aggregate-only exercise stats (#16) — NO row identifies a person.
+ *  Totals over the trailing 7 days across all active participants. */
+export function getExerciseAggregate(actor: MjActor): {
+  participantsLogged: number; totalSessions: number; totalMinutes: number;
+} {
+  if (!isHrOrAggregateViewer(actor)) throw new MounjaroForbidden("no_stats_access");
+  const today = bkkToday();
+  const start = new Date(new Date(`${today}T00:00:00Z`).getTime() - 6 * 86400_000)
+    .toISOString().slice(0, 10);
+  const row = getDb().prepare(`
+    SELECT COUNT(DISTINCT enrollment_id) AS participantsLogged,
+           COUNT(*) AS totalSessions,
+           COALESCE(SUM(duration_min), 0) AS totalMinutes
+    FROM mounjaro_exercise_logs
+    WHERE date >= ?
+  `).get(start) as { participantsLogged: number; totalSessions: number; totalMinutes: number };
+  audit(actor.id, "read_exercise_aggregate", "program", null);
+  return row;
 }
 
 /** PDPA right-to-access — everything we hold about the actor. */
