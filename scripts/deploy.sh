@@ -102,7 +102,23 @@ if [[ "${FORCE:-0}" != "1" ]]; then
 fi
 
 echo "==> [1/6] git pull origin main"
+# Capture the pre-pull commit so we can tell if dependencies changed.
+PREV_HEAD="$(git rev-parse HEAD 2>/dev/null || echo '')"
 git pull origin main
+
+# Dependency sync — when a deploy adds/removes an npm package (e.g.
+# pdfkit for the INVENTA PO PDF, 2026-06-06), package-lock.json changes
+# and the VPS must reinstall BEFORE the build, or `tsc`/`next build`
+# fails with "Cannot find module 'X'". Plain `git pull && npm run build`
+# misses this. We install only when package-lock.json actually changed
+# in this pull (cheap no-op otherwise). `npm install` (not `npm ci`)
+# keeps devDeps — the build needs typescript/tailwind/@types.
+if [[ -n "$PREV_HEAD" ]] && ! git diff --quiet "$PREV_HEAD" HEAD -- package-lock.json package.json; then
+  echo "    📦 dependencies changed — running npm install"
+  npm install --no-audit --no-fund
+else
+  echo "    dependencies unchanged — skipping npm install"
+fi
 
 # Wipe the stale build cache before rebuilding.
 #
