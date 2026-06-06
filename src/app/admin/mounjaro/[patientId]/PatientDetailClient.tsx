@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { Alert } from "@/lib/mounjaro-alerts";
+import { getActivity, levelLabel, rpeLabel } from "@/lib/exercise-catalog";
 
 // ── Mounjaro patient detail — clinical tracker view ─────────────────
 // Themed to the app CI (owner #10 2026-06-06): espresso-brown header +
@@ -23,6 +24,16 @@ type SelfLog = {
   bp: string | null; hr: number | null; fbs: number | null; diary: string | null;
   notes_for_doctor: string | null; doctor_reply: string | null;
 };
+type ExLog = {
+  id: number; date: string; activity_id: string; level: string;
+  duration_min: number; met: number; rpe: number;
+  kcal_est: number | null; low_energy_flag: boolean;
+};
+type ExSummary = {
+  days: number; totalMin: number; totalKcal: number | null;
+  avgRpe: number | null; streak: number; flagCount: number;
+};
+type ExerciseData = { logs: ExLog[]; summary: ExSummary };
 
 const DOSES = [2.5, 5, 7.5, 10, 12.5, 15];
 const SE_FIELDS: Array<[string, string]> = [
@@ -73,12 +84,13 @@ export default function PatientDetailClient(props: {
   comorbidities: Record<string, boolean>; contraindications: Record<string, boolean>;
   medications: Record<string, boolean>;
   visits: Visit[]; selfLogs: SelfLog[]; alerts: Alert[];
+  exercise: ExerciseData;
   pendingAction: { action: "withdraw" | "erase"; reason: string | null; at: string | null } | null;
 }) {
   const { patientId, employeeName, hn, startDate, notes, baseline,
-    comorbidities, contraindications, medications, visits, selfLogs, alerts, pendingAction } = props;
+    comorbidities, contraindications, medications, visits, selfLogs, alerts, exercise, pendingAction } = props;
   const router = useRouter();
-  const [tab, setTab] = useState<"titration" | "visits" | "chart" | "baseline">("titration");
+  const [tab, setTab] = useState<"titration" | "visits" | "chart" | "baseline" | "exercise">("titration");
   const [showVisit, setShowVisit] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [decidingPending, setDecidingPending] = useState(false);
@@ -192,7 +204,7 @@ export default function PatientDetailClient(props: {
       {/* Tabs — horizontally scrollable so the 4 labels never wrap /
           overlap on narrow phones. */}
       <div className="flex border-b border-[#E5E0D5] gap-1 overflow-x-auto whitespace-nowrap -mx-1 px-1">
-        {([["titration", "การปรับขนาดยา"], ["visits", "บันทึกการนัด"], ["chart", "กราฟติดตาม"], ["baseline", "ข้อมูลพื้นฐาน"]] as const).map(([k, label]) => (
+        {([["titration", "การปรับขนาดยา"], ["visits", "บันทึกการนัด"], ["chart", "กราฟติดตาม"], ["exercise", "การออกกำลังกาย"], ["baseline", "ข้อมูลพื้นฐาน"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`flex-shrink-0 px-4 py-3 text-[13px] font-medium -mb-px border-b-2 transition ${
               tab === k ? "text-[#3a2716] border-[#a06820]" : "text-slate-500 border-transparent hover:text-[#3a2716]"}`}>
@@ -284,6 +296,69 @@ export default function PatientDetailClient(props: {
       {tab === "chart" && (
         <Card title="กราฟติดตามผลลัพธ์ · Progress Chart">
           <ProgressChart baseline={{ weight: baseWeight, hr: num(baseline, "hr") }} startDate={startDate} visits={visits} selfLogs={selfLogs} />
+        </Card>
+      )}
+
+      {/* Tab: Exercise (owner #15-16) */}
+      {tab === "exercise" && (
+        <Card title="การออกกำลังกาย · Exercise Log">
+          {/* Soft clinical flag (#15) — light activity at high RPE. */}
+          {exercise.summary.flagCount > 0 && (
+            <div className="mb-3 rounded-sm border border-[#B45309] bg-[#FFFBEB] px-3 py-2 text-[12px] text-[#92400E]">
+              <b>ข้อสังเกตเชิงคลินิก:</b> ใน 7 วันล่าสุดมีการออกกำลังกายระดับเบาแต่ผู้ป่วยประเมินความเหนื่อยสูง
+              (RPE ≥ 7) จำนวน {exercise.summary.flagCount} ครั้ง อาจเป็นสัญญาณภาวะพลังงานต่ำหรือผลข้างเคียงของยา
+              — แนะนำให้สอบถามเพิ่มเติม
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-px bg-[#E5E0D5] border border-[#E5E0D5] rounded-sm overflow-hidden mb-3">
+            <Stat label="วันที่ออกกำลัง (7 วัน)" value={String(exercise.summary.days)} unit="วัน" />
+            <Stat label="เวลารวม" value={String(exercise.summary.totalMin)} unit="นาที" />
+            <Stat label="พลังงานโดยประมาณ"
+              value={exercise.summary.totalKcal != null ? `~${exercise.summary.totalKcal.toLocaleString("th-TH")}` : "—"} unit="kcal" small />
+            <Stat label="RPE เฉลี่ย" value={exercise.summary.avgRpe != null ? String(exercise.summary.avgRpe) : "—"} />
+            <Stat label="ต่อเนื่อง (streak)" value={String(exercise.summary.streak)} unit="วัน" />
+          </div>
+
+          {exercise.logs.length === 0 ? (
+            <p className="text-[13px] text-slate-400 py-6 text-center">ผู้ป่วยยังไม่มีบันทึกการออกกำลังกาย</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px] whitespace-nowrap">
+                <thead>
+                  <tr className="text-left text-slate-500 border-b border-[#E5E0D5]">
+                    <th className="py-2 pr-3 font-medium">วันที่</th>
+                    <th className="py-2 pr-3 font-medium">กิจกรรม</th>
+                    <th className="py-2 pr-3 font-medium">ระดับ</th>
+                    <th className="py-2 pr-3 font-medium text-right">นาที</th>
+                    <th className="py-2 pr-3 font-medium text-right">RPE</th>
+                    <th className="py-2 pr-3 font-medium text-right">พลังงาน</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {exercise.logs.slice(0, 60).map((l) => {
+                    const a = getActivity(l.activity_id);
+                    return (
+                      <tr key={l.id} className={`border-b border-[#E5E0D5] last:border-0 ${l.low_energy_flag ? "bg-[#FFFBEB]" : ""}`}>
+                        <td className="py-2 pr-3 font-mono text-xs">{toBE(l.date)}</td>
+                        <td className="py-2 pr-3">{a?.name ?? l.activity_id}</td>
+                        <td className="py-2 pr-3 text-xs text-slate-500">{levelLabel(l.level)}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">{l.duration_min}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">
+                          {l.rpe}
+                          {l.low_energy_flag && <span className="ml-1 text-[#B45309]" title={`เบาแต่เหนื่อยมาก — ${rpeLabel(l.rpe)}`}>⚑</span>}
+                        </td>
+                        <td className="py-2 pr-3 text-right tabular-nums">
+                          {l.kcal_est != null ? `~${l.kcal_est.toLocaleString("th-TH")}` : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="text-[10px] text-slate-400 mt-2">พลังงานเป็นค่าประมาณการจากน้ำหนักเริ่มต้น (met × kg × ชม.) ไม่ใช่ค่าที่วัดจริง</p>
+            </div>
+          )}
         </Card>
       )}
 

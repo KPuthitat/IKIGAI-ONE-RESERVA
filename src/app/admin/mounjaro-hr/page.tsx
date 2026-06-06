@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { getProgramStats, type MjActor } from "@/lib/mounjaro-db";
+import { getProgramStats, getExerciseAggregate, type MjActor } from "@/lib/mounjaro-db";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ภาพรวมสุขภาพพนักงาน (HR)" };
@@ -16,6 +16,7 @@ export default function MounjaroHrPage() {
     redirect("/admin?error=forbidden");
   }
   const s = getProgramStats(user as MjActor);
+  const ex = getExerciseAggregate(user as MjActor);
   const total = s.total_enrolled || 0;
   const pct = (n: number) => (total > 0 ? `${((n / total) * 100).toFixed(0)}%` : "—");
 
@@ -45,6 +46,24 @@ export default function MounjaroHrPage() {
           </div>
         ))}
       </div>
+      <div>
+        <h2 className="text-sm font-bold text-slate-700 mb-2">การออกกำลังกาย (7 วันล่าสุด · ภาพรวม)</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="card">
+            <div className="text-xs text-slate-500">ผู้ที่บันทึกกิจกรรม</div>
+            <div className="text-2xl font-bold mt-1 text-slate-800">{ex.participantsLogged}</div>
+          </div>
+          <div className="card">
+            <div className="text-xs text-slate-500">จำนวนครั้งที่บันทึก</div>
+            <div className="text-2xl font-bold mt-1 text-slate-800">{ex.totalSessions}</div>
+          </div>
+          <div className="card">
+            <div className="text-xs text-slate-500">เวลารวม (นาที)</div>
+            <div className="text-2xl font-bold mt-1 text-slate-800">{ex.totalMinutes.toLocaleString("th-TH")}</div>
+          </div>
+        </div>
+      </div>
+
       <div className="card flex items-center justify-between gap-2 flex-wrap">
         <p className="text-xs text-slate-500">ดาวน์โหลดสถิติภาพรวม (ไม่มีข้อมูลรายบุคคล)</p>
         <a href="/api/admin/mounjaro-hr/export" download
