@@ -164,6 +164,28 @@ export default function CountClient({
     } finally { setBusy(false); }
   }
 
+  // Flag the selected item's expiry/condition while counting (owner
+  // 2026-06-06). Sends a LINE alert to the INVENTA group; keeps the
+  // item open so staff can still enter its counted qty.
+  async function reportStatus(status: "expiring_60" | "expiring_30" | "expired" | "deteriorated") {
+    if (!sel) return;
+    const labels: Record<string, string> = {
+      expiring_60: "ใกล้หมดอายุ 60 วัน", expiring_30: "ใกล้หมดอายุ 30 วัน",
+      expired: "หมดอายุ", deteriorated: "เสื่อมสภาพ"
+    };
+    setBusy(true); setMsg(null);
+    try {
+      const res = await fetch(apiUrl("/api/inventa/expiry-report"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_id: sel.id, status })
+      });
+      const j = await res.json().catch(() => ({}));
+      setMsg(res.ok && j?.ok
+        ? `แจ้งกลุ่มแล้ว: ${sel.name} — ${labels[status]}`
+        : "แจ้งเตือนไม่สำเร็จ ลองใหม่อีกครั้ง");
+    } finally { setBusy(false); }
+  }
+
   // silent=true closes the round WITHOUT pinging the LINE group — for
   // minor corrections (owner 2026-06-06). silent=false is the normal
   // "submit + announce + go build the PO" flow.
@@ -361,6 +383,32 @@ export default function CountClient({
               onChange={(e) => setQty(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") saveLine(); }} />
           </div>
+
+          {/* Condition / expiry flag (owner 2026-06-06) — tap if this item
+              on the shelf is near-expiry, expired, or deteriorated. Sends
+              a LINE alert to the INVENTA group. */}
+          <div>
+            <div className="text-[11px] text-slate-500 mb-1.5">พบปัญหาสินค้าชิ้นนี้? แจ้งกลุ่มไลน์:</div>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" disabled={busy} onClick={() => reportStatus("expiring_60")}
+                className="text-xs py-2 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-50">
+                ใกล้หมดอายุ ≤60 วัน
+              </button>
+              <button type="button" disabled={busy} onClick={() => reportStatus("expiring_30")}
+                className="text-xs py-2 rounded-lg border border-orange-300 text-orange-700 hover:bg-orange-50 disabled:opacity-50">
+                ใกล้หมดอายุ ≤30 วัน
+              </button>
+              <button type="button" disabled={busy} onClick={() => reportStatus("expired")}
+                className="text-xs py-2 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 disabled:opacity-50">
+                หมดอายุแล้ว
+              </button>
+              <button type="button" disabled={busy} onClick={() => reportStatus("deteriorated")}
+                className="text-xs py-2 rounded-lg border border-violet-300 text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+                เสื่อมสภาพ
+              </button>
+            </div>
+          </div>
+
           <div className="flex gap-2">
             <button type="button" onClick={() => { setSel(null); setQty(""); }}
               disabled={busy}
