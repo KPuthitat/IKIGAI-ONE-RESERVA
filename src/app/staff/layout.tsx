@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, getSystemSettings } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
@@ -57,14 +58,27 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   let mjEnrolled = false;
   try { mjEnrolled = !!getMyEnrollment(user as MjActor); } catch { mjEnrolled = false; }
 
+  // Persisted view intent (owner 2026-06-08). INVENTA lives under /staff,
+  // so an admin who is in "admin view" and opens INVENTA used to fall into
+  // staff view with no easy way back. The os_view cookie remembers the
+  // intent — when it's "admin", keep the top-level module links pointing at
+  // /admin so the admin can jump back to any console page (never stranded).
+  // Default (no cookie) = staff, preserving the "admin is an employee
+  // first" behaviour. INVENTA itself stays under /staff (that's its home).
+  const isAdminUser = user.role === "super_admin"
+    || (user.role === "admin" && user.adminBranchIds.length > 0)
+    || user.permissions.length > 0;
+  const adminView = isAdminUser && cookies().get("os_view")?.value === "admin";
+  const modBase = adminView ? "/admin" : "/staff";
+
   // Sections scoped to each module via pathPrefix.
   const sections: SidebarSection[] = [
     {
       label: t(lang, "sidebar.section.modules"),
       items: [
-        { href: "/staff", label: t(lang, "sidebar.modulePicker") },
-        { href: "/staff/persona", label: "PERSONA" },
-        { href: "/staff/reserva", label: "RESERVA" },
+        { href: adminView ? "/admin" : "/staff", label: t(lang, "sidebar.modulePicker") },
+        { href: `${modBase}/persona`, label: "PERSONA" },
+        { href: `${modBase}/reserva`, label: "RESERVA" },
         { href: "/staff/inventa", label: "INVENTA" }
       ]
     },
@@ -185,14 +199,13 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   // rights second). Plain staff (no admin rights) get no switch.
   // RBAC (2026-06-04): also show the switch to a plain staffer granted
   // an admin-module role — otherwise they'd have no way to reach the
-  // console their role unlocks.
-  const isAdminUser = user.role === "super_admin"
-                   || (user.role === "admin" && user.adminBranchIds.length > 0)
-                   || user.permissions.length > 0;
+  // console their role unlocks. (isAdminUser computed above.)
   const mobileSidebarFooter = (
     <div className="space-y-3">
-      {/* STAFF / ADMIN switch — all breakpoints, admins only. */}
-      {isAdminUser && <AdminModeToggle />}
+      {/* STAFF / ADMIN switch — all breakpoints, admins only. The view
+          prop reflects the persisted os_view intent so the label + cookie
+          stay consistent even on a /staff page reached from admin. */}
+      {isAdminUser && <AdminModeToggle view={adminView ? "admin" : "staff"} />}
       <div className="md:hidden space-y-3">
         {/* Branch pill moved into sidebar brand area 2026-05-25 —
             see Sidebar's brand prop below. Removes the duplicate
