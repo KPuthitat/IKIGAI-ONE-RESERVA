@@ -37,6 +37,7 @@ export const metadata: Metadata = { title: "ตารางมอบหมาย
 type StaffOption = {
   id: number;
   display_name: string;
+  title_prefix: string | null;
   first_name_th: string | null;
   last_name_th: string | null;
   employment_type: string | null;
@@ -102,7 +103,7 @@ export default function AdminRosterPage({
   // employee) and excludes disabled accounts. super_admin is the
   // settings-only top role and isn't rosterable.
   const staff = db.prepare(`
-    SELECT u.id, u.display_name, u.first_name_th, u.last_name_th,
+    SELECT u.id, u.display_name, u.title_prefix, u.first_name_th, u.last_name_th,
            u.employment_type
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id

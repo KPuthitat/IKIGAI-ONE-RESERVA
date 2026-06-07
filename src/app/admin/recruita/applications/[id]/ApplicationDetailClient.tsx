@@ -9,6 +9,7 @@ import type {
 } from "@/lib/recruita";
 import { infoSourceLabel } from "@/lib/recruita";
 import { formatBkkDateTime } from "@/lib/time";
+import { nameWithPrefix } from "@/lib/name";
 
 type StageMeta = Record<ApplicationStage, { label: string; chip: string }>;
 
@@ -84,7 +85,7 @@ type PositionShape = {
 };
 
 type Branch = { id: number; name: string };
-type Supervisor = { id: number; display_name: string };
+type Supervisor = { id: number; display_name: string; title_prefix: string | null };
 
 type HireResult = {
   user_id: number;
@@ -1214,7 +1215,7 @@ function HireDialog({
               onChange={(e) => setSupervisorId(e.target.value)}>
               <option value="">— ยังไม่กำหนด —</option>
               {supervisors.map((s) => (
-                <option key={s.id} value={s.id}>{s.display_name}</option>
+                <option key={s.id} value={s.id}>{nameWithPrefix(s.title_prefix, s.display_name)}</option>
               ))}
             </select>
           </div>

@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { nameWithPrefix } from "@/lib/name";
 
 // Roster monthly grid — admin clicks a cell to assign (or clear) a
 // staff/shift combo. Renders the full month in one HTML table; CSS
@@ -18,6 +19,7 @@ type ShiftCode = {
 type Staff = {
   id: number;
   display_name: string;
+  title_prefix: string | null;
   first_name_th: string | null;
   last_name_th: string | null;
   employment_type: string | null;
@@ -282,7 +284,7 @@ export default function RosterClient({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-slate-500">📌 มุ่งเน้นที่:</span>
             <span className="text-sm font-bold bg-amber-100 text-amber-900 px-3 py-1 rounded-md">
-              {focusedStaff.display_name}
+              {nameWithPrefix(focusedStaff.title_prefix, focusedStaff.display_name)}
             </span>
             <span className="text-xs text-slate-500">
               ลงตารางไปแล้ว <b className="text-slate-800">{focusedShiftDates.size}</b> วันในเดือนนี้
@@ -310,7 +312,7 @@ export default function RosterClient({
                   <button key={s.id} type="button"
                     onClick={() => pickFocus(s.id)}
                     className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 border-b border-slate-100 last:border-0">
-                    <div className="font-bold text-slate-800">{s.display_name}</div>
+                    <div className="font-bold text-slate-800">{nameWithPrefix(s.title_prefix, s.display_name)}</div>
                     {(s.first_name_th || s.last_name_th) && (
                       <div className="text-[11px] text-slate-500">
                         {[s.first_name_th, s.last_name_th].filter(Boolean).join(" ")}
@@ -586,7 +588,7 @@ function AssignModal({
             <option value="">— {t("admin.persona.roster.modal.pickStaff")} —</option>
             {staff.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.display_name} {s.employment_type ? `(${s.employment_type.toUpperCase()})` : ""}
+                {nameWithPrefix(s.title_prefix, s.display_name)} {s.employment_type ? `(${s.employment_type.toUpperCase()})` : ""}
               </option>
             ))}
           </select>

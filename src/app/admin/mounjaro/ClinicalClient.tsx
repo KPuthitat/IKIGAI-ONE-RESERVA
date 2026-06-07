@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { nameWithPrefix } from "@/lib/name";
 
 // ── Mounjaro clinical dashboard — patient registry ──────────────────
 // Visual language follows the app CI (owner #10 2026-06-06): espresso
@@ -387,7 +388,7 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
                     <option value="">— เลือกพนักงาน —</option>
                     {pending.map((p) => (
                       <option key={p.enrollment_id} value={p.enrollment_id}>
-                        {p.employee_name} {p.enrolled_at ? `(สมัคร ${p.enrolled_at.slice(0, 10)})` : ""}
+                        {nameWithPrefix(p.title_prefix, p.employee_name)} {p.enrolled_at ? `(สมัคร ${p.enrolled_at.slice(0, 10)})` : ""}
                       </option>
                     ))}
                   </select>
@@ -590,7 +591,7 @@ function InviteModal({ onClose, onSent }: { onClose: () => void; onSent: () => v
                 <option value="">— เลือกพนักงาน —</option>
                 {employees.map((e) => (
                   <option key={e.id} value={e.id}>
-                    {e.title_prefix ? e.title_prefix + " " : ""}{e.display_name}
+                    {nameWithPrefix(e.title_prefix, e.display_name)}
                   </option>
                 ))}
               </select>
@@ -598,7 +599,7 @@ function InviteModal({ onClose, onSent }: { onClose: () => void; onSent: () => v
           </div>
           {selected && (
             <div className="bg-white border border-[#d6a14d] rounded-sm px-4 py-3 text-[13px] text-slate-700">
-              <b>{selected.title_prefix ? selected.title_prefix + " " : ""}{selected.display_name}</b> จะได้รับแจ้งเตือนทาง LINE
+              <b>{nameWithPrefix(selected.title_prefix, selected.display_name)}</b> จะได้รับแจ้งเตือนทาง LINE
               ให้กดยืนยันเข้าร่วมโครงการ · เมื่อยืนยันแล้วจึงจะปรากฏในรายการรอทำ Baseline
             </div>
           )}

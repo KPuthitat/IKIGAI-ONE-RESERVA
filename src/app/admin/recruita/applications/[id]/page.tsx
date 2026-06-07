@@ -140,12 +140,12 @@ export default function ApplicationDetailPage(
     "SELECT id, name FROM branches ORDER BY name"
   ).all() as Pick<Branch, "id" | "name">[];
   const supervisors = db.prepare(`
-    SELECT id, display_name
+    SELECT id, display_name, title_prefix
     FROM users
     WHERE status NOT IN ('disabled', 'resigned')
       AND role IN ('admin', 'super_admin', 'staff')
     ORDER BY display_name
-  `).all() as Array<{ id: number; display_name: string }>;
+  `).all() as Array<{ id: number; display_name: string; title_prefix: string | null }>;
 
   const customQuestions = parseCustomQuestions(position.custom_questions);
   const customAnswers = parseCustomAnswers(app.custom_answers);
