@@ -25,13 +25,19 @@ export default function InventaLabelsPage() {
     ORDER BY i.grid_row, i.grid_col, i.name
   `).all(branchId, branchId) as LabelItem[];
 
+  // Per-branch label print size (owner 2026-06-08), default 80×50 mm.
+  const size = branchId
+    ? (db.prepare("SELECT inventa_label_width_mm AS w, inventa_label_height_mm AS h FROM branches WHERE id = ?")
+        .get(branchId) as { w: number; h: number } | undefined)
+    : undefined;
+
   return (
     <div className="space-y-4">
-      <div className="no-print">
+      <div className="no-print pl-11 md:pl-0">
         <h1 className="text-2xl font-bold text-slate-800">{t(lang, "inv.qr.title")}</h1>
         <p className="text-sm text-slate-500">{t(lang, "inv.qr.subtitle")}</p>
       </div>
-      <LabelsClient items={items} />
+      <LabelsClient items={items} widthMm={size?.w ?? 80} heightMm={size?.h ?? 50} />
     </div>
   );
 }

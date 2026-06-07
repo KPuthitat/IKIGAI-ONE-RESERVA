@@ -5,6 +5,7 @@ import { t } from "@/lib/i18n";
 import type { InventaLookup, InventaSupplier } from "@/lib/inventa";
 import SettingsClient from "./SettingsClient";
 import InventaGroupForm from "./InventaGroupForm";
+import LabelSizeForm from "./LabelSizeForm";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +20,12 @@ export default function InventaSettingsPage() {
   const branchId = user.activeBranchId ?? null;
 
   const branch = branchId
-    ? (db.prepare("SELECT name, inventa_group_id, inventa_group_name FROM branches WHERE id = ?")
+    ? (db.prepare(`SELECT name, inventa_group_id, inventa_group_name,
+                          inventa_label_width_mm, inventa_label_height_mm
+                   FROM branches WHERE id = ?`)
         .get(branchId) as {
           name: string; inventa_group_id: string | null; inventa_group_name: string | null;
+          inventa_label_width_mm: number; inventa_label_height_mm: number;
         } | undefined)
     : undefined;
 
@@ -58,6 +62,10 @@ export default function InventaSettingsPage() {
         branchName={branch.name}
         groupId={branch.inventa_group_id ?? ""}
         groupName={branch.inventa_group_name ?? ""}
+      />
+      <LabelSizeForm
+        widthMm={branch.inventa_label_width_mm ?? 80}
+        heightMm={branch.inventa_label_height_mm ?? 50}
       />
       <SettingsClient
         lookups={lookups}

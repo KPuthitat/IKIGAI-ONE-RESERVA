@@ -1397,6 +1397,15 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("inventa_group_name")) {
     db.exec("ALTER TABLE branches ADD COLUMN inventa_group_name TEXT");
   }
+  // INVENTA label print size in mm (owner 2026-06-08). Default 80×50 mm —
+  // the common thermal sticker. Configurable in INVENTA settings; the
+  // labels page sizes each printed sticker + the @page to these values.
+  if (!bnames2.has("inventa_label_width_mm")) {
+    db.exec("ALTER TABLE branches ADD COLUMN inventa_label_width_mm INTEGER NOT NULL DEFAULT 80");
+  }
+  if (!bnames2.has("inventa_label_height_mm")) {
+    db.exec("ALTER TABLE branches ADD COLUMN inventa_label_height_mm INTEGER NOT NULL DEFAULT 50");
+  }
 
   // TC-4: time certification requests. Staff can't edit a clock
   // entry once the 5-min self-correction window closes — instead
@@ -4794,6 +4803,9 @@ export type Branch = {
   // Per-branch INVENTA LINE group (owner 2026-06-06). NULL = global group.
   inventa_group_id: string | null;
   inventa_group_name: string | null;
+  // INVENTA label print size in mm (owner 2026-06-08). Default 80×50.
+  inventa_label_width_mm: number;
+  inventa_label_height_mm: number;
 };
 
 // Global (non-branch-scoped) configuration. Today it carries the
