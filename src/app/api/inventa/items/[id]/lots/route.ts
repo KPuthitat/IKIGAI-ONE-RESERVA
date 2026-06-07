@@ -21,6 +21,9 @@ const Body = z.object({
   lot_number: z.string().trim().max(80).nullable().optional(),
   expiry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   qty: z.number().int().min(0),
+  // Cost paid per unit for this receipt (owner F6). When it differs from
+  // the item's current cost price we re-price the item + log the change.
+  unit_cost: z.number().min(0).max(10_000_000).nullable().optional(),
   note: z.string().trim().max(500).nullable().optional()
 });
 
@@ -58,21 +61,41 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
   const d = parsed.data;
   const db = getDb();
-  const item = db.prepare("SELECT id FROM inventa_items WHERE id = ? AND active = 1")
-    .get(id) as { id: number } | undefined;
+  const item = db.prepare("SELECT id, cost_price FROM inventa_items WHERE id = ? AND active = 1")
+    .get(id) as { id: number; cost_price: number | null } | undefined;
   if (!item) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  const info = db.prepare(`
-    INSERT INTO inventa_item_lots
-      (item_id, lot_number, expiry_date, qty, note, created_by)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
-    d.lot_number?.trim() || null,
-    d.expiry_date ?? null,
-    d.qty,
-    d.note?.trim() || null,
-    user.id
-  );
-  return NextResponse.json({ ok: true, id: Number(info.lastInsertRowid) });
+  // Did this receipt change the item's cost price? (owner F6)
+  //   • a value given AND (no cost yet → first-time set, OR differs) → re-price + log
+  //   • same as current, or left blank → no change
+  const newCost = d.unit_cost != null && d.unit_cost > 0 ? d.unit_cost : null;
+  const costChanged = newCost != null && item.cost_price !== newCost;
+
+  const tx = db.transaction(() => {
+    const info = db.prepare(`
+      INSERT INTO inventa_item_lots
+        (item_id, lot_number, expiry_date, qty, unit_cost, note, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      d.lot_number?.trim() || null,
+      d.expiry_date ?? null,
+      d.qty,
+      newCost,
+      d.note?.trim() || null,
+      user.id
+    );
+    const lotId = Number(info.lastInsertRowid);
+    if (costChanged) {
+      db.prepare("UPDATE inventa_items SET cost_price = ? WHERE id = ?").run(newCost, id);
+      db.prepare(`
+        INSERT INTO inventa_cost_changes
+          (item_id, old_cost, new_cost, source, lot_id, changed_by)
+        VALUES (?, ?, ?, 'receive', ?, ?)
+      `).run(id, item.cost_price, newCost, lotId, user.id);
+    }
+    return lotId;
+  });
+  const lotId = tx();
+  return NextResponse.json({ ok: true, id: lotId, costChanged });
 }

@@ -128,6 +128,9 @@ export type InventaItemLot = {
    *  (durable equipment etc.). */
   expiry_date: string | null;
   qty: number;
+  /** Cost paid per unit for this received batch (owner F6). null when
+   *  the receiver left it blank. May update the item's cost_price. */
+  unit_cost: number | null;
   received_at: string;
   note: string | null;
   created_by: number | null;

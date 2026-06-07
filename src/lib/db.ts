@@ -3573,7 +3573,35 @@ function runMigrations(db: Database.Database): void {
       ON inventa_item_lots(item_id);
     CREATE INDEX IF NOT EXISTS idx_inventa_item_lots_expiry
       ON inventa_item_lots(expiry_date) WHERE expiry_date IS NOT NULL;
+
+    -- Cost-change audit (owner F6 2026-06-07): every time a goods receipt
+    -- changes an item's cost price we record old→new + who/when, so the
+    -- owner can trace why a cost moved. source='receive' for the lot/
+    -- receiving flow; room for other sources later.
+    CREATE TABLE IF NOT EXISTS inventa_cost_changes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES inventa_items(id) ON DELETE CASCADE,
+      old_cost REAL,
+      new_cost REAL NOT NULL,
+      source TEXT NOT NULL DEFAULT 'receive',
+      lot_id INTEGER,
+      changed_by INTEGER REFERENCES users(id),
+      changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_inventa_cost_changes_item
+      ON inventa_cost_changes(item_id, changed_at DESC);
   `);
+
+  // Per-receipt cost paid (owner F6 2026-06-07). PRAGMA-guarded ALTER —
+  // CREATE TABLE IF NOT EXISTS above never adds a column to an existing
+  // lots table.
+  {
+    const lotCols = new Set(
+      (db.prepare("PRAGMA table_info(inventa_item_lots)").all() as Array<{ name: string }>)
+        .map((c) => c.name)
+    );
+    if (!lotCols.has("unit_cost")) db.exec("ALTER TABLE inventa_item_lots ADD COLUMN unit_cost REAL");
+  }
 
   // Branches gain an idempotency stamp for the daily INVENTA expiry
   // alert (#92). Same once-per-day-per-branch pattern as the

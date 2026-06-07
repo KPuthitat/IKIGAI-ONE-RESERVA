@@ -855,7 +855,7 @@ function ItemModal({
             during quick edits. */}
         {item && (
           <div className="border-t border-slate-200 pt-3">
-            <LotsSection itemId={item.id} unitLabel={item.unit ?? ""} />
+            <LotsSection itemId={item.id} unitLabel={item.unit ?? ""} currentCost={item.cost_price ?? null} />
           </div>
         )}
 
@@ -1201,7 +1201,9 @@ const EXPIRY_BUCKET_META: Record<ExpiryBucket, { chip: string; label: string; }>
   no_expiry:  { chip: "bg-slate-100 text-slate-500 border border-slate-200",  label: "ไม่มีวันหมดอายุ" }
 };
 
-function LotsSection({ itemId, unitLabel }: { itemId: number; unitLabel: string }) {
+function LotsSection({ itemId, unitLabel, currentCost }: {
+  itemId: number; unitLabel: string; currentCost: number | null;
+}) {
   const { t } = useLang();
   const [lots, setLots] = useState<InventaItemLot[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1212,6 +1214,11 @@ function LotsSection({ itemId, unitLabel }: { itemId: number; unitLabel: string 
   const [lot, setLot] = useState("");
   const [exp, setExp] = useState("");
   const [qty, setQty] = useState("");
+  // ราคาทุนรับเข้า/หน่วย — prefilled with the item's current cost (owner
+  // F6). A different value re-prices the item on receipt; the new value
+  // becomes the live cost so the next lot defaults to it.
+  const [cost, setCost] = useState(currentCost != null ? String(currentCost) : "");
+  const [costNote, setCostNote] = useState<string | null>(null);
 
   async function reload() {
     setLoading(true);
@@ -1225,17 +1232,26 @@ function LotsSection({ itemId, unitLabel }: { itemId: number; unitLabel: string 
 
   async function add() {
     if (!qty) return;
-    setBusy(true);
+    setBusy(true); setCostNote(null);
     try {
+      const unitCost = cost.trim() === "" ? null : Number(cost);
       const res = await fetch(apiUrl(`/api/inventa/items/${itemId}/lots`), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           lot_number: lot.trim() || null,
           expiry_date: exp || null,
-          qty: Number(qty) || 0
+          qty: Number(qty) || 0,
+          unit_cost: unitCost
         })
       });
-      if (res.ok) { setLot(""); setExp(""); setQty(""); await reload(); }
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.ok) {
+        // Keep the entered cost (it's now the live cost) so the next lot
+        // defaults to it; clear the batch-specific fields.
+        setLot(""); setExp(""); setQty("");
+        if (j.costChanged) setCostNote("ปรับราคาทุนของสินค้าตามราคารับเข้านี้แล้ว");
+        await reload();
+      }
     } finally { setBusy(false); }
   }
   async function del(lotId: number) {
@@ -1295,6 +1311,11 @@ function LotsSection({ itemId, unitLabel }: { itemId: number; unitLabel: string 
                   <span className="text-xs text-slate-500">
                     × {l.qty}{unitLabel ? ` ${unitLabel}` : ""}
                   </span>
+                  {l.unit_cost != null && (
+                    <span className="text-[11px] text-slate-500">
+                      @ ฿{l.unit_cost.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  )}
                 </div>
                 {l.lot_number && (
                   <div className="text-[10px] text-slate-400 mt-0.5">
@@ -1321,6 +1342,20 @@ function LotsSection({ itemId, unitLabel }: { itemId: number; unitLabel: string 
           <input className="input text-sm" type="number" min="0" value={qty}
             placeholder={t("inv.lot.qtyPh", { unit: unitLabel || t("inv.ord.unit") })}
             onChange={(e) => setQty(e.target.value)} />
+          <div className="col-span-2">
+            <label className="text-[11px] text-slate-500">ราคาทุนรับเข้า/หน่วย (บาท)</label>
+            <input className="input text-sm mt-0.5" type="number" min="0" step="0.01" inputMode="decimal"
+              value={cost} placeholder="เช่น 12.50"
+              onChange={(e) => setCost(e.target.value)} />
+            <p className="text-[10px] text-slate-400 mt-0.5">
+              ค่าเริ่มต้นคือราคาทุนปัจจุบัน · หากกรอกต่างจากเดิม ระบบจะปรับราคาทุนของสินค้าและบันทึกประวัติให้
+            </p>
+          </div>
+          {costNote && (
+            <p className="col-span-2 text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1">
+              {costNote}
+            </p>
+          )}
           <button type="button" onClick={add}
             disabled={busy || !qty}
             className="col-span-2 py-1.5 rounded-lg bg-brand text-white text-xs font-bold disabled:opacity-50">
