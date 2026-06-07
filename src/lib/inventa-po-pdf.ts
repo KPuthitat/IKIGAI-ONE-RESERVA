@@ -36,6 +36,9 @@ export type PoPdfData = {
   buyerBranchCode: string | null;
   buyerPhone: string | null;
   lines: PoPdfLine[];
+  /** Supplier-facing copy (owner 2026-06-08): hide on-hand + cost + total
+   *  columns and the subtotal — show only รายการ / รหัส / จำนวน / หน่วย. */
+  hideCost?: boolean;
 };
 
 const FONT_REG = path.join(process.cwd(), "public", "fonts", "LINESeedSansTH-Regular.ttf");
@@ -108,7 +111,14 @@ export function generatePoPdf(data: PoPdfData): Promise<Buffer> {
 
       // ── Table ───────────────────────────────────────────────────
       // Column widths (sum = contentW = 515pt on A4 @ 40pt margins).
-      const cols = [
+      // Supplier copy (hideCost) drops คงเหลือ/ทุน/รวม and widens the rest.
+      const cols = data.hideCost ? [
+        { key: "no", label: "#", w: 26, align: "left" as const },
+        { key: "item", label: "รายการ", w: 253, align: "left" as const },
+        { key: "code", label: "รหัส", w: 110, align: "left" as const },
+        { key: "order", label: "จำนวนสั่ง", w: 56, align: "right" as const },
+        { key: "unit", label: "หน่วย", w: 70, align: "left" as const }
+      ] : [
         { key: "no", label: "#", w: 22, align: "left" as const },
         { key: "item", label: "รายการ", w: 148, align: "left" as const },
         { key: "code", label: "รหัส", w: 82, align: "left" as const },
@@ -138,21 +148,29 @@ export function generatePoPdf(data: PoPdfData): Promise<Buffer> {
 
       doc.font("th").fontSize(9).fillColor("#333333");
       let subtotal = 0;
+      const numFmt = (n: number) =>
+        n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       data.lines.forEach((l, idx) => {
         const lineTotal = l.order_qty * l.unit_cost_at_order;
         subtotal += lineTotal;
-        const cells = [
-          String(idx + 1),
-          l.item_name,
-          l.item_code ?? "—",
-          l.qty_on_hand != null ? String(l.qty_on_hand) : "—",
-          String(l.order_qty),
-          l.unit ?? "—",
-          l.unit_cost_at_order.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-          lineTotal.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        ];
+        // Value per column key — so the supplier (hideCost) + internal
+        // column sets both render from one source.
+        const cellFor = (key: string): string => {
+          switch (key) {
+            case "no": return String(idx + 1);
+            case "item": return l.item_name;
+            case "code": return l.item_code ?? "—";
+            case "onhand": return l.qty_on_hand != null ? String(l.qty_on_hand) : "—";
+            case "order": return String(l.order_qty);
+            case "unit": return l.unit ?? "—";
+            case "cost": return numFmt(l.unit_cost_at_order);
+            case "total": return numFmt(lineTotal);
+            default: return "";
+          }
+        };
         // Row height = tallest cell (item column wraps).
-        const itemH = doc.heightOfString(cells[1], { width: cols[1].w - cellPad * 2 });
+        const itemCol = cols.find((c) => c.key === "item")!;
+        const itemH = doc.heightOfString(l.item_name, { width: itemCol.w - cellPad * 2 });
         const rowH = Math.max(16, itemH + 6);
 
         // Page break — repeat the header on the new page.
@@ -164,7 +182,7 @@ export function generatePoPdf(data: PoPdfData): Promise<Buffer> {
         }
 
         cols.forEach((c, i) => {
-          doc.text(cells[i], colX[i] + cellPad, y + 2, {
+          doc.text(cellFor(c.key), colX[i] + cellPad, y + 2, {
             width: c.w - cellPad * 2, align: c.align,
             // Keep the รหัส (drug code) on a single line (owner 2026-06-07).
             // The "/" in codes like IKGPH/A0226 is a break opportunity, so
@@ -176,14 +194,19 @@ export function generatePoPdf(data: PoPdfData): Promise<Buffer> {
         doc.moveTo(left, y - 2).lineTo(right, y - 2).strokeColor("#eeeeee").lineWidth(0.5).stroke();
       });
 
-      // Subtotal row
-      y += 4;
-      doc.moveTo(left, y).lineTo(right, y).strokeColor("#888888").lineWidth(0.8).stroke();
-      y += 6;
-      doc.font("th-b").fontSize(11).fillColor("#1a1a2e");
-      doc.text("รวมเป็นเงิน (ทุน)", left, y, { width: contentW - cols[7].w - 10, align: "right" });
-      doc.text(baht(subtotal), right - cols[7].w, y, { width: cols[7].w, align: "right" });
-      y = doc.y + 10;
+      // Subtotal row — internal copy only (hidden on the supplier PDF).
+      if (!data.hideCost) {
+        const totalW = cols[cols.length - 1].w;
+        y += 4;
+        doc.moveTo(left, y).lineTo(right, y).strokeColor("#888888").lineWidth(0.8).stroke();
+        y += 6;
+        doc.font("th-b").fontSize(11).fillColor("#1a1a2e");
+        doc.text("รวมเป็นเงิน (ทุน)", left, y, { width: contentW - totalW - 10, align: "right" });
+        doc.text(baht(subtotal), right - totalW, y, { width: totalW, align: "right" });
+        y = doc.y + 10;
+      } else {
+        y += 6;
+      }
 
       // Note
       if (data.note) {

@@ -5,6 +5,7 @@ import { getDb, logPersonaAction, type Branch } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { notifyInventaGroup } from "@/lib/line";
 import { nameWithPrefix } from "@/lib/name";
+import { ensureOrderToken } from "@/lib/inventa-po-token";
 
 // POST /api/inventa/orders/:id/status — move an order along its
 // lifecycle.  sent → approved → received, or → cancelled, or send an
@@ -147,6 +148,9 @@ function notifyApproved(
     const supName = head?.supplier_name ?? "(ไม่ระบุผู้จำหน่าย)";
     const subtotal = head?.subtotal ?? 0;
     const base = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
+    // Public supplier PDF (cost hidden) — ready to forward to the vendor.
+    const token = ensureOrderToken(orderId);
+    const supplierPdfUri = token ? `${base}/api/inventa/orders/${orderId}/pdf?token=${token}` : null;
     const flex = {
       type: "flex" as const,
       altText: `อนุมัติสั่งซื้อแล้ว · ${supName} · ${branch.name}`,
@@ -170,9 +174,13 @@ function notifyApproved(
           ]
         },
         footer: {
-          type: "box", layout: "vertical", contents: [
+          type: "box", layout: "vertical", spacing: "sm", contents: [
             { type: "button", style: "primary", color: "#1a7f37", height: "sm",
-              action: { type: "uri", label: "เปิดใบสั่งซื้อ", uri: `${base}/staff/inventa/orders/${orderId}` } }
+              action: { type: "uri", label: "เปิดใบสั่งซื้อ", uri: `${base}/staff/inventa/orders/${orderId}` } },
+            ...(supplierPdfUri ? [{
+              type: "button" as const, style: "secondary" as const, height: "sm" as const,
+              action: { type: "uri" as const, label: "PDF สำหรับผู้จำหน่าย", uri: supplierPdfUri }
+            }] : [])
           ]
         }
       }

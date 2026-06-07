@@ -3434,6 +3434,18 @@ function runMigrations(db: Database.Database): void {
       ON inventa_order_audit(order_id, created_at DESC);
   `);
 
+  // Public share token for the supplier-facing PO PDF (owner 2026-06-08).
+  // A random token lets a supplier open the PDF (no login, cost hidden)
+  // from a link the owner forwards. Generated lazily on first use.
+  {
+    const ordCols = new Set(
+      (db.prepare("PRAGMA table_info(inventa_orders)").all() as Array<{ name: string }>).map((c) => c.name)
+    );
+    if (!ordCols.has("public_token")) {
+      db.exec("ALTER TABLE inventa_orders ADD COLUMN public_token TEXT");
+    }
+  }
+
   // INVENTA configurable lookups — admin-editable option lists used by
   // the item form (grid row prefixes, storage cabinets, smallest-unit
   // names, drug categories). kind discriminates the list. branch_id

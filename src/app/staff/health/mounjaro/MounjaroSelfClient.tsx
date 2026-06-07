@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import {
   EXERCISE_CATALOG, EXERCISE_LEVELS, RPE_SCALE, getActivity, kcalEstimate,
-  levelLabel, rpeLabel, type ExerciseLevel
+  levelLabel, rpeLabel, activityLabel, REST_ACTIVITY_ID, type ExerciseLevel
 } from "@/lib/exercise-catalog";
 
 // Mounjaro Employee Wellness — employee self-service. Thai (official),
@@ -459,18 +459,24 @@ function ActiveView({
           sub={latestVisit?.next_visit ?? undefined} accent={nextDays != null && nextDays < 0 ? "rose" : undefined} />
       </div>
 
-      {baseW && target && (
-        <div className="card">
-          <div className="text-xs text-slate-500 mb-1">ความคืบหน้าสู่เป้าหมาย</div>
-          <div className="h-3 rounded-full bg-slate-100 overflow-hidden">
-            <div className="h-full bg-emerald-400"
-              style={{ width: `${Math.max(0, Math.min(100, baseW > target ? ((baseW - (curW ?? baseW)) / (baseW - target)) * 100 : 0)).toFixed(0)}%` }} />
+      {baseW && target && baseW > target && (() => {
+        // Progress toward the goal weight, shown as a % (owner 2026-06-08).
+        const pct = Math.max(0, Math.min(100, ((baseW - (curW ?? baseW)) / (baseW - target)) * 100));
+        return (
+          <div className="card">
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-xs text-slate-500">ความคืบหน้าสู่เป้าหมาย</div>
+              <div className="text-sm font-bold text-emerald-600">{pct.toFixed(0)}%</div>
+            </div>
+            <div className="h-3 rounded-full bg-slate-100 overflow-hidden">
+              <div className="h-full bg-emerald-400" style={{ width: `${pct.toFixed(0)}%` }} />
+            </div>
+            <div className="text-[11px] text-slate-400 mt-1">
+              เริ่มต้น {baseW} กก. · ปัจจุบัน {curW ?? baseW} กก. · เป้าหมาย {target} กก.
+            </div>
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            เริ่มต้น {baseW} กก. · เป้าหมาย {target} กก.
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Self-log form (daily) */}
       <div className="card space-y-3">
@@ -718,6 +724,23 @@ function ExerciseSection({
     } finally { setBusy(null); }
   }
 
+  async function logRest() {
+    setBusy("exercise"); setMsg(null);
+    try {
+      const res = await fetch(apiUrl("/api/mounjaro/exercise-log"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: today, activity_id: REST_ACTIVITY_ID, duration_min: 0, rpe: 0 })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        setMsg({ kind: "err", text: j.error === "not_active" ? "บันทึกได้เฉพาะผู้ที่อยู่ในโครงการ" : "บันทึกไม่สำเร็จ" });
+        return;
+      }
+      setMsg({ kind: "ok", text: "บันทึกวันพัก (ไม่ได้ออกกำลังกาย) เรียบร้อย" });
+      router.refresh();
+    } finally { setBusy(null); }
+  }
+
   async function remove(id: number) {
     setBusy("exercise"); setMsg(null);
     try {
@@ -748,6 +771,12 @@ function ExerciseSection({
         <ExStat label="ต่อเนื่อง (streak)" value={`${summary.streak} วัน`} accent="emerald" />
       </div>
       <p className="text-[10px] text-slate-400 -mt-1">สรุป 7 วันล่าสุด · พลังงานเป็นค่าโดยประมาณเท่านั้น ไม่ใช่เป้าหมาย</p>
+
+      {/* Rest day — record that today had no exercise (owner 2026-06-08). */}
+      <button type="button" disabled={busy !== null} onClick={logRest}
+        className="w-full py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-medium hover:bg-slate-50 disabled:opacity-50">
+        วันนี้ไม่ได้ออกกำลังกาย (บันทึกวันพัก)
+      </button>
 
       {/* Level tabs (#11) */}
       <div className="flex gap-2">
@@ -795,6 +824,7 @@ function ExerciseSection({
             <div className="grid grid-cols-11 gap-1">
               {RPE_SCALE.map((r) => (
                 <button key={r.value} type="button" onClick={() => setRpe(r.value)}
+                  title={`${r.value} — ${r.label}`}
                   className={`py-1.5 rounded-md text-xs font-bold border ${
                     rpe === r.value ? "bg-brand text-white border-brand" : "border-slate-300 text-slate-600"}`}>
                   {r.value}
@@ -804,6 +834,18 @@ function ExerciseSection({
             <p className={`text-[11px] mt-1 ${rpe == null ? "text-rose-500 font-semibold" : "text-slate-500"}`}>
               {rpe == null ? "กรุณาเลือกระดับความเหนื่อย (จำเป็น)" : `${rpe} — ${rpeLabel(rpe)}`}
             </p>
+            {/* Full RPE legend (owner 2026-06-08): description for each score. */}
+            <details className="mt-1">
+              <summary className="text-[11px] text-brand cursor-pointer select-none">ดูความหมาย RPE แต่ละระดับ</summary>
+              <div className="mt-1 grid grid-cols-1 gap-0.5 text-[11px] text-slate-500">
+                {RPE_SCALE.map((r) => (
+                  <div key={r.value} className="flex gap-2">
+                    <span className="font-mono font-bold text-slate-600 w-4 text-right">{r.value}</span>
+                    <span>{r.label}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
           </div>
 
           {/* Approximate energy (#13) — only when baseline weight is known */}
@@ -831,18 +873,24 @@ function ExerciseSection({
         <div className="space-y-1.5 pt-1">
           <div className="text-xs font-bold text-slate-600">กิจกรรมที่บันทึกล่าสุด</div>
           {logs.slice(0, 12).map((l) => {
-            const a = getActivity(l.activity_id);
+            const isRest = l.activity_id === REST_ACTIVITY_ID || l.level === "rest";
             return (
               <div key={l.id} className="flex items-center justify-between gap-2 text-xs border-b last:border-0 pb-1.5">
                 <div className="min-w-0">
                   <span className="font-mono text-slate-500">{l.date}</span>{" "}
-                  · <span className="text-slate-700">{a?.name ?? l.activity_id}</span>{" "}
-                  <span className="text-[10px] text-slate-400">({levelLabel(l.level)})</span>
+                  · <span className="text-slate-700">{activityLabel(l.activity_id)}</span>{" "}
+                  {!isRest && <span className="text-[10px] text-slate-400">({levelLabel(l.level)})</span>}
                   <div className="text-[11px] text-slate-500">
-                    {l.duration_min} นาที · RPE {l.rpe}
-                    {l.kcal_est != null && <> · ~{l.kcal_est.toLocaleString("th-TH")} kcal</>}
-                    {l.low_energy_flag && (
-                      <span className="ml-1 text-amber-600">· ออกแรงเบาแต่เหนื่อยมาก</span>
+                    {isRest ? (
+                      "วันพัก — ไม่ได้ออกกำลังกาย"
+                    ) : (
+                      <>
+                        {l.duration_min} นาที · RPE {l.rpe}
+                        {l.kcal_est != null && <> · ~{l.kcal_est.toLocaleString("th-TH")} kcal</>}
+                        {l.low_energy_flag && (
+                          <span className="ml-1 text-amber-600">· ออกแรงเบาแต่เหนื่อยมาก</span>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

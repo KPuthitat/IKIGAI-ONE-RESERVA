@@ -5,6 +5,7 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import PrintActions from "./PrintActions";
 import OrderEditor, { type CatalogItem, type EditorLine } from "./OrderEditor";
+import { ensureOrderToken } from "@/lib/inventa-po-token";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +114,12 @@ export default function InventaOrderDetailPage({
       }))
     : [];
 
+  // Public supplier PDF link (owner 2026-06-08) — share token, cost hidden.
+  const shareToken = ensureOrderToken(order.id);
+  const base = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
+  const supplierPdfUrl = shareToken
+    ? `${base}/api/inventa/orders/${order.id}/pdf?token=${shareToken}` : null;
+
   const branch = order.branch_id
     ? (db.prepare("SELECT name, reg_address, tax_branch_code, company_id, contact_phone FROM branches WHERE id = ?")
         .get(order.branch_id) as {
@@ -159,6 +166,7 @@ export default function InventaOrderDetailPage({
           status={order.status}
           canApprove={isAdmin}
           canManage={canManage}
+          supplierPdfUrl={supplierPdfUrl}
         />
       </div>
 

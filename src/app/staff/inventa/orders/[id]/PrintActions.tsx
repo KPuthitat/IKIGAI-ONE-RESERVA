@@ -14,18 +14,32 @@ type Status = "draft" | "sent" | "approved" | "received" | "cancelled";
 // (admin only) flips an approved order back to 'sent' so its lines can
 // be corrected — PIN-gated since it undoes an approval (owner 2026-06-07).
 export default function PrintActions({
-  orderId, status, canApprove, canManage
+  orderId, status, canApprove, canManage, supplierPdfUrl
 }: {
   orderId: number;
   status: Status;
   canApprove: boolean;
   canManage: boolean;
+  supplierPdfUrl?: string | null;
 }) {
   const router = useRouter();
   const { t } = useLang();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showSendBack, setShowSendBack] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function copySupplierLink() {
+    if (!supplierPdfUrl) return;
+    try {
+      await navigator.clipboard.writeText(supplierPdfUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // Clipboard blocked (rare) — open the link so they can copy manually.
+      window.open(supplierPdfUrl, "_blank", "noopener");
+    }
+  }
 
   async function act(action: "approve" | "cancel" | "receive", confirmMsg: string) {
     if (!window.confirm(confirmMsg)) return;
@@ -102,6 +116,20 @@ export default function PrintActions({
         className="text-xs px-3 py-1.5 rounded-lg bg-brand text-white font-bold hover:opacity-90">
         เปิด / ดาวน์โหลด PDF
       </a>
+      {/* Supplier link (owner 2026-06-08) — a public PDF (cost hidden, no
+          login) to forward to the vendor. Copy to clipboard for LINE/email. */}
+      {supplierPdfUrl && (
+        <>
+          <button type="button" onClick={copySupplierLink}
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 font-bold hover:bg-slate-50">
+            {copied ? "คัดลอกลิงก์แล้ว ✓" : "คัดลอกลิงก์ส่งผู้จำหน่าย"}
+          </button>
+          <a href={supplierPdfUrl} target="_blank" rel="noopener noreferrer"
+            className="text-xs text-brand hover:underline self-center">
+            เปิดดู
+          </a>
+        </>
+      )}
 
       {showSendBack && (
         <PinPromptModal

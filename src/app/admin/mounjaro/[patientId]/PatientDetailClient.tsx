@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { Alert } from "@/lib/mounjaro-alerts";
-import { getActivity, levelLabel, rpeLabel } from "@/lib/exercise-catalog";
+import { levelLabel, rpeLabel, activityLabel, REST_ACTIVITY_ID } from "@/lib/exercise-catalog";
 
 // ── Mounjaro patient detail — clinical tracker view ─────────────────
 // Themed to the app CI (owner #10 2026-06-06): espresso-brown header +
@@ -77,6 +77,18 @@ function num(b: Record<string, number | string>, k: string): number | null {
   const v = b[k];
   return typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" && !isNaN(Number(v)) ? Number(v) : null;
 }
+/** Age in whole years from an ISO DOB — for auto-filling from the linked
+ *  employee record when baseline age isn't set (owner 2026-06-08). */
+function ageFromDob(dob: string | null | undefined): number | null {
+  if (!dob) return null;
+  const d = new Date(dob);
+  if (isNaN(d.getTime())) return null;
+  const now = new Date();
+  let a = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) a--;
+  return a >= 0 && a < 130 ? a : null;
+}
 
 export default function PatientDetailClient(props: {
   patientId: number; employeeName: string; hn: string | null; startDate: string | null;
@@ -85,10 +97,16 @@ export default function PatientDetailClient(props: {
   medications: Record<string, boolean>;
   visits: Visit[]; selfLogs: SelfLog[]; alerts: Alert[];
   exercise: ExerciseData;
+  employeeDob?: string | null; employeePhone?: string | null;
   pendingAction: { action: "withdraw" | "erase"; reason: string | null; at: string | null } | null;
 }) {
   const { patientId, employeeName, hn, startDate, notes, baseline,
-    comorbidities, contraindications, medications, visits, selfLogs, alerts, exercise, pendingAction } = props;
+    comorbidities, contraindications, medications, visits, selfLogs, alerts, exercise,
+    employeeDob, employeePhone, pendingAction } = props;
+  // Age + phone auto-pulled from the linked employee record when the
+  // baseline override is blank (owner 2026-06-08).
+  const displayAge = num(baseline, "age") ?? ageFromDob(employeeDob);
+  const displayPhone = (baseline.phone as string)?.trim() || employeePhone || null;
   const router = useRouter();
   const [tab, setTab] = useState<"titration" | "visits" | "chart" | "baseline" | "exercise">("titration");
   const [showVisit, setShowVisit] = useState(false);
@@ -145,6 +163,9 @@ export default function PatientDetailClient(props: {
         <div className="text-[13px] text-[#d6a14d] tabular-nums tracking-[0.05em] mt-0.5">
           HN {hn ?? "—"} · เริ่มยา {toBE(startDate)}
         </div>
+        <div className="text-[12px] text-white/70 tabular-nums mt-1">
+          อายุ {displayAge != null ? `${displayAge} ปี` : "—"} · โทร {displayPhone ?? "—"}
+        </div>
       </div>
 
       {/* Pending withdraw/erase request — needs the attending doctor's
@@ -200,6 +221,27 @@ export default function PatientDetailClient(props: {
         <Stat label="นัดถัดไป" value={last?.next_visit ? toBE(last.next_visit) : "—"} small
           sub={last?.next_visit ? `อีก ${Math.max(0, Math.floor((new Date(last.next_visit).getTime() - Date.now()) / 86_400_000))} วัน` : "ยังไม่กำหนด"} />
       </div>
+
+      {/* Progress toward the goal weight, as a % (owner 2026-06-08). */}
+      {(() => {
+        const target = num(baseline, "target");
+        if (baseWeight == null || target == null || !(baseWeight > target)) return null;
+        const pct = Math.max(0, Math.min(100, ((baseWeight - (currentWeight ?? baseWeight)) / (baseWeight - target)) * 100));
+        return (
+          <div className="bg-white border border-[#E5E0D5] rounded-sm px-4 py-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-[12px] text-slate-500">ความคืบหน้าสู่เป้าหมาย</div>
+              <div className="text-[15px] font-bold text-[#047857] tabular-nums">{pct.toFixed(0)}%</div>
+            </div>
+            <div className="h-2.5 rounded-full bg-[#EFEADD] overflow-hidden">
+              <div className="h-full bg-[#047857]" style={{ width: `${pct.toFixed(0)}%` }} />
+            </div>
+            <div className="text-[11px] text-slate-400 mt-1 tabular-nums">
+              เริ่มต้น {baseWeight.toFixed(1)} กก. · ปัจจุบัน {(currentWeight ?? baseWeight).toFixed(1)} กก. · เป้าหมาย {target.toFixed(1)} กก.
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Tabs — horizontally scrollable so the 4 labels never wrap /
           overlap on narrow phones. */}
@@ -337,15 +379,15 @@ export default function PatientDetailClient(props: {
                 </thead>
                 <tbody>
                   {exercise.logs.slice(0, 60).map((l) => {
-                    const a = getActivity(l.activity_id);
+                    const isRest = l.activity_id === REST_ACTIVITY_ID || l.level === "rest";
                     return (
                       <tr key={l.id} className={`border-b border-[#E5E0D5] last:border-0 ${l.low_energy_flag ? "bg-[#FFFBEB]" : ""}`}>
                         <td className="py-2 pr-3 font-mono text-xs">{toBE(l.date)}</td>
-                        <td className="py-2 pr-3">{a?.name ?? l.activity_id}</td>
-                        <td className="py-2 pr-3 text-xs text-slate-500">{levelLabel(l.level)}</td>
-                        <td className="py-2 pr-3 text-right tabular-nums">{l.duration_min}</td>
+                        <td className="py-2 pr-3">{activityLabel(l.activity_id)}</td>
+                        <td className="py-2 pr-3 text-xs text-slate-500">{isRest ? "—" : levelLabel(l.level)}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">{isRest ? "—" : l.duration_min}</td>
                         <td className="py-2 pr-3 text-right tabular-nums">
-                          {l.rpe}
+                          {isRest ? "—" : l.rpe}
                           {l.low_energy_flag && <span className="ml-1 text-[#B45309]" title={`เบาแต่เหนื่อยมาก — ${rpeLabel(l.rpe)}`}>⚑</span>}
                         </td>
                         <td className="py-2 pr-3 text-right tabular-nums">
@@ -405,6 +447,7 @@ export default function PatientDetailClient(props: {
       {showVisit && <VisitModal patientId={patientId} defaultDose={currentDose} onClose={() => setShowVisit(false)} onSaved={() => { setShowVisit(false); router.refresh(); }} />}
       {showEdit && <PatientEditModal patientId={patientId} hn={hn} startDate={startDate} baseline={baseline}
         comorbidities={comorbidities} contraindications={contraindications} medications={medications} notes={notes}
+        employeeDob={employeeDob} employeePhone={employeePhone}
         onClose={() => setShowEdit(false)} onSaved={() => { setShowEdit(false); router.refresh(); }} />}
     </div>
   );
@@ -784,14 +827,18 @@ function PatientEditModal(props: {
   patientId: number; hn: string | null; startDate: string | null;
   baseline: Record<string, number | string>; comorbidities: Record<string, boolean>;
   contraindications: Record<string, boolean>; medications: Record<string, boolean>;
-  notes: string | null; onClose: () => void; onSaved: () => void;
+  notes: string | null; employeeDob?: string | null; employeePhone?: string | null;
+  onClose: () => void; onSaved: () => void;
 }) {
   const { patientId, baseline } = props;
   const [hn, setHn] = useState(props.hn ?? "");
   const [start, setStart] = useState(props.startDate ?? "");
-  const [age, setAge] = useState(num(baseline, "age")?.toString() ?? "");
+  // Prefill age/phone from the linked employee record when the baseline
+  // override is blank (owner 2026-06-08).
+  const [age, setAge] = useState(
+    num(baseline, "age")?.toString() ?? (ageFromDob(props.employeeDob)?.toString() ?? ""));
   const [sex, setSex] = useState((baseline.sex as string) || "หญิง");
-  const [phone, setPhone] = useState((baseline.phone as string) || "");
+  const [phone, setPhone] = useState((baseline.phone as string) || props.employeePhone || "");
   const [bp, setBp] = useState((baseline.bp as string) || "");
   const [b, setB] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};

@@ -32,6 +32,8 @@ export default function PatientDetailPage({ params }: { params: { patientId: str
       patientId={id}
       pendingAction={pendingAction}
       employeeName={bundle.employeeName}
+      employeeDob={(p.employee_dob as string | null) ?? null}
+      employeePhone={(p.employee_phone as string | null) ?? null}
       hn={(p.hn as string | null) ?? null}
       startDate={(p.start_date as string | null) ?? null}
       notes={(p.notes as string | null) ?? null}

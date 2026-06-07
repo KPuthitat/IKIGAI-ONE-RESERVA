@@ -444,6 +444,23 @@ export function addExerciseLog(actor: MjActor, data: {
   audit(actor.id, "exercise_log", "enrollment", enr.id);
 }
 
+/** Log a "did not exercise / rest day" (owner 2026-06-08). One rest row
+ *  per day — re-logging replaces it. Stored with met/duration/rpe 0 and
+ *  level 'rest' so it's excluded from the weekly exercise stats. */
+export function addRestLog(actor: MjActor, date: string): void {
+  const enr = getMyEnrollment(actor);
+  if (!enr || enr.status !== "active") throw new MounjaroForbidden("not_active");
+  getDb().prepare(
+    "DELETE FROM mounjaro_exercise_logs WHERE enrollment_id = ? AND date = ? AND activity_id = 'rest'"
+  ).run(enr.id, date);
+  getDb().prepare(`
+    INSERT INTO mounjaro_exercise_logs
+      (enrollment_id, date, activity_id, level, duration_min, met, rpe, kcal_est, source, logged_by)
+    VALUES (?, ?, 'rest', 'rest', 0, 0, 0, NULL, 'self-select', ?)
+  `).run(enr.id, date, actor.id);
+  audit(actor.id, "exercise_rest", "enrollment", enr.id);
+}
+
 /** Delete one of the actor's OWN exercise rows (corrections). Scoped to
  *  the actor's enrollment so nobody can delete another participant's row. */
 export function deleteMyExerciseLog(actor: MjActor, id: number): boolean {
@@ -473,7 +490,10 @@ function mapExerciseRow(r: Record<string, unknown>): ExerciseLogRow {
 export function summarizeExercise(rows: ExerciseLogRow[]): ExerciseSummary {
   const today = bkkToday();
   const start = new Date(`${today}T00:00:00Z`).getTime() - 6 * 86400_000;
-  const inWeek = rows.filter((r) => {
+  // Rest days (ไม่ได้ออกกำลังกาย) are recorded but must NOT inflate the
+  // exercise stats / streak (owner 2026-06-08).
+  const ex = rows.filter((r) => r.level !== "rest");
+  const inWeek = ex.filter((r) => {
     const t = new Date(`${r.date}T00:00:00Z`).getTime();
     return !Number.isNaN(t) && t >= start;
   });
@@ -488,7 +508,7 @@ export function summarizeExercise(rows: ExerciseLogRow[]): ExerciseSummary {
 
   // Streak — walk back day by day from today while each day has a log.
   // Tolerate "no log yet today" by allowing the run to start at yesterday.
-  const dated = new Set(rows.map((r) => r.date));
+  const dated = new Set(ex.map((r) => r.date));
   const dayStr = (offset: number) =>
     new Date(new Date(`${today}T00:00:00Z`).getTime() - offset * 86400_000)
       .toISOString().slice(0, 10);
@@ -936,7 +956,8 @@ export function getPatientBundle(actor: MjActor, patientId: number): {
 } | null {
   requireDoctor(actor);
   const patient = getDb().prepare(`
-    SELECT p.*, u.display_name AS employee_name, u.title_prefix AS employee_title_prefix, e.id AS enrollment_id
+    SELECT p.*, u.display_name AS employee_name, u.title_prefix AS employee_title_prefix,
+           u.dob AS employee_dob, u.mobile_phone AS employee_phone, e.id AS enrollment_id
     FROM mounjaro_patients p
     JOIN mounjaro_enrollments e ON e.id = p.enrollment_id
     JOIN users u ON u.id = e.employee_id

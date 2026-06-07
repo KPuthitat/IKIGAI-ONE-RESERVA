@@ -2,12 +2,17 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { generatePoPdf, type PoPdfLine } from "@/lib/inventa-po-pdf";
+import { orderTokenValid } from "@/lib/inventa-po-token";
 import { nameWithPrefix } from "@/lib/name";
 
 // GET /api/inventa/orders/[id]/pdf — stream a real A4 PDF of the purchase
 // order (owner 2026-06-06, replaces the broken browser-print preview).
 // Auth + branch scope mirror the order-detail page: super_admin sees any
 // branch; everyone else only their own active branch.
+//
+// Public supplier copy (owner 2026-06-08): ?token=<share token> opens the
+// PDF with NO login and WITH cost prices hidden, for forwarding to the
+// vendor. Any other access still requires a session + branch match.
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,13 +22,17 @@ const STATUS_TH: Record<string, string> = {
   received: "รับของแล้ว", cancelled: "ยกเลิก"
 };
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const user = getSessionUser();
-  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+export async function GET(req: Request, { params }: { params: { id: string } }) {
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });
   }
+  // Public supplier link (?token=…) bypasses auth + hides cost. Otherwise
+  // require a staff session.
+  const token = new URL(req.url).searchParams.get("token");
+  const isPublic = orderTokenValid(id, token);
+  const user = isPublic ? null : getSessionUser();
+  if (!isPublic && !user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const db = getDb();
   const order = db.prepare(`
     SELECT o.*, cu.display_name AS created_by_name, cu.title_prefix AS created_by_prefix,
@@ -39,9 +48,11 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   } | undefined;
   if (!order) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  const isSuper = user.role === "super_admin";
-  if (!isSuper && order.branch_id !== (user.activeBranchId ?? null)) {
-    return NextResponse.json({ error: "branch_forbidden" }, { status: 403 });
+  if (!isPublic) {
+    const isSuper = user!.role === "super_admin";
+    if (!isSuper && order.branch_id !== (user!.activeBranchId ?? null)) {
+      return NextResponse.json({ error: "branch_forbidden" }, { status: 403 });
+    }
   }
 
   const lines = db.prepare(`
@@ -83,6 +94,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       buyerTaxId: company?.tax_id ?? null,
       buyerBranchCode: branch?.tax_branch_code ?? null,
       buyerPhone: branch?.contact_phone || company?.phone || null,
+      hideCost: isPublic,
       lines: lines.map((l) => ({
         item_name: l.item_name,
         item_code: l.item_code,

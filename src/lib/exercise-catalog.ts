@@ -70,6 +70,18 @@ export function getActivity(id: string): ExerciseActivity | null {
   return BY_ID[id] ?? null;
 }
 
+/** Sentinel for a "did not exercise / rest day" log (owner 2026-06-08).
+ *  Stored with level 'rest', duration 0, met 0, rpe 0 — excluded from the
+ *  weekly exercise stats, but kept so the doctor sees the rest day. */
+export const REST_ACTIVITY_ID = "rest";
+export const REST_LABEL = "ไม่ได้ออกกำลังกาย (วันพัก)";
+
+/** Display name for a logged row, including the rest sentinel. */
+export function activityLabel(id: string): string {
+  if (id === REST_ACTIVITY_ID) return REST_LABEL;
+  return getActivity(id)?.name ?? id;
+}
+
 export function levelLabel(level: string): string {
   return EXERCISE_LEVELS.find((l) => l.key === level)?.label ?? level;
 }
