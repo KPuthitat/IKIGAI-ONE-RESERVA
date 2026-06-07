@@ -268,7 +268,11 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
         </header>
-        <main className="flex-1 w-full p-4 max-w-6xl mx-auto">{children}</main>
+        {/* overflow-x-clip — page-level guard so nothing can spill past the
+            viewport on mobile (owner R1). Intended scroll frames (wide
+            tables wrapped in overflow-x-auto) still scroll internally; clip
+            doesn't create a scroll container or affect vertical scroll. */}
+        <main className="flex-1 w-full p-4 max-w-6xl mx-auto overflow-x-clip">{children}</main>
         {/* Desktop only — mobile shows this in the sidebar bottom. */}
         <div className="hidden md:block mt-auto">
           <Footer />

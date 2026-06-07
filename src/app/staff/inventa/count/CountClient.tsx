@@ -447,21 +447,21 @@ export default function CountClient({
             })}
           </div>
           {categories.length > 0 && (
-            <select className="input !w-auto max-w-[42vw] sm:max-w-none text-sm" value={catFilter}
+            <select className="input !w-auto max-w-[42vw] sm:max-w-[220px] text-sm" value={catFilter}
               onChange={(e) => setCatFilter(e.target.value)}>
               <option value="">ทุกหมวด</option>
               {categories.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           )}
           {supplierOptions.length > 0 && (
-            <select className="input !w-auto max-w-[42vw] sm:max-w-none text-sm" value={supFilter}
+            <select className="input !w-auto max-w-[42vw] sm:max-w-[220px] text-sm" value={supFilter}
               onChange={(e) => setSupFilter(e.target.value)}>
               <option value="">ทุกผู้จำหน่าย</option>
               {supplierOptions.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           )}
           {locationOptions.length > 0 && (
-            <select className="input !w-auto max-w-[42vw] sm:max-w-none text-sm" value={locFilter}
+            <select className="input !w-auto max-w-[42vw] sm:max-w-[220px] text-sm" value={locFilter}
               onChange={(e) => setLocFilter(e.target.value)}>
               <option value="">ทุกตำแหน่ง</option>
               {locationOptions.map((l) => <option key={l} value={l}>{l}</option>)}

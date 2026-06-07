@@ -385,7 +385,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             wrap Thai names onto 2 lines on common desktop widths.
             Long-form text pages can still narrow themselves inside with
             their own max-w wrapper if they want. */}
-        <main className="flex-1 w-full p-4 max-w-screen-2xl mx-auto">{children}</main>
+        {/* overflow-x-clip — page-level guard so nothing can spill past the
+            viewport on mobile (owner R1). Wide tables wrapped in their own
+            overflow-x-auto still scroll internally. */}
+        <main className="flex-1 w-full p-4 max-w-screen-2xl mx-auto overflow-x-clip">{children}</main>
         {/* Desktop only — on mobile this info moves into the sidebar
             bottom (see mobileSidebarFooter) so the page isn't crowded. */}
         <div className="hidden md:block mt-auto">

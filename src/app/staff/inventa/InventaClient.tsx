@@ -300,7 +300,7 @@ export default function InventaClient({
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <label className="flex items-center gap-1">
             <span className="text-slate-500">{t("inv.flt.cat")}</span>
-            <select className="input !py-1 !px-2 !w-auto max-w-[42vw] sm:max-w-none text-xs"
+            <select className="input !py-1 !px-2 !w-auto max-w-[42vw] sm:max-w-[220px] text-xs"
               value={catFilter}
               onChange={(e) => setCatFilter(e.target.value)}>
               <option value="">{t("inv.filter.all")}</option>
@@ -313,7 +313,7 @@ export default function InventaClient({
           </label>
           <label className="flex items-center gap-1">
             <span className="text-slate-500">{t("inv.flt.sup")}</span>
-            <select className="input !py-1 !px-2 !w-auto max-w-[42vw] sm:max-w-none text-xs"
+            <select className="input !py-1 !px-2 !w-auto max-w-[42vw] sm:max-w-[220px] text-xs"
               value={supFilter}
               onChange={(e) => setSupFilter(e.target.value)}>
               <option value="">{t("inv.filter.all")}</option>
@@ -326,7 +326,7 @@ export default function InventaClient({
           </label>
           <label className="flex items-center gap-1">
             <span className="text-slate-500">{t("inv.flt.loc")}</span>
-            <select className="input !py-1 !px-2 !w-auto max-w-[42vw] sm:max-w-none text-xs"
+            <select className="input !py-1 !px-2 !w-auto max-w-[42vw] sm:max-w-[220px] text-xs"
               value={locFilter}
               onChange={(e) => setLocFilter(e.target.value)}>
               <option value="">{t("inv.filter.all")}</option>
@@ -344,7 +344,7 @@ export default function InventaClient({
           </button>
           <label className="flex items-center gap-1 ml-auto">
             <span className="text-slate-500">{t("inv.sort.label")}</span>
-            <select className="input !py-1 !px-2 !w-auto max-w-[42vw] sm:max-w-none text-xs"
+            <select className="input !py-1 !px-2 !w-auto max-w-[42vw] sm:max-w-[220px] text-xs"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
               <option value="name">{t("inv.sort.name")}</option>
