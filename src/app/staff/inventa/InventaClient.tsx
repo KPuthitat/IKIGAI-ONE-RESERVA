@@ -86,6 +86,9 @@ export default function InventaClient({
   const [catFilter, setCatFilter] = useState<string>("");
   const [supFilter, setSupFilter] = useState<string>("");
   const [locFilter, setLocFilter] = useState<string>("");
+  // "ยังไม่ตั้งราคาทุน" — items with no usable cost (owner-pinned cost_price
+  // nor a derived unit_cost), so the owner can find + price them (owner F5).
+  const [noCostOnly, setNoCostOnly] = useState(false);
   const [sortBy, setSortBy] = useState<
     "name" | "code" | "qty_asc" | "qty_desc" | "cost_desc" | "low_first"
   >("name");
@@ -134,6 +137,7 @@ export default function InventaClient({
       if (catFilter && (i.category ?? "") !== catFilter) return false;
       if (supFilter && String(i.supplier_id ?? "") !== supFilter) return false;
       if (locFilter && (i.storage_location ?? "") !== locFilter) return false;
+      if (noCostOnly && (i.cost_price ?? i.unit_cost ?? 0) > 0) return false;
       if (!term) return true;
       return [
         i.name, i.generic_name, i.item_code, i.barcode,
@@ -158,12 +162,12 @@ export default function InventaClient({
       }
     }[sortBy];
     return [...out].sort(cmp);
-  }, [items, q, freqFilter, catFilter, supFilter, locFilter, sortBy]);
+  }, [items, q, freqFilter, catFilter, supFilter, locFilter, noCostOnly, sortBy]);
 
   const activeFilterCount =
-    (catFilter ? 1 : 0) + (supFilter ? 1 : 0) + (locFilter ? 1 : 0) + (freqFilter ? 1 : 0);
+    (catFilter ? 1 : 0) + (supFilter ? 1 : 0) + (locFilter ? 1 : 0) + (freqFilter ? 1 : 0) + (noCostOnly ? 1 : 0);
   function clearFilters() {
-    setCatFilter(""); setSupFilter(""); setLocFilter(""); setFreqFilter("");
+    setCatFilter(""); setSupFilter(""); setLocFilter(""); setFreqFilter(""); setNoCostOnly(false);
   }
 
   // Scan: USB scanners type the code then send Enter. Look it up — a
@@ -333,6 +337,11 @@ export default function InventaClient({
               ))}
             </select>
           </label>
+          <button type="button" onClick={() => setNoCostOnly((v) => !v)}
+            className={`px-2.5 py-1 rounded-full border ${
+              noCostOnly ? "bg-rose-600 text-white border-rose-600" : "border-slate-300 text-slate-600"}`}>
+            ยังไม่ตั้งราคาทุน
+          </button>
           <label className="flex items-center gap-1 ml-auto">
             <span className="text-slate-500">{t("inv.sort.label")}</span>
             <select className="input !py-1 !px-2 !w-auto max-w-[42vw] sm:max-w-none text-xs"
