@@ -447,20 +447,27 @@ export default function OrdersClient({
                   (owner 2026-06-06). Sits at the bottom of the group. */}
               {renderAddBox(supplier, "+ เพิ่มสินค้าจากผู้จำหน่ายนี้", "ค้นหาสินค้าของผู้จำหน่ายนี้…")}
               {/* Per-supplier "create PO" — issue this vendor now, defer the
-                  rest (owner F3 2026-06-07). Enabled once ≥1 row is picked. */}
-              {supState !== "none" && (
-                <div className="flex items-center justify-between gap-2 pt-2">
-                  <span className="text-[11px] text-slate-500">
-                    เลือก {items.filter((it) => it.id in sel).length} รายการ
-                    {subtotal > 0 && <> · {fmtBaht(subtotal)}</>}
-                  </span>
-                  <button type="button" disabled={busy}
-                    onClick={() => submitSupplier(supplier, items)}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-brand text-white font-bold disabled:opacity-50">
-                    สร้างใบสั่งซื้อผู้จำหน่ายนี้
-                  </button>
-                </div>
-              )}
+                  rest (owner R3 2026-06-07). Always shown; disabled until at
+                  least one of THIS vendor's rows is ticked. The button
+                  carries this vendor's subtotal so it's clear what you're
+                  about to order. */}
+              {(() => {
+                const pickedCount = items.filter((it) => it.id in sel).length;
+                return (
+                  <div className="flex items-center justify-between gap-2 pt-2">
+                    <span className="text-[11px] text-slate-500">
+                      {pickedCount > 0
+                        ? <>เลือก {pickedCount} รายการ{subtotal > 0 && <> · {fmtBaht(subtotal)}</>}</>
+                        : "ยังไม่ได้เลือกรายการของผู้จำหน่ายนี้"}
+                    </span>
+                    <button type="button" disabled={busy || supState === "none"}
+                      onClick={() => submitSupplier(supplier, items)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-brand text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
+                      สร้างใบสั่งซื้อ{subtotal > 0 ? ` · ${fmtBaht(subtotal)}` : ""}
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
