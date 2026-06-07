@@ -4,12 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import PinPromptModal from "@/app/components/PinPromptModal";
 
 type Status = "draft" | "sent" | "approved" | "received" | "cancelled";
 
 // Print + lifecycle actions for one purchase order. Hidden in print
 // (.no-print on the parent row). Approve is management-only; cancel /
-// receive are open to the creator or an admin.
+// receive are open to the creator or an admin. "Send back to edit"
+// (admin only) flips an approved order back to 'sent' so its lines can
+// be corrected — PIN-gated since it undoes an approval (owner 2026-06-07).
 export default function PrintActions({
   orderId, status, canApprove, canManage
 }: {
@@ -22,6 +25,7 @@ export default function PrintActions({
   const { t } = useLang();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showSendBack, setShowSendBack] = useState(false);
 
   async function act(action: "approve" | "cancel" | "receive", confirmMsg: string) {
     if (!window.confirm(confirmMsg)) return;
@@ -42,6 +46,19 @@ export default function PrintActions({
     }
   }
 
+  async function sendBack(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    const res = await fetch(apiUrl(`/api/inventa/orders/${orderId}/status`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "send_back", pin })
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.ok) return { ok: false, message: j.error ?? t("inv.po.actFail") };
+    setShowSendBack(false);
+    router.refresh();
+    return { ok: true };
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       {err && <span className="text-xs text-rose-600">{err}</span>}
@@ -51,6 +68,13 @@ export default function PrintActions({
           onClick={() => act("approve", t("inv.po.cfApprove"))}
           className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
           {t("inv.po.approve")}
+        </button>
+      )}
+      {canApprove && status === "approved" && (
+        <button type="button" disabled={busy}
+          onClick={() => setShowSendBack(true)}
+          className="text-xs px-3 py-1.5 rounded-lg border border-amber-400 text-amber-700 font-bold hover:bg-amber-50 disabled:opacity-50">
+          {t("inv.po.sendBack")}
         </button>
       )}
       {canManage && status === "approved" && (
@@ -78,6 +102,16 @@ export default function PrintActions({
         className="text-xs px-3 py-1.5 rounded-lg bg-brand text-white font-bold hover:opacity-90">
         เปิด / ดาวน์โหลด PDF
       </a>
+
+      {showSendBack && (
+        <PinPromptModal
+          title={t("inv.po.cfSendBackTitle")}
+          description={t("inv.po.cfSendBackHint")}
+          submitLabel={t("inv.po.sendBackConfirm")}
+          onSubmit={sendBack}
+          onClose={() => setShowSendBack(false)}
+        />
+      )}
     </div>
   );
 }

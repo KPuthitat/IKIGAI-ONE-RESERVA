@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import PrintActions from "./PrintActions";
+import OrderEditor, { type CatalogItem, type EditorLine } from "./OrderEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,36 @@ export default function InventaOrderDetailPage({
     ORDER BY (s.name IS NULL), s.name COLLATE NOCASE, i.name COLLATE NOCASE
   `).all(id) as Line[];
 
+  // Edit affordances (owner 2026-06-07). A 'sent' (รออนุมัติ) order can
+  // have its lines corrected by an admin or the creator — PIN-gated +
+  // audited at the API. We only load the branch catalogue (for the
+  // "add item" picker) when the order is actually editable.
+  const canManage = isAdmin || order.created_by === user.id;
+  const editable = canManage && order.status === "sent";
+  const editorLines: EditorLine[] = lines.map((l) => ({
+    id: l.id,
+    item_id: l.item_id,
+    item_name: l.item_name,
+    item_code: l.item_code,
+    unit: l.unit,
+    order_qty: l.order_qty,
+    unit_cost_at_order: l.unit_cost_at_order
+  }));
+  const catalog: CatalogItem[] = editable
+    ? (db.prepare(`
+        SELECT id, name, item_code, unit, cost_price, unit_cost
+        FROM inventa_items
+        WHERE active = 1 AND (branch_id IS ? OR branch_id = ?)
+        ORDER BY name COLLATE NOCASE
+      `).all(order.branch_id, order.branch_id) as Array<{
+        id: number; name: string; item_code: string | null; unit: string | null;
+        cost_price: number | null; unit_cost: number | null;
+      }>).map((c) => ({
+        id: c.id, name: c.name, item_code: c.item_code, unit: c.unit,
+        cost: c.cost_price != null ? c.cost_price : (c.unit_cost ?? 0)
+      }))
+    : [];
+
   const branch = order.branch_id
     ? (db.prepare("SELECT name, reg_address, tax_branch_code, company_id, contact_phone FROM branches WHERE id = ?")
         .get(order.branch_id) as {
@@ -113,7 +144,7 @@ export default function InventaOrderDetailPage({
 
   return (
     <div className="space-y-4">
-      <div className="no-print flex flex-wrap items-center gap-2">
+      <div className="no-print flex flex-wrap items-center gap-2 pl-11 md:pl-0">
         <Link href="/staff/inventa/orders" className="text-sm text-brand hover:underline">
           {t(lang, "inv.po.backList")}
         </Link>
@@ -127,9 +158,20 @@ export default function InventaOrderDetailPage({
           orderId={order.id}
           status={order.status}
           canApprove={isAdmin}
-          canManage={isAdmin || order.created_by === user.id}
+          canManage={canManage}
         />
       </div>
+
+      {/* Inline line editor for a 'sent' order (owner 2026-06-07) —
+          collapsed to a single "แก้ไขรายการ" button until opened. */}
+      {editable && (
+        <OrderEditor
+          orderId={order.id}
+          editable={editable}
+          lines={editorLines}
+          catalog={catalog}
+        />
+      )}
 
       {/* On-screen summary (owner 2026-06-06). The authoritative supplier
           document is the A4 PDF (เปิด/ดาวน์โหลด PDF above) — this view is
@@ -180,7 +222,7 @@ export default function InventaOrderDetailPage({
                       <tr key={l.id} className="border-b border-slate-100 align-top">
                         <td className="py-1.5 pr-2 text-slate-400">{i + 1}</td>
                         <td className="py-1.5 pr-2 font-medium text-slate-800">{l.item_name}</td>
-                        <td className="py-1.5 pr-2 text-slate-500">{l.item_code ?? t(lang, "inv.dash")}</td>
+                        <td className="py-1.5 pr-2 text-slate-500 whitespace-nowrap">{l.item_code ?? t(lang, "inv.dash")}</td>
                         <td className="py-1.5 pr-2 text-right text-slate-500">{l.qty_on_hand ?? t(lang, "inv.dash")}</td>
                         <td className="py-1.5 pr-2 text-right font-bold">{l.order_qty}</td>
                         <td className="py-1.5 pr-2 text-slate-500">{l.unit ?? t(lang, "inv.dash")}</td>

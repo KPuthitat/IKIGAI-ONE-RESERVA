@@ -110,8 +110,8 @@ export function generatePoPdf(data: PoPdfData): Promise<Buffer> {
       // Column widths (sum = contentW = 515pt on A4 @ 40pt margins).
       const cols = [
         { key: "no", label: "#", w: 22, align: "left" as const },
-        { key: "item", label: "รายการ", w: 165, align: "left" as const },
-        { key: "code", label: "รหัส", w: 65, align: "left" as const },
+        { key: "item", label: "รายการ", w: 148, align: "left" as const },
+        { key: "code", label: "รหัส", w: 82, align: "left" as const },
         { key: "onhand", label: "คงเหลือ", w: 50, align: "right" as const },
         { key: "order", label: "สั่ง", w: 42, align: "right" as const },
         { key: "unit", label: "หน่วย", w: 48, align: "left" as const },
@@ -165,7 +165,11 @@ export function generatePoPdf(data: PoPdfData): Promise<Buffer> {
 
         cols.forEach((c, i) => {
           doc.text(cells[i], colX[i] + cellPad, y + 2, {
-            width: c.w - cellPad * 2, align: c.align
+            width: c.w - cellPad * 2, align: c.align,
+            // Keep the รหัส (drug code) on a single line (owner 2026-06-07).
+            // The "/" in codes like IKGPH/A0226 is a break opportunity, so
+            // even with the wider column we explicitly disable wrapping.
+            lineBreak: c.key !== "code"
           });
         });
         y += rowH;

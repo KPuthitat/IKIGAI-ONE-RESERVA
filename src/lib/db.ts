@@ -3406,6 +3406,23 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_inventa_order_lines_order
       ON inventa_order_lines(order_id);
+
+    -- Purchase-order edit audit (owner 2026-06-07). When an admin/creator
+    -- edits a 'sent' PO (qty change / add / remove line) or sends an
+    -- 'approved' PO back for correction, we record who + before/after so
+    -- there's a trail. PIN-gated at the API; this is the log half.
+    CREATE TABLE IF NOT EXISTS inventa_order_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES inventa_orders(id) ON DELETE CASCADE,
+      admin_id INTEGER NOT NULL REFERENCES users(id),
+      action TEXT NOT NULL,            -- 'edit' | 'send_back'
+      before_json TEXT NOT NULL,
+      after_json TEXT NOT NULL,
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_inventa_order_audit_order
+      ON inventa_order_audit(order_id, created_at DESC);
   `);
 
   // INVENTA configurable lookups — admin-editable option lists used by

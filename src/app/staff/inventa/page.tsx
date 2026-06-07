@@ -49,7 +49,9 @@ export default function InventaPage() {
 
   return (
     <div className="space-y-4">
-      <div>
+      {/* pl-11 on mobile clears the floating hamburger (fixed top-3 left-3)
+          so the heading never sits under it (owner R-mobile 2026-06-07). */}
+      <div className="pl-11 md:pl-0">
         <h1 className="text-2xl font-bold text-slate-800">{t(lang, "inv.stock.title")}</h1>
         <p className="text-sm text-slate-500">{t(lang, "inv.stock.subtitle")}</p>
       </div>

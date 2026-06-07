@@ -1,20 +1,30 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { getDb, logPersonaAction, type Branch } from "@/lib/db";
+import { verifyAdminPin } from "@/lib/admin-pin";
+import { notifyInventaGroup } from "@/lib/line";
+import { nameWithPrefix } from "@/lib/name";
 
 // POST /api/inventa/orders/:id/status — move an order along its
-// lifecycle.  sent → approved → received, or → cancelled.
+// lifecycle.  sent → approved → received, or → cancelled, or send an
+// approved order back to 'sent' for correction.
 //
-//   approve  : management only (admin / super_admin). sent → approved
-//   receive  : admin / super_admin OR the creator. approved → received
-//   cancel   : creator OR admin / super_admin. sent|approved → cancelled
+//   approve    : management only (admin / super_admin). sent → approved.
+//                Notifies the branch LINE group that it's approved
+//                (owner 2026-06-07: "แจ้ง LINE เมื่ออนุมัติ").
+//   send_back  : management only. approved → sent. Clears the approval
+//                so the lines can be edited again, then re-approved.
+//                PIN-gated + audited (it undoes an approval).
+//   receive    : admin / super_admin OR the creator. approved → received.
+//   cancel     : creator OR admin / super_admin. sent|approved → cancelled
 //
 // Branch scope: the order must belong to the caller's active branch
 // (super_admin may act on any branch).
 
 const Body = z.object({
-  action: z.enum(["approve", "cancel", "receive"])
+  action: z.enum(["approve", "cancel", "receive", "send_back"]),
+  pin: z.string().optional()
 });
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -58,7 +68,36 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     db.prepare(
       "UPDATE inventa_orders SET status='approved', approved_by=?, approved_at=? WHERE id=?"
     ).run(user.id, nowIso, id);
+    notifyApproved(db, order.branch_id, id, user.title_prefix, user.display_name);
     return NextResponse.json({ ok: true, status: "approved" });
+  }
+
+  if (action === "send_back") {
+    if (!isAdmin) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+    if (order.status !== "approved") {
+      return NextResponse.json({ error: "bad_state", status: order.status }, { status: 409 });
+    }
+    // PIN-gated: sending back undoes an approval, so prove presence.
+    const pin = parsed.data.pin;
+    if (!pin) return NextResponse.json({ error: "pin_required" }, { status: 400 });
+    const pinStatus = verifyAdminPin(user.id, pin);
+    if (!pinStatus.ok) {
+      const code = pinStatus.reason === "no_pin" ? 400 : 403;
+      return NextResponse.json({ error: pinStatus.reason }, { status: code });
+    }
+    db.prepare(
+      "UPDATE inventa_orders SET status='sent', approved_by=NULL, approved_at=NULL, sent_at=? WHERE id=?"
+    ).run(nowIso, id);
+    try {
+      db.prepare(`
+        INSERT INTO inventa_order_audit (order_id, admin_id, action, before_json, after_json, note, created_at)
+        VALUES (?, ?, 'send_back', ?, ?, NULL, ?)
+      `).run(id, user.id, JSON.stringify({ status: "approved" }), JSON.stringify({ status: "sent" }), nowIso);
+    } catch { /* audit must never block */ }
+    logPersonaAction(user.id, "inventa.order.send_back", id);
+    return NextResponse.json({ ok: true, status: "sent" });
   }
 
   if (action === "receive") {
@@ -81,4 +120,65 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
   db.prepare("UPDATE inventa_orders SET status='cancelled' WHERE id=?").run(id);
   return NextResponse.json({ ok: true, status: "cancelled" });
+}
+
+/** Fire-and-forget LINE card telling the branch group a PO is approved
+ *  (owner 2026-06-07). Mirrors the "ขออนุมัติ" card sent on creation so
+ *  the group sees the full sent → approved trail. Never blocks/throws. */
+function notifyApproved(
+  db: ReturnType<typeof getDb>,
+  branchId: number | null,
+  orderId: number,
+  prefix: string | null,
+  approverName: string | null
+): void {
+  try {
+    if (branchId == null) return;
+    const branch = db.prepare("SELECT * FROM branches WHERE id = ?").get(branchId) as Branch | undefined;
+    if (!branch) return;
+    const head = db.prepare(`
+      SELECT s.name AS supplier_name,
+             (SELECT COALESCE(SUM(order_qty * unit_cost_at_order), 0)
+                FROM inventa_order_lines WHERE order_id = ?) AS subtotal
+      FROM inventa_order_lines l
+      LEFT JOIN inventa_suppliers s ON s.id = l.supplier_id
+      WHERE l.order_id = ? LIMIT 1
+    `).get(orderId, orderId) as { supplier_name: string | null; subtotal: number } | undefined;
+    const supName = head?.supplier_name ?? "(ไม่ระบุผู้จำหน่าย)";
+    const subtotal = head?.subtotal ?? 0;
+    const base = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
+    const flex = {
+      type: "flex" as const,
+      altText: `อนุมัติสั่งซื้อแล้ว · ${supName} · ${branch.name}`,
+      contents: {
+        type: "bubble" as const,
+        body: {
+          type: "box", layout: "vertical", spacing: "sm",
+          contents: [
+            { type: "text", text: "อนุมัติสั่งซื้อแล้ว (INVENTA)", weight: "bold", size: "lg", color: "#1a7f37" },
+            { type: "text", text: `${branch.name} · PO-${orderId}`, size: "xs", color: "#888888" },
+            { type: "separator", margin: "md" },
+            { type: "box", layout: "baseline", margin: "sm", contents: [
+              { type: "text", text: "ผู้จำหน่าย", size: "sm", color: "#555555", flex: 2 },
+              { type: "text", text: supName, size: "sm", color: "#1a1a2e", weight: "bold", align: "end", flex: 4, wrap: true }
+            ]},
+            { type: "box", layout: "baseline", margin: "sm", contents: [
+              { type: "text", text: "รวม (ทุน)", size: "sm", color: "#555555", flex: 3 },
+              { type: "text", text: `฿${subtotal.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`, size: "sm", weight: "bold", align: "end", flex: 2 }
+            ]},
+            { type: "text", text: `ผู้อนุมัติ: ${nameWithPrefix(prefix, approverName ?? "")}`, size: "xs", color: "#888888", margin: "md", wrap: true }
+          ]
+        },
+        footer: {
+          type: "box", layout: "vertical", contents: [
+            { type: "button", style: "primary", color: "#1a7f37", height: "sm",
+              action: { type: "uri", label: "เปิดใบสั่งซื้อ", uri: `${base}/staff/inventa/orders/${orderId}` } }
+          ]
+        }
+      }
+    };
+    void notifyInventaGroup(branch, flex).catch(() => {});
+  } catch {
+    /* notification must never block the approval */
+  }
 }

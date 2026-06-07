@@ -88,7 +88,8 @@ export default function InventaOrdersPage() {
 
   return (
     <div className="space-y-4">
-      <div>
+      {/* pl-11 on mobile clears the floating hamburger (owner R-mobile). */}
+      <div className="pl-11 md:pl-0">
         <h1 className="text-2xl font-bold text-slate-800">{t(lang, "inv.orders.title")}</h1>
         <p className="text-sm text-slate-500">{t(lang, "inv.orders.subtitle")}</p>
       </div>

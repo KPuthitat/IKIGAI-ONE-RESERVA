@@ -430,7 +430,10 @@ export default function OrdersClient({
                         disabled={!checked}
                         onChange={(e) => setQty(it.id, e.target.value)}
                       />
-                      <span className="text-[11px] text-slate-500">{it.unit ?? t("inv.ord.unit")}</span>
+                      {/* Fixed-width unit so every qty input lines up in a
+                          column regardless of unit length (owner 2026-06-07:
+                          เม็ด/ขวด/กล่อง/แอมป์ differ in width). */}
+                      <span className="text-[11px] text-slate-500 inline-block w-12 text-left">{it.unit ?? t("inv.ord.unit")}</span>
                     </div>
                     {/* Per-line live preview — appears only when the
                         row is selected so the unchecked rows stay
