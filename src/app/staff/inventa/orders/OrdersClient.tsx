@@ -263,18 +263,26 @@ export default function OrdersClient({
     return n;
   }, [totalsBySupplier]);
 
+  /** POST a set of lines as PO(s). Returns the created order ids, or null
+   *  on failure (error already surfaced). Shared by the global submit and
+   *  the per-supplier create buttons. */
+  async function postOrder(lines: Array<{ item_id: number; order_qty: number }>): Promise<number[] | null> {
+    const res = await fetch(apiUrl("/api/inventa/orders"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: note.trim() || undefined, lines })
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.ok) { setErr(j.error ?? t("inv.ord.sendFail")); return null; }
+    return Array.isArray(j.ids) ? j.ids : (j.id ? [j.id] : []);
+  }
+
   async function submit() {
     if (chosen.length === 0) { setErr(t("inv.ord.selectMin")); return; }
     setBusy(true); setErr(null); setOkMsg(null);
     try {
-      const res = await fetch(apiUrl("/api/inventa/orders"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note: note.trim() || undefined, lines: chosen })
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setErr(j.error ?? t("inv.ord.sendFail")); return; }
-      const ids: number[] = Array.isArray(j.ids) ? j.ids : (j.id ? [j.id] : []);
+      const ids = await postOrder(chosen);
+      if (!ids) return;
       if (ids.length === 1) {
         // Single supplier → go straight to its PO.
         router.push(`/staff/inventa/orders/${ids[0]}`);
@@ -285,6 +293,32 @@ export default function OrdersClient({
       setSel({});
       setNote("");
       setOkMsg(`สร้างใบสั่งซื้อ ${ids.length} ใบ (แยกตามผู้จำหน่าย) แล้ว — เปิดแต่ละใบเพื่อพิมพ์/ส่ง`);
+      router.refresh();
+    } catch {
+      setErr(t("inv.ord.sendFail"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Create a PO for ONE supplier's selected lines (owner F3 2026-06-07).
+   *  Stays on the page so staff can issue the remaining suppliers one at a
+   *  time; the just-created PO appears under "ใบสั่งซื้อล่าสุด". */
+  async function submitSupplier(supplier: string, items: LowStockItem[]) {
+    const ids = new Set(items.map((i) => i.id));
+    const lines = chosen.filter((l) => ids.has(l.item_id));
+    if (lines.length === 0) { setErr(t("inv.ord.selectMin")); return; }
+    setBusy(true); setErr(null); setOkMsg(null);
+    try {
+      const created = await postOrder(lines);
+      if (!created) return;
+      // Drop just this supplier's lines from the selection; keep the rest.
+      setSel((prev) => {
+        const next = { ...prev };
+        for (const l of lines) delete next[l.item_id];
+        return next;
+      });
+      setOkMsg(`สร้างใบสั่งซื้อของ ${supplier} แล้ว — เปิดด้านล่างเพื่อพิมพ์/ส่ง (ผู้จำหน่ายอื่นกดสร้างต่อได้)`);
       router.refresh();
     } catch {
       setErr(t("inv.ord.sendFail"));
@@ -369,10 +403,14 @@ export default function OrdersClient({
                         <span className="font-medium text-slate-800">{it.name}</span>
                         {bin && <span className="ml-1 text-[11px] text-slate-400">[{bin}]</span>}
                         <span className="block text-[11px] text-slate-500">
-                          {/* On-hand qty emphasised (owner 2026-06-06) —
-                              blue + bold + larger so it reads at a glance. */}
+                          {/* On-hand qty emphasised + colour-coded by reorder
+                              point (owner F4 2026-06-07): below the reorder
+                              point → red; at/above → black, both bold. */}
                           {t("inv.ord.onhand")}{" "}
-                          <span className="text-blue-600 font-bold text-sm">{it.current_qty}</span>
+                          <span className={`font-bold text-sm ${
+                            it.current_qty < it.safety_stock ? "text-rose-600" : "text-slate-900"}`}>
+                            {it.current_qty}
+                          </span>
                           {it.unit ? ` ${it.unit}` : ""} / {t("inv.ord.repoint")} {it.safety_stock}
                           {" "}· {t("inv.ord.cost")}{" "}
                           {costMissing ? (
@@ -408,6 +446,21 @@ export default function OrdersClient({
               {/* Per-supplier add — only this vendor's catalogue items
                   (owner 2026-06-06). Sits at the bottom of the group. */}
               {renderAddBox(supplier, "+ เพิ่มสินค้าจากผู้จำหน่ายนี้", "ค้นหาสินค้าของผู้จำหน่ายนี้…")}
+              {/* Per-supplier "create PO" — issue this vendor now, defer the
+                  rest (owner F3 2026-06-07). Enabled once ≥1 row is picked. */}
+              {supState !== "none" && (
+                <div className="flex items-center justify-between gap-2 pt-2">
+                  <span className="text-[11px] text-slate-500">
+                    เลือก {items.filter((it) => it.id in sel).length} รายการ
+                    {subtotal > 0 && <> · {fmtBaht(subtotal)}</>}
+                  </span>
+                  <button type="button" disabled={busy}
+                    onClick={() => submitSupplier(supplier, items)}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-brand text-white font-bold disabled:opacity-50">
+                    สร้างใบสั่งซื้อผู้จำหน่ายนี้
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
