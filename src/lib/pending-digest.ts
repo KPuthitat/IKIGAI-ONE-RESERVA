@@ -2,7 +2,7 @@
 //
 // Once per day per branch, at the admin-configured
 // branches.pending_digest_time, push a single LINE card to the
-// executive/HR group (via notifyToStaffGroup → global routing)
+// HR group (via notifyToHrGroup → system_settings.recruita_exec_group_id)
 // summarising staff requests that are STILL WAITING on someone —
 // the ones that "fell through" because nobody actioned them:
 //
@@ -10,6 +10,8 @@
 //    • นาย ก
 //    • นาย ข
 //   คำขอลางานรออนุมัติ          ← leave_requests status='pending'
+//    • นาย ก
+//   คำขอทำงานล่วงเวลา           ← ot_requests status='pending' (owner 2026-06-08)
 //    • นาย ก
 //
 // Same idempotency model as the attendance summary:
@@ -51,6 +53,7 @@ export type PendingDigestItem = {
 export type PendingDigest = {
   shiftChange: PendingDigestItem[];
   leave: PendingDigestItem[];
+  ot: PendingDigestItem[];
 };
 
 /** Collect the still-pending shift-change + leave requests for a
@@ -85,6 +88,20 @@ export function buildPendingDigest(branchId: number): PendingDigest {
     ORDER BY l.created_at ASC
   `).all(branchId) as LeaveRow[];
 
+  // OT requests pending approval (owner 2026-06-08) — folded into this
+  // daily digest instead of a per-request push to save LINE quota.
+  type OtRow = {
+    work_date: string; requested_until: string;
+    display_name: string; title_prefix: string | null;
+  };
+  const otRows = db.prepare(`
+    SELECT o.work_date, o.requested_until, u.display_name, u.title_prefix
+    FROM ot_requests o
+    JOIN users u ON u.id = o.user_id
+    WHERE o.branch_id = ? AND o.status = 'pending'
+    ORDER BY o.created_at ASC
+  `).all(branchId) as OtRow[];
+
   return {
     shiftChange: shiftRows.map((r) => ({
       name: nameWithPrefix(r.title_prefix, r.display_name),
@@ -103,7 +120,12 @@ export function buildPendingDigest(branchId: number): PendingDigest {
         detail: `${label} · ${range}`,
         ref: r.ref_no
       };
-    })
+    }),
+    ot: otRows.map((r) => ({
+      name: nameWithPrefix(r.title_prefix, r.display_name),
+      detail: `ทำงานล่วงเวลาถึง ${r.requested_until} น. · ${r.work_date}`,
+      ref: null
+    }))
   };
 }
 
@@ -111,7 +133,7 @@ export function buildPendingDigest(branchId: number): PendingDigest {
  *  uses this to decide whether to actually push (an empty digest is
  *  pointless), while still stamping the dedupe date either way. */
 export function hasPendingItems(d: PendingDigest): boolean {
-  return d.shiftChange.length > 0 || d.leave.length > 0;
+  return d.shiftChange.length > 0 || d.leave.length > 0 || d.ot.length > 0;
 }
 
 /** Build the LINE Flex card. Navy header + two name-bulleted sections
@@ -125,7 +147,7 @@ export function pendingDigestFlex(args: {
   headerColor?: string | null;
 }): { type: "flex"; altText: string; contents: Record<string, unknown> } {
   const headerColor = args.headerColor || "#1a2b50";
-  const total = args.digest.shiftChange.length + args.digest.leave.length;
+  const total = args.digest.shiftChange.length + args.digest.leave.length + args.digest.ot.length;
   const altText =
     `สรุปคำขอค้าง ${total} รายการ · ${args.branchName}`;
 
@@ -195,7 +217,9 @@ export function pendingDigestFlex(args: {
         contents: [
           ...section("คำขอเปลี่ยนเวลางาน", args.digest.shiftChange),
           { type: "separator", margin: "lg", color: "#eeeeee" },
-          ...section("คำขอลางานรออนุมัติ", args.digest.leave)
+          ...section("คำขอลางานรออนุมัติ", args.digest.leave),
+          { type: "separator", margin: "lg", color: "#eeeeee" },
+          ...section("คำขอทำงานล่วงเวลา", args.digest.ot)
         ]
       },
       footer: {
