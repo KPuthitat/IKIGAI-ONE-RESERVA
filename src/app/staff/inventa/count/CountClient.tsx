@@ -328,7 +328,7 @@ export default function CountClient({
           </button>
           <button type="button" onClick={() => submit(true)} disabled={busy}
             className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-600 font-bold hover:bg-slate-50 disabled:opacity-50">
-            บันทึกเงียบ
+            บันทึก
           </button>
           <button type="button" onClick={() => submit(false)} disabled={busy}
             className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold disabled:opacity-50">
@@ -467,10 +467,10 @@ export default function CountClient({
               {locationOptions.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
           )}
-          <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer ml-auto">
-            <input type="checkbox" checked={uncountedOnly} onChange={(e) => setUncountedOnly(e.target.checked)} />
+          <button type="button" onClick={() => setUncountedOnly((v) => !v)}
+            className={`text-xs px-2.5 py-1 rounded-full border ${uncountedOnly ? "bg-slate-800 text-white border-slate-800" : "border-slate-300 text-slate-600"}`}>
             เฉพาะที่ยังไม่นับ
-          </label>
+          </button>
         </div>
         <div className="text-[11px] text-slate-400">แสดง {filtered.length} / {total} รายการ</div>
 
