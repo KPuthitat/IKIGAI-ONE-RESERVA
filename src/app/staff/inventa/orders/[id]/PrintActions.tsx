@@ -6,7 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import PinPromptModal from "@/app/components/PinPromptModal";
 
-type Status = "draft" | "sent" | "approved" | "received" | "cancelled";
+type Status = "draft" | "sent" | "approved" | "paid" | "shipping" | "received" | "returned" | "cancelled";
 
 // Print + lifecycle actions for one purchase order. Hidden in print
 // (.no-print on the parent row). Approve is management-only; cancel /
@@ -41,7 +41,10 @@ export default function PrintActions({
     }
   }
 
-  async function act(action: "approve" | "cancel" | "receive", confirmMsg: string) {
+  async function act(
+    action: "approve" | "cancel" | "receive" | "pay" | "credit" | "ship" | "return",
+    confirmMsg: string
+  ) {
     if (!window.confirm(confirmMsg)) return;
     setBusy(true); setErr(null);
     try {
@@ -91,11 +94,41 @@ export default function PrintActions({
           {t("inv.po.sendBack")}
         </button>
       )}
+      {/* Procurement flow (owner 2026-06-08): approved → ชำระเงิน|เครดิต →
+          จัดส่ง → รับเข้าคลัง, plus ส่งคืนผู้จำหน่าย. */}
       {canManage && status === "approved" && (
+        <>
+          <button type="button" disabled={busy}
+            onClick={() => act("pay", "บันทึกว่าชำระเงินแล้ว?")}
+            className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
+            บันทึกชำระเงิน
+          </button>
+          <button type="button" disabled={busy}
+            onClick={() => act("credit", "บันทึกเป็นเครดิต/วางบิล แล้วข้ามไปขั้นจัดส่ง?")}
+            className="text-xs px-3 py-1.5 rounded-lg border border-teal-500 text-teal-700 font-bold hover:bg-teal-50 disabled:opacity-50">
+            เครดิต/วางบิล → จัดส่ง
+          </button>
+        </>
+      )}
+      {canManage && status === "paid" && (
         <button type="button" disabled={busy}
-          onClick={() => act("receive", t("inv.po.cfReceive"))}
-          className="text-xs px-3 py-1.5 rounded-lg border border-sky-400 text-sky-700 font-bold hover:bg-sky-50 disabled:opacity-50">
-          {t("inv.po.receive")}
+          onClick={() => act("ship", "บันทึกว่ากำลังจัดส่ง?")}
+          className="text-xs px-3 py-1.5 rounded-lg bg-sky-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
+          เริ่มจัดส่ง
+        </button>
+      )}
+      {canManage && status === "shipping" && (
+        <button type="button" disabled={busy}
+          onClick={() => act("receive", "ยืนยันรับของเข้าคลังครบแล้ว?")}
+          className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
+          รับเข้าคลัง
+        </button>
+      )}
+      {canManage && (status === "paid" || status === "shipping" || status === "received") && (
+        <button type="button" disabled={busy}
+          onClick={() => act("return", "บันทึกว่าส่งคืนผู้จำหน่าย?")}
+          className="text-xs px-3 py-1.5 rounded-lg border border-orange-400 text-orange-700 hover:bg-orange-50 disabled:opacity-50">
+          ส่งคืนผู้จำหน่าย
         </button>
       )}
       {canManage && (status === "sent" || status === "approved") && (

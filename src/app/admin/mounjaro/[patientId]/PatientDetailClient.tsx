@@ -49,7 +49,7 @@ const ADH_LABEL: Record<string, string> = {
 };
 
 const inputCls =
-  "w-full px-3 py-2 text-sm border border-[#C9C2B0] rounded-sm bg-white text-[#3a2716] " +
+  "w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white text-[#3a2716] " +
   "focus:outline-none focus:border-[#a06820] focus:ring-2 focus:ring-[#a06820]/20";
 const labelCls = "text-[12px] font-medium text-slate-500 tracking-wide";
 
@@ -156,14 +156,14 @@ export default function PatientDetailClient(props: {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="relative bg-[#3a2716] text-white px-6 py-6 rounded-sm after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-20 after:h-[3px] after:bg-[#a06820]">
+      <div className="relative bg-white border border-slate-200 rounded-2xl shadow-card px-6 py-6 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-20 after:h-[3px] after:bg-[#a06820] after:rounded-bl-2xl">
         <button onClick={() => router.push("/admin/mounjaro")}
-          className="text-[12px] text-[#d6a14d] hover:text-white tracking-[0.08em] uppercase mb-2">← กลับสู่รายชื่อ</button>
-        <div className="text-[24px] font-semibold leading-tight">{employeeName}</div>
-        <div className="text-[13px] text-[#d6a14d] tabular-nums tracking-[0.05em] mt-0.5">
+          className="text-[12px] text-[#a06820] hover:text-[#7a4f16] tracking-[0.08em] uppercase mb-2">← กลับสู่รายชื่อ</button>
+        <div className="text-[24px] font-semibold leading-tight text-[#3a2716]">{employeeName}</div>
+        <div className="text-[13px] text-[#a06820] tabular-nums tracking-[0.05em] mt-0.5">
           HN {hn ?? "—"} · เริ่มยา {toBE(startDate)}
         </div>
-        <div className="text-[12px] text-white/70 tabular-nums mt-1">
+        <div className="text-[12px] text-slate-500 tabular-nums mt-1">
           อายุ {displayAge != null ? `${displayAge} ปี` : "—"} · โทร {displayPhone ?? "—"}
         </div>
       </div>
@@ -184,12 +184,12 @@ export default function PatientDetailClient(props: {
           <div className="flex gap-2 pt-1">
             <button type="button" disabled={decidingPending}
               onClick={() => decidePending("approve")}
-              className="px-4 py-2 rounded-sm bg-[#B45309] text-white text-[12px] font-bold disabled:opacity-50">
+              className="px-4 py-2 rounded-xl bg-[#B45309] text-white text-[12px] font-bold disabled:opacity-50">
               อนุมัติคำขอ
             </button>
             <button type="button" disabled={decidingPending}
               onClick={() => decidePending("reject")}
-              className="px-4 py-2 rounded-sm border border-[#B45309] text-[#B45309] text-[12px] font-bold disabled:opacity-50">
+              className="px-4 py-2 rounded-xl border border-[#B45309] text-[#B45309] text-[12px] font-bold disabled:opacity-50">
               ไม่อนุมัติ
             </button>
           </div>
@@ -210,7 +210,7 @@ export default function PatientDetailClient(props: {
       )}
 
       {/* Stat grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-px bg-[#E5E0D5] border border-[#E5E0D5] rounded-sm overflow-hidden">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-px bg-slate-200 border border-slate-200 rounded-2xl overflow-hidden">
         <Stat label="ขนาดยาปัจจุบัน" value={`${currentDose}`} unit="mg/wk" sub={last ? toBE(last.date) : "ยังไม่มีการนัด"} />
         <Stat label="สัปดาห์ที่" value={`${weeksFromStart}`} unit="สัปดาห์" sub="จากวันเริ่มยา" />
         <Stat label="น้ำหนักล่าสุด" value={currentWeight != null ? currentWeight.toFixed(1) : "—"} unit="กก."
@@ -228,7 +228,7 @@ export default function PatientDetailClient(props: {
         if (baseWeight == null || target == null || !(baseWeight > target)) return null;
         const pct = Math.max(0, Math.min(100, ((baseWeight - (currentWeight ?? baseWeight)) / (baseWeight - target)) * 100));
         return (
-          <div className="bg-white border border-[#E5E0D5] rounded-sm px-4 py-3">
+          <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
             <div className="flex items-center justify-between mb-1.5">
               <div className="text-[12px] text-slate-500">ความคืบหน้าสู่เป้าหมาย</div>
               <div className="text-[15px] font-bold text-[#047857] tabular-nums">{pct.toFixed(0)}%</div>
@@ -245,7 +245,7 @@ export default function PatientDetailClient(props: {
 
       {/* Tabs — horizontally scrollable so the 4 labels never wrap /
           overlap on narrow phones. */}
-      <div className="flex border-b border-[#E5E0D5] gap-1 overflow-x-auto whitespace-nowrap -mx-1 px-1">
+      <div className="flex border-b border-slate-200 gap-1 overflow-x-auto whitespace-nowrap -mx-1 px-1">
         {([["titration", "การปรับขนาดยา"], ["visits", "บันทึกการนัด"], ["chart", "กราฟติดตาม"], ["exercise", "การออกกำลังกาย"], ["baseline", "ข้อมูลพื้นฐาน"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`flex-shrink-0 px-4 py-3 text-[13px] font-medium -mb-px border-b-2 transition ${
@@ -262,12 +262,12 @@ export default function PatientDetailClient(props: {
           <div className="grid grid-cols-3 sm:grid-cols-6">
             {DOSES.map((dose, i) => {
               const idx = DOSES.indexOf(currentDose);
-              const cls = i < idx ? "bg-white border-[#a06820]" : i === idx ? "bg-[#3a2716] border-[#3a2716] text-white" : "bg-white border-[#E5E0D5]";
+              const cls = i < idx ? "bg-white border-[#a06820]" : i === idx ? "bg-[#a06820] border-[#a06820] text-white" : "bg-white border-slate-200";
               return (
                 <div key={dose} className={`text-center py-4 px-2 border ${i > 0 ? "border-l-0 sm:border-l-0" : ""} ${cls}`}>
                   <div className={`text-lg font-bold ${i === idx ? "text-white" : "text-[#3a2716]"}`}>{dose}</div>
-                  <div className={`text-[10px] ${i === idx ? "text-[#d6a14d]" : "text-slate-500"}`}>mg</div>
-                  <div className={`text-[10px] uppercase tracking-[0.08em] mt-1.5 ${i === idx ? "text-[#d6a14d]" : "text-slate-500"}`}>
+                  <div className={`text-[10px] ${i === idx ? "text-white/80" : "text-slate-500"}`}>mg</div>
+                  <div className={`text-[10px] uppercase tracking-[0.08em] mt-1.5 ${i === idx ? "text-white/80" : "text-slate-500"}`}>
                     {i === 0 ? "Starter" : `Step ${i + 1}`}
                   </div>
                 </div>
@@ -304,7 +304,7 @@ export default function PatientDetailClient(props: {
             <div className="overflow-x-auto -mx-6 sm:mx-0">
               <table className="w-full text-[13px] whitespace-nowrap">
                 <thead>
-                  <tr className="bg-[#3a2716] text-white text-left text-[11px] uppercase tracking-[0.08em]">
+                  <tr className="bg-slate-50 text-slate-500 text-left text-[11px] uppercase tracking-[0.08em] border-b border-slate-200">
                     <th className="py-2.5 px-4 font-medium">วันที่</th>
                     <th className="py-2.5 px-3 font-medium">ขนาดยา</th>
                     <th className="py-2.5 px-3 font-medium">น้ำหนัก</th>
@@ -346,14 +346,14 @@ export default function PatientDetailClient(props: {
         <Card title="การออกกำลังกาย · Exercise Log">
           {/* Soft clinical flag (#15) — light activity at high RPE. */}
           {exercise.summary.flagCount > 0 && (
-            <div className="mb-3 rounded-sm border border-[#B45309] bg-[#FFFBEB] px-3 py-2 text-[12px] text-[#92400E]">
+            <div className="mb-3 rounded-xl border border-[#B45309] bg-[#FFFBEB] px-3 py-2 text-[12px] text-[#92400E]">
               <b>ข้อสังเกตเชิงคลินิก:</b> ใน 7 วันล่าสุดมีการออกกำลังกายระดับเบาแต่ผู้ป่วยประเมินความเหนื่อยสูง
               (RPE ≥ 7) จำนวน {exercise.summary.flagCount} ครั้ง อาจเป็นสัญญาณภาวะพลังงานต่ำหรือผลข้างเคียงของยา
               — แนะนำให้สอบถามเพิ่มเติม
             </div>
           )}
 
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-px bg-[#E5E0D5] border border-[#E5E0D5] rounded-sm overflow-hidden mb-3">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-px bg-slate-200 border border-slate-200 rounded-2xl overflow-hidden mb-3">
             <Stat label="วันที่ออกกำลัง (7 วัน)" value={String(exercise.summary.days)} unit="วัน" />
             <Stat label="เวลารวม" value={String(exercise.summary.totalMin)} unit="นาที" />
             <Stat label="พลังงานโดยประมาณ"
@@ -368,7 +368,7 @@ export default function PatientDetailClient(props: {
             <div className="overflow-x-auto">
               <table className="w-full text-[13px] whitespace-nowrap">
                 <thead>
-                  <tr className="text-left text-slate-500 border-b border-[#E5E0D5]">
+                  <tr className="text-left text-slate-500 border-b border-slate-200">
                     <th className="py-2 pr-3 font-medium">วันที่</th>
                     <th className="py-2 pr-3 font-medium">กิจกรรม</th>
                     <th className="py-2 pr-3 font-medium">ระดับ</th>
@@ -381,7 +381,7 @@ export default function PatientDetailClient(props: {
                   {exercise.logs.slice(0, 60).map((l) => {
                     const isRest = l.activity_id === REST_ACTIVITY_ID || l.level === "rest";
                     return (
-                      <tr key={l.id} className={`border-b border-[#E5E0D5] last:border-0 ${l.low_energy_flag ? "bg-[#FFFBEB]" : ""}`}>
+                      <tr key={l.id} className={`border-b border-slate-200 last:border-0 ${l.low_energy_flag ? "bg-[#FFFBEB]" : ""}`}>
                         <td className="py-2 pr-3 font-mono text-xs">{toBE(l.date)}</td>
                         <td className="py-2 pr-3">{activityLabel(l.activity_id)}</td>
                         <td className="py-2 pr-3 text-xs text-slate-500">{isRest ? "—" : levelLabel(l.level)}</td>
@@ -407,8 +407,8 @@ export default function PatientDetailClient(props: {
       {/* Tab: Baseline */}
       {tab === "baseline" && (
         <Card title="ข้อมูลพื้นฐาน · Baseline Data"
-          action={<button onClick={() => setShowEdit(true)} className="px-3 py-1.5 text-[12px] border border-[#C9C2B0] rounded-sm text-[#3a2716] hover:bg-slate-50">แก้ไข</button>}>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-[#E5E0D5] border border-[#E5E0D5] rounded-sm overflow-hidden">
+          action={<button onClick={() => setShowEdit(true)} className="px-3 py-1.5 text-[12px] border border-slate-300 rounded-xl text-[#3a2716] hover:bg-slate-50">แก้ไข</button>}>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-200 border border-slate-200 rounded-2xl overflow-hidden">
             <Stat label="น้ำหนักเริ่มต้น" value={baseWeight != null ? baseWeight.toFixed(1) : "—"} unit="กก." />
             <Stat label="ส่วนสูง" value={baseHeight != null ? baseHeight.toFixed(0) : "—"} unit="ซม." />
             <Stat label="BMI" value={calcBMI(baseWeight, baseHeight)?.toFixed(1) ?? "—"} sub={bmiCat(calcBMI(baseWeight, baseHeight))} />
@@ -440,8 +440,8 @@ export default function PatientDetailClient(props: {
 
       {/* Footer actions */}
       <div className="flex justify-end gap-2.5 pt-1">
-        <button onClick={() => window.print()} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#3a2716] hover:bg-slate-50">พิมพ์เอกสาร</button>
-        <button onClick={deletePatient} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#B91C1C] hover:bg-[#FEF2F2]">ลบผู้ป่วย</button>
+        <button onClick={() => window.print()} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#3a2716] hover:bg-slate-50">พิมพ์เอกสาร</button>
+        <button onClick={deletePatient} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#B91C1C] hover:bg-[#FEF2F2]">ลบผู้ป่วย</button>
       </div>
 
       {showVisit && <VisitModal patientId={patientId} defaultDose={currentDose} onClose={() => setShowVisit(false)} onSaved={() => { setShowVisit(false); router.refresh(); }} />}
@@ -470,8 +470,8 @@ function Stat({ label, value, unit, sub, valueColor, small }: {
 
 function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="bg-white border border-[#E5E0D5] rounded-sm shadow-sm p-6">
-      <div className="flex items-center justify-between mb-5 pb-4 border-b border-[#E5E0D5]">
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
+      <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-200">
         <div className="text-[15px] font-semibold text-[#3a2716] flex items-center">
           <span className="inline-block w-[3px] h-4 bg-[#a06820] mr-2.5" />{title}
         </div>
@@ -483,7 +483,7 @@ function Card({ title, action, children }: { title: string; action?: React.React
 }
 
 function GoldBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return <button onClick={onClick} className="px-3 py-1.5 text-[12px] bg-[#a06820] hover:bg-[#7a4f16] text-white rounded-sm font-medium">{children}</button>;
+  return <button onClick={onClick} className="px-3 py-1.5 text-[12px] bg-[#a06820] hover:bg-[#7a4f16] text-white rounded-xl font-medium">{children}</button>;
 }
 
 function AlertBox({ level, a }: { level: "danger" | "warning"; a: Alert }) {
@@ -546,21 +546,21 @@ function FragmentRow({ v, se, patientId, onChange }: { v: Visit; se: string; pat
   }
   void patientId;
   const decCls: Record<string, string> = {
-    maintain: "border-[#C9C2B0] bg-slate-50 text-slate-500",
+    maintain: "border-slate-300 bg-slate-50 text-slate-500",
     increase: "border-[#047857] bg-[#ECFDF5] text-[#047857]",
     decrease: "border-[#B45309] bg-[#FEF3C7] text-[#78350F]",
     hold: "border-[#B91C1C] bg-[#FEF2F2] text-[#B91C1C]"
   };
   return (
     <>
-      <tr className="border-b border-[#E5E0D5]">
+      <tr className="border-b border-slate-200">
         <td className="py-3 px-4 font-medium text-[#3a2716]">{toBE(v.date)}</td>
         <td className="py-3 px-3 tabular-nums">{v.dose != null ? `${v.dose} mg` : "—"}</td>
         <td className="py-3 px-3 tabular-nums">{v.weight != null ? `${v.weight.toFixed(1)} กก.` : "—"}</td>
         <td className="py-3 px-3 tabular-nums">{v.bp || "—"} · {v.hr ?? "—"} bpm</td>
         <td className="py-3 px-3 text-[12px] text-slate-600">{se || "—"}</td>
         <td className="py-3 px-3">
-          <span className={`inline-block px-2.5 py-0.5 text-[11px] font-medium rounded-sm border ${decCls[v.decision ?? "maintain"]}`}>
+          <span className={`inline-block px-2.5 py-0.5 text-[11px] font-medium rounded-xl border ${decCls[v.decision ?? "maintain"]}`}>
             {DECISION_LABEL[v.decision ?? "maintain"] ?? "—"}
           </span>
         </td>
@@ -569,7 +569,7 @@ function FragmentRow({ v, se, patientId, onChange }: { v: Visit; se: string; pat
         </td>
       </tr>
       {v.notes && (
-        <tr><td colSpan={7} className="bg-slate-50 text-[12px] text-slate-600 px-4 py-2 border-b border-[#E5E0D5]">
+        <tr><td colSpan={7} className="bg-slate-50 text-[12px] text-slate-600 px-4 py-2 border-b border-slate-200">
           <b>บันทึก:</b> {v.notes}
         </td></tr>
       )}
@@ -682,7 +682,7 @@ function SelfLogRow({ log, onReplied }: { log: SelfLog; onReplied: () => void })
     } finally { setBusy(false); }
   }
   return (
-    <div className="text-[13px] border-b border-[#E5E0D5] last:border-0 pb-2.5">
+    <div className="text-[13px] border-b border-slate-200 last:border-0 pb-2.5">
       <div className="font-mono text-[12px] text-slate-500">{toBE(log.date)}
         {log.weight != null && <> · {log.weight} กก.</>}
         {log.bp && <> · BP {log.bp}</>}
@@ -692,11 +692,11 @@ function SelfLogRow({ log, onReplied }: { log: SelfLog; onReplied: () => void })
       {log.diary && <div className="text-slate-600 mt-0.5">บันทึกประจำวัน: {log.diary}</div>}
       {log.notes_for_doctor && <div className="text-[#3a2716] mt-0.5">ผู้ป่วย: {log.notes_for_doctor}</div>}
       {log.doctor_reply ? (
-        <div className="text-[#047857] bg-[#ECFDF5] rounded-sm px-2 py-1 mt-1">แพทย์: {log.doctor_reply}</div>
+        <div className="text-[#047857] bg-[#ECFDF5] rounded-xl px-2 py-1 mt-1">แพทย์: {log.doctor_reply}</div>
       ) : (
         <div className="flex gap-1.5 mt-1">
           <input className={inputCls + " !py-1 text-[12px]"} value={reply} placeholder="ตอบผู้ป่วย…" onChange={(e) => setReply(e.target.value)} />
-          <button onClick={send} disabled={busy} className="px-3 text-[12px] bg-[#3a2716] text-white rounded-sm disabled:opacity-50">ตอบ</button>
+          <button onClick={send} disabled={busy} className="px-3 text-[12px] bg-[#a06820] text-white rounded-xl disabled:opacity-50">ตอบ</button>
         </div>
       )}
     </div>
@@ -750,8 +750,8 @@ function VisitModal({ patientId, defaultDose, onClose, onSaved }: {
   return (
     <ModalShell title="บันทึกการนัดติดตาม" sub="Follow-up Visit Entry" onClose={onClose}
       footer={<>
-        <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#3a2716] hover:bg-white">ยกเลิก</button>
-        <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#3a2716] hover:bg-[#4e351f] text-white rounded-sm disabled:opacity-50">{busy ? "กำลังบันทึก…" : "บันทึกการนัด"}</button>
+        <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#3a2716] hover:bg-white">ยกเลิก</button>
+        <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#a06820] hover:bg-[#7a4f16] text-white rounded-xl disabled:opacity-50">{busy ? "กำลังบันทึก…" : "บันทึกการนัด"}</button>
       </>}>
       <Section title="ข้อมูลการนัด">
         <div className="grid sm:grid-cols-2 gap-4">
@@ -778,7 +778,7 @@ function VisitModal({ patientId, defaultDose, onClose, onSaved }: {
       <Section title="ผลข้างเคียง · Side Effects (0=ไม่มี · 1=เล็กน้อย · 2=ปานกลาง · 3=รุนแรง)">
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {SE_FIELDS.map(([k, label]) => (
-            <div key={k} className="border border-[#E5E0D5] p-3">
+            <div key={k} className="border border-slate-200 p-3">
               <div className="text-[12px] font-medium mb-2 text-[#3a2716]">{label}</div>
               <div className="flex gap-1">
                 {[0, 1, 2, 3].map((lvl) => {
@@ -786,7 +786,7 @@ function VisitModal({ patientId, defaultDose, onClose, onSaved }: {
                   const colors = ["bg-[#047857] border-[#047857] text-white", "bg-[#FCD34D] border-[#F59E0B] text-[#78350F]", "bg-[#B45309] border-[#B45309] text-white", "bg-[#B91C1C] border-[#B91C1C] text-white"];
                   return (
                     <button key={lvl} type="button" onClick={() => setSe((p) => ({ ...p, [k]: lvl }))}
-                      className={`flex-1 h-7 text-[11px] font-medium border ${active ? colors[lvl] : "bg-white border-[#C9C2B0] text-slate-500 hover:border-[#a06820]"}`}>{lvl}</button>
+                      className={`flex-1 h-7 text-[11px] font-medium border ${active ? colors[lvl] : "bg-white border-slate-300 text-slate-500 hover:border-[#a06820]"}`}>{lvl}</button>
                   );
                 })}
               </div>
@@ -885,8 +885,8 @@ function PatientEditModal(props: {
   return (
     <ModalShell title="แก้ไขข้อมูลผู้ป่วย" sub="Edit Patient" onClose={props.onClose}
       footer={<>
-        <button onClick={props.onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#3a2716] hover:bg-white">ยกเลิก</button>
-        <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#3a2716] hover:bg-[#4e351f] text-white rounded-sm disabled:opacity-50">{busy ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button onClick={props.onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#3a2716] hover:bg-white">ยกเลิก</button>
+        <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#a06820] hover:bg-[#7a4f16] text-white rounded-xl disabled:opacity-50">{busy ? "กำลังบันทึก…" : "บันทึก"}</button>
       </>}>
       <Section title="ข้อมูลผู้ป่วย">
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -951,15 +951,15 @@ function ModalShell({ title, sub, onClose, footer, children }: {
   title: string; sub: string; onClose: () => void; footer: React.ReactNode; children: React.ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[#3a2716]/60 backdrop-blur-[2px] p-4 sm:p-10 overflow-y-auto" onClick={onClose}>
-      <div className="bg-white w-full max-w-3xl rounded-sm border-t-[3px] border-[#a06820] shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="bg-[#3a2716] px-6 py-4 flex items-center justify-between">
-          <div><div className="text-white font-semibold text-[16px]">{title}</div>
-            <div className="text-[10px] text-[#d6a14d] tracking-[0.1em] uppercase mt-0.5">{sub}</div></div>
-          <button onClick={onClose} className="w-8 h-8 border border-white/30 text-white text-lg hover:bg-white/10">×</button>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 backdrop-blur-[2px] p-4 sm:p-10 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white w-full max-w-3xl rounded-2xl border-t-[3px] border-[#a06820] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+          <div><div className="text-[#3a2716] font-semibold text-[16px]">{title}</div>
+            <div className="text-[10px] text-[#a06820] tracking-[0.1em] uppercase mt-0.5">{sub}</div></div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg border border-slate-200 text-slate-400 text-lg hover:bg-slate-50">×</button>
         </div>
         <div className="p-6 max-h-[70vh] overflow-y-auto">{children}</div>
-        <div className="px-6 py-4 bg-slate-50 border-t border-[#E5E0D5] flex justify-end gap-2.5">{footer}</div>
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2.5">{footer}</div>
       </div>
     </div>
   );

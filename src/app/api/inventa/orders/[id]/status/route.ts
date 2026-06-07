@@ -24,7 +24,10 @@ import { ensureOrderToken } from "@/lib/inventa-po-token";
 // (super_admin may act on any branch).
 
 const Body = z.object({
-  action: z.enum(["approve", "cancel", "receive", "send_back"]),
+  action: z.enum([
+    "approve", "cancel", "receive", "send_back",
+    "pay", "credit", "ship", "return"
+  ]),
   pin: z.string().optional()
 });
 
@@ -101,19 +104,59 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ ok: true, status: "sent" });
   }
 
-  if (action === "receive") {
-    if (!isAdmin && !isCreator) {
-      return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    }
+  // Procurement-tracking steps (owner 2026-06-08). All available to the
+  // creator or an admin; no PIN, no per-step LINE push (kept quiet so the
+  // group isn't spammed — only approval still notifies).
+  const canManage = isAdmin || isCreator;
+
+  if (action === "pay") {
+    if (!canManage) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     if (order.status !== "approved") {
+      return NextResponse.json({ error: "bad_state", status: order.status }, { status: 409 });
+    }
+    db.prepare("UPDATE inventa_orders SET status='paid', payment_method='cash' WHERE id=?").run(id);
+    return NextResponse.json({ ok: true, status: "paid" });
+  }
+
+  if (action === "credit") {
+    // วางบิล/เครดิตเทอม — skip payment, go straight to shipping.
+    if (!canManage) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    if (order.status !== "approved") {
+      return NextResponse.json({ error: "bad_state", status: order.status }, { status: 409 });
+    }
+    db.prepare("UPDATE inventa_orders SET status='shipping', payment_method='credit' WHERE id=?").run(id);
+    return NextResponse.json({ ok: true, status: "shipping" });
+  }
+
+  if (action === "ship") {
+    if (!canManage) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    if (order.status !== "paid") {
+      return NextResponse.json({ error: "bad_state", status: order.status }, { status: 409 });
+    }
+    db.prepare("UPDATE inventa_orders SET status='shipping' WHERE id=?").run(id);
+    return NextResponse.json({ ok: true, status: "shipping" });
+  }
+
+  if (action === "receive") {
+    if (!canManage) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    if (!["approved", "paid", "shipping"].includes(order.status)) {
       return NextResponse.json({ error: "bad_state", status: order.status }, { status: 409 });
     }
     db.prepare("UPDATE inventa_orders SET status='received' WHERE id=?").run(id);
     return NextResponse.json({ ok: true, status: "received" });
   }
 
+  if (action === "return") {
+    if (!canManage) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    if (!["approved", "paid", "shipping", "received"].includes(order.status)) {
+      return NextResponse.json({ error: "bad_state", status: order.status }, { status: 409 });
+    }
+    db.prepare("UPDATE inventa_orders SET status='returned' WHERE id=?").run(id);
+    return NextResponse.json({ ok: true, status: "returned" });
+  }
+
   // cancel
-  if (!isAdmin && !isCreator) {
+  if (!canManage) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   if (order.status !== "sent" && order.status !== "approved") {

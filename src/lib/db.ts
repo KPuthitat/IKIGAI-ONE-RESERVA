@@ -3446,6 +3446,56 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // Widen inventa_orders.status to track the full procurement flow (owner
+  // 2026-06-08): + 'paid','shipping','returned'; + payment_method ('cash'
+  // |'credit'). SQLite can't ALTER a CHECK, so rebuild the table — SAFE
+  // pattern (explicit alternations, NOT \b-regex; mirrors the inventa_
+  // lookups rebuild). Idempotent: only runs while the old CHECK is live.
+  {
+    const ordSql = (db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='inventa_orders'"
+    ).get() as { sql: string } | undefined)?.sql ?? "";
+    if (ordSql && !ordSql.includes("'shipping'")) {
+      // FK is ON (top of file): a DROP TABLE inventa_orders would do an
+      // implicit DELETE that CASCADE-deletes inventa_order_lines +
+      // inventa_order_audit. Turn FK OFF around the swap (must be OUTSIDE
+      // the txn or it's a no-op) — same pattern as the messaging_channels
+      // rebuild above. Order ids are preserved so the children stay valid;
+      // FK is restored in finally.
+      db.exec("PRAGMA foreign_keys = OFF");
+      try {
+      db.transaction(() => {
+        db.exec(`
+          CREATE TABLE inventa_orders_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            branch_id INTEGER REFERENCES branches(id),
+            status TEXT NOT NULL DEFAULT 'draft'
+              CHECK (status IN ('draft','sent','approved','paid','shipping','received','returned','cancelled')),
+            note TEXT,
+            created_by INTEGER REFERENCES users(id),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            sent_at TEXT,
+            approved_by INTEGER REFERENCES users(id),
+            approved_at TEXT,
+            public_token TEXT,
+            payment_method TEXT
+          );
+          INSERT INTO inventa_orders_new
+            (id, branch_id, status, note, created_by, created_at, sent_at, approved_by, approved_at, public_token)
+            SELECT id, branch_id, status, note, created_by, created_at, sent_at, approved_by, approved_at, public_token
+            FROM inventa_orders;
+          DROP TABLE inventa_orders;
+          ALTER TABLE inventa_orders_new RENAME TO inventa_orders;
+          CREATE INDEX IF NOT EXISTS idx_inventa_orders_branch
+            ON inventa_orders(branch_id, created_at DESC);
+        `);
+      })();
+      } finally {
+        db.exec("PRAGMA foreign_keys = ON");
+      }
+    }
+  }
+
   // INVENTA configurable lookups — admin-editable option lists used by
   // the item form (grid row prefixes, storage cabinets, smallest-unit
   // names, drug categories). kind discriminates the list. branch_id

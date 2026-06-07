@@ -43,7 +43,7 @@ export default function InventaOrdersPage() {
         SELECT 1 FROM inventa_order_lines ol
         JOIN inventa_orders o ON o.id = ol.order_id
         WHERE ol.item_id = i.id
-          AND o.status IN ('sent', 'approved')
+          AND o.status IN ('sent', 'approved', 'paid', 'shipping')
           AND (o.branch_id IS ? OR o.branch_id = ?)
       )
     ORDER BY (s.name IS NULL), s.name COLLATE NOCASE, i.name COLLATE NOCASE

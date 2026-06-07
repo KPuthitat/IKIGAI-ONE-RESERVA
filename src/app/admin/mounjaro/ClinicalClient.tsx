@@ -30,7 +30,7 @@ type InvitedRow = {
 };
 
 const inputCls =
-  "w-full px-3 py-2 text-sm border border-[#C9C2B0] rounded-sm bg-white text-[#3a2716] " +
+  "w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white text-[#3a2716] " +
   "focus:outline-none focus:border-[#a06820] focus:ring-2 focus:ring-[#a06820]/20";
 const labelCls = "text-[12px] font-medium text-slate-500 tracking-wide";
 
@@ -74,14 +74,14 @@ function UnlockGate() {
   }
   return (
     <div className="max-w-md mx-auto mt-6">
-      <div className="bg-white border border-[#E5E0D5] rounded-sm shadow-sm overflow-hidden">
-        <div className="bg-[#3a2716] px-6 py-5 border-b-[3px] border-[#a06820]">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="bg-white px-6 py-5 border-b-[3px] border-[#a06820]">
           <div className="flex items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/ahc-logo.png" alt="AHC" className="w-10 h-10 rounded object-contain" />
             <div>
-              <h1 className="text-white font-semibold text-[15px]">ระบบติดตามผู้ป่วย โครงการควบคุมน้ำหนัก</h1>
-              <div className="text-[10px] text-[#d6a14d] tracking-[0.12em] uppercase mt-0.5">Tirzepatide Monitoring</div>
+              <h1 className="text-[#3a2716] font-semibold text-[15px]">ระบบติดตามผู้ป่วย โครงการควบคุมน้ำหนัก</h1>
+              <div className="text-[10px] text-[#a06820] tracking-[0.12em] uppercase mt-0.5">Tirzepatide Monitoring</div>
             </div>
           </div>
         </div>
@@ -100,7 +100,7 @@ function UnlockGate() {
           </div>
           {err && <p className="text-sm text-[#B91C1C]">✗ {err}</p>}
           <button type="button" disabled={busy || license.trim().length === 0} onClick={unlock}
-            className="w-full py-2.5 bg-[#3a2716] hover:bg-[#4e351f] text-white text-sm font-medium rounded-sm disabled:opacity-50 transition">
+            className="w-full py-2.5 bg-[#a06820] hover:bg-[#7a4f16] text-white text-sm font-medium rounded-xl disabled:opacity-50 transition">
             {busy ? "กำลังตรวจสอบ…" : "ปลดล็อกเข้าดูข้อมูล"}
           </button>
         </div>
@@ -111,10 +111,10 @@ function UnlockGate() {
 
 function StatusBadge({ level }: { level: "danger" | "warning" | null }) {
   if (level === "danger")
-    return <span className="text-[11px] px-2.5 py-0.5 rounded-sm border border-[#B91C1C] bg-[#FEF2F2] text-[#B91C1C] font-medium">เร่งด่วน</span>;
+    return <span className="text-[11px] px-2.5 py-0.5 rounded-xl border border-[#B91C1C] bg-[#FEF2F2] text-[#B91C1C] font-medium">เร่งด่วน</span>;
   if (level === "warning")
-    return <span className="text-[11px] px-2.5 py-0.5 rounded-sm border border-[#B45309] bg-[#FEF3C7] text-[#78350F] font-medium">เฝ้าระวัง</span>;
-  return <span className="text-[11px] px-2.5 py-0.5 rounded-sm border border-[#C9C2B0] bg-slate-50 text-slate-500 font-medium">ปกติ</span>;
+    return <span className="text-[11px] px-2.5 py-0.5 rounded-xl border border-[#B45309] bg-[#FEF3C7] text-[#78350F] font-medium">เฝ้าระวัง</span>;
+  return <span className="text-[11px] px-2.5 py-0.5 rounded-xl border border-slate-300 bg-slate-50 text-slate-500 font-medium">ปกติ</span>;
 }
 
 function PatientList({ patients, pending, pendingInvitations }: {
@@ -133,12 +133,12 @@ function PatientList({ patients, pending, pendingInvitations }: {
         </div>
         <div className="flex gap-2.5">
           <button type="button" onClick={() => setInvite(true)}
-            className="px-4 py-2.5 border border-[#a06820] text-[#a06820] hover:bg-slate-50 text-[13px] font-medium rounded-sm transition whitespace-nowrap">
+            className="px-4 py-2.5 border border-[#a06820] text-[#a06820] hover:bg-slate-50 text-[13px] font-medium rounded-xl transition whitespace-nowrap">
             + ส่งคำเชิญ
           </button>
           {pending.length > 0 && (
             <button type="button" onClick={() => setIntake(true)}
-              className="px-4 py-2.5 bg-[#a06820] hover:bg-[#7a4f16] text-white text-[13px] font-medium rounded-sm transition whitespace-nowrap">
+              className="px-4 py-2.5 bg-[#a06820] hover:bg-[#7a4f16] text-white text-[13px] font-medium rounded-xl transition whitespace-nowrap">
               ทำ Baseline ({pending.length})
             </button>
           )}
@@ -146,7 +146,7 @@ function PatientList({ patients, pending, pendingInvitations }: {
       </div>
 
       {pendingInvitations.length > 0 && (
-        <div className="bg-[#F0F4FF] border border-[#B8C7E0] rounded-sm px-4 py-2.5 text-[13px] text-[#1E3A5F]">
+        <div className="bg-[#F0F4FF] border border-[#B8C7E0] rounded-xl px-4 py-2.5 text-[13px] text-[#1E3A5F]">
           คำเชิญที่ส่งแล้ว รอพนักงานยืนยัน ({pendingInvitations.length} คน): {" "}
           {pendingInvitations.map((r, i) => (
             <span key={r.enrollment_id}>{i > 0 ? " · " : ""}<b>{r.employee_name}</b></span>
@@ -155,13 +155,13 @@ function PatientList({ patients, pending, pendingInvitations }: {
       )}
 
       {pending.length > 0 && (
-        <div className="bg-white border border-[#d6a14d] rounded-sm px-4 py-2.5 text-[13px] text-slate-700">
+        <div className="bg-white border border-[#d6a14d] rounded-xl px-4 py-2.5 text-[13px] text-slate-700">
           พนักงานยืนยันรับคำเชิญแล้ว <b>{pending.length}</b> คน รอบันทึก Baseline —
           กด <button onClick={() => setIntake(true)} className="underline font-medium">ทำ Baseline</button> เพื่อเปิดแฟ้มผู้ป่วย
         </div>
       )}
 
-      <div className="bg-white border border-[#E5E0D5] rounded-sm shadow-sm overflow-x-auto">
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-x-auto">
         {patients.length === 0 ? (
           <div className="text-center py-16 px-8">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -171,7 +171,7 @@ function PatientList({ patients, pending, pendingInvitations }: {
         ) : (
           <table className="w-full text-[13px] whitespace-nowrap">
             <thead>
-              <tr className="bg-[#3a2716] text-white text-left text-[11px] uppercase tracking-[0.08em]">
+              <tr className="bg-slate-50 text-slate-500 text-left text-[11px] uppercase tracking-[0.08em] border-b border-slate-200">
                 <th className="py-3 px-5 font-medium">HN</th>
                 <th className="py-3 px-3 font-medium">ชื่อ-สกุล</th>
                 <th className="py-3 px-3 font-medium text-right">ขนาดยาปัจจุบัน</th>
@@ -185,7 +185,7 @@ function PatientList({ patients, pending, pendingInvitations }: {
             <tbody>
               {patients.map((p) => (
                 <tr key={p.id} onClick={() => router.push(`/admin/mounjaro/${p.id}`)}
-                  className="border-b border-[#E5E0D5] last:border-0 hover:bg-slate-50 cursor-pointer">
+                  className="border-b border-slate-200 last:border-0 hover:bg-slate-50 cursor-pointer">
                   <td className="py-3 px-5 font-mono text-xs tabular-nums">{p.hn ?? "—"}</td>
                   <td className="py-3 px-3 font-medium text-[#3a2716]">
                     {p.employee_name}
@@ -207,7 +207,7 @@ function PatientList({ patients, pending, pendingInvitations }: {
       </div>
 
       {/* Standard monitoring reference */}
-      <div className="bg-white border border-[#d6a14d] rounded-sm px-6 py-5">
+      <div className="bg-white border border-[#d6a14d] rounded-xl px-6 py-5">
         <div className="text-[12px] font-semibold text-[#3a2716] tracking-[0.08em] uppercase mb-3">
           เกณฑ์การติดตามมาตรฐาน · Standard Monitoring Parameters
         </div>
@@ -363,14 +363,14 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[#3a2716]/60 backdrop-blur-[2px] p-4 sm:p-10 overflow-y-auto" onClick={onClose}>
-      <div className="bg-white w-full max-w-3xl rounded-sm border-t-[3px] border-[#a06820] shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="bg-[#3a2716] px-6 py-4 flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 backdrop-blur-[2px] p-4 sm:p-10 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white w-full max-w-3xl rounded-xl border-t-[3px] border-[#a06820] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
           <div>
-            <div className="text-white font-semibold text-[16px]">เพิ่มผู้ป่วยใหม่</div>
-            <div className="text-[10px] text-[#d6a14d] tracking-[0.1em] uppercase mt-0.5">New Patient Registration</div>
+            <div className="text-[#3a2716] font-semibold text-[16px]">เพิ่มผู้ป่วยใหม่</div>
+            <div className="text-[10px] text-[#a06820] tracking-[0.1em] uppercase mt-0.5">New Patient Registration</div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 border border-white/30 text-white text-lg hover:bg-slate-50/10">×</button>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg border border-slate-200 text-slate-400 text-lg hover:bg-slate-50">×</button>
         </div>
         <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
 
@@ -379,7 +379,7 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
               <div className="lg:col-span-3">
                 <label className={labelCls}>พนักงานที่สมัครเข้าโครงการ <span className="text-[#B91C1C]">*</span></label>
                 {pending.length === 0 ? (
-                  <p className="mt-1 text-sm text-slate-500 bg-slate-50 border border-[#E5E0D5] rounded-sm px-3 py-2">
+                  <p className="mt-1 text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
                     ยังไม่มีพนักงานยืนยันรับคำเชิญ — ส่งคำเชิญก่อน แล้วรอพนักงานยืนยัน
                   </p>
                 ) : (
@@ -481,9 +481,9 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
 
           {err && <p className="text-sm text-[#B91C1C]">✗ {err}</p>}
         </div>
-        <div className="px-6 py-4 bg-slate-50 border-t border-[#E5E0D5] flex justify-end gap-2.5">
-          <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#3a2716] hover:bg-slate-50">ยกเลิก</button>
-          <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#3a2716] hover:bg-[#4e351f] text-white rounded-sm disabled:opacity-50">
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2.5">
+          <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#3a2716] hover:bg-slate-50">ยกเลิก</button>
+          <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#a06820] hover:bg-[#7a4f16] text-white rounded-xl disabled:opacity-50">
             {busy ? "กำลังบันทึก…" : "บันทึก"}
           </button>
         </div>
@@ -561,16 +561,16 @@ function InviteModal({ onClose, onSent }: { onClose: () => void; onSent: () => v
   const selected = employees.find((e) => e.id === selectedId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#3a2716]/60 backdrop-blur-[2px] p-4" onClick={onClose}>
-      <div className="bg-white w-full max-w-md rounded-sm border-t-[3px] border-[#a06820] shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="bg-[#3a2716] px-6 py-4 flex items-center gap-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-[2px] p-4" onClick={onClose}>
+      <div className="bg-white w-full max-w-md rounded-xl border-t-[3px] border-[#a06820] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/ahc-logo.png" alt="AHC" className="w-16 h-16 rounded-lg object-contain bg-white/10 p-1 flex-shrink-0" />
+          <img src="/ahc-logo.png" alt="AHC" className="w-16 h-16 rounded-lg object-contain bg-slate-100 p-1 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="text-white font-semibold text-[15px]">ส่งคำเชิญเข้าร่วมโครงการ</div>
-            <div className="text-[10px] text-[#d6a14d] tracking-[0.1em] uppercase mt-0.5">Send Program Invitation</div>
+            <div className="text-[#3a2716] font-semibold text-[15px]">ส่งคำเชิญเข้าร่วมโครงการ</div>
+            <div className="text-[10px] text-[#a06820] tracking-[0.1em] uppercase mt-0.5">Send Program Invitation</div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 border border-white/30 text-white text-lg hover:bg-white/10 flex-shrink-0">×</button>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg border border-slate-200 text-slate-400 text-lg hover:bg-slate-50 flex-shrink-0">×</button>
         </div>
         <div className="p-6 space-y-4">
           <p className="text-[13px] text-slate-600">
@@ -582,7 +582,7 @@ function InviteModal({ onClose, onSent }: { onClose: () => void; onSent: () => v
             {loading ? (
               <p className="mt-1 text-sm text-slate-400">กำลังโหลด…</p>
             ) : employees.length === 0 ? (
-              <p className="mt-1 text-sm text-slate-500 bg-slate-50 border border-[#E5E0D5] rounded-sm px-3 py-2">
+              <p className="mt-1 text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
                 ไม่มีพนักงานที่สามารถเชิญได้ (ทุกคนอยู่ในโครงการแล้ว)
               </p>
             ) : (
@@ -598,17 +598,17 @@ function InviteModal({ onClose, onSent }: { onClose: () => void; onSent: () => v
             )}
           </div>
           {selected && (
-            <div className="bg-white border border-[#d6a14d] rounded-sm px-4 py-3 text-[13px] text-slate-700">
+            <div className="bg-white border border-[#d6a14d] rounded-xl px-4 py-3 text-[13px] text-slate-700">
               <b>{nameWithPrefix(selected.title_prefix, selected.display_name)}</b> จะได้รับแจ้งเตือนทาง LINE
               ให้กดยืนยันเข้าร่วมโครงการ · เมื่อยืนยันแล้วจึงจะปรากฏในรายการรอทำ Baseline
             </div>
           )}
           {err && <p className="text-sm text-[#B91C1C]">✗ {err}</p>}
         </div>
-        <div className="px-6 py-4 bg-slate-50 border-t border-[#E5E0D5] flex justify-end gap-2.5">
-          <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-[#C9C2B0] rounded-sm text-[#3a2716] hover:bg-slate-50">ยกเลิก</button>
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2.5">
+          <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#3a2716] hover:bg-slate-50">ยกเลิก</button>
           <button onClick={send} disabled={busy || selectedId === "" || loading}
-            className="px-5 py-2 text-[13px] bg-[#3a2716] hover:bg-[#4e351f] text-white rounded-sm disabled:opacity-50">
+            className="px-5 py-2 text-[13px] bg-[#a06820] hover:bg-[#7a4f16] text-white rounded-xl disabled:opacity-50">
             {busy ? "กำลังส่ง…" : "ส่งคำเชิญ"}
           </button>
         </div>

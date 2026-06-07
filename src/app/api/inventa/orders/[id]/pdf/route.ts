@@ -19,7 +19,8 @@ export const dynamic = "force-dynamic";
 
 const STATUS_TH: Record<string, string> = {
   draft: "ฉบับร่าง", sent: "รออนุมัติ", approved: "อนุมัติแล้ว",
-  received: "รับของแล้ว", cancelled: "ยกเลิก"
+  paid: "ชำระเงินแล้ว", shipping: "อยู่ระหว่างจัดส่ง",
+  received: "รับเข้าคลังแล้ว", returned: "ส่งคืนผู้จำหน่าย", cancelled: "ยกเลิก"
 };
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {

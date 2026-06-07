@@ -12,7 +12,8 @@ export const dynamic = "force-dynamic";
 type OrderHead = {
   id: number;
   branch_id: number | null;
-  status: "draft" | "sent" | "approved" | "received" | "cancelled";
+  status: "draft" | "sent" | "approved" | "paid" | "shipping" | "received" | "returned" | "cancelled";
+  payment_method: string | null;
   note: string | null;
   created_at: string;
   sent_at: string | null;
@@ -160,6 +161,11 @@ export default function InventaOrderDetailPage({
         <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
           {stLabel(order.status)}
         </span>
+        {order.payment_method && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
+            {t(lang, order.payment_method === "credit" ? "inv.ord.pay.credit" : "inv.ord.pay.cash")}
+          </span>
+        )}
         <span className="flex-1" />
         <PrintActions
           orderId={order.id}

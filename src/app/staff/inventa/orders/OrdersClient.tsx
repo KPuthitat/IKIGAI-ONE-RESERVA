@@ -46,7 +46,7 @@ function fmtBaht(n: number): string {
 
 export type OrderRow = {
   id: number;
-  status: "draft" | "sent" | "approved" | "received" | "cancelled";
+  status: "draft" | "sent" | "approved" | "paid" | "shipping" | "received" | "returned" | "cancelled";
   note: string | null;
   created_at: string;
   sent_at: string | null;
@@ -62,7 +62,10 @@ const STATUS_CLS: Record<OrderRow["status"], string> = {
   draft: "bg-slate-100 text-slate-600",
   sent: "bg-amber-100 text-amber-700",
   approved: "bg-emerald-100 text-emerald-700",
-  received: "bg-sky-100 text-sky-700",
+  paid: "bg-teal-100 text-teal-700",
+  shipping: "bg-sky-100 text-sky-700",
+  received: "bg-green-100 text-green-700",
+  returned: "bg-orange-100 text-orange-700",
   cancelled: "bg-rose-100 text-rose-600"
 };
 
