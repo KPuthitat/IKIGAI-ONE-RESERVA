@@ -121,11 +121,14 @@ export default function AttendanceReportPage({
   `).all(from, to) as Array<{ date: string }>;
   const holidaySet = new Set(holidays.map((h) => h.date));
 
-  // Approved leave covering days in month, per user
+  // Leave covering days in month, per user. Include PENDING as well as
+  // approved (owner 2026-06-08, item 7) so a filed leave reads as "ลางาน"
+  // rather than "ขาดงาน"; the report recomputes live, so a later
+  // rejection flips the day back to absent.
   const leaves = db.prepare(`
     SELECT user_id, date_from, date_to
     FROM leave_requests
-    WHERE status = 'approved'
+    WHERE status IN ('pending', 'approved')
       AND NOT (date_to < ? OR date_from > ?)
   `).all(from, to) as ApprovedLeave[];
   // Map user_id → Set of YYYY-MM-DD covered

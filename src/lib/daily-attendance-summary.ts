@@ -107,15 +107,19 @@ export function buildDailyAttendanceRoster(
   const inByUser = new Map<number, string>();
   for (const r of inRows) inByUser.set(r.user_id, r.ts);
 
-  // 3) Approved leave covering today (date_from..date_to inclusive)
+  // 3) Leave covering today (date_from..date_to inclusive). Include
+  //    PENDING as well as approved (owner 2026-06-08, item 7): a filed
+  //    leave must read as "ลางาน", never "ขาดงาน", even before the owner
+  //    approves it. (Approved sorts last so its type wins on overwrite.)
   type LeaveRow = { user_id: number; type: string };
   const leaveRows = db.prepare(`
     SELECT user_id, type
     FROM leave_requests
-    WHERE status = 'approved'
+    WHERE status IN ('pending', 'approved')
       AND date_from <= ?
       AND date_to >= ?
       AND user_id IN (${placeholders})
+    ORDER BY (status = 'approved')
   `).all(dateBkk, dateBkk, ...staffIds) as LeaveRow[];
   const leaveByUser = new Map<number, string>();
   for (const r of leaveRows) leaveByUser.set(r.user_id, r.type);
