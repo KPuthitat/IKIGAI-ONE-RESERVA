@@ -17,6 +17,7 @@ export type LabelItem = {
   pick_freq: PickFreq | null;
   unit?: string | null;
   cost?: number | null;        // effective ราคาทุน (cost_price ?? unit_cost)
+  sale?: number | null;        // ราคาขาย (price_opd) — for power-outage reference
   category?: string | null;
   storage_location?: string | null;
   supplier_name?: string | null;
@@ -268,9 +269,21 @@ export default function LabelsClient({
                   <img className="lbl-qr" src={qrSrc(code)} alt={code} />
                   <div className="lbl-meta">
                     <div className="lbl-code">{code}</div>
-                    {i.cost != null && i.cost > 0 && (
+                    {/* Both prices on the sticker so it's usable when the
+                        system is unreachable (owner "เผื่อไฟดับ"). */}
+                    {((i.cost != null && i.cost > 0) || (i.sale != null && i.sale > 0)) && (
                       <div className="lbl-price">
-                        ฿{i.cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        {i.cost != null && i.cost > 0 && (
+                          <span style={{ fontWeight: 400, fontSize: "2.6mm" }}>
+                            ทุน ฿{i.cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                        {i.sale != null && i.sale > 0 && (
+                          <span>
+                            {i.cost != null && i.cost > 0 ? "  " : ""}
+                            ขาย ฿{i.sale.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </span>
+                        )}
                         {i.unit ? <span style={{ fontWeight: 400, fontSize: "2.3mm" }}> /{i.unit}</span> : null}
                       </div>
                     )}
