@@ -24,7 +24,7 @@ type EntryRow = {
 };
 type CertRow = {
   id: number;
-  entry_id: number;
+  entry_id: number | null; // NULL for a 'missing' (forgot-to-punch) request
   proposed_ts: string;
   reason: string;
   status: "pending" | "approved" | "rejected";
@@ -60,7 +60,9 @@ export default function StaffTimeCertificationPage() {
   // "request" button on entries that already have one in flight.
   const pendingByEntry = new Map<number, CertRow>();
   for (const c of myCerts) {
-    if (c.status === "pending") pendingByEntry.set(c.entry_id, c);
+    // Missing-punch certs have no entry_id yet — they don't gate any
+    // existing entry's "request" button, so skip them here.
+    if (c.status === "pending" && c.entry_id != null) pendingByEntry.set(c.entry_id, c);
   }
 
   return (

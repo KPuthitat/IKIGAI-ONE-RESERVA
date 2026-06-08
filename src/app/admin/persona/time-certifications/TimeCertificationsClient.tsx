@@ -115,22 +115,36 @@ export default function TimeCertificationsClient({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <div className="text-[10px] uppercase tracking-[1px] text-slate-500 font-bold">
-                  {t("admin.persona.timeCert.original")}
-                </div>
-                <div className="font-mono mt-0.5">{bkkDisplay(r.original_ts)}</div>
-              </div>
-              <div>
-                <div className="text-[10px] uppercase tracking-[1px] text-emerald-700 font-bold">
-                  {t("admin.persona.timeCert.proposed")}
-                </div>
-                <div className="font-mono mt-0.5 text-emerald-700 font-bold">
-                  {bkkDisplay(r.proposed_ts)}
+            {r.kind === "missing" ? (
+              // Forgot-to-punch request: no original entry — they're asking
+              // to ADD the missing clock-in/out (owner 2026-06-08).
+              <div className="text-sm">
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-sky-100 text-sky-700">
+                  {r.entry_type === "out" ? "ลืมลงเวลาออก" : "ลืมลงเวลาเข้า"}
+                </span>
+                <div className="mt-1.5">
+                  <span className="text-slate-500 text-xs">เวลาที่ขอเพิ่ม:</span>{" "}
+                  <span className="font-mono font-bold text-emerald-700">{bkkDisplay(r.proposed_ts)}</span>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[1px] text-slate-500 font-bold">
+                    {t("admin.persona.timeCert.original")}
+                  </div>
+                  <div className="font-mono mt-0.5">{r.original_ts ? bkkDisplay(r.original_ts) : "—"}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-[1px] text-emerald-700 font-bold">
+                    {t("admin.persona.timeCert.proposed")}
+                  </div>
+                  <div className="font-mono mt-0.5 text-emerald-700 font-bold">
+                    {bkkDisplay(r.proposed_ts)}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="bg-amber-50 border border-amber-200 rounded p-2.5">
               <div className="text-[10px] uppercase tracking-[1px] text-amber-700 font-bold mb-1">

@@ -1434,6 +1434,59 @@ function runMigrations(db: Database.Database): void {
     WHERE status = 'pending';
   `);
 
+  // Widen time_certifications for MISSING-PUNCH requests (owner 2026-06-08):
+  // a staff who forgot to clock in/out has no time_entries row to certify,
+  // so entry_id becomes nullable and new columns describe the punch to
+  // CREATE on approval (kind='missing', entry_type in/out, work_date,
+  // branch_id). SQLite can't drop NOT NULL via ALTER → rebuild. Safe
+  // pattern: FK OFF around the swap (it has FKs out to time_entries/users/
+  // branches; no incoming FK so the drop is harmless). Idempotent.
+  {
+    const certSql = (db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='time_certifications'"
+    ).get() as { sql: string } | undefined)?.sql ?? "";
+    if (certSql && !certSql.includes("'missing'")) {
+      db.exec("PRAGMA foreign_keys = OFF");
+      try {
+        db.transaction(() => {
+          db.exec(`
+            CREATE TABLE time_certifications_new (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              entry_id INTEGER REFERENCES time_entries(id) ON DELETE CASCADE,
+              requested_by INTEGER NOT NULL REFERENCES users(id),
+              reason TEXT NOT NULL,
+              proposed_ts TEXT NOT NULL,
+              original_ts TEXT,
+              kind TEXT NOT NULL DEFAULT 'correction'
+                CHECK (kind IN ('correction','missing')),
+              entry_type TEXT CHECK (entry_type IN ('in','out')),
+              work_date TEXT,
+              branch_id INTEGER REFERENCES branches(id),
+              status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending','approved','rejected')),
+              decided_by INTEGER REFERENCES users(id),
+              decided_at TEXT,
+              decision_note TEXT,
+              created_at TEXT NOT NULL
+            );
+            INSERT INTO time_certifications_new
+              (id, entry_id, requested_by, reason, proposed_ts, original_ts,
+               kind, status, decided_by, decided_at, decision_note, created_at)
+              SELECT id, entry_id, requested_by, reason, proposed_ts, original_ts,
+                     'correction', status, decided_by, decided_at, decision_note, created_at
+              FROM time_certifications;
+            DROP TABLE time_certifications;
+            ALTER TABLE time_certifications_new RENAME TO time_certifications;
+            CREATE INDEX IF NOT EXISTS idx_time_cert_pending_branch
+              ON time_certifications(status, entry_id) WHERE status = 'pending';
+          `);
+        })();
+      } finally {
+        db.exec("PRAGMA foreign_keys = ON");
+      }
+    }
+  }
+
   // SVC — daily service-charge pot logged per branch per day.
   //
   // Source: admin or the closing-shift staff enters today's POS-collected

@@ -48,18 +48,23 @@ export async function POST(
 
   // Pull the cert + its underlying entry so we can branch-guard and
   // capture pre-update values for the audit row.
+  // LEFT JOIN — a 'missing' cert has no entry yet (entry_id NULL); its
+  // punch is described by the cert columns and CREATED on approval.
   const row = db.prepare(`
-    SELECT c.id, c.entry_id, c.proposed_ts, c.status,
+    SELECT c.id, c.entry_id, c.proposed_ts, c.status, c.kind, c.requested_by,
+           c.entry_type AS cert_entry_type, c.work_date, c.branch_id AS cert_branch_id,
            e.user_id AS entry_user_id, e.type AS entry_type,
            e.ts AS entry_ts, e.branch_id AS entry_branch_id
     FROM time_certifications c
-    JOIN time_entries e ON e.id = c.entry_id
+    LEFT JOIN time_entries e ON e.id = c.entry_id
     WHERE c.id = ?
   `).get(certId) as
     | {
-        id: number; entry_id: number; proposed_ts: string; status: string;
-        entry_user_id: number; entry_type: "in" | "out";
-        entry_ts: string; entry_branch_id: number;
+        id: number; entry_id: number | null; proposed_ts: string; status: string;
+        kind: "correction" | "missing"; requested_by: number;
+        cert_entry_type: "in" | "out" | null; work_date: string | null; cert_branch_id: number | null;
+        entry_user_id: number | null; entry_type: "in" | "out" | null;
+        entry_ts: string | null; entry_branch_id: number | null;
       }
     | undefined;
 
@@ -71,9 +76,10 @@ export async function POST(
     );
   }
   // Admin can only act on entries from a branch they're assigned to.
-  // userHasBranch guards admin scope to their branches (multi-branch
-  // admin pattern used elsewhere in the app).
-  if (!userHasBranch(user, row.entry_branch_id)) {
+  // For a missing cert the branch lives on the cert row; for a correction
+  // it lives on the underlying entry.
+  const guardBranch = row.kind === "missing" ? row.cert_branch_id : row.entry_branch_id;
+  if (guardBranch != null && !userHasBranch(user, guardBranch)) {
     return NextResponse.json({ error: "branch_forbidden" }, { status: 403 });
   }
 
@@ -88,20 +94,38 @@ export async function POST(
     `).run(parsed.data.decision, user.id, nowIso, note, certId);
 
     if (parsed.data.decision === "approved") {
-      // Audit the change so the original ts is recoverable if needed.
-      db.prepare(`
-        INSERT INTO time_entries_audit
-          (entry_id, entry_user_id, entry_type, entry_ts, action,
-           admin_id, reason, created_at)
-        VALUES (?, ?, ?, ?, 'cert-approve', ?, ?, ?)
-      `).run(
-        row.entry_id, row.entry_user_id, row.entry_type, row.entry_ts,
-        user.id,
-        `cert#${certId}` + (note ? ` · ${note}` : ""),
-        nowIso
-      );
-      db.prepare("UPDATE time_entries SET ts = ? WHERE id = ?")
-        .run(row.proposed_ts, row.entry_id);
+      if (row.kind === "missing") {
+        // CREATE the punch they forgot to record (owner 2026-06-08).
+        const res = db.prepare(
+          "INSERT INTO time_entries (user_id, type, ts, branch_id) VALUES (?, ?, ?, ?)"
+        ).run(row.requested_by, row.cert_entry_type, row.proposed_ts, row.cert_branch_id);
+        const newId = Number(res.lastInsertRowid);
+        db.prepare(`
+          INSERT INTO time_entries_audit
+            (entry_id, entry_user_id, entry_type, entry_ts, action,
+             admin_id, reason, created_at)
+          VALUES (?, ?, ?, ?, 'create', ?, ?, ?)
+        `).run(
+          newId, row.requested_by, row.cert_entry_type, row.proposed_ts,
+          user.id, `cert#${certId} · เพิ่มเวลาที่ลืมลง` + (note ? ` · ${note}` : ""), nowIso
+        );
+        // Link the cert to the created entry for traceability.
+        db.prepare("UPDATE time_certifications SET entry_id = ? WHERE id = ?").run(newId, certId);
+      } else {
+        // CORRECT an existing entry's timestamp. Audit so the original ts
+        // is recoverable.
+        db.prepare(`
+          INSERT INTO time_entries_audit
+            (entry_id, entry_user_id, entry_type, entry_ts, action,
+             admin_id, reason, created_at)
+          VALUES (?, ?, ?, ?, 'cert-approve', ?, ?, ?)
+        `).run(
+          row.entry_id, row.entry_user_id, row.entry_type, row.entry_ts,
+          user.id, `cert#${certId}` + (note ? ` · ${note}` : ""), nowIso
+        );
+        db.prepare("UPDATE time_entries SET ts = ? WHERE id = ?")
+          .run(row.proposed_ts, row.entry_id);
+      }
     }
   });
   tx();
@@ -122,7 +146,7 @@ export async function POST(
         WHERE status = 'draft' AND period_start <= ? AND period_end >= ?
       `).all(dateBkk, dateBkk) as Array<{ id: number }>;
       for (const p of periods) {
-        try { recomputeLine(db, p.id, row.entry_user_id); }
+        try { recomputeLine(db, p.id, row.requested_by); }
         catch { /* line_not_found / period_not_draft — skip */ }
       }
     } catch (e) {

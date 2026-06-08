@@ -17,9 +17,11 @@ export const metadata: Metadata = { title: "คำขอรับรองเว
 
 export type PendingCertRow = {
   id: number;
-  entry_id: number;
+  entry_id: number | null;
   entry_type: "in" | "out";
-  original_ts: string;
+  kind: "correction" | "missing";
+  work_date: string | null;
+  original_ts: string | null;
   proposed_ts: string;
   reason: string;
   requested_by: number;
@@ -41,16 +43,18 @@ export default function AdminTimeCertificationsPage() {
   }
 
   const db = getDb();
+  // LEFT JOIN — a 'missing' cert has no underlying entry yet; its branch
+  // + punch type live on the cert row (owner 2026-06-08).
   const pending = db.prepare(`
     SELECT c.id, c.entry_id, c.original_ts, c.proposed_ts, c.reason,
-           c.requested_by, c.created_at,
-           e.type AS entry_type,
+           c.requested_by, c.created_at, c.kind, c.work_date,
+           COALESCE(e.type, c.entry_type) AS entry_type,
            u.display_name AS requester_name,
            u.title_prefix AS requester_prefix
     FROM time_certifications c
-    JOIN time_entries e ON e.id = c.entry_id
+    LEFT JOIN time_entries e ON e.id = c.entry_id
     JOIN users u ON u.id = c.requested_by
-    WHERE c.status = 'pending' AND e.branch_id = ?
+    WHERE c.status = 'pending' AND COALESCE(e.branch_id, c.branch_id) = ?
     ORDER BY c.created_at DESC
   `).all(user.activeBranchId) as PendingCertRow[];
 

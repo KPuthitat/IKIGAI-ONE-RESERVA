@@ -13,7 +13,7 @@ type EntryRow = {
 };
 type CertRow = {
   id: number;
-  entry_id: number;
+  entry_id: number | null;
   proposed_ts: string;
   reason: string;
   status: "pending" | "approved" | "rejected";
@@ -44,6 +44,13 @@ function inputToIso(local: string): string {
   return new Date(local + ":00+07:00").toISOString();
 }
 
+// Combine a date (YYYY-MM-DD) + time (HH:MM) into an ISO instant at the
+// Bangkok offset — for filing a forgotten clock-in/out (owner 2026-06-08).
+function dateTimeToIso(date: string, time: string): string {
+  return new Date(`${date}T${time}:00+07:00`).toISOString();
+}
+const BKK_TODAY = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+
 export default function TimeCertificationClient({
   entries,
   certs,
@@ -64,6 +71,15 @@ export default function TimeCertificationClient({
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // Forgot-to-punch flow: file a request to ADD a clock-in/out that was
+  // never recorded (owner 2026-06-08). Distinct from `form` (correct an
+  // existing punch).
+  const [missingForm, setMissingForm] = useState<{
+    entryType: "in" | "out";
+    date: string;
+    time: string;
+    reason: string;
+  } | null>(null);
 
   function openForm(entry: EntryRow) {
     setForm({
@@ -104,6 +120,54 @@ export default function TimeCertificationClient({
       }
       setMsg({ kind: "ok", text: t("staff.persona.timeCert.submitted") });
       setForm(null);
+      router.refresh();
+    } catch {
+      setMsg({ kind: "err", text: t("common.error") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitMissing() {
+    if (!missingForm) return;
+    if (!missingForm.date || !missingForm.time) {
+      setMsg({ kind: "err", text: "กรุณาเลือกวันที่และเวลา" });
+      return;
+    }
+    if (missingForm.reason.trim().length < 3) {
+      setMsg({ kind: "err", text: t("staff.persona.timeCert.reasonTooShort") });
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch(apiUrl("/api/persona/time-certification"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "missing",
+          entry_type: missingForm.entryType,
+          work_date: missingForm.date,
+          proposed_ts: dateTimeToIso(missingForm.date, missingForm.time),
+          reason: missingForm.reason.trim()
+        })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const m =
+          j.error === "punch_exists"
+            ? "วันนั้นมีการลงเวลาประเภทนี้อยู่แล้ว — ใช้การแก้ไขเวลาแทน"
+            : j.error === "no_opposite_punch"
+            ? "เพิ่มได้เฉพาะวันที่มีลงเวลาอีกด้านไว้แล้ว (เช่น ลงเข้าแล้วแต่ลืมลงออก)"
+            : j.error === "already_pending"
+            ? t("staff.persona.timeCert.alreadyPending")
+            : j.error === "date_mismatch"
+            ? "วันที่และเวลาที่กรอกไม่ตรงกัน"
+            : t("common.error");
+        setMsg({ kind: "err", text: m });
+        return;
+      }
+      setMsg({ kind: "ok", text: t("staff.persona.timeCert.submitted") });
+      setMissingForm(null);
       router.refresh();
     } catch {
       setMsg({ kind: "err", text: t("common.error") });
@@ -173,6 +237,103 @@ export default function TimeCertificationClient({
           {msg.text}
         </div>
       )}
+
+      {/* ── Forgot to clock in/out — file a NEW punch (owner 2026-06-08) ── */}
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="font-bold text-slate-800 text-sm">ลืมลงเวลาเข้า/ออก?</h2>
+          {!missingForm && (
+            <button
+              type="button"
+              onClick={() =>
+                setMissingForm({ entryType: "out", date: BKK_TODAY, time: "", reason: "" })
+              }
+              className="text-xs px-3 py-1.5 rounded-lg border border-brand text-brand font-bold hover:bg-amber-50 whitespace-nowrap"
+            >
+              เพิ่มเวลาที่ลืมลง
+            </button>
+          )}
+        </div>
+
+        {missingForm ? (
+          <div className="space-y-3">
+            <div>
+              <label className="label">ประเภท</label>
+              <div className="flex gap-2">
+                {(["in", "out"] as const).map((tp) => (
+                  <button
+                    key={tp}
+                    type="button"
+                    onClick={() => setMissingForm({ ...missingForm, entryType: tp })}
+                    className={`flex-1 py-2 rounded-lg border text-sm font-bold ${
+                      missingForm.entryType === tp
+                        ? "bg-brand text-white border-brand"
+                        : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {tp === "in" ? "ลืมลงเวลาเข้า" : "ลืมลงเวลาออก"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="label">วันที่</label>
+                <input
+                  type="date"
+                  className="input"
+                  max={BKK_TODAY}
+                  value={missingForm.date}
+                  onChange={(e) => setMissingForm({ ...missingForm, date: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="label">เวลา</label>
+                <input
+                  type="time"
+                  className="input"
+                  value={missingForm.time}
+                  onChange={(e) => setMissingForm({ ...missingForm, time: e.target.value })}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="label">{t("staff.persona.timeCert.reasonLabel")}</label>
+              <textarea
+                className="input text-sm"
+                rows={2}
+                maxLength={500}
+                placeholder={t("staff.persona.timeCert.reasonPlaceholder")}
+                value={missingForm.reason}
+                onChange={(e) => setMissingForm({ ...missingForm, reason: e.target.value })}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setMissingForm(null)}
+                disabled={busy}
+                className="btn-secondary flex-1 text-sm"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={submitMissing}
+                disabled={busy}
+                className="btn-primary flex-1 text-sm"
+              >
+                {busy ? t("common.submitting") : t("staff.persona.timeCert.submit")}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            เพิ่มได้เฉพาะวันที่ลงเวลาอีกด้านไว้แล้ว (เช่น ลงเข้าแล้วแต่ลืมลงออก) — เมื่อแอดมินอนุมัติ
+            ระบบจะบันทึกเวลาและคำนวณเงินเดือนให้อัตโนมัติ
+          </p>
+        )}
+      </div>
 
       {/* ── Recent entries — pick one to certify ── */}
       <div className="card space-y-2">
