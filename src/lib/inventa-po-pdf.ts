@@ -107,6 +107,12 @@ export function generatePoPdf(data: PoPdfData): Promise<Buffer> {
       let y = Math.max(doc.y, buyerTop + 70) + 14;
       doc.font("th").fontSize(10).fillColor("#666666").text("ผู้จำหน่าย:", left, y, { continued: true });
       doc.font("th-b").fillColor("#1a1a2e").text(` ${data.supplierName}`);
+      // One-line clarification for the vendor (owner 2026-06-08): who is
+      // ordering, from whom, and where the detail is — so a supplier who
+      // only receives the forwarded link understands the document.
+      doc.font("th").fontSize(9).fillColor("#666666")
+        .text(`ใบสั่งซื้อจาก: ${data.buyerName}  ·  ผู้จำหน่าย: ${data.supplierName}  ·  รายละเอียดรายการตามตารางด้านล่าง`,
+          left, doc.y + 3, { width: contentW });
       y = doc.y + 10;
 
       // ── Table ───────────────────────────────────────────────────
