@@ -16,14 +16,21 @@ export default function InventaLabelsPage() {
   const db = getDb();
   const branchId = user.activeBranchId ?? null;
 
-  const items = db.prepare(`
+  const rawItems = db.prepare(`
     SELECT i.id, i.item_code, i.barcode, i.name, i.grid_row, i.grid_col, i.pick_freq,
+           i.unit, i.cost_price, i.unit_cost,
            i.category, i.storage_location, s.name AS supplier_name
     FROM inventa_items i
     LEFT JOIN inventa_suppliers s ON s.id = i.supplier_id
     WHERE i.active = 1 AND (i.branch_id IS ? OR i.branch_id = ?)
     ORDER BY i.grid_row, i.grid_col, i.name
-  `).all(branchId, branchId) as LabelItem[];
+  `).all(branchId, branchId) as Array<LabelItem & { cost_price: number | null; unit_cost: number | null }>;
+  // Effective ราคาทุน shown on the label (owner item 1): the pinned
+  // cost_price wins, else the derived unit_cost.
+  const items: LabelItem[] = rawItems.map((r) => ({
+    ...r,
+    cost: r.cost_price ?? r.unit_cost ?? null
+  }));
 
   // Per-branch label print size (owner 2026-06-08), default 80×50 mm.
   const size = branchId

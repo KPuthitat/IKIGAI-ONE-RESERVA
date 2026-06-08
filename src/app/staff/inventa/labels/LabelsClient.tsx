@@ -15,6 +15,8 @@ export type LabelItem = {
   grid_row: string | null;
   grid_col: number | null;
   pick_freq: PickFreq | null;
+  unit?: string | null;
+  cost?: number | null;        // effective ราคาทุน (cost_price ?? unit_cost)
   category?: string | null;
   storage_location?: string | null;
   supplier_name?: string | null;
@@ -117,13 +119,15 @@ export default function LabelsClient({
     .po-label .lbl-name {
       font-weight: 700; font-size: 3mm; line-height: 1.15; text-align: center;
       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      padding-bottom: 1mm; border-bottom: 0.25mm solid #e5e7eb;
     }
-    .po-label .lbl-mid { display: flex; align-items: center; gap: 2mm; margin-top: 1mm; }
+    .po-label .lbl-mid { display: flex; align-items: center; gap: 2mm; margin-top: 1.2mm; }
     .po-label .lbl-qr { width: 17mm; height: 17mm; flex: none; }
-    .po-label .lbl-meta { flex: 1; min-width: 0; }
+    .po-label .lbl-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.5mm; }
     .po-label .lbl-code { font-family: monospace; font-weight: 700; font-size: 3.1mm; line-height: 1.1; word-break: break-all; }
-    .po-label .lbl-bin { font-size: 2.4mm; color: #444; margin-top: 0.6mm; }
-    .po-label .lbl-bar { margin-top: auto; }
+    .po-label .lbl-price { font-weight: 700; font-size: 3.4mm; line-height: 1.05; color: #111; }
+    .po-label .lbl-bin { font-size: 2.3mm; color: #555; }
+    .po-label .lbl-bar { margin-top: auto; padding-top: 1mm; }
     .po-label .lbl-bc { display: block; width: 100%; height: 8mm; }
     .po-label .lbl-bc-text { font-family: monospace; font-size: 2.4mm; text-align: center; letter-spacing: 0.3mm; line-height: 1.2; }
     @media print {
@@ -264,6 +268,12 @@ export default function LabelsClient({
                   <img className="lbl-qr" src={qrSrc(code)} alt={code} />
                   <div className="lbl-meta">
                     <div className="lbl-code">{code}</div>
+                    {i.cost != null && i.cost > 0 && (
+                      <div className="lbl-price">
+                        ฿{i.cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        {i.unit ? <span style={{ fontWeight: 400, fontSize: "2.3mm" }}> /{i.unit}</span> : null}
+                      </div>
+                    )}
                     {bin && <div className="lbl-bin">{bin}</div>}
                   </div>
                 </div>
