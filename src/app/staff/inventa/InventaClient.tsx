@@ -461,7 +461,15 @@ export default function InventaClient({
                   </td>
                   <td className="py-2 pr-2 text-slate-600 text-xs whitespace-nowrap">{i.unit ?? t("inv.dash")}</td>
                   <td className="py-2 pr-3 text-right text-slate-700">
-                    {i.unit_cost ? i.unit_cost.toLocaleString(undefined, { maximumFractionDigits: 4 }) : t("inv.dash")}
+                    {/* Show the EFFECTIVE cost (owner-pinned ราคาทุน wins,
+                        else derived unit_cost) so an edit to ราคาทุน
+                        reflects here — previously this showed only
+                        unit_cost, making cost edits look like they didn't
+                        save (owner 2026-06-08, item 4). */}
+                    {(() => {
+                      const c = i.cost_price ?? i.unit_cost;
+                      return c ? c.toLocaleString(undefined, { maximumFractionDigits: 4 }) : t("inv.dash");
+                    })()}
                   </td>
                   <td className={`py-2 pr-3 text-right font-bold ${
                     bucket === "expired" ? "text-red-900"
@@ -628,8 +636,10 @@ function ItemModal({
         item_type: f.item_type,
         item_type_label: f.item_type_label.trim() || null,
         unit: f.unit.trim() || null,
-        unit_cost: f.unit_cost ? Number(f.unit_cost) : 0,
-        cost_price: f.cost_price ? Number(f.cost_price) : null,
+        // Use !== "" (not truthy) so a typed 0 is preserved instead of
+        // being silently dropped to null/default (owner 2026-06-08, item 4).
+        unit_cost: f.unit_cost !== "" ? Number(f.unit_cost) : 0,
+        cost_price: f.cost_price !== "" ? Number(f.cost_price) : null,
         storage_location: f.storage_location.trim() || null,
         supplier_id: f.supplier_id ? Number(f.supplier_id) : null,
         grid_row: f.grid_row || null,
