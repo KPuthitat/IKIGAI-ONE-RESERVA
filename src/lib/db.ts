@@ -1514,6 +1514,29 @@ function runMigrations(db: Database.Database): void {
       ON attendance_flags(branch_id, work_date);
   `);
 
+  // ── shift_swap_overrides — informal shift swaps confirmed at clock-in ──
+  // (owner 2026-06-08). When น้องฮูก detects a staff clocking in far off
+  // their rostered start and they answer "สลับกะกับเพื่อน", we store the
+  // friend's shift window for that day here. The payroll engine + breakdown
+  // overlay this onto the roster so pay is computed against the shift
+  // actually worked — without mutating roster_assignments. One row per
+  // (user, day); admin per-day overrides (payroll_line_days) still win.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shift_swap_overrides (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      branch_id INTEGER REFERENCES branches(id),
+      work_date TEXT NOT NULL,
+      sched_in TEXT NOT NULL,
+      sched_out TEXT NOT NULL,
+      friend_user_id INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, work_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_shift_swap_user
+      ON shift_swap_overrides(user_id, work_date);
+  `);
+
   // SVC — daily service-charge pot logged per branch per day.
   //
   // Source: admin or the closing-shift staff enters today's POS-collected

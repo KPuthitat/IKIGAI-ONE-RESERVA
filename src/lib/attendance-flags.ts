@@ -10,6 +10,8 @@
 // never break the critical clock endpoint.
 
 import { getDb } from "./db";
+import { effectiveShiftStartForUserDate } from "./roster";
+import { nameWithPrefix } from "./name";
 
 export type OwlPromptKind = "missing_in" | "missing_out";
 export type OwlPrompt = { kind: OwlPromptKind; work_date: string };
@@ -107,6 +109,88 @@ export function detectPunchAnomaly(args: {
   `).get(userId, s, e);
   if (!hasIn) return flag("missing_in", todayBkk, "ลงเวลาออกแต่ไม่มีเวลาเข้า");
   return null;
+}
+
+// ── Schedule-deviation detection (owner 2026-06-08) ──────────────────
+// At clock-in, compare the actual punch to the rostered start. If it's
+// far off (≥ threshold), น้องฮูก asks whether the staff is simply
+// late/early or covering a friend's shift (a swap). Only fires when a
+// roster shift exists for the day — no schedule, no comparison.
+
+export type SwapCandidate = {
+  user_id: number;
+  name: string;      // display name with prefix
+  sched_in: string;  // HH:MM
+  sched_out: string; // HH:MM
+};
+
+export type DeviationPrompt = {
+  kind: "late_or_swap" | "early_or_swap";
+  sched_start: string; // HH:MM rostered start
+  actual: string;      // HH:MM actual clock-in
+  work_date: string;   // YYYY-MM-DD (BKK)
+  candidates: SwapCandidate[];
+};
+
+// Off-by-this-much (minutes) before we bother asking. Below it, a minor
+// late is left to the normal payroll late calc; we only interrupt for a
+// gap big enough to plausibly be a swap.
+const DEVIATION_THRESHOLD_MIN = 30;
+
+function hhmmToMin(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+export function detectScheduleDeviation(args: {
+  userId: number;
+  branchId: number;
+  todayBkk: string;
+  actualIso: string;
+}): DeviationPrompt | null {
+  const db = getDb();
+  const { userId, branchId, todayBkk, actualIso } = args;
+
+  const schedStart = effectiveShiftStartForUserDate(userId, branchId, todayBkk);
+  if (!schedStart) return null; // no roster today → nothing to compare
+
+  const actual = new Date(new Date(actualIso).getTime() + 7 * 3600_000)
+    .toISOString().slice(11, 16);
+  const dev = hhmmToMin(actual) - hhmmToMin(schedStart); // + late, − early
+  if (Math.abs(dev) < DEVIATION_THRESHOLD_MIN) return null;
+
+  // Other staff rostered today at this branch — the shifts a swap could
+  // cover. Earliest-start shift per person (a person may hold multiple
+  // positions in a day).
+  const rows = db.prepare(`
+    SELECT a.user_id, u.display_name AS name, u.title_prefix AS prefix,
+           s.start_time AS sched_in, s.end_time AS sched_out
+    FROM roster_assignments a
+    JOIN shift_codes s ON s.id = a.shift_code_id
+    JOIN users u ON u.id = a.user_id
+    WHERE a.branch_id = ? AND a.assignment_date = ? AND a.user_id != ?
+      AND s.kind = 'work'
+    ORDER BY a.user_id, s.start_time
+  `).all(branchId, todayBkk, userId) as Array<{
+    user_id: number; name: string; prefix: string | null;
+    sched_in: string; sched_out: string;
+  }>;
+  const byUser = new Map<number, typeof rows[number]>();
+  for (const r of rows) if (!byUser.has(r.user_id)) byUser.set(r.user_id, r);
+  const candidates: SwapCandidate[] = [...byUser.values()].map((r) => ({
+    user_id: r.user_id,
+    name: nameWithPrefix(r.prefix, r.name),
+    sched_in: r.sched_in,
+    sched_out: r.sched_out
+  }));
+
+  return {
+    kind: dev > 0 ? "late_or_swap" : "early_or_swap",
+    sched_start: schedStart,
+    actual,
+    work_date: todayBkk,
+    candidates
+  };
 }
 
 /** Recent flags for a user, newest first — for the staff history list. */

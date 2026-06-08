@@ -9,7 +9,10 @@ import {
 import { rateLimit } from "@/lib/rate-limit";
 import { pushClockInCard } from "@/lib/line";
 import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
-import { detectPunchAnomaly, type OwlPrompt } from "@/lib/attendance-flags";
+import {
+  detectPunchAnomaly, detectScheduleDeviation,
+  type OwlPrompt, type DeviationPrompt
+} from "@/lib/attendance-flags";
 
 const Body = z.object({
   pin: z.string().regex(/^\d{4}$/),
@@ -261,6 +264,23 @@ export async function POST(req: Request) {
     console.warn("[clock] attendance anomaly detection failed:", e);
   }
 
+  // Schedule-deviation (late/early vs roster → maybe a shift swap). Only
+  // on a fresh clock-IN, and only when no missing-punch nudge already
+  // fired (one prompt per punch). Advisory — never blocks the clock-in.
+  let swap: DeviationPrompt | null = null;
+  if (action === "in" && !owl) {
+    try {
+      swap = detectScheduleDeviation({
+        userId: user.id,
+        branchId: user.activeBranchId,
+        todayBkk,
+        actualIso: nowIso
+      });
+    } catch (e) {
+      console.warn("[clock] schedule deviation detection failed:", e);
+    }
+  }
+
   // ── Fire-and-forget: ส่ง LINE flex confirmation message on clock-in ──
   // Channel: IKIGAI OS (platform-level OA, shared across all branches).
   // Branch context: ใช้แค่ดึงเวลาพักกลางวัน + ชื่อสาขามาแสดงในข้อความ.
@@ -298,5 +318,10 @@ export async function POST(req: Request) {
   // attendance_summary_time, fired from /api/cron — see
   // src/lib/daily-attendance-summary.ts.
 
-  return NextResponse.json({ ok: true, action, ...(owl ? { owl } : {}) });
+  return NextResponse.json({
+    ok: true,
+    action,
+    ...(owl ? { owl } : {}),
+    ...(swap ? { swap } : {})
+  });
 }

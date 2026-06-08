@@ -176,6 +176,39 @@ export type ScheduledShift = {
   breakEndTs?: string | null;
 };
 
+// ── Shift-swap overlay (owner 2026-06-08) ────────────────────────────
+// An informal swap confirmed at clock-in (น้องฮูก) stores the friend's
+// shift window in shift_swap_overrides. We treat it as a roster OVERLAY:
+// the day's scheduled window becomes the friend's shift, so PT grace +
+// pay are computed against the shift actually worked. Admin per-day
+// overrides (payroll_line_days.sched_in/out) are applied AFTER this in
+// computeLineForEmployee, so they still take precedence.
+
+/** Build a ScheduledShift from a friend's HH:MM window on a date. */
+function swapShiftWindow(workDate: string, schedIn: string, schedOut: string): ScheduledShift | null {
+  if (!schedIn || !schedOut || schedIn === schedOut) return null;
+  const startTs = new Date(`${workDate}T${schedIn}:00+07:00`).toISOString();
+  const endDate = schedOut < schedIn ? addDayYmd(workDate) : workDate;
+  const endTs = new Date(`${endDate}T${schedOut}:00+07:00`).toISOString();
+  return { startTs, endTs, breakStartTs: null, breakEndTs: null };
+}
+
+/** Replace the scheduled window for any swapped day in [from,to] for one
+ *  user with the friend's shift. Mutates `scheduledByDate` in place. */
+export function overlaySwapShifts(
+  db: Database.Database, userId: number, fromDate: string, toDate: string,
+  scheduledByDate: Map<string, ScheduledShift[]>
+): void {
+  const rows = db.prepare(`
+    SELECT work_date, sched_in, sched_out FROM shift_swap_overrides
+    WHERE user_id = ? AND work_date >= ? AND work_date <= ?
+  `).all(userId, fromDate, toDate) as Array<{ work_date: string; sched_in: string; sched_out: string }>;
+  for (const r of rows) {
+    const sh = swapShiftWindow(r.work_date, r.sched_in, r.sched_out);
+    if (sh) scheduledByDate.set(r.work_date, [sh]);
+  }
+}
+
 export type GracedShift = {
   startTs: string;        // effective in (UTC ISO)
   endTs: string;          // effective out (UTC ISO)
@@ -887,6 +920,22 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     byDate.set(r.assignment_date, list);
   }
 
+  // Shift-swap overlay — a confirmed swap replaces that day's scheduled
+  // window with the friend's shift (owner 2026-06-08).
+  const swapRows = db.prepare(`
+    SELECT user_id, work_date, sched_in, sched_out FROM shift_swap_overrides
+    WHERE work_date >= ? AND work_date <= ?
+  `).all(period.period_start, period.period_end) as Array<{
+    user_id: number; work_date: string; sched_in: string; sched_out: string;
+  }>;
+  for (const r of swapRows) {
+    const sh = swapShiftWindow(r.work_date, r.sched_in, r.sched_out);
+    if (!sh) continue;
+    let byDate = scheduledByUser.get(r.user_id);
+    if (!byDate) { byDate = new Map(); scheduledByUser.set(r.user_id, byDate); }
+    byDate.set(r.work_date, [sh]);
+  }
+
   // Eligible staff depend on (cycle, target):
   //   weekly + 'pt'  → PT only
   //   weekly + 'ft'  → FT-weekly only
@@ -1190,6 +1239,8 @@ export function recomputeLine(
     list.push({ startTs, endTs, breakStartTs, breakEndTs });
     scheduledByDate.set(r.assignment_date, list);
   }
+  // Shift-swap overlay (owner 2026-06-08).
+  overlaySwapShifts(db, userId, period.period_start, period.period_end, scheduledByDate);
 
   const userEntries = period.data_source === "manual"
     ? []

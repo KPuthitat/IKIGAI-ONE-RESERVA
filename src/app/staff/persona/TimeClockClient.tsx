@@ -7,9 +7,18 @@ import { useLang } from "@/lib/LangProvider";
 
 type TimeEntry = { id: number; type: "in" | "out"; ts: string };
 
-type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask" | "owl";
+type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask" | "owl" | "swap";
 
 type OwlPrompt = { kind: "missing_in" | "missing_out"; work_date: string };
+
+type SwapCandidate = { user_id: number; name: string; sched_in: string; sched_out: string };
+type SwapPrompt = {
+  kind: "late_or_swap" | "early_or_swap";
+  sched_start: string;
+  actual: string;
+  work_date: string;
+  candidates: SwapCandidate[];
+};
 
 type ReplaceState = {
   pin: string;
@@ -273,6 +282,12 @@ function ClockAction({
   const [actualAction, setActualAction] = useState<"in" | "out">(action);
   const [replaceState, setReplaceState] = useState<ReplaceState | null>(null);
   const [owlPrompt, setOwlPrompt] = useState<OwlPrompt | null>(null);
+  // Shift-swap / late-early prompt (owner 2026-06-08).
+  const [swapPrompt, setSwapPrompt] = useState<SwapPrompt | null>(null);
+  const [swapStep, setSwapStep] = useState<"ask" | "pickFriend">("ask");
+  const [swapFriend, setSwapFriend] = useState<number | "">("");
+  const [swapBusy, setSwapBusy] = useState(false);
+  const [swapErr, setSwapErr] = useState<string | null>(null);
 
   // OT prompt (PT clocking out after scheduled end).
   const [otStep, setOtStep] = useState<"ask" | "enter">("ask");
@@ -304,6 +319,39 @@ function ClockAction({
       setOtErr(t("common.error"));
     } finally {
       setOtBusy(false);
+    }
+  }
+
+  // Resolve a schedule-deviation prompt: record late / early / swap.
+  async function submitResolve(resolution: "late" | "early" | "swap", friendId?: number) {
+    if (!swapPrompt) return;
+    setSwapBusy(true);
+    setSwapErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/persona/attendance-resolve"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          work_date: swapPrompt.work_date,
+          resolution,
+          ...(friendId ? { friend_user_id: friendId } : {})
+        })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) {
+        setSwapErr(
+          j?.error === "friend_no_shift" ? "เพื่อนคนนี้ไม่มีกะในวันนี้"
+          : j?.error === "friend_required" ? "กรุณาเลือกเพื่อน"
+          : t("common.error")
+        );
+        return;
+      }
+      setPhase("success");
+      setTimeout(onSuccess, 1500);
+    } catch {
+      setSwapErr(t("common.error"));
+    } finally {
+      setSwapBusy(false);
     }
   }
 
@@ -529,6 +577,15 @@ function ClockAction({
         setPhase("owl");
         return;
       }
+      // Schedule-deviation prompt (late/early vs swap) — clock-in only.
+      if (data.swap && (data.swap.kind === "late_or_swap" || data.swap.kind === "early_or_swap")) {
+        setSwapPrompt(data.swap as SwapPrompt);
+        setSwapStep("ask");
+        setSwapFriend("");
+        setSwapErr(null);
+        setPhase("swap");
+        return;
+      }
       // OT prompt — PT clocked out past their scheduled shift end by
       // more than the 5-min grace (so the time would otherwise be cut at
       // the scheduled end). The pay engine pays it at the regular rate up
@@ -719,6 +776,80 @@ function ClockAction({
             ไปรับรองเวลา
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // ── น้องฮูก: late/early vs shift-swap ────────
+  if (phase === "swap" && swapPrompt) {
+    const isLate = swapPrompt.kind === "late_or_swap";
+    return (
+      <div className="bg-sky-50 border-2 border-sky-200 rounded-2xl p-4 space-y-3 text-left">
+        <div className="text-sm font-bold text-sky-900">น้องฮูกสอบถาม</div>
+        <div className="text-sm text-slate-700 leading-relaxed">
+          ตามตารางเวรพี่เข้างาน <b>{swapPrompt.sched_start}</b> น. แต่ลงเวลาจริง <b>{swapPrompt.actual}</b> น.
+          {isLate ? " — พี่มาสาย หรือสลับกะกับเพื่อนคะ?" : " (ก่อนเวลา) — พี่มาก่อนเวลา หรือสลับกะกับเพื่อนคะ?"}
+        </div>
+        {swapErr && <div className="text-rose-600 text-sm">{swapErr}</div>}
+        {swapStep === "ask" ? (
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              onClick={() => submitResolve(isLate ? "late" : "early")}
+              disabled={swapBusy}
+              className="py-3 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 active:scale-95 transition disabled:opacity-50"
+            >
+              {isLate ? "มาสาย" : "มาก่อนเวลา"}
+            </button>
+            <button
+              onClick={() => { setSwapStep("pickFriend"); setSwapErr(null); }}
+              disabled={swapBusy}
+              className="py-3 rounded-xl bg-brand text-white text-sm font-bold active:scale-95 transition disabled:opacity-50"
+            >
+              สลับกะกับเพื่อน
+            </button>
+          </div>
+        ) : swapPrompt.candidates.length === 0 ? (
+          <div className="space-y-2">
+            <p className="text-sm text-amber-700">
+              ไม่พบเพื่อนที่มีกะในวันนี้ — รบกวนแจ้งแอดมินเพื่อปรับเวลาให้ค่ะ
+            </p>
+            <button onClick={onSuccess} className="btn-secondary w-full text-sm">ปิด</button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <label className="text-xs text-slate-600">
+              สลับกะกับใคร? (ระบบจะลงเวลาตามกะของเพื่อนคนนั้นให้)
+            </label>
+            <select
+              className="input"
+              value={swapFriend}
+              onChange={(e) => setSwapFriend(e.target.value ? Number(e.target.value) : "")}
+            >
+              <option value="">— เลือกเพื่อน —</option>
+              {swapPrompt.candidates.map((c) => (
+                <option key={c.user_id} value={c.user_id}>
+                  {c.name} (กะ {c.sched_in}–{c.sched_out})
+                </option>
+              ))}
+            </select>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                onClick={() => { setSwapStep("ask"); setSwapErr(null); }}
+                disabled={swapBusy}
+                className="py-3 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+              >
+                ย้อนกลับ
+              </button>
+              <button
+                onClick={() => swapFriend ? submitResolve("swap", swapFriend) : setSwapErr("กรุณาเลือกเพื่อน")}
+                disabled={swapBusy}
+                className="py-3 rounded-xl bg-brand text-white text-sm font-bold disabled:opacity-50"
+              >
+                {swapBusy ? t("common.submitting") : "ยืนยัน"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

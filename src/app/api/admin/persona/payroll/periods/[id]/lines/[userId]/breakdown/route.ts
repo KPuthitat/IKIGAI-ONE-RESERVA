@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
   applyPtGrace, pickScheduled, deductBreak, splitRegularOt, computeOtPay,
+  overlaySwapShifts,
   type ScheduledShift, type PayrollSettings
 } from "@/lib/payroll-compute";
 
@@ -173,6 +174,9 @@ export async function GET(
     list.push({ startTs, endTs, breakStartTs, breakEndTs });
     scheduledByDate.set(r.assignment_date, list);
   }
+  // Shift-swap overlay — show the swapped (friend's) shift in the calc
+  // view so it matches what the pay engine used (owner 2026-06-08).
+  overlaySwapShifts(db, userId, period.period_start, period.period_end, scheduledByDate);
 
   // Per-day overrides (payroll_line_days) — admin corrections that win
   // over the time-clock for a given date (clock times + field overrides).
