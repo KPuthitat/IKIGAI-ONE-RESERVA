@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
 import { notifyTimeCertDecision } from "@/lib/time-cert-notify";
+import { recomputeLine } from "@/lib/payroll-compute";
 
 // POST /api/admin/persona/time-certification/[id]/decide
 //
@@ -104,6 +105,30 @@ export async function POST(
     }
   });
   tx();
+
+  // The certified time changed time_entries, but payroll lines are a
+  // STORED snapshot — so refresh any DRAFT payroll period covering that
+  // date for this employee, otherwise the corrected clock never reaches
+  // payroll (owner 2026-06-08: "รับรองเวลาแล้วไม่ขึ้นในระบบเงินเดือน").
+  // recomputeLine opens its own transaction, so it runs AFTER the cert tx
+  // commits. It throws for finalized periods (admin must reopen) and for
+  // users with no line in the period — both are safely ignored here.
+  if (parsed.data.decision === "approved") {
+    try {
+      const dateBkk = new Date(new Date(row.proposed_ts).getTime() + 7 * 3600_000)
+        .toISOString().slice(0, 10);
+      const periods = db.prepare(`
+        SELECT id FROM payroll_periods
+        WHERE status = 'draft' AND period_start <= ? AND period_end >= ?
+      `).all(dateBkk, dateBkk) as Array<{ id: number }>;
+      for (const p of periods) {
+        try { recomputeLine(db, p.id, row.entry_user_id); }
+        catch { /* line_not_found / period_not_draft — skip */ }
+      }
+    } catch (e) {
+      console.warn("[time-cert] payroll recompute after approve failed:", e);
+    }
+  }
 
   logPersonaAction(
     user.id,
