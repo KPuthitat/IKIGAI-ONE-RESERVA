@@ -228,16 +228,16 @@ export default function PatientDetailClient(props: {
         if (baseWeight == null || target == null || !(baseWeight > target)) return null;
         const pct = Math.max(0, Math.min(100, ((baseWeight - (currentWeight ?? baseWeight)) / (baseWeight - target)) * 100));
         return (
-          <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="text-[12px] text-slate-500">ความคืบหน้าสู่เป้าหมาย</div>
-              <div className="text-[15px] font-bold text-[#047857] tabular-nums">{pct.toFixed(0)}%</div>
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm px-5 py-4">
+            <div className="text-[12px] text-slate-500 uppercase tracking-[0.08em] mb-1">ความคืบหน้าสู่เป้าหมาย</div>
+            <div className="flex items-end gap-3 mb-2.5">
+              <div className="text-[44px] font-extrabold text-[#047857] leading-[0.9] tabular-nums">{pct.toFixed(0)}%</div>
+              <div className="text-[11px] text-slate-400 pb-1.5 tabular-nums leading-snug">
+                เริ่มต้น {baseWeight.toFixed(1)} กก.<br />ปัจจุบัน {(currentWeight ?? baseWeight).toFixed(1)} กก. · เป้าหมาย {target.toFixed(1)} กก.
+              </div>
             </div>
-            <div className="h-2.5 rounded-full bg-[#EFEADD] overflow-hidden">
+            <div className="h-3 rounded-full bg-[#EFEADD] overflow-hidden">
               <div className="h-full bg-[#047857]" style={{ width: `${pct.toFixed(0)}%` }} />
-            </div>
-            <div className="text-[11px] text-slate-400 mt-1 tabular-nums">
-              เริ่มต้น {baseWeight.toFixed(1)} กก. · ปัจจุบัน {(currentWeight ?? baseWeight).toFixed(1)} กก. · เป้าหมาย {target.toFixed(1)} กก.
             </div>
           </div>
         );

@@ -464,15 +464,15 @@ function ActiveView({
         const pct = Math.max(0, Math.min(100, ((baseW - (curW ?? baseW)) / (baseW - target)) * 100));
         return (
           <div className="card">
-            <div className="flex items-center justify-between mb-1">
-              <div className="text-xs text-slate-500">ความคืบหน้าสู่เป้าหมาย</div>
-              <div className="text-sm font-bold text-emerald-600">{pct.toFixed(0)}%</div>
+            <div className="text-xs text-slate-500 mb-1">ความคืบหน้าสู่เป้าหมาย</div>
+            <div className="flex items-end gap-3 mb-2.5">
+              <div className="text-[44px] font-extrabold text-emerald-600 leading-[0.9] tabular-nums">{pct.toFixed(0)}%</div>
+              <div className="text-[11px] text-slate-400 pb-1.5 leading-snug">
+                เริ่มต้น {baseW} กก.<br />ปัจจุบัน {curW ?? baseW} กก. · เป้าหมาย {target} กก.
+              </div>
             </div>
-            <div className="h-3 rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full bg-emerald-400" style={{ width: `${pct.toFixed(0)}%` }} />
-            </div>
-            <div className="text-[11px] text-slate-400 mt-1">
-              เริ่มต้น {baseW} กก. · ปัจจุบัน {curW ?? baseW} กก. · เป้าหมาย {target} กก.
+            <div className="h-3.5 rounded-full bg-slate-100 overflow-hidden">
+              <div className="h-full bg-emerald-400 transition-[width]" style={{ width: `${pct.toFixed(0)}%` }} />
             </div>
           </div>
         );
