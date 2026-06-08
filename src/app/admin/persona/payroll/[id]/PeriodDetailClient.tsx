@@ -1000,6 +1000,10 @@ function LineEditModal({
   // Bumped after a successful per-day save so the parent knows to
   // refresh its line list when the modal closes.
   const [dirty, setDirty] = useState(false);
+  // "Open the whole period" — show every calendar day as a row (blank
+  // where there's no punch) so admin can add/fill any day directly
+  // (owner 2026-06-08). Off by default = only days with activity.
+  const [showAllDays, setShowAllDays] = useState(false);
 
   const loadBreakdown = useCallback(async () => {
     try {
@@ -1261,11 +1265,24 @@ function LineEditModal({
             <h4 className="font-bold text-slate-800 text-sm">
               เวลาเข้า-ออกแต่ละวัน (ที่มาของยอด)
             </h4>
-            {breakdownDays && (
-              <span className="text-[10px] text-slate-400">
-                {breakdownDays.length} วันที่มีการลงเวลา
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {periodStart && periodEnd && (
+                <label className="flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showAllDays}
+                    onChange={(e) => setShowAllDays(e.target.checked)}
+                    className="accent-brand"
+                  />
+                  แสดงทุกวันในรอบ
+                </label>
+              )}
+              {breakdownDays && (
+                <span className="text-[10px] text-slate-400">
+                  {breakdownDays.length} วันที่มีการลงเวลา
+                </span>
+              )}
+            </div>
           </div>
           {breakdownLoading && (
             <p className="text-xs text-slate-500">กำลังโหลด…</p>
@@ -1273,13 +1290,13 @@ function LineEditModal({
           {breakdownErr && (
             <p className="text-xs text-rose-600">✗ {breakdownErr}</p>
           )}
-          {breakdownDays && breakdownDays.length === 0 && (
+          {breakdownDays && breakdownDays.length === 0 && !showAllDays && (
             <p className="text-xs text-slate-500 italic bg-slate-50 rounded p-3 text-center">
               ไม่มีบันทึกเวลาเข้า-ออกในรอบนี้
-              — กรอกค่าตอบแทนตามตกลงในส่วนสรุปด้านล่าง
+              — เปิด &quot;แสดงทุกวันในรอบ&quot; เพื่อเพิ่มเวลารายวัน หรือกรอกค่าตอบแทนในส่วนสรุปด้านล่าง
             </p>
           )}
-          {breakdownDays && breakdownDays.length > 0 && (() => {
+          {breakdownDays && (breakdownDays.length > 0 || showAllDays) && (() => {
             const showMoney = line.hourly_rate_snapshot != null;
             const clampedPair = (p: BreakdownDay["pairs"][number]) =>
               p.durationMinutes > 0 &&
@@ -1291,6 +1308,22 @@ function LineEditModal({
               otPay: s.otPay + d.otPay,
               pay: s.pay + d.pay
             }), { work: 0, brk: 0, ot: 0, otPay: 0, pay: 0 });
+            // When "show all days" is on, render a row for every calendar
+            // day in the period — blank (clickable to add) where there's
+            // no punch (owner 2026-06-08). Totals still come from real days.
+            const byDate = new Map(breakdownDays.map((d) => [d.date, d] as const));
+            const addYmd = (ymd: string): string => {
+              const dd = new Date(`${ymd}T00:00:00Z`);
+              dd.setUTCDate(dd.getUTCDate() + 1);
+              return dd.toISOString().slice(0, 10);
+            };
+            const dateList: string[] = [];
+            if (showAllDays && periodStart && periodEnd) {
+              for (let d = periodStart; d <= periodEnd; d = addYmd(d)) dateList.push(d);
+            } else {
+              for (const d of breakdownDays) dateList.push(d.date);
+            }
+            const moneyCols = showMoney ? 2 : 0;
             return (
             <>
             <div className="overflow-x-auto -mx-2">
@@ -1308,7 +1341,26 @@ function LineEditModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {breakdownDays.map((day) => {
+                  {dateList.map((date) => {
+                    const day = byDate.get(date);
+                    if (!day) {
+                      // Blank day (no punch) — click to add via the editor.
+                      return (
+                        <tr key={date}
+                          onClick={() => selectDateByValue(date)}
+                          className={`border-t border-slate-100 cursor-pointer hover:bg-rose-50/40 ${selectedDate === date ? "bg-rose-50" : ""}`}>
+                          <td className="px-2 py-1.5 font-mono text-slate-400">{date}</td>
+                          <td className="px-2 py-1.5 text-slate-300 italic">— ยังไม่มีการลงเวลา (กดเพื่อเพิ่ม) —</td>
+                          <td className="px-2 py-1.5 text-slate-300">—</td>
+                          <td className="px-2 py-1.5 text-right text-slate-300">—</td>
+                          <td className="px-2 py-1.5 text-right text-slate-300">—</td>
+                          <td className="px-2 py-1.5 text-right text-slate-300">—</td>
+                          {Array.from({ length: moneyCols }).map((_, k) => (
+                            <td key={k} className="px-2 py-1.5 text-right text-slate-300">—</td>
+                          ))}
+                        </tr>
+                      );
+                    }
                     const isSel = selectedDate === day.date;
                     return day.pairs.map((p, i) => (
                       <tr key={`${day.date}-${i}`}
