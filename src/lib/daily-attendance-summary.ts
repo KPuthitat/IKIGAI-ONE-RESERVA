@@ -120,6 +120,20 @@ export function buildDailyAttendanceRoster(
   const leaveByUser = new Map<number, string>();
   for (const r of leaveRows) leaveByUser.set(r.user_id, r.type);
 
+  // 3b) Scheduled day-off via the roster (owner 2026-06-08). A day_off
+  //     assignment must NOT read as absent even when the user still has a
+  //     legacy users.shift_start_time (which would otherwise make
+  //     effectiveStart truthy → fall through to the absent bucket).
+  type DayOffRow = { user_id: number };
+  const dayOffRows = db.prepare(`
+    SELECT DISTINCT ra.user_id
+    FROM roster_assignments ra
+    JOIN shift_codes sc ON sc.id = ra.shift_code_id
+    WHERE ra.branch_id = ? AND ra.assignment_date = ? AND sc.kind = 'day_off'
+      AND ra.user_id IN (${placeholders})
+  `).all(branchId, dateBkk, ...staffIds) as DayOffRow[];
+  const dayOffSet = new Set(dayOffRows.map((r) => r.user_id));
+
   // Roster overlay — when the supervisor has assigned shifts for
   // today, the roster's start time wins over users.shift_start_time
   // (which becomes a legacy fallback for staff still on the old
@@ -182,9 +196,13 @@ export function buildDailyAttendanceRoster(
         leaveType
       }];
     }
-    // No clock-in, no leave — split into "not_yet" vs "absent" by
-    // comparing now with their shift start. Staff whose shift starts
-    // later today shouldn't read as absent on the 11:00 summary.
+    // No clock-in, no leave — a roster-scheduled day off is NOT absent
+    // (owner 2026-06-08). Skip like the no-shift case so the roll-call
+    // stays focused on people who were supposed to be at work.
+    if (dayOffSet.has(s.user_id)) return [];
+    // Split remaining into "not_yet" vs "absent" by comparing now with
+    // their shift start. Staff whose shift starts later today shouldn't
+    // read as absent on the 11:00 summary.
     if (effectiveStart && nowHhmmBkk < effectiveStart) {
       return [{
         userId: s.user_id,

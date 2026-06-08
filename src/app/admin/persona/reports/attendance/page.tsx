@@ -160,6 +160,23 @@ export default function AttendanceReportPage({
     workedByUser.get(ci.user_id)!.add(bkkDateOf(ci.ts));
   }
 
+  // Roster-scheduled day-offs in the month (owner 2026-06-08). The
+  // schedule's "วันหยุด" must count as off — previously only the static
+  // weekly_off_days were considered, so a roster day-off with no clock-in
+  // was wrongly counted as ขาดงาน (absent).
+  const dayOffRows = db.prepare(`
+    SELECT ra.user_id, ra.assignment_date AS d
+    FROM roster_assignments ra
+    JOIN shift_codes sc ON sc.id = ra.shift_code_id
+    WHERE ra.branch_id = ? AND ra.assignment_date >= ? AND ra.assignment_date <= ?
+      AND sc.kind = 'day_off'
+  `).all(activeBranchId, from, to) as Array<{ user_id: number; d: string }>;
+  const dayOffByUser = new Map<number, Set<string>>();
+  for (const r of dayOffRows) {
+    if (!dayOffByUser.has(r.user_id)) dayOffByUser.set(r.user_id, new Set());
+    dayOffByUser.get(r.user_id)!.add(r.d);
+  }
+
   // Classify each day for each user
   type Counts = {
     worked: number; leave: number; off: number; holiday: number; absent: number; future: number;
@@ -169,6 +186,7 @@ export default function AttendanceReportPage({
     const counts: Counts = { worked: 0, leave: 0, off: 0, holiday: 0, absent: 0, future: 0 };
     const userLeaves = leaveByUser.get(u.id) ?? new Set();
     const userWorked = workedByUser.get(u.id) ?? new Set();
+    const userDayOff = dayOffByUser.get(u.id) ?? new Set();
     const offSet = parseOffSet(u.weekly_off_days);
 
     for (const d of days) {
@@ -177,8 +195,9 @@ export default function AttendanceReportPage({
       // Priority order:
       // 1. holiday
       if (holidaySet.has(d)) { counts.holiday++; continue; }
-      // 2. weekly off
-      if (offSet.size > 0 && offSet.has(dayOfWeek(d))) {
+      // 2. day off — either the static weekly_off_days OR a roster-
+      //    scheduled day_off assignment (owner 2026-06-08).
+      if ((offSet.size > 0 && offSet.has(dayOfWeek(d))) || userDayOff.has(d)) {
         counts.off++; continue;
       }
       // 3. leave (approved)
