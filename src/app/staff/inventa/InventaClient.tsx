@@ -291,6 +291,16 @@ export default function InventaClient({
               );
             })}
           </div>
+          {/* Quick "ยังไม่ตั้งราคาทุน" toggle — grouped with the colour
+              chips as a pill so the quick filters sit together; the
+              dropdown row below stays just selects + sort (owner item 3). */}
+          <button type="button" onClick={() => setNoCostOnly((v) => !v)}
+            className={`text-xs px-3 py-1.5 rounded-full border whitespace-nowrap ${
+              noCostOnly
+                ? "bg-rose-600 text-white border-rose-600 font-bold"
+                : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+            ยังไม่ตั้งราคาทุน
+          </button>
         </div>
 
         {/* Filter + sort menu (#89). Native selects so the touch
@@ -337,11 +347,6 @@ export default function InventaClient({
               ))}
             </select>
           </label>
-          <button type="button" onClick={() => setNoCostOnly((v) => !v)}
-            className={`px-2.5 py-1 rounded-full border ${
-              noCostOnly ? "bg-rose-600 text-white border-rose-600" : "border-slate-300 text-slate-600"}`}>
-            ยังไม่ตั้งราคาทุน
-          </button>
           <label className="flex items-center gap-1 w-full sm:w-auto sm:ml-auto">
             <span className="text-slate-500 w-20 shrink-0 sm:w-auto">{t("inv.sort.label")}</span>
             <select className="input !py-1 !px-2 flex-1 min-w-0 sm:flex-none sm:!w-auto sm:max-w-[220px] text-xs"
