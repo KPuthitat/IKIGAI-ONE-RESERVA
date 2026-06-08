@@ -3,7 +3,7 @@ import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { todayBkk } from "@/lib/time";
-import TimesheetsClient, { type TimeEntryRow, type UserOption, type AuditRow } from "./TimesheetsClient";
+import TimesheetsClient, { type TimesheetDayRow, type UserOption, type AuditRow } from "./TimesheetsClient";
 
 export const dynamic = "force-dynamic";
 
@@ -55,15 +55,84 @@ export default function TimesheetsPage({
     params.push(userIdFilter);
   }
 
-  const entries = db.prepare(`
+  const punches = db.prepare(`
     SELECT te.id, te.user_id, te.type, te.ts, u.username,
            u.display_name, u.title_prefix
     FROM time_entries te
     JOIN users u ON te.user_id = u.id
     WHERE te.branch_id = ? AND te.ts >= ? AND te.ts <= ? ${userClause}
-    ORDER BY te.ts DESC
-    LIMIT 500
-  `).all(...params) as TimeEntryRow[];
+    ORDER BY te.ts ASC
+    LIMIT 1000
+  `).all(...params) as Array<{
+    id: number; user_id: number; type: "in" | "out"; ts: string;
+    username: string; display_name: string; title_prefix: string | null;
+  }>;
+
+  // Approved OT until-times for the range, keyed by `${user_id}|${work_date}`.
+  // Only approved OT counts toward pay, so only that surfaces here.
+  const otRows = db.prepare(`
+    SELECT user_id, work_date, requested_until
+    FROM ot_requests
+    WHERE branch_id = ? AND status = 'approved'
+      AND work_date >= ? AND work_date <= ?
+  `).all(branch.id, from, to) as Array<{ user_id: number; work_date: string; requested_until: string }>;
+  const otByKey = new Map<string, string>();
+  for (const r of otRows) otByKey.set(`${r.user_id}|${r.work_date}`, r.requested_until);
+
+  // Roster shift per (user, date). When a staff holds multiple positions
+  // on the same day, the earliest-start shift wins (they had to be in by
+  // then) — matches effectiveShiftStartForUserDate's rule.
+  const shiftRows = db.prepare(`
+    SELECT a.user_id, a.assignment_date, s.code, s.start_time, s.end_time, s.kind
+    FROM roster_assignments a
+    JOIN shift_codes s ON s.id = a.shift_code_id
+    WHERE a.branch_id = ? AND a.assignment_date >= ? AND a.assignment_date <= ?
+    ORDER BY a.assignment_date ASC, s.start_time ASC
+  `).all(branch.id, from, to) as Array<{
+    user_id: number; assignment_date: string;
+    code: string; start_time: string; end_time: string; kind: string;
+  }>;
+  const shiftByKey = new Map<string, { code: string; start_time: string; end_time: string; kind: string }>();
+  for (const r of shiftRows) {
+    const k = `${r.user_id}|${r.assignment_date}`;
+    if (!shiftByKey.has(k)) {
+      shiftByKey.set(k, { code: r.code, start_time: r.start_time, end_time: r.end_time, kind: r.kind });
+    }
+  }
+
+  // Group raw punches into one row per (employee, Bangkok-date). Each row
+  // carries every in/out punch that day (so delete/resend still works per
+  // punch) plus the roster shift + approved OT for that day.
+  const bkkDate = (ts: string) =>
+    new Date(new Date(ts).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+  const dayMap = new Map<string, TimesheetDayRow>();
+  for (const p of punches) {
+    const date = bkkDate(p.ts);
+    const key = `${p.user_id}|${date}`;
+    let row = dayMap.get(key);
+    if (!row) {
+      row = {
+        user_id: p.user_id,
+        display_name: p.display_name,
+        title_prefix: p.title_prefix,
+        username: p.username,
+        work_date: date,
+        ins: [],
+        outs: [],
+        ot_until: otByKey.get(key) ?? null,
+        shift: shiftByKey.get(key) ?? null
+      };
+      dayMap.set(key, row);
+    }
+    if (p.type === "in") row.ins.push({ id: p.id, ts: p.ts });
+    else row.outs.push({ id: p.id, ts: p.ts });
+  }
+  // Newest day first, then by staff name (Thai collation).
+  const dayRows = [...dayMap.values()].sort((a, b) =>
+    a.work_date === b.work_date
+      ? a.display_name.localeCompare(b.display_name, "th")
+      : b.work_date.localeCompare(a.work_date)
+  );
 
   // User dropdown — only people assigned to this branch (so admin
   // doesn't see staff from the other branch in the filter list).
@@ -121,7 +190,7 @@ export default function TimesheetsPage({
         to={to}
         userIdFilter={userIdFilter}
         users={users}
-        entries={entries}
+        dayRows={dayRows}
         audit={audit}
       />
     </div>

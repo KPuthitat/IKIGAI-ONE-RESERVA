@@ -7,14 +7,18 @@ import { t } from "@/lib/i18n";
 import { useConfirm } from "@/app/components/useConfirm";
 import { nameWithPrefix } from "@/lib/name";
 
-export type TimeEntryRow = {
-  id: number;
+export type Punch = { id: number; ts: string };
+
+export type TimesheetDayRow = {
   user_id: number;
-  type: "in" | "out";
-  ts: string;
-  username: string;
   display_name: string;
   title_prefix: string | null;
+  username: string;
+  work_date: string; // YYYY-MM-DD (Bangkok)
+  ins: Punch[];
+  outs: Punch[];
+  ot_until: string | null; // "HH:MM" approved OT end-time, or null
+  shift: { code: string; start_time: string; end_time: string; kind: string } | null;
 };
 
 export type UserOption = {
@@ -51,13 +55,26 @@ function formatBkk(ts: string, lang: Lang): string {
   return `${date} ${time}`;
 }
 
+// HH:MM (Bangkok) from an ISO instant — for the in/out time cells.
+function timeBkk(ts: string): string {
+  const bkk = new Date(new Date(ts).getTime() + 7 * 60 * 60 * 1000);
+  return bkk.toISOString().slice(11, 16);
+}
+
+// DD/MM/YY for a YYYY-MM-DD Bangkok calendar date (BE year in Thai).
+function formatDate(ymd: string, lang: Lang): string {
+  const [y, m, dd] = ymd.split("-");
+  if (lang === "th") return `${dd}/${m}/${String(Number(y) + 543).slice(2)}`;
+  return `${dd}/${m}/${y.slice(2)}`;
+}
+
 export default function TimesheetsClient({
   lang,
   from,
   to,
   userIdFilter,
   users,
-  entries,
+  dayRows,
   audit
 }: {
   lang: Lang;
@@ -65,7 +82,7 @@ export default function TimesheetsClient({
   to: string;
   userIdFilter: number | null;
   users: UserOption[];
-  entries: TimeEntryRow[];
+  dayRows: TimesheetDayRow[];
   audit: AuditRow[];
 }) {
   const router = useRouter();
@@ -79,11 +96,11 @@ export default function TimesheetsClient({
   // auto-push at clock-in time was skipped — staff hadn't bound
   // LINE yet, platform OA was misconfigured, transient LINE
   // outage, etc.
-  async function resendNotification(entry: TimeEntryRow): Promise<void> {
-    setResendingId(entry.id);
+  async function resendNotification(punch: Punch): Promise<void> {
+    setResendingId(punch.id);
     try {
       const res = await fetch(
-        `/api/admin/persona/timesheets/${entry.id}/resend-notification`,
+        `/api/admin/persona/timesheets/${punch.id}/resend-notification`,
         { method: "POST" }
       );
       const j = await res.json().catch(() => ({}));
@@ -132,11 +149,15 @@ export default function TimesheetsClient({
     }
   }
 
-  async function deleteEntry(entry: TimeEntryRow): Promise<void> {
+  async function deleteEntry(
+    punch: Punch,
+    type: "in" | "out",
+    displayName: string
+  ): Promise<void> {
     const body = t(lang, "admin.persona.timesheets.confirmDelete")
-      .replace("{user}", entry.display_name)
-      .replace("{ts}", formatBkk(entry.ts, lang))
-      .replace("{type}", t(lang, `clock.short.${entry.type}` as any));
+      .replace("{user}", displayName)
+      .replace("{ts}", formatBkk(punch.ts, lang))
+      .replace("{type}", t(lang, `clock.short.${type}` as any));
 
     const reason = await confirm({
       title: t(lang, "admin.persona.timesheets.confirmDeleteTitle"),
@@ -150,8 +171,8 @@ export default function TimesheetsClient({
     });
     if (reason === null) return;
 
-    setDeletingId(entry.id);
-    fetch(`/api/admin/persona/timesheets/${entry.id}`, {
+    setDeletingId(punch.id);
+    fetch(`/api/admin/persona/timesheets/${punch.id}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason: reason.slice(0, 200) })
@@ -220,12 +241,15 @@ export default function TimesheetsClient({
         </button>
       </form>
 
-      {/* Entries table */}
+      {/* Entries table — one row per employee per day. Each day shows
+          its clock-in(s), clock-out(s), approved OT until-time, and the
+          rostered shift so admin can sanity-check the punches against
+          the schedule at a glance (owner 2026-06-08). */}
       <div className="card overflow-x-auto">
         <h2 className="font-semibold text-slate-700 mb-3">
-          {t(lang, "admin.persona.timesheets.entriesTitle")} ({entries.length})
+          {t(lang, "admin.persona.timesheets.entriesTitle")} ({dayRows.length})
         </h2>
-        {entries.length === 0 ? (
+        {dayRows.length === 0 ? (
           <p className="text-slate-500 text-sm py-4 text-center">
             {t(lang, "admin.persona.timesheets.empty")}
           </p>
@@ -234,64 +258,110 @@ export default function TimesheetsClient({
             <thead>
               <tr className="text-left text-xs text-slate-500 border-b">
                 <th className="py-2 pr-3">{t(lang, "admin.persona.timesheets.col.user")}</th>
-                <th className="py-2 pr-3">{t(lang, "admin.persona.timesheets.col.type")}</th>
-                <th className="py-2 pr-3">{t(lang, "admin.persona.timesheets.col.ts")}</th>
-                <th className="py-2 pr-3 w-40"></th>
+                <th className="py-2 pr-3 whitespace-nowrap">{t(lang, "admin.persona.timesheets.col.date")}</th>
+                <th className="py-2 pr-3 whitespace-nowrap">{t(lang, "admin.persona.timesheets.col.shift")}</th>
+                <th className="py-2 pr-3">{t(lang, "admin.persona.timesheets.col.clockIn")}</th>
+                <th className="py-2 pr-3">{t(lang, "admin.persona.timesheets.col.clockOut")}</th>
+                <th className="py-2 pr-3 whitespace-nowrap">{t(lang, "admin.persona.timesheets.col.ot")}</th>
               </tr>
             </thead>
             <tbody>
-              {entries.map((e) => (
-                <tr key={e.id} className="border-b last:border-0 hover:bg-slate-50">
-                  <td className="py-2 pr-3">
-                    <div className="font-medium text-slate-800">{nameWithPrefix(e.title_prefix, e.display_name)}</div>
-                    <div className="text-xs text-slate-500">@{e.username}</div>
-                  </td>
-                  <td className="py-2 pr-3">
-                    <span
-                      className={
-                        e.type === "in"
-                          ? "inline-block px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700"
-                          : "inline-block px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-700"
-                      }
-                    >
-                      {t(lang, `clock.short.${e.type}` as any)}
-                    </span>
-                  </td>
-                  <td className="py-2 pr-3 font-mono text-xs">
-                    {formatBkk(e.ts, lang)}
-                  </td>
-                  <td className="py-2 pr-3 text-right">
-                    <div className="flex justify-end items-center gap-3">
-                      {/* Resend button — only on clock-in rows since
-                          clock-out doesn't push a LINE card. Sits
-                          before delete so the muscle memory for
-                          "danger button last" stays. */}
-                      {e.type === "in" && (
-                        <button
-                          type="button"
-                          disabled={isLoading}
-                          onClick={() => resendNotification(e)}
-                          className="text-xs text-brand hover:underline disabled:opacity-50"
-                        >
-                          {resendingId === e.id
-                            ? t(lang, "admin.persona.timesheets.resend.sending")
-                            : t(lang, "admin.persona.timesheets.resend.btn")}
-                        </button>
+              {dayRows.map((r) => {
+                const name = nameWithPrefix(r.title_prefix, r.display_name);
+                const isDayOff = r.shift?.kind === "day_off";
+                return (
+                  <tr key={`${r.user_id}|${r.work_date}`} className="border-b last:border-0 hover:bg-slate-50 align-top">
+                    <td className="py-2 pr-3">
+                      <div className="font-medium text-slate-800">{name}</div>
+                      <div className="text-xs text-slate-500">@{r.username}</div>
+                    </td>
+                    <td className="py-2 pr-3 font-mono text-xs whitespace-nowrap text-slate-700">
+                      {formatDate(r.work_date, lang)}
+                    </td>
+                    <td className="py-2 pr-3 text-xs whitespace-nowrap">
+                      {r.shift ? (
+                        isDayOff ? (
+                          <span className="text-slate-400">{t(lang, "admin.persona.timesheets.dayOff")}</span>
+                        ) : (
+                          <span className="text-slate-600">
+                            <span className="font-medium text-slate-800">{r.shift.code}</span>
+                            {" · "}
+                            <span className="font-mono">{r.shift.start_time}–{r.shift.end_time}</span>
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-slate-300">{t(lang, "admin.persona.timesheets.noShift")}</span>
                       )}
-                      <button
-                        type="button"
-                        disabled={isLoading}
-                        onClick={() => deleteEntry(e)}
-                        className="text-xs text-rose-600 hover:text-rose-700 hover:underline disabled:opacity-50"
-                      >
-                        {deletingId === e.id
-                          ? t(lang, "admin.persona.timesheets.deleting")
-                          : t(lang, "admin.persona.timesheets.delete")}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    {/* Clock-in cell */}
+                    <td className="py-2 pr-3">
+                      {r.ins.length === 0 ? (
+                        <span className="text-slate-300">{t(lang, "admin.persona.timesheets.noShift")}</span>
+                      ) : (
+                        <div className="space-y-1">
+                          {r.ins.map((p) => (
+                            <div key={p.id} className="flex items-center gap-2">
+                              <span className="font-mono text-emerald-700 font-medium">{timeBkk(p.ts)}</span>
+                              <button
+                                type="button"
+                                disabled={isLoading}
+                                onClick={() => resendNotification(p)}
+                                className="text-[11px] text-brand hover:underline disabled:opacity-50"
+                              >
+                                {resendingId === p.id
+                                  ? t(lang, "admin.persona.timesheets.resend.sending")
+                                  : t(lang, "admin.persona.timesheets.resend.btn")}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isLoading}
+                                onClick={() => deleteEntry(p, "in", name)}
+                                className="text-[11px] text-rose-600 hover:underline disabled:opacity-50"
+                              >
+                                {deletingId === p.id
+                                  ? t(lang, "admin.persona.timesheets.deleting")
+                                  : t(lang, "admin.persona.timesheets.delete")}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    {/* Clock-out cell */}
+                    <td className="py-2 pr-3">
+                      {r.outs.length === 0 ? (
+                        <span className="text-slate-300">{t(lang, "admin.persona.timesheets.noShift")}</span>
+                      ) : (
+                        <div className="space-y-1">
+                          {r.outs.map((p) => (
+                            <div key={p.id} className="flex items-center gap-2">
+                              <span className="font-mono text-rose-700 font-medium">{timeBkk(p.ts)}</span>
+                              <button
+                                type="button"
+                                disabled={isLoading}
+                                onClick={() => deleteEntry(p, "out", name)}
+                                className="text-[11px] text-rose-600 hover:underline disabled:opacity-50"
+                              >
+                                {deletingId === p.id
+                                  ? t(lang, "admin.persona.timesheets.deleting")
+                                  : t(lang, "admin.persona.timesheets.delete")}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    {/* OT cell — approved OT until-time */}
+                    <td className="py-2 pr-3 whitespace-nowrap">
+                      {r.ot_until ? (
+                        <span className="font-mono text-amber-700 font-medium">{r.ot_until}</span>
+                      ) : (
+                        <span className="text-slate-300">{t(lang, "admin.persona.timesheets.noShift")}</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
