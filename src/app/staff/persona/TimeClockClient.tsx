@@ -7,7 +7,9 @@ import { useLang } from "@/lib/LangProvider";
 
 type TimeEntry = { id: number; type: "in" | "out"; ts: string };
 
-type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask";
+type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask" | "owl";
+
+type OwlPrompt = { kind: "missing_in" | "missing_out"; work_date: string };
 
 type ReplaceState = {
   pin: string;
@@ -264,11 +266,13 @@ function ClockAction({
   todayBkk: string;
 }) {
   const { t } = useLang();
+  const router = useRouter();
   const [phase, setPhase] = useState<Phase>("idle");
   const [pin, setPin] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [actualAction, setActualAction] = useState<"in" | "out">(action);
   const [replaceState, setReplaceState] = useState<ReplaceState | null>(null);
+  const [owlPrompt, setOwlPrompt] = useState<OwlPrompt | null>(null);
 
   // OT prompt (PT clocking out after scheduled end).
   const [otStep, setOtStep] = useState<"ask" | "enter">("ask");
@@ -518,6 +522,13 @@ function ClockAction({
       if (data.action === "in" || data.action === "out") {
         setActualAction(data.action);
       }
+      // น้องฮูก forgot-to-punch nudge takes priority — it routes the
+      // staff to certify the missing punch (owner 2026-06-08).
+      if (data.owl && (data.owl.kind === "missing_in" || data.owl.kind === "missing_out")) {
+        setOwlPrompt(data.owl as OwlPrompt);
+        setPhase("owl");
+        return;
+      }
       // OT prompt — PT clocked out past their scheduled shift end by
       // more than the 5-min grace (so the time would otherwise be cut at
       // the scheduled end). The pay engine pays it at the regular rate up
@@ -669,6 +680,45 @@ function ClockAction({
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  // ── น้องฮูก: forgot-to-punch nudge ──────────
+  // Shown right after the punch commits when an incomplete day is
+  // detected. Soft, formal copy (no disciplinary language) + a route to
+  // certify the missing punch (owner 2026-06-08).
+  if (phase === "owl" && owlPrompt) {
+    const isOut = owlPrompt.kind === "missing_out";
+    const certType = isOut ? "out" : "in";
+    const [yy, mm, dd] = owlPrompt.work_date.split("-");
+    const dateLabel = `${dd}/${mm}/${String(Number(yy) + 543).slice(2)}`;
+    return (
+      <div className="bg-sky-50 border-2 border-sky-200 rounded-2xl p-4 space-y-3 text-left">
+        <div className="text-sm font-bold text-sky-900">น้องฮูกแจ้งเตือน</div>
+        <div className="text-sm text-slate-700 leading-relaxed">
+          {isOut
+            ? `พบว่าเมื่อวันที่ ${dateLabel} ยังไม่มีการลงเวลาออกงาน ระบบได้บันทึกไว้เป็นประวัติแล้ว รบกวนพี่กดรับรองเวลาออกให้เรียบร้อย และอย่าลืมลงเวลาออกทุกครั้งนะคะ`
+            : `พบว่าวันนี้มีการลงเวลาออกงาน แต่ยังไม่มีเวลาเข้างาน ระบบได้บันทึกไว้เป็นประวัติแล้ว รบกวนพี่กดรับรองเวลาเข้าให้เรียบร้อยค่ะ`}
+        </div>
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <button
+            onClick={onSuccess}
+            className="py-3 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 active:scale-95 transition"
+          >
+            รับทราบ
+          </button>
+          <button
+            onClick={() =>
+              router.push(
+                `/staff/persona/time-certification?missing=1&type=${certType}&date=${owlPrompt.work_date}`
+              )
+            }
+            className="py-3 rounded-xl bg-brand text-white text-sm font-bold active:scale-95 transition"
+          >
+            ไปรับรองเวลา
+          </button>
+        </div>
       </div>
     );
   }

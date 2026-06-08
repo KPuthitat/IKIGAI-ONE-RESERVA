@@ -10,6 +10,7 @@ import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { listAttendanceFlagsForUser } from "@/lib/attendance-flags";
 import TimeCertificationClient from "./TimeCertificationClient";
 
 export const dynamic = "force-dynamic";
@@ -32,10 +33,26 @@ type CertRow = {
   decision_note: string | null;
 };
 
-export default function StaffTimeCertificationPage() {
+export default function StaffTimeCertificationPage({
+  searchParams
+}: {
+  searchParams: { missing?: string; type?: string; date?: string };
+}) {
   const user = requireUser();
   const lang = getLang();
   const db = getDb();
+
+  // น้องฮูก deep-links here with ?missing=1&type=in|out&date=YYYY-MM-DD to
+  // pre-open the missing-punch form for the lapse it just detected.
+  const initialMissing =
+    searchParams.missing === "1" &&
+    (searchParams.type === "in" || searchParams.type === "out") &&
+    typeof searchParams.date === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date)
+      ? { entryType: searchParams.type as "in" | "out", date: searchParams.date }
+      : null;
+
+  const flags = listAttendanceFlagsForUser(user.id, 20);
 
   // Last 30 days of entries — old enough to cover a full pay cycle,
   // recent enough that "wait, when did I forget to clock in?" is
@@ -82,6 +99,8 @@ export default function StaffTimeCertificationPage() {
         entries={entries}
         certs={myCerts}
         pendingEntryIds={[...pendingByEntry.keys()]}
+        initialMissing={initialMissing}
+        flags={flags}
       />
     </div>
   );

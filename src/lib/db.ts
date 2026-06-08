@@ -1487,6 +1487,33 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // ── attendance_flags — lightweight "irregular time-logging" history ──
+  // (owner 2026-06-08). When a staff forgets to clock in/out (or, later,
+  // clocks against a swapped shift), น้องฮูก records a flag here as a
+  // gentle HISTORY entry — NOT a disciplinary_warnings row. The owner
+  // chose: "แค่แจ้งเตือนว่ามีพฤติกรรมการลงเวลาผิดปกติ ระบบบันทึกไว้เป็นประวัติ
+  // และให้ปรับปรุงให้ถูกต้อง". One flag per (user, work_date, kind) — the
+  // UNIQUE lets detection INSERT OR IGNORE idempotently so a staff isn't
+  // nagged twice for the same lapse.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS attendance_flags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      branch_id INTEGER REFERENCES branches(id),
+      work_date TEXT NOT NULL,
+      kind TEXT NOT NULL
+        CHECK (kind IN ('missing_in','missing_out','late','early','swap')),
+      detail TEXT,
+      resolved_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, work_date, kind)
+    );
+    CREATE INDEX IF NOT EXISTS idx_attendance_flags_user
+      ON attendance_flags(user_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_attendance_flags_branch
+      ON attendance_flags(branch_id, work_date);
+  `);
+
   // SVC — daily service-charge pot logged per branch per day.
   //
   // Source: admin or the closing-shift staff enters today's POS-collected

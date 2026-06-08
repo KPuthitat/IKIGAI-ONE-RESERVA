@@ -9,6 +9,7 @@ import {
 import { rateLimit } from "@/lib/rate-limit";
 import { pushClockInCard } from "@/lib/line";
 import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
+import { detectPunchAnomaly, type OwlPrompt } from "@/lib/attendance-flags";
 
 const Body = z.object({
   pin: z.string().regex(/^\d{4}$/),
@@ -243,6 +244,23 @@ export async function POST(req: Request) {
   db.prepare("INSERT INTO time_entries (user_id, type, ts, branch_id) VALUES (?, ?, ?, ?)")
     .run(user.id, action, nowIso, user.activeBranchId);
 
+  // ── น้องฮูก: forgot-to-punch detection (owner 2026-06-08) ──────────
+  // STRICTLY ADVISORY — the punch above already committed. This only
+  // records a soft history flag + returns a prompt to nudge the staff to
+  // certify the missing punch. Wrapped so a detection bug can NEVER break
+  // a clock-in (the CLAUDE.md morning-window rule).
+  let owl: OwlPrompt | null = null;
+  try {
+    owl = detectPunchAnomaly({
+      userId: user.id,
+      branchId: user.activeBranchId,
+      action,
+      todayBkk
+    });
+  } catch (e) {
+    console.warn("[clock] attendance anomaly detection failed:", e);
+  }
+
   // ── Fire-and-forget: ส่ง LINE flex confirmation message on clock-in ──
   // Channel: IKIGAI OS (platform-level OA, shared across all branches).
   // Branch context: ใช้แค่ดึงเวลาพักกลางวัน + ชื่อสาขามาแสดงในข้อความ.
@@ -280,5 +298,5 @@ export async function POST(req: Request) {
   // attendance_summary_time, fired from /api/cron — see
   // src/lib/daily-attendance-summary.ts.
 
-  return NextResponse.json({ ok: true, action });
+  return NextResponse.json({ ok: true, action, ...(owl ? { owl } : {}) });
 }

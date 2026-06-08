@@ -51,14 +51,35 @@ function dateTimeToIso(date: string, time: string): string {
 }
 const BKK_TODAY = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 
+type FlagRow = {
+  id: number;
+  work_date: string;
+  kind: string;
+  detail: string | null;
+  resolved_at: string | null;
+  created_at: string;
+};
+
+const FLAG_KIND_LABEL: Record<string, string> = {
+  missing_in: "ไม่ได้ลงเวลาเข้างาน",
+  missing_out: "ไม่ได้ลงเวลาออกงาน",
+  late: "เข้างานสาย",
+  early: "เข้างานก่อนเวลา",
+  swap: "สลับกะกับเพื่อน"
+};
+
 export default function TimeCertificationClient({
   entries,
   certs,
-  pendingEntryIds
+  pendingEntryIds,
+  initialMissing = null,
+  flags = []
 }: {
   entries: EntryRow[];
   certs: CertRow[];
   pendingEntryIds: number[];
+  initialMissing?: { entryType: "in" | "out"; date: string } | null;
+  flags?: FlagRow[];
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -79,7 +100,11 @@ export default function TimeCertificationClient({
     date: string;
     time: string;
     reason: string;
-  } | null>(null);
+  } | null>(
+    initialMissing
+      ? { entryType: initialMissing.entryType, date: initialMissing.date, time: "", reason: "" }
+      : null
+  );
 
   function openForm(entry: EntryRow) {
     setForm({
@@ -334,6 +359,35 @@ export default function TimeCertificationClient({
           </p>
         )}
       </div>
+
+      {/* ── ประวัติการลงเวลาผิดปกติ (น้องฮูกบันทึกไว้) ── */}
+      {flags.length > 0 && (
+        <div className="card space-y-2">
+          <h2 className="font-bold text-slate-800 text-sm">ประวัติการลงเวลาที่ควรปรับปรุง</h2>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            ระบบบันทึกไว้เป็นประวัติ — โปรดลงเวลาเข้า–ออกให้ครบถ้วนทุกครั้ง หากรายการใดยังไม่ได้รับรองเวลา
+            รบกวนกดรับรองด้านบน
+          </p>
+          <div className="space-y-1.5">
+            {flags.map((f) => {
+              const [yy, mm, dd] = f.work_date.split("-");
+              const dateLabel = `${dd}/${mm}/${String(Number(yy) + 543).slice(2)}`;
+              return (
+                <div
+                  key={f.id}
+                  className="flex items-start justify-between gap-2 py-1.5 border-b border-slate-100 last:border-b-0"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm text-slate-700">{FLAG_KIND_LABEL[f.kind] ?? f.kind}</div>
+                    {f.detail && <div className="text-[11px] text-slate-400">{f.detail}</div>}
+                  </div>
+                  <span className="font-mono text-xs text-slate-500 whitespace-nowrap mt-0.5">{dateLabel}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Recent entries — pick one to certify ── */}
       <div className="card space-y-2">
