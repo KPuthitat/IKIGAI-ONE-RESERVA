@@ -212,47 +212,9 @@ export default function PayPeriodPicker({
         </div>
       </Section>
 
-      {/* 2. ประจำรายสัปดาห์ — Full-time weekly */}
-      <Section
-        lang={lang}
-        title={t(lang, "admin.persona.payroll.hub.cat.ftWeekly")}
-        desc={t(lang, "admin.persona.payroll.hub.cat.ftWeeklyDesc", { month: monthLabel })}
-        dotColor="bg-emerald-400"
-      >
-        {weeklyDates.length === 0 ? (
-          <p className="text-xs text-slate-500 italic px-3">
-            {t(lang, "admin.persona.payroll.hub.noMondays")}
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {weeklyDates.map((p) => {
-              const sp: SuggestedPeriod = { ...p, cycle: "weekly", target: "ft" };
-              const key = `weekly|ft|${p.start}|${p.end}`;
-              const ex = existingByKey.get(key);
-              return (
-                <PeriodCard
-                  key={key}
-                  lang={lang}
-                  start={p.start}
-                  end={p.end}
-                  pay={p.pay}
-                  cycleLabel={t(lang, "admin.persona.payroll.hub.cat.ftWeekly")}
-                  existing={ex}
-                  busyKey={busyKey}
-                  cardKey={key}
-                  onCreate={(ds) => createPeriod(sp, ds)}
-                  onForceOpen={() => setForceOpen({ sp })}
-                  onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
-                  accentClass="hover:border-emerald-400/60"
-                  today={today}
-                />
-              );
-            })}
-          </div>
-        )}
-      </Section>
+      {/* ประจำรายสัปดาห์ removed (owner 2026-06-09): FT paid monthly only. */}
 
-      {/* 3. พาร์ทไทม์ — Part-time (weekly only) */}
+      {/* 2. พาร์ทไทม์ — Part-time (weekly only) */}
       <Section
         lang={lang}
         title={t(lang, "admin.persona.payroll.hub.cat.pt")}

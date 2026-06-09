@@ -1537,6 +1537,15 @@ function runMigrations(db: Database.Database): void {
       ON shift_swap_overrides(user_id, work_date);
   `);
 
+  // FT weekly payroll cancelled (owner 2026-06-09): full-time staff are paid
+  // monthly only (not accounting-correct otherwise). Migrate any legacy
+  // FT pay_cycle='weekly' → 'monthly' so they keep appearing in monthly
+  // periods — the pay engine keys base pay on pay_cycle, so a stale 'weekly'
+  // would otherwise zero their salary. Idempotent (no-op after first run).
+  db.prepare(
+    "UPDATE users SET pay_cycle = 'monthly' WHERE employment_type = 'ft' AND pay_cycle = 'weekly'"
+  ).run();
+
   // SVC — daily service-charge pot logged per branch per day.
   //
   // Source: admin or the closing-shift staff enters today's POS-collected

@@ -936,23 +936,14 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     byDate.set(r.work_date, [sh]);
   }
 
-  // Eligible staff depend on (cycle, target):
-  //   weekly + 'pt'  → PT only
-  //   weekly + 'ft'  → FT-weekly only
-  //   weekly + 'all' → PT + FT-weekly (legacy/backward compat)
-  //   monthly + 'ft' → FT-monthly only
-  //   monthly + 'all' → FT-monthly only (PT never on monthly cycle)
+  // Eligible staff by cycle (owner 2026-06-09: FT-weekly cancelled — not
+  // accounting-correct). Weekly is PT-only; FT is always monthly.
+  //   weekly  → PT only (target ignored)
+  //   monthly → FT-monthly only
   let staffWhere: string;
   if (period.cycle === "weekly") {
-    if (period.target === "pt") {
-      staffWhere = "employment_type = 'pt'";
-    } else if (period.target === "ft") {
-      staffWhere = "employment_type = 'ft' AND pay_cycle = 'weekly'";
-    } else {
-      staffWhere = "(employment_type = 'pt' OR (employment_type = 'ft' AND pay_cycle = 'weekly'))";
-    }
+    staffWhere = "employment_type = 'pt'";
   } else {
-    // monthly — only FT-monthly regardless of target
     staffWhere = "employment_type = 'ft' AND pay_cycle = 'monthly'";
   }
   const staffSql = `

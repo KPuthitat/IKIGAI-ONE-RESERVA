@@ -494,7 +494,8 @@ function EditModal({
   const [monthlySalary, setMonthlySalary] = useState<string>(
     employee.monthly_salary == null ? "" : String(employee.monthly_salary)
   );
-  const [payCycle, setPayCycle] = useState<"weekly" | "monthly" | "">(employee.pay_cycle ?? "");
+  // pay_cycle is no longer user-selectable: FT = monthly, PT = none
+  // (owner 2026-06-09). Coerced at save by employment type.
   const [taxMode, setTaxMode] = useState<"sso" | "wht">(employee.salary_tax_mode ?? "sso");
   const [lineUserId, setLineUserId] = useState<string>(employee.line_user_id ?? "");
   // shift_start_time + escalation_hours per-user fields removed
@@ -654,7 +655,8 @@ function EditModal({
         bank_account: bankAccount.trim() || null,
         hourly_rate: hourlyRate.trim() === "" ? null : Number(hourlyRate),
         monthly_salary: monthlySalary.trim() === "" ? null : Number(monthlySalary),
-        pay_cycle: payCycle || null,
+        // FT is monthly-only (owner 2026-06-09); PT has no pay cycle.
+        pay_cycle: employmentType === "ft" ? "monthly" : null,
         salary_tax_mode: taxMode,
         line_user_id: lineUserId.trim() || null,
         // shift_start_time + escalation_hours UI removed 2026-05;
@@ -1017,14 +1019,13 @@ function EditModal({
                   </div>
                   <div>
                     <label className="label">{t("admin.persona.employees.field.payCycle")}</label>
-                    <select className="input" value={payCycle}
-                      onChange={(e) => setPayCycle(e.target.value as "weekly" | "monthly" | "")}>
-                      <option value="">— {t("admin.persona.employees.unset")} —</option>
-                      <option value="weekly">{t("admin.persona.employees.cycleWeekly")}</option>
-                      <option value="monthly">{t("admin.persona.employees.cycleMonthly")}</option>
-                    </select>
+                    {/* FT weekly cancelled (owner 2026-06-09): full-time staff
+                        are paid monthly only, per accounting policy. */}
+                    <div className="input bg-slate-50 text-slate-600">
+                      {t("admin.persona.employees.cycleMonthly")}
+                    </div>
                     <p className="text-xs text-slate-500 mt-1">
-                      {t("admin.persona.employees.payCycleHint")}
+                      พนักงานประจำจ่ายค่าตอบแทนรายเดือนเท่านั้น (ตามหลักบัญชี)
                     </p>
                   </div>
                 </div>

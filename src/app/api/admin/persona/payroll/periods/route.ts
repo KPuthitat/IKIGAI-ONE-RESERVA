@@ -38,6 +38,11 @@ export async function POST(req: Request) {
   if (d.period_end < d.period_start) {
     return NextResponse.json({ error: "invalid_range" }, { status: 400 });
   }
+  // FT weekly payroll is cancelled (owner 2026-06-09) — full-time staff are
+  // paid monthly only. Weekly periods are PT-only.
+  if (d.cycle === "weekly" && d.target === "ft") {
+    return NextResponse.json({ error: "ft_weekly_disabled" }, { status: 400 });
+  }
 
   // Default pay_date = next Monday after period_end (weekly) or last day (monthly)
   const payDate = d.pay_date ?? defaultPayDate(d.period_end, d.cycle);
