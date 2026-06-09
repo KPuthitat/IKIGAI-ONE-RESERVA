@@ -755,8 +755,8 @@ function ClockAction({
         <div className="text-sm font-bold text-sky-900">น้องฮูกแจ้งเตือน</div>
         <div className="text-sm text-slate-700 leading-relaxed">
           {isOut
-            ? `พบว่าเมื่อวันที่ ${dateLabel} ยังไม่มีการลงเวลาออกงาน ระบบได้บันทึกไว้เป็นประวัติแล้ว รบกวนพี่กดรับรองเวลาออกให้เรียบร้อย และอย่าลืมลงเวลาออกทุกครั้งนะคะ`
-            : `พบว่าวันนี้มีการลงเวลาออกงาน แต่ยังไม่มีเวลาเข้างาน ระบบได้บันทึกไว้เป็นประวัติแล้ว รบกวนพี่กดรับรองเวลาเข้าให้เรียบร้อยค่ะ`}
+            ? `พบว่าเมื่อวันที่ ${dateLabel} พี่ยังไม่ได้ลงเวลาออกงานนะครับ — ระบบบันทึกการลงเวลาที่ไม่เหมาะสมนี้ไว้เป็นสถิติแล้ว การลืมลงเวลาบ่อยครั้งอาจมีผลทางวินัย ไม่ได้ปล่อยผ่านนะครับ รบกวนพี่กดรับรองเวลาออกให้เรียบร้อย และลงเวลาให้ครบทุกครั้งครับ`
+            : `พบว่าวันนี้มีการลงเวลาออกงาน แต่ยังไม่มีเวลาเข้างานนะครับ — ระบบบันทึกไว้เป็นสถิติแล้ว การลงเวลาไม่ครบอาจมีผลทางวินัย รบกวนพี่กดรับรองเวลาเข้าให้เรียบร้อยครับ`}
         </div>
         <div className="grid grid-cols-2 gap-2 pt-1">
           <button
@@ -788,7 +788,7 @@ function ClockAction({
         <div className="text-sm font-bold text-sky-900">น้องฮูกสอบถาม</div>
         <div className="text-sm text-slate-700 leading-relaxed">
           ตามตารางเวรพี่เข้างาน <b>{swapPrompt.sched_start}</b> น. แต่ลงเวลาจริง <b>{swapPrompt.actual}</b> น.
-          {isLate ? " — พี่มาสาย หรือสลับกะกับเพื่อนคะ?" : " (ก่อนเวลา) — พี่มาก่อนเวลา หรือสลับกะกับเพื่อนคะ?"}
+          {isLate ? " — พี่มาสาย หรือสลับกะกับเพื่อนครับ?" : " (ก่อนเวลา) — พี่มาก่อนเวลา หรือสลับกะกับเพื่อนครับ?"}
         </div>
         {swapErr && <div className="text-rose-600 text-sm">{swapErr}</div>}
         {swapStep === "ask" ? (
@@ -811,7 +811,7 @@ function ClockAction({
         ) : swapPrompt.candidates.length === 0 ? (
           <div className="space-y-2">
             <p className="text-sm text-amber-700">
-              ไม่พบเพื่อนที่มีกะในวันนี้ — รบกวนแจ้งแอดมินเพื่อปรับเวลาให้ค่ะ
+              ไม่พบเพื่อนที่มีกะในวันนี้ — รบกวนแจ้งแอดมินเพื่อปรับเวลาให้ครับ
             </p>
             <button onClick={onSuccess} className="btn-secondary w-full text-sm">ปิด</button>
           </div>
@@ -820,6 +820,9 @@ function ClockAction({
             <label className="text-xs text-slate-600">
               สลับกะกับใคร? (ระบบจะลงเวลาตามกะของเพื่อนคนนั้นให้)
             </label>
+            <p className="text-[11px] text-rose-600 leading-relaxed">
+              การสลับกะกันเองโดยไม่แจ้งล่วงหน้าจะถูกบันทึกเป็นสถิติ และอาจมีผลทางวินัยนะครับ
+            </p>
             <select
               className="input"
               value={swapFriend}

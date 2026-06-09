@@ -363,10 +363,10 @@ export default function TimeCertificationClient({
       {/* ── ประวัติการลงเวลาผิดปกติ (น้องฮูกบันทึกไว้) ── */}
       {flags.length > 0 && (
         <div className="card space-y-2">
-          <h2 className="font-bold text-slate-800 text-sm">ประวัติการลงเวลาที่ควรปรับปรุง</h2>
-          <p className="text-[11px] text-slate-400 leading-relaxed">
-            ระบบบันทึกไว้เป็นประวัติ — โปรดลงเวลาเข้า–ออกให้ครบถ้วนทุกครั้ง หากรายการใดยังไม่ได้รับรองเวลา
-            รบกวนกดรับรองด้านบน
+          <h2 className="font-bold text-slate-800 text-sm">ประวัติการลงเวลาที่ไม่เหมาะสม</h2>
+          <p className="text-[11px] text-rose-600 leading-relaxed">
+            ระบบบันทึกการลงเวลาที่ไม่เหมาะสมไว้เป็นสถิติ — การลงเวลาไม่ครบหรือสลับกะกันเองโดยไม่แจ้งบ่อยครั้ง
+            อาจมีผลทางวินัย ไม่ได้ปล่อยผ่านนะครับ โปรดปรับปรุงและกดรับรองเวลาให้ครบถ้วน
           </p>
           <div className="space-y-1.5">
             {flags.map((f) => {
