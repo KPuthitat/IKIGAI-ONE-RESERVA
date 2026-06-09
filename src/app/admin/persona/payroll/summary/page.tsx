@@ -10,7 +10,7 @@ import { nameWithPrefix } from "@/lib/name";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "สรุปประจำเดือน · เงินเดือน" };
+export const metadata: Metadata = { title: "สรุปประจำเดือน · ค่าตอบแทน" };
 
 const TH_MONTHS = [
   "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",

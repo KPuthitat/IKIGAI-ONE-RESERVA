@@ -9,7 +9,7 @@ import PeriodDetailClient, { type PeriodDetail, type PayrollLineRow } from "./Pe
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "รอบเงินเดือน · PERSONA" };
+export const metadata: Metadata = { title: "รอบค่าตอบแทน · PERSONA" };
 
 export default function PeriodDetailPage({
   params

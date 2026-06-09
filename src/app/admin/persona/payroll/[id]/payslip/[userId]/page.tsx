@@ -13,7 +13,7 @@ import PayslipPrintButton from "./PayslipPrintButton";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "สลิปเงินเดือน · PERSONA" };
+export const metadata: Metadata = { title: "สลิปค่าตอบแทน · PERSONA" };
 
 type Period = {
   id: number;

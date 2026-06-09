@@ -10,7 +10,7 @@ import PayPeriodPicker, { type ExistingPeriod } from "./PayPeriodPicker";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "เงินเดือน · PERSONA" };
+export const metadata: Metadata = { title: "ค่าตอบแทน · PERSONA" };
 
 type Counter = { n: number };
 type Settings = {

@@ -8,7 +8,7 @@ import PayrollSettingsClient, { type PayrollSettings } from "./PayrollSettingsCl
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "ตั้งค่าเงินเดือน · PERSONA" };
+export const metadata: Metadata = { title: "ตั้งค่าค่าตอบแทน · PERSONA" };
 
 export default function PayrollSettingsPage() {
   requirePayrollAccess();
