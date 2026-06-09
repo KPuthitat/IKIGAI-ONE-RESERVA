@@ -114,6 +114,15 @@ export default function ApplicationsListClient({
                     {meta.label}
                   </span>
                   <span className="font-bold text-slate-800">{name}{nick}</span>
+                  {/* Dual-approval cue — a second admin proposed a stage
+                      move that's awaiting approval. Click through to the
+                      application to approve with PIN. */}
+                  {r.pending && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800"
+                      title={`ผู้ขอ: ${[r.pending.requester_prefix, r.pending.requester_name].filter(Boolean).join(" ") || "—"}`}>
+                      ⏳ รออนุมัติเปลี่ยนสถานะ → {STAGE_META[r.pending.to_stage].label}
+                    </span>
+                  )}
                   {/* PDPA countdown — only for terminal-no-go stages,
                       where the 30-day purge clock has started ticking
                       from updated_at (the moment admin set this stage). */}

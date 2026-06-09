@@ -180,6 +180,22 @@ export const STAGE_META: Record<ApplicationStage, { label: string; chip: string 
   withdrawn: { label: "ถอนตัว",       chip: "bg-slate-200 text-slate-600 line-through" }
 };
 
+// ── Pending stage-change tag (client-safe) ──────────────────────
+// A trimmed view of an active recruita_stage_change_requests row,
+// safe to pass into client components (no server-only imports). Both
+// the applications list and the pipeline render this as a
+// "รออนุมัติเปลี่ยนสถานะ" badge so a second admin can see that someone
+// already proposed a stage move and it's awaiting their approval.
+export type PendingStageTag = {
+  id: number;
+  from_stage: ApplicationStage;
+  to_stage: ApplicationStage;
+  requested_by: number;
+  requester_name: string | null;
+  requester_prefix: string | null;
+  expires_at: string;
+};
+
 // ── Candidate dedupe ────────────────────────────────────────────
 // Same person applying to multiple roles → one candidates row, two
 // applications rows. Key: sha256(national_id) when known, else

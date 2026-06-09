@@ -4,7 +4,8 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
-import type { ApplicationStage } from "@/lib/recruita";
+import PinPromptModal from "@/app/components/PinPromptModal";
+import type { ApplicationStage, PendingStageTag } from "@/lib/recruita";
 import type { PipelineCard } from "./page";
 
 type StageMeta = Record<ApplicationStage, { label: string; chip: string }>;
@@ -38,17 +39,20 @@ function daysSince(iso: string): number {
 }
 
 export default function PipelineClient({
-  cards: initialCards, positions, stageMeta
+  cards, positions, stageMeta, viewerHasPin, viewerUserId
 }: {
   cards: PipelineCard[];
   positions: PositionOpt[];
   stageMeta: StageMeta;
+  /** Whether the logged-in admin has a PIN. Request + approve are
+   *  gated on this (same PIN the time-clock uses). */
+  viewerHasPin: boolean;
+  /** Logged-in admin id — enforces "approver ≠ requester" client-side
+   *  (server enforces it too). */
+  viewerUserId: number;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  // Optimistic local copy of the cards so a drag visually commits
-  // instantly even before the server round-trip finishes.
-  const [cards, setCards] = useState(initialCards);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -56,6 +60,17 @@ export default function PipelineClient({
   const [dragId, setDragId] = useState<number | null>(null);
   const [hoverStage, setHoverStage] = useState<ApplicationStage | null>(null);
 
+  // Dual-admin flow modals (owner 2026-06-09: every stage move on the
+  // board now needs a second admin to approve — same as the detail
+  // page). Dropping / picking a stage opens the request modal; the
+  // card does NOT move until a different admin approves.
+  const [requestModal, setRequestModal] = useState<{ card: PipelineCard; to: ApplicationStage } | null>(null);
+  const [approveCard, setApproveCard] = useState<PipelineCard | null>(null);
+  const [cancelCard, setCancelCard] = useState<PipelineCard | null>(null);
+
+  // Stage column never changes locally — we read straight from the
+  // server-provided cards prop and router.refresh() after each action,
+  // so the board always reflects the real (post-approval) stage.
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     return cards.filter((c) => {
@@ -76,31 +91,24 @@ export default function PipelineClient({
     return m;
   }, [filtered]);
 
-  async function moveCard(id: number, to: ApplicationStage) {
+  const pendingCount = useMemo(
+    () => cards.filter((c) => c.pending).length, [cards]);
+
+  // Open the request modal for (card → to). Guards keep us from
+  // proposing a no-op, stacking onto an already-pending request, or
+  // acting without a PIN.
+  function proposeMove(card: PipelineCard, to: ApplicationStage) {
     setErr(null);
-    const prev = cards.find((c) => c.id === id)?.stage;
-    if (!prev || prev === to) return;
-    // Optimistic update
-    setCards((p) => p.map((c) => c.id === id ? { ...c, stage: to } : c));
-    setBusy(true);
-    try {
-      const res = await fetch(apiUrl(`/api/recruita/applications/${id}/stage`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stage: to })
-      });
-      if (!res.ok) {
-        // Roll back on failure
-        setCards((p) => p.map((c) => c.id === id ? { ...c, stage: prev } : c));
-        const j = await res.json().catch(() => ({}));
-        setErr(j.error ?? "เปลี่ยน stage ไม่สำเร็จ");
-        return;
-      }
-      startTransition(() => router.refresh());
-    } catch {
-      setCards((p) => p.map((c) => c.id === id ? { ...c, stage: prev } : c));
-      setErr("เครือข่ายมีปัญหา ลองอีกครั้ง");
-    } finally { setBusy(false); }
+    if (card.stage === to) return;
+    if (card.pending) {
+      setErr("ใบสมัครนี้มีคำขอเปลี่ยนสถานะรออนุมัติอยู่แล้ว — อนุมัติหรือยกเลิกคำขอเดิมก่อน");
+      return;
+    }
+    if (!viewerHasPin) {
+      setErr("ต้องตั้ง PIN ก่อนเปลี่ยนสถานะ — ตั้งได้ที่หน้าลงเวลา (Time Clock)");
+      return;
+    }
+    setRequestModal({ card, to });
   }
 
   function onDragStart(e: React.DragEvent, id: number) {
@@ -121,7 +129,9 @@ export default function PipelineClient({
     e.preventDefault();
     const id = Number(e.dataTransfer.getData("text/plain")) || dragId;
     setDragId(null); setHoverStage(null);
-    if (id) void moveCard(id, stage);
+    if (!id) return;
+    const card = cards.find((c) => c.id === id);
+    if (card) proposeMove(card, stage);
   }
 
   return (
@@ -146,6 +156,14 @@ export default function PipelineClient({
           แสดง {filtered.length} / {cards.length} ใบสมัคร
         </div>
       </div>
+
+      {/* Pending-approval summary — makes it obvious at a glance that
+          some cards are waiting on a second admin. */}
+      {pendingCount > 0 && (
+        <div className="card bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+          ⏳ มี {pendingCount} ใบสมัครที่ <b>รออนุมัติเปลี่ยนสถานะ</b> — แอดมินอีกคนต้องกดอนุมัติด้วย PIN
+        </div>
+      )}
 
       {err && (
         <div className="card bg-rose-50 border border-rose-200 text-rose-700 text-sm">
@@ -193,9 +211,13 @@ export default function PipelineClient({
                       stageMeta={stageMeta}
                       dragging={dragId === c.id}
                       busy={busy}
+                      viewerHasPin={viewerHasPin}
+                      viewerUserId={viewerUserId}
                       onDragStart={(e) => onDragStart(e, c.id)}
                       onDragEnd={onDragEnd}
-                      onMove={(to) => moveCard(c.id, to)} />
+                      onPropose={(to) => proposeMove(c, to)}
+                      onApprove={() => { setErr(null); setApproveCard(c); }}
+                      onCancel={() => { setErr(null); setCancelCard(c); }} />
                   ))}
                 </div>
               </div>
@@ -205,25 +227,131 @@ export default function PipelineClient({
       </div>
 
       <p className="text-[11px] text-slate-400 text-center">
-        💡 บนเดสก์ท็อปลากการ์ดได้ · บนมือถือคลิก chip ในการ์ดเพื่อเปลี่ยน stage
+        💡 ลาก/เลือก stage = ส่งคำขอเปลี่ยนสถานะ · ต้องมีแอดมินคนที่ 2 อนุมัติด้วย PIN
       </p>
+
+      {/* ── Request modal (Admin A) ─────────────────────────────── */}
+      {requestModal && (
+        <PinPromptModal
+          title="ขออนุมัติเปลี่ยนสถานะ"
+          description={
+            <>
+              <b>{cardName(requestModal.card)}</b>
+              <br />จาก <b>{stageMeta[requestModal.card.stage].label}</b> ไป{" "}
+              <b>{stageMeta[requestModal.to].label}</b>
+              <br />ใส่ PIN ของคุณเพื่อสร้างคำขอ (ต้องมีแอดมินคนที่ 2 อนุมัติ)
+            </>
+          }
+          submitLabel="ส่งคำขอ"
+          onClose={() => setRequestModal(null)}
+          onSubmit={async (pin) => {
+            const res = await fetch(
+              apiUrl(`/api/recruita/applications/${requestModal.card.id}/stage-request`),
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ to_stage: requestModal.to, pin })
+              }
+            );
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || !j.ok) {
+              return { ok: false, message: j.message ?? j.error ?? "ส่งคำขอไม่สำเร็จ" };
+            }
+            setRequestModal(null);
+            startTransition(() => router.refresh());
+            return { ok: true };
+          }} />
+      )}
+
+      {/* ── Approve modal (Admin B) ─────────────────────────────── */}
+      {approveCard && approveCard.pending && (
+        <PinPromptModal
+          title="อนุมัติการเปลี่ยนสถานะ"
+          description={
+            <>
+              <b>{cardName(approveCard)}</b>
+              <br />อนุมัติเปลี่ยน <b>{stageMeta[approveCard.pending.from_stage].label}</b>
+              {" "}→ <b>{stageMeta[approveCard.pending.to_stage].label}</b>
+              <br />ใส่ PIN ของคุณเพื่อยืนยัน
+            </>
+          }
+          submitLabel="อนุมัติ"
+          onClose={() => setApproveCard(null)}
+          onSubmit={async (pin) => {
+            const res = await fetch(
+              apiUrl(`/api/recruita/applications/${approveCard.id}/stage-request/${approveCard.pending!.id}`),
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ pin })
+              }
+            );
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || !j.ok) {
+              return { ok: false, message: j.message ?? j.error ?? "อนุมัติไม่สำเร็จ" };
+            }
+            setApproveCard(null);
+            startTransition(() => router.refresh());
+            return { ok: true };
+          }} />
+      )}
+
+      {/* ── Cancel modal (requester or super_admin) ─────────────── */}
+      {cancelCard && cancelCard.pending && (
+        <CancelModal
+          name={cardName(cancelCard)}
+          busy={busy}
+          onClose={() => setCancelCard(null)}
+          onConfirm={async (reason) => {
+            setBusy(true);
+            try {
+              const res = await fetch(
+                apiUrl(`/api/recruita/applications/${cancelCard.id}/stage-request/${cancelCard.pending!.id}`),
+                {
+                  method: "DELETE",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ reason })
+                }
+              );
+              const j = await res.json().catch(() => ({}));
+              if (!res.ok || !j.ok) {
+                return { ok: false as const, message: j.error ?? "ยกเลิกไม่สำเร็จ" };
+              }
+              setCancelCard(null);
+              startTransition(() => router.refresh());
+              return { ok: true as const };
+            } finally { setBusy(false); }
+          }} />
+      )}
     </div>
   );
 }
 
+function cardName(card: PipelineCard): string {
+  const name = [card.title_prefix, card.first_name_th, card.last_name_th]
+    .filter(Boolean).join(" ") || "—";
+  return card.nickname_th ? `${name} (${card.nickname_th})` : name;
+}
+
 // ── Single card ────────────────────────────────────────────────────
 function Card({
-  card, stageMeta, dragging, busy, onDragStart, onDragEnd, onMove
+  card, stageMeta, dragging, busy, viewerHasPin, viewerUserId,
+  onDragStart, onDragEnd, onPropose, onApprove, onCancel
 }: {
   card: PipelineCard;
   stageMeta: StageMeta;
   dragging: boolean;
   busy: boolean;
+  viewerHasPin: boolean;
+  viewerUserId: number;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
-  onMove: (to: ApplicationStage) => void;
+  onPropose: (to: ApplicationStage) => void;
+  onApprove: () => void;
+  onCancel: () => void;
 }) {
   const [picking, setPicking] = useState(false);
+  const pending = card.pending;
 
   const name = [card.title_prefix, card.first_name_th, card.last_name_th]
     .filter(Boolean).join(" ") || "—";
@@ -233,12 +361,14 @@ function Card({
 
   return (
     <div
-      draggable={!busy}
+      // A card with a pending request is locked from dragging — the
+      // existing request must be approved or cancelled first.
+      draggable={!busy && !pending}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className={`bg-white rounded-lg border border-slate-200 p-2 shadow-sm hover:shadow-md transition cursor-grab active:cursor-grabbing ${
-        dragging ? "opacity-50 ring-2 ring-brand" : ""
-      }`}>
+      className={`bg-white rounded-lg border p-2 shadow-sm hover:shadow-md transition ${
+        pending ? "border-amber-300 cursor-default" : "border-slate-200 cursor-grab active:cursor-grabbing"
+      } ${dragging ? "opacity-50 ring-2 ring-brand" : ""}`}>
       <div className="text-[10px] text-slate-400 font-mono mb-1">#{card.id}</div>
       <Link href={`/admin/recruita/applications/${card.id}`}
         className="block text-sm font-bold text-slate-800 hover:text-brand truncate"
@@ -259,49 +389,177 @@ function Card({
         )}
       </div>
 
-      {/* Stage chip / picker — for non-drag flow (mobile) */}
-      <div className="mt-1.5 pt-1.5 border-t border-slate-100">
-        {picking ? (
-          <div className="space-y-0.5">
-            <div className="text-[10px] text-slate-500 mb-1">เลือก stage:</div>
-            {STAGE_ORDER.filter((s) => s !== card.stage).map((s) => {
-              const m = stageMeta[s];
-              return (
-                <button key={s} type="button"
-                  disabled={busy}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPicking(false);
-                    onMove(s);
-                  }}
-                  className={`w-full text-[10px] px-1.5 py-1 rounded text-left ${m.chip} hover:ring-1 hover:ring-slate-300`}>
-                  → {m.label}
-                </button>
-              );
-            })}
-            <button type="button"
-              onClick={(e) => { e.stopPropagation(); setPicking(false); }}
-              className="w-full text-[10px] px-1.5 py-1 rounded text-slate-500 hover:bg-slate-50">
-              ยกเลิก
-            </button>
-          </div>
+      {pending ? (
+        <PendingBlock
+          pending={pending}
+          stageMeta={stageMeta}
+          viewerHasPin={viewerHasPin}
+          viewerUserId={viewerUserId}
+          busy={busy}
+          onApprove={onApprove}
+          onCancel={onCancel} />
+      ) : (
+        /* Stage chip / picker — proposes a dual-admin stage change. */
+        <div className="mt-1.5 pt-1.5 border-t border-slate-100">
+          {picking ? (
+            <div className="space-y-0.5">
+              <div className="text-[10px] text-slate-500 mb-1">ขอเปลี่ยน stage เป็น:</div>
+              {STAGE_ORDER.filter((s) => s !== card.stage).map((s) => {
+                const m = stageMeta[s];
+                return (
+                  <button key={s} type="button"
+                    disabled={busy}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPicking(false);
+                      onPropose(s);
+                    }}
+                    className={`w-full text-[10px] px-1.5 py-1 rounded text-left ${m.chip} hover:ring-1 hover:ring-slate-300`}>
+                    → {m.label}
+                  </button>
+                );
+              })}
+              <button type="button"
+                onClick={(e) => { e.stopPropagation(); setPicking(false); }}
+                className="w-full text-[10px] px-1.5 py-1 rounded text-slate-500 hover:bg-slate-50">
+                ยกเลิก
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <button type="button" disabled={busy}
+                onClick={(e) => { e.stopPropagation(); setPicking(true); }}
+                className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${stageMeta[card.stage].chip} hover:ring-1 hover:ring-slate-300`}>
+                {stageMeta[card.stage].label} ▾
+              </button>
+              {/* Shortcut to the full application / history — opens in a new
+                  tab so the board (filters + scroll) isn't lost. */}
+              <Link href={`/admin/recruita/applications/${card.id}`}
+                target="_blank" rel="noopener"
+                onClick={(e) => e.stopPropagation()}
+                className="text-[10px] text-brand font-semibold hover:underline whitespace-nowrap">
+                ดูใบสมัคร ↗
+              </Link>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Pending-approval block inside a card ───────────────────────────
+function PendingBlock({
+  pending, stageMeta, viewerHasPin, viewerUserId, busy, onApprove, onCancel
+}: {
+  pending: PendingStageTag;
+  stageMeta: StageMeta;
+  viewerHasPin: boolean;
+  viewerUserId: number;
+  busy: boolean;
+  onApprove: () => void;
+  onCancel: () => void;
+}) {
+  const requester = [pending.requester_prefix, pending.requester_name]
+    .filter(Boolean).join(" ") || "—";
+  const isRequester = pending.requested_by === viewerUserId;
+
+  return (
+    <div className="mt-1.5 pt-1.5 border-t border-amber-100 space-y-1.5">
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800">
+          ⏳ รออนุมัติเปลี่ยนสถานะ
+        </span>
+      </div>
+      <div className="text-[10px] text-slate-500 flex items-center gap-1 flex-wrap">
+        <span className={`px-1.5 py-0.5 rounded-full font-bold ${stageMeta[pending.from_stage].chip}`}>
+          {stageMeta[pending.from_stage].label}
+        </span>
+        →
+        <span className={`px-1.5 py-0.5 rounded-full font-bold ${stageMeta[pending.to_stage].chip}`}>
+          {stageMeta[pending.to_stage].label}
+        </span>
+      </div>
+      <div className="text-[10px] text-slate-400">โดย {requester}</div>
+      <div className="flex items-center gap-1.5">
+        {isRequester ? (
+          <span className="flex-1 text-[10px] text-slate-500 bg-slate-50 rounded px-1.5 py-1 text-center">
+            คุณเป็นผู้ขอ — รออีกคนอนุมัติ
+          </span>
         ) : (
-          <div className="flex items-center justify-between gap-2">
-            <button type="button" disabled={busy}
-              onClick={(e) => { e.stopPropagation(); setPicking(true); }}
-              className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${stageMeta[card.stage].chip} hover:ring-1 hover:ring-slate-300`}>
-              {stageMeta[card.stage].label} ▾
-            </button>
-            {/* Shortcut to the full application / history — opens in a new
-                tab so the board (filters + scroll) isn't lost. */}
-            <Link href={`/admin/recruita/applications/${card.id}`}
-              target="_blank" rel="noopener"
-              onClick={(e) => e.stopPropagation()}
-              className="text-[10px] text-brand font-semibold hover:underline whitespace-nowrap">
-              ดูใบสมัคร ↗
-            </Link>
-          </div>
+          <button type="button"
+            onClick={(e) => { e.stopPropagation(); onApprove(); }}
+            disabled={busy || !viewerHasPin}
+            className="flex-1 text-[10px] font-bold py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50">
+            ✓ อนุมัติ
+          </button>
         )}
+        <button type="button"
+          onClick={(e) => { e.stopPropagation(); onCancel(); }}
+          disabled={busy}
+          className="text-[10px] py-1 px-2 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+          ยกเลิก
+        </button>
+      </div>
+      {!isRequester && !viewerHasPin && (
+        <a href="/staff/persona" className="block text-[10px] text-rose-600 underline">
+          ตั้ง PIN ก่อนอนุมัติ
+        </a>
+      )}
+    </div>
+  );
+}
+
+// ── Cancel-request modal (optional reason) ─────────────────────────
+function CancelModal({
+  name, busy, onClose, onConfirm
+}: {
+  name: string;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => Promise<{ ok: true } | { ok: false; message: string }>;
+}) {
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+
+  async function go() {
+    setWorking(true);
+    setErr(null);
+    try {
+      const res = await onConfirm(reason.trim());
+      if (!res.ok) setErr(res.message);
+    } finally { setWorking(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-3"
+        onClick={(e) => e.stopPropagation()}>
+        <div>
+          <h3 className="font-bold text-slate-800">ยกเลิกคำขอเปลี่ยนสถานะ</h3>
+          <p className="text-xs text-slate-600 mt-1">
+            ของ <b>{name}</b> — ทำได้เฉพาะผู้ขอหรือผู้ดูแลระบบสูงสุด
+          </p>
+        </div>
+        <div>
+          <label className="label">เหตุผล (ทางเลือก)</label>
+          <input className="input text-sm" value={reason} maxLength={500}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="เช่น เลือกผิด stage" />
+        </div>
+        {err && <p className="text-rose-600 text-xs font-medium">✗ {err}</p>}
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} disabled={working || busy}
+            className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium disabled:opacity-50">
+            กลับ
+          </button>
+          <button type="button" onClick={go} disabled={working || busy}
+            className="flex-1 py-2.5 rounded-lg bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 disabled:opacity-50">
+            {working ? "กำลังยกเลิก…" : "ยกเลิกคำขอ"}
+          </button>
+        </div>
       </div>
     </div>
   );

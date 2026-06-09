@@ -3,7 +3,10 @@ import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
-import type { ApplicationStage } from "@/lib/recruita";
+import {
+  getActivePendingRequestsForApplications, toPendingTag
+} from "@/lib/recruita-stage-request";
+import type { ApplicationStage, PendingStageTag } from "@/lib/recruita";
 import ApplicationsListClient from "./ApplicationsListClient";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +35,9 @@ export type ApplicationRow = {
   personal_email: string | null;
   expected_salary: number | null;
   info_source: string | null;
+  /** Active dual-approval request awaiting a second admin, or null.
+   *  Drives the "รออนุมัติเปลี่ยนสถานะ" tag on the row. */
+  pending: PendingStageTag | null;
 };
 
 type PositionOption = {
@@ -62,6 +68,15 @@ export default function ApplicationsListPage() {
     ORDER BY a.submitted_at DESC
     LIMIT 500
   `).all() as ApplicationRow[];
+
+  // Attach any active dual-approval request so each row can show the
+  // "รออนุมัติเปลี่ยนสถานะ" tag — the cue a second admin needs to know
+  // someone already proposed a stage move (owner 2026-06-09).
+  const pendingMap = getActivePendingRequestsForApplications(rows.map((r) => r.id));
+  for (const r of rows) {
+    const p = pendingMap.get(r.id);
+    r.pending = p ? toPendingTag(p) : null;
+  }
 
   const positions = db.prepare(`
     SELECT p.id, p.title, p.code,

@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
-import { STAGE_META, type ApplicationStage } from "@/lib/recruita";
+import { hasAdminPin } from "@/lib/admin-pin";
+import {
+  getActivePendingRequestsForApplications, toPendingTag
+} from "@/lib/recruita-stage-request";
+import { STAGE_META, type ApplicationStage, type PendingStageTag } from "@/lib/recruita";
 import PipelineClient from "./PipelineClient";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +29,9 @@ export type PipelineCard = {
   nickname_th: string | null;
   mobile_phone: string | null;
   expected_salary: number | null;
+  /** Active dual-approval request awaiting a second admin, or null.
+   *  Drives the "รออนุมัติเปลี่ยนสถานะ" tag + approve/cancel on the card. */
+  pending: PendingStageTag | null;
 };
 
 type PositionOpt = {
@@ -61,6 +68,14 @@ export default function PipelinePage() {
     LIMIT 500
   `).all() as PipelineCard[];
 
+  // Attach any active dual-approval request to its card so the board
+  // shows the "รออนุมัติเปลี่ยนสถานะ" tag + approve/cancel inline.
+  const pendingMap = getActivePendingRequestsForApplications(cards.map((c) => c.id));
+  for (const c of cards) {
+    const p = pendingMap.get(c.id);
+    c.pending = p ? toPendingTag(p) : null;
+  }
+
   const positions = db.prepare(`
     SELECT p.id, p.title, p.code,
            (SELECT COUNT(*) FROM recruita_applications a
@@ -69,6 +84,13 @@ export default function PipelinePage() {
     WHERE p.status != 'draft'
     ORDER BY p.opened_at DESC
   `).all() as PositionOpt[];
+
+  // Viewer's PIN status + id — the board gates request/approve actions
+  // on having a PIN, and enforces "approver ≠ requester" client-side
+  // (server enforces it too).
+  const sessionUser = getSessionUser();
+  const viewerHasPin = sessionUser ? hasAdminPin(sessionUser.id) : false;
+  const viewerUserId = sessionUser?.id ?? 0;
 
   return (
     <div className="space-y-4">
@@ -80,7 +102,8 @@ export default function PipelinePage() {
           {t(lang, "admin.recruita.pipeline.subtitle")}
         </p>
       </div>
-      <PipelineClient cards={cards} positions={positions} stageMeta={STAGE_META} />
+      <PipelineClient cards={cards} positions={positions} stageMeta={STAGE_META}
+        viewerHasPin={viewerHasPin} viewerUserId={viewerUserId} />
     </div>
   );
 }
