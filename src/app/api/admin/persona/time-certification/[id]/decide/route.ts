@@ -21,7 +21,12 @@ import { recomputeLine } from "@/lib/payroll-compute";
 
 const Body = z.object({
   decision: z.enum(["approved", "rejected"]),
-  decision_note: z.string().trim().max(500).optional()
+  decision_note: z.string().trim().max(500).optional(),
+  // Admin may adjust the time before approving — covers certs where the
+  // staff left the proposed time unchanged or typed it wrong (owner
+  // 2026-06-09). When present, this ISO instant is applied instead of the
+  // cert's proposed_ts (create for 'missing', set ts for 'correction').
+  override_ts: z.string().datetime().optional()
 });
 
 export async function POST(
@@ -85,20 +90,27 @@ export async function POST(
 
   const nowIso = new Date().toISOString();
   const note = parsed.data.decision_note?.trim() || null;
+  // Effective time to apply — admin's override wins over the staff's proposal.
+  const effectiveTs = parsed.data.override_ts ?? row.proposed_ts;
+  const adjusted = parsed.data.override_ts != null && parsed.data.override_ts !== row.proposed_ts;
+  const adjNote = adjusted ? " · เวลาปรับโดยผู้อนุมัติ" : "";
 
   const tx = db.transaction(() => {
+    // Persist the applied time on the cert too, so staff history + the
+    // audit reflect what was actually recorded (not the stale proposal).
     db.prepare(`
       UPDATE time_certifications
-      SET status = ?, decided_by = ?, decided_at = ?, decision_note = ?
+      SET status = ?, decided_by = ?, decided_at = ?, decision_note = ?,
+          proposed_ts = ?
       WHERE id = ?
-    `).run(parsed.data.decision, user.id, nowIso, note, certId);
+    `).run(parsed.data.decision, user.id, nowIso, note, effectiveTs, certId);
 
     if (parsed.data.decision === "approved") {
       if (row.kind === "missing") {
         // CREATE the punch they forgot to record (owner 2026-06-08).
         const res = db.prepare(
           "INSERT INTO time_entries (user_id, type, ts, branch_id) VALUES (?, ?, ?, ?)"
-        ).run(row.requested_by, row.cert_entry_type, row.proposed_ts, row.cert_branch_id);
+        ).run(row.requested_by, row.cert_entry_type, effectiveTs, row.cert_branch_id);
         const newId = Number(res.lastInsertRowid);
         db.prepare(`
           INSERT INTO time_entries_audit
@@ -106,8 +118,8 @@ export async function POST(
              admin_id, reason, created_at)
           VALUES (?, ?, ?, ?, 'create', ?, ?, ?)
         `).run(
-          newId, row.requested_by, row.cert_entry_type, row.proposed_ts,
-          user.id, `cert#${certId} · เพิ่มเวลาที่ลืมลง` + (note ? ` · ${note}` : ""), nowIso
+          newId, row.requested_by, row.cert_entry_type, effectiveTs,
+          user.id, `cert#${certId} · เพิ่มเวลาที่ลืมลง${adjNote}` + (note ? ` · ${note}` : ""), nowIso
         );
         // Link the cert to the created entry for traceability.
         db.prepare("UPDATE time_certifications SET entry_id = ? WHERE id = ?").run(newId, certId);
@@ -121,10 +133,10 @@ export async function POST(
           VALUES (?, ?, ?, ?, 'cert-approve', ?, ?, ?)
         `).run(
           row.entry_id, row.entry_user_id, row.entry_type, row.entry_ts,
-          user.id, `cert#${certId}` + (note ? ` · ${note}` : ""), nowIso
+          user.id, `cert#${certId}${adjNote}` + (note ? ` · ${note}` : ""), nowIso
         );
         db.prepare("UPDATE time_entries SET ts = ? WHERE id = ?")
-          .run(row.proposed_ts, row.entry_id);
+          .run(effectiveTs, row.entry_id);
       }
     }
   });
@@ -139,7 +151,7 @@ export async function POST(
   // users with no line in the period — both are safely ignored here.
   if (parsed.data.decision === "approved") {
     try {
-      const dateBkk = new Date(new Date(row.proposed_ts).getTime() + 7 * 3600_000)
+      const dateBkk = new Date(new Date(effectiveTs).getTime() + 7 * 3600_000)
         .toISOString().slice(0, 10);
       const periods = db.prepare(`
         SELECT id FROM payroll_periods

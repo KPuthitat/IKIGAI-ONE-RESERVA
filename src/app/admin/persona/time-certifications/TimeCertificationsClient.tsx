@@ -13,6 +13,16 @@ function bkkDisplay(iso: string): string {
   return bkk.toISOString().slice(0, 16).replace("T", " ");
 }
 
+// "YYYY-MM-DDTHH:MM" Bangkok-local for an <input type="datetime-local">.
+function bkkLocalForInput(iso: string): string {
+  const bkk = new Date(new Date(iso).getTime() + 7 * 60 * 60 * 1000);
+  return bkk.toISOString().slice(0, 16);
+}
+// datetime-local back to an ISO instant at the Bangkok offset.
+function inputToIso(local: string): string {
+  return new Date(local + ":00+07:00").toISOString();
+}
+
 export default function TimeCertificationsClient({
   pending
 }: {
@@ -29,6 +39,10 @@ export default function TimeCertificationsClient({
   // SQLITE_CONSTRAINT_CHECK incident is the canonical example —
   // admin saw "approve doesn't work" with zero feedback.
   const [errorByCert, setErrorByCert] = useState<Record<number, string>>({});
+  // Admin-editable apply-time per cert (datetime-local), prefilled from the
+  // staff's proposed time. Lets the admin fix a wrong/unchanged time before
+  // approving (owner 2026-06-09).
+  const [editLocal, setEditLocal] = useState<Record<number, string>>({});
 
   function setError(certId: number, message: string | null) {
     setErrorByCert((prev) => {
@@ -39,7 +53,12 @@ export default function TimeCertificationsClient({
     });
   }
 
-  async function decide(certId: number, decision: "approved" | "rejected", note?: string) {
+  async function decide(
+    certId: number,
+    decision: "approved" | "rejected",
+    note?: string,
+    overrideIso?: string
+  ) {
     setBusyId(certId);
     setError(certId, null);
     try {
@@ -50,7 +69,8 @@ export default function TimeCertificationsClient({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             decision,
-            decision_note: note?.trim() || undefined
+            decision_note: note?.trim() || undefined,
+            override_ts: decision === "approved" ? overrideIso : undefined
           })
         }
       );
@@ -153,6 +173,21 @@ export default function TimeCertificationsClient({
               <div className="text-sm text-slate-800 whitespace-pre-wrap">{r.reason}</div>
             </div>
 
+            {/* Admin can adjust the exact time before approving — covers
+                certs where staff left the time unchanged or typed it wrong
+                (owner 2026-06-09). Default = the staff's proposed time. */}
+            <div>
+              <label className="text-[10px] uppercase tracking-[1px] text-slate-500 font-bold block mb-1">
+                เวลาที่จะบันทึก (แก้ได้ก่อนอนุมัติ)
+              </label>
+              <input
+                type="datetime-local"
+                className="input text-sm"
+                value={editLocal[r.id] ?? bkkLocalForInput(r.proposed_ts)}
+                onChange={(e) => setEditLocal((p) => ({ ...p, [r.id]: e.target.value }))}
+              />
+            </div>
+
             {err && (
               <div className="rounded-md bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700 flex items-start gap-2">
                 <span className="font-bold flex-shrink-0">⚠</span>
@@ -207,7 +242,7 @@ export default function TimeCertificationsClient({
                 </button>
                 <button
                   type="button"
-                  onClick={() => decide(r.id, "approved")}
+                  onClick={() => decide(r.id, "approved", undefined, inputToIso(editLocal[r.id] ?? bkkLocalForInput(r.proposed_ts)))}
                   disabled={busy}
                   className="btn-primary flex-1 text-sm"
                 >
