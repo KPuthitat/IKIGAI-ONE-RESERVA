@@ -138,20 +138,22 @@ export default function ShiftClosePage() {
         // staff sees what the LINE Flex card will actually look like
         // (custom labels + chosen order) before they hit submit.
         defaultFieldConfig={{
+          // Fixed layout (owner 2026-06-09): only ยอดขายวันนี้ in the red
+          // box; ปิดกะ + เซอร์วิสชาร์จ as bold rows. Mirrors the LINE card.
           closing_drawer: {
-            label: branch.sc_drawer_label,
+            label: branch.sc_drawer_label || "ยอดเงินปิดกะวันนี้",
             display_order: branch.sc_drawer_order,
-            in_red_box: branch.sc_show_drawer_primary === 1
+            in_red_box: false
           },
           service_charge: {
-            label: branch.sc_svc_label,
+            label: branch.sc_svc_label || "เซอร์วิสชาร์จวันนี้",
             display_order: branch.sc_svc_order,
-            in_red_box: branch.sc_show_svc_primary === 1
+            in_red_box: false
           },
           daily_revenue: {
-            label: branch.sc_revenue_label,
+            label: branch.sc_revenue_label || "ยอดขายวันนี้",
             display_order: branch.sc_revenue_order,
-            in_red_box: branch.sc_show_revenue_primary === 1
+            in_red_box: true
           }
         }}
         checklistItems={checklist

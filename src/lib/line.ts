@@ -1545,8 +1545,8 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
           type: "box", layout: "vertical", spacing: "sm", margin: "md",
           contents: [
             kvRow("ผู้เปิดกะ", args.openerName),
-            kvRow("ยอดปิดกะเมื่อวาน", fmtBaht(args.yesterdayClosingAmount)),
-            kvRow("ยอดเปิดกะเช้านี้", fmtBaht(args.morningDrawerAmount),
+            kvRow("ยอดเงินปิดกะเมื่อวาน", fmtBaht(args.yesterdayClosingAmount), { valueWeight: "bold" }),
+            kvRow("ยอดเงินเปิดกะเช้านี้", fmtBaht(args.morningDrawerAmount),
               { valueColor: COLOR_BRAND, valueWeight: "bold" })
           ]
         },
@@ -1844,41 +1844,26 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
   // Undefined/missing → push (legacy default). The fields are still
   // shown to the user; they just appear inside the regular checklist
   // body rendered by the form, not here.
-  const cfg = args.defaultFieldPrimary ?? {};
   const labelCfg = args.defaultFieldConfig ?? {};
-  // Build the (visible, order)-tuple list, then sort by order before
-  // dropping into the headline block.
-  const defaultRows: Array<{ order: number; label: string; amount: string }> = [];
-  if (args.closingDrawerAmount != null && cfg.closingDrawer !== false) {
-    defaultRows.push({
-      order: labelCfg.closingDrawer?.order ?? 1,
-      label: labelCfg.closingDrawer?.label?.trim() || "ยอดเงินปิดงาน",
-      amount: args.closingDrawerAmount.toLocaleString("th-TH", {
-        minimumFractionDigits: 0, maximumFractionDigits: 2
-      })
-    });
-  }
-  if (args.serviceChargeAmount != null && cfg.serviceCharge !== false) {
-    defaultRows.push({
-      order: labelCfg.serviceCharge?.order ?? 2,
-      label: labelCfg.serviceCharge?.label?.trim() || "เซอร์วิสชาร์จวันนี้",
-      amount: args.serviceChargeAmount.toLocaleString("th-TH", {
-        minimumFractionDigits: 0, maximumFractionDigits: 2
-      })
-    });
-  }
-  if (args.dailyRevenue != null && cfg.dailyRevenue !== false) {
-    defaultRows.push({
-      order: labelCfg.dailyRevenue?.order ?? 3,
+  const fmtBaht = (n: number | null | undefined) =>
+    n == null ? "—" : `${n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท`;
+
+  // Fixed layout (owner 2026-06-09): only (D) ยอดขายวันนี้ gets the
+  // prominent red box. (A) ยอดเงินปิดกะวันนี้ + (C) เซอร์วิสชาร์จวันนี้ render
+  // as bold rows below (added to the info group). Custom is_headline_amount
+  // items keep the red box after ยอดขาย. Labels still honour overrides.
+  const closingLabel = labelCfg.closingDrawer?.label?.trim() || "ยอดเงินปิดกะวันนี้";
+  const svcLabel = labelCfg.serviceCharge?.label?.trim() || "เซอร์วิสชาร์จวันนี้";
+  const dailyHeadlines: Array<{ label: string; amount: string }> = [];
+  if (args.dailyRevenue != null) {
+    dailyHeadlines.push({
       label: labelCfg.dailyRevenue?.label?.trim() || "ยอดขายวันนี้",
       amount: args.dailyRevenue.toLocaleString("th-TH", {
         minimumFractionDigits: 0, maximumFractionDigits: 2
       })
     });
   }
-  defaultRows.sort((a, b) => a.order - b.order);
-  const defaultHeadlines = defaultRows.map(({ label, amount }) => ({ label, amount }));
-  const mergedHeadlines = [...defaultHeadlines, ...(args.headlines ?? [])];
+  const mergedHeadlines = [...dailyHeadlines, ...(args.headlines ?? [])];
 
   const bubble = {
     type: "bubble", size: "giga",
@@ -1915,7 +1900,13 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
         {
           type: "box", layout: "vertical", spacing: "sm", margin: "md",
           contents: [
-            kvRow("ผู้ส่งรายการ", args.closerName)
+            kvRow("ผู้ส่งรายการ", args.closerName),
+            ...(args.closingDrawerAmount != null
+              ? [kvRow(closingLabel, fmtBaht(args.closingDrawerAmount), { valueWeight: "bold" })]
+              : []),
+            ...(args.serviceChargeAmount != null
+              ? [kvRow(svcLabel, fmtBaht(args.serviceChargeAmount), { valueWeight: "bold" })]
+              : [])
           ]
         },
         ...(headlineFlexBlock(mergedHeadlines)
@@ -2002,7 +1993,9 @@ function headlineFlexBlock(
         size: isPrimary ? "xxl" : "xl",
         weight: "bold",
         color: "#dc2626",
-        wrap: false
+        // wrap:true so a long amount wraps instead of bleeding past the
+        // bubble edge on narrow phones (owner 2026-06-09).
+        wrap: true
       }
     );
   });
