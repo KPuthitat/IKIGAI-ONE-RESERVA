@@ -1,11 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  type CSSProperties, type Dispatch, type SetStateAction,
+  type PointerEvent as ReactPointerEvent,
+  useMemo, useRef, useState
+} from "react";
 import Link from "next/link";
 import { useLang } from "@/lib/LangProvider";
 import { apiUrl } from "@/lib/url";
 import { PICK_FREQ_META, type PickFreq } from "@/lib/inventa";
 import { code128B } from "@/lib/code128";
+import {
+  parseLabelLayout, DEFAULT_LABEL_LAYOUT, LABEL_ELEMENT_KEYS, LABEL_ELEMENT_LABEL,
+  type LabelLayout, type LabelElement, type LabelElementKey
+} from "@/lib/label-layout";
 
 export type LabelItem = {
   id: number;
@@ -31,11 +39,13 @@ function qrSrc(code: string, size = 320): string {
 
 // 1-D Code 128 barcode as an inline SVG (owner 2026-06-08). Vector =
 // prints crisp at any label size; dependency-free (no CDN/runtime lib).
-function Barcode({ value }: { value: string }) {
+function Barcode({ value, fill }: { value: string; fill?: boolean }) {
   const bc = useMemo(() => code128B(value), [value]);
   if (!bc) return null;
   return (
-    <svg className="lbl-bc" viewBox={`0 0 ${bc.width} 100`} preserveAspectRatio="none"
+    <svg className={fill ? undefined : "lbl-bc"}
+      style={fill ? { display: "block", width: "100%", height: "100%" } : undefined}
+      viewBox={`0 0 ${bc.width} 100`} preserveAspectRatio="none"
       shapeRendering="crispEdges" role="img" aria-label={value}>
       <rect x="0" y="0" width={bc.width} height="100" fill="#ffffff" />
       {bc.bars.map((b, i) => (
@@ -51,9 +61,38 @@ function Barcode({ value }: { value: string }) {
 // its own page sized to the sticker, so a thermal label printer outputs
 // one sticker per item.
 export default function LabelsClient({
-  items, widthMm = 80, heightMm = 50
-}: { items: LabelItem[]; widthMm?: number; heightMm?: number }) {
+  items, widthMm = 80, heightMm = 50, layoutJson = null
+}: { items: LabelItem[]; widthMm?: number; heightMm?: number; layoutJson?: string | null }) {
   const { t } = useLang();
+
+  // Drag-designed layout (owner 2026-06-09). `layout` (null = built-in flex
+  // look) drives the printed label; `draft` is the editor's working copy.
+  const savedLayout = useMemo(() => parseLabelLayout(layoutJson), [layoutJson]);
+  const [layout, setLayout] = useState<LabelLayout | null>(savedLayout);
+  const [designing, setDesigning] = useState(false);
+  const [draft, setDraft] = useState<LabelLayout>(savedLayout ?? DEFAULT_LABEL_LAYOUT);
+  const [layoutSaving, setLayoutSaving] = useState(false);
+
+  async function saveLayout() {
+    setLayoutSaving(true);
+    try {
+      const res = await fetch(apiUrl("/api/inventa/label-layout"), {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ layout: draft })
+      });
+      if (res.ok) { setLayout(draft); setDesigning(false); }
+    } finally { setLayoutSaving(false); }
+  }
+  async function resetLayout() {
+    setLayoutSaving(true);
+    try {
+      const res = await fetch(apiUrl("/api/inventa/label-layout"), {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reset: true })
+      });
+      if (res.ok) { setLayout(null); setDraft(DEFAULT_LABEL_LAYOUT); setDesigning(false); }
+    } finally { setLayoutSaving(false); }
+  }
   const printable = useMemo(
     () => items.filter((i) => (i.item_code || i.barcode)),
     [items]
@@ -170,6 +209,38 @@ export default function LabelsClient({
           <Link href="/staff/inventa/settings" className="text-brand hover:underline">{t("inv.lbl.sizeChange")}</Link>
         </div>
 
+        {/* Drag-and-drop label designer (owner 2026-06-09) */}
+        <div className="border-t border-slate-100 pt-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-sm text-slate-600">
+              หน้าตาฉลาก{" "}
+              {layout
+                ? <span className="text-emerald-700 text-xs font-medium">· ออกแบบเอง</span>
+                : <span className="text-slate-400 text-xs">· รูปแบบมาตรฐาน</span>}
+            </div>
+            <button
+              type="button"
+              onClick={() => { setDraft(layout ?? DEFAULT_LABEL_LAYOUT); setDesigning((d) => !d); }}
+              className="text-xs px-3 py-1.5 rounded-lg border border-brand text-brand font-bold hover:bg-amber-50"
+            >
+              {designing ? "ปิดตัวออกแบบ" : "ออกแบบฉลาก (ลากวาง)"}
+            </button>
+          </div>
+          {designing && (
+            <LabelDesigner
+              draft={draft}
+              setDraft={setDraft}
+              widthMm={widthMm}
+              heightMm={heightMm}
+              sample={chosen[0] ?? printable[0] ?? null}
+              saving={layoutSaving}
+              hasSaved={!!layout}
+              onSave={saveLayout}
+              onReset={resetLayout}
+            />
+          )}
+        </div>
+
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)}
           placeholder="ค้นหาชื่อ / รหัส / บาร์โค้ด" />
 
@@ -262,6 +333,11 @@ export default function LabelsClient({
             .filter(Boolean).join(" · ");
           return (
             <div key={i.id} className="lbl-wrap">
+              {layout ? (
+                <div className="po-label" style={{ position: "relative", padding: 0 }}>
+                  <AbsBody i={i} L={layout} />
+                </div>
+              ) : (
               <div className="po-label">
                 <div className="lbl-name">{i.name}</div>
                 <div className="lbl-mid">
@@ -295,6 +371,7 @@ export default function LabelsClient({
                   <div className="lbl-bc-text">{code}</div>
                 </div>
               </div>
+              )}
               <a href={qrSrc(code, 512)} download={`qr-${code}.png`}
                 className="no-print text-[10px] text-brand hover:underline">
                 ดาวน์โหลด QR PNG
@@ -309,5 +386,237 @@ export default function LabelsClient({
         )}
       </div>
     </>
+  );
+}
+
+// ── Shared price/code helpers (flex + absolute renders) ──────────────
+function costLine(i: LabelItem): string | null {
+  return i.cost != null && i.cost > 0
+    ? `ราคาทุน ฿${i.cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}${i.unit ? `/${i.unit}` : ""}`
+    : null;
+}
+function saleLine(i: LabelItem): string | null {
+  return i.sale != null && i.sale > 0
+    ? `ราคาขาย ฿${i.sale.toLocaleString(undefined, { maximumFractionDigits: 2 })}${i.unit ? `/${i.unit}` : ""}`
+    : null;
+}
+function labelCodeOf(i: LabelItem): string { return (i.item_code || i.barcode || "") as string; }
+function binOf(i: LabelItem): string {
+  return [i.storage_location, i.grid_row && `${i.grid_row}${i.grid_col ?? ""}`]
+    .filter(Boolean).join(" · ");
+}
+
+// Absolute-positioned label body, driven by the drag-designed layout.
+// Used both in the print sheet and the designer preview.
+function AbsBody({ i, L }: { i: LabelItem; L: LabelLayout }) {
+  const code = labelCodeOf(i);
+  const bin = binOf(i);
+  const cost = costLine(i);
+  const sale = saleLine(i);
+  const at = (e: LabelLayout[LabelElementKey]): CSSProperties => ({
+    position: "absolute", left: `${e.x}%`, top: `${e.y}%`
+  });
+  const txt = (e: LabelLayout[LabelElementKey], extra?: CSSProperties): CSSProperties => ({
+    ...at(e), width: `${e.w}%`, fontSize: `${e.size}mm`, lineHeight: 1.12,
+    textAlign: e.align ?? "left", overflow: "hidden", ...extra
+  });
+  return (
+    <>
+      {L.name.show && <div style={txt(L.name, { fontWeight: 700 })}>{i.name}</div>}
+      {L.qr.show && code && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={qrSrc(code)} alt={code}
+          style={{ ...at(L.qr), width: `${L.qr.size}mm`, height: `${L.qr.size}mm` }} />
+      )}
+      {L.code.show && code && (
+        <div style={txt(L.code, { fontFamily: "monospace", fontWeight: 700, wordBreak: "break-all" })}>{code}</div>
+      )}
+      {L.cost.show && cost && <div style={txt(L.cost)}>{cost}</div>}
+      {L.sale.show && sale && <div style={txt(L.sale, { fontWeight: 700 })}>{sale}</div>}
+      {L.bin.show && bin && <div style={txt(L.bin, { color: "#555" })}>{bin}</div>}
+      {L.barcode.show && code && (
+        <div style={{ ...at(L.barcode), width: `${L.barcode.w}%`, height: `${L.barcode.size}mm` }}>
+          <Barcode value={code} fill />
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Drag-and-drop label designer (owner 2026-06-09) ──────────────────
+function Stepper({ label, value, step, min, max, onChange }: {
+  label: string; value: number; step: number; min: number; max: number; onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-slate-500">{label}</span>
+      <div className="flex items-center gap-1">
+        <button type="button" onClick={() => onChange(Math.max(min, value - step))}
+          className="w-6 h-6 rounded border border-slate-300 text-slate-600">−</button>
+        <span className="w-12 text-center font-mono">{value}</span>
+        <button type="button" onClick={() => onChange(Math.min(max, value + step))}
+          className="w-6 h-6 rounded border border-slate-300 text-slate-600">+</button>
+      </div>
+    </div>
+  );
+}
+
+function LabelDesigner({
+  draft, setDraft, widthMm, heightMm, sample, saving, hasSaved, onSave, onReset
+}: {
+  draft: LabelLayout;
+  setDraft: Dispatch<SetStateAction<LabelLayout>>;
+  widthMm: number; heightMm: number;
+  sample: LabelItem | null;
+  saving: boolean; hasSaved: boolean;
+  onSave: () => void; onReset: () => void;
+}) {
+  const PXMM = 4.4;
+  const W = Math.round(widthMm * PXMM), H = Math.round(heightMm * PXMM);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [sel, setSel] = useState<LabelElementKey>("name");
+
+  const i: LabelItem = sample ?? ({
+    id: 0, item_code: "ABC123", barcode: "ABC123", name: "ตัวอย่างสินค้า",
+    grid_row: "A", grid_col: 1, pick_freq: null, unit: "ชิ้น",
+    cost: 100, sale: 150, storage_location: "ชั้น A"
+  } as LabelItem);
+  const code = labelCodeOf(i) || "ABC123";
+  const cost = costLine(i) ?? "ราคาทุน ฿100/ชิ้น";
+  const sale = saleLine(i) ?? "ราคาขาย ฿150/ชิ้น";
+  const bin = binOf(i) || "ชั้น A";
+
+  function startDrag(k: LabelElementKey, ev: ReactPointerEvent) {
+    ev.preventDefault();
+    setSel(k);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const startX = ev.clientX, startY = ev.clientY;
+    const ox = draft[k].x, oy = draft[k].y;
+    function move(e: PointerEvent) {
+      const nx = ox + ((e.clientX - startX) / rect.width) * 100;
+      const ny = oy + ((e.clientY - startY) / rect.height) * 100;
+      setDraft((p) => ({ ...p, [k]: { ...p[k], x: Math.min(98, Math.max(0, nx)), y: Math.min(98, Math.max(0, ny)) } }));
+    }
+    function up() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+  function patch(k: LabelElementKey, p: Partial<LabelElement>) {
+    setDraft((prev) => ({ ...prev, [k]: { ...prev[k], ...p } }));
+  }
+
+  function content(k: LabelElementKey) {
+    const el = draft[k];
+    if (k === "qr") {
+      // eslint-disable-next-line @next/next/no-img-element
+      return <img src={qrSrc(code)} alt="" style={{ width: el.size * PXMM, height: el.size * PXMM, display: "block" }} />;
+    }
+    if (k === "barcode") {
+      return <div style={{ width: "100%", height: el.size * PXMM }}><Barcode value={code} fill /></div>;
+    }
+    const map: Record<string, string> = { name: i.name, code, cost, sale, bin };
+    return (
+      <div style={{
+        fontSize: el.size * PXMM, lineHeight: 1.1, textAlign: el.align ?? "left",
+        fontWeight: k === "name" || k === "code" || k === "sale" ? 700 : 400,
+        fontFamily: k === "code" ? "monospace" : undefined,
+        whiteSpace: "nowrap", overflow: "hidden"
+      }}>{map[k]}</div>
+    );
+  }
+
+  const e = draft[sel];
+  return (
+    <div className="mt-3 space-y-3">
+      <p className="text-[11px] text-slate-500">
+        ลากองค์ประกอบบนป้ายเพื่อจัดตำแหน่ง · แตะเลือกองค์ประกอบแล้วปรับขนาด/ความกว้าง/การจัดวางด้านขวา
+      </p>
+      <div className="flex flex-wrap gap-4">
+        <div
+          ref={canvasRef}
+          style={{
+            width: W, height: H, position: "relative", background: "#fff",
+            border: "1px dashed #94a3b8", borderRadius: 4, flex: "none", touchAction: "none"
+          }}
+        >
+          {LABEL_ELEMENT_KEYS.filter((k) => draft[k].show).map((k) => {
+            const el = draft[k];
+            return (
+              <div key={k} onPointerDown={(ev) => startDrag(k, ev)}
+                style={{
+                  position: "absolute", left: `${el.x}%`, top: `${el.y}%`,
+                  width: k === "qr" ? el.size * PXMM : `${el.w}%`,
+                  cursor: "move",
+                  outline: sel === k ? "2px solid #a06820" : "1px dotted #cbd5e1",
+                  background: sel === k ? "rgba(160,104,32,0.08)" : "transparent"
+                }}
+              >
+                {content(k)}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex-1 min-w-[210px] space-y-2">
+          <div className="flex flex-wrap gap-1">
+            {LABEL_ELEMENT_KEYS.map((k) => (
+              <button key={k} type="button" onClick={() => setSel(k)}
+                className={`text-[11px] px-2 py-1 rounded border ${
+                  sel === k ? "bg-brand text-white border-brand"
+                    : draft[k].show ? "border-slate-300 text-slate-700" : "border-slate-200 text-slate-300"
+                }`}>
+                {LABEL_ELEMENT_LABEL[k]}
+              </button>
+            ))}
+          </div>
+          <div className="border border-slate-200 rounded-lg p-2.5 space-y-2 text-xs">
+            <div className="font-bold text-slate-700">{LABEL_ELEMENT_LABEL[sel]}</div>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={e.show} onChange={(ev) => patch(sel, { show: ev.target.checked })} />
+              แสดงบนฉลาก
+            </label>
+            <Stepper
+              label={sel === "qr" || sel === "barcode" ? "ขนาด (มม.)" : "ขนาดตัวอักษร (มม.)"}
+              value={e.size} step={sel === "qr" || sel === "barcode" ? 1 : 0.2} min={0.5} max={60}
+              onChange={(v) => patch(sel, { size: Math.round(v * 10) / 10 })}
+            />
+            {sel !== "qr" && (
+              <Stepper label="ความกว้าง (%)" value={e.w} step={2} min={5} max={100}
+                onChange={(v) => patch(sel, { w: Math.round(v) })} />
+            )}
+            {sel !== "qr" && sel !== "barcode" && (
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500">จัดวาง</span>
+                {(["left", "center", "right"] as const).map((a) => (
+                  <button key={a} type="button" onClick={() => patch(sel, { align: a })}
+                    className={`px-2 py-0.5 rounded border ${
+                      e.align === a ? "bg-slate-800 text-white border-slate-800" : "border-slate-300 text-slate-600"
+                    }`}>
+                    {a === "left" ? "ซ้าย" : a === "center" ? "กลาง" : "ขวา"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={onSave} disabled={saving}
+              className="flex-1 py-2 rounded-lg bg-brand text-white text-sm font-bold disabled:opacity-50">
+              {saving ? "กำลังบันทึก…" : "บันทึกเลย์เอาต์"}
+            </button>
+            {hasSaved && (
+              <button type="button" onClick={onReset} disabled={saving}
+                className="py-2 px-3 rounded-lg border border-slate-300 text-slate-600 text-sm disabled:opacity-50">
+                คืนค่ามาตรฐาน
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

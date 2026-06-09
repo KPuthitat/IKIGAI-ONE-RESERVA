@@ -1406,6 +1406,12 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("inventa_label_height_mm")) {
     db.exec("ALTER TABLE branches ADD COLUMN inventa_label_height_mm INTEGER NOT NULL DEFAULT 50");
   }
+  // INVENTA label LAYOUT (owner 2026-06-09): per-branch drag-designed
+  // element positions/sizes/visibility, stored as JSON. NULL = use the
+  // built-in default layout (so existing branches print unchanged).
+  if (!bnames2.has("inventa_label_layout")) {
+    db.exec("ALTER TABLE branches ADD COLUMN inventa_label_layout TEXT");
+  }
 
   // TC-4: time certification requests. Staff can't edit a clock
   // entry once the 5-min self-correction window closes — instead
@@ -4980,6 +4986,7 @@ export type Branch = {
   // INVENTA label print size in mm (owner 2026-06-08). Default 80×50.
   inventa_label_width_mm: number;
   inventa_label_height_mm: number;
+  inventa_label_layout: string | null;
 };
 
 // Global (non-branch-scoped) configuration. Today it carries the
