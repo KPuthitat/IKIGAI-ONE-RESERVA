@@ -274,17 +274,17 @@ export default function LabelsClient({
                     {((i.cost != null && i.cost > 0) || (i.sale != null && i.sale > 0)) && (
                       <div className="lbl-price">
                         {i.cost != null && i.cost > 0 && (
-                          <span style={{ fontWeight: 400, fontSize: "2.6mm" }}>
-                            ทุน ฿{i.cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                          </span>
+                          <div style={{ fontWeight: 400, fontSize: "2.6mm" }}>
+                            ราคาทุน ฿{i.cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            {i.unit ? `/${i.unit}` : ""}
+                          </div>
                         )}
                         {i.sale != null && i.sale > 0 && (
-                          <span>
-                            {i.cost != null && i.cost > 0 ? "  " : ""}
-                            ขาย ฿{i.sale.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                          </span>
+                          <div>
+                            ราคาขาย ฿{i.sale.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            {i.unit ? `/${i.unit}` : ""}
+                          </div>
                         )}
-                        {i.unit ? <span style={{ fontWeight: 400, fontSize: "2.3mm" }}> /{i.unit}</span> : null}
                       </div>
                     )}
                     {bin && <div className="lbl-bin">{bin}</div>}

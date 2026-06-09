@@ -607,6 +607,7 @@ function ItemModal({
     unit: base.unit ?? "",
     unit_cost: base.unit_cost != null ? String(base.unit_cost) : "",
     cost_price: base.cost_price != null ? String(base.cost_price) : "",
+    price_opd: base.price_opd != null ? String(base.price_opd) : "",
     storage_location: base.storage_location ?? "",
     supplier_id: base.supplier_id != null ? String(base.supplier_id) : "",
     grid_row: base.grid_row ?? "",
@@ -645,6 +646,8 @@ function ItemModal({
         // being silently dropped to null/default (owner 2026-06-08, item 4).
         unit_cost: f.unit_cost !== "" ? Number(f.unit_cost) : 0,
         cost_price: f.cost_price !== "" ? Number(f.cost_price) : null,
+        // ราคาขาย — stored in price_opd, printed on the shelf label (owner 2026-06-09)
+        price_opd: f.price_opd !== "" ? Number(f.price_opd) : null,
         storage_location: f.storage_location.trim() || null,
         supplier_id: f.supplier_id ? Number(f.supplier_id) : null,
         grid_row: f.grid_row || null,
@@ -815,6 +818,22 @@ function ItemModal({
               placeholder={t("inv.f.costPricePh")} />
             <p className="text-[10px] text-slate-400 mt-1">
               {t("inv.f.costPriceHint")}
+            </p>
+          </div>
+          {/* ราคาขาย — selling price (owner 2026-06-09). Stored in price_opd;
+              printed on the shelf label next to ราคาทุน, in บาท/หน่วย. */}
+          <div>
+            <label className="label flex items-center gap-1">
+              <span className="text-amber-700">฿</span>
+              ราคาขาย (บาท/หน่วย)
+            </label>
+            <input className="input border-l-4 border-l-amber-500 font-semibold"
+              type="number" min="0" step="0.01"
+              value={f.price_opd}
+              onChange={(e) => up("price_opd", e.target.value)}
+              placeholder="เช่น 120" />
+            <p className="text-[10px] text-slate-400 mt-1">
+              ราคาขายต่อหน่วย — แสดงบนฉลากคู่กับราคาทุน
             </p>
           </div>
           <div className="col-span-2">
