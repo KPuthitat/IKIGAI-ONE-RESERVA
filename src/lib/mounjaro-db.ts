@@ -380,6 +380,37 @@ export function addSelfLog(actor: MjActor, data: {
   audit(actor.id, "self_log", "enrollment", enr.id);
 }
 
+/** Edit one of the actor's OWN self-log rows (owner 2026-06-09). Scoped to
+ *  their active enrollment; the edit is audited. The PIN gate is enforced in
+ *  the API route. Throws MounjaroForbidden when the row isn't theirs / the
+ *  enrollment isn't active. */
+export function updateSelfLog(actor: MjActor, id: number, data: {
+  date: string; weight: number | null; injection_done: boolean;
+  side_effect_diary: unknown; notes_for_doctor: string | null;
+  bp?: string | null; hr?: number | null; fbs?: number | null; diary?: string | null;
+}): void {
+  const enr = getMyEnrollment(actor);
+  if (!enr || enr.status !== "active") throw new MounjaroForbidden("not_active");
+  const db = getDb();
+  const row = db.prepare(
+    "SELECT id FROM mounjaro_self_logs WHERE id = ? AND enrollment_id = ?"
+  ).get(id, enr.id) as { id: number } | undefined;
+  if (!row) throw new MounjaroForbidden("not_found");
+  db.prepare(`
+    UPDATE mounjaro_self_logs
+    SET date = ?, weight = ?, injection_done = ?, side_effect_diary_json = ?,
+        notes_for_doctor = ?, bp = ?, hr = ?, fbs = ?, diary = ?
+    WHERE id = ?
+  `).run(
+    data.date, data.weight, data.injection_done ? 1 : 0,
+    JSON.stringify(data.side_effect_diary ?? {}),
+    data.notes_for_doctor ?? null,
+    data.bp ?? null, data.hr ?? null, data.fbs ?? null, data.diary ?? null,
+    id
+  );
+  audit(actor.id, "self_log_edit", "enrollment", enr.id);
+}
+
 export function getMySelfLogs(actor: MjActor): Array<Record<string, unknown>> {
   const enr = getMyEnrollment(actor);
   if (!enr) return [];

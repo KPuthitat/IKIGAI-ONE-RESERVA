@@ -26,8 +26,11 @@ type Patient = {
 } | null;
 type Visit = { date: string | null; dose: number | null; weight: number | null; next_visit: string | null };
 type SelfLog = {
+  id: number;
   date: string | null; weight: number | null; injection_done: boolean;
   bp: string | null; hr: number | null; fbs: number | null; diary: string | null;
+  notes_for_doctor: string | null;
+  side_effect_diary_json: string | null;
   doctor_reply: string | null;
 };
 type ConsentInfo = { needed: boolean; version: string | null; body: string | null };
@@ -417,32 +420,72 @@ function ActiveView({
   const [se, setSe] = useState<Record<string, number>>({});
   const [diary, setDiary] = useState("");
   const [notes, setNotes] = useState("");
+  // Edit an existing entry (owner 2026-06-09): editing health data needs the
+  // staff's PIN and is audited server-side.
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editPin, setEditPin] = useState("");
+
+  function resetForm() {
+    setDate(today); setWeight(""); setInjected(false); setBp(""); setHr(""); setFbs("");
+    setSe({}); setDiary(""); setNotes("");
+  }
+  function startEdit(l: SelfLog) {
+    setEditingId(l.id);
+    setDate(l.date ?? today);
+    setWeight(l.weight != null ? String(l.weight) : "");
+    setInjected(l.injection_done);
+    setBp(l.bp ?? "");
+    setHr(l.hr != null ? String(l.hr) : "");
+    setFbs(l.fbs != null ? String(l.fbs) : "");
+    setDiary(l.diary ?? "");
+    setNotes(l.notes_for_doctor ?? "");
+    let parsed: Record<string, number> = {};
+    try {
+      const o = l.side_effect_diary_json ? JSON.parse(l.side_effect_diary_json) : {};
+      if (o && typeof o === "object") parsed = o as Record<string, number>;
+    } catch { /* keep empty */ }
+    setSe(parsed);
+    setEditPin(""); setMsg(null);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function cancelEdit() { setEditingId(null); setEditPin(""); resetForm(); }
 
   const numOrNull = (s: string) => (s.trim() === "" ? null : Number(s));
   async function submitLog() {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { setMsg({ kind: "err", text: "เลือกวันที่" }); return; }
+    if (editingId != null && !/^\d{4}$/.test(editPin)) {
+      setMsg({ kind: "err", text: "กรอก PIN 4 หลักเพื่อยืนยันการแก้ไข" }); return;
+    }
     setBusy("log"); setMsg(null);
     try {
+      const payload = {
+        date, weight: numOrNull(weight),
+        injection_done: injected, side_effect_diary: se,
+        bp: bp.trim() || undefined,
+        hr: numOrNull(hr),
+        fbs: numOrNull(fbs),
+        diary: diary.trim() || undefined,
+        notes_for_doctor: notes.trim() || undefined
+      };
       const res = await fetch(apiUrl("/api/mounjaro/self-log"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date, weight: numOrNull(weight),
-          injection_done: injected, side_effect_diary: se,
-          bp: bp.trim() || undefined,
-          hr: numOrNull(hr),
-          fbs: numOrNull(fbs),
-          diary: diary.trim() || undefined,
-          notes_for_doctor: notes.trim() || undefined
-        })
+        method: editingId != null ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingId != null ? { ...payload, id: editingId, pin: editPin } : payload)
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) {
-        setMsg({ kind: "err", text: j.error === "not_active" ? "บันทึกได้เฉพาะผู้ที่อยู่ในโครงการ" : "บันทึกไม่สำเร็จ" });
+        const text =
+          j.error === "not_active" || j.error === "forbidden_or_not_active" ? "บันทึกได้เฉพาะผู้ที่อยู่ในโครงการ"
+          : j.error === "wrong_pin" ? "PIN ไม่ถูกต้อง"
+          : j.error === "no_pin_set" ? "ยังไม่ได้ตั้ง PIN — ตั้งที่หน้าลงเวลาก่อน"
+          : "บันทึกไม่สำเร็จ";
+        setMsg({ kind: "err", text });
         return;
       }
-      setMsg({ kind: "ok", text: "บันทึกเรียบร้อย — แพทย์จะเห็นข้อมูลของคุณ" });
-      setWeight(""); setInjected(false); setBp(""); setHr(""); setFbs("");
-      setSe({}); setDiary(""); setNotes("");
+      setMsg({ kind: "ok", text: editingId != null
+        ? "แก้ไขเรียบร้อย — ระบบบันทึกประวัติการแก้ไขไว้แล้ว"
+        : "บันทึกเรียบร้อย — แพทย์จะเห็นข้อมูลของคุณ" });
+      cancelEdit();
       router.refresh();
     } finally { setBusy(null); }
   }
@@ -547,10 +590,26 @@ function ActiveView({
           <textarea className="input text-sm" rows={2} value={notes} maxLength={1000}
             onChange={(e) => setNotes(e.target.value)} placeholder="เช่น อยากปรึกษาเรื่อง…" />
         </div>
-        <button type="button" disabled={busy === "log"} onClick={submitLog}
-          className="btn-primary w-full py-2.5 disabled:opacity-50">
-          {busy === "log" ? "กำลังบันทึก…" : "บันทึกข้อมูลวันนี้"}
-        </button>
+        {editingId != null && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 space-y-1.5">
+            <div className="text-xs text-amber-800">
+              กำลังแก้ไขรายการวันที่ <b>{date}</b> — ใส่ PIN เพื่อยืนยัน (ระบบจะบันทึกประวัติการแก้ไขไว้)
+            </div>
+            <input type="password" inputMode="numeric" maxLength={4} value={editPin}
+              onChange={(e) => setEditPin(e.target.value.replace(/\D/g, ""))}
+              className="input text-center tracking-[0.4em]" placeholder="PIN 4 หลัก" />
+          </div>
+        )}
+        <div className="flex gap-2">
+          {editingId != null && (
+            <button type="button" onClick={cancelEdit} disabled={busy === "log"}
+              className="btn-secondary py-2.5 px-4 disabled:opacity-50">ยกเลิก</button>
+          )}
+          <button type="button" disabled={busy === "log"} onClick={submitLog}
+            className="btn-primary flex-1 py-2.5 disabled:opacity-50">
+            {busy === "log" ? "กำลังบันทึก…" : editingId != null ? "บันทึกการแก้ไข" : "บันทึกข้อมูลวันนี้"}
+          </button>
+        </div>
       </div>
 
       {/* Exercise log (owner #11-16) */}
@@ -594,14 +653,20 @@ function ActiveView({
       {selfLogs.length > 0 && (
         <div className="card space-y-2">
           <h2 className="font-bold text-slate-800 text-sm">บันทึกของฉัน</h2>
-          {selfLogs.slice(0, 14).map((l, i) => (
-            <div key={i} className="text-xs border-b last:border-0 pb-1.5">
-              <span className="font-mono text-slate-500">{l.date}</span>
-              {l.weight != null && <> · {l.weight} กก.</>}
-              {l.bp && <> · BP {l.bp}</>}
-              {l.hr != null && <> · HR {l.hr}</>}
-              {l.fbs != null && <> · DTX {l.fbs}</>}
-              {l.injection_done && <> · ฉีดยาแล้ว</>}
+          {selfLogs.slice(0, 14).map((l) => (
+            <div key={l.id} className="text-xs border-b last:border-0 pb-1.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="font-mono text-slate-500">{l.date}</span>
+                  {l.weight != null && <> · {l.weight} กก.</>}
+                  {l.bp && <> · BP {l.bp}</>}
+                  {l.hr != null && <> · HR {l.hr}</>}
+                  {l.fbs != null && <> · DTX {l.fbs}</>}
+                  {l.injection_done && <> · ฉีดยาแล้ว</>}
+                </div>
+                <button type="button" onClick={() => startEdit(l)}
+                  className="text-brand hover:underline whitespace-nowrap flex-shrink-0">แก้ไข</button>
+              </div>
               {l.diary && <div className="text-slate-600 mt-0.5">บันทึกประจำวัน: {l.diary}</div>}
               {l.doctor_reply && (
                 <div className="mt-0.5 text-emerald-700 bg-emerald-50 rounded px-2 py-1">

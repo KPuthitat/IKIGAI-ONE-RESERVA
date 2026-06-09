@@ -64,6 +64,7 @@ export default function MounjaroSelfPage() {
   }));
 
   const logs = selfLogs.map((l) => ({
+    id: l.id as number,
     date: (l.date as string | null) ?? null,
     weight: (l.weight as number | null) ?? null,
     injection_done: (l.injection_done as number | null) === 1,
@@ -71,6 +72,8 @@ export default function MounjaroSelfPage() {
     hr: (l.hr as number | null) ?? null,
     fbs: (l.fbs as number | null) ?? null,
     diary: (l.diary as string | null) ?? null,
+    notes_for_doctor: (l.notes_for_doctor as string | null) ?? null,
+    side_effect_diary_json: (l.side_effect_diary_json as string | null) ?? null,
     doctor_reply: (l.doctor_reply as string | null) ?? null
   }));
 
