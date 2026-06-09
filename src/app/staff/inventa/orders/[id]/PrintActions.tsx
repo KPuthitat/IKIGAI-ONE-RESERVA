@@ -8,19 +8,25 @@ import PinPromptModal from "@/app/components/PinPromptModal";
 
 type Status = "draft" | "sent" | "approved" | "paid" | "shipping" | "received" | "returned" | "cancelled";
 
+type ReceiveLine = {
+  item_id: number; name: string; code: string | null; unit: string | null;
+  order_qty: number; current_cost: number | null; avg_cost: number | null;
+};
+
 // Print + lifecycle actions for one purchase order. Hidden in print
 // (.no-print on the parent row). Approve is management-only; cancel /
 // receive are open to the creator or an admin. "Send back to edit"
 // (admin only) flips an approved order back to 'sent' so its lines can
 // be corrected — PIN-gated since it undoes an approval (owner 2026-06-07).
 export default function PrintActions({
-  orderId, status, canApprove, canManage, supplierPdfUrl
+  orderId, status, canApprove, canManage, supplierPdfUrl, receiveLines = []
 }: {
   orderId: number;
   status: Status;
   canApprove: boolean;
   canManage: boolean;
   supplierPdfUrl?: string | null;
+  receiveLines?: ReceiveLine[];
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -28,6 +34,39 @@ export default function PrintActions({
   const [err, setErr] = useState<string | null>(null);
   const [showSendBack, setShowSendBack] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Receive modal — enter the current cost per item (owner 2026-06-09).
+  const [showReceive, setShowReceive] = useState(false);
+  const [costInputs, setCostInputs] = useState<Record<number, string>>({});
+
+  function openReceive() {
+    const init: Record<number, string> = {};
+    for (const l of receiveLines) init[l.item_id] = l.current_cost != null ? String(l.current_cost) : "";
+    setCostInputs(init);
+    setErr(null);
+    setShowReceive(true);
+  }
+  async function submitReceive() {
+    setBusy(true); setErr(null);
+    try {
+      const costs = receiveLines.map((l) => ({
+        item_id: l.item_id,
+        unit_cost: costInputs[l.item_id]?.trim() ? Number(costInputs[l.item_id]) : null
+      }));
+      const res = await fetch(apiUrl(`/api/inventa/orders/${orderId}/status`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "receive", costs })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setErr(j.error ?? t("inv.po.actFail")); return; }
+      setShowReceive(false);
+      router.refresh();
+    } catch {
+      setErr(t("inv.po.actFail"));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function copySupplierLink() {
     if (!supplierPdfUrl) return;
@@ -119,12 +158,14 @@ export default function PrintActions({
       )}
       {canManage && status === "shipping" && (
         <button type="button" disabled={busy}
-          onClick={() => act("receive", "ยืนยันรับของเข้าคลังครบแล้ว?")}
+          onClick={openReceive}
           className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
           รับเข้าคลัง
         </button>
       )}
-      {canManage && (status === "paid" || status === "shipping" || status === "received") && (
+      {/* ส่งคืนผู้จำหน่าย only BEFORE goods are received — once รับเข้าคลังแล้ว
+          the stock is in, so this is hidden (owner 2026-06-09). */}
+      {canManage && (status === "paid" || status === "shipping") && (
         <button type="button" disabled={busy}
           onClick={() => act("return", "บันทึกว่าส่งคืนผู้จำหน่าย?")}
           className="text-xs px-3 py-1.5 rounded-lg border border-orange-400 text-orange-700 hover:bg-orange-50 disabled:opacity-50">
@@ -153,10 +194,19 @@ export default function PrintActions({
           login) to forward to the vendor. Copy to clipboard for LINE/email. */}
       {supplierPdfUrl && (
         <>
-          <button type="button" onClick={copySupplierLink}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 font-bold hover:bg-slate-50">
-            {copied ? "คัดลอกลิงก์แล้ว ✓" : "คัดลอกลิงก์ส่งผู้จำหน่าย"}
-          </button>
+          {/* Once received, don't offer "copy link" again — stamp it instead
+              so no one re-sends / re-orders (owner 2026-06-09). Viewing is
+              still fine. */}
+          {status === "received" ? (
+            <span className="text-xs px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-700 font-bold">
+              ✓ รับเข้าคลังแล้ว — ไม่ต้องส่งซ้ำ
+            </span>
+          ) : (
+            <button type="button" onClick={copySupplierLink}
+              className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 font-bold hover:bg-slate-50">
+              {copied ? "คัดลอกลิงก์แล้ว ✓" : "คัดลอกลิงก์ส่งผู้จำหน่าย"}
+            </button>
+          )}
           <a href={supplierPdfUrl} target="_blank" rel="noopener noreferrer"
             className="text-xs text-brand hover:underline self-center">
             เปิดดู
@@ -172,6 +222,62 @@ export default function PrintActions({
           onSubmit={sendBack}
           onClose={() => setShowSendBack(false)}
         />
+      )}
+
+      {/* Receive modal — confirm receipt + set the current cost per item.
+          The faint number under each input is the moving-average cost, to
+          guide a cost adjustment (owner 2026-06-09). */}
+      {showReceive && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setShowReceive(false)}>
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="font-bold text-slate-800 text-base">รับเข้าคลัง — ตรวจ/ปรับราคาทุน</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                กรอกราคาทุนปัจจุบันต่อหน่วย (ปรับได้ถ้าราคาเปลี่ยน) — ระบบจะอัปเดตราคาทุนของสินค้าและบันทึกประวัติให้
+              </p>
+            </div>
+            {err && <div className="text-xs text-rose-600">{err}</div>}
+            <div className="space-y-2">
+              {receiveLines.map((l) => (
+                <div key={l.item_id} className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-slate-800 truncate">{l.name}</div>
+                    <div className="text-[11px] text-slate-400">
+                      {l.code ?? "—"} · สั่ง {l.order_qty}{l.unit ? ` ${l.unit}` : ""}
+                    </div>
+                  </div>
+                  <div className="w-28 flex-shrink-0">
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-slate-400">฿</span>
+                      <input type="number" min="0" step="0.01" inputMode="decimal"
+                        className="input text-sm text-right py-1"
+                        value={costInputs[l.item_id] ?? ""}
+                        onChange={(e) => setCostInputs((p) => ({ ...p, [l.item_id]: e.target.value }))}
+                        placeholder={l.avg_cost != null ? String(l.avg_cost) : "0.00"} />
+                    </div>
+                    <div className="text-[10px] text-slate-300 text-right mt-0.5">
+                      {l.avg_cost != null ? `เฉลี่ย ฿${l.avg_cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {receiveLines.length === 0 && (
+                <p className="text-xs text-slate-400 text-center py-2">ไม่มีรายการในใบสั่งซื้อ</p>
+              )}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setShowReceive(false)} disabled={busy}
+                className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium disabled:opacity-50">
+                {t("common.cancel")}
+              </button>
+              <button type="button" onClick={submitReceive} disabled={busy}
+                className="flex-1 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">
+                {busy ? "กำลังบันทึก…" : "ยืนยันรับเข้าคลัง"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

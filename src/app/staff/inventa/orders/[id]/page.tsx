@@ -34,6 +34,8 @@ type Line = {
   item_code: string | null;
   unit: string | null;
   supplier_name: string | null;
+  item_cost_price: number | null;
+  item_unit_cost: number | null;
 };
 
 export default function InventaOrderDetailPage({
@@ -77,6 +79,7 @@ export default function InventaOrderDetailPage({
 
   const lines = db.prepare(`
     SELECT l.*, i.name AS item_name, i.item_code, i.unit,
+           i.cost_price AS item_cost_price, i.unit_cost AS item_unit_cost,
            s.name AS supplier_name
     FROM inventa_order_lines l
     JOIN inventa_items i ON i.id = l.item_id
@@ -84,6 +87,27 @@ export default function InventaOrderDetailPage({
     WHERE l.order_id = ?
     ORDER BY (s.name IS NULL), s.name COLLATE NOCASE, i.name COLLATE NOCASE
   `).all(id) as Line[];
+
+  // Per-item receive rows (deduped) — current cost (pinned, fallback order
+  // cost) + moving-average cost for the faint hint at รับเข้าคลัง (owner
+  // 2026-06-09).
+  const receiveLines = (() => {
+    const seen = new Map<number, {
+      item_id: number; name: string; code: string | null; unit: string | null;
+      order_qty: number; current_cost: number | null; avg_cost: number | null;
+    }>();
+    for (const l of lines) {
+      const existing = seen.get(l.item_id);
+      if (existing) { existing.order_qty += l.order_qty; continue; }
+      seen.set(l.item_id, {
+        item_id: l.item_id, name: l.item_name, code: l.item_code, unit: l.unit,
+        order_qty: l.order_qty,
+        current_cost: l.item_cost_price ?? l.unit_cost_at_order ?? null,
+        avg_cost: l.item_unit_cost ?? null
+      });
+    }
+    return [...seen.values()];
+  })();
 
   // Edit affordances (owner 2026-06-07). A 'sent' (รออนุมัติ) order can
   // have its lines corrected by an admin or the creator — PIN-gated +
@@ -173,6 +197,7 @@ export default function InventaOrderDetailPage({
           canApprove={isAdmin}
           canManage={canManage}
           supplierPdfUrl={supplierPdfUrl}
+          receiveLines={receiveLines}
         />
       </div>
 

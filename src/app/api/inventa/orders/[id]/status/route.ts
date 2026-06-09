@@ -28,7 +28,14 @@ const Body = z.object({
     "approve", "cancel", "receive", "send_back",
     "pay", "credit", "ship", "return"
   ]),
-  pin: z.string().optional()
+  pin: z.string().optional(),
+  // Optional per-item current-cost updates applied at PO receive (owner
+  // 2026-06-09) — lets the receiver record a changed cost; logged + only
+  // applied to items actually on this order.
+  costs: z.array(z.object({
+    item_id: z.number().int().positive(),
+    unit_cost: z.number().min(0).max(10_000_000).nullable()
+  })).optional()
 });
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -142,7 +149,27 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     if (!["approved", "paid", "shipping"].includes(order.status)) {
       return NextResponse.json({ error: "bad_state", status: order.status }, { status: 409 });
     }
-    db.prepare("UPDATE inventa_orders SET status='received' WHERE id=?").run(id);
+    const costs = parsed.data.costs ?? [];
+    const orderItemIds = new Set(
+      (db.prepare("SELECT DISTINCT item_id FROM inventa_order_lines WHERE order_id = ?")
+        .all(id) as Array<{ item_id: number }>).map((r) => r.item_id)
+    );
+    db.transaction(() => {
+      db.prepare("UPDATE inventa_orders SET status='received' WHERE id=?").run(id);
+      // Apply current-cost updates for items on this order; log each change.
+      for (const c of costs) {
+        if (c.unit_cost == null || c.unit_cost <= 0) continue;
+        if (!orderItemIds.has(c.item_id)) continue;
+        const item = db.prepare("SELECT cost_price FROM inventa_items WHERE id = ?")
+          .get(c.item_id) as { cost_price: number | null } | undefined;
+        if (!item || item.cost_price === c.unit_cost) continue;
+        db.prepare("UPDATE inventa_items SET cost_price = ? WHERE id = ?").run(c.unit_cost, c.item_id);
+        db.prepare(`
+          INSERT INTO inventa_cost_changes (item_id, old_cost, new_cost, source, lot_id, changed_by)
+          VALUES (?, ?, ?, 'receive_po', NULL, ?)
+        `).run(c.item_id, item.cost_price, c.unit_cost, user.id);
+      }
+    })();
     return NextResponse.json({ ok: true, status: "received" });
   }
 
