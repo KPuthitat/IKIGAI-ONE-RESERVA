@@ -24,11 +24,17 @@ export default function StaffPersonaPage() {
         .get(user.activeBranchId) as Branch | undefined)
     : undefined;
 
+  // Clock state is PER-BRANCH (owner 2026-06-09): a staff who works at two
+  // branches must clock in/out at each independently. Scoping by the active
+  // branch fixes the cross-branch bug where an 'in' at branch A made branch
+  // B show "clock out" (and clocking out at B mis-paired the shift). −1 when
+  // no active branch → no rows → shows clock-in (tap then fails cleanly).
+  const branchId = user.activeBranchId ?? -1;
   const entries = db.prepare(`
     SELECT id, type, ts FROM time_entries
-    WHERE user_id = ? AND ts >= datetime('now', '-7 days')
+    WHERE user_id = ? AND branch_id = ? AND ts >= datetime('now', '-7 days')
     ORDER BY ts DESC LIMIT 100
-  `).all(user.id) as TimeEntry[];
+  `).all(user.id, branchId) as TimeEntry[];
 
   // เลือก entries ของวันนี้ตาม Bangkok local
   const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);

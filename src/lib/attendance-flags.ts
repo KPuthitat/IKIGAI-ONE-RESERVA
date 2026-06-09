@@ -73,17 +73,17 @@ export function detectPunchAnomaly(args: {
     // Most-recent punch strictly before today → its calendar day.
     const prev = db.prepare(`
       SELECT ts FROM time_entries
-      WHERE user_id = ? AND ts < ?
+      WHERE user_id = ? AND branch_id = ? AND ts < ?
       ORDER BY ts DESC LIMIT 1
-    `).get(userId, todayStart) as { ts: string } | undefined;
+    `).get(userId, branchId, todayStart) as { ts: string } | undefined;
     if (!prev) return null;
     const prevDate = bkkDate(prev.ts);
     const [s, e] = dayRangeIso(prevDate);
     const rows = db.prepare(`
       SELECT type, COUNT(*) AS n FROM time_entries
-      WHERE user_id = ? AND ts >= ? AND ts <= ?
+      WHERE user_id = ? AND branch_id = ? AND ts >= ? AND ts <= ?
       GROUP BY type
-    `).all(userId, s, e) as Array<{ type: "in" | "out"; n: number }>;
+    `).all(userId, branchId, s, e) as Array<{ type: "in" | "out"; n: number }>;
     const hasIn = rows.some((r) => r.type === "in" && r.n > 0);
     const hasOut = rows.some((r) => r.type === "out" && r.n > 0);
     if (hasIn && !hasOut) {
@@ -105,8 +105,8 @@ export function detectPunchAnomaly(args: {
   const [s, e] = dayRangeIso(todayBkk);
   const hasIn = db.prepare(`
     SELECT 1 FROM time_entries
-    WHERE user_id = ? AND type = 'in' AND ts >= ? AND ts <= ? LIMIT 1
-  `).get(userId, s, e);
+    WHERE user_id = ? AND branch_id = ? AND type = 'in' AND ts >= ? AND ts <= ? LIMIT 1
+  `).get(userId, branchId, s, e);
   if (!hasIn) return flag("missing_in", todayBkk, "ลงเวลาออกแต่ไม่มีเวลาเข้า");
   return null;
 }

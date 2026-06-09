@@ -167,11 +167,14 @@ export async function POST(req: Request) {
   const startIso = new Date(`${todayBkk}T00:00:00+07:00`).toISOString();
   const endIso = new Date(`${todayBkk}T23:59:59+07:00`).toISOString();
 
+  // Per-branch clock state (owner 2026-06-09): only count punches at the
+  // active branch, so a two-branch staff clocks in/out independently at each
+  // (clocking out pairs with THIS branch's in, not the other branch's).
   const todays = db.prepare(`
     SELECT id, type, ts FROM time_entries
-    WHERE user_id = ? AND ts >= ? AND ts <= ?
+    WHERE user_id = ? AND branch_id = ? AND ts >= ? AND ts <= ?
     ORDER BY ts ASC
-  `).all(user.id, startIso, endIso) as Array<{ id: number; type: "in" | "out"; ts: string }>;
+  `).all(user.id, user.activeBranchId, startIso, endIso) as Array<{ id: number; type: "in" | "out"; ts: string }>;
 
   const firstIn = todays.find((e) => e.type === "in") ?? null;
   const firstOut = todays.find((e) => e.type === "out") ?? null;
