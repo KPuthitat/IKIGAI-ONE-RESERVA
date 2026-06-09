@@ -4058,6 +4058,38 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_recruita_stagereq_pending
       ON recruita_stage_change_requests(status, expires_at)
       WHERE status = 'pending';
+
+    -- 2026-06-09 Self-service interview scheduling. The admin defines a
+    -- pool of bookable 1-hour slots (generated from selected weekdays ×
+    -- a date range × a daily time window). An applicant whose
+    -- application reached the 'interview' stage picks an OPEN slot on
+    -- the public status page; booking is first-come-first-served.
+    --
+    -- Concurrency is guarded by a CONDITIONAL update
+    --   UPDATE ... SET status='booked' WHERE id=? AND status='open'
+    -- and checking changes()===1 — NOT by relying on a UNIQUE over a
+    -- nullable column (SQLite treats NULLs as distinct, per CLAUDE.md).
+    -- booked_application_id ON DELETE SET NULL: if the linked
+    -- application is later purged (PDPA) the slot is reclaimed by the
+    -- "orphan sweep" (status='booked' AND booked_application_id IS NULL
+    -- → back to 'open') in recruita-interview-slots.ts.
+    CREATE TABLE IF NOT EXISTS recruita_interview_slots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slot_date TEXT NOT NULL,        -- 'YYYY-MM-DD' Bangkok-local
+      start_time TEXT NOT NULL,       -- 'HH:MM' 24h
+      end_time TEXT NOT NULL,         -- 'HH:MM'
+      location TEXT,                  -- optional venue text
+      status TEXT NOT NULL DEFAULT 'open'
+        CHECK (status IN ('open','booked')),
+      booked_application_id INTEGER REFERENCES recruita_applications(id) ON DELETE SET NULL,
+      booked_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (slot_date, start_time)
+    );
+    CREATE INDEX IF NOT EXISTS idx_recruita_slots_date
+      ON recruita_interview_slots(slot_date, status);
+    CREATE INDEX IF NOT EXISTS idx_recruita_slots_booked
+      ON recruita_interview_slots(booked_application_id);
   `);
 
   // 2026-06-01 NOTE — an earlier draft of this migration added

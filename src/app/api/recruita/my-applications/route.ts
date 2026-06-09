@@ -39,6 +39,10 @@ type Row = {
   position_code: string | null;
   branch_name: string | null;
   department: string | null;
+  /** Current interview booking (naive Bangkok-local), null if unbooked.
+   *  Drives the self-service slot picker on the status page. */
+  interview_at: string | null;
+  interview_location: string | null;
 };
 
 export async function POST(req: Request) {
@@ -57,6 +61,8 @@ export async function POST(req: Request) {
            (SELECT COUNT(*) FROM recruita_applications za
              WHERE date(za.submitted_at, '+7 hours') = date(a.submitted_at, '+7 hours')
                AND za.id <= a.id) AS day_seq,
+           a.interview_at        AS interview_at,
+           a.interview_location  AS interview_location,
            p.title         AS position_title,
            p.code          AS position_code,
            p.department    AS department,

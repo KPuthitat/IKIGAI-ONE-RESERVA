@@ -591,3 +591,91 @@ export async function notifyInterviewScheduled(applicationId: number): Promise<v
     );
   }
 }
+
+/** Exec-facing Flex card: an applicant picked their own interview slot
+ *  on the public status page (self-service booking, owner 2026-06-09).
+ *  Distinct copy from execStageChangeFlex so owners can tell a
+ *  self-booking apart from an admin-set time. */
+function execInterviewBookedFlex(args: {
+  applicantName: string;
+  positionTitle: string;
+  branchName: string | null;
+  interviewAt: string;
+  location: string | null;
+  applicationNo: string;
+  applicationId: number;
+}): LineMessage {
+  const rows: Array<Record<string, unknown>> = [
+    infoRow("ผู้สมัคร", args.applicantName),
+    infoRow("วันเวลาที่เลือก", fmtInterviewWhen(args.interviewAt)),
+    infoRow("ตำแหน่ง", args.positionTitle)
+  ];
+  if (args.branchName) rows.push(infoRow("บริษัท/สาขา", args.branchName));
+  if (args.location) rows.push(infoRow("สถานที่", args.location));
+  rows.push(infoRow("เลขที่ใบสมัคร", args.applicationNo));
+  return {
+    type: "flex",
+    altText: `ผู้สมัครเลือกวันสัมภาษณ์: ${args.applicantName} · ${fmtInterviewWhen(args.interviewAt)}`,
+    contents: {
+      type: "bubble",
+      size: "giga",
+      header: brandHeader("ผู้สมัครเลือกวันสัมภาษณ์แล้ว", "การจองผ่านหน้า ตรวจสอบสถานะใบสมัคร"),
+      body: {
+        type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+        backgroundColor: "#ffffff",
+        contents: rows
+      },
+      footer: {
+        type: "box", layout: "vertical", paddingAll: "16px",
+        backgroundColor: "#ffffff",
+        contents: [
+          {
+            type: "button", style: "primary", color: COLOR_BRAND,
+            action: { type: "uri", label: "ตรวจสอบใบสมัคร", uri: reviewUrl(args.applicationId) }
+          }
+        ]
+      }
+    }
+  };
+}
+
+/** Fire-and-forget exec-group push when an applicant self-books an
+ *  interview slot. Silent no-op when the exec group / platform OA isn't
+ *  configured. */
+export async function notifyExecGroupInterviewBooked(applicationId: number): Promise<void> {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT a.id, a.submitted_at, a.interview_at, a.interview_location,
+           (SELECT COUNT(*) FROM recruita_applications za
+             WHERE date(za.submitted_at, '+7 hours') = date(a.submitted_at, '+7 hours')
+               AND za.id <= a.id) AS day_seq,
+           c.title_prefix, c.first_name_th, c.last_name_th,
+           p.title AS position_title,
+           b.name  AS branch_name
+    FROM recruita_applications a
+    JOIN recruita_candidates c ON c.id = a.candidate_id
+    JOIN recruita_positions p  ON p.id = a.position_id
+    LEFT JOIN branches b ON b.id = p.branch_id
+    WHERE a.id = ?
+  `).get(applicationId) as {
+    id: number; submitted_at: string; day_seq: number;
+    interview_at: string | null; interview_location: string | null;
+    title_prefix: string | null;
+    first_name_th: string | null; last_name_th: string | null;
+    position_title: string;
+    branch_name: string | null;
+  } | undefined;
+  if (!row || !row.interview_at) return;
+
+  const applicantName = [row.title_prefix, row.first_name_th, row.last_name_th]
+    .filter(Boolean).join(" ") || "—";
+  await pushToExecGroup([execInterviewBookedFlex({
+    applicantName,
+    positionTitle: row.position_title,
+    branchName: row.branch_name,
+    interviewAt: row.interview_at,
+    location: row.interview_location,
+    applicationNo: formatApplicationNo(row.submitted_at, row.day_seq),
+    applicationId: row.id
+  })]);
+}

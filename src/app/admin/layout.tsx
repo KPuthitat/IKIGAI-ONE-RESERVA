@@ -233,6 +233,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/recruita/positions", label: t(lang, "admin.recruita.nav.positions") },
         { href: "/admin/recruita/pipeline", label: t(lang, "admin.recruita.nav.pipeline") },
         { href: "/admin/recruita/applications", label: t(lang, "admin.recruita.nav.applications") },
+        { href: "/admin/recruita/interview-slots", label: t(lang, "admin.recruita.nav.interviewSlots") },
         { href: "/admin/recruita/dashboard", label: t(lang, "admin.recruita.nav.dashboard") },
         { href: "/admin/recruita/form-template", label: t(lang, "admin.recruita.nav.formTemplate") }
         // "ตั้งค่า LINE OA" moved to /admin/system-settings (global,

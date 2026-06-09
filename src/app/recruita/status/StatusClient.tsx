@@ -25,7 +25,37 @@ type AppRow = {
   position_code: string | null;
   branch_name: string | null;
   department: string | null;
+  /** Current interview booking (naive Bangkok-local "YYYY-MM-DDTHH:MM"),
+   *  null until the applicant self-books a slot. */
+  interview_at: string | null;
+  interview_location: string | null;
 };
+
+// A bookable interview slot from /api/recruita/interview-slots/available.
+type BookableSlot = {
+  id: number;
+  slot_date: string;
+  start_time: string;
+  end_time: string;
+  location: string | null;
+  status: "open" | "booked";
+};
+
+// Thai weekday short names, indexed by JS getUTCDay().
+const WD_TH = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+
+function weekdayTh(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return WD_TH[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] ?? "";
+}
+
+/** Format a naive "YYYY-MM-DDTHH:MM" booking into Thai text. */
+function fmtBookingWhen(at: string): string {
+  const [d, tm] = at.split("T");
+  const time = (tm ?? "").slice(0, 5);
+  const datePart = /^\d{4}-\d{2}-\d{2}$/.test(d ?? "") ? formatLongDate(d, "th") : (d ?? at);
+  return time ? `${datePart} เวลา ${time} น.` : datePart;
+}
 
 // Candidate-friendly one-liner per stage — shown under each card so the
 // applicant understands what's happening / what's next.
@@ -95,6 +125,77 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
       setDeleteErr("เกิดข้อผิดพลาด กรุณาลองใหม่");
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  // ── Self-service interview booking ──────────────────────────────
+  // slots === null → not yet fetched. bookingFor holds the
+  // application_id whose slot picker is currently open.
+  const [slots, setSlots] = useState<BookableSlot[] | null>(null);
+  const [bookingFor, setBookingFor] = useState<number | null>(null);
+  const [bookingSlotId, setBookingSlotId] = useState<number | null>(null);
+  const [bookErr, setBookErr] = useState<string | null>(null);
+
+  async function loadSlots() {
+    try {
+      const r = await fetch(apiUrl("/api/recruita/interview-slots/available"));
+      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; slots?: BookableSlot[] };
+      setSlots(j.ok ? (j.slots ?? []) : []);
+    } catch {
+      setSlots([]);
+    }
+  }
+
+  // Identity proof for booking — LINE userId (LIFF) and/or the phone
+  // used to search. The server requires at least one to match the
+  // application's candidate.
+  function bookingIdentity(): { line_user_id?: string; mobile_phone?: string } {
+    const id: { line_user_id?: string; mobile_phone?: string } = {};
+    if (state.kind === "loaded" && state.userId) id.line_user_id = state.userId;
+    const phone = searchPhone.trim();
+    if (phone) id.mobile_phone = phone;
+    return id;
+  }
+
+  async function bookSlot(applicationId: number, slot: BookableSlot) {
+    if (!window.confirm(
+      `ยืนยันเลือกสัมภาษณ์ ${weekdayTh(slot.slot_date)} ${formatLongDate(slot.slot_date, "th")} ` +
+      `เวลา ${slot.start_time}–${slot.end_time} น.?`
+    )) return;
+    setBookingSlotId(slot.id);
+    setBookErr(null);
+    try {
+      const r = await fetch(apiUrl(`/api/recruita/interview-slots/${slot.id}/book`), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ application_id: applicationId, ...bookingIdentity() })
+      });
+      const j = (await r.json().catch(() => ({}))) as {
+        ok?: boolean; error?: string; message?: string;
+        interview_at?: string; location?: string | null;
+      };
+      if (!r.ok || !j.ok) {
+        setBookErr(j.message ?? "จองไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+        if (j.error === "slot_taken") void loadSlots(); // someone took it — refresh
+        return;
+      }
+      // Reflect the booking on the row + close the picker + refresh slots.
+      setState((prev) =>
+        prev.kind === "loaded"
+          ? {
+              ...prev,
+              rows: prev.rows.map((x) =>
+                x.application_id === applicationId
+                  ? { ...x, interview_at: j.interview_at ?? null, interview_location: j.location ?? null }
+                  : x)
+            }
+          : prev);
+      setBookingFor(null);
+      void loadSlots();
+    } catch {
+      setBookErr("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setBookingSlotId(null);
     }
   }
 
@@ -182,6 +283,14 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
     if (w.liff) bootLiff();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liffId]);
+
+  // Lazy-load interview slots once the loaded result includes an
+  // application at the 'interview' stage (the only stage that can book).
+  useEffect(() => {
+    if (state.kind !== "loaded" || slots !== null) return;
+    if (state.rows.some((r) => r.stage === "interview")) void loadSlots();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, slots]);
 
   // Reusable phone-search box — rendered as a fallback in the non-LINE
   // states and the "no applications" state.
@@ -323,6 +432,59 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
                     {STAGE_DESC[row.stage]}
                   </div>
 
+                  {/* Self-service interview booking — only while at the
+                      'interview' stage (the team has invited them to pick
+                      a time). Shows their current booking + lets them
+                      pick / change a 1-hour slot the admin opened. */}
+                  {row.stage === "interview" && (
+                    <div className="border border-amber-200 bg-amber-50/60 rounded-lg p-3 space-y-2">
+                      {row.interview_at ? (
+                        <div className="text-xs text-amber-900">
+                          <span className="font-bold">นัดสัมภาษณ์ของคุณ:</span>{" "}
+                          {fmtBookingWhen(row.interview_at)}
+                          {row.interview_location ? ` · ${row.interview_location}` : ""}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-amber-900 font-semibold">
+                          กรุณาเลือกวันและเวลาสัมภาษณ์ของคุณ
+                        </div>
+                      )}
+
+                      {bookingFor === row.application_id ? (
+                        <div className="space-y-2">
+                          {slots === null ? (
+                            <p className="text-xs text-slate-500">กำลังโหลดช่วงเวลา…</p>
+                          ) : slots.length === 0 ? (
+                            <p className="text-xs text-slate-500">
+                              ยังไม่มีช่วงเวลาว่างให้เลือกในขณะนี้ — กรุณาติดต่อเจ้าหน้าที่
+                            </p>
+                          ) : (
+                            <SlotPicker
+                              slots={slots}
+                              bookingSlotId={bookingSlotId}
+                              onPick={(slot) => bookSlot(row.application_id, slot)} />
+                          )}
+                          {bookErr && <p className="text-xs text-rose-600">{bookErr}</p>}
+                          <button type="button"
+                            onClick={() => { setBookingFor(null); setBookErr(null); }}
+                            className="text-[11px] text-slate-500 underline">
+                            ปิด
+                          </button>
+                        </div>
+                      ) : (
+                        <button type="button"
+                          onClick={() => {
+                            setBookingFor(row.application_id);
+                            setBookErr(null);
+                            if (slots === null) void loadSlots();
+                          }}
+                          className="text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg">
+                          {row.interview_at ? "เปลี่ยนวันเวลา" : "เลือกวันเวลาสัมภาษณ์"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   <div className="border-t border-slate-100 pt-2 flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-[11px] text-slate-400">
                       ส่งเมื่อ {formatLongDate(bkkDateIso(row.submitted_at), "th")} · {bkkHHMM(row.submitted_at)} น.
@@ -417,6 +579,57 @@ function PhoneSearchBox({
         className="w-full bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors">
         {busy ? "กำลังค้นหา…" : "ค้นหาใบสมัคร"}
       </button>
+    </div>
+  );
+}
+
+// Interview slot picker — groups bookable slots by date. Open slots are
+// tappable; booked ones render greyed-out as "ไม่ว่าง" so the applicant
+// can see (but not pick) times others already took.
+function SlotPicker({
+  slots, bookingSlotId, onPick
+}: {
+  slots: BookableSlot[];
+  bookingSlotId: number | null;
+  onPick: (slot: BookableSlot) => void;
+}) {
+  // Preserve the server's date order while grouping.
+  const groups: Array<[string, BookableSlot[]]> = [];
+  const idx = new Map<string, BookableSlot[]>();
+  for (const s of slots) {
+    let arr = idx.get(s.slot_date);
+    if (!arr) { arr = []; idx.set(s.slot_date, arr); groups.push([s.slot_date, arr]); }
+    arr.push(s);
+  }
+  const anyBusy = bookingSlotId !== null;
+
+  return (
+    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+      {groups.map(([date, daySlots]) => (
+        <div key={date}>
+          <div className="text-[11px] font-bold text-slate-600 mb-1">
+            {weekdayTh(date)} · {formatLongDate(date, "th")}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {daySlots.map((s) => {
+              const taken = s.status !== "open";
+              const busy = bookingSlotId === s.id;
+              return (
+                <button key={s.id} type="button"
+                  disabled={taken || anyBusy}
+                  onClick={() => onPick(s)}
+                  className={`text-[11px] px-2 py-1 rounded-lg border font-mono tabular-nums ${
+                    taken
+                      ? "border-slate-200 bg-slate-100 text-slate-400 line-through cursor-not-allowed"
+                      : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                  } ${busy ? "opacity-50" : ""}`}>
+                  {s.start_time}–{s.end_time}{taken ? " · ไม่ว่าง" : ""}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
