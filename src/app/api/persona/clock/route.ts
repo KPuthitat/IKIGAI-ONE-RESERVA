@@ -33,7 +33,10 @@ const Body = z.object({
   // by a strict boundary while a low-accuracy one still has to be
   // clearly inside.
   gpsAccuracy: z.number().min(0).max(10000).optional(),
-  qrToken: z.string().max(64).optional()
+  qrToken: z.string().max(64).optional(),
+  // Explicit clock direction from the split เข้า/ออก buttons (owner
+  // 2026-06-09). When omitted, the server auto-decides (back-compat).
+  intent: z.enum(["in", "out"]).optional()
 });
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
@@ -181,8 +184,33 @@ export async function POST(req: Request) {
   // ตัดสินใจ action + ตรวจ correction window
   let action: "in" | "out";
   let existing: { id: number; ts: string } | null = null;
+  const intent = parsed.data.intent;
 
-  if (!firstIn) {
+  if (intent === "out") {
+    // Explicit clock-OUT (split buttons). Cannot clock out without a
+    // clock-in today — this is the root fix for "ลืมกดเข้า แล้วกดออก
+    // กลายเป็นเวลาเข้า" (owner 2026-06-09). Staff must certify the missing
+    // clock-in first.
+    if (!firstIn) {
+      return NextResponse.json({ error: "no_clock_in_today" }, { status: 409 });
+    }
+    if (firstOut) {
+      if (outAge < FIVE_MIN_MS) { action = "out"; existing = { id: firstOut.id, ts: firstOut.ts }; }
+      else return NextResponse.json({ error: "already_done_today" }, { status: 409 });
+    } else {
+      action = "out";
+    }
+  } else if (intent === "in") {
+    // Explicit clock-IN. If already clocked in earlier today (outside the
+    // 5-min self-fix), refuse rather than silently flipping to an OUT.
+    if (firstIn) {
+      if (inAge < FIVE_MIN_MS) { action = "in"; existing = { id: firstIn.id, ts: firstIn.ts }; }
+      else return NextResponse.json({ error: "already_clocked_in" }, { status: 409 });
+    } else {
+      action = "in";
+    }
+  } else if (!firstIn) {
+    // ── Legacy auto-decide (no intent sent) ──
     action = "in";
   } else if (!firstOut) {
     if (inAge < FIVE_MIN_MS) {

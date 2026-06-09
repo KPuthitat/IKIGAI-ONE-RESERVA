@@ -126,6 +126,13 @@ export default function TimeClockClient({
     }
   }
 
+  // Split เข้า/ออก buttons (owner 2026-06-09): เข้างาน is available when a
+  // clock-in is still expected (or within the 5-min in-correction window);
+  // ออกงาน only once a clock-in exists and the day isn't finished. The
+  // server enforces the same rule (no clock-out without a clock-in).
+  const canIn = nextAction === "in";
+  const canOut = !!firstInTs && nextAction !== "done";
+
   const statusBadge: "in" | "out" | "done" =
     nextAction === "done"
       ? "done"
@@ -165,6 +172,9 @@ export default function TimeClockClient({
             <ClockAction
               key={`${nextAction}-${firstInTs ?? ""}-${firstOutTs ?? ""}`}
               action={nextAction}
+              canIn={canIn}
+              canOut={canOut}
+              hasClockIn={!!firstInTs}
               correctable={nextAction === "in" ? inCorrectable : outCorrectable}
               onSuccess={() => router.refresh()}
               branchName={branchName}
@@ -249,6 +259,9 @@ function StatusBadge({ state }: { state: "in" | "out" | "done" }) {
 // ── Clock action ─────────────────────────────────────────────────────
 function ClockAction({
   action,
+  canIn,
+  canOut,
+  hasClockIn,
   correctable,
   onSuccess,
   branchName,
@@ -262,6 +275,9 @@ function ClockAction({
   todayBkk
 }: {
   action: "in" | "out";
+  canIn: boolean;
+  canOut: boolean;
+  hasClockIn: boolean;
   correctable: boolean;
   onSuccess: () => void;
   branchName: string | null;
@@ -280,6 +296,9 @@ function ClockAction({
   const [pin, setPin] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [actualAction, setActualAction] = useState<"in" | "out">(action);
+  // Which button the user pressed (split เข้า/ออก) — sent to the server as
+  // `intent` and used for the PIN-screen copy.
+  const [chosenIntent, setChosenIntent] = useState<"in" | "out">(action);
   const [replaceState, setReplaceState] = useState<ReplaceState | null>(null);
   const [owlPrompt, setOwlPrompt] = useState<OwlPrompt | null>(null);
   // Shift-swap / late-early prompt (owner 2026-06-08).
@@ -483,7 +502,8 @@ function ClockAction({
   // When the user taps Clock In / Out, kick off the parallel
   // captures so by the time they finish the PIN keypad the gates
   // are usually green.
-  function onTapClockButton() {
+  function onTapClockButton(intent: "in" | "out") {
+    setChosenIntent(intent);
     setPhase("pin");
     if (geofenceEnabled && !gpsCoords) captureGps();
   }
@@ -508,7 +528,7 @@ function ClockAction({
     setPhase("saving");
     setErrorMsg(null);
     try {
-      const body: Record<string, unknown> = { pin: currentPin };
+      const body: Record<string, unknown> = { pin: currentPin, intent: chosenIntent };
       if (replaceTs !== undefined) body.replaceTs = replaceTs;
       if (gpsCoords) {
         body.lat = gpsCoords.lat;
@@ -527,6 +547,8 @@ function ClockAction({
         if (data.error === "wrong_pin") setErrorMsg(t("staff.persona.pinWrong"));
         else if (data.error === "rate_limited") setErrorMsg(t("staff.persona.tooManyAttempts", { n: data.retryAfterSec ?? 60 }));
         else if (data.error === "already_done_today") setErrorMsg(t("staff.persona.alreadyDoneToday"));
+        else if (data.error === "no_clock_in_today") setErrorMsg("ยังไม่ได้ลงเวลาเข้างานวันนี้ — กรุณาไปรับรองเวลาเข้าก่อนครับ");
+        else if (data.error === "already_clocked_in") setErrorMsg("วันนี้ลงเวลาเข้างานไปแล้วครับ");
         else if (data.error === "gps_required") setErrorMsg(t("staff.persona.gps.required"));
         else if (data.error === "out_of_geofence") {
           // Simplified copy — distance/radius detail dropped per
@@ -628,16 +650,41 @@ function ClockAction({
   if (phase === "idle") {
     return (
       <>
-        <button
-          onClick={onTapClockButton}
-          className={`w-full py-5 rounded-2xl text-lg font-bold transition active:scale-95 ${
-            action === "in"
-              ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-[0_4px_16px_rgba(16,185,129,.4)]"
-              : "bg-amber-500 hover:bg-amber-600 text-white shadow-[0_4px_16px_rgba(245,158,11,.4)]"
-          }`}
-        >
-          {action === "in" ? t("staff.persona.clockIn") : t("staff.persona.clockOut")}
-        </button>
+        {/* Split เข้า/ออก buttons (owner 2026-06-09). ออกงาน is disabled
+            until a clock-in exists — staff who forgot to clock in must
+            certify it first instead of clocking out (which used to record
+            their leave time as a clock-IN). */}
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => onTapClockButton("in")}
+            disabled={!canIn}
+            className={`py-5 rounded-2xl text-lg font-bold transition active:scale-95 ${
+              canIn
+                ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-[0_4px_16px_rgba(16,185,129,.4)]"
+                : "bg-slate-100 text-slate-400 cursor-not-allowed"
+            }`}
+          >
+            {t("staff.persona.clockIn")}
+          </button>
+          <button
+            onClick={() => onTapClockButton("out")}
+            disabled={!canOut}
+            className={`py-5 rounded-2xl text-lg font-bold transition active:scale-95 ${
+              canOut
+                ? "bg-amber-500 hover:bg-amber-600 text-white shadow-[0_4px_16px_rgba(245,158,11,.4)]"
+                : "bg-slate-100 text-slate-400 cursor-not-allowed"
+            }`}
+          >
+            {t("staff.persona.clockOut")}
+          </button>
+        </div>
+        {!hasClockIn && (
+          <p className="text-xs text-amber-700 mt-2">
+            ยังไม่ได้ลงเวลาเข้างานวันนี้ — หากลืมกดเข้า กรุณา{" "}
+            <a href="/staff/persona/time-certification" className="underline font-medium">ไปรับรองเวลาเข้า</a>
+            {" "}ก่อนจึงจะลงเวลาออกได้ครับ
+          </p>
+        )}
         {correctable && (
           <p className="text-xs text-slate-500 mt-2">
             {t("staff.persona.correctable")}
@@ -873,7 +920,7 @@ function ClockAction({
   return (
     <div className="space-y-3">
       <div className="text-sm text-slate-600">
-        {action === "in" ? t("staff.persona.pinPrompt.in") : t("staff.persona.pinPrompt.out")}
+        {chosenIntent === "in" ? t("staff.persona.pinPrompt.in") : t("staff.persona.pinPrompt.out")}
       </div>
 
       {/* Anti-cheat gate status — single centered banner per gate.
