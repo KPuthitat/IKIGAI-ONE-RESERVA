@@ -190,8 +190,86 @@ export type InventaItem = {
   pick_freq: PickFreq | null;
   safety_stock: number;
   current_qty: number;
+  /** Optional larger packaging unit, e.g. "กล่อง"/"ลัง"/"แผง". Null when
+   *  the item is only handled in its smallest unit. */
+  pack_unit: string | null;
+  /** How many smallest-units one pack holds (e.g. 10 = 1 กล่อง = 10 เม็ด).
+   *  Null or ≤ 1 means "no pack" — all quantities stay in the base unit. */
+  pack_size: number | null;
   active: number;
   created_by: number | null;
   created_at: string;
   updated_at: string | null;
 };
+
+// ── Pack ↔ smallest-unit conversion (N5) ───────────────────────────
+// The base unit is always the source of truth for stored quantities
+// (current_qty / order_qty / counted_qty). A pack is a data-entry +
+// display convenience layered on top, so totals / unit_cost never
+// change. These helpers all degrade gracefully when the item has no
+// pack defined.
+
+/** True when the item has a usable pack definition (a label + size > 1). */
+export function hasPack(
+  item: { pack_unit?: string | null; pack_size?: number | null } | null | undefined
+): boolean {
+  if (!item) return false;
+  const size = Number(item.pack_size);
+  return !!(item.pack_unit && item.pack_unit.trim()) && isFinite(size) && size > 1;
+}
+
+/** Split a base-unit quantity into whole packs + the loose remainder.
+ *  packSize ≤ 1 → everything is "loose". */
+export function packBreakdown(
+  baseQty: number,
+  packSize: number | null | undefined
+): { packs: number; loose: number } {
+  const size = Number(packSize);
+  if (!isFinite(size) || size <= 1) return { packs: 0, loose: Math.max(0, Math.trunc(baseQty)) };
+  const q = Math.max(0, Math.trunc(baseQty));
+  return { packs: Math.floor(q / size), loose: q % size };
+}
+
+/** Convert a (packs, loose) entry back into a base-unit quantity. */
+export function packToBase(
+  packs: number,
+  loose: number,
+  packSize: number | null | undefined
+): number {
+  const size = Number(packSize);
+  const p = Math.max(0, Math.trunc(Number(packs) || 0));
+  const l = Math.max(0, Math.trunc(Number(loose) || 0));
+  if (!isFinite(size) || size <= 1) return l + p; // no pack → treat packs as units too
+  return p * size + l;
+}
+
+/** Human breakdown of a base-unit quantity, e.g. "5 กล่อง + 2 เม็ด".
+ *  Returns null when the item has no pack (caller shows the plain qty).
+ *  unitLabel is the smallest-unit label (item.unit). */
+export function formatPackBreakdown(
+  baseQty: number,
+  item: { pack_unit?: string | null; pack_size?: number | null },
+  unitLabel: string | null | undefined
+): string | null {
+  if (!hasPack(item)) return null;
+  const { packs, loose } = packBreakdown(baseQty, item.pack_size);
+  const pu = (item.pack_unit ?? "").trim();
+  const u = (unitLabel ?? "").trim();
+  const parts: string[] = [];
+  if (packs > 0) parts.push(`${packs.toLocaleString("th-TH")} ${pu}`);
+  if (loose > 0 || packs === 0) parts.push(`${loose.toLocaleString("th-TH")}${u ? ` ${u}` : ""}`);
+  return parts.join(" + ");
+}
+
+/** Short "1 กล่อง = 10 เม็ด" relationship caption for forms/labels.
+ *  Returns null when the item has no pack. */
+export function packRelationCaption(
+  item: { pack_unit?: string | null; pack_size?: number | null },
+  unitLabel: string | null | undefined
+): string | null {
+  if (!hasPack(item)) return null;
+  const pu = (item.pack_unit ?? "").trim();
+  const u = (unitLabel ?? "").trim() || "หน่วย";
+  const size = Number(item.pack_size);
+  return `1 ${pu} = ${size.toLocaleString("th-TH")} ${u}`;
+}

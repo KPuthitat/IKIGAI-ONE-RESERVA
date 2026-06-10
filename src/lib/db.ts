@@ -3669,6 +3669,20 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE inventa_items ADD COLUMN cost_price REAL");
   }
 
+  // inventa_items: pack_unit + pack_size (N5, owner 2026-06-10). An
+  // OPTIONAL larger packaging unit + how many smallest-units it holds,
+  // e.g. 1 กล่อง = 10 เม็ด. Lets staff count + order in packs while the
+  // base quantities (current_qty / order_qty / counted_qty) stay in the
+  // smallest unit — pack is purely a data-entry + display convenience,
+  // so unit_cost / totals are unaffected. NULL pack_unit or pack_size<=1
+  // → the item has no pack concept and everything behaves as before.
+  if (!invCols.some((c) => c.name === "pack_unit")) {
+    db.exec("ALTER TABLE inventa_items ADD COLUMN pack_unit TEXT");
+  }
+  if (!invCols.some((c) => c.name === "pack_size")) {
+    db.exec("ALTER TABLE inventa_items ADD COLUMN pack_size REAL");
+  }
+
   // inventa_suppliers: code + display_order
   const supplierCols = db.prepare("PRAGMA table_info(inventa_suppliers)")
     .all() as Array<{ name: string }>;

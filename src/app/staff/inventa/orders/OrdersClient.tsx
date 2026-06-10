@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
-import { binCode, type PickFreq } from "@/lib/inventa";
+import { binCode, hasPack, formatPackBreakdown, type PickFreq } from "@/lib/inventa";
 
 export type LowStockItem = {
   id: number;
@@ -26,6 +26,10 @@ export type LowStockItem = {
    *  control regardless of receipt history. Null = use unit_cost. */
   cost_price: number | null;
   supplier_name: string | null;
+  /** N5 pack — surfaces "= N กล่อง" next to the order qty so staff can
+   *  round to whole packs. Null when the item has no pack. */
+  pack_unit: string | null;
+  pack_size: number | null;
 };
 
 /** Pick the per-unit cost used in PO totals. cost_price wins; if
@@ -438,6 +442,13 @@ export default function OrdersClient({
                           เม็ด/ขวด/กล่อง/แอมป์ differ in width). */}
                       <span className="text-[11px] text-slate-500 inline-block w-12 text-left">{it.unit ?? t("inv.ord.unit")}</span>
                     </div>
+                    {/* N5 pack equivalent — helps staff round to whole
+                        packs (e.g. 50 เม็ด = 5 กล่อง). */}
+                    {checked && qty > 0 && hasPack(it) && (
+                      <div className="w-full text-right text-[11px] text-emerald-700 -mt-0.5">
+                        = {formatPackBreakdown(qty, it, it.unit)}
+                      </div>
+                    )}
                     {/* Per-line live preview — appears only when the
                         row is selected so the unchecked rows stay
                         quiet. Right-aligned to match qty column. */}

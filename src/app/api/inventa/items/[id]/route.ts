@@ -31,7 +31,9 @@ const Body = z.object({
   grid_col: z.number().int().min(1).max(6).nullable().optional(),
   pick_freq: z.enum(["R", "Y", "G"]).nullable().optional(),
   safety_stock: z.number().int().min(0).optional(),
-  current_qty: z.number().int().min(0).optional()
+  current_qty: z.number().int().min(0).optional(),
+  pack_unit: z.string().max(40).nullable().optional(),
+  pack_size: z.number().min(0).nullable().optional()
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -80,6 +82,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   set("pick_freq", d.pick_freq);
   set("safety_stock", d.safety_stock);
   set("current_qty", d.current_qty);
+  set("pack_unit", d.pack_unit);
+  // Normalise pack_size: anything ≤ 1 means "no pack" → store NULL.
+  if (d.pack_size !== undefined) {
+    set("pack_size", d.pack_size != null && d.pack_size > 1 ? d.pack_size : null);
+  }
   // Recompute unit_cost from the purchase line when either part is
   // supplied; else honour a directly-typed unit_cost.
   if ("last_purchase_price" in d || "last_purchase_units" in d) {

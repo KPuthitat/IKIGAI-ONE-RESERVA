@@ -7,7 +7,7 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import BarcodeScanner from "@/app/components/BarcodeScanner";
 import {
-  PICK_FREQ_META, isLowStock, expiryBucket,
+  PICK_FREQ_META, isLowStock, expiryBucket, packRelationCaption,
   type PickFreq, type ItemType, type InventaSupplier, type InventaLookup,
   type InventaItemLot, type ExpiryBucket
 } from "@/lib/inventa";
@@ -59,6 +59,8 @@ type Item = {
   pick_freq: PickFreq | null;
   safety_stock: number;
   current_qty: number;
+  pack_unit: string | null;
+  pack_size: number | null;
   /** Soonest lot expiry across this item's still-positive-qty lots,
    *  or null when no lots are tracked or none are dated. Drives the
    *  row tinting (#93) so expired/critical items are obvious in the
@@ -464,7 +466,12 @@ export default function InventaClient({
                       {i.supplier_name ?? t("inv.dash")}
                     </div>
                   </td>
-                  <td className="py-2 pr-2 text-slate-600 text-xs whitespace-nowrap">{i.unit ?? t("inv.dash")}</td>
+                  <td className="py-2 pr-2 text-slate-600 text-xs whitespace-nowrap">
+                    {i.unit ?? t("inv.dash")}
+                    {packRelationCaption(i, i.unit) && (
+                      <div className="text-[10px] text-emerald-700">{packRelationCaption(i, i.unit)}</div>
+                    )}
+                  </td>
                   <td className="py-2 pr-3 text-right text-slate-700">
                     {/* Show the EFFECTIVE cost (owner-pinned ราคาทุน wins,
                         else derived unit_cost) so an edit to ราคาทุน
@@ -614,7 +621,10 @@ function ItemModal({
     grid_col: base.grid_col != null ? String(base.grid_col) : "",
     pick_freq: (base.pick_freq ?? "") as PickFreq | "",
     safety_stock: base.safety_stock != null ? String(base.safety_stock) : "50",
-    current_qty: base.current_qty != null ? String(base.current_qty) : "0"
+    current_qty: base.current_qty != null ? String(base.current_qty) : "0",
+    // N5 pack: optional larger packaging unit + units per pack.
+    pack_unit: base.pack_unit ?? "",
+    pack_size: base.pack_size != null ? String(base.pack_size) : ""
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -654,7 +664,10 @@ function ItemModal({
         grid_col: f.grid_col ? Number(f.grid_col) : null,
         pick_freq: f.pick_freq || null,
         safety_stock: Number(f.safety_stock) || 0,
-        current_qty: Number(f.current_qty) || 0
+        current_qty: Number(f.current_qty) || 0,
+        // N5 pack — empty / ≤1 size means "no pack".
+        pack_unit: f.pack_unit.trim() || null,
+        pack_size: f.pack_size !== "" ? Number(f.pack_size) : null
       };
       const res = item
         ? await fetch(apiUrl(`/api/inventa/items/${item.id}`), {
@@ -881,6 +894,35 @@ function ItemModal({
               ))}
             </select>
           </div>
+        </div>
+
+        {/* Pack / bulk unit (N5) — optional. Lets staff count + order in
+            packs (e.g. 1 กล่อง = 10 เม็ด); stock still stored in base unit. */}
+        <div className="border-t border-slate-200 pt-3">
+          <div className="text-xs font-bold text-slate-700 mb-2">หน่วยบรรจุ (แพ็ค) — ถ้ามี</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">ชื่อหน่วยแพ็ค</label>
+              <input className="input" value={f.pack_unit}
+                onChange={(e) => up("pack_unit", e.target.value)}
+                placeholder="เช่น กล่อง / ลัง / แผง" />
+            </div>
+            <div>
+              <label className="label">1 แพ็ค = กี่{f.unit || "หน่วย"}</label>
+              <input className="input" type="number" min="0" step="1"
+                value={f.pack_size}
+                onChange={(e) => up("pack_size", e.target.value)}
+                placeholder="เช่น 10" />
+            </div>
+          </div>
+          {f.pack_unit.trim() && Number(f.pack_size) > 1 && (
+            <p className="text-[11px] text-emerald-700 mt-1.5 font-semibold">
+              1 {f.pack_unit.trim()} = {Number(f.pack_size).toLocaleString("th-TH")} {f.unit || "หน่วย"}
+            </p>
+          )}
+          <p className="text-[10px] text-slate-400 mt-1">
+            ช่วยกรอกตอนนับสต๊อก/สั่งซื้อเป็นแพ็ค — จำนวนคงคลังยังเก็บเป็นหน่วยเล็กสุด
+          </p>
         </div>
 
         {/* Lots & expiry — only available once the item exists

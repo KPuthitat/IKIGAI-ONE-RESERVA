@@ -42,7 +42,11 @@ const Body = z.object({
   grid_col: z.number().int().min(1).max(6).nullable().optional(),
   pick_freq: z.enum(["R", "Y", "G"]).nullable().optional(),
   safety_stock: z.number().int().min(0).default(50),
-  current_qty: z.number().int().min(0).default(0)
+  current_qty: z.number().int().min(0).default(0),
+  // N5 pack: optional larger packaging unit + units-per-pack. Pure
+  // data-entry convenience; base quantities stay in the smallest unit.
+  pack_unit: z.string().max(40).nullable().optional(),
+  pack_size: z.number().min(0).nullable().optional()
 });
 
 export async function GET(req: Request) {
@@ -101,8 +105,8 @@ export async function POST(req: Request) {
        category, storage_location, item_type, item_type_label, unit, unit_cost, cost_price,
        last_purchase_price, last_purchase_units, price_opd, price_ipd,
        price_uc, supplier_id, grid_row, grid_col, pick_freq,
-       safety_stock, current_qty, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       safety_stock, current_qty, pack_unit, pack_size, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     user.activeBranchId ?? null,
     d.item_code ?? null, d.barcode ?? null, d.name.trim(),
@@ -112,7 +116,9 @@ export async function POST(req: Request) {
     d.last_purchase_price ?? null, d.last_purchase_units ?? null,
     d.price_opd ?? null, d.price_ipd ?? null, d.price_uc ?? null,
     d.supplier_id ?? null, d.grid_row ?? null, d.grid_col ?? null,
-    d.pick_freq ?? null, d.safety_stock, d.current_qty, user.id
+    d.pick_freq ?? null, d.safety_stock, d.current_qty,
+    d.pack_unit ?? null, (d.pack_size != null && d.pack_size > 1 ? d.pack_size : null),
+    user.id
   );
   return NextResponse.json({ ok: true, id: Number(info.lastInsertRowid) });
 }

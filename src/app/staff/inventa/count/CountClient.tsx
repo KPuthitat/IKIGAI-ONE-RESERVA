@@ -6,7 +6,10 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import BarcodeScanner from "@/app/components/BarcodeScanner";
 import PinPromptModal from "@/app/components/PinPromptModal";
-import { PICK_FREQ_META, type PickFreq } from "@/lib/inventa";
+import {
+  PICK_FREQ_META, hasPack, packToBase, packBreakdown, packRelationCaption,
+  type PickFreq
+} from "@/lib/inventa";
 
 export type CountSession = {
   id: number;
@@ -36,6 +39,8 @@ export type CountItem = {
   item_type?: string | null;
   storage_location?: string | null;
   supplier_name?: string | null;
+  pack_unit?: string | null;
+  pack_size?: number | null;
 };
 
 export default function CountClient({
@@ -55,6 +60,9 @@ export default function CountClient({
   const [counted, setCounted] = useState<Record<number, number>>(initialCounted);
   const [sel, setSel] = useState<CountItem | null>(null);
   const [qty, setQty] = useState("");
+  // N5 pack-entry aid: typing packs + loose computes the base qty.
+  const [packIn, setPackIn] = useState("");
+  const [looseIn, setLooseIn] = useState("");
   const [scanCam, setScanCam] = useState(false);
   const [q, setQ] = useState("");
   // Filters — mirror the catalogue page (pick frequency + category) plus
@@ -122,7 +130,26 @@ export default function CountClient({
   function pick(item: CountItem) {
     setSel(item);
     setMsg(null);
-    setQty(counted[item.id] !== undefined ? String(counted[item.id]) : "");
+    const existing = counted[item.id];
+    setQty(existing !== undefined ? String(existing) : "");
+    // Seed the pack/loose aid from the existing value (or blank).
+    if (hasPack(item) && existing !== undefined) {
+      const { packs, loose } = packBreakdown(existing, item.pack_size);
+      setPackIn(String(packs));
+      setLooseIn(String(loose));
+    } else {
+      setPackIn("");
+      setLooseIn("");
+    }
+  }
+
+  // Recompute the base-unit qty from the pack + loose aid inputs.
+  function syncPackToQty(nextPack: string, nextLoose: string) {
+    if (!sel) return;
+    setPackIn(nextPack);
+    setLooseIn(nextLoose);
+    const base = packToBase(Number(nextPack) || 0, Number(nextLoose) || 0, sel.pack_size);
+    setQty(String(base));
   }
 
   function resolveBarcode(code: string) {
@@ -383,6 +410,31 @@ export default function CountClient({
               onChange={(e) => setQty(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") saveLine(); }} />
           </div>
+
+          {/* Pack-entry aid (N5) — count in packs + loose; computes the
+              base-unit qty that's actually saved. */}
+          {hasPack(sel) && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 space-y-1.5">
+              <div className="text-[11px] text-emerald-800 font-semibold">
+                กรอกเป็นแพ็คได้ · {packRelationCaption(sel, sel.unit)}
+              </div>
+              <div className="flex items-center gap-2 text-sm flex-wrap">
+                <input className="input !w-20 text-center" type="number" min="0"
+                  value={packIn} placeholder="0"
+                  onChange={(e) => syncPackToQty(e.target.value, looseIn)} />
+                <span className="text-slate-600">{sel.pack_unit}</span>
+                <span className="text-slate-400">+</span>
+                <input className="input !w-20 text-center" type="number" min="0"
+                  value={looseIn} placeholder="0"
+                  onChange={(e) => syncPackToQty(packIn, e.target.value)} />
+                <span className="text-slate-600">{sel.unit}</span>
+                <span className="text-slate-400">=</span>
+                <span className="font-bold text-emerald-700">
+                  {(Number(qty) || 0).toLocaleString("th-TH")} {sel.unit}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Condition / expiry flag (owner 2026-06-06) — tap if this item
               on the shelf is near-expiry, expired, or deteriorated. Sends

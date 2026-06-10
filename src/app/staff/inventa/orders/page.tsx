@@ -32,7 +32,7 @@ export default function InventaOrdersPage() {
     SELECT i.id, i.name, i.item_code, i.unit,
            i.grid_row, i.grid_col, i.pick_freq,
            i.current_qty, i.safety_stock,
-           i.unit_cost, i.cost_price,
+           i.unit_cost, i.cost_price, i.pack_unit, i.pack_size,
            s.name AS supplier_name
     FROM inventa_items i
     LEFT JOIN inventa_suppliers s ON s.id = i.supplier_id
@@ -57,7 +57,7 @@ export default function InventaOrdersPage() {
     SELECT i.id, i.name, i.item_code, i.unit,
            i.grid_row, i.grid_col, i.pick_freq,
            i.current_qty, i.safety_stock,
-           i.unit_cost, i.cost_price,
+           i.unit_cost, i.cost_price, i.pack_unit, i.pack_size,
            s.name AS supplier_name
     FROM inventa_items i
     LEFT JOIN inventa_suppliers s ON s.id = i.supplier_id
