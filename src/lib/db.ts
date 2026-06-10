@@ -4166,6 +4166,12 @@ function runMigrations(db: Database.Database): void {
       ON recruita_interview_slots(booked_application_id);
   `);
 
+  // 2026-06-10 Stage-change requests no longer expire (owner). Resurrect
+  // any request that the old 24h TTL already auto-expired so a second
+  // admin can still approve it. Safe + effectively one-time: once the
+  // no-expiry code is live, no new 'expired' rows are ever created.
+  db.exec("UPDATE recruita_stage_change_requests SET status = 'pending' WHERE status = 'expired'");
+
   // 2026-06-01 NOTE — an earlier draft of this migration added
   //   users.admin_pin_hash + admin_pin_set_at + admin_pin_failed_attempts
   //   + admin_pin_locked_until

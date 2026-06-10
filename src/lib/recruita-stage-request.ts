@@ -18,9 +18,6 @@ import { getDb } from "./db";
 import type { ApplicationStage, PendingStageTag } from "./recruita";
 import { notifyStageChange, notifyExecGroupStageChange } from "./recruita-notify";
 
-/** How long a pending request stays valid before it's auto-expired. */
-const REQUEST_TTL_HOURS = 24;
-
 export type StageRequestRow = {
   id: number;
   application_id: number;
@@ -48,15 +45,8 @@ export type StageRequestRow = {
  *  in the past to status='expired' (read-time GC). */
 export function getActivePendingRequest(applicationId: number): StageRequestRow | null {
   const db = getDb();
-  // GC sweep — cheap, only touches expired rows for this application.
-  db.prepare(`
-    UPDATE recruita_stage_change_requests
-       SET status = 'expired'
-     WHERE application_id = ?
-       AND status = 'pending'
-       AND expires_at < CURRENT_TIMESTAMP
-  `).run(applicationId);
-
+  // Owner 2026-06-10: stage-change requests no longer expire — they wait
+  // until a second admin approves/cancels. (No read-time GC sweep.)
   const row = db.prepare(`
     SELECT r.*,
            ur.display_name AS requester_name,
@@ -100,14 +90,7 @@ export function getActivePendingRequestsForApplications(
   const map = new Map<number, StageRequestRow>();
   if (applicationIds.length === 0) return map;
   const db = getDb();
-  // Read-time GC across all pending rows — only touches expired ones.
-  db.prepare(`
-    UPDATE recruita_stage_change_requests
-       SET status = 'expired'
-     WHERE status = 'pending'
-       AND expires_at < CURRENT_TIMESTAMP
-  `).run();
-
+  // Owner 2026-06-10: no expiry GC — pending requests stay until decided.
   const placeholders = applicationIds.map(() => "?").join(",");
   const rows = db.prepare(`
     SELECT r.*,
@@ -147,7 +130,9 @@ export function createStageRequest(args: {
     return { ok: false, error: "pending_request_exists" };
   }
   const db = getDb();
-  const expiresAt = new Date(Date.now() + REQUEST_TTL_HOURS * 3600 * 1000).toISOString();
+  // Owner 2026-06-10: requests don't expire. expires_at is NOT NULL so we
+  // still write it, but far in the future so any legacy check passes.
+  const expiresAt = new Date(Date.now() + 100 * 365 * 24 * 3600 * 1000).toISOString();
   const info = db.prepare(`
     INSERT INTO recruita_stage_change_requests
       (application_id, from_stage, to_stage, requested_by, expires_at)
@@ -180,12 +165,8 @@ export async function approveStageRequest(args: {
   } | undefined;
   if (!req) return { ok: false, error: "not_found" };
   if (req.status !== "pending") return { ok: false, error: `status_${req.status}` };
-  if (new Date(req.expires_at).getTime() < Date.now()) {
-    // Mark expired so future reads see the right state.
-    db.prepare("UPDATE recruita_stage_change_requests SET status = 'expired' WHERE id = ?")
-      .run(args.requestId);
-    return { ok: false, error: "expired" };
-  }
+  // Owner 2026-06-10: no expiry — a pending request stays valid until a
+  // second admin approves or someone cancels it.
   if (req.requested_by === args.approverUserId) {
     return { ok: false, error: "same_user_cannot_approve" };
   }
