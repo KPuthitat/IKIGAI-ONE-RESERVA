@@ -84,15 +84,18 @@ export default function PayrollHubPage() {
     FROM payroll_settings WHERE id = 1
   `).get() as Settings | undefined;
 
-  // All existing periods (used by picker to mark "already created")
+  // Existing periods for THIS branch (owner 2026-06-10: payroll is now
+  // per-branch). Legacy periods created before branch scoping carry
+  // branch_id NULL and still show everywhere so nothing disappears.
   const existing = db.prepare(`
     SELECT p.id, p.cycle, p.target, p.period_start, p.period_end, p.pay_date, p.status,
            (SELECT SUM(gross_pay) FROM payroll_lines WHERE period_id = p.id) AS total_gross,
            (SELECT SUM(net_pay)   FROM payroll_lines WHERE period_id = p.id) AS total_net,
            (SELECT COUNT(*)       FROM payroll_lines WHERE period_id = p.id) AS line_count
     FROM payroll_periods p
+    WHERE p.branch_id = ? OR p.branch_id IS NULL
     ORDER BY p.period_end DESC, p.id DESC
-  `).all() as ExistingPeriod[];
+  `).all(branch.id) as ExistingPeriod[];
 
   // Recent periods table (last 12)
   const recent = existing.slice(0, 12);

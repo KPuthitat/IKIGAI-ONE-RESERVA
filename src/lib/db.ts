@@ -2553,6 +2553,66 @@ function runMigrations(db: Database.Database): void {
     `);
   }
 
+  // 2026-06-10 Per-branch payroll periods. payroll_periods was global, so
+  // computePayrollPeriod pulled EVERY employee across all branches into a
+  // single period (owner: NAMA's FT payroll listed AT HOME staff). Add
+  // branch_id + widen UNIQUE to include it so each branch keeps its own
+  // period for the same dates. foreign_keys is OFF during the swap
+  // (payroll_lines references this table) so the DROP can't cascade-delete
+  // the lines; legacy rows carry branch_id = NULL (treated as "all
+  // branches" by the compute fallback).
+  const ppBranchSql = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='payroll_periods'"
+  ).get() as { sql: string } | undefined;
+  if (ppBranchSql && !ppBranchSql.sql.includes("branch_id")) {
+    db.exec("PRAGMA foreign_keys = OFF");
+    db.exec(`
+      CREATE TABLE payroll_periods_b (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cycle TEXT NOT NULL CHECK (cycle IN ('weekly','monthly')),
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        pay_date TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft'
+          CHECK (status IN ('draft','finalized','cancelled','paid')),
+        ot_mode_snapshot TEXT,
+        ot_flat_per_15min_snapshot REAL,
+        computed_by INTEGER REFERENCES users(id),
+        computed_at TEXT,
+        finalized_by INTEGER REFERENCES users(id),
+        finalized_at TEXT,
+        notes TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        target TEXT NOT NULL DEFAULT 'all',
+        paid_at TEXT,
+        paid_by INTEGER REFERENCES users(id),
+        data_source TEXT NOT NULL DEFAULT 'auto',
+        branch_id INTEGER REFERENCES branches(id),
+        UNIQUE (cycle, period_start, period_end, branch_id)
+      );
+      INSERT INTO payroll_periods_b
+        (id, cycle, period_start, period_end, pay_date, status,
+         ot_mode_snapshot, ot_flat_per_15min_snapshot,
+         computed_by, computed_at, finalized_by, finalized_at,
+         notes, created_by, created_at, target, paid_at, paid_by, data_source, branch_id)
+      SELECT id, cycle, period_start, period_end, pay_date, status,
+             ot_mode_snapshot, ot_flat_per_15min_snapshot,
+             computed_by, computed_at, finalized_by, finalized_at,
+             notes, created_by, created_at, target, paid_at, paid_by, data_source, NULL
+      FROM payroll_periods;
+      DROP TABLE payroll_periods;
+      ALTER TABLE payroll_periods_b RENAME TO payroll_periods;
+      CREATE INDEX IF NOT EXISTS idx_payroll_periods_dates
+        ON payroll_periods(period_start, period_end);
+      CREATE INDEX IF NOT EXISTS idx_payroll_periods_status
+        ON payroll_periods(status, period_end);
+      CREATE INDEX IF NOT EXISTS idx_payroll_periods_branch
+        ON payroll_periods(branch_id, period_end);
+    `);
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+
   // ─────────────────────────────────────────────────────────────
   // TC-P (Profile Phase A) — multi-tenant companies + expanded
   // employee fields + disciplinary warning system.

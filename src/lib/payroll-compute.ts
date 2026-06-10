@@ -851,13 +851,14 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   skipped: number;
 } {
   const period = db.prepare(`
-    SELECT id, cycle, target, data_source, period_start, period_end, status
+    SELECT id, cycle, target, data_source, period_start, period_end, status, branch_id
     FROM payroll_periods WHERE id = ?
   `).get(periodId) as {
     id: number; cycle: "weekly" | "monthly";
     target: "pt" | "ft" | "all";
     data_source: "auto" | "manual";
     period_start: string; period_end: string; status: string;
+    branch_id: number | null;
   } | undefined;
   if (!period) throw new Error("period_not_found");
   if (period.status !== "draft") throw new Error("period_not_draft");
@@ -946,6 +947,12 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   } else {
     staffWhere = "employment_type = 'ft' AND pay_cycle = 'monthly'";
   }
+  // Branch scoping (owner 2026-06-10): a branch-stamped period only
+  // includes employees assigned to that branch (user_branches). Legacy
+  // periods (branch_id NULL) keep the old all-branches behaviour.
+  const branchClause = period.branch_id != null
+    ? "AND EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = users.id AND ub.branch_id = @bid)"
+    : "";
   const staffSql = `
     SELECT id AS user_id, display_name, employment_type, employee_code,
            hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
@@ -953,16 +960,23 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     WHERE role IN ('staff', 'admin') AND employment_type IS NOT NULL
       AND is_test_account = 0
       AND ${staffWhere}
+      ${branchClause}
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
   `;
-  const staff = db.prepare(staffSql).all() as EmployeePayrollSnapshot[];
+  const staff = (period.branch_id != null
+    ? db.prepare(staffSql).all({ bid: period.branch_id })
+    : db.prepare(staffSql).all()) as EmployeePayrollSnapshot[];
 
-  // All time entries in range
-  const entries = db.prepare(`
-    SELECT user_id, ts, type FROM time_entries
-    WHERE ts >= ? AND ts <= ?
-  `).all(fromIso, toIso) as Entry[];
+  // Time entries in range — scoped to the period's branch when set, so a
+  // multi-branch employee's hours/punches only count for the right branch.
+  const entries = (period.branch_id != null
+    ? db.prepare(
+        "SELECT user_id, ts, type FROM time_entries WHERE ts >= ? AND ts <= ? AND branch_id = ?"
+      ).all(fromIso, toIso, period.branch_id)
+    : db.prepare(
+        "SELECT user_id, ts, type FROM time_entries WHERE ts >= ? AND ts <= ?"
+      ).all(fromIso, toIso)) as Entry[];
   const entriesByUser = new Map<number, Entry[]>();
   for (const e of entries) {
     if (!entriesByUser.has(e.user_id)) entriesByUser.set(e.user_id, []);
@@ -1148,12 +1162,13 @@ export function recomputeLine(
   db: Database.Database, periodId: number, userId: number
 ): void {
   const period = db.prepare(`
-    SELECT id, cycle, data_source, period_start, period_end, status
+    SELECT id, cycle, data_source, period_start, period_end, status, branch_id
     FROM payroll_periods WHERE id = ?
   `).get(periodId) as {
     id: number; cycle: "weekly" | "monthly";
     data_source: "auto" | "manual";
     period_start: string; period_end: string; status: string;
+    branch_id: number | null;
   } | undefined;
   if (!period) throw new Error("period_not_found");
   if (period.status !== "draft") throw new Error("period_not_draft");
@@ -1235,10 +1250,15 @@ export function recomputeLine(
 
   const userEntries = period.data_source === "manual"
     ? []
-    : db.prepare(`
-        SELECT user_id, ts, type FROM time_entries
-        WHERE user_id = ? AND ts >= ? AND ts <= ?
-      `).all(userId, fromIso, toIso) as Entry[];
+    : (period.branch_id != null
+        ? db.prepare(`
+            SELECT user_id, ts, type FROM time_entries
+            WHERE user_id = ? AND ts >= ? AND ts <= ? AND branch_id = ?
+          `).all(userId, fromIso, toIso, period.branch_id)
+        : db.prepare(`
+            SELECT user_id, ts, type FROM time_entries
+            WHERE user_id = ? AND ts >= ? AND ts <= ?
+          `).all(userId, fromIso, toIso)) as Entry[];
   const auto = pairShifts(userEntries);
   const overrideRows = db.prepare(`
     SELECT work_date, clock_in, clock_out,

@@ -29,6 +29,11 @@ export async function POST(req: Request) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   if (!userCanViewPayroll(user)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // Per-branch payroll (owner 2026-06-10): a period belongs to the
+  // admin's active branch, so generation only pulls that branch's staff.
+  if (!user.activeBranchId) {
+    return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
+  }
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
@@ -69,22 +74,25 @@ export async function POST(req: Request) {
     }
   }
 
-  // Check for duplicate (cycle + target + dates uniquely identifies a period)
+  // Duplicate = same cycle + dates for THIS branch (matches the table's
+  // UNIQUE(cycle,start,end,branch_id)). Other branches can still hold
+  // their own period for the same dates.
+  const branchId = user.activeBranchId;
   const dup = db.prepare(`
     SELECT id FROM payroll_periods
-    WHERE cycle = ? AND target = ? AND period_start = ? AND period_end = ?
-  `).get(d.cycle, d.target, d.period_start, d.period_end);
+    WHERE cycle = ? AND period_start = ? AND period_end = ? AND branch_id IS ?
+  `).get(d.cycle, d.period_start, d.period_end, branchId);
   if (dup) {
     return NextResponse.json({ error: "duplicate_period" }, { status: 409 });
   }
 
   const result = db.prepare(`
     INSERT INTO payroll_periods
-      (cycle, target, data_source, period_start, period_end, pay_date, notes, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (cycle, target, data_source, period_start, period_end, pay_date, notes, created_by, branch_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     d.cycle, d.target, d.data_source,
-    d.period_start, d.period_end, payDate, d.notes ?? null, user.id
+    d.period_start, d.period_end, payDate, d.notes ?? null, user.id, branchId
   );
   const periodId = result.lastInsertRowid as number;
 
