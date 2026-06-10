@@ -10,7 +10,7 @@
 // underlying decision is already committed; a missed notification
 // is annoying but not data-loss.
 
-import { getDb } from "./db";
+import { getDb, getSystemSettings } from "./db";
 import { getPlatformChannel, isChannelReady } from "./messaging-channels";
 import { sendLinePush } from "./line";
 
@@ -107,5 +107,59 @@ export async function notifyTimeCertDecision(input: CertDecisionInput): Promise<
     console.warn(
       `[time-cert-notify] cert#${input.certId} push failed: status=${result.status} error=${result.error}`
     );
+  }
+}
+
+// Alert the HR / exec LINE group ("IKIGAI RECRUIT x HR") when a staff
+// SUBMITS a time-certification request, so an admin actually goes and
+// approves it (owner 2026-06-10: certs were sitting unapproved because
+// nothing flagged them → the certified time never reached payroll).
+// Reuses system_settings.recruita_exec_group_id (the combined HR group)
+// + the IKIGAI OS platform OA. Fire-and-forget; silent no-op when the
+// group / OA isn't configured.
+export async function notifyExecGroupTimeCertRequest(certId: number): Promise<void> {
+  const groupId = getSystemSettings().recruita_exec_group_id?.trim();
+  if (!groupId) return;
+  const channel = getPlatformChannel();
+  if (!isChannelReady(channel) || !channel?.channel_token) return;
+
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT c.kind, c.work_date, c.proposed_ts,
+           COALESCE(e.type, c.entry_type) AS entry_type,
+           u.display_name, u.title_prefix
+    FROM time_certifications c
+    JOIN users u ON u.id = c.requested_by
+    LEFT JOIN time_entries e ON e.id = c.entry_id
+    WHERE c.id = ?
+  `).get(certId) as
+    | {
+        kind: "correction" | "missing"; work_date: string | null; proposed_ts: string;
+        entry_type: "in" | "out" | null; display_name: string; title_prefix: string | null;
+      }
+    | undefined;
+  if (!row) return;
+
+  const who = [row.title_prefix, row.display_name].filter(Boolean).join(" ") || "พนักงาน";
+  const what = row.entry_type === "out" ? "เวลาออกงาน" : "เวลาเข้างาน";
+  const kindTh = row.kind === "missing" ? "เพิ่มเวลาที่ลืมลง" : "แก้ไขเวลา";
+  const when = bkkDisplay(row.proposed_ts);
+
+  const text = [
+    "🕒 มีคำขอรับรองเวลารออนุมัติ",
+    "",
+    `พนักงาน: ${who}`,
+    `รายการ: ${kindTh} (${what})`,
+    `เวลาที่ขอ: ${when} น.`,
+    "",
+    "อนุมัติได้ที่เมนู PERSONA › คำขอรับรองเวลา"
+  ].join("\n");
+
+  const res = await sendLinePush(channel.channel_token, {
+    to: groupId,
+    messages: [{ type: "text", text }]
+  });
+  if (!res.ok) {
+    console.warn(`[time-cert-notify] exec-group cert#${certId} push failed: status=${res.status} error=${res.error}`);
   }
 }

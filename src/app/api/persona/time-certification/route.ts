@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
+import { notifyExecGroupTimeCertRequest } from "@/lib/time-cert-notify";
 
 // POST /api/persona/time-certification
 //
@@ -91,6 +92,8 @@ export async function POST(req: Request) {
       VALUES (NULL, ?, ?, ?, NULL, 'missing', ?, ?, ?, 'pending', ?)
     `).run(user.id, reason, proposed_ts, entry_type, work_date, branchId, nowIso);
     logPersonaAction(user.id, "time_certification.request_missing", Number(result.lastInsertRowid));
+    void notifyExecGroupTimeCertRequest(Number(result.lastInsertRowid))
+      .catch((e) => console.warn("[time-cert] exec-group submit notify failed", e));
     return NextResponse.json({ ok: true, id: result.lastInsertRowid });
   }
 
@@ -117,5 +120,7 @@ export async function POST(req: Request) {
     VALUES (?, ?, ?, ?, ?, 'correction', 'pending', ?)
   `).run(entry.id, user.id, parsed.data.reason, parsed.data.proposed_ts, entry.ts, nowIso);
   logPersonaAction(user.id, "time_certification.request", entry.id);
+  void notifyExecGroupTimeCertRequest(Number(result.lastInsertRowid))
+    .catch((e) => console.warn("[time-cert] exec-group submit notify failed", e));
   return NextResponse.json({ ok: true, id: result.lastInsertRowid });
 }
