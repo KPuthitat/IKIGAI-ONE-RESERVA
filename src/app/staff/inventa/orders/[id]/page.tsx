@@ -188,7 +188,16 @@ export default function InventaOrderDetailPage({
     bySupplier.set(k, arr);
   }
   const supplierGroups = [...bySupplier.entries()];
-  const grandTotal = lines.reduce((s, l) => s + l.order_qty * l.unit_cost_at_order, 0);
+  // Display cost per line: prefer the order-time snapshot, but when an
+  // item was added with no cost yet (snapshot froze at ฿0), fall back to
+  // the item's CURRENT cost so the review reflects costs filled in later
+  // (owner 2026-06-10 — PO #4 kept showing ฿0 after its costs were set).
+  // Never overrides a real snapshot, so historical orders stay intact.
+  const lineCost = (l: Line): number =>
+    l.unit_cost_at_order > 0
+      ? l.unit_cost_at_order
+      : (l.item_cost_price ?? l.item_unit_cost ?? 0);
+  const grandTotal = lines.reduce((s, l) => s + l.order_qty * lineCost(l), 0);
   const buyerName = company?.name_th ?? branch?.name ?? t(lang, "inv.dash");
   const buyerAddr = branch?.reg_address || company?.address || "";
 
@@ -253,7 +262,7 @@ export default function InventaOrderDetailPage({
         </div>
 
         {supplierGroups.map(([supplier, rows]) => {
-          const subtotal = rows.reduce((s, l) => s + l.order_qty * l.unit_cost_at_order, 0);
+          const subtotal = rows.reduce((s, l) => s + l.order_qty * lineCost(l), 0);
           return (
             <div key={supplier} className="space-y-2">
               <div className="text-sm">
@@ -284,10 +293,10 @@ export default function InventaOrderDetailPage({
                         <td className="py-1.5 pr-2 text-right font-bold">{l.order_qty}</td>
                         <td className="py-1.5 pr-2 text-slate-500">{l.unit ?? t(lang, "inv.dash")}</td>
                         <td className="py-1.5 pr-2 text-right text-slate-500">
-                          ฿{l.unit_cost_at_order.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
+                          ฿{lineCost(l).toLocaleString("th-TH", { maximumFractionDigits: 2 })}
                         </td>
                         <td className="py-1.5 pl-2 text-right">
-                          ฿{(l.order_qty * l.unit_cost_at_order).toLocaleString("th-TH", { maximumFractionDigits: 2 })}
+                          ฿{(l.order_qty * lineCost(l)).toLocaleString("th-TH", { maximumFractionDigits: 2 })}
                         </td>
                       </tr>
                     ))}
