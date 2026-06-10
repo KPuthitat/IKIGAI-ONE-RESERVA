@@ -36,16 +36,25 @@ export default function InventaGroupForm({
     } finally { setBusy(false); }
   }
 
+  const configured = groupId.trim().length > 0;
+
   return (
-    <div className="card space-y-3">
-      <div>
-        <h2 className="font-bold text-slate-800 text-sm">กลุ่ม LINE สำหรับ INVENTA · {branchName}</h2>
-        <p className="text-xs text-slate-500 mt-1">
+    <details className="card !p-0 overflow-hidden group">
+      <summary className="cursor-pointer list-none select-none flex items-center justify-between px-4 py-3 hover:bg-slate-50">
+        <span className="font-bold text-slate-800">
+          กลุ่ม LINE สำหรับ INVENTA · {branchName}
+          <span className={`ml-2 text-xs font-normal ${configured ? "text-emerald-600" : "text-slate-400"}`}>
+            {configured ? "(ตั้งค่าแล้ว)" : "(ใช้กลุ่มรวม)"}
+          </span>
+        </span>
+        <span className="text-slate-400 transition-transform group-open:rotate-90">›</span>
+      </summary>
+      <div className="px-4 pb-4 pt-2 space-y-3 border-t border-slate-100">
+        <p className="text-xs text-slate-500">
           แจ้งเตือนสต๊อก (ขออนุมัติสั่งซื้อ · ของใกล้หมดอายุ · ส่งผลนับสต๊อก) จะถูกส่งไป
           <b>กลุ่มเฉพาะของสาขานี้</b> — ถ้าเว้นว่าง จะใช้กลุ่มรวมเหมือนเดิม ·
           <b>เชิญบอท IKIGAI OS เข้ากลุ่มก่อน</b> บอทจะพิมพ์ Group ID ออกมาให้
         </p>
-      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="label">ชื่อกลุ่ม (label)</label>
@@ -63,6 +72,7 @@ export default function InventaGroupForm({
         className="btn-primary px-4 py-2 text-sm disabled:opacity-50">
         {busy ? "กำลังบันทึก…" : "บันทึก"}
       </button>
-    </div>
+      </div>
+    </details>
   );
 }
