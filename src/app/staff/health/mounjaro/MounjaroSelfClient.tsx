@@ -67,6 +67,57 @@ function daysUntil(iso: string | null): number | null {
   return Math.round((b - a) / 86400_000);
 }
 
+// Staff weight-trend sparkline (owner 2026-06-10) — pure SVG, no library.
+// Plots every weighed point (mostly daily self-logs) so the staff SEES
+// their own progress; a dashed line marks the goal weight.
+function WeightTrend({
+  points, target
+}: { points: Array<{ date: string; weight: number }>; target: number | null }) {
+  if (points.length < 2) {
+    return (
+      <div className="card text-center text-xs text-slate-400 py-6">
+        บันทึกน้ำหนักอย่างน้อย 2 วัน เพื่อดูกราฟแนวโน้มของคุณ
+      </div>
+    );
+  }
+  const W = 320, H = 150, padX = 8, padTop = 14, padBot = 18;
+  const ws = points.map((p) => p.weight);
+  const lo = Math.min(...ws, target ?? Infinity);
+  const hi = Math.max(...ws, target ?? -Infinity);
+  const span = hi - lo || 1;
+  const x = (i: number) => padX + (i / (points.length - 1)) * (W - 2 * padX);
+  const y = (w: number) => padTop + (1 - (w - lo) / span) * (H - padTop - padBot);
+  const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.weight).toFixed(1)}`).join(" ");
+  const first = points[0].weight, last = points[points.length - 1].weight;
+  const down = last <= first;
+  return (
+    <div className="card space-y-1.5">
+      <div className="flex items-center justify-between">
+        <h2 className="font-bold text-slate-800 text-sm">แนวโน้มน้ำหนัก</h2>
+        <span className={`text-xs font-bold ${down ? "text-emerald-600" : "text-rose-600"}`}>
+          {down ? "▼" : "▲"} {Math.abs(last - first).toFixed(1)} กก. จากจุดเริ่ม
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: "auto" }} preserveAspectRatio="none">
+        {target != null && (
+          <line x1={padX} x2={W - padX} y1={y(target)} y2={y(target)}
+            stroke="#10b981" strokeWidth="1" strokeDasharray="4 3" opacity="0.7" />
+        )}
+        <path d={line} fill="none" stroke="#a06820" strokeWidth="2"
+          strokeLinejoin="round" strokeLinecap="round" />
+        {points.map((p, i) => (
+          <circle key={i} cx={x(i)} cy={y(p.weight)} r="2.2" fill="#a06820" />
+        ))}
+      </svg>
+      <div className="flex items-center justify-between text-[10px] text-slate-400">
+        <span>{points[0].date}</span>
+        {target != null && <span className="text-emerald-600">เป้าหมาย {target} กก.</span>}
+        <span>{points[points.length - 1].date}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function MounjaroSelfClient({
   enrollment, patient, visits, selfLogs, exercise, consent, audit, hasPin, facility
 }: {
@@ -405,10 +456,28 @@ function ActiveView({
   const baseW = patient?.baseline.weight ?? null;
   const target = patient?.baseline.target ?? null;
   const latestVisit = visits[0] ?? null;
+  // Owner 2026-06-10: current weight comes from the staff's DAILY self-log
+  // first (selfLogs are date-DESC, so the first with a weight is the most
+  // recent), then a clinic visit, then baseline — so daily logging drives
+  // the headline number + goal %, encouraging the habit.
   const latestLogWeight = selfLogs.find((l) => l.weight != null)?.weight ?? null;
-  const curW = latestVisit?.weight ?? latestLogWeight ?? baseW;
+  const curW = latestLogWeight ?? latestVisit?.weight ?? baseW;
   const lossPct = (baseW && curW) ? ((baseW - curW) / baseW) * 100 : null;
   const nextDays = daysUntil(latestVisit?.next_visit ?? null);
+
+  // Weight-trend points for the staff chart — every weighed daily log +
+  // clinic visit, plus the baseline as the start anchor, sorted by date.
+  const trendPoints = (() => {
+    const pts: Array<{ date: string; weight: number }> = [];
+    if (baseW != null && patient?.start_date) pts.push({ date: patient.start_date, weight: baseW });
+    for (const l of selfLogs) if (l.weight != null && l.date) pts.push({ date: String(l.date), weight: Number(l.weight) });
+    for (const v of visits) if (v.weight != null && v.date) pts.push({ date: String(v.date), weight: Number(v.weight) });
+    // Latest per date wins (a daily log + visit on the same day → keep one).
+    const byDate = new Map<string, number>();
+    for (const p of pts) byDate.set(p.date, p.weight);
+    return [...byDate.entries()].map(([date, weight]) => ({ date, weight }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  })();
 
   // self-log form (daily)
   const [date, setDate] = useState(today);
@@ -520,6 +589,10 @@ function ActiveView({
           </div>
         );
       })()}
+
+      {/* Weight trend — driven mostly by the daily self-log (owner
+          2026-06-10) so logging every day visibly moves the line. */}
+      <WeightTrend points={trendPoints} target={target} />
 
       {/* Self-log form (daily) */}
       <div className="card space-y-3">
