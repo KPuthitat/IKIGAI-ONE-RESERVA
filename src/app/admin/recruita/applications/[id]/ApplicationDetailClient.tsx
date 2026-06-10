@@ -387,36 +387,46 @@ export default function ApplicationDetailClient({
         </div>
       )}
 
-      {requestStageTarget && (
+      {requestStageTarget && (() => {
+        // Only ใบสมัครใหม่ → คัดกรอง needs a 2nd admin (owner 2026-06-11);
+        // any other transition applies immediately with this admin's PIN.
+        const isDual = stage === "applied" && requestStageTarget === "screening";
+        return (
         <PinPromptModal
-          title="ขออนุมัติเปลี่ยนสถานะ"
+          title={isDual ? "ขออนุมัติเปลี่ยนสถานะ (2 แอดมิน)" : "ยืนยันเปลี่ยนสถานะ"}
           description={
             <>
               จาก <b>{stageMeta[stage].label}</b> ไป
               {" "}<b>{stageMeta[requestStageTarget].label}</b>
-              <br />ใส่ PIN ของคุณเพื่อสร้างคำขอ
+              <br />{isDual
+                ? "ใส่ PIN ของคุณเพื่อสร้างคำขอ (ต้องมีแอดมินคนที่ 2 อนุมัติ)"
+                : "ใส่ PIN ของคุณเพื่อเปลี่ยนสถานะทันที"}
             </>
           }
-          submitLabel="ส่งคำขอ"
+          submitLabel={isDual ? "ส่งคำขอ" : "เปลี่ยนสถานะ"}
           onClose={() => setRequestStageTarget(null)}
           onSubmit={async (pin) => {
+            const target = requestStageTarget;
             const res = await fetch(
               apiUrl(`/api/recruita/applications/${application.id}/stage-request`),
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ to_stage: requestStageTarget, pin })
+                body: JSON.stringify({ to_stage: target, pin })
               }
             );
             const j = await res.json().catch(() => ({}));
             if (!res.ok || !j.ok) {
-              return { ok: false, message: j.message ?? j.error ?? "ส่งคำขอไม่สำเร็จ" };
+              return { ok: false, message: j.message ?? j.error ?? "เปลี่ยนสถานะไม่สำเร็จ" };
             }
+            // Single-admin path applied the change immediately → reflect it.
+            if (j.applied) setStage(target);
             setRequestStageTarget(null);
             startTransition(() => router.refresh());
             return { ok: true };
           }} />
-      )}
+        );
+      })()}
 
       {approveModalOpen && pendingStageRequest && (
         <PinPromptModal

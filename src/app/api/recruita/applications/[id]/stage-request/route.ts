@@ -4,7 +4,15 @@ import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { createStageRequest } from "@/lib/recruita-stage-request";
+import { notifyStageChange, notifyExecGroupStageChange } from "@/lib/recruita-notify";
 import type { ApplicationStage } from "@/lib/recruita";
+
+/** Owner 2026-06-11: only ใบสมัครใหม่ → คัดกรอง (applied → screening) needs a
+ *  second admin to approve. Every other transition is a single-admin direct
+ *  change (the requester's PIN is proof enough). */
+function needsDualApproval(from: ApplicationStage, to: ApplicationStage): boolean {
+  return from === "applied" && to === "screening";
+}
 
 // POST /api/recruita/applications/[id]/stage-request
 // Body: { to_stage, pin }
@@ -19,7 +27,7 @@ import type { ApplicationStage } from "@/lib/recruita";
 //   - Caller isn't an admin role
 
 const ALL_STAGES: ApplicationStage[] = [
-  "applied", "screening", "interview", "offered",
+  "applied", "screening", "interview", "health_check", "offered",
   "accepted", "hired", "rejected", "withdrawn"
 ];
 
@@ -74,10 +82,34 @@ export async function POST(
     return NextResponse.json({ error: "application_not_found" }, { status: 404 });
   }
 
+  const fromStage = app.stage;
+  const toStage = parsed.data.to_stage;
+  if (fromStage === toStage) {
+    return NextResponse.json(
+      { error: "same_stage", message: "ตั้ง stage เป็นค่าเดิม ไม่ต้องเปลี่ยน" },
+      { status: 400 }
+    );
+  }
+
+  // Single-admin transitions: apply immediately (PIN already verified above),
+  // then notify — same effect as the legacy /stage route, just PIN-gated.
+  if (!needsDualApproval(fromStage, toStage)) {
+    db.prepare(
+      "UPDATE recruita_applications SET stage = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).run(toStage, applicationId);
+    void notifyStageChange(applicationId).catch((e) =>
+      console.warn("[recruita-stage] notify failed", e));
+    void notifyExecGroupStageChange(applicationId).catch((e) =>
+      console.warn("[recruita-stage] exec notify failed", e));
+    return NextResponse.json({ ok: true, applied: true, stage: toStage });
+  }
+
+  // Dual-admin transition (applied → screening): create the pending request;
+  // the application stage isn't touched until a second admin approves.
   const result = createStageRequest({
     applicationId,
-    fromStage: app.stage,
-    toStage: parsed.data.to_stage,
+    fromStage,
+    toStage,
     requestedBy: user.id
   });
   if (!result.ok) {
@@ -87,5 +119,5 @@ export async function POST(
       result.error;
     return NextResponse.json({ error: result.error, message: msg }, { status: 400 });
   }
-  return NextResponse.json({ ok: true, request_id: result.requestId });
+  return NextResponse.json({ ok: true, request_id: result.requestId, dual: true });
 }

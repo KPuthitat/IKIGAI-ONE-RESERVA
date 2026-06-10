@@ -4264,6 +4264,26 @@ function runMigrations(db: Database.Database): void {
   // no-expiry code is live, no new 'expired' rows are ever created.
   db.exec("UPDATE recruita_stage_change_requests SET status = 'pending' WHERE status = 'expired'");
 
+  // 2026-06-11 (owner): clear STALE pending stage-change requests. Under the
+  // old "every move needs 2 admins" rule, applications got moved by other
+  // means while a request lingered — so the pipeline still shows a redundant
+  // "รออนุมัติเปลี่ยนสถานะ" tag even though the card already sits in the new
+  // column. A pending request whose from_stage no longer matches the
+  // application's CURRENT stage can never be validly approved anyway
+  // (approveStageRequest rejects it as 'stage_changed_under_us'), so cancel
+  // it and let the card just reflect its current column. Idempotent — once
+  // cancelled the row is no longer 'pending'.
+  db.exec(`
+    UPDATE recruita_stage_change_requests
+       SET status = 'cancelled',
+           cancelled_at = CURRENT_TIMESTAMP,
+           cancel_reason = 'ระบบยกเลิกอัตโนมัติ: ใบสมัครเปลี่ยนสถานะไปแล้ว (ปรับเกณฑ์อนุมัติ 2026-06-11)'
+     WHERE status = 'pending'
+       AND from_stage <> (
+         SELECT a.stage FROM recruita_applications a WHERE a.id = application_id
+       )
+  `);
+
   // 2026-06-01 NOTE — an earlier draft of this migration added
   //   users.admin_pin_hash + admin_pin_set_at + admin_pin_failed_attempts
   //   + admin_pin_locked_until

@@ -230,19 +230,25 @@ export default function PipelineClient({
         💡 ลาก/เลือก stage = ส่งคำขอเปลี่ยนสถานะ · ต้องมีแอดมินคนที่ 2 อนุมัติด้วย PIN
       </p>
 
-      {/* ── Request modal (Admin A) ─────────────────────────────── */}
-      {requestModal && (
+      {/* ── Request / change modal (Admin A) ────────────────────────
+          Only ใบสมัครใหม่ → คัดกรอง needs a 2nd admin (owner 2026-06-11);
+          every other move is applied immediately with this admin's PIN. */}
+      {requestModal && (() => {
+        const isDual = requestModal.card.stage === "applied" && requestModal.to === "screening";
+        return (
         <PinPromptModal
-          title="ขออนุมัติเปลี่ยนสถานะ"
+          title={isDual ? "ขออนุมัติเปลี่ยนสถานะ (2 แอดมิน)" : "ยืนยันเปลี่ยนสถานะ"}
           description={
             <>
               <b>{cardName(requestModal.card)}</b>
               <br />จาก <b>{stageMeta[requestModal.card.stage].label}</b> ไป{" "}
               <b>{stageMeta[requestModal.to].label}</b>
-              <br />ใส่ PIN ของคุณเพื่อสร้างคำขอ (ต้องมีแอดมินคนที่ 2 อนุมัติ)
+              <br />{isDual
+                ? "ใส่ PIN ของคุณเพื่อสร้างคำขอ (ต้องมีแอดมินคนที่ 2 อนุมัติ)"
+                : "ใส่ PIN ของคุณเพื่อเปลี่ยนสถานะทันที"}
             </>
           }
-          submitLabel="ส่งคำขอ"
+          submitLabel={isDual ? "ส่งคำขอ" : "เปลี่ยนสถานะ"}
           onClose={() => setRequestModal(null)}
           onSubmit={async (pin) => {
             const res = await fetch(
@@ -261,7 +267,8 @@ export default function PipelineClient({
             startTransition(() => router.refresh());
             return { ok: true };
           }} />
-      )}
+        );
+      })()}
 
       {/* ── Approve modal (Admin B) ─────────────────────────────── */}
       {approveCard && approveCard.pending && (
