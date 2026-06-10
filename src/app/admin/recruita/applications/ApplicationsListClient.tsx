@@ -120,7 +120,7 @@ export default function ApplicationsListClient({
                   {r.pending && (
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800"
                       title={`ผู้ขอ: ${[r.pending.requester_prefix, r.pending.requester_name].filter(Boolean).join(" ") || "—"}`}>
-                      ⏳ รออนุมัติเปลี่ยนสถานะ → {STAGE_META[r.pending.to_stage].label}
+                      รออนุมัติเปลี่ยนสถานะ → {STAGE_META[r.pending.to_stage].label}
                     </span>
                   )}
                   {/* PDPA countdown — only for terminal-no-go stages,

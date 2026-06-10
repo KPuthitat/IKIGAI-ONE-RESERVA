@@ -2018,7 +2018,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.payroll.hub.cat.ftMonthlyDesc": "{month} — รอบเดือน, จ่ายวันที่ 5 ของเดือนถัดไป",
     "admin.persona.payroll.hub.cat.ftWeekly": "ประจำรายสัปดาห์",
     "admin.persona.payroll.hub.cat.ftWeeklyDesc": "{month} — รอบจันทร์-อาทิตย์, จ่ายทุกจันทร์",
-    "admin.persona.payroll.hub.cat.pt": "พาร์ทไทม์",
+    "admin.persona.payroll.hub.cat.pt": "พนักงานพาร์ทไทม์",
     "admin.persona.payroll.hub.cat.ptDesc": "{month} — รอบจันทร์-อาทิตย์, จ่ายทุกจันทร์",
     "admin.persona.payroll.hub.ptGroupDesc": "เดือน {month} — รายสัปดาห์เท่านั้น",
     "admin.persona.payroll.hub.ftGroupDesc": "เดือน {month} — รายสัปดาห์ + รายเดือน",

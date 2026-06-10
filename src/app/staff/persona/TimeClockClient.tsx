@@ -719,21 +719,22 @@ function ClockAction({
             {t("staff.persona.correctable")}
           </p>
         )}
-        {/* FB2: concise in/out-area status (replaces the long GPS/QR text). */}
+        {/* FB2: concise in/out-area status (replaces the long GPS/QR text).
+            Owner 2026-06-10: no emoji, just the plain in/out message. */}
         {geofenceEnabled && (
           <div className="mt-3">
             {inZone === true ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
-                ✓ อยู่ในพื้นที่ลงเวลา{branchName ? ` · ${branchName}` : ""}
+              <span className="inline-flex items-center text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
+                อยู่ในพื้นที่ลงเวลา{branchName ? ` (${branchName})` : ""}
               </span>
             ) : inZone === false ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-3 py-1.5">
-                ✗ อยู่นอกพื้นที่ลงเวลา{branchName ? ` · ${branchName}` : ""}
+              <span className="inline-flex items-center text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-3 py-1.5">
+                ไม่อยู่ในพื้นที่ลงเวลา{branchName ? ` (${branchName})` : ""}
               </span>
             ) : (
               <button type="button" onClick={checkLocation}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5 hover:bg-slate-100">
-                📍 {gpsStatus ?? "ตรวจว่าอยู่ในพื้นที่ลงเวลาไหม"}
+                className="inline-flex items-center text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5 hover:bg-slate-100">
+                {gpsStatus ?? "ตรวจว่าอยู่ในพื้นที่ลงเวลาไหม"}
               </button>
             )}
           </div>

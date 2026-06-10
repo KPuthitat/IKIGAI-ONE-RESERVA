@@ -161,7 +161,7 @@ export default function PipelineClient({
           some cards are waiting on a second admin. */}
       {pendingCount > 0 && (
         <div className="card bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-          ⏳ มี {pendingCount} ใบสมัครที่ <b>รออนุมัติเปลี่ยนสถานะ</b> — แอดมินอีกคนต้องกดอนุมัติด้วย PIN
+          มี {pendingCount} ใบสมัครที่ <b>รออนุมัติเปลี่ยนสถานะ</b> — แอดมินอีกคนต้องกดอนุมัติด้วย PIN
         </div>
       )}
 
@@ -468,7 +468,7 @@ function PendingBlock({
     <div className="mt-1.5 pt-1.5 border-t border-amber-100 space-y-1.5">
       <div className="flex items-center gap-1 flex-wrap">
         <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800">
-          ⏳ รออนุมัติเปลี่ยนสถานะ
+          รออนุมัติเปลี่ยนสถานะ
         </span>
       </div>
       <div className="text-[10px] text-slate-500 flex items-center gap-1 flex-wrap">
