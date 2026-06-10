@@ -646,6 +646,30 @@ function ClockAction({
     setPin((p) => p.slice(0, -1));
   }
 
+  // FB2 (owner 2026-06-10): a one-tap location check on the idle screen so
+  // staff can see "in/out of clock-in area" up front, replacing the wordy
+  // grey GPS/QR paragraph. Captures one fix into gpsCoords (which also
+  // pre-satisfies the geofence gate for the PIN flow) → inZone renders.
+  function checkLocation() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGpsStatus("อุปกรณ์นี้ไม่รองรับการตรวจตำแหน่ง");
+      return;
+    }
+    setGpsStatus("กำลังตรวจตำแหน่ง…");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGpsCoords({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy
+        });
+        setGpsStatus(null);
+      },
+      () => setGpsStatus("อ่านตำแหน่งไม่ได้ — กรุณาเปิดสิทธิ์ตำแหน่ง (Location)"),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
+  }
+
   // ── Idle: ปุ่มหลัก ─────────────────────────
   if (phase === "idle") {
     return (
@@ -679,22 +703,44 @@ function ClockAction({
           </button>
         </div>
         {!hasClockIn && (
-          <p className="text-xs text-amber-700 mt-2">
-            ยังไม่ได้ลงเวลาเข้างานวันนี้ — หากลืมกดเข้า กรุณา{" "}
-            <a href="/staff/persona/time-certification" className="underline font-medium">ไปรับรองเวลาเข้า</a>
-            {" "}ก่อนจึงจะลงเวลาออกได้ครับ
-          </p>
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+            <p className="text-sm font-bold text-amber-800">ยังไม่ได้ลงเวลาเข้างานวันนี้</p>
+            <p className="text-xs text-amber-700 leading-relaxed">
+              หากลืมกดเข้า กรุณารับรองเวลาเข้าก่อน จึงจะลงเวลาออกได้ครับ
+            </p>
+            <a href="/staff/persona/time-certification"
+              className="inline-block text-sm font-bold bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg">
+              ไปรับรองเวลาเข้า
+            </a>
+          </div>
         )}
         {correctable && (
           <p className="text-xs text-slate-500 mt-2">
             {t("staff.persona.correctable")}
           </p>
         )}
-        {(geofenceEnabled || qrEnabled) && (
+        {/* FB2: concise in/out-area status (replaces the long GPS/QR text). */}
+        {geofenceEnabled && (
+          <div className="mt-3">
+            {inZone === true ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
+                ✓ อยู่ในพื้นที่ลงเวลา{branchName ? ` · ${branchName}` : ""}
+              </span>
+            ) : inZone === false ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-3 py-1.5">
+                ✗ อยู่นอกพื้นที่ลงเวลา{branchName ? ` · ${branchName}` : ""}
+              </span>
+            ) : (
+              <button type="button" onClick={checkLocation}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5 hover:bg-slate-100">
+                📍 {gpsStatus ?? "ตรวจว่าอยู่ในพื้นที่ลงเวลาไหม"}
+              </button>
+            )}
+          </div>
+        )}
+        {!geofenceEnabled && qrEnabled && (
           <p className="text-[11px] text-slate-400 mt-3">
-            {t("staff.persona.antiCheatHint", {
-              branch: branchName ?? "—"
-            })}
+            ต้องสแกน QR ที่จุดลงเวลาของ{branchName ? ` ${branchName}` : "สาขา"} ก่อนลงเวลา
           </p>
         )}
       </>
