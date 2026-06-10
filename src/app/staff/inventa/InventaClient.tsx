@@ -902,10 +902,22 @@ function ItemModal({
           <div className="text-xs font-bold text-slate-700 mb-2">หน่วยบรรจุ (แพ็ค) — ถ้ามี</div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label">ชื่อหน่วยแพ็ค</label>
-              <input className="input" value={f.pack_unit}
-                onChange={(e) => up("pack_unit", e.target.value)}
-                placeholder="เช่น กล่อง / ลัง / แผง" />
+              <label className="label">หน่วยแพ็ค</label>
+              {/* Owner 2026-06-10: pack unit must be a *configured* unit
+                  (same list as the base unit) so it maps cleanly to base
+                  units. Free text is gone; a legacy free-text value is kept
+                  as a "(เดิม)" option so saving never silently drops it. */}
+              <select className="input" value={f.pack_unit}
+                onChange={(e) => up("pack_unit", e.target.value)}>
+                <option value="">{t("inv.dash")}</option>
+                {f.pack_unit && !unitOpts.includes(f.pack_unit) && (
+                  <option value={f.pack_unit}>{f.pack_unit} (เดิม)</option>
+                )}
+                {unitOpts.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+              <p className="text-[10px] text-slate-400 mt-1">
+                เลือกจากหน่วยที่ตั้งไว้ในระบบ — เพิ่มหน่วยใหม่ได้ที่หน้าตั้งค่า
+              </p>
             </div>
             <div>
               <label className="label">1 แพ็ค = กี่{f.unit || "หน่วย"}</label>

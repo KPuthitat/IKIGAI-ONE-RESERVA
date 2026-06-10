@@ -86,6 +86,11 @@ export default function OrdersClient({
   // selected item_id → order qty (string for the input). Default qty
   // = max(0, safety - current). Unchecked = not in the order.
   const [sel, setSel] = useState<Record<number, string>>({});
+  // G6 (owner 2026-06-10): per-item order unit. false = base unit (เม็ด),
+  // true = the configured pack unit (กล่อง). The typed qty is in this
+  // unit; it's converted to base units before sending so current_qty +
+  // cost-per-unit stay consistent. Only meaningful when hasPack(item).
+  const [packMode, setPackMode] = useState<Record<number, boolean>>({});
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -202,6 +207,9 @@ export default function OrdersClient({
     return Math.max(0, it.safety_stock - it.current_qty);
   }
   function toggle(it: LowStockItem) {
+    // A freshly (re)selected row always starts in the base unit; clear any
+    // stale pack-mode flag so the seeded base qty isn't read as packs (G6).
+    setPackMode((p) => (it.id in p ? (() => { const n = { ...p }; delete n[it.id]; return n; })() : p));
     setSel((p) => {
       const next = { ...p };
       if (it.id in next) delete next[it.id];
@@ -212,10 +220,42 @@ export default function OrdersClient({
   function setQty(id: number, v: string) {
     setSel((p) => ({ ...p, [id]: v.replace(/[^0-9]/g, "") }));
   }
+  // ── G6 order-unit conversion ──────────────────────────────────────
+  /** Is this row currently being ordered in its pack unit? */
+  function inPack(it: LowStockItem): boolean {
+    return !!packMode[it.id] && hasPack(it);
+  }
+  /** The unit label to show next to the qty input for this row. */
+  function unitLabel(it: LowStockItem): string {
+    return inPack(it) ? (it.pack_unit ?? "") : (it.unit ?? t("inv.ord.unit"));
+  }
+  /** Convert the typed qty (in the row's current unit) to base units —
+   *  what the API + stock + cost all expect. */
+  function toBaseQty(it: LowStockItem, typed: string | number): number {
+    const n = Number(typed) || 0;
+    return inPack(it) && it.pack_size ? n * it.pack_size : n;
+  }
+  /** Flip a row between base unit and pack unit. Re-seeds the qty to a
+   *  whole, sensible amount in the new unit so the input never carries a
+   *  fractional value across the switch. */
+  function toggleUnit(it: LowStockItem) {
+    if (!hasPack(it)) return;
+    const nextPack = !packMode[it.id];
+    setPackMode((p) => ({ ...p, [it.id]: nextPack }));
+    setSel((s) => {
+      if (!(it.id in s)) return s;
+      const sug = suggested(it) || 1;
+      const val = nextPack && it.pack_size
+        ? String(Math.max(1, Math.ceil(sug / it.pack_size)))
+        : String(sug);
+      return { ...s, [it.id]: val };
+    });
+  }
   function selectAll() {
     const all: Record<number, string> = {};
     for (const it of allItems) all[it.id] = String(suggested(it) || 1);
     setSel(all);
+    setPackMode({}); // bulk-seeded qtys are all in base units
   }
   // Per-supplier select/clear (owner 2026-06-06) — lets staff issue a PO
   // for just some suppliers now and come back for the rest later. When
@@ -228,9 +268,9 @@ export default function OrdersClient({
     return "some";
   }
   function toggleSupplier(items: LowStockItem[]) {
+    const allPicked = items.every((it) => it.id in sel);
     setSel((p) => {
       const next = { ...p };
-      const allPicked = items.every((it) => it.id in next);
       if (allPicked) {
         for (const it of items) delete next[it.id];
       } else {
@@ -238,10 +278,23 @@ export default function OrdersClient({
       }
       return next;
     });
+    // Clear pack-mode for the rows this touched so newly-seeded base qtys
+    // aren't misread as packs (G6).
+    setPackMode((p) => {
+      const next = { ...p };
+      for (const it of items) delete next[it.id];
+      return next;
+    });
   }
 
   const chosen = Object.entries(sel)
-    .map(([id, q]) => ({ item_id: Number(id), order_qty: Number(q) }))
+    .map(([id, q]) => {
+      const it = allItems.find((x) => x.id === Number(id));
+      // order_qty is always sent in BASE units (the pack toggle is a
+      // data-entry convenience only) so the API, stock, and cost stay
+      // in one consistent unit.
+      return { item_id: Number(id), order_qty: it ? toBaseQty(it, q) : Number(q) || 0 };
+    })
     .filter((l) => l.order_qty > 0);
 
   // Live PO totals. Rebuilds on every sel/qty change so the budget
@@ -257,13 +310,13 @@ export default function OrdersClient({
     for (const [idStr, qStr] of Object.entries(sel)) {
       const it = itemById.get(Number(idStr));
       if (!it) continue;
-      const qty = Number(qStr) || 0;
+      const qty = toBaseQty(it, qStr);
       if (qty <= 0) continue;
       const key = it.supplier_name ?? t("inv.ord.noSupplier");
       m.set(key, (m.get(key) ?? 0) + qty * effectiveCost(it));
     }
     return m;
-  }, [sel, itemById, t]);
+  }, [sel, packMode, itemById, t]);
   const grandTotal = useMemo(() => {
     let n = 0;
     for (const v of totalsBySupplier.values()) n += v;
@@ -388,7 +441,9 @@ export default function OrdersClient({
                 const checked = it.id in sel;
                 const bin = binCode(it.grid_row, it.grid_col, it.pick_freq);
                 const cost = effectiveCost(it);
-                const qty = checked ? (Number(sel[it.id]) || 0) : 0;
+                // qty is always in BASE units (typed value × pack_size when
+                // the row is in pack mode) so cost/total math is unit-safe.
+                const qty = checked ? toBaseQty(it, sel[it.id]) : 0;
                 const lineTotal = qty * cost;
                 // Cost source label. cost_price = owner-pinned; else the
                 // value derived from the item's last purchase price. A
@@ -439,14 +494,30 @@ export default function OrdersClient({
                       />
                       {/* Fixed-width unit so every qty input lines up in a
                           column regardless of unit length (owner 2026-06-07:
-                          เม็ด/ขวด/กล่อง/แอมป์ differ in width). */}
-                      <span className="text-[11px] text-slate-500 inline-block w-12 text-left">{it.unit ?? t("inv.ord.unit")}</span>
+                          เม็ด/ขวด/กล่อง/แอมป์ differ in width). When the item
+                          has a pack unit, this becomes a tap-to-switch toggle
+                          (G6) so staff can order in หน่วยย่อย or แพ็ค. */}
+                      {hasPack(it) ? (
+                        <button type="button"
+                          disabled={!checked}
+                          onClick={() => toggleUnit(it)}
+                          title="แตะเพื่อสลับหน่วยสั่งซื้อ (หน่วยย่อย ↔ แพ็ค)"
+                          className="text-[11px] inline-block w-12 text-left underline decoration-dotted underline-offset-2 text-brand disabled:text-slate-400 disabled:no-underline">
+                          {unitLabel(it)} ⇅
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-500 inline-block w-12 text-left">{it.unit ?? t("inv.ord.unit")}</span>
+                      )}
                     </div>
-                    {/* N5 pack equivalent — helps staff round to whole
-                        packs (e.g. 50 เม็ด = 5 กล่อง). */}
+                    {/* Pack ↔ base conversion hint. When ordering in packs,
+                        show how many base units that is (e.g. 1 กล่อง = 500
+                        เม็ด); when ordering in base units, show the whole-pack
+                        breakdown (N5, e.g. 50 เม็ด = 5 กล่อง). */}
                     {checked && qty > 0 && hasPack(it) && (
                       <div className="w-full text-right text-[11px] text-emerald-700 -mt-0.5">
-                        = {formatPackBreakdown(qty, it, it.unit)}
+                        {inPack(it)
+                          ? `= ${qty.toLocaleString("th-TH")} ${it.unit ?? ""}`
+                          : `= ${formatPackBreakdown(qty, it, it.unit)}`}
                       </div>
                     )}
                     {/* Per-line live preview — appears only when the
