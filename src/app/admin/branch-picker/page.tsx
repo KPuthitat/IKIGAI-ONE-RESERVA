@@ -26,12 +26,14 @@ export default function AdminBranchPickerPage({
   const next = searchParams.next || "/admin";
 
   // Admin console only operates on branches the user may administer:
-  // super_admin → all their member branches; sub-admin → branches
-  // granted via user_branches.is_admin. Branches where they are only
-  // staff are hidden here (they appear in the staff picker instead).
-  const adminBranches = user.branches.filter((b) =>
-    user.adminBranchIds.includes(b.id)
-  );
+  // super_admin → all their member branches (they admin everything via
+  // role, even when no user_branches.is_admin flag is set — without this
+  // a super_admin with unflagged memberships would get an empty picker
+  // and be unable to enter admin mode); sub-admin → branches granted via
+  // user_branches.is_admin. Staff-only branches appear in the staff picker.
+  const adminBranches = user.role === "super_admin"
+    ? user.branches
+    : user.branches.filter((b) => user.adminBranchIds.includes(b.id));
 
   if (adminBranches.length === 0) {
     return (

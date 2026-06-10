@@ -57,20 +57,19 @@ export default function LoginForm({
         setErr(data.error || t("login.error.generic"));
         return;
       }
-      // Staff with multiple branches go through the branch picker first
-      // so they explicitly pick "today's branch" before doing anything.
-      // Single-branch staff and admin skip straight to their landing.
-      // super_admin → /admin (its own dedicated console, unchanged).
-      // Everyone else — including plain admin — lands on the module
-      // picker first (admin is an employee first; the Admin Console
-      // is an opt-in toggle in the sidebar). Multi-branch staff still
-      // pick today's branch before the picker.
+      // Owner 2026-06-10: EVERYONE logs in as an employee first and picks
+      // their working branch before doing anything — admins (incl.
+      // super_admin) are employees first and toggle into the Admin Console
+      // afterward. So anyone with ≥1 branch lands on the staff branch
+      // picker (which auto-skips straight to /staff when they have exactly
+      // one branch). A super_admin with no branch membership has nothing
+      // to pick → goes straight to /admin so they're never stranded.
       const dest = next
         ? next
-        : data.is_super_admin
-          ? "/admin"
-          : (data.branchCount ?? 0) > 1
-            ? "/staff/branch-picker"
+        : (data.branchCount ?? 0) >= 1
+          ? "/staff/branch-picker"
+          : data.is_super_admin
+            ? "/admin"
             : "/staff";
       router.push(dest);
       router.refresh();

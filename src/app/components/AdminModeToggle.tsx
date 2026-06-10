@@ -51,7 +51,14 @@ export default function AdminModeToggle({ view }: { view?: "admin" | "staff" }) 
   function go() {
     const target = inAdmin ? "staff" : "admin";
     writeView(target);
-    router.push(target === "admin" ? "/admin" : "/staff");
+    // Owner 2026-06-10: every mode switch goes through the branch picker
+    // first, so you always confirm which branch you're working in before
+    // touching a module. The pickers auto-skip (redirect straight through)
+    // when there's only one eligible branch, so single-branch users feel
+    // no extra step.
+    router.push(target === "admin"
+      ? "/admin/branch-picker?next=/admin"
+      : "/staff/branch-picker?next=/staff");
   }
 
   return (
