@@ -3674,6 +3674,22 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // Stock-applied marker (owner 2026-06-11): when a PO is received we add
+  // its quantities to on-hand stock exactly once. This timestamp records
+  // that it happened so the bump can't be applied twice — and so POs that
+  // were already 'received' BEFORE this feature shipped (NULL marker) can
+  // be topped up on demand via the "ปรับสต๊อกตามใบนี้" button without
+  // double-counting. Standalone idempotent ALTER (runs after the status
+  // rebuild above, regardless of its state).
+  {
+    const ordCols2 = new Set(
+      (db.prepare("PRAGMA table_info(inventa_orders)").all() as Array<{ name: string }>).map((c) => c.name)
+    );
+    if (!ordCols2.has("stock_applied_at")) {
+      db.exec("ALTER TABLE inventa_orders ADD COLUMN stock_applied_at TEXT");
+    }
+  }
+
   // INVENTA configurable lookups — admin-editable option lists used by
   // the item form (grid row prefixes, storage cabinets, smallest-unit
   // names, drug categories). kind discriminates the list. branch_id

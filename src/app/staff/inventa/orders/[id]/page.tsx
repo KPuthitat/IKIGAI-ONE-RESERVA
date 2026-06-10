@@ -21,6 +21,7 @@ type OrderHead = {
   created_by: number | null;
   created_by_name: string | null;
   approved_by_name: string | null;
+  stock_applied_at: string | null;
 };
 type Line = {
   id: number;
@@ -225,6 +226,7 @@ export default function InventaOrderDetailPage({
           canManage={canManage}
           supplierPdfUrl={supplierPdfUrl}
           receiveLines={receiveLines}
+          stockAppliedAt={order.stock_applied_at}
         />
       </div>
 

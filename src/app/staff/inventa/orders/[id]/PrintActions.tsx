@@ -19,7 +19,8 @@ type ReceiveLine = {
 // (admin only) flips an approved order back to 'sent' so its lines can
 // be corrected — PIN-gated since it undoes an approval (owner 2026-06-07).
 export default function PrintActions({
-  orderId, status, canApprove, canManage, supplierPdfUrl, receiveLines = []
+  orderId, status, canApprove, canManage, supplierPdfUrl, receiveLines = [],
+  stockAppliedAt = null
 }: {
   orderId: number;
   status: Status;
@@ -27,6 +28,10 @@ export default function PrintActions({
   canManage: boolean;
   supplierPdfUrl?: string | null;
   receiveLines?: ReceiveLine[];
+  /** When set, this PO's quantities have already been added to on-hand
+   *  stock. null on POs received before the auto-bump shipped → offer a
+   *  one-time "ปรับสต๊อกตามใบนี้" top-up. */
+  stockAppliedAt?: string | null;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -81,7 +86,7 @@ export default function PrintActions({
   }
 
   async function act(
-    action: "approve" | "cancel" | "receive" | "pay" | "credit" | "ship" | "return",
+    action: "approve" | "cancel" | "receive" | "pay" | "credit" | "ship" | "return" | "apply_stock",
     confirmMsg: string
   ) {
     if (!window.confirm(confirmMsg)) return;
@@ -177,6 +182,17 @@ export default function PrintActions({
           onClick={() => act("cancel", t("inv.po.cfCancel"))}
           className="text-xs px-3 py-1.5 rounded-lg border border-rose-300 text-rose-600 hover:bg-rose-50 disabled:opacity-50">
           {t("inv.po.cancel")}
+        </button>
+      )}
+      {/* One-time stock top-up for a PO received BEFORE the auto-bump
+          shipped (owner 2026-06-11). Hidden once applied — idempotent on
+          the server too, so it can never double-count. */}
+      {canManage && status === "received" && !stockAppliedAt && (
+        <button type="button" disabled={busy}
+          onClick={() => act("apply_stock",
+            "บวกจำนวนสินค้าในใบนี้เข้ายอดคงเหลือ?\n\nใช้สำหรับใบที่รับเข้าไว้ก่อนระบบบวกอัตโนมัติ — ทำได้ครั้งเดียวต่อใบ (กดซ้ำไม่บวกซ้ำ)")}
+          className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
+          ปรับสต๊อกตามใบนี้ (บวกยอดคงเหลือ)
         </button>
       )}
       {/* Real A4 PDF (owner 2026-06-06) — opens in a new tab so the

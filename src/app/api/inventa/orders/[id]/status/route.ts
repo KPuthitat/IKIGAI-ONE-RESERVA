@@ -26,7 +26,7 @@ import { ensureOrderToken } from "@/lib/inventa-po-token";
 const Body = z.object({
   action: z.enum([
     "approve", "cancel", "receive", "send_back",
-    "pay", "credit", "ship", "return"
+    "pay", "credit", "ship", "return", "apply_stock"
   ]),
   pin: z.string().optional(),
   // Optional per-item current-cost updates applied at PO receive (owner
@@ -51,9 +51,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
   const db = getDb();
   const order = db.prepare(
-    "SELECT id, branch_id, status, created_by FROM inventa_orders WHERE id = ?"
+    "SELECT id, branch_id, status, created_by, stock_applied_at FROM inventa_orders WHERE id = ?"
   ).get(id) as
-    | { id: number; branch_id: number | null; status: string; created_by: number | null }
+    | { id: number; branch_id: number | null; status: string; created_by: number | null; stock_applied_at: string | null }
     | undefined;
   if (!order) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
@@ -150,26 +150,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       return NextResponse.json({ error: "bad_state", status: order.status }, { status: 409 });
     }
     const costs = parsed.data.costs ?? [];
-    // Per-item received quantity. An order may list the same item on more
-    // than one line, so sum by item. order_qty is already in the item's
-    // smallest unit (same unit as current_qty), so it adds directly.
-    const receivedQtys = db.prepare(
-      "SELECT item_id, COALESCE(SUM(order_qty), 0) AS qty FROM inventa_order_lines WHERE order_id = ? GROUP BY item_id"
-    ).all(id) as Array<{ item_id: number; qty: number }>;
-    const orderItemIds = new Set(receivedQtys.map((r) => r.item_id));
+    const orderItemIds = new Set(
+      (db.prepare("SELECT DISTINCT item_id FROM inventa_order_lines WHERE order_id = ?")
+        .all(id) as Array<{ item_id: number }>).map((r) => r.item_id)
+    );
     db.transaction(() => {
       db.prepare("UPDATE inventa_orders SET status='received' WHERE id=?").run(id);
-      // Add received quantity to on-hand stock (owner 2026-06-10). The
-      // clinic's POS deducts stock independently, so this figure is
-      // approximate until the next physical count — the receive dialog
-      // warns the receiver of that. Receiving is one-way (bad_state guard
-      // above blocks a second receive), so this never double-counts.
-      for (const r of receivedQtys) {
-        if (r.qty <= 0) continue;
-        db.prepare(
-          "UPDATE inventa_items SET current_qty = current_qty + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-        ).run(r.qty, r.item_id);
-      }
+      // Add received quantity to on-hand stock (owner 2026-06-10), exactly
+      // once — guarded + stamped by applyOrderStock so it can't double-count.
+      applyOrderStock(db, id, nowIso);
       // Apply current-cost updates for items on this order; log each change.
       for (const c of costs) {
         if (c.unit_cost == null || c.unit_cost <= 0) continue;
@@ -185,6 +174,23 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       }
     })();
     return NextResponse.json({ ok: true, status: "received" });
+  }
+
+  if (action === "apply_stock") {
+    // Owner 2026-06-11: top up on-hand stock for a PO that was already
+    // 'received' BEFORE the auto-bump shipped (its stock was never added).
+    // Idempotent via stock_applied_at — a PO whose stock is already applied
+    // returns {already:true} and changes nothing, so it can't double-count.
+    if (!canManage) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    if (order.status !== "received") {
+      return NextResponse.json({ error: "bad_state", status: order.status }, { status: 409 });
+    }
+    if (order.stock_applied_at != null) {
+      return NextResponse.json({ ok: true, status: order.status, already: true });
+    }
+    let applied = false;
+    db.transaction(() => { applied = applyOrderStock(db, id, nowIso); })();
+    return NextResponse.json({ ok: true, status: order.status, applied });
   }
 
   if (action === "return") {
@@ -205,6 +211,33 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
   db.prepare("UPDATE inventa_orders SET status='cancelled' WHERE id=?").run(id);
   return NextResponse.json({ ok: true, status: "cancelled" });
+}
+
+/** Add a received order's quantities to on-hand stock, exactly once.
+ *  Guarded + stamped by inventa_orders.stock_applied_at so it is safe to
+ *  call from both the receive action and the manual top-up action — a PO
+ *  whose stock was already applied is a no-op (returns false). order_qty is
+ *  already in each item's smallest unit (same as current_qty), so it adds
+ *  directly. MUST be called inside a transaction. */
+function applyOrderStock(
+  db: ReturnType<typeof getDb>,
+  orderId: number,
+  nowIso: string
+): boolean {
+  const ord = db.prepare("SELECT stock_applied_at FROM inventa_orders WHERE id = ?")
+    .get(orderId) as { stock_applied_at: string | null } | undefined;
+  if (!ord || ord.stock_applied_at != null) return false;
+  const qtys = db.prepare(
+    "SELECT item_id, COALESCE(SUM(order_qty), 0) AS qty FROM inventa_order_lines WHERE order_id = ? GROUP BY item_id"
+  ).all(orderId) as Array<{ item_id: number; qty: number }>;
+  for (const r of qtys) {
+    if (r.qty <= 0) continue;
+    db.prepare(
+      "UPDATE inventa_items SET current_qty = current_qty + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).run(r.qty, r.item_id);
+  }
+  db.prepare("UPDATE inventa_orders SET stock_applied_at = ? WHERE id = ?").run(nowIso, orderId);
+  return true;
 }
 
 /** Fire-and-forget LINE card telling the branch group a PO is approved
