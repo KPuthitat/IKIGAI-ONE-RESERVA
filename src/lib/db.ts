@@ -1493,6 +1493,75 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // ── REPAIR: approved missing-punch certs that never created an entry ──
+  // (owner 2026-06-11, reported repeatedly: ฐิติรัตน์ + อนุธิดา 05/06 รับรอง
+  // เวลาออกแล้วแต่ "ไม่มีสักที่เลย"). Earlier builds marked a missing-punch
+  // cert 'approved' WITHOUT inserting the time_entries row it described —
+  // so the punch shows nowhere (timesheet, payroll) and, being approved,
+  // is no longer pending to re-process. Past deploys fixed the FORWARD
+  // path (decide route now creates the entry) but never repaired the rows
+  // already stuck in that state. This backfills them once.
+  //
+  // Safe + idempotent:
+  //   • Only approved 'missing' certs with entry_id IS NULL (untouched rows).
+  //   • Dedups against an identical existing punch (same user/type/ts) so a
+  //     half-repaired row can't double-insert.
+  //   • Links the cert to the entry → entry_id no longer NULL → never repeats.
+  // After deploy the punch appears in the timesheet; the owner recomputes
+  // the covering payroll period (one click) so ค่าตอบแทน picks it up.
+  {
+    const certCols = (db.prepare("PRAGMA table_info(time_certifications)").all() as Array<{ name: string }>)
+      .map((c) => c.name);
+    if (certCols.includes("kind") && certCols.includes("entry_type")) {
+      const stuck = db.prepare(`
+        SELECT id, requested_by, entry_type, proposed_ts, branch_id,
+               COALESCE(decided_by, requested_by) AS actor_id
+        FROM time_certifications
+        WHERE kind = 'missing' AND status = 'approved' AND entry_id IS NULL
+          AND entry_type IN ('in','out') AND proposed_ts IS NOT NULL
+      `).all() as Array<{
+        id: number; requested_by: number; entry_type: "in" | "out";
+        proposed_ts: string; branch_id: number | null; actor_id: number;
+      }>;
+      if (stuck.length > 0) {
+        const findEntry = db.prepare(
+          "SELECT id FROM time_entries WHERE user_id = ? AND type = ? AND ts = ? LIMIT 1"
+        );
+        const insEntry = db.prepare(
+          "INSERT INTO time_entries (user_id, type, ts, branch_id) VALUES (?, ?, ?, ?)"
+        );
+        const insAudit = db.prepare(`
+          INSERT INTO time_entries_audit
+            (entry_id, entry_user_id, entry_type, entry_ts, action, admin_id, reason, created_at)
+          VALUES (?, ?, ?, ?, 'create', ?, ?, ?)
+        `);
+        const linkCert = db.prepare("UPDATE time_certifications SET entry_id = ? WHERE id = ?");
+        const nowIso = new Date().toISOString();
+        const repairTx = db.transaction(() => {
+          for (const c of stuck) {
+            const existing = findEntry.get(c.requested_by, c.entry_type, c.proposed_ts) as
+              | { id: number } | undefined;
+            let entryId: number;
+            if (existing) {
+              entryId = existing.id;
+            } else {
+              const r = insEntry.run(c.requested_by, c.entry_type, c.proposed_ts, c.branch_id);
+              entryId = Number(r.lastInsertRowid);
+              insAudit.run(
+                entryId, c.requested_by, c.entry_type, c.proposed_ts, c.actor_id,
+                `ซ่อมย้อนหลัง: cert#${c.id} อนุมัติแล้วแต่ยังไม่ได้สร้างรายการเวลา (2026-06-11)`,
+                nowIso
+              );
+            }
+            linkCert.run(entryId, c.id);
+          }
+        });
+        repairTx();
+        console.info(`[time-cert] repaired ${stuck.length} approved missing cert(s) with no entry`);
+      }
+    }
+  }
+
   // ── attendance_flags — lightweight "irregular time-logging" history ──
   // (owner 2026-06-08). When a staff forgets to clock in/out (or, later,
   // clocks against a swapped shift), น้องฮูก records a flag here as a

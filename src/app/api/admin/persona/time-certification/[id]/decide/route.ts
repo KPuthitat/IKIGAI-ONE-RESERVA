@@ -95,6 +95,19 @@ export async function POST(
   const adjusted = parsed.data.override_ts != null && parsed.data.override_ts !== row.proposed_ts;
   const adjNote = adjusted ? " · เวลาปรับโดยผู้อนุมัติ" : "";
 
+  // Defensive: approving a 'missing' cert CREATES a punch from cert_entry_type.
+  // If that's somehow not 'in'/'out' we'd insert a NULL-type entry that the
+  // timesheet + payroll can't read — exactly the "ไม่มีสักที่เลย" failure.
+  // Refuse instead of writing a broken row.
+  if (
+    parsed.data.decision === "approved" &&
+    row.kind === "missing" &&
+    row.cert_entry_type !== "in" &&
+    row.cert_entry_type !== "out"
+  ) {
+    return NextResponse.json({ error: "cert_missing_entry_type" }, { status: 422 });
+  }
+
   const tx = db.transaction(() => {
     // Persist the applied time on the cert too, so staff history + the
     // audit reflect what was actually recorded (not the stale proposal).
