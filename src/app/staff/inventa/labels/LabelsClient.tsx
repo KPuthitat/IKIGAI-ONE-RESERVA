@@ -72,25 +72,52 @@ export default function LabelsClient({
   const [designing, setDesigning] = useState(false);
   const [draft, setDraft] = useState<LabelLayout>(savedLayout ?? DEFAULT_LABEL_LAYOUT);
   const [layoutSaving, setLayoutSaving] = useState(false);
+  // Surface save outcome — a silent failure here was why a saved layout
+  // seemed to "disappear" on re-entry (owner 2026-06-10): the client only
+  // acted on res.ok and showed nothing when the PATCH errored.
+  const [layoutMsg, setLayoutMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  function layoutErrText(error: string | undefined): string {
+    if (error === "no_active_branch") return "ยังไม่ได้เลือกสาขา — เลือกสาขาก่อนบันทึกรูปแบบฉลาก";
+    if (error === "invalid_layout") return "รูปแบบฉลากไม่ถูกต้อง";
+    return "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง";
+  }
 
   async function saveLayout() {
     setLayoutSaving(true);
+    setLayoutMsg(null);
     try {
       const res = await fetch(apiUrl("/api/inventa/label-layout"), {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ layout: draft })
       });
-      if (res.ok) { setLayout(draft); setDesigning(false); }
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        setLayout(draft);
+        setDesigning(false);
+        setLayoutMsg({ kind: "ok", text: "บันทึกรูปแบบฉลากแล้ว" });
+      } else {
+        setLayoutMsg({ kind: "err", text: layoutErrText(j?.error) });
+      }
+    } catch {
+      setLayoutMsg({ kind: "err", text: "เครือข่ายมีปัญหา ลองใหม่อีกครั้ง" });
     } finally { setLayoutSaving(false); }
   }
   async function resetLayout() {
     setLayoutSaving(true);
+    setLayoutMsg(null);
     try {
       const res = await fetch(apiUrl("/api/inventa/label-layout"), {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reset: true })
       });
-      if (res.ok) { setLayout(null); setDraft(DEFAULT_LABEL_LAYOUT); setDesigning(false); }
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        setLayout(null); setDraft(DEFAULT_LABEL_LAYOUT); setDesigning(false);
+        setLayoutMsg({ kind: "ok", text: "กลับเป็นรูปแบบมาตรฐานแล้ว" });
+      } else {
+        setLayoutMsg({ kind: "err", text: layoutErrText(j?.error) });
+      }
     } finally { setLayoutSaving(false); }
   }
   const printable = useMemo(
@@ -155,6 +182,9 @@ export default function LabelsClient({
       display: flex; flex-direction: column; overflow: hidden;
       background: #fff; color: #000;
       border: 1px solid #cbd5e1; border-radius: 2px;
+      /* All label text in LINE Seed Sans TH (owner 2026-06-10) — literal
+         'monospace' below was rendering in the browser's mono font. */
+      font-family: var(--font-lineseed), ui-sans-serif, system-ui, sans-serif;
     }
     .po-label .lbl-name {
       font-weight: 700; font-size: 3mm; line-height: 1.15; text-align: center;
@@ -164,12 +194,12 @@ export default function LabelsClient({
     .po-label .lbl-mid { display: flex; align-items: center; gap: 2mm; margin-top: 1.2mm; }
     .po-label .lbl-qr { width: 17mm; height: 17mm; flex: none; }
     .po-label .lbl-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.5mm; }
-    .po-label .lbl-code { font-family: monospace; font-weight: 700; font-size: 3.1mm; line-height: 1.1; word-break: break-all; }
+    .po-label .lbl-code { font-weight: 700; font-size: 3.1mm; line-height: 1.1; word-break: break-all; }
     .po-label .lbl-price { font-weight: 700; font-size: 3.4mm; line-height: 1.05; color: #111; }
     .po-label .lbl-bin { font-size: 2.3mm; color: #555; }
     .po-label .lbl-bar { margin-top: auto; padding-top: 1mm; }
     .po-label .lbl-bc { display: block; width: 100%; height: 8mm; }
-    .po-label .lbl-bc-text { font-family: monospace; font-size: 2.4mm; text-align: center; letter-spacing: 0.3mm; line-height: 1.2; }
+    .po-label .lbl-bc-text { font-size: 2.4mm; text-align: center; letter-spacing: 0.3mm; line-height: 1.2; }
     @media print {
       @page { size: ${widthMm}mm ${heightMm}mm; margin: 0; }
       .label-sheet { position: static !important; inset: auto !important; display: block !important; }
@@ -226,6 +256,11 @@ export default function LabelsClient({
               {designing ? "ปิดตัวออกแบบ" : "ออกแบบฉลาก (ลากวาง)"}
             </button>
           </div>
+          {layoutMsg && (
+            <p className={`text-xs mt-1.5 ${layoutMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
+              {layoutMsg.kind === "ok" ? "✓ " : "✗ "}{layoutMsg.text}
+            </p>
+          )}
           {designing && (
             <LabelDesigner
               draft={draft}
@@ -429,7 +464,7 @@ function AbsBody({ i, L }: { i: LabelItem; L: LabelLayout }) {
           style={{ ...at(L.qr), width: `${L.qr.size}mm`, height: `${L.qr.size}mm` }} />
       )}
       {L.code.show && code && (
-        <div style={txt(L.code, { fontFamily: "monospace", fontWeight: 700, wordBreak: "break-all" })}>{code}</div>
+        <div style={txt(L.code, { fontWeight: 700, wordBreak: "break-all" })}>{code}</div>
       )}
       {L.cost.show && cost && <div style={txt(L.cost)}>{cost}</div>}
       {L.sale.show && sale && <div style={txt(L.sale, { fontWeight: 700 })}>{sale}</div>}
@@ -524,7 +559,6 @@ function LabelDesigner({
       <div style={{
         fontSize: el.size * PXMM, lineHeight: 1.1, textAlign: el.align ?? "left",
         fontWeight: k === "name" || k === "code" || k === "sale" ? 700 : 400,
-        fontFamily: k === "code" ? "monospace" : undefined,
         whiteSpace: "nowrap", overflow: "hidden"
       }}>{map[k]}</div>
     );
