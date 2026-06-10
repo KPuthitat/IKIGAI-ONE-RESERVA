@@ -177,16 +177,39 @@ export function stageChangeFlex(args: {
   bodyRows.push(infoRow("เลขที่ใบสมัคร", args.applicationNo));
 
   const footerContents: Array<Record<string, unknown>> = [];
-  if (copy.cta) {
+  if (args.stage === "interview") {
+    // Interview invite (owner 2026-06-11): two clear actions —
+    //   1. เลือกเวลาเข้าสัมภาษณ์ → the candidate status page (LIFF when
+    //      configured so LINE auto-logs them in), where they self-book a slot.
+    //   2. นำทางมาสถานที่นัดสัมภาษณ์ → the venue map link from settings
+    //      (shown only when configured + a valid http(s) URL).
+    const ch = getRecruitaChannel();
+    const statusUrl = ch?.liff_id_status
+      ? `https://liff.line.me/${ch.liff_id_status}`
+      : `${PUBLIC_BASE}/recruita/status`;
     footerContents.push({
-      type: "button", style: "primary", color: COLOR_BRAND,
-      action: { type: "uri", label: copy.cta.label, uri: copy.cta.url }
+      type: "button", style: "primary", color: COLOR_BRAND, height: "sm",
+      action: { type: "uri", label: "เลือกเวลาเข้าสัมภาษณ์", uri: statusUrl }
+    });
+    const mapUrl = (getSystemSettings().recruita_interview_map_url ?? "").trim();
+    if (/^https?:\/\//i.test(mapUrl)) {
+      footerContents.push({
+        type: "button", style: "secondary", height: "sm",
+        action: { type: "uri", label: "นำทางมาสถานที่นัดสัมภาษณ์", uri: mapUrl }
+      });
+    }
+  } else {
+    if (copy.cta) {
+      footerContents.push({
+        type: "button", style: "primary", color: COLOR_BRAND,
+        action: { type: "uri", label: copy.cta.label, uri: copy.cta.url }
+      });
+    }
+    footerContents.push({
+      type: "button", style: "secondary", height: "sm",
+      action: { type: "uri", label: "ดูตำแหน่งงานอื่น", uri: `${PUBLIC_BASE}/recruita/positions` }
     });
   }
-  footerContents.push({
-    type: "button", style: "secondary", height: "sm",
-    action: { type: "uri", label: "ดูตำแหน่งงานอื่น", uri: `${PUBLIC_BASE}/recruita/positions` }
-  });
 
   return {
     type: "flex",

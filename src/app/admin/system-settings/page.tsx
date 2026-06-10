@@ -55,6 +55,7 @@ export default function SystemSettingsPage() {
         privacyPolicyUrl={settings.privacy_policy_url ?? ""}
         recruitaExecGroupId={settings.recruita_exec_group_id ?? ""}
         recruitaExecGroupName={settings.recruita_exec_group_name ?? ""}
+        recruitaInterviewMapUrl={settings.recruita_interview_map_url ?? ""}
       />
 
       {/* RECRUITA PDPA policy image — admin uploads an image of the

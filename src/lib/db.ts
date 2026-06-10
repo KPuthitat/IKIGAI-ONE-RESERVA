@@ -1857,6 +1857,13 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "recruita_pdpa_text")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN recruita_pdpa_text TEXT");
   }
+  // RECRUITA interview venue map/navigation link (2026-06-11) — the
+  // "นำทางมาสถานที่นัดสัมภาษณ์" button on the interview-invite LINE card
+  // opens this. Owner pastes a Google Maps / share URL once in
+  // /admin/system-settings. NULL/empty = the button is omitted.
+  if (!ssCols.some((c) => c.name === "recruita_interview_map_url")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN recruita_interview_map_url TEXT");
+  }
   // RECRUITA PDPA policy image (2026-06-02) — admin uploads an image
   // (PNG/JPG/WebP) of the privacy notice instead of typing dense text.
   // The apply form renders a "เปิดดูนโยบาย" button linking to the
@@ -4921,6 +4928,9 @@ export function updateSystemSettings(
     // Inline PDPA text for the apply form. Empty → NULL = use the
     // built-in default. Newlines preserved.
     recruita_pdpa_text?: string | null;
+    // RECRUITA interview venue map/navigation link. Empty → NULL = the
+    // "นำทางมาสถานที่นัดสัมภาษณ์" button is omitted from the invite card.
+    recruita_interview_map_url?: string | null;
   },
   updatedBy: number
 ): void {
@@ -5008,6 +5018,10 @@ export function updateSystemSettings(
     // so the form falls back to DEFAULT_RECRUITA_PDPA_TEXT.
     const raw = (patch.recruita_pdpa_text ?? "").trim();
     vals.push(raw === "" ? null : raw);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "recruita_interview_map_url")) {
+    sets.push("recruita_interview_map_url = ?");
+    vals.push(norm(patch.recruita_interview_map_url));
   }
   if (sets.length === 0) return;
   sets.push("updated_at = ?", "updated_by = ?");
@@ -5190,6 +5204,10 @@ export type SystemSettings = {
    *  NULL = no image → form falls back to the default text. */
   recruita_pdpa_image_path?: string | null;
   recruita_pdpa_image_mime?: string | null;
+  /** RECRUITA interview venue map/navigation URL (e.g. Google Maps share
+   *  link). NULL/empty = the "นำทางมาสถานที่นัดสัมภาษณ์" button is omitted
+   *  from the interview-invite LINE card. */
+  recruita_interview_map_url?: string | null;
   updated_at: string | null;
   updated_by: number | null;
 };

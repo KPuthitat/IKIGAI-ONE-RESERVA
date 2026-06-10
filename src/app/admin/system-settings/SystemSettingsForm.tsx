@@ -29,7 +29,8 @@ export default function SystemSettingsForm({
   maintenanceActive,
   privacyPolicyUrl,
   recruitaExecGroupId,
-  recruitaExecGroupName
+  recruitaExecGroupName,
+  recruitaInterviewMapUrl
 }: {
   token: string | null;
   groupId: string | null;
@@ -39,6 +40,7 @@ export default function SystemSettingsForm({
   privacyPolicyUrl: string;
   recruitaExecGroupId: string;
   recruitaExecGroupName: string;
+  recruitaInterviewMapUrl: string;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -71,6 +73,9 @@ export default function SystemSettingsForm({
   // Separate from global_staff_group_id so admin can route hiring
   // notifications to the owners chat without the staff seeing them.
   const [recruitaExecInput, setRecruitaExecInput] = useState(recruitaExecGroupId);
+  // RECRUITA interview venue map link (2026-06-11) — opened by the
+  // "นำทางมาสถานที่นัดสัมภาษณ์" button on the interview-invite LINE card.
+  const [interviewMapInput, setInterviewMapInput] = useState(recruitaInterviewMapUrl);
   const [recruitaExecNameInput, setRecruitaExecNameInput] = useState(recruitaExecGroupName);
   // (Resignation-policy textareas moved 2026-05-28 to
   // /admin/persona/resignation — that's the menu where admins
@@ -108,6 +113,7 @@ export default function SystemSettingsForm({
       body.privacy_policy_url = policyUrlInput.trim();
       body.recruita_exec_group_id = recruitaExecInput.trim();
       body.recruita_exec_group_name = recruitaExecNameInput.trim();
+      body.recruita_interview_map_url = interviewMapInput.trim();
 
       // (Resignation-policy fields moved to /admin/persona/resignation
       // 2026-05-28 — this form no longer sends them.)
@@ -394,6 +400,23 @@ export default function SystemSettingsForm({
               <br /><b>เชิญบอท IKIGAI OS เข้ากลุ่มนี้ก่อน</b> — บอทจะพิมพ์ Group ID ออกมาให้
             </p>
           </div>
+        </div>
+        {/* Interview venue map link (2026-06-11) — used by the
+            "นำทางมาสถานที่นัดสัมภาษณ์" button on the interview-invite card. */}
+        <div>
+          <label className="label">ลิงก์แผนที่/นำทางไปสถานที่สัมภาษณ์ (RECRUITA)</label>
+          <input
+            className="input text-sm"
+            type="url"
+            inputMode="url"
+            value={interviewMapInput}
+            onChange={(e) => setInterviewMapInput(e.target.value)}
+            placeholder="เช่น https://maps.app.goo.gl/xxxxxxxx"
+            maxLength={1000} />
+          <p className="text-[10px] text-slate-400 mt-1">
+            วางลิงก์ Google Maps (หรือลิงก์แผนที่อื่น) ของสถานที่นัดสัมภาษณ์ — จะเป็นปุ่ม
+            &quot;นำทางมาสถานที่นัดสัมภาษณ์&quot; บนการ์ดเชิญสัมภาษณ์ใน LINE. ปล่อยว่าง = ไม่แสดงปุ่ม.
+          </p>
         </div>
       </div>
 

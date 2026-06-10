@@ -50,7 +50,10 @@ const Body = z.object({
   recruita_exec_group_name: z.string().max(100).optional(),
   // Inline PDPA consent text for the apply form. 5000-char cap is
   // generous for a full notice. Empty = clear (form uses default).
-  recruita_pdpa_text: z.string().max(5000).optional()
+  recruita_pdpa_text: z.string().max(5000).optional(),
+  // RECRUITA interview venue map/navigation link (Google Maps share URL
+  // etc.). Empty = clear → the invite card omits the navigate button.
+  recruita_interview_map_url: z.string().max(1000).optional()
 });
 
 export async function POST(req: Request) {
@@ -134,6 +137,9 @@ export async function POST(req: Request) {
   }
   if (parsed.data.recruita_pdpa_text !== undefined) {
     dbPatch.recruita_pdpa_text = parsed.data.recruita_pdpa_text;
+  }
+  if (parsed.data.recruita_interview_map_url !== undefined) {
+    dbPatch.recruita_interview_map_url = parsed.data.recruita_interview_map_url;
   }
 
   updateSystemSettings(dbPatch, user.id);
