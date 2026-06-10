@@ -75,7 +75,8 @@ export default function TimesheetsClient({
   userIdFilter,
   users,
   dayRows,
-  audit
+  audit,
+  certEntryIds = []
 }: {
   lang: Lang;
   from: string;
@@ -84,12 +85,60 @@ export default function TimesheetsClient({
   users: UserOption[];
   dayRows: TimesheetDayRow[];
   audit: AuditRow[];
+  /** time_entries.id of punches that came from an approved time
+   *  certification — rendered with a "รับรองเวลา" tag so the source is
+   *  obvious (owner 2026-06-10). */
+  certEntryIds?: number[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [resendingId, setResendingId] = useState<number | null>(null);
+  // Admin add-missing-punch inline editor: addKey = `${user_id}|${date}|${type}`.
+  const [addKey, setAddKey] = useState<string | null>(null);
+  const [addTime, setAddTime] = useState("");
+  const [addingKey, setAddingKey] = useState<string | null>(null);
+  const certSet = new Set(certEntryIds);
   const { confirm, alert, ConfirmDialog } = useConfirm();
+
+  // Add a punch the staff never recorded (or that vanished). Creates the
+  // time_entries row + recomputes draft payroll — the reliable admin path
+  // when a certification didn't make it through.
+  async function submitAdd(r: TimesheetDayRow, type: "in" | "out"): Promise<void> {
+    if (!/^\d{2}:\d{2}$/.test(addTime)) return;
+    const key = `${r.user_id}|${r.work_date}|${type}`;
+    setAddingKey(key);
+    try {
+      const ts = new Date(`${r.work_date}T${addTime}:00+07:00`).toISOString();
+      const res = await fetch("/api/admin/persona/timesheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: r.user_id, type, ts })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        setAddKey(null);
+        setAddTime("");
+        startTransition(() => router.refresh());
+      } else {
+        alert({
+          title: t(lang, "common.error"),
+          body: <p>{j?.message ?? j?.error ?? "เพิ่มเวลาไม่สำเร็จ"}</p>,
+          variant: "danger",
+          okLabel: t(lang, "common.confirm")
+        });
+      }
+    } catch {
+      alert({
+        title: t(lang, "common.error"),
+        body: <p>{t(lang, "common.error")}</p>,
+        variant: "danger",
+        okLabel: t(lang, "common.confirm")
+      });
+    } finally {
+      setAddingKey(null);
+    }
+  }
 
   // Manual re-push of the clock-in LINE card. Available only for
   // 'in' rows (clock-out doesn't produce a card). Used when the
@@ -147,6 +196,35 @@ export default function TimesheetsClient({
     } finally {
       setResendingId(null);
     }
+  }
+
+  // Inline "+ เพิ่มเวลา" control shown in an empty in/out cell.
+  function addPunchUI(r: TimesheetDayRow, type: "in" | "out") {
+    const key = `${r.user_id}|${r.work_date}|${type}`;
+    if (addKey === key) {
+      return (
+        <div className="flex items-center gap-1">
+          <input type="time" autoFocus value={addTime}
+            onChange={(e) => setAddTime(e.target.value)}
+            className="input !w-[92px] !py-0.5 text-xs" />
+          <button type="button"
+            disabled={addingKey === key || !/^\d{2}:\d{2}$/.test(addTime)}
+            onClick={() => submitAdd(r, type)}
+            className="text-[11px] text-emerald-700 font-bold hover:underline disabled:opacity-50">
+            {addingKey === key ? "…" : "บันทึก"}
+          </button>
+          <button type="button" onClick={() => { setAddKey(null); setAddTime(""); }}
+            className="text-[11px] text-slate-400 hover:text-slate-600">✕</button>
+        </div>
+      );
+    }
+    return (
+      <button type="button" disabled={addingKey !== null}
+        onClick={() => { setAddKey(key); setAddTime(""); }}
+        className="text-[11px] text-brand hover:underline disabled:opacity-50">
+        + เพิ่มเวลา{type === "in" ? "เข้า" : "ออก"}
+      </button>
+    );
   }
 
   async function deleteEntry(
@@ -296,12 +374,15 @@ export default function TimesheetsClient({
                     {/* Clock-in cell */}
                     <td className="py-2 pr-3">
                       {r.ins.length === 0 ? (
-                        <span className="text-slate-300">{t(lang, "admin.persona.timesheets.noShift")}</span>
+                        addPunchUI(r, "in")
                       ) : (
                         <div className="space-y-1">
                           {r.ins.map((p) => (
                             <div key={p.id} className="flex items-center gap-2">
                               <span className="font-mono text-emerald-700 font-medium">{timeBkk(p.ts)}</span>
+                              {certSet.has(p.id) && (
+                                <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700 font-bold">รับรองเวลา</span>
+                              )}
                               <button
                                 type="button"
                                 disabled={isLoading}
@@ -330,12 +411,15 @@ export default function TimesheetsClient({
                     {/* Clock-out cell */}
                     <td className="py-2 pr-3">
                       {r.outs.length === 0 ? (
-                        <span className="text-slate-300">{t(lang, "admin.persona.timesheets.noShift")}</span>
+                        addPunchUI(r, "out")
                       ) : (
                         <div className="space-y-1">
                           {r.outs.map((p) => (
                             <div key={p.id} className="flex items-center gap-2">
                               <span className="font-mono text-rose-700 font-medium">{timeBkk(p.ts)}</span>
+                              {certSet.has(p.id) && (
+                                <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700 font-bold">รับรองเวลา</span>
+                              )}
                               <button
                                 type="button"
                                 disabled={isLoading}

@@ -172,6 +172,14 @@ export default function TimesheetsPage({
     LIMIT 10
   `).all(branch.id) as AuditRow[];
 
+  // Punches that came from an approved time certification — so the client
+  // can tag them "รับรองเวลา" (owner 2026-06-10). Small table; pass all
+  // approved entry_ids and let the client match by id.
+  const certEntryIds = (db.prepare(`
+    SELECT entry_id FROM time_certifications
+    WHERE status = 'approved' AND entry_id IS NOT NULL
+  `).all() as Array<{ entry_id: number }>).map((r) => r.entry_id);
+
   return (
     <div className="space-y-4">
       <div>
@@ -192,6 +200,7 @@ export default function TimesheetsPage({
         users={users}
         dayRows={dayRows}
         audit={audit}
+        certEntryIds={certEntryIds}
       />
     </div>
   );
