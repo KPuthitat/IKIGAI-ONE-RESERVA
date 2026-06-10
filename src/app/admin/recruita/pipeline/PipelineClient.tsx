@@ -14,7 +14,7 @@ type PositionOpt = {
 };
 
 const STAGE_ORDER: ApplicationStage[] = [
-  "applied", "screening", "interview", "offered",
+  "applied", "screening", "interview", "health_check", "offered",
   "accepted", "hired", "rejected", "withdrawn"
 ];
 

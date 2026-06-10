@@ -58,11 +58,12 @@ export default function PipelinePage() {
         WHEN 'applied' THEN 0
         WHEN 'screening' THEN 1
         WHEN 'interview' THEN 2
-        WHEN 'offered' THEN 3
-        WHEN 'accepted' THEN 4
-        WHEN 'hired' THEN 5
-        WHEN 'rejected' THEN 6
-        WHEN 'withdrawn' THEN 7
+        WHEN 'health_check' THEN 3
+        WHEN 'offered' THEN 4
+        WHEN 'accepted' THEN 5
+        WHEN 'hired' THEN 6
+        WHEN 'rejected' THEN 7
+        WHEN 'withdrawn' THEN 8
       END,
       a.submitted_at DESC
     LIMIT 500
