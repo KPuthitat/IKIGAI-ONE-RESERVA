@@ -88,9 +88,27 @@ export default function InventaOrderDetailPage({
     ORDER BY (s.name IS NULL), s.name COLLATE NOCASE, i.name COLLATE NOCASE
   `).all(id) as Line[];
 
+  // True average COST paid per item = mean of received-lot unit_costs.
+  // Owner 2026-06-10: the old hint used inventa_items.unit_cost which on
+  // some rows looked like a sale price; the received-lot average is the
+  // unambiguous "what we've actually paid" figure. Null when the item has
+  // no costed receipt yet → the hint shows "—" instead of a wrong number.
+  const itemIds = [...new Set(lines.map((l) => l.item_id))];
+  const lotAvg = new Map<number, number>();
+  if (itemIds.length > 0) {
+    const ph = itemIds.map(() => "?").join(",");
+    for (const r of db.prepare(`
+      SELECT item_id, AVG(unit_cost) AS avg_cost
+      FROM inventa_item_lots
+      WHERE unit_cost IS NOT NULL AND item_id IN (${ph})
+      GROUP BY item_id
+    `).all(...itemIds) as Array<{ item_id: number; avg_cost: number }>) {
+      lotAvg.set(r.item_id, r.avg_cost);
+    }
+  }
+
   // Per-item receive rows (deduped) — current cost (pinned, fallback order
-  // cost) + moving-average cost for the faint hint at รับเข้าคลัง (owner
-  // 2026-06-09).
+  // cost) + true average received cost for the faint hint at รับเข้าคลัง.
   const receiveLines = (() => {
     const seen = new Map<number, {
       item_id: number; name: string; code: string | null; unit: string | null;
@@ -103,7 +121,7 @@ export default function InventaOrderDetailPage({
         item_id: l.item_id, name: l.item_name, code: l.item_code, unit: l.unit,
         order_qty: l.order_qty,
         current_cost: l.item_cost_price ?? l.unit_cost_at_order ?? null,
-        avg_cost: l.item_unit_cost ?? null
+        avg_cost: lotAvg.get(l.item_id) ?? null
       });
     }
     return [...seen.values()];
