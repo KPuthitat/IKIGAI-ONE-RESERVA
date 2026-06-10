@@ -24,7 +24,7 @@ type Patient = {
   hn: string | null; start_date: string | null; notes: string | null;
   baseline: Record<string, number>;
 } | null;
-type Visit = { date: string | null; dose: number | null; weight: number | null; next_visit: string | null };
+type Visit = { date: string | null; dose: number | null; weight: number | null; hr: number | null; next_visit: string | null };
 type SelfLog = {
   id: number;
   date: string | null; weight: number | null; injection_done: boolean;
@@ -67,54 +67,114 @@ function daysUntil(iso: string | null): number | null {
   return Math.round((b - a) / 86400_000);
 }
 
-// Staff weight-trend sparkline (owner 2026-06-10) — pure SVG, no library.
-// Plots every weighed point (mostly daily self-logs) so the staff SEES
-// their own progress; a dashed line marks the goal weight.
-function WeightTrend({
-  points, target
-}: { points: Array<{ date: string; weight: number }>; target: number | null }) {
-  if (points.length < 2) {
+// Staff health-trend chart (owner 2026-06-10) — shows the SAME parameters
+// the doctor sees (weight + dose + heart rate) but with plain-language
+// labels (ชีพจร, not "HR"). Pure SVG, no library. Combines baseline +
+// clinic visits + daily self-logs, so logging every day densifies the
+// lines. Left axis = weight (kg), right axis = dose (0–15 mg); a dashed
+// green line marks the goal weight.
+function HealthTrendChart({
+  baseline, startDate, visits, selfLogs, target
+}: {
+  baseline: { weight: number | null; hr: number | null };
+  startDate: string | null;
+  visits: Visit[];
+  selfLogs: SelfLog[];
+  target: number | null;
+}) {
+  type CP = { date: string | null; weight: number | null; dose: number | null; hr: number | null };
+  const raw: CP[] = [
+    { date: startDate, weight: baseline.weight, dose: 0, hr: baseline.hr },
+    ...visits.map((v) => ({ date: v.date, weight: v.weight, dose: v.dose ?? null, hr: v.hr })),
+    ...selfLogs.map((l) => ({ date: l.date, weight: l.weight, dose: null, hr: l.hr }))
+  ].filter((p) => !!p.date);
+  raw.sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : 0));
+  // Forward-fill dose so the gold line stays continuous across self-log
+  // points (which carry no dose).
+  let lastDose = 0;
+  const pts = raw.map((p) => {
+    if (p.dose != null) lastDose = p.dose;
+    return { date: p.date, weight: p.weight, dose: lastDose, hr: p.hr };
+  });
+  const n = pts.length;
+  if (n < 2) {
     return (
       <div className="card text-center text-xs text-slate-400 py-6">
-        บันทึกน้ำหนักอย่างน้อย 2 วัน เพื่อดูกราฟแนวโน้มของคุณ
+        บันทึกข้อมูลสุขภาพอย่างน้อย 2 วัน เพื่อดูกราฟแนวโน้มของคุณ
       </div>
     );
   }
-  const W = 320, H = 150, padX = 8, padTop = 14, padBot = 18;
-  const ws = points.map((p) => p.weight);
-  const lo = Math.min(...ws, target ?? Infinity);
-  const hi = Math.max(...ws, target ?? -Infinity);
-  const span = hi - lo || 1;
-  const x = (i: number) => padX + (i / (points.length - 1)) * (W - 2 * padX);
-  const y = (w: number) => padTop + (1 - (w - lo) / span) * (H - padTop - padBot);
-  const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.weight).toFixed(1)}`).join(" ");
-  const first = points[0].weight, last = points[points.length - 1].weight;
-  const down = last <= first;
+  const W = 760, H = 300, padL = 44, padR = 44, padT = 16, padB = 36;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const xAt = (i: number) => padL + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+  const weights = pts.map((p) => p.weight).filter((w): w is number => w != null);
+  const wMin = weights.length ? Math.min(...weights) : 0;
+  const wMax = weights.length ? Math.max(...weights) : 1;
+  const wLo = Math.floor(Math.min(wMin, target ?? wMin) - 2);
+  const wHi = Math.ceil(Math.max(wMax, target ?? wMax) + 2);
+  const yW = (w: number) => padT + innerH - ((w - wLo) / Math.max(1, wHi - wLo)) * innerH;
+  const yD = (d: number) => padT + innerH - (d / 15) * innerH;
+  const hrs = pts.map((p) => p.hr).filter((h): h is number => h != null);
+  const hLo = hrs.length ? Math.min(...hrs) - 5 : 0, hHi = hrs.length ? Math.max(...hrs) + 5 : 1;
+  const yH = (h: number) => padT + innerH - ((h - hLo) / Math.max(1, hHi - hLo)) * innerH;
+  const line = (vals: Array<number | null>, y: (v: number) => number) =>
+    vals.map((v, i) => v == null ? null : `${xAt(i)},${y(v)}`).filter(Boolean).join(" ");
+  const weightPts = line(pts.map((p) => p.weight), yW);
+  const dosePts = pts.map((p, i) => `${xAt(i)},${yD(p.dose)}`).join(" ");
+  const hrPts = line(pts.map((p) => p.hr), yH);
+  const sd = (d: string | null) => { if (!d) return ""; const [, m, dd] = d.split("-"); return dd && m ? `${dd}/${m}` : d; };
+
   return (
-    <div className="card space-y-1.5">
-      <div className="flex items-center justify-between">
-        <h2 className="font-bold text-slate-800 text-sm">แนวโน้มน้ำหนัก</h2>
-        <span className={`text-xs font-bold ${down ? "text-emerald-600" : "text-rose-600"}`}>
-          {down ? "▼" : "▲"} {Math.abs(last - first).toFixed(1)} กก. จากจุดเริ่ม
-        </span>
+    <div className="card space-y-2">
+      <h2 className="font-bold text-slate-800 text-sm">แนวโน้มสุขภาพของคุณ</h2>
+      <div className="flex flex-wrap gap-4 justify-center text-[12px] text-slate-600">
+        <SelfLegend color="#3a2716" label="น้ำหนัก (กก.)" />
+        <SelfLegend color="#a06820" label="ขนาดยา (mg)" />
+        <SelfLegend color="#B91C1C" label="ชีพจร (ครั้ง/นาที)" dashed />
+        {target != null && <SelfLegend color="#10b981" label="น้ำหนักเป้าหมาย" dashed />}
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: "auto" }} preserveAspectRatio="none">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: "auto" }}>
+        {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+          const y = padT + innerH * t;
+          const wv = (wHi - (wHi - wLo) * t).toFixed(0);
+          const dv = (15 - 15 * t).toFixed(0);
+          return (
+            <g key={t}>
+              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#E5E0D5" strokeWidth={1} />
+              <text x={padL - 6} y={y + 3} textAnchor="end" fontSize={9} fill="#9CA3AF">{wv}</text>
+              <text x={W - padR + 6} y={y + 3} textAnchor="start" fontSize={9} fill="#a06820">{dv}</text>
+            </g>
+          );
+        })}
         {target != null && (
-          <line x1={padX} x2={W - padX} y1={y(target)} y2={y(target)}
-            stroke="#10b981" strokeWidth="1" strokeDasharray="4 3" opacity="0.7" />
+          <line x1={padL} x2={W - padR} y1={yW(target)} y2={yW(target)}
+            stroke="#10b981" strokeWidth={1.5} strokeDasharray="5 3" opacity={0.8} />
         )}
-        <path d={line} fill="none" stroke="#a06820" strokeWidth="2"
-          strokeLinejoin="round" strokeLinecap="round" />
-        {points.map((p, i) => (
-          <circle key={i} cx={x(i)} cy={y(p.weight)} r="2.2" fill="#a06820" />
-        ))}
+        {pts.map((p, i) => {
+          const step = Math.max(1, Math.ceil(n / 6));
+          if (i !== 0 && i !== n - 1 && i % step !== 0) return null;
+          return <text key={i} x={xAt(i)} y={H - 10} textAnchor="middle" fontSize={9} fill="#9CA3AF">{sd(p.date)}</text>;
+        })}
+        {n > 1 && <polyline points={dosePts} fill="none" stroke="#a06820" strokeWidth={2} />}
+        {pts.map((p, i) => <circle key={`d${i}`} cx={xAt(i)} cy={yD(p.dose)} r={3} fill="#a06820" />)}
+        {hrPts && n > 1 && <polyline points={hrPts} fill="none" stroke="#B91C1C" strokeWidth={1.5} strokeDasharray="4 4" />}
+        {pts.map((p, i) => p.hr != null ? <circle key={`h${i}`} cx={xAt(i)} cy={yH(p.hr)} r={2.5} fill="#B91C1C" /> : null)}
+        {weightPts && n > 1 && <polyline points={weightPts} fill="none" stroke="#3a2716" strokeWidth={2.5} />}
+        {pts.map((p, i) => p.weight != null ? <circle key={`w${i}`} cx={xAt(i)} cy={yW(p.weight)} r={4} fill="#3a2716" /> : null)}
       </svg>
-      <div className="flex items-center justify-between text-[10px] text-slate-400">
-        <span>{points[0].date}</span>
-        {target != null && <span className="text-emerald-600">เป้าหมาย {target} กก.</span>}
-        <span>{points[points.length - 1].date}</span>
-      </div>
+      <p className="text-[10px] text-slate-400 text-center">
+        เส้นน้ำหนัก = แกนซ้าย · ขนาดยา = แกนขวา (0–15) · ยิ่งลงข้อมูลทุกวัน เส้นยิ่งละเอียด
+      </p>
     </div>
+  );
+}
+function SelfLegend({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="inline-block w-5 h-0 border-t-2"
+        style={{ borderColor: color, borderStyle: dashed ? "dashed" : "solid" }} />
+      {label}
+    </span>
   );
 }
 
@@ -465,19 +525,6 @@ function ActiveView({
   const lossPct = (baseW && curW) ? ((baseW - curW) / baseW) * 100 : null;
   const nextDays = daysUntil(latestVisit?.next_visit ?? null);
 
-  // Weight-trend points for the staff chart — every weighed daily log +
-  // clinic visit, plus the baseline as the start anchor, sorted by date.
-  const trendPoints = (() => {
-    const pts: Array<{ date: string; weight: number }> = [];
-    if (baseW != null && patient?.start_date) pts.push({ date: patient.start_date, weight: baseW });
-    for (const l of selfLogs) if (l.weight != null && l.date) pts.push({ date: String(l.date), weight: Number(l.weight) });
-    for (const v of visits) if (v.weight != null && v.date) pts.push({ date: String(v.date), weight: Number(v.weight) });
-    // Latest per date wins (a daily log + visit on the same day → keep one).
-    const byDate = new Map<string, number>();
-    for (const p of pts) byDate.set(p.date, p.weight);
-    return [...byDate.entries()].map(([date, weight]) => ({ date, weight }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  })();
 
   // self-log form (daily)
   const [date, setDate] = useState(today);
@@ -590,9 +637,17 @@ function ActiveView({
         );
       })()}
 
-      {/* Weight trend — driven mostly by the daily self-log (owner
-          2026-06-10) so logging every day visibly moves the line. */}
-      <WeightTrend points={trendPoints} target={target} />
+      {/* Health trend — same parameters the doctor sees (weight + dose +
+          ชีพจร) but with plain-language labels, driven mostly by the daily
+          self-log so logging every day visibly moves the lines (owner
+          2026-06-10). */}
+      <HealthTrendChart
+        baseline={{ weight: baseW, hr: (patient?.baseline.hr as number | undefined) ?? null }}
+        startDate={patient?.start_date ?? null}
+        visits={visits}
+        selfLogs={selfLogs}
+        target={target}
+      />
 
       {/* Self-log form (daily) */}
       <div className="card space-y-3">

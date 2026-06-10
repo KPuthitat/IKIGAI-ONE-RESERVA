@@ -60,6 +60,7 @@ export default function MounjaroSelfPage() {
     date: (v.date as string | null) ?? null,
     dose: (v.dose as number | null) ?? null,
     weight: (v.weight as number | null) ?? null,
+    hr: (v.hr as number | null) ?? null,
     next_visit: (v.next_visit as string | null) ?? null
   }));
 
