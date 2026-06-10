@@ -237,6 +237,12 @@ export default function PrintActions({
                 กรอกราคาทุนปัจจุบันต่อหน่วย (ปรับได้ถ้าราคาเปลี่ยน) — ระบบจะอัปเดตราคาทุนของสินค้าและบันทึกประวัติให้
               </p>
             </div>
+            {/* Stock-accuracy notice (owner 2026-06-10): receiving bumps
+                on-hand by the ordered qty, but the clinic's POS deducts
+                stock on its own, so the figure drifts until the next count. */}
+            <div className="text-[11px] leading-relaxed rounded-lg bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2">
+              ระบบจะบวกจำนวนที่รับเข้านี้เข้ากับยอดคงเหลือของสินค้า — ระหว่างรอบนับสต๊อคอาจมีการใช้สินค้าออก จำนวนคงเหลืออาจไม่ตรงกับของจริง จนกว่าจะนับสต๊อคครั้งต่อไป
+            </div>
             {err && <div className="text-xs text-rose-600">{err}</div>}
             <div className="space-y-2">
               {receiveLines.map((l) => (

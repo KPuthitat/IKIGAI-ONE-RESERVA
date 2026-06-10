@@ -150,12 +150,26 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       return NextResponse.json({ error: "bad_state", status: order.status }, { status: 409 });
     }
     const costs = parsed.data.costs ?? [];
-    const orderItemIds = new Set(
-      (db.prepare("SELECT DISTINCT item_id FROM inventa_order_lines WHERE order_id = ?")
-        .all(id) as Array<{ item_id: number }>).map((r) => r.item_id)
-    );
+    // Per-item received quantity. An order may list the same item on more
+    // than one line, so sum by item. order_qty is already in the item's
+    // smallest unit (same unit as current_qty), so it adds directly.
+    const receivedQtys = db.prepare(
+      "SELECT item_id, COALESCE(SUM(order_qty), 0) AS qty FROM inventa_order_lines WHERE order_id = ? GROUP BY item_id"
+    ).all(id) as Array<{ item_id: number; qty: number }>;
+    const orderItemIds = new Set(receivedQtys.map((r) => r.item_id));
     db.transaction(() => {
       db.prepare("UPDATE inventa_orders SET status='received' WHERE id=?").run(id);
+      // Add received quantity to on-hand stock (owner 2026-06-10). The
+      // clinic's POS deducts stock independently, so this figure is
+      // approximate until the next physical count — the receive dialog
+      // warns the receiver of that. Receiving is one-way (bad_state guard
+      // above blocks a second receive), so this never double-counts.
+      for (const r of receivedQtys) {
+        if (r.qty <= 0) continue;
+        db.prepare(
+          "UPDATE inventa_items SET current_qty = current_qty + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        ).run(r.qty, r.item_id);
+      }
       // Apply current-cost updates for items on this order; log each change.
       for (const c of costs) {
         if (c.unit_cost == null || c.unit_cost <= 0) continue;
