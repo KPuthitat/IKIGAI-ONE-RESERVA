@@ -237,3 +237,28 @@ export function bookInterviewSlot(args: {
   if (!won) return { ok: false, error: "slot_taken" };
   return { ok: true, interviewAt, location: slot.location };
 }
+
+/** Cancel an application's interview booking (owner 2026-06-11): free any
+ *  slot it holds back to 'open' so another applicant can take it, and clear
+ *  the booking off the application. Caller has verified the applicant owns
+ *  the application. Idempotent — a no-booking application just clears to
+ *  the same (null) state. Returns how many slots were released. */
+export function cancelInterviewBooking(applicationId: number): { ok: true; freed: number } {
+  const db = getDb();
+  let freed = 0;
+  const tx = db.transaction(() => {
+    const info = db.prepare(`
+      UPDATE recruita_interview_slots
+         SET status = 'open', booked_application_id = NULL, booked_at = NULL
+       WHERE booked_application_id = ? AND status = 'booked'
+    `).run(applicationId);
+    freed = info.changes;
+    db.prepare(`
+      UPDATE recruita_applications
+         SET interview_at = NULL, interview_location = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?
+    `).run(applicationId);
+  });
+  tx();
+  return { ok: true, freed };
+}

@@ -135,6 +135,14 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
   const [bookingFor, setBookingFor] = useState<number | null>(null);
   const [bookingSlotId, setBookingSlotId] = useState<number | null>(null);
   const [bookErr, setBookErr] = useState<string | null>(null);
+  // A slot the applicant tapped but hasn't confirmed yet (owner 2026-06-11:
+  // "กดเลือกเวลาแล้วควรมีปุ่มยืนยันก่อน"). window.confirm is unreliable inside
+  // LINE's in-app browser, so booking is a two-step in-page flow instead.
+  const [pendingSlot, setPendingSlot] = useState<BookableSlot | null>(null);
+  // Cancel-booking flow ("ยกเลิกได้เพื่อปล่อยคิวให้คนอื่น").
+  const [cancelConfirmFor, setCancelConfirmFor] = useState<number | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelErr, setCancelErr] = useState<string | null>(null);
 
   async function loadSlots() {
     try {
@@ -158,10 +166,6 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
   }
 
   async function bookSlot(applicationId: number, slot: BookableSlot) {
-    if (!window.confirm(
-      `ยืนยันเลือกสัมภาษณ์ ${weekdayTh(slot.slot_date)} ${formatLongDate(slot.slot_date, "th")} ` +
-      `เวลา ${slot.start_time}–${slot.end_time} น.?`
-    )) return;
     setBookingSlotId(slot.id);
     setBookErr(null);
     try {
@@ -176,7 +180,7 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
       };
       if (!r.ok || !j.ok) {
         setBookErr(j.message ?? "จองไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-        if (j.error === "slot_taken") void loadSlots(); // someone took it — refresh
+        if (j.error === "slot_taken") { setPendingSlot(null); void loadSlots(); } // someone took it — refresh
         return;
       }
       // Reflect the booking on the row + close the picker + refresh slots.
@@ -191,11 +195,45 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
             }
           : prev);
       setBookingFor(null);
+      setPendingSlot(null);
       void loadSlots();
     } catch {
       setBookErr("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
     } finally {
       setBookingSlotId(null);
+    }
+  }
+
+  // Cancel a confirmed booking → frees the slot for others (owner 2026-06-11).
+  async function cancelBooking(applicationId: number) {
+    setCancelBusy(true);
+    setCancelErr(null);
+    try {
+      const r = await fetch(apiUrl("/api/recruita/interview-slots/cancel"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ application_id: applicationId, ...bookingIdentity() })
+      });
+      const j = (await r.json().catch(() => ({}))) as { ok?: boolean };
+      if (!r.ok || !j.ok) { setCancelErr("ยกเลิกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"); return; }
+      setState((prev) =>
+        prev.kind === "loaded"
+          ? {
+              ...prev,
+              rows: prev.rows.map((x) =>
+                x.application_id === applicationId
+                  ? { ...x, interview_at: null, interview_location: null }
+                  : x)
+            }
+          : prev);
+      setCancelConfirmFor(null);
+      setBookingFor(null);
+      setPendingSlot(null);
+      void loadSlots();
+    } catch {
+      setCancelErr("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setCancelBusy(false);
     }
   }
 
@@ -450,37 +488,97 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
                         </div>
                       )}
 
+                      {/* Picker / confirm step — open while choosing a slot. */}
                       {bookingFor === row.application_id ? (
-                        <div className="space-y-2">
-                          {slots === null ? (
-                            <p className="text-xs text-slate-500">กำลังโหลดช่วงเวลา…</p>
-                          ) : slots.length === 0 ? (
-                            <p className="text-xs text-slate-500">
-                              ยังไม่มีช่วงเวลาว่างให้เลือกในขณะนี้ — กรุณาติดต่อเจ้าหน้าที่
-                            </p>
-                          ) : (
-                            <SlotPicker
-                              slots={slots}
-                              bookingSlotId={bookingSlotId}
-                              onPick={(slot) => bookSlot(row.application_id, slot)} />
-                          )}
-                          {bookErr && <p className="text-xs text-rose-600">{bookErr}</p>}
-                          <button type="button"
-                            onClick={() => { setBookingFor(null); setBookErr(null); }}
-                            className="text-[11px] text-slate-500 underline">
-                            ปิด
-                          </button>
+                        pendingSlot ? (
+                          // Step 2: in-page confirm (replaces window.confirm,
+                          // which is unreliable inside the LINE in-app browser).
+                          <div className="bg-white border border-emerald-300 rounded-lg p-3 space-y-2">
+                            <div className="text-xs text-slate-700">
+                              ยืนยันเลือกเวลาสัมภาษณ์:
+                              <div className="font-bold text-emerald-800 mt-0.5">
+                                {weekdayTh(pendingSlot.slot_date)} {formatLongDate(pendingSlot.slot_date, "th")}
+                                {" "}เวลา {pendingSlot.start_time}–{pendingSlot.end_time} น.
+                              </div>
+                              {pendingSlot.location && (
+                                <div className="text-[11px] text-slate-500 mt-0.5">สถานที่: {pendingSlot.location}</div>
+                              )}
+                            </div>
+                            {bookErr && <p className="text-xs text-rose-600">{bookErr}</p>}
+                            <div className="flex gap-2">
+                              <button type="button" disabled={bookingSlotId !== null}
+                                onClick={() => bookSlot(row.application_id, pendingSlot)}
+                                className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-2 rounded-lg">
+                                {bookingSlotId !== null ? "กำลังยืนยัน…" : "ยืนยันนัดหมาย"}
+                              </button>
+                              <button type="button" disabled={bookingSlotId !== null}
+                                onClick={() => { setPendingSlot(null); setBookErr(null); }}
+                                className="flex-1 bg-white border border-slate-300 text-slate-700 text-xs font-semibold px-3 py-2 rounded-lg">
+                                เลือกเวลาอื่น
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          // Step 1: pick a slot (selecting only — no booking yet).
+                          <div className="space-y-2">
+                            {slots === null ? (
+                              <p className="text-xs text-slate-500">กำลังโหลดช่วงเวลา…</p>
+                            ) : slots.length === 0 ? (
+                              <p className="text-xs text-slate-500">
+                                ยังไม่มีช่วงเวลาว่างให้เลือกในขณะนี้ — กรุณาติดต่อเจ้าหน้าที่
+                              </p>
+                            ) : (
+                              <SlotPicker
+                                slots={slots}
+                                onPick={(slot) => { setPendingSlot(slot); setBookErr(null); }} />
+                            )}
+                            <button type="button"
+                              onClick={() => { setBookingFor(null); setBookErr(null); setPendingSlot(null); }}
+                              className="text-[11px] text-slate-500 underline">
+                              ปิด
+                            </button>
+                          </div>
+                        )
+                      ) : cancelConfirmFor === row.application_id ? (
+                        // Cancel confirm — releases the slot back to the queue.
+                        <div className="bg-white border border-rose-200 rounded-lg p-3 space-y-2">
+                          <p className="text-[11px] text-rose-800">
+                            ยกเลิกนัดสัมภาษณ์นี้? ช่วงเวลาจะถูกปล่อยคืนให้ผู้สมัครคนอื่นเลือกได้
+                          </p>
+                          {cancelErr && <p className="text-[11px] text-rose-600">{cancelErr}</p>}
+                          <div className="flex gap-2">
+                            <button type="button" disabled={cancelBusy}
+                              onClick={() => cancelBooking(row.application_id)}
+                              className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-2 rounded-lg">
+                              {cancelBusy ? "กำลังยกเลิก…" : "ยืนยันยกเลิกนัด"}
+                            </button>
+                            <button type="button" disabled={cancelBusy}
+                              onClick={() => { setCancelConfirmFor(null); setCancelErr(null); }}
+                              className="flex-1 bg-white border border-slate-300 text-slate-700 text-xs font-semibold px-3 py-2 rounded-lg">
+                              ไม่ยกเลิก
+                            </button>
+                          </div>
                         </div>
                       ) : (
-                        <button type="button"
-                          onClick={() => {
-                            setBookingFor(row.application_id);
-                            setBookErr(null);
-                            if (slots === null) void loadSlots();
-                          }}
-                          className="text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg">
-                          {row.interview_at ? "เปลี่ยนวันเวลา" : "เลือกวันเวลาสัมภาษณ์"}
-                        </button>
+                        <div className="flex gap-2 flex-wrap">
+                          <button type="button"
+                            onClick={() => {
+                              setBookingFor(row.application_id);
+                              setBookErr(null);
+                              setPendingSlot(null);
+                              if (slots === null) void loadSlots();
+                            }}
+                            className="text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg">
+                            {row.interview_at ? "เปลี่ยนวันเวลา" : "เลือกวันเวลาสัมภาษณ์"}
+                          </button>
+                          {row.interview_at && (
+                            <button type="button"
+                              onClick={() => { setCancelConfirmFor(row.application_id); setCancelErr(null); }}
+                              className="text-xs font-semibold border border-rose-300 text-rose-600 hover:bg-rose-50 px-3 py-1.5 rounded-lg">
+                              ยกเลิกนัด (ปล่อยคิว)
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
@@ -587,10 +685,9 @@ function PhoneSearchBox({
 // tappable; booked ones render greyed-out as "ไม่ว่าง" so the applicant
 // can see (but not pick) times others already took.
 function SlotPicker({
-  slots, bookingSlotId, onPick
+  slots, onPick
 }: {
   slots: BookableSlot[];
-  bookingSlotId: number | null;
   onPick: (slot: BookableSlot) => void;
 }) {
   // Preserve the server's date order while grouping.
@@ -601,35 +698,41 @@ function SlotPicker({
     if (!arr) { arr = []; idx.set(s.slot_date, arr); groups.push([s.slot_date, arr]); }
     arr.push(s);
   }
-  const anyBusy = bookingSlotId !== null;
+  // Surface the venue once per day (open slots usually share one location).
+  const dayLocation = (daySlots: BookableSlot[]): string | null =>
+    daySlots.find((s) => s.status === "open" && s.location)?.location ?? null;
 
   return (
     <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-      {groups.map(([date, daySlots]) => (
-        <div key={date}>
-          <div className="text-[11px] font-bold text-slate-600 mb-1">
-            {weekdayTh(date)} · {formatLongDate(date, "th")}
+      <p className="text-[11px] text-slate-500">แตะเลือกช่วงเวลา แล้วกดยืนยันอีกครั้ง</p>
+      {groups.map(([date, daySlots]) => {
+        const loc = dayLocation(daySlots);
+        return (
+          <div key={date}>
+            <div className="text-[11px] font-bold text-slate-600 mb-1">
+              {weekdayTh(date)} · {formatLongDate(date, "th")}
+              {loc && <span className="ml-1 font-normal text-slate-400">· {loc}</span>}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {daySlots.map((s) => {
+                const taken = s.status !== "open";
+                return (
+                  <button key={s.id} type="button"
+                    disabled={taken}
+                    onClick={() => onPick(s)}
+                    className={`text-[11px] px-2 py-1 rounded-lg border font-mono tabular-nums ${
+                      taken
+                        ? "border-slate-200 bg-slate-100 text-slate-400 line-through cursor-not-allowed"
+                        : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    }`}>
+                    {s.start_time}–{s.end_time}{taken ? " · ไม่ว่าง" : ""}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {daySlots.map((s) => {
-              const taken = s.status !== "open";
-              const busy = bookingSlotId === s.id;
-              return (
-                <button key={s.id} type="button"
-                  disabled={taken || anyBusy}
-                  onClick={() => onPick(s)}
-                  className={`text-[11px] px-2 py-1 rounded-lg border font-mono tabular-nums ${
-                    taken
-                      ? "border-slate-200 bg-slate-100 text-slate-400 line-through cursor-not-allowed"
-                      : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                  } ${busy ? "opacity-50" : ""}`}>
-                  {s.start_time}–{s.end_time}{taken ? " · ไม่ว่าง" : ""}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
