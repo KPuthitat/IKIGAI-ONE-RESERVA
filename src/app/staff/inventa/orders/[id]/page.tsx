@@ -189,15 +189,17 @@ export default function InventaOrderDetailPage({
     bySupplier.set(k, arr);
   }
   const supplierGroups = [...bySupplier.entries()];
-  // Display cost per line: prefer the order-time snapshot, but when an
-  // item was added with no cost yet (snapshot froze at ฿0), fall back to
-  // the item's CURRENT cost so the review reflects costs filled in later
-  // (owner 2026-06-10 — PO #4 kept showing ฿0 after its costs were set).
-  // Never overrides a real snapshot, so historical orders stay intact.
-  const lineCost = (l: Line): number =>
-    l.unit_cost_at_order > 0
-      ? l.unit_cost_at_order
-      : (l.item_cost_price ?? l.item_unit_cost ?? 0);
+  // Display cost per line. Owner 2026-06-11 (#10: Canasone PO showed 59.97
+  // although the cost was corrected to 60): the owner-pinned cost_price is
+  // the single source of truth — "ราคาทุนที่กรอกให้วิ่งไปแทนที่ราคาเก่าทุกที่".
+  // So prefer the item's CURRENT cost_price; only fall back to the order-time
+  // snapshot (then the derived unit_cost) when no cost_price is set. This also
+  // keeps PO #4 correct (snapshot ฿0 → shows the cost filled in later).
+  const lineCost = (l: Line): number => {
+    if (l.item_cost_price != null && l.item_cost_price > 0) return l.item_cost_price;
+    if (l.unit_cost_at_order > 0) return l.unit_cost_at_order;
+    return l.item_unit_cost ?? 0;
+  };
   const grandTotal = lines.reduce((s, l) => s + l.order_qty * lineCost(l), 0);
   const buyerName = company?.name_th ?? branch?.name ?? t(lang, "inv.dash");
   const buyerAddr = branch?.reg_address || company?.address || "";
