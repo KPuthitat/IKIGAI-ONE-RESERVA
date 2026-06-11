@@ -25,11 +25,17 @@ function weekdayOf(iso: string): number {
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
 
+const DURATION_OPTS = [15, 30, 45, 60, 90, 120];
+
 export default function InterviewSlotsClient({
-  slots, today
+  slots, today, lockedMinutes = null, currentMinutes = null
 }: {
   slots: AdminInterviewSlot[];
   today: string;
+  /** Slot length is locked to this many minutes once a booking exists. */
+  lockedMinutes?: number | null;
+  /** Current slot length (from existing slots) to default the picker to. */
+  currentMinutes?: number | null;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -41,6 +47,11 @@ export default function InterviewSlotsClient({
   const [startTime, setStartTime] = useState("12:00");
   const [endTime, setEndTime] = useState("15:00");
   const [location, setLocation] = useState("");
+  // Slot length (minutes). When locked (a booking exists) it's pinned to
+  // lockedMinutes; otherwise defaults to the current length or 60.
+  const [slotMinutes, setSlotMinutes] = useState<number>(
+    lockedMinutes ?? currentMinutes ?? 60
+  );
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -66,7 +77,8 @@ export default function InterviewSlotsClient({
           from_date: fromDate, to_date: toDate,
           weekdays: Array.from(weekdays),
           start_time: startTime, end_time: endTime,
-          location: location.trim() || undefined
+          location: location.trim() || undefined,
+          slot_minutes: slotMinutes
         })
       });
       const j = await res.json().catch(() => ({}));
@@ -168,13 +180,34 @@ export default function InterviewSlotsClient({
           </div>
         </div>
         <div>
+          <label className="label">ความยาวต่อช่วง (นาที)</label>
+          <select className="input text-sm" value={slotMinutes}
+            disabled={lockedMinutes != null}
+            onChange={(e) => setSlotMinutes(Number(e.target.value))}>
+            {/* keep a locked value selectable even if it's not a preset */}
+            {!DURATION_OPTS.includes(slotMinutes) && (
+              <option value={slotMinutes}>{slotMinutes} นาที</option>
+            )}
+            {DURATION_OPTS.map((m) => <option key={m} value={m}>{m} นาที</option>)}
+          </select>
+          {lockedMinutes != null ? (
+            <p className="text-[10px] text-amber-600 mt-1">
+              มีผู้จองสัมภาษณ์แล้ว — ปรับความยาวช่วงเวลาไม่ได้ (คงไว้ที่ {lockedMinutes} นาที) เพิ่มช่วงใหม่ความยาวเดิมได้
+            </p>
+          ) : (
+            <p className="text-[10px] text-slate-400 mt-1">
+              ตั้งได้ว่าช่วงสัมภาษณ์ละกี่นาที — ล็อกอัตโนมัติเมื่อมีผู้จองแล้ว
+            </p>
+          )}
+        </div>
+        <div>
           <label className="label">สถานที่ (ทางเลือก)</label>
           <input className="input text-sm" value={location} maxLength={300}
             onChange={(e) => setLocation(e.target.value)}
             placeholder="เช่น สาขา NAMA / Google Meet" />
         </div>
         <p className="text-[11px] text-slate-400">
-          ระบบจะสร้างช่วงละ 1 ชั่วโมงในกรอบเวลาที่กำหนด เช่น 12:00–15:00 = 12:00–13:00 / 13:00–14:00 / 14:00–15:00
+          ระบบจะสร้างช่วงละ {slotMinutes} นาที ในกรอบเวลาที่กำหนด (เศษเวลาที่ไม่ครบ 1 ช่วงจะถูกข้าม)
         </p>
         {msg && (
           <p className={`text-xs ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>{msg.text}</p>

@@ -95,6 +95,9 @@ export function generateInterviewSlots(args: {
   startTime: string;        // 'HH:MM'
   endTime: string;          // 'HH:MM'
   location?: string | null;
+  /** Minutes per slot (owner 2026-06-11 — was hard-coded 60). Once any
+   *  slot is booked the length is locked to the existing one (see below). */
+  slotMinutes?: number;
 }): { ok: true; created: number; skipped: number } | { ok: false; error: string } {
   const { fromDate, toDate, weekdays, startTime, endTime } = args;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
@@ -107,16 +110,29 @@ export function generateInterviewSlots(args: {
   if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
     return { ok: false, error: "bad_time" };
   }
-  if (timeToMinutes(startTime) + SLOT_MINUTES > timeToMinutes(endTime)) {
+  const slotMinutes = Math.round(Number(args.slotMinutes ?? SLOT_MINUTES));
+  if (!isFinite(slotMinutes) || slotMinutes < 5 || slotMinutes > 480) {
+    return { ok: false, error: "bad_duration" };
+  }
+  if (timeToMinutes(startTime) + slotMinutes > timeToMinutes(endTime)) {
     return { ok: false, error: "window_too_short" };
   }
   const wkSet = new Set(weekdays.filter((d) => d >= 0 && d <= 6));
   if (wkSet.size === 0) return { ok: false, error: "no_weekdays" };
 
-  const starts = generateSlots(startTime, endTime, SLOT_MINUTES);
+  const db = getDb();
+  // Lock the slot length once anyone has booked (owner 2026-06-11:
+  // "ห้ามแก้ไขหลังจากมีผู้ลงนัดมาแล้ว"). Generating MORE slots of the SAME
+  // length is still fine (extending the date range); only changing the
+  // length is refused so a booked schedule can't become inconsistent.
+  const lockedMinutes = bookedSlotMinutes();
+  if (lockedMinutes != null && lockedMinutes !== slotMinutes) {
+    return { ok: false, error: "duration_locked" };
+  }
+
+  const starts = generateSlots(startTime, endTime, slotMinutes);
   const location = (args.location ?? "").trim() || null;
 
-  const db = getDb();
   const insert = db.prepare(`
     INSERT OR IGNORE INTO recruita_interview_slots
       (slot_date, start_time, end_time, location, status)
@@ -128,7 +144,7 @@ export function generateInterviewSlots(args: {
     for (const { iso, weekday } of eachDate(fromDate, toDate)) {
       if (!wkSet.has(weekday)) continue;
       for (const start of starts) {
-        const end = minutesToTime(timeToMinutes(start) + SLOT_MINUTES);
+        const end = minutesToTime(timeToMinutes(start) + slotMinutes);
         attempted++;
         const info = insert.run(iso, start, end, location);
         if (info.changes > 0) created++;
@@ -137,6 +153,19 @@ export function generateInterviewSlots(args: {
   });
   tx();
   return { ok: true, created, skipped: attempted - created };
+}
+
+/** The slot length (minutes) the schedule is locked to once a booking
+ *  exists — derived from any booked slot's start/end. Returns null when no
+ *  slot is booked yet (length still freely changeable). Used to gate the
+ *  generator + to disable the duration picker in the admin UI. */
+export function bookedSlotMinutes(): number | null {
+  const row = getDb().prepare(
+    "SELECT start_time, end_time FROM recruita_interview_slots WHERE status = 'booked' LIMIT 1"
+  ).get() as { start_time: string; end_time: string } | undefined;
+  if (!row) return null;
+  const mins = timeToMinutes(row.end_time) - timeToMinutes(row.start_time);
+  return mins > 0 ? mins : null;
 }
 
 /** Slots from today onward, with booked-candidate info — for the admin

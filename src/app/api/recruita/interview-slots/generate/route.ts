@@ -16,7 +16,9 @@ const Body = z.object({
   weekdays: z.array(z.number().int().min(0).max(6)).min(1),
   start_time: z.string().regex(/^\d{2}:\d{2}$/),
   end_time: z.string().regex(/^\d{2}:\d{2}$/),
-  location: z.string().max(300).optional()
+  location: z.string().max(300).optional(),
+  // Minutes per slot (owner 2026-06-11). Default 60 for older clients.
+  slot_minutes: z.number().int().min(5).max(480).optional()
 });
 
 const ERR_MSG: Record<string, string> = {
@@ -24,7 +26,9 @@ const ERR_MSG: Record<string, string> = {
   range_reversed: "วันเริ่มต้องไม่เกินวันสิ้นสุด",
   no_weekdays: "เลือกวันในสัปดาห์อย่างน้อย 1 วัน",
   bad_time: "รูปแบบเวลาไม่ถูกต้อง",
-  window_too_short: "ช่วงเวลาต้องกว้างอย่างน้อย 1 ชั่วโมง"
+  bad_duration: "ความยาวช่วงเวลาไม่ถูกต้อง (5–480 นาที)",
+  window_too_short: "ช่วงเวลาต้องกว้างพอสำหรับอย่างน้อย 1 ช่วงตามที่ตั้งไว้",
+  duration_locked: "มีผู้จองสัมภาษณ์แล้ว — ปรับความยาวช่วงเวลาไม่ได้ (ต้องคงความยาวเดิม)"
 };
 
 export async function POST(req: Request) {
@@ -42,7 +46,8 @@ export async function POST(req: Request) {
     weekdays: parsed.data.weekdays,
     startTime: parsed.data.start_time,
     endTime: parsed.data.end_time,
-    location: parsed.data.location ?? null
+    location: parsed.data.location ?? null,
+    slotMinutes: parsed.data.slot_minutes
   });
   if (!r.ok) {
     return NextResponse.json(
