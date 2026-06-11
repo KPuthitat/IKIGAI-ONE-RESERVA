@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { getSystemSettings } from "@/lib/db";
 import { listSlotsForAdmin, bookedSlotMinutes, listInterviewStageApplicants } from "@/lib/recruita-interview-slots";
 import { todayBkk, timeToMinutes } from "@/lib/time";
 import InterviewSlotsClient from "./InterviewSlotsClient";
@@ -22,6 +23,8 @@ export default function InterviewSlotsPage() {
     : null;
   // Interview-stage applicants an admin can book a slot for (owner 2026-06-11).
   const applicants = listInterviewStageApplicants();
+  // Venue map/navigation link (shared with the invite-card button).
+  const mapUrl = getSystemSettings().recruita_interview_map_url ?? "";
 
   return (
     <div className="space-y-4">
@@ -38,7 +41,8 @@ export default function InterviewSlotsPage() {
         today={today}
         lockedMinutes={lockedMinutes}
         currentMinutes={currentMinutes}
-        applicants={applicants} />
+        applicants={applicants}
+        mapUrl={mapUrl} />
     </div>
   );
 }

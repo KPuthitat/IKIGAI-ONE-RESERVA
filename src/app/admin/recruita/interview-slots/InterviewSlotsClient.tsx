@@ -28,7 +28,7 @@ function weekdayOf(iso: string): number {
 const DURATION_OPTS = [15, 30, 45, 60, 90, 120];
 
 export default function InterviewSlotsClient({
-  slots, today, lockedMinutes = null, currentMinutes = null, applicants = []
+  slots, today, lockedMinutes = null, currentMinutes = null, applicants = [], mapUrl = ""
 }: {
   slots: AdminInterviewSlot[];
   today: string;
@@ -38,6 +38,8 @@ export default function InterviewSlotsClient({
   currentMinutes?: number | null;
   /** Interview-stage applicants the admin can book an open slot for. */
   applicants?: InterviewApplicant[];
+  /** Venue map/navigation link (shared with the invite-card button). */
+  mapUrl?: string;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -125,6 +127,26 @@ export default function InterviewSlotsClient({
     } finally { setBusy(false); }
   }
 
+  // Venue map link (owner 2026-06-11: "ยังไม่มีให้แปะลิงค์สถานที่นัด
+  // สัมภาษณ์") — editable here, shared with the invite-card navigate button.
+  const [mapLinkInput, setMapLinkInput] = useState(mapUrl);
+  const [mapBusy, setMapBusy] = useState(false);
+  async function saveMapLink() {
+    setMapBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch(apiUrl("/api/recruita/interview-slots/location-link"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ map_url: mapLinkInput.trim() })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setMsg({ kind: "err", text: j.message ?? "บันทึกลิงก์ไม่สำเร็จ" }); return; }
+      setMsg({ kind: "ok", text: "บันทึกลิงก์สถานที่แล้ว" });
+      startTransition(() => router.refresh());
+    } finally { setMapBusy(false); }
+  }
+
   // Admin books an open slot ON BEHALF of an applicant (owner 2026-06-11).
   // assignSlotId = the slot whose applicant-picker is open.
   const [assignSlotId, setAssignSlotId] = useState<number | null>(null);
@@ -166,6 +188,29 @@ export default function InterviewSlotsClient({
 
   return (
     <div className="space-y-4">
+      {/* Venue location link — shared with the invite-card navigate button. */}
+      <div className="card space-y-2">
+        <h2 className="font-bold text-slate-800 text-sm">ลิงก์สถานที่นัดสัมภาษณ์ (แผนที่/นำทาง)</h2>
+        <p className="text-[11px] text-slate-500">
+          วางลิงก์ Google Maps (หรือลิงก์แผนที่อื่น) ของสถานที่นัดสัมภาษณ์ — จะเป็นปุ่ม
+          &quot;นำทางมาสถานที่นัดสัมภาษณ์&quot; บนการ์ดเชิญสัมภาษณ์ใน LINE ของผู้สมัคร. ปล่อยว่าง = ไม่แสดงปุ่ม.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input className="input text-sm flex-1 min-w-[220px]" type="url" inputMode="url"
+            value={mapLinkInput} onChange={(e) => setMapLinkInput(e.target.value)}
+            placeholder="เช่น https://maps.app.goo.gl/xxxxxxxx" maxLength={1000} />
+          <button type="button" onClick={saveMapLink}
+            disabled={mapBusy || mapLinkInput.trim() === (mapUrl ?? "").trim()}
+            className="btn-primary text-sm py-2 px-4 disabled:opacity-50">
+            {mapBusy ? "กำลังบันทึก…" : "บันทึกลิงก์"}
+          </button>
+          {mapLinkInput.trim() && /^https?:\/\//i.test(mapLinkInput.trim()) && (
+            <a href={mapLinkInput.trim()} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-brand hover:underline">เปิดดู</a>
+          )}
+        </div>
+      </div>
+
       {/* Config / generator */}
       <div className="card space-y-3">
         <h2 className="font-bold text-slate-800 text-sm">สร้างช่วงเวลาสัมภาษณ์</h2>
