@@ -98,8 +98,55 @@ export default function TimesheetsClient({
   const [addKey, setAddKey] = useState<string | null>(null);
   const [addTime, setAddTime] = useState("");
   const [addingKey, setAddingKey] = useState<string | null>(null);
+  // Standalone "ลงเวลาแทนพนักงาน" panel (owner 2026-06-11) — lets an admin
+  // record a clock in/out for any employee + day, even when no row exists
+  // yet (the inline "+ เพิ่มเวลา" only appears on days that already have a row).
+  const [helpUserId, setHelpUserId] = useState("");
+  const [helpDate, setHelpDate] = useState(to);
+  const [helpType, setHelpType] = useState<"in" | "out">("in");
+  const [helpTime, setHelpTime] = useState("");
+  const [helpBusy, setHelpBusy] = useState(false);
   const certSet = new Set(certEntryIds);
   const { confirm, alert, ConfirmDialog } = useConfirm();
+
+  async function submitHelpPunch(): Promise<void> {
+    if (!helpUserId || !/^\d{4}-\d{2}-\d{2}$/.test(helpDate) || !/^\d{2}:\d{2}$/.test(helpTime)) return;
+    setHelpBusy(true);
+    try {
+      const ts = new Date(`${helpDate}T${helpTime}:00+07:00`).toISOString();
+      const res = await fetch("/api/admin/persona/timesheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: Number(helpUserId), type: helpType, ts })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        setHelpTime("");
+        alert({
+          title: "สำเร็จ",
+          body: <p>ลงเวลา{helpType === "in" ? "เข้า" : "ออก"}ให้พนักงานเรียบร้อยแล้ว</p>,
+          okLabel: t(lang, "common.confirm")
+        });
+        startTransition(() => router.refresh());
+      } else {
+        alert({
+          title: t(lang, "common.error"),
+          body: <p>{j?.message ?? j?.error ?? "ลงเวลาไม่สำเร็จ"}</p>,
+          variant: "danger",
+          okLabel: t(lang, "common.confirm")
+        });
+      }
+    } catch {
+      alert({
+        title: t(lang, "common.error"),
+        body: <p>{t(lang, "common.error")}</p>,
+        variant: "danger",
+        okLabel: t(lang, "common.confirm")
+      });
+    } finally {
+      setHelpBusy(false);
+    }
+  }
 
   // Add a punch the staff never recorded (or that vanished). Creates the
   // time_entries row + recomputes draft payroll — the reliable admin path
@@ -318,6 +365,56 @@ export default function TimesheetsClient({
           {t(lang, "admin.persona.timesheets.applyFilter")}
         </button>
       </form>
+
+      {/* ลงเวลาแทนพนักงาน — admin records a clock in/out for any employee +
+          day (owner 2026-06-11). Works even when no row exists yet. Records
+          on the admin's active branch, audited, + recomputes draft payroll. */}
+      <div className="card space-y-2">
+        <div>
+          <h2 className="font-bold text-slate-800 text-sm">ลงเวลาแทนพนักงาน</h2>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            ช่วยลงเวลาเข้า/ออกให้พนักงานที่ลืมลงเวลา — บันทึกในสาขาที่กำลังใช้งาน และคำนวณค่าตอบแทนรอบที่ยังเปิดอยู่ให้อัตโนมัติ
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end gap-2">
+          <div className="min-w-0 lg:flex-1">
+            <label className="block text-xs text-slate-500 mb-1">พนักงาน</label>
+            <select className="input" value={helpUserId}
+              onChange={(e) => setHelpUserId(e.target.value)}>
+              <option value="">— เลือกพนักงาน —</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {nameWithPrefix(u.title_prefix, u.display_name)} ({u.username})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="min-w-0">
+            <label className="block text-xs text-slate-500 mb-1">วันที่</label>
+            <input type="date" className="input" value={helpDate}
+              onChange={(e) => setHelpDate(e.target.value)} />
+          </div>
+          <div className="min-w-0">
+            <label className="block text-xs text-slate-500 mb-1">ประเภท</label>
+            <select className="input" value={helpType}
+              onChange={(e) => setHelpType(e.target.value as "in" | "out")}>
+              <option value="in">เวลาเข้า</option>
+              <option value="out">เวลาออก</option>
+            </select>
+          </div>
+          <div className="min-w-0">
+            <label className="block text-xs text-slate-500 mb-1">เวลา</label>
+            <input type="time" className="input" value={helpTime}
+              onChange={(e) => setHelpTime(e.target.value)} />
+          </div>
+          <button type="button"
+            disabled={helpBusy || !helpUserId || !/^\d{2}:\d{2}$/.test(helpTime)}
+            onClick={submitHelpPunch}
+            className="btn-primary disabled:opacity-50">
+            {helpBusy ? "กำลังบันทึก…" : "ลงเวลาให้"}
+          </button>
+        </div>
+      </div>
 
       {/* Entries table — one row per employee per day. Each day shows
           its clock-in(s), clock-out(s), approved OT until-time, and the
