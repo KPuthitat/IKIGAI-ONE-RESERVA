@@ -649,6 +649,52 @@ function ActiveView({
         target={target}
       />
 
+      {/* Nutrition guidance (owner 2026-06-11) — daily targets scaled to the
+          CURRENT body weight. Protein 1.2–1.6 g/kg helps preserve muscle
+          during weight loss; water ~30–35 ml/kg. General guidance only — the
+          care team sets individual targets (disclaimer below). */}
+      {curW != null && curW > 0 && (() => {
+        const pLo = Math.round(curW * 1.2);
+        const pHi = Math.round(curW * 1.6);
+        const wLo = (curW * 30 / 1000).toFixed(1);
+        const wHi = (curW * 35 / 1000).toFixed(1);
+        return (
+          <div className="card space-y-3">
+            <div>
+              <h2 className="font-bold text-slate-800 text-sm">คำแนะนำโภชนาการประจำวัน</h2>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                คำนวณจากน้ำหนักปัจจุบัน {curW} กก. — ปรับให้เหมาะกับแต่ละคนโดยทีมแพทย์
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                <div className="text-[11px] font-semibold text-emerald-800">โปรตีนต่อวัน</div>
+                <div className="text-2xl font-extrabold text-emerald-700 leading-tight tabular-nums">
+                  {pLo}–{pHi} <span className="text-sm font-bold">กรัม</span>
+                </div>
+                <div className="text-[10px] text-emerald-700/70 mt-0.5">≈ 1.2–1.6 ก./กก. ช่วยรักษามวลกล้ามเนื้อ</div>
+              </div>
+              <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3">
+                <div className="text-[11px] font-semibold text-sky-800">น้ำดื่มต่อวัน</div>
+                <div className="text-2xl font-extrabold text-sky-700 leading-tight tabular-nums">
+                  {wLo}–{wHi} <span className="text-sm font-bold">ลิตร</span>
+                </div>
+                <div className="text-[10px] text-sky-700/70 mt-0.5">≈ 30–35 มล./กก.</div>
+              </div>
+            </div>
+            <ul className="text-[11px] text-slate-600 leading-relaxed list-disc list-inside space-y-0.5">
+              <li>เน้นโปรตีนทุกมื้อ (เนื้อไม่ติดมัน ไข่ ปลา เต้าหู้ ถั่ว) เพื่อไม่ให้สูญเสียกล้ามเนื้อช่วงลดน้ำหนัก</li>
+              <li>กินผักและไฟเบอร์ให้มาก ลดน้ำตาล/น้ำหวาน/ของทอด</li>
+              <li>แบ่งมื้อพอดี ดื่มน้ำให้เพียงพอ โดยเฉพาะช่วงปรับยา</li>
+            </ul>
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              * เป็นคำแนะนำทั่วไปสำหรับการควบคุมน้ำหนัก ไม่ใช่คำสั่งทางการแพทย์เฉพาะบุคคล —
+              หากมีโรคประจำตัว (เช่น ไต) หรือต้องการเป้าหมายเฉพาะ กรุณาปรึกษาทีมแพทย์/นักโภชนาการ
+            </p>
+          </div>
+        );
+      })()}
+
       {/* Self-log form (daily) */}
       <div className="card space-y-3">
         <h2 className="font-bold text-slate-800 text-sm">บันทึกสุขภาพประจำวัน</h2>
