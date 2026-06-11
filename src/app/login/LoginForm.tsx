@@ -57,19 +57,17 @@ export default function LoginForm({
         setErr(data.error || t("login.error.generic"));
         return;
       }
-      // Owner 2026-06-10: EVERYONE logs in as an employee first and picks
-      // their working branch before doing anything — admins (incl.
-      // super_admin) are employees first and toggle into the Admin Console
-      // afterward. So anyone with ≥1 branch lands on the staff branch
-      // picker (which auto-skips straight to /staff when they have exactly
-      // one branch). A super_admin with no branch membership has nothing
-      // to pick → goes straight to /admin so they're never stranded.
+      // Landing by role (owner 2026-06-11): super_admin's home is the Admin
+      // Console, so they go through the ADMIN branch picker → /admin. Admins
+      // and staff are employees first → STAFF branch picker → /staff. Both
+      // pickers auto-skip straight through when there's only one eligible
+      // branch, so single-branch users feel no extra step.
       const dest = next
         ? next
-        : (data.branchCount ?? 0) >= 1
-          ? "/staff/branch-picker"
-          : data.is_super_admin
-            ? "/admin"
+        : data.is_super_admin
+          ? "/admin/branch-picker"
+          : (data.branchCount ?? 0) >= 1
+            ? "/staff/branch-picker"
             : "/staff";
       router.push(dest);
       router.refresh();

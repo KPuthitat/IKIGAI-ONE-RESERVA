@@ -68,7 +68,14 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   const isAdminUser = user.role === "super_admin"
     || (user.role === "admin" && user.adminBranchIds.length > 0)
     || user.permissions.length > 0;
-  const adminView = isAdminUser && cookies().get("os_view")?.value === "admin";
+  // Home mode by role (owner 2026-06-11): super_admin lands in admin view,
+  // everyone else in staff view. The os_view cookie overrides once the user
+  // deliberately switches (PIN-gated for the non-default direction).
+  const defaultView: "admin" | "staff" = user.role === "super_admin" ? "admin" : "staff";
+  const viewCookie = cookies().get("os_view")?.value;
+  const effectiveView: "admin" | "staff" =
+    viewCookie === "admin" || viewCookie === "staff" ? viewCookie : defaultView;
+  const adminView = isAdminUser && effectiveView === "admin";
   const modBase = adminView ? "/admin" : "/staff";
 
   // Sections scoped to each module via pathPrefix.
@@ -205,7 +212,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       {/* STAFF / ADMIN switch — all breakpoints, admins only. The view
           prop reflects the persisted os_view intent so the label + cookie
           stay consistent even on a /staff page reached from admin. */}
-      {isAdminUser && <AdminModeToggle view={adminView ? "admin" : "staff"} />}
+      {isAdminUser && <AdminModeToggle view={adminView ? "admin" : "staff"} defaultView={defaultView} />}
       <div className="md:hidden space-y-3">
         {/* Branch pill moved into sidebar brand area 2026-05-25 —
             see Sidebar's brand prop below. Removes the duplicate

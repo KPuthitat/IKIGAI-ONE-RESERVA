@@ -300,7 +300,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {(user.role === "super_admin" ||
         (user.role === "admin" && user.adminBranchIds.length > 0) ||
         user.permissions.length > 0) && (
-        <AdminModeToggle view="admin" />
+        <AdminModeToggle view="admin" defaultView={user.role === "super_admin" ? "admin" : "staff"} />
       )}
       <div className="md:hidden space-y-3">
         {/* Branch pill removed from mobile sidebar footer 2026-05-25
