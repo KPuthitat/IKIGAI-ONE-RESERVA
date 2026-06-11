@@ -77,6 +77,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // visible so admin can switch back to the picker.
   const isSuperAdmin = user.role === "super_admin";
 
+  // Branch-gate (owner 2026-06-11): a module can't be opened until a branch
+  // is selected. When none is set, every module link routes through the
+  // branch picker first (?next=destination). The picker auto-skips when the
+  // user has exactly one eligible branch, so single-branch users feel no
+  // extra step — this only forces a pick for multi-branch users.
+  const needBranch = !user.activeBranchId;
+  const gate = (href: string) =>
+    needBranch ? `/admin/branch-picker?next=${encodeURIComponent(href)}` : href;
   const sections: SidebarSection[] = [
     {
       label: t(lang, "sidebar.section.modules"),
@@ -85,17 +93,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // Module links are filtered by RBAC (2026-06-04): each appears
         // only when the user's roles grant that module. super_admin and
         // roleless full branch-admins see them all (see canModule).
-        ...(canModule(user, "persona.manage") ? [{ href: "/admin/persona", label: "PERSONA" }] : []),
-        ...(canModule(user, "reserva.manage") ? [{ href: "/admin/reserva", label: "RESERVA" }] : []),
+        ...(canModule(user, "persona.manage") ? [{ href: gate("/admin/persona"), label: "PERSONA" }] : []),
+        ...(canModule(user, "reserva.manage") ? [{ href: gate("/admin/reserva"), label: "RESERVA" }] : []),
         // INVENTA lives under /staff (clinic staff tool; admins are
         // employees too). Always shown — it's a staff-level tool, not
         // gated by the admin-module RBAC. The INVENTA settings page is
         // reached from inside INVENTA itself (its own sidebar section +
         // the toolbar) — not duplicated at module level here.
-        { href: "/staff/inventa", label: "INVENTA" },
-        ...(canModule(user, "ascenda.view") ? [{ href: "/admin/ascenda", label: "ASCENDA" }] : []),
-        ...(canModule(user, "insigna.view") ? [{ href: "/admin/insigna", label: "INSIGNA" }] : []),
-        ...(canModule(user, "recruita.access") ? [{ href: "/admin/recruita", label: "RECRUITA" }] : []),
+        { href: gate("/staff/inventa"), label: "INVENTA" },
+        ...(canModule(user, "ascenda.view") ? [{ href: gate("/admin/ascenda"), label: "ASCENDA" }] : []),
+        ...(canModule(user, "insigna.view") ? [{ href: gate("/admin/insigna"), label: "INSIGNA" }] : []),
+        ...(canModule(user, "recruita.access") ? [{ href: gate("/admin/recruita"), label: "RECRUITA" }] : []),
         // System-wide entries — only super_admin can manage these,
         // so hide them from regular admins to keep the sidebar clean.
         // The pages still enforce requireSuperAdmin() server-side as

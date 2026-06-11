@@ -78,15 +78,21 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   const adminView = isAdminUser && effectiveView === "admin";
   const modBase = adminView ? "/admin" : "/staff";
 
+  // Branch-gate (owner 2026-06-11): block opening a module until a branch is
+  // selected — when none is set, module links route through the branch picker
+  // (?next=destination). The picker auto-skips for single-branch users.
+  const needBranch = !user.activeBranchId;
+  const gate = (href: string) =>
+    needBranch ? `${modBase}/branch-picker?next=${encodeURIComponent(href)}` : href;
   // Sections scoped to each module via pathPrefix.
   const sections: SidebarSection[] = [
     {
       label: t(lang, "sidebar.section.modules"),
       items: [
         { href: adminView ? "/admin" : "/staff", label: t(lang, "sidebar.modulePicker") },
-        { href: `${modBase}/persona`, label: "PERSONA" },
-        { href: `${modBase}/reserva`, label: "RESERVA" },
-        { href: "/staff/inventa", label: "INVENTA" }
+        { href: gate(`${modBase}/persona`), label: "PERSONA" },
+        { href: gate(`${modBase}/reserva`), label: "RESERVA" },
+        { href: gate("/staff/inventa"), label: "INVENTA" }
       ]
     },
     {
