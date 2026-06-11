@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { formatLongDate } from "@/lib/time";
-import type { AdminInterviewSlot } from "@/lib/recruita-interview-slots";
+import type { AdminInterviewSlot, InterviewApplicant } from "@/lib/recruita-interview-slots";
 
 // Thai week, calendar order (Mon first). idx = JS getUTCDay() value.
 const WEEKDAYS: Array<{ idx: number; label: string; short: string }> = [
@@ -28,7 +28,7 @@ function weekdayOf(iso: string): number {
 const DURATION_OPTS = [15, 30, 45, 60, 90, 120];
 
 export default function InterviewSlotsClient({
-  slots, today, lockedMinutes = null, currentMinutes = null
+  slots, today, lockedMinutes = null, currentMinutes = null, applicants = []
 }: {
   slots: AdminInterviewSlot[];
   today: string;
@@ -36,6 +36,8 @@ export default function InterviewSlotsClient({
   lockedMinutes?: number | null;
   /** Current slot length (from existing slots) to default the picker to. */
   currentMinutes?: number | null;
+  /** Interview-stage applicants the admin can book an open slot for. */
+  applicants?: InterviewApplicant[];
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -119,6 +121,32 @@ export default function InterviewSlotsClient({
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setMsg({ kind: "err", text: "ล้างไม่สำเร็จ" }); return; }
       setMsg({ kind: "ok", text: `ล้างช่วงว่าง ${j.removed} ช่วงแล้ว` });
+      startTransition(() => router.refresh());
+    } finally { setBusy(false); }
+  }
+
+  // Admin books an open slot ON BEHALF of an applicant (owner 2026-06-11).
+  // assignSlotId = the slot whose applicant-picker is open.
+  const [assignSlotId, setAssignSlotId] = useState<number | null>(null);
+  const [assignAppId, setAssignAppId] = useState("");
+  async function assignSlot(slotId: number) {
+    if (!assignAppId) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/recruita/interview-slots/${slotId}/assign`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ application_id: Number(assignAppId) })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        setMsg({ kind: "err", text: j.message ?? j.error ?? "ลงนัดไม่สำเร็จ" });
+        return;
+      }
+      setMsg({ kind: "ok", text: "ลงนัดสัมภาษณ์ให้ผู้สมัครเรียบร้อยแล้ว" });
+      setAssignSlotId(null);
+      setAssignAppId("");
       startTransition(() => router.refresh());
     } finally { setBusy(false); }
   }
@@ -247,7 +275,7 @@ export default function InterviewSlotsClient({
                 </div>
                 <div className="divide-y divide-slate-100">
                   {daySlots.map((s) => (
-                    <div key={s.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                    <div key={s.id} className="flex items-center gap-2 px-3 py-2 text-sm flex-wrap">
                       <span className="font-mono text-slate-700 tabular-nums w-[110px] flex-shrink-0">
                         {s.start_time}–{s.end_time}
                       </span>
@@ -255,10 +283,41 @@ export default function InterviewSlotsClient({
                         <>
                           <span className="text-[11px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-700">ว่าง</span>
                           {s.location && <span className="text-[11px] text-slate-400 truncate">{s.location}</span>}
-                          <button type="button" onClick={() => deleteSlot(s.id)} disabled={busy}
-                            className="ml-auto text-[11px] text-rose-500 hover:text-rose-700 underline disabled:opacity-50">
-                            ลบ
-                          </button>
+                          {assignSlotId === s.id ? (
+                            <div className="ml-auto flex items-center gap-1 flex-wrap justify-end">
+                              <select className="input !py-0.5 !w-auto text-xs max-w-[220px]"
+                                value={assignAppId} onChange={(e) => setAssignAppId(e.target.value)}>
+                                <option value="">— เลือกผู้สมัคร —</option>
+                                {applicants.map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {a.name || "ผู้สมัคร"}{a.position_title ? ` · ${a.position_title}` : ""}{a.interview_at ? " (จองแล้ว)" : ""}
+                                  </option>
+                                ))}
+                              </select>
+                              <button type="button" disabled={busy || !assignAppId}
+                                onClick={() => assignSlot(s.id)}
+                                className="text-[11px] text-emerald-700 font-bold hover:underline disabled:opacity-50">
+                                ลงนัด
+                              </button>
+                              <button type="button"
+                                onClick={() => { setAssignSlotId(null); setAssignAppId(""); }}
+                                className="text-[11px] text-slate-400 hover:text-slate-600">✕</button>
+                            </div>
+                          ) : (
+                            <div className="ml-auto flex items-center gap-3">
+                              {applicants.length > 0 && (
+                                <button type="button" disabled={busy}
+                                  onClick={() => { setAssignSlotId(s.id); setAssignAppId(""); }}
+                                  className="text-[11px] text-brand font-semibold hover:underline disabled:opacity-50">
+                                  ลงนัดให้ผู้สมัคร
+                                </button>
+                              )}
+                              <button type="button" onClick={() => deleteSlot(s.id)} disabled={busy}
+                                className="text-[11px] text-rose-500 hover:text-rose-700 underline disabled:opacity-50">
+                                ลบ
+                              </button>
+                            </div>
+                          )}
                         </>
                       ) : (
                         <>

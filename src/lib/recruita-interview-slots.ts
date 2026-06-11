@@ -155,6 +155,31 @@ export function generateInterviewSlots(args: {
   return { ok: true, created, skipped: attempted - created };
 }
 
+/** Applicants currently at the 'interview' stage — the ones an admin can
+ *  book a slot FOR (owner 2026-06-11: "ลงเวลานัดสัมภาษณ์แทนผู้สมัครได้").
+ *  interview_at is their existing booking (null = none yet), so the admin
+ *  UI can flag who's already scheduled. */
+export type InterviewApplicant = {
+  id: number;
+  name: string;
+  position_title: string | null;
+  interview_at: string | null;
+};
+export function listInterviewStageApplicants(): InterviewApplicant[] {
+  return getDb().prepare(`
+    SELECT a.id, a.interview_at,
+           TRIM(COALESCE(c.title_prefix,'') || ' ' ||
+                COALESCE(c.first_name_th,'') || ' ' ||
+                COALESCE(c.last_name_th,'')) AS name,
+           p.title AS position_title
+    FROM recruita_applications a
+    JOIN recruita_candidates c ON c.id = a.candidate_id
+    JOIN recruita_positions  p ON p.id = a.position_id
+    WHERE a.stage = 'interview'
+    ORDER BY name COLLATE NOCASE
+  `).all() as InterviewApplicant[];
+}
+
 /** The slot length (minutes) the schedule is locked to once a booking
  *  exists — derived from any booked slot's start/end. Returns null when no
  *  slot is booked yet (length still freely changeable). Used to gate the

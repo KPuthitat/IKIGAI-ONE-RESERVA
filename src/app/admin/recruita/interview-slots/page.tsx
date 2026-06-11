@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
-import { listSlotsForAdmin, bookedSlotMinutes } from "@/lib/recruita-interview-slots";
+import { listSlotsForAdmin, bookedSlotMinutes, listInterviewStageApplicants } from "@/lib/recruita-interview-slots";
 import { todayBkk, timeToMinutes } from "@/lib/time";
 import InterviewSlotsClient from "./InterviewSlotsClient";
 
@@ -20,6 +20,8 @@ export default function InterviewSlotsPage() {
   const currentMinutes = slots.length > 0
     ? timeToMinutes(slots[0].end_time) - timeToMinutes(slots[0].start_time)
     : null;
+  // Interview-stage applicants an admin can book a slot for (owner 2026-06-11).
+  const applicants = listInterviewStageApplicants();
 
   return (
     <div className="space-y-4">
@@ -35,7 +37,8 @@ export default function InterviewSlotsPage() {
         slots={slots}
         today={today}
         lockedMinutes={lockedMinutes}
-        currentMinutes={currentMinutes} />
+        currentMinutes={currentMinutes}
+        applicants={applicants} />
     </div>
   );
 }
