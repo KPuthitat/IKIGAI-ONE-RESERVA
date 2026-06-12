@@ -656,7 +656,9 @@ function ItemModal({
         // being silently dropped to null/default (owner 2026-06-08, item 4).
         unit_cost: f.unit_cost !== "" ? Number(f.unit_cost) : 0,
         cost_price: f.cost_price !== "" ? Number(f.cost_price) : null,
-        // ราคาขาย — stored in price_opd, printed on the shelf label (owner 2026-06-09)
+        // price_opd — deprecated 2026-06-12 (selling price now lives in
+        // unit_cost). No form field edits it anymore; re-sent unchanged to
+        // preserve any legacy value. Safe to drop in a later cleanup.
         price_opd: f.price_opd !== "" ? Number(f.price_opd) : null,
         storage_location: f.storage_location.trim() || null,
         supplier_id: f.supplier_id ? Number(f.supplier_id) : null,
@@ -833,22 +835,10 @@ function ItemModal({
               {t("inv.f.costPriceHint")}
             </p>
           </div>
-          {/* ราคาขาย — selling price (owner 2026-06-09). Stored in price_opd;
-              printed on the shelf label next to ราคาทุน, in บาท/หน่วย. */}
-          <div>
-            <label className="label flex items-center gap-1">
-              <span className="text-amber-700">฿</span>
-              ราคาขาย (บาท/หน่วย)
-            </label>
-            <input className="input border-l-4 border-l-amber-500 font-semibold"
-              type="number" min="0" step="0.01"
-              value={f.price_opd}
-              onChange={(e) => up("price_opd", e.target.value)}
-              placeholder="เช่น 120" />
-            <p className="text-[10px] text-slate-400 mt-1">
-              ราคาขายต่อหน่วย — แสดงบนฉลากคู่กับราคาทุน
-            </p>
-          </div>
+          {/* ราคาขาย (price_opd) field removed 2026-06-12 — it was a duplicate
+              that was never populated, so the label read blank. The selling
+              price lives in unit_cost (ราคาต่อหน่วย) below, which the label now
+              reads. price_opd column/state kept for back-compat; not edited. */}
           <div className="col-span-2">
             <label className="label">{t("inv.f.cost")}</label>
             <input className="input" type="number" min="0" step="0.0001"

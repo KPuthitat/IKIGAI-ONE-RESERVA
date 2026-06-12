@@ -24,8 +24,8 @@ export type LabelItem = {
   grid_col: number | null;
   pick_freq: PickFreq | null;
   unit?: string | null;
-  cost?: number | null;        // effective ราคาทุน (cost_price ?? unit_cost)
-  sale?: number | null;        // ราคาขาย (price_opd) — for power-outage reference
+  cost?: number | null;        // ราคาทุน — cost_price only (owner 2026-06-12)
+  sale?: number | null;        // ราคาขาย — unit_cost (owner 2026-06-12); for power-outage reference
   category?: string | null;
   storage_location?: string | null;
   supplier_name?: string | null;

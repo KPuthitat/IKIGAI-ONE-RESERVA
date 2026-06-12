@@ -28,13 +28,15 @@ export default function InventaLabelsPage() {
     LabelItem & { cost_price: number | null; unit_cost: number | null; price_opd: number | null }
   >;
   // Label shows BOTH prices so a sticker is usable when the system is
-  // unreachable (owner 2026-06-08, "เผื่อไฟดับ"):
-  //   • ราคาทุน  = pinned cost_price, else derived unit_cost
-  //   • ราคาขาย  = price_opd (the selling price)
+  // unreachable (owner 2026-06-08, "เผื่อไฟดับ"). Owner 2026-06-12 clarified
+  // the price model: cost_price = ราคาทุน (what we paid), unit_cost = ราคาขาย
+  // (the per-unit selling price already maintained). So:
+  //   • ราคาทุน  = cost_price only (blank until entered — never the sale price)
+  //   • ราคาขาย  = unit_cost (the real data; the old price_opd field was empty)
   const items: LabelItem[] = rawItems.map((r) => ({
     ...r,
-    cost: r.cost_price ?? r.unit_cost ?? null,
-    sale: r.price_opd ?? null
+    cost: r.cost_price ?? null,
+    sale: r.unit_cost ?? null
   }));
 
   // Per-branch label print size (owner 2026-06-08), default 80×50 mm + the
