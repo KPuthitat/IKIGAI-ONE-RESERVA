@@ -29,6 +29,19 @@ export async function sendLinePush(
   channelToken: string,
   payload: LinePushPayload
 ): Promise<{ ok: boolean; status: number; error?: string }> {
+  // Dev safety guard: local dev runs against a copy of the prod DB, which
+  // carries REAL production LINE channel tokens and ~15 employees bound by
+  // line_user_id. Without this, any dev code path that reaches a push (cron
+  // digests, booking/leave/OT/discipline/recruita notifications, etc.) would
+  // message real people from localhost. Skip the real API call outside
+  // production unless the dev explicitly opts in with LINE_DEV_SEND=1.
+  if (process.env.NODE_ENV !== "production" && process.env.LINE_DEV_SEND !== "1") {
+    console.warn(
+      `[line] DEV GUARD — skipped LINE push to ${payload.to} ` +
+        `(${payload.messages.length} msg). Set LINE_DEV_SEND=1 in .env to send for real.`
+    );
+    return { ok: true, status: 200 };
+  }
   try {
     const res = await fetch("https://api.line.me/v2/bot/message/push", {
       method: "POST",
