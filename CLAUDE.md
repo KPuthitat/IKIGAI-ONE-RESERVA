@@ -30,6 +30,13 @@ Reads roster + shift_codes for today across all branches. Returns:
   the owner verbatim and ask them to decide. Mention `nextSafeAt` if it's
   within an hour.
 
+**The safe window (owner 2026-06-12):** deploy ONLY when now is outside a
+±30-minute band around EVERY branch's clock-in and clock-out times. I.e.
+no branch has anyone entering/leaving within the next or last 30 minutes.
+The `/api/deploy-window` API encodes this rule — trust its `safe` flag, but
+this is the definition behind it. When it's clear, you may proceed without
+asking again.
+
 deploy.sh runs the same check and prompts y/n; the API is for you so
 you can warn BEFORE the owner runs the script.
 
@@ -91,10 +98,17 @@ share the same `system_settings.maintenance_message`.
 ```
 1. Plan with the owner (use AskUserQuestion liberally)
 2. Code locally — touch as few files as the task requires
-3. npx tsc --noEmit -p tsconfig.json  ← mandatory before push
-4. git push origin main
+3. Review + test BEFORE moving on (owner standard 2026-06-12 — a large
+   system gets unmanageable if problems pile up):
+     - self-review the diff (run /code-review) and fix what it finds
+     - npx tsc --noEmit -p tsconfig.json   ← mandatory
+     - run relevant tests (npm run test:rbac / test:mounjaro) +
+       npm run check:i18n + npm run check:risks
+   Never carry unverified code into the next task.
+4. ALWAYS commit + push to GitHub — git push origin main (owner standard
+   2026-06-12: don't leave finished work only on the local machine)
 5. Wait for GitHub Actions CI to go green (40s)
-6. curl /api/deploy-window before suggesting deploy
+6. curl /api/deploy-window before suggesting deploy (see ±30-min rule above)
 7. Owner SSHs in, runs /var/www/reserva/scripts/deploy.sh
 8. Owner reports back; if anything broke, debug from pm2 logs
 ```
