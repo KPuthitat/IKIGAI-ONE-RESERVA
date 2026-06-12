@@ -138,7 +138,16 @@ export default function PatientDetailClient(props: {
   const baseHeight = num(baseline, "height");
   const last = visits[visits.length - 1] ?? null;
   const currentDose = last?.dose ?? 2.5;
-  const currentWeight = last?.weight ?? baseWeight;
+  // Current weight = the most recent weigh-in from EITHER source — clinic
+  // visits AND the patient's daily self-logs — picked by date (owner
+  // 2026-06-12). Previously this used only the last clinic visit, so the
+  // headline read "62.0 · 0%" while the chart (which already merges both
+  // sources) clearly showed the self-logged loss. Order-independent.
+  const weighIns = [
+    ...visits.filter((v) => v.weight != null && v.date).map((v) => ({ date: v.date as string, weight: v.weight as number })),
+    ...selfLogs.filter((l) => l.weight != null && l.date).map((l) => ({ date: l.date as string, weight: l.weight as number }))
+  ].sort((a, b) => a.date.localeCompare(b.date));
+  const currentWeight = weighIns.length ? weighIns[weighIns.length - 1].weight : baseWeight;
   const lossPct = baseWeight && currentWeight != null ? ((baseWeight - currentWeight) / baseWeight) * 100 : null;
   const bmi = calcBMI(currentWeight, baseHeight);
   const weeksFromStart = startDate
