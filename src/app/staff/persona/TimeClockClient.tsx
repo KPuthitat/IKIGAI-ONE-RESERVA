@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { bkkHHMM, bkkDateIso } from "@/lib/time";
 
 type TimeEntry = { id: number; type: "in" | "out"; ts: string };
 
@@ -29,9 +30,13 @@ type ReplaceState = {
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
 
-// Format timestamp → "HH:MM" Bangkok local
+// Format timestamp → "HH:MM" Bangkok local. Delegates to the suffix-safe
+// helper (owner 2026-06-13) so a ts stored WITHOUT a "Z"/offset (e.g. a
+// bare datetime('now') / CURRENT_TIMESTAMP from a non-clock-route insert)
+// is still parsed as UTC instead of device-local — the old ad-hoc
+// `new Date(ts)+7h` double-shifted those, throwing the date off by a day.
 function bkkTime(ts: string): string {
-  return new Date(new Date(ts).getTime() + 7 * 60 * 60 * 1000).toISOString().slice(11, 16);
+  return bkkHHMM(ts);
 }
 
 export default function TimeClockClient({
@@ -140,10 +145,11 @@ export default function TimeClockClient({
         ? "out"  // working now (ระหว่าง in กับ out)
         : "in";  // ยังไม่ทำงาน
 
-  // กลุ่ม entries ตาม day สำหรับประวัติ
+  // กลุ่ม entries ตาม day สำหรับประวัติ — bkkDateIso is suffix-safe so a
+  // ts without a "Z" doesn't get double-shifted into the wrong day.
   const byDay: Record<string, TimeEntry[]> = {};
   for (const e of entries) {
-    const d = new Date(new Date(e.ts).getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const d = bkkDateIso(e.ts);
     (byDay[d] ||= []).push(e);
   }
   const days = Object.keys(byDay).sort().reverse();

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { nameWithPrefix } from "@/lib/name";
+import { bkkDateIso } from "@/lib/time";
 import TimeClockClient from "./TimeClockClient";
 
 export const dynamic = "force-dynamic";
@@ -36,11 +37,11 @@ export default function StaffPersonaPage() {
     ORDER BY ts DESC LIMIT 100
   `).all(user.id, branchId) as TimeEntry[];
 
-  // เลือก entries ของวันนี้ตาม Bangkok local
-  const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const todayEntries = entries.filter((e) =>
-    new Date(new Date(e.ts).getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10) === todayBkk
-  );
+  // เลือก entries ของวันนี้ตาม Bangkok local. bkkDateIso is suffix-safe so a
+  // ts stored without a "Z" isn't double-shifted into the wrong day
+  // (owner 2026-06-13 — fixes entries showing under the wrong date).
+  const todayBkk = bkkDateIso(new Date().toISOString());
+  const todayEntries = entries.filter((e) => bkkDateIso(e.ts) === todayBkk);
 
   // ส่งเฉพาะ ts ของ in/out แรก ไปให้ client คำนวณ nextAction + 5-min window เอง
   // (ง่ายต่อการ re-evaluate ทุกวินาทีตามนาฬิกาที่วิ่งอยู่)
