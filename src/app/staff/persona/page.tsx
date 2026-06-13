@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { nameWithPrefix } from "@/lib/name";
 import { bkkDateIso } from "@/lib/time";
+import { userHasWorkShiftOn } from "@/lib/roster";
 import TimeClockClient from "./TimeClockClient";
 
 export const dynamic = "force-dynamic";
@@ -50,10 +51,20 @@ export default function StaffPersonaPage() {
   const firstInTs = inSorted[0]?.ts ?? null;
   const firstOutTs = outSorted[0]?.ts ?? null;
 
-  // ตรวจว่า user มี PIN หรือยัง
-  const userRow = db.prepare("SELECT pin_hash, employment_type FROM users WHERE id = ?").get(user.id) as
-    | { pin_hash: string | null; employment_type: "pt" | "ft" | null } | undefined;
+  // ตรวจว่า user มี PIN หรือยัง + ชื่อเล่นไว้ขึ้นข้อความ "ไม่มีกะ"
+  const userRow = db.prepare(
+    "SELECT pin_hash, employment_type, nickname_th, first_name_th FROM users WHERE id = ?"
+  ).get(user.id) as
+    | { pin_hash: string | null; employment_type: "pt" | "ft" | null; nickname_th: string | null; first_name_th: string | null }
+    | undefined;
   const hasPin = Boolean(userRow?.pin_hash);
+  const nickname = userRow?.nickname_th || userRow?.first_name_th || user.display_name || "";
+
+  // มีกะงานวันนี้ไหม (owner 2026-06-13) — ใช้ disable ปุ่มเข้า/ออกงาน +
+  // ขึ้นข้อความ 2 บรรทัดเมื่อไม่มีกะ. วันหยุดก็นับว่าไม่มีกะ.
+  const hasShiftToday =
+    user.activeBranchId != null &&
+    userHasWorkShiftOn(user.id, user.activeBranchId, todayBkk);
 
   // Today's scheduled shift end (work kind) — drives the OT prompt when
   // a PT staff clocks out after their shift ends (owner 2026-06-03).
@@ -84,6 +95,8 @@ export default function StaffPersonaPage() {
       isPartTime={userRow?.employment_type === "pt"}
       scheduledEnd={scheduledEnd}
       todayBkk={todayBkk}
+      hasShiftToday={hasShiftToday}
+      nickname={nickname}
     />
   );
 }

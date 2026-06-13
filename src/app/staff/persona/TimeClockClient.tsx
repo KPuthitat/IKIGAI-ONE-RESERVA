@@ -53,7 +53,9 @@ export default function TimeClockClient({
   qrEnabled,
   isPartTime,
   scheduledEnd,
-  todayBkk
+  todayBkk,
+  hasShiftToday,
+  nickname
 }: {
   userName: string;
   hasPin: boolean;
@@ -86,6 +88,8 @@ export default function TimeClockClient({
   isPartTime: boolean;
   scheduledEnd: string | null;
   todayBkk: string;
+  hasShiftToday: boolean;
+  nickname: string;
 }) {
   const router = useRouter();
   const { t, formatDateLong } = useLang();
@@ -139,7 +143,7 @@ export default function TimeClockClient({
   // clock-in is still expected (or within the 5-min in-correction window);
   // ออกงาน only once a clock-in exists and the day isn't finished. The
   // server enforces the same rule (no clock-out without a clock-in).
-  const canIn = nextAction === "in";
+  const canIn = hasShiftToday && nextAction === "in";
   const canOut = !!firstInTs && nextAction !== "done";
 
   const statusBadge: "in" | "out" | "done" =
@@ -185,6 +189,8 @@ export default function TimeClockClient({
               canIn={canIn}
               canOut={canOut}
               hasClockIn={!!firstInTs}
+              hasShiftToday={hasShiftToday}
+              nickname={nickname}
               correctable={nextAction === "in" ? inCorrectable : outCorrectable}
               onSuccess={() => router.refresh()}
               branchName={branchName}
@@ -282,7 +288,9 @@ function ClockAction({
   qrEnabled,
   isPartTime,
   scheduledEnd,
-  todayBkk
+  todayBkk,
+  hasShiftToday,
+  nickname
 }: {
   action: "in" | "out";
   canIn: boolean;
@@ -299,6 +307,8 @@ function ClockAction({
   isPartTime: boolean;
   scheduledEnd: string | null;
   todayBkk: string;
+  hasShiftToday: boolean;
+  nickname: string;
 }) {
   const { t } = useLang();
   const router = useRouter();
@@ -696,6 +706,16 @@ function ClockAction({
             until a clock-in exists — staff who forgot to clock in must
             certify it first instead of clocking out (which used to record
             their leave time as a clock-IN). */}
+        {!hasShiftToday && (
+          <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-center space-y-1">
+            <p className="text-sm font-bold text-amber-900">
+              วันนี้ไม่มีชื่อพี่ {nickname} ในตารางงาน
+            </p>
+            <p className="text-sm text-amber-800">
+              รบกวนพี่ {nickname} ติดต่อหัวหน้างานก่อนเข้าทำงานครับ
+            </p>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <button
             onClick={() => onTapClockButton("in")}
