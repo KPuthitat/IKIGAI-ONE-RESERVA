@@ -169,23 +169,16 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       // from the LINE profile, or a follow-up "id" reply) lands in
       // 1f. For now, a simple welcome message + a CTA back to the
       // public positions board.
-      if (channel.scope === "recruita") {
-        // Greeting + how to get linked. We do NOT auto-link by recency
-        // anymore (2026-06-05): guessing "the most recent applicant ==
-        // this follower" cross-linked different people and could leak
-        // one applicant's status to another's LINE. Reliable linking is
-        // either (a) applying via this OA's LIFF link — userId captured
-        // automatically — or (b) typing "ID" here, screenshotting, and
-        // sending it to the admin to paste into the application.
-        const welcome = "ยินดีต้อนรับสู่ IKIGAI Recruit\n\n" +
-          "• ถ้าสมัครงานผ่านลิงก์ในบัญชีนี้ ระบบจะแจ้งสถานะใบสมัครทาง LINE นี้ให้อัตโนมัติ\n" +
-          "• ถ้าสมัครผ่านลิงก์ภายนอกแล้วยังไม่ได้รับแจ้งเตือน ให้พิมพ์คำว่า \"ID\" แล้วส่งภาพให้แอดมินตั้งค่าให้\n\n" +
-          "ดูตำแหน่งที่เปิดรับ: https://ikigaimedihealth.com/recruita/positions";
-        await sendLinePush(channel.channel_token, {
-          to: userId,
-          messages: [{ type: "text", text: welcome }]
-        });
-      }
+      // RECRUITA: the system-sent follow welcome was REMOVED (owner
+      // 2026-06-13). It contained a PUBLIC web link
+      // (ikigaimedihealth.com/recruita/positions) which let new followers
+      // apply via the web form — bypassing LIFF, so their LINE userId was
+      // never captured and they fell into the "no notification" black hole.
+      // The owner wants applicants to come ONLY through the Rich Menu
+      // (a LIFF link that captures the userId). New followers now see just
+      // the OA's own Greeting message (set in LINE OA Manager), which points
+      // at the Rich Menu button. The "ID" text-reply fallback below still
+      // works for anyone who needs manual linking.
       continue;
     }
 
