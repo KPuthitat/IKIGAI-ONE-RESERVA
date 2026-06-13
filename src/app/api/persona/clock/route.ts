@@ -14,6 +14,7 @@ import {
   type OwlPrompt, type DeviationPrompt
 } from "@/lib/attendance-flags";
 import { userHasWorkShiftOn } from "@/lib/roster";
+import { bkkDateIso } from "@/lib/time";
 
 const Body = z.object({
   pin: z.string().regex(/^\d{4}$/),
@@ -250,6 +251,29 @@ export async function POST(req: Request) {
         { error: "no_shift_today", supervisorName: sup?.name ?? null },
         { status: 403 }
       );
+    }
+
+    // ── Prior-day certification guard (owner 2026-06-13) ─────────
+    // Don't let a new day start while a PRIOR day's punch is still
+    // pending certification — payroll can't finalise that day yet.
+    // The staff must get it approved first. Scoped to a fresh clock-in
+    // (not clock-out) so nobody mid-shift gets stranded.
+    const pendingCerts = db.prepare(`
+      SELECT kind, work_date, proposed_ts, original_ts
+      FROM time_certifications
+      WHERE requested_by = ? AND status = 'pending'
+    `).all(user.id) as Array<{
+      kind: string;
+      work_date: string | null;
+      proposed_ts: string;
+      original_ts: string | null;
+    }>;
+    const hasPriorPending = pendingCerts.some((c) => {
+      const day = c.work_date ?? bkkDateIso(c.original_ts ?? c.proposed_ts);
+      return day !== "" && day < todayBkk;
+    });
+    if (hasPriorPending) {
+      return NextResponse.json({ error: "prior_day_uncertified" }, { status: 409 });
     }
   }
 

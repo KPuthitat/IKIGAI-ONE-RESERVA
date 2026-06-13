@@ -554,6 +554,9 @@ function ClockAction({
             ? `วันนี้คุณไม่มีกะงาน — กรุณาติดต่อหัวหน้างาน (${data.supervisorName}) ก่อนเข้างานครับ`
             : "วันนี้คุณไม่มีกะงาน — กรุณาติดต่อหัวหน้างานก่อนเข้างานครับ"
         );
+        else if (data.error === "prior_day_uncertified") setErrorMsg(
+          "มีเวลาของวันก่อนที่ยังรอรับรอง — กรุณาไปรับรองเวลาให้เรียบร้อยก่อนเข้างานครับ"
+        );
         else if (data.error === "gps_required") setErrorMsg(t("staff.persona.gps.required"));
         else if (data.error === "out_of_geofence") {
           // Simplified copy — distance/radius detail dropped per
