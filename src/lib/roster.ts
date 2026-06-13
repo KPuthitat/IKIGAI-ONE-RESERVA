@@ -186,6 +186,29 @@ export function effectiveShiftStartForUserDate(
   return row?.start_time ?? null;
 }
 
+/** True when the user has a WORK shift assigned on the given date at the
+ *  branch. A day-off assignment (shift_codes.kind='day_off') does NOT count,
+ *  and neither does the absence of any assignment. Used to gate clock-in:
+ *  no work shift → the staff must contact their supervisor first
+ *  (owner 2026-06-13). shift_codes.kind is NOT NULL DEFAULT 'work'. */
+export function userHasWorkShiftOn(
+  userId: number,
+  branchId: number,
+  dateBkk: string
+): boolean {
+  const row = getDb().prepare(`
+    SELECT 1
+    FROM roster_assignments a
+    JOIN shift_codes s ON s.id = a.shift_code_id
+    WHERE a.user_id = ?
+      AND a.branch_id = ?
+      AND a.assignment_date = ?
+      AND s.kind = 'work'
+    LIMIT 1
+  `).get(userId, branchId, dateBkk);
+  return row != null;
+}
+
 /** Bulk variant: returns Map<userId, "HH:MM"|null> for every user in
  *  the given list. Used by monthly aggregators (SVC, daily summary)
  *  so we don't hit the DB once per user per day. dateBkk is a single

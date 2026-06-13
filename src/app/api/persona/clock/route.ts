@@ -13,6 +13,7 @@ import {
   detectPunchAnomaly, detectScheduleDeviation,
   type OwlPrompt, type DeviationPrompt
 } from "@/lib/attendance-flags";
+import { userHasWorkShiftOn } from "@/lib/roster";
 
 const Body = z.object({
   pin: z.string().regex(/^\d{4}$/),
@@ -230,6 +231,25 @@ export async function POST(req: Request) {
     } else {
       // นอกหน้าต่าง 5 นาทีของ "out" → ครบแล้ว ติดต่อหัวหน้างาน
       return NextResponse.json({ error: "already_done_today" }, { status: 409 });
+    }
+  }
+
+  // ── No-shift guard (owner 2026-06-13) ──────────────────────────
+  // Block a fresh clock-IN when the user has no WORK shift rostered today
+  // (no assignment, or a day-off). Applies to everyone (staff + admin).
+  // Only gates a brand-new clock-in — clock-out and the 5-min self-correction
+  // (existing != null) pass through so someone already at work can finish.
+  if (action === "in" && !existing) {
+    if (!userHasWorkShiftOn(user.id, user.activeBranchId, todayBkk)) {
+      const sup = db.prepare(`
+        SELECT m.display_name AS name
+        FROM users u JOIN users m ON m.id = u.reports_to_user_id
+        WHERE u.id = ?
+      `).get(user.id) as { name: string | null } | undefined;
+      return NextResponse.json(
+        { error: "no_shift_today", supervisorName: sup?.name ?? null },
+        { status: 403 }
+      );
     }
   }
 

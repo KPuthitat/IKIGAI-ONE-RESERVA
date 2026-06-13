@@ -549,6 +549,11 @@ function ClockAction({
         else if (data.error === "already_done_today") setErrorMsg(t("staff.persona.alreadyDoneToday"));
         else if (data.error === "no_clock_in_today") setErrorMsg("ยังไม่ได้ลงเวลาเข้างานวันนี้ — กรุณาไปรับรองเวลาเข้าก่อนครับ");
         else if (data.error === "already_clocked_in") setErrorMsg("วันนี้ลงเวลาเข้างานไปแล้วครับ");
+        else if (data.error === "no_shift_today") setErrorMsg(
+          data.supervisorName
+            ? `วันนี้คุณไม่มีกะงาน — กรุณาติดต่อหัวหน้างาน (${data.supervisorName}) ก่อนเข้างานครับ`
+            : "วันนี้คุณไม่มีกะงาน — กรุณาติดต่อหัวหน้างานก่อนเข้างานครับ"
+        );
         else if (data.error === "gps_required") setErrorMsg(t("staff.persona.gps.required"));
         else if (data.error === "out_of_geofence") {
           // Simplified copy — distance/radius detail dropped per
