@@ -4116,8 +4116,10 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_recruita_candidates_dedupe
       ON recruita_candidates(dedupe_hash) WHERE dedupe_hash IS NOT NULL;
-    CREATE INDEX IF NOT EXISTS idx_recruita_candidates_line
-      ON recruita_candidates(line_user_id) WHERE line_user_id IS NOT NULL;
+    -- idx_recruita_candidates_line is created as a UNIQUE index in a
+    -- dedup-first migration after this block (RC-2, owner 2026-06-13) —
+    -- it can't be inline because existing rows may share a userId and a
+    -- UNIQUE create would throw at boot before the dedup runs.
 
     CREATE TABLE IF NOT EXISTS recruita_applications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4256,6 +4258,29 @@ function runMigrations(db: Database.Database): void {
       ON recruita_interview_slots(slot_date, status);
     CREATE INDEX IF NOT EXISTS idx_recruita_slots_booked
       ON recruita_interview_slots(booked_application_id);
+  `);
+
+  // RC-2 (owner 2026-06-13) — one LINE account per candidate. The removed
+  // phone-search bind (RC-1) let the same line_user_id sit on multiple
+  // candidate rows, so one person's notifications reached another. Step 1:
+  // dedup — NULL the binding on EVERY row of any duplicated userId (we don't
+  // guess which is the real owner; an admin re-links via the unlinked list).
+  // Step 2: a partial UNIQUE index so any future cross-bind fails loudly.
+  // Dedup-before-constraint + IF NOT EXISTS = idempotent and boot-safe; this
+  // never throws on existing data the way an inline UNIQUE create would.
+  db.prepare(`
+    UPDATE recruita_candidates
+    SET line_user_id = NULL, updated_at = datetime('now')
+    WHERE line_user_id IN (
+      SELECT line_user_id FROM recruita_candidates
+      WHERE line_user_id IS NOT NULL
+      GROUP BY line_user_id HAVING COUNT(*) > 1
+    )
+  `).run();
+  db.exec(`
+    DROP INDEX IF EXISTS idx_recruita_candidates_line;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_recruita_candidates_line
+      ON recruita_candidates(line_user_id) WHERE line_user_id IS NOT NULL;
   `);
 
   // 2026-06-10 Stage-change requests no longer expire (owner). Resurrect
