@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { binCode, hasPack, formatPackBreakdown, type PickFreq } from "@/lib/inventa";
+import { type OrderRow, isPendingOrder } from "@/lib/inventa-orders";
 
 export type LowStockItem = {
   id: number;
@@ -48,41 +49,22 @@ function fmtBaht(n: number): string {
   });
 }
 
-export type OrderRow = {
-  id: number;
-  status: "draft" | "sent" | "approved" | "paid" | "shipping" | "received" | "returned" | "cancelled";
-  note: string | null;
-  created_at: string;
-  sent_at: string | null;
-  approved_at: string | null;
-  line_count: number;
-  total_cost: number;
-  created_by_name: string | null;
-  approved_by_name: string | null;
-  supplier_name: string | null;
-};
-
-const STATUS_CLS: Record<OrderRow["status"], string> = {
-  draft: "bg-slate-100 text-slate-600",
-  sent: "bg-amber-100 text-amber-700",
-  approved: "bg-emerald-100 text-emerald-700",
-  paid: "bg-teal-100 text-teal-700",
-  shipping: "bg-sky-100 text-sky-700",
-  received: "bg-green-100 text-green-700",
-  returned: "bg-orange-100 text-orange-700",
-  cancelled: "bg-rose-100 text-rose-600"
-};
 
 export default function OrdersClient({
-  lowStock, catalog = [], orders, canApprove
+  lowStock, catalog = [], orders
 }: {
   lowStock: LowStockItem[];
   catalog?: LowStockItem[];
   orders: OrderRow[];
-  canApprove: boolean;
 }) {
   const router = useRouter();
   const { t } = useLang();
+  // Pending = created POs still awaiting follow-up. Surfaced as a badge on
+  // the link to the tracking page so an open order isn't forgotten.
+  const pendingCount = useMemo(
+    () => orders.filter((o) => isPendingOrder(o.status)).length,
+    [orders]
+  );
   // selected item_id → order qty (string for the input). Default qty
   // = max(0, safety - current). Unchecked = not in the order.
   const [sel, setSel] = useState<Record<number, string>>({});
@@ -604,44 +586,29 @@ export default function OrdersClient({
         )}
       </div>
 
-      {/* ── Recent orders ───────────────────────────────────────── */}
+      {/* ── Link to the created-orders tracking page (owner 2026-06-13).
+             The full list now lives on its own prominent menu so open POs
+             don't get forgotten at the bottom of this create workspace. ── */}
       <div className="card space-y-2">
         {okMsg && (
           <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
             {okMsg}
           </div>
         )}
-        <h2 className="font-bold text-slate-800 text-sm">
-          {t("inv.ord.recent", { n: orders.length })}
-        </h2>
-        {orders.length === 0 && (
-          <p className="text-sm text-slate-400">{t("inv.ord.none")}</p>
-        )}
-        {orders.map((o) => {
-          return (
-            <Link key={o.id} href={`/staff/inventa/orders/${o.id}`}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 hover:bg-slate-50 -mx-1 px-1 rounded">
-              <span className="font-bold text-slate-700 text-sm">#{o.id}</span>
-              {o.supplier_name && (
-                <span className="text-xs font-medium text-slate-700">{o.supplier_name}</span>
-              )}
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_CLS[o.status]}`}>
-                {t(`inv.ord.st.${o.status}`)}
+        <Link
+          href="/staff/inventa/orders/list"
+          className="flex items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 hover:bg-amber-100 transition"
+        >
+          <span className="flex items-center gap-2">
+            <span className="text-sm font-bold text-slate-800">{t("inv.ord.viewCreated")}</span>
+            {pendingCount > 0 && (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-200 text-amber-800 font-medium">
+                {t("inv.ord.pendingBadge", { n: pendingCount })}
               </span>
-              <span className="text-xs text-slate-500">
-                {t("inv.ord.lineCount", { n: o.line_count })} · ฿{o.total_cost.toLocaleString("th-TH", { maximumFractionDigits: 2 })}
-              </span>
-              <span className="text-[11px] text-slate-400">
-                {o.created_by_name ?? t("inv.dash")} · {o.created_at.slice(0, 16).replace("T", " ")}
-              </span>
-              {canApprove && o.status === "sent" && (
-                <span className="text-[11px] text-amber-700 font-medium ml-auto">
-                  {t("inv.ord.awaiting")}
-                </span>
-              )}
-            </Link>
-          );
-        })}
+            )}
+          </span>
+          <span className="text-amber-700 font-bold">→</span>
+        </Link>
       </div>
     </div>
   );

@@ -105,6 +105,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/inventa/labels", label: t(lang, "inv.nav.qr") },
         { href: "/staff/inventa/count", label: t(lang, "inv.nav.count") },
         { href: "/staff/inventa/orders", label: t(lang, "inv.nav.orders") },
+        { href: "/staff/inventa/orders/list", label: t(lang, "inv.nav.ordersList") },
         // Settings is super_admin-only — hide the link from everyone
         // else (the page itself also enforces requireSuperAdmin).
         ...(user.role === "super_admin"

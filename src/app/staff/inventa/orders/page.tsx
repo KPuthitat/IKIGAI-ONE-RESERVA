@@ -2,10 +2,8 @@ import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
-import OrdersClient, {
-  type LowStockItem,
-  type OrderRow
-} from "./OrdersClient";
+import OrdersClient, { type LowStockItem } from "./OrdersClient";
+import { getBranchOrders } from "@/lib/inventa-orders-server";
 
 export const dynamic = "force-dynamic";
 
@@ -67,24 +65,7 @@ export default function InventaOrdersPage() {
     LIMIT 2000
   `).all(branchId, branchId) as LowStockItem[];
 
-  const orders = db.prepare(`
-    SELECT o.id, o.status, o.note, o.created_at, o.sent_at,
-           o.approved_at,
-           (SELECT COUNT(*) FROM inventa_order_lines l WHERE l.order_id = o.id) AS line_count,
-           (SELECT COALESCE(SUM(l.order_qty * l.unit_cost_at_order), 0)
-              FROM inventa_order_lines l WHERE l.order_id = o.id) AS total_cost,
-           (SELECT s.name FROM inventa_order_lines l
-              JOIN inventa_suppliers s ON s.id = l.supplier_id
-              WHERE l.order_id = o.id LIMIT 1) AS supplier_name,
-           cu.display_name AS created_by_name,
-           au.display_name AS approved_by_name
-    FROM inventa_orders o
-    LEFT JOIN users cu ON cu.id = o.created_by
-    LEFT JOIN users au ON au.id = o.approved_by
-    WHERE o.branch_id IS ? OR o.branch_id = ?
-    ORDER BY o.created_at DESC
-    LIMIT 50
-  `).all(branchId, branchId) as OrderRow[];
+  const orders = getBranchOrders(branchId, 50);
 
   return (
     <div className="space-y-4">
@@ -97,7 +78,6 @@ export default function InventaOrdersPage() {
         lowStock={lowStock}
         catalog={catalog}
         orders={orders}
-        canApprove={user.role === "admin" || user.role === "super_admin"}
       />
     </div>
   );
