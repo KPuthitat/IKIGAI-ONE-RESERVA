@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
 import { t, type Lang } from "@/lib/i18n";
+import { formatBkkDateTime } from "@/lib/time";
 import type { ChannelQuota } from "@/lib/line-quota";
 
 // Live LINE OA quota dashboard.
@@ -303,7 +304,7 @@ function ChannelCard({
         {userRole === "super_admin" && channel.updatedAt ? (
           <span className="text-[10px] text-slate-400">
             {t(lang, "admin.messaging.quota.tokenUpdated", {
-              date: channel.updatedAt.slice(0, 16).replace("T", " ")
+              date: formatBkkDateTime(channel.updatedAt)
             })}
           </span>
         ) : (

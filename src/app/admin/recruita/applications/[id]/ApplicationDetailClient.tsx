@@ -319,7 +319,7 @@ export default function ApplicationDetailClient({
             </p>
             <p className="text-[10px] text-amber-700 mt-1">
               คำขอเลขที่ #{pendingStageRequest.id} ·
-              สิ้นสุดเวลาอนุมัติ {pendingStageRequest.expires_at.slice(0, 16).replace("T", " ")}
+              สิ้นสุดเวลาอนุมัติ {formatBkkDateTime(pendingStageRequest.expires_at)}
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
@@ -1271,7 +1271,7 @@ function InviteLinkBox({ result }: { result: HireResult }) {
         📨 แชร์ลิงก์ด้านล่างให้พนักงานใหม่เพื่อตั้งรหัสผ่าน + ผูก LINE
       </p>
       <p className="text-[10px] text-slate-500">
-        ลิงก์หมดอายุ {new Date(result.expires_at).toLocaleString("th-TH")}
+        ลิงก์หมดอายุ {formatBkkDateTime(result.expires_at)}
       </p>
       {result.liff_url && (
         <div className="bg-white border border-slate-200 rounded p-2 text-xs space-y-1">

@@ -17,6 +17,7 @@ import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getCustomerProfile, isCustomerHash } from "@/lib/insigna";
+import { bkkDateIso, formatBkkDateTime } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Customer · INSIGNA" };
@@ -349,7 +350,7 @@ export default function CustomerDrillDown({
                     food {f.food_rating ?? "—"} · svc {f.service_rating ?? "—"} · amb {f.ambience_rating ?? "—"}
                   </span>
                   <span className="text-[10px] text-slate-400 ml-auto">
-                    {f.submitted_at.slice(0, 10)}
+                    {bkkDateIso(f.submitted_at)}
                   </span>
                 </div>
                 {f.comment && (
@@ -381,7 +382,7 @@ export default function CustomerDrillDown({
               {touchpoints.map((t, i) => (
                 <div key={i} className="flex items-center gap-2 text-xs">
                   <span className="font-mono text-[10px] text-slate-400 w-24 shrink-0">
-                    {t.timestamp.slice(0, 16).replace("T", " ")}
+                    {formatBkkDateTime(t.timestamp)}
                   </span>
                   <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-mono">
                     {t.touchpoint_type}

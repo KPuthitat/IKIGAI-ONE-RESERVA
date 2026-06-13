@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { nameWithPrefix } from "@/lib/name";
+import { bkkDateIso } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import Switch from "@/app/components/Switch";
 import { RBAC_PERMISSIONS } from "@/lib/rbac";
@@ -1408,7 +1409,7 @@ function EditModal({
                   {inviteLinkResp.kind === "rebind_line" && "ผูก LINE ใหม่"}
                 </span>
                 <br />
-                หมดอายุ {new Date(inviteLinkResp.expires_at).toISOString().slice(0, 10)}
+                หมดอายุ {bkkDateIso(inviteLinkResp.expires_at)}
               </p>
             </div>
 

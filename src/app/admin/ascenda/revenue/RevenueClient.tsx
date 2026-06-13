@@ -17,10 +17,12 @@ const TH_DAYS = ["อา","จ","อ","พ","พฤ","ศ","ส"];
 
 function friendlyDate(d: string): { line1: string; line2: string } {
   const [y, m, day] = d.split("-").map(Number);
-  const dt = new Date(`${d}T00:00:00+07:00`);
+  // Build at UTC midnight + read the UTC weekday so the day label doesn't
+  // shift on a non-ICT device (owner 2026-06-13).
+  const dt = new Date(`${d}T00:00:00Z`);
   return {
     line1: `${day} ${TH_MONTHS[m - 1]} ${(y + 543) % 100}`,
-    line2: TH_DAYS[dt.getDay()]
+    line2: TH_DAYS[dt.getUTCDay()]
   };
 }
 

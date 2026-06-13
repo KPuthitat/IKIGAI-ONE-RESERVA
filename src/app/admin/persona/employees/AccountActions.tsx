@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { bkkDateIso } from "@/lib/time";
 
 // Top-of-page actions for /admin/persona/employees:
 //   • "+ เพิ่มพนักงานใหม่" — opens a small modal to create a user
@@ -173,7 +174,7 @@ export default function AccountActions({
               <div className="text-4xl">✓</div>
               <h3 className="font-bold text-slate-800 text-lg mt-2">สร้างบัญชี + ลิงก์เรียบร้อย</h3>
               <p className="text-xs text-slate-500 mt-1">
-                หมดอายุ {expiresAt ? new Date(expiresAt).toISOString().slice(0, 10) : "—"}
+                หมดอายุ {expiresAt ? bkkDateIso(expiresAt) : "—"}
               </p>
             </div>
 

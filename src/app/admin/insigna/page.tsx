@@ -13,6 +13,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { formatBkkDateTime } from "@/lib/time";
 import {
   personaDistribution,
   churnRiskList,
@@ -318,7 +319,7 @@ export default function InsignaDashboard() {
                 className="flex items-center gap-2 text-xs py-1 border-b border-slate-100 last:border-b-0"
               >
                 <span className="text-[10px] font-mono text-slate-400 w-32 shrink-0">
-                  {e.received_at.slice(0, 19).replace("T", " ")}
+                  {formatBkkDateTime(e.received_at)}
                 </span>
                 <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px]">
                   {e.event_type}

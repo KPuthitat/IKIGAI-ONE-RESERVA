@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { bkkDateIso } from "@/lib/time";
 import type { ResignationStatus } from "@/app/staff/persona/resignation/ResignationClient";
 import { DecisionModal } from "@/app/admin/persona/leave/LeaveAdminClient";
 import { useConfirm } from "@/app/components/useConfirm";
@@ -228,7 +229,7 @@ export default function ResignationAdminClient({
                     <span className="text-xs text-slate-400 ml-1">@{u.username}</span>
                     {u.resignation_unlocked_at && (
                       <span className="text-xs text-slate-500 ml-2">
-                        {formatDate(u.resignation_unlocked_at.slice(0, 10))}
+                        {formatDate(bkkDateIso(u.resignation_unlocked_at))}
                       </span>
                     )}
                   </span>
