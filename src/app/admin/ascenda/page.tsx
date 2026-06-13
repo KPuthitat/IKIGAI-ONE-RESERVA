@@ -88,9 +88,13 @@ export default function AdminAscendaPage({
             ประเมิน KPI / OKR รายเดือนของบริษัท
           </p>
           <div className="ml-auto flex items-center gap-3">
+            <Link href="/admin/ascenda/daily"
+              className="text-xs text-brand hover:underline">
+              ยอดขาย + %COL รายวัน →
+            </Link>
             <Link href="/admin/ascenda/revenue"
               className="text-xs text-brand hover:underline">
-              ยอดขายรายวัน →
+              กรอกยอดขาย →
             </Link>
             <Link href="/admin/ascenda/kpis"
               className="text-xs text-brand hover:underline">

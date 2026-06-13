@@ -179,7 +179,7 @@ function bucketEntriesByDay(
  *  staff has unmatched ins (e.g. forgot to clock out), those minutes
  *  are dropped — same conservative rule the payroll engine already
  *  follows. */
-function computeWorkedMinutesByDay(
+export function computeWorkedMinutesByDay(
   entries: Array<{ user_id: number; ts: string; type: "in" | "out" }>
 ): Map<string, Map<number, number>> {
   const out = new Map<string, Map<number, number>>();
