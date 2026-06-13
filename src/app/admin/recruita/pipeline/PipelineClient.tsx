@@ -394,6 +394,13 @@ function Card({
         {card.expected_salary != null && (
           <span className="text-emerald-700">฿{card.expected_salary.toLocaleString("th-TH")}</span>
         )}
+        {/* LINE binding status (owner 2026-06-13) — amber = needs manual
+            link before this candidate can receive any push. */}
+        {card.line_linked ? (
+          <span className="text-green-600 font-medium">● ผูก LINE แล้ว</span>
+        ) : (
+          <span className="text-amber-800 font-medium bg-amber-100 px-1.5 py-0.5 rounded">ยังไม่ผูก LINE</span>
+        )}
       </div>
 
       {pending ? (

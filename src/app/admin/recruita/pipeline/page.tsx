@@ -29,6 +29,10 @@ export type PipelineCard = {
   nickname_th: string | null;
   mobile_phone: string | null;
   expected_salary: number | null;
+  /** 1 when the candidate has a LINE userId bound (can receive push), 0 when
+   *  not — surfaced as a badge so admins can spot who needs manual linking
+   *  (owner 2026-06-13). Only the boolean is sent, never the userId itself. */
+  line_linked: number;
   /** Active dual-approval request awaiting a second admin, or null.
    *  Drives the "รออนุมัติเปลี่ยนสถานะ" tag + approve/cancel on the card. */
   pending: PendingStageTag | null;
@@ -47,6 +51,7 @@ export default function PipelinePage() {
     SELECT a.id, a.candidate_id, a.position_id, a.stage,
            a.submitted_at, a.updated_at, a.expected_salary,
            c.title_prefix, c.first_name_th, c.last_name_th, c.nickname_th, c.mobile_phone,
+           (c.line_user_id IS NOT NULL) AS line_linked,
            p.title AS position_title, p.code AS position_code,
            b.name AS branch_name
     FROM recruita_applications a
