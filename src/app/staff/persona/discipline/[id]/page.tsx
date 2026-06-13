@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { requireStaffOrAdmin } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { formatBkkDateTime } from "@/lib/time";
 import { getWarning, recordView } from "@/lib/discipline";
 import { nameWithPrefix } from "@/lib/name";
 import WarningAcknowledgeClient from "./WarningAcknowledgeClient";
@@ -72,7 +73,7 @@ export default function StaffDisciplineDetailPage({ params }: { params: { id: st
 
         <div className="text-[11px] text-slate-500">
           {t(lang, "staff.persona.discipline.issuedBy", { name: nameWithPrefix(w.issued_by_prefix, w.issued_by_name) })}
-          · {new Date(w.issued_at).toISOString().slice(0, 16).replace("T", " ")}
+          · {formatBkkDateTime(w.issued_at)}
           {w.effective_date && (
             <span className="ml-2">
               · {t(lang, "staff.persona.discipline.effectiveDate", { date: w.effective_date })}

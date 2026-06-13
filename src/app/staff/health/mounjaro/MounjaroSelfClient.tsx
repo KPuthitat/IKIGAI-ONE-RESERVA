@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { formatBkkDateTime } from "@/lib/time";
 import {
   EXERCISE_CATALOG, EXERCISE_LEVELS, RPE_SCALE, getActivity, kcalEstimate,
   levelLabel, rpeLabel, activityLabel, REST_ACTIVITY_ID, type ExerciseLevel
@@ -271,7 +272,7 @@ export default function MounjaroSelfClient({
             ระบบจะแจ้งเตือนทาง LINE เมื่อพร้อมใช้งาน
           </div>
           <p className="text-[11px] text-slate-500">
-            ยืนยันเมื่อ {enrollment?.enrolled_at ? new Date(enrollment.enrolled_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "—"}
+            ยืนยันเมื่อ {enrollment?.enrolled_at ? formatBkkDateTime(enrollment.enrolled_at) : "—"}
           </p>
         </div>
       )}
@@ -480,7 +481,7 @@ function AuditViewer({ audit }: { audit: AuditEntry[] }) {
                 {a.by_name && <span className="text-slate-400"> · {a.by_name}</span>}
               </span>
               <span className="text-slate-400 font-mono">
-                {new Date(a.created_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}
+                {formatBkkDateTime(a.created_at)}
               </span>
             </div>
           ))}

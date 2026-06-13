@@ -14,6 +14,7 @@ import { requireStaffOrAdmin } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { formatBkkDateTime } from "@/lib/time";
 import {
   listAssignmentsForUserMonth,
   listAssignmentsForMonth,
@@ -137,7 +138,7 @@ export default function StaffCalendarPage({
           ✓ {t(lang, lastPublish.kind === "publish"
             ? "staff.persona.calendar.publishedAt"
             : "staff.persona.calendar.editedAt", {
-              ts: new Date(lastPublish.published_at).toISOString().slice(0, 16).replace("T", " ")
+              ts: formatBkkDateTime(lastPublish.published_at)
           })}
           {lastPublish.note && (
             <div className="text-xs text-emerald-700 mt-1">📝 {lastPublish.note}</div>

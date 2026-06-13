@@ -19,6 +19,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { formatBkkDateTime } from "@/lib/time";
 import {
   listShiftCodes,
   listPositions,
@@ -151,7 +152,7 @@ export default function AdminRosterPage({
             {t(lang, lastPublish.kind === "publish"
               ? "admin.persona.roster.lastPublishedAt"
               : "admin.persona.roster.lastEditedAt", {
-                ts: new Date(lastPublish.published_at).toISOString().slice(0, 16).replace("T", " ")
+                ts: formatBkkDateTime(lastPublish.published_at)
             })}
           </span>
         )}

@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { bkkDateIso } from "@/lib/time";
 import PrintActions from "./PrintActions";
 import OrderEditor, { type CatalogItem, type EditorLine } from "./OrderEditor";
 import { ensureOrderToken } from "@/lib/inventa-po-token";
@@ -252,7 +253,7 @@ export default function InventaOrderDetailPage({
           <div>
             <div className="text-lg font-bold text-slate-800">{t(lang, "inv.po.docTitle")} #{order.id}</div>
             <div className="text-xs text-slate-500 mt-1">
-              {t(lang, "inv.po.date")} {order.created_at.slice(0, 10)} · {t(lang, "inv.po.status")} {stLabel(order.status)}
+              {t(lang, "inv.po.date")} {bkkDateIso(order.created_at)} · {t(lang, "inv.po.status")} {stLabel(order.status)}
             </div>
           </div>
           <div className="text-right text-xs text-slate-600">

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useLang } from "@/lib/LangProvider";
 import { type OrderRow, STATUS_CLS, isPendingOrder } from "@/lib/inventa-orders";
+import { formatBkkDateTime } from "@/lib/time";
 
 function fmtBaht(n: number): string {
   return "฿" + n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -32,7 +33,7 @@ function OrderCard({ o, highlight }: { o: OrderRow; highlight: boolean }) {
       <div className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-slate-500">
         <span>{t("inv.ord.lineCount", { n: o.line_count })}</span>
         <span>{o.created_by_name ?? t("inv.dash")}</span>
-        <span>{o.created_at.slice(0, 16).replace("T", " ")}</span>
+        <span>{formatBkkDateTime(o.created_at)}</span>
       </div>
     </Link>
   );

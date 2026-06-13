@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { formatBkkDateTime } from "@/lib/time";
 
 type DailyRow = {
   id: number;
@@ -129,7 +130,7 @@ export default function ServiceChargeClient({
                       <>
                         {row.updatedByName}
                         <span className="text-slate-400 ml-1">
-                          · {row.updatedAt ? new Date(row.updatedAt).toISOString().slice(0, 16).replace("T", " ") : ""}
+                          · {row.updatedAt ? formatBkkDateTime(row.updatedAt) : ""}
                         </span>
                       </>
                     ) : row ? (

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { requireStaffOrAdmin } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { formatBkkDateTime } from "@/lib/time";
 import { listWarningsForUser } from "@/lib/discipline";
 import { nameWithPrefix } from "@/lib/name";
 import OwlMascot from "../../../components/OwlMascot";
@@ -71,7 +72,7 @@ export default function StaffDisciplineListPage() {
                     </div>
                     <div className="text-[10px] text-slate-400 mt-1">
                       {t(lang, "staff.persona.discipline.issuedBy", { name: nameWithPrefix(w.issued_by_prefix, w.issued_by_name) })}
-                      · {new Date(w.issued_at).toISOString().slice(0, 16).replace("T", " ")}
+                      · {formatBkkDateTime(w.issued_at)}
                     </div>
                   </div>
                   <div>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { nameWithPrefix } from "@/lib/name";
+import { formatBkkDateTime } from "@/lib/time";
 
 type StaffOption = { id: number; display_name: string; title_prefix: string | null; username: string; employment_type: string | null };
 type WarningRow = {
@@ -264,7 +265,7 @@ export default function DisciplineClient({
                     </div>
                     <div className="text-[10px] text-slate-400 mt-1">
                       {t("admin.persona.discipline.issuedBy", { name: w.issued_by })}
-                      · {new Date(w.issued_at).toISOString().slice(0, 16).replace("T", " ")}
+                      · {formatBkkDateTime(w.issued_at)}
                     </div>
                   </div>
                   <div>
