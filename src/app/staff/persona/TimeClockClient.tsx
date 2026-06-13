@@ -708,8 +708,8 @@ function ClockAction({
             their leave time as a clock-IN). */}
         {!hasShiftToday && (
           <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-center space-y-1">
-            <p className="text-sm font-bold text-amber-900">
-              วันนี้ไม่มีชื่อพี่{nickname} ในตารางงาน
+            <p className="text-base font-bold text-amber-900">
+              วันนี้ไม่มีชื่อพี่{nickname}ในตารางงาน
             </p>
             <p className="text-sm text-amber-800">
               รบกวนพี่{nickname} ติดต่อหัวหน้างานก่อนเข้าทำงานครับ
