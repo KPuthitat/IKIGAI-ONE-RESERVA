@@ -98,7 +98,11 @@ export default function TimeClockClient({
 
   const bkk = new Date(now.getTime() + 7 * 60 * 60 * 1000);
   const timeStr = bkk.toISOString().slice(11, 19);
-  const dateStr = formatDateLong(bkk);
+  // Pass the Bangkok DATE STRING (not the +7-shifted Date) so the day isn't
+  // double-shifted into tomorrow on a UTC+7 device in the evening (owner
+  // 2026-06-13 — header showed "อาทิตย์ 14" on Sat 13). formatDateLong parses
+  // a YYYY-MM-DD as a plain local date → correct weekday regardless of TZ.
+  const dateStr = formatDateLong(bkkDateIso(now.toISOString()));
 
   if (!hasPin) {
     return <PinSetup onDone={() => router.refresh()} />;
