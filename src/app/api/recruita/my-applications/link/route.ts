@@ -11,15 +11,21 @@ import type { ApplicationStage } from "@/lib/recruita";
 //
 // Behaviour:
 //   • find the candidate by their registered phone number
-//   • if a LINE userId is supplied AND the candidate isn't bound yet,
-//     bind it opportunistically (so future stage pushes reach them) —
-//     but NEVER re-bind a candidate already linked to another LINE
-//     account (no takeover; we just show their applications)
-//   • always return the matching applications (search semantics)
+//   • return the matching applications (READ-ONLY search)
 //
-// line_user_id is OPTIONAL — present only when the page was opened via
-// LIFF. Phone matching is normalised on both sides (strip non-digits)
-// so stored "082-345-6789" matches input "0823456789".
+// IMPORTANT (owner 2026-06-13): this endpoint NO LONGER binds line_user_id.
+// The old "opportunistic bind on phone search" wrote the searcher's LINE
+// userId onto whatever candidate matched the typed phone — but phone is not
+// unique or verified, so person B searching person A's number (shared/typo'd
+// phone) bound B's LINE to A's candidate → A's stage notifications were
+// delivered to B. Binding now comes only from a trustworthy source: LIFF
+// auto-capture at apply time (the applicant's own LINE) and the admin
+// link-line flow. Search is purely read-only.
+//
+// line_user_id is still accepted (optional) for backward compatibility with
+// existing clients but is intentionally ignored here. Phone matching is
+// normalised on both sides (strip non-digits) so stored "082-345-6789"
+// matches input "0823456789".
 //
 // Returns { ok: true, applications: [...] } or { ok: false, error: "not_found" }.
 
@@ -56,14 +62,12 @@ export async function POST(req: Request) {
 
   // Find the candidate by phone (try normalised AND raw stored value)
   const candidate = db.prepare(`
-    SELECT id, line_user_id
+    SELECT id
     FROM recruita_candidates
     WHERE REPLACE(REPLACE(REPLACE(mobile_phone, '-', ''), ' ', ''), '.', '') = ?
        OR mobile_phone = ?
     LIMIT 1
-  `).get(normalised, body.mobile_phone.trim()) as
-    | { id: number; line_user_id: string | null }
-    | undefined;
+  `).get(normalised, body.mobile_phone.trim()) as { id: number } | undefined;
 
   if (!candidate) {
     // Don't distinguish "wrong phone" from "phone not in system" to
@@ -71,17 +75,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
   }
 
-  // Opportunistic bind: only when we have a LINE userId AND this
-  // candidate isn't already linked to someone. Search never claims an
-  // account that's already bound to a different LINE user — it just
-  // returns their applications below.
-  if (body.line_user_id && candidate.line_user_id === null) {
-    db.prepare(`
-      UPDATE recruita_candidates
-      SET line_user_id = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(body.line_user_id, candidate.id);
-  }
+  // (No binding here — see header note. Phone search is read-only.)
 
   // Return the candidate's applications (may be empty — caller handles that)
   const rows = db.prepare(`
