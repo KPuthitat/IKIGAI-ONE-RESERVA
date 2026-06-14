@@ -988,9 +988,19 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
 
   // Time entries in range — scoped to the period's branch when set, so a
   // multi-branch employee's hours/punches only count for the right branch.
+  // EXCEPTION (owner 2026-06-15): a punch created by an APPROVED time
+  // certification is always included even if its branch_id is NULL or
+  // differs from the period — the admin already approved that time, so it
+  // must reach payroll regardless of where the branch stamp landed. Without
+  // this a certified clock-out showed in the timesheet but the day stayed
+  // "ขาด" (unpaired) in the pay calc.
   const entries = (period.branch_id != null
     ? db.prepare(
-        "SELECT user_id, ts, type FROM time_entries WHERE ts >= ? AND ts <= ? AND branch_id = ?"
+        `SELECT user_id, ts, type FROM time_entries
+         WHERE ts >= ? AND ts <= ?
+           AND (branch_id = ?
+                OR id IN (SELECT entry_id FROM time_certifications
+                          WHERE status = 'approved' AND entry_id IS NOT NULL))`
       ).all(fromIso, toIso, period.branch_id)
     : db.prepare(
         "SELECT user_id, ts, type FROM time_entries WHERE ts >= ? AND ts <= ?"
@@ -1307,7 +1317,10 @@ export function recomputeLine(
     : (period.branch_id != null
         ? db.prepare(`
             SELECT user_id, ts, type FROM time_entries
-            WHERE user_id = ? AND ts >= ? AND ts <= ? AND branch_id = ?
+            WHERE user_id = ? AND ts >= ? AND ts <= ?
+              AND (branch_id = ?
+                   OR id IN (SELECT entry_id FROM time_certifications
+                             WHERE status = 'approved' AND entry_id IS NOT NULL))
           `).all(userId, fromIso, toIso, period.branch_id)
         : db.prepare(`
             SELECT user_id, ts, type FROM time_entries
