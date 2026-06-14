@@ -146,6 +146,21 @@ export default function TimeClockClient({
   const canIn = hasShiftToday && nextAction === "in";
   const canOut = !!firstInTs && nextAction !== "done";
 
+  // Cert prompt for a MISSING clock-in shows ONLY from 30 min before the
+  // shift end onward (owner 2026-06-14). A normal/late staff mid-shift just
+  // clocks in — no prompt. Near clock-out time, if they still have no
+  // clock-in, they clearly worked but forgot to punch in (so ออกงาน is
+  // disabled) → show the cert prompt. No shift / no scheduled end → never.
+  const nowMinBkk = (() => {
+    const [h, m] = timeStr.split(":").map(Number);
+    return h * 60 + m;
+  })();
+  const endMinBkk = scheduledEnd
+    ? (() => { const [h, m] = scheduledEnd.split(":").map(Number); return h * 60 + m; })()
+    : null;
+  const showCertPrompt =
+    !firstInTs && hasShiftToday && endMinBkk != null && nowMinBkk >= endMinBkk - 30;
+
   const statusBadge: "in" | "out" | "done" =
     nextAction === "done"
       ? "done"
@@ -191,6 +206,7 @@ export default function TimeClockClient({
               hasClockIn={!!firstInTs}
               hasShiftToday={hasShiftToday}
               nickname={nickname}
+              showCertPrompt={showCertPrompt}
               correctable={nextAction === "in" ? inCorrectable : outCorrectable}
               onSuccess={() => router.refresh()}
               branchName={branchName}
@@ -278,6 +294,7 @@ function ClockAction({
   canIn,
   canOut,
   hasClockIn,
+  showCertPrompt,
   correctable,
   onSuccess,
   branchName,
@@ -296,6 +313,7 @@ function ClockAction({
   canIn: boolean;
   canOut: boolean;
   hasClockIn: boolean;
+  showCertPrompt: boolean;
   correctable: boolean;
   onSuccess: () => void;
   branchName: string | null;
@@ -740,7 +758,7 @@ function ClockAction({
             {t("staff.persona.clockOut")}
           </button>
         </div>
-        {!hasClockIn && (
+        {showCertPrompt && (
           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
             <p className="text-sm font-bold text-amber-800">ยังไม่ได้ลงเวลาเข้างานวันนี้</p>
             <p className="text-xs text-amber-700 leading-relaxed">
