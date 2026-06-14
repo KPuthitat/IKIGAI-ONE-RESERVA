@@ -1191,7 +1191,7 @@ export function recomputeLine(
   if (!period) throw new Error("period_not_found");
   if (period.status !== "draft") throw new Error("period_not_draft");
 
-  const existing = db.prepare(`
+  let existing = db.prepare(`
     SELECT employee_code, display_name, employment_type,
            pay_cycle_snapshot, hourly_rate_snapshot, monthly_salary_snapshot,
            salary_tax_mode_snapshot,
@@ -1206,7 +1206,43 @@ export function recomputeLine(
     service_charge: number; other_additions: number; other_deductions: number;
     leave_days: number;
   } | undefined;
-  if (!existing) throw new Error("line_not_found");
+  // When the line is missing we INSERT a fresh one instead of throwing
+  // (owner 2026-06-14). This is the case where the employee had no punches
+  // when the period was first computed, then a time-certification added one
+  // later — the per-user recompute fired on cert-approve must be able to
+  // create the line, otherwise the certified hours never reach payroll.
+  const lineExists = !!existing;
+  if (!existing) {
+    const u = db.prepare(`
+      SELECT display_name, employee_code, employment_type,
+             hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
+      FROM users
+      WHERE id = ? AND role IN ('staff', 'admin') AND employment_type IS NOT NULL
+        AND is_test_account = 0
+    `).get(userId) as {
+      display_name: string; employee_code: string | null;
+      employment_type: "pt" | "ft" | null; hourly_rate: number | null;
+      monthly_salary: number | null; pay_cycle: "weekly" | "monthly" | null;
+      salary_tax_mode: "sso" | "wht" | null;
+    } | undefined;
+    // Not a payroll employee → nothing to create (caller skips on throw).
+    if (!u) throw new Error("line_not_found");
+    // Respect the period's branch scope so we don't pull in an out-of-branch
+    // employee that the full compute would have excluded.
+    if (period.branch_id != null) {
+      const inBranch = db.prepare(
+        "SELECT 1 FROM user_branches WHERE user_id = ? AND branch_id = ?"
+      ).get(userId, period.branch_id);
+      if (!inBranch) throw new Error("line_not_found");
+    }
+    existing = {
+      employee_code: u.employee_code, display_name: u.display_name,
+      employment_type: u.employment_type, pay_cycle_snapshot: u.pay_cycle,
+      hourly_rate_snapshot: u.hourly_rate, monthly_salary_snapshot: u.monthly_salary,
+      salary_tax_mode_snapshot: u.salary_tax_mode,
+      service_charge: 0, other_additions: 0, other_deductions: 0, leave_days: 0
+    };
+  }
 
   const fresh = db.prepare(`
     SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
@@ -1344,25 +1380,50 @@ export function recomputeLine(
   }
   const net = gross - sso - tax - ded;
 
-  db.prepare(`
-    UPDATE payroll_lines
-    SET shift_minutes = ?, break_deducted_minutes = ?,
-        regular_minutes = ?, ot_minutes = ?, holiday_minutes = ?,
-        days_worked = ?, unpaired_clockins = ?,
-        base_pay = ?, ot_pay = ?, gross_pay = ?,
-        sso_amount = ?, tax_amount = ?, net_pay = ?,
-        hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
-        pay_cycle_snapshot = ?, salary_tax_mode_snapshot = ?,
-        overridden = 1, updated_at = CURRENT_TIMESTAMP
-    WHERE period_id = ? AND user_id = ?
-  `).run(
-    computed.shift_minutes, computed.break_deducted_minutes,
-    computed.regular_minutes, computed.ot_minutes, computed.holiday_minutes,
-    computed.days_worked, computed.unpaired_clockins,
-    round2(computed.base_pay), round2(computed.ot_pay), round2(gross),
-    round2(sso), round2(tax), round2(net),
-    employee.hourly_rate, employee.monthly_salary,
-    employee.pay_cycle, taxMode,
-    periodId, userId
-  );
+  if (lineExists) {
+    db.prepare(`
+      UPDATE payroll_lines
+      SET shift_minutes = ?, break_deducted_minutes = ?,
+          regular_minutes = ?, ot_minutes = ?, holiday_minutes = ?,
+          days_worked = ?, unpaired_clockins = ?,
+          base_pay = ?, ot_pay = ?, gross_pay = ?,
+          sso_amount = ?, tax_amount = ?, net_pay = ?,
+          hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
+          pay_cycle_snapshot = ?, salary_tax_mode_snapshot = ?,
+          overridden = 1, updated_at = CURRENT_TIMESTAMP
+      WHERE period_id = ? AND user_id = ?
+    `).run(
+      computed.shift_minutes, computed.break_deducted_minutes,
+      computed.regular_minutes, computed.ot_minutes, computed.holiday_minutes,
+      computed.days_worked, computed.unpaired_clockins,
+      round2(computed.base_pay), round2(computed.ot_pay), round2(gross),
+      round2(sso), round2(tax), round2(net),
+      employee.hourly_rate, employee.monthly_salary,
+      employee.pay_cycle, taxMode,
+      periodId, userId
+    );
+  } else {
+    // Fresh line (employee had no punches at period-creation; a certification
+    // added one later). Mirror computePayrollPeriod's insert column set; extras
+    // are 0 for a brand-new line.
+    db.prepare(`
+      INSERT INTO payroll_lines (
+        period_id, user_id, employee_code, display_name, employment_type,
+        pay_cycle_snapshot, hourly_rate_snapshot, monthly_salary_snapshot,
+        salary_tax_mode_snapshot,
+        shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
+        holiday_minutes, days_worked, leave_days, unpaired_clockins,
+        base_pay, ot_pay, service_charge, other_additions, gross_pay,
+        sso_amount, tax_amount, other_deductions, net_pay
+      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?)
+    `).run(
+      periodId, userId, existing.employee_code, existing.display_name, employee.employment_type,
+      employee.pay_cycle, employee.hourly_rate, employee.monthly_salary,
+      taxMode,
+      computed.shift_minutes, computed.break_deducted_minutes, computed.regular_minutes, computed.ot_minutes,
+      computed.holiday_minutes, computed.days_worked, existing.leave_days, computed.unpaired_clockins,
+      round2(computed.base_pay), round2(computed.ot_pay), round2(svc), round2(add), round2(gross),
+      round2(sso), round2(tax), round2(ded), round2(net)
+    );
+  }
 }
