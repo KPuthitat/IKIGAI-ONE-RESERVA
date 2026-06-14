@@ -6,6 +6,7 @@ import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
 import { useConfirm } from "@/app/components/useConfirm";
 import { nameWithPrefix } from "@/lib/name";
+import PinPromptModal from "@/app/components/PinPromptModal";
 
 export type Punch = { id: number; ts: string };
 
@@ -92,6 +93,7 @@ export default function TimesheetsClient({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const refresh = () => startTransition(() => router.refresh());
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [resendingId, setResendingId] = useState<number | null>(null);
   // Admin add-missing-punch inline editor: addKey = `${user_id}|${date}|${type}`.
@@ -532,13 +534,9 @@ export default function TimesheetsClient({
                         </div>
                       )}
                     </td>
-                    {/* OT cell — approved OT until-time */}
+                    {/* OT cell — approved OT until-time + admin add/edit */}
                     <td className="py-2 pr-3 whitespace-nowrap">
-                      {r.ot_until ? (
-                        <span className="font-mono text-amber-700 font-medium">{r.ot_until}</span>
-                      ) : (
-                        <span className="text-slate-300">{t(lang, "admin.persona.timesheets.noShift")}</span>
-                      )}
+                      <OtCell row={r} onSaved={refresh} />
                     </td>
                   </tr>
                 );
@@ -581,5 +579,76 @@ export default function TimesheetsClient({
       )}
       {ConfirmDialog}
     </>
+  );
+}
+
+// OT cell on the timesheet — shows the approved OT until-time and lets an
+// admin add/edit it directly (owner 2026-06-14). Saving posts an
+// already-approved ot_request; requires the admin PIN (pay change).
+function OtCell({ row, onSaved }: { row: TimesheetDayRow; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [until, setUntil] = useState(row.ot_until ?? row.shift?.end_time ?? "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [pinOpen, setPinOpen] = useState(false);
+  const valid = /^([01]\d|2[0-3]):[0-5]\d$/.test(until);
+
+  async function save(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/admin/persona/ot-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: row.user_id, work_date: row.work_date, requested_until: until, pin })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) { setEditing(false); onSaved(); return { ok: true }; }
+      const m = j?.error === "wrong_pin" ? "PIN ไม่ถูกต้อง"
+        : j?.error === "no_pin" ? "ยังไม่ได้ตั้ง PIN"
+        : j?.error === "not_eligible_for_ot" ? "ไม่มีประเภทการจ้าง (PT/FT)"
+        : j?.error === "user_not_in_branch" ? "ไม่พบพนักงานในสาขานี้"
+        : j?.error ?? "ไม่สำเร็จ";
+      setErr(m);
+      return { ok: false, message: m };
+    } finally { setBusy(false); }
+  }
+
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-2">
+        {row.ot_until
+          ? <span className="font-mono text-amber-700 font-medium">{row.ot_until}</span>
+          : <span className="text-slate-300">—</span>}
+        <button type="button"
+          onClick={() => { setUntil(row.ot_until ?? row.shift?.end_time ?? ""); setEditing(true); setErr(null); }}
+          className="text-[11px] text-brand hover:underline">
+          {row.ot_until ? "แก้" : "+ เพิ่ม OT"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <input type="time" className="input !w-auto !py-0.5 text-xs" value={until}
+        onChange={(e) => setUntil(e.target.value)} />
+      <button type="button" disabled={busy || !valid} onClick={() => setPinOpen(true)}
+        className="text-[11px] px-2 py-0.5 rounded bg-brand text-white font-bold disabled:opacity-50">
+        บันทึก
+      </button>
+      <button type="button" onClick={() => { setEditing(false); setErr(null); }}
+        className="text-[11px] text-slate-500 hover:underline">ยกเลิก</button>
+      {err && <span className="text-[10px] text-rose-600">{err}</span>}
+      {pinOpen && (
+        <PinPromptModal
+          title="ยืนยันเพิ่ม OT"
+          description={<>เพิ่ม OT ถึง <b>{until}</b> น. วันที่ {row.work_date} — กระทบเงินเดือน ต้องใส่ PIN</>}
+          submitLabel="บันทึก"
+          onSubmit={save}
+          onClose={() => setPinOpen(false)}
+        />
+      )}
+    </div>
   );
 }

@@ -20,13 +20,20 @@ export type OtRow = {
   decided_by_name: string | null;
 };
 
+export type OtStaff = {
+  id: number;
+  display_name: string;
+  title_prefix: string | null;
+  employment_type: "pt" | "ft" | null;
+};
+
 const STATUS_META: Record<OtRow["status"], { label: string; cls: string }> = {
   pending: { label: "รออนุมัติ", cls: "bg-amber-100 text-amber-700" },
   approved: { label: "อนุมัติแล้ว", cls: "bg-emerald-100 text-emerald-700" },
   rejected: { label: "ไม่อนุมัติ", cls: "bg-rose-100 text-rose-600" }
 };
 
-export default function OtApprovalsClient({ rows }: { rows: OtRow[] }) {
+export default function OtApprovalsClient({ rows, staff }: { rows: OtRow[]; staff: OtStaff[] }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const refresh = () => startTransition(() => router.refresh());
@@ -36,6 +43,8 @@ export default function OtApprovalsClient({ rows }: { rows: OtRow[] }) {
 
   return (
     <div className="space-y-4">
+      <AddOtForm staff={staff} onAdded={refresh} />
+
       <div className="card space-y-3">
         <h2 className="font-bold text-slate-800 text-sm">รออนุมัติ ({pending.length})</h2>
         {pending.length === 0 && <p className="text-sm text-slate-400">ไม่มีคำขอที่รออนุมัติ</p>}
@@ -58,6 +67,101 @@ export default function OtApprovalsClient({ rows }: { rows: OtRow[] }) {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// Admin grants OT directly to a staff member (owner 2026-06-14). Creates an
+// already-approved request via POST /api/admin/persona/ot-requests. Requires
+// the admin PIN because it changes a pay value.
+function AddOtForm({ staff, onAdded }: { staff: OtStaff[]; onAdded: () => void }) {
+  const todayBkk = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  const [userId, setUserId] = useState<string>("");
+  const [date, setDate] = useState(todayBkk);
+  const [until, setUntil] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [pinOpen, setPinOpen] = useState(false);
+
+  const ready = userId !== "" && /^\d{4}-\d{2}-\d{2}$/.test(date) && /^([01]\d|2[0-3]):[0-5]\d$/.test(until);
+
+  async function submit(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    setBusy(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      const res = await fetch(apiUrl("/api/admin/persona/ot-requests"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: Number(userId), work_date: date, requested_until: until, pin })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        setMsg("เพิ่ม OT เรียบร้อย (อนุมัติแล้ว)");
+        setUntil("");
+        onAdded();
+        return { ok: true };
+      }
+      const m = j?.error === "wrong_pin" ? "PIN ไม่ถูกต้อง"
+        : j?.error === "no_pin" ? "ยังไม่ได้ตั้ง PIN"
+        : j?.error === "not_eligible_for_ot" ? "พนักงานนี้ไม่มีประเภทการจ้าง (PT/FT)"
+        : j?.error === "user_not_in_branch" ? "ไม่พบพนักงานในสาขานี้"
+        : j?.error ?? "ไม่สำเร็จ";
+      setErr(m);
+      return { ok: false, message: m };
+    } finally { setBusy(false); }
+  }
+
+  if (staff.length === 0) return null;
+
+  return (
+    <div className="card space-y-3">
+      <div>
+        <h2 className="font-bold text-slate-800 text-sm">เพิ่ม OT ให้พนักงาน</h2>
+        <p className="text-[11px] text-slate-500">
+          สำหรับพนักงานที่ทำ OT แต่ไม่ได้กดขอเอง — กรอกเวลาที่ทำถึง ระบบจะบันทึกเป็น &quot;อนุมัติแล้ว&quot; ทันที (ทั้ง PT/FT)
+        </p>
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <label className="text-[11px] text-slate-500 block">พนักงาน</label>
+          <select className="input !w-auto !py-1 text-sm" value={userId}
+            onChange={(e) => { setUserId(e.target.value); setErr(null); setMsg(null); }}>
+            <option value="">— เลือก —</option>
+            {staff.map((s) => (
+              <option key={s.id} value={s.id}>
+                {nameWithPrefix(s.title_prefix, s.display_name)} ({s.employment_type === "ft" ? "FT" : "PT"})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-[11px] text-slate-500 block">วันที่</label>
+          <input type="date" className="input !w-auto !py-1 text-sm" value={date}
+            onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <div>
+          <label className="text-[11px] text-slate-500 block">ทำถึงเวลา</label>
+          <input type="time" className="input !w-auto !py-1 text-sm" value={until}
+            onChange={(e) => setUntil(e.target.value)} />
+        </div>
+        <button type="button" disabled={busy || !ready} onClick={() => setPinOpen(true)}
+          className="text-xs px-4 py-1.5 rounded-md bg-brand text-white font-bold hover:opacity-90 disabled:opacity-50">
+          เพิ่ม OT
+        </button>
+      </div>
+      {err && <p className="text-xs text-rose-600">{err}</p>}
+      {msg && <p className="text-xs text-emerald-700 font-medium">{msg}</p>}
+      {pinOpen && (
+        <PinPromptModal
+          title="ยืนยันเพิ่ม OT"
+          description={<>เพิ่ม OT ถึง <b>{until}</b> น. วันที่ {date} — กระทบเงินเดือน ต้องใส่ PIN</>}
+          submitLabel="เพิ่ม OT"
+          onSubmit={submit}
+          onClose={() => setPinOpen(false)}
+        />
       )}
     </div>
   );

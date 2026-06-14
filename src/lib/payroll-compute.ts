@@ -536,9 +536,9 @@ export function computeLineForEmployee(args: {
   // fall back to raw clock times (legacy behaviour, e.g. no roster).
   scheduledByDate?: Map<string, ScheduledShift[]>;
   // Approved OT requests for this employee, keyed by BKK date → the
-  // "requested until" HH:MM. PT only. OT minutes credited that day =
-  // min(actual clock-out, requested_until) − scheduled end. Requires a
-  // scheduled shift (sched) for the date.
+  // "requested until" HH:MM. Applies to BOTH PT and FT (owner 2026-06-14).
+  // OT minutes credited that day = min(actual clock-out, requested_until) −
+  // scheduled end. Requires a scheduled shift (sched) for the date.
   approvedOtByDate?: Map<string, string>;
   // Per-day FIELD overrides (admin typed a value in the breakdown). Any
   // present field wins over the computed one.
@@ -578,10 +578,17 @@ export function computeLineForEmployee(args: {
     const ov = fieldOverridesByDate?.get(shiftDate);
 
     // Scheduled window — admin per-day override wins over the roster.
-    let sched = (e.employment_type === "pt" && scheduledByDate)
+    // Applies to BOTH PT and FT now (owner 2026-06-14): FT used to skip
+    // the roster cap and auto-earn OT for any time worked past 8h/day. The
+    // new policy is "no automatic OT for anyone — OT must be requested and
+    // approved". Giving FT the same roster-based cap means their worked
+    // window stops at the scheduled end unless an approved OT extends it,
+    // so OT comes ONLY from an approved request. FT base stays salary
+    // (unaffected by this); only the OT portion changes.
+    let sched = scheduledByDate
       ? pickScheduled(scheduledByDate.get(shiftDate) ?? [], s)
       : null;
-    if (e.employment_type === "pt" && ov?.sched_in && ov?.sched_out) {
+    if (ov?.sched_in && ov?.sched_out) {
       const sStart = new Date(`${shiftDate}T${ov.sched_in}:00+07:00`).toISOString();
       const sEndDate = ov.sched_out < ov.sched_in ? addDayYmd(shiftDate) : shiftDate;
       const sEnd = new Date(`${sEndDate}T${ov.sched_out}:00+07:00`).toISOString();
@@ -593,7 +600,7 @@ export function computeLineForEmployee(args: {
     // excess as OT rate (≤8h total stays regular rate, even past the end).
     // An admin per-day ot_until override wins over the approved request.
     let otUntilTs: string | null = null;
-    if (e.employment_type === "pt" && sched) {
+    if (sched) {
       const reqUntil = ov?.ot_until ?? approvedOtByDate?.get(shiftDate);
       if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
         otUntilTs = new Date(`${shiftDate}T${reqUntil}:00+07:00`).toISOString();
@@ -621,10 +628,18 @@ export function computeLineForEmployee(args: {
     shiftMin += grossMin;
     breakDeducted += deducted;
     const split = splitRegularOt(workedMinutes);
+    // No automatic OT without a roster (owner 2026-06-14). When there's no
+    // scheduled shift there's no shift-end to measure OT against, and OT
+    // must be approved — so a sched-less FT day must not auto-earn the
+    // over-8h split. Those minutes fold back into regular instead. FT base
+    // is salary, so this has no pay effect for them; PT keeps the legacy
+    // behaviour (a sched-less PT still splits at 8h — zeroing it would
+    // underpay the over-8h hours they actually worked).
+    const autoOt = (sched || e.employment_type !== "ft") ? split.ot : 0;
     // Per-day overrides of the final regular / OT minutes win over the
     // computed split.
-    const dayRegular = ov?.worked_min != null ? ov.worked_min : split.regular;
-    const dayOt = ov?.ot_min != null ? ov.ot_min : split.ot;
+    const dayRegular = ov?.worked_min != null ? ov.worked_min : split.regular + (split.ot - autoOt);
+    const dayOt = ov?.ot_min != null ? ov.ot_min : autoOt;
     regularMin += dayRegular;
     otMin += dayOt;
 
@@ -643,8 +658,11 @@ export function computeLineForEmployee(args: {
       // ค่าล่วงเวลา override (typed baht) wins over the computed OT pay.
       ptOtPay += ov?.ot_pay != null ? ov.ot_pay : computeOtPay(dayOt, ptRate, settings, mult);
     } else if (e.employment_type === "ft") {
-      // FT: OT only (base is salary). No holiday premium per company rule.
-      ftOtPay += computeOtPay(split.ot, ftHourlyEquivalent, settings, 1);
+      // FT: OT only (base is salary), now approval-gated like PT — the
+      // roster sched above caps worked at the scheduled end, so OT is the
+      // approved-extension excess only (no auto over-8h). A typed ค่าล่วงเวลา
+      // override still wins. No holiday premium per company rule.
+      ftOtPay += ov?.ot_pay != null ? ov.ot_pay : computeOtPay(dayOt, ftHourlyEquivalent, settings, 1);
     }
   }
 
