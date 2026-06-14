@@ -58,8 +58,8 @@ export async function PATCH(
     return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
   }
   const d = parsed.data;
-  const clockIn = d.clock_in || null;
-  const clockOut = d.clock_out || null;
+  let clockIn = d.clock_in || null;
+  let clockOut = d.clock_out || null;
   const schedIn = d.sched_in || null;
   const schedOut = d.sched_out || null;
   const breakMin = d.break_min ?? null;
@@ -67,10 +67,6 @@ export async function PATCH(
   const otMin = d.ot_min ?? null;
   const otPay = d.ot_pay ?? null;
   const otUntil = d.ot_until || null;
-  // Both-or-neither: a half-filled pair is ambiguous.
-  if ((clockIn === null) !== (clockOut === null)) {
-    return NextResponse.json({ error: "need_both_times" }, { status: 400 });
-  }
   if ((schedIn === null) !== (schedOut === null)) {
     return NextResponse.json({ error: "need_both_sched" }, { status: 400 });
   }
@@ -95,6 +91,29 @@ export async function PATCH(
   }
   if (d.work_date < period.period_start || d.work_date > period.period_end) {
     return NextResponse.json({ error: "date_out_of_range" }, { status: 400 });
+  }
+
+  // If the admin filled only ONE side (the common case for a "ขาด" day —
+  // a real IN exists but the OUT is missing, or vice-versa), auto-fill the
+  // other side from the day's real time-clock punch so they don't have to
+  // retype it (owner 2026-06-15). The override needs both times to form a
+  // shift; without this the half-filled edit returned need_both_times and
+  // the day stayed "ขาด".
+  if ((clockIn === null) !== (clockOut === null)) {
+    const startIso = new Date(`${d.work_date}T00:00:00+07:00`).toISOString();
+    const endIso = new Date(`${d.work_date}T23:59:59+07:00`).toISOString();
+    const wantType = clockIn === null ? "in" : "out";
+    const existing = db.prepare(
+      "SELECT ts FROM time_entries WHERE user_id = ? AND type = ? AND ts >= ? AND ts <= ? ORDER BY ts ASC LIMIT 1"
+    ).get(userId, wantType, startIso, endIso) as { ts: string } | undefined;
+    if (existing) {
+      const hhmm = new Date(new Date(existing.ts).getTime() + 7 * 3600_000).toISOString().slice(11, 16);
+      if (wantType === "in") clockIn = hhmm; else clockOut = hhmm;
+    }
+  }
+  // Both-or-neither (after auto-fill): a half-filled pair is still ambiguous.
+  if ((clockIn === null) !== (clockOut === null)) {
+    return NextResponse.json({ error: "need_both_times" }, { status: 400 });
   }
 
   const line = db.prepare(`
