@@ -123,11 +123,11 @@ export default function ApplicationsListClient({
                       รออนุมัติเปลี่ยนสถานะ → {STAGE_META[r.pending.to_stage].label}
                     </span>
                   )}
-                  {/* PDPA countdown — only for terminal-no-go stages,
-                      where the 30-day purge clock has started ticking
-                      from updated_at (the moment admin set this stage). */}
-                  {(r.stage === "rejected" || r.stage === "withdrawn") && r.updated_at && (
-                    <DaysToPurge updatedAt={r.updated_at} />
+                  {/* PDPA countdown — only for terminal-no-go stages.
+                      The 30-day purge clock runs from submitted_at (when
+                      they applied), per owner rule 2026-06-14. */}
+                  {(r.stage === "rejected" || r.stage === "withdrawn") && r.submitted_at && (
+                    <DaysToPurge submittedAt={r.submitted_at} />
                   )}
                 </div>
                 <div className="text-xs text-slate-500 mt-0.5">
@@ -156,19 +156,21 @@ export default function ApplicationsListClient({
 
 // ── PDPA countdown ──────────────────────────────────────────────
 // Renders "เหลือ N วันก่อนลบ" for terminal-no-go applications
-// (rejected / withdrawn). Days are computed from the stage-change
-// updated_at, capped at 30. Past zero we show "ลบเมื่อรอบล้างถัดไป"
+// (rejected / withdrawn). Days are computed from submitted_at (when they
+// applied), capped at 30. Past zero we show "ลบเมื่อรอบล้างถัดไป"
 // since the actual purge cron runs daily and may have a small lag.
 const PDPA_RETENTION_DAYS = 30;
 
-function DaysToPurge({ updatedAt }: { updatedAt: string }) {
-  const set = new Date(updatedAt).getTime();
+function DaysToPurge({ submittedAt }: { submittedAt: string }) {
+  // SQLite UTC is "YYYY-MM-DD HH:MM:SS" (space, no Z). Normalise to ISO
+  // (space→T, append Z) so Safari/WebKit doesn't return Invalid Date.
+  const set = new Date(submittedAt.replace(" ", "T") + (submittedAt.endsWith("Z") ? "" : "Z")).getTime();
   const elapsed = Math.max(0, (Date.now() - set) / 86_400_000);
   const left = Math.max(0, Math.ceil(PDPA_RETENTION_DAYS - elapsed));
   if (left > 7) {
     return (
       <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-slate-100 text-slate-500"
-        title={`PDPA: ลบอัตโนมัติ ${PDPA_RETENTION_DAYS} วันหลังตัดสิน`}>
+        title={`PDPA: ลบอัตโนมัติ ${PDPA_RETENTION_DAYS} วันหลังกรอกใบสมัคร`}>
         เหลือ {left} วันก่อนลบ
       </span>
     );

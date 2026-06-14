@@ -397,9 +397,9 @@ function Card({
         {/* LINE binding status (owner 2026-06-13) — amber = needs manual
             link before this candidate can receive any push. */}
         {card.line_linked ? (
-          <span className="text-green-600 font-medium">● ผูก LINE แล้ว</span>
+          <span className="text-green-600 font-medium">● เชื่อมต่อ UserID แล้ว</span>
         ) : (
-          <span className="text-amber-800 font-medium bg-amber-100 px-1.5 py-0.5 rounded">ยังไม่ผูก LINE</span>
+          <span className="text-amber-800 font-medium bg-amber-100 px-1.5 py-0.5 rounded">ยังไม่เชื่อมต่อ UserID</span>
         )}
       </div>
 

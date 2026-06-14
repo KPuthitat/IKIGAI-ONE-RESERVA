@@ -583,6 +583,16 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
                     </div>
                   )}
 
+                  {/* Health-check upload — only while waiting on the
+                      medical check. Applicant uploads the 5-disease cert
+                      photo/PDF (owner 2026-06-14); it lands as a
+                      health_result document the admin form surfaces. */}
+                  {row.stage === "health_check" && (
+                    <HealthCertUpload
+                      applicationId={row.application_id}
+                      identity={bookingIdentity()} />
+                  )}
+
                   <div className="border-t border-slate-100 pt-2 flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-[11px] text-slate-400">
                       ส่งเมื่อ {formatLongDate(bkkDateIso(row.submitted_at), "th")} · {bkkHHMM(row.submitted_at)} น.
@@ -636,6 +646,94 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
           </section>
         )}
       </main>
+    </div>
+  );
+}
+
+// Health-certificate upload — shown on a health_check-stage card. The
+// applicant picks a photo/PDF of their 5-disease medical certificate and
+// uploads it; the server stores it as a health_result document the admin
+// form picks up. A fresh upload replaces the previous one server-side.
+function HealthCertUpload({
+  applicationId, identity
+}: {
+  applicationId: number;
+  identity: { line_user_id?: string; mobile_phone?: string };
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function upload() {
+    if (!file) return;
+    if (!identity.line_user_id && !identity.mobile_phone) {
+      setErr("ไม่พบข้อมูลยืนยันตัวตน — เปิดผ่าน LINE หรือค้นหาด้วยเบอร์โทรก่อน");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      if (identity.line_user_id) fd.append("line_user_id", identity.line_user_id);
+      if (identity.mobile_phone) fd.append("mobile_phone", identity.mobile_phone);
+      const r = await fetch(apiUrl(`/api/recruita/my-applications/${applicationId}/health-cert`), {
+        method: "POST",
+        body: fd
+      });
+      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      if (!r.ok || !j.ok) {
+        setErr(j.message ?? "อัพโหลดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+        return;
+      }
+      setDone(true);
+      setFile(null);
+    } catch {
+      setErr("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border border-teal-200 bg-teal-50/60 rounded-lg p-3 space-y-2">
+      <div className="text-xs text-teal-900 font-semibold">
+        อัพโหลดใบรับรองแพทย์ 5 โรค
+      </div>
+      <p className="text-[11px] text-teal-800/80 leading-relaxed">
+        ถ่ายรูปหรือสแกนใบรับรองแพทย์ (รองรับรูปภาพหรือ PDF ไม่เกิน 10MB)
+        แล้วอัพโหลดที่นี่ · ใบรับรองตัวจริงให้นำมายื่นที่บริษัทในวันแรกที่มาทำงาน
+      </p>
+      {done ? (
+        <div className="bg-white border border-emerald-300 rounded-lg p-3 space-y-2">
+          <p className="text-xs text-emerald-800 font-semibold">
+            อัพโหลดเรียบร้อยแล้ว — เจ้าหน้าที่จะตรวจสอบและแจ้งผลให้ทราบ
+          </p>
+          <button type="button"
+            onClick={() => { setDone(false); setErr(null); }}
+            className="text-[11px] text-teal-700 underline">
+            อัพโหลดใหม่อีกครั้ง
+          </button>
+        </div>
+      ) : (
+        <>
+          <input
+            type="file"
+            accept=".pdf,image/*"
+            onChange={(e) => { setFile(e.target.files?.[0] ?? null); setErr(null); }}
+            disabled={busy}
+            className="text-xs w-full" />
+          {file && <p className="text-[11px] text-teal-700">{file.name}</p>}
+          {err && <p className="text-[11px] text-rose-600">{err}</p>}
+          <button type="button"
+            onClick={upload}
+            disabled={busy || !file}
+            className="bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-bold px-4 py-2 rounded-lg">
+            {busy ? "กำลังอัพโหลด…" : "อัพโหลดใบรับรองแพทย์"}
+          </button>
+        </>
+      )}
     </div>
   );
 }

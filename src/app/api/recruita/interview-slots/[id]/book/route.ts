@@ -53,7 +53,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // Ownership — at least one identity proof must match the candidate.
   const lineMatches = !!line_user_id && app.line_user_id === line_user_id;
   const norm = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
-  const phoneMatches = !!mobile_phone && norm(app.mobile_phone) === norm(mobile_phone);
+  // Require a real ≥9-digit phone on the supplied side — norm() strips
+  // non-digits, so without this a junk value (norm → "") would match a
+  // candidate whose phone is NULL/empty and bypass ownership.
+  const phoneMatches = norm(mobile_phone).length >= 9 && norm(app.mobile_phone) === norm(mobile_phone);
   if (!lineMatches && !phoneMatches) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }

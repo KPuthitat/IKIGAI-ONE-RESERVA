@@ -53,7 +53,11 @@ const Body = z.object({
   recruita_pdpa_text: z.string().max(5000).optional(),
   // RECRUITA interview venue map/navigation link (Google Maps share URL
   // etc.). Empty = clear → the invite card omits the navigate button.
-  recruita_interview_map_url: z.string().max(1000).optional()
+  recruita_interview_map_url: z.string().max(1000).optional(),
+  // RECRUITA health-check card body shown to applicants who passed the
+  // interview. Empty = clear → card uses the built-in default. 2000-char
+  // cap fits the multi-paragraph default + note comfortably.
+  recruita_health_check_message: z.string().max(2000).optional()
 });
 
 export async function POST(req: Request) {
@@ -140,6 +144,9 @@ export async function POST(req: Request) {
   }
   if (parsed.data.recruita_interview_map_url !== undefined) {
     dbPatch.recruita_interview_map_url = parsed.data.recruita_interview_map_url;
+  }
+  if (parsed.data.recruita_health_check_message !== undefined) {
+    dbPatch.recruita_health_check_message = parsed.data.recruita_health_check_message;
   }
 
   updateSystemSettings(dbPatch, user.id);

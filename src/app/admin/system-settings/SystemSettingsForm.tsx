@@ -30,7 +30,9 @@ export default function SystemSettingsForm({
   privacyPolicyUrl,
   recruitaExecGroupId,
   recruitaExecGroupName,
-  recruitaInterviewMapUrl
+  recruitaInterviewMapUrl,
+  recruitaHealthCheckMessage,
+  defaultHealthCheckMessage
 }: {
   token: string | null;
   groupId: string | null;
@@ -41,6 +43,8 @@ export default function SystemSettingsForm({
   recruitaExecGroupId: string;
   recruitaExecGroupName: string;
   recruitaInterviewMapUrl: string;
+  recruitaHealthCheckMessage: string;
+  defaultHealthCheckMessage: string;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -76,6 +80,7 @@ export default function SystemSettingsForm({
   // RECRUITA interview venue map link (2026-06-11) — opened by the
   // "นำทางมาสถานที่นัดสัมภาษณ์" button on the interview-invite LINE card.
   const [interviewMapInput, setInterviewMapInput] = useState(recruitaInterviewMapUrl);
+  const [healthMsgInput, setHealthMsgInput] = useState(recruitaHealthCheckMessage);
   const [recruitaExecNameInput, setRecruitaExecNameInput] = useState(recruitaExecGroupName);
   // (Resignation-policy textareas moved 2026-05-28 to
   // /admin/persona/resignation — that's the menu where admins
@@ -114,6 +119,7 @@ export default function SystemSettingsForm({
       body.recruita_exec_group_id = recruitaExecInput.trim();
       body.recruita_exec_group_name = recruitaExecNameInput.trim();
       body.recruita_interview_map_url = interviewMapInput.trim();
+      body.recruita_health_check_message = healthMsgInput.trim();
 
       // (Resignation-policy fields moved to /admin/persona/resignation
       // 2026-05-28 — this form no longer sends them.)
@@ -416,6 +422,21 @@ export default function SystemSettingsForm({
           <p className="text-[10px] text-slate-400 mt-1">
             วางลิงก์ Google Maps (หรือลิงก์แผนที่อื่น) ของสถานที่นัดสัมภาษณ์ — จะเป็นปุ่ม
             &quot;นำทางมาสถานที่นัดสัมภาษณ์&quot; บนการ์ดเชิญสัมภาษณ์ใน LINE. ปล่อยว่าง = ไม่แสดงปุ่ม.
+          </p>
+        </div>
+        {/* Health-check card body (2026-06-14) — shown to applicants who
+            passed the interview, on the "ตรวจสุขภาพ" LINE card. */}
+        <div>
+          <label className="label">ข้อความชี้แจงการตรวจสุขภาพ (RECRUITA)</label>
+          <textarea
+            className="input text-sm min-h-[160px] leading-relaxed"
+            value={healthMsgInput}
+            onChange={(e) => setHealthMsgInput(e.target.value)}
+            placeholder={defaultHealthCheckMessage}
+            maxLength={2000} />
+          <p className="text-[10px] text-slate-400 mt-1">
+            ข้อความนี้จะแสดงบนการ์ด &quot;ตรวจสุขภาพ&quot; ที่ส่งให้ผู้สมัครผ่าน LINE.
+            ปล่อยว่าง = ใช้ข้อความเริ่มต้นของระบบ (ตามที่แสดงเป็น placeholder).
           </p>
         </div>
       </div>

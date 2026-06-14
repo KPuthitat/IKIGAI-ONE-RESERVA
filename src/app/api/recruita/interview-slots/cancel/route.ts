@@ -44,7 +44,9 @@ export async function POST(req: Request) {
 
   const norm = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
   const lineMatches = !!line_user_id && app.line_user_id === line_user_id;
-  const phoneMatches = !!mobile_phone && norm(app.mobile_phone) === norm(mobile_phone);
+  // ≥9-digit floor — norm() strips non-digits, so a junk phone (norm → "")
+  // must not match a candidate whose phone is NULL/empty.
+  const phoneMatches = norm(mobile_phone).length >= 9 && norm(app.mobile_phone) === norm(mobile_phone);
   if (!lineMatches && !phoneMatches) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }

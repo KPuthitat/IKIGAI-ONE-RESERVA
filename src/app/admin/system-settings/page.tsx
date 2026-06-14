@@ -20,6 +20,7 @@ import { t } from "@/lib/i18n";
 import SystemSettingsForm from "./SystemSettingsForm";
 import RecruitaOaSection from "./RecruitaOaSection";
 import PdpaImageUploader from "./PdpaImageUploader";
+import { DEFAULT_HEALTH_CHECK_MESSAGE } from "@/lib/recruita-notify";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,8 @@ export default function SystemSettingsPage() {
         recruitaExecGroupId={settings.recruita_exec_group_id ?? ""}
         recruitaExecGroupName={settings.recruita_exec_group_name ?? ""}
         recruitaInterviewMapUrl={settings.recruita_interview_map_url ?? ""}
+        recruitaHealthCheckMessage={settings.recruita_health_check_message ?? ""}
+        defaultHealthCheckMessage={DEFAULT_HEALTH_CHECK_MESSAGE}
       />
 
       {/* RECRUITA PDPA policy image — admin uploads an image of the

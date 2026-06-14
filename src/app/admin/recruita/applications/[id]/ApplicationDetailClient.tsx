@@ -285,6 +285,7 @@ export default function ApplicationDetailClient({
         at={application.health_check_at}
         note={application.health_check_note}
         resultDoc={documents.find((d) => d.kind === "health_result") ?? null}
+        certDoc={documents.find((d) => d.kind === "health_cert") ?? null}
       />
 
       {/* Stage controls — dual-admin gated.
@@ -692,9 +693,9 @@ export default function ApplicationDetailClient({
       <Card title="เอกสารแนบ">
         {/* Health-check result has its own section above — keep it out of
             the generic attachments list so it isn't mislabeled. */}
-        {documents.filter((d) => d.kind !== "health_result").length === 0 ? <Empty /> : (
+        {documents.filter((d) => d.kind !== "health_result" && d.kind !== "health_cert").length === 0 ? <Empty /> : (
           <div className="space-y-1.5">
-            {documents.filter((d) => d.kind !== "health_result").map((d) => (
+            {documents.filter((d) => d.kind !== "health_result" && d.kind !== "health_cert").map((d) => (
               <a key={d.id} href={`/api/recruita/documents/${d.id}`}
                 target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2 text-sm border border-slate-200 rounded-lg p-2 hover:bg-slate-50">
@@ -779,7 +780,7 @@ export default function ApplicationDetailClient({
 }
 
 function HealthCheckSection({
-  applicationId, status, provider, at, note, resultDoc
+  applicationId, status, provider, at, note, resultDoc, certDoc
 }: {
   applicationId: number;
   status: "pending" | "passed" | "failed" | null;
@@ -787,6 +788,9 @@ function HealthCheckSection({
   at: string | null;
   note: string | null;
   resultDoc: DocShape | null;
+  /** Certificate the APPLICANT uploaded from their status page
+   *  (kind='health_cert'), distinct from the admin's own resultDoc. */
+  certDoc: DocShape | null;
 }) {
   const router = useRouter();
   const [st, setSt] = useState<"pending" | "passed" | "failed">(status ?? "pending");
@@ -837,17 +841,23 @@ function HealthCheckSection({
         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${badge.c}`}>{badge.t}</span>
       </div>
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        หลังสัมภาษณ์ผ่าน ผู้สมัครต้องตรวจสุขภาพ — นำใบรับรองแพทย์มาเอง หรือตรวจที่ AT HOME CLINIC
-        แล้วบันทึกผลที่นี่ · ต้องเป็น &quot;ผ่าน&quot; จึงจะกดรับเข้าทำงานได้
+        หลังสัมภาษณ์ผ่าน ผู้สมัครต้องตรวจสุขภาพกับสถานพยาบาล (คลินิกหรือโรงพยาบาล)
+        แล้วนำใบรับรองแพทย์มายื่น · บันทึกผลที่นี่ · ต้องเป็น &quot;ผ่าน&quot; จึงจะกดรับเข้าทำงานได้
       </p>
       <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 leading-relaxed">
         ใบรับรองแพทย์ 5 โรค (ตามที่กฎหมายกำหนด): (1) โรคเรื้อน · (2) วัณโรคในระยะอันตราย ·
         (3) โรคเท้าช้างในระยะที่ปรากฏอาการ · (4) โรคติดยาเสพติดให้โทษ · (5) โรคพิษสุราเรื้อรัง
       </div>
+      {certDoc && (
+        <a href={apiUrl(`/api/recruita/documents/${certDoc.id}`)} target="_blank" rel="noopener"
+          className="block text-xs text-teal-700 underline">
+          ใบรับรองแพทย์ที่ผู้สมัครอัพโหลด{certDoc.original_filename ? ` (${certDoc.original_filename})` : ""}
+        </a>
+      )}
       {resultDoc && (
         <a href={apiUrl(`/api/recruita/documents/${resultDoc.id}`)} target="_blank" rel="noopener"
           className="inline-block text-xs text-teal-700 underline">
-          📄 ไฟล์ผลตรวจที่บันทึกไว้{resultDoc.original_filename ? ` (${resultDoc.original_filename})` : ""}
+          ไฟล์ผลตรวจที่บันทึกไว้{resultDoc.original_filename ? ` (${resultDoc.original_filename})` : ""}
         </a>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -865,7 +875,7 @@ function HealthCheckSection({
           <select className="input text-sm" value={prov}
             onChange={(e) => setProv(e.target.value as "self" | "at_home")}>
             <option value="self">ใบรับรองจากภายนอก</option>
-            <option value="at_home">AT HOME CLINIC</option>
+            <option value="at_home">ตรวจที่สถานพยาบาลในเครือ</option>
           </select>
         </div>
         <div>

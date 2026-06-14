@@ -3,7 +3,10 @@ import path from "path";
 import { getDb } from "./db";
 
 // PDPA retention for RECRUITA. Rejected/withdrawn applications are
-// purged 30 days after they reached that terminal stage (updated_at).
+// purged 30 days after the candidate APPLIED (submitted_at) — the owner's
+// rule (2026-06-14): no rejected/withdrawn record may live past 30 days
+// from application. NOTE: a record that's already >30 days old when it
+// reaches rejected/withdrawn is purged on the very next cron run.
 // This is what the admin UI's "เหลือ X วันก่อนลบ" countdown promises.
 //
 // When a candidate has NO remaining applications after the purge, we
@@ -22,14 +25,14 @@ export async function purgeOldRecruitaApplications(): Promise<{
 }> {
   const db = getDb();
 
-  // SQLite stores updated_at as UTC "YYYY-MM-DD HH:MM:SS"; let SQLite do
+  // SQLite stores submitted_at as UTC "YYYY-MM-DD HH:MM:SS"; let SQLite do
   // the date math so we don't fight timezone/format mismatches.
   const stale = db.prepare(`
     SELECT id, candidate_id
     FROM recruita_applications
     WHERE stage IN ('rejected', 'withdrawn')
-      AND updated_at IS NOT NULL
-      AND updated_at < datetime('now', '-${RETENTION_DAYS} days')
+      AND submitted_at IS NOT NULL
+      AND submitted_at < datetime('now', '-${RETENTION_DAYS} days')
   `).all() as Array<{ id: number; candidate_id: number }>;
 
   if (stale.length === 0) return { apps: 0, candidates: 0, files: 0 };

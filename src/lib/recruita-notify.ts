@@ -118,11 +118,11 @@ function stageCopy(stage: ApplicationStage, positionTitle: string): StageCopy {
       tone: "#3b82f6"
     },
     screening: {
-      headline: `✅ ใบสมัครของคุณผ่านการคัดกรองเบื้องต้น\nสำหรับตำแหน่ง ${positionTitle}`,
+      headline: `ใบสมัครของคุณผ่านการคัดกรองเบื้องต้น\nสำหรับตำแหน่ง ${positionTitle}`,
       tone: "#0ea5e9"
     },
     interview: {
-      headline: `🗣 ทีมงานต้องการเชิญคุณมาสัมภาษณ์\nสำหรับตำแหน่ง ${positionTitle}`,
+      headline: `ทีมงานต้องการเชิญคุณมาสัมภาษณ์\nสำหรับตำแหน่ง ${positionTitle}`,
       tone: "#f59e0b"
     },
     health_check: {
@@ -130,15 +130,15 @@ function stageCopy(stage: ApplicationStage, positionTitle: string): StageCopy {
       tone: "#14b8a6"
     },
     offered: {
-      headline: `📨 ยินดีด้วย! เรามีข้อเสนองานสำหรับคุณ\nสำหรับตำแหน่ง ${positionTitle}`,
+      headline: `ยินดีด้วย เรามีข้อเสนองานสำหรับคุณ\nสำหรับตำแหน่ง ${positionTitle}`,
       tone: "#8b5cf6"
     },
     accepted: {
-      headline: `🎉 ขอบคุณที่ตอบรับข้อเสนอ\nสำหรับตำแหน่ง ${positionTitle}`,
+      headline: `ขอบคุณที่ตอบรับข้อเสนอ\nสำหรับตำแหน่ง ${positionTitle}`,
       tone: "#10b981"
     },
     hired: {
-      headline: `🎊 ยินดีต้อนรับสู่ทีม IKIGAI!\nตำแหน่ง ${positionTitle}`,
+      headline: `ยินดีต้อนรับสู่ทีม IKIGAI\nตำแหน่ง ${positionTitle}`,
       tone: "#059669",
       cta: { label: "เข้าสู่ระบบพนักงาน", url: `${PUBLIC_BASE}/login` }
     },
@@ -154,6 +154,17 @@ function stageCopy(stage: ApplicationStage, positionTitle: string): StageCopy {
   return candidates[stage];
 }
 
+/** Default body for the health-check ("ตรวจสุขภาพ") card. Admin can
+ *  override it in /admin/system-settings (recruita_health_check_message);
+ *  NULL/empty there falls back to this. Owner-authored 2026-06-14. */
+export const DEFAULT_HEALTH_CHECK_MESSAGE =
+  "ให้ผู้สมัครที่ผ่านสัมภาษณ์ ติดต่อสถานพยาบาล (คลินิก หรือโรงพยาบาลก็ได้) เพื่อตรวจสุขภาพ " +
+  "โดยแจ้งว่ามาขอรับการตรวจร่างกาย และใบรับรองแพทย์ 5 โรค หลังจากนั้นให้ผู้สมัครอัพโหลดภาพถ่าย" +
+  "ใบรับรองแพทย์เข้ามาในระบบก่อน ส่วนใบรับรองแพทย์ตัวจริงให้นำมายื่นที่บริษัทในวันแรกที่มาทำงาน\n\n" +
+  "หมายเหตุ: ถ้าสถานพยาบาลสอบถามลักษณะงานที่ทำ สามารถแจ้งได้ว่าทำงานในร้านอาหาร " +
+  "หากทางสถานพยาบาลแนะนำให้ตรวจสุขภาพรายการอื่นๆ นอกเหนือจากใบรับรองแพทย์ 5 โรค ให้ปฏิเสธ " +
+  "และแจ้งว่า ทางบริษัทจะจัดตรวจสุขภาพสำหรับผู้สัมผัสอาหารให้อีกครั้งก่อนเริ่มงาน";
+
 /** Build the Flex card we send when an admin moves a candidate to a
  *  new stage. Generic across stages; the copy varies by stage. */
 export function stageChangeFlex(args: {
@@ -168,11 +179,23 @@ export function stageChangeFlex(args: {
   const altText = `${meta.label} · ${args.positionTitle}`;
 
   const bodyRows: Array<Record<string, unknown>> = [
-    { type: "text", text: copy.headline, size: "sm", color: COLOR_TEXT_DARK, wrap: true },
+    { type: "text", text: copy.headline, size: "sm", color: COLOR_TEXT_DARK, wrap: true }
+  ];
+  // Health-check stage: surface the admin-editable instructions (contact a
+  // clinic, get the 5-disease cert, upload the photo, bring the original on
+  // day one). Owner rule 2026-06-14. Falls back to the built-in default.
+  if (args.stage === "health_check") {
+    const msg = (getSystemSettings().recruita_health_check_message ?? "").trim()
+      || DEFAULT_HEALTH_CHECK_MESSAGE;
+    bodyRows.push({
+      type: "text", text: msg, size: "xs", color: "#475569", wrap: true, margin: "md"
+    });
+  }
+  bodyRows.push(
     { type: "separator", margin: "md", color: COLOR_DIVIDER },
     infoRow("สถานะ", meta.label),
     infoRow("ตำแหน่ง", args.positionTitle)
-  ];
+  );
   if (args.branchName) bodyRows.push(infoRow("บริษัท/สาขา", args.branchName));
   bodyRows.push(infoRow("เลขที่ใบสมัคร", args.applicationNo));
 
@@ -198,6 +221,20 @@ export function stageChangeFlex(args: {
         action: { type: "uri", label: "นำทางมาสถานที่นัดสัมภาษณ์", uri: mapUrl }
       });
     }
+  } else if (args.stage === "health_check") {
+    // Health-check stage (owner 2026-06-14): the sole action is to upload
+    // the medical certificate. Opens the candidate status page (LIFF when
+    // configured so LINE auto-logs them in), where the upload control
+    // appears on this application's card. Replaces the old
+    // "ดูตำแหน่งงานอื่น" button on this card.
+    const ch = getRecruitaChannel();
+    const statusUrl = ch?.liff_id_status
+      ? `https://liff.line.me/${ch.liff_id_status}`
+      : `${PUBLIC_BASE}/recruita/status`;
+    footerContents.push({
+      type: "button", style: "primary", color: COLOR_BRAND, height: "sm",
+      action: { type: "uri", label: "อัพโหลดใบรับรองแพทย์", uri: statusUrl }
+    });
   } else {
     if (copy.cta) {
       footerContents.push({

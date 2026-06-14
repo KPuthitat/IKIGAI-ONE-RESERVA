@@ -1933,6 +1933,12 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "recruita_interview_map_url")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN recruita_interview_map_url TEXT");
   }
+  // RECRUITA health-check instructions (2026-06-14) — admin-editable body
+  // shown on the "ตรวจสุขภาพ" LINE card sent to applicants who passed the
+  // interview. NULL/empty = the card uses the built-in default text.
+  if (!ssCols.some((c) => c.name === "recruita_health_check_message")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN recruita_health_check_message TEXT");
+  }
   // RECRUITA PDPA policy image (2026-06-02) — admin uploads an image
   // (PNG/JPG/WebP) of the privacy notice instead of typing dense text.
   // The apply form renders a "เปิดดูนโยบาย" button linking to the
@@ -5045,6 +5051,8 @@ export function updateSystemSettings(
     // RECRUITA interview venue map/navigation link. Empty → NULL = the
     // "นำทางมาสถานที่นัดสัมภาษณ์" button is omitted from the invite card.
     recruita_interview_map_url?: string | null;
+    // RECRUITA health-check card body. Empty → NULL = card uses default.
+    recruita_health_check_message?: string | null;
   },
   updatedBy: number
 ): void {
@@ -5136,6 +5144,10 @@ export function updateSystemSettings(
   if (Object.prototype.hasOwnProperty.call(patch, "recruita_interview_map_url")) {
     sets.push("recruita_interview_map_url = ?");
     vals.push(norm(patch.recruita_interview_map_url));
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "recruita_health_check_message")) {
+    sets.push("recruita_health_check_message = ?");
+    vals.push(norm(patch.recruita_health_check_message));
   }
   if (sets.length === 0) return;
   sets.push("updated_at = ?", "updated_by = ?");
@@ -5322,6 +5334,9 @@ export type SystemSettings = {
    *  link). NULL/empty = the "นำทางมาสถานที่นัดสัมภาษณ์" button is omitted
    *  from the interview-invite LINE card. */
   recruita_interview_map_url?: string | null;
+  /** RECRUITA health-check card body (admin-editable). NULL/empty = the
+   *  card falls back to DEFAULT_HEALTH_CHECK_MESSAGE in recruita-notify. */
+  recruita_health_check_message?: string | null;
   updated_at: string | null;
   updated_by: number | null;
 };
