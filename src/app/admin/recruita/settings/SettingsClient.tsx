@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
 export default function SettingsClient({
-  code, label, hasSecret, hasToken, liffId, liffIdStatus, webhookUrl
+  code, label, hasSecret, hasToken, liffId, liffIdStatus, oaLink, oaLinkDefault, webhookUrl
 }: {
   code: string;
   label: string;
@@ -13,6 +13,8 @@ export default function SettingsClient({
   hasToken: boolean;
   liffId: string;
   liffIdStatus: string;
+  oaLink: string;
+  oaLinkDefault: string;
   webhookUrl: string;
 }) {
   const router = useRouter();
@@ -21,6 +23,7 @@ export default function SettingsClient({
   const [token, setToken] = useState("");
   const [liff, setLiff] = useState(liffId);
   const [liffStatus, setLiffStatus] = useState(liffIdStatus);
+  const [oa, setOa] = useState(oaLink);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -43,6 +46,7 @@ export default function SettingsClient({
       if (token.trim()) body.channel_token = token.trim();
       if (liff !== liffId) body.liff_id = liff.trim();
       if (liffStatus !== liffIdStatus) body.liff_id_status = liffStatus.trim();
+      if (oa !== oaLink) body.oa_link = oa.trim();
       if (Object.keys(body).length === 0) {
         setMsg("ไม่มีค่าใหม่ที่จะบันทึก");
         return;
@@ -146,6 +150,18 @@ export default function SettingsClient({
             LIFF app ที่ตั้ง endpoint = <code>/recruita/status</code>
             <br />ผู้สมัครกดปุ่มนี้แล้วเห็นสถานะใบสมัครของตัวเอง
             <br /><span className="text-amber-600">ใส่แค่ ID ล้วน เช่น <code>2010245034-x1TBNhAv</code> ห้ามใส่ URL เต็ม</span>
+          </p>
+        </div>
+
+        <div>
+          <label className="label">ลิงก์เพิ่มเพื่อน OA (สำหรับคนที่เปิดฟอร์มนอก LINE)</label>
+          <input className="input font-mono text-xs"
+            value={oa} onChange={(e) => setOa(e.target.value)}
+            placeholder={oaLinkDefault} />
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            เมื่อผู้สมัครเปิดหน้าสมัครงาน<b>นอกแอป LINE</b> ระบบจะล็อกฟอร์มและแสดงปุ่มนี้ให้ไปเพิ่มเพื่อน OA
+            แล้วกลับเข้ามาผ่าน Rich Menu (เพื่อเก็บ LINE userId).
+            <br />ปล่อยว่าง = ใช้ค่าเริ่มต้น <code>{oaLinkDefault}</code>
           </p>
         </div>
 

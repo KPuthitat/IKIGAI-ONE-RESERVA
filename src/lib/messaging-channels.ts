@@ -25,12 +25,17 @@ export type MessagingChannel = {
   channel_token: string | null;      // plaintext after decryptRow
   liff_id: string | null;            // LIFF app ID for the apply page (RECRUITA) or booking page (RESERVA)
   liff_id_status: string | null;     // LIFF app ID for the candidate status page (RECRUITA only)
+  oa_link: string | null;            // "add OA as friend" deep link (RECRUITA apply gate, RC-4)
   updated_at: string;
   updated_by: number | null;
 };
 
 const PLATFORM_CODE = "ikigai-os";
 const RECRUITA_CODE = "ikigai-recruit";
+
+/** Fallback "add IKIGAI Recruit OA" link (owner-provided 2026-06-14) used by
+ *  the apply gate when messaging_channels.oa_link is NULL/empty. */
+export const DEFAULT_RECRUITA_OA_LINK = "https://lin.ee/saEBWjQ";
 
 /** Decrypt the secret/token fields on a row read from the DB. All
  *  read paths funnel through here so downstream callers see plaintext
@@ -93,6 +98,7 @@ export function setChannelCreds(args: {
   channel_secret?: string | undefined;
   liff_id?: string | undefined;
   liff_id_status?: string | undefined;
+  oa_link?: string | undefined;
   updated_by: number | null;
 }): { ok: true } | { ok: false; error: "not_found" } {
   const db = getDb();
@@ -122,6 +128,12 @@ export function setChannelCreds(args: {
   if (args.liff_id_status !== undefined) {
     sets.push("liff_id_status = ?");
     const v = args.liff_id_status.trim();
+    vals.push(v === "" ? null : v);
+  }
+  if (args.oa_link !== undefined) {
+    // Public deep link — not a secret. Plaintext.
+    sets.push("oa_link = ?");
+    const v = args.oa_link.trim();
     vals.push(v === "" ? null : v);
   }
   if (sets.length === 0) return { ok: true };

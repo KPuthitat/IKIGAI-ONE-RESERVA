@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getRecruitaChannel } from "@/lib/messaging-channels";
+import { getRecruitaChannel, DEFAULT_RECRUITA_OA_LINK } from "@/lib/messaging-channels";
 import SettingsClient from "@/app/admin/recruita/settings/SettingsClient";
 
 // /admin/system-settings — RECRUITA LINE OA section.
@@ -52,6 +52,8 @@ export default function RecruitaOaSection() {
         hasToken={!!channel.channel_token}
         liffId={channel.liff_id ?? ""}
         liffIdStatus={channel.liff_id_status ?? ""}
+        oaLink={channel.oa_link ?? ""}
+        oaLinkDefault={DEFAULT_RECRUITA_OA_LINK}
         webhookUrl={webhookUrl} />
     </section>
   );

@@ -2340,6 +2340,17 @@ function runMigrations(db: Database.Database): void {
       VALUES ('recruita', 'ikigai-recruit', 'IKIGAI Recruit');
   `);
 
+  // 2026-06-14 — configurable "add OA as friend" deep link for the RECRUITA
+  // apply gate (RC-4). Shown to applicants who open the form OUTSIDE LINE so
+  // they can add the IKIGAI Recruit OA and re-enter via the Rich Menu (LIFF),
+  // where their LINE userId is captured. Editable in the RECRUITA OA settings;
+  // NULL/empty falls back to DEFAULT_RECRUITA_OA_LINK. Placed AFTER the scope
+  // rebuild above so it survives on freshly-rebuilt tables too.
+  const mcCols2 = db.prepare("PRAGMA table_info(messaging_channels)").all() as Array<{ name: string }>;
+  if (!mcCols2.some((c) => c.name === "oa_link")) {
+    db.exec("ALTER TABLE messaging_channels ADD COLUMN oa_link TEXT");
+  }
+
   // Auto-seed one row per branch (code = branch.slug, scope='reserva') so
   // the admin UI always has something to render. Idempotent — INSERT OR
   // IGNORE on the unique 'code' column.

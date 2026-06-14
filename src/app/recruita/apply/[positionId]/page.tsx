@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getDb, getSystemSettings } from "@/lib/db";
 import { parseCustomQuestions } from "@/lib/recruita";
-import { getRecruitaChannel } from "@/lib/messaging-channels";
+import { getRecruitaChannel, DEFAULT_RECRUITA_OA_LINK } from "@/lib/messaging-channels";
 import { getFormTemplate } from "@/lib/recruita-form-template";
 import ApplyClient from "./ApplyClient";
 
@@ -37,7 +37,11 @@ export default function ApplyPage({ params }: { params: { positionId: string } }
   // they open this page via the Rich Menu / chat link. Web-form
   // applicants (no LIFF id, or LIFF init fails) get null and the
   // form works the same — just without the auto-bind.
-  const liffId = getRecruitaChannel()?.liff_id ?? null;
+  const recruitaChannel = getRecruitaChannel();
+  const liffId = recruitaChannel?.liff_id ?? null;
+  // "Add OA as friend" deep link for the apply gate (RC-4) — shown when the
+  // applicant opens the form outside LINE. Falls back to the owner default.
+  const oaLink = (recruitaChannel?.oa_link ?? "").trim() || DEFAULT_RECRUITA_OA_LINK;
   // Global privacy-policy URL (single source of truth — see
   // /admin/system-settings). Passed into the PDPA consent section so
   // the applicant can review the actual policy text before ticking
@@ -79,6 +83,7 @@ export default function ApplyPage({ params }: { params: { positionId: string } }
           department={p.department}
           customQuestions={customQuestions}
           liffId={liffId}
+          oaLink={oaLink}
           privacyPolicyUrl={privacyPolicyUrl}
           pdpaImageUrl={pdpaImageUrl}
           fieldCfg={fieldCfg}

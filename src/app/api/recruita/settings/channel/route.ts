@@ -16,7 +16,9 @@ const Body = z.object({
   channel_secret:  z.string().max(200).optional(),
   channel_token:   z.string().max(500).optional(),
   liff_id:         z.string().max(100).optional(),
-  liff_id_status:  z.string().max(100).optional()
+  liff_id_status:  z.string().max(100).optional(),
+  // "Add OA as friend" deep link shown on the apply gate (RC-4). Empty = clear.
+  oa_link:         z.string().max(500).optional()
 });
 
 export async function POST(req: Request) {

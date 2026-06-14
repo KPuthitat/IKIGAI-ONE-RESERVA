@@ -201,9 +201,90 @@ function blankState(): FormState {
   };
 }
 
+type GateState = "checking" | "outside_line" | "need_consent" | "connecting" | "connected";
+
+// RC-4 capture gate UI. Shown in place of the form until we've captured the
+// applicant's LINE userId (or LIFF is unconfigured). Three live states:
+//   outside_line → opened in a plain browser → lock + "add OA" deep link
+//   need_consent / connecting → in LINE → consent notice + connect button
+function ApplyGate({
+  gate, oaLink, sdkLoaded, err, onConnect, tr
+}: {
+  gate: GateState;
+  oaLink: string;
+  sdkLoaded: boolean;
+  err: string | null;
+  onConnect: () => void;
+  tr: (th: string, en: string) => string;
+}) {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="card max-w-md w-full space-y-4 text-center py-8">
+        {gate === "checking" && (
+          <p className="text-sm text-slate-500">{tr("กำลังตรวจสอบ…", "Checking…")}</p>
+        )}
+
+        {gate === "outside_line" && (
+          <>
+            <h2 className="text-lg font-bold text-slate-800">
+              {tr("กรุณาสมัครผ่านไลน์ของคุณ", "Please apply via your LINE")}
+            </h2>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              {tr(
+                "กรุณากรอกใบสมัครผ่านไลน์ส่วนตัวของคุณเท่านั้น เพื่อให้ระบบเชื่อมต่อบัญชีและส่งแจ้งเตือนสถานะใบสมัครให้คุณได้",
+                "Please complete the application through your own LINE so we can link your account and send you status updates."
+              )}
+            </p>
+            <a href={oaLink} target="_blank" rel="noopener noreferrer"
+              className="btn-primary inline-block w-full py-3">
+              {tr("เพิ่มเพื่อน IKIGAI Recruit", "Add IKIGAI Recruit")}
+            </a>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              {tr(
+                "เพิ่มเพื่อนแล้ว เปิดเมนูด้านล่างแชต แล้วกด \"สมัครงาน\" อีกครั้งผ่าน LINE",
+                "After adding, open the chat menu and tap \"Apply\" again inside LINE."
+              )}
+            </p>
+          </>
+        )}
+
+        {(gate === "need_consent" || gate === "connecting") && (
+          <>
+            <h2 className="text-lg font-bold text-slate-800">
+              {tr("เชื่อมต่อ LINE เพื่อรับการแจ้งเตือน", "Connect LINE for notifications")}
+            </h2>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              {tr(
+                "ระบบจะเก็บ LINE UserID ของคุณ เพื่อส่งแจ้งเตือนสถานะใบสมัครจากบริษัท — กดปุ่มด้านล่างเพื่อเชื่อมต่อ แล้วจึงกรอกใบสมัคร",
+                "We'll store your LINE UserID to send you application-status updates. Tap below to connect, then fill in the form."
+              )}
+            </p>
+            {err && <p className="text-xs text-rose-600">{err}</p>}
+            {/* Button stays tappable even before the SDK loads — connectLine
+                handles the not-ready case with a "tap again" message. This
+                avoids a permanent lock-out if the LIFF CDN script stalls. */}
+            <button type="button" onClick={onConnect}
+              disabled={gate === "connecting"}
+              className="btn-primary w-full py-3 disabled:opacity-50">
+              {gate === "connecting"
+                ? tr("กำลังเชื่อมต่อ…", "Connecting…")
+                : tr("เชื่อมต่อ LINE", "Connect LINE")}
+            </button>
+            {!sdkLoaded && gate === "need_consent" && (
+              <p className="text-[11px] text-slate-400">
+                {tr("กำลังโหลด LINE… ถ้ากดแล้วยังไม่ติด กรุณากดอีกครั้ง", "Loading LINE… if nothing happens, please tap again")}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ApplyClient({
   positionId, positionTitle, positionCode, branchName, department,
-  customQuestions, liffId, privacyPolicyUrl, pdpaImageUrl, fieldCfg
+  customQuestions, liffId, oaLink, privacyPolicyUrl, pdpaImageUrl, fieldCfg
 }: {
   positionId: number;
   positionTitle: string;
@@ -212,6 +293,9 @@ export default function ApplyClient({
   department: string | null;
   customQuestions: CustomQuestion[];
   liffId: string | null;
+  /** "Add IKIGAI Recruit OA as friend" deep link — shown on the apply gate
+   *  when the form is opened outside LINE (RC-4). */
+  oaLink: string;
   /** Per-field config from the admin form template (hide/rename/require
    *  standard fields). Empty object = use built-in defaults. */
   fieldCfg: FieldCfg;
@@ -248,49 +332,80 @@ export default function ApplyClient({
   // and the stage-change push reaches them. Null on web-form
   // applicants and when LIFF init fails (gracefully degrades).
   const [lineUserId, setLineUserId] = useState<string | null>(null);
-  const liffReady = useRef(false);
+  // RC-4 capture gate (owner 2026-06-14). The form is locked until we've
+  // captured the applicant's LINE userId, so every application links to a
+  // LINE account for notifications. Gate states:
+  //   checking     → deciding (client-only, before UA/sessionStorage read)
+  //   outside_line → opened in a plain browser (not LINE) → locked + OA link
+  //   need_consent → in LINE, awaiting the applicant's consent tap
+  //   connecting   → capturing via LIFF
+  //   connected    → userId captured (or LIFF unconfigured) → form unlocked
+  const [gate, setGate] = useState<GateState>("checking");
+  const [sdkLoaded, setSdkLoaded] = useState(false);
   // Returning-candidate prefill state
   const prefillFetched = useRef(false);
   const [welcomeBack, setWelcomeBack] = useState(false);
 
-  async function initLiff() {
-    if (!liffId || liffReady.current) return;
-    liffReady.current = true;
-
-    // ── Safety guards — don't trigger LIFF OAuth unless we're SURE
-    //    we entered through a LIFF URL. The old version called
-    //    liff.init() unconditionally, which on internal Next.js
-    //    navigation (e.g. user clicked a position link from
-    //    /recruita/positions, landing here without liff.state) made
-    //    the SDK redirect to access.line.me to re-establish auth
-    //    context — and that redirect returned 400 because there was
-    //    no fresh OAuth grant to consume. Net result: "page loads
-    //    briefly then 400" reported by the owner 2026-06-01.
-    //
-    //    Two guards, both must pass:
-    //      a) UA contains "Line/" — page is open inside LINE's
-    //         in-app browser (not Safari/Chrome).
-    //      b) URL still carries liff.state — we are the FIRST page
-    //         after the liff.line.me hop, not a soft-nav target.
-    //
-    //    Failing either guard means it's safer to render the form
-    //    as a plain web form. The candidate still gets bound to
-    //    their LINE userId later via the recency-link path in the
-    //    webhook (matching applications submitted within 24h of
-    //    them adding the OA as a friend).
-    const inLineApp = /Line\/[\d.]+/i.test(navigator.userAgent);
-    if (!inLineApp) return;
-    if (!window.location.search.includes("liff.state")) return;
-
+  // Decide the gate on mount (client only — UA + sessionStorage aren't
+  // available during SSR, hence the effect). Robust to entry path: we no
+  // longer require the fragile ?liff.state survival — the in-LINE consent
+  // tap establishes the session directly via liff.login()/getProfile().
+  useEffect(() => {
+    if (!liffId) { setGate("connected"); return; }   // LIFF unconfigured → don't lock anyone out
+    // Fast path: userId already captured by LiffCapture on /recruita/positions.
     try {
-      const w = window as unknown as { liff?: { init: (a: { liffId: string }) => Promise<void>; isLoggedIn: () => boolean; login: () => void; getProfile: () => Promise<{ userId: string }>; getContext?: () => { type?: string } | null } };
-      if (!w.liff) return;
+      const raw = sessionStorage.getItem("recruita_liff_profile_v1");
+      const uid = raw ? (JSON.parse(raw) as { userId?: string }).userId : null;
+      if (uid) { setLineUserId(uid); setGate("connected"); return; }
+    } catch { /* ignore corrupt cache */ }
+    const inLineApp = /Line\/[\d.]+/i.test(navigator.userAgent);
+    setGate(inLineApp ? "need_consent" : "outside_line");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liffId]);
+
+  // Consent tap → capture the LINE userId. Only ever called when we're
+  // inside the LINE in-app browser (the gate UI only shows the button in
+  // 'need_consent', reached only when inLineApp). That UA guard is what
+  // keeps the 2026-06-01 "400 on web view" regression from returning —
+  // liff.init()/login() never runs in a plain browser here.
+  async function connectLine() {
+    if (!liffId) return;
+    setErr(null);
+    setGate("connecting");
+    try {
+      const w = window as unknown as { liff?: { init: (a: { liffId: string }) => Promise<void>; isLoggedIn: () => boolean; login: () => void; getProfile: () => Promise<{ userId: string; displayName?: string }> } };
+      if (!w.liff) {
+        setErr(tr("กำลังโหลด LINE… กรุณากดอีกครั้ง", "Loading LINE… please tap again"));
+        setGate("need_consent");
+        return;
+      }
       await w.liff.init({ liffId });
-      if (!w.liff.isLoggedIn()) return;
+      if (!w.liff.isLoggedIn()) {
+        // Rare inside LINE (the app usually provides the session); this
+        // redirects to LINE login and returns to this page logged in.
+        w.liff.login();
+        return;
+      }
       const profile = await w.liff.getProfile();
-      if (profile?.userId) setLineUserId(profile.userId);
+      if (profile?.userId) {
+        setLineUserId(profile.userId);
+        // Cache so a re-open / soft-nav stays connected without re-tapping.
+        try {
+          sessionStorage.setItem("recruita_liff_profile_v1", JSON.stringify({
+            userId: profile.userId,
+            displayName: profile.displayName ?? "",
+            capturedAt: Date.now()
+          }));
+        } catch { /* storage unavailable — non-fatal */ }
+        setGate("connected");
+      } else {
+        setErr(tr("เชื่อมต่อไม่สำเร็จ กรุณาลองอีกครั้ง", "Could not connect. Please try again."));
+        setGate("need_consent");
+      }
     } catch (e) {
-      console.warn("[recruita] LIFF init failed:", e);
+      console.warn("[recruita] connectLine failed:", e);
+      setErr(tr("เชื่อมต่อ LINE ไม่สำเร็จ กรุณาลองอีกครั้ง", "LINE connection failed. Please try again."));
+      setGate("need_consent");
     }
   }
 
@@ -513,15 +628,47 @@ export default function ApplyClient({
     }
   }
 
+  // Gate (RC-4): until connected, the form is hidden behind a capture
+  // step so we never take an application without a LINE userId.
+  if (gate !== "connected") {
+    return (
+      <FieldCfgContext.Provider value={fieldCfg}>
+        {liffId && (
+          <Script src="https://static.line-scdn.net/liff/edge/2/sdk.js"
+            strategy="afterInteractive"
+            onLoad={() => setSdkLoaded(true)} />
+        )}
+        <ApplyGate
+          gate={gate}
+          oaLink={oaLink}
+          sdkLoaded={sdkLoaded}
+          err={err}
+          onConnect={connectLine}
+          tr={tr}
+        />
+      </FieldCfgContext.Provider>
+    );
+  }
+
   return (
     <FieldCfgContext.Provider value={fieldCfg}>
     <form onSubmit={submit} className="space-y-4">
-      {/* LIFF SDK — loads only when liffId is set. onLoad fires
-          initLiff which captures profile.userId silently. */}
+      {/* Keep the SDK mounted post-connect too (harmless, idempotent). */}
       {liffId && (
         <Script src="https://static.line-scdn.net/liff/edge/2/sdk.js"
           strategy="afterInteractive"
-          onLoad={initLiff} />
+          onLoad={() => setSdkLoaded(true)} />
+      )}
+
+      {/* LINE-connected confirmation — transparency that we stored their
+          userId for status notifications (owner 2026-06-14). */}
+      {lineUserId && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 text-xs text-emerald-800">
+          {tr(
+            "เชื่อมต่อ LINE ของคุณแล้ว — จะได้รับการแจ้งเตือนสถานะใบสมัครหลังจากนี้",
+            "Your LINE is connected — you'll receive application-status updates."
+          )}
+        </div>
       )}
 
       {/* Language switch — foreigners flip to EN here (owner 2026-06-03).
