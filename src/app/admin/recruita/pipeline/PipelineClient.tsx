@@ -401,6 +401,18 @@ function Card({
         ) : (
           <span className="text-amber-800 font-medium bg-amber-100 px-1.5 py-0.5 rounded">ยังไม่เชื่อมต่อ UserID</span>
         )}
+        {/* Progress tags next to the name (owner 2026-06-14) */}
+        {card.has_interview ? (
+          <span className="font-medium bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded">เลือกเวลานัดสัมภาษณ์แล้ว</span>
+        ) : null}
+        {card.has_health_cert ? (
+          <span className="font-medium bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded">ส่งใบรับรองแพทย์แล้ว</span>
+        ) : null}
+        {card.health_check_status === "passed" ? (
+          <span className="font-medium bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">ตรวจสุขภาพผ่าน</span>
+        ) : card.health_check_status === "failed" ? (
+          <span className="font-medium bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded">ตรวจสุขภาพไม่ผ่าน</span>
+        ) : null}
       </div>
 
       {pending ? (

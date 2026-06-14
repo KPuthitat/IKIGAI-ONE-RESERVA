@@ -80,3 +80,37 @@ export async function POST(req: Request) {
   logPersonaAction(user.id, "ot.admin_add", user_id);
   return NextResponse.json({ ok: true });
 }
+
+const DeleteBody = z.object({
+  user_id: z.number().int().positive(),
+  work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  pin: z.string().min(1)
+});
+
+// DELETE /api/admin/persona/ot-requests — remove a day's OT for a staff
+// member (owner 2026-06-14, the "ลบออก" action). PIN-gated (pay change).
+export async function DELETE(req: Request) {
+  const user = getSessionUser();
+  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  if (user.role !== "admin" && user.role !== "super_admin") {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  const branchId = user.activeBranchId ?? null;
+  if (!branchId) return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
+
+  const parsed = DeleteBody.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
+  }
+  const { user_id, work_date, pin } = parsed.data;
+  const pinRes = verifyAdminPin(user.id, pin);
+  if (!pinRes.ok) {
+    return NextResponse.json({ error: pinRes.reason }, { status: pinRes.reason === "no_pin" ? 400 : 403 });
+  }
+
+  const db = getDb();
+  const r = db.prepare("DELETE FROM ot_requests WHERE user_id = ? AND work_date = ?")
+    .run(user_id, work_date);
+  if (r.changes > 0) logPersonaAction(user.id, "ot.admin_delete", user_id);
+  return NextResponse.json({ ok: true, deleted: r.changes });
+}

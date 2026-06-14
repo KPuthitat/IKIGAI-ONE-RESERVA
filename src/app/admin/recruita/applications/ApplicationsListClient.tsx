@@ -129,6 +129,21 @@ export default function ApplicationsListClient({
                   {(r.stage === "rejected" || r.stage === "withdrawn") && r.submitted_at && (
                     <DaysToPurge submittedAt={r.submitted_at} />
                   )}
+                  {/* Progress tags next to the name (owner 2026-06-14) */}
+                  {r.line_linked
+                    ? <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-green-100 text-green-700">เชื่อมต่อ UserID แล้ว</span>
+                    : <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800">ยังไม่เชื่อมต่อ UserID</span>}
+                  {r.has_interview ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-sky-100 text-sky-700">เลือกเวลานัดสัมภาษณ์แล้ว</span>
+                  ) : null}
+                  {r.has_health_cert ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-teal-100 text-teal-700">ส่งใบรับรองแพทย์แล้ว</span>
+                  ) : null}
+                  {r.health_check_status === "passed" ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-700">ตรวจสุขภาพผ่าน</span>
+                  ) : r.health_check_status === "failed" ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-rose-100 text-rose-700">ตรวจสุขภาพไม่ผ่าน</span>
+                  ) : null}
                 </div>
                 <div className="text-xs text-slate-500 mt-0.5">
                   {r.position_code ? `[${r.position_code}] ` : ""}{r.position_title}

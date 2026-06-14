@@ -35,6 +35,11 @@ export type ApplicationRow = {
   personal_email: string | null;
   expected_salary: number | null;
   info_source: string | null;
+  /** Progress signals shown as tags next to the name (owner 2026-06-14). */
+  line_linked: number;
+  has_interview: number;
+  has_health_cert: number;
+  health_check_status: "pending" | "passed" | "failed" | null;
   /** Active dual-approval request awaiting a second admin, or null.
    *  Drives the "รออนุมัติเปลี่ยนสถานะ" tag on the row. */
   pending: PendingStageTag | null;
@@ -56,9 +61,12 @@ export default function ApplicationsListPage() {
            (SELECT COUNT(*) FROM recruita_applications za
              WHERE date(za.submitted_at, '+7 hours') = date(a.submitted_at, '+7 hours')
                AND za.id <= a.id) AS day_seq,
-           a.updated_at, a.expected_salary, a.info_source,
+           a.updated_at, a.expected_salary, a.info_source, a.health_check_status,
            c.title_prefix, c.first_name_th, c.last_name_th, c.nickname_th,
            c.mobile_phone, c.personal_email,
+           (c.line_user_id IS NOT NULL) AS line_linked,
+           (EXISTS (SELECT 1 FROM recruita_interview_slots s WHERE s.booked_application_id = a.id)) AS has_interview,
+           (EXISTS (SELECT 1 FROM recruita_documents d WHERE d.candidate_id = c.id AND d.kind = 'health_cert')) AS has_health_cert,
            p.title AS position_title, p.code AS position_code,
            b.name AS branch_name
     FROM recruita_applications a

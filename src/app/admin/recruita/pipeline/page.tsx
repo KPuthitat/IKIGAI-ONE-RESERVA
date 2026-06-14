@@ -33,6 +33,12 @@ export type PipelineCard = {
    *  not — surfaced as a badge so admins can spot who needs manual linking
    *  (owner 2026-06-13). Only the boolean is sent, never the userId itself. */
   line_linked: number;
+  /** Progress signals surfaced as tags next to the name (owner 2026-06-14):
+   *  1 = the candidate has booked an interview slot / uploaded a medical
+   *  certificate. health_check_status drives the pass/fail tag. */
+  has_interview: number;
+  has_health_cert: number;
+  health_check_status: "pending" | "passed" | "failed" | null;
   /** Active dual-approval request awaiting a second admin, or null.
    *  Drives the "รออนุมัติเปลี่ยนสถานะ" tag + approve/cancel on the card. */
   pending: PendingStageTag | null;
@@ -49,9 +55,11 @@ export default function PipelinePage() {
 
   const cards = db.prepare(`
     SELECT a.id, a.candidate_id, a.position_id, a.stage,
-           a.submitted_at, a.updated_at, a.expected_salary,
+           a.submitted_at, a.updated_at, a.expected_salary, a.health_check_status,
            c.title_prefix, c.first_name_th, c.last_name_th, c.nickname_th, c.mobile_phone,
            (c.line_user_id IS NOT NULL) AS line_linked,
+           (EXISTS (SELECT 1 FROM recruita_interview_slots s WHERE s.booked_application_id = a.id)) AS has_interview,
+           (EXISTS (SELECT 1 FROM recruita_documents d WHERE d.candidate_id = c.id AND d.kind = 'health_cert')) AS has_health_cert,
            p.title AS position_title, p.code AS position_code,
            b.name AS branch_name
     FROM recruita_applications a

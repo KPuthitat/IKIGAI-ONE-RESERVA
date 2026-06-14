@@ -100,6 +100,10 @@ export default function TimesheetsClient({
   const [addKey, setAddKey] = useState<string | null>(null);
   const [addTime, setAddTime] = useState("");
   const [addingKey, setAddingKey] = useState<string | null>(null);
+  // Edit-punch inline editor: editId = the time_entries.id being edited.
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editTime, setEditTime] = useState("");
+  const [savingEditId, setSavingEditId] = useState<number | null>(null);
   // Standalone "ลงเวลาแทนพนักงาน" panel (owner 2026-06-11) — lets an admin
   // record a clock in/out for any employee + day, even when no row exists
   // yet (the inline "+ เพิ่มเวลา" only appears on days that already have a row).
@@ -189,6 +193,40 @@ export default function TimesheetsClient({
     }
   }
 
+  // Edit an existing punch's time (owner 2026-06-14). PATCHes the entry's ts
+  // (built from the punch's own Bangkok date + the new HH:MM) → audited +
+  // payroll refreshed server-side.
+  async function submitEdit(p: { id: number; ts: string }): Promise<void> {
+    if (!/^\d{2}:\d{2}$/.test(editTime)) return;
+    setSavingEditId(p.id);
+    try {
+      const dateBkk = new Date(new Date(p.ts).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+      const ts = new Date(`${dateBkk}T${editTime}:00+07:00`).toISOString();
+      const res = await fetch(`/api/admin/persona/timesheets/${p.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ts })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        setEditId(null);
+        setEditTime("");
+        startTransition(() => router.refresh());
+      } else {
+        alert({
+          title: t(lang, "common.error"),
+          body: <p>{j?.message ?? j?.error ?? "แก้ไขเวลาไม่สำเร็จ"}</p>,
+          variant: "danger",
+          okLabel: t(lang, "common.confirm")
+        });
+      }
+    } catch {
+      alert({ title: t(lang, "common.error"), body: <p>{t(lang, "common.error")}</p>, variant: "danger", okLabel: t(lang, "common.confirm") });
+    } finally {
+      setSavingEditId(null);
+    }
+  }
+
   // Manual re-push of the clock-in LINE card. Available only for
   // 'in' rows (clock-out doesn't produce a card). Used when the
   // auto-push at clock-in time was skipped — staff hadn't bound
@@ -271,8 +309,53 @@ export default function TimesheetsClient({
       <button type="button" disabled={addingKey !== null}
         onClick={() => { setAddKey(key); setAddTime(""); }}
         className="text-[11px] text-brand hover:underline disabled:opacity-50">
-        + เพิ่มเวลา{type === "in" ? "เข้า" : "ออก"}
+        + เพิ่มเติม
       </button>
+    );
+  }
+
+  // Render one punch: time (or inline edit box) + แก้ไข / ลบออก actions.
+  // For clock-in we also keep the resend-notification action.
+  function renderPunch(p: { id: number; ts: string }, type: "in" | "out", name: string) {
+    if (editId === p.id) {
+      return (
+        <div className="flex items-center gap-1">
+          <input type="time" autoFocus value={editTime}
+            onChange={(e) => setEditTime(e.target.value)}
+            className="input !w-[92px] !py-0.5 text-xs" />
+          <button type="button"
+            disabled={savingEditId === p.id || !/^\d{2}:\d{2}$/.test(editTime)}
+            onClick={() => submitEdit(p)}
+            className="text-[11px] text-emerald-700 font-bold hover:underline disabled:opacity-50">
+            {savingEditId === p.id ? "…" : "บันทึก"}
+          </button>
+          <button type="button" onClick={() => { setEditId(null); setEditTime(""); }}
+            className="text-[11px] text-slate-400 hover:text-slate-600">✕</button>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center gap-2">
+        <span className={`font-mono font-medium ${type === "in" ? "text-emerald-700" : "text-rose-700"}`}>{timeBkk(p.ts)}</span>
+        {certSet.has(p.id) && (
+          <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700 font-bold">รับรองเวลา</span>
+        )}
+        {type === "in" && (
+          <button type="button" disabled={isLoading} onClick={() => resendNotification(p)}
+            className="text-[11px] text-brand hover:underline disabled:opacity-50">
+            {resendingId === p.id ? t(lang, "admin.persona.timesheets.resend.sending") : t(lang, "admin.persona.timesheets.resend.btn")}
+          </button>
+        )}
+        <button type="button" disabled={isLoading}
+          onClick={() => { setEditId(p.id); setEditTime(timeBkk(p.ts)); }}
+          className="text-[11px] text-amber-700 hover:underline disabled:opacity-50">
+          แก้ไข
+        </button>
+        <button type="button" disabled={isLoading} onClick={() => deleteEntry(p, type, name)}
+          className="text-[11px] text-rose-600 hover:underline disabled:opacity-50">
+          {deletingId === p.id ? t(lang, "admin.persona.timesheets.deleting") : "ลบออก"}
+        </button>
+      </div>
     );
   }
 
@@ -477,32 +560,7 @@ export default function TimesheetsClient({
                       ) : (
                         <div className="space-y-1">
                           {r.ins.map((p) => (
-                            <div key={p.id} className="flex items-center gap-2">
-                              <span className="font-mono text-emerald-700 font-medium">{timeBkk(p.ts)}</span>
-                              {certSet.has(p.id) && (
-                                <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700 font-bold">รับรองเวลา</span>
-                              )}
-                              <button
-                                type="button"
-                                disabled={isLoading}
-                                onClick={() => resendNotification(p)}
-                                className="text-[11px] text-brand hover:underline disabled:opacity-50"
-                              >
-                                {resendingId === p.id
-                                  ? t(lang, "admin.persona.timesheets.resend.sending")
-                                  : t(lang, "admin.persona.timesheets.resend.btn")}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={isLoading}
-                                onClick={() => deleteEntry(p, "in", name)}
-                                className="text-[11px] text-rose-600 hover:underline disabled:opacity-50"
-                              >
-                                {deletingId === p.id
-                                  ? t(lang, "admin.persona.timesheets.deleting")
-                                  : t(lang, "admin.persona.timesheets.delete")}
-                              </button>
-                            </div>
+                            <div key={p.id}>{renderPunch(p, "in", name)}</div>
                           ))}
                         </div>
                       )}
@@ -514,22 +572,7 @@ export default function TimesheetsClient({
                       ) : (
                         <div className="space-y-1">
                           {r.outs.map((p) => (
-                            <div key={p.id} className="flex items-center gap-2">
-                              <span className="font-mono text-rose-700 font-medium">{timeBkk(p.ts)}</span>
-                              {certSet.has(p.id) && (
-                                <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700 font-bold">รับรองเวลา</span>
-                              )}
-                              <button
-                                type="button"
-                                disabled={isLoading}
-                                onClick={() => deleteEntry(p, "out", name)}
-                                className="text-[11px] text-rose-600 hover:underline disabled:opacity-50"
-                              >
-                                {deletingId === p.id
-                                  ? t(lang, "admin.persona.timesheets.deleting")
-                                  : t(lang, "admin.persona.timesheets.delete")}
-                              </button>
-                            </div>
+                            <div key={p.id}>{renderPunch(p, "out", name)}</div>
                           ))}
                         </div>
                       )}
@@ -591,6 +634,7 @@ function OtCell({ row, onSaved }: { row: TimesheetDayRow; onSaved: () => void })
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [pinOpen, setPinOpen] = useState(false);
+  const [delPinOpen, setDelPinOpen] = useState(false);
   const valid = /^([01]\d|2[0-3]):[0-5]\d$/.test(until);
 
   async function save(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
@@ -614,6 +658,23 @@ function OtCell({ row, onSaved }: { row: TimesheetDayRow; onSaved: () => void })
     } finally { setBusy(false); }
   }
 
+  async function del(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/admin/persona/ot-requests", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: row.user_id, work_date: row.work_date, pin })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) { onSaved(); return { ok: true }; }
+      const m = j?.error === "wrong_pin" ? "PIN ไม่ถูกต้อง" : j?.error === "no_pin" ? "ยังไม่ได้ตั้ง PIN" : j?.error ?? "ไม่สำเร็จ";
+      setErr(m);
+      return { ok: false, message: m };
+    } finally { setBusy(false); }
+  }
+
   if (!editing) {
     return (
       <div className="flex items-center gap-2">
@@ -622,9 +683,23 @@ function OtCell({ row, onSaved }: { row: TimesheetDayRow; onSaved: () => void })
           : <span className="text-slate-300">—</span>}
         <button type="button"
           onClick={() => { setUntil(row.ot_until ?? row.shift?.end_time ?? ""); setEditing(true); setErr(null); }}
-          className="text-[11px] text-brand hover:underline">
-          {row.ot_until ? "แก้" : "+ เพิ่ม OT"}
+          className="text-[11px] text-amber-700 hover:underline">
+          {row.ot_until ? "แก้ไข" : "เพิ่มเติม"}
         </button>
+        {row.ot_until && (
+          <button type="button" onClick={() => { setDelPinOpen(true); setErr(null); }}
+            className="text-[11px] text-rose-600 hover:underline">ลบออก</button>
+        )}
+        {err && <span className="text-[10px] text-rose-600">{err}</span>}
+        {delPinOpen && (
+          <PinPromptModal
+            title="ยืนยันลบ OT"
+            description={<>ลบ OT วันที่ {row.work_date} — กระทบเงินเดือน ต้องใส่ PIN</>}
+            submitLabel="ลบออก"
+            onSubmit={del}
+            onClose={() => setDelPinOpen(false)}
+          />
+        )}
       </div>
     );
   }
