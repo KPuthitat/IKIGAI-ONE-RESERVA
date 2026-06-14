@@ -346,7 +346,7 @@ function ClockAction({
   const [swapBusy, setSwapBusy] = useState(false);
   const [swapErr, setSwapErr] = useState<string | null>(null);
 
-  // OT prompt (PT clocking out after scheduled end).
+  // OT prompt (anyone clocking out after their scheduled end — PT or FT).
   const [otStep, setOtStep] = useState<"ask" | "enter">("ask");
   const [otUntil, setOtUntil] = useState("");
   const [otBusy, setOtBusy] = useState(false);
@@ -660,11 +660,13 @@ function ClockAction({
         setPhase("swap");
         return;
       }
-      // OT prompt — PT clocked out past their scheduled shift end by
+      // OT prompt — staff clocked out past their scheduled shift end by
       // more than the 5-min grace (so the time would otherwise be cut at
-      // the scheduled end). The pay engine pays it at the regular rate up
-      // to 8h and the OT rate only beyond 8h.
-      if (data.action === "out" && isPartTime && scheduledEnd) {
+      // the scheduled end). Applies to BOTH PT and FT now (owner 2026-06-15):
+      // OT is approval-gated for everyone, so anyone who works late must be
+      // able to file the OT request here. The pay engine pays it at the
+      // regular rate up to 8h and the OT rate only beyond 8h.
+      if (data.action === "out" && scheduledEnd) {
         const bkkNow = new Date(Date.now() + 7 * 60 * 60 * 1000);
         const nowMins = bkkNow.getUTCHours() * 60 + bkkNow.getUTCMinutes();
         const [eh, em] = scheduledEnd.split(":").map(Number);
@@ -840,7 +842,7 @@ function ClockAction({
     );
   }
 
-  // ── OT prompt (late clock-out, PT) ──────────
+  // ── OT prompt (late clock-out, PT or FT) ──────────
   if (phase === "ot_ask") {
     return (
       <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-4 space-y-3 text-left">
