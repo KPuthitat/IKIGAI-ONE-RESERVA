@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
 import { notifyExecGroupTimeCertRequest } from "@/lib/time-cert-notify";
+import { createWarning } from "@/lib/discipline";
 
 // POST /api/persona/time-certification
 //
@@ -92,6 +93,25 @@ export async function POST(req: Request) {
       VALUES (NULL, ?, ?, ?, NULL, 'missing', ?, ?, ?, 'pending', ?)
     `).run(user.id, reason, proposed_ts, entry_type, work_date, branchId, nowIso);
     logPersonaAction(user.id, "time_certification.request_missing", Number(result.lastInsertRowid));
+    // Auto-record a (verbal) disciplinary note for the missing punch so HR
+    // tracking is automatic (owner 2026-06-14). Quiet — no LINE notify. Wrapped
+    // so a discipline-insert failure never blocks the certification itself.
+    if (branchId != null) {
+      try {
+        const th = entry_type === "out" ? "ออก" : "เข้า";
+        createWarning({
+          branchId,
+          userId: user.id,
+          issuedByUserId: user.id,
+          severity: "verbal",
+          title: `ลืมลงเวลา${th}งาน (บันทึกอัตโนมัติ)`,
+          body: `ระบบบันทึกอัตโนมัติเมื่อพนักงานยื่นรับรองเวลา${th}งานที่ลืมลงของวันที่ ${work_date}`,
+          reasonCategory: "ลงเวลา"
+        });
+      } catch (e) {
+        console.warn("[time-cert] auto-discipline failed", e);
+      }
+    }
     void notifyExecGroupTimeCertRequest(Number(result.lastInsertRowid))
       .catch((e) => console.warn("[time-cert] exec-group submit notify failed", e));
     return NextResponse.json({ ok: true, id: result.lastInsertRowid });

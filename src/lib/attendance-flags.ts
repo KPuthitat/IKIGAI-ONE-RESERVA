@@ -111,6 +111,53 @@ export function detectPunchAnomaly(args: {
   return null;
 }
 
+/** Read-only check (no side effects): returns the work_date of an
+ *  UNCERTIFIED prior-day dangling clock-out — an "in" with no "out" on the
+ *  user's most recent prior working day (excluding overnight shifts) that has
+ *  no certification request filed yet — or null. Used to BLOCK today's
+ *  clock-in until the staff files a cert (owner 2026-06-14, #9 part B). Mirrors
+ *  the missing_out branch of detectPunchAnomaly but doesn't record a flag, and
+ *  clears once a time_certifications row (any status) covers that day. */
+export function uncertifiedPriorMissingOut(
+  userId: number,
+  branchId: number,
+  todayBkk: string
+): string | null {
+  const db = getDb();
+  const [todayStart] = dayRangeIso(todayBkk);
+  const prev = db.prepare(`
+    SELECT ts FROM time_entries
+    WHERE user_id = ? AND branch_id = ? AND ts < ?
+    ORDER BY ts DESC LIMIT 1
+  `).get(userId, branchId, todayStart) as { ts: string } | undefined;
+  if (!prev) return null;
+  const prevDate = bkkDate(prev.ts);
+  const [s, e] = dayRangeIso(prevDate);
+  const rows = db.prepare(`
+    SELECT type, COUNT(*) AS n FROM time_entries
+    WHERE user_id = ? AND branch_id = ? AND ts >= ? AND ts <= ?
+    GROUP BY type
+  `).all(userId, branchId, s, e) as Array<{ type: "in" | "out"; n: number }>;
+  const hasIn = rows.some((r) => r.type === "in" && r.n > 0);
+  const hasOut = rows.some((r) => r.type === "out" && r.n > 0);
+  if (!hasIn || hasOut) return null;
+  const overnight = db.prepare(`
+    SELECT 1 FROM roster_assignments a
+    JOIN shift_codes s ON s.id = a.shift_code_id
+    WHERE a.user_id = ? AND a.assignment_date = ? AND s.end_time < s.start_time
+    LIMIT 1
+  `).get(userId, prevDate);
+  if (overnight) return null;
+  const cert = db.prepare(`
+    SELECT 1 FROM time_certifications
+    WHERE requested_by = ? AND kind = 'missing' AND entry_type = 'out'
+      AND work_date = ? AND status IN ('pending', 'approved')
+    LIMIT 1
+  `).get(userId, prevDate);
+  if (cert) return null;
+  return prevDate;
+}
+
 // ── Schedule-deviation detection (owner 2026-06-08) ──────────────────
 // At clock-in, compare the actual punch to the rostered start. If it's
 // far off (≥ threshold), น้องฮูก asks whether the staff is simply

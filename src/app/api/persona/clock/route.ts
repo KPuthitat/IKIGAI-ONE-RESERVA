@@ -10,11 +10,10 @@ import { rateLimit } from "@/lib/rate-limit";
 import { pushClockInCard } from "@/lib/line";
 import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
 import {
-  detectPunchAnomaly, detectScheduleDeviation,
+  detectPunchAnomaly, detectScheduleDeviation, uncertifiedPriorMissingOut,
   type OwlPrompt, type DeviationPrompt
 } from "@/lib/attendance-flags";
 import { userHasWorkShiftOn } from "@/lib/roster";
-import { bkkDateIso } from "@/lib/time";
 
 const Body = z.object({
   pin: z.string().regex(/^\d{4}$/),
@@ -253,27 +252,22 @@ export async function POST(req: Request) {
       );
     }
 
-    // ── Prior-day certification guard (owner 2026-06-13) ─────────
-    // Don't let a new day start while a PRIOR day's punch is still
-    // pending certification — payroll can't finalise that day yet.
-    // The staff must get it approved first. Scoped to a fresh clock-in
-    // (not clock-out) so nobody mid-shift gets stranded.
-    const pendingCerts = db.prepare(`
-      SELECT kind, work_date, proposed_ts, original_ts
-      FROM time_certifications
-      WHERE requested_by = ? AND status = 'pending'
-    `).all(user.id) as Array<{
-      kind: string;
-      work_date: string | null;
-      proposed_ts: string;
-      original_ts: string | null;
-    }>;
-    const hasPriorPending = pendingCerts.some((c) => {
-      const day = c.work_date ?? bkkDateIso(c.original_ts ?? c.proposed_ts);
-      return day !== "" && day < todayBkk;
-    });
-    if (hasPriorPending) {
-      return NextResponse.json({ error: "prior_day_uncertified" }, { status: 409 });
+    // ── Prior-day missing clock-out guard (owner 2026-06-14, #9 part B) ──
+    // If the most recent prior working day has an "in" with no "out" and the
+    // staff hasn't filed a certification for it yet, block today's clock-in —
+    // they must certify yesterday first (which auto-records a discipline note,
+    // see the time-certification route). Once the cert is FILED the day is no
+    // longer uncertified → unblocked immediately, no admin approval needed
+    // (owner: "ปลดบล็อกก่อน"). Scoped to a fresh clock-in so nobody mid-shift
+    // gets stranded. Supersedes the earlier pending-cert block.
+    const danglingDay = uncertifiedPriorMissingOut(
+      user.id, user.activeBranchId, todayBkk
+    );
+    if (danglingDay) {
+      return NextResponse.json(
+        { error: "prior_day_missing_out", workDate: danglingDay },
+        { status: 409 }
+      );
     }
   }
 
@@ -337,6 +331,18 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     console.warn("[clock] attendance anomaly detection failed:", e);
+  }
+  // Don't re-nudge to certify a missing punch the staff already filed a cert
+  // for (owner 2026-06-14) — avoids a redundant owl right after they certified
+  // yesterday's missing clock-out and got unblocked.
+  if (owl) {
+    const certed = db.prepare(`
+      SELECT 1 FROM time_certifications
+      WHERE requested_by = ? AND kind = 'missing' AND entry_type = ?
+        AND work_date = ? AND status IN ('pending', 'approved')
+      LIMIT 1
+    `).get(user.id, owl.kind === "missing_out" ? "out" : "in", owl.work_date);
+    if (certed) owl = null;
   }
 
   // Schedule-deviation (late/early vs roster → maybe a shift swap). Only

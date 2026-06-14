@@ -592,9 +592,15 @@ function ClockAction({
             ? `วันนี้คุณไม่มีกะงาน — กรุณาติดต่อหัวหน้างาน (${data.supervisorName}) ก่อนเข้างานครับ`
             : "วันนี้คุณไม่มีกะงาน — กรุณาติดต่อหัวหน้างานก่อนเข้างานครับ"
         );
-        else if (data.error === "prior_day_uncertified") setErrorMsg(
-          "มีเวลาของวันก่อนที่ยังรอรับรอง — กรุณาไปรับรองเวลาให้เรียบร้อยก่อนเข้างานครับ"
-        );
+        else if (data.error === "prior_day_missing_out") {
+          // Yesterday's clock-out is missing → take them straight to certify
+          // it. Filing the cert auto-records a discipline note and unblocks
+          // today's clock-in (no admin approval needed to proceed).
+          router.push(
+            `/staff/persona/time-certification?missing=1&type=out&date=${data.workDate}`
+          );
+          return;
+        }
         else if (data.error === "gps_required") setErrorMsg(t("staff.persona.gps.required"));
         else if (data.error === "out_of_geofence") {
           // Simplified copy — distance/radius detail dropped per

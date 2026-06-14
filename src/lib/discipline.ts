@@ -28,6 +28,38 @@ export function generateWarningRef(): string {
   return `${prefix}${String(next).padStart(2, "0")}`;
 }
 
+/** Programmatic warning insert (no LINE notification). Used for the
+ *  auto-disciplinary record created when a staff self-files a missing-punch
+ *  certification (owner 2026-06-14). Returns the new warning id. The
+ *  admin-issued path stays in /api/admin/persona/discipline (it also sends a
+ *  LINE notify); this helper is quiet by design — it's a tracking record. */
+export function createWarning(args: {
+  branchId: number;
+  userId: number;
+  issuedByUserId: number;
+  severity: "verbal" | "written_1" | "written_2" | "final";
+  title: string;
+  body: string;
+  reasonCategory?: string | null;
+  effectiveDate?: string | null;
+  validityMonths?: number | null;
+}): number {
+  const db = getDb();
+  const refNo = generateWarningRef();
+  const r = db.prepare(`
+    INSERT INTO disciplinary_warnings
+      (branch_id, user_id, issued_by_user_id, severity, title, body,
+       reason_category, effective_date, ref_no, validity_months)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    args.branchId, args.userId, args.issuedByUserId, args.severity,
+    args.title, args.body,
+    args.reasonCategory ?? null, args.effectiveDate ?? null,
+    refNo, args.validityMonths ?? null
+  );
+  return Number(r.lastInsertRowid);
+}
+
 export type WarningWithUsers = DisciplinaryWarning & {
   user_display_name: string;
   user_title_prefix: string | null;
