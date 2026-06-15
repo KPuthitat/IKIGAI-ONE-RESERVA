@@ -381,9 +381,16 @@ export default function ApplyClient({
       }
       await w.liff.init({ liffId });
       if (!w.liff.isLoggedIn()) {
-        // Rare inside LINE (the app usually provides the session); this
-        // redirects to LINE login and returns to this page logged in.
-        w.liff.login();
+        // Not in a LIFF session here (the apply page isn't the LIFF's own
+        // Endpoint URL, so a deep-navigated apply page is "outside" the
+        // LIFF and isLoggedIn() is false). Calling w.liff.login() then
+        // redirects to access.line.me with the apply URL as redirect_uri,
+        // which LINE rejects → "400 Bad Request" (owner 2026-06-15, same
+        // class as the 2026-06-01 incident). Instead RE-ENTER through the
+        // LIFF launcher URL — LINE establishes the login itself and lands
+        // on the LIFF endpoint (where LiffCapture stores the userId), no
+        // access.line.me round-trip, no 400.
+        window.location.href = `https://liff.line.me/${liffId}`;
         return;
       }
       const profile = await w.liff.getProfile();
