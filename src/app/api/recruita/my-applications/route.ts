@@ -43,6 +43,11 @@ type Row = {
    *  Drives the self-service slot picker on the status page. */
   interview_at: string | null;
   interview_location: string | null;
+  /** Offer detail — shown on the status card at the 'offered' stage so the
+   *  candidate can accept/reject an informed offer (owner 2026-06-15). */
+  offer_salary: number | null;
+  offer_salary_type: "monthly" | "hourly" | null;
+  offer_start_date: string | null;
 };
 
 export async function POST(req: Request) {
@@ -63,6 +68,9 @@ export async function POST(req: Request) {
                AND za.id <= a.id) AS day_seq,
            a.interview_at        AS interview_at,
            a.interview_location  AS interview_location,
+           a.offer_salary        AS offer_salary,
+           a.offer_salary_type   AS offer_salary_type,
+           a.offer_start_date    AS offer_start_date,
            p.title         AS position_title,
            p.code          AS position_code,
            p.department    AS department,

@@ -68,6 +68,8 @@ export default function PipelineClient({
   // First work day captured in the offer popup (owner 2026-06-15) — required
   // when moving a card to 'offered', sent on the candidate's offer card.
   const [offerStartDate, setOfferStartDate] = useState("");
+  const [offerSalary, setOfferSalary] = useState("");
+  const [offerSalaryType, setOfferSalaryType] = useState<"monthly" | "hourly">("monthly");
   const [approveCard, setApproveCard] = useState<PipelineCard | null>(null);
   const [cancelCard, setCancelCard] = useState<PipelineCard | null>(null);
 
@@ -252,8 +254,18 @@ export default function PipelineClient({
                   <label className="label">วันเริ่มงานวันแรก</label>
                   <input type="date" className="input text-sm" value={offerStartDate}
                     onChange={(e) => setOfferStartDate(e.target.value)} />
+                  <label className="label mt-2">ค่าตอบแทนที่เสนอ</label>
+                  <div className="flex gap-2">
+                    <input type="number" min={0} className="input text-sm flex-1" placeholder="จำนวน"
+                      value={offerSalary} onChange={(e) => setOfferSalary(e.target.value)} />
+                    <select className="input text-sm !w-auto" value={offerSalaryType}
+                      onChange={(e) => setOfferSalaryType(e.target.value as "monthly" | "hourly")}>
+                      <option value="monthly">บาท/เดือน</option>
+                      <option value="hourly">บาท/ชม.</option>
+                    </select>
+                  </div>
                   <p className="text-[10px] text-slate-400 mt-0.5">
-                    วันที่นี้จะแสดงในการ์ดข้อเสนองานที่ส่งให้ผู้สมัคร
+                    ตำแหน่ง + ค่าตอบแทน + วันเริ่มงาน จะแสดงในการ์ดข้อเสนอที่ส่งให้ผู้สมัคร
                   </p>
                 </div>
               )}
@@ -263,10 +275,13 @@ export default function PipelineClient({
             </>
           }
           submitLabel={isDual ? "ส่งคำขอ" : isOffer ? "เสนองาน" : "เปลี่ยนสถานะ"}
-          onClose={() => { setRequestModal(null); setOfferStartDate(""); }}
+          onClose={() => { setRequestModal(null); setOfferStartDate(""); setOfferSalary(""); }}
           onSubmit={async (pin) => {
             if (isOffer && !/^\d{4}-\d{2}-\d{2}$/.test(offerStartDate)) {
               return { ok: false, message: "กรุณาเลือกวันเริ่มงานวันแรกก่อนเสนองาน" };
+            }
+            if (isOffer && !(Number(offerSalary) > 0)) {
+              return { ok: false, message: "กรุณากรอกค่าตอบแทนที่เสนอ" };
             }
             const res = await fetch(
               apiUrl(`/api/recruita/applications/${requestModal.card.id}/stage-request`),
@@ -275,7 +290,11 @@ export default function PipelineClient({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   to_stage: requestModal.to, pin,
-                  ...(isOffer ? { offer_start_date: offerStartDate } : {})
+                  ...(isOffer ? {
+                    offer_start_date: offerStartDate,
+                    offer_salary: Number(offerSalary),
+                    offer_salary_type: offerSalaryType
+                  } : {})
                 })
               }
             );
@@ -285,6 +304,7 @@ export default function PipelineClient({
             }
             setRequestModal(null);
             setOfferStartDate("");
+            setOfferSalary("");
             startTransition(() => router.refresh());
             return { ok: true };
           }} />

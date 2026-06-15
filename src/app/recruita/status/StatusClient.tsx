@@ -29,6 +29,10 @@ type AppRow = {
    *  null until the applicant self-books a slot. */
   interview_at: string | null;
   interview_location: string | null;
+  /** Offer detail at the 'offered' stage (owner 2026-06-15). */
+  offer_salary: number | null;
+  offer_salary_type: "monthly" | "hourly" | null;
+  offer_start_date: string | null;
 };
 
 // A bookable interview slot from /api/recruita/interview-slots/available.
@@ -593,6 +597,19 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
                       identity={bookingIdentity()} />
                   )}
 
+                  {/* Job offer — accept / reject (owner 2026-06-15) */}
+                  {row.stage === "offered" && (
+                    <OfferResponse
+                      row={row}
+                      identity={bookingIdentity()}
+                      onResponded={(stage) =>
+                        setState((prev) =>
+                          prev.kind === "loaded"
+                            ? { ...prev, rows: prev.rows.map((x) => x.application_id === row.application_id ? { ...x, stage } : x) }
+                            : prev)
+                      } />
+                  )}
+
                   <div className="border-t border-slate-100 pt-2 flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-[11px] text-slate-400">
                       ส่งเมื่อ {formatLongDate(bkkDateIso(row.submitted_at), "th")} · {bkkHHMM(row.submitted_at)} น.
@@ -733,6 +750,98 @@ function HealthCertUpload({
             {busy ? "กำลังอัพโหลด…" : "อัพโหลดใบรับรองแพทย์"}
           </button>
         </>
+      )}
+    </div>
+  );
+}
+
+// Job-offer accept/reject (owner 2026-06-15). Shown on an 'offered'-stage
+// card: the candidate sees the position + compensation + start date and
+// accepts (→ accepted, waits for the admin to hire) or rejects (→ withdrawn).
+// Two-step confirm because window.confirm is unreliable in LINE's browser.
+function OfferResponse({
+  row, identity, onResponded
+}: {
+  row: AppRow;
+  identity: { line_user_id?: string; mobile_phone?: string };
+  onResponded: (stage: ApplicationStage) => void;
+}) {
+  const [step, setStep] = useState<"view" | "confirm_accept" | "confirm_reject" | "done">("view");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function respond(action: "accept" | "reject") {
+    if (!identity.line_user_id && !identity.mobile_phone) {
+      setErr("ไม่พบข้อมูลยืนยันตัวตน — เปิดผ่าน LINE หรือค้นหาด้วยเบอร์โทรก่อน");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch(apiUrl(`/api/recruita/my-applications/${row.application_id}/offer-response`), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, ...identity })
+      });
+      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      if (!r.ok || !j.ok) { setErr(j.message ?? "ทำรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"); return; }
+      setStep("done");
+      onResponded(action === "accept" ? "accepted" : "withdrawn");
+    } catch {
+      setErr("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const unit = row.offer_salary_type === "hourly" ? "บาท/ชม." : "บาท/เดือน";
+
+  return (
+    <div className="border border-violet-200 bg-violet-50/60 rounded-lg p-3 space-y-2">
+      <div className="text-xs text-violet-900 font-bold">ข้อเสนองาน</div>
+      <div className="text-xs text-violet-900 space-y-0.5">
+        <div>ตำแหน่ง: <b>{row.position_title}</b></div>
+        {row.offer_salary != null && (
+          <div>ค่าตอบแทน: <b>{row.offer_salary.toLocaleString("th-TH")} {unit}</b></div>
+        )}
+        {row.offer_start_date && (
+          <div>เริ่มงานวันแรก: <b>{formatLongDate(row.offer_start_date, "th")}</b></div>
+        )}
+      </div>
+      {err && <p className="text-[11px] text-rose-600">{err}</p>}
+
+      {step === "done" ? (
+        <p className="text-xs text-emerald-800 font-semibold">บันทึกคำตอบเรียบร้อยแล้ว — เจ้าหน้าที่จะติดต่อกลับ</p>
+      ) : step === "view" ? (
+        <div className="flex gap-2">
+          <button type="button" onClick={() => { setStep("confirm_accept"); setErr(null); }}
+            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-lg">
+            ตอบรับข้อเสนอ
+          </button>
+          <button type="button" onClick={() => { setStep("confirm_reject"); setErr(null); }}
+            className="flex-1 bg-white border border-rose-300 text-rose-600 text-xs font-semibold px-3 py-2 rounded-lg">
+            ปฏิเสธ
+          </button>
+        </div>
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-lg p-2.5 space-y-2">
+          <p className="text-xs text-slate-700">
+            {step === "confirm_accept" ? "ยืนยันตอบรับข้อเสนองานนี้?" : "ยืนยันปฏิเสธข้อเสนองานนี้?"}
+          </p>
+          <div className="flex gap-2">
+            <button type="button" disabled={busy}
+              onClick={() => respond(step === "confirm_accept" ? "accept" : "reject")}
+              className={`flex-1 text-white text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-50 ${
+                step === "confirm_accept" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"
+              }`}>
+              {busy ? "กำลังบันทึก…" : step === "confirm_accept" ? "ยืนยันตอบรับ" : "ยืนยันปฏิเสธ"}
+            </button>
+            <button type="button" disabled={busy} onClick={() => setStep("view")}
+              className="flex-1 bg-white border border-slate-300 text-slate-700 text-xs font-semibold px-3 py-2 rounded-lg">
+              กลับ
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -176,6 +176,9 @@ export function stageChangeFlex(args: {
   /** First work day (YYYY-MM-DD) — shown on the 'offered' card so the
    *  candidate knows when to start (owner 2026-06-15). */
   offerStartDate?: string | null;
+  /** Offered compensation shown on the 'offered' card. */
+  offerSalary?: number | null;
+  offerSalaryType?: "monthly" | "hourly" | null;
 }): LineMessage {
   const meta = STAGE_META[args.stage];
   const copy = stageCopy(args.stage, args.positionTitle);
@@ -200,6 +203,10 @@ export function stageChangeFlex(args: {
     infoRow("ตำแหน่ง", args.positionTitle)
   );
   if (args.branchName) bodyRows.push(infoRow("บริษัท/สาขา", args.branchName));
+  if (args.stage === "offered" && args.offerSalary != null && args.offerSalary > 0) {
+    const unit = args.offerSalaryType === "hourly" ? "บาท/ชม." : "บาท/เดือน";
+    bodyRows.push(infoRow("ค่าตอบแทน", `${args.offerSalary.toLocaleString("th-TH")} ${unit}`));
+  }
   if (args.stage === "offered" && args.offerStartDate && /^\d{4}-\d{2}-\d{2}$/.test(args.offerStartDate)) {
     bodyRows.push(infoRow("เริ่มงานวันแรก", formatLongDate(args.offerStartDate, "th")));
   }
@@ -240,6 +247,18 @@ export function stageChangeFlex(args: {
     footerContents.push({
       type: "button", style: "primary", color: COLOR_BRAND, height: "sm",
       action: { type: "uri", label: "อัพโหลดใบรับรองแพทย์", uri: statusUrl }
+    });
+  } else if (args.stage === "offered") {
+    // Offer stage (owner 2026-06-15): the candidate accepts or rejects the
+    // offer on the status page (LIFF auto-logs them in), where the offer
+    // detail + ตอบรับ/ปฏิเสธ buttons appear on this application's card.
+    const ch = getRecruitaChannel();
+    const statusUrl = ch?.liff_id_status
+      ? `https://liff.line.me/${ch.liff_id_status}`
+      : `${PUBLIC_BASE}/recruita/status`;
+    footerContents.push({
+      type: "button", style: "primary", color: COLOR_BRAND, height: "sm",
+      action: { type: "uri", label: "ดูข้อเสนอ & ตอบรับ/ปฏิเสธ", uri: statusUrl }
     });
   } else {
     if (copy.cta) {
@@ -509,6 +528,7 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
   const db = getDb();
   const row = db.prepare(`
     SELECT a.id, a.stage, a.submitted_at, a.offer_start_date,
+           a.offer_salary, a.offer_salary_type,
            (SELECT COUNT(*) FROM recruita_applications za
              WHERE date(za.submitted_at, '+7 hours') = date(a.submitted_at, '+7 hours')
                AND za.id <= a.id) AS day_seq,
@@ -524,6 +544,8 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
   `).get(applicationId) as {
     id: number; stage: ApplicationStage; submitted_at: string; day_seq: number;
     offer_start_date: string | null;
+    offer_salary: number | null;
+    offer_salary_type: "monthly" | "hourly" | null;
     line_user_id: string | null;
     title_prefix: string | null;
     first_name_th: string | null; last_name_th: string | null;
@@ -550,7 +572,9 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
     branchName: row.branch_name,
     stage: row.stage,
     applicationNo: formatApplicationNo(row.submitted_at, row.day_seq),
-    offerStartDate: row.offer_start_date
+    offerStartDate: row.offer_start_date,
+    offerSalary: row.offer_salary,
+    offerSalaryType: row.offer_salary_type
   });
   const res = await pushToCandidate(row.line_user_id, [message]);
   if (res.ok) {

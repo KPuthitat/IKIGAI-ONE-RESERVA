@@ -45,6 +45,9 @@ type AppRow = {
   department: string | null;
   interview_at: string | null;
   interview_location: string | null;
+  offer_salary: number | null;
+  offer_salary_type: "monthly" | "hourly" | null;
+  offer_start_date: string | null;
 };
 
 export async function POST(req: Request) {
@@ -87,6 +90,9 @@ export async function POST(req: Request) {
                AND za.id <= a.id) AS day_seq,
            a.interview_at        AS interview_at,
            a.interview_location  AS interview_location,
+           a.offer_salary        AS offer_salary,
+           a.offer_salary_type   AS offer_salary_type,
+           a.offer_start_date    AS offer_start_date,
            p.title         AS position_title,
            p.code          AS position_code,
            p.department    AS department,

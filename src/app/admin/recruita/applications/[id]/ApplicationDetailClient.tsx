@@ -218,8 +218,10 @@ export default function ApplicationDetailClient({
   //   - cancelModalOpen: when true, opens the cancel-request prompt
   //     (no PIN — only the requester or a super_admin can cancel).
   const [requestStageTarget, setRequestStageTarget] = useState<ApplicationStage | null>(null);
-  // First work day captured in the offer popup (owner 2026-06-15).
+  // First work day + compensation captured in the offer popup (owner 2026-06-15).
   const [offerStartDate, setOfferStartDate] = useState("");
+  const [offerSalary, setOfferSalary] = useState("");
+  const [offerSalaryType, setOfferSalaryType] = useState<"monthly" | "hourly">("monthly");
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
 
@@ -406,8 +408,18 @@ export default function ApplicationDetailClient({
                   <label className="label">วันเริ่มงานวันแรก</label>
                   <input type="date" className="input text-sm" value={offerStartDate}
                     onChange={(e) => setOfferStartDate(e.target.value)} />
+                  <label className="label mt-2">ค่าตอบแทนที่เสนอ</label>
+                  <div className="flex gap-2">
+                    <input type="number" min={0} className="input text-sm flex-1" placeholder="จำนวน"
+                      value={offerSalary} onChange={(e) => setOfferSalary(e.target.value)} />
+                    <select className="input text-sm !w-auto" value={offerSalaryType}
+                      onChange={(e) => setOfferSalaryType(e.target.value as "monthly" | "hourly")}>
+                      <option value="monthly">บาท/เดือน</option>
+                      <option value="hourly">บาท/ชม.</option>
+                    </select>
+                  </div>
                   <p className="text-[10px] text-slate-400 mt-0.5">
-                    วันที่นี้จะแสดงในการ์ดข้อเสนองานที่ส่งให้ผู้สมัคร
+                    ตำแหน่ง + ค่าตอบแทน + วันเริ่มงาน จะแสดงในการ์ดข้อเสนอที่ส่งให้ผู้สมัคร
                   </p>
                 </div>
               )}
@@ -417,11 +429,14 @@ export default function ApplicationDetailClient({
             </>
           }
           submitLabel={isDual ? "ส่งคำขอ" : requestStageTarget === "offered" ? "เสนองาน" : "เปลี่ยนสถานะ"}
-          onClose={() => { setRequestStageTarget(null); setOfferStartDate(""); }}
+          onClose={() => { setRequestStageTarget(null); setOfferStartDate(""); setOfferSalary(""); }}
           onSubmit={async (pin) => {
             const target = requestStageTarget;
             if (target === "offered" && !/^\d{4}-\d{2}-\d{2}$/.test(offerStartDate)) {
               return { ok: false, message: "กรุณาเลือกวันเริ่มงานวันแรกก่อนเสนองาน" };
+            }
+            if (target === "offered" && !(Number(offerSalary) > 0)) {
+              return { ok: false, message: "กรุณากรอกค่าตอบแทนที่เสนอ" };
             }
             const res = await fetch(
               apiUrl(`/api/recruita/applications/${application.id}/stage-request`),
@@ -430,7 +445,11 @@ export default function ApplicationDetailClient({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   to_stage: target, pin,
-                  ...(target === "offered" ? { offer_start_date: offerStartDate } : {})
+                  ...(target === "offered" ? {
+                    offer_start_date: offerStartDate,
+                    offer_salary: Number(offerSalary),
+                    offer_salary_type: offerSalaryType
+                  } : {})
                 })
               }
             );
@@ -442,6 +461,7 @@ export default function ApplicationDetailClient({
             if (j.applied) setStage(target);
             setRequestStageTarget(null);
             setOfferStartDate("");
+            setOfferSalary("");
             startTransition(() => router.refresh());
             return { ok: true };
           }} />
