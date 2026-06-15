@@ -30,6 +30,22 @@ export type PendingCertRow = {
   created_at: string;
 };
 
+export type HistoryCertRow = {
+  id: number;
+  entry_id: number | null;
+  entry_type: "in" | "out";
+  kind: "correction" | "missing";
+  work_date: string | null;
+  proposed_ts: string;
+  reason: string;
+  status: "approved" | "rejected";
+  decided_at: string | null;
+  decision_note: string | null;
+  requester_name: string;
+  requester_prefix: string | null;
+  decided_by_name: string | null;
+};
+
 export default function AdminTimeCertificationsPage() {
   const user = requireAdmin();
   const lang = getLang();
@@ -58,6 +74,25 @@ export default function AdminTimeCertificationsPage() {
     ORDER BY c.created_at DESC
   `).all(user.activeBranchId) as PendingCertRow[];
 
+  // History — decided (approved/rejected) certs so admin can audit what
+  // happened (owner 2026-06-15: "ไม่มีการเก็บประวัติ ย้อนไปตรวจสอบไม่ได้").
+  const history = db.prepare(`
+    SELECT c.id, c.entry_id, c.proposed_ts, c.reason, c.kind, c.work_date,
+           c.status, c.decided_at, c.decision_note,
+           COALESCE(e.type, c.entry_type) AS entry_type,
+           u.display_name AS requester_name,
+           u.title_prefix AS requester_prefix,
+           du.display_name AS decided_by_name
+    FROM time_certifications c
+    LEFT JOIN time_entries e ON e.id = c.entry_id
+    JOIN users u ON u.id = c.requested_by
+    LEFT JOIN users du ON du.id = c.decided_by
+    WHERE c.status IN ('approved', 'rejected')
+      AND COALESCE(e.branch_id, c.branch_id) = ?
+    ORDER BY c.decided_at DESC
+    LIMIT 100
+  `).all(user.activeBranchId) as HistoryCertRow[];
+
   return (
     <div className="space-y-4">
       <div>
@@ -73,7 +108,7 @@ export default function AdminTimeCertificationsPage() {
           {t(lang, "admin.persona.timeCert.subtitle")}
         </p>
       </div>
-      <TimeCertificationsClient pending={pending} />
+      <TimeCertificationsClient pending={pending} history={history} />
     </div>
   );
 }

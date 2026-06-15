@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { nameWithPrefix } from "@/lib/name";
-import type { PendingCertRow } from "./page";
+import type { PendingCertRow, HistoryCertRow } from "./page";
 
 function bkkDisplay(iso: string): string {
   const d = new Date(iso);
@@ -24,9 +24,10 @@ function inputToIso(local: string): string {
 }
 
 export default function TimeCertificationsClient({
-  pending
+  pending, history
 }: {
   pending: PendingCertRow[];
+  history: HistoryCertRow[];
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -111,16 +112,14 @@ export default function TimeCertificationsClient({
     }
   }
 
-  if (pending.length === 0) {
-    return (
-      <div className="card text-sm text-slate-400 text-center py-10">
-        {t("admin.persona.timeCert.empty")}
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      <div className="space-y-3">
+      {pending.length === 0 && (
+        <div className="card text-sm text-slate-400 text-center py-10">
+          {t("admin.persona.timeCert.empty")}
+        </div>
+      )}
       {pending.map((r) => {
         const busy = busyId === r.id;
         const err = errorByCert[r.id];
@@ -253,6 +252,43 @@ export default function TimeCertificationsClient({
           </div>
         );
       })}
+      </div>
+
+      {/* History — decided certs, so admin can audit what happened
+          (owner 2026-06-15). Shows type (เข้า/ออก), date, who decided. */}
+      {history.length > 0 && (
+        <div className="card space-y-2">
+          <h2 className="font-bold text-slate-800 text-sm">ประวัติการรับรองเวลา</h2>
+          <div className="divide-y divide-slate-100">
+            {history.map((h) => (
+              <div key={h.id} className="py-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                  h.status === "approved" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600"
+                }`}>
+                  {h.status === "approved" ? "อนุมัติ" : "ไม่อนุมัติ"}
+                </span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                  h.entry_type === "out" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"
+                }`}>
+                  {h.kind === "missing"
+                    ? (h.entry_type === "out" ? "ลืมลงเวลาออก" : "ลืมลงเวลาเข้า")
+                    : (h.entry_type === "out" ? "แก้เวลาออก" : "แก้เวลาเข้า")}
+                </span>
+                <span className="font-medium text-slate-700">{nameWithPrefix(h.requester_prefix, h.requester_name)}</span>
+                <span className="text-xs text-slate-500 font-mono">{bkkDisplay(h.proposed_ts)}</span>
+                {h.decided_by_name && (
+                  <span className="text-[11px] text-slate-400 ml-auto">
+                    โดย {h.decided_by_name}{h.decided_at ? ` · ${bkkDisplay(h.decided_at)}` : ""}
+                  </span>
+                )}
+                {h.decision_note && (
+                  <span className="basis-full text-[11px] italic text-slate-500">หมายเหตุ: {h.decision_note}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
