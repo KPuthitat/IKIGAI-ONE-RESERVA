@@ -98,7 +98,7 @@ export async function POST(req: Request) {
     if (!me?.line_user_id) {
       return NextResponse.json({
         error: "no_line_bound",
-        message: "บัญชี admin ของคุณยังไม่ได้ผูก LINE — ผูกที่หน้า /staff/persona/profile ก่อน"
+        message: "บัญชี admin ของคุณยังไม่ได้เชื่อมต่อ LINE — เชื่อมต่อที่หน้า /staff/persona/profile ก่อน"
       }, { status: 412 });
     }
     const res = await sendLinePush(platformToken, {

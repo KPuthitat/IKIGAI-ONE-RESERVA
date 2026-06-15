@@ -64,7 +64,7 @@ export default function TestNotificationsClient() {
   return (
     <div className="space-y-6">
       <Section title="📲 ส่งเข้า LINE ของคุณ (DM)"
-               hint="ต้องผูก LINE ที่ /staff/persona/profile ก่อน">
+               hint="ต้องเชื่อมต่อ LINE ที่ /staff/persona/profile ก่อน">
         <div className="grid sm:grid-cols-2 gap-3">
           {SELF_DM.map((b) => <TestButton key={b.kind} {...b} />)}
         </div>
@@ -117,7 +117,7 @@ function TestButton({ kind, label, desc }: ButtonDef) {
         });
       } else {
         const map: Record<string, string> = {
-          no_line_bound: "ยังไม่ได้ผูก LINE — ผูกที่ /staff/persona/profile ก่อน",
+          no_line_bound: "ยังไม่ได้เชื่อมต่อ LINE — เชื่อมต่อที่ /staff/persona/profile ก่อน",
           platform_channel_not_ready: "ตั้งค่า LINE OA token + secret ที่ /admin/persona/messaging ก่อน",
           group_push_failed: `ส่งเข้ากลุ่มไม่สำเร็จ — ${j.detail ?? ""}`,
           push_failed: `ส่งไม่สำเร็จ — ${j.detail ?? ""}`,

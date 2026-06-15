@@ -72,7 +72,7 @@ export async function POST(req: Request) {
 
   if (!recipient.line_user_id) {
     return NextResponse.json(
-      { error: "no_line_binding", message: "พนักงานคนนี้ยังไม่ได้ผูก LINE — ส่งไม่ได้" },
+      { error: "no_line_binding", message: "พนักงานคนนี้ยังไม่ได้เชื่อมต่อ LINE — ส่งไม่ได้" },
       { status: 422 }
     );
   }

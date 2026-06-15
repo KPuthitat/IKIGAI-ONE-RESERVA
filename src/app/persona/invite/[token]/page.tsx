@@ -41,7 +41,7 @@ export default function InviteRedeemPage({ params }: { params: { token: string }
     ? { title: "ยินดีต้อนรับเข้าทีมครับ!", sub: "สร้างบัญชีของคุณก่อนเริ่มใช้งาน" }
     : invite.kind === "reset"
       ? { title: "ตั้งรหัสผ่านใหม่", sub: "ตั้ง username + password + PIN ใหม่เพื่อใช้ล็อกอินครั้งต่อไป" }
-      : { title: "ผูก LINE ใหม่", sub: "ระบบจะผูก LINE ใหม่ของคุณกับบัญชีเดิม" };
+      : { title: "เชื่อมต่อ LINE ใหม่", sub: "ระบบจะเชื่อมต่อ LINE ใหม่ของคุณกับบัญชีเดิม" };
 
   return (
     <div className="min-h-[100dvh] flex items-center justify-center bg-amber-50/40 p-4">

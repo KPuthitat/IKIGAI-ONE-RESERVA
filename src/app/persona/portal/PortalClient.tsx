@@ -264,7 +264,7 @@ export default function PortalClient({ liffId }: { liffId: string }) {
         {phase === "not_bound" && (
           <div className="space-y-3 pt-1">
             <p className="text-sm text-slate-700 font-medium">
-              บัญชี LINE ของคุณยังไม่ได้ผูกกับระบบ
+              บัญชี LINE ของคุณยังไม่ได้เชื่อมต่อกับระบบ
             </p>
 
             {lineName && (
@@ -277,7 +277,7 @@ export default function PortalClient({ liffId }: { liffId: string }) {
               <div className="space-y-2">
                 <p className="text-xs text-slate-600">
                   ส่ง <span className="font-bold">LINE ID</span> ด้านล่างนี้
-                  ให้หัวหน้างาน เพื่อผูกบัญชีให้คุณ
+                  ให้หัวหน้างาน เพื่อเชื่อมต่อบัญชีให้คุณ
                 </p>
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs break-all select-all font-mono text-slate-700">
                   {lineUserId}

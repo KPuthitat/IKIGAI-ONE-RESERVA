@@ -14,7 +14,7 @@ import { createInvite, revokeOpenInvites } from "@/lib/invites";
 //     invites in either case).
 //
 // POST — admin explicitly wants to issue a NEW invite of a specific
-// kind. Used for "ออกลิงก์ผูก LINE ใหม่" (rebind_line) and "ออกลิงก์
+// kind. Used for "ออกลิงก์เชื่อมต่อ LINE ใหม่" (rebind_line) and "ออกลิงก์
 // รีเซ็ตรหัสผ่าน" (reset). Always revokes prior open invites and
 // creates a fresh one — even if a valid one already exists.
 

@@ -29,7 +29,7 @@ export default function NotifyShiftsButton() {
       }
       setMsg(
         j.recipients === 0
-          ? "วันนี้ไม่มีพนักงานที่มีเวร (หรือยังไม่ได้ผูก LINE)"
+          ? "วันนี้ไม่มีพนักงานที่มีเวร (หรือยังไม่ได้เชื่อมต่อ LINE)"
           : `ส่งแล้ว ${j.sent}/${j.recipients} คน${j.skipped ? ` · ส่งไม่สำเร็จ ${j.skipped}` : ""}`
       );
     } catch {

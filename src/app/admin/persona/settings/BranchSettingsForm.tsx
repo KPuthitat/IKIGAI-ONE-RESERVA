@@ -639,7 +639,7 @@ export default function BranchSettingsForm({
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             ทุกเช้าระบบจะส่งข้อความเข้าไลน์ส่วนตัวของพนักงานที่มีเวรในวันนั้น
-            (เวลากะ + ตำแหน่ง) สำหรับสาขา {branchName} — ต้องผูก LINE ของ
+            (เวลากะ + ตำแหน่ง) สำหรับสาขา {branchName} — ต้องเชื่อมต่อ LINE ของ
             พนักงานไว้ในข้อมูลพนักงานก่อน
           </p>
         </div>

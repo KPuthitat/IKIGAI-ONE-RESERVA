@@ -122,7 +122,7 @@ export default function RedeemForm({
       )}
       {!lineUserId && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] text-amber-800">
-          ⓘ ไม่ได้เปิดผ่าน LINE — admin จะต้องผูก LINE ของคุณภายหลัง
+          ⓘ ไม่ได้เปิดผ่าน LINE — admin จะต้องเชื่อมต่อ LINE ของคุณภายหลัง
           ถ้าต้องการรับแจ้งเตือน กรุณาปิดหน้านี้แล้วเปิดลิงก์ใหม่ใน LINE app
         </div>
       )}

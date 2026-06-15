@@ -78,8 +78,8 @@ export async function POST(
         {
           error: "userid_in_use",
           other_candidate_id: dup.id,
-          message: `LINE userId นี้ถูกผูกกับผู้สมัครรายอื่น (candidate #${dup.id}) อยู่แล้ว — ` +
-            `ถ้าเป็นบุคคลเดียวกัน กด "ย้ายมาผูกที่นี่" เพื่อย้ายมาที่ใบสมัครนี้`
+          message: `LINE userId นี้ถูกเชื่อมต่อกับผู้สมัครรายอื่น (candidate #${dup.id}) อยู่แล้ว — ` +
+            `ถ้าเป็นบุคคลเดียวกัน กด "ย้ายมาเชื่อมต่อที่นี่" เพื่อย้ายมาที่ใบสมัครนี้`
         },
         { status: 409 }
       );

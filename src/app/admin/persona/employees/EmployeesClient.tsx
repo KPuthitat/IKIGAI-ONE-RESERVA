@@ -339,7 +339,7 @@ export default function EmployeesClient({
                         return (
                           <span
                             className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold whitespace-nowrap"
-                            title="ผูก LINE แล้ว แต่ยังไม่มีชื่อเล่น — น้องฮูกจะทักด้วยชื่อจริง"
+                            title="เชื่อมต่อ LINE แล้ว แต่ยังไม่มีชื่อเล่น — น้องฮูกจะทักด้วยชื่อจริง"
                           >
                             ⚠ ขาดชื่อเล่น
                           </span>
@@ -348,9 +348,9 @@ export default function EmployeesClient({
                       return (
                         <span
                           className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-bold whitespace-nowrap"
-                          title="ยังไม่ผูก LINE — ไม่ได้รับการแจ้งเตือนทาง LINE"
+                          title="ยังไม่เชื่อมต่อ LINE — ไม่ได้รับการแจ้งเตือนทาง LINE"
                         >
-                          ✗ ยังไม่ผูก LINE
+                          ✗ ยังไม่เชื่อมต่อ LINE
                         </span>
                       );
                     })()}
@@ -549,7 +549,7 @@ function EditModal({
   //     or issues a fresh `onboard` one. Lets admin re-show a link they
   //     closed before sending to staff.
   //   • "ออกลิงก์รีเซ็ตรหัสผ่าน" (active users) — POST kind=reset.
-  //   • "ออกลิงก์ผูก LINE ใหม่" (active users) — POST kind=rebind_line.
+  //   • "ออกลิงก์เชื่อมต่อ LINE ใหม่" (active users) — POST kind=rebind_line.
   //     Used when staff changes LINE account or admin needs to fix a
   //     misplaced binding (e.g. bound to the wrong user during testing).
   type InviteLinkResp = {
@@ -764,7 +764,7 @@ function EditModal({
                     onClick={() => regenerateInvite("rebind_line")}
                     disabled={inviteLinkBusy !== null}
                     className="text-xs px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-medium disabled:opacity-50">
-                    {inviteLinkBusy === "rebind" ? "กำลังออก..." : "ออกลิงก์ผูก LINE ใหม่"}
+                    {inviteLinkBusy === "rebind" ? "กำลังออก..." : "ออกลิงก์เชื่อมต่อ LINE ใหม่"}
                   </button>
                 </>
               )}
@@ -1334,7 +1334,7 @@ function EditModal({
             ลบบัญชีพนักงาน
           </h4>
           <p className="text-xs text-slate-600 mb-2 leading-snug">
-            บัญชีจะถูกระงับ (status=disabled), ลบการผูก LINE, ปิด session
+            บัญชีจะถูกระงับ (status=disabled), ลบการเชื่อมต่อ LINE, ปิด session
             ที่ใช้งานอยู่ และยกเลิกลิงก์เชิญที่ยังไม่ได้ใช้
             <br />
             <span className="text-slate-500">
@@ -1406,7 +1406,7 @@ function EditModal({
                 ประเภท: <span className="font-medium">
                   {inviteLinkResp.kind === "onboard" && "ลงทะเบียนครั้งแรก"}
                   {inviteLinkResp.kind === "reset" && "รีเซ็ตรหัสผ่าน"}
-                  {inviteLinkResp.kind === "rebind_line" && "ผูก LINE ใหม่"}
+                  {inviteLinkResp.kind === "rebind_line" && "เชื่อมต่อ LINE ใหม่"}
                 </span>
                 <br />
                 หมดอายุ {bkkDateIso(inviteLinkResp.expires_at)}

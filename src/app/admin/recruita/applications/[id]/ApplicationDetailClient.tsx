@@ -537,7 +537,7 @@ export default function ApplicationDetailClient({
             <li>สร้าง user ใน PERSONA โดยใช้ข้อมูลจากใบสมัครทุก field (ไม่ต้องคีย์ใหม่)</li>
             <li>ผูกเข้าสาขาที่เลือก + ลงตำแหน่งงานให้</li>
             <li>เปลี่ยน stage ใบสมัครนี้เป็น "รับเข้าทำงาน" อัตโนมัติ</li>
-            <li>ส่ง invite link ให้แชร์กับพนักงานใหม่ตั้งรหัสผ่าน + ผูก LINE</li>
+            <li>ส่ง invite link ให้แชร์กับพนักงานใหม่ตั้งรหัสผ่าน + เชื่อมต่อ LINE</li>
           </ul>
           {application.health_check_status !== "passed" && (
             <p className="text-xs text-rose-700 font-bold bg-rose-50 border border-rose-200 rounded px-2 py-1.5">
@@ -979,7 +979,7 @@ function InterviewSection({
         setMsg({ kind: "err", text: j.message ?? j.error ?? "บันทึกไม่สำเร็จ" });
         return;
       }
-      setMsg({ kind: "ok", text: "✓ บันทึกแล้ว + แจ้งผู้สมัครทาง LINE (ถ้าผูก LINE ไว้)" });
+      setMsg({ kind: "ok", text: "✓ บันทึกแล้ว + แจ้งผู้สมัครทาง LINE (ถ้าเชื่อมต่อ LINE ไว้)" });
       router.refresh();
     } catch {
       setMsg({ kind: "err", text: "เกิดข้อผิดพลาด ลองใหม่อีกครั้ง" });
@@ -993,7 +993,7 @@ function InterviewSection({
       <div>
         <h2 className="font-bold text-slate-800 text-sm">นัดสัมภาษณ์</h2>
         <p className="text-[11px] text-slate-500 mt-0.5">
-          เลือกวัน-เวลา แล้วระบบจะส่งแจ้งเตือนให้ผู้สมัครทาง LINE (ถ้าผูก LINE ไว้)
+          เลือกวัน-เวลา แล้วระบบจะส่งแจ้งเตือนให้ผู้สมัครทาง LINE (ถ้าเชื่อมต่อ LINE ไว้)
         </p>
       </div>
       {initialAt && (
@@ -1329,7 +1329,7 @@ function InviteLinkBox({ result }: { result: HireResult }) {
       </p>
       {result.liff_url && (
         <div className="bg-white border border-slate-200 rounded p-2 text-xs space-y-1">
-          <div className="font-bold text-slate-700">🔗 ลิงก์ LINE (แนะนำ — ผูก LINE อัตโนมัติ)</div>
+          <div className="font-bold text-slate-700">🔗 ลิงก์ LINE (แนะนำ — เชื่อมต่อ LINE อัตโนมัติ)</div>
           <div className="flex items-center gap-2">
             <code className="flex-1 truncate font-mono text-[10px] text-slate-600">{result.liff_url}</code>
             <button type="button" onClick={() => copy(result.liff_url!, "liff")}
@@ -1372,7 +1372,7 @@ function LineLinkBox({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   // Set when the API reports the userId is already on another candidate
-  // (409 userid_in_use). Shows the "ย้ายมาผูกที่นี่" confirm button.
+  // (409 userid_in_use). Shows the "ย้ายมาเชื่อมต่อที่นี่" confirm button.
   const [conflict, setConflict] = useState(false);
 
   async function save(force = false) {
@@ -1395,8 +1395,8 @@ function LineLinkBox({
       setMsg({
         kind: "ok",
         text: j.moved_from
-          ? `✓ ย้าย LINE มาผูกที่ใบสมัครนี้แล้ว (ถอดจาก candidate #${j.moved_from})`
-          : input.trim() ? "✓ ผูก LINE เรียบร้อย" : "✓ ยกเลิกการผูกแล้ว"
+          ? `✓ ย้าย LINE มาเชื่อมต่อที่ใบสมัครนี้แล้ว (ถอดจาก candidate #${j.moved_from})`
+          : input.trim() ? "✓ เชื่อมต่อ LINE เรียบร้อย" : "✓ ยกเลิกการเชื่อมต่อแล้ว"
       });
       setEditing(false);
       router.refresh();
@@ -1415,7 +1415,7 @@ function LineLinkBox({
         {!editing && (
           <button type="button" onClick={() => { setEditing(true); setInput(currentValue ?? ""); }}
             className="text-xs px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50 font-semibold">
-            {currentValue ? "แก้ไข / ยกเลิก" : "ผูก LINE"}
+            {currentValue ? "แก้ไข / ยกเลิก" : "เชื่อมต่อ LINE"}
           </button>
         )}
       </div>
@@ -1427,7 +1427,7 @@ function LineLinkBox({
             </code>
           ) : (
             <span className="text-slate-400 italic">
-              ยังไม่ได้ผูก — ผู้สมัคร copy userId ของตัวเองจากหน้า /recruita/status แล้วส่งให้แอดมิน
+              ยังไม่ได้เชื่อมต่อ — ผู้สมัคร copy userId ของตัวเองจากหน้า /recruita/status แล้วส่งให้แอดมิน
               paste ที่นี่
             </span>
           )}
@@ -1443,7 +1443,7 @@ function LineLinkBox({
             placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
             maxLength={80} />
           <p className="text-[10px] text-slate-400">
-            ขึ้นต้นด้วย U ตามด้วย 32 ตัวอักษร hex. ปล่อยว่าง = ยกเลิกการผูก
+            ขึ้นต้นด้วย U ตามด้วย 32 ตัวอักษร hex. ปล่อยว่าง = ยกเลิกการเชื่อมต่อ
           </p>
           {msg && (
             <p className={`text-xs ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
@@ -1465,7 +1465,7 @@ function LineLinkBox({
           {conflict && (
             <button type="button" onClick={() => save(true)} disabled={busy}
               className="w-full py-2 rounded bg-amber-600 text-white text-sm font-bold disabled:opacity-50">
-              ย้ายมาผูกที่นี่ (ยืนยันว่าเป็นบุคคลเดียวกัน)
+              ย้ายมาเชื่อมต่อที่นี่ (ยืนยันว่าเป็นบุคคลเดียวกัน)
             </button>
           )}
         </div>
