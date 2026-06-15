@@ -594,6 +594,129 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
   }
 }
 
+/** Welcome + onboard Flex card sent to a freshly-hired candidate (owner
+ *  2026-06-15). Distinct from the generic 'hired' stage card because it
+ *  carries the two actions a NEW employee needs to actually start using the
+ *  staff system:
+ *    1. "เพิ่มเพื่อน IKIGAI OS PORTAL" — adds the staff OA so PERSONA pushes
+ *       (shift reminders, payroll, edit decisions) can reach them. Omitted
+ *       when system_settings.portal_oa_link isn't set.
+ *    2. "ตั้งค่าบัญชีพนักงาน" — the one-time onboard invite link (LIFF when
+ *       configured so it auto-binds their LINE; else the direct token URL).
+ *       This is where they set username + password and bind LINE.
+ *  The OA-add button comes first: the onboard binding only delivers future
+ *  notifications once they've added the PORTAL OA as a friend. */
+function hireWelcomeFlex(args: {
+  positionTitle: string;
+  branchName: string | null;
+  onboardUrl: string;
+  portalOaLink: string | null;
+}): LineMessage {
+  const rows: Array<Record<string, unknown>> = [
+    {
+      type: "text",
+      text: "ยินดีต้อนรับสู่ทีม IKIGAI! เหลืออีก 2 ขั้นตอนเพื่อเริ่มใช้งานระบบพนักงาน",
+      size: "sm", color: COLOR_TEXT_DARK, wrap: true
+    },
+    {
+      type: "text",
+      text: "1. เพิ่มเพื่อน LINE ระบบพนักงาน (IKIGAI OS PORTAL) เพื่อรับการแจ้งเตือน\n" +
+            "2. ตั้งค่าบัญชีพนักงานของคุณ (ตั้งรหัสผ่าน + เชื่อมต่อ LINE)",
+      size: "xs", color: "#475569", wrap: true, margin: "md"
+    },
+    { type: "separator", margin: "md", color: COLOR_DIVIDER },
+    infoRow("ตำแหน่ง", args.positionTitle)
+  ];
+  if (args.branchName) rows.push(infoRow("บริษัท/สาขา", args.branchName));
+
+  const footerContents: Array<Record<string, unknown>> = [];
+  if (args.portalOaLink && /^https?:\/\//i.test(args.portalOaLink)) {
+    footerContents.push({
+      type: "button", style: "primary", color: COLOR_BRAND, height: "sm",
+      action: { type: "uri", label: "เพิ่มเพื่อน IKIGAI OS PORTAL", uri: args.portalOaLink }
+    });
+  }
+  footerContents.push({
+    type: "button", style: "primary", color: COLOR_BRAND_LIGHT, height: "sm",
+    action: { type: "uri", label: "ตั้งค่าบัญชีพนักงาน", uri: args.onboardUrl }
+  });
+
+  return {
+    type: "flex",
+    altText: `ยินดีต้อนรับสู่ทีม IKIGAI · ${args.positionTitle}`,
+    contents: {
+      type: "bubble",
+      size: "giga",
+      header: brandHeader("ยินดีต้อนรับสู่ทีม IKIGAI", args.positionTitle),
+      body: {
+        type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+        backgroundColor: "#ffffff",
+        contents: rows
+      },
+      footer: {
+        type: "box", layout: "vertical", paddingAll: "16px", spacing: "sm",
+        backgroundColor: "#ffffff",
+        contents: footerContents
+      }
+    }
+  };
+}
+
+/** Fire-and-forget welcome+onboard push to a freshly-hired candidate. Called
+ *  from the hire bridge once the onboard invite exists, so the new employee
+ *  gets both the PORTAL OA add-friend button and their onboard link in one
+ *  card. Silent no-op without a linked LINE userId / configured OA. */
+export async function notifyHireWelcome(
+  applicationId: number,
+  onboardUrl: string
+): Promise<void> {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT a.id, c.line_user_id,
+           p.title AS position_title,
+           b.name  AS branch_name
+    FROM recruita_applications a
+    JOIN recruita_candidates c ON c.id = a.candidate_id
+    JOIN recruita_positions p  ON p.id = a.position_id
+    LEFT JOIN branches b ON b.id = p.branch_id
+    WHERE a.id = ?
+  `).get(applicationId) as {
+    id: number; line_user_id: string | null;
+    position_title: string; branch_name: string | null;
+  } | undefined;
+  if (!row) {
+    console.info(`[recruita] hire welcome skipped: application #${applicationId} not found`);
+    return;
+  }
+  if (!row.line_user_id) {
+    console.info(
+      `[recruita] hire welcome skipped: app #${applicationId} has no linked LINE userId ` +
+      `(send the onboard link manually from the application detail page)`
+    );
+    return;
+  }
+  const portalOaLink = (getSystemSettings().portal_oa_link ?? "").trim() || null;
+  const message = hireWelcomeFlex({
+    positionTitle: row.position_title,
+    branchName: row.branch_name,
+    onboardUrl,
+    portalOaLink
+  });
+  const res = await pushToCandidate(row.line_user_id, [message]);
+  if (res.ok) {
+    console.info(`[recruita] hire welcome sent → app #${applicationId}`);
+  } else if (res.skipped) {
+    console.info(
+      "[recruita] hire welcome skipped: IKIGAI Recruit OA token not configured"
+    );
+  } else {
+    console.warn(
+      `[recruita] hire welcome rejected by LINE: status=${res.status} ` +
+      `error=${res.error ?? "(unknown)"}`
+    );
+  }
+}
+
 /** Format a naive Bangkok-local "YYYY-MM-DDTHH:MM" into Thai text. */
 function fmtInterviewWhen(at: string): string {
   const [d, t] = at.split("T");

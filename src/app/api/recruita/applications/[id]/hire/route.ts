@@ -6,7 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
 import { createInvite } from "@/lib/invites";
 import { decryptSecret } from "@/lib/secret-vault";
-import { notifyStageChange } from "@/lib/recruita-notify";
+import { notifyHireWelcome } from "@/lib/recruita-notify";
 
 // POST /api/recruita/applications/[id]/hire
 //
@@ -228,13 +228,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "hire_failed" }, { status: 500 });
   }
 
-  // Fire-and-forget: send the candidate the "🎊 ยินดีต้อนรับสู่ทีม" card
-  // via the IKIGAI Recruit OA now that stage = 'hired'. No-op when the
-  // applicant has no linked LINE userId / the OA isn't configured.
-  void notifyStageChange(app.id).catch((e) =>
-    console.warn("[recruita-hire] candidate notify failed", e)
-  );
-
   // ── Create the onboard invite ─────────────────────────────
   // Same kind / lifetime as the existing PERSONA onboard flow so
   // the redemption page (/persona/invite/<token>) handles it
@@ -250,6 +243,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const liffUrl = liffId
     ? `https://liff.line.me/${liffId}?token=${invite.token}`
     : null;
+
+  // Fire-and-forget: send the new hire the welcome+onboard card via the
+  // IKIGAI Recruit OA — carries the "เพิ่มเพื่อน IKIGAI OS PORTAL" button
+  // (so they add the staff OA + receive PERSONA pushes) and the onboard link
+  // above. No-op when the applicant has no linked LINE userId / OA isn't set;
+  // admin can still copy the onboard URL from the application detail page.
+  void notifyHireWelcome(app.id, liffUrl ?? directUrl).catch((e) =>
+    console.warn("[recruita-hire] hire welcome notify failed", e)
+  );
 
   return NextResponse.json({
     ok: true,

@@ -1317,7 +1317,12 @@ function InviteLinkBox({ result }: { result: HireResult }) {
   return (
     <div className="space-y-2 mt-2">
       <p className="text-xs font-bold text-emerald-900">
-        📨 แชร์ลิงก์ด้านล่างให้พนักงานใหม่เพื่อตั้งรหัสผ่าน + ผูก LINE
+        แชร์ลิงก์ด้านล่างให้พนักงานใหม่เพื่อตั้งรหัสผ่าน + เชื่อมต่อ LINE
+      </p>
+      <p className="text-[10px] text-slate-500">
+        ถ้าผู้สมัครเชื่อมต่อ LINE ไว้แล้ว ระบบได้ส่งการ์ดต้อนรับ
+        (ปุ่มเพิ่มเพื่อน IKIGAI OS PORTAL + ลิงก์ตั้งค่าบัญชี) ให้อัตโนมัติแล้ว —
+        ลิงก์ด้านล่างไว้ใช้สำรองกรณีส่งเองด้วยมือ
       </p>
       <p className="text-[10px] text-slate-500">
         ลิงก์หมดอายุ {formatBkkDateTime(result.expires_at)}

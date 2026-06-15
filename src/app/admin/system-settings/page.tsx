@@ -59,6 +59,7 @@ export default function SystemSettingsPage() {
         recruitaInterviewMapUrl={settings.recruita_interview_map_url ?? ""}
         recruitaHealthCheckMessage={settings.recruita_health_check_message ?? ""}
         defaultHealthCheckMessage={DEFAULT_HEALTH_CHECK_MESSAGE}
+        portalOaLink={settings.portal_oa_link ?? ""}
       />
 
       {/* RECRUITA PDPA policy image — admin uploads an image of the

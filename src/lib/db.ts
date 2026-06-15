@@ -1939,6 +1939,13 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "recruita_health_check_message")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN recruita_health_check_message TEXT");
   }
+  // IKIGAI OS PORTAL OA "add friend" deep link (2026-06-15) — shown as a
+  // button on the welcome card sent to a freshly-hired employee so they add
+  // the staff OA and start receiving PERSONA notifications. NULL = button
+  // omitted.
+  if (!ssCols.some((c) => c.name === "portal_oa_link")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN portal_oa_link TEXT");
+  }
   // RECRUITA PDPA policy image (2026-06-02) — admin uploads an image
   // (PNG/JPG/WebP) of the privacy notice instead of typing dense text.
   // The apply form renders a "เปิดดูนโยบาย" button linking to the
@@ -5074,6 +5081,8 @@ export function updateSystemSettings(
     recruita_interview_map_url?: string | null;
     // RECRUITA health-check card body. Empty → NULL = card uses default.
     recruita_health_check_message?: string | null;
+    // IKIGAI OS PORTAL OA add-friend link. Empty → NULL = button omitted.
+    portal_oa_link?: string | null;
   },
   updatedBy: number
 ): void {
@@ -5169,6 +5178,10 @@ export function updateSystemSettings(
   if (Object.prototype.hasOwnProperty.call(patch, "recruita_health_check_message")) {
     sets.push("recruita_health_check_message = ?");
     vals.push(norm(patch.recruita_health_check_message));
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "portal_oa_link")) {
+    sets.push("portal_oa_link = ?");
+    vals.push(norm(patch.portal_oa_link));
   }
   if (sets.length === 0) return;
   sets.push("updated_at = ?", "updated_by = ?");
@@ -5358,6 +5371,10 @@ export type SystemSettings = {
   /** RECRUITA health-check card body (admin-editable). NULL/empty = the
    *  card falls back to DEFAULT_HEALTH_CHECK_MESSAGE in recruita-notify. */
   recruita_health_check_message?: string | null;
+  /** IKIGAI OS PORTAL OA add-friend deep link (e.g. https://lin.ee/xxxx).
+   *  NULL/empty = the "เพิ่มเพื่อน IKIGAI OS PORTAL" button is omitted from
+   *  the welcome card sent to a freshly-hired employee. */
+  portal_oa_link?: string | null;
   updated_at: string | null;
   updated_by: number | null;
 };

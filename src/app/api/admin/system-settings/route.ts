@@ -57,7 +57,11 @@ const Body = z.object({
   // RECRUITA health-check card body shown to applicants who passed the
   // interview. Empty = clear → card uses the built-in default. 2000-char
   // cap fits the multi-paragraph default + note comfortably.
-  recruita_health_check_message: z.string().max(2000).optional()
+  recruita_health_check_message: z.string().max(2000).optional(),
+  // IKIGAI OS PORTAL OA add-friend link (LINE deep link, e.g. https://lin.ee/…).
+  // Empty = clear → the welcome card sent to a freshly-hired employee omits the
+  // "เพิ่มเพื่อน IKIGAI OS PORTAL" button.
+  portal_oa_link: z.string().max(500).optional()
 });
 
 export async function POST(req: Request) {
@@ -147,6 +151,9 @@ export async function POST(req: Request) {
   }
   if (parsed.data.recruita_health_check_message !== undefined) {
     dbPatch.recruita_health_check_message = parsed.data.recruita_health_check_message;
+  }
+  if (parsed.data.portal_oa_link !== undefined) {
+    dbPatch.portal_oa_link = parsed.data.portal_oa_link;
   }
 
   updateSystemSettings(dbPatch, user.id);

@@ -32,7 +32,8 @@ export default function SystemSettingsForm({
   recruitaExecGroupName,
   recruitaInterviewMapUrl,
   recruitaHealthCheckMessage,
-  defaultHealthCheckMessage
+  defaultHealthCheckMessage,
+  portalOaLink
 }: {
   token: string | null;
   groupId: string | null;
@@ -45,6 +46,7 @@ export default function SystemSettingsForm({
   recruitaInterviewMapUrl: string;
   recruitaHealthCheckMessage: string;
   defaultHealthCheckMessage: string;
+  portalOaLink: string;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -82,6 +84,10 @@ export default function SystemSettingsForm({
   const [interviewMapInput, setInterviewMapInput] = useState(recruitaInterviewMapUrl);
   const [healthMsgInput, setHealthMsgInput] = useState(recruitaHealthCheckMessage);
   const [recruitaExecNameInput, setRecruitaExecNameInput] = useState(recruitaExecGroupName);
+  // IKIGAI OS PORTAL OA add-friend link (2026-06-15) — the deep link a
+  // freshly-hired employee taps to add the staff OA. Surfaced as a button on
+  // the welcome card from the hire flow. Empty = button omitted.
+  const [portalOaInput, setPortalOaInput] = useState(portalOaLink);
   // (Resignation-policy textareas moved 2026-05-28 to
   // /admin/persona/resignation — that's the menu where admins
   // already manage resignation requests, so the policy authoring
@@ -120,6 +126,7 @@ export default function SystemSettingsForm({
       body.recruita_exec_group_name = recruitaExecNameInput.trim();
       body.recruita_interview_map_url = interviewMapInput.trim();
       body.recruita_health_check_message = healthMsgInput.trim();
+      body.portal_oa_link = portalOaInput.trim();
 
       // (Resignation-policy fields moved to /admin/persona/resignation
       // 2026-05-28 — this form no longer sends them.)
@@ -437,6 +444,25 @@ export default function SystemSettingsForm({
           <p className="text-[10px] text-slate-400 mt-1">
             ข้อความนี้จะแสดงบนการ์ด &quot;ตรวจสุขภาพ&quot; ที่ส่งให้ผู้สมัครผ่าน LINE.
             ปล่อยว่าง = ใช้ข้อความเริ่มต้นของระบบ (ตามที่แสดงเป็น placeholder).
+          </p>
+        </div>
+        {/* IKIGAI OS PORTAL OA add-friend link (2026-06-15) — the button a
+            freshly-hired employee taps to add the staff OA, on the welcome
+            card from the hire flow. */}
+        <div>
+          <label className="label">ลิงก์เพิ่มเพื่อน IKIGAI OS PORTAL (พนักงาน)</label>
+          <input
+            className="input text-sm"
+            type="url"
+            inputMode="url"
+            value={portalOaInput}
+            onChange={(e) => setPortalOaInput(e.target.value)}
+            placeholder="เช่น https://lin.ee/xxxxxxx"
+            maxLength={500} />
+          <p className="text-[10px] text-slate-400 mt-1">
+            ลิงก์เพิ่มเพื่อน LINE OA ของระบบพนักงาน (IKIGAI OS PORTAL) — จะเป็นปุ่ม
+            &quot;เพิ่มเพื่อน IKIGAI OS PORTAL&quot; บนการ์ดต้อนรับที่ส่งให้พนักงานใหม่
+            หลังกดรับเข้าทำงาน. ปล่อยว่าง = ไม่แสดงปุ่ม.
           </p>
         </div>
       </div>
