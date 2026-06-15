@@ -258,7 +258,7 @@ export function stageChangeFlex(args: {
       : `${PUBLIC_BASE}/recruita/status`;
     footerContents.push({
       type: "button", style: "primary", color: COLOR_BRAND, height: "sm",
-      action: { type: "uri", label: "ดูข้อเสนอ & ตอบรับ/ปฏิเสธ", uri: statusUrl }
+      action: { type: "uri", label: "ตอบรับ หรือปฏิเสธข้อเสนองาน", uri: statusUrl }
     });
   } else {
     if (copy.cta) {
@@ -267,31 +267,39 @@ export function stageChangeFlex(args: {
         action: { type: "uri", label: copy.cta.label, uri: copy.cta.url }
       });
     }
-    footerContents.push({
-      type: "button", style: "secondary", height: "sm",
-      action: { type: "uri", label: "ดูตำแหน่งงานอื่น", uri: `${PUBLIC_BASE}/recruita/positions` }
-    });
+    // "ดูตำแหน่งงานอื่น" only makes sense for early or terminal-negative
+    // stages — NOT once the candidate has accepted the offer or been hired
+    // (owner 2026-06-15: the accepted-status card should not invite them to
+    // browse other jobs).
+    if (args.stage !== "accepted" && args.stage !== "hired") {
+      footerContents.push({
+        type: "button", style: "secondary", height: "sm",
+        action: { type: "uri", label: "ดูตำแหน่งงานอื่น", uri: `${PUBLIC_BASE}/recruita/positions` }
+      });
+    }
   }
 
-  return {
-    type: "flex",
-    altText,
-    contents: {
-      type: "bubble",
-      size: "giga",
-      header: brandHeader(meta.label, args.positionTitle),
-      body: {
-        type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
-        backgroundColor: "#ffffff",
-        contents: bodyRows
-      },
-      footer: {
-        type: "box", layout: "vertical", paddingAll: "16px", spacing: "sm",
-        backgroundColor: "#ffffff",
-        contents: footerContents
-      }
+  const bubble: Record<string, unknown> = {
+    type: "bubble",
+    size: "giga",
+    header: brandHeader(meta.label, args.positionTitle),
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+      backgroundColor: "#ffffff",
+      contents: bodyRows
     }
   };
+  // Only attach a footer when there's at least one button — an empty footer
+  // box renders as dead padding (e.g. the 'accepted' card has no actions).
+  if (footerContents.length > 0) {
+    bubble.footer = {
+      type: "box", layout: "vertical", paddingAll: "16px", spacing: "sm",
+      backgroundColor: "#ffffff",
+      contents: footerContents
+    };
+  }
+
+  return { type: "flex", altText, contents: bubble };
 }
 
 /** Build a compact Flex card the exec group sees when a new

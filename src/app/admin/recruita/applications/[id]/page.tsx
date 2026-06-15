@@ -23,6 +23,11 @@ type AppRow = {
   stage: ApplicationStage;
   expected_salary: number | null;
   earliest_start_date: string | null;
+  /** Offer terms captured when the admin moved the card to 'offered'
+   *  (owner 2026-06-15). The hire form pre-fills + locks to these. */
+  offer_salary: number | null;
+  offer_salary_type: "monthly" | "hourly" | null;
+  offer_start_date: string | null;
   why_join: string | null;
   custom_answers: string;
   consent_at: string | null;

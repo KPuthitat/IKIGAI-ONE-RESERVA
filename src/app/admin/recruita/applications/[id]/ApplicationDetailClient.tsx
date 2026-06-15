@@ -17,6 +17,11 @@ type AppShape = {
   id: number; candidate_id: number; position_id: number;
   stage: ApplicationStage; submitted_at: string;
   expected_salary: number | null; earliest_start_date: string | null;
+  /** Offer terms captured at the 'offered' stage (owner 2026-06-15). The
+   *  hire form pre-fills + locks salary / start-date / mode to these. */
+  offer_salary: number | null;
+  offer_salary_type: "monthly" | "hourly" | null;
+  offer_start_date: string | null;
   why_join: string | null; goals: string | null;
   info_source: string | null; can_travel: number | null;
   truth_declaration_accepted: number | null;
@@ -1121,27 +1126,46 @@ function HireDialog({
   onHired: (res: HireResult) => void;
 }) {
   // Default branch — the one the position is pinned to, else first
-  // branch in the list. Admin can override.
+  // branch in the list. Admin can override (PIN-gated, see `locked`).
   const defaultBranch = position.branch_id ?? branches[0]?.id ?? null;
   const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000)
     .toISOString().slice(0, 10);
+
+  // Offer terms captured at the 'offered' stage (owner 2026-06-15). The hire
+  // must match what the candidate applied for (branch + position) and what
+  // was offered (salary + start date + mode) BY DEFAULT — these fields are
+  // locked, and changing them is a deliberate, PIN-gated override.
+  const offerMode: "monthly" | "hourly" = application.offer_salary_type ?? "monthly";
 
   const [branchId, setBranchId] = useState<string>(
     defaultBranch != null ? String(defaultBranch) : ""
   );
   const [employmentType, setEmploymentType] = useState<"ft" | "pt">("ft");
   const [employmentStatus, setEmploymentStatus] = useState<"probation" | "permanent">("probation");
-  const [hireMode, setHireMode] = useState<"monthly" | "daily" | "hourly">("monthly");
-  const [hireDate, setHireDate] = useState(todayBkk);
-  const [salary, setSalary] = useState(
-    application.expected_salary != null ? String(application.expected_salary) : ""
+  const [hireMode, setHireMode] = useState<"monthly" | "daily" | "hourly">(offerMode);
+  const [hireDate, setHireDate] = useState(
+    application.offer_start_date && /^\d{4}-\d{2}-\d{2}$/.test(application.offer_start_date)
+      ? application.offer_start_date
+      : todayBkk
   );
-  const [hourlyRate, setHourlyRate] = useState("");
+  const [salary, setSalary] = useState(
+    application.offer_salary != null && offerMode === "monthly"
+      ? String(application.offer_salary) : ""
+  );
+  const [hourlyRate, setHourlyRate] = useState(
+    application.offer_salary != null && offerMode === "hourly"
+      ? String(application.offer_salary) : ""
+  );
   const [jobTitle, setJobTitle] = useState(position.title);
   const [supervisorId, setSupervisorId] = useState<string>("");
   const [employeeCode, setEmployeeCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // The offer-matched fields (branch / position / salary / start date / mode)
+  // start locked; unlocking needs the admin's PIN (intent gate, not a
+  // security boundary — the hire route is already requireAdmin).
+  const [locked, setLocked] = useState(true);
+  const [pinOpen, setPinOpen] = useState(false);
 
   const candidateName = [
     candidate.title_prefix, candidate.first_name_th, candidate.last_name_th
@@ -1186,6 +1210,7 @@ function HireDialog({
   }
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
@@ -1195,10 +1220,29 @@ function HireDialog({
           ระบบจะสร้าง user ใน PERSONA + carry ข้อมูลจากใบสมัครครบทุก field
         </p>
 
+        {/* Lock banner — the offer-matched fields are read-only until the
+            admin unlocks with a PIN (owner 2026-06-15). */}
+        <div className={`rounded-lg p-3 text-xs flex items-center justify-between gap-2 ${
+          locked ? "bg-slate-50 border border-slate-200 text-slate-600"
+                 : "bg-amber-50 border border-amber-200 text-amber-900"
+        }`}>
+          <span>
+            {locked
+              ? "🔒 สาขา / ตำแหน่ง / ค่าตอบแทน / วันเริ่มงาน ดึงจากใบสมัคร + ข้อเสนอ และถูกล็อกไว้"
+              : "🔓 ปลดล็อกแล้ว — แก้ไขได้ (ค่าจะไม่ตรงกับข้อเสนอเดิม)"}
+          </span>
+          {locked && (
+            <button type="button" onClick={() => setPinOpen(true)}
+              className="shrink-0 px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-50">
+              แก้ไข (PIN)
+            </button>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="label">สาขา *</label>
-            <select className="input" value={branchId}
+            <select className="input" value={branchId} disabled={locked}
               onChange={(e) => setBranchId(e.target.value)}>
               <option value="">— เลือกสาขา —</option>
               {branches.map((b) => (
@@ -1208,7 +1252,7 @@ function HireDialog({
           </div>
           <div>
             <label className="label">ตำแหน่งงาน</label>
-            <input className="input" value={jobTitle}
+            <input className="input" value={jobTitle} disabled={locked}
               onChange={(e) => setJobTitle(e.target.value)} />
           </div>
           <div>
@@ -1229,7 +1273,7 @@ function HireDialog({
           </div>
           <div>
             <label className="label">วิธีคิดค่าจ้าง</label>
-            <select className="input" value={hireMode}
+            <select className="input" value={hireMode} disabled={locked}
               onChange={(e) => setHireMode(e.target.value as "monthly" | "daily" | "hourly")}>
               <option value="monthly">รายเดือน</option>
               <option value="daily">รายวัน</option>
@@ -1238,15 +1282,19 @@ function HireDialog({
           </div>
           <div>
             <label className="label">วันเริ่มงาน *</label>
-            <input className="input" type="date" value={hireDate}
+            <input className="input" type="date" value={hireDate} disabled={locked}
               onChange={(e) => setHireDate(e.target.value)} />
           </div>
           {hireMode === "monthly" && (
             <div className="sm:col-span-2">
               <label className="label">เงินเดือน (฿)</label>
-              <input className="input" type="number" min="0" value={salary}
+              <input className="input" type="number" min="0" value={salary} disabled={locked}
                 onChange={(e) => setSalary(e.target.value)} />
-              {application.expected_salary != null && (
+              {application.offer_salary != null && application.offer_salary_type === "monthly" ? (
+                <p className="text-[10px] text-emerald-600 mt-0.5">
+                  ✓ ตรงกับข้อเสนอ ฿{application.offer_salary.toLocaleString("th-TH")}/เดือน
+                </p>
+              ) : application.expected_salary != null && (
                 <p className="text-[10px] text-slate-400 mt-0.5">
                   💡 ผู้สมัครตั้งความคาดหวังไว้ที่ ฿{application.expected_salary.toLocaleString("th-TH")}
                 </p>
@@ -1258,8 +1306,13 @@ function HireDialog({
               <label className="label">
                 {hireMode === "hourly" ? "ค่าจ้างต่อชั่วโมง (฿)" : "ค่าจ้างต่อวัน (฿)"}
               </label>
-              <input className="input" type="number" min="0" value={hourlyRate}
+              <input className="input" type="number" min="0" value={hourlyRate} disabled={locked}
                 onChange={(e) => setHourlyRate(e.target.value)} />
+              {hireMode === "hourly" && application.offer_salary != null && application.offer_salary_type === "hourly" && (
+                <p className="text-[10px] text-emerald-600 mt-0.5">
+                  ✓ ตรงกับข้อเสนอ ฿{application.offer_salary.toLocaleString("th-TH")}/ชม.
+                </p>
+              )}
             </div>
           )}
           <div>
@@ -1299,6 +1352,38 @@ function HireDialog({
         </div>
       </div>
     </div>
+    {pinOpen && (
+      <PinPromptModal
+        title="ปลดล็อกแก้ไขข้อมูลการจ้าง"
+        description={
+          <>
+            ข้อมูลสาขา / ตำแหน่ง / ค่าตอบแทน / วันเริ่มงาน ดึงจากใบสมัคร + ข้อเสนอ
+            ที่ผู้สมัครตอบรับไว้ — ใส่ PIN ของคุณเพื่อปลดล็อกและแก้ไข
+          </>
+        }
+        submitLabel="ปลดล็อก"
+        onClose={() => setPinOpen(false)}
+        onSubmit={async (pin) => {
+          const res = await fetch(apiUrl("/api/auth/verify-pin"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pin })
+          });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok || !j.ok) {
+            return {
+              ok: false,
+              message: j.error === "no_pin"
+                ? "คุณยังไม่ได้ตั้ง PIN — ตั้งที่หน้าโปรไฟล์ก่อน"
+                : "PIN ไม่ถูกต้อง"
+            };
+          }
+          setLocked(false);
+          setPinOpen(false);
+          return { ok: true };
+        }} />
+    )}
+    </>
   );
 }
 
