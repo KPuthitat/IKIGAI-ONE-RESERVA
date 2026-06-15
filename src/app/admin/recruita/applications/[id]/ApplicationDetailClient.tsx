@@ -218,6 +218,8 @@ export default function ApplicationDetailClient({
   //   - cancelModalOpen: when true, opens the cancel-request prompt
   //     (no PIN — only the requester or a super_admin can cancel).
   const [requestStageTarget, setRequestStageTarget] = useState<ApplicationStage | null>(null);
+  // First work day captured in the offer popup (owner 2026-06-15).
+  const [offerStartDate, setOfferStartDate] = useState("");
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
 
@@ -394,26 +396,42 @@ export default function ApplicationDetailClient({
         const isDual = stage === "applied" && requestStageTarget === "screening";
         return (
         <PinPromptModal
-          title={isDual ? "ขออนุมัติเปลี่ยนสถานะ (2 แอดมิน)" : "ยืนยันเปลี่ยนสถานะ"}
+          title={isDual ? "ขออนุมัติเปลี่ยนสถานะ (2 แอดมิน)" : requestStageTarget === "offered" ? "เสนองาน" : "ยืนยันเปลี่ยนสถานะ"}
           description={
             <>
               จาก <b>{stageMeta[stage].label}</b> ไป
               {" "}<b>{stageMeta[requestStageTarget].label}</b>
-              <br />{isDual
+              {requestStageTarget === "offered" && (
+                <div className="mt-2">
+                  <label className="label">วันเริ่มงานวันแรก</label>
+                  <input type="date" className="input text-sm" value={offerStartDate}
+                    onChange={(e) => setOfferStartDate(e.target.value)} />
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    วันที่นี้จะแสดงในการ์ดข้อเสนองานที่ส่งให้ผู้สมัคร
+                  </p>
+                </div>
+              )}
+              <div className="mt-2">{isDual
                 ? "ใส่ PIN ของคุณเพื่อสร้างคำขอ (ต้องมีแอดมินคนที่ 2 อนุมัติ)"
-                : "ใส่ PIN ของคุณเพื่อเปลี่ยนสถานะทันที"}
+                : "ใส่ PIN ของคุณเพื่อเปลี่ยนสถานะทันที"}</div>
             </>
           }
-          submitLabel={isDual ? "ส่งคำขอ" : "เปลี่ยนสถานะ"}
-          onClose={() => setRequestStageTarget(null)}
+          submitLabel={isDual ? "ส่งคำขอ" : requestStageTarget === "offered" ? "เสนองาน" : "เปลี่ยนสถานะ"}
+          onClose={() => { setRequestStageTarget(null); setOfferStartDate(""); }}
           onSubmit={async (pin) => {
             const target = requestStageTarget;
+            if (target === "offered" && !/^\d{4}-\d{2}-\d{2}$/.test(offerStartDate)) {
+              return { ok: false, message: "กรุณาเลือกวันเริ่มงานวันแรกก่อนเสนองาน" };
+            }
             const res = await fetch(
               apiUrl(`/api/recruita/applications/${application.id}/stage-request`),
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ to_stage: target, pin })
+                body: JSON.stringify({
+                  to_stage: target, pin,
+                  ...(target === "offered" ? { offer_start_date: offerStartDate } : {})
+                })
               }
             );
             const j = await res.json().catch(() => ({}));
@@ -423,6 +441,7 @@ export default function ApplicationDetailClient({
             // Single-admin path applied the change immediately → reflect it.
             if (j.applied) setStage(target);
             setRequestStageTarget(null);
+            setOfferStartDate("");
             startTransition(() => router.refresh());
             return { ok: true };
           }} />

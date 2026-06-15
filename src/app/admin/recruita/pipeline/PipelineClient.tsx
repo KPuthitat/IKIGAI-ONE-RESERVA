@@ -65,6 +65,9 @@ export default function PipelineClient({
   // page). Dropping / picking a stage opens the request modal; the
   // card does NOT move until a different admin approves.
   const [requestModal, setRequestModal] = useState<{ card: PipelineCard; to: ApplicationStage } | null>(null);
+  // First work day captured in the offer popup (owner 2026-06-15) — required
+  // when moving a card to 'offered', sent on the candidate's offer card.
+  const [offerStartDate, setOfferStartDate] = useState("");
   const [approveCard, setApproveCard] = useState<PipelineCard | null>(null);
   const [cancelCard, setCancelCard] = useState<PipelineCard | null>(null);
 
@@ -235,28 +238,45 @@ export default function PipelineClient({
           every other move is applied immediately with this admin's PIN. */}
       {requestModal && (() => {
         const isDual = requestModal.card.stage === "applied" && requestModal.to === "screening";
+        const isOffer = requestModal.to === "offered";
         return (
         <PinPromptModal
-          title={isDual ? "ขออนุมัติเปลี่ยนสถานะ (2 แอดมิน)" : "ยืนยันเปลี่ยนสถานะ"}
+          title={isDual ? "ขออนุมัติเปลี่ยนสถานะ (2 แอดมิน)" : isOffer ? "เสนองาน" : "ยืนยันเปลี่ยนสถานะ"}
           description={
             <>
               <b>{cardName(requestModal.card)}</b>
               <br />จาก <b>{stageMeta[requestModal.card.stage].label}</b> ไป{" "}
               <b>{stageMeta[requestModal.to].label}</b>
-              <br />{isDual
+              {isOffer && (
+                <div className="mt-2">
+                  <label className="label">วันเริ่มงานวันแรก</label>
+                  <input type="date" className="input text-sm" value={offerStartDate}
+                    onChange={(e) => setOfferStartDate(e.target.value)} />
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    วันที่นี้จะแสดงในการ์ดข้อเสนองานที่ส่งให้ผู้สมัคร
+                  </p>
+                </div>
+              )}
+              <div className="mt-2">{isDual
                 ? "ใส่ PIN ของคุณเพื่อสร้างคำขอ (ต้องมีแอดมินคนที่ 2 อนุมัติ)"
-                : "ใส่ PIN ของคุณเพื่อเปลี่ยนสถานะทันที"}
+                : "ใส่ PIN ของคุณเพื่อเปลี่ยนสถานะทันที"}</div>
             </>
           }
-          submitLabel={isDual ? "ส่งคำขอ" : "เปลี่ยนสถานะ"}
-          onClose={() => setRequestModal(null)}
+          submitLabel={isDual ? "ส่งคำขอ" : isOffer ? "เสนองาน" : "เปลี่ยนสถานะ"}
+          onClose={() => { setRequestModal(null); setOfferStartDate(""); }}
           onSubmit={async (pin) => {
+            if (isOffer && !/^\d{4}-\d{2}-\d{2}$/.test(offerStartDate)) {
+              return { ok: false, message: "กรุณาเลือกวันเริ่มงานวันแรกก่อนเสนองาน" };
+            }
             const res = await fetch(
               apiUrl(`/api/recruita/applications/${requestModal.card.id}/stage-request`),
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ to_stage: requestModal.to, pin })
+                body: JSON.stringify({
+                  to_stage: requestModal.to, pin,
+                  ...(isOffer ? { offer_start_date: offerStartDate } : {})
+                })
               }
             );
             const j = await res.json().catch(() => ({}));
@@ -264,6 +284,7 @@ export default function PipelineClient({
               return { ok: false, message: j.message ?? j.error ?? "ส่งคำขอไม่สำเร็จ" };
             }
             setRequestModal(null);
+            setOfferStartDate("");
             startTransition(() => router.refresh());
             return { ok: true };
           }} />

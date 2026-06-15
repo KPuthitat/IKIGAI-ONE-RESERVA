@@ -173,6 +173,9 @@ export function stageChangeFlex(args: {
   branchName: string | null;
   stage: ApplicationStage;
   applicationNo: string;
+  /** First work day (YYYY-MM-DD) — shown on the 'offered' card so the
+   *  candidate knows when to start (owner 2026-06-15). */
+  offerStartDate?: string | null;
 }): LineMessage {
   const meta = STAGE_META[args.stage];
   const copy = stageCopy(args.stage, args.positionTitle);
@@ -197,6 +200,9 @@ export function stageChangeFlex(args: {
     infoRow("ตำแหน่ง", args.positionTitle)
   );
   if (args.branchName) bodyRows.push(infoRow("บริษัท/สาขา", args.branchName));
+  if (args.stage === "offered" && args.offerStartDate && /^\d{4}-\d{2}-\d{2}$/.test(args.offerStartDate)) {
+    bodyRows.push(infoRow("เริ่มงานวันแรก", formatLongDate(args.offerStartDate, "th")));
+  }
   bodyRows.push(infoRow("เลขที่ใบสมัคร", args.applicationNo));
 
   const footerContents: Array<Record<string, unknown>> = [];
@@ -502,7 +508,7 @@ export async function notifyExecGroupStageChange(applicationId: number): Promise
 export async function notifyStageChange(applicationId: number): Promise<void> {
   const db = getDb();
   const row = db.prepare(`
-    SELECT a.id, a.stage, a.submitted_at,
+    SELECT a.id, a.stage, a.submitted_at, a.offer_start_date,
            (SELECT COUNT(*) FROM recruita_applications za
              WHERE date(za.submitted_at, '+7 hours') = date(a.submitted_at, '+7 hours')
                AND za.id <= a.id) AS day_seq,
@@ -517,6 +523,7 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
     WHERE a.id = ?
   `).get(applicationId) as {
     id: number; stage: ApplicationStage; submitted_at: string; day_seq: number;
+    offer_start_date: string | null;
     line_user_id: string | null;
     title_prefix: string | null;
     first_name_th: string | null; last_name_th: string | null;
@@ -542,7 +549,8 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
     positionTitle: row.position_title,
     branchName: row.branch_name,
     stage: row.stage,
-    applicationNo: formatApplicationNo(row.submitted_at, row.day_seq)
+    applicationNo: formatApplicationNo(row.submitted_at, row.day_seq),
+    offerStartDate: row.offer_start_date
   });
   const res = await pushToCandidate(row.line_user_id, [message]);
   if (res.ok) {

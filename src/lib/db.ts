@@ -4415,6 +4415,11 @@ function runMigrations(db: Database.Database): void {
   addApplication("health_check_note", "TEXT");
   addApplication("health_checked_by", "INTEGER");    // users.id who recorded it
 
+  // First work day, set when the admin moves the application to 'offered'
+  // (owner 2026-06-15). Captured in a popup at offer time and shown on the
+  // offer card pushed to the candidate. 'YYYY-MM-DD' (Bangkok date).
+  addApplication("offer_start_date", "TEXT");
+
   // Walk-in visits (added 2026-05-24) — staff records anyone who walks
   // in without a booking. Mirrors a slice of `bookings`: phone is the
   // identity key used to decide "first-time vs returning". Walk-ins

@@ -33,7 +33,10 @@ const ALL_STAGES: ApplicationStage[] = [
 
 const Body = z.object({
   to_stage: z.enum(ALL_STAGES as [ApplicationStage, ...ApplicationStage[]]),
-  pin: z.string().regex(/^\d{4}$/, "PIN ต้องเป็นตัวเลข 4 หลัก")
+  pin: z.string().regex(/^\d{4}$/, "PIN ต้องเป็นตัวเลข 4 หลัก"),
+  // First work day — required when moving to 'offered' (owner 2026-06-15);
+  // shown on the offer card sent to the candidate.
+  offer_start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
 });
 
 export async function POST(
@@ -90,13 +93,27 @@ export async function POST(
       { status: 400 }
     );
   }
+  // Moving to 'offered' requires the first work day (owner 2026-06-15).
+  const offerStartDate = parsed.data.offer_start_date ?? null;
+  if (toStage === "offered" && !offerStartDate) {
+    return NextResponse.json(
+      { error: "offer_start_date_required", message: "กรุณาเลือกวันเริ่มงานวันแรกก่อนเสนองาน" },
+      { status: 400 }
+    );
+  }
 
   // Single-admin transitions: apply immediately (PIN already verified above),
   // then notify — same effect as the legacy /stage route, just PIN-gated.
   if (!needsDualApproval(fromStage, toStage)) {
-    db.prepare(
-      "UPDATE recruita_applications SET stage = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-    ).run(toStage, applicationId);
+    if (toStage === "offered") {
+      db.prepare(
+        "UPDATE recruita_applications SET stage = ?, offer_start_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).run(toStage, offerStartDate, applicationId);
+    } else {
+      db.prepare(
+        "UPDATE recruita_applications SET stage = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).run(toStage, applicationId);
+    }
     void notifyStageChange(applicationId).catch((e) =>
       console.warn("[recruita-stage] notify failed", e));
     void notifyExecGroupStageChange(applicationId).catch((e) =>
