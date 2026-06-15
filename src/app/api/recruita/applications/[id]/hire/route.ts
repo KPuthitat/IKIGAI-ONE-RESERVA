@@ -85,6 +85,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (app.stage === "hired" || app.hired_user_id != null) {
     return NextResponse.json({ error: "already_hired" }, { status: 409 });
   }
+  // Offer-acceptance gate (owner 2026-06-15): no skipping straight to hire —
+  // the candidate must have accepted the offer first (stage = 'accepted').
+  // The UI disables the button too, but the server is the ground truth.
+  if (app.stage !== "accepted") {
+    return NextResponse.json({
+      error: "not_accepted",
+      message: "ผู้สมัครต้องตอบรับข้อเสนองานก่อน (สถานะต้องเป็น \"ตอบรับข้อเสนอ\")"
+    }, { status: 400 });
+  }
   // Medical clearance gate (owner 2026-06-04): no hire until the health
   // check is recorded as 'passed'. The UI disables the button too, but
   // the server is the ground truth.

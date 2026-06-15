@@ -527,9 +527,10 @@ export default function ApplicationDetailClient({
           }} />
       )}
 
-      {/* Hire bridge — appears only when not yet hired. Stage doesn't
-          have to be 'accepted' to enable; admin may want to fast-track
-          (e.g. interview → hire directly). */}
+      {/* Hire bridge — appears only when not yet hired. The button stays
+          DISABLED until the candidate has ACCEPTED the offer (stage =
+          'accepted') AND the health check is 'passed' (owner 2026-06-15:
+          no skipping straight to hire). Server enforces the same. */}
       {stage !== "hired" && !hireResult && (
         <div className="card bg-emerald-50 border-2 border-emerald-200 space-y-2">
           <h2 className="font-bold text-emerald-900 text-sm">
@@ -544,13 +545,19 @@ export default function ApplicationDetailClient({
             <li>เปลี่ยน stage ใบสมัครนี้เป็น "รับเข้าทำงาน" อัตโนมัติ</li>
             <li>ส่ง invite link ให้แชร์กับพนักงานใหม่ตั้งรหัสผ่าน + เชื่อมต่อ LINE</li>
           </ul>
+          {stage !== "accepted" && (
+            <p className="text-xs text-rose-700 font-bold bg-rose-50 border border-rose-200 rounded px-2 py-1.5">
+              ⚠ ผู้สมัครต้องตอบรับข้อเสนองานก่อน — สถานะต้องเป็น &quot;ตอบรับข้อเสนอ&quot;
+              (เลื่อนไป &quot;เสนองาน&quot; แล้วให้ผู้สมัครกดตอบรับในการ์ด LINE)
+            </p>
+          )}
           {application.health_check_status !== "passed" && (
             <p className="text-xs text-rose-700 font-bold bg-rose-50 border border-rose-200 rounded px-2 py-1.5">
               ⚠ ต้องบันทึกผลตรวจสุขภาพเป็น &quot;ผ่าน&quot; ก่อนจึงจะรับเข้าทำงานได้ (ดูส่วน &quot;ผลตรวจสุขภาพ&quot; ด้านบน)
             </p>
           )}
           <button type="button" onClick={() => setShowHire(true)}
-            disabled={busy || application.health_check_status !== "passed"}
+            disabled={busy || stage !== "accepted" || application.health_check_status !== "passed"}
             className="btn-primary w-full text-base py-3 mt-2 disabled:opacity-50 disabled:cursor-not-allowed">
             ✓ รับเข้าทำงาน
           </button>
@@ -1195,7 +1202,7 @@ function HireDialog({
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) {
-        setErr(j.error ?? "รับเข้าทำงานไม่สำเร็จ");
+        setErr(j.message ?? j.error ?? "รับเข้าทำงานไม่สำเร็จ");
         return;
       }
       onHired({
