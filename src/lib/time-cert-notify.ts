@@ -14,6 +14,19 @@ import { getDb, getSystemSettings } from "./db";
 import { getPlatformChannel, isChannelReady } from "./messaging-channels";
 import { sendLinePush } from "./line";
 
+const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
+
+// One "label: value" row for the Flex card body.
+function infoRow(label: string, value: string): Record<string, unknown> {
+  return {
+    type: "box", layout: "baseline", spacing: "sm",
+    contents: [
+      { type: "text", text: label, size: "sm", color: "#94a3b8", flex: 3 },
+      { type: "text", text: value, size: "sm", color: "#1e293b", weight: "bold", flex: 7, wrap: true }
+    ]
+  };
+}
+
 function bkkDisplay(iso: string): string {
   // Same helper as TimeCertificationsClient — "YYYY-MM-DD HH:MM"
   // in Bangkok time. Keep in sync if the format ever changes.
@@ -145,19 +158,44 @@ export async function notifyExecGroupTimeCertRequest(certId: number): Promise<vo
   const kindTh = row.kind === "missing" ? "เพิ่มเวลาที่ลืมลง" : "แก้ไขเวลา";
   const when = bkkDisplay(row.proposed_ts);
 
-  const text = [
-    "🕒 มีคำขอรับรองเวลารออนุมัติ",
-    "",
-    `พนักงาน: ${who}`,
-    `รายการ: ${kindTh} (${what})`,
-    `เวลาที่ขอ: ${when} น.`,
-    "",
-    "อนุมัติได้ที่เมนู PERSONA › คำขอรับรองเวลา"
-  ].join("\n");
+  // Flex card with a button straight to the approval page (owner 2026-06-15).
+  // No emoji — supplementary-plane glyphs got mangled into "\uD83D…" on the
+  // group push, and the owner wants a clean card anyway.
+  const flex = {
+    type: "flex" as const,
+    altText: `คำขอรับรองเวลา: ${who} (${kindTh} ${what})`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box", layout: "vertical", paddingAll: "16px", backgroundColor: "#a06820",
+        contents: [
+          { type: "text", text: "คำขอรับรองเวลา", color: "#ffffff", weight: "bold", size: "md" },
+          { type: "text", text: "รออนุมัติ", color: "#ffffff", size: "xs", margin: "xs" }
+        ]
+      },
+      body: {
+        type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", backgroundColor: "#ffffff",
+        contents: [
+          infoRow("พนักงาน", who),
+          infoRow("รายการ", `${kindTh} (${what})`),
+          infoRow("เวลาที่ขอ", `${when} น.`)
+        ]
+      },
+      footer: {
+        type: "box", layout: "vertical", paddingAll: "12px", backgroundColor: "#ffffff",
+        contents: [
+          {
+            type: "button", style: "primary", color: "#a06820", height: "sm",
+            action: { type: "uri", label: "ไปอนุมัติ", uri: `${PUBLIC_BASE}/admin/persona/time-certifications` }
+          }
+        ]
+      }
+    }
+  };
 
   const res = await sendLinePush(channel.channel_token, {
     to: groupId,
-    messages: [{ type: "text", text }]
+    messages: [flex]
   });
   if (!res.ok) {
     console.warn(`[time-cert-notify] exec-group cert#${certId} push failed: status=${res.status} error=${res.error}`);

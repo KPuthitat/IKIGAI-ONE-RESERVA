@@ -37,6 +37,11 @@ function bkkDisplay(iso: string): string {
   return bkk.toISOString().slice(0, 16).replace("T", " ");
 }
 
+// Bangkok calendar date (YYYY-MM-DD) of an ISO instant.
+function bkkDateOf(iso: string): string {
+  return new Date(new Date(iso).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+}
+
 // Convert datetime-local string ("2026-05-13T08:32") back to a
 // proper ISO with the Bangkok offset, so the server sees the same
 // instant the user picked on their phone.
@@ -106,6 +111,22 @@ export default function TimeCertificationClient({
       : null
   );
 
+  // Detect which punch is missing for a Bangkok date, from the staff's own
+  // entries — so the missing-punch form can LOCK to the side that's actually
+  // missing instead of letting them pick the wrong one (owner 2026-06-15:
+  // "ถ้าลืมลงเข้า มีแค่รับรองเข้า / ถ้าลืมลงออก มีแค่รับรองออก").
+  function missingInfoForDate(date: string): {
+    missing: "in" | "out" | null; reason: "ok" | "complete" | "no_punch";
+  } {
+    const day = entries.filter((e) => bkkDateOf(e.ts) === date);
+    const hasIn = day.some((e) => e.type === "in");
+    const hasOut = day.some((e) => e.type === "out");
+    if (hasIn && !hasOut) return { missing: "out", reason: "ok" };
+    if (hasOut && !hasIn) return { missing: "in", reason: "ok" };
+    if (hasIn && hasOut) return { missing: null, reason: "complete" };
+    return { missing: null, reason: "no_punch" };
+  }
+
   function openForm(entry: EntryRow) {
     setForm({
       entryId: entry.id,
@@ -159,6 +180,15 @@ export default function TimeCertificationClient({
       setMsg({ kind: "err", text: "กรุณาเลือกวันที่และเวลา" });
       return;
     }
+    // Type is DERIVED from the day's punches, never picked freely — you can
+    // only certify the side that's actually missing (owner 2026-06-15).
+    const info = missingInfoForDate(missingForm.date);
+    if (!info.missing) {
+      setMsg({ kind: "err", text: info.reason === "complete"
+        ? "วันนี้ลงเวลาครบทั้งเข้า-ออกแล้ว — ถ้าเวลาผิดให้ใช้ \"แก้ไขเวลา\" รายการด้านล่าง"
+        : "วันนี้ยังไม่มีการลงเวลา — เพิ่มได้เฉพาะวันที่ลงเวลาอีกด้านไว้แล้ว" });
+      return;
+    }
     if (missingForm.reason.trim().length < 3) {
       setMsg({ kind: "err", text: t("staff.persona.timeCert.reasonTooShort") });
       return;
@@ -170,7 +200,7 @@ export default function TimeCertificationClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kind: "missing",
-          entry_type: missingForm.entryType,
+          entry_type: info.missing,
           work_date: missingForm.date,
           proposed_ts: dateTimeToIso(missingForm.date, missingForm.time),
           reason: missingForm.reason.trim()
@@ -280,26 +310,27 @@ export default function TimeCertificationClient({
           )}
         </div>
 
-        {missingForm ? (
+        {missingForm ? (() => {
+          const dayInfo = missingInfoForDate(missingForm.date);
+          return (
           <div className="space-y-3">
             <div>
-              <label className="label">ประเภท</label>
-              <div className="flex gap-2">
-                {(["in", "out"] as const).map((tp) => (
-                  <button
-                    key={tp}
-                    type="button"
-                    onClick={() => setMissingForm({ ...missingForm, entryType: tp })}
-                    className={`flex-1 py-2 rounded-lg border text-sm font-bold ${
-                      missingForm.entryType === tp
-                        ? "bg-brand text-white border-brand"
-                        : "border-slate-300 text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {tp === "in" ? "ลืมลงเวลาเข้า" : "ลืมลงเวลาออก"}
-                  </button>
-                ))}
-              </div>
+              <label className="label">ประเภท (ระบบตรวจจากวันที่ให้อัตโนมัติ)</label>
+              {dayInfo.missing ? (
+                <div className={`py-2 px-3 rounded-lg text-sm font-bold border ${
+                  dayInfo.missing === "in"
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : "bg-rose-50 text-rose-700 border-rose-200"
+                }`}>
+                  {dayInfo.missing === "in" ? "ลืมลงเวลาเข้า" : "ลืมลงเวลาออก"}
+                </div>
+              ) : (
+                <div className="py-2 px-3 rounded-lg text-xs bg-amber-50 text-amber-800 border border-amber-200 leading-relaxed">
+                  {dayInfo.reason === "complete"
+                    ? "วันนี้ลงเวลาครบทั้งเข้า-ออกแล้ว — ถ้าเวลาผิด ให้ใช้ “แก้ไขเวลา” ที่รายการด้านล่าง"
+                    : "วันนี้ยังไม่มีการลงเวลา — เพิ่มได้เฉพาะวันที่ลงเวลาอีกด้านไว้แล้ว (เช่น ลงเข้าแล้วแต่ลืมลงออก)"}
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -313,7 +344,9 @@ export default function TimeCertificationClient({
                 />
               </div>
               <div>
-                <label className="label">เวลา</label>
+                <label className="label">
+                  {dayInfo.missing === "in" ? "เวลาเข้า" : dayInfo.missing === "out" ? "เวลาออก" : "เวลา"}
+                </label>
                 <input
                   type="time"
                   className="input"
@@ -345,14 +378,15 @@ export default function TimeCertificationClient({
               <button
                 type="button"
                 onClick={submitMissing}
-                disabled={busy}
-                className="btn-primary flex-1 text-sm"
+                disabled={busy || !dayInfo.missing}
+                className="btn-primary flex-1 text-sm disabled:opacity-50"
               >
                 {busy ? t("common.submitting") : t("staff.persona.timeCert.submit")}
               </button>
             </div>
           </div>
-        ) : (
+          );
+        })() : (
           <p className="text-[11px] text-slate-400 leading-relaxed">
             เพิ่มได้เฉพาะวันที่ลงเวลาอีกด้านไว้แล้ว (เช่น ลงเข้าแล้วแต่ลืมลงออก) — เมื่อแอดมินอนุมัติ
             ระบบจะบันทึกเวลาและคำนวณเงินเดือนให้อัตโนมัติ
