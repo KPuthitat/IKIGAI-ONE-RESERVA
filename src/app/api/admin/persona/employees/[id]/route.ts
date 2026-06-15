@@ -302,16 +302,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 // DELETE /api/admin/persona/employees/[id]
 //
 // Soft-delete an employee. Sets status='disabled', clears LINE binding,
-// revokes any open invites, and terminates active sessions. We DON'T
-// hard-delete the users row because many tables (bookings.created_by,
-// persona_activity_log, payroll_lines, etc.) reference users(id) and a
-// destructive cascade would lose operational/audit data.
+// PARKS the username (so it can be reused), revokes any open invites, and
+// terminates active sessions. We DON'T hard-delete the users row because many
+// tables (bookings.created_by, persona_activity_log, payroll_lines, etc.)
+// reference users(id) and a destructive cascade would lose operational/audit
+// data.
 //
 // After the soft-delete:
 //   • The user disappears from /admin/persona/employees (filtered).
 //   • Their LINE userId is freed up — important when admin needs to
 //     re-bind it to a different user row (e.g. fixing a misplaced
 //     binding from a test account).
+//   • Their username is parked to "<name>__disabled_<id>" (username is
+//     UNIQUE) so a future hire/onboard can reuse the ORIGINAL username —
+//     e.g. a mis-hire that's deleted and re-done (owner 2026-06-16). The
+//     original is recoverable by stripping the suffix.
 //   • Their active session is killed so they can't continue acting
 //     under the old identity if they're currently logged in.
 //   • Login is blocked (login route filters status='active' only).
@@ -360,7 +365,9 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   const tx = db.transaction(() => {
     db.prepare(`
       UPDATE users
-      SET status = 'disabled', line_user_id = NULL
+      SET status = 'disabled',
+          line_user_id = NULL,
+          username = username || '__disabled_' || id
       WHERE id = ?
     `).run(id);
     db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
