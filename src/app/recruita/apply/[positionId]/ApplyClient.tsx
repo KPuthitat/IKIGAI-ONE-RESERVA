@@ -708,14 +708,6 @@ export default function ApplyClient({
         </div>
       )}
 
-      {/* Tiny info badge when LIFF binding is active (and no welcome-back) */}
-      {lineUserId && !welcomeBack && (
-        <div className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 text-center">
-          {tr("ผูก LINE สำเร็จ — เราจะแจ้งสถานะใบสมัครให้คุณผ่าน LINE",
-            "LINE linked — we'll notify you of your application status via LINE")}
-        </div>
-      )}
-
       {/* Header */}
       <div className="card text-center space-y-2">
         <div className="text-xs font-bold text-slate-500 uppercase tracking-[2px]">
