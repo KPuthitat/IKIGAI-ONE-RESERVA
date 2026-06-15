@@ -379,7 +379,11 @@ export default function ApplyClient({
         setGate("need_consent");
         return;
       }
-      await w.liff.init({ liffId });
+      // Tolerate a second init — LiffCapture on /recruita/positions may have
+      // already initialised the SDK with the same liffId (the SDK is a single
+      // window.liff instance shared across the soft-navigated pages). A
+      // re-init throw is benign; isLoggedIn()/getProfile() work regardless.
+      try { await w.liff.init({ liffId }); } catch { /* already initialized */ }
       if (!w.liff.isLoggedIn()) {
         // Not in a LIFF session here (the apply page isn't the LIFF's own
         // Endpoint URL, so a deep-navigated apply page is "outside" the

@@ -41,19 +41,20 @@ export default function LiffCapture({ liffId }: { liffId: string | null }) {
   async function run() {
     if (!liffId || ranRef.current) return;
     ranRef.current = true;
-    // Same guards as ApplyClient: only proceed when we are clearly
-    // inside LINE's in-app browser AND on the first hop after the
-    // liff.line.me redirect (URL still carries liff.state). On a
-    // plain web view the SDK would just redirect to access.line.me
-    // for OAuth and return 400 — see ApplyClient's guard comment
-    // for the full history.
+    // Only proceed inside LINE's in-app browser (UA "Line/x.x"). With the
+    // LIFF Endpoint URL now set to /recruita (covering this page), every
+    // /recruita/* page is inside the LIFF session, so we no longer require
+    // ?liff.state in the URL — that guard dropped the capture after the
+    // /recruita → /recruita/positions redirect (owner 2026-06-15). We still
+    // never call liff.login() here, so a not-logged-in case just returns —
+    // no access.line.me redirect, no 400.
     const inLineApp = /Line\/[\d.]+/i.test(navigator.userAgent);
     if (!inLineApp) return;
-    if (!window.location.search.includes("liff.state")) return;
     try {
       const w = window as unknown as { liff?: typeof window.liff };
       if (!w.liff) return;
-      await w.liff.init({ liffId });
+      // Tolerate a re-init — the SDK may already be initialised.
+      try { await w.liff.init({ liffId }); } catch { /* already initialized */ }
       if (!w.liff.isLoggedIn()) return;
       const profile = await w.liff.getProfile();
       if (!profile?.userId) return;
