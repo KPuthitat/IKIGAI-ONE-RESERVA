@@ -136,9 +136,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // accepts the same enc:v1: format. Keep the blob.
   void decryptSecret;
 
-  // Build display_name: "<title> <first> <last>"
+  // Build display_name = NAME ONLY ("<first> <last>"). The title prefix
+  // lives in its own column (title_prefix below) and the UI prepends it via
+  // nameWithPrefix() everywhere a name is shown. Baking the prefix in here
+  // too doubled it ("นางสาว นางสาว ...") in every employee list (owner
+  // 2026-06-16).
   const titlePrefix = (candidate.title_prefix as string | null) ?? null;
-  const displayName = [titlePrefix, first, last].filter(Boolean).join(" ").trim();
+  const displayName = [first, last].filter(Boolean).join(" ").trim();
 
   // Placeholder credentials — replaced on invite redemption.
   const placeholderUsername = `invite.${Math.random().toString(36).slice(2, 10)}`;
