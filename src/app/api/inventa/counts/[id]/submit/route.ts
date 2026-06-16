@@ -55,7 +55,12 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
       WHERE i.active = 1
         AND (? IS NULL OR i.branch_id = ? OR i.branch_id IS NULL)
         AND i.safety_stock IS NOT NULL
-        AND i.current_qty <= i.safety_stock
+        AND (
+          ((i.count_mode IS NULL OR i.count_mode <> 'fractional')
+             AND i.current_qty <= i.safety_stock)
+          OR (i.count_mode = 'fractional'
+             AND COALESCE(i.qty_frac, 0) <= i.safety_stock / 100.0)
+        )
     `).get(branchId, branchId) as { n: number };
     const lowCount = low?.n ?? 0;
 

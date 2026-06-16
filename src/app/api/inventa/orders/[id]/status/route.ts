@@ -227,14 +227,26 @@ function applyOrderStock(
   const ord = db.prepare("SELECT stock_applied_at FROM inventa_orders WHERE id = ?")
     .get(orderId) as { stock_applied_at: string | null } | undefined;
   if (!ord || ord.stock_applied_at != null) return false;
-  const qtys = db.prepare(
-    "SELECT item_id, COALESCE(SUM(order_qty), 0) AS qty FROM inventa_order_lines WHERE order_id = ? GROUP BY item_id"
-  ).all(orderId) as Array<{ item_id: number; qty: number }>;
+  const qtys = db.prepare(`
+    SELECT ol.item_id, COALESCE(SUM(ol.order_qty), 0) AS qty, i.count_mode
+    FROM inventa_order_lines ol
+    JOIN inventa_items i ON i.id = ol.item_id
+    WHERE ol.order_id = ?
+    GROUP BY ol.item_id, i.count_mode
+  `).all(orderId) as Array<{ item_id: number; qty: number; count_mode: string | null }>;
   for (const r of qtys) {
     if (r.qty <= 0) continue;
-    db.prepare(
-      "UPDATE inventa_items SET current_qty = current_qty + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-    ).run(r.qty, r.item_id);
+    // Fractional items order in whole bottles → each received bottle adds 1.0
+    // to the decimal on-hand (qty_frac). Discrete items add to current_qty.
+    if (r.count_mode === "fractional") {
+      db.prepare(
+        "UPDATE inventa_items SET qty_frac = COALESCE(qty_frac, 0) + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).run(r.qty, r.item_id);
+    } else {
+      db.prepare(
+        "UPDATE inventa_items SET current_qty = current_qty + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).run(r.qty, r.item_id);
+    }
   }
   db.prepare("UPDATE inventa_orders SET stock_applied_at = ? WHERE id = ?").run(nowIso, orderId);
   return true;

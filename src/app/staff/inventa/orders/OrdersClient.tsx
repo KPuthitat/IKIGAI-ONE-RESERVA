@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
-import { binCode, hasPack, formatPackBreakdown, type PickFreq } from "@/lib/inventa";
+import {
+  binCode, hasPack, formatPackBreakdown,
+  isFractionalItem, fracOnHand, formatFracQty, isLowStockItem,
+  type PickFreq
+} from "@/lib/inventa";
 import { type OrderRow, isPendingOrder } from "@/lib/inventa-orders";
 
 export type LowStockItem = {
@@ -18,6 +22,8 @@ export type LowStockItem = {
   pick_freq: PickFreq | null;
   current_qty: number;
   safety_stock: number;
+  count_mode?: "discrete" | "fractional" | null;
+  qty_frac?: number | null;
   /** Moving avg derived from purchase lines; fallback when
    *  cost_price is null. Kept on the row so a re-tagged item with
    *  no manual price still shows a sensible estimate. */
@@ -171,7 +177,8 @@ export default function OrdersClient({
                       <span className="font-medium text-slate-800">{c.name}</span>
                       {c.item_code && <span className="ml-1 text-[11px] text-slate-400">[{c.item_code}]</span>}
                       <span className="block text-[11px] text-slate-500">
-                        {c.supplier_name ?? noSupplierLabel} · {t("inv.ord.onhand")} {c.current_qty}{c.unit ? ` ${c.unit}` : ""}
+                        {c.supplier_name ?? noSupplierLabel} · {t("inv.ord.onhand")}{" "}
+                        {isFractionalItem(c) ? formatFracQty(fracOnHand(c)) : `${c.current_qty}${c.unit ? ` ${c.unit}` : ""}`}
                       </span>
                     </span>
                     <span className="text-brand font-bold text-sm flex-shrink-0">+ เพิ่ม</span>
@@ -186,6 +193,9 @@ export default function OrdersClient({
   };
 
   function suggested(it: LowStockItem): number {
+    // Fractional items order in whole bottles — default to 1 bottle when low
+    // (staff can bump it). Discrete: top up to the safety level.
+    if (isFractionalItem(it)) return 1;
     return Math.max(0, it.safety_stock - it.current_qty);
   }
   function toggle(it: LowStockItem) {
@@ -452,10 +462,12 @@ export default function OrdersClient({
                               point → red; at/above → black, both bold. */}
                           {t("inv.ord.onhand")}{" "}
                           <span className={`font-bold text-sm ${
-                            it.current_qty < it.safety_stock ? "text-rose-600" : "text-slate-900"}`}>
-                            {it.current_qty}
+                            isLowStockItem(it) ? "text-rose-600" : "text-slate-900"}`}>
+                            {isFractionalItem(it) ? formatFracQty(fracOnHand(it)) : it.current_qty}
                           </span>
-                          {it.unit ? ` ${it.unit}` : ""} / {t("inv.ord.repoint")} {it.safety_stock}
+                          {isFractionalItem(it) ? "" : (it.unit ? ` ${it.unit}` : "")}
+                          {" "}/ {t("inv.ord.repoint")}{" "}
+                          {isFractionalItem(it) ? `${it.safety_stock}% ของขวด` : it.safety_stock}
                           {" "}· {t("inv.ord.cost")}{" "}
                           {costMissing ? (
                             <span className="text-rose-600 font-medium">{t("inv.ord.costMissing")}</span>

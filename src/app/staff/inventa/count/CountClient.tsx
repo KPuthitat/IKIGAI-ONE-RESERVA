@@ -8,6 +8,7 @@ import BarcodeScanner from "@/app/components/BarcodeScanner";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import {
   PICK_FREQ_META, hasPack, packToBase, packBreakdown, packRelationCaption,
+  isFractionalItem, formatFracQty,
   type PickFreq
 } from "@/lib/inventa";
 
@@ -41,6 +42,8 @@ export type CountItem = {
   supplier_name?: string | null;
   pack_unit?: string | null;
   pack_size?: number | null;
+  count_mode?: "discrete" | "fractional" | null;
+  qty_frac?: number | null;
 };
 
 export default function CountClient({
@@ -63,6 +66,10 @@ export default function CountClient({
   // N5 pack-entry aid: typing packs + loose computes the base qty.
   const [packIn, setPackIn] = useState("");
   const [looseIn, setLooseIn] = useState("");
+  // Fractional-count aid (owner 2026-06-16): full bottles + a 0-100% slider
+  // for the open bottle → total bottles (decimal) stored in `qty`.
+  const [fullBottles, setFullBottles] = useState("");
+  const [openPct, setOpenPct] = useState(0);
   const [scanCam, setScanCam] = useState(false);
   const [q, setQ] = useState("");
   // Filters — mirror the catalogue page (pick frequency + category) plus
@@ -131,6 +138,20 @@ export default function CountClient({
     setSel(item);
     setMsg(null);
     const existing = counted[item.id];
+    if (isFractionalItem(item)) {
+      // Seed full-bottles + open% from this round's value, else the item's
+      // live on-hand (so the slider starts where the stock actually is).
+      const v = existing !== undefined ? existing : (item.qty_frac ?? 0);
+      let full = Math.floor(v + 1e-9);
+      let pct = Math.round((v - full) * 100);
+      if (pct >= 100) { full += 1; pct = 0; }
+      setFullBottles(v > 0 ? String(full) : "");
+      setOpenPct(pct);
+      setQty(String(v));
+      setPackIn(""); setLooseIn("");
+      return;
+    }
+    setFullBottles(""); setOpenPct(0);
     setQty(existing !== undefined ? String(existing) : "");
     // Seed the pack/loose aid from the existing value (or blank).
     if (hasPack(item) && existing !== undefined) {
@@ -150,6 +171,14 @@ export default function CountClient({
     setLooseIn(nextLoose);
     const base = packToBase(Number(nextPack) || 0, Number(nextLoose) || 0, sel.pack_size);
     setQty(String(base));
+  }
+
+  // Fractional aid: full bottles + open-bottle % → total bottles (decimal).
+  function syncFracToQty(nextFull: string, nextPct: number) {
+    setFullBottles(nextFull);
+    setOpenPct(nextPct);
+    const total = (Number(nextFull) || 0) + nextPct / 100;
+    setQty(String(Math.round(total * 100) / 100));
   }
 
   function resolveBarcode(code: string) {
@@ -174,7 +203,11 @@ export default function CountClient({
   async function saveLine() {
     if (!sel || !session) return;
     const n = Number(qty);
-    if (!Number.isInteger(n) || n < 0) { setMsg(t("inv.cnt.intError")); return; }
+    const frac = isFractionalItem(sel);
+    // Fractional (bottle) items accept a decimal; discrete must be whole.
+    if (!isFinite(n) || n < 0 || (!frac && !Number.isInteger(n))) {
+      setMsg(frac ? "ค่าไม่ถูกต้อง" : t("inv.cnt.intError")); return;
+    }
     setBusy(true);
     setMsg(null);
     try {
@@ -401,39 +434,71 @@ export default function CountClient({
               <div className="text-xs text-slate-400 mt-0.5">{sel.generic_name}</div>
             )}
           </div>
-          <div>
-            <label className="label">
-              {t("inv.cnt.qtyLabel", { unit: sel.unit ?? t("inv.ord.unit") })}
-            </label>
-            <input className="input text-lg font-bold" type="number" min="0"
-              autoFocus value={qty} placeholder={t("inv.cnt.qtyPh")}
-              onChange={(e) => setQty(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") saveLine(); }} />
-          </div>
-
-          {/* Pack-entry aid (N5) — count in packs + loose; computes the
-              base-unit qty that's actually saved. */}
-          {hasPack(sel) && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 space-y-1.5">
-              <div className="text-[11px] text-emerald-800 font-semibold">
-                กรอกเป็นแพ็คได้ · {packRelationCaption(sel, sel.unit)}
-              </div>
+          {isFractionalItem(sel) ? (
+            // Fractional (liquid) count: full bottles + a 0-100% slider for
+            // the open bottle (owner 2026-06-16). Total bottles → `qty`.
+            <div className="space-y-2">
+              <label className="label">นับสต๊อก (ขวด)</label>
               <div className="flex items-center gap-2 text-sm flex-wrap">
-                <input className="input !w-20 text-center" type="number" min="0"
-                  value={packIn} placeholder="0"
-                  onChange={(e) => syncPackToQty(e.target.value, looseIn)} />
-                <span className="text-slate-600">{sel.pack_unit}</span>
+                <input className="input !w-24 text-center text-lg font-bold" type="number" min="0"
+                  value={fullBottles} placeholder="0"
+                  onChange={(e) => syncFracToQty(e.target.value, openPct)} />
+                <span className="text-slate-600">ขวดเต็ม</span>
                 <span className="text-slate-400">+</span>
-                <input className="input !w-20 text-center" type="number" min="0"
-                  value={looseIn} placeholder="0"
-                  onChange={(e) => syncPackToQty(packIn, e.target.value)} />
-                <span className="text-slate-600">{sel.unit}</span>
-                <span className="text-slate-400">=</span>
-                <span className="font-bold text-emerald-700">
-                  {(Number(qty) || 0).toLocaleString("th-TH")} {sel.unit}
-                </span>
+                <span className="font-bold text-brand text-base">{openPct}%</span>
+                <span className="text-slate-500 text-xs">ของขวดที่เปิดใช้</span>
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-500 mb-1">ลากเลือก % ของขวดที่เปิดใช้อยู่</div>
+                <input type="range" min={0} max={100} step={5} value={openPct}
+                  onChange={(e) => syncFracToQty(fullBottles, Number(e.target.value))}
+                  className="w-full accent-brand" />
+                <div className="flex justify-between text-[10px] text-slate-400">
+                  <span>0%</span><span>50%</span><span>เต็ม 100%</span>
+                </div>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-sm text-center">
+                รวม = <span className="font-bold text-amber-800">{formatFracQty(Number(qty) || 0)}</span>
+                <span className="text-slate-400 text-xs"> (≈ {(Number(qty) || 0).toFixed(2)} ขวด)</span>
               </div>
             </div>
+          ) : (
+            <>
+              <div>
+                <label className="label">
+                  {t("inv.cnt.qtyLabel", { unit: sel.unit ?? t("inv.ord.unit") })}
+                </label>
+                <input className="input text-lg font-bold" type="number" min="0"
+                  autoFocus value={qty} placeholder={t("inv.cnt.qtyPh")}
+                  onChange={(e) => setQty(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") saveLine(); }} />
+              </div>
+
+              {/* Pack-entry aid (N5) — count in packs + loose; computes the
+                  base-unit qty that's actually saved. */}
+              {hasPack(sel) && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 space-y-1.5">
+                  <div className="text-[11px] text-emerald-800 font-semibold">
+                    กรอกเป็นแพ็คได้ · {packRelationCaption(sel, sel.unit)}
+                  </div>
+                  <div className="flex items-center gap-2 text-sm flex-wrap">
+                    <input className="input !w-20 text-center" type="number" min="0"
+                      value={packIn} placeholder="0"
+                      onChange={(e) => syncPackToQty(e.target.value, looseIn)} />
+                    <span className="text-slate-600">{sel.pack_unit}</span>
+                    <span className="text-slate-400">+</span>
+                    <input className="input !w-20 text-center" type="number" min="0"
+                      value={looseIn} placeholder="0"
+                      onChange={(e) => syncPackToQty(packIn, e.target.value)} />
+                    <span className="text-slate-600">{sel.unit}</span>
+                    <span className="text-slate-400">=</span>
+                    <span className="font-bold text-emerald-700">
+                      {(Number(qty) || 0).toLocaleString("th-TH")} {sel.unit}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Condition / expiry flag (owner 2026-06-06) — tap if this item
@@ -545,7 +610,7 @@ export default function CountClient({
                 </div>
                 <div className="flex-shrink-0 text-sm">
                   {isDone
-                    ? <span className="text-emerald-600 font-bold">{t("inv.cnt.countedTag", { n: c })}</span>
+                    ? <span className="text-emerald-600 font-bold">{t("inv.cnt.countedTag", { n: isFractionalItem(i) ? formatFracQty(c) : c })}</span>
                     : <span className="text-slate-400">{t("inv.cnt.notCounted")}</span>}
                 </div>
               </button>

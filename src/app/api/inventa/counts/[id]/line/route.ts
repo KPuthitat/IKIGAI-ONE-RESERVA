@@ -11,7 +11,9 @@ import { getDb } from "@/lib/db";
 
 const Body = z.object({
   item_id: z.number().int().positive(),
-  counted_qty: z.number().int().min(0)
+  // Decimal allowed for fractional (bottle) items, e.g. 3.2 bottles. Discrete
+  // items are still required to be whole — enforced per-item below.
+  counted_qty: z.number().min(0)
 });
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -40,9 +42,20 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "count_closed" }, { status: 409 });
   }
   const item = db.prepare(
-    "SELECT id, current_qty FROM inventa_items WHERE id = ? AND active = 1"
-  ).get(item_id) as { id: number; current_qty: number } | undefined;
+    "SELECT id, current_qty, count_mode, qty_frac FROM inventa_items WHERE id = ? AND active = 1"
+  ).get(item_id) as
+    | { id: number; current_qty: number; count_mode: string | null; qty_frac: number | null }
+    | undefined;
   if (!item) return NextResponse.json({ error: "item_not_found" }, { status: 404 });
+
+  const fractional = item.count_mode === "fractional";
+  // Discrete items must be whole units; fractional (bottle) items accept a
+  // decimal (e.g. 3.2 bottles = 3 full + open one at 20%).
+  if (!fractional && !Number.isInteger(counted_qty)) {
+    return NextResponse.json({ error: "must_be_integer" }, { status: 400 });
+  }
+  // prev = the on-hand before this count, in the item's own unit.
+  const prevQty = fractional ? (item.qty_frac ?? 0) : item.current_qty;
 
   const tx = db.transaction(() => {
     const existing = db.prepare(
@@ -56,11 +69,19 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       db.prepare(`
         INSERT INTO inventa_count_lines (count_id, item_id, prev_qty, counted_qty)
         VALUES (?, ?, ?, ?)
-      `).run(countId, item_id, item.current_qty, counted_qty);
+      `).run(countId, item_id, prevQty, counted_qty);
     }
-    db.prepare(
-      "UPDATE inventa_items SET current_qty = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-    ).run(counted_qty, item_id);
+    // Write back to the item's live on-hand — qty_frac for fractional, the
+    // integer current_qty for discrete.
+    if (fractional) {
+      db.prepare(
+        "UPDATE inventa_items SET qty_frac = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).run(counted_qty, item_id);
+    } else {
+      db.prepare(
+        "UPDATE inventa_items SET current_qty = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).run(counted_qty, item_id);
+    }
   });
   tx();
 

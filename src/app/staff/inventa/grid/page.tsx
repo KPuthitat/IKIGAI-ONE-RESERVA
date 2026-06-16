@@ -14,7 +14,8 @@ export default function InventaGridPage() {
 
   const items = db.prepare(`
     SELECT id, name, generic_name, item_code, barcode, category,
-           grid_row, grid_col, pick_freq, current_qty, safety_stock
+           grid_row, grid_col, pick_freq, current_qty, safety_stock,
+           count_mode, qty_frac
     FROM inventa_items
     WHERE active = 1 AND (branch_id IS ? OR branch_id = ?)
     ORDER BY grid_row, grid_col, name

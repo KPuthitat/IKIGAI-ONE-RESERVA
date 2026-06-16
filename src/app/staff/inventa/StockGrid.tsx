@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
-  PICK_FREQ_META, GRID_ROWS, GRID_COLS, binCode, isLowStock,
+  PICK_FREQ_META, GRID_ROWS, GRID_COLS, binCode, isLowStockItem,
   type PickFreq
 } from "@/lib/inventa";
 
@@ -22,6 +22,8 @@ export type GridItem = {
   pick_freq: PickFreq | null;
   current_qty: number;
   safety_stock: number;
+  count_mode?: "discrete" | "fractional" | null;
+  qty_frac?: number | null;
 };
 
 export default function StockGrid({ items }: { items: GridItem[] }) {
@@ -86,7 +88,7 @@ export default function StockGrid({ items }: { items: GridItem[] }) {
             <div key={r} className="grid grid-cols-6 gap-1.5 mb-1.5">
               {GRID_COLS.map((c) => {
                 const list = byCell.get(`${r}|${c}`) ?? [];
-                const low = list.some((i) => isLowStock(i.current_qty, i.safety_stock));
+                const low = list.some((i) => isLowStockItem(i));
                 const cnt = (f: PickFreq) => list.filter((i) => i.pick_freq === f).length;
                 return (
                   <button key={c} type="button"

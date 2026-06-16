@@ -41,7 +41,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   // Branch-scope when the count carries a branch_id (newer counts do);
   // legacy global counts (NULL branch_id) include every active item.
   const missingRows = db.prepare(`
-    SELECT i.id, i.current_qty
+    SELECT i.id, i.current_qty, i.count_mode, i.qty_frac
     FROM inventa_items i
     WHERE i.active = 1
       AND (? IS NULL OR i.branch_id = ? OR i.branch_id IS NULL)
@@ -52,6 +52,8 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   `).all(count.branch_id, count.branch_id, countId) as Array<{
     id: number;
     current_qty: number;
+    count_mode: string | null;
+    qty_frac: number | null;
   }>;
 
   if (missingRows.length === 0) {
@@ -65,7 +67,11 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   const tx = db.transaction(() => {
     let n = 0;
     for (const r of missingRows) {
-      insert.run(countId, r.id, r.current_qty, r.current_qty);
+      // Fractional items keep their on-hand in qty_frac (bottles), not the
+      // integer current_qty — snapshot the right field so prefill doesn't
+      // stamp a wrong "0 bottles" line.
+      const v = r.count_mode === "fractional" ? (r.qty_frac ?? 0) : r.current_qty;
+      insert.run(countId, r.id, v, v);
       n += 1;
     }
     return n;

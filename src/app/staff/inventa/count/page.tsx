@@ -20,7 +20,7 @@ export default function InventaCountPage() {
     SELECT i.id, i.item_code, i.barcode, i.name, i.generic_name, i.unit,
            i.grid_row, i.grid_col, i.pick_freq, i.current_qty, i.safety_stock,
            i.category, i.item_type, i.storage_location,
-           i.pack_unit, i.pack_size,
+           i.pack_unit, i.pack_size, i.count_mode, i.qty_frac,
            s.name AS supplier_name
     FROM inventa_items i
     LEFT JOIN inventa_suppliers s ON s.id = i.supplier_id

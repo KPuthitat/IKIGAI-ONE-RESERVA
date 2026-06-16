@@ -29,14 +29,19 @@ export default function InventaOrdersPage() {
   const lowStock = db.prepare(`
     SELECT i.id, i.name, i.item_code, i.unit,
            i.grid_row, i.grid_col, i.pick_freq,
-           i.current_qty, i.safety_stock,
+           i.current_qty, i.safety_stock, i.count_mode, i.qty_frac,
            i.unit_cost, i.cost_price, i.pack_unit, i.pack_size,
            s.name AS supplier_name
     FROM inventa_items i
     LEFT JOIN inventa_suppliers s ON s.id = i.supplier_id
     WHERE i.active = 1
       AND (i.branch_id IS ? OR i.branch_id = ?)
-      AND i.current_qty <= i.safety_stock
+      AND (
+        ((i.count_mode IS NULL OR i.count_mode <> 'fractional')
+           AND i.current_qty <= i.safety_stock)
+        OR (i.count_mode = 'fractional'
+           AND COALESCE(i.qty_frac, 0) <= i.safety_stock / 100.0)
+      )
       AND NOT EXISTS (
         SELECT 1 FROM inventa_order_lines ol
         JOIN inventa_orders o ON o.id = ol.order_id
@@ -54,7 +59,7 @@ export default function InventaOrdersPage() {
   const catalog = db.prepare(`
     SELECT i.id, i.name, i.item_code, i.unit,
            i.grid_row, i.grid_col, i.pick_freq,
-           i.current_qty, i.safety_stock,
+           i.current_qty, i.safety_stock, i.count_mode, i.qty_frac,
            i.unit_cost, i.cost_price, i.pack_unit, i.pack_size,
            s.name AS supplier_name
     FROM inventa_items i

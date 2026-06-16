@@ -65,7 +65,7 @@ export async function POST(req: Request) {
   const placeholders = ids.map(() => "?").join(",");
   const items = db.prepare(`
     SELECT id, supplier_id, current_qty, safety_stock,
-           unit_cost, cost_price
+           unit_cost, cost_price, count_mode, qty_frac
     FROM inventa_items
     WHERE active = 1 AND id IN (${placeholders})
       AND (branch_id IS ? OR branch_id = ?)
@@ -73,6 +73,7 @@ export async function POST(req: Request) {
     id: number; supplier_id: number | null;
     current_qty: number; safety_stock: number;
     unit_cost: number; cost_price: number | null;
+    count_mode: string | null; qty_frac: number | null;
   }>;
   const effectiveCost = (it: typeof items[number]): number =>
     it.cost_price != null ? it.cost_price : (it.unit_cost ?? 0);
@@ -117,12 +118,17 @@ export async function POST(req: Request) {
       let subtotal = 0;
       for (const l of lines) {
         const it = itemById.get(l.item_id)!;
-        const suggested = Math.max(0, it.safety_stock - it.current_qty);
+        // Fractional items: snapshot on-hand in bottles (qty_frac) and use the
+        // staff-entered bottle qty as "suggested" (safety is a % here, not a
+        // unit count). Discrete items keep the original unit math.
+        const fractional = it.count_mode === "fractional";
+        const onHandSnap = fractional ? (it.qty_frac ?? 0) : it.current_qty;
+        const suggested = fractional ? l.order_qty : Math.max(0, it.safety_stock - it.current_qty);
         const cost = effectiveCost(it);
         subtotal += l.order_qty * cost;
         insLine.run(
           orderId, l.item_id, sup,
-          it.current_qty, suggested, l.order_qty, cost
+          onHandSnap, suggested, l.order_qty, cost
         );
       }
       createdOrders.push({ orderId, supplierId: sup, subtotal });
