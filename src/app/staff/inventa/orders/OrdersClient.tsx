@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
@@ -24,6 +24,8 @@ export type LowStockItem = {
   safety_stock: number;
   count_mode?: "discrete" | "fractional" | null;
   qty_frac?: number | null;
+  /** 1 = muted from the reorder list (LASA substitute not in use). */
+  reorder_muted?: number | null;
   /** Moving avg derived from purchase lines; fallback when
    *  cost_price is null. Kept on the row so a re-tagged item with
    *  no manual price still shows a sensible estimate. */
@@ -57,10 +59,11 @@ function fmtBaht(n: number): string {
 
 
 export default function OrdersClient({
-  lowStock, catalog = [], orders
+  lowStock, catalog = [], mutedItems = [], orders
 }: {
   lowStock: LowStockItem[];
   catalog?: LowStockItem[];
+  mutedItems?: LowStockItem[];
   orders: OrderRow[];
 }) {
   const router = useRouter();
@@ -95,6 +98,70 @@ export default function OrdersClient({
   const [addQuery, setAddQuery] = useState("");
   const noSupplierLabel = t("inv.ord.noSupplier");
   const supplierKey = (it: LowStockItem) => it.supplier_name ?? noSupplierLabel;
+
+  // Draft persistence (owner 2026-06-16): keep the selection + quantities so
+  // navigating away and back doesn't lose work. Stored in localStorage; extra
+  // (manually-added) items are restored from the CURRENT catalogue only, so a
+  // draft saved on another branch can't leak foreign items in.
+  const DRAFT_KEY = "inventa_order_draft_v1";
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const d = JSON.parse(raw) as {
+          sel?: Record<number, string>; packMode?: Record<number, boolean>;
+          note?: string; extraIds?: number[];
+        };
+        if (d.sel) setSel(d.sel);
+        if (d.packMode) setPackMode(d.packMode);
+        if (typeof d.note === "string") setNote(d.note);
+        if (d.extraIds?.length) {
+          const byId = new Map(catalog.map((c) => [c.id, c]));
+          const restored = d.extraIds
+            .map((id) => byId.get(id))
+            .filter((x): x is LowStockItem => !!x);
+          if (restored.length) setExtraItems(restored);
+        }
+      }
+    } catch { /* corrupt/unavailable — ignore */ }
+    hydratedRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        sel, packMode, note, extraIds: extraItems.map((e) => e.id)
+      }));
+    } catch { /* quota/unavailable — ignore */ }
+  }, [sel, packMode, note, extraItems]);
+  function clearDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+  }
+  function clearSelection() {
+    setSel({}); setPackMode({}); setNote(""); setExtraItems([]);
+    clearDraft();
+  }
+
+  // Reorder mute (owner 2026-06-16): hide / unhide a LASA substitute from the
+  // "should order" list. Muting also drops it from the current selection.
+  const [showMuted, setShowMuted] = useState(false);
+  async function toggleMute(it: LowStockItem, muted: boolean) {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl(`/api/inventa/items/${it.id}`), {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reorder_muted: muted ? 1 : 0 })
+      });
+      if (!res.ok) { setErr("ปรับการเตือนสั่งซื้อไม่สำเร็จ"); return; }
+      if (muted) {
+        setSel((p) => { const n = { ...p }; delete n[it.id]; return n; });
+        setExtraItems((p) => p.filter((e) => e.id !== it.id));
+      }
+      router.refresh();
+    } finally { setBusy(false); }
+  }
 
   // Low-stock list + any manually-added catalogue items (deduped by id).
   const allItems = useMemo(() => {
@@ -335,6 +402,7 @@ export default function OrdersClient({
     try {
       const ids = await postOrder(chosen);
       if (!ids) return;
+      clearDraft();
       if (ids.length === 1) {
         // Single supplier → go straight to its PO.
         router.push(`/staff/inventa/orders/${ids[0]}`);
@@ -344,6 +412,7 @@ export default function OrdersClient({
       // them in "ใบสั่งซื้อล่าสุด".
       setSel({});
       setNote("");
+      setExtraItems([]);
       setOkMsg(`สร้างใบสั่งซื้อ ${ids.length} ใบ (แยกตามผู้จำหน่าย) แล้ว — เปิดแต่ละใบเพื่อพิมพ์/ส่ง`);
       router.refresh();
     } catch {
@@ -387,12 +456,20 @@ export default function OrdersClient({
           <h2 className="font-bold text-slate-800 text-sm">
             {t("inv.ord.reorder", { n: lowStock.length })}
           </h2>
-          {allItems.length > 0 && (
-            <button type="button" onClick={selectAll}
-              className="text-xs text-brand hover:underline">
-              {t("inv.ord.selectAll")}
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {(chosen.length > 0 || extraItems.length > 0) && (
+              <button type="button" onClick={clearSelection}
+                className="text-xs text-slate-400 hover:text-rose-600 hover:underline">
+                ล้างที่เลือก
+              </button>
+            )}
+            {allItems.length > 0 && (
+              <button type="button" onClick={selectAll}
+                className="text-xs text-brand hover:underline">
+                {t("inv.ord.selectAll")}
+              </button>
+            )}
+          </div>
         </div>
 
         {lowStock.length === 0 && extraItems.length === 0 && (
@@ -503,23 +580,34 @@ export default function OrdersClient({
                         <span className="text-[11px] text-slate-500 inline-block w-12 text-left">{it.unit ?? t("inv.ord.unit")}</span>
                       )}
                     </div>
+                    {/* Mute this item from the reorder list (owner 2026-06-16) —
+                        for LASA substitutes not in use right now. */}
+                    <button type="button" onClick={() => toggleMute(it, true)} disabled={busy}
+                      title="ปิดเตือนสั่งซื้อรายการนี้ (เช่น ยี่ห้อสำรองที่ไม่ได้ใช้ช่วงนี้)"
+                      className="text-[11px] text-slate-400 hover:text-rose-600 underline decoration-dotted underline-offset-2 disabled:opacity-50 shrink-0">
+                      🔕 ไม่เตือน
+                    </button>
                     {/* Pack ↔ base conversion hint. When ordering in packs,
                         show how many base units that is (e.g. 1 กล่อง = 500
                         เม็ด); when ordering in base units, show the whole-pack
                         breakdown (N5, e.g. 50 เม็ด = 5 กล่อง). */}
-                    {checked && qty > 0 && hasPack(it) && (
-                      <div className="w-full text-right text-[11px] text-emerald-700 -mt-0.5">
-                        {inPack(it)
-                          ? `= ${qty.toLocaleString("th-TH")} ${it.unit ?? ""}`
-                          : `= ${formatPackBreakdown(qty, it, it.unit)}`}
-                      </div>
-                    )}
-                    {/* Per-line live preview — appears only when the
-                        row is selected so the unchecked rows stay
-                        quiet. Right-aligned to match qty column. */}
-                    {checked && lineTotal > 0 && (
-                      <div className="w-full text-right text-[11px] text-slate-600 -mt-0.5">
-                        = {fmtBaht(lineTotal)}
+                    {/* Per-line live preview — bigger + emphasised (owner
+                        2026-06-16): the pack breakdown + line cost are the
+                        numbers staff act on, so make them pop. */}
+                    {checked && (qty > 0 && (hasPack(it) || lineTotal > 0)) && (
+                      <div className="w-full flex flex-wrap items-center justify-end gap-2 mt-0.5">
+                        {qty > 0 && hasPack(it) && (
+                          <span className="text-sm font-semibold text-emerald-700">
+                            {inPack(it)
+                              ? `= ${qty.toLocaleString("th-TH")} ${it.unit ?? ""}`
+                              : `= ${formatPackBreakdown(qty, it, it.unit)}`}
+                          </span>
+                        )}
+                        {lineTotal > 0 && (
+                          <span className="inline-block bg-brand/10 text-brand font-bold text-base rounded-md px-2.5 py-0.5">
+                            = {fmtBaht(lineTotal)}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -597,6 +685,42 @@ export default function OrdersClient({
           </div>
         )}
       </div>
+
+      {/* ── Muted (LASA) items — hidden from the reorder list above; can be
+             re-enabled here (owner 2026-06-16). ── */}
+      {mutedItems.length > 0 && (
+        <div className="card space-y-2">
+          <button type="button" onClick={() => setShowMuted((s) => !s)}
+            className="w-full flex items-center justify-between gap-2 text-sm font-semibold text-slate-600">
+            <span>🔕 รายการที่ปิดเตือนสั่งซื้ออยู่ ({mutedItems.length})</span>
+            <span className="text-slate-400">{showMuted ? "▲" : "▼"}</span>
+          </button>
+          {showMuted && (
+            <div className="divide-y divide-slate-100">
+              {mutedItems.map((it) => (
+                <div key={it.id} className="flex items-center justify-between gap-2 py-2">
+                  <span className="text-sm min-w-0">
+                    <span className="font-medium text-slate-700">{it.name}</span>
+                    <span className="block text-[11px] text-slate-400">
+                      {t("inv.ord.onhand")}{" "}
+                      {isFractionalItem(it)
+                        ? formatFracQty(fracOnHand(it))
+                        : `${it.current_qty}${it.unit ? ` ${it.unit}` : ""}`}
+                      {" "}· {isLowStockItem(it)
+                        ? <span className="text-rose-500">ต่ำกว่าจุดสั่งซื้อ</span>
+                        : "ปกติ"}
+                    </span>
+                  </span>
+                  <button type="button" onClick={() => toggleMute(it, false)} disabled={busy}
+                    className="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 font-semibold">
+                    🔔 เปิดเตือน
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Link to the created-orders tracking page (owner 2026-06-13).
              The full list now lives on its own prominent menu so open POs

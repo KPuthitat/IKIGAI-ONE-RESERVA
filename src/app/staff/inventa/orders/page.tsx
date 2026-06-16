@@ -29,13 +29,14 @@ export default function InventaOrdersPage() {
   const lowStock = db.prepare(`
     SELECT i.id, i.name, i.item_code, i.unit,
            i.grid_row, i.grid_col, i.pick_freq,
-           i.current_qty, i.safety_stock, i.count_mode, i.qty_frac,
+           i.current_qty, i.safety_stock, i.count_mode, i.qty_frac, i.reorder_muted,
            i.unit_cost, i.cost_price, i.pack_unit, i.pack_size,
            s.name AS supplier_name
     FROM inventa_items i
     LEFT JOIN inventa_suppliers s ON s.id = i.supplier_id
     WHERE i.active = 1
       AND (i.branch_id IS ? OR i.branch_id = ?)
+      AND i.reorder_muted = 0
       AND (
         ((i.count_mode IS NULL OR i.count_mode <> 'fractional')
            AND i.current_qty <= i.safety_stock)
@@ -59,7 +60,7 @@ export default function InventaOrdersPage() {
   const catalog = db.prepare(`
     SELECT i.id, i.name, i.item_code, i.unit,
            i.grid_row, i.grid_col, i.pick_freq,
-           i.current_qty, i.safety_stock, i.count_mode, i.qty_frac,
+           i.current_qty, i.safety_stock, i.count_mode, i.qty_frac, i.reorder_muted,
            i.unit_cost, i.cost_price, i.pack_unit, i.pack_size,
            s.name AS supplier_name
     FROM inventa_items i
@@ -68,6 +69,22 @@ export default function InventaOrdersPage() {
       AND (i.branch_id IS ? OR i.branch_id = ?)
     ORDER BY (s.name IS NULL), s.name COLLATE NOCASE, i.name COLLATE NOCASE
     LIMIT 2000
+  `).all(branchId, branchId) as LowStockItem[];
+
+  // Muted items (owner 2026-06-16) — substitutes the staff hid from the
+  // reorder list. Surfaced in a collapsible "ปิดเตือนอยู่" section so they
+  // can be re-enabled. Few per branch, so list them all.
+  const mutedItems = db.prepare(`
+    SELECT i.id, i.name, i.item_code, i.unit,
+           i.grid_row, i.grid_col, i.pick_freq,
+           i.current_qty, i.safety_stock, i.count_mode, i.qty_frac, i.reorder_muted,
+           i.unit_cost, i.cost_price, i.pack_unit, i.pack_size,
+           s.name AS supplier_name
+    FROM inventa_items i
+    LEFT JOIN inventa_suppliers s ON s.id = i.supplier_id
+    WHERE i.active = 1 AND i.reorder_muted = 1
+      AND (i.branch_id IS ? OR i.branch_id = ?)
+    ORDER BY i.name COLLATE NOCASE
   `).all(branchId, branchId) as LowStockItem[];
 
   const orders = getBranchOrders(branchId, 50);
@@ -82,6 +99,7 @@ export default function InventaOrdersPage() {
       <OrdersClient
         lowStock={lowStock}
         catalog={catalog}
+        mutedItems={mutedItems}
         orders={orders}
       />
     </div>

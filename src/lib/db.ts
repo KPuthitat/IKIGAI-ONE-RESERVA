@@ -3874,6 +3874,15 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE inventa_items ADD COLUMN qty_frac REAL");
   }
 
+  // inventa_items: reorder mute (owner 2026-06-16). For look-alike/sound-
+  // alike substitutes — when a brand isn't in use right now, the staff can
+  // mute it so it stops appearing in the "should order" list even when it's
+  // below its reorder point. Keeps the reorder list short + un-confusing. The
+  // item is otherwise fully active (still counted, still in the catalogue).
+  if (!invCols.some((c) => c.name === "reorder_muted")) {
+    db.exec("ALTER TABLE inventa_items ADD COLUMN reorder_muted INTEGER NOT NULL DEFAULT 0");
+  }
+
   // inventa_suppliers: code + display_order
   const supplierCols = db.prepare("PRAGMA table_info(inventa_suppliers)")
     .all() as Array<{ name: string }>;

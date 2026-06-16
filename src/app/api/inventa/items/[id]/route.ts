@@ -36,7 +36,10 @@ const Body = z.object({
   pack_size: z.number().min(0).nullable().optional(),
   // Fractional-count mode toggle (owner 2026-06-16). qty_frac is changed via
   // count rounds, not this edit form (same as current_qty).
-  count_mode: z.enum(["discrete", "fractional"]).optional()
+  count_mode: z.enum(["discrete", "fractional"]).optional(),
+  // Reorder mute (owner 2026-06-16) — 1 = hide from the "should order" list
+  // even when below safety (LASA substitute not currently in use).
+  reorder_muted: z.number().int().min(0).max(1).optional()
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -94,6 +97,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       : d.safety_stock);
   }
   set("current_qty", d.current_qty);
+  set("reorder_muted", d.reorder_muted);
   set("pack_unit", d.pack_unit);
   // Normalise pack_size: anything ≤ 1 means "no pack" → store NULL.
   if (d.pack_size !== undefined) {
