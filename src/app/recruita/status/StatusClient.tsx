@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Script from "next/script";
 import { apiUrl } from "@/lib/url";
+import { humanizeApiError } from "@/lib/error-messages";
 import { STAGE_META, type ApplicationStage } from "@/lib/recruita";
 import { formatApplicationNo, bkkDateIso, bkkHHMM, formatLongDate } from "@/lib/time";
 import "@/lib/liff-types";
@@ -307,7 +308,7 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
       });
       const data = (await r.json()) as { ok?: boolean; applications?: AppRow[]; error?: string };
       if (!data.ok) {
-        setState({ kind: "error", message: data.error ?? "lookup_failed" });
+        setState({ kind: "error", message: humanizeApiError(data, "ตรวจสอบสถานะไม่สำเร็จ กรุณาลองใหม่อีกครั้ง") });
         return;
       }
       setState({ kind: "loaded", rows: data.applications ?? [], userId: profile.userId });

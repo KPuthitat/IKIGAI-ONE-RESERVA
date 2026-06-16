@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { humanizeApiError } from "@/lib/error-messages";
 import { useLang } from "@/lib/LangProvider";
 import type { LeaveType, QuotaInfo, PublicHoliday } from "@/lib/leave-types";
 import { useConfirm } from "@/app/components/useConfirm";
@@ -366,7 +367,7 @@ export default function LeaveClient({
       const j = await res.json().catch(() => ({}));
       alert({
         title: t("common.error"),
-        body: <p>{j.error || t("common.error")}</p>,
+        body: <p>{humanizeApiError(j, t("common.error"))}</p>,
         variant: "danger",
         okLabel: t("common.confirm")
       });

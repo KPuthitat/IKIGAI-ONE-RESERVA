@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
+import { humanizeApiError } from "@/lib/error-messages";
 
 type Position = {
   id: number;
@@ -309,7 +310,7 @@ function NewPositionDialog({
         })
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setErr(j.error ?? "สร้างไม่สำเร็จ"); return; }
+      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "สร้างไม่สำเร็จ")); return; }
       onCreated(Number(j.id));
     } finally { setBusy(false); }
   }

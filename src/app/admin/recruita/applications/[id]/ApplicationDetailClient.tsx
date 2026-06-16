@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { humanizeApiError } from "@/lib/error-messages";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import type {
   ApplicationStage, CustomQuestion, CustomAnswers
@@ -519,7 +520,7 @@ export default function ApplicationDetailClient({
             );
             const j = await res.json().catch(() => ({}));
             if (!res.ok || !j.ok) {
-              return { ok: false, message: j.error ?? "ยกเลิกไม่สำเร็จ" };
+              return { ok: false, message: humanizeApiError(j, "ยกเลิกไม่สำเร็จ") };
             }
             setCancelModalOpen(false);
             startTransition(() => router.refresh());

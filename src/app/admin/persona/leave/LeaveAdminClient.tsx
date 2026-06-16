@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { humanizeApiError } from "@/lib/error-messages";
 import { useLang } from "@/lib/LangProvider";
 import { ALL_LEAVE_TYPES, type LeaveType } from "@/lib/leave-types";
 import type { LeaveStatus } from "@/app/staff/persona/leave/LeaveClient";
@@ -582,7 +583,7 @@ function CreateForm({ staffList, onDone }: { staffList: StaffOption[]; onDone: (
       const res = await fetch(apiUrl("/api/admin/persona/leave/create"), { method: "POST", body: fd });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setErr(data.error || t("common.error"));
+        setErr(humanizeApiError(data, t("common.error")));
         return;
       }
       onDone();

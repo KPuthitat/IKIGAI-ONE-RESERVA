@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
+import { humanizeApiError } from "@/lib/error-messages";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import type { ApplicationStage, PendingStageTag } from "@/lib/recruita";
 import type { PipelineCard } from "./page";
@@ -363,7 +364,7 @@ export default function PipelineClient({
               );
               const j = await res.json().catch(() => ({}));
               if (!res.ok || !j.ok) {
-                return { ok: false as const, message: j.error ?? "ยกเลิกไม่สำเร็จ" };
+                return { ok: false as const, message: humanizeApiError(j, "ยกเลิกไม่สำเร็จ") };
               }
               setCancelCard(null);
               startTransition(() => router.refresh());

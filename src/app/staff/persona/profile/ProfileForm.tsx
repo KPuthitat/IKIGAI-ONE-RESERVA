@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { humanizeApiError } from "@/lib/error-messages";
 import { useLang } from "@/lib/LangProvider";
 import Switch from "@/app/components/Switch";
 import type { EmployeeProfile } from "@/lib/db";
@@ -191,7 +192,7 @@ export default function ProfileForm({
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) {
-        setMsg({ kind: "err", text: j.error ?? t("common.error") });
+        setMsg({ kind: "err", text: humanizeApiError(j, t("common.error")) });
         return;
       }
       setMsg({ kind: "ok", text: t("staff.persona.profile.saved") });

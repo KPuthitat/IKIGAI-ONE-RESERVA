@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { humanizeApiError } from "@/lib/error-messages";
 import type { Lang } from "@/lib/i18n";
 import type { FormTemplate, FormSection, FormField } from "@/lib/recruita-form-template";
 
@@ -93,7 +94,7 @@ export default function FormTemplateClient({
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) {
-        setErr(j.error ?? "บันทึกไม่สำเร็จ");
+        setErr(humanizeApiError(j, "บันทึกไม่สำเร็จ"));
         return;
       }
       setMsg("✓ บันทึกเรียบร้อย");

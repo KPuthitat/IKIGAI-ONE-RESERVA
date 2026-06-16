@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { humanizeApiError } from "@/lib/error-messages";
 import { useLang } from "@/lib/LangProvider";
 
 // The acknowledge half of the staff disciplinary detail page.
@@ -107,7 +108,7 @@ export default function WarningAcknowledgeClient({
       if (!res.ok || !j.ok) {
         if (j.error === "wrong_pin") setErr(t("staff.persona.discipline.wrongPin"));
         else if (j.error === "no_pin_set") setErr(t("staff.persona.discipline.noPinSet"));
-        else setErr(j.error ?? t("common.error"));
+        else setErr(humanizeApiError(j, t("common.error")));
         return;
       }
       explicitAckedRef.current = true;

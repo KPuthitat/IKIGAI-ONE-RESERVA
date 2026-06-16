@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { humanizeApiError } from "@/lib/error-messages";
 import { useLang } from "@/lib/LangProvider";
 import { bkkHHMM, bkkDateIso } from "@/lib/time";
 
@@ -371,7 +372,7 @@ function ClockAction({
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) finishOt();
-      else setOtErr(j?.error ?? t("common.error"));
+      else setOtErr(humanizeApiError(j, t("common.error")));
     } catch {
       setOtErr(t("common.error"));
     } finally {
@@ -1318,7 +1319,7 @@ function PinSetup({ onDone }: { onDone: () => void }) {
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        setErr(j.error || t("common.error"));
+        setErr(humanizeApiError(j, t("common.error")));
         setPin("");
         setConfirmPin("");
         setStep("enter");

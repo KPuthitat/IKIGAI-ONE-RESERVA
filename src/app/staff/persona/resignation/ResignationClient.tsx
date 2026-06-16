@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { humanizeApiError } from "@/lib/error-messages";
 import { useLang } from "@/lib/LangProvider";
 import { useConfirm } from "@/app/components/useConfirm";
 import Switch from "@/app/components/Switch";
@@ -86,7 +87,7 @@ export default function ResignationClient({
       if (!res.ok) {
         const errKey = `staff.persona.resignation.err.${data.error}`;
         const tr = t(errKey as any);
-        setErr(tr === errKey ? (data.error || t("common.error")) : tr);
+        setErr(tr === errKey ? humanizeApiError(data, t("common.error")) : tr);
         return;
       }
       setReason("");
@@ -115,7 +116,7 @@ export default function ResignationClient({
       const j = await res.json().catch(() => ({}));
       alert({
         title: t("common.error"),
-        body: <p>{j.error || t("common.error")}</p>,
+        body: <p>{humanizeApiError(j, t("common.error"))}</p>,
         variant: "danger",
         okLabel: t("common.confirm")
       });

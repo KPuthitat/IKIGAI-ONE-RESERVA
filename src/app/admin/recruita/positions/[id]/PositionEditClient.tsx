@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { humanizeApiError } from "@/lib/error-messages";
 import {
   parseCustomQuestions, type CustomQuestion, type CustomQuestionType
 } from "@/lib/recruita";
@@ -200,7 +201,7 @@ export default function PositionEditClient({
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) {
-        setErr(j.error ?? "บันทึกไม่สำเร็จ");
+        setErr(humanizeApiError(j, "บันทึกไม่สำเร็จ"));
         return;
       }
       setMsg("✓ บันทึกแล้ว");
