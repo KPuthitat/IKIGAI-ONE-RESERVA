@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import OwlMascot from "../../components/OwlMascot";
 import { apiUrl } from "@/lib/url";
+import PortalSelfRegister from "./PortalSelfRegister";
 import "@/lib/liff-types";
 
 // Phase of the auto-login flow. Drives the visible copy + whether we
@@ -57,6 +58,10 @@ export default function PortalClient({ liffId }: { liffId: string }) {
   // since the portal LIFF itself clearly works to this point.
   const [lineUserId, setLineUserId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // New-employee self-registration toggle (owner 2026-06-16) — shown on the
+  // not_bound screen so a freshly-hired employee can claim their own account
+  // (national_id + dob) instead of waiting for an admin to send a link.
+  const [showRegister, setShowRegister] = useState(false);
 
   async function copyUserId(): Promise<void> {
     if (!lineUserId) return;
@@ -273,40 +278,65 @@ export default function PortalClient({ liffId }: { liffId: string }) {
               </p>
             )}
 
-            {lineUserId ? (
-              <div className="space-y-2">
-                <p className="text-xs text-slate-600">
-                  ส่ง <span className="font-bold">LINE ID</span> ด้านล่างนี้
-                  ให้หัวหน้างาน เพื่อเชื่อมต่อบัญชีให้คุณ
-                </p>
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs break-all select-all font-mono text-slate-700">
-                  {lineUserId}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={copyUserId}
-                    className="flex-1 py-2 rounded-lg border border-brand text-brand text-xs font-bold hover:bg-rose-50"
-                  >
-                    {copied ? "✓ คัดลอกแล้ว" : "📋 คัดลอก"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={shareUserIdToAdmin}
-                    className="flex-1 py-2 rounded-lg bg-brand text-white text-xs font-bold hover:bg-brand/90"
-                  >
-                    📤 ส่งให้แอดมิน
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-400 leading-snug">
-                  หัวหน้างานนำไปวางในช่อง &quot;LINE binding&quot; ของพนักงาน
-                  ที่หน้า จัดการพนักงาน แล้วคุณกดปุ่มนี้อีกครั้งจะเข้าได้เลย
-                </p>
-              </div>
+            {showRegister ? (
+              <>
+                <PortalSelfRegister
+                  getAccessToken={() =>
+                    (typeof window !== "undefined" && window.liff
+                      ? window.liff.getAccessToken() ?? null
+                      : null)}
+                  onDone={() => router.replace("/staff")} />
+                <button
+                  type="button"
+                  onClick={() => setShowRegister(false)}
+                  className="block w-full py-2 text-xs text-slate-500 hover:underline"
+                >
+                  ← ย้อนกลับ
+                </button>
+              </>
             ) : (
-              <p className="text-xs text-slate-500">
-                กรุณาติดต่อหัวหน้างานเพื่อขอลิงก์เชิญลงทะเบียน
-              </p>
+              <>
+                {/* Primary path — the new employee claims their own account */}
+                <button
+                  type="button"
+                  onClick={() => setShowRegister(true)}
+                  className="block w-full py-2.5 rounded-lg bg-brand text-white text-sm font-bold hover:bg-brand/90"
+                >
+                  ลงทะเบียนพนักงานใหม่ (สมัครด้วยตัวเอง)
+                </button>
+
+                {/* Fallback — hand the LINE ID to an admin to bind manually */}
+                {lineUserId ? (
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <p className="text-[11px] text-slate-400">
+                      หรือ ให้แอดมินลงทะเบียนให้ — ส่ง LINE ID นี้ให้หัวหน้างาน
+                    </p>
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs break-all select-all font-mono text-slate-700">
+                      {lineUserId}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={copyUserId}
+                        className="flex-1 py-2 rounded-lg border border-brand text-brand text-xs font-bold hover:bg-rose-50"
+                      >
+                        {copied ? "✓ คัดลอกแล้ว" : "📋 คัดลอก"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={shareUserIdToAdmin}
+                        className="flex-1 py-2 rounded-lg bg-slate-600 text-white text-xs font-bold hover:bg-slate-700"
+                      >
+                        📤 ส่งให้แอดมิน
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 pt-1">
+                    หรือ ติดต่อหัวหน้างานเพื่อลงทะเบียนให้
+                  </p>
+                )}
+              </>
             )}
           </div>
         )}
