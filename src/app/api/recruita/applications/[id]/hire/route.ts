@@ -257,12 +257,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     ? `https://liff.line.me/${liffId}?token=${invite.token}`
     : null;
 
-  // Fire-and-forget: send the new hire the welcome+onboard card via the
-  // IKIGAI Recruit OA — carries the "เพิ่มเพื่อน IKIGAI OS PORTAL" button
-  // (so they add the staff OA + receive PERSONA pushes) and the onboard link
-  // above. No-op when the applicant has no linked LINE userId / OA isn't set;
-  // admin can still copy the onboard URL from the application detail page.
-  void notifyHireWelcome(app.id, liffUrl ?? directUrl).catch((e) =>
+  // Fire-and-forget: send the new hire the welcome card via the IKIGAI Recruit
+  // OA — its only action is "เพิ่มเพื่อน IKIGAI OS PORTAL" (so they add the
+  // staff OA). Account setup + LINE binding are handled by the admin manually
+  // afterward (owner 2026-06-16). The onboard invite still exists below for the
+  // admin to send from the application detail page. No-op when the applicant
+  // has no linked LINE userId / OA isn't set.
+  void notifyHireWelcome(app.id).catch((e) =>
     console.warn("[recruita-hire] hire welcome notify failed", e)
   );
 

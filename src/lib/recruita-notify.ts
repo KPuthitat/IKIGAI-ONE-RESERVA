@@ -602,34 +602,29 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
   }
 }
 
-/** Welcome + onboard Flex card sent to a freshly-hired candidate (owner
- *  2026-06-15). Distinct from the generic 'hired' stage card because it
- *  carries the two actions a NEW employee needs to actually start using the
- *  staff system:
- *    1. "เพิ่มเพื่อน IKIGAI OS PORTAL" — adds the staff OA so PERSONA pushes
- *       (shift reminders, payroll, edit decisions) can reach them. Omitted
- *       when system_settings.portal_oa_link isn't set.
- *    2. "ตั้งค่าบัญชีพนักงาน" — the one-time onboard invite link (LIFF when
- *       configured so it auto-binds their LINE; else the direct token URL).
- *       This is where they set username + password and bind LINE.
- *  The OA-add button comes first: the onboard binding only delivers future
- *  notifications once they've added the PORTAL OA as a friend. */
+/** Welcome Flex card sent to a freshly-hired candidate (owner 2026-06-15,
+ *  simplified 2026-06-16). The card's ONLY action is "เพิ่มเพื่อน IKIGAI OS
+ *  PORTAL" — adds the staff OA so PERSONA pushes (shift reminders, payroll,
+ *  edit decisions) can reach them. Account setup (username/password) + LINE
+ *  binding are then handled by the admin manually (owner chose the semi-manual
+ *  path after the INVITE LIFF onboard proved flaky). The OA-add button is
+ *  omitted when system_settings.portal_oa_link isn't set — then the card is a
+ *  plain welcome message. */
 function hireWelcomeFlex(args: {
   positionTitle: string;
   branchName: string | null;
-  onboardUrl: string;
   portalOaLink: string | null;
 }): LineMessage {
   const rows: Array<Record<string, unknown>> = [
     {
       type: "text",
-      text: "ยินดีต้อนรับสู่ทีม IKIGAI! เหลืออีก 2 ขั้นตอนเพื่อเริ่มใช้งานระบบพนักงาน",
-      size: "sm", color: COLOR_TEXT_DARK, wrap: true
+      text: "ยินดีต้อนรับสู่ทีม IKIGAI!",
+      size: "sm", color: COLOR_TEXT_DARK, wrap: true, weight: "bold"
     },
     {
       type: "text",
-      text: "1. เพิ่มเพื่อน LINE ระบบพนักงาน (IKIGAI OS PORTAL) เพื่อรับการแจ้งเตือน\n" +
-            "2. ตั้งค่าบัญชีพนักงานของคุณ (ตั้งรหัสผ่าน + เชื่อมต่อ LINE)",
+      text: "ขั้นตอนถัดไป: กดปุ่มด้านล่างเพื่อเพิ่มเพื่อน LINE ระบบพนักงาน " +
+            "(IKIGAI OS PORTAL) จากนั้นแอดมินจะตั้งค่าบัญชีพนักงานให้คุณต่อไป",
       size: "xs", color: "#475569", wrap: true, margin: "md"
     },
     { type: "separator", margin: "md", color: COLOR_DIVIDER },
@@ -644,39 +639,38 @@ function hireWelcomeFlex(args: {
       action: { type: "uri", label: "เพิ่มเพื่อน IKIGAI OS PORTAL", uri: args.portalOaLink }
     });
   }
-  footerContents.push({
-    type: "button", style: "primary", color: COLOR_BRAND_LIGHT, height: "sm",
-    action: { type: "uri", label: "ตั้งค่าบัญชีพนักงาน", uri: args.onboardUrl }
-  });
+
+  const bubble: Record<string, unknown> = {
+    type: "bubble",
+    size: "giga",
+    header: brandHeader("ยินดีต้อนรับสู่ทีม IKIGAI", args.positionTitle),
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+      backgroundColor: "#ffffff",
+      contents: rows
+    }
+  };
+  if (footerContents.length > 0) {
+    bubble.footer = {
+      type: "box", layout: "vertical", paddingAll: "16px", spacing: "sm",
+      backgroundColor: "#ffffff",
+      contents: footerContents
+    };
+  }
 
   return {
     type: "flex",
     altText: `ยินดีต้อนรับสู่ทีม IKIGAI · ${args.positionTitle}`,
-    contents: {
-      type: "bubble",
-      size: "giga",
-      header: brandHeader("ยินดีต้อนรับสู่ทีม IKIGAI", args.positionTitle),
-      body: {
-        type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
-        backgroundColor: "#ffffff",
-        contents: rows
-      },
-      footer: {
-        type: "box", layout: "vertical", paddingAll: "16px", spacing: "sm",
-        backgroundColor: "#ffffff",
-        contents: footerContents
-      }
-    }
+    contents: bubble
   };
 }
 
-/** Fire-and-forget welcome+onboard push to a freshly-hired candidate. Called
- *  from the hire bridge once the onboard invite exists, so the new employee
- *  gets both the PORTAL OA add-friend button and their onboard link in one
- *  card. Silent no-op without a linked LINE userId / configured OA. */
+/** Fire-and-forget welcome push to a freshly-hired candidate. Called from the
+ *  hire bridge so the new employee gets the "เพิ่มเพื่อน IKIGAI OS PORTAL"
+ *  button; account setup + LINE binding are handled by the admin afterward.
+ *  Silent no-op without a linked LINE userId / configured OA. */
 export async function notifyHireWelcome(
-  applicationId: number,
-  onboardUrl: string
+  applicationId: number
 ): Promise<void> {
   const db = getDb();
   const row = db.prepare(`
@@ -707,7 +701,6 @@ export async function notifyHireWelcome(
   const message = hireWelcomeFlex({
     positionTitle: row.position_title,
     branchName: row.branch_name,
-    onboardUrl,
     portalOaLink
   });
   const res = await pushToCandidate(row.line_user_id, [message]);

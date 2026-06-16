@@ -1412,9 +1412,9 @@ function InviteLinkBox({ result }: { result: HireResult }) {
         แชร์ลิงก์ด้านล่างให้พนักงานใหม่เพื่อตั้งรหัสผ่าน + เชื่อมต่อ LINE
       </p>
       <p className="text-[10px] text-slate-500">
-        ถ้าผู้สมัครเชื่อมต่อ LINE ไว้แล้ว ระบบได้ส่งการ์ดต้อนรับ
-        (ปุ่มเพิ่มเพื่อน IKIGAI OS PORTAL + ลิงก์ตั้งค่าบัญชี) ให้อัตโนมัติแล้ว —
-        ลิงก์ด้านล่างไว้ใช้สำรองกรณีส่งเองด้วยมือ
+        การ์ดต้อนรับที่ส่งเข้า LINE พนักงาน มีแค่ปุ่ม &quot;เพิ่มเพื่อน IKIGAI OS
+        PORTAL&quot; — ส่วนการตั้งค่าบัญชี (username/password) ให้ส่ง
+        &quot;ลิงก์เบราว์เซอร์ปกติ&quot; ด้านล่างนี้ให้พนักงานเอง
       </p>
       <p className="text-[10px] text-slate-500">
         ลิงก์หมดอายุ {formatBkkDateTime(result.expires_at)}
