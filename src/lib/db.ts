@@ -4912,6 +4912,31 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_insigna_audit_received ON insigna_ingestion_audit(received_at);
   `);
 
+  // ── FEASIBILITY (project investment feasibility, owner 2026-06-16) ──
+  // One row per project. `inputs` holds the whole assumptions/startup/cost
+  // model as JSON (shape in src/lib/feasibility.ts); all results are computed
+  // client-side. `summary_cache` is a tiny {verdict, profit, payback} blob for
+  // the list page so it needn't recompute every card. Scoped per creator in
+  // the query layer (admin/super_admin only) — the SQLite equivalent of the
+  // spec's RLS.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS feasibility_projects (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_by    INTEGER NOT NULL REFERENCES users(id),
+      company       TEXT NOT NULL,
+      project_name  TEXT NOT NULL,
+      location      TEXT,
+      business_type TEXT,
+      status        TEXT NOT NULL DEFAULT 'draft',
+      inputs        TEXT NOT NULL DEFAULT '{}',
+      summary_cache TEXT,
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_feasibility_owner
+      ON feasibility_projects(created_by, updated_at DESC);
+  `);
+
   // ── INSIGNA PII lint (spec section 6.1, NON-NEGOTIABLE) ─────
   // Walk every column of every `insigna_*` table and refuse to
   // proceed if any column name looks like personal data. This
