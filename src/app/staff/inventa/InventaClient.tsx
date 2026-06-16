@@ -62,6 +62,7 @@ type Item = {
   current_qty: number;
   count_mode: "discrete" | "fractional" | null;
   qty_frac: number | null;
+  reorder_muted: number | null;
   pack_unit: string | null;
   pack_size: number | null;
   /** Soonest lot expiry across this item's still-positive-qty lots,
@@ -493,6 +494,11 @@ export default function InventaClient({
                   }`}>
                     {isFractionalItem(i) ? formatFracQty(i.qty_frac ?? 0) : i.current_qty}
                     {low && <span className="ml-1 text-[10px] font-normal">{t("inv.low")}</span>}
+                    {i.reorder_muted ? (
+                      <span className="ml-1 inline-block text-[9px] font-normal text-slate-400 border border-slate-300 rounded px-1">
+                        ปิดเตือนสั่งซื้อ
+                      </span>
+                    ) : null}
                     {bucket === "expired" && (
                       <span className="ml-1 inline-block text-[9px] font-bold uppercase tracking-wide bg-red-900 text-red-50 px-1.5 py-0.5 rounded">
                         {t("inv.expired")}
@@ -628,6 +634,8 @@ function ItemModal({
     // Fractional-count mode (liquids): count_mode + initial bottles (qty_frac).
     count_mode: (base.count_mode ?? "discrete") as "discrete" | "fractional",
     qty_frac: base.qty_frac != null ? String(base.qty_frac) : "0",
+    // Reorder-alert mute (owner 2026-06-16) — managed here in the catalogue.
+    reorder_muted: base.reorder_muted ? "1" : "0",
     // N5 pack: optional larger packaging unit + units per pack.
     pack_unit: base.pack_unit ?? "",
     pack_size: base.pack_size != null ? String(base.pack_size) : ""
@@ -678,6 +686,7 @@ function ItemModal({
         qty_frac: f.count_mode === "fractional"
           ? (f.qty_frac !== "" ? Number(f.qty_frac) : 0)
           : null,
+        reorder_muted: f.reorder_muted === "1" ? 1 : 0,
         // N5 pack — empty / ≤1 size means "no pack".
         pack_unit: f.pack_unit.trim() || null,
         pack_size: f.pack_size !== "" ? Number(f.pack_size) : null
@@ -925,6 +934,22 @@ function ItemModal({
               {f.count_mode === "fractional"
                 ? "เตือนเติมเมื่อเหลือ ≤ % นี้ของ 1 ขวด (0–100)"
                 : t("inv.f.safetyHint")}
+            </p>
+          </div>
+          {/* Reorder-alert mute (owner 2026-06-16) — managed per item here in
+              the catalogue, not on the orders page. */}
+          <div className="col-span-2">
+            <label className="label">การแจ้งเตือนสั่งซื้อ</label>
+            <button type="button"
+              onClick={() => up("reorder_muted", f.reorder_muted === "1" ? "0" : "1")}
+              className={`w-full py-2 rounded-lg text-sm font-semibold border ${
+                f.reorder_muted === "1"
+                  ? "bg-slate-100 border-slate-300 text-slate-600"
+                  : "bg-emerald-50 border-emerald-300 text-emerald-700"}`}>
+              {f.reorder_muted === "1" ? "ปิดการแจ้งเตือนอยู่ — แตะเพื่อเปิด" : "เปิดการแจ้งเตือนอยู่ — แตะเพื่อปิด"}
+            </button>
+            <p className="text-[10px] text-slate-400 mt-1">
+              ปิดสำหรับสินค้าที่ไม่ได้ใช้ช่วงนี้ (เช่น ยี่ห้อสำรอง) — จะไม่ขึ้นในรายการที่ควรสั่งแม้ต่ำกว่าจุดสั่งซื้อ
             </p>
           </div>
           <div className="col-span-2">

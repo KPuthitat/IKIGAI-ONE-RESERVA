@@ -59,11 +59,10 @@ function fmtBaht(n: number): string {
 
 
 export default function OrdersClient({
-  lowStock, catalog = [], mutedItems = [], orders
+  lowStock, catalog = [], orders
 }: {
   lowStock: LowStockItem[];
   catalog?: LowStockItem[];
-  mutedItems?: LowStockItem[];
   orders: OrderRow[];
 }) {
   const router = useRouter();
@@ -142,25 +141,6 @@ export default function OrdersClient({
   function clearSelection() {
     setSel({}); setPackMode({}); setNote(""); setExtraItems([]);
     clearDraft();
-  }
-
-  // Reorder mute (owner 2026-06-16): hide / unhide a LASA substitute from the
-  // "should order" list. Muting also drops it from the current selection.
-  const [showMuted, setShowMuted] = useState(false);
-  async function toggleMute(it: LowStockItem, muted: boolean) {
-    setBusy(true); setErr(null);
-    try {
-      const res = await fetch(apiUrl(`/api/inventa/items/${it.id}`), {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reorder_muted: muted ? 1 : 0 })
-      });
-      if (!res.ok) { setErr("ปรับการเตือนสั่งซื้อไม่สำเร็จ"); return; }
-      if (muted) {
-        setSel((p) => { const n = { ...p }; delete n[it.id]; return n; });
-        setExtraItems((p) => p.filter((e) => e.id !== it.id));
-      }
-      router.refresh();
-    } finally { setBusy(false); }
   }
 
   // Low-stock list + any manually-added catalogue items (deduped by id).
@@ -580,34 +560,25 @@ export default function OrdersClient({
                         <span className="text-[11px] text-slate-500 inline-block w-12 text-left">{it.unit ?? t("inv.ord.unit")}</span>
                       )}
                     </div>
-                    {/* Mute this item from the reorder list (owner 2026-06-16) —
-                        for LASA substitutes not in use right now. */}
-                    <button type="button" onClick={() => toggleMute(it, true)} disabled={busy}
-                      title="ปิดเตือนสั่งซื้อรายการนี้ (เช่น ยี่ห้อสำรองที่ไม่ได้ใช้ช่วงนี้)"
-                      className="text-[11px] text-slate-400 hover:text-rose-600 underline decoration-dotted underline-offset-2 disabled:opacity-50 shrink-0">
-                      🔕 ไม่เตือน
-                    </button>
                     {/* Pack ↔ base conversion hint. When ordering in packs,
                         show how many base units that is (e.g. 1 กล่อง = 500
                         เม็ด); when ordering in base units, show the whole-pack
                         breakdown (N5, e.g. 50 เม็ด = 5 กล่อง). */}
-                    {/* Per-line live preview — bigger + emphasised (owner
-                        2026-06-16): the pack breakdown + line cost are the
-                        numbers staff act on, so make them pop. */}
-                    {checked && (qty > 0 && (hasPack(it) || lineTotal > 0)) && (
-                      <div className="w-full flex flex-wrap items-center justify-end gap-2 mt-0.5">
-                        {qty > 0 && hasPack(it) && (
-                          <span className="text-sm font-semibold text-emerald-700">
-                            {inPack(it)
-                              ? `= ${qty.toLocaleString("th-TH")} ${it.unit ?? ""}`
-                              : `= ${formatPackBreakdown(qty, it, it.unit)}`}
-                          </span>
-                        )}
-                        {lineTotal > 0 && (
-                          <span className="inline-block bg-brand/10 text-brand font-bold text-base rounded-md px-2.5 py-0.5">
-                            = {fmtBaht(lineTotal)}
-                          </span>
-                        )}
+                    {/* Per-line live preview — on its own line BELOW the row
+                        (owner 2026-06-16): the sub-unit breakdown when ordering
+                        by pack, then the line cost as an emphasised pill. */}
+                    {checked && qty > 0 && hasPack(it) && (
+                      <div className="w-full text-sm font-semibold text-emerald-700 mt-0.5">
+                        {inPack(it)
+                          ? `= ${qty.toLocaleString("th-TH")} ${it.unit ?? ""}`
+                          : `= ${formatPackBreakdown(qty, it, it.unit)}`}
+                      </div>
+                    )}
+                    {checked && lineTotal > 0 && (
+                      <div className="w-full text-right mt-0.5">
+                        <span className="inline-block bg-brand/10 text-brand font-bold text-base rounded-md px-2.5 py-0.5">
+                          = {fmtBaht(lineTotal)}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -685,42 +656,6 @@ export default function OrdersClient({
           </div>
         )}
       </div>
-
-      {/* ── Muted (LASA) items — hidden from the reorder list above; can be
-             re-enabled here (owner 2026-06-16). ── */}
-      {mutedItems.length > 0 && (
-        <div className="card space-y-2">
-          <button type="button" onClick={() => setShowMuted((s) => !s)}
-            className="w-full flex items-center justify-between gap-2 text-sm font-semibold text-slate-600">
-            <span>🔕 รายการที่ปิดเตือนสั่งซื้ออยู่ ({mutedItems.length})</span>
-            <span className="text-slate-400">{showMuted ? "▲" : "▼"}</span>
-          </button>
-          {showMuted && (
-            <div className="divide-y divide-slate-100">
-              {mutedItems.map((it) => (
-                <div key={it.id} className="flex items-center justify-between gap-2 py-2">
-                  <span className="text-sm min-w-0">
-                    <span className="font-medium text-slate-700">{it.name}</span>
-                    <span className="block text-[11px] text-slate-400">
-                      {t("inv.ord.onhand")}{" "}
-                      {isFractionalItem(it)
-                        ? formatFracQty(fracOnHand(it))
-                        : `${it.current_qty}${it.unit ? ` ${it.unit}` : ""}`}
-                      {" "}· {isLowStockItem(it)
-                        ? <span className="text-rose-500">ต่ำกว่าจุดสั่งซื้อ</span>
-                        : "ปกติ"}
-                    </span>
-                  </span>
-                  <button type="button" onClick={() => toggleMute(it, false)} disabled={busy}
-                    className="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 font-semibold">
-                    🔔 เปิดเตือน
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ── Link to the created-orders tracking page (owner 2026-06-13).
              The full list now lives on its own prominent menu so open POs

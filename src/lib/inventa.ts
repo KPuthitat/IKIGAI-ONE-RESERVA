@@ -243,6 +243,9 @@ export type InventaItem = {
   /** On-hand in BOTTLES (decimal, e.g. 3.2) for fractional items; null for
    *  discrete items (which use the integer current_qty). */
   qty_frac: number | null;
+  /** 1 = muted from the reorder "should order" list (LASA substitute not in
+   *  use right now). Managed in the catalogue item editor. */
+  reorder_muted: number | null;
   active: number;
   created_by: number | null;
   created_at: string;

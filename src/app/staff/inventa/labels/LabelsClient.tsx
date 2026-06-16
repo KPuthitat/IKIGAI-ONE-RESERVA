@@ -238,6 +238,15 @@ export default function LabelsClient({
           {t("inv.lbl.sizeLabel")} <b>{widthMm}×{heightMm} mm</b> ·{" "}
           <Link href="/staff/inventa/settings" className="text-brand hover:underline">{t("inv.lbl.sizeChange")}</Link>
         </div>
+        {/* Print-dialog tips (owner 2026-06-16) — the @page size below is set
+            to the label, but the browser/printer must match for a flush fit. */}
+        <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 leading-relaxed">
+          <b>ตั้งค่าในกล่องพิมพ์ให้พอดีสติ๊กเกอร์ {widthMm}×{heightMm} มม.:</b>
+          <br />• ขนาดกระดาษ (Paper size) = {widthMm}×{heightMm} มม. (หรือสร้างขนาดกำหนดเองในไดรเวอร์เครื่องพิมพ์)
+          <br />• ระยะขอบ (Margins) = <b>ไม่มี (None)</b>
+          <br />• มาตราส่วน (Scale) = <b>100% / ค่าเริ่มต้น</b> (อย่าตั้ง &quot;พอดีหน้า/Fit&quot;)
+          <br />• เอาหัว-ท้ายกระดาษ (Headers and footers) ออก
+        </div>
 
         {/* Drag-and-drop label designer (owner 2026-06-09) */}
         <div className="border-t border-slate-100 pt-3">
