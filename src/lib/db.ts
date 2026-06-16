@@ -3555,13 +3555,13 @@ function runMigrations(db: Database.Database): void {
       "INSERT INTO rbac_roles (key, name, description, is_system) VALUES ('legacy_admin', ?, ?, 1)"
     ).run(
       "ผู้ดูแลระบบ (ทุกโมดูล)",
-      "บทบาทระบบ — เข้าถึงทุกโมดูลผู้ดูแล (PERSONA / RESERVA / RECRUITA / INSIGNA / ASCENDA) เทียบเท่าผู้ดูแลเดิม"
+      "บทบาทระบบ — เข้าถึงทุกโมดูลผู้ดูแล (PERSONA / RESERVA / RECRUITA / INSIGNA / ASCENDA / ACCOUNTA) เทียบเท่าผู้ดูแลเดิม"
     );
     const roleId = Number(info.lastInsertRowid);
-    // The 5 module permissions (must match RBAC_PERMISSION_KEYS in lib/rbac.ts).
+    // All module permissions (must match RBAC_PERMISSION_KEYS in lib/rbac.ts).
     for (const perm of [
       "persona.manage", "reserva.manage", "recruita.access",
-      "insigna.view", "ascenda.view"
+      "insigna.view", "ascenda.view", "accounta.manage"
     ]) {
       db.prepare(
         "INSERT OR IGNORE INTO rbac_role_permissions (role_id, permission_key) VALUES (?, ?)"
@@ -3581,6 +3581,39 @@ function runMigrations(db: Database.Database): void {
           WHERE ub.user_id = u.id AND ub.is_admin = 1
         )
     `).run(roleId);
+  }
+
+  // ── One-time backfill of module permissions added AFTER the initial
+  // legacy_admin seed ────────────────────────────────────────────────
+  // The seed block above runs only when legacy_admin is first created, so
+  // permissions shipped in later releases (e.g. accounta.manage, 2026-06-16,
+  // when FEASIBILITY moved behind requirePermission) would never reach
+  // existing installs — every current full-admin would silently lose the
+  // module. Backfill each new key EXACTLY ONCE (tracked per-key) so a later
+  // owner removal in the role UI still sticks across reboots.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rbac_perm_backfills (
+      permission_key TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  const legacyRoleForBackfill = db.prepare(
+    "SELECT id FROM rbac_roles WHERE key = 'legacy_admin'"
+  ).get() as { id: number } | undefined;
+  if (legacyRoleForBackfill) {
+    for (const perm of ["accounta.manage"]) {
+      const already = db.prepare(
+        "SELECT 1 FROM rbac_perm_backfills WHERE permission_key = ?"
+      ).get(perm);
+      if (!already) {
+        db.prepare(
+          "INSERT OR IGNORE INTO rbac_role_permissions (role_id, permission_key) VALUES (?, ?)"
+        ).run(legacyRoleForBackfill.id, perm);
+        db.prepare(
+          "INSERT OR IGNORE INTO rbac_perm_backfills (permission_key) VALUES (?)"
+        ).run(perm);
+      }
+    }
   }
 
   // ── INVENTA — clinic stock-count module ──────────────────────────

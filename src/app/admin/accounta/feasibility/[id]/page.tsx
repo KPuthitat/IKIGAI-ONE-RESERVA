@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAdmin } from "@/lib/auth";
-import { getProject } from "@/lib/feasibility-db";
+import { requirePermission } from "@/lib/auth";
+import { getProject, listCompanies } from "@/lib/feasibility-db";
 import { listItems } from "@/lib/feasibility-startup-db";
 import ProjectEditor from "./ProjectEditor";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "FEASIBILITY · โปรเจค" };
 
 export default function FeasibilityProjectPage({ params }: { params: { id: string } }) {
-  const user = requireAdmin();
+  const user = requirePermission("accounta.manage");
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) notFound();
   const project = getProject(id, user.id);
@@ -19,12 +19,13 @@ export default function FeasibilityProjectPage({ params }: { params: { id: strin
   return (
     <div className="space-y-4">
       <div>
-        <Link href="/admin/feasibility" className="text-sm text-slate-500 hover:text-brand">
+        <Link href="/admin/accounta/feasibility" className="text-sm text-slate-500 hover:text-brand">
           ← กลับรายการโปรเจค
         </Link>
       </div>
       <ProjectEditor
         id={project.id}
+        companies={listCompanies()}
         meta={{
           company: project.company,
           project_name: project.project_name,

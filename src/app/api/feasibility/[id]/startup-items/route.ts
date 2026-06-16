@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import {
   createItem, STARTUP_CATEGORIES
 } from "@/lib/feasibility-startup-db";
@@ -22,7 +22,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const user = requireAdmin();
+  const user = requirePermission("accounta.manage");
   const projectId = Number(params.id);
   if (!Number.isInteger(projectId) || projectId <= 0) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });

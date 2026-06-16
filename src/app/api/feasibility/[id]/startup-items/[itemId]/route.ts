@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import {
   updateItem, deleteItem, STARTUP_CATEGORIES
 } from "@/lib/feasibility-startup-db";
@@ -31,7 +31,7 @@ function ids(params: { id: string; itemId: string }): { projectId: number; itemI
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string; itemId: string } }) {
-  const user = requireAdmin();
+  const user = requirePermission("accounta.manage");
   const p = ids(params);
   if (!p) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
@@ -56,7 +56,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string; it
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string; itemId: string } }) {
-  const user = requireAdmin();
+  const user = requirePermission("accounta.manage");
   const p = ids(params);
   if (!p) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
   const ok = deleteItem(p.itemId, p.projectId, user.id);

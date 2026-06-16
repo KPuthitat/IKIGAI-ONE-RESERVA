@@ -7,7 +7,7 @@ import { fmtMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
 import {
   evaluate, computeScenario, decide,
-  FEASIBILITY_COMPANIES, STARTUP_CATEGORIES, whtBaht,
+  STARTUP_CATEGORIES, whtBaht,
   type FeasibilityInputs, type Scenario, type PnlResult, type SweetSpot
 } from "@/lib/feasibility";
 
@@ -92,8 +92,8 @@ function Section({ title, defaultOpen = true, footer, children }: {
   );
 }
 
-export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startupItems: items0 }: {
-  id: number; meta: Meta; inputs: FeasibilityInputs; startupItems: StartupItem[];
+export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startupItems: items0, companies }: {
+  id: number; meta: Meta; inputs: FeasibilityInputs; startupItems: StartupItem[]; companies: string[];
 }) {
   const router = useRouter();
   const [meta, setMeta] = useState<Meta>(meta0);
@@ -205,7 +205,7 @@ export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startu
             <div>
               <label className="label !text-xs">บริษัท</label>
               <select className="input" value={meta.company} onChange={(e) => mset("company", e.target.value)}>
-                {FEASIBILITY_COMPANIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                {[...new Set([meta.company, ...companies].filter(Boolean))].map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
@@ -216,11 +216,20 @@ export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startu
                 <option value="archived">เก็บถาวร</option>
               </select>
             </div>
-            <div>
-              <label className="label !text-xs">ทำเล</label>
-              <input className="input" value={meta.location} onChange={(e) => mset("location", e.target.value)} />
+            <div className="sm:col-span-2">
+              <label className="label !text-xs">ทำเล (ที่อยู่ / พิกัด หรือลิงก์ Google Maps)</label>
+              <input className="input" value={meta.location}
+                onChange={(e) => mset("location", e.target.value)}
+                placeholder="เช่น 13.61,100.92 · ชื่อสถานที่ · หรือวางลิงก์ Google Maps" />
+              {meta.location.trim() && (
+                <div className="mt-2 rounded-lg overflow-hidden border border-slate-200">
+                  <iframe title="แผนที่ทำเล" className="w-full h-44 block"
+                    loading="lazy"
+                    src={`https://maps.google.com/maps?q=${encodeURIComponent(meta.location.trim())}&output=embed`} />
+                </div>
+              )}
             </div>
-            <div>
+            <div className="sm:col-span-2">
               <label className="label !text-xs">ประเภทธุรกิจ</label>
               <input className="input" value={meta.business_type} onChange={(e) => mset("business_type", e.target.value)} />
             </div>

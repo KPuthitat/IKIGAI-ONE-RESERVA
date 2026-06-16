@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { coerceInputs } from "@/lib/feasibility";
-import { updateProject, deleteProject, getProject, FEASIBILITY_COMPANIES } from "@/lib/feasibility-db";
+import { updateProject, deleteProject, getProject } from "@/lib/feasibility-db";
 
-// PATCH  /api/feasibility/[id] — full update (editor save). Owner-scoped.
-// DELETE /api/feasibility/[id] — delete. Owner-scoped.
+// PATCH  /api/feasibility/[id] — full update (editor save). Shared (accounta).
+// DELETE /api/feasibility/[id] — delete. Shared (accounta).
 
 const Body = z.object({
-  company: z.enum(FEASIBILITY_COMPANIES),
+  company: z.string().trim().min(1).max(100),
   project_name: z.string().trim().min(1).max(200),
   location: z.string().trim().max(200).nullable().optional(),
   business_type: z.string().trim().max(200).nullable().optional(),
@@ -22,7 +22,7 @@ function parseId(raw: string): number | null {
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const user = requireAdmin();
+  const user = requirePermission("accounta.manage");
   const id = parseId(params.id);
   if (id == null) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
 
@@ -51,7 +51,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  const user = requireAdmin();
+  const user = requirePermission("accounta.manage");
   const id = parseId(params.id);
   if (id == null) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
   const ok = deleteProject(id, user.id);

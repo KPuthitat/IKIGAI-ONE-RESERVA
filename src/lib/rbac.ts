@@ -18,7 +18,8 @@ export type RbacPermissionKey =
   | "reserva.manage"
   | "recruita.access"
   | "insigna.view"
-  | "ascenda.view";
+  | "ascenda.view"
+  | "accounta.manage";
 
 export type RbacPermissionDef = {
   key: RbacPermissionKey;
@@ -59,6 +60,12 @@ export const RBAC_PERMISSIONS: RbacPermissionDef[] = [
     module: "ASCENDA",
     labelTh: "ASCENDA — รายได้/KPI",
     descTh: "ดูรายได้ เป้าหมาย และตัวชี้วัด"
+  },
+  {
+    key: "accounta.manage",
+    module: "ACCOUNTA",
+    labelTh: "ACCOUNTA — บัญชี/ความเป็นไปได้",
+    descTh: "ลงบัญชีรายรับ-รายจ่าย ภาษี และประเมินความเป็นไปได้ของโปรเจคลงทุน (FEASIBILITY)"
   }
 ];
 

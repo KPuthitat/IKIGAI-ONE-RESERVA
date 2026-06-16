@@ -1,24 +1,25 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth";
-import { listProjects } from "@/lib/feasibility-db";
+import { requirePermission } from "@/lib/auth";
+import { listProjects, listCompanies } from "@/lib/feasibility-db";
 import FeasibilityClient from "./FeasibilityClient";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "FEASIBILITY · IKIGAI OS" };
 
-// FEASIBILITY — project investment feasibility. Admin/executive only
-// (requireAdmin); each admin sees only their own projects (scoped in
-// listProjects by created_by).
+// FEASIBILITY — project investment feasibility, inside ACCOUNTA. Visible to
+// every admin granted accounta.manage; projects are SHARED (not per-creator)
+// so the team plans together.
 export default function FeasibilityListPage() {
-  const user = requireAdmin();
-  const projects = listProjects(user.id);
+  requirePermission("accounta.manage");
+  const projects = listProjects();
+  const companies = listCompanies();
 
   return (
     <div className="space-y-4">
       <div>
-        <Link href="/admin" className="text-sm text-slate-500 hover:text-brand">
-          ← กลับหน้ารวมโมดูล
+        <Link href="/admin/accounta" className="text-sm text-slate-500 hover:text-brand">
+          ← กลับ ACCOUNTA
         </Link>
       </div>
       <div>
@@ -28,6 +29,7 @@ export default function FeasibilityListPage() {
         </p>
       </div>
       <FeasibilityClient
+        companies={companies}
         projects={projects.map((p) => ({
           id: p.id,
           company: p.company,

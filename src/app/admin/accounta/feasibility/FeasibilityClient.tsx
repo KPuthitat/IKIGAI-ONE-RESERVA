@@ -6,7 +6,6 @@ import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { formatLongDate } from "@/lib/time";
 import { humanizeApiError } from "@/lib/error-messages";
-import { FEASIBILITY_COMPANIES } from "@/lib/feasibility";
 
 type Summary = { verdict: "go" | "caution" | "no"; profit: number; paybackMonths: number };
 type Card = {
@@ -29,7 +28,7 @@ function payback(m: number): string {
   return Number.isFinite(m) ? `${m.toFixed(2)} เดือน` : "—";
 }
 
-export default function FeasibilityClient({ projects }: { projects: Card[] }) {
+export default function FeasibilityClient({ projects, companies }: { projects: Card[]; companies: string[] }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const refresh = () => startTransition(() => router.refresh());
@@ -58,11 +57,11 @@ export default function FeasibilityClient({ projects }: { projects: Card[] }) {
       const res = await fetch(apiUrl("/api/feasibility"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ company: "MEDIHEALTH", project_name: "โปรเจคใหม่" })
+        body: JSON.stringify({ company: companies[0] ?? "บริษัท", project_name: "โปรเจคใหม่" })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "สร้างโปรเจคไม่สำเร็จ")); return; }
-      router.push(`/admin/feasibility/${j.id}`);
+      router.push(`/admin/accounta/feasibility/${j.id}`);
     } finally { setBusy(false); }
   }
 
@@ -76,7 +75,7 @@ export default function FeasibilityClient({ projects }: { projects: Card[] }) {
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "ทำรายการไม่สำเร็จ")); return; }
-      if (action === "duplicate" && j.id) { router.push(`/admin/feasibility/${j.id}`); return; }
+      if (action === "duplicate" && j.id) { router.push(`/admin/accounta/feasibility/${j.id}`); return; }
       refresh();
     } finally { setBusy(false); }
   }
@@ -103,7 +102,7 @@ export default function FeasibilityClient({ projects }: { projects: Card[] }) {
           value={q} onChange={(e) => setQ(e.target.value)} />
         <select className="input !w-auto" value={company} onChange={(e) => setCompany(e.target.value)}>
           <option value="">ทุกบริษัท</option>
-          {FEASIBILITY_COMPANIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          {companies.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <select className="input !w-auto" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="active">ใช้งานอยู่</option>
@@ -130,7 +129,7 @@ export default function FeasibilityClient({ projects }: { projects: Card[] }) {
             const v = p.summary ? VERDICT[p.summary.verdict] : null;
             return (
               <div key={p.id} className="card space-y-2 flex flex-col">
-                <button type="button" onClick={() => router.push(`/admin/feasibility/${p.id}`)}
+                <button type="button" onClick={() => router.push(`/admin/accounta/feasibility/${p.id}`)}
                   className="text-left space-y-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] tracking-wide text-slate-400">{p.company}</span>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { duplicateProject, setStatus } from "@/lib/feasibility-db";
 
 // POST /api/feasibility/[id]/action — lightweight list actions that don't need
@@ -11,7 +11,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const user = requireAdmin();
+  const user = requirePermission("accounta.manage");
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });
