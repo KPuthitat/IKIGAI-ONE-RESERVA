@@ -5,11 +5,15 @@
 // sees their own projects.
 
 import { getDb } from "./db";
-import { coerceInputs, evaluate, type FeasibilityInputs } from "./feasibility";
+import {
+  coerceInputs, evaluate, FEASIBILITY_COMPANIES,
+  type FeasibilityCompany, type FeasibilityStatus, type FeasibilityInputs
+} from "./feasibility";
 
-export const FEASIBILITY_COMPANIES = ["WELTRADE", "MEDIHEALTH", "OMNIA"] as const;
-export type FeasibilityCompany = (typeof FEASIBILITY_COMPANIES)[number];
-export type FeasibilityStatus = "draft" | "active" | "archived";
+// Re-export so existing server-side importers keep working; the canonical
+// definitions live in feasibility.ts (client-safe — no db import).
+export { FEASIBILITY_COMPANIES };
+export type { FeasibilityCompany, FeasibilityStatus };
 
 export type FeasibilitySummary = {
   verdict: "go" | "caution" | "no";

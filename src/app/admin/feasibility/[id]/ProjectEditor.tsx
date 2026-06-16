@@ -9,7 +9,7 @@ import {
   evaluate, computeScenario, decide,
   type FeasibilityInputs, type Scenario, type PnlResult, type SweetSpot
 } from "@/lib/feasibility";
-import { FEASIBILITY_COMPANIES } from "@/lib/feasibility-db";
+import { FEASIBILITY_COMPANIES } from "@/lib/feasibility";
 
 type Meta = {
   company: string; project_name: string;

@@ -6,7 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { formatLongDate } from "@/lib/time";
 import { humanizeApiError } from "@/lib/error-messages";
-import { FEASIBILITY_COMPANIES } from "@/lib/feasibility-db";
+import { FEASIBILITY_COMPANIES } from "@/lib/feasibility";
 
 type Summary = { verdict: "go" | "caution" | "no"; profit: number; paybackMonths: number };
 type Card = {

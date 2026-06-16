@@ -14,6 +14,12 @@
 export type ScenarioTriple = { base: number; best: number; worst: number };
 export type Scenario = "base" | "best" | "worst";
 
+// Client-safe constants/types (kept here, NOT in feasibility-db, so client
+// components can import them without pulling in better-sqlite3).
+export const FEASIBILITY_COMPANIES = ["WELTRADE", "MEDIHEALTH", "OMNIA"] as const;
+export type FeasibilityCompany = (typeof FEASIBILITY_COMPANIES)[number];
+export type FeasibilityStatus = "draft" | "active" | "archived";
+
 export type FeasibilityInputs = {
   assumptions: {
     seats: number; occupancyPct: number;
