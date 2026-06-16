@@ -4935,6 +4935,30 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_feasibility_owner
       ON feasibility_projects(created_by, updated_at DESC);
+
+    -- Itemised startup spend (owner 2026-06-16). Each startup category
+    -- (construction/ffe/…) can hold a ledger of real payments — date, payee,
+    -- amount, withholding tax (baht or %), document type + image, paid/pending.
+    -- The category's number in feasibility_projects.inputs is kept = SUM(amount)
+    -- of its items. Scoped via the parent project's owner.
+    CREATE TABLE IF NOT EXISTS feasibility_startup_items (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id     INTEGER NOT NULL REFERENCES feasibility_projects(id) ON DELETE CASCADE,
+      category       TEXT NOT NULL,
+      paid_date      TEXT,
+      item_name      TEXT NOT NULL,
+      payee          TEXT,
+      amount         REAL NOT NULL DEFAULT 0,
+      wht_mode       TEXT NOT NULL DEFAULT 'none',  -- 'none' | 'baht' | 'pct'
+      wht_value      REAL NOT NULL DEFAULT 0,
+      doc_type       TEXT,                          -- 'tax_invoice' | 'receipt'
+      payment_status TEXT NOT NULL DEFAULT 'paid',  -- 'paid' | 'pending'
+      doc_image_path TEXT,
+      created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_feasibility_startup_project
+      ON feasibility_startup_items(project_id, category);
   `);
 
   // ── INSIGNA PII lint (spec section 6.1, NON-NEGOTIABLE) ─────
