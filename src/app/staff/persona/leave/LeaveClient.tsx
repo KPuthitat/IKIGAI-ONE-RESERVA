@@ -333,7 +333,12 @@ export default function LeaveClient({
       if (!res.ok) {
         const errKey = `staff.persona.leave.err.${data.error}`;
         const translated = t(errKey as any);
-        setErr(translated === errKey ? (data.error || t("common.error")) : translated);
+        // Prefer an i18n translation; else fall back to the server's
+        // human-readable `message` (e.g. approval_chain_not_configured carries
+        // a Thai instruction) before ever showing a raw error code.
+        setErr(translated === errKey
+          ? (data.message || data.error || t("common.error"))
+          : translated);
         return;
       }
       reset();
