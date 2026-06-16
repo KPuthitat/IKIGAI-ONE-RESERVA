@@ -104,6 +104,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         ...(canModule(user, "ascenda.view") ? [{ href: gate("/admin/ascenda"), label: "ASCENDA" }] : []),
         ...(canModule(user, "insigna.view") ? [{ href: gate("/admin/insigna"), label: "INSIGNA" }] : []),
         ...(canModule(user, "recruita.access") ? [{ href: gate("/admin/recruita"), label: "RECRUITA" }] : []),
+        // FEASIBILITY — admin/executive only (owner 2026-06-16). Not granular-
+        // RBAC-gated; every admin who reaches /admin sees it, the pages enforce
+        // requireAdmin server-side.
+        { href: gate("/admin/feasibility"), label: "FEASIBILITY" },
         // System-wide entries — only super_admin can manage these,
         // so hide them from regular admins to keep the sidebar clean.
         // The pages still enforce requireSuperAdmin() server-side as

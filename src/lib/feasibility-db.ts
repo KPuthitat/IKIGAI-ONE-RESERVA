@@ -5,7 +5,7 @@
 // sees their own projects.
 
 import { getDb } from "./db";
-import { blankInputs, evaluate, type FeasibilityInputs } from "./feasibility";
+import { coerceInputs, evaluate, type FeasibilityInputs } from "./feasibility";
 
 export const FEASIBILITY_COMPANIES = ["WELTRADE", "MEDIHEALTH", "OMNIA"] as const;
 export type FeasibilityCompany = (typeof FEASIBILITY_COMPANIES)[number];
@@ -38,18 +38,9 @@ export type FeasibilityProject = Omit<FeasibilityRow, "inputs" | "summary_cache"
 
 function parseInputs(raw: string): FeasibilityInputs {
   try {
-    const parsed = JSON.parse(raw) as Partial<FeasibilityInputs>;
-    // Merge over a blank default so a partial/older blob still has every key.
-    const blank = blankInputs();
-    return {
-      assumptions: { ...blank.assumptions, ...parsed.assumptions },
-      startup: { ...blank.startup, ...parsed.startup },
-      variablePct: { ...blank.variablePct, ...parsed.variablePct },
-      fixed: { ...blank.fixed, ...parsed.fixed },
-      thresholds: { ...blank.thresholds, ...parsed.thresholds }
-    };
+    return coerceInputs(JSON.parse(raw));
   } catch {
-    return blankInputs();
+    return coerceInputs(null);
   }
 }
 

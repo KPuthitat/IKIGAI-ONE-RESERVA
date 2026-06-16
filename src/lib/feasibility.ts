@@ -75,6 +75,42 @@ const n = (x: unknown): number => {
   return Number.isFinite(v) ? v : 0;
 };
 
+/** Merge an arbitrary (possibly partial/untrusted) object over the blank
+ *  default so every key exists + is the right type. Used when reading a
+ *  stored blob or accepting an API body — never trust the shape. */
+export function coerceInputs(raw: unknown): FeasibilityInputs {
+  const blank = blankInputs();
+  if (!raw || typeof raw !== "object") return blank;
+  const p = raw as Record<string, Record<string, unknown>>;
+  const triple = (t: unknown, d: ScenarioTriple): ScenarioTriple => {
+    const o = (t && typeof t === "object" ? t : {}) as Record<string, unknown>;
+    return { base: n(o.base ?? d.base), best: n(o.best ?? d.best), worst: n(o.worst ?? d.worst) };
+  };
+  const num = <T extends Record<string, number>>(src: unknown, def: T): T => {
+    const o = (src && typeof src === "object" ? src : {}) as Record<string, unknown>;
+    const out = {} as Record<string, number>;
+    for (const k of Object.keys(def)) out[k] = n(o[k] ?? def[k]);
+    return out as T;
+  };
+  const a = (p.assumptions ?? {}) as Record<string, unknown>;
+  return {
+    assumptions: {
+      ...num(a, {
+        seats: 0, occupancyPct: 0, avgCheckSitin: 0, cogsSitinPct: 0,
+        avgCheckDelivery: 0, cogsDeliveryPct: 0, weekdayDays: 0, weekendDays: 0
+      }),
+      turnoverWeekday: triple(a.turnoverWeekday, blank.assumptions.turnoverWeekday),
+      turnoverWeekend: triple(a.turnoverWeekend, blank.assumptions.turnoverWeekend),
+      deliveryWeekday: triple(a.deliveryWeekday, blank.assumptions.deliveryWeekday),
+      deliveryWeekend: triple(a.deliveryWeekend, blank.assumptions.deliveryWeekend)
+    },
+    startup: num(p.startup, blank.startup),
+    variablePct: num(p.variablePct, blank.variablePct),
+    fixed: num(p.fixed, blank.fixed),
+    thresholds: num(p.thresholds, blank.thresholds)
+  };
+}
+
 /** Total one-off startup investment. */
 export function startupTotal(inp: FeasibilityInputs): number {
   const s = inp.startup;
