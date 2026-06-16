@@ -7,7 +7,7 @@ import { fmtMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
 import {
   evaluate, computeScenario, decide,
-  type FeasibilityInputs, type Scenario, type PnlResult
+  type FeasibilityInputs, type Scenario, type PnlResult, type SweetSpot
 } from "@/lib/feasibility";
 import { FEASIBILITY_COMPANIES } from "@/lib/feasibility-db";
 
@@ -123,6 +123,17 @@ export default function ProjectEditor({ id, meta: meta0, inputs: inputs0 }: {
       setMsg({ kind: "ok", text: "บันทึกแล้ว" });
       router.refresh();
     } finally { setBusy(false); }
+  }
+
+  async function copySummary() {
+    setMsg(null);
+    const text = buildSummary(meta, inputs);
+    try {
+      await navigator.clipboard.writeText(text);
+      setMsg({ kind: "ok", text: "คัดลอกสรุปแล้ว — วางส่งทาง LINE/อีเมลได้เลย" });
+    } catch {
+      setMsg({ kind: "err", text: "คัดลอกไม่สำเร็จ (เบราว์เซอร์ไม่รองรับ)" });
+    }
   }
 
   const a = inputs.assumptions;
@@ -282,18 +293,24 @@ export default function ProjectEditor({ id, meta: meta0, inputs: inputs0 }: {
           </div>
         </div>
 
+        <SweetSpotGauge sweet={result.sweet} />
         <ScenarioTable inputs={inputs} />
+        <SensitivityTable inputs={inputs} />
 
-        <div className="card flex items-center justify-between gap-2">
+        <div className="card flex flex-wrap items-center justify-between gap-2">
           {msg && (
             <span className={`text-sm ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
               {msg.kind === "ok" ? "✓ " : "✗ "}{msg.text}
             </span>
           )}
-          <button type="button" onClick={save} disabled={busy}
-            className="btn-primary ml-auto disabled:opacity-50">
-            {busy ? "กำลังบันทึก…" : "บันทึกโปรเจค"}
-          </button>
+          <div className="flex items-center gap-2 ml-auto">
+            <button type="button" onClick={copySummary} disabled={busy}
+              className="btn-secondary disabled:opacity-50">คัดลอกสรุปผล</button>
+            <button type="button" onClick={save} disabled={busy}
+              className="btn-primary disabled:opacity-50">
+              {busy ? "กำลังบันทึก…" : "บันทึกโปรเจค"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -350,4 +367,111 @@ function ScenarioTable({ inputs }: { inputs: FeasibilityInputs }) {
       </table>
     </div>
   );
+}
+
+// ── revenue sweet-spot gauge (signature view) ────────────────────
+function SweetSpotGauge({ sweet }: { sweet: SweetSpot }) {
+  const marks = [
+    { key: "floor", label: "ขั้นต่ำ", note: "ไม่ขาดทุน", v: sweet.floor, color: "bg-rose-500" },
+    { key: "target", label: "เป้าหมาย", note: "คืนทุนตามเป้า", v: sweet.target, color: "bg-amber-500" },
+    { key: "comfort", label: "หลัก", note: "สมมติฐานหลัก", v: sweet.comfort, color: "bg-blue-600" },
+    { key: "ceiling", label: "เพดาน", note: "ศักยภาพสูงสุด", v: sweet.ceiling, color: "bg-emerald-600" }
+  ].filter((m) => Number.isFinite(m.v) && m.v >= 0);
+  if (marks.length < 2) {
+    return (
+      <div className="card">
+        <h3 className="font-bold text-slate-800 text-sm">ช่วงรายได้ที่เหมาะสม</h3>
+        <p className="text-xs text-slate-400 mt-1">กรอกสมมติฐานรายได้ให้ครบเพื่อดูช่วงรายได้</p>
+      </div>
+    );
+  }
+  const vals = marks.map((m) => m.v);
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const span = hi - lo || 1;
+  const posOf = (v: number) => Math.max(0, Math.min(100, ((v - lo) / span) * 100));
+  return (
+    <div className="card">
+      <h3 className="font-bold text-slate-800 text-sm mb-3">ช่วงรายได้ที่เหมาะสม (ต่อเดือน)</h3>
+      <div className="relative h-2 rounded-full bg-gradient-to-r from-rose-200 via-amber-200 to-emerald-200">
+        {marks.map((m) => (
+          <div key={m.key} className="absolute -top-1 -translate-x-1/2" style={{ left: `${posOf(m.v)}%` }}>
+            <div className={`w-3 h-3 rounded-full ${m.color} ring-2 ring-white`} />
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
+        {marks.map((m) => (
+          <div key={m.key} className="text-center">
+            <div className={`inline-block w-2 h-2 rounded-full ${m.color}`} />
+            <div className="text-[11px] font-semibold text-slate-700">{m.label}</div>
+            <div className="text-xs font-bold tabular-nums">{baht(m.v)}</div>
+            <div className="text-[10px] text-slate-400">~{sweet.dailyHeads(m.v).toFixed(0)} หัว/วัน</div>
+            <div className="text-[9px] text-slate-400">{m.note}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── occupancy sensitivity (Base turns) ───────────────────────────
+function SensitivityTable({ inputs }: { inputs: FeasibilityInputs }) {
+  const levels = [50, 60, 70, 75, 80, 90];
+  const cur = inputs.assumptions.occupancyPct;
+  const rows = levels.map((occ) => {
+    const r = computeScenario(
+      { ...inputs, assumptions: { ...inputs.assumptions, occupancyPct: occ } }, "base"
+    );
+    return { occ, sales: r.sales, profit: r.profit, payback: r.paybackMonths };
+  });
+  return (
+    <div className="card overflow-x-auto">
+      <h3 className="font-bold text-slate-800 text-sm mb-2">ความไวต่ออัตราเข้าร้าน (สถานการณ์ฐาน)</h3>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-slate-400">
+            <th className="text-left font-medium pb-1">อัตราเข้าร้าน</th>
+            <th className="text-right font-medium pb-1 px-1">ยอดขาย</th>
+            <th className="text-right font-medium pb-1 px-1">กำไร</th>
+            <th className="text-right font-medium pb-1 px-1">คืนทุน</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const active = Math.abs(r.occ - cur) < 0.5;
+            return (
+              <tr key={r.occ} className={`border-t border-slate-100 ${active ? "bg-brand/10 font-semibold" : ""}`}>
+                <td className="py-1.5 pr-2">{r.occ}%{active ? " ← ปัจจุบัน" : ""}</td>
+                <td className="py-1.5 px-1 text-right tabular-nums">{baht(r.sales)}</td>
+                <td className={`py-1.5 px-1 text-right tabular-nums ${r.profit > 0 ? "" : "text-rose-600"}`}>{baht(r.profit)}</td>
+                <td className="py-1.5 px-1 text-right tabular-nums">{months(r.payback)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── copy-to-clipboard summary text ───────────────────────────────
+function buildSummary(meta: Meta, inputs: FeasibilityInputs): string {
+  const r = evaluate(inputs);
+  const s = r.sweet;
+  const L: string[] = [];
+  L.push(`FEASIBILITY — ${meta.project_name} (${meta.company})`);
+  if (meta.location) L.push(`ทำเล: ${meta.location}`);
+  L.push("");
+  L.push(`ผลการประเมิน: ${r.decision.label}`);
+  if (r.decision.reasons.length) L.push(`เหตุผล: ${r.decision.reasons.join(", ")}`);
+  L.push("");
+  L.push(`กำไร/เดือน: ${baht(r.base.profit)}`);
+  L.push(`คืนทุน: ${months(r.base.paybackMonths)}`);
+  L.push(`ROI/ปี: ${pct(r.base.roiAnnual)}`);
+  L.push(`Margin of Safety: ${pct(r.base.marginOfSafety)}`);
+  L.push(`เงินลงทุนรวม: ${baht(r.startupTotal)}`);
+  L.push("");
+  L.push("ช่วงรายได้/เดือน:");
+  L.push(`  ขั้นต่ำ ${baht(s.floor)} · เป้าหมาย ${baht(s.target)} · หลัก ${baht(s.comfort)} · เพดาน ${baht(s.ceiling)}`);
+  return L.join("\n");
 }
