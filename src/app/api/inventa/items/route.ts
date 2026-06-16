@@ -46,7 +46,12 @@ const Body = z.object({
   // N5 pack: optional larger packaging unit + units-per-pack. Pure
   // data-entry convenience; base quantities stay in the smallest unit.
   pack_unit: z.string().max(40).nullable().optional(),
-  pack_size: z.number().min(0).nullable().optional()
+  pack_size: z.number().min(0).nullable().optional(),
+  // Fractional-count mode (owner 2026-06-16) — liquids counted as
+  // "bottles + % of the open bottle". qty_frac = initial on-hand in bottles
+  // (decimal). For fractional items safety_stock is read as "% of a bottle".
+  count_mode: z.enum(["discrete", "fractional"]).default("discrete"),
+  qty_frac: z.number().min(0).nullable().optional()
 });
 
 export async function GET(req: Request) {
@@ -98,6 +103,13 @@ export async function POST(req: Request) {
     ? unitCostFrom(d.last_purchase_price, d.last_purchase_units)
     : (d.unit_cost ?? 0);
 
+  // Fractional items: safety_stock is a "% of a bottle" (clamp 0-100), the
+  // on-hand lives in qty_frac (bottles, decimal) and current_qty stays 0.
+  const isFractional = d.count_mode === "fractional";
+  const safetyStock = isFractional ? Math.min(100, Math.max(0, d.safety_stock)) : d.safety_stock;
+  const currentQty = isFractional ? 0 : d.current_qty;
+  const qtyFrac = isFractional ? (d.qty_frac ?? 0) : null;
+
   const db = getDb();
   const info = db.prepare(`
     INSERT INTO inventa_items
@@ -105,8 +117,9 @@ export async function POST(req: Request) {
        category, storage_location, item_type, item_type_label, unit, unit_cost, cost_price,
        last_purchase_price, last_purchase_units, price_opd, price_ipd,
        price_uc, supplier_id, grid_row, grid_col, pick_freq,
-       safety_stock, current_qty, pack_unit, pack_size, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       safety_stock, current_qty, pack_unit, pack_size,
+       count_mode, qty_frac, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     user.activeBranchId ?? null,
     d.item_code ?? null, d.barcode ?? null, d.name.trim(),
@@ -116,8 +129,9 @@ export async function POST(req: Request) {
     d.last_purchase_price ?? null, d.last_purchase_units ?? null,
     d.price_opd ?? null, d.price_ipd ?? null, d.price_uc ?? null,
     d.supplier_id ?? null, d.grid_row ?? null, d.grid_col ?? null,
-    d.pick_freq ?? null, d.safety_stock, d.current_qty,
+    d.pick_freq ?? null, safetyStock, currentQty,
     d.pack_unit ?? null, (d.pack_size != null && d.pack_size > 1 ? d.pack_size : null),
+    d.count_mode, qtyFrac,
     user.id
   );
   return NextResponse.json({ ok: true, id: Number(info.lastInsertRowid) });

@@ -3859,6 +3859,21 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE inventa_items ADD COLUMN pack_size REAL");
   }
 
+  // inventa_items: fractional-count mode (owner 2026-06-16). For a liquid in
+  // a bottle (e.g. anaesthetic) you can't count a discrete unit — staff count
+  // "full bottles + % of the open bottle" with a slider. count_mode flags the
+  // item; qty_frac holds the on-hand in BOTTLES as a DECIMAL (e.g. 3.2). For
+  // such items safety_stock (0-100) is read as "% of one bottle", and the
+  // order/receive unit stays whole bottles. Discrete items are completely
+  // untouched (count_mode='discrete', qty_frac NULL — the integer current_qty
+  // path is unchanged).
+  if (!invCols.some((c) => c.name === "count_mode")) {
+    db.exec("ALTER TABLE inventa_items ADD COLUMN count_mode TEXT NOT NULL DEFAULT 'discrete'");
+  }
+  if (!invCols.some((c) => c.name === "qty_frac")) {
+    db.exec("ALTER TABLE inventa_items ADD COLUMN qty_frac REAL");
+  }
+
   // inventa_suppliers: code + display_order
   const supplierCols = db.prepare("PRAGMA table_info(inventa_suppliers)")
     .all() as Array<{ name: string }>;

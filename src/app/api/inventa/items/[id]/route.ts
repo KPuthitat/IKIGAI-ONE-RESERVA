@@ -33,7 +33,10 @@ const Body = z.object({
   safety_stock: z.number().int().min(0).optional(),
   current_qty: z.number().int().min(0).optional(),
   pack_unit: z.string().max(40).nullable().optional(),
-  pack_size: z.number().min(0).nullable().optional()
+  pack_size: z.number().min(0).nullable().optional(),
+  // Fractional-count mode toggle (owner 2026-06-16). qty_frac is changed via
+  // count rounds, not this edit form (same as current_qty).
+  count_mode: z.enum(["discrete", "fractional"]).optional()
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -54,8 +57,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const d = parsed.data;
 
   const db = getDb();
-  const row = db.prepare("SELECT id FROM inventa_items WHERE id = ?").get(id);
+  const row = db.prepare("SELECT id, count_mode FROM inventa_items WHERE id = ?")
+    .get(id) as { id: number; count_mode: string | null } | undefined;
   if (!row) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  // Effective mode after this patch — drives the safety_stock interpretation.
+  const effectiveMode = d.count_mode ?? row.count_mode ?? "discrete";
 
   const fields: string[] = [];
   const vals: Array<string | number | null> = [];
@@ -80,7 +86,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   set("grid_row", d.grid_row);
   set("grid_col", d.grid_col);
   set("pick_freq", d.pick_freq);
-  set("safety_stock", d.safety_stock);
+  set("count_mode", d.count_mode);
+  // Fractional items read safety_stock as "% of a bottle" → clamp 0-100.
+  if (d.safety_stock !== undefined) {
+    set("safety_stock", effectiveMode === "fractional"
+      ? Math.min(100, Math.max(0, d.safety_stock))
+      : d.safety_stock);
+  }
   set("current_qty", d.current_qty);
   set("pack_unit", d.pack_unit);
   // Normalise pack_size: anything ≤ 1 means "no pack" → store NULL.

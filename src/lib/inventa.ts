@@ -92,9 +92,48 @@ export function unitCostFrom(
   return Math.round((p / u) * 10000) / 10000;
 }
 
-/** Is this item at/below its reorder point? */
+/** Is this item at/below its reorder point? (discrete, whole-unit form). */
 export function isLowStock(qty: number, safety: number): boolean {
   return qty <= (safety ?? DEFAULT_SAFETY_STOCK);
+}
+
+/** True for a liquid item counted as "bottles + % of the open bottle". */
+export function isFractionalItem(
+  item: { count_mode?: string | null } | null | undefined
+): boolean {
+  return item?.count_mode === "fractional";
+}
+
+/** On-hand in bottles (decimal) for a fractional item; 0 when unset. */
+export function fracOnHand(
+  item: { qty_frac?: number | null } | null | undefined
+): number {
+  const v = Number(item?.qty_frac);
+  return isFinite(v) && v > 0 ? v : 0;
+}
+
+/** Reorder check that understands both modes. For a fractional item the
+ *  on-hand (bottles) is compared against safety_stock read as "% of one
+ *  bottle" (e.g. safety 20 → reorder at ≤ 0.2 bottle). */
+export function isLowStockItem(
+  item: { count_mode?: string | null; current_qty: number; qty_frac?: number | null; safety_stock: number }
+): boolean {
+  if (isFractionalItem(item)) {
+    return fracOnHand(item) <= (item.safety_stock ?? 0) / 100;
+  }
+  return isLowStock(item.current_qty, item.safety_stock);
+}
+
+/** Human display of a fractional on-hand: "3 ขวด + 20%" / "20%" / "0". */
+export function formatFracQty(bottles: number): string {
+  const b = isFinite(bottles) && bottles > 0 ? bottles : 0;
+  let full = Math.floor(b + 1e-9);
+  let pct = Math.round((b - full) * 100);
+  if (pct >= 100) { full += 1; pct = 0; }
+  if (full > 0 && pct > 0) return `${full} ขวด + ${pct}%`;
+  if (full > 0) return `${full} ขวด`;
+  if (pct > 0) return `${pct}%`;
+  return "0";
 }
 
 export type InventaSupplier = {
@@ -196,6 +235,14 @@ export type InventaItem = {
   /** How many smallest-units one pack holds (e.g. 10 = 1 กล่อง = 10 เม็ด).
    *  Null or ≤ 1 means "no pack" — all quantities stay in the base unit. */
   pack_size: number | null;
+  /** Stock-count mode. 'discrete' (default) counts whole base units via
+   *  current_qty. 'fractional' (liquids in a bottle) counts "bottles + % of
+   *  the open bottle" — the on-hand lives in qty_frac (decimal bottles) and
+   *  safety_stock is read as "% of one bottle" (0-100). */
+  count_mode: "discrete" | "fractional" | null;
+  /** On-hand in BOTTLES (decimal, e.g. 3.2) for fractional items; null for
+   *  discrete items (which use the integer current_qty). */
+  qty_frac: number | null;
   active: number;
   created_by: number | null;
   created_at: string;

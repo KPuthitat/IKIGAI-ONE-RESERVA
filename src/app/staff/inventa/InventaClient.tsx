@@ -7,7 +7,8 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import BarcodeScanner from "@/app/components/BarcodeScanner";
 import {
-  PICK_FREQ_META, isLowStock, expiryBucket, packRelationCaption,
+  PICK_FREQ_META, isLowStock, isLowStockItem, isFractionalItem, formatFracQty,
+  expiryBucket, packRelationCaption,
   type PickFreq, type ItemType, type InventaSupplier, type InventaLookup,
   type InventaItemLot, type ExpiryBucket
 } from "@/lib/inventa";
@@ -59,6 +60,8 @@ type Item = {
   pick_freq: PickFreq | null;
   safety_stock: number;
   current_qty: number;
+  count_mode: "discrete" | "fractional" | null;
+  qty_frac: number | null;
   pack_unit: string | null;
   pack_size: number | null;
   /** Soonest lot expiry across this item's still-positive-qty lots,
@@ -157,8 +160,8 @@ export default function InventaClient({
       cost_desc: (a: Item, b: Item) =>
         (b.cost_price ?? b.unit_cost ?? 0) - (a.cost_price ?? a.unit_cost ?? 0),
       low_first: (a: Item, b: Item) => {
-        const la = isLowStock(a.current_qty, a.safety_stock) ? 0 : 1;
-        const lb = isLowStock(b.current_qty, b.safety_stock) ? 0 : 1;
+        const la = isLowStockItem(a) ? 0 : 1;
+        const lb = isLowStockItem(b) ? 0 : 1;
         if (la !== lb) return la - lb;
         return a.name.localeCompare(b.name, "th");
       }
@@ -389,7 +392,7 @@ export default function InventaClient({
           </thead>
           <tbody>
             {filtered.map((i) => {
-              const low = isLowStock(i.current_qty, i.safety_stock);
+              const low = isLowStockItem(i);
               const fm = i.pick_freq ? PICK_FREQ_META[i.pick_freq] : null;
               // Row tone (#93). Expired wins — it's the most urgent
               // and the darkest tone signals "do not dispense".
@@ -488,7 +491,7 @@ export default function InventaClient({
                     : low ? "text-rose-600"
                     : "text-slate-800"
                   }`}>
-                    {i.current_qty}
+                    {isFractionalItem(i) ? formatFracQty(i.qty_frac ?? 0) : i.current_qty}
                     {low && <span className="ml-1 text-[10px] font-normal">{t("inv.low")}</span>}
                     {bucket === "expired" && (
                       <span className="ml-1 inline-block text-[9px] font-bold uppercase tracking-wide bg-red-900 text-red-50 px-1.5 py-0.5 rounded">
@@ -622,6 +625,9 @@ function ItemModal({
     pick_freq: (base.pick_freq ?? "") as PickFreq | "",
     safety_stock: base.safety_stock != null ? String(base.safety_stock) : "50",
     current_qty: base.current_qty != null ? String(base.current_qty) : "0",
+    // Fractional-count mode (liquids): count_mode + initial bottles (qty_frac).
+    count_mode: (base.count_mode ?? "discrete") as "discrete" | "fractional",
+    qty_frac: base.qty_frac != null ? String(base.qty_frac) : "0",
     // N5 pack: optional larger packaging unit + units per pack.
     pack_unit: base.pack_unit ?? "",
     pack_size: base.pack_size != null ? String(base.pack_size) : ""
@@ -667,6 +673,11 @@ function ItemModal({
         pick_freq: f.pick_freq || null,
         safety_stock: Number(f.safety_stock) || 0,
         current_qty: Number(f.current_qty) || 0,
+        // Fractional mode — initial on-hand in bottles (decimal).
+        count_mode: f.count_mode,
+        qty_frac: f.count_mode === "fractional"
+          ? (f.qty_frac !== "" ? Number(f.qty_frac) : 0)
+          : null,
         // N5 pack — empty / ≤1 size means "no pack".
         pack_unit: f.pack_unit.trim() || null,
         pack_size: f.pack_size !== "" ? Number(f.pack_size) : null
@@ -849,30 +860,72 @@ function ItemModal({
               {t("inv.f.costHint")}
             </p>
           </div>
+          {/* Count mode (owner 2026-06-16) — discrete units vs fractional
+              "bottles + % of the open bottle" for liquids. */}
+          <div className="col-span-2">
+            <label className="label">วิธีนับสต๊อก</label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => up("count_mode", "discrete")}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold border ${
+                  f.count_mode !== "fractional"
+                    ? "bg-brand text-white border-brand"
+                    : "border-slate-300 text-slate-600"}`}>
+                นับเป็นจำนวน
+              </button>
+              <button type="button" onClick={() => up("count_mode", "fractional")}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold border ${
+                  f.count_mode === "fractional"
+                    ? "bg-brand text-white border-brand"
+                    : "border-slate-300 text-slate-600"}`}>
+                นับเป็น % (น้ำในขวด)
+              </button>
+            </div>
+            {f.count_mode === "fractional" && (
+              <p className="text-[10px] text-slate-400 mt-1">
+                สำหรับของเหลวในขวดที่นับหน่วยไม่ได้ — นับเป็น &quot;ขวดเต็ม + % ของขวดที่เปิด&quot;,
+                safety เป็น % ของขวด, สั่งซื้อยังเป็นขวด
+              </p>
+            )}
+          </div>
           <div>
-            <label className="label">{t("inv.f.onhand")}</label>
+            <label className="label">
+              {f.count_mode === "fractional" ? "คงเหลือ (ขวด)" : t("inv.f.onhand")}
+            </label>
             {item ? (
-              // Editing an existing item → qty is read-only here; the
-              // real adjustment path is a stock-count round (owner
-              // 2026-06-03). Avoids accidental edits from the catalogue.
+              // Editing → qty is read-only here; real adjustment is a
+              // stock-count round (owner 2026-06-03).
               <>
                 <div className="input bg-slate-50 text-slate-700 flex items-center">
-                  {f.current_qty || "0"}
+                  {f.count_mode === "fractional"
+                    ? formatFracQty(Number(base.qty_frac) || 0)
+                    : (f.current_qty || "0")}
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">
                   ปรับจำนวนที่ &quot;รอบเช็คสต๊อค&quot;
                 </p>
               </>
+            ) : f.count_mode === "fractional" ? (
+              <input className="input" type="number" min="0" step="0.05" value={f.qty_frac}
+                onChange={(e) => up("qty_frac", e.target.value)}
+                placeholder="เช่น 1 = เต็มขวด, 0.2 = เหลือ 20%" />
             ) : (
               <input className="input" type="number" min="0" value={f.current_qty}
                 onChange={(e) => up("current_qty", e.target.value)} />
             )}
           </div>
           <div>
-            <label className="label">{t("inv.f.safety")}</label>
-            <input className="input" type="number" min="0" value={f.safety_stock}
+            <label className="label">
+              {f.count_mode === "fractional" ? "Safety stock (% ของขวด)" : t("inv.f.safety")}
+            </label>
+            <input className="input" type="number" min="0"
+              max={f.count_mode === "fractional" ? 100 : undefined}
+              value={f.safety_stock}
               onChange={(e) => up("safety_stock", e.target.value)} />
-            <p className="text-[10px] text-slate-400 mt-1">{t("inv.f.safetyHint")}</p>
+            <p className="text-[10px] text-slate-400 mt-1">
+              {f.count_mode === "fractional"
+                ? "เตือนเติมเมื่อเหลือ ≤ % นี้ของ 1 ขวด (0–100)"
+                : t("inv.f.safetyHint")}
+            </p>
           </div>
           <div className="col-span-2">
             <label className="label">{t("inv.f.supplier")}</label>
