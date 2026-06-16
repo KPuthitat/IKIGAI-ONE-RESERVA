@@ -6,14 +6,14 @@
 
 import { getDb } from "./db";
 import { getProject, updateProject } from "./feasibility-db";
+import {
+  STARTUP_CATEGORIES, whtBaht as whtBahtPure,
+  type StartupCategory, type WhtMode
+} from "./feasibility";
 
-export const STARTUP_CATEGORIES = [
-  "construction", "ffe", "stock", "hardOther", "franchise",
-  "deposit", "permit", "professional", "preOpening", "softOther"
-] as const;
-export type StartupCategory = (typeof STARTUP_CATEGORIES)[number];
-
-export type WhtMode = "none" | "baht" | "pct";
+// Re-export the client-safe pieces for server callers' convenience.
+export { STARTUP_CATEGORIES };
+export type { StartupCategory, WhtMode };
 export type DocType = "tax_invoice" | "receipt" | null;
 export type PaymentStatus = "paid" | "pending";
 
@@ -47,11 +47,9 @@ export type StartupItemWrite = {
   doc_image_path?: string | null;
 };
 
-/** Withholding-tax amount in baht for one item. */
+/** Withholding-tax amount in baht for one item (delegates to the pure helper). */
 export function whtBaht(it: { amount: number; wht_mode: string; wht_value: number }): number {
-  if (it.wht_mode === "pct") return (it.amount * it.wht_value) / 100;
-  if (it.wht_mode === "baht") return it.wht_value;
-  return 0;
+  return whtBahtPure(it.amount, it.wht_mode, it.wht_value);
 }
 
 function round2(n: number): number {

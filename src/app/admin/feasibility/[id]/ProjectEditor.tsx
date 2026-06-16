@@ -1,20 +1,40 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
 import {
   evaluate, computeScenario, decide,
+  FEASIBILITY_COMPANIES, STARTUP_CATEGORIES, whtBaht,
   type FeasibilityInputs, type Scenario, type PnlResult, type SweetSpot
 } from "@/lib/feasibility";
-import { FEASIBILITY_COMPANIES } from "@/lib/feasibility";
 
 type Meta = {
   company: string; project_name: string;
   location: string; business_type: string; status: string;
 };
+
+export type StartupItem = {
+  id: number;
+  category: string;
+  paid_date: string | null;
+  item_name: string;
+  payee: string | null;
+  amount: number;
+  wht_mode: string;
+  wht_value: number;
+  doc_type: string | null;
+  payment_status: string;
+};
+
+const STARTUP_LABELS: Record<string, string> = {
+  construction: "ก่อสร้าง/ตกแต่ง", ffe: "เฟอร์นิเจอร์/อุปกรณ์", stock: "สต๊อกเริ่มต้น",
+  hardOther: "ฮาร์ดแวร์อื่นๆ", franchise: "ค่าแฟรนไชส์", deposit: "เงินมัดจำ",
+  permit: "ใบอนุญาต", professional: "ค่าวิชาชีพ", preOpening: "ก่อนเปิดร้าน", softOther: "อื่นๆ (soft)"
+};
+const round2 = (n: number) => Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 const months = (m: number) => (Number.isFinite(m) ? `${m.toFixed(2)} เดือน` : "—");
@@ -72,14 +92,34 @@ function Section({ title, defaultOpen = true, footer, children }: {
   );
 }
 
-export default function ProjectEditor({ id, meta: meta0, inputs: inputs0 }: {
-  id: number; meta: Meta; inputs: FeasibilityInputs;
+export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startupItems: items0 }: {
+  id: number; meta: Meta; inputs: FeasibilityInputs; startupItems: StartupItem[];
 }) {
   const router = useRouter();
   const [meta, setMeta] = useState<Meta>(meta0);
   const [inputs, setInputs] = useState<FeasibilityInputs>(inputs0);
+  const [items, setItems] = useState<StartupItem[]>(items0);
+  const [startupModalCat, setStartupModalCat] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  // Keep inputs.startup.<category> = sum of that category's items (mirrors the
+  // server's syncCategory) so the live KPIs reflect the ledger immediately.
+  useEffect(() => {
+    setInputs((prev) => {
+      const startup = { ...prev.startup };
+      let changed = false;
+      for (const cat of STARTUP_CATEGORIES) {
+        const k = cat as keyof typeof startup;
+        const catItems = items.filter((i) => i.category === cat);
+        if (catItems.length > 0) {
+          const sum = round2(catItems.reduce((s, i) => s + i.amount, 0));
+          if (startup[k] !== sum) { startup[k] = sum; changed = true; }
+        }
+      }
+      return changed ? { ...prev, startup } : prev;
+    });
+  }, [items]);
 
   const result = useMemo(() => evaluate(inputs), [inputs]);
 
@@ -214,17 +254,31 @@ export default function ProjectEditor({ id, meta: meta0, inputs: inputs0 }: {
             <span className="text-slate-900">{baht(result.startupTotal)}</span>
           </div>
         }>
-          <div className="grid grid-cols-2 gap-2">
-            <NumField label="ก่อสร้าง/ตกแต่ง" value={inputs.startup.construction} onChange={(v) => setS("construction", v)} suffix="฿" />
-            <NumField label="เฟอร์นิเจอร์/อุปกรณ์" value={inputs.startup.ffe} onChange={(v) => setS("ffe", v)} suffix="฿" />
-            <NumField label="สต๊อกเริ่มต้น" value={inputs.startup.stock} onChange={(v) => setS("stock", v)} suffix="฿" />
-            <NumField label="ฮาร์ดแวร์อื่นๆ" value={inputs.startup.hardOther} onChange={(v) => setS("hardOther", v)} suffix="฿" />
-            <NumField label="ค่าแฟรนไชส์" value={inputs.startup.franchise} onChange={(v) => setS("franchise", v)} suffix="฿" />
-            <NumField label="เงินมัดจำ" value={inputs.startup.deposit} onChange={(v) => setS("deposit", v)} suffix="฿" />
-            <NumField label="ใบอนุญาต" value={inputs.startup.permit} onChange={(v) => setS("permit", v)} suffix="฿" />
-            <NumField label="ค่าวิชาชีพ" value={inputs.startup.professional} onChange={(v) => setS("professional", v)} suffix="฿" />
-            <NumField label="ก่อนเปิดร้าน" value={inputs.startup.preOpening} onChange={(v) => setS("preOpening", v)} suffix="฿" />
-            <NumField label="อื่นๆ (soft)" value={inputs.startup.softOther} onChange={(v) => setS("softOther", v)} suffix="฿" />
+          <div className="space-y-1.5">
+            <p className="text-[11px] text-slate-400">
+              กดหัวข้อเพื่อเพิ่มรายการจ่ายจริง (วันที่ · ผู้รับเงิน · เอกสาร · สถานะ) — ยอดรวมจะคำนวณอัตโนมัติ
+            </p>
+            {STARTUP_CATEGORIES.map((cat) => {
+              const k = cat as keyof FeasibilityInputs["startup"];
+              const catItems = items.filter((i) => i.category === cat);
+              const sum = round2(catItems.reduce((s, i) => s + i.amount, 0));
+              return (
+                <div key={cat} className="flex items-center gap-2">
+                  <div className="flex-1 text-sm text-slate-600 min-w-0 truncate">{STARTUP_LABELS[cat]}</div>
+                  {catItems.length > 0 ? (
+                    <div className="w-28 text-right text-sm font-semibold tabular-nums">{baht(sum)}</div>
+                  ) : (
+                    <input className="input !py-1 text-sm !w-28 text-right" type="number" inputMode="decimal"
+                      value={inputs.startup[k] === 0 ? "" : inputs.startup[k]} placeholder="0"
+                      onChange={(e) => setS(k, e.target.value === "" ? 0 : Number(e.target.value))} />
+                  )}
+                  <button type="button" onClick={() => setStartupModalCat(cat)}
+                    className="text-xs text-brand hover:underline whitespace-nowrap w-24 text-right">
+                    {catItems.length > 0 ? `จัดการ (${catItems.length})` : "+ เพิ่มรายการ"}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </Section>
 
@@ -294,6 +348,7 @@ export default function ProjectEditor({ id, meta: meta0, inputs: inputs0 }: {
         </div>
 
         <SweetSpotGauge sweet={result.sweet} />
+        <PayeeBreakdown items={items} />
         <ScenarioTable inputs={inputs} />
         <SensitivityTable inputs={inputs} />
 
@@ -312,6 +367,233 @@ export default function ProjectEditor({ id, meta: meta0, inputs: inputs0 }: {
             </button>
           </div>
         </div>
+      </div>
+      {startupModalCat && (
+        <StartupItemsModal
+          projectId={id}
+          category={startupModalCat}
+          items={items}
+          setItems={setItems}
+          onClose={() => setStartupModalCat(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── payee breakdown — "this project paid X to whom" ──────────────
+function PayeeBreakdown({ items }: { items: StartupItem[] }) {
+  const total = items.reduce((s, i) => s + i.amount, 0);
+  const byPayee = useMemo(() => {
+    const m = new Map<string, { amount: number; count: number }>();
+    for (const it of items) {
+      const key = (it.payee ?? "").trim() || "(ไม่ระบุผู้รับเงิน)";
+      const cur = m.get(key) ?? { amount: 0, count: 0 };
+      cur.amount += it.amount; cur.count += 1;
+      m.set(key, cur);
+    }
+    return [...m.entries()].map(([payee, v]) => ({
+      payee, amount: v.amount, count: v.count,
+      pct: total > 0 ? (v.amount / total) * 100 : 0
+    })).sort((a, b) => b.amount - a.amount);
+  }, [items, total]);
+
+  if (items.length === 0) return null;
+  return (
+    <div className="card">
+      <h3 className="font-bold text-slate-800 text-sm mb-2">จ่ายให้ใครไปเท่าไร (เงินลงทุน)</h3>
+      <div className="space-y-1.5">
+        {byPayee.map((p) => (
+          <div key={p.payee}>
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-slate-700 min-w-0 truncate">{p.payee}
+                <span className="text-slate-400"> · {p.count} รายการ</span></span>
+              <span className="tabular-nums whitespace-nowrap">
+                {baht(p.amount)} <span className="text-slate-400">({p.pct.toFixed(1)}%)</span>
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full bg-slate-100 mt-0.5">
+              <div className="h-1.5 rounded-full bg-brand" style={{ width: `${Math.min(100, p.pct)}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── startup-category ledger modal ────────────────────────────────
+function StartupItemsModal({ projectId, category, items, setItems, onClose }: {
+  projectId: number; category: string;
+  items: StartupItem[]; setItems: React.Dispatch<React.SetStateAction<StartupItem[]>>;
+  onClose: () => void;
+}) {
+  const catItems = items.filter((i) => i.category === category);
+  const blank = (): Omit<StartupItem, "id"> => ({
+    category, paid_date: null, item_name: "", payee: null, amount: 0,
+    wht_mode: "none", wht_value: 0, doc_type: null, payment_status: "paid"
+  });
+  const [editing, setEditing] = useState<StartupItem | null>(null);
+  const [form, setForm] = useState<Omit<StartupItem, "id">>(blank());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function startAdd() { setEditing(null); setForm(blank()); }
+  function startEdit(it: StartupItem) {
+    setEditing(it);
+    setForm({ ...it });
+  }
+  const fset = <K extends keyof Omit<StartupItem, "id">>(k: K, v: Omit<StartupItem, "id">[K]) =>
+    setForm((p) => ({ ...p, [k]: v }));
+
+  async function submit() {
+    setErr(null);
+    if (!form.item_name.trim()) { setErr("กรุณากรอกชื่อรายการ"); return; }
+    setBusy(true);
+    const body = {
+      category, paid_date: form.paid_date || null, item_name: form.item_name.trim(),
+      payee: form.payee?.trim() || null, amount: Number(form.amount) || 0,
+      wht_mode: form.wht_mode, wht_value: Number(form.wht_value) || 0,
+      doc_type: form.doc_type, payment_status: form.payment_status
+    };
+    try {
+      if (editing) {
+        const res = await fetch(apiUrl(`/api/feasibility/${projectId}/startup-items/${editing.id}`), {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "บันทึกไม่สำเร็จ")); return; }
+        setItems((p) => p.map((i) => i.id === editing.id ? { ...editing, ...body } : i));
+      } else {
+        const res = await fetch(apiUrl(`/api/feasibility/${projectId}/startup-items`), {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "เพิ่มไม่สำเร็จ")); return; }
+        setItems((p) => [...p, { id: Number(j.id), ...body }]);
+      }
+      startAdd();
+    } finally { setBusy(false); }
+  }
+
+  async function remove(it: StartupItem) {
+    if (!window.confirm(`ลบรายการ "${it.item_name}" ?`)) return;
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl(`/api/feasibility/${projectId}/startup-items/${it.id}`), { method: "DELETE" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "ลบไม่สำเร็จ")); return; }
+      setItems((p) => p.filter((i) => i.id !== it.id));
+      if (editing?.id === it.id) startAdd();
+    } finally { setBusy(false); }
+  }
+
+  const catSum = catItems.reduce((s, i) => s + i.amount, 0);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl max-w-xl w-full p-5 space-y-3 max-h-[92vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="font-bold text-slate-800">{STARTUP_LABELS[category]} — รายการจ่าย</h3>
+          <span className="text-sm font-bold tabular-nums">{baht(catSum)}</span>
+        </div>
+
+        {/* existing rows */}
+        <div className="space-y-1.5">
+          {catItems.length === 0 && <p className="text-xs text-slate-400">ยังไม่มีรายการ — เพิ่มด้านล่าง</p>}
+          {catItems.map((it) => (
+            <div key={it.id} className="flex items-center gap-2 border border-slate-100 rounded-lg px-2.5 py-1.5">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-slate-800 truncate">{it.item_name}</div>
+                <div className="text-[11px] text-slate-400 truncate">
+                  {it.payee || "—"}{it.paid_date ? ` · ${it.paid_date}` : ""}
+                  {" · "}{it.payment_status === "pending" ? <span className="text-amber-600">รอชำระ</span> : "ชำระแล้ว"}
+                  {it.doc_type ? ` · ${it.doc_type === "tax_invoice" ? "ใบกำกับภาษี" : "ใบเสร็จ"}` : ""}
+                  {it.wht_mode !== "none" ? ` · หัก ${baht(whtBaht(it.amount, it.wht_mode, it.wht_value))}` : ""}
+                </div>
+              </div>
+              <div className="text-sm tabular-nums">{baht(it.amount)}</div>
+              <button type="button" onClick={() => startEdit(it)} className="text-xs text-brand hover:underline">แก้</button>
+              <button type="button" onClick={() => remove(it)} className="text-xs text-rose-500 hover:underline">ลบ</button>
+            </div>
+          ))}
+        </div>
+
+        {/* add / edit form */}
+        <div className="border-t border-slate-100 pt-3 space-y-2">
+          <div className="text-xs font-semibold text-slate-500">{editing ? "แก้ไขรายการ" : "เพิ่มรายการใหม่"}</div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="col-span-2">
+              <label className="label !text-xs">ชื่อรายการสินค้า *</label>
+              <input className="input !py-1.5 text-sm" value={form.item_name}
+                onChange={(e) => fset("item_name", e.target.value)} />
+            </div>
+            <div>
+              <label className="label !text-xs">วันที่ชำระเงิน</label>
+              <input className="input !py-1.5 text-sm" type="date" value={form.paid_date ?? ""}
+                onChange={(e) => fset("paid_date", e.target.value || null)} />
+            </div>
+            <div>
+              <label className="label !text-xs">ผู้รับเงิน / ผู้จำหน่าย</label>
+              <input className="input !py-1.5 text-sm" value={form.payee ?? ""}
+                onChange={(e) => fset("payee", e.target.value || null)} />
+            </div>
+            <div>
+              <label className="label !text-xs">จำนวนเงิน (฿)</label>
+              <input className="input !py-1.5 text-sm" type="number" inputMode="decimal"
+                value={form.amount === 0 ? "" : form.amount} placeholder="0"
+                onChange={(e) => fset("amount", e.target.value === "" ? 0 : Number(e.target.value))} />
+            </div>
+            <div>
+              <label className="label !text-xs">หัก ณ ที่จ่าย</label>
+              <div className="flex gap-1">
+                <select className="input !py-1.5 text-sm !w-auto" value={form.wht_mode}
+                  onChange={(e) => fset("wht_mode", e.target.value)}>
+                  <option value="none">ไม่มี</option>
+                  <option value="baht">บาท</option>
+                  <option value="pct">%</option>
+                </select>
+                {form.wht_mode !== "none" && (
+                  <input className="input !py-1.5 text-sm flex-1" type="number" inputMode="decimal"
+                    value={form.wht_value === 0 ? "" : form.wht_value}
+                    placeholder={form.wht_mode === "pct" ? "เช่น 3" : "บาท"}
+                    onChange={(e) => fset("wht_value", e.target.value === "" ? 0 : Number(e.target.value))} />
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="label !text-xs">ประเภทเอกสาร</label>
+              <select className="input !py-1.5 text-sm" value={form.doc_type ?? ""}
+                onChange={(e) => fset("doc_type", (e.target.value || null) as StartupItem["doc_type"])}>
+                <option value="">— ไม่ระบุ —</option>
+                <option value="tax_invoice">ใบกำกับภาษี</option>
+                <option value="receipt">ใบเสร็จรับเงิน (ไม่มีภาษี)</option>
+              </select>
+            </div>
+            <div>
+              <label className="label !text-xs">สถานะการชำระ</label>
+              <select className="input !py-1.5 text-sm" value={form.payment_status}
+                onChange={(e) => fset("payment_status", e.target.value)}>
+                <option value="paid">ชำระเงินแล้ว</option>
+                <option value="pending">รอชำระ</option>
+              </select>
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-400">อัพโหลดรูปเอกสารจะเพิ่มในเฟสถัดไป (กำลังประเมินระบบอ่านอัตโนมัติ)</p>
+          {err && <p className="text-xs text-rose-600">{err}</p>}
+          <div className="flex gap-2">
+            {editing && (
+              <button type="button" onClick={startAdd} disabled={busy}
+                className="flex-1 py-2 rounded-lg border border-slate-300 text-sm">ยกเลิกแก้ไข</button>
+            )}
+            <button type="button" onClick={submit} disabled={busy}
+              className="flex-1 btn-primary disabled:opacity-50">
+              {busy ? "กำลังบันทึก…" : editing ? "บันทึกการแก้ไข" : "+ เพิ่มรายการ"}
+            </button>
+          </div>
+        </div>
+
+        <button type="button" onClick={onClose} className="w-full py-2 text-sm text-slate-500 hover:underline">ปิด</button>
       </div>
     </div>
   );

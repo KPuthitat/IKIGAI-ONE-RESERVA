@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { getProject } from "@/lib/feasibility-db";
+import { listItems } from "@/lib/feasibility-startup-db";
 import ProjectEditor from "./ProjectEditor";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +33,18 @@ export default function FeasibilityProjectPage({ params }: { params: { id: strin
           status: project.status
         }}
         inputs={project.inputs}
+        startupItems={listItems(project.id, user.id).map((it) => ({
+          id: it.id,
+          category: it.category,
+          paid_date: it.paid_date,
+          item_name: it.item_name,
+          payee: it.payee,
+          amount: it.amount,
+          wht_mode: it.wht_mode,
+          wht_value: it.wht_value,
+          doc_type: it.doc_type,
+          payment_status: it.payment_status
+        }))}
       />
     </div>
   );

@@ -20,6 +20,23 @@ export const FEASIBILITY_COMPANIES = ["WELTRADE", "MEDIHEALTH", "OMNIA"] as cons
 export type FeasibilityCompany = (typeof FEASIBILITY_COMPANIES)[number];
 export type FeasibilityStatus = "draft" | "active" | "archived";
 
+// Startup-spend categories (the keys of inputs.startup) + withholding-tax math —
+// kept here (client-safe) so the project editor can use them without importing
+// the db layer.
+export const STARTUP_CATEGORIES = [
+  "construction", "ffe", "stock", "hardOther", "franchise",
+  "deposit", "permit", "professional", "preOpening", "softOther"
+] as const;
+export type StartupCategory = (typeof STARTUP_CATEGORIES)[number];
+export type WhtMode = "none" | "baht" | "pct";
+
+/** Withholding-tax amount in baht for a line item (mode = baht | pct | none). */
+export function whtBaht(amount: number, mode: string, value: number): number {
+  if (mode === "pct") return (amount * value) / 100;
+  if (mode === "baht") return value;
+  return 0;
+}
+
 export type FeasibilityInputs = {
   assumptions: {
     seats: number; occupancyPct: number;
