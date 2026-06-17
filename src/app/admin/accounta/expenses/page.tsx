@@ -23,9 +23,12 @@ export default function AccountaExpensesPage() {
 
   return (
     <div className="space-y-4">
-      <div>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <Link href="/admin/accounta" className="text-sm text-slate-500 hover:text-brand">
           ← กลับ ACCOUNTA
+        </Link>
+        <Link href="/admin/accounta/daybook" className="text-sm text-brand hover:underline">
+          ดูสมุดรายวัน (แบบเอกเซล) →
         </Link>
       </div>
       <div>

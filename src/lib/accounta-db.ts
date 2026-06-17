@@ -309,6 +309,73 @@ export function summarise(month: string, branchId?: number | null, companyId?: n
   };
 }
 
+// ── Daybook (Excel-style: date rows, รายรับ left / รายจ่าย right) ───
+
+export type DaybookExpense = {
+  id: number; vendor: string | null; category: string | null;
+  amount: number; status: PaymentStatus; method: string | null; vat: number;
+};
+export type DaybookDay = {
+  date: string;
+  income: number;
+  expenses: DaybookExpense[];
+  expenseTotal: number;
+  balance: number;          // running (income − expense) within the month
+};
+export type Daybook = {
+  days: DaybookDay[];
+  totalIncome: number;
+  totalExpense: number;
+  net: number;
+};
+
+/** Build the two-sided daily ledger for a month (owner 2026-06-17, "แบบ
+ *  Excel"): income (branch_daily_revenue, fed from shift-close) on the
+ *  left, expenses (accounta_expenses) on the right, with a running
+ *  balance. Income is branch-scoped only; the company filter narrows the
+ *  expense side. */
+export function daybook(month: string, branchId?: number | null, companyId?: number | null): Daybook {
+  const db = getDb();
+
+  const incWhere = ["substr(date,1,7) = ?"];
+  const incArgs: Array<string | number> = [month];
+  if (branchId != null) { incWhere.push("branch_id = ?"); incArgs.push(branchId); }
+  const incRows = db.prepare(
+    `SELECT date, SUM(revenue) AS inc FROM branch_daily_revenue
+      WHERE ${incWhere.join(" AND ")} GROUP BY date`
+  ).all(...incArgs) as Array<{ date: string; inc: number }>;
+  const incByDate = new Map(incRows.map((r) => [r.date, r.inc]));
+
+  const exps = listExpenses({ month, branchId, companyId });
+  const byDate = new Map<string, DaybookExpense[]>();
+  for (const e of exps) {
+    const arr = byDate.get(e.bill_date) ?? [];
+    arr.push({
+      id: e.id, vendor: e.vendor_name, category: e.category,
+      amount: e.amount_total, status: e.payment_status,
+      method: e.payment_method, vat: e.vat_amount
+    });
+    byDate.set(e.bill_date, arr);
+  }
+
+  const dates = [...new Set([...incByDate.keys(), ...byDate.keys()])].sort();
+  let bal = 0, totalIncome = 0, totalExpense = 0;
+  const days: DaybookDay[] = dates.map((date) => {
+    const income = round2(incByDate.get(date) ?? 0);
+    const dayExps = byDate.get(date) ?? [];
+    const expenseTotal = round2(dayExps.reduce((s, x) => s + x.amount, 0));
+    bal += income - expenseTotal;
+    totalIncome += income; totalExpense += expenseTotal;
+    return { date, income, expenses: dayExps, expenseTotal, balance: round2(bal) };
+  });
+  return {
+    days,
+    totalIncome: round2(totalIncome),
+    totalExpense: round2(totalExpense),
+    net: round2(totalIncome - totalExpense)
+  };
+}
+
 // ── OCR usage log ──────────────────────────────────────────────────
 
 export function logOcrUsage(d: {
