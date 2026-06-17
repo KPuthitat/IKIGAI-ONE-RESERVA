@@ -198,6 +198,28 @@ export function pendingDigestFlex(args: {
     return blocks;
   };
 
+  // One button per request TYPE that has something pending, each linking to
+  // its own menu — so tapping lands on the right page instead of always the
+  // shift-change menu (owner 2026-06-17). Only non-empty sections get a
+  // button; a fallback keeps at least one if somehow all are empty.
+  const menuFor = [
+    { items: args.digest.shiftChange, label: "ตอบรับคำขอเปลี่ยนเวลางาน", path: "/admin/persona/shift-requests" },
+    { items: args.digest.leave, label: "ตอบรับคำขอลางาน", path: "/admin/persona/leave" },
+    { items: args.digest.ot, label: "ตอบรับคำขอ OT (ล่วงเวลา)", path: "/admin/persona/ot-approvals" }
+  ];
+  const footerButtons: Array<Record<string, unknown>> = menuFor
+    .filter((m) => m.items.length > 0)
+    .map((m) => ({
+      type: "button", style: "primary", color: headerColor, height: "sm",
+      action: { type: "uri", label: m.label, uri: `${PUBLIC_BASE}${m.path}` }
+    }));
+  if (footerButtons.length === 0) {
+    footerButtons.push({
+      type: "button", style: "primary", color: headerColor, height: "sm",
+      action: { type: "uri", label: "เปิด PERSONA", uri: `${PUBLIC_BASE}/admin/persona/shift-requests` }
+    });
+  }
+
   return {
     type: "flex",
     altText,
@@ -223,17 +245,8 @@ export function pendingDigestFlex(args: {
         ]
       },
       footer: {
-        type: "box", layout: "vertical", paddingAll: "16px",
-        contents: [
-          {
-            type: "button", style: "primary", color: headerColor, height: "sm",
-            action: {
-              type: "uri",
-              label: "เปิด PERSONA เพื่อดำเนินการ",
-              uri: `${PUBLIC_BASE}/admin/persona/shift-requests`
-            }
-          }
-        ]
+        type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
+        contents: footerButtons
       }
     }
   };
