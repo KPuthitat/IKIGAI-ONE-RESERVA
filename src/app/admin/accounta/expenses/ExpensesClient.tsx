@@ -86,6 +86,10 @@ export default function ExpensesClient(props: {
   const [newCat, setNewCat] = useState<string | null>(null);   // null = closed
   const [newMethod, setNewMethod] = useState<string | null>(null);
 
+  // Bulk CSV import (owner 2026-06-17).
+  const importRef = useRef<HTMLInputElement>(null);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -287,6 +291,34 @@ export default function ExpensesClient(props: {
     } finally { setNewMethod(null); }
   }
 
+  function downloadTemplate() {
+    const header = "branch,company,bill_date,vendor,category,description,amount,has_tax_invoice,payment_status,payment_method,note";
+    const sample = [
+      'NAMA PASTA SRIRACHA,,2026-01-05,ร้านตัวอย่างวัตถุดิบ,สินค้า/เวชภัณฑ์,วัตถุดิบประจำสัปดาห์,1070,1,paid,โอนเงิน,ตัวอย่าง',
+      ',,2026-01-06,ร้านตัวอย่างอุปกรณ์,อุปกรณ์/ของใช้สำนักงาน,,500,0,unpaid,,เครดิตเทอม รอชำระ'
+    ];
+    const blob = new Blob(["﻿" + [header, ...sample].join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "ACCOUNTA_expense_template.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function importCsv(file: File) {
+    setBusy(true); setErr(null); setImportMsg("กำลังนำเข้า…");
+    try {
+      const fd = new FormData();
+      fd.append("csv", file);
+      const res = await fetch(apiUrl("/api/accounta/expenses/import"), { method: "POST", body: fd });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setImportMsg(null); setErr(humanizeApiError(j, "นำเข้าไม่สำเร็จ")); return; }
+      setImportMsg(`นำเข้าสำเร็จ ${j.imported} รายการ${j.failed ? ` · ข้าม ${j.failed} (ผิดรูปแบบ)` : ""}`);
+      await reload();
+      startTransition(() => router.refresh());
+    } finally { setBusy(false); }
+  }
+
   const filtered = statusFilter ? expenses.filter((e) => e.payment_status === statusFilter) : expenses;
 
   return (
@@ -314,7 +346,19 @@ export default function ExpensesClient(props: {
           <option value="paid">ชำระแล้ว</option>
           <option value="unpaid">ค้างชำระ</option>
         </select>
+        <span className="ml-auto flex items-center gap-2">
+          <button type="button" onClick={downloadTemplate} className="text-xs text-slate-500 hover:text-brand underline">
+            เทมเพลต CSV
+          </button>
+          <button type="button" onClick={() => importRef.current?.click()} disabled={busy}
+            className="btn-secondary !py-1.5 disabled:opacity-50">
+            นำเข้า CSV
+          </button>
+          <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) importCsv(f); e.target.value = ""; }} />
+        </span>
       </div>
+      {importMsg && <p className="text-sm text-emerald-700">{importMsg}</p>}
 
       {err && <p className="text-sm text-rose-600">{err}</p>}
 
