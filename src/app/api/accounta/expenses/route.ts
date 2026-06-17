@@ -16,12 +16,14 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const branchRaw = url.searchParams.get("branch");
   const branchId = branchRaw && /^\d+$/.test(branchRaw) ? Number(branchRaw) : null;
+  const companyRaw = url.searchParams.get("company");
+  const companyId = companyRaw && /^\d+$/.test(companyRaw) ? Number(companyRaw) : null;
   const month = url.searchParams.get("month") || thisMonth();
   const statusRaw = url.searchParams.get("status");
   const status = statusRaw === "paid" || statusRaw === "unpaid" ? statusRaw : null;
 
-  const expenses = listExpenses({ branchId, month, status });
-  const summary = summarise(month, branchId);
+  const expenses = listExpenses({ branchId, companyId, month, status });
+  const summary = summarise(month, branchId, companyId);
   return NextResponse.json({ ok: true, expenses, summary });
 }
 

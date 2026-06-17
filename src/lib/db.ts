@@ -5069,7 +5069,60 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_accounta_ocr_usage_created
       ON accounta_ocr_usage(created_at);
+
+    -- Owner-extensible picklists (owner 2026-06-17): expense categories
+    -- (seeded from the owner's Excel chart — UT/RT/GD/…) and payment
+    -- channels (so future "director credit card · bank X" can be added
+    -- without code). Expenses store the NAME as text; these tables are
+    -- the dropdown source + add-new target.
+    CREATE TABLE IF NOT EXISTS accounta_categories (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      code       TEXT,
+      name       TEXT NOT NULL UNIQUE,
+      sort_order INTEGER NOT NULL DEFAULT 100,
+      active     INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS accounta_payment_methods (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL UNIQUE,
+      sort_order INTEGER NOT NULL DEFAULT 100,
+      active     INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+
+  // Seed the picklists once (guarded by emptiness so owner edits stick).
+  // Categories mirror the Excel expense codes; PF=Profit is income-side
+  // and intentionally excluded.
+  const catCount = (db.prepare("SELECT COUNT(*) AS c FROM accounta_categories").get() as { c: number }).c;
+  if (catCount === 0) {
+    const seedCat = db.prepare(
+      "INSERT OR IGNORE INTO accounta_categories (code, name, sort_order) VALUES (?, ?, ?)"
+    );
+    [
+      ["RT", "ค่าเช่า"],
+      ["UT", "สาธารณูปโภค (น้ำ/ไฟ/เน็ต/ระบบ)"],
+      ["LB", "ค่าแรง/เงินเดือน/ประกันสังคม"],
+      ["GD", "สินค้า/เวชภัณฑ์"],
+      ["ER", "ค่าเช่าอุปกรณ์"],
+      ["AO", "อุปกรณ์/ของใช้สำนักงาน"],
+      ["MK", "การตลาด/โฆษณา"],
+      ["RM", "ซ่อมบำรุง"],
+      ["FC", "ค่าธรรมเนียมการเงิน/แพลตฟอร์ม"],
+      ["MI", "เบ็ดเตล็ด"],
+      ["CP", "รายจ่ายลงทุน/ครุภัณฑ์ (CapEx)"],
+      ["LN", "ชำระเงินกู้"]
+    ].forEach(([code, name], i) => seedCat.run(code, name, (i + 1) * 10));
+  }
+  const pmCount = (db.prepare("SELECT COUNT(*) AS c FROM accounta_payment_methods").get() as { c: number }).c;
+  if (pmCount === 0) {
+    const seedPm = db.prepare(
+      "INSERT OR IGNORE INTO accounta_payment_methods (name, sort_order) VALUES (?, ?)"
+    );
+    ["เงินสด", "โอนเงิน", "บัตรเครดิต", "กรรมการสำรองจ่าย", "อื่นๆ"]
+      .forEach((name, i) => seedPm.run(name, (i + 1) * 10));
+  }
 
   // ── INSIGNA PII lint (spec section 6.1, NON-NEGOTIABLE) ─────
   // Walk every column of every `insigna_*` table and refuse to

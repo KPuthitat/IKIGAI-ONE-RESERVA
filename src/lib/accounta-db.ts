@@ -58,6 +58,50 @@ export function listCompanies(): Array<{ id: number; name: string }> {
   ).all() as Array<{ id: number; name: string }>;
 }
 
+export function listCategories(): Array<{ id: number; code: string | null; name: string }> {
+  return getDb().prepare(
+    "SELECT id, code, name FROM accounta_categories WHERE active = 1 ORDER BY sort_order, name COLLATE NOCASE"
+  ).all() as Array<{ id: number; code: string | null; name: string }>;
+}
+
+export function createCategory(d: { name: string; code?: string | null }): number {
+  const name = d.name.trim();
+  const existing = getDb().prepare(
+    "SELECT id FROM accounta_categories WHERE name = ? COLLATE NOCASE"
+  ).get(name) as { id: number } | undefined;
+  if (existing) {
+    getDb().prepare("UPDATE accounta_categories SET active = 1 WHERE id = ?").run(existing.id);
+    return existing.id;
+  }
+  const max = (getDb().prepare("SELECT COALESCE(MAX(sort_order),0) AS m FROM accounta_categories").get() as { m: number }).m;
+  const info = getDb().prepare(
+    "INSERT INTO accounta_categories (code, name, sort_order) VALUES (?, ?, ?)"
+  ).run(d.code?.trim() || null, name, max + 10);
+  return Number(info.lastInsertRowid);
+}
+
+export function listPaymentMethods(): Array<{ id: number; name: string }> {
+  return getDb().prepare(
+    "SELECT id, name FROM accounta_payment_methods WHERE active = 1 ORDER BY sort_order, name COLLATE NOCASE"
+  ).all() as Array<{ id: number; name: string }>;
+}
+
+export function createPaymentMethod(d: { name: string }): number {
+  const name = d.name.trim();
+  const existing = getDb().prepare(
+    "SELECT id FROM accounta_payment_methods WHERE name = ? COLLATE NOCASE"
+  ).get(name) as { id: number } | undefined;
+  if (existing) {
+    getDb().prepare("UPDATE accounta_payment_methods SET active = 1 WHERE id = ?").run(existing.id);
+    return existing.id;
+  }
+  const max = (getDb().prepare("SELECT COALESCE(MAX(sort_order),0) AS m FROM accounta_payment_methods").get() as { m: number }).m;
+  const info = getDb().prepare(
+    "INSERT INTO accounta_payment_methods (name, sort_order) VALUES (?, ?)"
+  ).run(name, max + 10);
+  return Number(info.lastInsertRowid);
+}
+
 export function listVendors(): VendorRow[] {
   return getDb().prepare(
     "SELECT id, name, tax_id, category FROM accounta_vendors WHERE active = 1 ORDER BY name COLLATE NOCASE"
@@ -103,6 +147,7 @@ function shape(r: RawExpense): ExpenseRow {
 
 export type ExpenseFilter = {
   branchId?: number | null;
+  companyId?: number | null;
   month?: string | null;      // 'YYYY-MM' — filters bill_date
   status?: PaymentStatus | null;
 };
@@ -111,6 +156,7 @@ export function listExpenses(f: ExpenseFilter = {}): ExpenseRow[] {
   const where: string[] = [];
   const args: Array<string | number> = [];
   if (f.branchId != null) { where.push("e.branch_id = ?"); args.push(f.branchId); }
+  if (f.companyId != null) { where.push("e.company_id = ?"); args.push(f.companyId); }
   if (f.month) { where.push("substr(e.bill_date, 1, 7) = ?"); args.push(f.month); }
   if (f.status) { where.push("e.payment_status = ?"); args.push(f.status); }
   const sql = SELECT_EXPENSE +
@@ -218,10 +264,14 @@ export type AccountaSummary = {
   unpaidCount: number;
 };
 
-export function summarise(month: string, branchId?: number | null): AccountaSummary {
+export function summarise(month: string, branchId?: number | null, companyId?: number | null): AccountaSummary {
   const db = getDb();
-  const bf = branchId != null ? " AND branch_id = ?" : "";
-  const bArg: number[] = branchId != null ? [branchId] : [];
+  const parts: string[] = [];
+  const scope: number[] = [];
+  if (branchId != null) { parts.push(" AND branch_id = ?"); scope.push(branchId); }
+  if (companyId != null) { parts.push(" AND company_id = ?"); scope.push(companyId); }
+  const bf = parts.join("");
+  const bArg = scope;
 
   const accrual = db.prepare(`
     SELECT COUNT(*) AS count,

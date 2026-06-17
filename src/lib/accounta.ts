@@ -6,44 +6,19 @@
 // (Same client/server boundary rule that bit FEASIBILITY — see CLAUDE.md.)
 
 // ── Expense taxonomy ───────────────────────────────────────────────
-
-/** Default expense categories (clinic + general business). The owner can
- *  pick "อื่นๆ" and type a free description; this list is just the quick
- *  picker, not an enforced enum. */
-export const EXPENSE_CATEGORIES = [
-  "วัตถุดิบ/เวชภัณฑ์",
-  "ค่าเช่า",
-  "เงินเดือน/ค่าแรง",
-  "สาธารณูปโภค (น้ำ/ไฟ/เน็ต)",
-  "การตลาด/โฆษณา",
-  "ซอฟต์แวร์/ระบบ",
-  "ค่าขนส่ง/เดินทาง",
-  "อุปกรณ์/ของใช้สำนักงาน",
-  "ค่าธรรมเนียม/บริการวิชาชีพ",
-  "ประกัน",
-  "ซ่อมบำรุง",
-  "อื่นๆ"
-] as const;
+//
+// Expense categories and payment methods are OWNER-EXTENSIBLE picklists
+// stored in the DB (accounta_categories / accounta_payment_methods),
+// seeded from the owner's Excel chart. Expenses store the chosen NAME as
+// free text. The lists below are only fallbacks for callers that have no
+// DB list to hand.
 
 export type PaymentStatus = "paid" | "unpaid";
-export type PaymentMethod = "cash" | "transfer" | "credit_card" | "director" | "other";
 
 export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
   paid: "ชำระแล้ว",
   unpaid: "ค้างชำระ"
 };
-
-export const PAYMENT_METHODS: Array<{ value: PaymentMethod; label: string }> = [
-  { value: "cash", label: "เงินสด" },
-  { value: "transfer", label: "โอนเงิน" },
-  { value: "credit_card", label: "บัตรเครดิต" },
-  { value: "director", label: "กรรมการสำรองจ่าย" },
-  { value: "other", label: "อื่นๆ" }
-];
-
-export function paymentMethodLabel(m: string | null | undefined): string {
-  return PAYMENT_METHODS.find((x) => x.value === m)?.label ?? "—";
-}
 
 // ── VAT (ภาษีซื้อ) ─────────────────────────────────────────────────
 
@@ -115,14 +90,14 @@ export type ExpenseInput = {
   bill_date: string;            // YYYY-MM-DD (accrual)
   vendor_id: number | null;
   vendor_name: string | null;
-  category: string | null;
+  category: string | null;      // category NAME (free text, from the picklist)
   description: string | null;
   amount_total: number;
   has_tax_invoice: boolean;
   vat_amount: number;           // may be overridden; defaults to splitVat()
   base_amount: number;
   payment_status: PaymentStatus;
-  payment_method: PaymentMethod | null;
+  payment_method: string | null; // method NAME (free text, from the picklist)
   paid_date: string | null;     // cash-flow date; required-ish when paid
   note: string | null;
 };

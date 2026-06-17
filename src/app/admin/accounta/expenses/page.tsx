@@ -3,7 +3,8 @@ import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getSystemSettings } from "@/lib/db";
 import {
-  listBranches, listCompanies, listVendors, listExpenses, summarise, ocrUsageStats
+  listBranches, listCompanies, listVendors, listExpenses, summarise, ocrUsageStats,
+  listCategories, listPaymentMethods
 } from "@/lib/accounta-db";
 import ExpensesClient from "./ExpensesClient";
 
@@ -32,12 +33,18 @@ export default function AccountaExpensesPage() {
         <p className="text-sm text-slate-500 mt-1">
           ลงบิลผู้ค้า (ชำระแล้ว / ค้างชำระ) · แยกมุมมองตามบิล vs กระแสเงินสด · ภาษีซื้อเรียลไทม์
         </p>
+        <p className="text-[11px] text-slate-400 mt-1 bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 inline-block">
+          หมายเหตุ: การลงบันทึกนี้ใช้เพื่อช่วยติดตามรายรับ-รายจ่ายภายในเท่านั้น ไม่ได้อ้างอิงหลักการบัญชี
+          และไม่ใช้แทนงบการเงิน/เอกสารทางบัญชีอย่างเป็นทางการ
+        </p>
       </div>
       <ExpensesClient
         month={month}
         branches={listBranches()}
         companies={listCompanies()}
         vendors={listVendors()}
+        categories={listCategories()}
+        paymentMethods={listPaymentMethods()}
         initialExpenses={listExpenses({ month })}
         initialSummary={summarise(month)}
         ocrAvailable={ocrAvailable}

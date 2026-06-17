@@ -7,12 +7,13 @@ import { fmtMoney } from "@/lib/format";
 import { formatLongDate } from "@/lib/time";
 import { humanizeApiError } from "@/lib/error-messages";
 import {
-  EXPENSE_CATEGORIES, PAYMENT_METHODS, PAYMENT_STATUS_LABEL, paymentMethodLabel,
-  splitVat, round2,
-  type PaymentStatus, type PaymentMethod, type OcrBillResult
+  PAYMENT_STATUS_LABEL, splitVat, round2,
+  type PaymentStatus, type OcrBillResult
 } from "@/lib/accounta";
 
 type Ref = { id: number; name: string };
+type Category = { id: number; code: string | null; name: string };
+type Method = { id: number; name: string };
 type Vendor = { id: number; name: string; tax_id: string | null; category: string | null };
 type Expense = {
   id: number; branch_id: number | null; branch_name: string | null;
@@ -36,7 +37,7 @@ type FormState = {
   branch_id: string; company_id: string;
   bill_date: string; vendor_name: string; category: string; description: string;
   amount_total: string; has_tax_invoice: boolean; vat_override: string;
-  payment_status: PaymentStatus; payment_method: PaymentMethod; paid_date: string;
+  payment_status: PaymentStatus; payment_method: string; paid_date: string;
   note: string;
   rememberVendor: boolean;
 };
@@ -45,12 +46,12 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function blankForm(): FormState {
+function blankForm(defaultMethod = ""): FormState {
   return {
     id: null, branch_id: "", company_id: "",
     bill_date: todayISO(), vendor_name: "", category: "", description: "",
     amount_total: "", has_tax_invoice: false, vat_override: "",
-    payment_status: "paid", payment_method: "transfer", paid_date: todayISO(),
+    payment_status: "paid", payment_method: defaultMethod, paid_date: todayISO(),
     note: "", rememberVendor: true
   };
 }
@@ -60,6 +61,8 @@ export default function ExpensesClient(props: {
   branches: Ref[];
   companies: Ref[];
   vendors: Vendor[];
+  categories: Category[];
+  paymentMethods: Method[];
   initialExpenses: Expense[];
   initialSummary: Summary;
   ocrAvailable: boolean;
@@ -70,16 +73,23 @@ export default function ExpensesClient(props: {
 
   const [month, setMonth] = useState(props.month);
   const [branchId, setBranchId] = useState<string>("");
+  const [companyId, setCompanyId] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<"" | PaymentStatus>("");
   const [expenses, setExpenses] = useState<Expense[]>(props.initialExpenses);
   const [summary, setSummary] = useState<Summary>(props.initialSummary);
   const [vendors, setVendors] = useState<Vendor[]>(props.vendors);
+  const [categories, setCategories] = useState<Category[]>(props.categories);
+  const [methods, setMethods] = useState<Method[]>(props.paymentMethods);
   const [usage, setUsage] = useState<Usage>(props.ocrUsage);
+
+  // Inline "+ add" state for the category / payment-method pickers.
+  const [newCat, setNewCat] = useState<string | null>(null);   // null = closed
+  const [newMethod, setNewMethod] = useState<string | null>(null);
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState<FormState>(blankForm());
+  const [form, setForm] = useState<FormState>(blankForm(props.paymentMethods[0]?.name ?? ""));
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   // Receipt file staged in the add/edit modal (uploaded after save). The
@@ -100,14 +110,16 @@ export default function ExpensesClient(props: {
     return splitVat(total, form.has_tax_invoice);
   }, [form.amount_total, form.has_tax_invoice, form.vat_override]);
 
-  async function reload(next?: { month?: string; branch?: string; status?: "" | PaymentStatus }) {
+  async function reload(next?: { month?: string; branch?: string; company?: string; status?: "" | PaymentStatus }) {
     const m = next?.month ?? month;
     const b = next?.branch ?? branchId;
+    const co = next?.company ?? companyId;
     const s = next?.status ?? statusFilter;
     setBusy(true); setErr(null);
     try {
       const q = new URLSearchParams({ month: m });
       if (b) q.set("branch", b);
+      if (co) q.set("company", co);
       if (s) q.set("status", s);
       const res = await fetch(apiUrl(`/api/accounta/expenses?${q.toString()}`));
       const j = await res.json().catch(() => ({}));
@@ -117,9 +129,10 @@ export default function ExpensesClient(props: {
   }
 
   function openAdd() {
-    setForm(blankForm());
+    setForm(blankForm(methods[0]?.name ?? ""));
     setStagedFile(null);
     setScanMsg(null);
+    setNewCat(null); setNewMethod(null);
     setErr(null);
     setModalOpen(true);
   }
@@ -137,13 +150,14 @@ export default function ExpensesClient(props: {
       has_tax_invoice: !!e.has_tax_invoice,
       vat_override: "",
       payment_status: e.payment_status,
-      payment_method: (e.payment_method as PaymentMethod) || "transfer",
+      payment_method: e.payment_method || (methods[0]?.name ?? ""),
       paid_date: e.paid_date ?? e.bill_date,
       note: e.note ?? "",
       rememberVendor: false
     });
     setStagedFile(null);
     setScanMsg(null);
+    setNewCat(null); setNewMethod(null);
     setErr(null);
     setModalOpen(true);
   }
@@ -164,8 +178,7 @@ export default function ExpensesClient(props: {
         amount_total: r.amount_total != null ? String(r.amount_total) : f.amount_total,
         has_tax_invoice: r.has_tax_invoice ?? f.has_tax_invoice,
         vat_override: r.vat_amount != null ? String(r.vat_amount) : f.vat_override,
-        category: r.category && EXPENSE_CATEGORIES.includes(r.category as typeof EXPENSE_CATEGORIES[number])
-          ? r.category : f.category,
+        category: r.category && categories.some((c) => c.name === r.category) ? r.category : f.category,
         description: r.description ?? f.description,
         paid_date: r.bill_date ?? f.paid_date
       }));
@@ -248,6 +261,32 @@ export default function ExpensesClient(props: {
     } finally { setBusy(false); }
   }
 
+  async function addCategory() {
+    const name = (newCat ?? "").trim();
+    if (!name) { setNewCat(null); return; }
+    try {
+      const res = await fetch(apiUrl("/api/accounta/categories"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j.ok) { setCategories(j.categories); set("category", name); }
+    } finally { setNewCat(null); }
+  }
+
+  async function addMethod() {
+    const name = (newMethod ?? "").trim();
+    if (!name) { setNewMethod(null); return; }
+    try {
+      const res = await fetch(apiUrl("/api/accounta/payment-methods"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j.ok) { setMethods(j.methods); set("payment_method", name); }
+    } finally { setNewMethod(null); }
+  }
+
   const filtered = statusFilter ? expenses.filter((e) => e.payment_status === statusFilter) : expenses;
 
   return (
@@ -259,6 +298,11 @@ export default function ExpensesClient(props: {
         </button>
         <input type="month" className="input !w-auto" value={month}
           onChange={(e) => { setMonth(e.target.value); reload({ month: e.target.value }); }} />
+        <select className="input !w-auto" value={companyId}
+          onChange={(e) => { setCompanyId(e.target.value); reload({ company: e.target.value }); }}>
+          <option value="">ทุกบริษัท</option>
+          {props.companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
         <select className="input !w-auto" value={branchId}
           onChange={(e) => { setBranchId(e.target.value); reload({ branch: e.target.value }); }}>
           <option value="">ทุกสาขา</option>
@@ -350,7 +394,7 @@ export default function ExpensesClient(props: {
                       {PAYMENT_STATUS_LABEL[e.payment_status]}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-xs text-slate-500">{e.payment_status === "paid" ? paymentMethodLabel(e.payment_method) : "—"}</td>
+                  <td className="px-3 py-2 text-xs text-slate-500">{e.payment_status === "paid" ? (e.payment_method || "—") : "—"}</td>
                   <td className="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">
                     {e.payment_status === "paid" && e.paid_date ? formatLongDate(e.paid_date, "th") : "—"}
                   </td>
@@ -414,10 +458,22 @@ export default function ExpensesClient(props: {
               </div>
               <div>
                 <label className="label !text-xs">หมวดหมู่</label>
-                <select className="input" value={form.category} onChange={(e) => set("category", e.target.value)}>
-                  <option value="">— เลือก —</option>
-                  {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+                {newCat === null ? (
+                  <select className="input" value={form.category}
+                    onChange={(e) => { if (e.target.value === "__add__") setNewCat(""); else set("category", e.target.value); }}>
+                    <option value="">— เลือก —</option>
+                    {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    <option value="__add__">+ เพิ่มประเภทใหม่…</option>
+                  </select>
+                ) : (
+                  <div className="flex gap-1">
+                    <input className="input" autoFocus value={newCat} onChange={(e) => setNewCat(e.target.value)}
+                      placeholder="ชื่อประเภทใหม่"
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCategory(); } }} />
+                    <button type="button" className="btn-secondary !px-2" onClick={addCategory}>เพิ่ม</button>
+                    <button type="button" className="btn-secondary !px-2" onClick={() => setNewCat(null)}>✕</button>
+                  </div>
+                )}
               </div>
               <div className="sm:col-span-2">
                 <label className="label !text-xs">ผู้ค้า / ผู้รับเงิน</label>
@@ -429,7 +485,7 @@ export default function ExpensesClient(props: {
               </div>
               <div className="sm:col-span-2">
                 <label className="label !text-xs">รายละเอียด</label>
-                <input className="input" value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="เช่น ยาเพิ่มเติม วินฟาร์ม่า" />
+                <input className="input" value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="เช่น ค่าวัสดุสำนักงานประจำเดือน" />
               </div>
             </div>
 
@@ -471,10 +527,21 @@ export default function ExpensesClient(props: {
                 <>
                   <div>
                     <label className="label !text-xs">จ่ายโดย</label>
-                    <select className="input" value={form.payment_method}
-                      onChange={(e) => set("payment_method", e.target.value as PaymentMethod)}>
-                      {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                    </select>
+                    {newMethod === null ? (
+                      <select className="input" value={form.payment_method}
+                        onChange={(e) => { if (e.target.value === "__add__") setNewMethod(""); else set("payment_method", e.target.value); }}>
+                        {methods.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
+                        <option value="__add__">+ เพิ่มช่องทาง…</option>
+                      </select>
+                    ) : (
+                      <div className="flex gap-1">
+                        <input className="input" autoFocus value={newMethod} onChange={(e) => setNewMethod(e.target.value)}
+                          placeholder="เช่น บัตรเครดิตกรรมการ ธนาคาร ก."
+                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addMethod(); } }} />
+                        <button type="button" className="btn-secondary !px-2" onClick={addMethod}>เพิ่ม</button>
+                        <button type="button" className="btn-secondary !px-2" onClick={() => setNewMethod(null)}>✕</button>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="label !text-xs">วันที่เงินออกจริง</label>
@@ -483,7 +550,7 @@ export default function ExpensesClient(props: {
                 </>
               )}
             </div>
-            {form.payment_status === "paid" && form.payment_method === "credit_card" && (
+            {form.payment_status === "paid" && form.payment_method.includes("เครดิต") && (
               <p className="text-[11px] text-slate-400 -mt-1">
                 บัตรเครดิต: ลงบิลตามวันที่บิล แต่ “วันที่เงินออกจริง” คือรอบตัดบัตร (อาจเป็นเดือนถัดไป) — แยกในมุมมองกระแสเงินสด
               </p>
