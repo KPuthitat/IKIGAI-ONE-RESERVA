@@ -126,6 +126,28 @@ export function listPendingShiftRequests(branchId: number): Array<ShiftRequestRo
   }>;
 }
 
+/** Decided (approved/rejected/cancelled) requests for a branch — the
+ *  history view (owner 2026-06-17). Newest decision first; the client
+ *  groups them by month + day. Joined with the decider's name. */
+export function listDecidedShiftRequests(branchId: number, limit = 300): Array<ShiftRequestRow & {
+  employee_name: string; title_prefix: string | null; employment_type: string | null;
+  decided_by_name: string | null;
+}> {
+  return getDb().prepare(`
+    SELECT r.*, u.display_name AS employee_name, u.title_prefix, u.employment_type,
+           du.display_name AS decided_by_name
+    FROM shift_change_requests r
+    JOIN users u ON u.id = r.user_id
+    LEFT JOIN users du ON du.id = r.decided_by
+    WHERE r.branch_id = ? AND r.status != 'pending'
+    ORDER BY COALESCE(r.decided_at, r.created_at) DESC
+    LIMIT ?
+  `).all(branchId, limit) as Array<ShiftRequestRow & {
+    employee_name: string; title_prefix: string | null; employment_type: string | null;
+    decided_by_name: string | null;
+  }>;
+}
+
 /** Approve / reject a request + notify the requester. Returns false when
  *  the request isn't found or is no longer pending. */
 export function decideShiftRequest(

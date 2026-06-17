@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
-import { listPendingShiftRequests } from "@/lib/shift-requests";
+import { listPendingShiftRequests, listDecidedShiftRequests } from "@/lib/shift-requests";
 import {
   listPositions, listShiftCodes, getRegularPositionId,
   occupiedPositionIdsOnDate, userPositionOnDate, defaultWorkShiftCodeId
@@ -49,6 +49,7 @@ export default function ShiftRequestsAdminPage() {
       </div>
       <ShiftRequestsAdminClient
         pending={pending}
+        history={listDecidedShiftRequests(branchId)}
         positions={positions}
         shiftCodes={shiftCodes}
         defaultShiftCodeId={defaultShiftCodeId}

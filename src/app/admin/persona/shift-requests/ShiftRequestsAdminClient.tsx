@@ -9,6 +9,7 @@ import type { ShiftRequestRow } from "@/lib/shift-requests";
 type Row = ShiftRequestRow & {
   employee_name: string; title_prefix: string | null; employment_type: string | null;
 };
+type HistoryRow = Row & { decided_by_name: string | null };
 type Position = { id: number; title: string };
 type ShiftCodeOpt = { id: number; code: string; name: string | null; kind: string };
 export type RosterCtx = {
@@ -19,10 +20,29 @@ export type RosterCtx = {
 
 const KIND_TH: Record<string, string> = { extra_shift: "ขอเพิ่มกะ", swap: "ขอสลับวันหยุด" };
 
+const TH_MONTHS = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+];
+function monthLabel(mk: string): string {
+  const [y, m] = mk.split("-").map(Number);
+  return `${TH_MONTHS[(m || 1) - 1] ?? mk} ${(y || 0) + 543}`;
+}
+function dayLabel(d: string): string {
+  const [, , dd] = d.split("-");
+  return dd ? `วันที่ ${Number(dd)}` : d;
+}
+const STATUS_META: Record<string, { label: string; cls: string }> = {
+  approved:  { label: "อนุมัติ",    cls: "bg-emerald-100 text-emerald-800" },
+  rejected:  { label: "ไม่อนุมัติ", cls: "bg-rose-100 text-rose-700" },
+  cancelled: { label: "ยกเลิก",     cls: "bg-slate-100 text-slate-500" }
+};
+
 export default function ShiftRequestsAdminClient({
-  pending, positions, shiftCodes, defaultShiftCodeId, rosterCtx
+  pending, history, positions, shiftCodes, defaultShiftCodeId, rosterCtx
 }: {
   pending: Row[];
+  history: HistoryRow[];
   positions: Position[];
   shiftCodes: ShiftCodeOpt[];
   defaultShiftCodeId: number | null;
@@ -46,13 +66,28 @@ export default function ShiftRequestsAdminClient({
     } finally { setBusyId(null); }
   }
 
-  if (pending.length === 0) {
-    return <div className="card text-sm text-slate-400 text-center py-8">ไม่มีคำขอที่รออนุมัติ</div>;
-  }
+  // Group decided requests by month → day for the history view.
+  const historyGroups = useMemo(() => {
+    const months = new Map<string, Map<string, HistoryRow[]>>();
+    for (const r of history) {
+      const dt = (r.decided_at ?? r.created_at ?? "").slice(0, 10);
+      if (!dt) continue;
+      const mk = dt.slice(0, 7);
+      if (!months.has(mk)) months.set(mk, new Map());
+      const days = months.get(mk)!;
+      if (!days.has(dt)) days.set(dt, []);
+      days.get(dt)!.push(r);
+    }
+    return [...months.entries()].map(([mk, days]) => ({ mk, days: [...days.entries()] }));
+  }, [history]);
 
   return (
-    <div className="space-y-2">
-      {pending.map((r) => (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <h2 className="text-sm font-bold text-slate-700">รออนุมัติ</h2>
+        {pending.length === 0 ? (
+          <div className="card text-sm text-slate-400 text-center py-8">ไม่มีคำขอที่รออนุมัติ</div>
+        ) : pending.map((r) => (
         <div key={r.id} className="card space-y-2">
           <div className="flex items-start justify-between gap-2 flex-wrap">
             <div>
@@ -83,7 +118,7 @@ export default function ShiftRequestsAdminClient({
             <button type="button" disabled={busyId === r.id}
               onClick={() => { setNote(""); setNoteFor(null); setAssignFor(r); }}
               className="flex-1 py-2 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">
-              อนุมัติ + จัดลงตาราง
+              อนุมัติ
             </button>
             <button type="button" disabled={busyId === r.id}
               onClick={() => { if (noteFor === r.id) reject(r.id); else { setNoteFor(r.id); setNote(""); } }}
@@ -93,6 +128,53 @@ export default function ShiftRequestsAdminClient({
           </div>
         </div>
       ))}
+      </div>
+
+      {/* History — decided requests, grouped by month → day (owner 2026-06-17). */}
+      <div className="space-y-2">
+        <h2 className="text-sm font-bold text-slate-700">ประวัติคำขอ (อนุมัติ/ไม่อนุมัติแล้ว)</h2>
+        {historyGroups.length === 0 ? (
+          <div className="card text-sm text-slate-400 text-center py-6">ยังไม่มีประวัติ</div>
+        ) : historyGroups.map(({ mk, days }, i) => (
+          <details key={mk} open={i === 0} className="card">
+            <summary className="cursor-pointer font-semibold text-slate-700 text-sm select-none">
+              {monthLabel(mk)}{" "}
+              <span className="text-[11px] text-slate-400 font-normal">
+                · {days.reduce((s, [, rows]) => s + rows.length, 0)} รายการ
+              </span>
+            </summary>
+            <div className="mt-2 space-y-3">
+              {days.map(([d, rows]) => (
+                <div key={d}>
+                  <div className="text-[11px] font-bold text-slate-400 border-b border-slate-100 pb-1 mb-1">
+                    {dayLabel(d)}
+                  </div>
+                  <div className="space-y-1.5">
+                    {rows.map((r) => {
+                      const sm = STATUS_META[r.status] ?? { label: r.status, cls: "bg-slate-100 text-slate-500" };
+                      return (
+                        <div key={r.id} className="flex items-start justify-between gap-2 text-sm">
+                          <div className="min-w-0">
+                            <span className="font-medium text-slate-800">{nameWithPrefix(r.title_prefix, r.employee_name)}</span>
+                            <span className="text-[11px] text-slate-400">
+                              {" "}· {KIND_TH[r.kind]} · {r.kind === "swap"
+                                ? `หยุด ${r.off_date} / ทำงาน ${r.work_date}`
+                                : `ทำงานเพิ่ม ${r.work_date}`}
+                            </span>
+                            {r.decision_note && <div className="text-[11px] text-slate-500">หมายเหตุ: {r.decision_note}</div>}
+                            {r.decided_by_name && <div className="text-[10px] text-slate-400">โดย {r.decided_by_name}</div>}
+                          </div>
+                          <span className={`flex-shrink-0 text-[10px] px-2 py-0.5 rounded-full font-bold ${sm.cls}`}>{sm.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
+        ))}
+      </div>
 
       {assignFor && (
         <AssignModal
@@ -170,7 +252,7 @@ function AssignModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
-        <h3 className="font-bold text-slate-800">อนุมัติ + จัดลงตารางงาน</h3>
+        <h3 className="font-bold text-slate-800">อนุมัติคำขอ</h3>
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700 space-y-0.5">
           <div><b>{name}</b> · {KIND_TH[row.kind]}</div>
           <div className="text-xs text-slate-500">
@@ -224,7 +306,7 @@ function AssignModal({
 
             <div>
               <label className="label">PIN 4 หลักเพื่อยืนยัน</label>
-              <input className="input tracking-[0.5em] text-center" inputMode="numeric" maxLength={4}
+              <input type="password" className="input tracking-[0.5em] text-center" inputMode="numeric" maxLength={4}
                 value={pin} autoComplete="off"
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
                 placeholder="••••" />
@@ -241,7 +323,7 @@ function AssignModal({
           {emptyPositions.length > 0 && (
             <button type="button" onClick={confirm} disabled={!canSubmit}
               className="flex-1 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-40">
-              {busy ? "กำลังจัดลงตาราง…" : "ยืนยัน + ลงตาราง"}
+              {busy ? "กำลังบันทึก…" : "ยืนยัน"}
             </button>
           )}
         </div>
