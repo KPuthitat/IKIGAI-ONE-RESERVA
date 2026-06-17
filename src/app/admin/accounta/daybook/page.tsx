@@ -42,8 +42,7 @@ export default function DaybookPage({
           แยกตามวัน — ซ้ายรายรับ ขวารายจ่าย พร้อมยอดคงเหลือสะสม (รูปแบบเดียวกับเอกเซล)
         </p>
         <p className="text-[11px] text-slate-400 mt-1">
-          รายรับดึงจากยอดขายรายวันของสาขา (รายงานปิดกะ) · ตัวกรองบริษัทมีผลเฉพาะฝั่งรายจ่าย ·
-          การลงบันทึกนี้ไม่ได้อ้างอิงหลักการบัญชี
+          รายรับมาจากที่ลงไว้ในเมนูรายรับ (แยกช่องทางชำระเงิน) · การลงบันทึกนี้ไม่ได้อ้างอิงหลักการบัญชี
         </p>
       </div>
 
@@ -92,10 +91,19 @@ export default function DaybookPage({
               {book.days.map((d) => (
                 <tr key={d.date} className="border-b border-slate-100 align-top">
                   <td className="px-3 py-2 whitespace-nowrap text-slate-600">{formatLongDate(d.date, "th")}</td>
-                  <td className="px-3 py-2 text-right border-l border-slate-100 whitespace-nowrap">
-                    {d.income > 0
-                      ? <span className="font-semibold text-emerald-700">฿{fmtMoney(d.income)}</span>
-                      : <span className="text-slate-300">—</span>}
+                  <td className="px-3 py-2 text-right border-l border-slate-100 whitespace-nowrap align-top">
+                    {d.income > 0 ? (
+                      <div>
+                        <span className="font-semibold text-emerald-700">฿{fmtMoney(d.income)}</span>
+                        {d.incomeByChannel.length > 0 && (
+                          <div className="text-[10px] text-slate-400 space-y-0.5 mt-0.5">
+                            {d.incomeByChannel.map((c) => (
+                              <div key={c.channel}>{c.channel}: ฿{fmtMoney(c.amount)}</div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="px-3 py-2 border-l border-slate-100">
                     {d.expenses.length === 0 ? (

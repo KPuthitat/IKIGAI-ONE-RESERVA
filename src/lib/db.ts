@@ -5110,6 +5110,31 @@ function runMigrations(db: Database.Database): void {
       active     INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- รายรับ by payment channel (owner 2026-06-17, from the Excel income
+    -- side). Channels are an owner-extensible picklist; income rows record
+    -- one amount per channel per day per branch.
+    CREATE TABLE IF NOT EXISTS accounta_income_channels (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL UNIQUE,
+      sort_order INTEGER NOT NULL DEFAULT 100,
+      active     INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS accounta_income (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id   INTEGER REFERENCES branches(id),
+      company_id  INTEGER REFERENCES companies(id),
+      income_date TEXT NOT NULL,
+      channel     TEXT,
+      amount      REAL NOT NULL DEFAULT 0,
+      note        TEXT,
+      created_by  INTEGER REFERENCES users(id),
+      created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_accounta_income_date
+      ON accounta_income(branch_id, income_date DESC);
   `);
 
   // Seed the picklists once (guarded by emptiness so owner edits stick).
@@ -5142,6 +5167,15 @@ function runMigrations(db: Database.Database): void {
     );
     ["เงินสด", "โอนเงิน", "บัตรเครดิต", "กรรมการสำรองจ่าย", "อื่นๆ"]
       .forEach((name, i) => seedPm.run(name, (i + 1) * 10));
+  }
+  const icCount = (db.prepare("SELECT COUNT(*) AS c FROM accounta_income_channels").get() as { c: number }).c;
+  if (icCount === 0) {
+    const seedIc = db.prepare(
+      "INSERT OR IGNORE INTO accounta_income_channels (name, sort_order) VALUES (?, ?)"
+    );
+    ["เงินสด", "QR / พร้อมเพย์", "บัตรเครดิต VISA", "บัตรเครดิต Mastercard",
+     "บัตรเครดิต JCB", "บัตรเครดิต UnionPay"]
+      .forEach((name, i) => seedIc.run(name, (i + 1) * 10));
   }
 
   // ── INSIGNA PII lint (spec section 6.1, NON-NEGOTIABLE) ─────

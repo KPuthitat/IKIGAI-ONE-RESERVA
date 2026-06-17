@@ -1,0 +1,45 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { requirePermission } from "@/lib/auth";
+import { getIncome, updateIncome, deleteIncome } from "@/lib/accounta-db";
+
+const Body = z.object({
+  branch_id: z.number().int().positive().nullable().optional(),
+  company_id: z.number().int().positive().nullable().optional(),
+  income_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  channel: z.string().trim().max(60).nullable().optional(),
+  amount: z.number().min(0).max(1e9),
+  note: z.string().trim().max(300).nullable().optional()
+});
+
+function parseId(raw: string): number | null {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  requirePermission("accounta.manage");
+  const id = parseId(params.id);
+  if (id == null) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
+  if (!getIncome(id)) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
+  }
+  const d = parsed.data;
+  updateIncome(id, {
+    branch_id: d.branch_id ?? null, company_id: d.company_id ?? null,
+    income_date: d.income_date, channel: d.channel ?? null,
+    amount: d.amount, note: d.note ?? null
+  });
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  requirePermission("accounta.manage");
+  const id = parseId(params.id);
+  if (id == null) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
+  const ok = deleteIncome(id);
+  if (!ok) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  return NextResponse.json({ ok: true });
+}

@@ -102,6 +102,115 @@ export function createPaymentMethod(d: { name: string }): number {
   return Number(info.lastInsertRowid);
 }
 
+export function listIncomeChannels(): Array<{ id: number; name: string }> {
+  return getDb().prepare(
+    "SELECT id, name FROM accounta_income_channels WHERE active = 1 ORDER BY sort_order, name COLLATE NOCASE"
+  ).all() as Array<{ id: number; name: string }>;
+}
+
+export function createIncomeChannel(d: { name: string }): number {
+  const name = d.name.trim();
+  const existing = getDb().prepare(
+    "SELECT id FROM accounta_income_channels WHERE name = ? COLLATE NOCASE"
+  ).get(name) as { id: number } | undefined;
+  if (existing) {
+    getDb().prepare("UPDATE accounta_income_channels SET active = 1 WHERE id = ?").run(existing.id);
+    return existing.id;
+  }
+  const max = (getDb().prepare("SELECT COALESCE(MAX(sort_order),0) AS m FROM accounta_income_channels").get() as { m: number }).m;
+  const info = getDb().prepare(
+    "INSERT INTO accounta_income_channels (name, sort_order) VALUES (?, ?)"
+  ).run(name, max + 10);
+  return Number(info.lastInsertRowid);
+}
+
+export type IncomeRow = {
+  id: number;
+  branch_id: number | null;
+  branch_name: string | null;
+  company_id: number | null;
+  company_name: string | null;
+  income_date: string;
+  channel: string | null;
+  amount: number;
+  note: string | null;
+};
+
+export type IncomeInput = {
+  branch_id: number | null;
+  company_id: number | null;
+  income_date: string;
+  channel: string | null;
+  amount: number;
+  note: string | null;
+};
+
+export type IncomeFilter = { branchId?: number | null; companyId?: number | null; month?: string | null };
+
+export function listIncome(f: IncomeFilter = {}): IncomeRow[] {
+  const where: string[] = [];
+  const args: Array<string | number> = [];
+  if (f.branchId != null) { where.push("i.branch_id = ?"); args.push(f.branchId); }
+  if (f.companyId != null) { where.push("i.company_id = ?"); args.push(f.companyId); }
+  if (f.month) { where.push("substr(i.income_date,1,7) = ?"); args.push(f.month); }
+  const sql = `
+    SELECT i.id, i.branch_id, b.name AS branch_name, i.company_id, c.name_th AS company_name,
+           i.income_date, i.channel, i.amount, i.note
+      FROM accounta_income i
+      LEFT JOIN branches b  ON b.id = i.branch_id
+      LEFT JOIN companies c ON c.id = i.company_id
+    ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+    ORDER BY i.income_date DESC, i.id DESC`;
+  return getDb().prepare(sql).all(...args) as IncomeRow[];
+}
+
+export function createIncome(userId: number, d: IncomeInput): number {
+  const info = getDb().prepare(`
+    INSERT INTO accounta_income (branch_id, company_id, income_date, channel, amount, note, created_by)
+    VALUES (?,?,?,?,?,?,?)
+  `).run(d.branch_id, d.company_id, d.income_date, d.channel, round2(Number(d.amount) || 0), d.note?.trim() || null, userId);
+  return Number(info.lastInsertRowid);
+}
+
+export function updateIncome(id: number, d: IncomeInput): boolean {
+  const info = getDb().prepare(`
+    UPDATE accounta_income SET branch_id = ?, company_id = ?, income_date = ?, channel = ?,
+      amount = ?, note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+  `).run(d.branch_id, d.company_id, d.income_date, d.channel, round2(Number(d.amount) || 0), d.note?.trim() || null, id);
+  return info.changes > 0;
+}
+
+export function deleteIncome(id: number): boolean {
+  return getDb().prepare("DELETE FROM accounta_income WHERE id = ?").run(id).changes > 0;
+}
+
+export function getIncome(id: number): IncomeRow | null {
+  return listIncome().find((r) => r.id === id) ?? getDb().prepare(`
+    SELECT i.id, i.branch_id, b.name AS branch_name, i.company_id, c.name_th AS company_name,
+           i.income_date, i.channel, i.amount, i.note
+      FROM accounta_income i
+      LEFT JOIN branches b ON b.id = i.branch_id
+      LEFT JOIN companies c ON c.id = i.company_id
+     WHERE i.id = ?
+  `).get(id) as IncomeRow | undefined ?? null;
+}
+
+export type IncomeSummary = { total: number; byChannel: Array<{ channel: string; total: number }> };
+
+export function incomeSummary(month: string, branchId?: number | null, companyId?: number | null): IncomeSummary {
+  const where = ["substr(income_date,1,7) = ?"];
+  const args: Array<string | number> = [month];
+  if (branchId != null) { where.push("branch_id = ?"); args.push(branchId); }
+  if (companyId != null) { where.push("company_id = ?"); args.push(companyId); }
+  const rows = getDb().prepare(`
+    SELECT COALESCE(channel,'(ไม่ระบุ)') AS channel, COALESCE(SUM(amount),0) AS total
+      FROM accounta_income WHERE ${where.join(" AND ")}
+     GROUP BY COALESCE(channel,'(ไม่ระบุ)') ORDER BY total DESC
+  `).all(...args) as Array<{ channel: string; total: number }>;
+  const total = round2(rows.reduce((s, r) => s + r.total, 0));
+  return { total, byChannel: rows.map((r) => ({ channel: r.channel, total: round2(r.total) })) };
+}
+
 export function listVendors(): VendorRow[] {
   return getDb().prepare(
     "SELECT id, name, tax_id, category FROM accounta_vendors WHERE active = 1 ORDER BY name COLLATE NOCASE"
@@ -318,6 +427,7 @@ export type DaybookExpense = {
 export type DaybookDay = {
   date: string;
   income: number;
+  incomeByChannel: Array<{ channel: string; amount: number }>;
   expenses: DaybookExpense[];
   expenseTotal: number;
   balance: number;          // running (income − expense) within the month
@@ -337,14 +447,25 @@ export type Daybook = {
 export function daybook(month: string, branchId?: number | null, companyId?: number | null): Daybook {
   const db = getDb();
 
-  const incWhere = ["substr(date,1,7) = ?"];
+  // Income from the ACCOUNTA รายรับ ledger, grouped by date + channel
+  // (owner 2026-06-17). branch_daily_revenue stays a separate concern (COL).
+  const incWhere = ["substr(income_date,1,7) = ?"];
   const incArgs: Array<string | number> = [month];
   if (branchId != null) { incWhere.push("branch_id = ?"); incArgs.push(branchId); }
+  if (companyId != null) { incWhere.push("company_id = ?"); incArgs.push(companyId); }
   const incRows = db.prepare(
-    `SELECT date, SUM(revenue) AS inc FROM branch_daily_revenue
-      WHERE ${incWhere.join(" AND ")} GROUP BY date`
-  ).all(...incArgs) as Array<{ date: string; inc: number }>;
-  const incByDate = new Map(incRows.map((r) => [r.date, r.inc]));
+    `SELECT income_date AS date, COALESCE(channel,'(ไม่ระบุ)') AS channel, SUM(amount) AS amt
+       FROM accounta_income WHERE ${incWhere.join(" AND ")}
+      GROUP BY income_date, COALESCE(channel,'(ไม่ระบุ)')`
+  ).all(...incArgs) as Array<{ date: string; channel: string; amt: number }>;
+  const incByDate = new Map<string, number>();
+  const incChannelsByDate = new Map<string, Array<{ channel: string; amount: number }>>();
+  for (const r of incRows) {
+    incByDate.set(r.date, round2((incByDate.get(r.date) ?? 0) + r.amt));
+    const arr = incChannelsByDate.get(r.date) ?? [];
+    arr.push({ channel: r.channel, amount: round2(r.amt) });
+    incChannelsByDate.set(r.date, arr);
+  }
 
   const exps = listExpenses({ month, branchId, companyId });
   const byDate = new Map<string, DaybookExpense[]>();
@@ -362,11 +483,12 @@ export function daybook(month: string, branchId?: number | null, companyId?: num
   let bal = 0, totalIncome = 0, totalExpense = 0;
   const days: DaybookDay[] = dates.map((date) => {
     const income = round2(incByDate.get(date) ?? 0);
+    const incomeByChannel = incChannelsByDate.get(date) ?? [];
     const dayExps = byDate.get(date) ?? [];
     const expenseTotal = round2(dayExps.reduce((s, x) => s + x.amount, 0));
     bal += income - expenseTotal;
     totalIncome += income; totalExpense += expenseTotal;
-    return { date, income, expenses: dayExps, expenseTotal, balance: round2(bal) };
+    return { date, income, incomeByChannel, expenses: dayExps, expenseTotal, balance: round2(bal) };
   });
   return {
     days,
