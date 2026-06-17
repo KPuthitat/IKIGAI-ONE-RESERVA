@@ -38,6 +38,7 @@ export type InterviewSlot = {
 export type AdminInterviewSlot = InterviewSlot & {
   applicant_name: string | null;
   position_title: string | null;
+  interview_confirmed: number | null;   // 1 = admin locked the appointment
 };
 
 /** Public booking row — no candidate identity, just whether it's free. */
@@ -205,6 +206,7 @@ export function listSlotsForAdmin(): AdminInterviewSlot[] {
              TRIM(COALESCE(c.title_prefix,'') || ' ' ||
                   COALESCE(c.first_name_th,'') || ' ' ||
                   COALESCE(c.last_name_th,'')) END AS applicant_name,
+           a.interview_confirmed AS interview_confirmed,
            p.title AS position_title
     FROM recruita_interview_slots s
     LEFT JOIN recruita_applications a ON a.id = s.booked_application_id
@@ -250,12 +252,41 @@ export function clearOpenSlots(): { removed: number } {
  *  Supports re-booking: any slot the application already holds is freed
  *  first, then the new slot is taken atomically. Returns the naive
  *  Bangkok-local interview datetime on success. */
+/** Why an application's interview is frozen against candidate changes
+ *  (owner 2026-06-17): 'day_of' = the appointment is today or already past;
+ *  'confirmed' = an admin locked it in. null = still freely changeable.
+ *  First-time booking (no interview_at yet) is never locked. */
+export function interviewLockReason(applicationId: number): "confirmed" | "day_of" | null {
+  const a = getDb().prepare(
+    "SELECT interview_at, interview_confirmed FROM recruita_applications WHERE id = ?"
+  ).get(applicationId) as { interview_at: string | null; interview_confirmed: number | null } | undefined;
+  if (!a) return null;
+  if (a.interview_confirmed) return "confirmed";
+  if (a.interview_at && a.interview_at.slice(0, 10) <= todayBkk()) return "day_of";
+  return null;
+}
+
+/** Admin confirm / un-confirm an application's interview appointment. Only
+ *  applies to an application that actually has a booking. */
+export function setInterviewConfirmed(applicationId: number, confirmed: boolean): { ok: boolean } {
+  const info = getDb().prepare(
+    "UPDATE recruita_applications SET interview_confirmed = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND interview_at IS NOT NULL"
+  ).run(confirmed ? 1 : 0, applicationId);
+  return { ok: info.changes > 0 };
+}
+
 export function bookInterviewSlot(args: {
   slotId: number;
   applicationId: number;
+  /** Admins (assign route) bypass the candidate-facing reschedule lock so
+   *  they can still move/confirm an appointment on the candidate's behalf. */
+  bypassLock?: boolean;
 }): { ok: true; interviewAt: string; location: string | null }
- | { ok: false; error: "not_found" | "slot_taken" } {
+ | { ok: false; error: "not_found" | "slot_taken" | "locked" } {
   const db = getDb();
+  // Block CANDIDATE re-booking once the appointment is day-of/past or
+  // admin-confirmed. (First booking has no interview_at, so it isn't locked.)
+  if (!args.bypassLock && interviewLockReason(args.applicationId)) return { ok: false, error: "locked" };
   const slot = db.prepare(
     "SELECT id, slot_date, start_time, location, status FROM recruita_interview_slots WHERE id = ?"
   ).get(args.slotId) as
@@ -297,8 +328,10 @@ export function bookInterviewSlot(args: {
  *  the booking off the application. Caller has verified the applicant owns
  *  the application. Idempotent — a no-booking application just clears to
  *  the same (null) state. Returns how many slots were released. */
-export function cancelInterviewBooking(applicationId: number): { ok: true; freed: number } {
+export function cancelInterviewBooking(applicationId: number): { ok: true; freed: number } | { ok: false; error: "locked" } {
   const db = getDb();
+  // Same freeze as re-booking: no cancel on the day-of or after admin confirm.
+  if (interviewLockReason(applicationId)) return { ok: false, error: "locked" };
   let freed = 0;
   const tx = db.transaction(() => {
     const info = db.prepare(`

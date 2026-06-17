@@ -4515,6 +4515,10 @@ function runMigrations(db: Database.Database): void {
   // Free text shown on the offer card + the candidate's status page. NULL =
   // none (card omits the section).
   addApplication("offer_conditions", "TEXT");
+  // Admin-confirmed interview appointment (owner 2026-06-17). Once 1, the
+  // candidate can no longer reschedule/cancel their interview. Independent
+  // of the day-of lock (a confirmed future appointment is also frozen).
+  addApplication("interview_confirmed", "INTEGER");  // 0/1, NULL = not confirmed
 
   // Walk-in visits (added 2026-05-24) — staff records anyone who walks
   // in without a booking. Mirrors a slice of `bookings`: phone is the

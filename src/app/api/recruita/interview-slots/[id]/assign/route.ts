@@ -43,7 +43,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     );
   }
 
-  const r = bookInterviewSlot({ slotId, applicationId: application_id });
+  const r = bookInterviewSlot({ slotId, applicationId: application_id, bypassLock: true });
   if (!r.ok) {
     const message =
       r.error === "slot_taken" ? "ช่วงเวลานี้ถูกจองแล้ว กรุณาเลือกช่วงอื่น" :

@@ -73,7 +73,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!r.ok) {
     const message =
       r.error === "slot_taken" ? "ช่วงเวลานี้มีผู้เลือกแล้ว กรุณาเลือกเวลาอื่น" :
-      r.error === "not_found" ? "ไม่พบช่วงเวลานี้แล้ว" : "จองไม่สำเร็จ";
+      r.error === "not_found" ? "ไม่พบช่วงเวลานี้แล้ว" :
+      r.error === "locked" ? "ไม่สามารถเปลี่ยนเวลานัดได้แล้ว (ถึงวันนัด หรือแอดมินยืนยันนัดแล้ว) — กรุณาติดต่อแอดมิน" :
+      "จองไม่สำเร็จ";
     return NextResponse.json({ ok: false, error: r.error, message }, { status: 409 });
   }
 

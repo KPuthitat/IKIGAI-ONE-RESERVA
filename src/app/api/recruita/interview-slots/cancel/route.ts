@@ -52,5 +52,11 @@ export async function POST(req: Request) {
   }
 
   const r = cancelInterviewBooking(application_id);
+  if (!r.ok) {
+    return NextResponse.json(
+      { ok: false, error: r.error, message: "ไม่สามารถยกเลิกนัดได้แล้ว (ถึงวันนัด หรือแอดมินยืนยันนัดแล้ว) — กรุณาติดต่อแอดมิน" },
+      { status: 409 }
+    );
+  }
   return NextResponse.json({ ok: true, freed: r.freed });
 }

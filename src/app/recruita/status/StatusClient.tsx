@@ -30,6 +30,9 @@ type AppRow = {
    *  null until the applicant self-books a slot. */
   interview_at: string | null;
   interview_location: string | null;
+  /** 1 once an admin confirmed the appointment — candidate can no longer
+   *  reschedule/cancel (owner 2026-06-17). */
+  interview_confirmed?: number | null;
   /** Offer detail at the 'offered' stage (owner 2026-06-15). */
   offer_salary: number | null;
   offer_salary_type: "monthly" | "hourly" | null;
@@ -61,6 +64,16 @@ function fmtBookingWhen(at: string): string {
   const time = (tm ?? "").slice(0, 5);
   const datePart = /^\d{4}-\d{2}-\d{2}$/.test(d ?? "") ? formatLongDate(d, "th") : (d ?? at);
   return time ? `${datePart} เวลา ${time} น.` : datePart;
+}
+
+/** Whether the candidate can no longer change their interview (owner
+ *  2026-06-17): admin-confirmed, or the appointment is today/past. A
+ *  not-yet-booked application is never locked. Mirrors the server gate. */
+function interviewLockReason(row: { interview_at: string | null; interview_confirmed?: number | null }): "confirmed" | "day_of" | null {
+  if (!row.interview_at) return null;
+  if (row.interview_confirmed) return "confirmed";
+  const todayBkk = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  return row.interview_at.slice(0, 10) <= todayBkk ? "day_of" : null;
 }
 
 // Candidate-friendly one-liner per stage — shown under each card so the
@@ -565,6 +578,12 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
                             </button>
                           </div>
                         </div>
+                      ) : interviewLockReason(row) ? (
+                        <p className="text-[11px] text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2">
+                          {interviewLockReason(row) === "confirmed"
+                            ? "แอดมินยืนยันนัดแล้ว ไม่สามารถเปลี่ยนวัน/เวลาได้ — หากต้องการเปลี่ยน กรุณาติดต่อแอดมิน"
+                            : "ถึงวันนัดแล้ว ไม่สามารถเปลี่ยนเวลาได้ — หากติดขัด กรุณาติดต่อแอดมิน"}
+                        </p>
                       ) : (
                         <div className="flex gap-2 flex-wrap">
                           <button type="button"

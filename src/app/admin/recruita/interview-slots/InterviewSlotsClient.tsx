@@ -173,6 +173,27 @@ export default function InterviewSlotsClient({
     } finally { setBusy(false); }
   }
 
+  // Lock / unlock an appointment so the candidate can't reschedule (owner
+  // 2026-06-17). Admins can still move it via assign.
+  async function confirmInterview(appId: number, confirmed: boolean) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/recruita/applications/${appId}/interview-confirm`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        setMsg({ kind: "err", text: j.message ?? j.error ?? "ทำรายการไม่สำเร็จ" });
+        return;
+      }
+      setMsg({ kind: "ok", text: confirmed ? "ยืนยันนัด — ผู้สมัครจะเปลี่ยนเวลาเองไม่ได้แล้ว" : "ปลดล็อก — ผู้สมัครเปลี่ยนเวลาได้อีกครั้ง" });
+      startTransition(() => router.refresh());
+    } finally { setBusy(false); }
+  }
+
   // Group slots by date for the board.
   const groups = useMemo(() => {
     const m = new Map<string, AdminInterviewSlot[]>();
@@ -369,6 +390,17 @@ export default function InterviewSlotsClient({
                           <span className="text-[11px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800">จองแล้ว</span>
                           <span className="text-slate-700 truncate font-semibold">{s.applicant_name || "ผู้สมัคร"}</span>
                           {s.position_title && <span className="text-[11px] text-slate-400 truncate">· {s.position_title}</span>}
+                          {s.booked_application_id && (
+                            <button type="button" disabled={busy}
+                              onClick={() => confirmInterview(s.booked_application_id!, !s.interview_confirmed)}
+                              className={`text-[11px] px-2 py-0.5 rounded-full font-bold disabled:opacity-50 ${
+                                s.interview_confirmed
+                                  ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                                  : "border border-slate-300 text-slate-600 hover:bg-slate-50"}`}
+                              title={s.interview_confirmed ? "กดเพื่อปลดล็อก ให้ผู้สมัครเปลี่ยนเวลาได้" : "ล็อกไม่ให้ผู้สมัครเปลี่ยนเวลา/วัน"}>
+                              {s.interview_confirmed ? "ยืนยันนัดแล้ว ✓" : "ยืนยันนัด (ล็อก)"}
+                            </button>
+                          )}
                         </>
                       )}
                     </div>
