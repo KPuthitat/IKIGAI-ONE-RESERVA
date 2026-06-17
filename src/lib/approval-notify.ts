@@ -149,7 +149,7 @@ export async function notifyLeaveEvent(args: {
 
   const ctaPrimary = {
     url: `${PUBLIC_BASE}/admin/persona/leave?focus=${row.id}`,
-    label: "เปิดหน้าอนุมัติ"
+    label: "ตอบรับคำขอ"
   };
   const ctaSelf = {
     url: `${PUBLIC_BASE}/staff/persona/leave`,
@@ -184,7 +184,7 @@ export async function notifyLeaveEvent(args: {
         type: "flex",
         altText: `คำขอ${label}ของคุณถูกส่งแล้ว`,
         contents: {
-          type: "bubble", size: "kilo",
+          type: "bubble", size: "giga",
           body: {
             type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
             contents: [
@@ -298,7 +298,7 @@ export async function notifyHrLeaveRequest(requestId: number): Promise<void> {
       type: "flex",
       altText: `คำขอลางาน · ${name} · ${label}`,
       contents: {
-        type: "bubble", size: "kilo",
+        type: "bubble", size: "giga",
         body: {
           type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
           contents: [
@@ -312,7 +312,7 @@ export async function notifyHrLeaveRequest(requestId: number): Promise<void> {
           type: "box", layout: "vertical", paddingAll: "12px",
           contents: [{
             type: "button", style: "primary", color: "#0F1B33", height: "sm",
-            action: { type: "uri", label: "เปิดเพื่ออนุมัติ", uri: `${PUBLIC_BASE}/admin/persona/leave?focus=${requestId}` }
+            action: { type: "uri", label: "ตอบรับคำขอ", uri: `${PUBLIC_BASE}/admin/persona/leave?focus=${requestId}` }
           }]
         }
       }
@@ -335,7 +335,7 @@ export async function notifyHrShiftRequest(params: {
       type: "flex",
       altText: `คำขอเปลี่ยนเวลางาน · ${params.name} · ${kindLabel}`,
       contents: {
-        type: "bubble", size: "kilo",
+        type: "bubble", size: "giga",
         body: {
           type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
           contents: [
@@ -349,7 +349,7 @@ export async function notifyHrShiftRequest(params: {
           type: "box", layout: "vertical", paddingAll: "12px",
           contents: [{
             type: "button", style: "primary", color: "#1a2b50", height: "sm",
-            action: { type: "uri", label: "เปิดเพื่ออนุมัติ", uri: `${PUBLIC_BASE}/admin/persona/shift-requests` }
+            action: { type: "uri", label: "ตอบรับคำขอ", uri: `${PUBLIC_BASE}/admin/persona/shift-requests` }
           }]
         }
       }

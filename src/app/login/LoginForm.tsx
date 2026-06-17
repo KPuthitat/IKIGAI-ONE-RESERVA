@@ -62,13 +62,17 @@ export default function LoginForm({
       // and staff are employees first → STAFF branch picker → /staff. Both
       // pickers auto-skip straight through when there's only one eligible
       // branch, so single-branch users feel no extra step.
-      const dest = next
-        ? next
-        : data.is_super_admin
-          ? "/admin/branch-picker"
-          : (data.branchCount ?? 0) >= 1
-            ? "/staff/branch-picker"
-            : "/staff";
+      // Always route through the branch picker so an active branch is set
+      // (it auto-skips for single-branch users). When a deep-link target is
+      // present (a tapped LINE card → /login?next=…), pass it through the
+      // picker so it forwards there after the branch is chosen — instead of
+      // jumping straight to a page that would then demand a branch.
+      const pickerBase = data.is_super_admin
+        ? "/admin/branch-picker"
+        : (data.branchCount ?? 0) >= 1
+          ? "/staff/branch-picker"
+          : "/staff";
+      const dest = next ? `${pickerBase}?next=${encodeURIComponent(next)}` : pickerBase;
       router.push(dest);
       router.refresh();
     } finally {

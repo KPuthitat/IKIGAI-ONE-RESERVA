@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import crypto from "node:crypto";
 import { getDb, getUserPermissions, type User, type Branch } from "./db";
@@ -182,7 +182,14 @@ export function setActiveBranch(branchId: number): boolean {
 
 export function requireUser(): SessionUser {
   const u = getSessionUser();
-  if (!u) redirect("/login");
+  if (!u) {
+    // Carry the page they were trying to reach through login so a tapped
+    // LINE card lands on the right menu afterwards (owner 2026-06-17). The
+    // path comes from middleware's x-pathname header; only forward in-app
+    // absolute paths.
+    const path = headers().get("x-pathname") ?? "";
+    redirect(path.startsWith("/") ? `/login?next=${encodeURIComponent(path)}` : "/login");
+  }
   return u;
 }
 

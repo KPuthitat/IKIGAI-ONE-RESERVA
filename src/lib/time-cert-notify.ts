@@ -165,7 +165,7 @@ export async function notifyExecGroupTimeCertRequest(certId: number): Promise<vo
     type: "flex" as const,
     altText: `คำขอรับรองเวลา: ${who} (${kindTh} ${what})`,
     contents: {
-      type: "bubble",
+      type: "bubble", size: "giga",
       header: {
         type: "box", layout: "vertical", paddingAll: "16px", backgroundColor: "#a06820",
         contents: [
@@ -186,7 +186,7 @@ export async function notifyExecGroupTimeCertRequest(certId: number): Promise<vo
         contents: [
           {
             type: "button", style: "primary", color: "#a06820", height: "sm",
-            action: { type: "uri", label: "ไปอนุมัติ", uri: `${PUBLIC_BASE}/admin/persona/time-certifications` }
+            action: { type: "uri", label: "ตอบรับคำขอ", uri: `${PUBLIC_BASE}/admin/persona/time-certifications` }
           }
         ]
       }

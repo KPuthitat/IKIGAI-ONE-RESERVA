@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { nameWithPrefix } from "@/lib/name";
+import { thMonthLabel, thDayLabel, groupByMonthDay } from "@/lib/th-month";
 import type { PendingCertRow, HistoryCertRow } from "./page";
 
 function bkkDisplay(iso: string): string {
@@ -257,10 +258,24 @@ export default function TimeCertificationsClient({
       {/* History — decided certs, so admin can audit what happened
           (owner 2026-06-15). Shows type (เข้า/ออก), date, who decided. */}
       {history.length > 0 && (
-        <div className="card space-y-2">
+        <div className="space-y-2">
           <h2 className="font-bold text-slate-800 text-sm">ประวัติการรับรองเวลา</h2>
-          <div className="divide-y divide-slate-100">
-            {history.map((h) => (
+          {groupByMonthDay(history, (h) => h.decided_at ?? h.proposed_ts).map(({ mk, days }, i) => (
+            <details key={mk} open={i === 0} className="card">
+              <summary className="cursor-pointer font-semibold text-slate-700 text-sm select-none">
+                {thMonthLabel(mk)}{" "}
+                <span className="text-[11px] text-slate-400 font-normal">
+                  · {days.reduce((s, [, rs]) => s + rs.length, 0)} รายการ
+                </span>
+              </summary>
+              <div className="mt-2 space-y-3">
+                {days.map(([d, rows]) => (
+                  <div key={d}>
+                    <div className="text-[11px] font-bold text-slate-400 border-b border-slate-100 pb-1 mb-1">
+                      {thDayLabel(d)}
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {rows.map((h) => (
               <div key={h.id} className="py-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
                   h.status === "approved" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600"
@@ -285,8 +300,13 @@ export default function TimeCertificationsClient({
                   <span className="basis-full text-[11px] italic text-slate-500">หมายเหตุ: {h.decision_note}</span>
                 )}
               </div>
-            ))}
-          </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ))}
         </div>
       )}
     </div>
