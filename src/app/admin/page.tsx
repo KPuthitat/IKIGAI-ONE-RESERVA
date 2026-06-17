@@ -119,6 +119,31 @@ export default function AdminHomePage() {
             </p>
           </Link>
         )}
+
+        {/* ACCOUNTA — accounting + feasibility (owner 2026-06-16). Mirrors
+            the sidebar gate; the card was missing from this grid on first
+            ship (fixed 2026-06-17). */}
+        {canModule(user, "accounta.manage") && (
+          <Link href="/admin/accounta" className="card hover:shadow-2xl transition group block">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="text-[11px] tracking-[1px] text-slate-400">
+                {t(lang, "portal.label.module")}
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-700">
+                NEW
+              </span>
+            </div>
+            <h2 className="text-2xl font-bold text-slate-800 group-hover:text-brand transition-colors">
+              ACCOUNTA
+            </h2>
+            <p className="text-slate-500 text-sm mt-1">
+              บัญชีรายรับ-รายจ่าย · ภาษีซื้อ-ขาย · สมุดรายวัน · ประเมินความเป็นไปได้ (FEASIBILITY)
+            </p>
+            <p className="mt-4 text-brand font-bold text-sm">
+              {t(lang, "portal.openBackend")}
+            </p>
+          </Link>
+        )}
       </div>
     </div>
   );
