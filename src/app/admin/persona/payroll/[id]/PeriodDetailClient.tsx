@@ -57,6 +57,7 @@ export type PayrollLineRow = {
   ot_minutes: number;
   days_worked: number;
   leave_days: number;
+  unpaid_leave_days: number;
   unpaired_clockins: number;
   base_pay: number;
   ot_pay: number;
@@ -992,6 +993,11 @@ function LineEditModal({
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
 
+  // ลาไม่รับค่าจ้าง — line-level day count; deducts salary/30 per day (FT).
+  const [ulDays, setUlDays] = useState(String(line.unpaid_leave_days ?? 0));
+  const [ulPinOpen, setUlPinOpen] = useState(false);
+  const [ulMsg, setUlMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
   // Daily time-entry breakdown — owner spec 2026-06-01 promoted this
   // from a collapsible footer to the primary view of the modal.
   const [breakdownDays, setBreakdownDays] = useState<BreakdownDay[] | null>(null);
@@ -1256,6 +1262,61 @@ function LineEditModal({
             </p>
           )}
         </div>
+
+        {/* ลาไม่รับค่าจ้าง — FT only (salary-based). Deducts salary/30 per
+            day even for full-time staff (owner 2026-06-17). */}
+        {line.hourly_rate_snapshot == null && line.monthly_salary_snapshot != null && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1.5">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <div className="text-sm font-semibold text-slate-700">ลาไม่รับค่าจ้าง</div>
+                <div className="text-[11px] text-slate-500">
+                  หักเงินเดือน ÷ 30 ต่อวัน = {fmtMoney(line.monthly_salary_snapshot / 30)} บาท/วัน
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="number" min="0" max="31" step="0.5"
+                  className="input !w-20 text-right" value={ulDays}
+                  onChange={(e) => setUlDays(e.target.value)} />
+                <span className="text-xs text-slate-500">วัน</span>
+                <button type="button" className="btn-secondary !py-1.5 disabled:opacity-50"
+                  disabled={(Number(ulDays) || 0) === line.unpaid_leave_days}
+                  onClick={() => setUlPinOpen(true)}>บันทึก</button>
+              </div>
+            </div>
+            {(Number(ulDays) || 0) > 0 && (
+              <div className="text-[11px] text-rose-600">
+                หักประมาณ ฿{fmtMoney((line.monthly_salary_snapshot / 30) * (Number(ulDays) || 0))}
+              </div>
+            )}
+            {ulMsg && (
+              <p className={`text-[11px] ${ulMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>{ulMsg.text}</p>
+            )}
+          </div>
+        )}
+        {ulPinOpen && (
+          <PinPromptModal
+            title="ยืนยันบันทึกลาไม่รับค่าจ้าง"
+            description={<p className="text-xs text-slate-600">หักเงินเดือน ÷ 30 × {ulDays} วัน — ใส่ PIN เพื่อยืนยัน</p>}
+            submitLabel="บันทึก"
+            onClose={() => setUlPinOpen(false)}
+            onSubmit={async (pin) => {
+              const res = await fetch(
+                apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}`),
+                {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ unpaid_leave_days: Number(ulDays) || 0, admin_pin: pin })
+                }
+              );
+              const j = await res.json().catch(() => ({}));
+              if (!res.ok || !j.ok) return { ok: false, message: j.message ?? j.error ?? "บันทึกไม่สำเร็จ" };
+              setUlPinOpen(false); setDirty(true);
+              setUlMsg({ kind: "ok", text: "บันทึกแล้ว — ยอดสุทธิจะอัปเดตเมื่อปิดหน้าต่าง" });
+              return { ok: true };
+            }}
+          />
+        )}
 
         {/* Daily time-entry breakdown — PRIMARY view per owner spec
             2026-06-01. Shows where each day's pay comes from before

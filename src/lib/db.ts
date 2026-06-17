@@ -844,7 +844,11 @@ function runMigrations(db: Database.Database): void {
     ["maternity",     98,   "female", "all", 1, 1, 5],
     ["sterilization", null, "all",    "all", 1, 1, 6],
     ["ordination",    90,   "male",   "all", 0, 1, 7],
-    ["military",      60,   "male",   "all", 0, 1, 8]
+    ["military",      60,   "male",   "all", 0, 1, 8],
+    // ลาไม่รับค่าจ้าง (owner 2026-06-17): no quota; the day is deducted at
+    // salary/30 even for FT. Label lives in line.ts; payroll deduction in
+    // payroll-compute.ts (unpaidLeaveDays). No evidence/pre-approval gate.
+    ["unpaid",        null, "all",    "all", 0, 0, 9]
   ];
   for (const t of types) seedLeaveType.run(...t);
 
@@ -2490,6 +2494,14 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_payroll_lines_user
       ON payroll_lines(user_id);
   `);
+
+  // Unpaid-leave days on a payroll line (owner 2026-06-17). Opt-in: default
+  // 0 means no change to any existing line. When > 0 the compute deducts
+  // salary/30 per day from FT base pay (see payroll-compute.ts).
+  const plColsUnpaid = db.prepare("PRAGMA table_info(payroll_lines)").all() as Array<{ name: string }>;
+  if (!plColsUnpaid.some((c) => c.name === "unpaid_leave_days")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN unpaid_leave_days REAL NOT NULL DEFAULT 0");
+  }
 
   // payroll_line_audit — accountability trail for manual edits to a
   // payroll line (owner 2026-06-02: "แอดมินแก้ได้ แต่ต้องกด PIN แล้ว

@@ -41,6 +41,7 @@ type Line = {
   holiday_minutes: number;
   days_worked: number;
   leave_days: number;
+  unpaid_leave_days: number;
   unpaired_clockins: number;
   base_pay: number;
   ot_pay: number;
@@ -109,7 +110,7 @@ export default function PayslipPage({
            salary_tax_mode_snapshot,
            shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
            holiday_minutes,
-           days_worked, leave_days, unpaired_clockins,
+           days_worked, leave_days, unpaid_leave_days, unpaired_clockins,
            base_pay, ot_pay, service_charge, other_additions, gross_pay,
            sso_amount, tax_amount, other_deductions, net_pay
     FROM payroll_lines WHERE period_id = ? AND user_id = ?
@@ -179,6 +180,13 @@ export default function PayslipPage({
           <KV label={t(lang, "admin.persona.payroll.payslip.daysWorked")} value={String(line.days_worked)} />
           {line.leave_days > 0 && (
             <KV label={t(lang, "admin.persona.payroll.payslip.leaveDays")} value={String(line.leave_days)} />
+          )}
+          {line.unpaid_leave_days > 0 && (
+            <KV label="ลาไม่รับค่าจ้าง"
+              value={`${line.unpaid_leave_days} วัน${
+                line.monthly_salary_snapshot != null
+                  ? ` (หัก ฿${fmtMoney((line.monthly_salary_snapshot / 30) * line.unpaid_leave_days)} จากฐานเงินเดือนแล้ว)`
+                  : ""}`} />
           )}
           {line.employment_type === "pt" && line.hourly_rate_snapshot != null && (
             <KV label={t(lang, "admin.persona.payroll.payslip.hourlyRate")} value={`${fmtMoney(line.hourly_rate_snapshot)} ${t(lang, "admin.persona.employees.bahtPerHour")}`} />

@@ -71,6 +71,9 @@ export type ComputedLine = {
   holiday_minutes: number;
   days_worked: number;
   leave_days: number;
+  // ลาไม่รับค่าจ้าง — days, and the baht deducted (salary/30 × days, FT only).
+  unpaid_leave_days: number;
+  unpaid_leave_deduction: number;
   unpaired_clockins: number;
   // pay
   base_pay: number;
@@ -525,6 +528,7 @@ export function computeLineForEmployee(args: {
   shifts: Shift[];
   unpaired: number;
   leaveDays: number;
+  unpaidLeaveDays?: number;
   cycle: "weekly" | "monthly";
   periodEnd: string;          // YYYY-MM-DD (used for FT-weekly division)
   settings: PayrollSettings;
@@ -544,7 +548,7 @@ export function computeLineForEmployee(args: {
   // present field wins over the computed one.
   fieldOverridesByDate?: Map<string, DayFieldOverride>;
 }): ComputedLine {
-  const { employee: e, shifts, unpaired, leaveDays, cycle, periodEnd, settings, holidaySet, scheduledByDate, approvedOtByDate, fieldOverridesByDate } = args;
+  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodEnd, settings, holidaySet, scheduledByDate, approvedOtByDate, fieldOverridesByDate } = args;
 
   // Determine effective hourly rate (used for legal OT mode + display)
   const ptRate = e.hourly_rate ?? settings.pt_default_hourly_rate;
@@ -685,6 +689,10 @@ export function computeLineForEmployee(args: {
     // Else: this employee has a different pay_cycle than this period — exclude
   }
 
+  // ลาไม่รับค่าจ้าง — reduce FT base by salary/30 per unpaid day. Default 0.
+  const ulDeduction = unpaidLeaveDeduction(e, unpaidLeaveDays, basePay);
+  basePay = round2(basePay - ulDeduction);
+
   // Total OT pay
   const otPay = e.employment_type === "pt" ? ptOtPay : ftOtPay;
 
@@ -728,6 +736,8 @@ export function computeLineForEmployee(args: {
     holiday_minutes: Math.round(holidayMin),
     days_worked: daysSet.size,
     leave_days: leaveDays,
+    unpaid_leave_days: unpaidLeaveDays,
+    unpaid_leave_deduction: round2(ulDeduction),
     unpaired_clockins: unpaired,
     base_pay: round2(basePay),
     ot_pay: round2(otPay),
@@ -745,6 +755,14 @@ function round2(x: number): number {
   return Math.round(x * 100) / 100;
 }
 
+/** ลาไม่รับค่าจ้าง deduction: salary/30 per day, FT only (a PT's unpaid
+ *  leave is already no-shift = no pay, so nothing to deduct). Clamped so it
+ *  never drives base pay below zero. owner 2026-06-17. */
+function unpaidLeaveDeduction(e: EmployeePayrollSnapshot, days: number, base: number): number {
+  if (e.employment_type !== "ft" || !e.monthly_salary || days <= 0) return 0;
+  return Math.min(round2((e.monthly_salary / 30) * days), round2(base));
+}
+
 /**
  * Recompute pay components from manually-entered minute totals.
  * Used when an admin edits a payroll line's hours/days directly (no shift data).
@@ -759,6 +777,7 @@ export function computeLineFromMinutes(args: {
   otMinutes: number;
   holidayMinutes: number;
   leaveDays: number;
+  unpaidLeaveDays?: number;
   daysWorked: number;
   unpaired: number;
   cycle: "weekly" | "monthly";
@@ -770,7 +789,7 @@ export function computeLineFromMinutes(args: {
 }): ComputedLine {
   const {
     employee: e, regularMinutes, otMinutes, holidayMinutes, leaveDays,
-    daysWorked, unpaired, cycle, periodEnd, settings,
+    unpaidLeaveDays = 0, daysWorked, unpaired, cycle, periodEnd, settings,
     serviceCharge = 0, otherAdditions = 0, otherDeductions = 0
   } = args;
 
@@ -802,6 +821,11 @@ export function computeLineFromMinutes(args: {
       basePay = e.monthly_salary / mondays;
     }
   }
+
+  // ลาไม่รับค่าจ้าง — reduce FT base by salary/30 per unpaid day BEFORE gross
+  // so SSO/tax fall on the actually-earned amount. Default 0 → no effect.
+  const ulDeduction = unpaidLeaveDeduction(e, unpaidLeaveDays, basePay);
+  basePay = round2(basePay - ulDeduction);
 
   // OT pay — PT gets holiday premium, FT does not (per company rule)
   let otPay = 0;
@@ -845,6 +869,8 @@ export function computeLineFromMinutes(args: {
     holiday_minutes: holidayMinutes,
     days_worked: daysWorked,
     leave_days: leaveDays,
+    unpaid_leave_days: unpaidLeaveDays,
+    unpaid_leave_deduction: round2(ulDeduction),
     unpaired_clockins: unpaired,
     base_pay: round2(basePay),
     ot_pay: round2(otPay),

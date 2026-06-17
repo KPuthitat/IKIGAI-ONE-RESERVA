@@ -26,6 +26,7 @@ const Body = z.object({
   ot_minutes: z.number().int().min(0).max(100000).optional(),
   holiday_minutes: z.number().int().min(0).max(100000).optional(),
   leave_days: z.number().min(0).max(366).optional(),
+  unpaid_leave_days: z.number().min(0).max(366).optional(),
   days_worked: z.number().int().min(0).max(366).optional(),
   // Money-based fields
   base_pay: z.number().min(0).optional(),
@@ -86,7 +87,7 @@ export async function PATCH(
            pay_cycle_snapshot, hourly_rate_snapshot, monthly_salary_snapshot,
            salary_tax_mode_snapshot,
            regular_minutes, ot_minutes, holiday_minutes,
-           days_worked, leave_days, unpaired_clockins,
+           days_worked, leave_days, unpaid_leave_days, unpaired_clockins,
            base_pay, ot_pay, service_charge, other_additions, other_deductions,
            gross_pay, net_pay, sso_amount, tax_amount
     FROM payroll_lines WHERE period_id = ? AND user_id = ?
@@ -100,7 +101,7 @@ export async function PATCH(
     monthly_salary_snapshot: number | null;
     salary_tax_mode_snapshot: "sso" | "wht" | null;
     regular_minutes: number; ot_minutes: number; holiday_minutes: number;
-    days_worked: number; leave_days: number; unpaired_clockins: number;
+    days_worked: number; leave_days: number; unpaid_leave_days: number; unpaired_clockins: number;
     base_pay: number; ot_pay: number; service_charge: number;
     other_additions: number; other_deductions: number;
     gross_pay: number; net_pay: number;
@@ -126,6 +127,7 @@ export async function PATCH(
     d.ot_minutes !== undefined ||
     d.holiday_minutes !== undefined ||
     d.leave_days !== undefined ||
+    d.unpaid_leave_days !== undefined ||
     d.days_worked !== undefined;
 
   if (timeFieldsProvided) {
@@ -169,6 +171,7 @@ export async function PATCH(
       otMinutes: d.ot_minutes ?? line.ot_minutes,
       holidayMinutes: d.holiday_minutes ?? line.holiday_minutes,
       leaveDays: d.leave_days ?? line.leave_days,
+      unpaidLeaveDays: d.unpaid_leave_days ?? line.unpaid_leave_days,
       daysWorked: d.days_worked ?? line.days_worked,
       unpaired: line.unpaired_clockins,
       cycle: period.cycle,
@@ -182,7 +185,7 @@ export async function PATCH(
     db.prepare(`
       UPDATE payroll_lines
       SET regular_minutes = ?, ot_minutes = ?, holiday_minutes = ?,
-          days_worked = ?, leave_days = ?,
+          days_worked = ?, leave_days = ?, unpaid_leave_days = ?,
           base_pay = ?, ot_pay = ?, service_charge = ?,
           other_additions = ?, other_deductions = ?,
           gross_pay = ?, sso_amount = ?, tax_amount = ?, net_pay = ?,
@@ -195,7 +198,7 @@ export async function PATCH(
       WHERE period_id = ? AND user_id = ?
     `).run(
       computed.regular_minutes, computed.ot_minutes, computed.holiday_minutes,
-      computed.days_worked, computed.leave_days,
+      computed.days_worked, computed.leave_days, computed.unpaid_leave_days,
       computed.base_pay, computed.ot_pay, computed.service_charge,
       computed.other_additions, computed.other_deductions,
       computed.gross_pay, computed.sso_amount, computed.tax_amount, computed.net_pay,
