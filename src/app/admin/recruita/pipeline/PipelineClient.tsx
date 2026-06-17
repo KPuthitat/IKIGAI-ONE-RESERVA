@@ -71,6 +71,7 @@ export default function PipelineClient({
   const [offerStartDate, setOfferStartDate] = useState("");
   const [offerSalary, setOfferSalary] = useState("");
   const [offerSalaryType, setOfferSalaryType] = useState<"monthly" | "hourly">("monthly");
+  const [offerConditions, setOfferConditions] = useState("");
   const [approveCard, setApproveCard] = useState<PipelineCard | null>(null);
   const [cancelCard, setCancelCard] = useState<PipelineCard | null>(null);
 
@@ -265,8 +266,12 @@ export default function PipelineClient({
                       <option value="hourly">บาท/ชม.</option>
                     </select>
                   </div>
+                  <label className="label mt-2">เงื่อนไขเฉพาะราย (ถ้ามี)</label>
+                  <textarea className="input text-sm" rows={2} maxLength={1000}
+                    value={offerConditions} onChange={(e) => setOfferConditions(e.target.value)}
+                    placeholder="เช่น ทดลองงาน 90 วัน · ค่าเดินทางเหมาจ่ายเดือนละ 800 บาท" />
                   <p className="text-[10px] text-slate-400 mt-0.5">
-                    ตำแหน่ง + ค่าตอบแทน + วันเริ่มงาน จะแสดงในการ์ดข้อเสนอที่ส่งให้ผู้สมัคร
+                    ตำแหน่ง + ค่าตอบแทน + วันเริ่มงาน + เงื่อนไขเฉพาะราย จะแสดงในการ์ดข้อเสนอที่ส่งให้ผู้สมัคร
                   </p>
                 </div>
               )}
@@ -276,7 +281,7 @@ export default function PipelineClient({
             </>
           }
           submitLabel={isDual ? "ส่งคำขอ" : isOffer ? "เสนองาน" : "เปลี่ยนสถานะ"}
-          onClose={() => { setRequestModal(null); setOfferStartDate(""); setOfferSalary(""); }}
+          onClose={() => { setRequestModal(null); setOfferStartDate(""); setOfferSalary(""); setOfferConditions(""); }}
           onSubmit={async (pin) => {
             if (isOffer && !/^\d{4}-\d{2}-\d{2}$/.test(offerStartDate)) {
               return { ok: false, message: "กรุณาเลือกวันเริ่มงานวันแรกก่อนเสนองาน" };
@@ -294,7 +299,8 @@ export default function PipelineClient({
                   ...(isOffer ? {
                     offer_start_date: offerStartDate,
                     offer_salary: Number(offerSalary),
-                    offer_salary_type: offerSalaryType
+                    offer_salary_type: offerSalaryType,
+                    offer_conditions: offerConditions
                   } : {})
                 })
               }

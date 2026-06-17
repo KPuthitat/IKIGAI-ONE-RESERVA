@@ -40,7 +40,9 @@ const Body = z.object({
   // Offered compensation — also required at 'offered'. Amount + type so the
   // candidate sees a concrete offer.
   offer_salary: z.number().min(0).max(10_000_000).optional(),
-  offer_salary_type: z.enum(["monthly", "hourly"]).optional()
+  offer_salary_type: z.enum(["monthly", "hourly"]).optional(),
+  // Optional per-candidate special conditions shown on the offer card.
+  offer_conditions: z.string().trim().max(1000).optional()
 });
 
 export async function POST(
@@ -102,6 +104,7 @@ export async function POST(
   const offerStartDate = parsed.data.offer_start_date ?? null;
   const offerSalary = parsed.data.offer_salary ?? null;
   const offerSalaryType = parsed.data.offer_salary_type ?? null;
+  const offerConditions = (parsed.data.offer_conditions ?? "").trim() || null;
   if (toStage === "offered" && !offerStartDate) {
     return NextResponse.json(
       { error: "offer_start_date_required", message: "กรุณาเลือกวันเริ่มงานวันแรกก่อนเสนองาน" },
@@ -120,8 +123,8 @@ export async function POST(
   if (!needsDualApproval(fromStage, toStage)) {
     if (toStage === "offered") {
       db.prepare(
-        "UPDATE recruita_applications SET stage = ?, offer_start_date = ?, offer_salary = ?, offer_salary_type = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-      ).run(toStage, offerStartDate, offerSalary, offerSalaryType, applicationId);
+        "UPDATE recruita_applications SET stage = ?, offer_start_date = ?, offer_salary = ?, offer_salary_type = ?, offer_conditions = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).run(toStage, offerStartDate, offerSalary, offerSalaryType, offerConditions, applicationId);
     } else {
       db.prepare(
         "UPDATE recruita_applications SET stage = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"

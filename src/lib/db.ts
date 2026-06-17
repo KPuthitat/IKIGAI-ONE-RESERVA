@@ -4511,6 +4511,10 @@ function runMigrations(db: Database.Database): void {
   // 'monthly' | 'hourly'. Defaults the hire-bridge salary fields later.
   addApplication("offer_salary", "REAL");
   addApplication("offer_salary_type", "TEXT");   // 'monthly' | 'hourly'
+  // Per-candidate special conditions, typed at offer time (owner 2026-06-17).
+  // Free text shown on the offer card + the candidate's status page. NULL =
+  // none (card omits the section).
+  addApplication("offer_conditions", "TEXT");
 
   // Walk-in visits (added 2026-05-24) — staff records anyone who walks
   // in without a booking. Mirrors a slice of `bookings`: phone is the

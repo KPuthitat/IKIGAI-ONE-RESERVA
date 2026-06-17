@@ -48,6 +48,7 @@ type Row = {
   offer_salary: number | null;
   offer_salary_type: "monthly" | "hourly" | null;
   offer_start_date: string | null;
+  offer_conditions: string | null;
 };
 
 export async function POST(req: Request) {
@@ -71,6 +72,7 @@ export async function POST(req: Request) {
            a.offer_salary        AS offer_salary,
            a.offer_salary_type   AS offer_salary_type,
            a.offer_start_date    AS offer_start_date,
+           a.offer_conditions    AS offer_conditions,
            p.title         AS position_title,
            p.code          AS position_code,
            p.department    AS department,

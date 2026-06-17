@@ -34,6 +34,7 @@ type AppRow = {
   offer_salary: number | null;
   offer_salary_type: "monthly" | "hourly" | null;
   offer_start_date: string | null;
+  offer_conditions: string | null;
 };
 
 // A bookable interview slot from /api/recruita/interview-slots/available.
@@ -807,6 +808,9 @@ function OfferResponse({
         )}
         {row.offer_start_date && (
           <div>เริ่มงานวันแรก: <b>{formatLongDate(row.offer_start_date, "th")}</b></div>
+        )}
+        {row.offer_conditions && row.offer_conditions.trim() && (
+          <div>เงื่อนไขเพิ่มเติม: <b className="font-semibold whitespace-pre-line">{row.offer_conditions.trim()}</b></div>
         )}
       </div>
       {err && <p className="text-[11px] text-rose-600">{err}</p>}

@@ -176,6 +176,7 @@ export function stageChangeFlex(args: {
   /** First work day (YYYY-MM-DD) — shown on the 'offered' card so the
    *  candidate knows when to start (owner 2026-06-15). */
   offerStartDate?: string | null;
+  offerConditions?: string | null;
   /** Offered compensation shown on the 'offered' card. */
   offerSalary?: number | null;
   offerSalaryType?: "monthly" | "hourly" | null;
@@ -209,6 +210,9 @@ export function stageChangeFlex(args: {
   }
   if (args.stage === "offered" && args.offerStartDate && /^\d{4}-\d{2}-\d{2}$/.test(args.offerStartDate)) {
     bodyRows.push(infoRow("เริ่มงานวันแรก", formatLongDate(args.offerStartDate, "th")));
+  }
+  if (args.stage === "offered" && args.offerConditions && args.offerConditions.trim()) {
+    bodyRows.push(infoRow("เงื่อนไขเพิ่มเติม", args.offerConditions.trim()));
   }
   bodyRows.push(infoRow("เลขที่ใบสมัคร", args.applicationNo));
 
@@ -536,7 +540,7 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
   const db = getDb();
   const row = db.prepare(`
     SELECT a.id, a.stage, a.submitted_at, a.offer_start_date,
-           a.offer_salary, a.offer_salary_type,
+           a.offer_salary, a.offer_salary_type, a.offer_conditions,
            (SELECT COUNT(*) FROM recruita_applications za
              WHERE date(za.submitted_at, '+7 hours') = date(a.submitted_at, '+7 hours')
                AND za.id <= a.id) AS day_seq,
@@ -554,6 +558,7 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
     offer_start_date: string | null;
     offer_salary: number | null;
     offer_salary_type: "monthly" | "hourly" | null;
+    offer_conditions: string | null;
     line_user_id: string | null;
     title_prefix: string | null;
     first_name_th: string | null; last_name_th: string | null;
@@ -581,6 +586,7 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
     stage: row.stage,
     applicationNo: formatApplicationNo(row.submitted_at, row.day_seq),
     offerStartDate: row.offer_start_date,
+    offerConditions: row.offer_conditions,
     offerSalary: row.offer_salary,
     offerSalaryType: row.offer_salary_type
   });
