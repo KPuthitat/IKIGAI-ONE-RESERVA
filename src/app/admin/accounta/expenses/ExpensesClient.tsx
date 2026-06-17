@@ -432,7 +432,9 @@ export default function ExpensesClient(props: {
                   <span className="text-[11px] text-slate-500">ตรวจทานตัวเลขทุกครั้งก่อนบันทึก</span>
                 </div>
                 {scanMsg && <p className="text-[11px] text-emerald-700">{scanMsg}</p>}
-                <input ref={ocrInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                {/* No `capture` attr → the OS picker offers BOTH camera and
+                    album (owner 2026-06-17: was camera-only). */}
+                <input ref={ocrInputRef} type="file" accept="image/*" className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) runOcr(f); e.target.value = ""; }} />
               </div>
             )}
