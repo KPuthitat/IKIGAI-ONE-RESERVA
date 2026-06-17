@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { nameWithPrefix } from "@/lib/name";
+import { thMonthLabel, thDayLabel, groupByMonthDay } from "@/lib/th-month";
 import PinPromptModal from "@/app/components/PinPromptModal";
 
 export type OtRow = {
@@ -51,23 +52,45 @@ export default function OtApprovalsClient({ rows, staff }: { rows: OtRow[]; staf
         {pending.map((r) => <PendingRow key={r.id} row={r} onChanged={refresh} />)}
       </div>
 
-      {decided.length > 0 && (
-        <div className="card space-y-2">
-          <h2 className="font-bold text-slate-800 text-sm">ประวัติล่าสุด</h2>
-          {decided.map((r) => (
-            <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-sm">
-              <span className="font-medium text-slate-700">{nameWithPrefix(r.title_prefix, r.display_name)}</span>
-              <span className="text-xs text-slate-500">{r.work_date} · ถึง {r.requested_until} น.</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_META[r.status].cls}`}>
-                {STATUS_META[r.status].label}
+      {/* ประวัติ — decided OT grouped by month → day (owner 2026-06-17). */}
+      <div className="space-y-2">
+        <h2 className="text-sm font-bold text-slate-700">ประวัติ OT (อนุมัติ/ไม่อนุมัติแล้ว)</h2>
+        {decided.length === 0 ? (
+          <div className="card text-sm text-slate-400 text-center py-6">ยังไม่มีประวัติ</div>
+        ) : groupByMonthDay(decided, (r) => r.work_date).map(({ mk, days }, i) => (
+          <details key={mk} open={i === 0} className="card">
+            <summary className="cursor-pointer font-semibold text-slate-700 text-sm select-none">
+              {thMonthLabel(mk)}{" "}
+              <span className="text-[11px] text-slate-400 font-normal">
+                · {days.reduce((s, [, rs]) => s + rs.length, 0)} รายการ
               </span>
-              {r.decided_by_name && (
-                <span className="text-[11px] text-slate-400 ml-auto">โดย {r.decided_by_name}</span>
-              )}
+            </summary>
+            <div className="mt-2 space-y-3">
+              {days.map(([d, rs]) => (
+                <div key={d}>
+                  <div className="text-[11px] font-bold text-slate-400 border-b border-slate-100 pb-1 mb-1">
+                    {thDayLabel(d)}
+                  </div>
+                  <div className="space-y-1.5">
+                    {rs.map((r) => (
+                      <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                        <span className="font-medium text-slate-700">{nameWithPrefix(r.title_prefix, r.display_name)}</span>
+                        <span className="text-xs text-slate-500">ถึง {r.requested_until} น.</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_META[r.status].cls}`}>
+                          {STATUS_META[r.status].label}
+                        </span>
+                        {r.decided_by_name && (
+                          <span className="text-[11px] text-slate-400 ml-auto">โดย {r.decided_by_name}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          </details>
+        ))}
+      </div>
     </div>
   );
 }

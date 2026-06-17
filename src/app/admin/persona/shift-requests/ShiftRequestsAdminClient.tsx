@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { nameWithPrefix } from "@/lib/name";
+import { thMonthLabel, thDayLabel, groupByMonthDay } from "@/lib/th-month";
 import type { ShiftRequestRow } from "@/lib/shift-requests";
 
 type Row = ShiftRequestRow & {
@@ -20,18 +21,6 @@ export type RosterCtx = {
 
 const KIND_TH: Record<string, string> = { extra_shift: "ขอเพิ่มกะ", swap: "ขอสลับวันหยุด" };
 
-const TH_MONTHS = [
-  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
-];
-function monthLabel(mk: string): string {
-  const [y, m] = mk.split("-").map(Number);
-  return `${TH_MONTHS[(m || 1) - 1] ?? mk} ${(y || 0) + 543}`;
-}
-function dayLabel(d: string): string {
-  const [, , dd] = d.split("-");
-  return dd ? `วันที่ ${Number(dd)}` : d;
-}
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   approved:  { label: "อนุมัติ",    cls: "bg-emerald-100 text-emerald-800" },
   rejected:  { label: "ไม่อนุมัติ", cls: "bg-rose-100 text-rose-700" },
@@ -67,19 +56,10 @@ export default function ShiftRequestsAdminClient({
   }
 
   // Group decided requests by month → day for the history view.
-  const historyGroups = useMemo(() => {
-    const months = new Map<string, Map<string, HistoryRow[]>>();
-    for (const r of history) {
-      const dt = (r.decided_at ?? r.created_at ?? "").slice(0, 10);
-      if (!dt) continue;
-      const mk = dt.slice(0, 7);
-      if (!months.has(mk)) months.set(mk, new Map());
-      const days = months.get(mk)!;
-      if (!days.has(dt)) days.set(dt, []);
-      days.get(dt)!.push(r);
-    }
-    return [...months.entries()].map(([mk, days]) => ({ mk, days: [...days.entries()] }));
-  }, [history]);
+  const historyGroups = useMemo(
+    () => groupByMonthDay(history, (r) => r.decided_at ?? r.created_at),
+    [history]
+  );
 
   return (
     <div className="space-y-6">
@@ -138,7 +118,7 @@ export default function ShiftRequestsAdminClient({
         ) : historyGroups.map(({ mk, days }, i) => (
           <details key={mk} open={i === 0} className="card">
             <summary className="cursor-pointer font-semibold text-slate-700 text-sm select-none">
-              {monthLabel(mk)}{" "}
+              {thMonthLabel(mk)}{" "}
               <span className="text-[11px] text-slate-400 font-normal">
                 · {days.reduce((s, [, rows]) => s + rows.length, 0)} รายการ
               </span>
@@ -147,7 +127,7 @@ export default function ShiftRequestsAdminClient({
               {days.map(([d, rows]) => (
                 <div key={d}>
                   <div className="text-[11px] font-bold text-slate-400 border-b border-slate-100 pb-1 mb-1">
-                    {dayLabel(d)}
+                    {thDayLabel(d)}
                   </div>
                   <div className="space-y-1.5">
                     {rows.map((r) => {

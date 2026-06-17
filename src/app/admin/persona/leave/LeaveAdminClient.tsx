@@ -11,6 +11,7 @@ import type { LeaveStatus } from "@/app/staff/persona/leave/LeaveClient";
 import { useConfirm } from "@/app/components/useConfirm";
 import Switch from "@/app/components/Switch";
 import { nameWithPrefix } from "@/lib/name";
+import { thMonthLabel, thDayLabel, groupByMonthDay } from "@/lib/th-month";
 
 export type StaffOption = {
   id: number;
@@ -216,6 +217,9 @@ export default function LeaveAdminClient({
       {(() => {
         const specialReqs = requests.filter((r) => r.is_special_request === 1);
         const normalReqs = requests.filter((r) => r.is_special_request !== 1);
+        // Decided/history tabs get month→day grouping; the work-queue tabs
+        // (pending / special / revision_requested) stay a flat list.
+        const isHistoryView = ["approved", "rejected", "cancelled", "all"].includes(currentStatus);
         const renderItem = (r: LeaveAdminRow) => (
               <li key={r.id} className={`border rounded-lg p-3 hover:bg-slate-50 transition ${
                 r.is_special_request === 1
@@ -367,6 +371,31 @@ export default function LeaveAdminClient({
                 <p className="text-slate-500 text-sm py-6 text-center">
                   {t("admin.persona.leave.empty")}
                 </p>
+              ) : isHistoryView ? (
+                // History views (อนุมัติ/ไม่อนุมัติ/ยกเลิก/ทั้งหมด) — group by
+                // month → day so the log is easy to scan (owner 2026-06-17).
+                <div className="space-y-2">
+                  {groupByMonthDay(normalReqs, (r) => r.decided_at ?? r.date_from).map(({ mk, days }, i) => (
+                    <details key={mk} open={i === 0}>
+                      <summary className="cursor-pointer font-semibold text-slate-700 text-sm select-none py-1">
+                        {thMonthLabel(mk)}{" "}
+                        <span className="text-[11px] text-slate-400 font-normal">
+                          · {days.reduce((s, [, rs]) => s + rs.length, 0)} รายการ
+                        </span>
+                      </summary>
+                      <div className="mt-1 space-y-2 pl-1">
+                        {days.map(([d, rs]) => (
+                          <div key={d}>
+                            <div className="text-[11px] font-bold text-slate-400 border-b border-slate-100 pb-1 mb-1">
+                              {thDayLabel(d)}
+                            </div>
+                            <ul className="space-y-3">{rs.map(renderItem)}</ul>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  ))}
+                </div>
               ) : (
                 <ul className="space-y-3">{normalReqs.map(renderItem)}</ul>
               )}

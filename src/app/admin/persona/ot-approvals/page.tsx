@@ -38,7 +38,7 @@ export default function OtApprovalsPage() {
     LEFT JOIN users du ON du.id = o.decided_by
     ORDER BY CASE WHEN o.status = 'pending' THEN 0 ELSE 1 END,
              o.work_date DESC, o.id DESC
-    LIMIT 100
+    LIMIT 400
   `).all() as OtRow[];
 
   return (
