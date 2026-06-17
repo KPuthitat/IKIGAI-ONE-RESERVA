@@ -36,14 +36,17 @@ export default function AccountaHome() {
           <p className="text-brand font-bold text-sm pt-2">เปิด →</p>
         </Link>
 
-        <div className="card opacity-60 space-y-1">
+        <Link href="/admin/accounta/expenses"
+          className="card hover:shadow-lg transition group block space-y-1">
           <div className="text-[11px] tracking-[1px] text-slate-400">โมดูลย่อย</div>
-          <h2 className="text-xl font-bold text-slate-700">บัญชีรายรับ-รายจ่าย</h2>
+          <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand transition-colors">
+            รายจ่าย
+          </h2>
           <p className="text-slate-500 text-sm">
-            ลงบิลผู้ค้า (ชำระแล้ว/เครดิตเทอม) · รายรับจากปิดกะ · ภาษีซื้อ-ขาย · มุมมองตามบิล vs กระแสเงินสด
+            ลงบิลผู้ค้า (ชำระแล้ว/ค้างชำระ) · ภาษีซื้อเรียลไทม์ · มุมมองตามบิล vs กระแสเงินสด · สแกนบิลด้วย OCR
           </p>
-          <p className="text-slate-400 font-semibold text-sm pt-2">กำลังพัฒนา (เฟสถัดไป)</p>
-        </div>
+          <p className="text-brand font-bold text-sm pt-2">เปิด →</p>
+        </Link>
       </div>
     </div>
   );

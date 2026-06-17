@@ -1894,6 +1894,17 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "maintenance_active")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN maintenance_active INTEGER NOT NULL DEFAULT 0");
   }
+  // ACCOUNTA bill-OCR (2026-06-16). OFF by default — the owner flips it on
+  // in /admin/system-settings only when ANTHROPIC_API_KEY is configured,
+  // so a missing key never breaks a deploy. model = which Claude vision
+  // model to use (Haiku 4.5 by default — cheapest accurate-enough for
+  // printed Thai bills; owner can switch to Sonnet for hard scans).
+  if (!ssCols.some((c) => c.name === "accounta_ocr_enabled")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN accounta_ocr_enabled INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!ssCols.some((c) => c.name === "accounta_ocr_model")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN accounta_ocr_model TEXT");
+  }
   // Cron heartbeat (2026-05-25) — stamped by every successful POST
   // /api/cron call. Lets admin diagnose "is the external cron job
   // actually pinging us?" without SSH'ing into the VPS. NULL = never
@@ -4994,6 +5005,72 @@ function runMigrations(db: Database.Database): void {
       ON feasibility_startup_items(project_id, category);
   `);
 
+  // ── ACCOUNTA — expense ledger (owner 2026-06-16) ───────────────────
+  // รายจ่าย: vendor bills, some paid / some on credit-term (ค้างชำระ).
+  // Two time axes so we can show ACCRUAL (ตามบิล, by bill_date) vs CASH
+  // FLOW (กระแสเงินสด, by paid_date) — e.g. a credit-card buy is booked in
+  // the bill month but the cash only leaves when paid_date lands.
+  // VAT (ภาษีซื้อ) is derived from the VAT-inclusive total when the bill
+  // carries a full tax invoice (owner choice 2026-06-16): vat = round(total*7/107).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS accounta_vendors (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL,
+      tax_id      TEXT,
+      category    TEXT,                          -- default category hint
+      active      INTEGER NOT NULL DEFAULT 1,
+      created_by  INTEGER REFERENCES users(id),
+      created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_accounta_vendors_active
+      ON accounta_vendors(active, name);
+
+    CREATE TABLE IF NOT EXISTS accounta_expenses (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id       INTEGER REFERENCES branches(id),
+      company_id      INTEGER REFERENCES companies(id),
+      bill_date       TEXT NOT NULL,                 -- accrual date (วันที่ตามบิล)
+      vendor_id       INTEGER REFERENCES accounta_vendors(id),
+      vendor_name     TEXT,                          -- denormalised (free-text ok)
+      category        TEXT,
+      description     TEXT,
+      amount_total    REAL NOT NULL DEFAULT 0,       -- VAT-inclusive total entered
+      has_tax_invoice INTEGER NOT NULL DEFAULT 0,    -- มีใบกำกับภาษีเต็มรูป
+      vat_amount      REAL NOT NULL DEFAULT 0,       -- ภาษีซื้อ (derived, overridable)
+      base_amount     REAL NOT NULL DEFAULT 0,       -- amount_total - vat_amount
+      payment_status  TEXT NOT NULL DEFAULT 'paid',  -- 'paid' | 'unpaid' (ค้างชำระ/เครดิตเทอม)
+      payment_method  TEXT,                          -- 'cash'|'transfer'|'credit_card'|'director'|'other'
+      paid_date       TEXT,                          -- cash-flow date (เงินออกจริง); null while unpaid
+      doc_path        TEXT,                          -- uploaded receipt/invoice image (outside www-root)
+      doc_mime        TEXT,
+      ocr_source      TEXT,                          -- model id when created via OCR, else null
+      ocr_cost_baht   REAL,                          -- estimated OCR cost for this bill
+      note            TEXT,
+      created_by      INTEGER REFERENCES users(id),
+      created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_accounta_expenses_bill
+      ON accounta_expenses(branch_id, bill_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_accounta_expenses_paid
+      ON accounta_expenses(payment_status, paid_date);
+
+    -- OCR usage log: one row per bill-scan call, so the toggle UI can show
+    -- "ใช้ไปแล้วกี่บาทเดือนนี้" without re-summing the Anthropic dashboard.
+    CREATE TABLE IF NOT EXISTS accounta_ocr_usage (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      model         TEXT NOT NULL,
+      input_tokens  INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cost_baht     REAL NOT NULL DEFAULT 0,
+      expense_id    INTEGER REFERENCES accounta_expenses(id) ON DELETE SET NULL,
+      created_by    INTEGER REFERENCES users(id),
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_accounta_ocr_usage_created
+      ON accounta_ocr_usage(created_at);
+  `);
+
   // ── INSIGNA PII lint (spec section 6.1, NON-NEGOTIABLE) ─────
   // Walk every column of every `insigna_*` table and refuse to
   // proceed if any column name looks like personal data. This
@@ -5189,6 +5266,9 @@ export function updateSystemSettings(
     recruita_health_check_message?: string | null;
     // IKIGAI OS PORTAL OA add-friend link. Empty → NULL = button omitted.
     portal_oa_link?: string | null;
+    // ACCOUNTA bill-OCR toggle (0/1) + chosen vision model.
+    accounta_ocr_enabled?: 0 | 1 | boolean;
+    accounta_ocr_model?: string | null;
   },
   updatedBy: number
 ): void {
@@ -5288,6 +5368,14 @@ export function updateSystemSettings(
   if (Object.prototype.hasOwnProperty.call(patch, "portal_oa_link")) {
     sets.push("portal_oa_link = ?");
     vals.push(norm(patch.portal_oa_link));
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "accounta_ocr_enabled")) {
+    sets.push("accounta_ocr_enabled = ?");
+    vals.push(patch.accounta_ocr_enabled ? 1 : 0);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "accounta_ocr_model")) {
+    sets.push("accounta_ocr_model = ?");
+    vals.push(norm(patch.accounta_ocr_model));
   }
   if (sets.length === 0) return;
   sets.push("updated_at = ?", "updated_by = ?");
@@ -5481,6 +5569,12 @@ export type SystemSettings = {
    *  NULL/empty = the "เพิ่มเพื่อน IKIGAI OS PORTAL" button is omitted from
    *  the welcome card sent to a freshly-hired employee. */
   portal_oa_link?: string | null;
+  /** ACCOUNTA bill-OCR master toggle. 0/1, default 0. When 0 the scan
+   *  endpoint refuses and the UI hides the "ถ่ายรูปบิล" path. */
+  accounta_ocr_enabled?: number | null;
+  /** Which Claude vision model the OCR scan uses. NULL = the default
+   *  (Haiku 4.5) resolved in lib/accounta-ocr.ts. */
+  accounta_ocr_model?: string | null;
   updated_at: string | null;
   updated_by: number | null;
 };

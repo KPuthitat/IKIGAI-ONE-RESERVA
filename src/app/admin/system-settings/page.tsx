@@ -21,6 +21,7 @@ import SystemSettingsForm from "./SystemSettingsForm";
 import RecruitaOaSection from "./RecruitaOaSection";
 import PdpaImageUploader from "./PdpaImageUploader";
 import { DEFAULT_HEALTH_CHECK_MESSAGE } from "@/lib/recruita-notify";
+import { OCR_MODELS, DEFAULT_OCR_MODEL } from "@/lib/accounta";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,10 @@ export default function SystemSettingsPage() {
         recruitaHealthCheckMessage={settings.recruita_health_check_message ?? ""}
         defaultHealthCheckMessage={DEFAULT_HEALTH_CHECK_MESSAGE}
         portalOaLink={settings.portal_oa_link ?? ""}
+        accountaOcrEnabled={settings.accounta_ocr_enabled === 1}
+        accountaOcrModel={settings.accounta_ocr_model ?? DEFAULT_OCR_MODEL}
+        ocrModels={OCR_MODELS.map((m) => ({ id: m.id, label: m.label }))}
+        anthropicKeyPresent={!!process.env.ANTHROPIC_API_KEY}
       />
 
       {/* RECRUITA PDPA policy image — admin uploads an image of the

@@ -33,7 +33,11 @@ export default function SystemSettingsForm({
   recruitaInterviewMapUrl,
   recruitaHealthCheckMessage,
   defaultHealthCheckMessage,
-  portalOaLink
+  portalOaLink,
+  accountaOcrEnabled,
+  accountaOcrModel,
+  ocrModels,
+  anthropicKeyPresent
 }: {
   token: string | null;
   groupId: string | null;
@@ -47,6 +51,10 @@ export default function SystemSettingsForm({
   recruitaHealthCheckMessage: string;
   defaultHealthCheckMessage: string;
   portalOaLink: string;
+  accountaOcrEnabled: boolean;
+  accountaOcrModel: string;
+  ocrModels: Array<{ id: string; label: string }>;
+  anthropicKeyPresent: boolean;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -88,6 +96,10 @@ export default function SystemSettingsForm({
   // freshly-hired employee taps to add the staff OA. Surfaced as a button on
   // the welcome card from the hire flow. Empty = button omitted.
   const [portalOaInput, setPortalOaInput] = useState(portalOaLink);
+  // ACCOUNTA bill-OCR (2026-06-16) — master on/off + which vision model.
+  // OFF by default; needs ANTHROPIC_API_KEY on the server to actually run.
+  const [ocrOn, setOcrOn] = useState<boolean>(accountaOcrEnabled);
+  const [ocrModelSel, setOcrModelSel] = useState<string>(accountaOcrModel || (ocrModels[0]?.id ?? ""));
   // (Resignation-policy textareas moved 2026-05-28 to
   // /admin/persona/resignation — that's the menu where admins
   // already manage resignation requests, so the policy authoring
@@ -127,6 +139,8 @@ export default function SystemSettingsForm({
       body.recruita_interview_map_url = interviewMapInput.trim();
       body.recruita_health_check_message = healthMsgInput.trim();
       body.portal_oa_link = portalOaInput.trim();
+      body.accounta_ocr_enabled = ocrOn ? "true" : "false";
+      body.accounta_ocr_model = ocrModelSel;
 
       // (Resignation-policy fields moved to /admin/persona/resignation
       // 2026-05-28 — this form no longer sends them.)
@@ -339,6 +353,47 @@ export default function SystemSettingsForm({
             </div>
           </div>
         )}
+      </div>
+
+      {/* ACCOUNTA bill-OCR — master toggle + model. OFF by default; needs
+          ANTHROPIC_API_KEY on the server to actually run. */}
+      <div className="card space-y-3">
+        <div>
+          <h2 className="text-lg font-bold text-slate-800">ACCOUNTA · สแกนบิลอัตโนมัติ (OCR)</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            เปิดให้ถ่ายรูปบิล/ใบเสร็จในหน้ารายจ่าย แล้วระบบอ่านตัวเลขมากรอกฟอร์มให้ — ลดการพิมพ์เอง
+          </p>
+        </div>
+        <div className={`rounded-xl border-2 p-3 transition ${
+          ocrOn ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-slate-50"
+        }`}>
+          <label className="flex items-center justify-between gap-3 cursor-pointer">
+            <div className="flex-1 min-w-0">
+              <div className={`text-sm font-bold ${ocrOn ? "text-emerald-800" : "text-slate-700"}`}>
+                {ocrOn ? "OCR เปิดอยู่ — มีปุ่มสแกนบิลในหน้ารายจ่าย" : "OCR ปิด — กรอกบิลด้วยมือเท่านั้น"}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                คิดค่าใช้จ่ายตามจำนวนบิลที่สแกน (ประมาณการแสดงในหน้ารายจ่าย)
+              </div>
+            </div>
+            <Switch checked={ocrOn} onChange={setOcrOn} accent="emerald" />
+          </label>
+        </div>
+        {ocrOn && !anthropicKeyPresent && (
+          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            ยังไม่ได้ตั้งค่า <code>ANTHROPIC_API_KEY</code> บนเซิร์ฟเวอร์ — เปิดสวิตช์ไว้ได้
+            แต่ปุ่มสแกนจะยังใช้ไม่ได้จนกว่าจะตั้งค่า key แล้ว deploy
+          </p>
+        )}
+        <div>
+          <label className="label">โมเดลที่ใช้อ่านบิล</label>
+          <select className="input" value={ocrModelSel} onChange={(e) => setOcrModelSel(e.target.value)}>
+            {ocrModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </select>
+          <p className="text-[10px] text-slate-400 mt-1">
+            Haiku = ประหยัดสุด พอสำหรับบิลพิมพ์ทั่วไป · Sonnet = แม่นกว่าแต่แพงกว่า สำหรับบิลอ่านยาก
+          </p>
+        </div>
       </div>
 
       {/* PDPA / Privacy policy — single URL pasted once, reused by

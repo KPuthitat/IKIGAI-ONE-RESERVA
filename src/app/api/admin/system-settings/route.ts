@@ -61,7 +61,10 @@ const Body = z.object({
   // IKIGAI OS PORTAL OA add-friend link (LINE deep link, e.g. https://lin.ee/…).
   // Empty = clear → the welcome card sent to a freshly-hired employee omits the
   // "เพิ่มเพื่อน IKIGAI OS PORTAL" button.
-  portal_oa_link: z.string().max(500).optional()
+  portal_oa_link: z.string().max(500).optional(),
+  // ACCOUNTA bill-OCR master toggle + chosen vision model id.
+  accounta_ocr_enabled: z.union([z.boolean(), z.literal("true"), z.literal("false")]).optional(),
+  accounta_ocr_model: z.string().max(100).optional()
 });
 
 export async function POST(req: Request) {
@@ -154,6 +157,13 @@ export async function POST(req: Request) {
   }
   if (parsed.data.portal_oa_link !== undefined) {
     dbPatch.portal_oa_link = parsed.data.portal_oa_link;
+  }
+  if (parsed.data.accounta_ocr_enabled !== undefined) {
+    const v = parsed.data.accounta_ocr_enabled;
+    dbPatch.accounta_ocr_enabled = (v === true || v === "true") ? 1 : 0;
+  }
+  if (parsed.data.accounta_ocr_model !== undefined) {
+    dbPatch.accounta_ocr_model = parsed.data.accounta_ocr_model.trim();
   }
 
   updateSystemSettings(dbPatch, user.id);

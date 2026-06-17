@@ -1,0 +1,48 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { requirePermission } from "@/lib/auth";
+import { getSystemSettings } from "@/lib/db";
+import {
+  listBranches, listCompanies, listVendors, listExpenses, summarise, ocrUsageStats
+} from "@/lib/accounta-db";
+import ExpensesClient from "./ExpensesClient";
+
+export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "ACCOUNTA · รายจ่าย" };
+
+function thisMonth(): string {
+  return new Date().toISOString().slice(0, 7);
+}
+
+export default function AccountaExpensesPage() {
+  requirePermission("accounta.manage");
+  const month = thisMonth();
+  const settings = getSystemSettings();
+  const ocrAvailable = !!settings.accounta_ocr_enabled && !!process.env.ANTHROPIC_API_KEY;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <Link href="/admin/accounta" className="text-sm text-slate-500 hover:text-brand">
+          ← กลับ ACCOUNTA
+        </Link>
+      </div>
+      <div>
+        <h1 className="text-2xl font-bold text-slate-800">รายจ่าย</h1>
+        <p className="text-sm text-slate-500 mt-1">
+          ลงบิลผู้ค้า (ชำระแล้ว / ค้างชำระ) · แยกมุมมองตามบิล vs กระแสเงินสด · ภาษีซื้อเรียลไทม์
+        </p>
+      </div>
+      <ExpensesClient
+        month={month}
+        branches={listBranches()}
+        companies={listCompanies()}
+        vendors={listVendors()}
+        initialExpenses={listExpenses({ month })}
+        initialSummary={summarise(month)}
+        ocrAvailable={ocrAvailable}
+        ocrUsage={ocrUsageStats(month)}
+      />
+    </div>
+  );
+}
