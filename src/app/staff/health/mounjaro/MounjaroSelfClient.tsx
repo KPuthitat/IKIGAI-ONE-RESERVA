@@ -969,7 +969,7 @@ function ExerciseSection({
     try {
       const res = await fetch(apiUrl("/api/mounjaro/exercise-log"), {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: today, activity_id: REST_ACTIVITY_ID, duration_min: 0, rpe: 0 })
+        body: JSON.stringify({ date, activity_id: REST_ACTIVITY_ID, duration_min: 0, rpe: 0 })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) {
@@ -997,7 +997,7 @@ function ExerciseSection({
       <div>
         <h2 className="font-bold text-slate-800 text-sm">บันทึกการออกกำลังกาย</h2>
         <p className="text-[11px] text-slate-500 mt-0.5">
-          เลือกระดับและกิจกรรมของวันนี้ แล้วประเมินความเหนื่อย (RPE) — บันทึกได้หลายกิจกรรมต่อวัน
+          เลือกวันที่ (ย้อนหลังได้) แล้วเลือกระดับ/กิจกรรม + ประเมินความเหนื่อย (RPE) — บันทึกได้หลายกิจกรรมต่อวัน
         </p>
       </div>
 
@@ -1012,10 +1012,20 @@ function ExerciseSection({
       </div>
       <p className="text-[10px] text-slate-400 -mt-1">สรุป 7 วันล่าสุด · พลังงานเป็นค่าโดยประมาณเท่านั้น ไม่ใช่เป้าหมาย</p>
 
-      {/* Rest day — record that today had no exercise (owner 2026-06-08). */}
+      {/* Shared date — defaults to today but can be backdated. Applies to
+          BOTH the rest button and the activity log below, so a missed
+          "didn't exercise" day can be recorded after the fact
+          (owner 2026-06-17). max=today blocks future dates. */}
+      <div>
+        <label className="label">วันที่ (เลือกย้อนหลังได้)</label>
+        <input type="date" className="input" value={date} max={today} onChange={(e) => setDate(e.target.value)} />
+      </div>
+
+      {/* Rest day — record that the selected date had no exercise
+          (owner 2026-06-08; backdatable 2026-06-17). */}
       <button type="button" disabled={busy !== null} onClick={logRest}
         className="w-full py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-medium hover:bg-slate-50 disabled:opacity-50">
-        วันนี้ไม่ได้ออกกำลังกาย (บันทึกวันพัก)
+        ไม่ได้ออกกำลังกาย (บันทึกวันพักของวันที่เลือก)
       </button>
 
       {/* Level tabs (#11) */}
@@ -1047,16 +1057,10 @@ function ExerciseSection({
       {activity && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
           <div className="font-bold text-slate-800 text-sm">{activity.name}</div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">วันที่</label>
-              <input type="date" className="input" value={date} max={today} onChange={(e) => setDate(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">ระยะเวลา (นาที)</label>
-              <input type="number" inputMode="numeric" min="1" max="600" className="input"
-                value={duration} onChange={(e) => setDuration(e.target.value)} placeholder={String(activity.defaultMin)} />
-            </div>
+          <div>
+            <label className="label">ระยะเวลา (นาที) · วันที่ {date}</label>
+            <input type="number" inputMode="numeric" min="1" max="600" className="input"
+              value={duration} onChange={(e) => setDuration(e.target.value)} placeholder={String(activity.defaultMin)} />
           </div>
 
           <div>
