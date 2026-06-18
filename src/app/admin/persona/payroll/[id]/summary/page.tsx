@@ -84,6 +84,36 @@ export default function PayrollSummaryPage({ params }: { params: { id: string } 
              pl.display_name
   `).all(id) as Line[];
 
+  // Company on the letterhead = the one the run's employees belong to, via
+  // their branch (owner 2026-06-18: หัวกระดาษต้องตรงสังกัดพนักงาน). Pick the
+  // company shared by the most employees; fall back to the default company.
+  type Company = { name_th: string; name_en: string | null; tax_id: string | null; address: string | null; phone: string | null };
+  let company = db.prepare(`
+    SELECT c.name_th, c.name_en, c.tax_id, c.address, c.phone
+    FROM payroll_lines pl
+    JOIN user_branches ub ON ub.user_id = pl.user_id
+    JOIN branches b ON b.id = ub.branch_id
+    JOIN companies c ON c.id = b.company_id
+    WHERE pl.period_id = ?
+    GROUP BY c.id
+    ORDER BY COUNT(*) DESC, c.id ASC
+    LIMIT 1
+  `).get(id) as Company | undefined;
+  if (!company) {
+    company = db.prepare(
+      "SELECT name_th, name_en, tax_id, address, phone FROM companies WHERE active = 1 ORDER BY id LIMIT 1"
+    ).get() as Company | undefined;
+  }
+  // How many distinct companies are represented — if >1 the single letterhead
+  // is only the dominant one, so we note it.
+  const companyCount = (db.prepare(`
+    SELECT COUNT(DISTINCT b.company_id) AS n
+    FROM payroll_lines pl
+    JOIN user_branches ub ON ub.user_id = pl.user_id
+    JOIN branches b ON b.id = ub.branch_id
+    WHERE pl.period_id = ? AND b.company_id IS NOT NULL
+  `).get(id) as { n: number }).n;
+
   // Column totals — summed in code so the printed footer ties out exactly to
   // the rows above (never recomputed from rounded display strings).
   const tot = lines.reduce((a, l) => ({
@@ -108,10 +138,24 @@ export default function PayrollSummaryPage({ params }: { params: { id: string } 
       </div>
 
       <div className="printable bg-white text-slate-800 p-6 rounded-2xl shadow-card print:shadow-none print:rounded-none">
-        {/* Header */}
+        {/* Header — company letterhead matching the employees' affiliation */}
         <div className="text-center border-b-2 border-slate-300 pb-3 mb-3">
-          <div className="text-xl font-bold tracking-wide">IKIGAI MEDIHEALTH</div>
-          <h1 className="text-lg font-semibold mt-1">สรุปค่าตอบแทนทั้งรอบ (สำหรับสำนักงานบัญชี)</h1>
+          <div className="text-xl font-bold tracking-wide">{company?.name_th ?? "IKIGAI MEDIHEALTH"}</div>
+          {company?.name_en && <div className="text-xs text-slate-500 mt-0.5">{company.name_en}</div>}
+          {company?.address && <div className="text-[11px] text-slate-500 mt-0.5 whitespace-pre-line">{company.address}</div>}
+          {(company?.tax_id || company?.phone) && (
+            <div className="text-[11px] text-slate-500">
+              {company?.tax_id ? `เลขประจำตัวผู้เสียภาษี ${company.tax_id}` : ""}
+              {company?.tax_id && company?.phone ? " · " : ""}
+              {company?.phone ? `โทร ${company.phone}` : ""}
+            </div>
+          )}
+          <h1 className="text-lg font-semibold mt-2">สรุปค่าตอบแทนทั้งรอบ (สำหรับสำนักงานบัญชี)</h1>
+          {companyCount > 1 && (
+            <div className="text-[10px] text-amber-600 mt-0.5">
+              * รอบนี้มีพนักงานหลายบริษัท — หัวกระดาษแสดงบริษัทหลัก
+            </div>
+          )}
         </div>
 
         {/* Period meta */}
