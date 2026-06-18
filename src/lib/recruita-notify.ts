@@ -657,6 +657,10 @@ function hireWelcomeFlex(args: {
   branchName: string | null;
   portalOaLink: string | null;
 }): LineMessage {
+  // Only promise a button when one will actually render — otherwise the card
+  // said "กดปุ่มด้านล่าง" with nothing below it (owner 2026-06-18: ปุ่มไม่ขึ้น
+  // เพราะ portal_oa_link ยังไม่ได้ตั้งค่า).
+  const hasButton = !!(args.portalOaLink && /^https?:\/\//i.test(args.portalOaLink));
   const rows: Array<Record<string, unknown>> = [
     {
       type: "text",
@@ -665,8 +669,10 @@ function hireWelcomeFlex(args: {
     },
     {
       type: "text",
-      text: "ขั้นตอนถัดไป: กดปุ่มด้านล่างเพื่อเพิ่มเพื่อน LINE ระบบพนักงาน " +
-            "(IKIGAI OS PORTAL) จากนั้นแอดมินจะตั้งค่าบัญชีพนักงานให้คุณต่อไป",
+      text: hasButton
+        ? "ขั้นตอนถัดไป: กดปุ่มด้านล่างเพื่อเพิ่มเพื่อน LINE ระบบพนักงาน " +
+          "(IKIGAI OS PORTAL) แล้วลงทะเบียนด้วยเลขบัตรประชาชน + วันเกิด เพื่อตั้งบัญชีพนักงานของคุณเอง"
+        : "ขั้นตอนถัดไป: แอดมินจะติดต่อตั้งค่าบัญชีพนักงาน (ระบบ PERSONA) ให้คุณต่อไป",
       size: "xs", color: "#475569", wrap: true, margin: "md"
     },
     { type: "separator", margin: "md", color: COLOR_DIVIDER },
@@ -675,10 +681,10 @@ function hireWelcomeFlex(args: {
   if (args.branchName) rows.push(infoRow("บริษัท/สาขา", args.branchName));
 
   const footerContents: Array<Record<string, unknown>> = [];
-  if (args.portalOaLink && /^https?:\/\//i.test(args.portalOaLink)) {
+  if (hasButton) {
     footerContents.push({
       type: "button", style: "primary", color: COLOR_BRAND, height: "sm",
-      action: { type: "uri", label: "เพิ่มเพื่อน IKIGAI OS PORTAL", uri: args.portalOaLink }
+      action: { type: "uri", label: "เพิ่มเพื่อน IKIGAI OS PORTAL", uri: args.portalOaLink! }
     });
   }
 
