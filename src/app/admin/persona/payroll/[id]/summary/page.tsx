@@ -114,6 +114,33 @@ export default function PayrollSummaryPage({ params }: { params: { id: string } 
     WHERE pl.period_id = ? AND b.company_id IS NOT NULL
   `).get(id) as { n: number }).n;
 
+  // Tax establishment (สาขา) the run's employees belong to — owner 2026-06-18:
+  // "สาขานามะ มัน 00001". Head office = 00000 = สำนักงานใหญ่; others = สาขาที่ X.
+  type RunBranch = { name: string; tax_branch_code: string | null; reg_address: string | null };
+  const branch = db.prepare(`
+    SELECT b.name, b.tax_branch_code, b.reg_address
+    FROM payroll_lines pl
+    JOIN user_branches ub ON ub.user_id = pl.user_id
+    JOIN branches b ON b.id = ub.branch_id
+    WHERE pl.period_id = ?
+    GROUP BY b.id
+    ORDER BY COUNT(*) DESC, b.id ASC
+    LIMIT 1
+  `).get(id) as RunBranch | undefined;
+  const branchCount = (db.prepare(`
+    SELECT COUNT(DISTINCT ub.branch_id) AS n
+    FROM payroll_lines pl JOIN user_branches ub ON ub.user_id = pl.user_id
+    WHERE pl.period_id = ?
+  `).get(id) as { n: number }).n;
+
+  const branchTaxLabel = (code: string | null): string => {
+    const c = (code ?? "").trim();
+    return !c || c === "00000" ? "สำนักงานใหญ่ (00000)" : `สาขาที่ ${c}`;
+  };
+  // The establishment address (สาขา) is more accurate for the doc than the HQ;
+  // fall back to the company's registered address when the branch has none.
+  const addressToShow = branch?.reg_address?.trim() || company?.address || null;
+
   // Column totals — summed in code so the printed footer ties out exactly to
   // the rows above (never recomputed from rounded display strings).
   const tot = lines.reduce((a, l) => ({
@@ -138,11 +165,16 @@ export default function PayrollSummaryPage({ params }: { params: { id: string } 
       </div>
 
       <div className="printable bg-white text-slate-800 p-6 rounded-2xl shadow-card print:shadow-none print:rounded-none">
-        {/* Header — company letterhead matching the employees' affiliation */}
+        {/* Header — company + branch (สาขา) letterhead matching the employees */}
         <div className="text-center border-b-2 border-slate-300 pb-3 mb-3">
           <div className="text-xl font-bold tracking-wide">{company?.name_th ?? "IKIGAI MEDIHEALTH"}</div>
           {company?.name_en && <div className="text-xs text-slate-500 mt-0.5">{company.name_en}</div>}
-          {company?.address && <div className="text-[11px] text-slate-500 mt-0.5 whitespace-pre-line">{company.address}</div>}
+          {branch && (
+            <div className="text-[11px] text-slate-600 mt-0.5">
+              <b>{branch.name}</b> · {branchTaxLabel(branch.tax_branch_code)}
+            </div>
+          )}
+          {addressToShow && <div className="text-[11px] text-slate-500 mt-0.5 whitespace-pre-line">{addressToShow}</div>}
           {(company?.tax_id || company?.phone) && (
             <div className="text-[11px] text-slate-500">
               {company?.tax_id ? `เลขประจำตัวผู้เสียภาษี ${company.tax_id}` : ""}
@@ -151,9 +183,9 @@ export default function PayrollSummaryPage({ params }: { params: { id: string } 
             </div>
           )}
           <h1 className="text-lg font-semibold mt-2">สรุปค่าตอบแทนทั้งรอบ (สำหรับสำนักงานบัญชี)</h1>
-          {companyCount > 1 && (
+          {(companyCount > 1 || branchCount > 1) && (
             <div className="text-[10px] text-amber-600 mt-0.5">
-              * รอบนี้มีพนักงานหลายบริษัท — หัวกระดาษแสดงบริษัทหลัก
+              * รอบนี้มีพนักงานหลาย{companyCount > 1 ? "บริษัท" : "สาขา"} — หัวกระดาษแสดง{companyCount > 1 ? "บริษัท" : "สาขา"}หลัก
             </div>
           )}
         </div>
