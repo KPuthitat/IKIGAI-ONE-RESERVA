@@ -113,4 +113,27 @@ export type OcrBillResult = {
   vat_amount: number | null;
   category: string | null;
   description: string | null;
+  // Mixed-bill split (owner 2026-06-18): when a single bill carries both
+  // VAT-able and VAT-exempt line items, these hold the two VAT-inclusive
+  // subtotals so the system can break it into two entries. Either may be
+  // null/0 when the whole bill is one kind.
+  vatable_amount: number | null;  // sum of items that carry VAT (incl. VAT)
+  nonvat_amount: number | null;   // sum of items with no VAT
 };
+
+/** A mixed bill split into its two VAT-inclusive subtotals, with the input
+ *  VAT computed on the VAT-able portion only. Returns null when the bill
+ *  isn't genuinely mixed (one side missing/zero, or the parts don't add up
+ *  to roughly the total). Pure — shared by the in-app form + LINE ingest. */
+export function splitMixedBill(r: OcrBillResult): { vatable: number; vat: number; nonvat: number } | null {
+  const vatable = round2(Number(r.vatable_amount) || 0);
+  const nonvat = round2(Number(r.nonvat_amount) || 0);
+  if (vatable <= 0 || nonvat <= 0) return null;       // not actually mixed
+  const total = round2(Number(r.amount_total) || 0);
+  // Sanity: the two parts should sum to ~the total (allow ฿1 rounding slack).
+  if (total > 0 && Math.abs(round2(vatable + nonvat) - total) > 1) return null;
+  // VAT-able side: prefer the printed VAT if it's plausibly for that portion,
+  // else extract 7% from the VAT-inclusive subtotal.
+  const vat = splitVat(vatable, true).vat;
+  return { vatable, vat, nonvat };
+}

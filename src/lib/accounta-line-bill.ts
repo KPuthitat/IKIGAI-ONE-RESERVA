@@ -20,7 +20,7 @@ import {
   expenseExistsForLineMessage, findVendorByName
 } from "./accounta-db";
 import { saveReceiptImage, RECEIPT_ALLOWED_MIME } from "./accounta-receipts";
-import { ocrCostBaht, round2, type ExpenseInput, type OcrBillResult } from "./accounta";
+import { ocrCostBaht, round2, splitMixedBill, type ExpenseInput, type OcrBillResult } from "./accounta";
 
 type SenderRow = {
   id: number;
@@ -97,55 +97,83 @@ export async function ingestLineBill(args: {
   // Vendor memory: if OCR read a known vendor, inherit its remembered
   // category/tax-id link so repeat bills auto-fill (owner 2026-06-18).
   const known = parsed?.vendor_name ? findVendorByName(parsed.vendor_name) : null;
-  const total = parsed?.amount_total ?? 0;
-  const hasTax = parsed?.has_tax_invoice ?? false;
-  // Prefer the VAT printed on the bill (handles mixed VAT/non-VAT bills);
-  // fall back to 0/0 so createExpense.normalise() derives the 7% split.
-  const printedVat = hasTax && parsed?.vat_amount != null ? round2(parsed.vat_amount) : 0;
+  const cat = parsed?.category ?? known?.category ?? null;
+  const baseNote = `ส่งโดย ${senderName} ทางไลน์`;
 
-  const input: ExpenseInput = {
+  // Build one draft row's input from a VAT-resolved amount slice.
+  const buildInput = (a: {
+    amount: number; hasTax: boolean; vat: number; base: number; note: string;
+  }): ExpenseInput => ({
     branch_id: null,
     company_id: null,
     bill_date: parsed?.bill_date || today,
     vendor_id: known?.id ?? null,
     vendor_name: parsed?.vendor_name ?? null,
-    category: parsed?.category ?? known?.category ?? null,
+    category: cat,
     description: parsed?.description ?? null,
-    amount_total: total,
-    has_tax_invoice: hasTax,
-    vat_amount: printedVat,
-    base_amount: printedVat > 0 ? round2(total - printedVat) : 0,
+    amount_total: a.amount,
+    has_tax_invoice: a.hasTax,
+    vat_amount: a.vat,
+    base_amount: a.base,
     payment_status: "unpaid",     // admin sets paid/method on review
     payment_method: null,
     paid_date: null,
-    note: `ส่งโดย ${senderName} ทางไลน์`
+    note: a.note
+  });
+
+  const ocrMeta = model && usage
+    ? { source: model, costBaht: ocrCostBaht(model, usage.input_tokens, usage.output_tokens) }
+    : undefined;
+
+  // Create one draft row + attach its own copy of the photo. `claimMsgId`
+  // is set only on the row that "owns" the LINE message id (dedup); the
+  // second split row passes null. Returns the new id, or null if the unique
+  // line_message_id index rejected a concurrent retry.
+  const createDraftRow = async (input: ExpenseInput, claimMsgId: string | null): Promise<number | null> => {
+    let id: number;
+    try {
+      id = createExpense(user.id, input, ocrMeta, { reviewStatus: "draft", lineMessageId: claimMsgId });
+    } catch {
+      return null;
+    }
+    try {
+      const p = await saveReceiptImage(buffer, mime, id);
+      setExpenseDoc(id, p, mime);
+    } catch { /* photo write failed; draft still exists for manual keying */ }
+    return id;
   };
 
-  const cost = model && usage ? ocrCostBaht(model, usage.input_tokens, usage.output_tokens) : 0;
-  let expenseId: number;
-  try {
-    expenseId = createExpense(
-      user.id,
-      input,
-      model ? { source: model, costBaht: cost } : undefined,
-      { reviewStatus: "draft", lineMessageId: messageId }
+  const split = parsed ? splitMixedBill(parsed) : null;
+  let firstId: number | null;
+  if (split) {
+    // Mixed bill → two drafts: one VAT-able, one VAT-exempt (owner 2026-06-18).
+    firstId = await createDraftRow(
+      buildInput({ amount: split.vatable, hasTax: true, vat: split.vat, base: round2(split.vatable - split.vat), note: `${baseNote} · ส่วนมี VAT` }),
+      messageId
     );
-  } catch {
-    // UNIQUE(line_message_id) — a concurrent retry already claimed it.
-    return;
+    if (firstId == null) return; // concurrent retry already claimed it
+    await createDraftRow(
+      buildInput({ amount: split.nonvat, hasTax: false, vat: 0, base: split.nonvat, note: `${baseNote} · ส่วนไม่มี VAT` }),
+      null
+    );
+  } else {
+    const total = parsed?.amount_total ?? 0;
+    const hasTax = parsed?.has_tax_invoice ?? false;
+    // Prefer the VAT printed on the bill; else 0/0 → normalise() derives 7%.
+    const printedVat = hasTax && parsed?.vat_amount != null ? round2(parsed.vat_amount) : 0;
+    firstId = await createDraftRow(
+      buildInput({ amount: total, hasTax, vat: printedVat, base: printedVat > 0 ? round2(total - printedVat) : 0, note: baseNote }),
+      messageId
+    );
+    if (firstId == null) return;
   }
-
-  try {
-    const savedPath = await saveReceiptImage(buffer, mime, expenseId);
-    setExpenseDoc(expenseId, savedPath, mime);
-  } catch { /* photo write failed; draft still exists for manual keying */ }
 
   if (model && usage) {
     logOcrUsage({
       model,
       inputTokens: usage.input_tokens,
       outputTokens: usage.output_tokens,
-      expenseId,
+      expenseId: firstId,
       userId: user.id
     });
   }
@@ -156,9 +184,10 @@ export async function ingestLineBill(args: {
       senderName,
       vendor: parsed?.vendor_name ?? null,
       amount: parsed?.amount_total ?? null,
-      category: parsed?.category ?? null,
+      category: cat,
       billDate: parsed?.bill_date ?? null,
-      parsed: !!parsed
+      parsed: !!parsed,
+      extraLine: split ? "บิลผสม — แยกเป็น 2 รายการ (มี VAT / ไม่มี VAT)" : null
     })]
   });
 }

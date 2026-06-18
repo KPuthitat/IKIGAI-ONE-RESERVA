@@ -392,6 +392,7 @@ export type AccountaBillAckArgs = {
   category: string | null;     // OCR'd หมวด (null = ยังไม่ระบุ)
   billDate: string | null;     // YYYY-MM-DD or null
   parsed: boolean;             // false → OCR failed; card asks admin to key it
+  extraLine?: string | null;   // optional note, e.g. mixed-bill split info
 };
 
 /** Small confirmation card pushed back to the staff member who sent a bill
@@ -452,6 +453,9 @@ export function accountaBillAckFlex(args: AccountaBillAckArgs): LineFlexMessage 
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
         { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: rows },
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        ...(args.extraLine ? [{
+          type: "text", text: args.extraLine, size: "xs", color: COLOR_BRAND, weight: "bold", wrap: true, margin: "sm"
+        }] : []),
         { type: "text", text: tail, size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "sm" }
       ]
     },

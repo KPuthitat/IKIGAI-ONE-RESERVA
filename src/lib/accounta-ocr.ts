@@ -40,6 +40,8 @@ function buildPrompt(categories?: string[]): string {
   "amount_total": number|null,       // ยอดรวมสุทธิที่ต้องจ่าย (ตัวเลขล้วน ไม่มีคอมมา)
   "has_tax_invoice": boolean|null,   // true ถ้าเป็นใบกำกับภาษีเต็มรูป (มีคำว่า "ใบกำกับภาษี" + เลขผู้เสียภาษี)
   "vat_amount": number|null,         // ยอด VAT ที่ "พิมพ์ไว้บนบิล" (ถ้ามี ให้ใช้ค่านี้เป็นหลัก)
+  "vatable_amount": number|null,     // ยอดรวมของรายการที่ "มี VAT" (รวม VAT แล้ว) — เฉพาะบิลผสม
+  "nonvat_amount": number|null,      // ยอดรวมของรายการที่ "ไม่มี/ยกเว้น VAT" — เฉพาะบิลผสม
   "category": string|null,           // หมวดค่าใช้จ่าย (ดูกติกาด้านล่าง)
   "description": string|null         // สรุปสั้นๆ ของรายการ
 }
@@ -47,6 +49,7 @@ function buildPrompt(categories?: string[]): string {
 - vendor_name: ใส่เฉพาะชื่อร้าน/ผู้ขายที่ "พิมพ์อยู่บนบิลจริง" ห้ามเดาจากโลโก้ ตราประทับ หรือบริบท ถ้าไม่ชัดเจนให้ null (เดาผิดแย่กว่าปล่อยว่าง)
 - description: ถ้ามีหลายรายการ ให้สรุปรวบสั้นๆ เช่น "วัตถุดิบ 20 รายการ" หรือ "ของใช้สำนักงานหลายรายการ" ไม่ต้องลอกทุกบรรทัด
 - vat_amount: ถ้าบิลมีทั้งสินค้าที่มี VAT และไม่มี VAT ให้ใช้ยอด VAT ตามที่บิลระบุเท่านั้น อย่าคำนวณ 7% จากยอดรวมทั้งหมดเอง
+- บิลผสม (มีทั้งรายการมี VAT และไม่มี VAT): ให้แยกยอดเป็น vatable_amount (ยอดรวมส่วนที่มี VAT รวม VAT แล้ว) กับ nonvat_amount (ยอดรวมส่วนที่ไม่มี VAT) โดยให้ vatable_amount + nonvat_amount = amount_total ถ้าบิลทั้งใบเป็นแบบเดียว (มี VAT ล้วน หรือไม่มี VAT ล้วน) ให้ทั้งสองช่องนี้เป็น null
 - หมวดค่าใช้จ่าย (category): ${categoryRule}
 ถ้าอ่านค่าไหนไม่ได้ให้ใส่ null อย่าเดามั่ว ความถูกต้องสำคัญกว่าความครบ`;
 }
@@ -135,7 +138,8 @@ export async function scanBill(args: {
 function parseResult(text: string, categories?: string[]): OcrBillResult {
   const blank: OcrBillResult = {
     vendor_name: null, tax_id: null, bill_date: null, amount_total: null,
-    has_tax_invoice: null, vat_amount: null, category: null, description: null
+    has_tax_invoice: null, vat_amount: null, category: null, description: null,
+    vatable_amount: null, nonvat_amount: null
   };
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) return blank;
@@ -183,6 +187,8 @@ function parseResult(text: string, categories?: string[]): OcrBillResult {
     has_tax_invoice: bool(o.has_tax_invoice),
     vat_amount: num(o.vat_amount),
     category,
-    description: str(o.description)
+    description: str(o.description),
+    vatable_amount: num(o.vatable_amount),
+    nonvat_amount: num(o.nonvat_amount)
   };
 }

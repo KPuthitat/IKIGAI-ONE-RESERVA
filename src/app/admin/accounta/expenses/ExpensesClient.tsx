@@ -7,7 +7,7 @@ import { fmtMoney } from "@/lib/format";
 import { formatLongDate } from "@/lib/time";
 import { humanizeApiError } from "@/lib/error-messages";
 import {
-  PAYMENT_STATUS_LABEL, splitVat, round2,
+  PAYMENT_STATUS_LABEL, splitVat, round2, splitMixedBill,
   type PaymentStatus, type OcrBillResult
 } from "@/lib/accounta";
 
@@ -110,6 +110,9 @@ export default function ExpensesClient(props: {
   const [stagedFile, setStagedFile] = useState<File | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
+  // Mixed-bill split detected by OCR (owner 2026-06-18): when set, the form
+  // offers "แยกเป็น 2 รายการ" (VAT row + non-VAT row).
+  const [mixedSplit, setMixedSplit] = useState<{ vatable: number; vat: number; nonvat: number } | null>(null);
 
   // Live VAT split preview for the form.
   const vatPreview = useMemo(() => {
@@ -143,7 +146,7 @@ export default function ExpensesClient(props: {
   function openAdd() {
     setForm(blankForm(methods[0]?.name ?? ""));
     setStagedFile(null);
-    setScanMsg(null);
+    setScanMsg(null); setMixedSplit(null);
     setNewCat(null); setNewMethod(null);
     setDraftMode(false);
     setErr(null);
@@ -173,14 +176,14 @@ export default function ExpensesClient(props: {
       rememberVendor: e.review_status === "draft"
     });
     setStagedFile(null);
-    setScanMsg(null);
+    setScanMsg(null); setMixedSplit(null);
     setNewCat(null); setNewMethod(null);
     setErr(null);
     setModalOpen(true);
   }
 
   async function runOcr(file: File) {
-    setScanning(true); setScanMsg("กำลังอ่านบิล…"); setErr(null);
+    setScanning(true); setScanMsg("กำลังอ่านบิล…"); setErr(null); setMixedSplit(null);
     try {
       const fd = new FormData();
       fd.append("image", file);
@@ -208,9 +211,87 @@ export default function ExpensesClient(props: {
         paid_date: r.bill_date ?? f.paid_date
       }));
       setStagedFile(file); // keep the scan as the receipt
+      setMixedSplit(splitMixedBill(r)); // mixed bill → offer the 2-row split
       if (j.usage) setUsage(j.usage);
       setScanMsg(`อ่านแล้ว (สแกนนี้ ~฿${fmtMoney(j.costBaht ?? 0)}) — ตรวจทานก่อนบันทึก`);
     } finally { setScanning(false); }
+  }
+
+  // Remember the vendor + learn its category for next time. Runs for both
+  // new AND existing vendors (server upserts the category via COALESCE), so
+  // correcting a known vendor's category sticks and auto-fills the next bill
+  // from that vendor (owner 2026-06-18). Shared by save() + splitSave().
+  async function rememberVendorIfNeeded() {
+    if (!(form.rememberVendor && form.vendor_name.trim())) return;
+    const vname = form.vendor_name.trim();
+    try {
+      const vr = await fetch(apiUrl("/api/accounta/vendors"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: vname, category: form.category || null })
+      });
+      const vj = await vr.json().catch(() => ({}));
+      if (vj.ok) {
+        setVendors((vs) => {
+          const i = vs.findIndex((v) => v.name.toLowerCase() === vname.toLowerCase());
+          if (i >= 0) {
+            const next = [...vs];
+            next[i] = { ...next[i], category: form.category || next[i].category };
+            return next;
+          }
+          return [...vs, { id: vj.id, name: vname, tax_id: null, category: form.category || null }];
+        });
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  // Mixed bill → create TWO expenses from one scan: a VAT-able row and a
+  // VAT-exempt row, sharing the same photo/vendor/date (owner 2026-06-18).
+  async function splitSave() {
+    if (!mixedSplit) return;
+    setBusy(true); setErr(null);
+    try {
+      const matchVendor = vendors.find(
+        (v) => v.name.toLowerCase() === form.vendor_name.trim().toLowerCase()
+      );
+      const notePrefix = form.note.trim() ? form.note.trim() + " · " : "";
+      const common = {
+        branch_id: form.branch_id ? Number(form.branch_id) : null,
+        company_id: form.company_id ? Number(form.company_id) : null,
+        bill_date: form.bill_date,
+        vendor_id: matchVendor?.id ?? null,
+        vendor_name: form.vendor_name.trim() || null,
+        category: form.category || null,
+        description: form.description.trim() || null,
+        payment_status: form.payment_status,
+        payment_method: form.payment_status === "paid" ? form.payment_method : null,
+        paid_date: form.payment_status === "paid" ? form.paid_date : null
+      };
+      const rows = [
+        { ...common, amount_total: mixedSplit.vatable, has_tax_invoice: true, vat_amount: mixedSplit.vat, note: notePrefix + "ส่วนมี VAT" },
+        { ...common, amount_total: mixedSplit.nonvat, has_tax_invoice: false, vat_amount: 0, note: notePrefix + "ส่วนไม่มี VAT" }
+      ];
+      const ids: number[] = [];
+      for (const body of rows) {
+        const res = await fetch(apiUrl("/api/accounta/expenses"), {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "บันทึกไม่สำเร็จ")); return; }
+        ids.push(j.id);
+      }
+      await rememberVendorIfNeeded();
+      // Attach the same receipt photo to both rows.
+      if (stagedFile) {
+        for (const id of ids) {
+          const fd = new FormData();
+          fd.append("image", stagedFile);
+          await fetch(apiUrl(`/api/accounta/expenses/${id}/doc`), { method: "POST", body: fd }).catch(() => {});
+        }
+      }
+      setModalOpen(false);
+      await reload();
+      startTransition(() => router.refresh());
+    } finally { setBusy(false); }
   }
 
   async function save(opts?: { confirm?: boolean }) {
@@ -254,31 +335,7 @@ export default function ExpensesClient(props: {
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "บันทึกไม่สำเร็จ")); return; }
       const expenseId = form.id ?? j.id;
 
-      // Remember the vendor + learn its category for next time. Runs for both
-      // new AND existing vendors (server upserts the category via COALESCE), so
-      // correcting a known vendor's category sticks and auto-fills the next
-      // bill from that vendor (owner 2026-06-18).
-      if (form.rememberVendor && form.vendor_name.trim()) {
-        const vname = form.vendor_name.trim();
-        try {
-          const vr = await fetch(apiUrl("/api/accounta/vendors"), {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: vname, category: form.category || null })
-          });
-          const vj = await vr.json().catch(() => ({}));
-          if (vj.ok) {
-            setVendors((vs) => {
-              const i = vs.findIndex((v) => v.name.toLowerCase() === vname.toLowerCase());
-              if (i >= 0) {
-                const next = [...vs];
-                next[i] = { ...next[i], category: form.category || next[i].category };
-                return next;
-              }
-              return [...vs, { id: vj.id, name: vname, tax_id: null, category: form.category || null }];
-            });
-          }
-        } catch { /* non-fatal */ }
-      }
+      await rememberVendorIfNeeded();
 
       // Attach the receipt image (staged file or OCR scan) if present.
       if (stagedFile && expenseId) {
@@ -565,6 +622,25 @@ export default function ExpensesClient(props: {
                     album (owner 2026-06-17: was camera-only). */}
                 <input ref={ocrInputRef} type="file" accept="image/*" className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) runOcr(f); e.target.value = ""; }} />
+              </div>
+            )}
+
+            {/* Mixed-bill split — OCR found both VAT-able and VAT-exempt items
+                (owner 2026-06-18). One tap files two rows so input VAT is
+                claimed only on the VAT-able part. */}
+            {mixedSplit && !form.id && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+                <div className="text-xs font-bold text-amber-900">บิลผสม VAT / ไม่มี VAT</div>
+                <div className="text-[11px] text-amber-800">
+                  มี VAT ฿{fmtMoney(mixedSplit.vatable)} (ภาษีซื้อ ฿{fmtMoney(mixedSplit.vat)}) · ไม่มี VAT ฿{fmtMoney(mixedSplit.nonvat)}
+                </div>
+                <p className="text-[11px] text-amber-800/80">
+                  แยกเป็น 2 รายการให้คิดภาษีซื้อเฉพาะส่วนที่มี VAT — ใช้สาขา/บริษัท/ผู้ค้า/หมวด ตามที่กรอกด้านล่าง (แก้หมวดของแต่ละแถวได้ภายหลัง)
+                </p>
+                <button type="button" onClick={splitSave} disabled={busy}
+                  className="btn-primary !py-1.5 text-xs disabled:opacity-50">
+                  {busy ? "กำลังบันทึก…" : "แยกเป็น 2 รายการ"}
+                </button>
               </div>
             )}
 
