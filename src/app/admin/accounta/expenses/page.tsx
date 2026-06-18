@@ -50,6 +50,7 @@ export default function AccountaExpensesPage() {
         paymentMethods={listPaymentMethods()}
         initialExpenses={listExpenses({ month })}
         initialSummary={summarise(month)}
+        initialDrafts={listExpenses({ reviewStatus: "draft" })}
         ocrAvailable={ocrAvailable}
         ocrUsage={ocrUsageStats(month)}
       />

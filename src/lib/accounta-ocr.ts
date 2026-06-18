@@ -19,7 +19,19 @@ export class OcrError extends Error {
   }
 }
 
-const PROMPT = `คุณเป็นผู้ช่วยคีย์บิลค่าใช้จ่ายของคลินิก อ่านรูปบิล/ใบเสร็จ/ใบกำกับภาษีนี้แล้วดึงข้อมูลออกมา
+/** Build the extraction prompt. When `categories` is given, the model must
+ *  pick `category` from that exact list (or null) so the result maps onto the
+ *  owner's ผังหมวด in accounta_categories — no free-text drift (owner
+ *  2026-06-18, จัดหมวดอัตโนมัติ). Without a list it falls back to a free guess. */
+function buildPrompt(categories?: string[]): string {
+  const cats = (categories ?? []).filter((c) => c.trim());
+  const categoryRule = cats.length
+    ? `เลือกชื่อหมวดที่ตรงที่สุด "จากรายการนี้เท่านั้น" และตอบเป็นชื่อให้ตรงเป๊ะทุกตัวอักษร — ` +
+      `ถ้าไม่มีหมวดไหนตรงเลยให้ใส่ null (ห้ามสร้างหมวดใหม่เอง):\n` +
+      cats.map((c) => `  - ${c}`).join("\n")
+    : `เดาหมวดหมู่สั้นๆ เช่น วัตถุดิบ/เวชภัณฑ์, ค่าขนส่ง, ซอฟต์แวร์/ระบบ`;
+
+  return `คุณเป็นผู้ช่วยคีย์บิลค่าใช้จ่ายของคลินิก อ่านรูปบิล/ใบเสร็จ/ใบกำกับภาษีนี้แล้วดึงข้อมูลออกมา
 ตอบกลับเป็น JSON อย่างเดียว (ไม่มีข้อความอื่น ไม่มี markdown) ตามรูปแบบนี้เป๊ะ:
 {
   "vendor_name": string|null,        // ชื่อผู้ขาย/ร้านค้า
@@ -28,10 +40,12 @@ const PROMPT = `คุณเป็นผู้ช่วยคีย์บิล�
   "amount_total": number|null,       // ยอดรวมสุทธิที่ต้องจ่าย (ตัวเลขล้วน ไม่มีคอมมา)
   "has_tax_invoice": boolean|null,   // true ถ้าเป็นใบกำกับภาษีเต็มรูป (มีคำว่า "ใบกำกับภาษี" + เลขผู้เสียภาษี)
   "vat_amount": number|null,         // ยอดภาษีมูลค่าเพิ่ม (VAT) ถ้าระบุไว้บนบิล
-  "category": string|null,           // เดาหมวดหมู่สั้นๆ เช่น วัตถุดิบ/เวชภัณฑ์, ค่าขนส่ง, ซอฟต์แวร์/ระบบ
+  "category": string|null,           // หมวดค่าใช้จ่าย (ดูกติกาด้านล่าง)
   "description": string|null         // รายการสินค้า/บริการโดยย่อ
 }
+กติกาหมวดค่าใช้จ่าย (category): ${categoryRule}
 ถ้าอ่านค่าไหนไม่ได้ให้ใส่ null อย่าเดามั่ว ความถูกต้องสำคัญกว่าความครบ`;
+}
 
 type AnthropicUsage = { input_tokens: number; output_tokens: number };
 
@@ -50,6 +64,9 @@ export function ocrEnabled(): boolean {
 export async function scanBill(args: {
   base64: string;
   mediaType: string;
+  /** Active category names — when given, the model must pick one of these
+   *  (or null) and the result is validated against the list. */
+  categories?: string[];
 }): Promise<{ result: OcrBillResult; usage: AnthropicUsage; model: string }> {
   const s = getSystemSettings();
   if (!s.accounta_ocr_enabled) {
@@ -77,7 +94,7 @@ export async function scanBill(args: {
           role: "user",
           content: [
             { type: "image", source: { type: "base64", media_type: args.mediaType, data: args.base64 } },
-            { type: "text", text: PROMPT }
+            { type: "text", text: buildPrompt(args.categories) }
           ]
         }]
       })
@@ -102,13 +119,16 @@ export async function scanBill(args: {
   const text = json?.content?.find((c) => c.type === "text")?.text ?? "";
   const usage = json?.usage ?? { input_tokens: 0, output_tokens: 0 };
 
-  const result = parseResult(text);
+  const result = parseResult(text, args.categories);
   return { result, usage, model };
 }
 
 /** Pull the JSON object out of the model's reply (tolerant of stray text
- *  or code fences) and coerce to OcrBillResult. */
-function parseResult(text: string): OcrBillResult {
+ *  or code fences) and coerce to OcrBillResult. When `categories` is given,
+ *  the parsed category is snapped to an exact (case-insensitive) member of
+ *  the list, else nulled — so a hallucinated/renamed category never reaches
+ *  the ledger. */
+function parseResult(text: string, categories?: string[]): OcrBillResult {
   const blank: OcrBillResult = {
     vendor_name: null, tax_id: null, bill_date: null, amount_total: null,
     has_tax_invoice: null, vat_amount: null, category: null, description: null
@@ -143,6 +163,14 @@ function parseResult(text: string): OcrBillResult {
     }
   }
 
+  // Snap category onto the allowed list (exact, case-insensitive). Anything
+  // off-list → null so only real ผังหมวด values land on the bill.
+  let category = str(o.category);
+  if (category && categories && categories.length) {
+    const hit = categories.find((c) => c.trim().toLowerCase() === category!.toLowerCase());
+    category = hit ?? null;
+  }
+
   return {
     vendor_name: str(o.vendor_name),
     tax_id: str(o.tax_id),
@@ -150,7 +178,7 @@ function parseResult(text: string): OcrBillResult {
     amount_total: num(o.amount_total),
     has_tax_invoice: bool(o.has_tax_invoice),
     vat_amount: num(o.vat_amount),
-    category: str(o.category),
+    category,
     description: str(o.description)
   };
 }

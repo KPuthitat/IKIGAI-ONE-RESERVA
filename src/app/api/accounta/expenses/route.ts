@@ -3,6 +3,10 @@ import { requirePermission } from "@/lib/auth";
 import { ExpenseBody, toExpenseInput } from "@/lib/accounta-validate";
 import { listExpenses, createExpense, summarise } from "@/lib/accounta-db";
 
+// Drafts (LINE-submitted bills awaiting review) are global — not scoped to the
+// current month/branch filter — so the admin always sees the full pending
+// inbox regardless of what they're viewing.
+
 // GET  /api/accounta/expenses?branch=&month=&status=  — list + month summary
 // POST /api/accounta/expenses                          — create one bill
 // Shared across accounta.manage admins.
@@ -24,7 +28,8 @@ export async function GET(req: Request) {
 
   const expenses = listExpenses({ branchId, companyId, month, status });
   const summary = summarise(month, branchId, companyId);
-  return NextResponse.json({ ok: true, expenses, summary });
+  const drafts = listExpenses({ reviewStatus: "draft" });
+  return NextResponse.json({ ok: true, expenses, summary, drafts });
 }
 
 export async function POST(req: Request) {

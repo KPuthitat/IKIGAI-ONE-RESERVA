@@ -5065,6 +5065,8 @@ function runMigrations(db: Database.Database): void {
       doc_mime        TEXT,
       ocr_source      TEXT,                          -- model id when created via OCR, else null
       ocr_cost_baht   REAL,                          -- estimated OCR cost for this bill
+      review_status   TEXT NOT NULL DEFAULT 'confirmed', -- 'draft' (บิลจากไลน์ รอแอดมินตรวจ+ผูกสาขา) | 'confirmed'
+      line_message_id TEXT,                          -- LINE message id when submitted via chat (dedup on webhook retry)
       note            TEXT,
       created_by      INTEGER REFERENCES users(id),
       created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -5136,6 +5138,23 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_accounta_income_date
       ON accounta_income(branch_id, income_date DESC);
   `);
+
+  // LINE-bill drafts (owner 2026-06-18): a staff member sends a bill photo to
+  // the LINE OA → OCR → a 'draft' expense (no branch yet) that the admin
+  // reviews, assigns สาขา/บริษัท, and confirms. Additive ALTERs for DBs that
+  // already created accounta_expenses without these columns. The partial
+  // UNIQUE index dedups when LINE retries a webhook delivery.
+  const expCols = db.prepare("PRAGMA table_info(accounta_expenses)").all() as Array<{ name: string }>;
+  if (!expCols.some((c) => c.name === "review_status")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN review_status TEXT NOT NULL DEFAULT 'confirmed'");
+  }
+  if (!expCols.some((c) => c.name === "line_message_id")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN line_message_id TEXT");
+  }
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_accounta_expenses_linemsg " +
+    "ON accounta_expenses(line_message_id) WHERE line_message_id IS NOT NULL"
+  );
 
   // Seed the picklists once (guarded by emptiness so owner edits stick).
   // Categories mirror the Excel expense codes; PF=Profit is income-side

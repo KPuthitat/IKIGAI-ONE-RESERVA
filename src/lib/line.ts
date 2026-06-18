@@ -74,6 +74,30 @@ export async function sendLinePush(
   }
 }
 
+/** Download a message's binary content (image/file) from LINE's data API.
+ *  Used by the ACCOUNTA bill-ingest webhook to pull a bill photo a staff
+ *  member sent to the OA. Returns bytes + mime, or null on any failure.
+ *  This is a GET (not a push) so it is NOT gated by the LINE_DEV_SEND guard;
+ *  in dev there are no real signed webhooks to trigger it anyway. */
+export async function downloadLineContent(
+  channelToken: string,
+  messageId: string
+): Promise<{ buffer: Buffer; mime: string } | null> {
+  try {
+    const res = await fetch(
+      `https://api-data.line.me/v2/bot/message/${encodeURIComponent(messageId)}/content`,
+      { headers: { Authorization: `Bearer ${channelToken}` } }
+    );
+    if (!res.ok) return null;
+    const mime = (res.headers.get("content-type") ?? "image/jpeg").split(";")[0].trim() || "image/jpeg";
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.byteLength === 0) return null;
+    return { buffer, mime };
+  } catch {
+    return null;
+  }
+}
+
 // (Legacy text builders for booking events were replaced by Flex cards —
 // see customerBookingFlex / staffBookingFlex below. notifyCustomer and
 // notifyStaff at the bottom of this file are still the entry points used
@@ -355,6 +379,91 @@ export function personaClockInFlex(args: ClockInCardArgs): LineFlexMessage {
   return {
     type: "flex",
     altText: `บันทึกเวลาเข้างาน ${inHHMM} · เลิก ${outHHMM}`,
+    contents: bubble
+  };
+}
+
+// ── ACCOUNTA: bill-received acknowledgement Flex card ───────────────
+
+export type AccountaBillAckArgs = {
+  senderName: string;          // already prefixed staff name
+  vendor: string | null;       // OCR'd ร้านค้า (null = couldn't read)
+  amount: number | null;       // OCR'd ยอดรวม (null = couldn't read)
+  category: string | null;     // OCR'd หมวด (null = ยังไม่ระบุ)
+  billDate: string | null;     // YYYY-MM-DD or null
+  parsed: boolean;             // false → OCR failed; card asks admin to key it
+};
+
+/** Small confirmation card pushed back to the staff member who sent a bill
+ *  photo. Reassures them the bill landed and was filed as a draft for admin
+ *  review — no figures are committed to the ledger from this card. */
+export function accountaBillAckFlex(args: AccountaBillAckArgs): LineFlexMessage {
+  const baht = (n: number) =>
+    n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const row = (label: string, value: string, strong?: boolean) => ({
+    type: "box", layout: "horizontal", spacing: "sm",
+    contents: [
+      { type: "text", text: label, size: "sm", color: COLOR_LABEL, flex: 4, wrap: true },
+      {
+        type: "text", text: value, size: "sm",
+        color: strong ? COLOR_BRAND : COLOR_TEXT_DARK,
+        weight: "bold", flex: 6, align: "end", wrap: true
+      }
+    ]
+  });
+
+  const rows: unknown[] = [
+    row("ร้านค้า", args.vendor ?? "— อ่านไม่ออก —"),
+    row("ยอดรวม", args.amount != null ? `${baht(args.amount)} บาท` : "— อ่านไม่ออก —", true),
+    row("หมวด", args.category ?? "ยังไม่ระบุ")
+  ];
+  if (args.billDate) rows.push(row("วันที่บิล", args.billDate));
+
+  const tail = args.parsed
+    ? "บันทึกเป็นร่างให้แล้ว รอแอดมินตรวจสอบและผูกสาขา"
+    : "อ่านตัวเลขไม่ออก แต่เก็บรูปเป็นร่างไว้ให้แล้ว รบกวนแอดมินกรอกข้อมูลเองครับ";
+
+  const bubble = {
+    type: "bubble",
+    size: "giga",
+    header: {
+      type: "box", layout: "vertical", backgroundColor: COLOR_INK_700, paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "ACCOUNTA", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", spacing: "sm", margin: "md",
+          contents: [
+            { type: "text", text: "✓", color: COLOR_BRAND_LIGHT, size: "lg", weight: "bold", flex: 0 },
+            { type: "text", text: "รับบิลแล้ว", color: "#ffffff", size: "lg", weight: "bold" }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.senderName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: rows },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        { type: "text", text: tail, size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "sm" }
+      ]
+    },
+    styles: {
+      header: { backgroundColor: COLOR_INK_700 },
+      body: { backgroundColor: "#ffffff" }
+    }
+  };
+
+  return {
+    type: "flex",
+    altText: args.amount != null ? `รับบิลแล้ว · ${baht(args.amount)} บาท` : "รับบิลแล้ว (รอตรวจ)",
     contents: bubble
   };
 }

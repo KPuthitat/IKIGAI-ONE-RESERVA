@@ -23,6 +23,7 @@ type Expense = {
   amount_total: number; has_tax_invoice: number; vat_amount: number; base_amount: number;
   payment_status: PaymentStatus; payment_method: string | null; paid_date: string | null;
   has_doc: boolean; ocr_source: string | null; ocr_cost_baht: number | null; note: string | null;
+  review_status?: string;   // 'draft' (จากไลน์ รอตรวจ) | 'confirmed'
 };
 type Summary = {
   month: string;
@@ -65,6 +66,7 @@ export default function ExpensesClient(props: {
   paymentMethods: Method[];
   initialExpenses: Expense[];
   initialSummary: Summary;
+  initialDrafts: Expense[];
   ocrAvailable: boolean;
   ocrUsage: Usage;
 }) {
@@ -77,6 +79,11 @@ export default function ExpensesClient(props: {
   const [statusFilter, setStatusFilter] = useState<"" | PaymentStatus>("");
   const [expenses, setExpenses] = useState<Expense[]>(props.initialExpenses);
   const [summary, setSummary] = useState<Summary>(props.initialSummary);
+  // LINE-submitted bills awaiting review (owner 2026-06-18). Global, not
+  // scoped to the month/branch filter.
+  const [drafts, setDrafts] = useState<Expense[]>(props.initialDrafts);
+  // True while the modal is reviewing a draft → shows the "ยืนยันเข้าสมุด" CTA.
+  const [draftMode, setDraftMode] = useState(false);
   const [vendors, setVendors] = useState<Vendor[]>(props.vendors);
   const [categories, setCategories] = useState<Category[]>(props.categories);
   const [methods, setMethods] = useState<Method[]>(props.paymentMethods);
@@ -129,6 +136,7 @@ export default function ExpensesClient(props: {
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "โหลดข้อมูลไม่สำเร็จ")); return; }
       setExpenses(j.expenses); setSummary(j.summary);
+      if (Array.isArray(j.drafts)) setDrafts(j.drafts);
     } finally { setBusy(false); }
   }
 
@@ -137,11 +145,13 @@ export default function ExpensesClient(props: {
     setStagedFile(null);
     setScanMsg(null);
     setNewCat(null); setNewMethod(null);
+    setDraftMode(false);
     setErr(null);
     setModalOpen(true);
   }
 
   function openEdit(e: Expense) {
+    setDraftMode(e.review_status === "draft");
     setForm({
       id: e.id,
       branch_id: e.branch_id != null ? String(e.branch_id) : "",
@@ -192,10 +202,14 @@ export default function ExpensesClient(props: {
     } finally { setScanning(false); }
   }
 
-  async function save() {
+  async function save(opts?: { confirm?: boolean }) {
     const total = Number(form.amount_total);
     if (!form.amount_total || !Number.isFinite(total) || total <= 0) {
       setErr("กรอกยอดเงินให้ถูกต้อง"); return;
+    }
+    // Confirming a draft into the ledger requires a branch (owner: แยกสาขา).
+    if (opts?.confirm && !form.branch_id) {
+      setErr("เลือกสาขาก่อนยืนยันเข้าสมุด"); return;
     }
     setBusy(true); setErr(null);
     try {
@@ -246,6 +260,14 @@ export default function ExpensesClient(props: {
         const fd = new FormData();
         fd.append("image", stagedFile);
         await fetch(apiUrl(`/api/accounta/expenses/${expenseId}/doc`), { method: "POST", body: fd }).catch(() => {});
+      }
+
+      // Promote a draft into the ledger after its edits are saved. On failure
+      // we keep the modal open so the admin can fix it (edits are persisted).
+      if (opts?.confirm && expenseId) {
+        const cr = await fetch(apiUrl(`/api/accounta/expenses/${expenseId}/confirm`), { method: "POST" });
+        const cj = await cr.json().catch(() => ({}));
+        if (!cr.ok || !cj.ok) { setErr(humanizeApiError(cj, "ยืนยันเข้าสมุดไม่สำเร็จ")); return; }
       }
 
       setModalOpen(false);
@@ -362,6 +384,42 @@ export default function ExpensesClient(props: {
 
       {err && <p className="text-sm text-rose-600">{err}</p>}
 
+      {/* Draft inbox — bills staff sent to the LINE OA, awaiting review.
+          Global (not month/branch-scoped). Don't count in the totals until
+          confirmed. (owner 2026-06-18) */}
+      {drafts.length > 0 && (
+        <div className="card border-amber-300 bg-amber-50/60 space-y-2 p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-amber-900">📥 ร่างรอตรวจ (จากไลน์)</span>
+            <span className="text-xs bg-amber-500 text-white font-bold rounded-full px-2 py-0.5">{drafts.length}</span>
+          </div>
+          <p className="text-[11px] text-amber-800/80">
+            บิลที่พนักงานส่งเข้าไลน์ — กด “ตรวจ” เพื่อผูกสาขา แก้ไข แล้วยืนยันเข้าสมุด (ยังไม่นับในยอดจนกว่าจะยืนยัน)
+          </p>
+          <ul className="divide-y divide-amber-200">
+            {drafts.map((d) => (
+              <li key={d.id} className="flex items-center gap-3 py-2">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-slate-800 truncate">{d.vendor_name || "— ยังไม่ระบุร้าน —"}</div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    {formatLongDate(d.bill_date, "th")} · {d.category || "ไม่ระบุหมวด"}{d.note ? ` · ${d.note}` : ""}
+                  </div>
+                </div>
+                {d.has_doc && (
+                  <a href={apiUrl(`/api/accounta/expenses/${d.id}/doc`)} target="_blank" rel="noreferrer"
+                    className="text-[11px] text-brand hover:underline whitespace-nowrap">ดูบิล</a>
+                )}
+                <div className="text-right font-semibold text-slate-800 whitespace-nowrap">
+                  {d.amount_total > 0 ? `฿${fmtMoney(d.amount_total)}` : "—"}
+                </div>
+                <button type="button" onClick={() => openEdit(d)} disabled={busy}
+                  className="btn-secondary !py-1 !px-3 text-xs disabled:opacity-50">ตรวจ</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Summary — accrual vs cash flow + outstanding */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="card space-y-1">
@@ -461,7 +519,9 @@ export default function ExpensesClient(props: {
           onClick={() => !busy && setModalOpen(false)}>
           <div className="card w-full max-w-2xl my-8 space-y-3" onClick={(ev) => ev.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h3 className="font-bold text-slate-800">{form.id ? "แก้ไขรายจ่าย" : "เพิ่มรายจ่าย"}</h3>
+              <h3 className="font-bold text-slate-800">
+                {draftMode ? "ตรวจร่างจากไลน์" : form.id ? "แก้ไขรายจ่าย" : "เพิ่มรายจ่าย"}
+              </h3>
               <button type="button" onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-slate-700">✕</button>
             </div>
 
@@ -621,9 +681,20 @@ export default function ExpensesClient(props: {
               </div>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary" disabled={busy}>ยกเลิก</button>
-                <button type="button" onClick={save} className="btn-primary disabled:opacity-50" disabled={busy}>
-                  {busy ? "กำลังบันทึก…" : "บันทึก"}
-                </button>
+                {draftMode ? (
+                  <>
+                    <button type="button" onClick={() => save()} className="btn-secondary disabled:opacity-50" disabled={busy}>
+                      {busy ? "กำลังบันทึก…" : "บันทึกร่าง"}
+                    </button>
+                    <button type="button" onClick={() => save({ confirm: true })} className="btn-primary disabled:opacity-50" disabled={busy}>
+                      {busy ? "กำลังบันทึก…" : "ยืนยันเข้าสมุด"}
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" onClick={() => save()} className="btn-primary disabled:opacity-50" disabled={busy}>
+                    {busy ? "กำลังบันทึก…" : "บันทึก"}
+                  </button>
+                )}
               </div>
             </div>
           </div>

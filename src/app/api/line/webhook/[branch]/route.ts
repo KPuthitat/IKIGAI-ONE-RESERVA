@@ -20,6 +20,7 @@ import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { getDb, type Branch } from "@/lib/db";
 import { sendLinePush } from "@/lib/line";
+import { ingestLineBill } from "@/lib/accounta-line-bill";
 import { getChannelByCode } from "@/lib/messaging-channels";
 
 type LineEvent = {
@@ -30,7 +31,7 @@ type LineEvent = {
     groupId?: string;
     roomId?: string;
   };
-  message?: { type: string; text?: string };
+  message?: { type: string; text?: string; id?: string };
   replyToken?: string;
 };
 
@@ -179,6 +180,23 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       // the OA's own Greeting message (set in LINE OA Manager), which points
       // at the Rich Menu button. The "ID" text-reply fallback below still
       // works for anyone who needs manual linking.
+      continue;
+    }
+
+    // ACCOUNTA bill-photo ingest (owner 2026-06-18). A bound staff member
+    // sends a bill image to the IKIGAI OS OA → OCR → draft expense. Only the
+    // platform (staff-facing) OA; RESERVA / legacy-branch OAs are customer-
+    // facing so their photos must never reach OCR. Processed inline; the
+    // unique line_message_id index dedups LINE's retry deliveries.
+    if (ev.type === "message" && ev.message?.type === "image" && ev.message.id) {
+      if (channel.scope === "platform") {
+        await ingestLineBill({
+          channelToken: channel.channel_token,
+          senderUserId: userId,
+          messageId: ev.message.id,
+          isDirect: ev.source?.type === "user" || ev.source?.type == null
+        });
+      }
       continue;
     }
 

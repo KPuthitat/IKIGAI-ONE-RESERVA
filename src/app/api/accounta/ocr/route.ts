@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { scanBill, OcrError } from "@/lib/accounta-ocr";
-import { logOcrUsage, ocrUsageStats } from "@/lib/accounta-db";
+import { logOcrUsage, ocrUsageStats, listCategories } from "@/lib/accounta-db";
 import { ocrCostBaht } from "@/lib/accounta";
 
 // POST /api/accounta/ocr — multipart image → structured bill prefill.
@@ -32,7 +32,8 @@ export async function POST(req: Request) {
   const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
 
   try {
-    const { result, usage, model } = await scanBill({ base64, mediaType });
+    const categories = listCategories().map((c) => c.name);
+    const { result, usage, model } = await scanBill({ base64, mediaType, categories });
     logOcrUsage({
       model,
       inputTokens: usage.input_tokens,

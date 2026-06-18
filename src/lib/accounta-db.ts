@@ -39,6 +39,7 @@ export type ExpenseRow = {
   doc_mime: string | null;
   ocr_source: string | null;
   ocr_cost_baht: number | null;
+  review_status: string;          // 'draft' (จากไลน์ รอตรวจ) | 'confirmed'
   note: string | null;
   created_at: string;
   updated_at: string;
@@ -259,6 +260,10 @@ export type ExpenseFilter = {
   companyId?: number | null;
   month?: string | null;      // 'YYYY-MM' — filters bill_date
   status?: PaymentStatus | null;
+  // Review state: defaults to 'confirmed' so the ledger / summaries never
+  // include LINE drafts that haven't been reviewed. 'draft' = the review
+  // inbox; 'all' = both.
+  reviewStatus?: "draft" | "confirmed" | "all";
 };
 
 export function listExpenses(f: ExpenseFilter = {}): ExpenseRow[] {
@@ -268,10 +273,36 @@ export function listExpenses(f: ExpenseFilter = {}): ExpenseRow[] {
   if (f.companyId != null) { where.push("e.company_id = ?"); args.push(f.companyId); }
   if (f.month) { where.push("substr(e.bill_date, 1, 7) = ?"); args.push(f.month); }
   if (f.status) { where.push("e.payment_status = ?"); args.push(f.status); }
+  const review = f.reviewStatus ?? "confirmed";
+  if (review !== "all") { where.push("e.review_status = ?"); args.push(review); }
+  // Drafts read newest-submitted-first (id), confirmed rows by bill_date.
+  const order = review === "draft" ? "e.id DESC" : "e.bill_date DESC, e.id DESC";
   const sql = SELECT_EXPENSE +
     (where.length ? ` WHERE ${where.join(" AND ")}` : "") +
-    " ORDER BY e.bill_date DESC, e.id DESC";
+    ` ORDER BY ${order}`;
   return (getDb().prepare(sql).all(...args) as RawExpense[]).map(shape);
+}
+
+/** Count LINE-submitted drafts awaiting review (badge in the expenses UI). */
+export function countDraftExpenses(): number {
+  return (getDb().prepare(
+    "SELECT COUNT(*) AS n FROM accounta_expenses WHERE review_status = 'draft'"
+  ).get() as { n: number }).n;
+}
+
+/** Mark a draft as reviewed → it now counts in the ledger/summaries. */
+export function confirmExpense(id: number): boolean {
+  return getDb().prepare(
+    "UPDATE accounta_expenses SET review_status = 'confirmed', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).run(id).changes > 0;
+}
+
+/** Dedup guard for the LINE webhook — true if this message already produced
+ *  an expense (LINE retries deliveries on slow responses). */
+export function expenseExistsForLineMessage(messageId: string): boolean {
+  return !!getDb().prepare(
+    "SELECT 1 FROM accounta_expenses WHERE line_message_id = ?"
+  ).get(messageId);
 }
 
 export function getExpense(id: number): ExpenseRow | null {
@@ -310,7 +341,10 @@ function normalise(d: ExpenseInput): ExpenseInput {
 export function createExpense(
   userId: number,
   input: ExpenseInput,
-  ocr?: { source: string; costBaht: number }
+  ocr?: { source: string; costBaht: number },
+  // LINE-submitted bills land as 'draft' with the message id for dedup;
+  // everything else defaults to 'confirmed'.
+  extra?: { reviewStatus?: "draft" | "confirmed"; lineMessageId?: string | null }
 ): number {
   const d = normalise(input);
   const info = getDb().prepare(`
@@ -318,14 +352,16 @@ export function createExpense(
       branch_id, company_id, bill_date, vendor_id, vendor_name, category, description,
       amount_total, has_tax_invoice, vat_amount, base_amount,
       payment_status, payment_method, paid_date,
-      ocr_source, ocr_cost_baht, note, created_by
-    ) VALUES (?,?,?,?,?,?,?, ?,?,?,?, ?,?,?, ?,?,?,?)
+      ocr_source, ocr_cost_baht, review_status, line_message_id, note, created_by
+    ) VALUES (?,?,?,?,?,?,?, ?,?,?,?, ?,?,?, ?,?,?,?,?,?)
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
     d.category, d.description?.trim() || null,
     d.amount_total, d.has_tax_invoice ? 1 : 0, d.vat_amount, d.base_amount,
     d.payment_status, d.payment_method, d.paid_date,
-    ocr?.source ?? null, ocr?.costBaht ?? null, d.note?.trim() || null, userId
+    ocr?.source ?? null, ocr?.costBaht ?? null,
+    extra?.reviewStatus ?? "confirmed", extra?.lineMessageId ?? null,
+    d.note?.trim() || null, userId
   );
   return Number(info.lastInsertRowid);
 }
@@ -382,25 +418,27 @@ export function summarise(month: string, branchId?: number | null, companyId?: n
   const bf = parts.join("");
   const bArg = scope;
 
+  // review_status='confirmed' on every subquery so unreviewed LINE drafts
+  // never inflate the totals (owner 2026-06-18).
   const accrual = db.prepare(`
     SELECT COUNT(*) AS count,
            COALESCE(SUM(base_amount),0) AS base,
            COALESCE(SUM(vat_amount),0)  AS vat,
            COALESCE(SUM(amount_total),0) AS total
       FROM accounta_expenses
-     WHERE substr(bill_date,1,7) = ?${bf}
+     WHERE review_status = 'confirmed' AND substr(bill_date,1,7) = ?${bf}
   `).get(month, ...bArg) as { count: number; base: number; vat: number; total: number };
 
   const cash = db.prepare(`
     SELECT COUNT(*) AS count, COALESCE(SUM(amount_total),0) AS total
       FROM accounta_expenses
-     WHERE payment_status = 'paid' AND substr(COALESCE(paid_date,bill_date),1,7) = ?${bf}
+     WHERE review_status = 'confirmed' AND payment_status = 'paid' AND substr(COALESCE(paid_date,bill_date),1,7) = ?${bf}
   `).get(month, ...bArg) as { count: number; total: number };
 
   const unpaid = db.prepare(`
     SELECT COUNT(*) AS count, COALESCE(SUM(amount_total),0) AS total
       FROM accounta_expenses
-     WHERE payment_status = 'unpaid'${bf}
+     WHERE review_status = 'confirmed' AND payment_status = 'unpaid'${bf}
   `).get(...bArg) as { count: number; total: number };
 
   return {
