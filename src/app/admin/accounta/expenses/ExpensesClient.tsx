@@ -167,7 +167,10 @@ export default function ExpensesClient(props: {
       payment_method: e.payment_method || (methods[0]?.name ?? ""),
       paid_date: e.paid_date ?? e.bill_date,
       note: e.note ?? "",
-      rememberVendor: false
+      // Reviewing a LINE draft: remember the vendor by default so a corrected
+      // category is learned on confirm. Editing a confirmed row: off (no
+      // surprise overwrite).
+      rememberVendor: e.review_status === "draft"
     });
     setStagedFile(null);
     setScanMsg(null);
@@ -185,6 +188,14 @@ export default function ExpensesClient(props: {
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setScanMsg(null); setErr(humanizeApiError(j, "อ่านบิลไม่สำเร็จ")); return; }
       const r = j.result as OcrBillResult;
+      // Vendor memory: if OCR read a known vendor, fall back to its remembered
+      // category when the bill itself didn't yield one (owner 2026-06-18).
+      const known = r.vendor_name
+        ? vendors.find((v) => v.name.toLowerCase() === r.vendor_name!.toLowerCase())
+        : undefined;
+      const ocrCat = r.category && categories.some((c) => c.name === r.category) ? r.category : null;
+      const learnedCat = known?.category && categories.some((c) => c.name === known.category)
+        ? known.category : null;
       setForm((f) => ({
         ...f,
         vendor_name: r.vendor_name ?? f.vendor_name,
@@ -192,7 +203,7 @@ export default function ExpensesClient(props: {
         amount_total: r.amount_total != null ? String(r.amount_total) : f.amount_total,
         has_tax_invoice: r.has_tax_invoice ?? f.has_tax_invoice,
         vat_override: r.vat_amount != null ? String(r.vat_amount) : f.vat_override,
-        category: r.category && categories.some((c) => c.name === r.category) ? r.category : f.category,
+        category: ocrCat ?? learnedCat ?? f.category,
         description: r.description ?? f.description,
         paid_date: r.bill_date ?? f.paid_date
       }));
@@ -243,15 +254,29 @@ export default function ExpensesClient(props: {
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "บันทึกไม่สำเร็จ")); return; }
       const expenseId = form.id ?? j.id;
 
-      // Remember a new vendor for next time (de-duped server-side).
-      if (!matchVendor && form.rememberVendor && form.vendor_name.trim()) {
+      // Remember the vendor + learn its category for next time. Runs for both
+      // new AND existing vendors (server upserts the category via COALESCE), so
+      // correcting a known vendor's category sticks and auto-fills the next
+      // bill from that vendor (owner 2026-06-18).
+      if (form.rememberVendor && form.vendor_name.trim()) {
+        const vname = form.vendor_name.trim();
         try {
           const vr = await fetch(apiUrl("/api/accounta/vendors"), {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: form.vendor_name.trim(), category: form.category || null })
+            body: JSON.stringify({ name: vname, category: form.category || null })
           });
           const vj = await vr.json().catch(() => ({}));
-          if (vj.ok) setVendors((vs) => [...vs, { id: vj.id, name: form.vendor_name.trim(), tax_id: null, category: form.category || null }]);
+          if (vj.ok) {
+            setVendors((vs) => {
+              const i = vs.findIndex((v) => v.name.toLowerCase() === vname.toLowerCase());
+              if (i >= 0) {
+                const next = [...vs];
+                next[i] = { ...next[i], category: form.category || next[i].category };
+                return next;
+              }
+              return [...vs, { id: vj.id, name: vname, tax_id: null, category: form.category || null }];
+            });
+          }
         } catch { /* non-fatal */ }
       }
 

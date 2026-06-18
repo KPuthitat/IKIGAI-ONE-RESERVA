@@ -223,16 +223,39 @@ export function createVendor(
   d: { name: string; tax_id?: string | null; category?: string | null }
 ): number {
   const name = d.name.trim();
+  const cat = d.category?.trim() || null;
+  const tax = d.tax_id?.trim() || null;
   // De-dup on name (case-insensitive) so the picker doesn't accrue twins.
   const existing = getDb().prepare(
     "SELECT id FROM accounta_vendors WHERE active = 1 AND name = ? COLLATE NOCASE"
   ).get(name) as { id: number } | undefined;
-  if (existing) return existing.id;
+  if (existing) {
+    // "Learn from edits": when the admin saves a bill with a corrected
+    // category/tax_id for a known vendor, remember the latest values so the
+    // next bill from that vendor auto-fills them. Only overwrite with a real
+    // value — never blank out a good one (owner 2026-06-18).
+    if (cat || tax) {
+      getDb().prepare(
+        "UPDATE accounta_vendors SET category = COALESCE(?, category), tax_id = COALESCE(?, tax_id) WHERE id = ?"
+      ).run(cat, tax, existing.id);
+    }
+    return existing.id;
+  }
   const info = getDb().prepare(`
     INSERT INTO accounta_vendors (name, tax_id, category, created_by)
     VALUES (?, ?, ?, ?)
-  `).run(name, d.tax_id?.trim() || null, d.category?.trim() || null, userId);
+  `).run(name, tax, cat, userId);
   return Number(info.lastInsertRowid);
+}
+
+/** Look up an active vendor by name (case-insensitive). Used to auto-fill the
+ *  remembered category/tax_id when OCR reads a known vendor. */
+export function findVendorByName(name: string): VendorRow | null {
+  const v = name.trim();
+  if (!v) return null;
+  return getDb().prepare(
+    "SELECT id, name, tax_id, category FROM accounta_vendors WHERE active = 1 AND name = ? COLLATE NOCASE"
+  ).get(v) as VendorRow | undefined ?? null;
 }
 
 // ── Expense CRUD ───────────────────────────────────────────────────

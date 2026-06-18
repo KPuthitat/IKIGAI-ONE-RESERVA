@@ -17,10 +17,10 @@ import { sendLinePush, downloadLineContent, accountaBillAckFlex } from "./line";
 import { scanBill, ocrEnabled } from "./accounta-ocr";
 import {
   listCategories, createExpense, setExpenseDoc, logOcrUsage,
-  expenseExistsForLineMessage
+  expenseExistsForLineMessage, findVendorByName
 } from "./accounta-db";
 import { saveReceiptImage, RECEIPT_ALLOWED_MIME } from "./accounta-receipts";
-import { ocrCostBaht, type ExpenseInput, type OcrBillResult } from "./accounta";
+import { ocrCostBaht, round2, type ExpenseInput, type OcrBillResult } from "./accounta";
 
 type SenderRow = {
   id: number;
@@ -94,18 +94,27 @@ export async function ingestLineBill(args: {
     parsed = r.result; usage = r.usage; model = r.model;
   } catch { /* keep the draft + photo; parsed stays null */ }
 
+  // Vendor memory: if OCR read a known vendor, inherit its remembered
+  // category/tax-id link so repeat bills auto-fill (owner 2026-06-18).
+  const known = parsed?.vendor_name ? findVendorByName(parsed.vendor_name) : null;
+  const total = parsed?.amount_total ?? 0;
+  const hasTax = parsed?.has_tax_invoice ?? false;
+  // Prefer the VAT printed on the bill (handles mixed VAT/non-VAT bills);
+  // fall back to 0/0 so createExpense.normalise() derives the 7% split.
+  const printedVat = hasTax && parsed?.vat_amount != null ? round2(parsed.vat_amount) : 0;
+
   const input: ExpenseInput = {
     branch_id: null,
     company_id: null,
     bill_date: parsed?.bill_date || today,
-    vendor_id: null,
+    vendor_id: known?.id ?? null,
     vendor_name: parsed?.vendor_name ?? null,
-    category: parsed?.category ?? null,
+    category: parsed?.category ?? known?.category ?? null,
     description: parsed?.description ?? null,
-    amount_total: parsed?.amount_total ?? 0,
-    has_tax_invoice: parsed?.has_tax_invoice ?? false,
-    vat_amount: 0,                // createExpense.normalise() re-derives the split
-    base_amount: 0,
+    amount_total: total,
+    has_tax_invoice: hasTax,
+    vat_amount: printedVat,
+    base_amount: printedVat > 0 ? round2(total - printedVat) : 0,
     payment_status: "unpaid",     // admin sets paid/method on review
     payment_method: null,
     paid_date: null,
