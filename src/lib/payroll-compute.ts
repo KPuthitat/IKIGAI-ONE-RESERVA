@@ -582,13 +582,13 @@ export function computeLineForEmployee(args: {
     const ov = fieldOverridesByDate?.get(shiftDate);
 
     // Scheduled window — admin per-day override wins over the roster.
-    // Applies to BOTH PT and FT now (owner 2026-06-14): FT used to skip
-    // the roster cap and auto-earn OT for any time worked past 8h/day. The
-    // new policy is "no automatic OT for anyone — OT must be requested and
-    // approved". Giving FT the same roster-based cap means their worked
-    // window stops at the scheduled end unless an approved OT extends it,
-    // so OT comes ONLY from an approved request. FT base stays salary
-    // (unaffected by this); only the OT portion changes.
+    // PT ONLY (owner 2026-06-18): the roster cap clamps PT's worked window
+    // (no pay before start / after end, scheduled break, approved-OT
+    // extension) because PT pay is window-based. FT is salary-based and earns
+    // OT automatically for any time worked past 8h/day — so FT skips the
+    // roster cap entirely and uses the raw clock duration for its 8h split.
+    // (Reverts the 2026-06-14 approval-gated FT OT: owner wants FT OT to work
+    // exactly like PT — วันไหนทำงานเกิน 8 ชม. ส่วนเกินเป็น OT.)
     let sched = scheduledByDate
       ? pickScheduled(scheduledByDate.get(shiftDate) ?? [], s)
       : null;
@@ -611,13 +611,14 @@ export function computeLineForEmployee(args: {
       }
     }
 
-    if (sched) {
+    if (sched && e.employment_type === "pt") {
       const g = applyPtGrace(s, sched, otUntilTs);
       grossMin = g.grossMinutes;
       deducted = g.breakMinutes;
       workedMinutes = g.workedMinutes;
     } else {
-      // No roster for this day (or FT) → legacy threshold-based break.
+      // FT (salary), or any sched-less day → raw clock minus the threshold
+      // break, so OT is purely "actual worked over 8h/day".
       const db = deductBreak(s.durationMinutes, settings);
       workedMinutes = db.workedMinutes;
       deducted = db.deducted;
@@ -632,14 +633,10 @@ export function computeLineForEmployee(args: {
     shiftMin += grossMin;
     breakDeducted += deducted;
     const split = splitRegularOt(workedMinutes);
-    // No automatic OT without a roster (owner 2026-06-14). When there's no
-    // scheduled shift there's no shift-end to measure OT against, and OT
-    // must be approved — so a sched-less FT day must not auto-earn the
-    // over-8h split. Those minutes fold back into regular instead. FT base
-    // is salary, so this has no pay effect for them; PT keeps the legacy
-    // behaviour (a sched-less PT still splits at 8h — zeroing it would
-    // underpay the over-8h hours they actually worked).
-    const autoOt = (sched || e.employment_type !== "ft") ? split.ot : 0;
+    // Auto OT = any time worked past 8h/day, for EVERYONE (owner 2026-06-18:
+    // FT OT now works the same as PT — over-8h is OT automatically, no
+    // approval needed). Per-day overrides below still win.
+    const autoOt = split.ot;
     // Per-day overrides of the final regular / OT minutes win over the
     // computed split.
     const dayRegular = ov?.worked_min != null ? ov.worked_min : split.regular + (split.ot - autoOt);
