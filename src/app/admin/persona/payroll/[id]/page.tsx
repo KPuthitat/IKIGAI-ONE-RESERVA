@@ -121,9 +121,13 @@ export default function PeriodDetailPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <Link href="/admin/persona/payroll" className="text-sm text-slate-500 hover:text-brand">
           ← {t(lang, "admin.persona.payroll.backToHub")}
+        </Link>
+        <Link href={`/admin/persona/payroll/${id}/summary`}
+          className="text-sm text-brand hover:underline ml-auto">
+          สรุปทั้งรอบ (PDF สำหรับบัญชี) →
         </Link>
       </div>
       <PeriodDetailClient
