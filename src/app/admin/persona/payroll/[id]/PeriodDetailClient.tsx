@@ -945,6 +945,8 @@ type BreakdownDay = {
   // approved request alone (for the "ขออนุมัติถึง …" hint).
   otUntil: string | null;
   otApprovedUntil: string | null;
+  // Work shift (กะ) assigned to this date — drives the tag on worked days.
+  shift: { code: string; name: string | null; color: string | null } | null;
 };
 
 function LineEditModal({
@@ -1006,10 +1008,10 @@ function LineEditModal({
   // Bumped after a successful per-day save so the parent knows to
   // refresh its line list when the modal closes.
   const [dirty, setDirty] = useState(false);
-  // "Open the whole period" — show every calendar day as a row (blank
-  // where there's no punch) so admin can add/fill any day directly
-  // (owner 2026-06-08). Off by default = only days with activity.
-  const [showAllDays, setShowAllDays] = useState(false);
+  // Always show every calendar day in the period (owner 2026-06-18): worked
+  // days tag the กะ, the rest show วันหยุด / ลา / ขาดงาน. The API now returns
+  // a row for every day, so this just drives the full-range iteration.
+  const [showAllDays] = useState(true);
 
   const loadBreakdown = useCallback(async () => {
     try {
@@ -1327,20 +1329,13 @@ function LineEditModal({
               เวลาเข้า-ออกแต่ละวัน (ที่มาของยอด)
             </h4>
             <div className="flex items-center gap-3">
-              {periodStart && periodEnd && (
-                <label className="flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={showAllDays}
-                    onChange={(e) => setShowAllDays(e.target.checked)}
-                    className="accent-brand"
-                  />
-                  แสดงทุกวันในรอบ
-                </label>
-              )}
+              {/* Every day in the period now shows (worked = กะ tag, otherwise
+                  วันหยุด / ลา / ขาดงาน) — owner 2026-06-18. The old
+                  "แสดงทุกวันในรอบ" toggle is no longer needed. */}
               {breakdownDays && (
                 <span className="text-[10px] text-slate-400">
-                  {breakdownDays.length} วันที่มีการลงเวลา
+                  มาทำงาน {breakdownDays.filter((d) => d.pairs.some((p) => p.workIn)).length} วัน
+                  {" · "}ทั้งรอบ {breakdownDays.length} วัน
                 </span>
               )}
             </div>
@@ -1431,6 +1426,16 @@ function LineEditModal({
                           {i === 0 && (
                             <span className="inline-flex items-center gap-1 flex-wrap">
                               {day.date}
+                              {/* กะ tag on worked days (owner 2026-06-18). Status
+                                  rows (วันหยุด/ลา/ขาดงาน) skip it — their label
+                                  shows in the next column. */}
+                              {!p.statusLabel && day.shift && (
+                                <span className="text-[8px] px-1 rounded font-sans font-bold"
+                                  style={{ backgroundColor: day.shift.color || "#e2e8f0", color: "#1a1a2e" }}
+                                  title={day.shift.name ?? day.shift.code}>
+                                  {day.shift.code}
+                                </span>
+                              )}
                               {day.edited && (
                                 <span className="text-[8px] px-1 rounded bg-amber-100 text-amber-700 font-sans">แก้ไขแล้ว</span>
                               )}

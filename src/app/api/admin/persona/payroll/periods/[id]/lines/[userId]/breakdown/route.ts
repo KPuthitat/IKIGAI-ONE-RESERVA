@@ -148,7 +148,8 @@ export async function GET(
     return d.toISOString().slice(0, 10);
   };
   const rosterRows = db.prepare(`
-    SELECT ra.assignment_date, sc.start_time, sc.end_time, sc.break_start, sc.break_end
+    SELECT ra.assignment_date, sc.start_time, sc.end_time, sc.break_start, sc.break_end,
+           sc.code, sc.name AS shift_name, sc.color
     FROM roster_assignments ra
     JOIN shift_codes sc ON sc.id = ra.shift_code_id
     WHERE ra.user_id = ? AND ra.assignment_date >= ? AND ra.assignment_date <= ?
@@ -156,10 +157,18 @@ export async function GET(
   `).all(userId, period.period_start, period.period_end) as Array<{
     assignment_date: string; start_time: string; end_time: string;
     break_start: string | null; break_end: string | null;
+    code: string; shift_name: string | null; color: string | null;
   }>;
   const scheduledByDate = new Map<string, ScheduledShift[]>();
+  // The work shift assigned to each date — for the กะ tag on worked days +
+  // to tell "scheduled-but-absent" from a real rest day (owner 2026-06-18).
+  type ShiftTag = { code: string; name: string | null; color: string | null };
+  const shiftByDate = new Map<string, ShiftTag>();
   for (const r of rosterRows) {
     if (!r.start_time || !r.end_time || r.start_time === r.end_time) continue;
+    if (!shiftByDate.has(r.assignment_date)) {
+      shiftByDate.set(r.assignment_date, { code: r.code, name: r.shift_name, color: r.color });
+    }
     const startTs = new Date(`${r.assignment_date}T${r.start_time}:00+07:00`).toISOString();
     const endDate = r.end_time < r.start_time ? addDayYmd(r.assignment_date) : r.assignment_date;
     const endTs = new Date(`${endDate}T${r.end_time}:00+07:00`).toISOString();
@@ -376,6 +385,8 @@ export async function GET(
     // request alone (for the "ขออนุมัติถึง …" hint).
     otUntil: string | null;
     otApprovedUntil: string | null;
+    // The work shift (กะ) assigned to this date, for the tag on worked days.
+    shift: ShiftTag | null;
   };
   const days = new Map<string, Day>();
   function ensureDay(date: string): Day {
@@ -386,7 +397,8 @@ export async function GET(
             breakMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: false,
             override: fieldOvByDate.get(date) ?? null,
             otUntil: (fieldOvByDate.get(date)?.ot_until ?? approved) || null,
-            otApprovedUntil: approved };
+            otApprovedUntil: approved,
+            shift: shiftByDate.get(date) ?? null };
       days.set(date, d);
     }
     return d;
@@ -463,13 +475,14 @@ export async function GET(
     }
   }
 
-  // Emit status rows for non-worked days that are leave / day-off /
-  // public holiday — only when the day has no clock activity already.
+  // Emit a status row for EVERY non-worked day in the period (owner
+  // 2026-06-18 — show every day, never skip): ลา (filed + approved) wins;
+  // a roster day-off / public holiday / no work assignment = วันหยุด; a day
+  // they WERE scheduled to work but didn't clock in (and no leave) = ขาดงาน.
   for (let d = period.period_start; d <= period.period_end; d = addDayYmd(d)) {
     if (days.has(d)) continue;
     const label = leaveByDate.get(d)
-      ?? (dayOffSet.has(d) || publicHolidaySet.has(d) ? "วันหยุด" : null);
-    if (!label) continue;
+      ?? ((dayOffSet.has(d) || publicHolidaySet.has(d) || !shiftByDate.has(d)) ? "วันหยุด" : "ขาดงาน");
     const day = ensureDay(d);
     day.pairs.push({
       date: d, workIn: null, workOut: null, durationMinutes: 0,
