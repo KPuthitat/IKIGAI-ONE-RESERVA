@@ -1422,32 +1422,36 @@ function LineEditModal({
                       <tr key={`${day.date}-${i}`}
                         onClick={() => pickDay(day)}
                         className={`border-t border-slate-100 cursor-pointer hover:bg-rose-50/40 ${isSel ? "bg-rose-50" : ""}`}>
-                        <td className="px-2 py-1.5 font-mono">
+                        <td className="px-3 py-2 font-mono align-middle">
                           {i === 0 && (
-                            <span className="inline-flex items-center gap-1 flex-wrap">
-                              {day.date}
-                              {/* กะ tag on worked days (owner 2026-06-18). Status
-                                  rows (วันหยุด/ลา/ขาดงาน) skip it — their label
-                                  shows in the next column. */}
-                              {!p.statusLabel && day.shift && (
-                                <span className="text-[8px] px-1 rounded font-sans font-bold"
-                                  style={{ backgroundColor: day.shift.color || "#e2e8f0", color: "#1a1a2e" }}
-                                  title={day.shift.name ?? day.shift.code}>
-                                  {day.shift.code}
-                                </span>
+                            <div className="space-y-1">
+                              <div className="text-slate-600">{day.date}</div>
+                              {/* Tags row — กะ on worked days; status rows
+                                  (วันหยุด/ลา/ขาดงาน) show their label in the next
+                                  column. Uniform pill size (owner 2026-06-18). */}
+                              {((!p.statusLabel && day.shift) || day.edited || p.holiday) && (
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {!p.statusLabel && day.shift && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-sans font-bold min-w-[2.5rem] text-center"
+                                      style={{ backgroundColor: day.shift.color || "#e2e8f0", color: "#1a1a2e" }}
+                                      title={day.shift.name ?? day.shift.code}>
+                                      {day.shift.code}
+                                    </span>
+                                  )}
+                                  {day.edited && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-sans">แก้ไขแล้ว</span>
+                                  )}
+                                  {p.holiday && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-sans">วันพิเศษ ×1.5</span>
+                                  )}
+                                </div>
                               )}
-                              {day.edited && (
-                                <span className="text-[8px] px-1 rounded bg-amber-100 text-amber-700 font-sans">แก้ไขแล้ว</span>
-                              )}
-                              {p.holiday && (
-                                <span className="text-[8px] px-1 rounded bg-violet-100 text-violet-700 font-sans">วันพิเศษ ×1.5</span>
-                              )}
-                            </span>
+                            </div>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 font-mono">
+                        <td className="px-3 py-2 font-mono align-middle">
                           {p.statusLabel ? (
-                            <span className={`text-[10px] font-sans px-1.5 py-0.5 rounded ${
+                            <span className={`text-[9px] font-sans px-1.5 py-0.5 rounded ${
                               p.statusLabel === "ขาดงาน"
                                 ? "bg-rose-100 text-rose-700"
                                 : p.statusLabel === "วันหยุด"

@@ -581,14 +581,12 @@ export function computeLineForEmployee(args: {
 
     const ov = fieldOverridesByDate?.get(shiftDate);
 
-    // Scheduled window — admin per-day override wins over the roster.
-    // PT ONLY (owner 2026-06-18): the roster cap clamps PT's worked window
-    // (no pay before start / after end, scheduled break, approved-OT
-    // extension) because PT pay is window-based. FT is salary-based and earns
-    // OT automatically for any time worked past 8h/day — so FT skips the
-    // roster cap entirely and uses the raw clock duration for its 8h split.
-    // (Reverts the 2026-06-14 approval-gated FT OT: owner wants FT OT to work
-    // exactly like PT — วันไหนทำงานเกิน 8 ชม. ส่วนเกินเป็น OT.)
+    // Scheduled window — admin per-day override wins over the roster. Used by
+    // BOTH PT and FT: the scheduled break + start-grace make the worked hours
+    // match the shift (same break for the same กะ). The only difference is the
+    // OT window (otUntilTs below): PT extends only for approved OT; FT extends
+    // to the ACTUAL clock-out so any time past the scheduled end (over 8h/day)
+    // is OT automatically (owner 2026-06-18 — FT OT = same as PT, auto over-8h).
     let sched = scheduledByDate
       ? pickScheduled(scheduledByDate.get(shiftDate) ?? [], s)
       : null;
@@ -605,20 +603,26 @@ export function computeLineForEmployee(args: {
     // An admin per-day ot_until override wins over the approved request.
     let otUntilTs: string | null = null;
     if (sched) {
-      const reqUntil = ov?.ot_until ?? approvedOtByDate?.get(shiftDate);
-      if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
-        otUntilTs = new Date(`${shiftDate}T${reqUntil}:00+07:00`).toISOString();
+      if (e.employment_type === "ft") {
+        // FT: auto-OT — extend the worked window to the ACTUAL clock-out so
+        // over-8h is OT without an approval (owner 2026-06-18).
+        otUntilTs = s.endTs;
+      } else {
+        const reqUntil = ov?.ot_until ?? approvedOtByDate?.get(shiftDate);
+        if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
+          otUntilTs = new Date(`${shiftDate}T${reqUntil}:00+07:00`).toISOString();
+        }
       }
     }
 
-    if (sched && e.employment_type === "pt") {
+    if (sched) {
       const g = applyPtGrace(s, sched, otUntilTs);
       grossMin = g.grossMinutes;
       deducted = g.breakMinutes;
       workedMinutes = g.workedMinutes;
     } else {
-      // FT (salary), or any sched-less day → raw clock minus the threshold
-      // break, so OT is purely "actual worked over 8h/day".
+      // No roster for this day → raw clock minus the threshold break, so OT
+      // is still "actual worked over 8h/day".
       const db = deductBreak(s.durationMinutes, settings);
       workedMinutes = db.workedMinutes;
       deducted = db.deducted;

@@ -229,22 +229,28 @@ export async function GET(
     const rawMin = outTs ? Math.max(0, floorMin(outTs) - floorMin(inTs)) : 0;
     const holiday = isPt && holidaySet.has(date);
 
-    // Scheduled window — per-day override wins over the roster.
+    // Scheduled window — per-day override wins over the roster (both PT + FT,
+    // matching the pay engine).
     let sched = pickScheduled(scheduledByDate.get(date) ?? [], { startTs: inTs });
-    if (isPt && ov?.sched_in && ov?.sched_out) {
+    if (ov?.sched_in && ov?.sched_out) {
       const sStart = new Date(`${date}T${ov.sched_in}:00+07:00`).toISOString();
       const sEndDate = ov.sched_out < ov.sched_in ? addDayYmd(date) : date;
       const sEnd = new Date(`${sEndDate}T${ov.sched_out}:00+07:00`).toISOString();
       sched = { startTs: sStart, endTs: sEnd, breakStartTs: sched?.breakStartTs ?? null, breakEndTs: sched?.breakEndTs ?? null };
     }
 
-    // Approved OT extends the worked window past the scheduled end. An
-    // admin per-day ot_until override wins over the approved request.
+    // OT window: PT extends only for approved OT; FT extends to the ACTUAL
+    // clock-out so over-8h is OT automatically (owner 2026-06-18). An admin
+    // per-day ot_until override wins for PT.
     let otUntilTs: string | null = null;
-    if (isPt && sched) {
-      const reqUntil = ov?.ot_until ?? approvedOtByDate.get(date);
-      if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
-        otUntilTs = new Date(`${date}T${reqUntil}:00+07:00`).toISOString();
+    if (sched && outTs) {
+      if (!isPt) {
+        otUntilTs = outTs;
+      } else {
+        const reqUntil = ov?.ot_until ?? approvedOtByDate.get(date);
+        if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
+          otUntilTs = new Date(`${date}T${reqUntil}:00+07:00`).toISOString();
+        }
       }
     }
 
@@ -253,7 +259,7 @@ export async function GET(
     let lateMin = 0;
     let earlyMin = 0;
     if (outTs) {
-      if (isPt && sched) {
+      if (sched) {
         const g = applyPtGrace({ startTs: inTs, endTs: outTs }, sched, otUntilTs);
         breakMinutes = Math.round(g.breakMinutes);
         workedMin = Math.round(g.workedMinutes);
@@ -266,7 +272,7 @@ export async function GET(
       }
     }
     // Per-day break override (recompute worked from gross − new break).
-    const grossForBreak = outTs && isPt && sched ? workedMin + breakMinutes : rawMin;
+    const grossForBreak = outTs && sched ? workedMin + breakMinutes : rawMin;
     if (ov?.break_min != null) {
       breakMinutes = ov.break_min;
       workedMin = Math.max(0, grossForBreak - ov.break_min);
