@@ -22,6 +22,7 @@ import RecruitaOaSection from "./RecruitaOaSection";
 import PdpaImageUploader from "./PdpaImageUploader";
 import { DEFAULT_HEALTH_CHECK_MESSAGE } from "@/lib/recruita-notify";
 import { OCR_MODELS, DEFAULT_OCR_MODEL } from "@/lib/accounta";
+import { OWL_AI_MODELS, DEFAULT_OWL_AI_MODEL } from "@/lib/owl-ai-models";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,9 @@ export default function SystemSettingsPage() {
         accountaOcrEnabled={settings.accounta_ocr_enabled === 1}
         accountaOcrModel={settings.accounta_ocr_model ?? DEFAULT_OCR_MODEL}
         ocrModels={OCR_MODELS.map((m) => ({ id: m.id, label: m.label }))}
+        owlAiEnabled={settings.owl_ai_enabled === 1}
+        owlAiModel={settings.owl_ai_model ?? DEFAULT_OWL_AI_MODEL}
+        owlModels={OWL_AI_MODELS.map((m) => ({ id: m.id, label: m.label }))}
         anthropicKeyPresent={!!process.env.ANTHROPIC_API_KEY}
       />
 

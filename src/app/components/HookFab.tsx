@@ -89,9 +89,13 @@ function savePosition(p: { right: number; bottom: number }): void {
 // roster-publish answers).
 
 export default function HookFab({
-  audience = "any"
+  audience = "any",
+  aiEnabled = false
 }: {
   audience?: FaqAudience;
+  /** Admin + owl_ai_enabled → show the natural-language "ถามน้องฮูก" box
+   *  that answers finance/HR questions from real DB numbers. */
+  aiEnabled?: boolean;
 }) {
   const { lang } = useLang();
   const router = useRouter();
@@ -99,6 +103,34 @@ export default function HookFab({
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<FaqCategory | "">("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Smart น้องฮูก (AI) — admin-only natural-language Q&A (owner 2026-06-18).
+  const [aiQ, setAiQ] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [aiErr, setAiErr] = useState<string | null>(null);
+  const [aiCost, setAiCost] = useState<number | null>(null);
+
+  async function askOwlAi() {
+    const question = aiQ.trim();
+    if (!question || aiBusy) return;
+    setAiBusy(true); setAiErr(null); setAiAnswer(null);
+    try {
+      const res = await fetch(apiUrl("/api/owl/ask"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setAiErr(j.message || j.error || "ถามไม่สำเร็จ ลองใหม่อีกครั้ง"); return; }
+      setAiAnswer(j.answer);
+      setAiCost(typeof j.costBaht === "number" ? j.costBaht : null);
+    } catch {
+      setAiErr("เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง");
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   /** Switch active branch + navigate. Owl items for a non-active
    *  branch need this two-step because the target admin page reads
@@ -401,6 +433,40 @@ export default function HookFab({
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            {/* Smart AI ask box — admin only, when owl_ai_enabled. Answers
+                finance/HR questions in plain Thai from real DB numbers. */}
+            {audience === "admin" && aiEnabled && (
+              <div className="rounded-xl border border-brand/30 bg-brand/5 p-3 space-y-2">
+                <div className="text-sm font-bold text-slate-800">ถามน้องฮูก (ภาษาคน)</div>
+                <div className="text-[11px] text-slate-500 leading-relaxed">
+                  เช่น “เดือนนี้สาขา NAMA จ่ายค่าอะไรเยอะสุด” · “มีบิลค้างจ่ายเท่าไร” · “ลากี่คนเดือนนี้”
+                </div>
+                <div className="flex gap-1">
+                  <input
+                    className="input text-sm" value={aiQ} disabled={aiBusy}
+                    placeholder="พิมพ์คำถาม…"
+                    onChange={(e) => setAiQ(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); askOwlAi(); } }}
+                  />
+                  <button type="button" onClick={askOwlAi} disabled={aiBusy || !aiQ.trim()}
+                    className="btn-primary !py-1 !px-3 text-sm disabled:opacity-50 whitespace-nowrap">
+                    {aiBusy ? "…" : "ถาม"}
+                  </button>
+                </div>
+                {aiErr && <p className="text-[11px] text-rose-600">{aiErr}</p>}
+                {aiAnswer && (
+                  <div className="rounded-lg bg-white border border-slate-200 p-2.5">
+                    <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">{aiAnswer}</div>
+                    {aiCost != null && (
+                      <div className="text-[10px] text-slate-400 mt-1.5">
+                        ~฿{aiCost.toFixed(2)} · ตัวเลขดึงจากระบบจริง
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Pending queue — admin only. The owl plays the role of
                 an attentive assistant, addressing the admin by name
                 and showing pending work across EVERY branch they

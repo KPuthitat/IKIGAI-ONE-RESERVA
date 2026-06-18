@@ -1909,6 +1909,17 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "accounta_ocr_model")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN accounta_ocr_model TEXT");
   }
+  // Smart น้องฮูก — admin-only AI Q&A over ACCOUNTA + PERSONA (owner
+  // 2026-06-18). OFF by default; reuses ANTHROPIC_API_KEY. model = which
+  // Claude model answers (Opus 4.8 default — best at orchestrating the safe
+  // data tools). Numbers always come from the DB via those tools, never the
+  // model. See lib/owl-ai.ts + lib/owl-data.ts.
+  if (!ssCols.some((c) => c.name === "owl_ai_enabled")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN owl_ai_enabled INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!ssCols.some((c) => c.name === "owl_ai_model")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN owl_ai_model TEXT");
+  }
   // Cron heartbeat (2026-05-25) — stamped by every successful POST
   // /api/cron call. Lets admin diagnose "is the external cron job
   // actually pinging us?" without SSH'ing into the VPS. NULL = never
@@ -5092,6 +5103,21 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_accounta_ocr_usage_created
       ON accounta_ocr_usage(created_at);
 
+    -- Smart น้องฮูก usage log: one row per AI question, so the settings UI
+    -- can show running spend (same pattern as the OCR counter).
+    CREATE TABLE IF NOT EXISTS owl_ai_usage (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      model         TEXT NOT NULL,
+      input_tokens  INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cost_baht     REAL NOT NULL DEFAULT 0,
+      question      TEXT,
+      created_by    INTEGER REFERENCES users(id),
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_owl_ai_usage_created
+      ON owl_ai_usage(created_at);
+
     -- Owner-extensible picklists (owner 2026-06-17): expense categories
     -- (seeded from the owner's Excel chart — UT/RT/GD/…) and payment
     -- channels (so future "director credit card · bank X" can be added
@@ -5395,6 +5421,9 @@ export function updateSystemSettings(
     // ACCOUNTA bill-OCR toggle (0/1) + chosen vision model.
     accounta_ocr_enabled?: 0 | 1 | boolean;
     accounta_ocr_model?: string | null;
+    // Smart น้องฮูก toggle (0/1) + chosen Claude model.
+    owl_ai_enabled?: 0 | 1 | boolean;
+    owl_ai_model?: string | null;
   },
   updatedBy: number
 ): void {
@@ -5502,6 +5531,14 @@ export function updateSystemSettings(
   if (Object.prototype.hasOwnProperty.call(patch, "accounta_ocr_model")) {
     sets.push("accounta_ocr_model = ?");
     vals.push(norm(patch.accounta_ocr_model));
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "owl_ai_enabled")) {
+    sets.push("owl_ai_enabled = ?");
+    vals.push(patch.owl_ai_enabled ? 1 : 0);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "owl_ai_model")) {
+    sets.push("owl_ai_model = ?");
+    vals.push(norm(patch.owl_ai_model));
   }
   if (sets.length === 0) return;
   sets.push("updated_at = ?", "updated_by = ?");
@@ -5701,6 +5738,11 @@ export type SystemSettings = {
   /** Which Claude vision model the OCR scan uses. NULL = the default
    *  (Haiku 4.5) resolved in lib/accounta-ocr.ts. */
   accounta_ocr_model?: string | null;
+  /** Smart น้องฮูก (admin AI Q&A) master toggle. 0/1, default 0. */
+  owl_ai_enabled?: number | null;
+  /** Which Claude model answers น้องฮูก. NULL = the default (Opus 4.8)
+   *  resolved in lib/owl-ai-models.ts. */
+  owl_ai_model?: string | null;
   updated_at: string | null;
   updated_by: number | null;
 };

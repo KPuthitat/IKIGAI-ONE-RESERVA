@@ -64,7 +64,10 @@ const Body = z.object({
   portal_oa_link: z.string().max(500).optional(),
   // ACCOUNTA bill-OCR master toggle + chosen vision model id.
   accounta_ocr_enabled: z.union([z.boolean(), z.literal("true"), z.literal("false")]).optional(),
-  accounta_ocr_model: z.string().max(100).optional()
+  accounta_ocr_model: z.string().max(100).optional(),
+  // Smart น้องฮูก (admin AI Q&A) master toggle + chosen model id.
+  owl_ai_enabled: z.union([z.boolean(), z.literal("true"), z.literal("false")]).optional(),
+  owl_ai_model: z.string().max(100).optional()
 });
 
 export async function POST(req: Request) {
@@ -164,6 +167,13 @@ export async function POST(req: Request) {
   }
   if (parsed.data.accounta_ocr_model !== undefined) {
     dbPatch.accounta_ocr_model = parsed.data.accounta_ocr_model.trim();
+  }
+  if (parsed.data.owl_ai_enabled !== undefined) {
+    const v = parsed.data.owl_ai_enabled;
+    dbPatch.owl_ai_enabled = (v === true || v === "true") ? 1 : 0;
+  }
+  if (parsed.data.owl_ai_model !== undefined) {
+    dbPatch.owl_ai_model = parsed.data.owl_ai_model.trim();
   }
 
   updateSystemSettings(dbPatch, user.id);

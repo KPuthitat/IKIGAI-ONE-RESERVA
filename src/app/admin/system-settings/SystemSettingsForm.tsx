@@ -37,6 +37,9 @@ export default function SystemSettingsForm({
   accountaOcrEnabled,
   accountaOcrModel,
   ocrModels,
+  owlAiEnabled,
+  owlAiModel,
+  owlModels,
   anthropicKeyPresent
 }: {
   token: string | null;
@@ -54,6 +57,9 @@ export default function SystemSettingsForm({
   accountaOcrEnabled: boolean;
   accountaOcrModel: string;
   ocrModels: Array<{ id: string; label: string }>;
+  owlAiEnabled: boolean;
+  owlAiModel: string;
+  owlModels: Array<{ id: string; label: string }>;
   anthropicKeyPresent: boolean;
 }) {
   const router = useRouter();
@@ -100,6 +106,9 @@ export default function SystemSettingsForm({
   // OFF by default; needs ANTHROPIC_API_KEY on the server to actually run.
   const [ocrOn, setOcrOn] = useState<boolean>(accountaOcrEnabled);
   const [ocrModelSel, setOcrModelSel] = useState<string>(accountaOcrModel || (ocrModels[0]?.id ?? ""));
+  // Smart น้องฮูก (2026-06-18) — admin-only AI Q&A over การเงิน + งานบุคคล.
+  const [owlOn, setOwlOn] = useState<boolean>(owlAiEnabled);
+  const [owlModelSel, setOwlModelSel] = useState<string>(owlAiModel || (owlModels[0]?.id ?? ""));
   // (Resignation-policy textareas moved 2026-05-28 to
   // /admin/persona/resignation — that's the menu where admins
   // already manage resignation requests, so the policy authoring
@@ -141,6 +150,8 @@ export default function SystemSettingsForm({
       body.portal_oa_link = portalOaInput.trim();
       body.accounta_ocr_enabled = ocrOn ? "true" : "false";
       body.accounta_ocr_model = ocrModelSel;
+      body.owl_ai_enabled = owlOn ? "true" : "false";
+      body.owl_ai_model = owlModelSel;
 
       // (Resignation-policy fields moved to /admin/persona/resignation
       // 2026-05-28 — this form no longer sends them.)
@@ -392,6 +403,48 @@ export default function SystemSettingsForm({
           </select>
           <p className="text-[10px] text-slate-400 mt-1">
             Haiku = ประหยัดสุด พอสำหรับบิลพิมพ์ทั่วไป · Sonnet = แม่นกว่าแต่แพงกว่า สำหรับบิลอ่านยาก
+          </p>
+        </div>
+      </div>
+
+      {/* Smart น้องฮูก — admin-only AI Q&A over การเงิน + งานบุคคล. OFF by
+          default; needs ANTHROPIC_API_KEY. Numbers always come from the DB. */}
+      <div className="card space-y-3">
+        <div>
+          <h2 className="text-lg font-bold text-slate-800">น้องฮูก · ถามด้วยภาษาคน (AI)</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            ให้แอดมินพิมพ์ถามเรื่องการเงิน/งานบุคคลเป็นภาษาคน เช่น “เดือนนี้สาขา NAMA จ่ายค่าอะไรเยอะสุด”
+            หรือ “มีบิลค้างจ่ายเท่าไร” — น้องฮูกดึงตัวเลขจริงจากระบบมาตอบ (เฉพาะแอดมิน)
+          </p>
+        </div>
+        <div className={`rounded-xl border-2 p-3 transition ${
+          owlOn ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-slate-50"
+        }`}>
+          <label className="flex items-center justify-between gap-3 cursor-pointer">
+            <div className="flex-1 min-w-0">
+              <div className={`text-sm font-bold ${owlOn ? "text-emerald-800" : "text-slate-700"}`}>
+                {owlOn ? "เปิดอยู่ — มีช่องถามน้องฮูกในกล่องผู้ช่วย (มุมขวาล่าง)" : "ปิด — น้องฮูกตอบเฉพาะคำถามคู่มือ (FAQ)"}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                คิดค่าใช้จ่ายตามจำนวนคำถาม (ประมาณการแสดงใต้ช่องถาม) · ตัวเลขมาจากฐานข้อมูล ไม่ใช่ AI เดา
+              </div>
+            </div>
+            <Switch checked={owlOn} onChange={setOwlOn} accent="emerald" />
+          </label>
+        </div>
+        {owlOn && !anthropicKeyPresent && (
+          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            ยังไม่ได้ตั้งค่า <code>ANTHROPIC_API_KEY</code> บนเซิร์ฟเวอร์ — เปิดสวิตช์ไว้ได้
+            แต่ช่องถามจะยังใช้ไม่ได้จนกว่าจะตั้งค่า key แล้ว deploy
+          </p>
+        )}
+        <div>
+          <label className="label">โมเดลที่ใช้ตอบ</label>
+          <select className="input" value={owlModelSel} onChange={(e) => setOwlModelSel(e.target.value)}>
+            {owlModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </select>
+          <p className="text-[10px] text-slate-400 mt-1">
+            Opus = ฉลาดสุด เหมาะกับคำถามวิเคราะห์ · Haiku = ประหยัดสุด สำหรับคำถามง่ายๆ
           </p>
         </div>
       </div>

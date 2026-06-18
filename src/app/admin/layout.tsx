@@ -408,7 +408,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <Footer />
         </div>
       </div>
-      <HookFab audience="admin" />
+      <HookFab
+        audience="admin"
+        aiEnabled={!!getSystemSettings().owl_ai_enabled && !!process.env.ANTHROPIC_API_KEY}
+      />
     </div>
   );
 }
