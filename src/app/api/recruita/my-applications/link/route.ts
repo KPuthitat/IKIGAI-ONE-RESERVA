@@ -50,6 +50,8 @@ type AppRow = {
   offer_salary_type: "monthly" | "hourly" | null;
   offer_start_date: string | null;
   offer_conditions: string | null;
+  health_cert_uploaded: number;
+  health_cert_filename: string | null;
 };
 
 export async function POST(req: Request) {
@@ -97,6 +99,11 @@ export async function POST(req: Request) {
            a.offer_salary_type   AS offer_salary_type,
            a.offer_start_date    AS offer_start_date,
            a.offer_conditions    AS offer_conditions,
+           (SELECT COUNT(*) FROM recruita_documents d
+             WHERE d.candidate_id = a.candidate_id AND d.kind = 'health_cert') AS health_cert_uploaded,
+           (SELECT d.original_filename FROM recruita_documents d
+             WHERE d.candidate_id = a.candidate_id AND d.kind = 'health_cert'
+             ORDER BY d.id DESC LIMIT 1) AS health_cert_filename,
            p.title         AS position_title,
            p.code          AS position_code,
            p.department    AS department,

@@ -111,6 +111,28 @@ export default function HookFab({
   const [aiErr, setAiErr] = useState<string | null>(null);
   const [aiCost, setAiCost] = useState<number | null>(null);
 
+  // Running Claude API spend across EVERY action that calls it (bill OCR +
+  // owl questions). Fetched when the panel opens (admin) + refreshed after a
+  // question, so the owl can report "ใช้ไปเท่าไรแล้ว" (owner 2026-06-18).
+  type AiUsage = {
+    monthCount: number; monthBaht: number; totalCount: number; totalBaht: number;
+    ocr: { monthCount: number; monthBaht: number };
+    owl: { monthCount: number; monthBaht: number };
+  };
+  const [aiUsage, setAiUsage] = useState<AiUsage | null>(null);
+
+  async function fetchAiUsage() {
+    try {
+      const res = await fetch(apiUrl("/api/owl/usage"), { cache: "no-store" });
+      if (!res.ok) return;
+      const j = await res.json();
+      if (j.ok) setAiUsage(j.usage as AiUsage);
+    } catch { /* offline / 403 — leave the line hidden */ }
+  }
+  useEffect(() => {
+    if (open && audience === "admin") fetchAiUsage();
+  }, [open, audience]);
+
   async function askOwlAi() {
     const question = aiQ.trim();
     if (!question || aiBusy) return;
@@ -125,6 +147,7 @@ export default function HookFab({
       if (!res.ok || !j.ok) { setAiErr(j.message || j.error || "ถามไม่สำเร็จ ลองใหม่อีกครั้ง"); return; }
       setAiAnswer(j.answer);
       setAiCost(typeof j.costBaht === "number" ? j.costBaht : null);
+      fetchAiUsage(); // refresh the running total after spending
     } catch {
       setAiErr("เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง");
     } finally {
@@ -433,6 +456,19 @@ export default function HookFab({
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            {/* Running Claude API spend — admin only, shown once anything has
+                been used. Covers bill OCR + owl questions together. */}
+            {audience === "admin" && aiUsage && aiUsage.totalCount > 0 && (
+              <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 leading-relaxed">
+                <span className="font-bold text-slate-600">ค่าใช้ Claude API เดือนนี้:</span>{" "}
+                {aiUsage.monthCount} ครั้ง ~฿{aiUsage.monthBaht.toFixed(2)}
+                <span className="text-slate-400">
+                  {" "}(สแกนบิล {aiUsage.ocr.monthCount} · ถามน้องฮูก {aiUsage.owl.monthCount}) ·
+                  รวมทั้งหมด ~฿{aiUsage.totalBaht.toFixed(2)}
+                </span>
+              </div>
+            )}
+
             {/* Smart AI ask box — admin only, when owl_ai_enabled. Answers
                 finance/HR questions in plain Thai from real DB numbers. */}
             {audience === "admin" && aiEnabled && (

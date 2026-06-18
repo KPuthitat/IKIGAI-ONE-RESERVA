@@ -533,6 +533,42 @@ export async function notifyExecGroupStageChange(applicationId: number): Promise
   })]);
 }
 
+/** Notify the exec/HR group that a candidate just uploaded their medical
+ *  certificate (owner 2026-06-18 — the owner wasn't being told, so an
+ *  uploaded cert sat unnoticed). Concise text push via the platform OA;
+ *  silent no-op when the group / OA isn't configured. */
+export async function notifyExecGroupHealthCertUploaded(applicationId: number): Promise<void> {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT a.id, a.submitted_at,
+           (SELECT COUNT(*) FROM recruita_applications za
+             WHERE date(za.submitted_at, '+7 hours') = date(a.submitted_at, '+7 hours')
+               AND za.id <= a.id) AS day_seq,
+           c.title_prefix, c.first_name_th, c.last_name_th,
+           p.title AS position_title, b.name AS branch_name
+      FROM recruita_applications a
+      JOIN recruita_candidates c ON c.id = a.candidate_id
+      JOIN recruita_positions p  ON p.id = a.position_id
+      LEFT JOIN branches b ON b.id = p.branch_id
+     WHERE a.id = ?
+  `).get(applicationId) as {
+    id: number; submitted_at: string; day_seq: number;
+    title_prefix: string | null; first_name_th: string | null; last_name_th: string | null;
+    position_title: string; branch_name: string | null;
+  } | undefined;
+  if (!row) return;
+
+  const name = [row.title_prefix, row.first_name_th, row.last_name_th].filter(Boolean).join(" ") || "—";
+  const appNo = formatApplicationNo(row.submitted_at, row.day_seq);
+  const text =
+    "📄 ผู้สมัครอัปโหลดใบรับรองแพทย์แล้ว\n" +
+    `${name}\n` +
+    `${row.position_title}${row.branch_name ? " · " + row.branch_name : ""}\n` +
+    `ใบสมัคร ${appNo}\n` +
+    "ตรวจสอบได้ในระบบ RECRUITA → ใบสมัคร";
+  await pushToExecGroup([{ type: "text", text }]);
+}
+
 /** Fire-and-forget stage-change push to a candidate. Called from
  *  the stage-change API after the DB write succeeds. Silently skips
  *  when there's no linked LINE userId or the OA isn't configured. */

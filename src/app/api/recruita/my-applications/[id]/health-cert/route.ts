@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { randomBytes } from "crypto";
 import { getDb } from "@/lib/db";
+import { notifyExecGroupHealthCertUploaded } from "@/lib/recruita-notify";
 
 // POST /api/recruita/my-applications/[id]/health-cert  (public, candidate)
 //
@@ -134,5 +135,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
 
   console.info(`[recruita] candidate uploaded health cert → app #${appId}`);
+  // Tell the HR/exec group so the upload doesn't sit unnoticed (owner
+  // 2026-06-18). Fire-and-forget — a LINE hiccup must not fail the upload.
+  void notifyExecGroupHealthCertUploaded(appId).catch((e) =>
+    console.warn("[recruita] health-cert exec notify failed", e));
   return NextResponse.json({ ok: true, filename: file.name.slice(0, 200) });
 }

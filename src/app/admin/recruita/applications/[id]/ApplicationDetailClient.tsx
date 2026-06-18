@@ -228,6 +228,9 @@ export default function ApplicationDetailClient({
   const [offerStartDate, setOfferStartDate] = useState("");
   const [offerSalary, setOfferSalary] = useState("");
   const [offerSalaryType, setOfferSalaryType] = useState<"monthly" | "hourly">("monthly");
+  // Per-candidate special conditions to communicate on the offer card
+  // (owner 2026-06-18 — the input box was missing from the offer modal).
+  const [offerConditions, setOfferConditions] = useState("");
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
 
@@ -424,8 +427,12 @@ export default function ApplicationDetailClient({
                       <option value="hourly">บาท/ชม.</option>
                     </select>
                   </div>
+                  <label className="label mt-2">เงื่อนไขเฉพาะราย (ถ้ามี)</label>
+                  <textarea className="input text-sm" rows={3}
+                    value={offerConditions} onChange={(e) => setOfferConditions(e.target.value)}
+                    placeholder="เช่น ทดลองงาน 90 วัน · ต้องผ่านอบรมความปลอดภัยก่อนเริ่ม · ค่าตอบแทนปรับหลังผ่านทดลองงาน" />
                   <p className="text-[10px] text-slate-400 mt-0.5">
-                    ตำแหน่ง + ค่าตอบแทน + วันเริ่มงาน จะแสดงในการ์ดข้อเสนอที่ส่งให้ผู้สมัคร
+                    ตำแหน่ง + ค่าตอบแทน + วันเริ่มงาน + เงื่อนไขเฉพาะราย จะแสดงในการ์ดข้อเสนอที่ส่งให้ผู้สมัคร
                   </p>
                 </div>
               )}
@@ -435,7 +442,7 @@ export default function ApplicationDetailClient({
             </>
           }
           submitLabel={isDual ? "ส่งคำขอ" : requestStageTarget === "offered" ? "เสนองาน" : "เปลี่ยนสถานะ"}
-          onClose={() => { setRequestStageTarget(null); setOfferStartDate(""); setOfferSalary(""); }}
+          onClose={() => { setRequestStageTarget(null); setOfferStartDate(""); setOfferSalary(""); setOfferConditions(""); }}
           onSubmit={async (pin) => {
             const target = requestStageTarget;
             if (target === "offered" && !/^\d{4}-\d{2}-\d{2}$/.test(offerStartDate)) {
@@ -454,7 +461,8 @@ export default function ApplicationDetailClient({
                   ...(target === "offered" ? {
                     offer_start_date: offerStartDate,
                     offer_salary: Number(offerSalary),
-                    offer_salary_type: offerSalaryType
+                    offer_salary_type: offerSalaryType,
+                    ...(offerConditions.trim() ? { offer_conditions: offerConditions.trim() } : {})
                   } : {})
                 })
               }
@@ -468,6 +476,7 @@ export default function ApplicationDetailClient({
             setRequestStageTarget(null);
             setOfferStartDate("");
             setOfferSalary("");
+            setOfferConditions("");
             startTransition(() => router.refresh());
             return { ok: true };
           }} />

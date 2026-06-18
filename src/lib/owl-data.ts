@@ -9,7 +9,7 @@
 
 import { getDb } from "./db";
 import { round2 } from "./accounta";
-import { summarise, incomeSummary, daybook, listBranches, listCompanies, listCategories, listIncomeChannels } from "./accounta-db";
+import { summarise, incomeSummary, daybook, listBranches, listCompanies, listCategories, listIncomeChannels, ocrUsageStats } from "./accounta-db";
 import { owlAiCostBaht } from "./owl-ai-models";
 
 export function bkkMonth(): string {
@@ -251,4 +251,21 @@ export function owlUsageStats(month: string): {
     "SELECT COUNT(*) AS c, COALESCE(SUM(cost_baht),0) AS b FROM owl_ai_usage"
   ).get() as { c: number; b: number };
   return { monthCount: m.c, monthBaht: round2(m.b), totalCount: t.c, totalBaht: round2(t.b) };
+}
+
+/** Combined Claude API usage across EVERY action that calls it — bill OCR
+ *  (in-app + LINE) and น้องฮูก questions — so the owl can show one running
+ *  spend figure (owner 2026-06-18). */
+export function aiUsageSummary(month: string) {
+  const ocr = ocrUsageStats(month);
+  const owl = owlUsageStats(month);
+  return {
+    month,
+    monthCount: ocr.monthCount + owl.monthCount,
+    monthBaht: round2(ocr.monthBaht + owl.monthBaht),
+    totalCount: ocr.totalCount + owl.totalCount,
+    totalBaht: round2(ocr.totalBaht + owl.totalBaht),
+    ocr: { monthCount: ocr.monthCount, monthBaht: ocr.monthBaht },
+    owl: { monthCount: owl.monthCount, monthBaht: owl.monthBaht }
+  };
 }

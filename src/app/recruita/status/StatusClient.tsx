@@ -38,6 +38,10 @@ type AppRow = {
   offer_salary_type: "monthly" | "hourly" | null;
   offer_start_date: string | null;
   offer_conditions: string | null;
+  /** Set once the candidate has uploaded their medical certificate, so the
+   *  card confirms receipt instead of re-prompting (owner 2026-06-18). */
+  health_cert_uploaded?: number | null;
+  health_cert_filename?: string | null;
 };
 
 // A bookable interview slot from /api/recruita/interview-slots/available.
@@ -615,7 +619,9 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
                   {row.stage === "health_check" && (
                     <HealthCertUpload
                       applicationId={row.application_id}
-                      identity={bookingIdentity()} />
+                      identity={bookingIdentity()}
+                      alreadyUploaded={!!row.health_cert_uploaded}
+                      existingFilename={row.health_cert_filename ?? null} />
                   )}
 
                   {/* Job offer — accept / reject (owner 2026-06-15) */}
@@ -693,14 +699,20 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
 // uploads it; the server stores it as a health_result document the admin
 // form picks up. A fresh upload replaces the previous one server-side.
 function HealthCertUpload({
-  applicationId, identity
+  applicationId, identity, alreadyUploaded, existingFilename
 }: {
   applicationId: number;
   identity: { line_user_id?: string; mobile_phone?: string };
+  /** True when the server already has a health_cert for this candidate — the
+   *  card then opens in the "received" state so a re-visit doesn't look like
+   *  the upload failed (owner 2026-06-18). */
+  alreadyUploaded?: boolean;
+  existingFilename?: string | null;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState(!!alreadyUploaded);
+  const [uploadedName, setUploadedName] = useState<string | null>(existingFilename ?? null);
   const [err, setErr] = useState<string | null>(null);
 
   async function upload() {
@@ -726,6 +738,7 @@ function HealthCertUpload({
         return;
       }
       setDone(true);
+      setUploadedName(file.name);
       setFile(null);
     } catch {
       setErr("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
@@ -744,9 +757,15 @@ function HealthCertUpload({
         แล้วอัพโหลดที่นี่ · ใบรับรองตัวจริงให้นำมายื่นที่บริษัทในวันแรกที่มาทำงาน
       </p>
       {done ? (
-        <div className="bg-white border border-emerald-300 rounded-lg p-3 space-y-2">
+        <div className="bg-white border border-emerald-300 rounded-lg p-3 space-y-1.5">
           <p className="text-xs text-emerald-800 font-semibold">
-            อัพโหลดเรียบร้อยแล้ว — เจ้าหน้าที่จะตรวจสอบและแจ้งผลให้ทราบ
+            ✓ ได้รับใบรับรองแพทย์ของคุณแล้ว — เจ้าหน้าที่จะตรวจสอบและแจ้งผลให้ทราบ
+          </p>
+          {uploadedName && (
+            <p className="text-[11px] text-slate-500">ไฟล์ที่อัพโหลด: {uploadedName}</p>
+          )}
+          <p className="text-[11px] text-slate-500">
+            ไม่ต้องอัพโหลดซ้ำ — แต่ถ้าต้องการเปลี่ยนไฟล์ กดด้านล่างเพื่ออัพโหลดใหม่
           </p>
           <button type="button"
             onClick={() => { setDone(false); setErr(null); }}
