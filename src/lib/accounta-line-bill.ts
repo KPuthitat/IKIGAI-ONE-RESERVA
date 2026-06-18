@@ -100,12 +100,21 @@ export async function ingestLineBill(args: {
   const cat = parsed?.category ?? known?.category ?? null;
   const baseNote = `ส่งโดย ${senderName} ทางไลน์`;
 
+  // Attribute the draft to the submitter's own branch + its company (owner
+  // 2026-06-18 — a bill a branch's staff sends in belongs to that branch and
+  // company). The admin can still change it on review.
+  const ub = db.prepare(`
+    SELECT b.id AS branch_id, b.company_id AS company_id
+    FROM user_branches ub JOIN branches b ON b.id = ub.branch_id
+    WHERE ub.user_id = ? ORDER BY ub.branch_id LIMIT 1
+  `).get(user.id) as { branch_id: number; company_id: number | null } | undefined;
+
   // Build one draft row's input from a VAT-resolved amount slice.
   const buildInput = (a: {
     amount: number; hasTax: boolean; vat: number; base: number; note: string;
   }): ExpenseInput => ({
-    branch_id: null,
-    company_id: null,
+    branch_id: ub?.branch_id ?? null,
+    company_id: ub?.company_id ?? null,
     bill_date: parsed?.bill_date || today,
     vendor_id: known?.id ?? null,
     vendor_name: parsed?.vendor_name ?? null,

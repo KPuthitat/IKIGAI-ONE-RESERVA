@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { ExpenseBody, toExpenseInput } from "@/lib/accounta-validate";
-import { listExpenses, createExpense, summarise } from "@/lib/accounta-db";
+import { listExpenses, createExpense, summarise, categoryBudget } from "@/lib/accounta-db";
 
 // Drafts (LINE-submitted bills awaiting review) are global — not scoped to the
 // current month/branch filter — so the admin always sees the full pending
@@ -29,7 +29,8 @@ export async function GET(req: Request) {
   const expenses = listExpenses({ branchId, companyId, month, status });
   const summary = summarise(month, branchId, companyId);
   const drafts = listExpenses({ reviewStatus: "draft" });
-  return NextResponse.json({ ok: true, expenses, summary, drafts });
+  const budget = categoryBudget(month, branchId, companyId);
+  return NextResponse.json({ ok: true, expenses, summary, drafts, budget });
 }
 
 export async function POST(req: Request) {

@@ -5127,6 +5127,9 @@ function runMigrations(db: Database.Database): void {
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       code       TEXT,
       name       TEXT NOT NULL UNIQUE,
+      description    TEXT,                 -- chart description (EN + TH)
+      target_pct_min REAL,                 -- benchmark % of revenue (low)
+      target_pct_max REAL,                 -- benchmark % of revenue (high)
       sort_order INTEGER NOT NULL DEFAULT 100,
       active     INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -5182,6 +5185,21 @@ function runMigrations(db: Database.Database): void {
     "ON accounta_expenses(line_message_id) WHERE line_message_id IS NOT NULL"
   );
 
+  // Expense-category chart (owner 2026-06-18): description + benchmark % of
+  // revenue per the owner's long-standing F&B cost chart, for an actual-vs-
+  // target comparison. Additive columns + a backfill BY CODE that fills only
+  // blanks (COALESCE) so owner edits stick. % are of REVENUE.
+  const catCols = db.prepare("PRAGMA table_info(accounta_categories)").all() as Array<{ name: string }>;
+  if (!catCols.some((c) => c.name === "description")) {
+    db.exec("ALTER TABLE accounta_categories ADD COLUMN description TEXT");
+  }
+  if (!catCols.some((c) => c.name === "target_pct_min")) {
+    db.exec("ALTER TABLE accounta_categories ADD COLUMN target_pct_min REAL");
+  }
+  if (!catCols.some((c) => c.name === "target_pct_max")) {
+    db.exec("ALTER TABLE accounta_categories ADD COLUMN target_pct_max REAL");
+  }
+
   // Seed the picklists once (guarded by emptiness so owner edits stick).
   // Categories mirror the Excel expense codes; PF=Profit is income-side
   // and intentionally excluded.
@@ -5205,6 +5223,29 @@ function runMigrations(db: Database.Database): void {
       ["LN", "ชำระเงินกู้"]
     ].forEach(([code, name], i) => seedCat.run(code, name, (i + 1) * 10));
   }
+  // Backfill the chart description + benchmark % BY CODE — runs every boot but
+  // COALESCE only fills blanks, so it works for both fresh seeds + existing
+  // installs and never clobbers an owner edit (owner 2026-06-18).
+  const CAT_BENCHMARKS: Array<[string, string, number | null, number | null]> = [
+    ["GD", "ต้นทุนสินค้า/วัตถุดิบ · Cost of goods sold (วัตถุดิบ, ของเสีย, ตัวอย่างโปรโมชัน)", 30, 40],
+    ["LB", "ค่าแรง/เงินเดือน · Cost of labor (เงินเดือน, OT, ประกันสังคม, ยูนิฟอร์ม, โบนัส, เซอร์วิสชาร์จ)", 18, 25],
+    ["RT", "ค่าเช่าสถานที่ · Rental", 5, 10],
+    ["UT", "สาธารณูปโภค · Utilities (น้ำ/ไฟ/แก๊ส/เน็ต/ค่าขยะ)", 2, 4],
+    ["ER", "ค่าเช่าอุปกรณ์ · Equipment rental", 0.5, 2],
+    ["RM", "ซ่อมบำรุง · Repair & Maintenance", 1, 2],
+    ["MK", "การตลาด/โฆษณา · Marketing & Promotion (โซเชียล, อินฟลู, สื่อสิ่งพิมพ์)", 2, 5],
+    ["AO", "ค่าบริหาร/สำนักงาน · Admin & Office (เครื่องเขียน, ค่าบัญชี, ประกัน)", 1, 3],
+    ["FC", "ค่าธรรมเนียมการเงิน/แพลตฟอร์ม · Financial & Platform (ค่าธรรมเนียมบัตร, GP เช่น GRAB)", 6, 12],
+    ["MI", "เบ็ดเตล็ด · Miscellaneous (ข้าวพนักงาน, เลี้ยงทีม, ค่าปรับ ฯลฯ)", 0.5, 1],
+    ["CP", "รายจ่ายลงทุน/ครุภัณฑ์ · CapEx (ลงทุนครั้งเดียว: อุปกรณ์, เฟอร์นิเจอร์, โครงสร้าง)", null, null]
+  ];
+  const setBench = db.prepare(
+    "UPDATE accounta_categories SET description = COALESCE(description, ?), " +
+    "target_pct_min = COALESCE(target_pct_min, ?), target_pct_max = COALESCE(target_pct_max, ?) " +
+    "WHERE code = ?"
+  );
+  for (const [code, desc, mn, mx] of CAT_BENCHMARKS) setBench.run(desc, mn, mx, code);
+
   const pmCount = (db.prepare("SELECT COUNT(*) AS c FROM accounta_payment_methods").get() as { c: number }).c;
   if (pmCount === 0) {
     const seedPm = db.prepare(

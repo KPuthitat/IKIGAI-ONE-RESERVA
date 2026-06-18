@@ -12,7 +12,19 @@ import {
 } from "@/lib/accounta";
 
 type Ref = { id: number; name: string };
-type Category = { id: number; code: string | null; name: string };
+type Category = {
+  id: number; code: string | null; name: string;
+  description?: string | null; target_pct_min?: number | null; target_pct_max?: number | null;
+};
+type BudgetItem = {
+  code: string | null; name: string; description: string | null;
+  spent: number; pct: number | null; targetMin: number | null; targetMax: number | null;
+  status: "over" | "under" | "ok" | "na";
+};
+type Budget = {
+  month: string; revenue: number; totalExpense: number;
+  items: BudgetItem[]; uncategorized: number;
+};
 type Method = { id: number; name: string };
 type Vendor = { id: number; name: string; tax_id: string | null; category: string | null };
 type Expense = {
@@ -59,7 +71,7 @@ function blankForm(defaultMethod = ""): FormState {
 
 export default function ExpensesClient(props: {
   month: string;
-  branches: Ref[];
+  branches: Array<Ref & { company_id: number | null }>;
   companies: Ref[];
   vendors: Vendor[];
   categories: Category[];
@@ -67,6 +79,7 @@ export default function ExpensesClient(props: {
   initialExpenses: Expense[];
   initialSummary: Summary;
   initialDrafts: Expense[];
+  initialBudget: Budget;
   ocrAvailable: boolean;
   ocrUsage: Usage;
 }) {
@@ -82,6 +95,8 @@ export default function ExpensesClient(props: {
   // LINE-submitted bills awaiting review (owner 2026-06-18). Global, not
   // scoped to the month/branch filter.
   const [drafts, setDrafts] = useState<Expense[]>(props.initialDrafts);
+  // Category vs benchmark % (owner 2026-06-18).
+  const [budget, setBudget] = useState<Budget>(props.initialBudget);
   // True while the modal is reviewing a draft → shows the "ยืนยันเข้าสมุด" CTA.
   const [draftMode, setDraftMode] = useState(false);
   const [vendors, setVendors] = useState<Vendor[]>(props.vendors);
@@ -140,6 +155,7 @@ export default function ExpensesClient(props: {
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "โหลดข้อมูลไม่สำเร็จ")); return; }
       setExpenses(j.expenses); setSummary(j.summary);
       if (Array.isArray(j.drafts)) setDrafts(j.drafts);
+      if (j.budget) setBudget(j.budget);
     } finally { setBusy(false); }
   }
 
@@ -531,6 +547,63 @@ export default function ExpensesClient(props: {
         </p>
       )}
 
+      {/* Category vs benchmark % — actual spend / revenue vs the F&B target
+          band (owner 2026-06-18). Collapsed by default. */}
+      {budget.items.length > 0 && (
+        <details className="card">
+          <summary className="cursor-pointer text-sm font-bold text-slate-700 select-none">
+            เทียบเป้า % ค่าใช้จ่าย (เทียบรายรับเดือนนี้)
+            <span className="font-normal text-slate-500">
+              {budget.revenue > 0 ? ` · รายรับ ฿${fmtMoney(budget.revenue)}` : " · ยังไม่มีรายรับเดือนนี้ (กรอกที่หน้ารายรับ)"}
+            </span>
+          </summary>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-400 text-left border-b border-slate-100">
+                  <th className="py-1.5 px-2 font-semibold">หมวด</th>
+                  <th className="py-1.5 px-2 text-right font-semibold">ใช้จริง</th>
+                  <th className="py-1.5 px-2 text-right font-semibold">% รายรับ</th>
+                  <th className="py-1.5 px-2 text-right font-semibold">เป้า %</th>
+                  <th className="py-1.5 px-2 text-center font-semibold">สถานะ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {budget.items.map((it) => (
+                  <tr key={it.name} className="border-b border-slate-50">
+                    <td className="py-1.5 px-2">
+                      {it.code && <span className="font-bold text-slate-700">{it.code}</span>} {it.name}
+                      {it.description && <div className="text-[10px] text-slate-400">{it.description}</div>}
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono whitespace-nowrap">฿{fmtMoney(it.spent)}</td>
+                    <td className="py-1.5 px-2 text-right font-mono">{it.pct != null ? `${it.pct}%` : "—"}</td>
+                    <td className="py-1.5 px-2 text-right text-slate-500 whitespace-nowrap">
+                      {it.targetMin != null ? `${it.targetMin}–${it.targetMax}%` : "—"}
+                    </td>
+                    <td className="py-1.5 px-2 text-center">
+                      {it.status === "over" ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">เกินเป้า</span>
+                        : it.status === "under" ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">ต่ำกว่าเป้า</span>
+                        : it.status === "ok" ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">อยู่ในเป้า</span>
+                        : <span className="text-slate-300">—</span>}
+                    </td>
+                  </tr>
+                ))}
+                {budget.uncategorized > 0 && (
+                  <tr className="border-b border-slate-50 text-slate-400">
+                    <td className="py-1.5 px-2 italic">(ไม่ระบุหมวด / หมวดอื่น)</td>
+                    <td className="py-1.5 px-2 text-right font-mono">฿{fmtMoney(budget.uncategorized)}</td>
+                    <td colSpan={3} />
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <p className="text-[10px] text-slate-400 mt-2">
+              % เทียบกับรายรับเดือนนี้ · เป้า % อ้างอิงทฤษฎีร้านอาหาร (แก้ได้ที่ผังหมวด) · นับเฉพาะรายการที่ยืนยันแล้ว
+            </p>
+          </div>
+        </details>
+      )}
+
       {/* List */}
       {filtered.length === 0 ? (
         <div className="card text-center py-10 text-slate-500">
@@ -645,18 +718,36 @@ export default function ExpensesClient(props: {
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Company first, then branch filtered to that company (owner
+                  2026-06-18). Picking a branch also auto-fills its company. */}
               <div>
-                <label className="label !text-xs">สาขา</label>
-                <select className="input" value={form.branch_id} onChange={(e) => set("branch_id", e.target.value)}>
+                <label className="label !text-xs">บริษัท (สำหรับภาษี)</label>
+                <select className="input" value={form.company_id}
+                  onChange={(e) => {
+                    const cid = e.target.value;
+                    set("company_id", cid);
+                    if (cid && form.branch_id) {
+                      const b = props.branches.find((x) => String(x.id) === form.branch_id);
+                      if (b && String(b.company_id ?? "") !== cid) set("branch_id", "");
+                    }
+                  }}>
                   <option value="">— ไม่ระบุ —</option>
-                  {props.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  {props.companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
               <div>
-                <label className="label !text-xs">บริษัท (สำหรับภาษี)</label>
-                <select className="input" value={form.company_id} onChange={(e) => set("company_id", e.target.value)}>
+                <label className="label !text-xs">สาขา</label>
+                <select className="input" value={form.branch_id}
+                  onChange={(e) => {
+                    const bid = e.target.value;
+                    set("branch_id", bid);
+                    const b = props.branches.find((x) => String(x.id) === bid);
+                    if (b && b.company_id != null) set("company_id", String(b.company_id));
+                  }}>
                   <option value="">— ไม่ระบุ —</option>
-                  {props.companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {props.branches
+                    .filter((b) => !form.company_id || String(b.company_id ?? "") === form.company_id)
+                    .map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>
               <div>
@@ -669,7 +760,7 @@ export default function ExpensesClient(props: {
                   <select className="input" value={form.category}
                     onChange={(e) => { if (e.target.value === "__add__") setNewCat(""); else set("category", e.target.value); }}>
                     <option value="">— เลือก —</option>
-                    {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    {categories.map((c) => <option key={c.id} value={c.name}>{c.code ? `${c.code} · ${c.name}` : c.name}</option>)}
                     <option value="__add__">+ เพิ่มประเภทใหม่…</option>
                   </select>
                 ) : (

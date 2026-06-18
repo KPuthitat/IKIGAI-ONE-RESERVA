@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { getSystemSettings } from "@/lib/db";
 import {
   listBranches, listCompanies, listVendors, listExpenses, summarise, ocrUsageStats,
-  listCategories, listPaymentMethods
+  listCategories, listPaymentMethods, categoryBudget
 } from "@/lib/accounta-db";
 import ExpensesClient from "./ExpensesClient";
 
@@ -51,6 +51,7 @@ export default function AccountaExpensesPage() {
         initialExpenses={listExpenses({ month })}
         initialSummary={summarise(month)}
         initialDrafts={listExpenses({ reviewStatus: "draft" })}
+        initialBudget={categoryBudget(month)}
         ocrAvailable={ocrAvailable}
         ocrUsage={ocrUsageStats(month)}
       />

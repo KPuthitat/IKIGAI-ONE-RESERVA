@@ -47,10 +47,10 @@ export type ExpenseRow = {
 
 // ── Reference lists ────────────────────────────────────────────────
 
-export function listBranches(): Array<{ id: number; name: string }> {
+export function listBranches(): Array<{ id: number; name: string; company_id: number | null }> {
   return getDb().prepare(
-    "SELECT id, name FROM branches WHERE status != 'closed' ORDER BY display_order, name"
-  ).all() as Array<{ id: number; name: string }>;
+    "SELECT id, name, company_id FROM branches WHERE status != 'closed' ORDER BY display_order, name"
+  ).all() as Array<{ id: number; name: string; company_id: number | null }>;
 }
 
 export function listCompanies(): Array<{ id: number; name: string }> {
@@ -59,10 +59,15 @@ export function listCompanies(): Array<{ id: number; name: string }> {
   ).all() as Array<{ id: number; name: string }>;
 }
 
-export function listCategories(): Array<{ id: number; code: string | null; name: string }> {
+export type CategoryRow = {
+  id: number; code: string | null; name: string;
+  description: string | null; target_pct_min: number | null; target_pct_max: number | null;
+};
+
+export function listCategories(): CategoryRow[] {
   return getDb().prepare(
-    "SELECT id, code, name FROM accounta_categories WHERE active = 1 ORDER BY sort_order, name COLLATE NOCASE"
-  ).all() as Array<{ id: number; code: string | null; name: string }>;
+    "SELECT id, code, name, description, target_pct_min, target_pct_max FROM accounta_categories WHERE active = 1 ORDER BY sort_order, name COLLATE NOCASE"
+  ).all() as CategoryRow[];
 }
 
 export function createCategory(d: { name: string; code?: string | null }): number {
@@ -210,6 +215,58 @@ export function incomeSummary(month: string, branchId?: number | null, companyId
   `).all(...args) as Array<{ channel: string; total: number }>;
   const total = round2(rows.reduce((s, r) => s + r.total, 0));
   return { total, byChannel: rows.map((r) => ({ channel: r.channel, total: round2(r.total) })) };
+}
+
+// ── Category vs benchmark % (owner 2026-06-18) ─────────────────────
+// Each category's actual spend as a % of REVENUE for the month, compared to
+// its target band, so the owner can see what's over/under the F&B benchmark.
+
+export type CategoryBudgetItem = {
+  code: string | null; name: string; description: string | null;
+  spent: number; pct: number | null;            // pct = of revenue (null when no revenue)
+  targetMin: number | null; targetMax: number | null;
+  status: "over" | "under" | "ok" | "na";
+};
+export type CategoryBudget = {
+  month: string; revenue: number; totalExpense: number;
+  items: CategoryBudgetItem[];
+  uncategorized: number;
+};
+
+export function categoryBudget(month: string, branchId?: number | null, companyId?: number | null): CategoryBudget {
+  const db = getDb();
+  const revenue = incomeSummary(month, branchId, companyId).total;
+
+  const where = ["review_status = 'confirmed'", "substr(bill_date,1,7) = ?"];
+  const args: Array<string | number> = [month];
+  if (branchId != null) { where.push("branch_id = ?"); args.push(branchId); }
+  if (companyId != null) { where.push("company_id = ?"); args.push(companyId); }
+  const rows = db.prepare(
+    `SELECT COALESCE(category,'') AS name, ROUND(SUM(amount_total),2) AS spent
+       FROM accounta_expenses WHERE ${where.join(" AND ")} GROUP BY COALESCE(category,'')`
+  ).all(...args) as Array<{ name: string; spent: number }>;
+  const spentByName = new Map(rows.map((r) => [r.name, r.spent]));
+  const totalExpense = round2(rows.reduce((s, r) => s + r.spent, 0));
+
+  const matched = new Set<string>();
+  const items: CategoryBudgetItem[] = listCategories().map((c) => {
+    matched.add(c.name);
+    const spent = round2(spentByName.get(c.name) ?? 0);
+    const pct = revenue > 0 ? round2((spent / revenue) * 100) : null;
+    let status: CategoryBudgetItem["status"] = "ok";
+    if (pct == null || (c.target_pct_min == null && c.target_pct_max == null)) status = "na";
+    else if (c.target_pct_max != null && pct > c.target_pct_max) status = "over";
+    else if (c.target_pct_min != null && pct < c.target_pct_min) status = "under";
+    return {
+      code: c.code, name: c.name, description: c.description,
+      spent, pct, targetMin: c.target_pct_min, targetMax: c.target_pct_max, status
+    };
+  });
+  // Spend on a category not in the active list (renamed/blank) — surfaced once.
+  let uncategorized = 0;
+  for (const [name, spent] of spentByName) if (!matched.has(name)) uncategorized += spent;
+
+  return { month, revenue, totalExpense, items, uncategorized: round2(uncategorized) };
 }
 
 export function listVendors(): VendorRow[] {
