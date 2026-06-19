@@ -49,13 +49,13 @@ export function getDriveConfig(branchId: number): DriveConfig | undefined {
 /** All branch configs joined with the branch name — for the admin list. */
 export function listDriveConfigs(): Array<DriveConfig & { branch_name: string; company_name: string | null }> {
   return getDb().prepare(`
-    SELECT b.id AS branch_id, b.name AS branch_name, co.name AS company_name,
+    SELECT b.id AS branch_id, b.name AS branch_name, co.name_th AS company_name,
            COALESCE(d.enabled, 0) AS enabled, d.sa_client_email, d.root_folder_id,
            d.last_ok_at, d.last_error, d.sa_json_enc
     FROM branches b
     LEFT JOIN accounta_drive_config d ON d.branch_id = b.id
     LEFT JOIN companies co ON co.id = b.company_id
-    ORDER BY co.name, b.name
+    ORDER BY co.name_th, b.name
   `).all() as Array<DriveConfig & { branch_name: string; company_name: string | null }>;
 }
 
