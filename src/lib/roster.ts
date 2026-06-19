@@ -421,6 +421,19 @@ export function occupiedPositionIdsOnDate(branchId: number, date: string): numbe
   return rows.map((r) => r.position_id);
 }
 
+/** True when every active roster position for the branch is already
+ *  filled on `date` — i.e. there's no open slot to add an extra shift
+ *  into. Used to block ขอเพิ่มกะ when the day is already full (owner
+ *  2026-06-20: "คนทำงานเยอะไปแล้ว"). Returns false when the branch has
+ *  no positions defined, so an unconfigured branch never hard-blocks. */
+export function rosterFullOnDate(branchId: number, date: string): boolean {
+  const active = (getDb().prepare(
+    "SELECT COUNT(*) AS n FROM roster_positions WHERE branch_id = ? AND active = 1"
+  ).get(branchId) as { n: number }).n;
+  if (active === 0) return false;
+  return occupiedPositionIdsOnDate(branchId, date).length >= active;
+}
+
 /** The user's roster slot (position_id) on a date, or null. Used to
  *  clear a swap's off-date. Returns the first if multiple. */
 export function userPositionOnDate(branchId: number, userId: number, date: string): number | null {

@@ -197,12 +197,18 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       (msg.type === "file" && /\.pdf$/i.test(msg.fileName ?? ""))
     );
     if (isBillUpload && msg?.id) {
-      if (channel.scope === "platform") {
+      // ONLY OCR bills sent in a 1:1 DM to the OA. Images posted in a
+      // GROUP / room are NOT read — the OA sits in staff group chats (e.g.
+      // the AT HOME CLINIC group) where people share all sorts of photos,
+      // and OCR-ing every one of them is wrong + wastes API spend. Bills
+      // must be DM'd to the OA. (owner 2026-06-20.)
+      const isDirect = ev.source?.type === "user" || ev.source?.type == null;
+      if (channel.scope === "platform" && isDirect) {
         await ingestLineBill({
           channelToken: channel.channel_token,
           senderUserId: userId,
           messageId: msg.id,
-          isDirect: ev.source?.type === "user" || ev.source?.type == null
+          isDirect: true
         });
       }
       continue;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { createShiftRequest } from "@/lib/shift-requests";
+import { rosterFullOnDate } from "@/lib/roster";
 
 // POST /api/persona/shift-request — staff submit a shift-change request:
 //   kind 'extra_shift' → work_date only (ขอเพิ่มกะ)
@@ -24,6 +25,17 @@ export async function POST(req: Request) {
   const d = parsed.data;
   if (d.kind === "swap" && !d.off_date) {
     return NextResponse.json({ error: "off_date_required" }, { status: 400 });
+  }
+
+  // ขอเพิ่มกะ: block when the branch's roster for that day is already
+  // full — every active position is taken, so there's nowhere to add the
+  // person (owner 2026-06-20: คนทำงานเยอะไปแล้ว). 'swap' is exempt: the
+  // staff is trading their own day off, not adding net headcount.
+  if (d.kind === "extra_shift" && rosterFullOnDate(user.activeBranchId, d.work_date)) {
+    return NextResponse.json(
+      { error: "roster_full", message: "ตารางวันนั้นเต็มแล้ว ทุกตำแหน่งมีคนลงครบ — ขอเพิ่มกะไม่ได้" },
+      { status: 409 }
+    );
   }
 
   const res = createShiftRequest(

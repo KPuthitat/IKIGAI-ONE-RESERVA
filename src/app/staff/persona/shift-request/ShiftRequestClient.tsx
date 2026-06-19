@@ -39,7 +39,7 @@ export default function ShiftRequestClient({ requests }: { requests: ShiftReques
         })
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setMsg({ kind: "err", text: "ส่งคำขอไม่สำเร็จ ลองใหม่อีกครั้ง" }); return; }
+      if (!res.ok || !j.ok) { setMsg({ kind: "err", text: j.message || "ส่งคำขอไม่สำเร็จ ลองใหม่อีกครั้ง" }); return; }
       setMsg({ kind: "ok", text: `ส่งคำขอแล้ว (${j.ref_no}) — รอหัวหน้าอนุมัติ` });
       setWorkDate(""); setOffDate(""); setNote("");
       router.refresh();
