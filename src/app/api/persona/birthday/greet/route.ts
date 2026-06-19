@@ -50,7 +50,7 @@ export async function POST(req: Request) {
            u.title_prefix
     FROM users u
     WHERE u.id = ?
-      AND u.status NOT IN ('disabled', 'resigned')
+      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
       AND EXISTS (
         SELECT 1
         FROM user_branches ub1

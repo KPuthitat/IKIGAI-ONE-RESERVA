@@ -19,7 +19,7 @@ export default function OtApprovalsPage() {
         SELECT DISTINCT u.id, u.display_name, u.title_prefix, u.employment_type
         FROM users u
         INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-        WHERE u.status NOT IN ('disabled', 'resigned')
+        WHERE u.status NOT IN ('disabled', 'resigned', 'terminated')
           AND u.employment_type IN ('pt', 'ft')
           AND u.is_test_account = 0
         ORDER BY CASE WHEN u.employment_type = 'ft' THEN 0 ELSE 1 END, u.display_name

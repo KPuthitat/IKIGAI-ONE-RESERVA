@@ -25,6 +25,7 @@ import {
   sweepResignationsToTake,
   sweepResignationPurge
 } from "@/lib/resignation-sweep";
+import { sweepTerminationsToTake } from "@/lib/termination";
 import { purgeOldBookings } from "@/lib/retention";
 import { purgeOldRecruitaApplications } from "@/lib/recruita-retention";
 import { bookingStartMs } from "@/lib/time";
@@ -392,6 +393,20 @@ async function runCron(): Promise<NextResponse> {
     reportError(e, "cron resignation-take", {});
   }
 
+  // Termination auto-lock (2026-06-19). When a scheduled involuntary
+  // termination's effective_date has passed, flip the account to
+  // 'terminated' + kill sessions so login is blocked the next day.
+  // No LINE card (owner: admin handles the conversation offline).
+  // Idempotent — re-runs find nothing still 'active' + 'scheduled'.
+  let terminationsClosed = 0;
+  try {
+    const { closed } = sweepTerminationsToTake(todayBkk);
+    terminationsClosed = closed;
+  } catch (e) {
+    console.error("termination auto-lock sweep error", e);
+    reportError(e, "cron termination-take", {});
+  }
+
   // 1-year purge — DELETE users whose status='resigned' AND
   // resigned_at older than the retention window. Cascades carry
   // the related rows (sessions/leave/etc) away via FK constraints.
@@ -490,6 +505,7 @@ async function runCron(): Promise<NextResponse> {
     resignations_closed: resignationsClosed,
     resignations_close_notified: resignationCloseNotified,
     resignations_purged: resignationsPurged,
+    terminations_closed: terminationsClosed,
     purged_old_bookings: purged,
     recruita_pdpa_purged: recruitaPurged,
     insigna_rollup: insignaRollup,

@@ -2869,7 +2869,7 @@ function runMigrations(db: Database.Database): void {
     UPDATE user_branches SET is_admin = 1
     WHERE user_id IN (
       SELECT u.id FROM users u
-      WHERE u.role = 'admin' AND u.status != 'disabled'
+      WHERE u.role = 'admin' AND u.status NOT IN ('disabled', 'resigned', 'terminated')
         AND NOT EXISTS (
           SELECT 1 FROM user_branches ub2
           WHERE ub2.user_id = u.id AND ub2.is_admin = 1
@@ -3108,6 +3108,57 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // 2026-06-19: extend users.status CHECK with 'terminated' — the
+  // involuntary-termination flow (เลิกจ้าง) flips a user to 'terminated'
+  // (distinct from voluntary 'resigned' and admin 'disabled') so HR
+  // reports can tell the three apart. Same clone-table rebuild pattern
+  // as the 'resigned' widen above (SQLite CHECK constraints are
+  // immutable). Placed AFTER the 'resigned' block so the DDL it reads
+  // already carries the 4-value CHECK; explicit-alternation CREATE TABLE
+  // match avoids the \b-vs-quote backtracking bug that broke prod
+  // 2026-05-28.
+  const userTableDdlForTerm = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+  ).get() as { sql: string } | undefined;
+  if (userTableDdlForTerm
+      && /CHECK\s*\(\s*status\s+IN\s*\([^)]*\)/i.test(userTableDdlForTerm.sql)
+      && !/'terminated'/.test(userTableDdlForTerm.sql)) {
+    const utCols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+    const colList = utCols.map((c) => `"${c.name}"`).join(", ");
+    const newDdl = userTableDdlForTerm.sql
+      .replace(
+        /CHECK\s*\(\s*status\s+IN\s*\([^)]+\)\s*\)/i,
+        "CHECK (status IN ('active','pending_invite','disabled','resigned','terminated'))"
+      )
+      .replace(
+        /CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(?:"users"|`users`|users)/i,
+        "CREATE TABLE users_new"
+      );
+    // users is the parent of many FK columns (bookings.created_by,
+    // payroll_lines, time_entries, etc.). With foreign_keys ON the DROP
+    // would fail on existing child rows, so disable enforcement around
+    // the swap — same pattern as the payroll_periods / mounjaro rebuilds.
+    // PRAGMA is a no-op inside a transaction, so it must sit OUTSIDE the
+    // BEGIN/COMMIT. Identical column copy preserves every id, so no
+    // reference is orphaned. (This is the FK-safety the 'resigned' widen
+    // above lacked — it only got away with it by being skipped on fresh
+    // installs whose base schema already carries 'resigned'.)
+    db.exec("PRAGMA foreign_keys = OFF");
+    db.exec("BEGIN");
+    try {
+      db.exec(newDdl);
+      db.exec(`INSERT INTO users_new (${colList}) SELECT ${colList} FROM users`);
+      db.exec("DROP TABLE users");
+      db.exec("ALTER TABLE users_new RENAME TO users");
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    } finally {
+      db.exec("PRAGMA foreign_keys = ON");
+    }
+  }
+
   // 2026-05-30: widen time_entries_audit.action CHECK to include
   // 'cert-approve' and 'cert-reject'. The time-certification approve
   // route INSERTs into this audit table with action='cert-approve'
@@ -3170,6 +3221,52 @@ function runMigrations(db: Database.Database): void {
       if (!String(e).includes("duplicate column")) throw e;
     }
   }
+
+  // terminated_at — ISO ts stamped when the termination sweep flips a
+  // user to 'terminated'. Parallel to resigned_at; the 1-year purge
+  // sweep treats both the same so payroll back-references survive a
+  // full tax-year close. (owner 2026-06-19 — involuntary termination.)
+  const userColsForTerm = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  if (!userColsForTerm.some((c) => c.name === "terminated_at")) {
+    try {
+      db.exec("ALTER TABLE users ADD COLUMN terminated_at TEXT");
+    } catch (e) {
+      if (!String(e).includes("duplicate column")) throw e;
+    }
+  }
+
+  // termination_records — involuntary-termination (เลิกจ้าง) cases.
+  // Distinct from the staff-initiated resignation_requests: admin
+  // creates these, severance is computed from tenure (พรบ.คุ้มครอง
+  // แรงงาน ม.118), and a 'scheduled' record locks the account to
+  // status='terminated' on effective_date via the nightly cron sweep.
+  // No staff submission, no approval chain — the admin owns the call.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS termination_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      branch_id INTEGER REFERENCES branches(id),
+      termination_type TEXT NOT NULL
+        CHECK (termination_type IN ('probation_fail','just_cause','no_cause','contract_end')),
+      reason TEXT NOT NULL,
+      evidence_filename TEXT,
+      effective_date TEXT NOT NULL,               -- YYYY-MM-DD last working day
+      tenure_days INTEGER,                         -- hire_date → effective_date snapshot
+      severance_days INTEGER NOT NULL DEFAULT 0,
+      severance_amount REAL NOT NULL DEFAULT 0,
+      severance_auto INTEGER NOT NULL DEFAULT 1,   -- 0 = admin overrode the figure
+      status TEXT NOT NULL DEFAULT 'scheduled'
+        CHECK (status IN ('scheduled','executed','cancelled')),
+      ref_no TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      executed_at TEXT,
+      cancelled_at TEXT,
+      cancelled_by INTEGER REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_termination_user ON termination_records(user_id);
+    CREATE INDEX IF NOT EXISTS idx_termination_sweep ON termination_records(status, effective_date);
+  `);
 
   // Promote the bootstrap 'admin' account to super_admin so the
   // setup wizard / role grants have a starting point. Idempotent

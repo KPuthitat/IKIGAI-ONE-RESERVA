@@ -48,14 +48,14 @@ export function pickInitialApprover(requesterUserId: number): ApprovalAssignment
     const mgr = db.prepare(
       "SELECT id, status FROM users WHERE id = ?"
     ).get(requester.reports_to_user_id) as { id: number; status: string } | undefined;
-    if (mgr && mgr.status !== "disabled" && mgr.status !== "resigned") {
+    if (mgr && mgr.status !== "disabled" && mgr.status !== "resigned" && mgr.status !== "terminated") {
       return { approver_user_id: mgr.id, level: 0, reason: "initial" };
     }
   }
 
   // Fallback to any super_admin so the request doesn't orphan.
   const su = db.prepare(
-    "SELECT id FROM users WHERE role = 'super_admin' AND status NOT IN ('disabled', 'resigned') ORDER BY id LIMIT 1"
+    "SELECT id FROM users WHERE role = 'super_admin' AND status NOT IN ('disabled', 'resigned', 'terminated') ORDER BY id LIMIT 1"
   ).get() as { id: number } | undefined;
   if (!su) throw new Error("No super_admin available to take the approval");
   return { approver_user_id: su.id, level: 0, reason: "fallback" };
@@ -91,7 +91,7 @@ export function escalateOneStep(
     ).get(next.reports_to_user_id) as
       | { id: number; status: string; role: string }
       | undefined;
-    if (!mgr || mgr.status === "disabled" || mgr.status === "resigned") {
+    if (!mgr || mgr.status === "disabled" || mgr.status === "resigned" || mgr.status === "terminated") {
       // Skip deactivated or resigned manager and walk further up.
       cursor = next.reports_to_user_id;
       continue;
@@ -104,7 +104,7 @@ export function escalateOneStep(
   }
   // Last-resort: any super_admin.
   const su = db.prepare(
-    "SELECT id FROM users WHERE role = 'super_admin' AND status NOT IN ('disabled', 'resigned') AND id != ? ORDER BY id LIMIT 1"
+    "SELECT id FROM users WHERE role = 'super_admin' AND status NOT IN ('disabled', 'resigned', 'terminated') AND id != ? ORDER BY id LIMIT 1"
   ).get(currentApproverUserId) as { id: number } | undefined;
   if (!su) return null;
   return { approver_user_id: su.id, level: currentLevel + 1, reason: "fallback" };

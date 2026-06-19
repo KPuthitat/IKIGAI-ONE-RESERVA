@@ -118,15 +118,16 @@ export type SweepPurgeResult = {
 export function sweepResignationPurge(todayBkk: string): SweepPurgeResult {
   const db = getDb();
   const cutoffDate = bkkDateMinusDays(todayBkk, RESIGNATION_RETENTION_DAYS);
-  // Compare resigned_at (ISO ts) against the cutoff date-string by
-  // pulling the YYYY-MM-DD prefix of resigned_at. Lex-compare on
-  // YYYY-MM-DD is total-ordered so this is safe.
+  // Compare the closing timestamp (ISO ts) against the cutoff date-string
+  // by pulling its YYYY-MM-DD prefix. Lex-compare on YYYY-MM-DD is
+  // total-ordered so this is safe. Both separation kinds share the same
+  // 1-year retention: voluntary 'resigned' (resigned_at) and involuntary
+  // 'terminated' (terminated_at) — owner 2026-06-19.
   const candidates = db.prepare(`
     SELECT id FROM users
-    WHERE status = 'resigned'
-      AND resigned_at IS NOT NULL
-      AND substr(resigned_at, 1, 10) < ?
-  `).all(cutoffDate) as Array<{ id: number }>;
+    WHERE (status = 'resigned'   AND resigned_at   IS NOT NULL AND substr(resigned_at, 1, 10)   < ?)
+       OR (status = 'terminated' AND terminated_at IS NOT NULL AND substr(terminated_at, 1, 10) < ?)
+  `).all(cutoffDate, cutoffDate) as Array<{ id: number }>;
 
   if (candidates.length === 0) return { purged: 0, userIds: [] };
 

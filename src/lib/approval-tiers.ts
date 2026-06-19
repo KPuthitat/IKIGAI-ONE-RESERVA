@@ -47,7 +47,7 @@ export function getBranchTierMembers(
     FROM branch_approval_tiers t
     INNER JOIN users u ON u.id = t.user_id
     WHERE t.branch_id = ? AND t.tier_level = ?
-      AND u.status NOT IN ('disabled', 'resigned')
+      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
       AND u.is_test_account = 0
     ORDER BY u.display_name
   `).all(branchId, tier) as TierMember[];
@@ -63,7 +63,7 @@ export function isBranchChainReady(branchId: number): boolean {
       SUM(CASE WHEN t.tier_level = 2 THEN 1 ELSE 0 END) AS t2
     FROM branch_approval_tiers t
     INNER JOIN users u ON u.id = t.user_id
-    WHERE t.branch_id = ? AND u.status NOT IN ('disabled', 'resigned')
+    WHERE t.branch_id = ? AND u.status NOT IN ('disabled', 'resigned', 'terminated')
   `).get(branchId) as { t1: number | null; t2: number | null } | undefined;
   return !!(row && (row.t1 ?? 0) > 0 && (row.t2 ?? 0) > 0);
 }
@@ -97,7 +97,7 @@ export function isEligibleApprover(
     SELECT 1 FROM branch_approval_tiers t
     INNER JOIN users u ON u.id = t.user_id
     WHERE t.branch_id = ? AND t.tier_level = ? AND t.user_id = ?
-      AND u.status NOT IN ('disabled', 'resigned')
+      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
       AND u.is_test_account = 0
   `).get(branchId, tier, userId);
   return !!row;
@@ -220,7 +220,7 @@ export function getTierLineRecipients(
     FROM branch_approval_tiers t
     INNER JOIN users u ON u.id = t.user_id
     WHERE t.branch_id = ? AND t.tier_level = ?
-      AND u.status NOT IN ('disabled', 'resigned')
+      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
       AND u.is_test_account = 0
       AND u.id != ?
       AND u.line_user_id IS NOT NULL

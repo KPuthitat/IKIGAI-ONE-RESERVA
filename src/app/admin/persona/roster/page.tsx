@@ -90,7 +90,7 @@ export default function AdminRosterPage({
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
     WHERE u.dob IS NOT NULL
       AND length(u.dob) >= 10
-      AND u.status NOT IN ('disabled', 'resigned')
+      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
       AND u.is_test_account = 0
   `).all(branch.id) as Array<{
     user_id: number;
@@ -110,7 +110,7 @@ export default function AdminRosterPage({
     JOIN user_branches ub ON ub.user_id = u.id
     WHERE ub.branch_id = ?
       AND u.role IN ('staff','admin')
-      AND u.status NOT IN ('disabled', 'resigned')
+      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
       AND u.is_test_account = 0
     ORDER BY u.display_name COLLATE NOCASE
   `).all(branch.id) as StaffOption[];

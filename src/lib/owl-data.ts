@@ -192,12 +192,12 @@ export function staffHeadcount(a: { branch_name?: string }) {
       `SELECT COUNT(DISTINCT u.id) AS n FROM users u
          JOIN user_branches ub ON ub.user_id = u.id
         WHERE ub.branch_id = ? AND u.role IN ('staff','admin')
-          AND u.status NOT IN ('disabled','resigned')`
+          AND u.status NOT IN ('disabled','resigned','terminated')`
     ).get(branchId) as { n: number }).n;
   } else {
     n = (db.prepare(
       `SELECT COUNT(*) AS n FROM users
-        WHERE role IN ('staff','admin') AND status NOT IN ('disabled','resigned')`
+        WHERE role IN ('staff','admin') AND status NOT IN ('disabled','resigned','terminated')`
     ).get() as { n: number }).n;
   }
   return { scope: { branch: a.branch_name ?? "ทุกสาขา" }, activeStaff: n };

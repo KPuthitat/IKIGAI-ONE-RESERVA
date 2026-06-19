@@ -64,7 +64,7 @@ export default function HRDashboard({
   // disabled/resigned per CLAUDE.md guardrail), role in staff/admin
   // (admins are employees too).
   const whereActive = `
-    u.status NOT IN ('disabled', 'resigned')
+    u.status NOT IN ('disabled', 'resigned', 'terminated')
     AND u.role IN ('staff', 'admin')
   `;
   const branchJoin = branchFilter
@@ -135,7 +135,7 @@ export default function HRDashboard({
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
     JOIN branches b ON b.id = ub.branch_id
-    WHERE u.status NOT IN ('disabled', 'resigned')
+    WHERE u.status NOT IN ('disabled', 'resigned', 'terminated')
       AND u.role IN ('staff', 'admin')
     GROUP BY b.id
     ORDER BY count DESC

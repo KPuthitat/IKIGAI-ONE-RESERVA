@@ -71,7 +71,7 @@ export async function POST(req: Request) {
       FROM users u
       INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
       WHERE u.id IN (${placeholders})
-        AND u.status NOT IN ('disabled', 'resigned')
+        AND u.status NOT IN ('disabled', 'resigned', 'terminated')
         AND u.role IN ('staff', 'admin', 'super_admin')
     `).all(branch_id, ...allIds) as Array<{ id: number }>;
     const validSet = new Set(valid.map((v) => v.id));

@@ -36,7 +36,7 @@ process.env.DATABASE_PATH = TMP;
 
 const MODULES = [
   "persona.manage", "reserva.manage", "recruita.access",
-  "insigna.view", "ascenda.view"
+  "insigna.view", "ascenda.view", "accounta.manage"
 ];
 
 (async () => {
@@ -88,7 +88,7 @@ const MODULES = [
   ok("legacy_admin system role seeded", !!legacy);
   ok("legacy_admin is_system = 1", legacy?.is_system === 1);
   ok(
-    "legacy_admin grants exactly the 5 modules",
+    "legacy_admin grants exactly the 6 modules",
     !!legacy &&
       legacy.permissions.length === MODULES.length &&
       MODULES.every((m) => legacy.permissions.includes(m))

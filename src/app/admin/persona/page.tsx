@@ -324,6 +324,18 @@ export default function AdminPersonaDashboard() {
         </div>
       )}
 
+      {/* Involuntary termination (เลิกจ้าง) — admin-initiated, separate
+          from the staff-driven resignation flow above. */}
+      <div className="card">
+        <h2 className="font-semibold text-slate-800 mb-1">เลิกจ้างพนักงาน</h2>
+        <p className="text-sm text-slate-600">
+          บันทึกการเลิกจ้าง (ไม่ผ่านทดลองงาน / มีความผิด / ลดคน / สิ้นสุดสัญญา) พร้อมคำนวณค่าชดเชยตามอายุงาน
+        </p>
+        <Link href="/admin/persona/termination" className="text-sm text-brand font-medium mt-2 inline-block">
+          ไปที่หน้าเลิกจ้าง →
+        </Link>
+      </div>
+
       {/* Legacy card removed 2026-05-13 — all features now native.
           /admin/persona/legacy URL still resolves during the
           ~2-week transition period and can then be deleted. */}

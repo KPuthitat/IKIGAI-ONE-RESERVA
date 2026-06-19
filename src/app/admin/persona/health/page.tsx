@@ -51,7 +51,7 @@ export default function AdminHealthPage() {
       ORDER BY checkup_date DESC, id DESC
       LIMIT 1
     )
-    WHERE u.status NOT IN ('disabled', 'resigned') AND u.is_test_account = 0
+    WHERE u.status NOT IN ('disabled', 'resigned', 'terminated') AND u.is_test_account = 0
     ORDER BY u.role DESC,
              CASE WHEN u.employment_type = 'ft' THEN 0
                   WHEN u.employment_type = 'pt' THEN 1 ELSE 2 END,

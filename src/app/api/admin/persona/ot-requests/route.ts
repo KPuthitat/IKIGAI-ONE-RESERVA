@@ -55,7 +55,7 @@ export async function POST(req: Request) {
     SELECT u.id, u.employment_type
     FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.id = ? AND u.status NOT IN ('disabled', 'resigned')
+    WHERE u.id = ? AND u.status NOT IN ('disabled', 'resigned', 'terminated')
   `).get(branchId, user_id) as { id: number; employment_type: string | null } | undefined;
   if (!target) {
     return NextResponse.json({ error: "user_not_in_branch" }, { status: 404 });

@@ -85,7 +85,7 @@ export default function StaffCalendarPage({
         INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
         WHERE u.dob IS NOT NULL
           AND length(u.dob) >= 10
-          AND u.status NOT IN ('disabled', 'resigned')
+          AND u.status NOT IN ('disabled', 'resigned', 'terminated')
           AND u.is_test_account = 0
       `).all(branch.id) as Array<{
         user_id: number;

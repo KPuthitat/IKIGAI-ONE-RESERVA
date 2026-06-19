@@ -147,7 +147,7 @@ export default function ApplicationDetailPage(
   const supervisors = db.prepare(`
     SELECT id, display_name, title_prefix
     FROM users
-    WHERE status NOT IN ('disabled', 'resigned')
+    WHERE status NOT IN ('disabled', 'resigned', 'terminated')
       AND role IN ('admin', 'super_admin', 'staff')
     ORDER BY display_name
   `).all() as Array<{ id: number; display_name: string; title_prefix: string | null }>;
