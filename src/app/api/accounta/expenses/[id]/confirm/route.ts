@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getExpense, confirmExpense } from "@/lib/accounta-db";
+import { syncReceiptToDrive } from "@/lib/google-drive";
 
 // POST /api/accounta/expenses/[id]/confirm — promote a LINE draft into the
 // ledger. Requires a branch to be assigned first (owner: ลงบันทึกแยกตามสาขา),
@@ -27,5 +28,9 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
 
   const ok = confirmExpense(id);
   if (!ok) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  // Best-effort: push the receipt to the branch's Drive (no-op when the
+  // branch has no Drive config; never throws). Awaited so the upload + its
+  // status land within the request on the long-lived PM2 process.
+  await syncReceiptToDrive(id);
   return NextResponse.json({ ok: true });
 }

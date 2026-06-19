@@ -5282,6 +5282,30 @@ function runMigrations(db: Database.Database): void {
     "ON accounta_expenses(line_message_id) WHERE line_message_id IS NOT NULL"
   );
 
+  // Google Drive sync (owner 2026-06-20): when a bill is CONFIRMED, upload
+  // its receipt file to that BRANCH's own Drive, foldered by bill month.
+  // Per-branch credentials — each branch has its own service account (option
+  // A). The SA JSON is stored encrypted (secret-vault); client_email + root
+  // folder id are plain for the admin UI. drive_file_id on the expense marks
+  // a successful upload so re-confirm / re-attach doesn't duplicate.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS accounta_drive_config (
+      branch_id INTEGER PRIMARY KEY REFERENCES branches(id),
+      enabled INTEGER NOT NULL DEFAULT 0,
+      sa_json_enc TEXT,            -- encrypted full service-account JSON (enc:v1:…)
+      sa_client_email TEXT,        -- shown in the admin UI (not secret)
+      root_folder_id TEXT,         -- destination folder in the branch's Drive
+      last_ok_at TEXT,             -- last successful upload / test
+      last_error TEXT,             -- last failure message (admin UI)
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_by INTEGER REFERENCES users(id)
+    );
+  `);
+  if (!expCols.some((c) => c.name === "drive_file_id")) {
+    try { db.exec("ALTER TABLE accounta_expenses ADD COLUMN drive_file_id TEXT"); }
+    catch (e) { if (!String(e).includes("duplicate column")) throw e; }
+  }
+
   // Expense-category chart (owner 2026-06-18): description + benchmark % of
   // revenue per the owner's long-standing F&B cost chart, for an actual-vs-
   // target comparison. Additive columns + a backfill BY CODE that fills only

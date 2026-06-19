@@ -4,6 +4,7 @@ import path from "path";
 import { randomBytes } from "crypto";
 import { requirePermission } from "@/lib/auth";
 import { getExpenseDoc, setExpenseDoc, getExpense } from "@/lib/accounta-db";
+import { syncReceiptToDrive } from "@/lib/google-drive";
 
 // GET  /api/accounta/expenses/[id]/doc — stream the stored receipt image
 // POST /api/accounta/expenses/[id]/doc — attach/replace a receipt image
@@ -78,5 +79,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     try { await fs.unlink(prev.doc_path); } catch { /* already gone */ }
   }
   setExpenseDoc(id, fullPath, file.type);
+  // If this bill is already confirmed, sync the freshly-attached receipt to
+  // the branch Drive (no-op for drafts / branches without Drive config).
+  await syncReceiptToDrive(id);
   return NextResponse.json({ ok: true, mime: file.type });
 }

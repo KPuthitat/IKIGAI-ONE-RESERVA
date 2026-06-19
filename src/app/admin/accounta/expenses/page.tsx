@@ -16,7 +16,7 @@ function thisMonth(): string {
 }
 
 export default function AccountaExpensesPage() {
-  requirePermission("accounta.manage");
+  const user = requirePermission("accounta.manage");
   const month = thisMonth();
   const settings = getSystemSettings();
   const ocrAvailable = !!settings.accounta_ocr_enabled && !!process.env.ANTHROPIC_API_KEY;
@@ -27,9 +27,16 @@ export default function AccountaExpensesPage() {
         <Link href="/admin/accounta" className="text-sm text-slate-500 hover:text-brand">
           ← กลับ ACCOUNTA
         </Link>
-        <Link href="/admin/accounta/daybook" className="text-sm text-brand hover:underline">
-          ดูสมุดรายวัน (แบบเอกเซล) →
-        </Link>
+        <div className="flex items-center gap-3">
+          {user.role === "super_admin" && (
+            <Link href="/admin/accounta/drive" className="text-sm text-brand hover:underline">
+              Google Drive ↗
+            </Link>
+          )}
+          <Link href="/admin/accounta/daybook" className="text-sm text-brand hover:underline">
+            ดูสมุดรายวัน (แบบเอกเซล) →
+          </Link>
+        </div>
       </div>
       <div>
         <h1 className="text-2xl font-bold text-slate-800">รายจ่าย</h1>
