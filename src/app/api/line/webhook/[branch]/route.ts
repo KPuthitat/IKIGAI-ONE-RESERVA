@@ -31,7 +31,7 @@ type LineEvent = {
     groupId?: string;
     roomId?: string;
   };
-  message?: { type: string; text?: string; id?: string };
+  message?: { type: string; text?: string; id?: string; fileName?: string };
   replyToken?: string;
 };
 
@@ -183,17 +183,25 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       continue;
     }
 
-    // ACCOUNTA bill-photo ingest (owner 2026-06-18). A bound staff member
-    // sends a bill image to the IKIGAI OS OA → OCR → draft expense. Only the
-    // platform (staff-facing) OA; RESERVA / legacy-branch OAs are customer-
-    // facing so their photos must never reach OCR. Processed inline; the
-    // unique line_message_id index dedups LINE's retry deliveries.
-    if (ev.type === "message" && ev.message?.type === "image" && ev.message.id) {
+    // ACCOUNTA bill ingest (owner 2026-06-18). A bound staff member sends a
+    // bill to the IKIGAI OS OA → OCR → draft expense. Accepts a photo
+    // (image message) OR a PDF e-tax invoice (file message ending .pdf;
+    // owner 2026-06-19). Non-PDF file messages are ignored so random docs
+    // don't reach OCR. Only the platform (staff-facing) OA; RESERVA /
+    // legacy-branch OAs are customer-facing so their uploads must never
+    // reach OCR. Processed inline; the unique line_message_id index dedups
+    // LINE's retry deliveries.
+    const msg = ev.message;
+    const isBillUpload = ev.type === "message" && !!msg?.id && (
+      msg.type === "image" ||
+      (msg.type === "file" && /\.pdf$/i.test(msg.fileName ?? ""))
+    );
+    if (isBillUpload && msg?.id) {
       if (channel.scope === "platform") {
         await ingestLineBill({
           channelToken: channel.channel_token,
           senderUserId: userId,
-          messageId: ev.message.id,
+          messageId: msg.id,
           isDirect: ev.source?.type === "user" || ev.source?.type == null
         });
       }

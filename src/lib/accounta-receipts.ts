@@ -11,10 +11,15 @@ const DATA_ROOT = process.env.ACCOUNTA_DATA_ROOT ?? path.join(process.cwd(), "da
 const RECEIPT_DIR = path.join(DATA_ROOT, "receipts");
 
 export const RECEIPT_MAX_BYTES = 8 * 1024 * 1024;
-export const RECEIPT_ALLOWED_MIME = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+export const RECEIPT_ALLOWED_MIME = new Set([
+  "image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"
+]);
 
 function extForMime(mime: string): string {
-  return mime === "image/png" ? ".png" : mime === "image/webp" ? ".webp" : ".jpg";
+  return mime === "application/pdf" ? ".pdf"
+    : mime === "image/png" ? ".png"
+    : mime === "image/webp" ? ".webp"
+    : ".jpg";
 }
 
 /** Persist a receipt image buffer; returns its absolute path on disk.

@@ -9,7 +9,9 @@ import { ocrCostBaht } from "@/lib/accounta";
 // returned fields only PRE-FILL the form; nothing is saved here.
 
 const MAX_BYTES = 8 * 1024 * 1024;
-const ALLOWED_MIME = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+const ALLOWED_MIME = new Set([
+  "image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"
+]);
 
 export async function POST(req: Request) {
   const user = requirePermission("accounta.manage");
@@ -19,14 +21,14 @@ export async function POST(req: Request) {
   catch { return NextResponse.json({ error: "bad_form" }, { status: 400 }); }
   const file = form.get("image");
   if (!(file instanceof File) || file.size === 0) {
-    return NextResponse.json({ error: "no_file", message: "ไม่พบไฟล์รูป" }, { status: 400 });
+    return NextResponse.json({ error: "no_file", message: "ไม่พบไฟล์" }, { status: 400 });
   }
   if (file.size > MAX_BYTES) {
     return NextResponse.json({ error: "too_large", message: "ไฟล์เกิน 8 MB" }, { status: 400 });
   }
   const mediaType = file.type === "image/jpg" ? "image/jpeg" : file.type;
   if (!ALLOWED_MIME.has(file.type)) {
-    return NextResponse.json({ error: "bad_type", message: "รองรับเฉพาะรูป PNG / JPG / WebP" }, { status: 400 });
+    return NextResponse.json({ error: "bad_type", message: "รองรับเฉพาะรูป PNG / JPG / WebP หรือไฟล์ PDF" }, { status: 400 });
   }
 
   const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");

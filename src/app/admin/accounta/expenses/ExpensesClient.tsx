@@ -693,7 +693,7 @@ export default function ExpensesClient(props: {
                 {scanMsg && <p className="text-[11px] text-emerald-700">{scanMsg}</p>}
                 {/* No `capture` attr → the OS picker offers BOTH camera and
                     album (owner 2026-06-17: was camera-only). */}
-                <input ref={ocrInputRef} type="file" accept="image/*" className="hidden"
+                <input ref={ocrInputRef} type="file" accept="image/*,application/pdf" className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) runOcr(f); e.target.value = ""; }} />
               </div>
             )}
@@ -868,7 +868,7 @@ export default function ExpensesClient(props: {
                 <button type="button" onClick={() => fileRef.current?.click()} className="hover:text-brand">
                   {stagedFile ? `แนบบิล: ${stagedFile.name.slice(0, 20)}` : "แนบรูปบิล"}
                 </button>
-                <input ref={fileRef} type="file" accept="image/*" className="hidden"
+                <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden"
                   onChange={(e) => setStagedFile(e.target.files?.[0] ?? null)} />
               </div>
               <div className="flex items-center gap-2">

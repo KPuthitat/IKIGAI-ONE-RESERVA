@@ -85,6 +85,14 @@ export async function scanBill(args: {
   }
   const model = ocrModel(s.accounta_ocr_model ?? DEFAULT_OCR_MODEL).id;
 
+  // PDFs go in a `document` content block (GA on Haiku 4.5+); images use
+  // an `image` block. Same base64 source shape for both. Lets staff send
+  // a PDF e-tax invoice straight through, not just a photo (owner 2026-06-19).
+  const isPdf = args.mediaType === "application/pdf";
+  const fileBlock = isPdf
+    ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: args.base64 } }
+    : { type: "image", source: { type: "base64", media_type: args.mediaType, data: args.base64 } };
+
   let res: Response;
   try {
     res = await fetch(API_URL, {
@@ -100,7 +108,7 @@ export async function scanBill(args: {
         messages: [{
           role: "user",
           content: [
-            { type: "image", source: { type: "base64", media_type: args.mediaType, data: args.base64 } },
+            fileBlock,
             { type: "text", text: buildPrompt(args.categories) }
           ]
         }]

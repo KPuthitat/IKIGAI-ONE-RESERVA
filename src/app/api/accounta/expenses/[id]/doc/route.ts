@@ -12,7 +12,7 @@ import { getExpenseDoc, setExpenseDoc, getExpense } from "@/lib/accounta-db";
 // RECRUITA documents). Path + mime recorded on the expense row.
 
 const MAX_BYTES = 8 * 1024 * 1024;
-const ALLOWED_MIME = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+const ALLOWED_MIME = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"]);
 const DATA_ROOT = process.env.ACCOUNTA_DATA_ROOT ?? path.join(process.cwd(), "data", "accounta");
 const RECEIPT_DIR = path.join(DATA_ROOT, "receipts");
 
@@ -61,12 +61,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "too_large", message: "ไฟล์เกิน 8 MB" }, { status: 400 });
   }
   if (!ALLOWED_MIME.has(file.type)) {
-    return NextResponse.json({ error: "bad_type", message: "รองรับเฉพาะรูป PNG / JPG / WebP" }, { status: 400 });
+    return NextResponse.json({ error: "bad_type", message: "รองรับเฉพาะรูป PNG / JPG / WebP หรือไฟล์ PDF" }, { status: 400 });
   }
 
   await fs.mkdir(RECEIPT_DIR, { recursive: true });
   const ext = (file.name.match(/\.[A-Za-z0-9]+$/)?.[0] ?? "").slice(0, 8) ||
-    (file.type === "image/png" ? ".png" : file.type === "image/webp" ? ".webp" : ".jpg");
+    (file.type === "application/pdf" ? ".pdf"
+      : file.type === "image/png" ? ".png"
+      : file.type === "image/webp" ? ".webp" : ".jpg");
   const fullPath = path.join(RECEIPT_DIR, `bill-${id}-${randomBytes(6).toString("hex")}${ext}`);
   await fs.writeFile(fullPath, Buffer.from(await file.arrayBuffer()));
 
