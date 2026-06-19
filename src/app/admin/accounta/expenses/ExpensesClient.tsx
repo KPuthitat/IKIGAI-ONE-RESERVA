@@ -512,6 +512,9 @@ export default function ExpensesClient(props: {
                 </div>
                 <button type="button" onClick={() => openEdit(d)} disabled={busy}
                   className="btn-secondary !py-1 !px-3 text-xs disabled:opacity-50">ตรวจ</button>
+                <button type="button" onClick={() => remove(d)} disabled={busy}
+                  className="!py-1 !px-2 text-xs text-red-500 hover:text-red-700 hover:underline disabled:opacity-50"
+                  title="ลบร่างที่ส่งผิด/ส่งเกิน (ไม่ต้องยืนยันก่อน)">ลบ</button>
               </li>
             ))}
           </ul>
