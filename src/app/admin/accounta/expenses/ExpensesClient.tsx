@@ -117,6 +117,14 @@ export default function ExpensesClient(props: {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<FormState>(blankForm(props.paymentMethods[0]?.name ?? ""));
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
+  // วันที่เงินออกจริง (paid_date) ตามวันที่บิลโดยปริยาย — เปลี่ยนวันที่บิล
+  // แล้ว paid_date เลื่อนตามให้ เว้นแต่ผู้ใช้แก้ paid_date ต่างไปเองแล้ว
+  // (owner 2026-06-20). f.bill_date คือค่าเดิมก่อนแก้ จึงเทียบได้ว่ายัง "ตาม" อยู่ไหม.
+  const setBillDate = (v: string) => setForm((f) => ({
+    ...f,
+    bill_date: v,
+    paid_date: (!f.paid_date || f.paid_date === f.bill_date) ? v : f.paid_date
+  }));
 
   // Receipt file staged in the add/edit modal (uploaded after save). The
   // OCR scan reuses the same file as the receipt.
@@ -755,7 +763,7 @@ export default function ExpensesClient(props: {
               </div>
               <div>
                 <label className="label !text-xs">วันที่บิล</label>
-                <input type="date" className="input" value={form.bill_date} onChange={(e) => set("bill_date", e.target.value)} />
+                <input type="date" className="input" value={form.bill_date} onChange={(e) => setBillDate(e.target.value)} />
               </div>
               <div>
                 <label className="label !text-xs">หมวดหมู่</label>
