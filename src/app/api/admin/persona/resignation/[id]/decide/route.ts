@@ -40,7 +40,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
            (SELECT ub.branch_id
               FROM user_branches ub
               WHERE ub.user_id = r.user_id
-              ORDER BY ub.is_primary DESC, ub.branch_id ASC
+              ORDER BY ub.branch_id ASC
               LIMIT 1) AS branch_id
     FROM resignation_requests r
     WHERE r.id = ?

@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     SELECT id, role, status, display_name, hire_date, monthly_salary,
            (SELECT ub.branch_id FROM user_branches ub
              WHERE ub.user_id = users.id
-             ORDER BY ub.is_primary DESC, ub.branch_id ASC LIMIT 1) AS branch_id
+             ORDER BY ub.branch_id ASC LIMIT 1) AS branch_id
     FROM users WHERE id = ?
   `).get(employeeId) as {
     id: number; role: string; status: string; display_name: string;

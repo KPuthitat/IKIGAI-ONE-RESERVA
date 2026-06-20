@@ -28,7 +28,7 @@ export default function TerminationPage() {
     SELECT u.id, u.display_name, u.title_prefix, u.employment_type, u.hire_date,
            ${canSeeSalary ? "u.monthly_salary" : "NULL"} AS monthly_salary,
            (SELECT b.name FROM user_branches ub JOIN branches b ON b.id = ub.branch_id
-             WHERE ub.user_id = u.id ORDER BY ub.is_primary DESC, ub.branch_id ASC LIMIT 1) AS branch_name
+             WHERE ub.user_id = u.id ORDER BY ub.branch_id ASC LIMIT 1) AS branch_name
     FROM users u
     WHERE u.role IN ${roleScope}
       AND u.status = 'active'
