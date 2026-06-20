@@ -1,76 +1,64 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
+import { getLang } from "@/lib/lang-server";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ACCOUNTA · IKIGAI OS" };
 
-// ACCOUNTA — accounting module (owner 2026-06-16). Landing that groups the
-// sub-areas: บัญชีรายรับ-รายจ่าย (coming) + FEASIBILITY (project payback).
+// ACCOUNTA landing (owner 2026-06-20): two top-level areas only —
+// บัญชีรายรับรายจ่าย (the income/expense ledger hub) + แฟ้มวิเคราะห์โครงการลงทุน
+// (FEASIBILITY). English name shown in EN mode.
 export default function AccountaHome() {
   requirePermission("accounta.manage");
+  const lang = getLang();
+  const en = lang === "en";
+
+  const cards = [
+    {
+      href: "/admin/accounta/daybook",
+      title: en ? "Income and Expense Account" : "บัญชีรายรับรายจ่าย",
+      sub: en
+        ? "Record income & expenses, input/output VAT — add income or expense, then view the ledger"
+        : "ลงรายรับ-รายจ่าย ภาษีซื้อ-ขาย — เพิ่มรายรับ เพิ่มรายจ่าย แล้วดูบัญชีรายรับรายจ่าย"
+    },
+    {
+      href: "/admin/accounta/feasibility",
+      title: en ? "Financial Feasibility Study" : "แฟ้มวิเคราะห์โครงการลงทุน",
+      sub: en
+        ? "Investment project feasibility + initial capital ledger and payback point"
+        : "ประเมินความเป็นไปได้ของโปรเจคลงทุน + บัญชีเงินลงทุนตั้งต้น และจุดคืนทุน"
+    }
+  ];
+
   return (
     <div className="space-y-4">
       <div>
         <Link href="/admin" className="text-sm text-slate-500 hover:text-brand">
-          ← กลับหน้ารวมโมดูล
+          {en ? "← Back to modules" : "← กลับหน้ารวมโมดูล"}
         </Link>
       </div>
       <div>
         <h1 className="text-2xl font-bold text-slate-800">ACCOUNTA</h1>
         <p className="text-sm text-slate-500 mt-1">
-          ระบบบัญชี — ลงรายรับ-รายจ่าย ภาษีซื้อ-ขาย และประเมินความเป็นไปได้/จุดคืนทุนของแต่ละสาขา
+          {en
+            ? "Accounting — income/expense, input/output VAT, and per-branch investment feasibility"
+            : "ระบบบัญชี — รายรับ-รายจ่าย ภาษีซื้อ-ขาย และประเมินความเป็นไปได้ของการลงทุนแต่ละสาขา"}
         </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Link href="/admin/accounta/income"
-          className="card hover:shadow-lg transition group block space-y-1">
-          <div className="text-[11px] tracking-[1px] text-slate-400">โมดูลย่อย</div>
-          <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand transition-colors">
-            รายรับ
-          </h2>
-          <p className="text-slate-500 text-sm">
-            ลงรายรับแยกตามช่องทางชำระเงิน (เงินสด / QR / บัตรเครดิต) — เพิ่มช่องทางได้เอง
-          </p>
-          <p className="text-brand font-bold text-sm pt-2">เปิด →</p>
-        </Link>
-
-        <Link href="/admin/accounta/daybook"
-          className="card hover:shadow-lg transition group block space-y-1">
-          <div className="text-[11px] tracking-[1px] text-slate-400">โมดูลย่อย</div>
-          <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand transition-colors">
-            สมุดรายวัน
-          </h2>
-          <p className="text-slate-500 text-sm">
-            มุมมองแบบเอกเซล — แยกตามวัน ซ้ายรายรับ ขวารายจ่าย พร้อมยอดคงเหลือสะสม
-          </p>
-          <p className="text-brand font-bold text-sm pt-2">เปิด →</p>
-        </Link>
-
-        <Link href="/admin/accounta/feasibility"
-          className="card hover:shadow-lg transition group block space-y-1">
-          <div className="text-[11px] tracking-[1px] text-slate-400">โมดูลย่อย</div>
-          <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand transition-colors">
-            FEASIBILITY
-          </h2>
-          <p className="text-slate-500 text-sm">
-            ประเมินความเป็นไปได้ของโปรเจคลงทุน + บัญชีเงินลงทุนตั้งต้น และจุดคืนทุน
-          </p>
-          <p className="text-brand font-bold text-sm pt-2">เปิด →</p>
-        </Link>
-
-        <Link href="/admin/accounta/expenses"
-          className="card hover:shadow-lg transition group block space-y-1">
-          <div className="text-[11px] tracking-[1px] text-slate-400">โมดูลย่อย</div>
-          <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand transition-colors">
-            รายจ่าย
-          </h2>
-          <p className="text-slate-500 text-sm">
-            ลงบิลผู้ค้า (ชำระแล้ว/ค้างชำระ) · ภาษีซื้อเรียลไทม์ · มุมมองตามบิล vs กระแสเงินสด · สแกนบิลด้วย OCR
-          </p>
-          <p className="text-brand font-bold text-sm pt-2">เปิด →</p>
-        </Link>
+        {cards.map((c) => (
+          <Link key={c.href} href={c.href}
+            className="card hover:shadow-lg transition group block space-y-1">
+            <div className="text-[11px] tracking-[1px] text-slate-400">{en ? "AREA" : "ส่วนงาน"}</div>
+            <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand transition-colors">
+              {c.title}
+            </h2>
+            <p className="text-slate-500 text-sm">{c.sub}</p>
+            <p className="text-brand font-bold text-sm pt-2">{en ? "Open →" : "เปิด →"}</p>
+          </Link>
+        ))}
       </div>
     </div>
   );

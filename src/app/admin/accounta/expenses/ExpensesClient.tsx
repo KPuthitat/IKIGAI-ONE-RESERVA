@@ -118,7 +118,7 @@ export default function ExpensesClient(props: {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<FormState>(blankForm(props.paymentMethods[0]?.name ?? ""));
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
-  // วันที่เงินออกจริง (paid_date) ตามวันที่บิลโดยปริยาย — เปลี่ยนวันที่บิล
+  // วันที่เงินออกจริง (paid_date) ตามวันที่เอกสารโดยปริยาย — เปลี่ยนวันที่เอกสาร
   // แล้ว paid_date เลื่อนตามให้ เว้นแต่ผู้ใช้แก้ paid_date ต่างไปเองแล้ว
   // (owner 2026-06-20). f.bill_date คือค่าเดิมก่อนแก้ จึงเทียบได้ว่ายัง "ตาม" อยู่ไหม.
   const setBillDate = (v: string) => setForm((f) => ({
@@ -209,13 +209,13 @@ export default function ExpensesClient(props: {
   }
 
   async function runOcr(file: File) {
-    setScanning(true); setScanMsg("กำลังอ่านบิล…"); setErr(null); setMixedSplit(null);
+    setScanning(true); setScanMsg("กำลังอ่านเอกสาร…"); setErr(null); setMixedSplit(null);
     try {
       const fd = new FormData();
       fd.append("image", file);
       const res = await fetch(apiUrl("/api/accounta/ocr"), { method: "POST", body: fd });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setScanMsg(null); setErr(humanizeApiError(j, "อ่านบิลไม่สำเร็จ")); return; }
+      if (!res.ok || !j.ok) { setScanMsg(null); setErr(humanizeApiError(j, "อ่านเอกสารไม่สำเร็จ")); return; }
       const r = j.result as OcrBillResult;
       // Vendor memory: if OCR read a known vendor, fall back to its remembered
       // category when the bill itself didn't yield one (owner 2026-06-18).
@@ -505,7 +505,7 @@ export default function ExpensesClient(props: {
             <span className="text-xs bg-amber-500 text-white font-bold rounded-full px-2 py-0.5">{drafts.length}</span>
           </div>
           <p className="text-[11px] text-amber-800/80">
-            บิลที่พนักงานส่งเข้าไลน์ — กด “ตรวจ” เพื่อผูกสาขา แก้ไข แล้วยืนยันเข้าสมุด (ยังไม่นับในยอดจนกว่าจะยืนยัน)
+            เอกสารที่พนักงานส่งเข้าไลน์ — กด “ตรวจ” เพื่อผูกสาขา แก้ไข แล้วยืนยันเข้าสมุด (ยังไม่นับในยอดจนกว่าจะยืนยัน)
           </p>
           <ul className="divide-y divide-amber-200">
             {drafts.map((d) => (
@@ -518,7 +518,7 @@ export default function ExpensesClient(props: {
                 </div>
                 {d.has_doc && (
                   <a href={apiUrl(`/api/accounta/expenses/${d.id}/doc`)} target="_blank" rel="noreferrer"
-                    className="text-[11px] text-brand hover:underline whitespace-nowrap">ดูบิล</a>
+                    className="text-[11px] text-brand hover:underline whitespace-nowrap">ดูเอกสาร</a>
                 )}
                 <div className="text-right font-semibold text-slate-800 whitespace-nowrap">
                   {d.amount_total > 0 ? `฿${fmtMoney(d.amount_total)}` : "—"}
@@ -537,10 +537,10 @@ export default function ExpensesClient(props: {
       {/* Summary — accrual vs cash flow + outstanding */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="card space-y-1">
-          <div className="text-[11px] tracking-wide text-slate-400">ตามบิล (เดือนนี้)</div>
+          <div className="text-[11px] tracking-wide text-slate-400">ตามเอกสาร (เดือนนี้)</div>
           <div className="text-2xl font-bold text-slate-800">฿{fmtMoney(summary.accrual.total)}</div>
           <div className="text-xs text-slate-500">
-            ฐาน ฿{fmtMoney(summary.accrual.base)} · ภาษีซื้อ <span className="text-brand font-semibold">฿{fmtMoney(summary.inputVat)}</span> · {summary.accrual.count} บิล
+            ฐาน ฿{fmtMoney(summary.accrual.base)} · ภาษีซื้อ <span className="text-brand font-semibold">฿{fmtMoney(summary.inputVat)}</span> · {summary.accrual.count} เอกสาร
           </div>
         </div>
         <div className="card space-y-1">
@@ -553,13 +553,13 @@ export default function ExpensesClient(props: {
           <div className={`text-2xl font-bold ${summary.unpaidTotal > 0 ? "text-amber-600" : "text-slate-800"}`}>
             ฿{fmtMoney(summary.unpaidTotal)}
           </div>
-          <div className="text-xs text-slate-500">{summary.unpaidCount} บิลรอชำระ</div>
+          <div className="text-xs text-slate-500">{summary.unpaidCount} เอกสารรอชำระ</div>
         </div>
       </div>
 
       {props.ocrAvailable && (
         <p className="text-[11px] text-slate-400">
-          OCR สแกนบิล: เดือนนี้ {usage.monthCount} ครั้ง ~฿{fmtMoney(usage.monthBaht)} · รวมทั้งหมด {usage.totalCount} ครั้ง ~฿{fmtMoney(usage.totalBaht)} (ประมาณการ)
+          OCR สแกนเอกสาร: เดือนนี้ {usage.monthCount} ครั้ง ~฿{fmtMoney(usage.monthBaht)} · รวมทั้งหมด {usage.totalCount} ครั้ง ~฿{fmtMoney(usage.totalBaht)} (ประมาณการ)
         </p>
       )}
 
@@ -623,14 +623,14 @@ export default function ExpensesClient(props: {
       {/* List */}
       {filtered.length === 0 ? (
         <div className="card text-center py-10 text-slate-500">
-          ยังไม่มีรายจ่ายในเดือนนี้ — กด “เพิ่มรายจ่าย” เพื่อเริ่มลงบิล
+          ยังไม่มีรายจ่ายในเดือนนี้ — กด “เพิ่มรายจ่าย” เพื่อเริ่มลงเอกสาร
         </div>
       ) : (
         <div className="card overflow-x-auto p-0">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[11px] text-slate-400 border-b border-slate-100">
-                <th className="px-3 py-2">วันที่บิล</th>
+                <th className="px-3 py-2">วันที่เอกสาร</th>
                 <th className="px-3 py-2">ผู้ค้า / รายการ</th>
                 <th className="px-3 py-2">หมวด</th>
                 <th className="px-3 py-2 text-right">ยอดรวม</th>
@@ -657,7 +657,7 @@ export default function ExpensesClient(props: {
                     <div className="flex gap-2">
                       {e.has_doc && (
                         <a href={apiUrl(`/api/accounta/expenses/${e.id}/doc`)} target="_blank" rel="noreferrer"
-                          className="text-[11px] text-brand hover:underline">ดูบิล</a>
+                          className="text-[11px] text-brand hover:underline">ดูเอกสาร</a>
                       )}
                       <a href={`/admin/accounta/expenses/${e.id}/substitute-receipt`} target="_blank" rel="noreferrer"
                         className="text-[11px] text-slate-500 hover:underline" title="ออกใบรับรองแทนใบเสร็จ (เมื่อไม่มีใบเสร็จ/ใบกำกับ)">ใบแทน</a>
@@ -709,7 +709,7 @@ export default function ExpensesClient(props: {
                   <button type="button" disabled={scanning}
                     onClick={() => ocrInputRef.current?.click()}
                     className="btn-secondary !py-1.5 disabled:opacity-50">
-                    {scanning ? "กำลังอ่าน…" : "ถ่ายรูป / อัปโหลดบิล แล้วกรอกให้อัตโนมัติ"}
+                    {scanning ? "กำลังอ่าน…" : "ถ่ายรูป / อัปโหลดเอกสาร แล้วกรอกให้อัตโนมัติ"}
                   </button>
                   <span className="text-[11px] text-slate-500">ตรวจทานตัวเลขทุกครั้งก่อนบันทึก</span>
                 </div>
@@ -726,7 +726,7 @@ export default function ExpensesClient(props: {
                 claimed only on the VAT-able part. */}
             {mixedSplit && !form.id && (
               <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
-                <div className="text-xs font-bold text-amber-900">บิลผสม VAT / ไม่มี VAT</div>
+                <div className="text-xs font-bold text-amber-900">เอกสารผสม VAT / ไม่มี VAT</div>
                 <div className="text-[11px] text-amber-800">
                   มี VAT ฿{fmtMoney(mixedSplit.vatable)} (ภาษีซื้อ ฿{fmtMoney(mixedSplit.vat)}) · ไม่มี VAT ฿{fmtMoney(mixedSplit.nonvat)}
                 </div>
@@ -774,7 +774,7 @@ export default function ExpensesClient(props: {
                 </select>
               </div>
               <div>
-                <label className="label !text-xs">วันที่บิล</label>
+                <label className="label !text-xs">วันที่เอกสาร</label>
                 <input type="date" className="input" value={form.bill_date} onChange={(e) => setBillDate(e.target.value)} />
               </div>
               <div>
@@ -885,7 +885,7 @@ export default function ExpensesClient(props: {
             </div>
             {form.payment_status === "paid" && form.payment_method.includes("เครดิต") && (
               <p className="text-[11px] text-slate-400 -mt-1">
-                บัตรเครดิต: ลงบิลตามวันที่บิล แต่ “วันที่เงินออกจริง” คือรอบตัดบัตร (อาจเป็นเดือนถัดไป) — แยกในมุมมองกระแสเงินสด
+                บัตรเครดิต: ลงเอกสารตามวันที่เอกสาร แต่ “วันที่เงินออกจริง” คือรอบตัดบัตร (อาจเป็นเดือนถัดไป) — แยกในมุมมองกระแสเงินสด
               </p>
             )}
 
@@ -901,7 +901,7 @@ export default function ExpensesClient(props: {
                   จำผู้ค้านี้
                 </label>
                 <button type="button" onClick={() => fileRef.current?.click()} className="hover:text-brand">
-                  {stagedFile ? `แนบบิล: ${stagedFile.name.slice(0, 20)}` : "แนบรูปบิล"}
+                  {stagedFile ? `แนบเอกสาร: ${stagedFile.name.slice(0, 20)}` : "แนบรูปเอกสาร"}
                 </button>
                 <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden"
                   onChange={(e) => setStagedFile(e.target.files?.[0] ?? null)} />

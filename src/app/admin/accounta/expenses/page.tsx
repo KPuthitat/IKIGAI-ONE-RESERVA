@@ -41,7 +41,7 @@ export default function AccountaExpensesPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-800">รายจ่าย</h1>
         <p className="text-sm text-slate-500 mt-1">
-          ลงบิลผู้ค้า (ชำระแล้ว / ค้างชำระ) · แยกมุมมองตามบิล vs กระแสเงินสด · ภาษีซื้อเรียลไทม์
+          ลงเอกสารผู้ค้า (ชำระแล้ว / ค้างชำระ) · แยกมุมมองตามเอกสาร vs กระแสเงินสด · ภาษีซื้อเรียลไทม์
         </p>
         <p className="text-[11px] text-slate-400 mt-1 bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 inline-block">
           หมายเหตุ: การลงบันทึกนี้ใช้เพื่อช่วยติดตามรายรับ-รายจ่ายภายในเท่านั้น ไม่ได้อ้างอิงหลักการบัญชี

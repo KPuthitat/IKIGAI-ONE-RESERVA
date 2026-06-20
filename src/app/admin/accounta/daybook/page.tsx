@@ -32,15 +32,23 @@ export default function DaybookPage({
         <Link href="/admin/accounta" className="text-sm text-slate-500 hover:text-brand">
           ← กลับ ACCOUNTA
         </Link>
-        <Link href="/admin/accounta/expenses" className="text-sm text-brand hover:underline">
-          ลงรายจ่าย →
-        </Link>
       </div>
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">สมุดรายวัน</h1>
+        <h1 className="text-2xl font-bold text-slate-800">บัญชีรายรับรายจ่าย</h1>
         <p className="text-sm text-slate-500 mt-1">
-          แยกตามวัน — ซ้ายรายรับ ขวารายจ่าย พร้อมยอดคงเหลือสะสม (รูปแบบเดียวกับเอกเซล)
+          สมุดรายวัน — แยกตามวัน ซ้ายรายรับ ขวารายจ่าย พร้อมยอดคงเหลือสะสม (รูปแบบเดียวกับเอกเซล)
         </p>
+        {/* เพิ่มรายรับ / เพิ่มรายจ่าย (owner 2026-06-20) */}
+        <div className="flex gap-2 mt-3">
+          <Link href="/admin/accounta/income"
+            className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700">
+            + เพิ่มรายรับ
+          </Link>
+          <Link href="/admin/accounta/expenses"
+            className="rounded-md bg-rose-600 text-white px-4 py-2 text-sm font-medium hover:bg-rose-700">
+            + เพิ่มรายจ่าย
+          </Link>
+        </div>
         <p className="text-[11px] text-slate-400 mt-1">
           รายรับมาจากที่ลงไว้ในเมนูรายรับ (แยกช่องทางชำระเงิน) · การลงบันทึกนี้ไม่ได้อ้างอิงหลักการบัญชี
         </p>
