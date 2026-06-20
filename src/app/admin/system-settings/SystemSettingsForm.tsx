@@ -40,6 +40,7 @@ export default function SystemSettingsForm({
   owlAiEnabled,
   owlAiModel,
   owlModels,
+  owlHelpEnabled,
   anthropicKeyPresent
 }: {
   token: string | null;
@@ -60,6 +61,7 @@ export default function SystemSettingsForm({
   owlAiEnabled: boolean;
   owlAiModel: string;
   owlModels: Array<{ id: string; label: string }>;
+  owlHelpEnabled: boolean;
   anthropicKeyPresent: boolean;
 }) {
   const router = useRouter();
@@ -109,6 +111,8 @@ export default function SystemSettingsForm({
   // Smart น้องฮูก (2026-06-18) — admin-only AI Q&A over การเงิน + งานบุคคล.
   const [owlOn, setOwlOn] = useState<boolean>(owlAiEnabled);
   const [owlModelSel, setOwlModelSel] = useState<string>(owlAiModel || (owlModels[0]?.id ?? ""));
+  // น้องฮูก usage-help (2026-06-20) — all users, Claude over the FAQ.
+  const [owlHelpOn, setOwlHelpOn] = useState<boolean>(owlHelpEnabled);
   // (Resignation-policy textareas moved 2026-05-28 to
   // /admin/persona/resignation — that's the menu where admins
   // already manage resignation requests, so the policy authoring
@@ -152,6 +156,7 @@ export default function SystemSettingsForm({
       body.accounta_ocr_model = ocrModelSel;
       body.owl_ai_enabled = owlOn ? "true" : "false";
       body.owl_ai_model = owlModelSel;
+      body.owl_help_enabled = owlHelpOn ? "true" : "false";
 
       // (Resignation-policy fields moved to /admin/persona/resignation
       // 2026-05-28 — this form no longer sends them.)
@@ -447,6 +452,38 @@ export default function SystemSettingsForm({
             Opus = ฉลาดสุด เหมาะกับคำถามวิเคราะห์ · Haiku = ประหยัดสุด สำหรับคำถามง่ายๆ
           </p>
         </div>
+      </div>
+
+      {/* น้องฮูก · ตอบ "วิธีใช้งาน" (all users, Claude over the FAQ).
+          Separate from the admin finance/HR AI above. OFF by default. */}
+      <div className="card space-y-3">
+        <div>
+          <h2 className="text-lg font-bold text-slate-800">น้องฮูก · ตอบวิธีใช้งาน (AI · ทุกคน)</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            ให้พนักงานทุกคนพิมพ์ถาม “วิธีใช้งาน” เช่น “ขอลายังไง” “ลงเวลายังไง” — น้องฮูกตอบจากคู่มือ (FAQ)
+            ด้วย Claude เมื่อ FAQ ไม่มีคำตอบตรงๆ (จำกัด {/* HELP_DAILY_CAP */}20 คำถาม/คน/วัน คุมค่าใช้จ่าย)
+          </p>
+        </div>
+        <div className={`rounded-xl border-2 p-3 transition ${
+          owlHelpOn ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-slate-50"
+        }`}>
+          <label className="flex items-center justify-between gap-3 cursor-pointer">
+            <div className="flex-1 min-w-0">
+              <div className={`text-sm font-bold ${owlHelpOn ? "text-emerald-800" : "text-slate-700"}`}>
+                {owlHelpOn ? "เปิดอยู่ — มีช่องถามวิธีใช้ในกล่องน้องฮูก (ทุกคน)" : "ปิด — น้องฮูกตอบเฉพาะ FAQ คงที่"}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                ใช้ Haiku (ถูก) · ตอบเฉพาะวิธีใช้แอป ไม่หลุดเรื่องอื่น · บันทึกค่าใช้จ่ายรวมกับน้องฮูก AI
+              </div>
+            </div>
+            <Switch checked={owlHelpOn} onChange={setOwlHelpOn} accent="emerald" />
+          </label>
+        </div>
+        {owlHelpOn && !anthropicKeyPresent && (
+          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            ยังไม่ได้ตั้งค่า <code>ANTHROPIC_API_KEY</code> บนเซิร์ฟเวอร์ — เปิดสวิตช์ไว้ได้ แต่ช่องถามจะยังใช้ไม่ได้
+          </p>
+        )}
       </div>
 
       {/* PDPA / Privacy policy — single URL pasted once, reused by

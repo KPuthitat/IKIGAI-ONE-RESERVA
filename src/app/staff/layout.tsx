@@ -305,7 +305,10 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           <Footer />
         </div>
       </div>
-      <HookFab audience="staff" />
+      <HookFab
+        audience="staff"
+        helpEnabled={!!getSystemSettings().owl_help_enabled && !!process.env.ANTHROPIC_API_KEY}
+      />
     </div>
   );
 }

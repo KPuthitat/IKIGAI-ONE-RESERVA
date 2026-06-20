@@ -411,6 +411,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <HookFab
         audience="admin"
         aiEnabled={!!getSystemSettings().owl_ai_enabled && !!process.env.ANTHROPIC_API_KEY}
+        helpEnabled={!!getSystemSettings().owl_help_enabled && !!process.env.ANTHROPIC_API_KEY}
       />
     </div>
   );

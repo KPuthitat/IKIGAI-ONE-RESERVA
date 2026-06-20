@@ -1917,6 +1917,12 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "owl_ai_enabled")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN owl_ai_enabled INTEGER NOT NULL DEFAULT 0");
   }
+  // owl_help_enabled (owner 2026-06-20): the corner owl answers "วิธีใช้งาน"
+  // questions via Claude for ALL users (grounded in the FAQ). Separate toggle
+  // from owl_ai_enabled (which is the admin finance/HR data Q&A).
+  if (!ssCols.some((c) => c.name === "owl_help_enabled")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN owl_help_enabled INTEGER NOT NULL DEFAULT 0");
+  }
   if (!ssCols.some((c) => c.name === "owl_ai_model")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN owl_ai_model TEXT");
   }
@@ -5624,6 +5630,7 @@ export function updateSystemSettings(
     accounta_ocr_model?: string | null;
     // Smart น้องฮูก toggle (0/1) + chosen Claude model.
     owl_ai_enabled?: 0 | 1 | boolean;
+    owl_help_enabled?: 0 | 1 | boolean;
     owl_ai_model?: string | null;
   },
   updatedBy: number
@@ -5736,6 +5743,10 @@ export function updateSystemSettings(
   if (Object.prototype.hasOwnProperty.call(patch, "owl_ai_enabled")) {
     sets.push("owl_ai_enabled = ?");
     vals.push(patch.owl_ai_enabled ? 1 : 0);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "owl_help_enabled")) {
+    sets.push("owl_help_enabled = ?");
+    vals.push(patch.owl_help_enabled ? 1 : 0);
   }
   if (Object.prototype.hasOwnProperty.call(patch, "owl_ai_model")) {
     sets.push("owl_ai_model = ?");
@@ -5941,6 +5952,8 @@ export type SystemSettings = {
   accounta_ocr_model?: string | null;
   /** Smart น้องฮูก (admin AI Q&A) master toggle. 0/1, default 0. */
   owl_ai_enabled?: number | null;
+  /** น้องฮูก usage-help (all users, Claude over the FAQ) toggle. 0/1, default 0. */
+  owl_help_enabled?: number | null;
   /** Which Claude model answers น้องฮูก. NULL = the default (Opus 4.8)
    *  resolved in lib/owl-ai-models.ts. */
   owl_ai_model?: string | null;

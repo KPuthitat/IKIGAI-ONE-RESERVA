@@ -90,12 +90,16 @@ function savePosition(p: { right: number; bottom: number }): void {
 
 export default function HookFab({
   audience = "any",
-  aiEnabled = false
+  aiEnabled = false,
+  helpEnabled = false
 }: {
   audience?: FaqAudience;
   /** Admin + owl_ai_enabled → show the natural-language "ถามน้องฮูก" box
    *  that answers finance/HR questions from real DB numbers. */
   aiEnabled?: boolean;
+  /** owl_help_enabled → show the "ถามวิธีใช้งาน" box (all users, Claude
+   *  over the FAQ). */
+  helpEnabled?: boolean;
 }) {
   const { lang } = useLang();
   const router = useRouter();
@@ -110,6 +114,31 @@ export default function HookFab({
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
   const [aiErr, setAiErr] = useState<string | null>(null);
   const [aiCost, setAiCost] = useState<number | null>(null);
+
+  // Usage-help (AI) — all users; answers "วิธีใช้งาน" over the FAQ (2026-06-20).
+  const [helpQ, setHelpQ] = useState("");
+  const [helpBusy, setHelpBusy] = useState(false);
+  const [helpAnswer, setHelpAnswer] = useState<string | null>(null);
+  const [helpErr, setHelpErr] = useState<string | null>(null);
+
+  async function askHelp() {
+    const question = helpQ.trim();
+    if (!question || helpBusy) return;
+    setHelpBusy(true); setHelpErr(null); setHelpAnswer(null);
+    try {
+      const res = await fetch(apiUrl("/api/owl/help"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setHelpErr(j.message || j.error || "ถามไม่สำเร็จ ลองใหม่อีกครั้ง"); return; }
+      setHelpAnswer(j.answer);
+    } catch {
+      setHelpErr("เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง");
+    } finally {
+      setHelpBusy(false);
+    }
+  }
 
   // Running Claude API spend across EVERY action that calls it (bill OCR +
   // owl questions). Fetched when the panel opens (admin) + refreshed after a
@@ -546,6 +575,35 @@ export default function HookFab({
                     </ul>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* ถามวิธีใช้งาน (AI) — all users when owl_help_enabled. Answers
+                how-to questions with Claude grounded in the FAQ. */}
+            {helpEnabled && (
+              <div className="rounded-xl border border-brand/30 bg-brand/5 p-3 space-y-2">
+                <div className="text-sm font-bold text-slate-800">ถามวิธีใช้งาน (AI)</div>
+                <div className="text-[11px] text-slate-500">
+                  เช่น “ขอลายังไง” · “ลงเวลายังไง” · “ดูตารางงานที่ไหน”
+                </div>
+                <div className="flex gap-1">
+                  <input
+                    className="input text-sm" value={helpQ} disabled={helpBusy}
+                    placeholder="พิมพ์คำถามวิธีใช้…"
+                    onChange={(e) => setHelpQ(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); askHelp(); } }}
+                  />
+                  <button type="button" onClick={askHelp} disabled={helpBusy || !helpQ.trim()}
+                    className="btn-primary !py-1 !px-3 text-sm disabled:opacity-50 whitespace-nowrap">
+                    {helpBusy ? "…" : "ถาม"}
+                  </button>
+                </div>
+                {helpErr && <p className="text-[11px] text-rose-600">{helpErr}</p>}
+                {helpAnswer && (
+                  <div className="rounded-lg bg-white border border-slate-200 p-2.5">
+                    <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">{helpAnswer}</div>
+                  </div>
+                )}
               </div>
             )}
 

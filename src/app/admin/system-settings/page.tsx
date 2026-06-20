@@ -68,6 +68,7 @@ export default function SystemSettingsPage() {
         owlAiEnabled={settings.owl_ai_enabled === 1}
         owlAiModel={settings.owl_ai_model ?? DEFAULT_OWL_AI_MODEL}
         owlModels={OWL_AI_MODELS.map((m) => ({ id: m.id, label: m.label }))}
+        owlHelpEnabled={settings.owl_help_enabled === 1}
         anthropicKeyPresent={!!process.env.ANTHROPIC_API_KEY}
       />
 

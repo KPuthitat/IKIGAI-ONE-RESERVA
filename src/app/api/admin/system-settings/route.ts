@@ -67,7 +67,9 @@ const Body = z.object({
   accounta_ocr_model: z.string().max(100).optional(),
   // Smart น้องฮูก (admin AI Q&A) master toggle + chosen model id.
   owl_ai_enabled: z.union([z.boolean(), z.literal("true"), z.literal("false")]).optional(),
-  owl_ai_model: z.string().max(100).optional()
+  owl_ai_model: z.string().max(100).optional(),
+  // น้องฮูก usage-help (all users, Claude over the FAQ) master toggle.
+  owl_help_enabled: z.union([z.boolean(), z.literal("true"), z.literal("false")]).optional()
 });
 
 export async function POST(req: Request) {
@@ -174,6 +176,10 @@ export async function POST(req: Request) {
   }
   if (parsed.data.owl_ai_model !== undefined) {
     dbPatch.owl_ai_model = parsed.data.owl_ai_model.trim();
+  }
+  if (parsed.data.owl_help_enabled !== undefined) {
+    const v = parsed.data.owl_help_enabled;
+    dbPatch.owl_help_enabled = (v === true || v === "true") ? 1 : 0;
   }
 
   updateSystemSettings(dbPatch, user.id);
