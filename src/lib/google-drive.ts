@@ -1,16 +1,20 @@
-// ── ACCOUNTA — Google Drive receipt sync (server-only) ─────────────────
+// ── ACCOUNTA — Google Drive receipt sync (server-only, OAuth) ──────────
 //
-// When a bill is CONFIRMED, its receipt file is uploaded to that BRANCH's
-// own Google Drive, foldered by the bill month (YYYY-MM from bill_date).
-// Per-branch credentials (owner 2026-06-20, option A): each branch has its
-// own service account whose JSON key is stored encrypted; the branch shares
-// a destination folder in its Drive with that SA (root_folder_id).
+// When a bill is CONFIRMED, its receipt uploads to that BRANCH's own Google
+// Drive, foldered by bill month (YYYY-MM). Each branch authorises its own
+// Google account once (OAuth) — the app then uploads AS that user, so files
+// land in the branch's Drive and use the branch's 15 GB quota.
 //
-// No SDK — talks to the Drive + OAuth REST endpoints with raw fetch + a
-// node:crypto-signed JWT, to keep the 1 GB droplet lean (same philosophy as
-// the OCR client). All sync is BEST-EFFORT: a failure never blocks the
-// confirm action; the error is stashed on accounta_drive_config.last_error
-// for the admin to see.
+// Why OAuth and not a service account: service accounts have NO Drive storage
+// quota on consumer Gmail, so SA-owned uploads fail with storageQuotaExceeded
+// (owner 2026-06-20 — confirmed in prod). OAuth uploads are owned by the user,
+// sidestepping the quota entirely.
+//
+// Scope is `drive.file` (non-sensitive — no Google app verification needed):
+// the app creates its OWN root folder + month subfolders + files, so it never
+// needs access to the user's other files. The app-level OAuth client lives in
+// env (GOOGLE_OAUTH_CLIENT_ID / _SECRET); the per-branch refresh token is
+// stored encrypted. All sync is BEST-EFFORT and never throws.
 
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
@@ -18,161 +22,235 @@ import { getDb } from "./db";
 import { encryptSecret, decryptSecret } from "./secret-vault";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
+const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const DRIVE_API = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
-const SCOPE = "https://www.googleapis.com/auth/drive";
+const SCOPES = "openid email https://www.googleapis.com/auth/drive.file";
+const ROOT_FOLDER_NAME = "ACCOUNTA - บิลค่าใช้จ่าย";
 
-// Bound every Google call so a hung request can't stall the confirm action
-// (sync is awaited inside the confirm/doc routes).
 const FETCH_TIMEOUT_MS = 20_000;
 function timeoutSignal(): AbortSignal {
   return AbortSignal.timeout(FETCH_TIMEOUT_MS);
 }
 
+const clientId = () => process.env.GOOGLE_OAUTH_CLIENT_ID || "";
+const clientSecret = () => process.env.GOOGLE_OAUTH_CLIENT_SECRET || "";
+const baseUrl = () => (process.env.APP_BASE_URL || "https://ikigaimedihealth.com").replace(/\/$/, "");
+const redirectUri = () => `${baseUrl()}/api/accounta/drive/oauth/callback`;
+
+/** True when the server-level OAuth client is configured. */
+export function driveOAuthConfigured(): boolean {
+  return !!clientId() && !!clientSecret();
+}
+
 export type DriveConfig = {
   branch_id: number;
   enabled: number;
-  sa_json_enc: string | null;
-  sa_client_email: string | null;
-  root_folder_id: string | null;
+  oauth_refresh_token_enc: string | null;
+  oauth_email: string | null;
+  oauth_root_folder_id: string | null;
   last_ok_at: string | null;
   last_error: string | null;
 };
 
 export function getDriveConfig(branchId: number): DriveConfig | undefined {
   return getDb().prepare(
-    "SELECT branch_id, enabled, sa_json_enc, sa_client_email, root_folder_id, last_ok_at, last_error FROM accounta_drive_config WHERE branch_id = ?"
+    "SELECT branch_id, enabled, oauth_refresh_token_enc, oauth_email, oauth_root_folder_id, last_ok_at, last_error FROM accounta_drive_config WHERE branch_id = ?"
   ).get(branchId) as DriveConfig | undefined;
 }
 
 /** All branch configs joined with the branch name — for the admin list. */
-export function listDriveConfigs(): Array<DriveConfig & { branch_name: string; company_name: string | null }> {
+export function listDriveConfigs(): Array<{
+  branch_id: number; branch_name: string; company_name: string | null;
+  enabled: number; connected: number; oauth_email: string | null;
+  last_ok_at: string | null; last_error: string | null;
+}> {
   return getDb().prepare(`
     SELECT b.id AS branch_id, b.name AS branch_name, co.name_th AS company_name,
-           COALESCE(d.enabled, 0) AS enabled, d.sa_client_email, d.root_folder_id,
-           d.last_ok_at, d.last_error, d.sa_json_enc
+           COALESCE(d.enabled, 0) AS enabled,
+           CASE WHEN d.oauth_refresh_token_enc IS NOT NULL THEN 1 ELSE 0 END AS connected,
+           d.oauth_email, d.last_ok_at, d.last_error
     FROM branches b
     LEFT JOIN accounta_drive_config d ON d.branch_id = b.id
     LEFT JOIN companies co ON co.id = b.company_id
     ORDER BY co.name_th, b.name
-  `).all() as Array<DriveConfig & { branch_name: string; company_name: string | null }>;
+  `).all() as Array<{
+    branch_id: number; branch_name: string; company_name: string | null;
+    enabled: number; connected: number; oauth_email: string | null;
+    last_ok_at: string | null; last_error: string | null;
+  }>;
 }
 
-/** Upsert a branch's Drive config. `saJson` null = keep the stored key;
- *  "" = clear it. Parses client_email out of the JSON for display. */
-export function setDriveConfig(args: {
-  branchId: number;
-  enabled: boolean;
-  saJson: string | null;
-  rootFolderId: string | null;
-  updatedBy: number;
-}): { ok: true } | { ok: false; error: string } {
+/** Toggle the enabled flag (connection is managed by the OAuth flow). */
+export function setDriveEnabled(branchId: number, enabled: boolean, updatedBy: number): void {
   const db = getDb();
-  let saEnc: string | null | undefined;
-  let clientEmail: string | null | undefined;
-  if (args.saJson === "") {
-    saEnc = null; clientEmail = null;
-  } else if (args.saJson != null) {
-    let parsed: { client_email?: string; private_key?: string };
-    try { parsed = JSON.parse(args.saJson); }
-    catch { return { ok: false, error: "ไฟล์ service account ไม่ใช่ JSON ที่ถูกต้อง" }; }
-    if (!parsed.client_email || !parsed.private_key) {
-      return { ok: false, error: "JSON ต้องมี client_email และ private_key" };
-    }
-    saEnc = encryptSecret(args.saJson);
-    clientEmail = parsed.client_email;
-  }
-
-  const existing = getDriveConfig(args.branchId);
+  const existing = getDriveConfig(branchId);
   if (existing) {
-    db.prepare(`
-      UPDATE accounta_drive_config
-      SET enabled = ?, root_folder_id = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ?
-          ${saEnc !== undefined ? ", sa_json_enc = ?, sa_client_email = ?" : ""}
-      WHERE branch_id = ?
-    `).run(
-      args.enabled ? 1 : 0, args.rootFolderId || null, args.updatedBy,
-      ...(saEnc !== undefined ? [saEnc, clientEmail ?? null] : []),
-      args.branchId
-    );
+    db.prepare("UPDATE accounta_drive_config SET enabled = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ? WHERE branch_id = ?")
+      .run(enabled ? 1 : 0, updatedBy, branchId);
   } else {
-    db.prepare(`
-      INSERT INTO accounta_drive_config
-        (branch_id, enabled, sa_json_enc, sa_client_email, root_folder_id, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      args.branchId, args.enabled ? 1 : 0, saEnc ?? null, clientEmail ?? null,
-      args.rootFolderId || null, args.updatedBy
-    );
+    db.prepare("INSERT INTO accounta_drive_config (branch_id, enabled, updated_by) VALUES (?, ?, ?)")
+      .run(branchId, enabled ? 1 : 0, updatedBy);
   }
-  return { ok: true };
+}
+
+/** Forget a branch's Google connection (refresh token + cached state). */
+export function disconnectDrive(branchId: number, updatedBy: number): void {
+  getDb().prepare(`
+    UPDATE accounta_drive_config
+    SET oauth_refresh_token_enc = NULL, oauth_email = NULL, oauth_root_folder_id = NULL,
+        enabled = 0, last_error = NULL, updated_at = CURRENT_TIMESTAMP, updated_by = ?
+    WHERE branch_id = ?
+  `).run(updatedBy, branchId);
+  tokenCache.delete(branchId);
 }
 
 function setStatus(branchId: number, s: { ok: boolean; error?: string }): void {
   if (s.ok) {
-    getDb().prepare(
-      "UPDATE accounta_drive_config SET last_ok_at = CURRENT_TIMESTAMP, last_error = NULL WHERE branch_id = ?"
-    ).run(branchId);
+    getDb().prepare("UPDATE accounta_drive_config SET last_ok_at = CURRENT_TIMESTAMP, last_error = NULL WHERE branch_id = ?").run(branchId);
   } else {
-    getDb().prepare(
-      "UPDATE accounta_drive_config SET last_error = ? WHERE branch_id = ?"
-    ).run((s.error ?? "unknown").slice(0, 400), branchId);
+    getDb().prepare("UPDATE accounta_drive_config SET last_error = ? WHERE branch_id = ?").run((s.error ?? "unknown").slice(0, 400), branchId);
   }
 }
 
-// ── Google REST plumbing ───────────────────────────────────────────────
+// ── OAuth flow ─────────────────────────────────────────────────────────
 
-function b64url(input: Buffer | string): string {
-  return Buffer.from(input).toString("base64")
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function stateSecret(): string {
+  return process.env.RESERVA_SECRET_KEY || "accounta-drive-state";
+}
+/** Signed, time-boxed state carrying the branch id (CSRF protection). */
+function signState(branchId: number): string {
+  const payload = `${branchId}.${Date.now()}`;
+  const sig = crypto.createHmac("sha256", stateSecret()).update(payload).digest("hex").slice(0, 32);
+  return Buffer.from(`${payload}.${sig}`).toString("base64url");
+}
+export function verifyState(state: string): number | null {
+  try {
+    const raw = Buffer.from(state, "base64url").toString("utf8");
+    const [branchId, ts, sig] = raw.split(".");
+    const expect = crypto.createHmac("sha256", stateSecret()).update(`${branchId}.${ts}`).digest("hex").slice(0, 32);
+    if (!sig || sig !== expect) return null;
+    if (Date.now() - Number(ts) > 15 * 60 * 1000) return null; // 15-min window
+    const id = Number(branchId);
+    return Number.isInteger(id) && id > 0 ? id : null;
+  } catch { return null; }
 }
 
-// Short-lived access-token cache keyed by service-account email.
-const tokenCache = new Map<string, { token: string; exp: number }>();
+/** Google consent URL for connecting a branch's Drive. */
+export function buildDriveAuthUrl(branchId: number): string {
+  const p = new URLSearchParams({
+    client_id: clientId(),
+    redirect_uri: redirectUri(),
+    response_type: "code",
+    scope: SCOPES,
+    access_type: "offline",
+    prompt: "consent",            // force a refresh_token every time
+    include_granted_scopes: "true",
+    state: signState(branchId)
+  });
+  return `${AUTH_URL}?${p.toString()}`;
+}
 
-async function getAccessToken(clientEmail: string, privateKeyPem: string): Promise<string> {
-  const cached = tokenCache.get(clientEmail);
+function decodeEmail(idToken: string | undefined): string {
+  if (!idToken) return "";
+  try {
+    const payload = JSON.parse(Buffer.from(idToken.split(".")[1], "base64").toString("utf8")) as { email?: string };
+    return payload.email || "";
+  } catch { return ""; }
+}
+
+/** Exchange the auth code for a refresh token + connected email, then store
+ *  it (encrypted) on the branch config + enable sync. */
+export async function completeDriveOAuth(branchId: number, code: string, updatedBy: number): Promise<{ ok: boolean; email?: string; error?: string }> {
+  if (!driveOAuthConfigured()) return { ok: false, error: "เซิร์ฟเวอร์ยังไม่ได้ตั้งค่า GOOGLE_OAUTH_CLIENT_ID / SECRET" };
+  try {
+    const res = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code, client_id: clientId(), client_secret: clientSecret(),
+        redirect_uri: redirectUri(), grant_type: "authorization_code"
+      }),
+      signal: timeoutSignal()
+    });
+    const j = await res.json().catch(() => ({})) as { refresh_token?: string; id_token?: string; error_description?: string; error?: string };
+    if (!res.ok || !j.refresh_token) {
+      throw new Error(j.error_description || j.error || "ไม่ได้ refresh token (ลองถอดสิทธิ์แอปออกจากบัญชี Google แล้วเชื่อมใหม่)");
+    }
+    const email = decodeEmail(j.id_token);
+    const enc = encryptSecret(j.refresh_token);
+    const db = getDb();
+    const existing = getDriveConfig(branchId);
+    if (existing) {
+      db.prepare(`
+        UPDATE accounta_drive_config
+        SET oauth_refresh_token_enc = ?, oauth_email = ?, oauth_root_folder_id = NULL,
+            enabled = 1, last_error = NULL, updated_at = CURRENT_TIMESTAMP, updated_by = ?
+        WHERE branch_id = ?
+      `).run(enc, email, updatedBy, branchId);
+    } else {
+      db.prepare(`
+        INSERT INTO accounta_drive_config (branch_id, enabled, oauth_refresh_token_enc, oauth_email, updated_by)
+        VALUES (?, 1, ?, ?, ?)
+      `).run(branchId, enc, email, updatedBy);
+    }
+    tokenCache.delete(branchId);
+    return { ok: true, email };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// Short-lived access-token cache keyed by branch id.
+const tokenCache = new Map<number, { token: string; exp: number }>();
+
+async function getAccessToken(branchId: number, refreshToken: string): Promise<string> {
+  const cached = tokenCache.get(branchId);
   const now = Math.floor(Date.now() / 1000);
   if (cached && cached.exp - 60 > now) return cached.token;
-
-  const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claims = b64url(JSON.stringify({
-    iss: clientEmail, scope: SCOPE, aud: TOKEN_URL, iat: now, exp: now + 3600
-  }));
-  const signingInput = `${header}.${claims}`;
-  const signature = b64url(
-    crypto.createSign("RSA-SHA256").update(signingInput).sign(privateKeyPem)
-  );
-  const jwt = `${signingInput}.${signature}`;
 
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt
+      client_id: clientId(), client_secret: clientSecret(),
+      refresh_token: refreshToken, grant_type: "refresh_token"
     }),
     signal: timeoutSignal()
   });
-  const json = await res.json().catch(() => ({})) as { access_token?: string; expires_in?: number; error_description?: string };
-  if (!res.ok || !json.access_token) {
-    throw new Error(`oauth: ${json.error_description || res.status}`);
-  }
-  tokenCache.set(clientEmail, { token: json.access_token, exp: now + (json.expires_in ?? 3600) });
-  return json.access_token;
+  const j = await res.json().catch(() => ({})) as { access_token?: string; expires_in?: number; error_description?: string };
+  if (!res.ok || !j.access_token) throw new Error(`refresh: ${j.error_description || res.status}`);
+  tokenCache.set(branchId, { token: j.access_token, exp: now + (j.expires_in ?? 3600) });
+  return j.access_token;
+}
+
+/** The app's own root folder in the user's Drive (auto-created once). */
+async function ensureRootFolder(branchId: number, token: string): Promise<string> {
+  const cfg = getDriveConfig(branchId);
+  if (cfg?.oauth_root_folder_id) return cfg.oauth_root_folder_id;
+  const cr = await fetch(`${DRIVE_API}?fields=id`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: ROOT_FOLDER_NAME, mimeType: FOLDER_MIME }),
+    signal: timeoutSignal()
+  });
+  const cj = await cr.json().catch(() => ({})) as { id?: string; error?: { message: string } };
+  if (!cr.ok || !cj.id) throw new Error(`create root: ${cj.error?.message || cr.status}`);
+  getDb().prepare("UPDATE accounta_drive_config SET oauth_root_folder_id = ? WHERE branch_id = ?").run(cj.id, branchId);
+  return cj.id;
 }
 
 /** Find (or create) the YYYY-MM subfolder under rootId; returns its id. */
 async function ensureMonthFolder(token: string, rootId: string, month: string): Promise<string> {
   const q = `name='${month}' and '${rootId}' in parents and mimeType='${FOLDER_MIME}' and trashed=false`;
-  const findUrl = `${DRIVE_API}?q=${encodeURIComponent(q)}&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+  const findUrl = `${DRIVE_API}?q=${encodeURIComponent(q)}&fields=files(id)`;
   const fr = await fetch(findUrl, { headers: { Authorization: `Bearer ${token}` }, signal: timeoutSignal() });
   const fj = await fr.json().catch(() => ({})) as { files?: Array<{ id: string }>; error?: { message: string } };
   if (!fr.ok) throw new Error(`find folder: ${fj.error?.message || fr.status}`);
   if (fj.files && fj.files.length > 0) return fj.files[0].id;
 
-  const cr = await fetch(`${DRIVE_API}?supportsAllDrives=true`, {
+  const cr = await fetch(`${DRIVE_API}?fields=id`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ name: month, mimeType: FOLDER_MIME, parents: [rootId] }),
@@ -184,9 +262,7 @@ async function ensureMonthFolder(token: string, rootId: string, month: string): 
 }
 
 /** Multipart upload of a file buffer into a folder; returns the file id. */
-async function uploadMultipart(
-  token: string, folderId: string, name: string, mime: string, data: Buffer
-): Promise<string> {
+async function uploadMultipart(token: string, folderId: string, name: string, mime: string, data: Buffer): Promise<string> {
   const boundary = "ikigai_" + crypto.randomBytes(8).toString("hex");
   const meta = JSON.stringify({ name, parents: [folderId] });
   const pre = Buffer.from(
@@ -196,12 +272,9 @@ async function uploadMultipart(
   const post = Buffer.from(`\r\n--${boundary}--`, "utf8");
   const body = Buffer.concat([pre, data, post]);
 
-  const res = await fetch(`${DRIVE_UPLOAD}?uploadType=multipart&supportsAllDrives=true&fields=id`, {
+  const res = await fetch(`${DRIVE_UPLOAD}?uploadType=multipart&fields=id`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": `multipart/related; boundary=${boundary}`
-    },
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
     body: new Uint8Array(body),
     signal: timeoutSignal()
   });
@@ -219,29 +292,17 @@ function extForMime(mime: string | null): string {
   }
 }
 
-/** Verify a branch's config end-to-end (token + folder access) without
- *  uploading a real bill — drives the admin "ทดสอบการเชื่อมต่อ" button. */
+/** Verify a branch's connection end-to-end (token refresh + root folder)
+ *  without uploading a real bill — drives the admin "ทดสอบ" button. */
 export async function testDriveConfig(branchId: number): Promise<{ ok: boolean; error?: string }> {
   const cfg = getDriveConfig(branchId);
-  if (!cfg?.sa_json_enc || !cfg.root_folder_id) {
-    return { ok: false, error: "ยังไม่ได้ตั้งค่า service account หรือโฟลเดอร์ปลายทาง" };
-  }
+  if (!cfg?.oauth_refresh_token_enc) return { ok: false, error: "ยังไม่ได้เชื่อมต่อ Google Drive" };
+  if (!driveOAuthConfigured()) return { ok: false, error: "เซิร์ฟเวอร์ยังไม่ได้ตั้งค่า GOOGLE_OAUTH_CLIENT_ID / SECRET" };
   try {
-    const dec = decryptSecret(cfg.sa_json_enc);
-    if (!dec) throw new Error("ถอดรหัส service account key ไม่สำเร็จ — RESERVA_SECRET_KEY อาจไม่ตรงกับตอนบันทึก");
-    const sa = JSON.parse(dec) as { client_email: string; private_key: string };
-    const token = await getAccessToken(sa.client_email, sa.private_key);
-    // Touch the root folder to confirm the SA can see it.
-    const r = await fetch(
-      `${DRIVE_API}/${encodeURIComponent(cfg.root_folder_id)}?fields=id,name&supportsAllDrives=true`,
-      { headers: { Authorization: `Bearer ${token}` }, signal: timeoutSignal() }
-    );
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({})) as { error?: { message: string } };
-      throw new Error(`โฟลเดอร์เข้าไม่ได้: ${j.error?.message || r.status} — ตรวจว่าได้แชร์โฟลเดอร์ให้ ${sa.client_email} แล้ว`);
-    }
-    // A successful test only clears the error — it must NOT stamp
-    // last_ok_at, which means "last real upload" in the admin UI.
+    const rt = decryptSecret(cfg.oauth_refresh_token_enc);
+    if (!rt) throw new Error("ถอดรหัส token ไม่สำเร็จ — RESERVA_SECRET_KEY อาจไม่ตรง");
+    const token = await getAccessToken(branchId, rt);
+    await ensureRootFolder(branchId, token);
     getDb().prepare("UPDATE accounta_drive_config SET last_error = NULL WHERE branch_id = ?").run(branchId);
     return { ok: true };
   } catch (e) {
@@ -252,9 +313,9 @@ export async function testDriveConfig(branchId: number): Promise<{ ok: boolean; 
 }
 
 /** Best-effort: upload a confirmed bill's receipt to its branch Drive,
- *  foldered by bill month. No-op (and never throws) when the bill isn't
- *  confirmed, has no receipt, was already synced, or the branch has no
- *  enabled Drive config. */
+ *  foldered by bill month. No-op (never throws) when the bill isn't
+ *  confirmed, has no receipt, was already synced, or the branch isn't
+ *  connected / enabled. */
 export async function syncReceiptToDrive(expenseId: number): Promise<void> {
   const db = getDb();
   const row = db.prepare(`
@@ -270,15 +331,16 @@ export async function syncReceiptToDrive(expenseId: number): Promise<void> {
       || row.drive_file_id || row.branch_id == null) return;
 
   const cfg = getDriveConfig(row.branch_id);
-  if (!cfg?.enabled || !cfg.root_folder_id || !cfg.sa_json_enc) return;
+  if (!cfg?.enabled || !cfg.oauth_refresh_token_enc) return;
+  if (!driveOAuthConfigured()) { setStatus(row.branch_id, { ok: false, error: "server OAuth not configured" }); return; }
 
   try {
-    const dec = decryptSecret(cfg.sa_json_enc);
-    if (!dec) throw new Error("ถอดรหัส service account key ไม่สำเร็จ — RESERVA_SECRET_KEY อาจไม่ตรงกับตอนบันทึก");
-    const sa = JSON.parse(dec) as { client_email: string; private_key: string };
-    const token = await getAccessToken(sa.client_email, sa.private_key);
+    const rt = decryptSecret(cfg.oauth_refresh_token_enc);
+    if (!rt) throw new Error("ถอดรหัส refresh token ไม่สำเร็จ — RESERVA_SECRET_KEY อาจไม่ตรง");
+    const token = await getAccessToken(row.branch_id, rt);
+    const root = await ensureRootFolder(row.branch_id, token);
     const month = (row.bill_date || "").slice(0, 7) || "ไม่ระบุเดือน";
-    const folderId = await ensureMonthFolder(token, cfg.root_folder_id, month);
+    const folderId = await ensureMonthFolder(token, root, month);
     const buf = await fs.readFile(row.doc_path);
     const name = `${row.bill_date || "nodate"}-bill${row.id}${extForMime(row.doc_mime)}`;
     const fileId = await uploadMultipart(token, folderId, name, row.doc_mime || "application/octet-stream", buf);

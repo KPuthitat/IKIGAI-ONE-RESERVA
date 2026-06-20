@@ -5301,6 +5301,21 @@ function runMigrations(db: Database.Database): void {
       updated_by INTEGER REFERENCES users(id)
     );
   `);
+  // OAuth columns (owner 2026-06-20): service accounts have no Drive storage
+  // quota on consumer Gmail, so uploads failed. Switched to OAuth — each
+  // branch authorises its own Google account once; the app uploads as that
+  // user (their 15 GB quota) and auto-creates its own root folder. The SA
+  // columns above are left in place but unused.
+  const driveCols = db.prepare("PRAGMA table_info(accounta_drive_config)").all() as Array<{ name: string }>;
+  for (const [col, ddl] of [
+    ["oauth_refresh_token_enc", "ALTER TABLE accounta_drive_config ADD COLUMN oauth_refresh_token_enc TEXT"],
+    ["oauth_email", "ALTER TABLE accounta_drive_config ADD COLUMN oauth_email TEXT"],
+    ["oauth_root_folder_id", "ALTER TABLE accounta_drive_config ADD COLUMN oauth_root_folder_id TEXT"]
+  ] as const) {
+    if (!driveCols.some((c) => c.name === col)) {
+      try { db.exec(ddl); } catch (e) { if (!String(e).includes("duplicate column")) throw e; }
+    }
+  }
   if (!expCols.some((c) => c.name === "drive_file_id")) {
     try { db.exec("ALTER TABLE accounta_expenses ADD COLUMN drive_file_id TEXT"); }
     catch (e) { if (!String(e).includes("duplicate column")) throw e; }

@@ -1,16 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
-import { setDriveConfig } from "@/lib/google-drive";
+import { setDriveEnabled } from "@/lib/google-drive";
 
-// POST /api/accounta/drive/[branchId] — save a branch's Drive config.
-// super_admin only: it stores a service-account credential. saJson:
-// omit/null = keep the stored key, "" = clear it, JSON string = replace.
-const Body = z.object({
-  enabled: z.boolean(),
-  saJson: z.string().max(20000).nullable().optional(),
-  rootFolderId: z.string().max(200).nullable().optional()
-});
+// POST /api/accounta/drive/[branchId] — toggle a branch's Drive sync on/off.
+// The Google connection itself is managed by the OAuth flow (start/callback).
+// super_admin only.
+const Body = z.object({ enabled: z.boolean() });
 
 export async function POST(req: Request, { params }: { params: { branchId: string } }) {
   const user = getSessionUser();
@@ -24,13 +20,6 @@ export async function POST(req: Request, { params }: { params: { branchId: strin
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
 
-  const r = setDriveConfig({
-    branchId,
-    enabled: parsed.data.enabled,
-    saJson: parsed.data.saJson ?? null,
-    rootFolderId: parsed.data.rootFolderId ?? null,
-    updatedBy: user.id
-  });
-  if (!r.ok) return NextResponse.json({ error: "bad_config", message: r.error }, { status: 400 });
+  setDriveEnabled(branchId, parsed.data.enabled, user.id);
   return NextResponse.json({ ok: true });
 }
