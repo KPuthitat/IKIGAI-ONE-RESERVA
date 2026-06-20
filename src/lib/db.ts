@@ -2787,6 +2787,13 @@ function runMigrations(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  // vat_registered (owner 2026-06-20): per-company VAT status. When 1, sales
+  // carry 7% output VAT and ภพ.30 = output − input; when 0 (e.g. a VAT-exempt
+  // clinic) the ledger shows only accumulated input VAT, no ภพ.30.
+  const compCols = db.prepare("PRAGMA table_info(companies)").all() as Array<{ name: string }>;
+  if (!compCols.some((c) => c.name === "vat_registered")) {
+    db.exec("ALTER TABLE companies ADD COLUMN vat_registered INTEGER NOT NULL DEFAULT 0");
+  }
 
   // Seed the default company on first run so existing branches have
   // somewhere to point. Name comes from the owner's empeo screenshot.
