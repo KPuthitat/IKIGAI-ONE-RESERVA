@@ -19,6 +19,7 @@ type Dash = {
   inputVat: number; outputVat: number; vatPayable: number; vatRegistered: boolean;
   daysWithRevenue: number; avgPerDay: number; avgWeekday: number; avgWeekend: number;
   forecast: number | null; categories: CatItem[]; uncategorized: number;
+  dailyRows: Array<{ date: string; revenue: number; expense: number; balance: number }>;
 };
 export type LedgerExpenseRow = {
   id: number; bill_date: string; vendor_name: string | null; doc_type: string | null;
@@ -36,6 +37,14 @@ function shiftAnchor(anchor: string, period: LedgerPeriod, dir: 1 | -1): string 
     return `${nd.getUTCFullYear()}-${String(nd.getUTCMonth() + 1).padStart(2, "0")}-15`;
   }
   return new Date(Date.UTC(y, m - 1, d) + dir * 7 * 86400_000).toISOString().slice(0, 10);
+}
+
+const TH_DOW = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+const TH_MON_SHORT = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+function fmtDayLabel(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dow = TH_DOW[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${dow} ${d} ${TH_MON_SHORT[m]}`;
 }
 
 const CAT_STATUS = {
@@ -82,8 +91,8 @@ export default function LedgerDashboardClient({
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/admin/accounta/income" className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700">+ รายรับ</Link>
-          <Link href="/admin/accounta/expenses" className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ รายจ่าย</Link>
+          <Link href="/admin/accounta/income" className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700">+ บันทึกรายรับ</Link>
+          <Link href="/admin/accounta/expenses" className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ บันทึกรายจ่าย</Link>
         </div>
       </div>
 
@@ -107,14 +116,14 @@ export default function LedgerDashboardClient({
           <div className="text-2xl font-bold text-rose-600">฿{fmtMoney(dash.expense)}</div>
         </div>
         <div className="card text-center py-3">
-          <div className="text-[11px] text-slate-400">คงเหลือ (กำไรเบื้องต้น)</div>
+          <div className="text-[11px] text-slate-400">คงเหลือสุทธิ (รายรับ − รายจ่าย)</div>
           <div className={`text-2xl font-bold ${dash.net >= 0 ? "text-slate-800" : "text-rose-600"}`}>฿{fmtMoney(dash.net)}</div>
         </div>
       </div>
 
       {/* VAT / ภพ.30 */}
       <div className="card space-y-2">
-        <div className="text-sm font-bold text-slate-800">ภาษีมูลค่าเพิ่ม (สะสมในช่วงนี้)</div>
+        <div className="text-sm font-bold text-slate-800">ภาษีมูลค่าเพิ่ม (ยอดสะสมในช่วงเวลานี้)</div>
         {dash.vatRegistered ? (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
             <div><div className="text-[11px] text-slate-400">ภาษีขาย</div><div className="text-lg font-bold text-slate-700">฿{fmtMoney(dash.outputVat)}</div></div>
@@ -128,8 +137,8 @@ export default function LedgerDashboardClient({
           </div>
         ) : (
           <div className="text-xs text-slate-500">
-            บริษัทนี้ไม่ได้จด VAT — แสดงเฉพาะ <b>ภาษีซื้อสะสม ฿{fmtMoney(dash.inputVat)}</b> (ไม่มีภาษีขาย/ภพ.30)
-            <div className="text-[11px] text-slate-400 mt-0.5">เปิด “จด VAT” ได้ที่ บริษัทในเครือ ถ้าสาขานี้ออกใบกำกับภาษีขาย</div>
+            บริษัทนี้ยังไม่ได้จดทะเบียนภาษีมูลค่าเพิ่ม — แสดงเฉพาะ <b>ภาษีซื้อสะสม ฿{fmtMoney(dash.inputVat)}</b> (ไม่มีภาษีขายและ ภพ.30)
+            <div className="text-[11px] text-slate-400 mt-0.5">หากสาขานี้ออกใบกำกับภาษีขาย สามารถเปิดสถานะ “จดทะเบียนภาษีมูลค่าเพิ่ม” ได้ที่เมนูบริษัทในเครือ</div>
           </div>
         )}
       </div>
@@ -137,30 +146,30 @@ export default function LedgerDashboardClient({
       {/* Sales analytics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="card text-center py-3">
-          <div className="text-[11px] text-slate-400">ยอดขายเฉลี่ย/วัน</div>
+          <div className="text-[11px] text-slate-400">ยอดขายเฉลี่ยต่อวัน</div>
           <div className="text-lg font-bold text-slate-800">฿{fmtMoney(dash.avgPerDay)}</div>
-          <div className="text-[10px] text-slate-400">{dash.daysWithRevenue} วันที่มียอด</div>
+          <div className="text-[10px] text-slate-400">{dash.daysWithRevenue} วันที่มียอดขาย</div>
         </div>
         <div className="card text-center py-3">
           <div className="text-[11px] text-slate-400">เฉลี่ยวันธรรมดา</div>
           <div className="text-lg font-bold text-slate-800">฿{fmtMoney(dash.avgWeekday)}</div>
         </div>
         <div className="card text-center py-3">
-          <div className="text-[11px] text-slate-400">เฉลี่ยเสาร์-อาทิตย์</div>
+          <div className="text-[11px] text-slate-400">เฉลี่ยวันหยุดสุดสัปดาห์</div>
           <div className="text-lg font-bold text-slate-800">฿{fmtMoney(dash.avgWeekend)}</div>
         </div>
         <div className="card text-center py-3">
-          <div className="text-[11px] text-slate-400">คาดการณ์ทั้งเดือน</div>
+          <div className="text-[11px] text-slate-400">ประมาณการยอดขายทั้งเดือน</div>
           <div className="text-lg font-bold text-brand">{dash.forecast != null ? `฿${fmtMoney(dash.forecast)}` : "—"}</div>
-          {dash.forecast != null && <div className="text-[10px] text-slate-400">จากเฉลี่ย × วันในเดือน</div>}
+          {dash.forecast != null && <div className="text-[10px] text-slate-400">คำนวณจากค่าเฉลี่ยคูณจำนวนวันในเดือน</div>}
         </div>
       </div>
 
       {/* Category breakdown — % of revenue vs target band */}
       <div className="card space-y-2">
-        <div className="text-sm font-bold text-slate-800">รายจ่ายแยกหมวด · % เทียบยอดขาย</div>
+        <div className="text-sm font-bold text-slate-800">รายจ่ายจำแนกตามหมวด · สัดส่วน % เทียบยอดขาย</div>
         {dash.categories.length === 0 ? (
-          <p className="text-xs text-slate-400">ยังไม่มีรายจ่ายในช่วงนี้</p>
+          <p className="text-xs text-slate-400">ไม่พบรายการรายจ่ายในช่วงเวลานี้</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -198,14 +207,53 @@ export default function LedgerDashboardClient({
         )}
       </div>
 
+      {/* Excel-style daily comparison — revenue (shift-close) vs expense, running balance */}
+      <div className="card space-y-2">
+        <div className="text-sm font-bold text-slate-800">สมุดรายวัน · เปรียบเทียบรายรับ–รายจ่ายรายวัน</div>
+        {dash.dailyRows.length === 0 ? (
+          <p className="text-xs text-slate-400">ไม่พบความเคลื่อนไหวในช่วงเวลานี้</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm tabular-nums">
+              <thead>
+                <tr className="text-[11px] text-slate-400 border-b border-slate-200">
+                  <th className="text-left py-1.5 px-2">วันที่</th>
+                  <th className="text-right py-1.5 px-2">รายรับ</th>
+                  <th className="text-right py-1.5 px-2">รายจ่าย</th>
+                  <th className="text-right py-1.5 px-2">คงเหลือสะสม</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dash.dailyRows.map((r) => (
+                  <tr key={r.date} className="border-b border-slate-50">
+                    <td className="py-1.5 px-2 whitespace-nowrap text-slate-600">{fmtDayLabel(r.date)}</td>
+                    <td className="py-1.5 px-2 text-right font-mono text-emerald-600">{r.revenue > 0 ? fmtMoney(r.revenue) : "—"}</td>
+                    <td className="py-1.5 px-2 text-right font-mono text-rose-600">{r.expense > 0 ? fmtMoney(r.expense) : "—"}</td>
+                    <td className={`py-1.5 px-2 text-right font-mono font-bold ${r.balance >= 0 ? "text-slate-700" : "text-rose-600"}`}>{fmtMoney(r.balance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-200 font-bold">
+                  <td className="py-1.5 px-2 text-slate-700">รวมทั้งสิ้น</td>
+                  <td className="py-1.5 px-2 text-right font-mono text-emerald-700">฿{fmtMoney(dash.revenue)}</td>
+                  <td className="py-1.5 px-2 text-right font-mono text-rose-700">฿{fmtMoney(dash.expense)}</td>
+                  <td className={`py-1.5 px-2 text-right font-mono ${dash.net >= 0 ? "text-slate-800" : "text-rose-600"}`}>฿{fmtMoney(dash.net)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Expense list — editable (delete inline; edit on the รายจ่าย page) */}
       <div className="card space-y-2">
         <div className="flex items-center justify-between">
           <div className="text-sm font-bold text-slate-800">รายการรายจ่าย ({expenses.length})</div>
-          <Link href="/admin/accounta/expenses" className="text-xs text-brand hover:underline">ไปหน้ารายจ่าย (เพิ่ม/สแกน/แก้) →</Link>
+          <Link href="/admin/accounta/expenses" className="text-xs text-brand hover:underline">ไปยังหน้ารายจ่าย (เพิ่ม / สแกน / แก้ไข) →</Link>
         </div>
         {expenses.length === 0 ? (
-          <p className="text-xs text-slate-400">ยังไม่มีรายจ่ายในช่วงนี้</p>
+          <p className="text-xs text-slate-400">ไม่พบรายการรายจ่ายในช่วงเวลานี้</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

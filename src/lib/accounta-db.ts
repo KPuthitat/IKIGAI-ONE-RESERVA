@@ -679,6 +679,7 @@ export type LedgerDashboard = {
   forecast: number | null;
   categories: LedgerCatItem[];
   uncategorized: number;
+  dailyRows: Array<{ date: string; revenue: number; expense: number; balance: number }>;
 };
 
 function bkkToday(): string {
@@ -695,7 +696,7 @@ export function ledgerRange(period: LedgerPeriod, anchor: string): { start: stri
   if (period === "month") {
     const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
     const mm = String(m).padStart(2, "0");
-    return { start: `${y}-${mm}-01`, end: `${y}-${mm}-${String(last).padStart(2, "0")}`, label: `${["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."][m]} ${y + 543}` };
+    return { start: `${y}-${mm}-01`, end: `${y}-${mm}-${String(last).padStart(2, "0")}`, label: `${["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"][m]} ${y + 543}` };
   }
   const dt = new Date(Date.UTC(y, m - 1, d));
   const dow = dt.getUTCDay();                 // 0=Sun..6=Sat
@@ -720,9 +721,10 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
   ).get(branchId) as { vat: number | null } | undefined;
   const vatRegistered = !!co?.vat;
 
-  // Revenue by day (accounta_income) → total + weekday/weekend averages.
+  // Revenue by day — pulled from the shift-close daily total
+  // (branch_daily_revenue, recorded by the closing staff). One row per day.
   const incDays = db.prepare(
-    "SELECT income_date AS d, SUM(amount) AS amt FROM accounta_income WHERE branch_id = ? AND income_date BETWEEN ? AND ? GROUP BY income_date"
+    "SELECT date AS d, revenue AS amt FROM branch_daily_revenue WHERE branch_id = ? AND date BETWEEN ? AND ? ORDER BY date"
   ).all(branchId, start, end) as Array<{ d: string; amt: number }>;
   let revenue = 0, wkdaySum = 0, wkdayN = 0, wkendSum = 0, wkendN = 0;
   for (const r of incDays) {
@@ -774,12 +776,28 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
     if (elapsed > 0) forecast = round2((revenue / elapsed) * daysInMonth);
   }
 
+  // Excel-style daily rows: revenue (shift-close) vs expense per day, with a
+  // running balance — the comparison table the owner wanted back.
+  const expByDate = db.prepare(
+    "SELECT bill_date AS d, COALESCE(SUM(amount_total),0) AS amt FROM accounta_expenses WHERE review_status = 'confirmed' AND branch_id = ? AND bill_date BETWEEN ? AND ? GROUP BY bill_date"
+  ).all(branchId, start, end) as Array<{ d: string; amt: number }>;
+  const revByDate = new Map(incDays.map((r) => [r.d, round2(r.amt)]));
+  const expByDateMap = new Map(expByDate.map((r) => [r.d, round2(r.amt)]));
+  const allDates = [...new Set([...revByDate.keys(), ...expByDateMap.keys()])].sort();
+  let bal = 0;
+  const dailyRows = allDates.map((d) => {
+    const inc = revByDate.get(d) ?? 0;
+    const exp = expByDateMap.get(d) ?? 0;
+    bal = round2(bal + inc - exp);
+    return { date: d, revenue: inc, expense: exp, balance: bal };
+  });
+
   return {
     period, start, end, label,
     revenue, expense, net: round2(revenue - expense),
     inputVat, outputVat, vatPayable, vatRegistered,
     daysWithRevenue, avgPerDay, avgWeekday, avgWeekend,
-    forecast, categories, uncategorized
+    forecast, categories, uncategorized, dailyRows
   };
 }
 
