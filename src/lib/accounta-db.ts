@@ -471,12 +471,51 @@ export function setExpenseDoc(id: number, docPath: string | null, docMime: strin
   ).run(docPath, docMime, id);
 }
 
-/** Delete an expense; returns the doc path (if any) so the caller can
- *  unlink the orphaned file. */
-export function deleteExpense(id: number): { ok: boolean; doc_path: string | null } {
-  const doc = getExpenseDoc(id);
-  const info = getDb().prepare("DELETE FROM accounta_expenses WHERE id = ?").run(id);
-  return { ok: info.changes > 0, doc_path: doc?.doc_path ?? null };
+/** Delete an expense; returns every file path (primary + extra attachments)
+ *  so the caller can unlink the orphaned files. The child rows are removed
+ *  by the FK ON DELETE CASCADE. */
+export function deleteExpense(id: number): { ok: boolean; paths: string[] } {
+  const db = getDb();
+  const primary = getExpenseDoc(id)?.doc_path ?? null;
+  const extras = (db.prepare("SELECT doc_path FROM accounta_expense_docs WHERE expense_id = ?")
+    .all(id) as Array<{ doc_path: string }>).map((r) => r.doc_path);
+  const info = db.prepare("DELETE FROM accounta_expenses WHERE id = ?").run(id);
+  const paths = [primary, ...extras].filter((p): p is string => !!p);
+  return { ok: info.changes > 0, paths };
+}
+
+// ── Extra attachments (owner 2026-06-20, #3.3) ─────────────────────
+
+export type ExpenseDocRow = {
+  id: number; expense_id: number; doc_path: string; doc_mime: string | null;
+  label: string | null; drive_file_id: string | null; created_at: string;
+};
+
+export function addExpenseDoc(expenseId: number, docPath: string, docMime: string | null, label: string | null, createdBy: number): number {
+  const info = getDb().prepare(
+    "INSERT INTO accounta_expense_docs (expense_id, doc_path, doc_mime, label, created_by) VALUES (?, ?, ?, ?, ?)"
+  ).run(expenseId, docPath, docMime, label, createdBy);
+  return Number(info.lastInsertRowid);
+}
+
+/** Extra attachments for an expense (metadata only — doc_path stays server-side). */
+export function listExpenseDocs(expenseId: number): Array<Omit<ExpenseDocRow, "doc_path" | "expense_id">> {
+  return getDb().prepare(
+    "SELECT id, doc_mime, label, drive_file_id, created_at FROM accounta_expense_docs WHERE expense_id = ? ORDER BY id"
+  ).all(expenseId) as Array<Omit<ExpenseDocRow, "doc_path" | "expense_id">>;
+}
+
+export function getExpenseDocRow(docId: number): ExpenseDocRow | undefined {
+  return getDb().prepare("SELECT * FROM accounta_expense_docs WHERE id = ?").get(docId) as ExpenseDocRow | undefined;
+}
+
+/** Delete one extra attachment; returns its file path for unlinking. */
+export function deleteExpenseDocRow(docId: number): string | null {
+  const db = getDb();
+  const row = db.prepare("SELECT doc_path FROM accounta_expense_docs WHERE id = ?").get(docId) as { doc_path: string } | undefined;
+  if (!row) return null;
+  db.prepare("DELETE FROM accounta_expense_docs WHERE id = ?").run(docId);
+  return row.doc_path;
 }
 
 // ── Period summary (accrual vs cash flow + input VAT) ──────────────

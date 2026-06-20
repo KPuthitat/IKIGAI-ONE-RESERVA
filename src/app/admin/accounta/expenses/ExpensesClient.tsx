@@ -134,6 +134,11 @@ export default function ExpensesClient(props: {
   const [stagedFile, setStagedFile] = useState<File | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
+  // Extra attachments (owner 2026-06-20, #3.3) — loaded when editing an
+  // existing expense; the primary receipt is handled by stagedFile above.
+  const [extraDocs, setExtraDocs] = useState<Array<{ id: number; doc_mime: string | null; label: string | null }>>([]);
+  const [extraBusy, setExtraBusy] = useState(false);
+  const extraRef = useRef<HTMLInputElement>(null);
   // Mixed-bill split detected by OCR (owner 2026-06-18): when set, the form
   // offers "แยกเป็น 2 รายการ" (VAT row + non-VAT row).
   const [mixedSplit, setMixedSplit] = useState<{ vatable: number; vat: number; nonvat: number } | null>(null);
@@ -174,6 +179,7 @@ export default function ExpensesClient(props: {
     setScanMsg(null); setMixedSplit(null);
     setNewCat(null); setNewMethod(null);
     setDraftMode(false);
+    setExtraDocs([]);
     setErr(null);
     setModalOpen(true);
   }
@@ -204,6 +210,8 @@ export default function ExpensesClient(props: {
     setStagedFile(null);
     setScanMsg(null); setMixedSplit(null);
     setNewCat(null); setNewMethod(null);
+    setExtraDocs([]);
+    void loadExtraDocs(e.id);
     setErr(null);
     setModalOpen(true);
   }
@@ -396,6 +404,36 @@ export default function ExpensesClient(props: {
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "ลบไม่สำเร็จ")); return; }
       await reload();
     } finally { setBusy(false); }
+  }
+
+  // ── Extra attachments (#3.3) ──
+  async function loadExtraDocs(expenseId: number) {
+    try {
+      const res = await fetch(apiUrl(`/api/accounta/expenses/${expenseId}/docs`));
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(j.docs)) setExtraDocs(j.docs);
+    } catch { /* ignore */ }
+  }
+  async function addExtraDoc(file: File) {
+    if (form.id == null) return;
+    setExtraBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(apiUrl(`/api/accounta/expenses/${form.id}/docs`), { method: "POST", body: fd });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "แนบไฟล์ไม่สำเร็จ")); return; }
+      await loadExtraDocs(form.id);
+    } finally { setExtraBusy(false); }
+  }
+  async function removeExtraDoc(docId: number) {
+    if (form.id == null) return;
+    if (!window.confirm("ลบไฟล์แนบนี้?")) return;
+    setExtraBusy(true);
+    try {
+      await fetch(apiUrl(`/api/accounta/expenses/${form.id}/docs/${docId}`), { method: "DELETE" });
+      await loadExtraDocs(form.id);
+    } finally { setExtraBusy(false); }
   }
 
   async function addCategory() {
@@ -893,6 +931,37 @@ export default function ExpensesClient(props: {
               <label className="label !text-xs">หมายเหตุ</label>
               <input className="input" value={form.note} onChange={(e) => set("note", e.target.value)} />
             </div>
+
+            {/* หลักฐานเพิ่มเติม — เฉพาะเอกสารที่บันทึกแล้ว (owner 2026-06-20, #3.3) */}
+            {form.id != null && (
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-2.5 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-600">หลักฐานเพิ่มเติม (สลิปโอน / ใบอื่นๆ)</span>
+                  <button type="button" onClick={() => extraRef.current?.click()} disabled={extraBusy}
+                    className="text-xs text-brand hover:underline disabled:opacity-50">
+                    {extraBusy ? "กำลังอัป…" : "+ แนบไฟล์"}
+                  </button>
+                  <input ref={extraRef} type="file" accept="image/*,application/pdf" className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) addExtraDoc(f); e.target.value = ""; }} />
+                </div>
+                {extraDocs.length === 0 ? (
+                  <p className="text-[11px] text-slate-400">ยังไม่มีไฟล์แนบเพิ่ม</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {extraDocs.map((d) => (
+                      <li key={d.id} className="flex items-center gap-2 text-[11px]">
+                        <a href={apiUrl(`/api/accounta/expenses/${form.id}/docs/${d.id}`)} target="_blank" rel="noreferrer"
+                          className="text-brand hover:underline flex-1 truncate">
+                          {d.label || (d.doc_mime === "application/pdf" ? "ไฟล์ PDF" : "รูปภาพ")}
+                        </a>
+                        <button type="button" onClick={() => removeExtraDoc(d.id)} disabled={extraBusy}
+                          className="text-red-500 hover:underline disabled:opacity-50">ลบ</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-3 text-xs text-slate-500">

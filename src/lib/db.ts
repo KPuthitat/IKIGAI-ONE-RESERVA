@@ -5283,6 +5283,24 @@ function runMigrations(db: Database.Database): void {
   if (!expCols.some((c) => c.name === "doc_type")) {
     db.exec("ALTER TABLE accounta_expenses ADD COLUMN doc_type TEXT");
   }
+  // Extra attachments per expense (owner 2026-06-20, paypers-like #3.3):
+  // the primary receipt stays on accounta_expenses.doc_path; ADDITIONAL
+  // evidence (slips, a second invoice, …) lives here. Each row is uploaded
+  // to Drive on confirm too (its own drive_file_id). FK cascade clears the
+  // rows on expense delete; the route unlinks the files.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS accounta_expense_docs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      expense_id INTEGER NOT NULL REFERENCES accounta_expenses(id) ON DELETE CASCADE,
+      doc_path TEXT NOT NULL,
+      doc_mime TEXT,
+      label TEXT,
+      drive_file_id TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_by INTEGER REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_accounta_expense_docs_exp ON accounta_expense_docs(expense_id);
+  `);
   db.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_accounta_expenses_linemsg " +
     "ON accounta_expenses(line_message_id) WHERE line_message_id IS NOT NULL"

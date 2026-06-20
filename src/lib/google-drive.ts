@@ -327,8 +327,14 @@ export async function syncReceiptToDrive(expenseId: number): Promise<void> {
     drive_file_id: string | null;
   } | undefined;
 
-  if (!row || row.review_status !== "confirmed" || !row.doc_path
-      || row.drive_file_id || row.branch_id == null) return;
+  if (!row || row.review_status !== "confirmed" || row.branch_id == null) return;
+
+  // Primary receipt (on the expense) + any extra attachments not yet synced.
+  const primaryNeedsUpload = !!row.doc_path && !row.drive_file_id;
+  const extras = db.prepare(
+    "SELECT id, doc_path, doc_mime FROM accounta_expense_docs WHERE expense_id = ? AND drive_file_id IS NULL"
+  ).all(row.id) as Array<{ id: number; doc_path: string; doc_mime: string | null }>;
+  if (!primaryNeedsUpload && extras.length === 0) return;
 
   const cfg = getDriveConfig(row.branch_id);
   if (!cfg?.enabled || !cfg.oauth_refresh_token_enc) return;
@@ -341,10 +347,19 @@ export async function syncReceiptToDrive(expenseId: number): Promise<void> {
     const root = await ensureRootFolder(row.branch_id, token);
     const month = (row.bill_date || "").slice(0, 7) || "ไม่ระบุเดือน";
     const folderId = await ensureMonthFolder(token, root, month);
-    const buf = await fs.readFile(row.doc_path);
-    const name = `${row.bill_date || "nodate"}-bill${row.id}${extForMime(row.doc_mime)}`;
-    const fileId = await uploadMultipart(token, folderId, name, row.doc_mime || "application/octet-stream", buf);
-    db.prepare("UPDATE accounta_expenses SET drive_file_id = ? WHERE id = ?").run(fileId, row.id);
+
+    if (primaryNeedsUpload && row.doc_path) {
+      const buf = await fs.readFile(row.doc_path);
+      const name = `${row.bill_date || "nodate"}-bill${row.id}${extForMime(row.doc_mime)}`;
+      const fileId = await uploadMultipart(token, folderId, name, row.doc_mime || "application/octet-stream", buf);
+      db.prepare("UPDATE accounta_expenses SET drive_file_id = ? WHERE id = ?").run(fileId, row.id);
+    }
+    for (const ex of extras) {
+      const buf = await fs.readFile(ex.doc_path);
+      const name = `${row.bill_date || "nodate"}-bill${row.id}-add${ex.id}${extForMime(ex.doc_mime)}`;
+      const fileId = await uploadMultipart(token, folderId, name, ex.doc_mime || "application/octet-stream", buf);
+      db.prepare("UPDATE accounta_expense_docs SET drive_file_id = ? WHERE id = ?").run(fileId, ex.id);
+    }
     setStatus(row.branch_id, { ok: true });
   } catch (e) {
     setStatus(row.branch_id, { ok: false, error: e instanceof Error ? e.message : String(e) });

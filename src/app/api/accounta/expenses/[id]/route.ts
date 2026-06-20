@@ -31,8 +31,8 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   requirePermission("accounta.manage");
   const id = parseId(params.id);
   if (id == null) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
-  const { ok, doc_path } = deleteExpense(id);
+  const { ok, paths } = deleteExpense(id);
   if (!ok) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  if (doc_path) { try { await fs.unlink(doc_path); } catch { /* already gone */ } }
+  for (const p of paths) { try { await fs.unlink(p); } catch { /* already gone */ } }
   return NextResponse.json({ ok: true });
 }
