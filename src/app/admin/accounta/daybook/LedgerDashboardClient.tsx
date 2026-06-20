@@ -1,0 +1,245 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { apiUrl } from "@/lib/url";
+import { fmtMoney } from "@/lib/format";
+
+type LedgerPeriod = "week" | "month" | "year";
+
+type CatItem = {
+  code: string | null; name: string; spent: number;
+  pct: number | null; targetMin: number | null; targetMax: number | null;
+  status: "over" | "under" | "ok" | "na";
+};
+type Dash = {
+  period: LedgerPeriod; start: string; end: string; label: string;
+  revenue: number; expense: number; net: number;
+  inputVat: number; outputVat: number; vatPayable: number; vatRegistered: boolean;
+  daysWithRevenue: number; avgPerDay: number; avgWeekday: number; avgWeekend: number;
+  forecast: number | null; categories: CatItem[]; uncategorized: number;
+};
+export type LedgerExpenseRow = {
+  id: number; bill_date: string; vendor_name: string | null; doc_type: string | null;
+  category: string | null; amount_total: number; vat_amount: number;
+  payment_status: "paid" | "unpaid"; has_doc: boolean;
+};
+
+const PERIOD_LABEL: Record<LedgerPeriod, string> = { week: "สัปดาห์", month: "เดือน", year: "ปี" };
+
+function shiftAnchor(anchor: string, period: LedgerPeriod, dir: 1 | -1): string {
+  const [y, m, d] = anchor.split("-").map(Number);
+  if (period === "year") return `${y + dir}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  if (period === "month") {
+    const nd = new Date(Date.UTC(y, m - 1 + dir, 15));
+    return `${nd.getUTCFullYear()}-${String(nd.getUTCMonth() + 1).padStart(2, "0")}-15`;
+  }
+  return new Date(Date.UTC(y, m - 1, d) + dir * 7 * 86400_000).toISOString().slice(0, 10);
+}
+
+const CAT_STATUS = {
+  over: { c: "text-rose-600", t: "เกินเป้า" },
+  under: { c: "text-emerald-600", t: "ต่ำกว่าเป้า" },
+  ok: { c: "text-slate-600", t: "อยู่ในเป้า" },
+  na: { c: "text-slate-400", t: "—" }
+} as const;
+
+export default function LedgerDashboardClient({
+  dash, expenses, period, anchor
+}: {
+  dash: Dash; expenses: LedgerExpenseRow[]; period: LedgerPeriod; anchor: string;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  function go(nextPeriod: LedgerPeriod, nextAnchor: string) {
+    const q = new URLSearchParams({ period: nextPeriod, anchor: nextAnchor });
+    startTransition(() => router.push(`/admin/accounta/daybook?${q.toString()}`));
+  }
+
+  async function remove(e: LedgerExpenseRow) {
+    if (!window.confirm(`ลบรายจ่าย "${e.vendor_name ?? "รายการนี้"}" ฿${fmtMoney(e.amount_total)} ? กู้คืนไม่ได้`)) return;
+    setBusyId(e.id);
+    try {
+      const res = await fetch(apiUrl(`/api/accounta/expenses/${e.id}`), { method: "DELETE" });
+      if (res.ok) startTransition(() => router.refresh());
+    } finally { setBusyId(null); }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Period selector + add buttons */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1">
+          {(["week", "month", "year"] as LedgerPeriod[]).map((p) => (
+            <button key={p} type="button" onClick={() => go(p, anchor)}
+              className={`text-sm px-3 py-1.5 rounded-md border ${period === p
+                ? "bg-brand text-white border-brand" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+              {PERIOD_LABEL[p]}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <Link href="/admin/accounta/income" className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700">+ รายรับ</Link>
+          <Link href="/admin/accounta/expenses" className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ รายจ่าย</Link>
+        </div>
+      </div>
+
+      {/* Range nav */}
+      <div className="flex items-center justify-center gap-3">
+        <button type="button" onClick={() => go(period, shiftAnchor(anchor, period, -1))}
+          className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50" disabled={pending}>←</button>
+        <span className="text-sm font-bold text-slate-700">{dash.label}</span>
+        <button type="button" onClick={() => go(period, shiftAnchor(anchor, period, 1))}
+          className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50" disabled={pending}>→</button>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="card text-center py-3">
+          <div className="text-[11px] text-slate-400">รายรับ</div>
+          <div className="text-2xl font-bold text-emerald-600">฿{fmtMoney(dash.revenue)}</div>
+        </div>
+        <div className="card text-center py-3">
+          <div className="text-[11px] text-slate-400">รายจ่าย</div>
+          <div className="text-2xl font-bold text-rose-600">฿{fmtMoney(dash.expense)}</div>
+        </div>
+        <div className="card text-center py-3">
+          <div className="text-[11px] text-slate-400">คงเหลือ (กำไรเบื้องต้น)</div>
+          <div className={`text-2xl font-bold ${dash.net >= 0 ? "text-slate-800" : "text-rose-600"}`}>฿{fmtMoney(dash.net)}</div>
+        </div>
+      </div>
+
+      {/* VAT / ภพ.30 */}
+      <div className="card space-y-2">
+        <div className="text-sm font-bold text-slate-800">ภาษีมูลค่าเพิ่ม (สะสมในช่วงนี้)</div>
+        {dash.vatRegistered ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+            <div><div className="text-[11px] text-slate-400">ภาษีขาย</div><div className="text-lg font-bold text-slate-700">฿{fmtMoney(dash.outputVat)}</div></div>
+            <div><div className="text-[11px] text-slate-400">ภาษีซื้อ</div><div className="text-lg font-bold text-slate-700">฿{fmtMoney(dash.inputVat)}</div></div>
+            <div>
+              <div className="text-[11px] text-slate-400">ภพ.30 (ขาย − ซื้อ)</div>
+              <div className={`text-lg font-bold ${dash.vatPayable >= 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                {dash.vatPayable >= 0 ? `ต้องชำระ ฿${fmtMoney(dash.vatPayable)}` : `เครดิตยกไป ฿${fmtMoney(-dash.vatPayable)}`}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-xs text-slate-500">
+            บริษัทนี้ไม่ได้จด VAT — แสดงเฉพาะ <b>ภาษีซื้อสะสม ฿{fmtMoney(dash.inputVat)}</b> (ไม่มีภาษีขาย/ภพ.30)
+            <div className="text-[11px] text-slate-400 mt-0.5">เปิด “จด VAT” ได้ที่ บริษัทในเครือ ถ้าสาขานี้ออกใบกำกับภาษีขาย</div>
+          </div>
+        )}
+      </div>
+
+      {/* Sales analytics */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="card text-center py-3">
+          <div className="text-[11px] text-slate-400">ยอดขายเฉลี่ย/วัน</div>
+          <div className="text-lg font-bold text-slate-800">฿{fmtMoney(dash.avgPerDay)}</div>
+          <div className="text-[10px] text-slate-400">{dash.daysWithRevenue} วันที่มียอด</div>
+        </div>
+        <div className="card text-center py-3">
+          <div className="text-[11px] text-slate-400">เฉลี่ยวันธรรมดา</div>
+          <div className="text-lg font-bold text-slate-800">฿{fmtMoney(dash.avgWeekday)}</div>
+        </div>
+        <div className="card text-center py-3">
+          <div className="text-[11px] text-slate-400">เฉลี่ยเสาร์-อาทิตย์</div>
+          <div className="text-lg font-bold text-slate-800">฿{fmtMoney(dash.avgWeekend)}</div>
+        </div>
+        <div className="card text-center py-3">
+          <div className="text-[11px] text-slate-400">คาดการณ์ทั้งเดือน</div>
+          <div className="text-lg font-bold text-brand">{dash.forecast != null ? `฿${fmtMoney(dash.forecast)}` : "—"}</div>
+          {dash.forecast != null && <div className="text-[10px] text-slate-400">จากเฉลี่ย × วันในเดือน</div>}
+        </div>
+      </div>
+
+      {/* Category breakdown — % of revenue vs target band */}
+      <div className="card space-y-2">
+        <div className="text-sm font-bold text-slate-800">รายจ่ายแยกหมวด · % เทียบยอดขาย</div>
+        {dash.categories.length === 0 ? (
+          <p className="text-xs text-slate-400">ยังไม่มีรายจ่ายในช่วงนี้</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] text-slate-400 border-b border-slate-100">
+                  <th className="text-left py-1.5 px-2">หมวด</th>
+                  <th className="text-right py-1.5 px-2">ยอด</th>
+                  <th className="text-right py-1.5 px-2">% ของยอดขาย</th>
+                  <th className="text-right py-1.5 px-2">เป้า</th>
+                  <th className="text-right py-1.5 px-2">สถานะ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dash.categories.map((c) => (
+                  <tr key={c.name} className="border-b border-slate-50">
+                    <td className="py-1.5 px-2 text-slate-700">{c.code ? `${c.code} · ${c.name}` : c.name}</td>
+                    <td className="py-1.5 px-2 text-right font-mono">฿{fmtMoney(c.spent)}</td>
+                    <td className="py-1.5 px-2 text-right font-mono">{c.pct != null ? `${c.pct.toFixed(1)}%` : "—"}</td>
+                    <td className="py-1.5 px-2 text-right text-[11px] text-slate-400">
+                      {c.targetMin != null || c.targetMax != null ? `${c.targetMin ?? 0}–${c.targetMax ?? "∞"}%` : "—"}
+                    </td>
+                    <td className={`py-1.5 px-2 text-right text-[11px] font-bold ${CAT_STATUS[c.status].c}`}>{CAT_STATUS[c.status].t}</td>
+                  </tr>
+                ))}
+                {dash.uncategorized > 0 && (
+                  <tr className="border-b border-slate-50 text-slate-400 italic">
+                    <td className="py-1.5 px-2">(ไม่ระบุหมวด)</td>
+                    <td className="py-1.5 px-2 text-right font-mono">฿{fmtMoney(dash.uncategorized)}</td>
+                    <td colSpan={3} />
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Expense list — editable (delete inline; edit on the รายจ่าย page) */}
+      <div className="card space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-bold text-slate-800">รายการรายจ่าย ({expenses.length})</div>
+          <Link href="/admin/accounta/expenses" className="text-xs text-brand hover:underline">ไปหน้ารายจ่าย (เพิ่ม/สแกน/แก้) →</Link>
+        </div>
+        {expenses.length === 0 ? (
+          <p className="text-xs text-slate-400">ยังไม่มีรายจ่ายในช่วงนี้</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] text-slate-400 border-b border-slate-100">
+                  <th className="text-left py-1.5 px-2">วันที่</th>
+                  <th className="text-left py-1.5 px-2">ผู้ค้า / รายการ</th>
+                  <th className="text-right py-1.5 px-2">ยอด</th>
+                  <th className="text-right py-1.5 px-2">ภาษีซื้อ</th>
+                  <th className="text-right py-1.5 px-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.map((e) => (
+                  <tr key={e.id} className="border-b border-slate-50 hover:bg-slate-50/60">
+                    <td className="py-1.5 px-2 whitespace-nowrap text-slate-600">{e.bill_date}</td>
+                    <td className="py-1.5 px-2">
+                      <div className="text-slate-700">{e.vendor_name || "—"}</div>
+                      <div className="text-[10px] text-slate-400">{e.category || "ไม่ระบุหมวด"}{e.payment_status === "unpaid" ? " · ค้างชำระ" : ""}</div>
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono">฿{fmtMoney(e.amount_total)}</td>
+                    <td className="py-1.5 px-2 text-right font-mono text-slate-500">{e.vat_amount > 0 ? `฿${fmtMoney(e.vat_amount)}` : "—"}</td>
+                    <td className="py-1.5 px-2 text-right whitespace-nowrap">
+                      <Link href={`/admin/accounta/expenses?edit=${e.id}`} className="text-[11px] text-brand hover:underline mr-2">แก้</Link>
+                      <button type="button" onClick={() => remove(e)} disabled={busyId === e.id}
+                        className="text-[11px] text-rose-500 hover:underline disabled:opacity-50">ลบ</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

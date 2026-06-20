@@ -18,7 +18,8 @@ const CreateBody = z.object({
 });
 const UpdateBody = CreateBody.partial().extend({
   id: z.number().int().positive(),
-  active: z.boolean().optional()
+  active: z.boolean().optional(),
+  vat_registered: z.boolean().optional()
 });
 
 export async function POST(req: Request) {
@@ -71,6 +72,10 @@ export async function PATCH(req: Request) {
   if (d.active !== undefined) {
     sets.push("active = ?");
     vals.push(d.active ? 1 : 0);
+  }
+  if (d.vat_registered !== undefined) {
+    sets.push("vat_registered = ?");
+    vals.push(d.vat_registered ? 1 : 0);
   }
   if (sets.length === 0) return NextResponse.json({ error: "no_fields" }, { status: 400 });
   vals.push(d.id);

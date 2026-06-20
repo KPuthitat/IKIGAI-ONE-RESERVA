@@ -6019,6 +6019,7 @@ export type Company = {
   email: string | null;
   logo_url: string | null;
   active: number;
+  vat_registered?: number | null;
   created_at: string;
 };
 

@@ -491,6 +491,7 @@ function CompanyForm({
   const [address, setAddress] = useState(company?.address ?? "");
   const [phone, setPhone] = useState(company?.phone ?? "");
   const [email, setEmail] = useState(company?.email ?? "");
+  const [vatReg, setVatReg] = useState<boolean>(!!company?.vat_registered);
 
   return (
     <div className="space-y-2">
@@ -525,13 +526,23 @@ function CompanyForm({
           <input className="input text-sm" value={email}
             onChange={(e) => setEmail(e.target.value)} maxLength={120} />
         </div>
+        <div className="md:col-span-2">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={vatReg} onChange={(e) => setVatReg(e.target.checked)} />
+            จดทะเบียน VAT (ออกใบกำกับภาษีขาย 7%)
+          </label>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            เปิด = หน้าบัญชีคิดภาษีขาย + ภพ.30 ให้ · ปิด = แสดงเฉพาะภาษีซื้อสะสม (เช่น คลินิกที่ยกเว้น VAT)
+          </p>
+        </div>
       </div>
       <div className="flex gap-2">
         <button type="button" disabled={busy || !nameTh.trim()}
           onClick={() => onSave({
             name_th: nameTh, name_en: nameEn || null,
             tax_id: taxId || null, address: address || null,
-            phone: phone || null, email: email || null
+            phone: phone || null, email: email || null,
+            vat_registered: vatReg
           })}
           className="flex-1 py-1.5 rounded bg-brand text-white text-xs font-bold disabled:opacity-50">
           {busy ? "…" : t("common.save")}

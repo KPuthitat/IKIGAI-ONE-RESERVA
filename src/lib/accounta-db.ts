@@ -656,6 +656,141 @@ export function daybook(month: string, branchId?: number | null, companyId?: num
   };
 }
 
+// ── Income/Expense dashboard (owner 2026-06-20) ────────────────────
+// Single-branch financial overview: revenue / expense / net, ภาษีซื้อ-ขาย-
+// ภพ.30 (output VAT only when the branch's company is vat_registered),
+// per-category % of revenue, daily averages (weekday/weekend), and a
+// run-rate forecast for the month. Period = week / month / year.
+
+export type LedgerPeriod = "week" | "month" | "year";
+
+export type LedgerCatItem = {
+  code: string | null; name: string; spent: number;
+  pct: number | null; targetMin: number | null; targetMax: number | null;
+  status: "over" | "under" | "ok" | "na";
+};
+
+export type LedgerDashboard = {
+  period: LedgerPeriod;
+  start: string; end: string; label: string;
+  revenue: number; expense: number; net: number;
+  inputVat: number; outputVat: number; vatPayable: number; vatRegistered: boolean;
+  daysWithRevenue: number; avgPerDay: number; avgWeekday: number; avgWeekend: number;
+  forecast: number | null;
+  categories: LedgerCatItem[];
+  uncategorized: number;
+};
+
+function bkkToday(): string {
+  return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+}
+
+/** Resolve {start,end,label} for a period anchored on a YYYY-MM-DD date. */
+export function ledgerRange(period: LedgerPeriod, anchor: string): { start: string; end: string; label: string } {
+  const [y, m, d] = (/^\d{4}-\d{2}-\d{2}$/.test(anchor) ? anchor : bkkToday()).split("-").map(Number);
+  const iso = (x: Date) => x.toISOString().slice(0, 10);
+  if (period === "year") {
+    return { start: `${y}-01-01`, end: `${y}-12-31`, label: `ปี ${y + 543}` };
+  }
+  if (period === "month") {
+    const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const mm = String(m).padStart(2, "0");
+    return { start: `${y}-${mm}-01`, end: `${y}-${mm}-${String(last).padStart(2, "0")}`, label: `${["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."][m]} ${y + 543}` };
+  }
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = dt.getUTCDay();                 // 0=Sun..6=Sat
+  const mon = new Date(dt.getTime() + (dow === 0 ? -6 : 1 - dow) * 86400_000);
+  const sun = new Date(mon.getTime() + 6 * 86400_000);
+  return { start: iso(mon), end: iso(sun), label: `สัปดาห์ ${iso(mon)} – ${iso(sun)}` };
+}
+
+function isWeekend(ymd: string): boolean {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return dow === 0 || dow === 6;
+}
+
+export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: string): LedgerDashboard {
+  const db = getDb();
+  const { start, end, label } = ledgerRange(period, anchor);
+
+  // VAT status from the branch's company.
+  const co = db.prepare(
+    "SELECT c.vat_registered AS vat FROM branches b LEFT JOIN companies c ON c.id = b.company_id WHERE b.id = ?"
+  ).get(branchId) as { vat: number | null } | undefined;
+  const vatRegistered = !!co?.vat;
+
+  // Revenue by day (accounta_income) → total + weekday/weekend averages.
+  const incDays = db.prepare(
+    "SELECT income_date AS d, SUM(amount) AS amt FROM accounta_income WHERE branch_id = ? AND income_date BETWEEN ? AND ? GROUP BY income_date"
+  ).all(branchId, start, end) as Array<{ d: string; amt: number }>;
+  let revenue = 0, wkdaySum = 0, wkdayN = 0, wkendSum = 0, wkendN = 0;
+  for (const r of incDays) {
+    revenue += r.amt;
+    if (isWeekend(r.d)) { wkendSum += r.amt; wkendN += 1; } else { wkdaySum += r.amt; wkdayN += 1; }
+  }
+  revenue = round2(revenue);
+  const daysWithRevenue = incDays.length;
+  const avgPerDay = daysWithRevenue ? round2(revenue / daysWithRevenue) : 0;
+  const avgWeekday = wkdayN ? round2(wkdaySum / wkdayN) : 0;
+  const avgWeekend = wkendN ? round2(wkendSum / wkendN) : 0;
+
+  // Expenses (confirmed) → total + input VAT + per-category.
+  const expAgg = db.prepare(
+    "SELECT COALESCE(SUM(amount_total),0) AS total, COALESCE(SUM(vat_amount),0) AS vat FROM accounta_expenses WHERE review_status = 'confirmed' AND branch_id = ? AND bill_date BETWEEN ? AND ?"
+  ).get(branchId, start, end) as { total: number; vat: number };
+  const expense = round2(expAgg.total);
+  const inputVat = round2(expAgg.vat);
+
+  const catRows = db.prepare(
+    "SELECT COALESCE(category,'') AS cat, COALESCE(SUM(amount_total),0) AS spent FROM accounta_expenses WHERE review_status = 'confirmed' AND branch_id = ? AND bill_date BETWEEN ? AND ? GROUP BY COALESCE(category,'')"
+  ).all(branchId, start, end) as Array<{ cat: string; spent: number }>;
+  const spentByName = new Map(catRows.map((r) => [r.cat, round2(r.spent)]));
+  const uncategorized = round2(spentByName.get("") ?? 0);
+
+  const categories: LedgerCatItem[] = listCategories().map((c) => {
+    const spent = round2(spentByName.get(c.name) ?? 0);
+    const pct = revenue > 0 ? round2((spent / revenue) * 100) : null;
+    let status: LedgerCatItem["status"] = "ok";
+    if (pct == null || (c.target_pct_min == null && c.target_pct_max == null)) status = "na";
+    else if (c.target_pct_max != null && pct > c.target_pct_max) status = "over";
+    else if (c.target_pct_min != null && pct < c.target_pct_min) status = "under";
+    return { code: c.code, name: c.name, spent, pct, targetMin: c.target_pct_min ?? null, targetMax: c.target_pct_max ?? null, status };
+  }).filter((i) => i.spent > 0);
+
+  // Output VAT (ภาษีขาย) + ภพ.30 — only when the company is VAT-registered.
+  const outputVat = vatRegistered ? round2((revenue * 7) / 107) : 0;
+  const vatPayable = vatRegistered ? round2(outputVat - inputVat) : 0;
+
+  // Run-rate forecast — month period only: revenue-so-far / days-elapsed ×
+  // days-in-month. Past months use all days; future months → no forecast.
+  let forecast: number | null = null;
+  if (period === "month") {
+    const daysInMonth = Number(end.slice(8, 10));
+    const today = bkkToday();
+    let elapsed = daysInMonth;
+    if (today >= start && today <= end) elapsed = Number(today.slice(8, 10));
+    else if (today < start) elapsed = 0;
+    if (elapsed > 0) forecast = round2((revenue / elapsed) * daysInMonth);
+  }
+
+  return {
+    period, start, end, label,
+    revenue, expense, net: round2(revenue - expense),
+    inputVat, outputVat, vatPayable, vatRegistered,
+    daysWithRevenue, avgPerDay, avgWeekday, avgWeekend,
+    forecast, categories, uncategorized
+  };
+}
+
+/** Confirmed expenses in a date range (for the dashboard's editable list). */
+export function listExpensesInRange(branchId: number, start: string, end: string): ExpenseRow[] {
+  const r = getDb().prepare(
+    `${SELECT_EXPENSE} WHERE e.review_status = 'confirmed' AND e.branch_id = ? AND e.bill_date BETWEEN ? AND ? ORDER BY e.bill_date DESC, e.id DESC`
+  ).all(branchId, start, end) as RawExpense[];
+  return r.map(shape);
+}
+
 // ── OCR usage log ──────────────────────────────────────────────────
 
 export function logOcrUsage(d: {
