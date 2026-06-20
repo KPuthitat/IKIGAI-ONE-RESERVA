@@ -335,6 +335,16 @@ function runMigrations(db: Database.Database): void {
   if (!sccolNames.has("description")) {
     db.exec("ALTER TABLE shift_checklist_items ADD COLUMN description TEXT");
   }
+  // 2026-06-21: income_breakdown flags a SECTION/group row whose
+  // amount-kind children are payment channels (Cash, PromptPay, VISA…).
+  // When 1, the shift-close submit mirrors each child's amount into the
+  // ACCOUNTA รายรับ ledger as a per-channel row (channel = child label),
+  // so the channels staff already fill in every day double as the income
+  // breakdown — one source of truth, no re-keying. Meaningful only on
+  // section rows that have amount children.
+  if (!sccolNames.has("income_breakdown")) {
+    db.exec("ALTER TABLE shift_checklist_items ADD COLUMN income_breakdown INTEGER NOT NULL DEFAULT 0");
+  }
   if (!sccolNames.has("branch_id")) {
     db.exec("ALTER TABLE shift_checklist_items ADD COLUMN branch_id INTEGER REFERENCES branches(id)");
     // Clone any orphan (NULL branch_id) rows once per existing branch so
@@ -6389,6 +6399,11 @@ export type ShiftChecklistItem = {
    *  staff form + LINE Flex card. Used for examples or clarifications
    *  the label itself shouldn't carry. */
   description: string | null;
+  /** Section rows only: when 1, the amount-kind CHILDREN of this group
+   *  are treated as payment channels and mirrored into the ACCOUNTA
+   *  รายรับ ledger (channel = child label) on every shift-close submit.
+   *  0 = group is display-only. Stored as 1 / 0. */
+  income_breakdown: number;
   display_order: number;
   active: number;          // 1 / 0
   created_at: string;

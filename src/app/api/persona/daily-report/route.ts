@@ -8,6 +8,7 @@ import {
 import { todayBkk } from "@/lib/time";
 import { upsertDailyServiceCharge } from "@/lib/service-charge";
 import { upsertBranchDailyRevenue } from "@/lib/ascenda";
+import { syncShiftCloseIncomeOnSubmit } from "@/lib/accounta-db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { nameWithPrefix } from "@/lib/name";
 
@@ -298,6 +299,18 @@ export async function POST(req: Request) {
       } catch (e) {
         console.error("revenue upsert from shift_close failed", e);
       }
+    }
+    // Mirror into the ACCOUNTA รายรับ ledger (owner 2026-06-21). Per-channel
+    // when the branch flagged a payment-channel group (income_breakdown),
+    // else the single daily total. Fire-and-forget — never blocks the close.
+    try {
+      syncShiftCloseIncomeOnSubmit(
+        branch.id, report_date, user.id,
+        (d.checklist ?? []).map((c) => ({ label: c.label, note: c.note ?? null, kind: c.kind ?? null })),
+        d.daily_revenue ?? null
+      );
+    } catch (e) {
+      console.error("รายรับ ledger sync from shift_close failed", e);
     }
   }
 

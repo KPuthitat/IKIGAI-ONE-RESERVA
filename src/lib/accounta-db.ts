@@ -203,6 +203,125 @@ export function getIncome(id: number): IncomeRow | null {
   `).get(id) as IncomeRow | undefined ?? null;
 }
 
+// ── Shift-close → รายรับ ledger mirror ───────────────────────────
+// The payment channels staff already fill in at shift-close double as
+// the income breakdown: any SECTION row flagged income_breakdown=1 has
+// its amount children mirrored here as per-channel income (owner
+// 2026-06-21). source='shift_close' rows are owned by this flow and
+// rebuilt on every submit — admins edit the source (ยอดขายรายวัน), not
+// the mirror. When a branch has no breakdown configured we fall back to
+// a single channel-less total row (the daily revenue figure).
+
+type ShiftCloseEntry = { label: string; note?: string | null; kind?: string | null };
+
+/** Parse "12,345.67" (or "฿12,345") → 12345.67. Empty/garbage → 0. */
+function parseAmountNote(note: string | null | undefined): number {
+  if (note == null) return 0;
+  const n = parseFloat(String(note).replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** From the submitted checklist entries, pull the per-channel amounts
+ *  for this branch's income_breakdown groups. channel = child label. */
+export function shiftCloseChannelRows(
+  branchId: number,
+  entries: ShiftCloseEntry[]
+): Array<{ channel: string; amount: number }> {
+  const db = getDb();
+  // Any flagged top-level row counts as an income-channel group — the
+  // parent's kind doesn't matter (the card channels sit under a 'text'
+  // "EDC Batch #" header, the cash/QR ones under a 'section'). What
+  // matters is its amount children.
+  const groups = db.prepare(
+    "SELECT id FROM shift_checklist_items WHERE branch_id = ? AND type = 'shift_close' AND parent_id IS NULL AND income_breakdown = 1 AND active = 1"
+  ).all(branchId) as Array<{ id: number }>;
+  if (groups.length === 0) return [];
+  const ph = groups.map(() => "?").join(",");
+  const children = db.prepare(
+    `SELECT label FROM shift_checklist_items WHERE parent_id IN (${ph}) AND kind = 'amount' AND active = 1`
+  ).all(...groups.map((g) => g.id)) as Array<{ label: string }>;
+  const channelLabels = new Set(children.map((c) => c.label));
+  const rows: Array<{ channel: string; amount: number }> = [];
+  for (const e of entries) {
+    if (!channelLabels.has(e.label)) continue;
+    const amt = round2(parseAmountNote(e.note));
+    if (amt > 0) rows.push({ channel: e.label, amount: amt });
+  }
+  return rows;
+}
+
+/** Rebuild the source='shift_close' income rows for a (branch, date):
+ *  delete the old ones, insert the given rows. Channel names are also
+ *  registered in accounta_income_channels so they appear in the manual
+ *  รายรับ dropdown (one source of truth for channels). */
+export function replaceShiftCloseIncome(
+  branchId: number,
+  date: string,
+  userId: number,
+  rows: Array<{ channel: string | null; amount: number }>
+): void {
+  const db = getDb();
+  const company = db.prepare("SELECT company_id FROM branches WHERE id = ?")
+    .get(branchId) as { company_id: number | null } | undefined;
+  const companyId = company?.company_id ?? null;
+  const txn = db.transaction(() => {
+    db.prepare(
+      "DELETE FROM accounta_income WHERE branch_id = ? AND income_date = ? AND source = 'shift_close'"
+    ).run(branchId, date);
+    const regCh = db.prepare(
+      "INSERT OR IGNORE INTO accounta_income_channels (name, sort_order) VALUES (?, 500)"
+    );
+    const ins = db.prepare(
+      `INSERT INTO accounta_income (branch_id, company_id, income_date, channel, amount, note, created_by, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'shift_close')`
+    );
+    for (const r of rows) {
+      const amt = round2(r.amount);
+      if (amt <= 0) continue;
+      if (r.channel) regCh.run(r.channel);
+      const note = r.channel
+        ? `จากรายงานปิดกะ · ${r.channel}`
+        : "ดึงอัตโนมัติจากรายงานปิดกะ (ยอดขายรวมทุกช่องทาง)";
+      ins.run(branchId, companyId, date, r.channel, amt, note, userId);
+    }
+  });
+  txn();
+}
+
+/** Called from the shift-close submit. Per-channel split when the branch
+ *  has an income_breakdown group; otherwise the single daily-revenue
+ *  total. No-op when there's neither (leaves any prior rows intact). */
+export function syncShiftCloseIncomeOnSubmit(
+  branchId: number,
+  date: string,
+  userId: number,
+  entries: ShiftCloseEntry[],
+  total: number | null
+): void {
+  const channelRows = shiftCloseChannelRows(branchId, entries);
+  if (channelRows.length > 0) {
+    replaceShiftCloseIncome(branchId, date, userId, channelRows);
+  } else if (total != null) {
+    replaceShiftCloseIncome(branchId, date, userId, [{ channel: null, amount: total }]);
+  }
+}
+
+/** Called from the admin daily-revenue edit. Only mirrors the total when
+ *  there's no per-channel breakdown for that date — never clobbers the
+ *  channel rows a shift-close submit produced. */
+export function syncShiftCloseTotalIfNoChannels(
+  branchId: number,
+  date: string,
+  total: number | null,
+  userId: number
+): void {
+  const hasChannel = getDb().prepare(
+    "SELECT 1 FROM accounta_income WHERE branch_id = ? AND income_date = ? AND source = 'shift_close' AND channel IS NOT NULL LIMIT 1"
+  ).get(branchId, date);
+  if (hasChannel) return;
+  replaceShiftCloseIncome(branchId, date, userId, total != null ? [{ channel: null, amount: total }] : []);
+}
+
 export type IncomeSummary = { total: number; byChannel: Array<{ channel: string; total: number }> };
 
 export function incomeSummary(month: string, branchId?: number | null, companyId?: number | null): IncomeSummary {

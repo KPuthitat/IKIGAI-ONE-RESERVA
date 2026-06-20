@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { upsertBranchDailyRevenue } from "@/lib/ascenda";
+import { syncShiftCloseTotalIfNoChannels } from "@/lib/accounta-db";
 import { logPersonaAction } from "@/lib/db";
 
 // PUT /api/admin/ascenda/revenue — admin upserts one day's revenue.
@@ -52,6 +53,15 @@ export async function PUT(req: Request) {
     userId: user.id,
     source: "admin_edit"
   });
+
+  // Mirror the corrected total into the รายรับ ledger — but only when that
+  // day has no per-channel breakdown (so a manual total fix never wipes the
+  // channel split a shift-close submit produced).
+  try {
+    syncShiftCloseTotalIfNoChannels(branch_id, date, revenue, user.id);
+  } catch (e) {
+    console.error("รายรับ ledger total sync from admin edit failed", e);
+  }
 
   logPersonaAction(
     user.id,

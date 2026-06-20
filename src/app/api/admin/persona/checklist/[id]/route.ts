@@ -18,7 +18,10 @@ const PatchBody = z.object({
   is_headline_amount: z.union([z.literal(0), z.literal(1)]).optional(),
   /** Optional small-text description shown under the label. Empty
    *  string normalises to NULL. */
-  description: z.string().max(500).optional()
+  description: z.string().max(500).optional(),
+  /** Section rows only — when 1, this group's amount children are
+   *  mirrored into the ACCOUNTA รายรับ ledger as per-channel income. */
+  income_breakdown: z.union([z.literal(0), z.literal(1)]).optional()
 });
 
 /** Look up the item and verify the calling admin is assigned to the
@@ -85,6 +88,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
    // No atomic-clear here — admin manages the set freely.
   if (incoming.is_headline_amount !== undefined) {
     updates.is_headline_amount = incoming.is_headline_amount;
+  }
+  if (incoming.income_breakdown !== undefined) {
+    updates.income_breakdown = incoming.income_breakdown;
   }
   // Description — empty string normalises to NULL so the column
   // doesn't end up with whitespace-only rows.
