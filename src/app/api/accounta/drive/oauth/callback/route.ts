@@ -7,11 +7,15 @@ import { verifyState, completeDriveOAuth } from "@/lib/google-drive";
 // the branch id rides in the signed `state`. Stores the refresh token and
 // bounces back to the admin Drive page with a status flag.
 export async function GET(req: Request) {
-  const back = (q: string) => NextResponse.redirect(new URL(`/admin/accounta/drive?${q}`, req.url));
+  // Build redirects against the PUBLIC base URL, not req.url — behind Nginx
+  // req.url's host is the internal localhost:3010, which the browser can't
+  // reach (it followed the redirect to localhost and got CONNECTION_REFUSED).
+  const appBase = (process.env.APP_BASE_URL || "https://ikigaimedihealth.com").replace(/\/$/, "");
+  const back = (q: string) => NextResponse.redirect(`${appBase}/admin/accounta/drive?${q}`);
 
   const user = getSessionUser();
   if (!user || user.role !== "super_admin") {
-    return NextResponse.redirect(new URL("/admin/accounta", req.url));
+    return NextResponse.redirect(`${appBase}/admin/accounta`);
   }
 
   const url = new URL(req.url);
