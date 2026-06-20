@@ -654,10 +654,14 @@ export default function ExpensesClient(props: {
                       <span className="inline-block text-[10px] bg-slate-100 text-slate-500 rounded px-1.5 py-0.5 mt-0.5">{docTypeLabel(e.doc_type)}</span>
                     )}
                     {e.description && <div className="text-[11px] text-slate-500">{e.description}</div>}
-                    {e.has_doc && (
-                      <a href={apiUrl(`/api/accounta/expenses/${e.id}/doc`)} target="_blank" rel="noreferrer"
-                        className="text-[11px] text-brand hover:underline">ดูบิล</a>
-                    )}
+                    <div className="flex gap-2">
+                      {e.has_doc && (
+                        <a href={apiUrl(`/api/accounta/expenses/${e.id}/doc`)} target="_blank" rel="noreferrer"
+                          className="text-[11px] text-brand hover:underline">ดูบิล</a>
+                      )}
+                      <a href={`/admin/accounta/expenses/${e.id}/substitute-receipt`} target="_blank" rel="noreferrer"
+                        className="text-[11px] text-slate-500 hover:underline" title="ออกใบรับรองแทนใบเสร็จ (เมื่อไม่มีใบเสร็จ/ใบกำกับ)">ใบแทน</a>
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-slate-500 text-xs">{e.category || "—"}</td>
                   <td className="px-3 py-2 text-right font-semibold text-slate-800 whitespace-nowrap">฿{fmtMoney(e.amount_total)}</td>
