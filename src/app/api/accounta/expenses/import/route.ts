@@ -93,6 +93,7 @@ export async function POST(req: Request) {
       bill_date: dateRaw,
       vendor_id: null,
       vendor_name: get(r, "vendor") || null,
+      doc_type: null,
       category: get(r, "category") || null,
       description: get(r, "description") || null,
       amount_total: round2(amount),

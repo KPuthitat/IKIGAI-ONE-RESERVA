@@ -390,6 +390,7 @@ export type AccountaBillAckArgs = {
   vendor: string | null;       // OCR'd ร้านค้า (null = couldn't read)
   amount: number | null;       // OCR'd ยอดรวม (null = couldn't read)
   category: string | null;     // OCR'd หมวด (null = ยังไม่ระบุ)
+  docTypeLabel?: string | null; // OCR'd ประเภทเอกสาร label (null = ไม่ระบุ)
   billDate: string | null;     // YYYY-MM-DD or null
   parsed: boolean;             // false → OCR failed; card asks admin to key it
   extraLine?: string | null;   // optional note, e.g. mixed-bill split info
@@ -418,6 +419,7 @@ export function accountaBillAckFlex(args: AccountaBillAckArgs): LineFlexMessage 
     row("ยอดรวม", args.amount != null ? `${baht(args.amount)} บาท` : "— อ่านไม่ออก —", true),
     row("หมวด", args.category ?? "ยังไม่ระบุ")
   ];
+  if (args.docTypeLabel) rows.push(row("ประเภทเอกสาร", args.docTypeLabel));
   if (args.billDate) rows.push(row("วันที่บิล", args.billDate));
 
   const tail = args.parsed

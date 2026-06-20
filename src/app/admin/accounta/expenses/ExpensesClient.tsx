@@ -8,6 +8,7 @@ import { formatLongDate } from "@/lib/time";
 import { humanizeApiError } from "@/lib/error-messages";
 import {
   PAYMENT_STATUS_LABEL, splitVat, round2, splitMixedBill,
+  DOC_TYPES, DOC_TYPE_LABEL, docTypeLabel,
   type PaymentStatus, type OcrBillResult
 } from "@/lib/accounta";
 
@@ -31,7 +32,7 @@ type Expense = {
   id: number; branch_id: number | null; branch_name: string | null;
   company_id: number | null; company_name: string | null;
   bill_date: string; vendor_id: number | null; vendor_name: string | null;
-  category: string | null; description: string | null;
+  doc_type: string | null; category: string | null; description: string | null;
   amount_total: number; has_tax_invoice: number; vat_amount: number; base_amount: number;
   payment_status: PaymentStatus; payment_method: string | null; paid_date: string | null;
   has_doc: boolean; ocr_source: string | null; ocr_cost_baht: number | null; note: string | null;
@@ -48,7 +49,7 @@ type Usage = { monthCount: number; monthBaht: number; totalCount: number; totalB
 type FormState = {
   id: number | null;
   branch_id: string; company_id: string;
-  bill_date: string; vendor_name: string; category: string; description: string;
+  bill_date: string; vendor_name: string; doc_type: string; category: string; description: string;
   amount_total: string; has_tax_invoice: boolean; vat_override: string;
   payment_status: PaymentStatus; payment_method: string; paid_date: string;
   note: string;
@@ -62,7 +63,7 @@ function todayISO(): string {
 function blankForm(defaultMethod = ""): FormState {
   return {
     id: null, branch_id: "", company_id: "",
-    bill_date: todayISO(), vendor_name: "", category: "", description: "",
+    bill_date: todayISO(), vendor_name: "", doc_type: "", category: "", description: "",
     amount_total: "", has_tax_invoice: false, vat_override: "",
     payment_status: "paid", payment_method: defaultMethod, paid_date: todayISO(),
     note: "", rememberVendor: true
@@ -185,6 +186,7 @@ export default function ExpensesClient(props: {
       company_id: e.company_id != null ? String(e.company_id) : "",
       bill_date: e.bill_date,
       vendor_name: e.vendor_name ?? "",
+      doc_type: e.doc_type ?? "",
       category: e.category ?? "",
       description: e.description ?? "",
       amount_total: String(e.amount_total),
@@ -230,6 +232,7 @@ export default function ExpensesClient(props: {
         amount_total: r.amount_total != null ? String(r.amount_total) : f.amount_total,
         has_tax_invoice: r.has_tax_invoice ?? f.has_tax_invoice,
         vat_override: r.vat_amount != null ? String(r.vat_amount) : f.vat_override,
+        doc_type: (r.doc_type && DOC_TYPES.includes(r.doc_type as never)) ? r.doc_type : f.doc_type,
         category: ocrCat ?? learnedCat ?? f.category,
         description: r.description ?? f.description,
         paid_date: r.bill_date ?? f.paid_date
@@ -284,6 +287,7 @@ export default function ExpensesClient(props: {
         bill_date: form.bill_date,
         vendor_id: matchVendor?.id ?? null,
         vendor_name: form.vendor_name.trim() || null,
+        doc_type: form.doc_type || null,
         category: form.category || null,
         description: form.description.trim() || null,
         payment_status: form.payment_status,
@@ -338,6 +342,7 @@ export default function ExpensesClient(props: {
         bill_date: form.bill_date,
         vendor_id: matchVendor?.id ?? null,
         vendor_name: form.vendor_name.trim() || null,
+        doc_type: form.doc_type || null,
         category: form.category || null,
         description: form.description.trim() || null,
         amount_total: total,
@@ -508,7 +513,7 @@ export default function ExpensesClient(props: {
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-slate-800 truncate">{d.vendor_name || "— ยังไม่ระบุร้าน —"}</div>
                   <div className="text-[11px] text-slate-500 truncate">
-                    {formatLongDate(d.bill_date, "th")} · {d.category || "ไม่ระบุหมวด"}{d.note ? ` · ${d.note}` : ""}
+                    {formatLongDate(d.bill_date, "th")} · {docTypeLabel(d.doc_type) ? `${docTypeLabel(d.doc_type)} · ` : ""}{d.category || "ไม่ระบุหมวด"}{d.note ? ` · ${d.note}` : ""}
                   </div>
                 </div>
                 {d.has_doc && (
@@ -645,6 +650,9 @@ export default function ExpensesClient(props: {
                   </td>
                   <td className="px-3 py-2">
                     <div className="font-medium text-slate-800">{e.vendor_name || "—"}</div>
+                    {docTypeLabel(e.doc_type) && (
+                      <span className="inline-block text-[10px] bg-slate-100 text-slate-500 rounded px-1.5 py-0.5 mt-0.5">{docTypeLabel(e.doc_type)}</span>
+                    )}
                     {e.description && <div className="text-[11px] text-slate-500">{e.description}</div>}
                     {e.has_doc && (
                       <a href={apiUrl(`/api/accounta/expenses/${e.id}/doc`)} target="_blank" rel="noreferrer"
@@ -764,6 +772,18 @@ export default function ExpensesClient(props: {
               <div>
                 <label className="label !text-xs">วันที่บิล</label>
                 <input type="date" className="input" value={form.bill_date} onChange={(e) => setBillDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="label !text-xs">ประเภทเอกสาร</label>
+                <select className="input" value={form.doc_type}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    // เลือก "ใบกำกับภาษีเต็มรูป" → ติ๊กแยก VAT 7% ให้เลย (เอกสารเดียวที่เคลมภาษีซื้อได้)
+                    setForm((f) => ({ ...f, doc_type: v, has_tax_invoice: v === "tax_invoice" ? true : f.has_tax_invoice }));
+                  }}>
+                  <option value="">— เลือก —</option>
+                  {DOC_TYPES.map((t) => <option key={t} value={t}>{DOC_TYPE_LABEL[t]}</option>)}
+                </select>
               </div>
               <div>
                 <label className="label !text-xs">หมวดหมู่</label>

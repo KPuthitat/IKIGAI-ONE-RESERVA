@@ -26,6 +26,7 @@ export type ExpenseRow = {
   bill_date: string;
   vendor_id: number | null;
   vendor_name: string | null;
+  doc_type: string | null;
   category: string | null;
   description: string | null;
   amount_total: number;
@@ -429,14 +430,14 @@ export function createExpense(
   const d = normalise(input);
   const info = getDb().prepare(`
     INSERT INTO accounta_expenses (
-      branch_id, company_id, bill_date, vendor_id, vendor_name, category, description,
+      branch_id, company_id, bill_date, vendor_id, vendor_name, doc_type, category, description,
       amount_total, has_tax_invoice, vat_amount, base_amount,
       payment_status, payment_method, paid_date,
       ocr_source, ocr_cost_baht, review_status, line_message_id, note, created_by
-    ) VALUES (?,?,?,?,?,?,?, ?,?,?,?, ?,?,?, ?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?, ?,?,?,?, ?,?,?, ?,?,?,?,?,?)
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
-    d.category, d.description?.trim() || null,
+    d.doc_type, d.category, d.description?.trim() || null,
     d.amount_total, d.has_tax_invoice ? 1 : 0, d.vat_amount, d.base_amount,
     d.payment_status, d.payment_method, d.paid_date,
     ocr?.source ?? null, ocr?.costBaht ?? null,
@@ -451,13 +452,13 @@ export function updateExpense(id: number, input: ExpenseInput): boolean {
   const info = getDb().prepare(`
     UPDATE accounta_expenses SET
       branch_id = ?, company_id = ?, bill_date = ?, vendor_id = ?, vendor_name = ?,
-      category = ?, description = ?, amount_total = ?, has_tax_invoice = ?,
+      doc_type = ?, category = ?, description = ?, amount_total = ?, has_tax_invoice = ?,
       vat_amount = ?, base_amount = ?, payment_status = ?, payment_method = ?,
       paid_date = ?, note = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
-    d.category, d.description?.trim() || null, d.amount_total, d.has_tax_invoice ? 1 : 0,
+    d.doc_type, d.category, d.description?.trim() || null, d.amount_total, d.has_tax_invoice ? 1 : 0,
     d.vat_amount, d.base_amount, d.payment_status, d.payment_method,
     d.paid_date, d.note?.trim() || null, id
   );

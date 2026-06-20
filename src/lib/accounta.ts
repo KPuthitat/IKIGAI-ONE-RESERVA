@@ -20,6 +20,35 @@ export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
   unpaid: "ค้างชำระ"
 };
 
+// ── Document type (ประเภทเอกสาร) ───────────────────────────────────
+// Classifies the source document a bill came from. Descriptive only — the
+// VAT-claim driver is still `has_tax_invoice` (a full tax invoice is the
+// only doc you can claim ภาษีซื้อ on). The form pre-checks has_tax_invoice
+// when the owner picks "ใบกำกับภาษี (เต็มรูป)". (owner 2026-06-20.)
+export type DocType =
+  | "receipt" | "tax_invoice" | "tax_invoice_abbr"
+  | "cash_bill" | "transfer_slip" | "invoice" | "other";
+
+export const DOC_TYPE_LABEL: Record<DocType, string> = {
+  receipt: "ใบเสร็จรับเงิน",
+  tax_invoice: "ใบกำกับภาษี (เต็มรูป)",
+  tax_invoice_abbr: "ใบกำกับภาษีอย่างย่อ",
+  cash_bill: "บิลเงินสด",
+  transfer_slip: "สลิปโอนเงิน",
+  invoice: "ใบแจ้งหนี้",
+  other: "อื่นๆ"
+};
+
+export const DOC_TYPES = Object.keys(DOC_TYPE_LABEL) as DocType[];
+
+export function isDocType(v: unknown): v is DocType {
+  return typeof v === "string" && (DOC_TYPES as string[]).includes(v);
+}
+
+export function docTypeLabel(v: string | null | undefined): string | null {
+  return v && isDocType(v) ? DOC_TYPE_LABEL[v] : null;
+}
+
 // ── VAT (ภาษีซื้อ) ─────────────────────────────────────────────────
 
 export const VAT_RATE = 0.07;
@@ -90,6 +119,7 @@ export type ExpenseInput = {
   bill_date: string;            // YYYY-MM-DD (accrual)
   vendor_id: number | null;
   vendor_name: string | null;
+  doc_type: DocType | null;     // ประเภทเอกสาร (descriptive)
   category: string | null;      // category NAME (free text, from the picklist)
   description: string | null;
   amount_total: number;
@@ -111,6 +141,7 @@ export type OcrBillResult = {
   amount_total: number | null;
   has_tax_invoice: boolean | null;
   vat_amount: number | null;
+  doc_type: string | null;      // one of DOC_TYPES, or null
   category: string | null;
   description: string | null;
   // Mixed-bill split (owner 2026-06-18): when a single bill carries both

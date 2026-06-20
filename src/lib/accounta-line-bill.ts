@@ -20,7 +20,7 @@ import {
   expenseExistsForLineMessage, findVendorByName
 } from "./accounta-db";
 import { saveReceiptImage, RECEIPT_ALLOWED_MIME } from "./accounta-receipts";
-import { ocrCostBaht, round2, splitMixedBill, type ExpenseInput, type OcrBillResult } from "./accounta";
+import { ocrCostBaht, round2, splitMixedBill, isDocType, DOC_TYPE_LABEL, type DocType, type ExpenseInput, type OcrBillResult } from "./accounta";
 
 type SenderRow = {
   id: number;
@@ -98,6 +98,7 @@ export async function ingestLineBill(args: {
   // category/tax-id link so repeat bills auto-fill (owner 2026-06-18).
   const known = parsed?.vendor_name ? findVendorByName(parsed.vendor_name) : null;
   const cat = parsed?.category ?? known?.category ?? null;
+  const docType: DocType | null = parsed?.doc_type && isDocType(parsed.doc_type) ? parsed.doc_type : null;
   const baseNote = `ส่งโดย ${senderName} ทางไลน์`;
 
   // Attribute the draft to the submitter's own branch + its company (owner
@@ -118,6 +119,7 @@ export async function ingestLineBill(args: {
     bill_date: parsed?.bill_date || today,
     vendor_id: known?.id ?? null,
     vendor_name: parsed?.vendor_name ?? null,
+    doc_type: docType,
     category: cat,
     description: parsed?.description ?? null,
     amount_total: a.amount,
@@ -194,6 +196,7 @@ export async function ingestLineBill(args: {
       vendor: parsed?.vendor_name ?? null,
       amount: parsed?.amount_total ?? null,
       category: cat,
+      docTypeLabel: docType ? DOC_TYPE_LABEL[docType] : null,
       billDate: parsed?.bill_date ?? null,
       parsed: !!parsed,
       extraLine: split ? "บิลผสม — แยกเป็น 2 รายการ (มี VAT / ไม่มี VAT)" : null

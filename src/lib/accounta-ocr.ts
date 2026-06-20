@@ -6,7 +6,7 @@
 // ANTHROPIC_API_KEY is set. "เน้นถูกต้อง ประหยัด" (owner 2026-06-16).
 
 import { getSystemSettings } from "./db";
-import { DEFAULT_OCR_MODEL, ocrModel, type OcrBillResult } from "./accounta";
+import { DEFAULT_OCR_MODEL, ocrModel, isDocType, type OcrBillResult } from "./accounta";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -39,6 +39,7 @@ function buildPrompt(categories?: string[]): string {
   "bill_date": string|null,          // วันที่บนบิล รูปแบบ YYYY-MM-DD (ค.ศ.) ถ้าเป็น พ.ศ. ให้ลบ 543
   "amount_total": number|null,       // ยอดรวมสุทธิที่ต้องจ่าย (ตัวเลขล้วน ไม่มีคอมมา)
   "has_tax_invoice": boolean|null,   // true ถ้าเป็นใบกำกับภาษีเต็มรูป (มีคำว่า "ใบกำกับภาษี" + เลขผู้เสียภาษี)
+  "doc_type": string|null,           // ประเภทเอกสาร — ตอบเป็นรหัสอังกฤษตามนี้ (ดูกติกาด้านล่าง)
   "vat_amount": number|null,         // ยอด VAT ที่ "พิมพ์ไว้บนบิล" (ถ้ามี ให้ใช้ค่านี้เป็นหลัก)
   "vatable_amount": number|null,     // ยอดรวมของรายการที่ "มี VAT" (รวม VAT แล้ว) — เฉพาะบิลผสม
   "nonvat_amount": number|null,      // ยอดรวมของรายการที่ "ไม่มี/ยกเว้น VAT" — เฉพาะบิลผสม
@@ -50,6 +51,8 @@ function buildPrompt(categories?: string[]): string {
   • ห้ามเอา "ยี่ห้อสินค้า" ในรายการมาเป็นชื่อผู้ขายเด็ดขาด เช่น บิลซื้อไวน์ ผู้ขายคือ "ร้าน/บริษัทที่ขายไวน์" ไม่ใช่ยี่ห้อไวน์บนขวด
   • ห้ามเดาจากโลโก้ ตราประทับ ที่อยู่ หรือบริบทอื่น
   • ถ้าอ่านชื่อไม่ชัด หรือไม่มั่นใจ 100% ว่าอ่านถูกทุกตัวอักษร ให้ใส่ null (เดาผิดแย่กว่าปล่อยว่าง — แอดมินเติมเองได้)
+- doc_type: ดูจากหัวเอกสาร/คำที่พิมพ์บนบิล ตอบเป็น "รหัสอังกฤษ" ตัวเดียวจากนี้ (ไม่ชัดให้ null):
+  receipt=ใบเสร็จรับเงิน · tax_invoice=ใบกำกับภาษีเต็มรูป(มีเลขผู้เสียภาษี) · tax_invoice_abbr=ใบกำกับภาษีอย่างย่อ · cash_bill=บิลเงินสด/บิลร้านทั่วไป · transfer_slip=สลิปโอนเงิน/หลักฐานโอน · invoice=ใบแจ้งหนี้ · other=อื่นๆ
 - description: ถ้ามีหลายรายการ ให้สรุปรวบสั้นๆ เช่น "วัตถุดิบ 20 รายการ" หรือ "ของใช้สำนักงานหลายรายการ" ไม่ต้องลอกทุกบรรทัด
 - vat_amount: ถ้าบิลมีทั้งสินค้าที่มี VAT และไม่มี VAT ให้ใช้ยอด VAT ตามที่บิลระบุเท่านั้น อย่าคำนวณ 7% จากยอดรวมทั้งหมดเอง
 - บิลผสม (มีทั้งรายการมี VAT และไม่มี VAT): ให้แยกยอดเป็น vatable_amount (ยอดรวมส่วนที่มี VAT รวม VAT แล้ว) กับ nonvat_amount (ยอดรวมส่วนที่ไม่มี VAT) โดยให้ vatable_amount + nonvat_amount = amount_total ถ้าบิลทั้งใบเป็นแบบเดียว (มี VAT ล้วน หรือไม่มี VAT ล้วน) ให้ทั้งสองช่องนี้เป็น null
@@ -149,8 +152,8 @@ export async function scanBill(args: {
 function parseResult(text: string, categories?: string[]): OcrBillResult {
   const blank: OcrBillResult = {
     vendor_name: null, tax_id: null, bill_date: null, amount_total: null,
-    has_tax_invoice: null, vat_amount: null, category: null, description: null,
-    vatable_amount: null, nonvat_amount: null
+    has_tax_invoice: null, vat_amount: null, doc_type: null, category: null,
+    description: null, vatable_amount: null, nonvat_amount: null
   };
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) return blank;
@@ -190,6 +193,10 @@ function parseResult(text: string, categories?: string[]): OcrBillResult {
     category = hit ?? null;
   }
 
+  // Snap doc_type to a known code, else null (never trust a free-text guess).
+  const dt = str(o.doc_type)?.toLowerCase() ?? null;
+  const docType = dt && isDocType(dt) ? dt : null;
+
   return {
     vendor_name: str(o.vendor_name),
     tax_id: str(o.tax_id),
@@ -197,6 +204,7 @@ function parseResult(text: string, categories?: string[]): OcrBillResult {
     amount_total: num(o.amount_total),
     has_tax_invoice: bool(o.has_tax_invoice),
     vat_amount: num(o.vat_amount),
+    doc_type: docType,
     category,
     description: str(o.description),
     vatable_amount: num(o.vatable_amount),

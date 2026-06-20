@@ -5277,6 +5277,12 @@ function runMigrations(db: Database.Database): void {
   if (!expCols.some((c) => c.name === "line_message_id")) {
     db.exec("ALTER TABLE accounta_expenses ADD COLUMN line_message_id TEXT");
   }
+  // ประเภทเอกสาร (owner 2026-06-20): receipt / tax_invoice / cash_bill /
+  // transfer_slip / invoice / … (see DOC_TYPES in accounta.ts). Descriptive;
+  // nullable.
+  if (!expCols.some((c) => c.name === "doc_type")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN doc_type TEXT");
+  }
   db.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_accounta_expenses_linemsg " +
     "ON accounta_expenses(line_message_id) WHERE line_message_id IS NOT NULL"

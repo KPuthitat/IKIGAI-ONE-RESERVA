@@ -2,7 +2,7 @@
 // (POST create + PATCH update). Server-only (imported by route handlers).
 
 import { z } from "zod";
-import { splitVat, round2, type ExpenseInput } from "./accounta";
+import { splitVat, round2, DOC_TYPES, type DocType, type ExpenseInput } from "./accounta";
 
 export const ExpenseBody = z.object({
   branch_id: z.number().int().positive().nullable().optional(),
@@ -10,6 +10,7 @@ export const ExpenseBody = z.object({
   bill_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   vendor_id: z.number().int().positive().nullable().optional(),
   vendor_name: z.string().trim().max(200).nullable().optional(),
+  doc_type: z.enum(DOC_TYPES as [DocType, ...DocType[]]).nullable().optional(),
   category: z.string().trim().max(100).nullable().optional(),
   description: z.string().trim().max(500).nullable().optional(),
   amount_total: z.number().min(0).max(1e9),
@@ -37,6 +38,7 @@ export function toExpenseInput(d: ExpenseBodyT): ExpenseInput {
     bill_date: d.bill_date,
     vendor_id: d.vendor_id ?? null,
     vendor_name: d.vendor_name ?? null,
+    doc_type: d.doc_type ?? null,
     category: d.category ?? null,
     description: d.description ?? null,
     amount_total: total,
