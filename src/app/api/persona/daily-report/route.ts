@@ -8,7 +8,7 @@ import {
 import { todayBkk } from "@/lib/time";
 import { upsertDailyServiceCharge } from "@/lib/service-charge";
 import { upsertBranchDailyRevenue } from "@/lib/ascenda";
-import { syncShiftCloseIncomeOnSubmit } from "@/lib/accounta-db";
+import { replaceShiftCloseIncome } from "@/lib/accounta-db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { nameWithPrefix } from "@/lib/name";
 
@@ -85,6 +85,14 @@ const ShiftCloseData = z.object({
   // read from there). Optional so staff can skip and admin backfills
   // later via /admin/ascenda/revenue.
   daily_revenue: z.number().min(0).max(10_000_000).nullable().optional(),
+  // Per-channel sales breakdown (owner 2026-06-21). When present, the sum
+  // must equal daily_revenue exactly — enforced server-side below — and each
+  // channel is mirrored into the ACCOUNTA รายรับ ledger.
+  channel_amounts: z.array(z.object({
+    channel_id: z.number().int().positive().nullable().optional(),
+    channel: z.string().trim().min(1).max(60),
+    amount: z.number().min(0).max(10_000_000)
+  })).max(40).optional(),
   checklist: z.array(ChecklistEntry).max(50)
 });
 // Readiness reports (11:30 + 16:00) — 2026-05-21 onward driven entirely
@@ -208,6 +216,29 @@ export async function POST(req: Request) {
     }, { status: 409 });
   }
 
+  // Reconciliation guard (owner 2026-06-21): for shift_close, the per-channel
+  // sales breakdown must sum EXACTLY to daily_revenue. Reject before insert so
+  // a mismatched report never lands — mirrors the client-side block.
+  if (type === "shift_close") {
+    const d = v.data as z.infer<typeof ShiftCloseData>;
+    const chans = d.channel_amounts ?? [];
+    if (chans.length > 0) {
+      const sum = Math.round(chans.reduce((s, c) => s + (Number(c.amount) || 0), 0) * 100) / 100;
+      if (d.daily_revenue == null) {
+        return NextResponse.json(
+          { error: "revenue_required", message: "ต้องกรอกยอดขายวันนี้เมื่อมีการแยกช่องทาง" },
+          { status: 400 }
+        );
+      }
+      if (Math.abs(sum - d.daily_revenue) >= 0.005) {
+        return NextResponse.json(
+          { error: "channel_reconcile_mismatch", message: `ผลรวมช่องทาง ฿${sum.toFixed(2)} ไม่เท่ายอดขายวันนี้ ฿${d.daily_revenue.toFixed(2)}` },
+          { status: 400 }
+        );
+      }
+    }
+  }
+
   // If a previous row for the same (branch, type, date) is now
   // superseded — i.e. admin granted an unlock and the staff is now
   // re-submitting — chain the new row to the most recent superseded
@@ -301,14 +332,18 @@ export async function POST(req: Request) {
       }
     }
     // Mirror into the ACCOUNTA รายรับ ledger (owner 2026-06-21). Per-channel
-    // when the branch flagged a payment-channel group (income_breakdown),
-    // else the single daily total. Fire-and-forget — never blocks the close.
+    // from the reconciled breakdown; else the single daily total. Already
+    // reconciled above, so the channel rows sum to daily_revenue. Fire-and-
+    // forget — never blocks the close.
     try {
-      syncShiftCloseIncomeOnSubmit(
-        branch.id, report_date, user.id,
-        (d.checklist ?? []).map((c) => ({ label: c.label, note: c.note ?? null, kind: c.kind ?? null })),
-        d.daily_revenue ?? null
-      );
+      const chans = (d.channel_amounts ?? [])
+        .filter((c) => c.amount > 0)
+        .map((c) => ({ channel: c.channel, amount: c.amount }));
+      if (chans.length > 0) {
+        replaceShiftCloseIncome(branch.id, report_date, user.id, chans);
+      } else if (d.daily_revenue != null) {
+        replaceShiftCloseIncome(branch.id, report_date, user.id, [{ channel: null, amount: d.daily_revenue }]);
+      }
     } catch (e) {
       console.error("รายรับ ledger sync from shift_close failed", e);
     }

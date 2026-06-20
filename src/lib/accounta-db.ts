@@ -131,6 +131,56 @@ export function createIncomeChannel(d: { name: string }): number {
   return Number(info.lastInsertRowid);
 }
 
+// ── Channel master management (owner 2026-06-21) ─────────────────
+// The income-channel list is the single source of truth: it drives
+// both the manual รายรับ picklist AND the per-channel breakdown staff
+// fill on every shift-close. Managed centrally in ACCOUNTA.
+
+export type ChannelRow = { id: number; name: string; sort_order: number; active: number };
+
+export function listAllIncomeChannels(): ChannelRow[] {
+  return getDb().prepare(
+    "SELECT id, name, sort_order, active FROM accounta_income_channels ORDER BY active DESC, sort_order, name COLLATE NOCASE"
+  ).all() as ChannelRow[];
+}
+
+export function renameIncomeChannel(id: number, name: string): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  // Block renaming onto another channel's name (case-insensitive).
+  const clash = getDb().prepare(
+    "SELECT id FROM accounta_income_channels WHERE name = ? COLLATE NOCASE AND id <> ?"
+  ).get(trimmed, id) as { id: number } | undefined;
+  if (clash) return false;
+  return getDb().prepare("UPDATE accounta_income_channels SET name = ? WHERE id = ?")
+    .run(trimmed, id).changes > 0;
+}
+
+export function setIncomeChannelActive(id: number, active: boolean): boolean {
+  return getDb().prepare("UPDATE accounta_income_channels SET active = ? WHERE id = ?")
+    .run(active ? 1 : 0, id).changes > 0;
+}
+
+/** Swap sort_order with the active neighbour in the given direction. */
+export function moveIncomeChannel(id: number, dir: "up" | "down"): boolean {
+  const db = getDb();
+  const me = db.prepare("SELECT id, sort_order FROM accounta_income_channels WHERE id = ?")
+    .get(id) as { id: number; sort_order: number } | undefined;
+  if (!me) return false;
+  const neighbour = db.prepare(
+    dir === "up"
+      ? "SELECT id, sort_order FROM accounta_income_channels WHERE active = 1 AND sort_order < ? ORDER BY sort_order DESC LIMIT 1"
+      : "SELECT id, sort_order FROM accounta_income_channels WHERE active = 1 AND sort_order > ? ORDER BY sort_order ASC LIMIT 1"
+  ).get(me.sort_order) as { id: number; sort_order: number } | undefined;
+  if (!neighbour) return false;
+  const swap = db.transaction(() => {
+    db.prepare("UPDATE accounta_income_channels SET sort_order = ? WHERE id = ?").run(neighbour.sort_order, me.id);
+    db.prepare("UPDATE accounta_income_channels SET sort_order = ? WHERE id = ?").run(me.sort_order, neighbour.id);
+  });
+  swap();
+  return true;
+}
+
 export type IncomeRow = {
   id: number;
   branch_id: number | null;
@@ -212,44 +262,6 @@ export function getIncome(id: number): IncomeRow | null {
 // the mirror. When a branch has no breakdown configured we fall back to
 // a single channel-less total row (the daily revenue figure).
 
-type ShiftCloseEntry = { label: string; note?: string | null; kind?: string | null };
-
-/** Parse "12,345.67" (or "฿12,345") → 12345.67. Empty/garbage → 0. */
-function parseAmountNote(note: string | null | undefined): number {
-  if (note == null) return 0;
-  const n = parseFloat(String(note).replace(/[^0-9.-]/g, ""));
-  return Number.isFinite(n) ? n : 0;
-}
-
-/** From the submitted checklist entries, pull the per-channel amounts
- *  for this branch's income_breakdown groups. channel = child label. */
-export function shiftCloseChannelRows(
-  branchId: number,
-  entries: ShiftCloseEntry[]
-): Array<{ channel: string; amount: number }> {
-  const db = getDb();
-  // Any flagged top-level row counts as an income-channel group — the
-  // parent's kind doesn't matter (the card channels sit under a 'text'
-  // "EDC Batch #" header, the cash/QR ones under a 'section'). What
-  // matters is its amount children.
-  const groups = db.prepare(
-    "SELECT id FROM shift_checklist_items WHERE branch_id = ? AND type = 'shift_close' AND parent_id IS NULL AND income_breakdown = 1 AND active = 1"
-  ).all(branchId) as Array<{ id: number }>;
-  if (groups.length === 0) return [];
-  const ph = groups.map(() => "?").join(",");
-  const children = db.prepare(
-    `SELECT label FROM shift_checklist_items WHERE parent_id IN (${ph}) AND kind = 'amount' AND active = 1`
-  ).all(...groups.map((g) => g.id)) as Array<{ label: string }>;
-  const channelLabels = new Set(children.map((c) => c.label));
-  const rows: Array<{ channel: string; amount: number }> = [];
-  for (const e of entries) {
-    if (!channelLabels.has(e.label)) continue;
-    const amt = round2(parseAmountNote(e.note));
-    if (amt > 0) rows.push({ channel: e.label, amount: amt });
-  }
-  return rows;
-}
-
 /** Rebuild the source='shift_close' income rows for a (branch, date):
  *  delete the old ones, insert the given rows. Channel names are also
  *  registered in accounta_income_channels so they appear in the manual
@@ -286,24 +298,6 @@ export function replaceShiftCloseIncome(
     }
   });
   txn();
-}
-
-/** Called from the shift-close submit. Per-channel split when the branch
- *  has an income_breakdown group; otherwise the single daily-revenue
- *  total. No-op when there's neither (leaves any prior rows intact). */
-export function syncShiftCloseIncomeOnSubmit(
-  branchId: number,
-  date: string,
-  userId: number,
-  entries: ShiftCloseEntry[],
-  total: number | null
-): void {
-  const channelRows = shiftCloseChannelRows(branchId, entries);
-  if (channelRows.length > 0) {
-    replaceShiftCloseIncome(branchId, date, userId, channelRows);
-  } else if (total != null) {
-    replaceShiftCloseIncome(branchId, date, userId, [{ channel: null, amount: total }]);
-  }
 }
 
 /** Called from the admin daily-revenue edit. Only mirrors the total when

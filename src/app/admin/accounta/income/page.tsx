@@ -20,9 +20,14 @@ export default function AccountaIncomePage() {
         <Link href="/admin/accounta" className="text-sm text-slate-500 hover:text-brand">
           ← กลับ ACCOUNTA
         </Link>
-        <Link href="/admin/accounta/daybook" className="text-sm text-brand hover:underline">
-          ดูสมุดรายวัน (แบบเอกเซล) →
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/admin/accounta/channels" className="text-sm text-brand hover:underline">
+            จัดการช่องทางรับเงิน →
+          </Link>
+          <Link href="/admin/accounta/daybook" className="text-sm text-brand hover:underline">
+            ดูสมุดรายวัน (แบบเอกเซล) →
+          </Link>
+        </div>
       </div>
       <div>
         <h1 className="text-2xl font-bold text-slate-800">รายรับ</h1>

@@ -260,8 +260,6 @@ export default function ChecklistEditor({
                     onPatchKind={(kind) => patchItem(parent.id, { kind })}
                     onPatchOptions={(opts) => patchItem(parent.id, { options: opts })}
                     onPatchHeadline={(flag) => patchItem(parent.id, { is_headline_amount: flag })}
-                    onPatchIncomeBreakdown={(flag) => patchItem(parent.id, { income_breakdown: flag })}
-                    canIncomeBreakdown={children.some((c) => c.kind === "amount")}
                     onPatchDescription={(text) => patchItem(parent.id, { description: text })}
                     onToggleActive={() =>
                       patchItem(parent.id, { active: parent.active ? 0 : 1 })}
@@ -283,7 +281,6 @@ export default function ChecklistEditor({
                           isLast={ci === children.length - 1}
                           busy={busyId === child.id}
                           isChild
-                          parentIncomeBreakdown={!!parent.income_breakdown}
                           onPatchLabel={(label) => patchItem(child.id, { label })}
                           onPatchKind={(kind) => patchItem(child.id, { kind })}
                           onPatchOptions={(opts) => patchItem(child.id, { options: opts })}
@@ -425,9 +422,8 @@ export default function ChecklistEditor({
 }
 
 function ChecklistRow({
-  item, isFirst, isLast, busy, isChild, parentIncomeBreakdown,
+  item, isFirst, isLast, busy, isChild,
   onPatchLabel, onPatchKind, onPatchOptions, onPatchHeadline,
-  onPatchIncomeBreakdown, canIncomeBreakdown,
   onPatchDescription,
   onToggleActive, onMoveUp, onMoveDown, onDelete, onAddChild, t
 }: {
@@ -439,10 +435,6 @@ function ChecklistRow({
    *  Child rows don't get the "+ เพิ่มรายการย่อย" button — we keep
    *  nesting to 2 levels max. */
   isChild?: boolean;
-  /** For child rows: whether the PARENT group is flagged income_breakdown.
-   *  When true and this child is an amount, it posts to the income ledger
-   *  as a channel — we show a small tag so admin can see the link. */
-  parentIncomeBreakdown?: boolean;
   onPatchLabel: (label: string) => Promise<void>;
   onPatchKind: (kind: "checkbox" | "text" | "choice" | "amount" | "section") => Promise<void>;
   onPatchOptions: (options: string[]) => Promise<void>;
@@ -450,12 +442,6 @@ function ChecklistRow({
    *  Multiple amount rows can carry this; they stack by display_order
    *  with the first one rendered biggest. */
   onPatchHeadline: (flag: 0 | 1) => Promise<void>;
-  /** Toggle "this group's amount children are income channels". Only
-   *  passed for top-level rows. */
-  onPatchIncomeBreakdown?: (flag: 0 | 1) => Promise<void>;
-  /** True when this top-level row has at least one amount child — only
-   *  then is the income-breakdown toggle meaningful/shown. */
-  canIncomeBreakdown?: boolean;
   /** Patch the description (small help text under the label).
    *  Triggered on blur of the inline editor. */
   onPatchDescription: (text: string) => Promise<void>;
@@ -652,40 +638,6 @@ function ChecklistRow({
           <p className="text-[10px] text-slate-500 pl-6 mt-0.5">
             {t("admin.persona.checklist.kind.headlineHint")}
           </p>
-        </div>
-      )}
-
-      {/* Income-breakdown toggle — any top-level group that has amount
-          children. When on, those children are mirrored to the ACCOUNTA
-          รายรับ ledger as per-channel income on every shift-close. */}
-      {!isChild && canIncomeBreakdown && onPatchIncomeBreakdown && (
-        <div className="mt-2 pl-7">
-          <label className="flex items-center gap-2 text-[11px] text-emerald-800 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              className="w-4 h-4 accent-emerald-600"
-              checked={!!item.income_breakdown}
-              disabled={busy}
-              onChange={(e) => onPatchIncomeBreakdown(e.target.checked ? 1 : 0)}
-            />
-            <span className="font-medium">
-              {t("admin.persona.checklist.income.groupToggle")}
-            </span>
-          </label>
-          <p className="text-[10px] text-slate-500 pl-6 mt-0.5">
-            {t("admin.persona.checklist.income.groupHint")}
-          </p>
-        </div>
-      )}
-
-      {/* Child-amount → income channel tag. Shown when the parent group
-          is flagged and this child is an amount row, so admin can see
-          which rows feed the ledger and under what channel name. */}
-      {isChild && parentIncomeBreakdown && item.kind === "amount" && (
-        <div className="mt-1.5 pl-7">
-          <span className="inline-block text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
-            {t("admin.persona.checklist.income.childTag")}: <b>{item.label}</b>
-          </span>
         </div>
       )}
 

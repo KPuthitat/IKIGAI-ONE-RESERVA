@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
+import { listIncomeChannels } from "@/lib/accounta-db";
 import { parseChecklistOptions } from "@/lib/checklist-options";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
@@ -132,6 +133,11 @@ export default function ShiftClosePage() {
         requireServiceCharge={branch.require_service_charge === 1}
         requireTodayClosing={branch.require_today_closing === 1}
         requireDailyRevenue={branch.require_daily_revenue === 1}
+        // Master income channels — staff fill a mandatory per-channel
+        // breakdown that must reconcile to ยอดขายวันนี้ before they can
+        // submit (owner 2026-06-21). Only relevant when the branch records
+        // daily revenue; the form gates the panel on requireDailyRevenue.
+        incomeChannels={branch.require_daily_revenue === 1 ? listIncomeChannels() : []}
         previousData={previousData}
         // Per-branch headline label + order + in-red-box knobs.
         // The form forwards these into the live FlexPreview so the

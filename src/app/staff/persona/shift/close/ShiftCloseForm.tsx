@@ -53,6 +53,7 @@ export default function ShiftCloseForm({
   requireServiceCharge = false,
   requireTodayClosing = true,
   requireDailyRevenue = true,
+  incomeChannels = [],
   previousData = null,
   defaultFieldConfig
 }: {
@@ -60,6 +61,10 @@ export default function ShiftCloseForm({
   branchName: string;
   closerName: string;
   checklistItems: ChecklistItem[];
+  /** Master income channels (owner 2026-06-21). When non-empty, the form
+   *  shows a mandatory per-channel sales breakdown that must sum exactly
+   *  to ยอดขายวันนี้ before the report can be submitted. */
+  incomeChannels?: Array<{ id: number; name: string }>;
   /** Optional — when omitted, the preview uses hardcoded defaults. */
   defaultFieldConfig?: DefaultFieldConfig;
   /** When the branch admin has flipped require_service_charge ON,
@@ -137,6 +142,12 @@ export default function ShiftCloseForm({
   // Lands in branch_daily_revenue (NOT in daily_reports.data) so the
   // ASCENDA COL/sales-growth calculators have a clean source.
   const [dailyRevenue, setDailyRevenue] = useState<string>("");
+  // Per-channel sales (owner 2026-06-21). Keyed by channel id. Empty is
+  // treated as 0 — every channel is always shown, staff fill the ones with
+  // sales. The sum must equal ยอดขายวันนี้ exactly or submit is blocked.
+  const [channelAmounts, setChannelAmounts] = useState<Record<number, string>>(() =>
+    Object.fromEntries(incomeChannels.map((c) => [c.id, ""]))
+  );
   const [checked, setChecked] = useState<Record<number, boolean>>(() =>
     Object.fromEntries(checklistItems.map((it) => {
       const prev = prevByLabel.get(it.label);
@@ -221,6 +232,16 @@ export default function ShiftCloseForm({
     return n;
   }
 
+  // Per-channel reconciliation (owner 2026-06-21). Empty channel = 0. The
+  // sum must equal ยอดขายวันนี้ exactly (to the satang) before submit.
+  const channelsActive = incomeChannels.length > 0;
+  const channelSum = Math.round(
+    incomeChannels.reduce((s, c) => s + (parseAmount(channelAmounts[c.id] ?? "") ?? 0), 0) * 100
+  ) / 100;
+  const revenueNum = parseAmount(dailyRevenue);
+  const reconcileDiff = revenueNum == null ? null : Math.round((channelSum - revenueNum) * 100) / 100;
+  const reconcileOk = !channelsActive || (revenueNum != null && Math.abs(channelSum - revenueNum) < 0.005);
+
   /** Build and validate the payload, then open the PIN modal.
    *  Actual POST happens in submitWithPin() after PIN is entered. */
   async function submit(e: React.FormEvent) {
@@ -267,6 +288,21 @@ export default function ShiftCloseForm({
         text: t("staff.persona.shift.close.svcRequired")
       });
       return;
+    }
+    // Per-channel reconciliation gate — channels must sum to ยอดขายวันนี้.
+    if (channelsActive) {
+      if (revenueNum == null) {
+        setMsg({ kind: "err", text: "กรุณากรอก “ยอดขายวันนี้” ก่อน แล้วกรอกยอดแยกช่องทางให้ครบ" });
+        return;
+      }
+      if (!reconcileOk) {
+        const f = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        setMsg({
+          kind: "err",
+          text: `ผลรวมแยกช่องทาง ฿${f(channelSum)} ไม่เท่ายอดขายวันนี้ ฿${f(revenueNum)} (ต่างกัน ฿${f(Math.abs(reconcileDiff ?? 0))}) — แก้ให้ตรงก่อนส่ง`
+        });
+        return;
+      }
     }
 
     setErrorIds({});
@@ -352,6 +388,13 @@ export default function ShiftCloseForm({
           closing_drawer_amount: closingParsed,
           service_charge_amount: svcParsed,
           daily_revenue: parseAmount(dailyRevenue),
+          channel_amounts: channelsActive
+            ? incomeChannels.map((c) => ({
+                channel_id: c.id,
+                channel: c.name,
+                amount: parseAmount(channelAmounts[c.id] ?? "") ?? 0
+              }))
+            : [],
           checklist: checklistPayload
         }
       });
@@ -494,6 +537,67 @@ export default function ShiftCloseForm({
           </div>
         )}
       </div>
+
+      {/* ยอดขายแยกช่องทาง — driven by the master income-channel list
+          (owner 2026-06-21). Every active channel is shown; staff fill
+          the ones with sales (blank = 0). The sum must equal ยอดขายวันนี้
+          exactly or the form blocks submit. */}
+      {channelsActive && (
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h2 className="font-bold text-slate-800">ยอดขายแยกช่องทางการรับเงิน</h2>
+            <span className="text-[11px] text-slate-400">ช่องทางที่ไม่มียอดวันนี้ ใส่ 0 หรือเว้นว่าง</span>
+          </div>
+          <div className="space-y-1.5">
+            {incomeChannels.map((c) => (
+              <div key={c.id} className="flex items-center gap-2">
+                <span className="text-sm text-slate-700 flex-1 min-w-0">{c.name}</span>
+                <input
+                  type="number" inputMode="decimal" min="0" step="0.01"
+                  className="input text-sm w-32 sm:w-40 font-mono text-right"
+                  placeholder="0.00"
+                  value={channelAmounts[c.id] ?? ""}
+                  onChange={(e) => setChannelAmounts((p) => ({ ...p, [c.id]: e.target.value }))}
+                  onBlur={() => {
+                    const v = (channelAmounts[c.id] ?? "").trim();
+                    if (!v) return;
+                    const n = Number(v.replace(/,/g, ""));
+                    if (Number.isFinite(n) && n >= 0) {
+                      setChannelAmounts((p) => ({ ...p, [c.id]: n.toFixed(2) }));
+                    }
+                  }}
+                />
+                <span className="text-sm font-bold text-slate-500 select-none">฿</span>
+              </div>
+            ))}
+          </div>
+          {/* Live reconciliation vs ยอดขายวันนี้ */}
+          <div className={`rounded-lg p-3 text-sm space-y-1 border ${
+            revenueNum == null ? "bg-slate-50 border-slate-200"
+              : reconcileOk ? "bg-emerald-50 border-emerald-200" : "bg-rose-50 border-rose-200"
+          }`}>
+            <div className="flex justify-between">
+              <span className="text-slate-600">ผลรวมแยกช่องทาง</span>
+              <b className="font-mono text-slate-800">฿{channelSum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">ยอดขายวันนี้ (POS)</span>
+              <b className="font-mono text-slate-800">
+                {revenueNum != null ? `฿${revenueNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+              </b>
+            </div>
+            {revenueNum == null ? (
+              <div className="text-[11px] text-slate-500 pt-0.5">กรอก “ยอดขายวันนี้” ด้านบนเพื่อตรวจสอบให้ตรงกัน</div>
+            ) : reconcileOk ? (
+              <div className="text-emerald-700 font-bold pt-0.5">✓ ยอดตรงกัน — ส่งรายงานได้</div>
+            ) : (
+              <div className="text-rose-700 font-bold pt-0.5">
+                ✗ ต่างกัน ฿{Math.abs(reconcileDiff ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} — ส่งรายงานไม่ได้จนกว่าจะตรง
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {checklistItems.length > 0 ? (
         <div className="card space-y-3">
@@ -858,11 +962,13 @@ export default function ShiftCloseForm({
         </div>
       )}
 
-      <button type="submit" disabled={busy}
-        className="btn-primary w-full text-base py-3.5">
+      <button type="submit" disabled={busy || !reconcileOk}
+        className="btn-primary w-full text-base py-3.5 disabled:opacity-50">
         {busy
           ? t("staff.persona.shift.open.submitting")
-          : t("staff.persona.shift.close.submit")}
+          : !reconcileOk
+            ? "ยอดแยกช่องทางยังไม่ตรงกับยอดขายวันนี้"
+            : t("staff.persona.shift.close.submit")}
       </button>
 
       {pinOpen && (
