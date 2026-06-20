@@ -5278,6 +5278,34 @@ function runMigrations(db: Database.Database): void {
       ON accounta_income(branch_id, income_date DESC);
   `);
 
+  // source (owner 2026-06-21): tag where an income row came from so the
+  // daily shift-close total can flow straight into the รายรับ ledger and
+  // stay idempotent. 'manual' = admin keyed it; 'shift_close' = auto-synced
+  // from branch_daily_revenue (the "ยอดขายวันนี้" staff enter at close).
+  // One shift_close row per (branch_id, income_date) — upserted, not unique-
+  // constrained (branch_id can be NULL on a draft and SQLite NULLs dodge
+  // UNIQUE), so the sync does a lookup-first dedup instead.
+  const incCols = db.prepare("PRAGMA table_info(accounta_income)").all() as Array<{ name: string }>;
+  if (!incCols.some((c) => c.name === "source")) {
+    db.exec("ALTER TABLE accounta_income ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'");
+  }
+  // Mirror every recorded shift-close day into the รายรับ ledger. Self-
+  // guarding (NOT EXISTS) so it backfills June history once and is a no-op
+  // thereafter — the shift_close row is the authoritative mirror of
+  // branch_daily_revenue, so re-materialising a missing one is correct.
+  db.exec(`
+    INSERT INTO accounta_income
+      (branch_id, company_id, income_date, channel, amount, note, created_by, source)
+    SELECT r.branch_id, b.company_id, r.date, NULL, r.revenue,
+           'ดึงอัตโนมัติจากรายงานปิดกะ (ยอดขายรวมทุกช่องทาง)', NULL, 'shift_close'
+      FROM branch_daily_revenue r
+      JOIN branches b ON b.id = r.branch_id
+     WHERE NOT EXISTS (
+       SELECT 1 FROM accounta_income i
+        WHERE i.branch_id = r.branch_id AND i.income_date = r.date AND i.source = 'shift_close'
+     );
+  `);
+
   // LINE-bill drafts (owner 2026-06-18): a staff member sends a bill photo to
   // the LINE OA → OCR → a 'draft' expense (no branch yet) that the admin
   // reviews, assigns สาขา/บริษัท, and confirms. Additive ALTERs for DBs that

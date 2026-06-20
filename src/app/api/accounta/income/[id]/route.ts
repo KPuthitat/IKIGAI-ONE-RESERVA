@@ -21,7 +21,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   requirePermission("accounta.manage");
   const id = parseId(params.id);
   if (id == null) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
-  if (!getIncome(id)) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const existing = getIncome(id);
+  if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  // Shift-close rows mirror branch_daily_revenue — edit the source, not the
+  // mirror, or the next close/backfill overwrites it.
+  if (existing.source === "shift_close") {
+    return NextResponse.json({ error: "auto_row_readonly", message: "ยอดนี้ดึงจากรายงานปิดกะอัตโนมัติ แก้ไขได้ที่ยอดขายรายวัน" }, { status: 409 });
+  }
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
@@ -39,6 +45,11 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   requirePermission("accounta.manage");
   const id = parseId(params.id);
   if (id == null) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
+  const existing = getIncome(id);
+  if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (existing.source === "shift_close") {
+    return NextResponse.json({ error: "auto_row_readonly", message: "ยอดนี้ดึงจากรายงานปิดกะอัตโนมัติ ลบไม่ได้" }, { status: 409 });
+  }
   const ok = deleteIncome(id);
   if (!ok) return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json({ ok: true });

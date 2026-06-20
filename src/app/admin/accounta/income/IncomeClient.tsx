@@ -13,6 +13,7 @@ type Income = {
   id: number; branch_id: number | null; branch_name: string | null;
   company_id: number | null; company_name: string | null;
   income_date: string; channel: string | null; amount: number; note: string | null;
+  source: string;
 };
 type Summary = { total: number; byChannel: Array<{ channel: string; total: number }> };
 
@@ -170,14 +171,25 @@ export default function IncomeClient(props: {
                 <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/60">
                   <td className="px-3 py-2 whitespace-nowrap text-slate-600">{formatLongDate(r.income_date, "th")}</td>
                   <td className="px-3 py-2">
-                    <div className="font-medium text-slate-800">{r.channel || "—"}</div>
+                    <div className="font-medium text-slate-800 flex items-center gap-1.5">
+                      {r.channel || (r.source === "shift_close" ? "ยอดขายรวม" : "—")}
+                      {r.source === "shift_close" && (
+                        <span className="text-[10px] font-normal bg-sky-50 text-sky-700 border border-sky-200 rounded-full px-1.5 py-px">จากปิดกะ</span>
+                      )}
+                    </div>
                     {r.note && <div className="text-[11px] text-slate-500">{r.note}</div>}
                   </td>
                   <td className="px-3 py-2 text-xs text-slate-500">{r.branch_name || "—"}</td>
                   <td className="px-3 py-2 text-right font-semibold text-emerald-700 whitespace-nowrap">฿{fmtMoney(r.amount)}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
-                    <button type="button" onClick={() => openEdit(r)} disabled={busy} className="text-xs text-slate-500 hover:text-brand">แก้</button>
-                    <button type="button" onClick={() => remove(r)} disabled={busy} className="text-xs text-slate-400 hover:text-rose-600 ml-3">ลบ</button>
+                    {r.source === "shift_close" ? (
+                      <span className="text-[11px] text-slate-300" title="ยอดนี้ดึงจากรายงานปิดกะอัตโนมัติ — แก้ไขได้ที่ยอดขายรายวัน">อัตโนมัติ</span>
+                    ) : (
+                      <>
+                        <button type="button" onClick={() => openEdit(r)} disabled={busy} className="text-xs text-slate-500 hover:text-brand">แก้</button>
+                        <button type="button" onClick={() => remove(r)} disabled={busy} className="text-xs text-slate-400 hover:text-rose-600 ml-3">ลบ</button>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}

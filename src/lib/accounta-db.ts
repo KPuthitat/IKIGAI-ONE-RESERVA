@@ -141,6 +141,7 @@ export type IncomeRow = {
   channel: string | null;
   amount: number;
   note: string | null;
+  source: string;
 };
 
 export type IncomeInput = {
@@ -162,7 +163,7 @@ export function listIncome(f: IncomeFilter = {}): IncomeRow[] {
   if (f.month) { where.push("substr(i.income_date,1,7) = ?"); args.push(f.month); }
   const sql = `
     SELECT i.id, i.branch_id, b.name AS branch_name, i.company_id, c.name_th AS company_name,
-           i.income_date, i.channel, i.amount, i.note
+           i.income_date, i.channel, i.amount, i.note, i.source
       FROM accounta_income i
       LEFT JOIN branches b  ON b.id = i.branch_id
       LEFT JOIN companies c ON c.id = i.company_id
@@ -194,7 +195,7 @@ export function deleteIncome(id: number): boolean {
 export function getIncome(id: number): IncomeRow | null {
   return listIncome().find((r) => r.id === id) ?? getDb().prepare(`
     SELECT i.id, i.branch_id, b.name AS branch_name, i.company_id, c.name_th AS company_name,
-           i.income_date, i.channel, i.amount, i.note
+           i.income_date, i.channel, i.amount, i.note, i.source
       FROM accounta_income i
       LEFT JOIN branches b ON b.id = i.branch_id
       LEFT JOIN companies c ON c.id = i.company_id
