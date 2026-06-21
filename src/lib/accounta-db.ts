@@ -987,8 +987,9 @@ export function materialPurchaseQuota(branchId: number, date: string): MaterialQ
   const monthBudget = round2(b.x * (b.y / 100));
   const spent = round2(spentRow.s);
   const remainingBudget = round2(monthBudget - spent);
-  // Quota rule (owner 2026-06-21): buying is allowed EVERY day.
-  //   • On the chosen weekday (the planned big-order day) → full X×Y% budget.
+  // Quota rule (owner 2026-06-21, revised): buying is allowed EVERY day.
+  //   • On the chosen weekday (the planned order day) → a flat daily rate =
+  //     monthly budget ÷ 30 (e.g. 240,000/30 = 8,000 every Monday).
   //   • On any other day → leftover budget (X×Y% − spent) spread over the
   //     remaining NON-weekday days of the month.
   const [yy, mm, dd] = date.split("-").map(Number);
@@ -999,7 +1000,7 @@ export function materialPurchaseQuota(branchId: number, date: string): MaterialQ
     if (new Date(Date.UTC(yy, mm - 1, day)).getUTCDay() !== b.wd) otherDaysLeft += 1;
   }
   const quotaToday = todayIsPurchaseDay
-    ? monthBudget
+    ? round2(monthBudget / 30)
     : (otherDaysLeft > 0 ? Math.max(0, round2(remainingBudget / otherDaysLeft)) : 0);
   return {
     targetSales: round2(b.x), budgetPct: b.y, weekday: b.wd,
