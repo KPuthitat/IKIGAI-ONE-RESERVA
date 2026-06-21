@@ -19,7 +19,8 @@ type Dash = {
   inputVat: number; outputVat: number; vatPayable: number; vatRegistered: boolean;
   daysWithRevenue: number; avgPerDay: number; avgWeekday: number; avgWeekend: number;
   forecast: number | null; categories: CatItem[]; uncategorized: number;
-  dailyRows: Array<{ date: string; revenue: number; expense: number; balance: number }>;
+  dailyRows: Array<{ date: string; revenue: number; expense: number; net: number; balance: number }>;
+  incomeByChannel: Array<{ channel: string; amount: number }>;
 };
 export type LedgerExpenseRow = {
   id: number; bill_date: string; vendor_name: string | null; doc_type: string | null;
@@ -207,6 +208,33 @@ export default function LedgerDashboardClient({
         )}
       </div>
 
+      {/* Revenue split by payment channel (from shift-close breakdown) */}
+      <div className="card space-y-2">
+        <div className="text-sm font-bold text-slate-800">รายรับแยกตามช่องทางการรับเงิน</div>
+        {dash.incomeByChannel.length === 0 ? (
+          <p className="text-xs text-slate-400">ยังไม่มีข้อมูลรายรับในช่วงเวลานี้</p>
+        ) : (
+          <div className="space-y-1.5">
+            {dash.incomeByChannel.map((c) => {
+              const pct = dash.revenue > 0 ? (c.amount / dash.revenue) * 100 : 0;
+              return (
+                <div key={c.channel} className="flex items-center gap-2 text-sm">
+                  <span className="text-slate-700 w-40 sm:w-52 shrink-0 truncate">{c.channel}</span>
+                  <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <div className="h-full bg-emerald-400" style={{ width: `${Math.min(100, pct)}%` }} />
+                  </div>
+                  <span className="font-mono text-slate-800 w-28 text-right shrink-0">฿{fmtMoney(c.amount)}</span>
+                  <span className="font-mono text-[11px] text-slate-400 w-12 text-right shrink-0">{pct.toFixed(0)}%</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {dash.incomeByChannel.some((c) => c.channel === "(ไม่ระบุช่องทาง)") && (
+          <p className="text-[11px] text-slate-400">หมายเหตุ: ยอดที่บันทึกก่อนเปิดใช้การแยกช่องทาง จะรวมอยู่ใน “(ไม่ระบุช่องทาง)”</p>
+        )}
+      </div>
+
       {/* Excel-style daily comparison — revenue (shift-close) vs expense, running balance */}
       <div className="card space-y-2">
         <div className="text-sm font-bold text-slate-800">สมุดรายวัน · เปรียบเทียบรายรับ–รายจ่ายรายวัน</div>
@@ -220,6 +248,7 @@ export default function LedgerDashboardClient({
                   <th className="text-left py-1.5 px-2">วันที่</th>
                   <th className="text-right py-1.5 px-2">รายรับ</th>
                   <th className="text-right py-1.5 px-2">รายจ่าย</th>
+                  <th className="text-right py-1.5 px-2">กำไร/ขาดทุนวันนี้</th>
                   <th className="text-right py-1.5 px-2">คงเหลือสะสม</th>
                 </tr>
               </thead>
@@ -229,6 +258,7 @@ export default function LedgerDashboardClient({
                     <td className="py-1.5 px-2 whitespace-nowrap text-slate-600">{fmtDayLabel(r.date)}</td>
                     <td className="py-1.5 px-2 text-right font-mono text-emerald-600">{r.revenue > 0 ? fmtMoney(r.revenue) : "—"}</td>
                     <td className="py-1.5 px-2 text-right font-mono text-rose-600">{r.expense > 0 ? fmtMoney(r.expense) : "—"}</td>
+                    <td className={`py-1.5 px-2 text-right font-mono ${r.net >= 0 ? "text-slate-700" : "text-rose-600"}`}>{r.net < 0 ? `(${fmtMoney(-r.net)})` : fmtMoney(r.net)}</td>
                     <td className={`py-1.5 px-2 text-right font-mono font-bold ${r.balance >= 0 ? "text-slate-700" : "text-rose-600"}`}>{fmtMoney(r.balance)}</td>
                   </tr>
                 ))}
@@ -238,6 +268,7 @@ export default function LedgerDashboardClient({
                   <td className="py-1.5 px-2 text-slate-700">รวมทั้งสิ้น</td>
                   <td className="py-1.5 px-2 text-right font-mono text-emerald-700">฿{fmtMoney(dash.revenue)}</td>
                   <td className="py-1.5 px-2 text-right font-mono text-rose-700">฿{fmtMoney(dash.expense)}</td>
+                  <td className={`py-1.5 px-2 text-right font-mono ${dash.net >= 0 ? "text-slate-800" : "text-rose-600"}`}>{dash.net < 0 ? `(฿${fmtMoney(-dash.net)})` : `฿${fmtMoney(dash.net)}`}</td>
                   <td className={`py-1.5 px-2 text-right font-mono ${dash.net >= 0 ? "text-slate-800" : "text-rose-600"}`}>฿{fmtMoney(dash.net)}</td>
                 </tr>
               </tfoot>

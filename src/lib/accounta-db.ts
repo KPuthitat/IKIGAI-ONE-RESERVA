@@ -793,7 +793,8 @@ export type LedgerDashboard = {
   forecast: number | null;
   categories: LedgerCatItem[];
   uncategorized: number;
-  dailyRows: Array<{ date: string; revenue: number; expense: number; balance: number }>;
+  dailyRows: Array<{ date: string; revenue: number; expense: number; net: number; balance: number }>;
+  incomeByChannel: Array<{ channel: string; amount: number }>;
 };
 
 function bkkToday(): string {
@@ -902,16 +903,30 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
   const dailyRows = allDates.map((d) => {
     const inc = revByDate.get(d) ?? 0;
     const exp = expByDateMap.get(d) ?? 0;
-    bal = round2(bal + inc - exp);
-    return { date: d, revenue: inc, expense: exp, balance: bal };
+    const net = round2(inc - exp);
+    bal = round2(bal + net);
+    return { date: d, revenue: inc, expense: exp, net, balance: bal };
   });
+
+  // Revenue split by payment channel for the period (owner 2026-06-21).
+  // Comes from accounta_income source='shift_close' rows — populated going
+  // forward by the close-form breakdown. Channel-less backfilled history
+  // falls under "(ไม่ระบุช่องทาง)".
+  const channelRows = db.prepare(
+    `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุช่องทาง)') AS channel, COALESCE(SUM(amount),0) AS amount
+       FROM accounta_income
+      WHERE branch_id = ? AND income_date BETWEEN ? AND ?
+      GROUP BY COALESCE(NULLIF(channel,''),'(ไม่ระบุช่องทาง)')
+      ORDER BY amount DESC`
+  ).all(branchId, start, end) as Array<{ channel: string; amount: number }>;
+  const incomeByChannel = channelRows.map((r) => ({ channel: r.channel, amount: round2(r.amount) }));
 
   return {
     period, start, end, label,
     revenue, expense, net: round2(revenue - expense),
     inputVat, outputVat, vatPayable, vatRegistered,
     daysWithRevenue, avgPerDay, avgWeekday, avgWeekend,
-    forecast, categories, uncategorized, dailyRows
+    forecast, categories, uncategorized, dailyRows, incomeByChannel
   };
 }
 
