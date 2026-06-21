@@ -795,6 +795,9 @@ export type LedgerDashboard = {
   uncategorized: number;
   dailyRows: Array<{ date: string; revenue: number; expense: number; net: number; balance: number }>;
   incomeByChannel: Array<{ channel: string; amount: number }>;
+  incomeRows: Array<{ date: string; channel: string; amount: number }>;
+  byVendor: Array<{ vendor: string; amount: number }>;
+  byPaymentMethod: Array<{ method: string; amount: number }>;
 };
 
 function bkkToday(): string {
@@ -921,12 +924,36 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
   ).all(branchId, start, end) as Array<{ channel: string; amount: number }>;
   const incomeByChannel = channelRows.map((r) => ({ channel: r.channel, amount: round2(r.amount) }));
 
+  // Per-day income rows (date + channel) so the client can show the
+  // selected day's income detail in the drill-down panel.
+  const incomeRows = (db.prepare(
+    `SELECT income_date AS date, COALESCE(NULLIF(channel,''),'(ไม่ระบุช่องทาง)') AS channel, COALESCE(SUM(amount),0) AS amount
+       FROM accounta_income WHERE branch_id = ? AND income_date BETWEEN ? AND ?
+      GROUP BY income_date, COALESCE(NULLIF(channel,''),'(ไม่ระบุช่องทาง)')`
+  ).all(branchId, start, end) as Array<{ date: string; channel: string; amount: number }>)
+    .map((r) => ({ date: r.date, channel: r.channel, amount: round2(r.amount) }));
+
+  // Expense analysis — by vendor and by payment method (confirmed only).
+  const byVendor = (db.prepare(
+    `SELECT COALESCE(NULLIF(TRIM(vendor_name),''),'(ไม่ระบุผู้จำหน่าย)') AS vendor, COALESCE(SUM(amount_total),0) AS amount
+       FROM accounta_expenses WHERE review_status = 'confirmed' AND branch_id = ? AND bill_date BETWEEN ? AND ?
+      GROUP BY vendor ORDER BY amount DESC`
+  ).all(branchId, start, end) as Array<{ vendor: string; amount: number }>)
+    .map((r) => ({ vendor: r.vendor, amount: round2(r.amount) }));
+  const byPaymentMethod = (db.prepare(
+    `SELECT COALESCE(NULLIF(TRIM(payment_method),''),'(ไม่ระบุวิธีจ่าย)') AS method, COALESCE(SUM(amount_total),0) AS amount
+       FROM accounta_expenses WHERE review_status = 'confirmed' AND branch_id = ? AND bill_date BETWEEN ? AND ?
+      GROUP BY method ORDER BY amount DESC`
+  ).all(branchId, start, end) as Array<{ method: string; amount: number }>)
+    .map((r) => ({ method: r.method, amount: round2(r.amount) }));
+
   return {
     period, start, end, label,
     revenue, expense, net: round2(revenue - expense),
     inputVat, outputVat, vatPayable, vatRegistered,
     daysWithRevenue, avgPerDay, avgWeekday, avgWeekend,
-    forecast, categories, uncategorized, dailyRows, incomeByChannel
+    forecast, categories, uncategorized, dailyRows, incomeByChannel,
+    incomeRows, byVendor, byPaymentMethod
   };
 }
 
