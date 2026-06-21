@@ -939,7 +939,7 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
 export type MaterialQuota = {
   targetSales: number; budgetPct: number; weekday: number; weekdayLabel: string;
   monthBudget: number; spentThisMonth: number; remainingBudget: number;
-  purchaseDaysLeft: number; todayIsPurchaseDay: boolean; quotaToday: number;
+  otherDaysLeft: number; todayIsPurchaseDay: boolean; quotaToday: number;
 };
 
 const TH_WEEKDAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
@@ -960,23 +960,25 @@ export function materialPurchaseQuota(branchId: number, date: string): MaterialQ
   const monthBudget = round2(b.x * (b.y / 100));
   const spent = round2(spentRow.s);
   const remainingBudget = round2(monthBudget - spent);
-  // Count remaining occurrences of the buying weekday from `date` (inclusive)
-  // through month-end.
+  // Quota rule (owner 2026-06-21): buying is allowed EVERY day.
+  //   • On the chosen weekday (the planned big-order day) → full X×Y% budget.
+  //   • On any other day → leftover budget (X×Y% − spent) spread over the
+  //     remaining NON-weekday days of the month.
   const [yy, mm, dd] = date.split("-").map(Number);
   const lastDay = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
-  let purchaseDaysLeft = 0;
-  for (let day = dd; day <= lastDay; day++) {
-    if (new Date(Date.UTC(yy, mm - 1, day)).getUTCDay() === b.wd) purchaseDaysLeft += 1;
-  }
   const todayIsPurchaseDay = new Date(Date.UTC(yy, mm - 1, dd)).getUTCDay() === b.wd;
-  const quotaToday = todayIsPurchaseDay && purchaseDaysLeft > 0
-    ? Math.max(0, round2(remainingBudget / purchaseDaysLeft))
-    : 0;
+  let otherDaysLeft = 0;
+  for (let day = dd; day <= lastDay; day++) {
+    if (new Date(Date.UTC(yy, mm - 1, day)).getUTCDay() !== b.wd) otherDaysLeft += 1;
+  }
+  const quotaToday = todayIsPurchaseDay
+    ? monthBudget
+    : (otherDaysLeft > 0 ? Math.max(0, round2(remainingBudget / otherDaysLeft)) : 0);
   return {
     targetSales: round2(b.x), budgetPct: b.y, weekday: b.wd,
     weekdayLabel: TH_WEEKDAYS[b.wd] ?? "",
     monthBudget, spentThisMonth: spent, remainingBudget,
-    purchaseDaysLeft, todayIsPurchaseDay, quotaToday
+    otherDaysLeft, todayIsPurchaseDay, quotaToday
   };
 }
 
