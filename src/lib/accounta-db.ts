@@ -126,23 +126,17 @@ export function listIncomeChannels(branchId?: number | null): Array<{ id: number
   ).all() as Array<{ id: number; name: string }>;
 }
 
-/** Channels that staff fill on the shift-close report — active AND flagged
- *  show_on_close. Same branch-own-then-shared-defaults fallback. */
+/** Channels that staff fill on the shift-close report — the branch's OWN
+ *  active + show_on_close channels. Strictly OPT-IN per branch (owner
+ *  2026-06-21): a branch that hasn't set up its channels gets NO breakdown
+ *  panel (and no reconciliation) — staff just enter the daily total, exactly
+ *  as before the feature. No global fallback, so a half-configured branch is
+ *  never forced to reconcile against the wrong default channels. */
 export function listShiftCloseChannels(branchId?: number | null): Array<{ id: number; name: string }> {
-  const db = getDb();
-  if (branchId != null) {
-    const own = db.prepare(
-      "SELECT id, name FROM accounta_income_channels WHERE branch_id = ? AND active = 1 AND show_on_close = 1 ORDER BY sort_order, name COLLATE NOCASE"
-    ).all(branchId) as Array<{ id: number; name: string }>;
-    if (own.length > 0) return own;
-    // If the branch HAS its own channels but none are flagged for the close
-    // form, that's a deliberate empty — don't fall back to global defaults.
-    const anyOwn = db.prepare("SELECT 1 FROM accounta_income_channels WHERE branch_id = ? LIMIT 1").get(branchId);
-    if (anyOwn) return [];
-  }
-  return db.prepare(
-    "SELECT id, name FROM accounta_income_channels WHERE branch_id IS NULL AND active = 1 AND show_on_close = 1 ORDER BY sort_order, name COLLATE NOCASE"
-  ).all() as Array<{ id: number; name: string }>;
+  if (branchId == null) return [];
+  return getDb().prepare(
+    "SELECT id, name FROM accounta_income_channels WHERE branch_id = ? AND active = 1 AND show_on_close = 1 ORDER BY sort_order, name COLLATE NOCASE"
+  ).all(branchId) as Array<{ id: number; name: string }>;
 }
 
 export function createIncomeChannel(d: { name: string; branchId: number }): number {
