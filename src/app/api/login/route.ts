@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { findPayrollUserByUsername } from "@/lib/payroll-db";
@@ -130,6 +131,21 @@ export async function POST(req: Request) {
     .run(authedUserId);
 
   createSession(authedUserId, null);
+
+  // Reset the view-mode intent on every login (owner 2026-06-21). Each
+  // login starts at the role's HOME mode — super_admin in admin view,
+  // everyone else in staff view — so crossing into the NON-default mode
+  // always requires the PIN again. Without this, the os_view cookie
+  // (1-year) would silently keep an admin in admin view across logins,
+  // skipping the PIN gate. Non-httpOnly so AdminModeToggle's JS can keep
+  // reading/writing it within the session.
+  cookies().set("os_view", authedRole === "super_admin" ? "admin" : "staff", {
+    httpOnly: false,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 31_536_000
+  });
 
   const branchCount = (db.prepare(
     "SELECT COUNT(*) AS n FROM user_branches WHERE user_id = ?"
