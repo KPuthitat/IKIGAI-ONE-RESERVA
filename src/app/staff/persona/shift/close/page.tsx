@@ -11,7 +11,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
-import { listIncomeChannels } from "@/lib/accounta-db";
+import { listIncomeChannels, materialPurchaseQuota } from "@/lib/accounta-db";
 import { parseChecklistOptions } from "@/lib/checklist-options";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
@@ -138,6 +138,10 @@ export default function ShiftClosePage() {
         // submit (owner 2026-06-21). Only relevant when the branch records
         // daily revenue; the form gates the panel on requireDailyRevenue.
         incomeChannels={branch.require_daily_revenue === 1 ? listIncomeChannels() : []}
+        // Material-purchase quota for today (owner 2026-06-21). null when the
+        // branch hasn't enabled it. The form shows today's quota + records how
+        // much was ordered, flagging over-quota on the report.
+        materialQuota={materialPurchaseQuota(branch.id, today)}
         previousData={previousData}
         // Per-branch headline label + order + in-red-box knobs.
         // The form forwards these into the live FlexPreview so the

@@ -1325,6 +1325,29 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN require_daily_revenue INTEGER NOT NULL DEFAULT 1");
   }
 
+  // Material-purchase quota (owner 2026-06-21). The monthly raw-material
+  // budget = target sales (X) × max-material-% (Y). Buying is allowed once
+  // a week on a chosen weekday; today's quota redistributes the leftover
+  // budget (budget − GD spent this month) over the remaining purchase days.
+  // Surfaced on the shift-close report so a closer sees if today's order
+  // is within quota. OFF by default (only restaurants opt in).
+  //   material_quota_enabled    0/1
+  //   material_target_sales     X — monthly sales target (baht)
+  //   material_budget_pct       Y — max material cost as % of target sales
+  //   material_purchase_weekday 0=Sun … 6=Sat — the one buying day
+  if (!bnames2.has("material_quota_enabled")) {
+    db.exec("ALTER TABLE branches ADD COLUMN material_quota_enabled INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!bnames2.has("material_target_sales")) {
+    db.exec("ALTER TABLE branches ADD COLUMN material_target_sales REAL NOT NULL DEFAULT 0");
+  }
+  if (!bnames2.has("material_budget_pct")) {
+    db.exec("ALTER TABLE branches ADD COLUMN material_budget_pct REAL NOT NULL DEFAULT 40");
+  }
+  if (!bnames2.has("material_purchase_weekday")) {
+    db.exec("ALTER TABLE branches ADD COLUMN material_purchase_weekday INTEGER NOT NULL DEFAULT 1");
+  }
+
   // Daily attendance summary (TC-6) — per-branch HH:MM time at which
   // the cron job posts a 4-category roll-call to the executive group:
   //   • มาตรงเวลา (on time, within 5-min grace)
@@ -5885,6 +5908,10 @@ export type Branch = {
   require_morning_opening: number;     // 0/1
   require_today_closing: number;       // 0/1
   require_daily_revenue: number;       // 0/1 — shift_close "ยอดขายวันนี้"
+  material_quota_enabled: number;      // 0/1 — material-purchase quota on shift_close
+  material_target_sales: number;       // X — monthly sales target (baht)
+  material_budget_pct: number;         // Y — max material cost as % of target sales
+  material_purchase_weekday: number;   // 0=Sun … 6=Sat — the weekly buying day
   // Daily attendance summary (TC-6) — see migration block above.
   attendance_summary_time: string | null;           // HH:MM Bangkok, NULL = disabled
   attendance_summary_last_sent_date: string | null; // YYYY-MM-DD dedupe key

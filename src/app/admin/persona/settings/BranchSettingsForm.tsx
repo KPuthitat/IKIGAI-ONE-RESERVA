@@ -51,6 +51,10 @@ export default function BranchSettingsForm({
   requireMorningOpening,
   requireTodayClosing,
   requireDailyRevenue,
+  materialQuotaEnabled,
+  materialTargetSales,
+  materialBudgetPct,
+  materialPurchaseWeekday,
   attendanceSummaryTime,
   shiftNotifyTime,
   pendingDigestTime,
@@ -71,6 +75,10 @@ export default function BranchSettingsForm({
   requireMorningOpening: boolean;
   requireTodayClosing: boolean;
   requireDailyRevenue: boolean;
+  materialQuotaEnabled: boolean;
+  materialTargetSales: number;
+  materialBudgetPct: number;
+  materialPurchaseWeekday: number;
   attendanceSummaryTime: string | null;
   shiftNotifyTime: string | null;
   pendingDigestTime: string | null;
@@ -111,6 +119,13 @@ export default function BranchSettingsForm({
   // branch_daily_revenue + appears as a headline figure on the LINE
   // Flex card. OFF = field hidden, admin backfills via /admin/ascenda.
   const [dailyRevReq, setDailyRevReq] = useState<boolean>(requireDailyRevenue);
+  // Material-purchase quota (owner 2026-06-21). X = monthly sales target,
+  // Y = max material %, weekday = the one weekly buying day. Strings for the
+  // numeric inputs so the field can be cleared while typing.
+  const [matQuotaOn, setMatQuotaOn] = useState<boolean>(materialQuotaEnabled);
+  const [matTarget, setMatTarget] = useState<string>(String(materialTargetSales || ""));
+  const [matPct, setMatPct] = useState<string>(String(materialBudgetPct || ""));
+  const [matWeekday, setMatWeekday] = useState<number>(materialPurchaseWeekday);
   // Daily attendance summary times — comma-separated HH:MM values,
   // e.g. "08:30,17:00". Routes to the HR group. Legacy single-time
   // field is kept for backwards compat but superseded by this.
@@ -159,6 +174,10 @@ export default function BranchSettingsForm({
     mOpeningReq === requireMorningOpening &&
     tClosingReq === requireTodayClosing &&
     dailyRevReq === requireDailyRevenue &&
+    matQuotaOn === materialQuotaEnabled &&
+    matTarget === String(materialTargetSales || "") &&
+    matPct === String(materialBudgetPct || "") &&
+    matWeekday === materialPurchaseWeekday &&
     (summaryTimes || null) === (attendanceSummaryTime || null) &&
     (shiftNotify || null) === (shiftNotifyTime || null) &&
     (pendingDigest || null) === (pendingDigestTime || null);
@@ -194,6 +213,10 @@ export default function BranchSettingsForm({
           require_morning_opening: mOpeningReq,
           require_today_closing: tClosingReq,
           require_daily_revenue: dailyRevReq,
+          material_quota_enabled: matQuotaOn,
+          material_target_sales: Number(matTarget.replace(/,/g, "")) || 0,
+          material_budget_pct: Number(matPct) || 0,
+          material_purchase_weekday: matWeekday,
           attendance_summary_times_json: summaryTimes.trim() ? JSON.stringify(
             summaryTimes.split(",").map((t) => t.trim()).filter((t) => /^\d{2}:\d{2}$/.test(t))
           ) : null,
@@ -583,6 +606,53 @@ export default function BranchSettingsForm({
               ยอดขายวันนี้ (ASCENDA — บนรายงาน)
             </span>
           </label>
+
+          {/* Material-purchase quota (owner 2026-06-21). When on, the
+              shift-close report shows today's buying quota; the closer
+              records how much was ordered and the card flags over-quota. */}
+          <div className="pt-2 mt-1 border-t border-slate-100 space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Switch checked={matQuotaOn} onChange={setMatQuotaOn} accent="emerald" />
+              <span className="text-sm font-medium text-slate-700">
+                โควตาสั่งซื้อวัตถุดิบ (แสดงในรายงานปิดกะ)
+              </span>
+            </label>
+            {matQuotaOn && (
+              <div className="pl-2 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="label !text-xs">ยอดขายเป้าหมาย/เดือน (X)</label>
+                    <input type="number" inputMode="decimal" min={0} className="input"
+                      value={matTarget} placeholder="เช่น 600000"
+                      onChange={(e) => setMatTarget(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label !text-xs">ต้นทุนวัตถุดิบไม่เกิน (Y %)</label>
+                    <input type="number" inputMode="decimal" min={0} max={100} className="input"
+                      value={matPct} placeholder="เช่น 40"
+                      onChange={(e) => setMatPct(e.target.value)} />
+                  </div>
+                </div>
+                <div>
+                  <label className="label !text-xs">วันที่สั่งซื้อได้ (สัปดาห์ละครั้ง)</label>
+                  <select className="input !w-auto" value={matWeekday}
+                    onChange={(e) => setMatWeekday(Number(e.target.value))}>
+                    {["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"].map((d, i) => (
+                      <option key={i} value={i}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  งบวัตถุดิบทั้งเดือน = X × Y% ={" "}
+                  <b className="text-slate-700">
+                    ฿{((Number(matTarget.replace(/,/g, "")) || 0) * (Number(matPct) || 0) / 100)
+                      .toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                  </b>
+                  {" "}· โควตาต่อวันสั่งของ = (งบ − ที่ซื้อไปแล้วเดือนนี้) ÷ จำนวนวัน{["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"][matWeekday]}ที่เหลือ
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

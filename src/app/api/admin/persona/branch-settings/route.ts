@@ -68,6 +68,12 @@ const Body = z.object({
   // the shift_close form. ON = staff see + can fill, OFF = field
   // hidden and admin backfills via /admin/ascenda/revenue.
   require_daily_revenue: z.boolean().optional(),
+  // Material-purchase quota (owner 2026-06-21). X = monthly sales target,
+  // Y = max material %, weekday = the one weekly buying day (0=Sun…6=Sat).
+  material_quota_enabled: z.boolean().optional(),
+  material_target_sales: z.number().min(0).max(1_000_000_000).optional(),
+  material_budget_pct: z.number().min(0).max(100).optional(),
+  material_purchase_weekday: z.number().int().min(0).max(6).optional(),
 
   // Daily attendance summary — legacy single time (kept for backwards compat).
   attendance_summary_time: z.string().regex(TIME_RE, "invalid_time").nullable().optional(),
@@ -171,6 +177,22 @@ export async function POST(req: Request) {
   if (parsed.data.require_daily_revenue !== undefined) {
     sets.push("require_daily_revenue = ?");
     vals.push(parsed.data.require_daily_revenue ? 1 : 0);
+  }
+  if (parsed.data.material_quota_enabled !== undefined) {
+    sets.push("material_quota_enabled = ?");
+    vals.push(parsed.data.material_quota_enabled ? 1 : 0);
+  }
+  if (parsed.data.material_target_sales !== undefined) {
+    sets.push("material_target_sales = ?");
+    vals.push(parsed.data.material_target_sales);
+  }
+  if (parsed.data.material_budget_pct !== undefined) {
+    sets.push("material_budget_pct = ?");
+    vals.push(parsed.data.material_budget_pct);
+  }
+  if (parsed.data.material_purchase_weekday !== undefined) {
+    sets.push("material_purchase_weekday = ?");
+    vals.push(parsed.data.material_purchase_weekday);
   }
   // attendance_summary_times_json — new multi-time path (JSON array).
   // Reset sent_log + last_sent_date on any change so today's summary

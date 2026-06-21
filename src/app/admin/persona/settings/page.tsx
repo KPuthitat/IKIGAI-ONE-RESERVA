@@ -72,6 +72,10 @@ export default function PersonaSettingsPage() {
         requireMorningOpening={branch.require_morning_opening === 1}
         requireTodayClosing={branch.require_today_closing === 1}
         requireDailyRevenue={branch.require_daily_revenue === 1}
+        materialQuotaEnabled={branch.material_quota_enabled === 1}
+        materialTargetSales={branch.material_target_sales}
+        materialBudgetPct={branch.material_budget_pct}
+        materialPurchaseWeekday={branch.material_purchase_weekday}
         attendanceSummaryTime={branch.attendance_summary_time}
         shiftNotifyTime={branch.shift_notify_time}
         pendingDigestTime={branch.pending_digest_time}

@@ -26,6 +26,11 @@ type ChecklistItem = {
   description?: string | null;
 };
 
+/** Format a number as "12,345.67" baht for display. */
+function fmtThb(n: number): string {
+  return (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 /** Normalise a baht amount to "12,345.67". Returns "" when invalid. */
 function formatBahtAmount(raw: string): string {
   const trimmed = raw.trim();
@@ -48,12 +53,21 @@ type DefaultFieldConfig = {
   daily_revenue:  { label: string | null; display_order: number; in_red_box: boolean };
 };
 
+// Mirror of MaterialQuota (server lib/accounta-db) — duplicated here so the
+// client component doesn't import the server-only DB module.
+type MaterialQuotaView = {
+  weekdayLabel: string;
+  monthBudget: number; spentThisMonth: number; remainingBudget: number;
+  purchaseDaysLeft: number; todayIsPurchaseDay: boolean; quotaToday: number;
+};
+
 export default function ShiftCloseForm({
   branchId, branchName, closerName, checklistItems,
   requireServiceCharge = false,
   requireTodayClosing = true,
   requireDailyRevenue = true,
   incomeChannels = [],
+  materialQuota = null,
   previousData = null,
   defaultFieldConfig
 }: {
@@ -65,6 +79,9 @@ export default function ShiftCloseForm({
    *  shows a mandatory per-channel sales breakdown that must sum exactly
    *  to ยอดขายวันนี้ before the report can be submitted. */
   incomeChannels?: Array<{ id: number; name: string }>;
+  /** Today's material-purchase quota (owner 2026-06-21). null = branch hasn't
+   *  enabled the feature. Display-only; staff record what they ordered. */
+  materialQuota?: MaterialQuotaView | null;
   /** Optional — when omitted, the preview uses hardcoded defaults. */
   defaultFieldConfig?: DefaultFieldConfig;
   /** When the branch admin has flipped require_service_charge ON,
@@ -148,6 +165,9 @@ export default function ShiftCloseForm({
   const [channelAmounts, setChannelAmounts] = useState<Record<number, string>>(() =>
     Object.fromEntries(incomeChannels.map((c) => [c.id, ""]))
   );
+  // Material ordered today (owner 2026-06-21) — only when the branch enabled
+  // the quota feature. Blank = 0. Compared to today's quota on the report.
+  const [materialOrdered, setMaterialOrdered] = useState<string>("");
   const [checked, setChecked] = useState<Record<number, boolean>>(() =>
     Object.fromEntries(checklistItems.map((it) => {
       const prev = prevByLabel.get(it.label);
@@ -388,6 +408,7 @@ export default function ShiftCloseForm({
           closing_drawer_amount: closingParsed,
           service_charge_amount: svcParsed,
           daily_revenue: parseAmount(dailyRevenue),
+          material_ordered_today: materialQuota ? (parseAmount(materialOrdered) ?? 0) : null,
           channel_amounts: channelsActive
             ? incomeChannels.map((c) => ({
                 channel_id: c.id,
@@ -598,6 +619,47 @@ export default function ShiftCloseForm({
           </div>
         </div>
       )}
+
+      {/* Material-purchase quota (owner 2026-06-21). Shows today's buying
+          quota + records what was ordered; flags over-quota on the report. */}
+      {materialQuota && (() => {
+        const ordered = parseAmount(materialOrdered) ?? 0;
+        const over = ordered > materialQuota.quotaToday + 0.005;
+        return (
+          <div className="card space-y-3">
+            <h2 className="font-bold text-slate-800">โควตาสั่งซื้อวัตถุดิบวันนี้</h2>
+            {materialQuota.todayIsPurchaseDay ? (
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-center">
+                <div className="text-[11px] text-slate-500">โควตาที่สั่งได้วันนี้ ({materialQuota.weekdayLabel})</div>
+                <div className="text-2xl font-bold text-emerald-700">฿{fmtThb(materialQuota.quotaToday)}</div>
+                <div className="text-[11px] text-slate-500 mt-1">
+                  งบเดือนนี้ ฿{fmtThb(materialQuota.monthBudget)} · ซื้อไปแล้ว ฿{fmtThb(materialQuota.spentThisMonth)} ·
+                  เหลือวันสั่งของอีก {materialQuota.purchaseDaysLeft} ครั้ง
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-center text-sm text-slate-500">
+                วันนี้ไม่ใช่วันสั่งของ (วันสั่งของคือวัน{materialQuota.weekdayLabel}) — ปกติไม่ควรสั่งวัตถุดิบเข้า
+              </div>
+            )}
+            <div>
+              <label className="label">มูลค่าวัตถุดิบที่สั่งวันนี้ (บาท)</label>
+              <input type="number" inputMode="decimal" min={0} step="0.01" className="input"
+                value={materialOrdered} placeholder="0.00 (ไม่มีก็ใส่ 0)"
+                onChange={(e) => setMaterialOrdered(e.target.value)} />
+            </div>
+            {ordered > 0 && (
+              <div className={`rounded-lg p-2.5 text-sm font-bold text-center border ${
+                over ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-emerald-50 border-emerald-200 text-emerald-700"
+              }`}>
+                {over
+                  ? `⚠ เกินโควตา ฿${fmtThb(ordered - materialQuota.quotaToday)} (สั่ง ฿${fmtThb(ordered)} / โควตา ฿${fmtThb(materialQuota.quotaToday)})`
+                  : `✓ ปกติ — อยู่ในโควตา (สั่ง ฿${fmtThb(ordered)} / โควตา ฿${fmtThb(materialQuota.quotaToday)})`}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {checklistItems.length > 0 ? (
         <div className="card space-y-3">

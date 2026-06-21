@@ -930,6 +930,56 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
   };
 }
 
+// ── Material-purchase quota (owner 2026-06-21) ─────────────────────
+// Monthly raw-material budget = target sales (X) × max-material-% (Y).
+// Buying once a week on a chosen weekday; today's quota redistributes the
+// leftover budget (budget − GD spent this month) over the purchase days
+// still left in the month. GD = the "ต้นทุนสินค้า/วัตถุดิบ" category (code GD).
+
+export type MaterialQuota = {
+  targetSales: number; budgetPct: number; weekday: number; weekdayLabel: string;
+  monthBudget: number; spentThisMonth: number; remainingBudget: number;
+  purchaseDaysLeft: number; todayIsPurchaseDay: boolean; quotaToday: number;
+};
+
+const TH_WEEKDAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+
+export function materialPurchaseQuota(branchId: number, date: string): MaterialQuota | null {
+  const db = getDb();
+  const b = db.prepare(
+    "SELECT material_quota_enabled AS en, material_target_sales AS x, material_budget_pct AS y, material_purchase_weekday AS wd FROM branches WHERE id = ?"
+  ).get(branchId) as { en: number; x: number; y: number; wd: number } | undefined;
+  if (!b || !b.en) return null;
+  const month = date.slice(0, 7);
+  const gd = db.prepare("SELECT name FROM accounta_categories WHERE code = 'GD'")
+    .get() as { name: string } | undefined;
+  const gdName = gd?.name ?? "ต้นทุนสินค้า/วัตถุดิบ";
+  const spentRow = db.prepare(
+    "SELECT COALESCE(SUM(amount_total),0) AS s FROM accounta_expenses WHERE review_status = 'confirmed' AND branch_id = ? AND substr(bill_date,1,7) = ? AND category = ?"
+  ).get(branchId, month, gdName) as { s: number };
+  const monthBudget = round2(b.x * (b.y / 100));
+  const spent = round2(spentRow.s);
+  const remainingBudget = round2(monthBudget - spent);
+  // Count remaining occurrences of the buying weekday from `date` (inclusive)
+  // through month-end.
+  const [yy, mm, dd] = date.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+  let purchaseDaysLeft = 0;
+  for (let day = dd; day <= lastDay; day++) {
+    if (new Date(Date.UTC(yy, mm - 1, day)).getUTCDay() === b.wd) purchaseDaysLeft += 1;
+  }
+  const todayIsPurchaseDay = new Date(Date.UTC(yy, mm - 1, dd)).getUTCDay() === b.wd;
+  const quotaToday = todayIsPurchaseDay && purchaseDaysLeft > 0
+    ? Math.max(0, round2(remainingBudget / purchaseDaysLeft))
+    : 0;
+  return {
+    targetSales: round2(b.x), budgetPct: b.y, weekday: b.wd,
+    weekdayLabel: TH_WEEKDAYS[b.wd] ?? "",
+    monthBudget, spentThisMonth: spent, remainingBudget,
+    purchaseDaysLeft, todayIsPurchaseDay, quotaToday
+  };
+}
+
 /** Confirmed expenses in a date range (for the dashboard's editable list). */
 export function listExpensesInRange(branchId: number, start: string, end: string): ExpenseRow[] {
   const r = getDb().prepare(

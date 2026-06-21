@@ -85,6 +85,9 @@ const ShiftCloseData = z.object({
   // read from there). Optional so staff can skip and admin backfills
   // later via /admin/ascenda/revenue.
   daily_revenue: z.number().min(0).max(10_000_000).nullable().optional(),
+  // Material ordered today (owner 2026-06-21) — stored in daily_reports.data
+  // for the close report's quota comparison. null = branch quota feature off.
+  material_ordered_today: z.number().min(0).max(10_000_000).nullable().optional(),
   // Per-channel sales breakdown (owner 2026-06-21). When present, the sum
   // must equal daily_revenue exactly — enforced server-side below — and each
   // channel is mirrored into the ACCOUNTA รายรับ ledger.
