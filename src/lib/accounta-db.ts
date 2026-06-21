@@ -126,6 +126,25 @@ export function listIncomeChannels(branchId?: number | null): Array<{ id: number
   ).all() as Array<{ id: number; name: string }>;
 }
 
+/** Channels that staff fill on the shift-close report — active AND flagged
+ *  show_on_close. Same branch-own-then-shared-defaults fallback. */
+export function listShiftCloseChannels(branchId?: number | null): Array<{ id: number; name: string }> {
+  const db = getDb();
+  if (branchId != null) {
+    const own = db.prepare(
+      "SELECT id, name FROM accounta_income_channels WHERE branch_id = ? AND active = 1 AND show_on_close = 1 ORDER BY sort_order, name COLLATE NOCASE"
+    ).all(branchId) as Array<{ id: number; name: string }>;
+    if (own.length > 0) return own;
+    // If the branch HAS its own channels but none are flagged for the close
+    // form, that's a deliberate empty — don't fall back to global defaults.
+    const anyOwn = db.prepare("SELECT 1 FROM accounta_income_channels WHERE branch_id = ? LIMIT 1").get(branchId);
+    if (anyOwn) return [];
+  }
+  return db.prepare(
+    "SELECT id, name FROM accounta_income_channels WHERE branch_id IS NULL AND active = 1 AND show_on_close = 1 ORDER BY sort_order, name COLLATE NOCASE"
+  ).all() as Array<{ id: number; name: string }>;
+}
+
 export function createIncomeChannel(d: { name: string; branchId: number }): number {
   const db = getDb();
   const name = d.name.trim();
@@ -146,12 +165,12 @@ export function createIncomeChannel(d: { name: string; branchId: number }): numb
 // ── Channel master management (owner 2026-06-21) — per branch ─────
 // Drives both the manual รายรับ picklist AND the shift-close breakdown.
 
-export type ChannelRow = { id: number; name: string; sort_order: number; active: number };
+export type ChannelRow = { id: number; name: string; sort_order: number; active: number; show_on_close: number };
 
 /** The branch's OWN channels (incl. inactive) for the manager. */
 export function listAllIncomeChannels(branchId: number): ChannelRow[] {
   return getDb().prepare(
-    "SELECT id, name, sort_order, active FROM accounta_income_channels WHERE branch_id = ? ORDER BY active DESC, sort_order, name COLLATE NOCASE"
+    "SELECT id, name, sort_order, active, show_on_close FROM accounta_income_channels WHERE branch_id = ? ORDER BY active DESC, sort_order, name COLLATE NOCASE"
   ).all(branchId) as ChannelRow[];
 }
 
@@ -194,6 +213,12 @@ export function setIncomeChannelActive(id: number, branchId: number, active: boo
   if (!channelInBranch(id, branchId)) return false;
   return getDb().prepare("UPDATE accounta_income_channels SET active = ? WHERE id = ?")
     .run(active ? 1 : 0, id).changes > 0;
+}
+
+export function setIncomeChannelShowOnClose(id: number, branchId: number, show: boolean): boolean {
+  if (!channelInBranch(id, branchId)) return false;
+  return getDb().prepare("UPDATE accounta_income_channels SET show_on_close = ? WHERE id = ?")
+    .run(show ? 1 : 0, id).changes > 0;
 }
 
 /** Swap sort_order with the active neighbour (same branch) in the direction. */

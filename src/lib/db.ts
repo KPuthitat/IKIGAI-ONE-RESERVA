@@ -5342,6 +5342,14 @@ function runMigrations(db: Database.Database): void {
     rebuild();
     db.exec("PRAGMA foreign_keys = ON");
   }
+  // show_on_close (owner 2026-06-21): per-channel toggle for whether staff
+  // must fill it on the shift-close report. A channel can exist in the list
+  // (for manual รายรับ entry, e.g. an insurer credit account) without cluttering
+  // the close form. DEFAULT 1 = appears, preserving current behaviour.
+  const chCols2 = db.prepare("PRAGMA table_info(accounta_income_channels)").all() as Array<{ name: string }>;
+  if (!chCols2.some((c) => c.name === "show_on_close")) {
+    db.exec("ALTER TABLE accounta_income_channels ADD COLUMN show_on_close INTEGER NOT NULL DEFAULT 1");
+  }
 
   // source (owner 2026-06-21): tag where an income row came from so the
   // daily shift-close total can flow straight into the รายรับ ledger and

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
 
-type Channel = { id: number; name: string; sort_order: number; active: number };
+type Channel = { id: number; name: string; sort_order: number; active: number; show_on_close: number };
 
 export default function ChannelsClient({
   initialChannels, defaults = []
@@ -79,7 +79,7 @@ export default function ChannelsClient({
       {/* Active list (ordered — this is the order shown on the close form) */}
       <div className="card space-y-2">
         <div className="text-sm font-bold text-slate-800">ช่องทางที่ใช้งาน ({active.length})</div>
-        <p className="text-[11px] text-slate-400">ลำดับนี้คือลำดับที่จะแสดงในฟอร์มปิดกะ</p>
+        <p className="text-[11px] text-slate-400">เฉพาะช่องทางที่ติด “✓ ขึ้นปิดกะ” จะให้น้องกรอกในรายงานปิดกะ (เรียงตามลำดับนี้) · ช่องทางอื่นยังใช้ลงรายรับมือได้</p>
         {active.length === 0 ? (
           <p className="text-xs text-slate-400">ยังไม่มีช่องทาง</p>
         ) : (
@@ -108,6 +108,17 @@ export default function ChannelsClient({
                   <button type="button" onClick={() => { setEditId(c.id); setEditName(c.name); }}
                     className="flex-1 text-left text-sm text-slate-800 hover:text-brand">{c.name}</button>
                 )}
+                <button type="button"
+                  onClick={() => call("PATCH", { id: c.id, show_on_close: !c.show_on_close })}
+                  disabled={busy}
+                  title="แสดงให้น้องกรอกในรายงานปิดกะหรือไม่"
+                  className={`text-[11px] px-2 py-1 rounded border ${
+                    c.show_on_close
+                      ? "border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
+                      : "border-slate-300 text-slate-400 hover:bg-slate-50"
+                  }`}>
+                  {c.show_on_close ? "✓ ขึ้นปิดกะ" : "ไม่ขึ้นปิดกะ"}
+                </button>
                 <button type="button" onClick={() => call("PATCH", { id: c.id, active: false })}
                   disabled={busy}
                   className="text-[11px] px-2 py-1 rounded border border-slate-300 text-slate-500 hover:bg-slate-50">ปิดใช้งาน</button>

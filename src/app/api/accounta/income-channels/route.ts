@@ -3,8 +3,8 @@ import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import {
   listIncomeChannels, listAllIncomeChannels, createIncomeChannel,
-  renameIncomeChannel, setIncomeChannelActive, moveIncomeChannel,
-  copyDefaultChannelsToBranch, listDefaultChannelNames
+  renameIncomeChannel, setIncomeChannelActive, setIncomeChannelShowOnClose,
+  moveIncomeChannel, copyDefaultChannelsToBranch, listDefaultChannelNames
 } from "@/lib/accounta-db";
 
 // Income channels are PER-BRANCH (owner 2026-06-21). All operations scope to
@@ -20,6 +20,7 @@ const PatchBody = z.object({
   id: z.number().int().positive().optional(),
   name: z.string().trim().min(1).max(60).optional(),
   active: z.boolean().optional(),
+  show_on_close: z.boolean().optional(),
   move: z.enum(["up", "down"]).optional(),
   copy_defaults: z.boolean().optional()
 });
@@ -70,6 +71,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "rename_failed", message: "ชื่อช่องทางซ้ำหรือไม่ถูกต้อง" }, { status: 409 });
   }
   if (d.active !== undefined) setIncomeChannelActive(d.id, branchId, d.active);
+  if (d.show_on_close !== undefined) setIncomeChannelShowOnClose(d.id, branchId, d.show_on_close);
   if (d.move !== undefined) moveIncomeChannel(d.id, branchId, d.move);
   return NextResponse.json({ ok: true, channels: listAllIncomeChannels(branchId) });
 }
