@@ -5311,6 +5311,38 @@ function runMigrations(db: Database.Database): void {
       ON accounta_income(branch_id, income_date DESC);
   `);
 
+  // Per-branch income channels (owner 2026-06-21). Each branch records money
+  // through a DIFFERENT set of channels (a restaurant: Cash/QR/Grab/cards; a
+  // clinic: Cash/PromptPay + insurer credit accounts). The original table had
+  // a global UNIQUE(name) which blocks two branches both having "Cash", so we
+  // rebuild it: add branch_id + swap to UNIQUE(branch_id, name). Existing rows
+  // keep branch_id NULL = shared defaults shown to any branch that hasn't set
+  // up its own list yet. No FK references the channel id (accounta_income
+  // stores the channel NAME as free text), so the rebuild is safe.
+  const chCols = db.prepare("PRAGMA table_info(accounta_income_channels)").all() as Array<{ name: string }>;
+  if (!chCols.some((c) => c.name === "branch_id")) {
+    db.exec("PRAGMA foreign_keys = OFF");
+    const rebuild = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE accounta_income_channels_new (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          branch_id  INTEGER REFERENCES branches(id) ON DELETE CASCADE,
+          name       TEXT NOT NULL,
+          sort_order INTEGER NOT NULL DEFAULT 100,
+          active     INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO accounta_income_channels_new (id, branch_id, name, sort_order, active, created_at)
+          SELECT id, NULL, name, sort_order, active, created_at FROM accounta_income_channels;
+        DROP TABLE accounta_income_channels;
+        ALTER TABLE accounta_income_channels_new RENAME TO accounta_income_channels;
+        CREATE UNIQUE INDEX idx_income_channel_branch_name ON accounta_income_channels(branch_id, name);
+      `);
+    });
+    rebuild();
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+
   // source (owner 2026-06-21): tag where an income row came from so the
   // daily shift-close total can flow straight into the รายรับ ledger and
   // stay idempotent. 'manual' = admin keyed it; 'shift_close' = auto-synced

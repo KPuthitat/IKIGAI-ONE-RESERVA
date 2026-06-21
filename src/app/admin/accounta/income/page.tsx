@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "ACCOUNTA · รายรับ" };
 function thisMonth(): string { return new Date().toISOString().slice(0, 7); }
 
 export default function AccountaIncomePage() {
-  requirePermission("accounta.manage");
+  const user = requirePermission("accounta.manage");
   const month = thisMonth();
   return (
     <div className="space-y-4">
@@ -40,7 +40,7 @@ export default function AccountaIncomePage() {
         month={month}
         branches={listBranches()}
         companies={listCompanies()}
-        channels={listIncomeChannels()}
+        channels={listIncomeChannels(user.activeBranchId)}
         initialIncome={listIncome({ month })}
         initialSummary={incomeSummary(month)}
       />

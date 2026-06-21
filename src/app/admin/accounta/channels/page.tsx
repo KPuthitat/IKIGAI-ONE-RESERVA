@@ -1,18 +1,33 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
-import { listAllIncomeChannels } from "@/lib/accounta-db";
+import { getDb } from "@/lib/db";
+import { listAllIncomeChannels, listDefaultChannelNames } from "@/lib/accounta-db";
 import ChannelsClient from "./ChannelsClient";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ACCOUNTA · ช่องทางรับเงิน" };
 
-// ช่องทางรับเงิน — the single master list (owner 2026-06-21). It drives
-// both the manual รายรับ picklist AND the mandatory per-channel breakdown
-// staff fill on every shift-close. Add a channel here → it appears on the
-// close form for every branch that records daily sales.
+// ช่องทางรับเงิน — PER BRANCH (owner 2026-06-21). Each branch keeps its own
+// channel list (a clinic's insurer accounts differ from a restaurant's cards).
+// Drives both the manual รายรับ picklist AND the shift-close breakdown for the
+// branch selected at the top of the console.
 export default function AccountaChannelsPage() {
-  requirePermission("accounta.manage");
+  const user = requirePermission("accounta.manage");
+  const branchId = user.activeBranchId ?? null;
+  const branch = branchId != null
+    ? (getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined)
+    : undefined;
+
+  if (branchId == null) {
+    return (
+      <div className="space-y-4">
+        <Link href="/admin/accounta" className="text-sm text-slate-500 hover:text-brand">← กลับ ACCOUNTA</Link>
+        <div className="card text-sm text-slate-500">กรุณาเลือกสาขาที่มุมบนซ้ายก่อน แล้วเปิดหน้านี้อีกครั้ง</div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -22,14 +37,17 @@ export default function AccountaChannelsPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-800">ช่องทางรับเงิน</h1>
         <p className="text-sm text-slate-500 mt-1">
-          รายการช่องทางรับชำระเงินกลาง — ใช้ทั้งหน้ารายรับ และฟอร์มปิดกะ (พนักงานกรอกยอดแยกช่องทางทุกวัน)
+          สาขา <b>{branch?.name ?? `#${branchId}`}</b> · ช่องทางรับชำระเงินของสาขานี้ — ใช้ทั้งหน้ารายรับ และฟอร์มปิดกะ
         </p>
         <p className="text-[11px] text-slate-400 mt-1">
-          เพิ่มช่องทางที่นี่ จะไปขึ้นในฟอร์มปิดกะของทุกสาขาที่บันทึกยอดขายให้อัตโนมัติ (บังคับกรอก ไม่มีก็ใส่ 0) ·
-          ปิดใช้งานช่องทางที่ไม่ใช้แล้วได้ (ของเก่าไม่หาย)
+          แต่ละสาขาตั้งช่องทางของตัวเองได้ (เช่น คลินิกใช้ เงินสด/PromptPay + บริษัทประกัน · ร้านอาหารใช้ เงินสด/QR/บัตร) ·
+          เพิ่มที่นี่ → ขึ้นในฟอร์มปิดกะของสาขานี้ (บังคับกรอก ไม่มีก็ใส่ 0) · ปิดใช้งานได้ (ของเก่าไม่หาย)
         </p>
       </div>
-      <ChannelsClient initialChannels={listAllIncomeChannels()} />
+      <ChannelsClient
+        initialChannels={listAllIncomeChannels(branchId)}
+        defaults={listDefaultChannelNames()}
+      />
     </div>
   );
 }

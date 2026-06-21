@@ -109,72 +109,106 @@ export function createPaymentMethod(d: { name: string }): number {
   return Number(info.lastInsertRowid);
 }
 
-export function listIncomeChannels(): Array<{ id: number; name: string }> {
-  return getDb().prepare(
-    "SELECT id, name FROM accounta_income_channels WHERE active = 1 ORDER BY sort_order, name COLLATE NOCASE"
+// Per-branch income channels (owner 2026-06-21). Each branch has its own
+// list (a clinic's insurer credit accounts differ from a restaurant's card
+// types). A branch with no list of its own falls back to the shared defaults
+// (branch_id IS NULL) so nothing breaks before it's configured.
+export function listIncomeChannels(branchId?: number | null): Array<{ id: number; name: string }> {
+  const db = getDb();
+  if (branchId != null) {
+    const own = db.prepare(
+      "SELECT id, name FROM accounta_income_channels WHERE branch_id = ? AND active = 1 ORDER BY sort_order, name COLLATE NOCASE"
+    ).all(branchId) as Array<{ id: number; name: string }>;
+    if (own.length > 0) return own;
+  }
+  return db.prepare(
+    "SELECT id, name FROM accounta_income_channels WHERE branch_id IS NULL AND active = 1 ORDER BY sort_order, name COLLATE NOCASE"
   ).all() as Array<{ id: number; name: string }>;
 }
 
-export function createIncomeChannel(d: { name: string }): number {
+export function createIncomeChannel(d: { name: string; branchId: number }): number {
+  const db = getDb();
   const name = d.name.trim();
-  const existing = getDb().prepare(
-    "SELECT id FROM accounta_income_channels WHERE name = ? COLLATE NOCASE"
-  ).get(name) as { id: number } | undefined;
+  const existing = db.prepare(
+    "SELECT id FROM accounta_income_channels WHERE branch_id = ? AND name = ? COLLATE NOCASE"
+  ).get(d.branchId, name) as { id: number } | undefined;
   if (existing) {
-    getDb().prepare("UPDATE accounta_income_channels SET active = 1 WHERE id = ?").run(existing.id);
+    db.prepare("UPDATE accounta_income_channels SET active = 1 WHERE id = ?").run(existing.id);
     return existing.id;
   }
-  const max = (getDb().prepare("SELECT COALESCE(MAX(sort_order),0) AS m FROM accounta_income_channels").get() as { m: number }).m;
-  const info = getDb().prepare(
-    "INSERT INTO accounta_income_channels (name, sort_order) VALUES (?, ?)"
-  ).run(name, max + 10);
+  const max = (db.prepare("SELECT COALESCE(MAX(sort_order),0) AS m FROM accounta_income_channels WHERE branch_id = ?").get(d.branchId) as { m: number }).m;
+  const info = db.prepare(
+    "INSERT INTO accounta_income_channels (branch_id, name, sort_order) VALUES (?, ?, ?)"
+  ).run(d.branchId, name, max + 10);
   return Number(info.lastInsertRowid);
 }
 
-// ── Channel master management (owner 2026-06-21) ─────────────────
-// The income-channel list is the single source of truth: it drives
-// both the manual รายรับ picklist AND the per-channel breakdown staff
-// fill on every shift-close. Managed centrally in ACCOUNTA.
+// ── Channel master management (owner 2026-06-21) — per branch ─────
+// Drives both the manual รายรับ picklist AND the shift-close breakdown.
 
 export type ChannelRow = { id: number; name: string; sort_order: number; active: number };
 
-export function listAllIncomeChannels(): ChannelRow[] {
+/** The branch's OWN channels (incl. inactive) for the manager. */
+export function listAllIncomeChannels(branchId: number): ChannelRow[] {
   return getDb().prepare(
-    "SELECT id, name, sort_order, active FROM accounta_income_channels ORDER BY active DESC, sort_order, name COLLATE NOCASE"
-  ).all() as ChannelRow[];
+    "SELECT id, name, sort_order, active FROM accounta_income_channels WHERE branch_id = ? ORDER BY active DESC, sort_order, name COLLATE NOCASE"
+  ).all(branchId) as ChannelRow[];
 }
 
-export function renameIncomeChannel(id: number, name: string): boolean {
+/** Shared default channel names (branch_id NULL) — offered as a starter set. */
+export function listDefaultChannelNames(): string[] {
+  return (getDb().prepare(
+    "SELECT name FROM accounta_income_channels WHERE branch_id IS NULL AND active = 1 ORDER BY sort_order"
+  ).all() as Array<{ name: string }>).map((r) => r.name);
+}
+
+/** Copy the shared defaults into a branch's own list (skip ones it has). */
+export function copyDefaultChannelsToBranch(branchId: number): number {
+  return getDb().prepare(`
+    INSERT INTO accounta_income_channels (branch_id, name, sort_order, active)
+    SELECT ?, d.name, d.sort_order, 1 FROM accounta_income_channels d
+     WHERE d.branch_id IS NULL AND d.active = 1
+       AND NOT EXISTS (SELECT 1 FROM accounta_income_channels x WHERE x.branch_id = ? AND x.name = d.name COLLATE NOCASE)
+  `).run(branchId, branchId).changes;
+}
+
+/** branch-scope guard: only mutate a channel that belongs to this branch. */
+function channelInBranch(id: number, branchId: number): { sort_order: number } | null {
+  return getDb().prepare(
+    "SELECT sort_order FROM accounta_income_channels WHERE id = ? AND branch_id = ?"
+  ).get(id, branchId) as { sort_order: number } | null;
+}
+
+export function renameIncomeChannel(id: number, branchId: number, name: string): boolean {
+  const db = getDb();
   const trimmed = name.trim();
-  if (!trimmed) return false;
-  // Block renaming onto another channel's name (case-insensitive).
-  const clash = getDb().prepare(
-    "SELECT id FROM accounta_income_channels WHERE name = ? COLLATE NOCASE AND id <> ?"
-  ).get(trimmed, id) as { id: number } | undefined;
+  if (!trimmed || !channelInBranch(id, branchId)) return false;
+  const clash = db.prepare(
+    "SELECT id FROM accounta_income_channels WHERE branch_id = ? AND name = ? COLLATE NOCASE AND id <> ?"
+  ).get(branchId, trimmed, id) as { id: number } | undefined;
   if (clash) return false;
-  return getDb().prepare("UPDATE accounta_income_channels SET name = ? WHERE id = ?")
-    .run(trimmed, id).changes > 0;
+  return db.prepare("UPDATE accounta_income_channels SET name = ? WHERE id = ?").run(trimmed, id).changes > 0;
 }
 
-export function setIncomeChannelActive(id: number, active: boolean): boolean {
+export function setIncomeChannelActive(id: number, branchId: number, active: boolean): boolean {
+  if (!channelInBranch(id, branchId)) return false;
   return getDb().prepare("UPDATE accounta_income_channels SET active = ? WHERE id = ?")
     .run(active ? 1 : 0, id).changes > 0;
 }
 
-/** Swap sort_order with the active neighbour in the given direction. */
-export function moveIncomeChannel(id: number, dir: "up" | "down"): boolean {
+/** Swap sort_order with the active neighbour (same branch) in the direction. */
+export function moveIncomeChannel(id: number, branchId: number, dir: "up" | "down"): boolean {
   const db = getDb();
-  const me = db.prepare("SELECT id, sort_order FROM accounta_income_channels WHERE id = ?")
-    .get(id) as { id: number; sort_order: number } | undefined;
+  const me = channelInBranch(id, branchId);
   if (!me) return false;
   const neighbour = db.prepare(
     dir === "up"
-      ? "SELECT id, sort_order FROM accounta_income_channels WHERE active = 1 AND sort_order < ? ORDER BY sort_order DESC LIMIT 1"
-      : "SELECT id, sort_order FROM accounta_income_channels WHERE active = 1 AND sort_order > ? ORDER BY sort_order ASC LIMIT 1"
-  ).get(me.sort_order) as { id: number; sort_order: number } | undefined;
+      ? "SELECT id, sort_order FROM accounta_income_channels WHERE branch_id = ? AND active = 1 AND sort_order < ? ORDER BY sort_order DESC LIMIT 1"
+      : "SELECT id, sort_order FROM accounta_income_channels WHERE branch_id = ? AND active = 1 AND sort_order > ? ORDER BY sort_order ASC LIMIT 1"
+  ).get(branchId, me.sort_order) as { id: number; sort_order: number } | undefined;
   if (!neighbour) return false;
   const swap = db.transaction(() => {
-    db.prepare("UPDATE accounta_income_channels SET sort_order = ? WHERE id = ?").run(neighbour.sort_order, me.id);
+    db.prepare("UPDATE accounta_income_channels SET sort_order = ? WHERE id = ?").run(neighbour.sort_order, id);
     db.prepare("UPDATE accounta_income_channels SET sort_order = ? WHERE id = ?").run(me.sort_order, neighbour.id);
   });
   swap();

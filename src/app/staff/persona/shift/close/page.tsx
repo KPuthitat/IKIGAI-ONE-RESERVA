@@ -137,7 +137,7 @@ export default function ShiftClosePage() {
         // breakdown that must reconcile to ยอดขายวันนี้ before they can
         // submit (owner 2026-06-21). Only relevant when the branch records
         // daily revenue; the form gates the panel on requireDailyRevenue.
-        incomeChannels={branch.require_daily_revenue === 1 ? listIncomeChannels() : []}
+        incomeChannels={branch.require_daily_revenue === 1 ? listIncomeChannels(branch.id) : []}
         // Material-purchase quota for today (owner 2026-06-21). null when the
         // branch hasn't enabled it. The form shows today's quota + records how
         // much was ordered, flagging over-quota on the report.

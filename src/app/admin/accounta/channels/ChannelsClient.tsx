@@ -7,7 +7,9 @@ import { humanizeApiError } from "@/lib/error-messages";
 
 type Channel = { id: number; name: string; sort_order: number; active: number };
 
-export default function ChannelsClient({ initialChannels }: { initialChannels: Channel[] }) {
+export default function ChannelsClient({
+  initialChannels, defaults = []
+}: { initialChannels: Channel[]; defaults?: string[] }) {
   const router = useRouter();
   const [channels, setChannels] = useState<Channel[]>(initialChannels);
   const [newName, setNewName] = useState("");
@@ -47,6 +49,18 @@ export default function ChannelsClient({ initialChannels }: { initialChannels: C
   return (
     <div className="space-y-4">
       {err && <p className="text-sm text-rose-600">{err}</p>}
+
+      {/* Empty-state — offer to seed from the shared defaults */}
+      {channels.length === 0 && defaults.length > 0 && (
+        <div className="card bg-amber-50 border border-amber-200 space-y-2">
+          <div className="text-sm font-bold text-amber-800">สาขานี้ยังไม่ได้ตั้งช่องทางของตัวเอง</div>
+          <p className="text-xs text-amber-700">
+            ตอนนี้ใช้ค่าเริ่มต้นรวม: {defaults.join(" · ")} — กดเพื่อคัดลอกมาเป็นของสาขานี้แล้วปรับ หรือเพิ่มเองด้านล่าง
+          </p>
+          <button type="button" onClick={() => call("PATCH", { copy_defaults: true })} disabled={busy}
+            className="btn-secondary text-sm w-fit disabled:opacity-50">คัดลอกค่าเริ่มต้นมาเริ่ม</button>
+        </div>
+      )}
 
       {/* Add */}
       <div className="card flex flex-col sm:flex-row gap-2">

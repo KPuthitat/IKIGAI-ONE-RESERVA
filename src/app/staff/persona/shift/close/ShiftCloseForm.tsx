@@ -571,24 +571,26 @@ export default function ShiftCloseForm({
           </div>
           <div className="space-y-1.5">
             {incomeChannels.map((c) => (
-              <div key={c.id} className="flex items-center gap-2">
-                <span className="text-sm text-slate-700 flex-1 min-w-0">{c.name}</span>
-                <input
-                  type="number" inputMode="decimal" min="0" step="0.01"
-                  className="input text-sm w-32 sm:w-40 font-mono text-right"
-                  placeholder="0.00"
-                  value={channelAmounts[c.id] ?? ""}
-                  onChange={(e) => setChannelAmounts((p) => ({ ...p, [c.id]: e.target.value }))}
-                  onBlur={() => {
-                    const v = (channelAmounts[c.id] ?? "").trim();
-                    if (!v) return;
-                    const n = Number(v.replace(/,/g, ""));
-                    if (Number.isFinite(n) && n >= 0) {
-                      setChannelAmounts((p) => ({ ...p, [c.id]: n.toFixed(2) }));
-                    }
-                  }}
-                />
-                <span className="text-sm font-bold text-slate-500 select-none">฿</span>
+              <div key={c.id} className="space-y-1">
+                <label className="block text-sm text-slate-700">{c.name}</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number" inputMode="decimal" min="0" step="0.01"
+                    className="input text-sm font-mono text-right flex-1"
+                    placeholder="0.00"
+                    value={channelAmounts[c.id] ?? ""}
+                    onChange={(e) => setChannelAmounts((p) => ({ ...p, [c.id]: e.target.value }))}
+                    onBlur={() => {
+                      const v = (channelAmounts[c.id] ?? "").trim();
+                      if (!v) return;
+                      const n = Number(v.replace(/,/g, ""));
+                      if (Number.isFinite(n) && n >= 0) {
+                        setChannelAmounts((p) => ({ ...p, [c.id]: n.toFixed(2) }));
+                      }
+                    }}
+                  />
+                  <span className="text-sm font-bold text-slate-500 select-none">฿</span>
+                </div>
               </div>
             ))}
           </div>
