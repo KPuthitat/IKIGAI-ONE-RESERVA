@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
 
-type Channel = { id: number; name: string; sort_order: number; active: number; show_on_close: number };
+type Channel = { id: number; name: string; sort_order: number; active: number; show_on_close: number; is_credit: number };
 
 export default function ChannelsClient({
   initialChannels, defaults = []
@@ -118,6 +118,17 @@ export default function ChannelsClient({
                       : "border-slate-300 text-slate-400 hover:bg-slate-50"
                   }`}>
                   {c.show_on_close ? "✓ ขึ้นปิดกะ" : "ไม่ขึ้นปิดกะ"}
+                </button>
+                <button type="button"
+                  onClick={() => call("PATCH", { id: c.id, is_credit: !c.is_credit })}
+                  disabled={busy}
+                  title="ช่องทางนี้ได้เงินทีหลัง (ลูกหนี้ค้างชำระ) — นับเป็นยอดขายแต่ยังไม่เข้าเงินสด"
+                  className={`text-[11px] px-2 py-1 rounded border ${
+                    c.is_credit
+                      ? "border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100"
+                      : "border-slate-300 text-slate-400 hover:bg-slate-50"
+                  }`}>
+                  {c.is_credit ? "⏳ ค้างชำระ" : "เงินเข้าวันนี้"}
                 </button>
                 <button type="button" onClick={() => call("PATCH", { id: c.id, active: false })}
                   disabled={busy}

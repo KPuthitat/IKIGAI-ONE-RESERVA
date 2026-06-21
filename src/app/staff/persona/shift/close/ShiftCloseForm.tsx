@@ -75,10 +75,11 @@ export default function ShiftCloseForm({
   branchName: string;
   closerName: string;
   checklistItems: ChecklistItem[];
-  /** Master income channels (owner 2026-06-21). When non-empty, the form
-   *  shows a mandatory per-channel sales breakdown that must sum exactly
-   *  to ยอดขายวันนี้ before the report can be submitted. */
-  incomeChannels?: Array<{ id: number; name: string }>;
+  /** Per-branch income channels for the close breakdown (owner 2026-06-22).
+   *  When non-empty, the form shows a per-channel entry and the day's total
+   *  is the SUM of the channels (no separate total field, no reconciliation).
+   *  is_credit channels count as sales but as outstanding (ค้างชำระ), not cash. */
+  incomeChannels?: Array<{ id: number; name: string; is_credit?: number }>;
   /** Today's material-purchase quota (owner 2026-06-21). null = branch hasn't
    *  enabled the feature. Display-only; staff record what they ordered. */
   materialQuota?: MaterialQuotaView | null;
@@ -252,15 +253,18 @@ export default function ShiftCloseForm({
     return n;
   }
 
-  // Per-channel reconciliation (owner 2026-06-21). Empty channel = 0. The
-  // sum must equal ยอดขายวันนี้ exactly (to the satang) before submit.
+  // Per-channel model (owner 2026-06-22). The day's total IS the sum of the
+  // channels — no separate total field, no reconciliation. is_credit channels
+  // count toward sales (accrual) but as outstanding (ค้างชำระ), not cash.
   const channelsActive = incomeChannels.length > 0;
-  const channelSum = Math.round(
-    incomeChannels.reduce((s, c) => s + (parseAmount(channelAmounts[c.id] ?? "") ?? 0), 0) * 100
-  ) / 100;
-  const revenueNum = parseAmount(dailyRevenue);
-  const reconcileDiff = revenueNum == null ? null : Math.round((channelSum - revenueNum) * 100) / 100;
-  const reconcileOk = !channelsActive || (revenueNum != null && Math.abs(channelSum - revenueNum) < 0.005);
+  const round2c = (n: number) => Math.round(n * 100) / 100;
+  const amtOf = (c: { id: number }) => parseAmount(channelAmounts[c.id] ?? "") ?? 0;
+  const channelSum = round2c(incomeChannels.reduce((s, c) => s + amtOf(c), 0));      // total sales (accrual)
+  const cashSum = round2c(incomeChannels.filter((c) => !c.is_credit).reduce((s, c) => s + amtOf(c), 0));
+  const creditSum = round2c(incomeChannels.filter((c) => c.is_credit).reduce((s, c) => s + amtOf(c), 0));
+  // When channels drive the form, the daily total comes from them; otherwise
+  // it's the manual "ยอดขายวันนี้" field.
+  const dailyTotal = channelsActive ? channelSum : parseAmount(dailyRevenue);
 
   /** Build and validate the payload, then open the PIN modal.
    *  Actual POST happens in submitWithPin() after PIN is entered. */
@@ -309,22 +313,6 @@ export default function ShiftCloseForm({
       });
       return;
     }
-    // Per-channel reconciliation gate — channels must sum to ยอดขายวันนี้.
-    if (channelsActive) {
-      if (revenueNum == null) {
-        setMsg({ kind: "err", text: "กรุณากรอก “ยอดขายวันนี้” ก่อน แล้วกรอกยอดแยกช่องทางให้ครบ" });
-        return;
-      }
-      if (!reconcileOk) {
-        const f = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        setMsg({
-          kind: "err",
-          text: `ผลรวมแยกช่องทาง ฿${f(channelSum)} ไม่เท่ายอดขายวันนี้ ฿${f(revenueNum)} (ต่างกัน ฿${f(Math.abs(reconcileDiff ?? 0))}) — แก้ให้ตรงก่อนส่ง`
-        });
-        return;
-      }
-    }
-
     setErrorIds({});
     setBusy(true);
     try {
@@ -407,13 +395,14 @@ export default function ShiftCloseForm({
         data: {
           closing_drawer_amount: closingParsed,
           service_charge_amount: svcParsed,
-          daily_revenue: parseAmount(dailyRevenue),
+          daily_revenue: dailyTotal,
           material_ordered_today: materialQuota ? (parseAmount(materialOrdered) ?? 0) : null,
           channel_amounts: channelsActive
             ? incomeChannels.map((c) => ({
                 channel_id: c.id,
                 channel: c.name,
-                amount: parseAmount(channelAmounts[c.id] ?? "") ?? 0
+                amount: parseAmount(channelAmounts[c.id] ?? "") ?? 0,
+                is_credit: !!c.is_credit
               }))
             : [],
           checklist: checklistPayload
@@ -544,7 +533,7 @@ export default function ShiftCloseForm({
             auto-calculators AND appears as a headline figure on the
             LINE Flex report. Staff can skip; admin backfills via
             /admin/ascenda/revenue. */}
-        {requireDailyRevenue && (
+        {requireDailyRevenue && !channelsActive && (
           <div>
             <label className="label">ยอดขายวันนี้ (บาท)</label>
             <input type="number" inputMode="decimal" min={0} step="0.01"
@@ -572,7 +561,12 @@ export default function ShiftCloseForm({
           <div className="space-y-1.5">
             {incomeChannels.map((c) => (
               <div key={c.id} className="space-y-1">
-                <label className="block text-sm text-slate-700">{c.name}</label>
+                <label className="flex items-center gap-1.5 text-sm text-slate-700">
+                  {c.name}
+                  {!!c.is_credit && (
+                    <span className="text-[10px] font-normal bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-px">ค้างชำระ</span>
+                  )}
+                </label>
                 <div className="flex items-center gap-2">
                   <input
                     type="number" inputMode="decimal" min="0" step="0.01"
@@ -594,30 +588,22 @@ export default function ShiftCloseForm({
               </div>
             ))}
           </div>
-          {/* Live reconciliation vs ยอดขายวันนี้ */}
-          <div className={`rounded-lg p-3 text-sm space-y-1 border ${
-            revenueNum == null ? "bg-slate-50 border-slate-200"
-              : reconcileOk ? "bg-emerald-50 border-emerald-200" : "bg-rose-50 border-rose-200"
-          }`}>
+          {/* Live totals — total sales (accrual) = sum; cash vs outstanding split */}
+          <div className="rounded-lg p-3 text-sm space-y-1 border bg-slate-50 border-slate-200">
             <div className="flex justify-between">
-              <span className="text-slate-600">ผลรวมแยกช่องทาง</span>
-              <b className="font-mono text-slate-800">฿{channelSum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
+              <span className="text-slate-600">เงินเข้าจริงวันนี้</span>
+              <b className="font-mono text-emerald-700">฿{fmtThb(cashSum)}</b>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-600">ยอดขายวันนี้ (POS)</span>
-              <b className="font-mono text-slate-800">
-                {revenueNum != null ? `฿${revenueNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
-              </b>
-            </div>
-            {revenueNum == null ? (
-              <div className="text-[11px] text-slate-500 pt-0.5">กรอก “ยอดขายวันนี้” ด้านบนเพื่อตรวจสอบให้ตรงกัน</div>
-            ) : reconcileOk ? (
-              <div className="text-emerald-700 font-bold pt-0.5">✓ ยอดตรงกัน — ส่งรายงานได้</div>
-            ) : (
-              <div className="text-rose-700 font-bold pt-0.5">
-                ✗ ต่างกัน ฿{Math.abs(reconcileDiff ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} — ส่งรายงานไม่ได้จนกว่าจะตรง
+            {creditSum > 0 && (
+              <div className="flex justify-between">
+                <span className="text-slate-600">ค้างชำระ (ลูกหนี้)</span>
+                <b className="font-mono text-amber-700">฿{fmtThb(creditSum)}</b>
               </div>
             )}
+            <div className="flex justify-between border-t border-slate-200 pt-1 mt-1">
+              <span className="font-bold text-slate-700">ยอดขายรวมวันนี้</span>
+              <b className="font-mono text-slate-900">฿{fmtThb(channelSum)}</b>
+            </div>
           </div>
         </div>
       )}
@@ -1009,7 +995,7 @@ export default function ShiftCloseForm({
         closerName={closerName}
         closingAmount={closingAmount}
         svcAmount={svcAmount}
-        dailyRevenue={dailyRevenue}
+        dailyRevenue={channelsActive ? String(channelSum) : dailyRevenue}
         requireServiceCharge={requireServiceCharge}
         requireTodayClosing={requireTodayClosing}
         requireDailyRevenue={requireDailyRevenue}
@@ -1027,13 +1013,11 @@ export default function ShiftCloseForm({
         </div>
       )}
 
-      <button type="submit" disabled={busy || !reconcileOk}
+      <button type="submit" disabled={busy}
         className="btn-primary w-full text-base py-3.5 disabled:opacity-50">
         {busy
           ? t("staff.persona.shift.open.submitting")
-          : !reconcileOk
-            ? "ยอดแยกช่องทางยังไม่ตรงกับยอดขายวันนี้"
-            : t("staff.persona.shift.close.submit")}
+          : t("staff.persona.shift.close.submit")}
       </button>
 
       {pinOpen && (

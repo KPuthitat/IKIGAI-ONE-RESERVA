@@ -94,7 +94,8 @@ const ShiftCloseData = z.object({
   channel_amounts: z.array(z.object({
     channel_id: z.number().int().positive().nullable().optional(),
     channel: z.string().trim().min(1).max(60),
-    amount: z.number().min(0).max(10_000_000)
+    amount: z.number().min(0).max(10_000_000),
+    is_credit: z.boolean().optional()
   })).max(40).optional(),
   checklist: z.array(ChecklistEntry).max(50)
 });
@@ -219,26 +220,14 @@ export async function POST(req: Request) {
     }, { status: 409 });
   }
 
-  // Reconciliation guard (owner 2026-06-21): for shift_close, the per-channel
-  // sales breakdown must sum EXACTLY to daily_revenue. Reject before insert so
-  // a mismatched report never lands — mirrors the client-side block.
+  // Per-channel model (owner 2026-06-22): the day's total IS the sum of the
+  // channels. Make daily_revenue authoritative server-side so it can't drift
+  // from the breakdown, then carry on (no reconciliation block).
   if (type === "shift_close") {
-    const d = v.data as z.infer<typeof ShiftCloseData>;
+    const d = v.data as z.infer<typeof ShiftCloseData> & { daily_revenue?: number | null };
     const chans = d.channel_amounts ?? [];
     if (chans.length > 0) {
-      const sum = Math.round(chans.reduce((s, c) => s + (Number(c.amount) || 0), 0) * 100) / 100;
-      if (d.daily_revenue == null) {
-        return NextResponse.json(
-          { error: "revenue_required", message: "ต้องกรอกยอดขายวันนี้เมื่อมีการแยกช่องทาง" },
-          { status: 400 }
-        );
-      }
-      if (Math.abs(sum - d.daily_revenue) >= 0.005) {
-        return NextResponse.json(
-          { error: "channel_reconcile_mismatch", message: `ผลรวมช่องทาง ฿${sum.toFixed(2)} ไม่เท่ายอดขายวันนี้ ฿${d.daily_revenue.toFixed(2)}` },
-          { status: 400 }
-        );
-      }
+      d.daily_revenue = Math.round(chans.reduce((s, c) => s + (Number(c.amount) || 0), 0) * 100) / 100;
     }
   }
 
@@ -341,7 +330,7 @@ export async function POST(req: Request) {
     try {
       const chans = (d.channel_amounts ?? [])
         .filter((c) => c.amount > 0)
-        .map((c) => ({ channel: c.channel, amount: c.amount }));
+        .map((c) => ({ channel: c.channel, amount: c.amount, isOutstanding: !!c.is_credit }));
       if (chans.length > 0) {
         replaceShiftCloseIncome(branch.id, report_date, user.id, chans);
       } else if (d.daily_revenue != null) {

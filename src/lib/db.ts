@@ -5350,6 +5350,38 @@ function runMigrations(db: Database.Database): void {
   if (!chCols2.some((c) => c.name === "show_on_close")) {
     db.exec("ALTER TABLE accounta_income_channels ADD COLUMN show_on_close INTEGER NOT NULL DEFAULT 1");
   }
+  // is_credit (owner 2026-06-22): the channel is paid on credit/ค้างชำระ (e.g.
+  // an insurer that settles later). Its amount counts toward today's SALES
+  // (accrual) but NOT toward cash received — it becomes an outstanding AR until
+  // marked รับชำระแล้ว. DEFAULT 0 = received same day.
+  if (!chCols2.some((c) => c.name === "is_credit")) {
+    db.exec("ALTER TABLE accounta_income_channels ADD COLUMN is_credit INTEGER NOT NULL DEFAULT 0");
+  }
+  // Seed each branch's real channels (owner 2026-06-22, "สร้างให้ตามที่เห็น").
+  // Guarded: only seeds a branch that has NO channels of its own yet, so it
+  // never overwrites the owner's later edits. Matched by branch name.
+  function seedBranchChannels(branchName: string, chans: Array<{ name: string; credit?: boolean }>): void {
+    const b = db.prepare("SELECT id FROM branches WHERE name = ? COLLATE NOCASE").get(branchName) as { id: number } | undefined;
+    if (!b) return;
+    const has = db.prepare("SELECT 1 FROM accounta_income_channels WHERE branch_id = ? LIMIT 1").get(b.id);
+    if (has) return;
+    const ins = db.prepare(
+      "INSERT INTO accounta_income_channels (branch_id, name, sort_order, active, show_on_close, is_credit) VALUES (?, ?, ?, 1, 1, ?)"
+    );
+    chans.forEach((c, i) => ins.run(b.id, c.name, (i + 1) * 10, c.credit ? 1 : 0));
+  }
+  seedBranchChannels("NAMA PASTA SRIRACHA", [
+    { name: "เงินสด" }, { name: "QR / พร้อมเพย์" },
+    { name: "บัตรเครดิต VISA" }, { name: "บัตรเครดิต Mastercard" },
+    { name: "บัตรเครดิต JCB" }, { name: "บัตรเครดิต UnionPay" },
+    { name: "Grab delivery" }, { name: "Lineman delivery" }
+  ]);
+  seedBranchChannels("AT HOME CLINIC", [
+    { name: "เงินสด" }, { name: "PromptPay" },
+    { name: "Allianz", credit: true }, { name: "AIA", credit: true },
+    { name: "Generali", credit: true }, { name: "Tokio Marine", credit: true },
+    { name: "OceanLife", credit: true }, { name: "TRIGO QUALITY", credit: true }
+  ]);
 
   // source (owner 2026-06-21): tag where an income row came from so the
   // daily shift-close total can flow straight into the รายรับ ledger and
@@ -5361,6 +5393,16 @@ function runMigrations(db: Database.Database): void {
   const incCols = db.prepare("PRAGMA table_info(accounta_income)").all() as Array<{ name: string }>;
   if (!incCols.some((c) => c.name === "source")) {
     db.exec("ALTER TABLE accounta_income ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'");
+  }
+  // is_outstanding + settled_date (owner 2026-06-22): a credit/ค้างชำระ income
+  // row counts as sales but is an open receivable until collected. settled_date
+  // = when it was marked รับชำระแล้ว (cash actually arrived). DEFAULT 0 = cash
+  // received same day as the sale.
+  if (!incCols.some((c) => c.name === "is_outstanding")) {
+    db.exec("ALTER TABLE accounta_income ADD COLUMN is_outstanding INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!incCols.some((c) => c.name === "settled_date")) {
+    db.exec("ALTER TABLE accounta_income ADD COLUMN settled_date TEXT");
   }
   // Mirror every recorded shift-close day into the รายรับ ledger. Self-
   // guarding (NOT EXISTS) so it backfills June history once and is a no-op

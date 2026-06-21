@@ -4,7 +4,8 @@ import { requirePermission } from "@/lib/auth";
 import {
   listIncomeChannels, listAllIncomeChannels, createIncomeChannel,
   renameIncomeChannel, setIncomeChannelActive, setIncomeChannelShowOnClose,
-  moveIncomeChannel, copyDefaultChannelsToBranch, listDefaultChannelNames
+  setIncomeChannelCredit, moveIncomeChannel, copyDefaultChannelsToBranch,
+  listDefaultChannelNames
 } from "@/lib/accounta-db";
 
 // Income channels are PER-BRANCH (owner 2026-06-21). All operations scope to
@@ -21,6 +22,7 @@ const PatchBody = z.object({
   name: z.string().trim().min(1).max(60).optional(),
   active: z.boolean().optional(),
   show_on_close: z.boolean().optional(),
+  is_credit: z.boolean().optional(),
   move: z.enum(["up", "down"]).optional(),
   copy_defaults: z.boolean().optional()
 });
@@ -72,6 +74,7 @@ export async function PATCH(req: Request) {
   }
   if (d.active !== undefined) setIncomeChannelActive(d.id, branchId, d.active);
   if (d.show_on_close !== undefined) setIncomeChannelShowOnClose(d.id, branchId, d.show_on_close);
+  if (d.is_credit !== undefined) setIncomeChannelCredit(d.id, branchId, d.is_credit);
   if (d.move !== undefined) moveIncomeChannel(d.id, branchId, d.move);
   return NextResponse.json({ ok: true, channels: listAllIncomeChannels(branchId) });
 }

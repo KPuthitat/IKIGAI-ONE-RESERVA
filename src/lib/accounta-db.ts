@@ -132,11 +132,11 @@ export function listIncomeChannels(branchId?: number | null): Array<{ id: number
  *  panel (and no reconciliation) — staff just enter the daily total, exactly
  *  as before the feature. No global fallback, so a half-configured branch is
  *  never forced to reconcile against the wrong default channels. */
-export function listShiftCloseChannels(branchId?: number | null): Array<{ id: number; name: string }> {
+export function listShiftCloseChannels(branchId?: number | null): Array<{ id: number; name: string; is_credit: number }> {
   if (branchId == null) return [];
   return getDb().prepare(
-    "SELECT id, name FROM accounta_income_channels WHERE branch_id = ? AND active = 1 AND show_on_close = 1 ORDER BY sort_order, name COLLATE NOCASE"
-  ).all(branchId) as Array<{ id: number; name: string }>;
+    "SELECT id, name, is_credit FROM accounta_income_channels WHERE branch_id = ? AND active = 1 AND show_on_close = 1 ORDER BY sort_order, name COLLATE NOCASE"
+  ).all(branchId) as Array<{ id: number; name: string; is_credit: number }>;
 }
 
 export function createIncomeChannel(d: { name: string; branchId: number }): number {
@@ -159,12 +159,12 @@ export function createIncomeChannel(d: { name: string; branchId: number }): numb
 // ── Channel master management (owner 2026-06-21) — per branch ─────
 // Drives both the manual รายรับ picklist AND the shift-close breakdown.
 
-export type ChannelRow = { id: number; name: string; sort_order: number; active: number; show_on_close: number };
+export type ChannelRow = { id: number; name: string; sort_order: number; active: number; show_on_close: number; is_credit: number };
 
 /** The branch's OWN channels (incl. inactive) for the manager. */
 export function listAllIncomeChannels(branchId: number): ChannelRow[] {
   return getDb().prepare(
-    "SELECT id, name, sort_order, active, show_on_close FROM accounta_income_channels WHERE branch_id = ? ORDER BY active DESC, sort_order, name COLLATE NOCASE"
+    "SELECT id, name, sort_order, active, show_on_close, is_credit FROM accounta_income_channels WHERE branch_id = ? ORDER BY active DESC, sort_order, name COLLATE NOCASE"
   ).all(branchId) as ChannelRow[];
 }
 
@@ -213,6 +213,12 @@ export function setIncomeChannelShowOnClose(id: number, branchId: number, show: 
   if (!channelInBranch(id, branchId)) return false;
   return getDb().prepare("UPDATE accounta_income_channels SET show_on_close = ? WHERE id = ?")
     .run(show ? 1 : 0, id).changes > 0;
+}
+
+export function setIncomeChannelCredit(id: number, branchId: number, credit: boolean): boolean {
+  if (!channelInBranch(id, branchId)) return false;
+  return getDb().prepare("UPDATE accounta_income_channels SET is_credit = ? WHERE id = ?")
+    .run(credit ? 1 : 0, id).changes > 0;
 }
 
 /** Swap sort_order with the active neighbour (same branch) in the direction. */
@@ -323,7 +329,7 @@ export function replaceShiftCloseIncome(
   branchId: number,
   date: string,
   userId: number,
-  rows: Array<{ channel: string | null; amount: number }>
+  rows: Array<{ channel: string | null; amount: number; isOutstanding?: boolean }>
 ): void {
   const db = getDb();
   const company = db.prepare("SELECT company_id FROM branches WHERE id = ?")
@@ -333,21 +339,18 @@ export function replaceShiftCloseIncome(
     db.prepare(
       "DELETE FROM accounta_income WHERE branch_id = ? AND income_date = ? AND source = 'shift_close'"
     ).run(branchId, date);
-    const regCh = db.prepare(
-      "INSERT OR IGNORE INTO accounta_income_channels (name, sort_order) VALUES (?, 500)"
-    );
     const ins = db.prepare(
-      `INSERT INTO accounta_income (branch_id, company_id, income_date, channel, amount, note, created_by, source)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'shift_close')`
+      `INSERT INTO accounta_income (branch_id, company_id, income_date, channel, amount, note, created_by, source, is_outstanding)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'shift_close', ?)`
     );
     for (const r of rows) {
       const amt = round2(r.amount);
       if (amt <= 0) continue;
-      if (r.channel) regCh.run(r.channel);
+      const outstanding = r.isOutstanding ? 1 : 0;
       const note = r.channel
-        ? `จากรายงานปิดกะ · ${r.channel}`
+        ? `จากรายงานปิดกะ · ${r.channel}${outstanding ? " (ค้างชำระ)" : ""}`
         : "ดึงอัตโนมัติจากรายงานปิดกะ (ยอดขายรวมทุกช่องทาง)";
-      ins.run(branchId, companyId, date, r.channel, amt, note, userId);
+      ins.run(branchId, companyId, date, r.channel, amt, note, userId, outstanding);
     }
   });
   txn();
