@@ -107,18 +107,21 @@ PREV_HEAD="$(git rev-parse HEAD 2>/dev/null || echo '')"
 git pull origin main
 
 # Dependency sync — when a deploy adds/removes an npm package (e.g.
-# pdfkit for the INVENTA PO PDF, 2026-06-06), package-lock.json changes
-# and the VPS must reinstall BEFORE the build, or `tsc`/`next build`
-# fails with "Cannot find module 'X'". Plain `git pull && npm run build`
-# misses this. We install only when package-lock.json actually changed
-# in this pull (cheap no-op otherwise). `npm install` (not `npm ci`)
-# keeps devDeps — the build needs typescript/tailwind/@types.
-if [[ -n "$PREV_HEAD" ]] && ! git diff --quiet "$PREV_HEAD" HEAD -- package-lock.json package.json; then
-  echo "    📦 dependencies changed — running npm install"
-  npm install --no-audit --no-fund
-else
-  echo "    dependencies unchanged — skipping npm install"
-fi
+# pdfkit for the INVENTA PO PDF 2026-06-06, xlsx for Revenue-Share
+# 2026-06-22), package-lock.json changes and the VPS must reinstall
+# BEFORE the build, or `tsc`/`next build` fails with "Cannot find
+# module 'X'". `npm install` (not `npm ci`) keeps devDeps — the build
+# needs typescript/tailwind/@types.
+#
+# 2026-06-22: ALWAYS run npm install. The old "skip when this pull's
+# git diff didn't touch package-lock" optimisation broke on RETRIES —
+# if a prior run already pulled the dep-adding commit, the retry's pull
+# is a no-op ("Already up to date"), PREV_HEAD == HEAD, the diff is
+# empty, so it skipped the install while node_modules still lacked the
+# new package (xlsx). npm install is idempotent + only a few seconds
+# when everything is already in sync, so the safety beats the saving.
+echo "    📦 npm install (ensure node_modules matches package-lock)"
+npm install --no-audit --no-fund
 
 # Wipe the stale build cache before rebuilding.
 #
