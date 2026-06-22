@@ -1348,6 +1348,100 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN material_purchase_weekday INTEGER NOT NULL DEFAULT 1");
   }
 
+  // Revenue-Share GP (owner 2026-06-22) — opt-in per branch, OFF everywhere by
+  // default. The whole feature (menu, routes, data) is gated on this flag so it
+  // only appears for the branch(es) that run a revenue-share partner. Seeded ON
+  // once for HYPOPLARAEMIA by name (prod branch id may differ from dev — never
+  // hardcode the id). Toggle later from the branch settings to extend it.
+  if (!bnames2.has("revshare_enabled")) {
+    db.exec("ALTER TABLE branches ADD COLUMN revshare_enabled INTEGER NOT NULL DEFAULT 0");
+    db.prepare("UPDATE branches SET revshare_enabled = 1 WHERE name = 'HYPOPLARAEMIA'").run();
+  }
+
+  // Revenue-Share GP tables. Money = REAL (round2 at the boundaries, matching
+  // the rest of ACCOUNTA); dates are ISO (ค.ศ.) rendered พ.ศ. at the UI. Every
+  // child inherits branch scope through partner_id → revshare_partners.branch_id.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS revshare_partners (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id     INTEGER NOT NULL REFERENCES branches(id),
+      name          TEXT NOT NULL,
+      venue         TEXT,
+      start_date    TEXT NOT NULL,                          -- YYYY-MM-DD (สัญญาเริ่ม)
+      sales_base    TEXT NOT NULL DEFAULT 'gross'
+        CHECK (sales_base IN ('gross','after_discount','nett')),
+      pos_categories TEXT NOT NULL DEFAULT '[]',            -- JSON array of POS category names
+      vat_enabled   INTEGER NOT NULL DEFAULT 1,
+      vat_rate      REAL NOT NULL DEFAULT 0.07,
+      wht_rate      REAL NOT NULL DEFAULT 0.03,
+      active        INTEGER NOT NULL DEFAULT 1,
+      note          TEXT,
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_revshare_partners_branch ON revshare_partners(branch_id, active);
+
+    CREATE TABLE IF NOT EXISTS revshare_tiers (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      partner_id  INTEGER NOT NULL REFERENCES revshare_partners(id) ON DELETE CASCADE,
+      lower_bound REAL NOT NULL,                            -- ขอบล่างของชั้น (marginal)
+      upper_bound REAL,                                     -- NULL = ไม่จำกัด (∞)
+      rate        REAL NOT NULL,                            -- 0.18 = 18%
+      sort_order  INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_revshare_tiers_partner ON revshare_tiers(partner_id, sort_order);
+
+    CREATE TABLE IF NOT EXISTS revshare_floors (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      partner_id   INTEGER NOT NULL REFERENCES revshare_partners(id) ON DELETE CASCADE,
+      month_from   INTEGER NOT NULL,                        -- เดือนที่ของสัญญา (1-indexed)
+      month_to     INTEGER NOT NULL,
+      floor_amount REAL NOT NULL                            -- ยอดเรียกเก็บขั้นต่ำ
+    );
+    CREATE INDEX IF NOT EXISTS idx_revshare_floors_partner ON revshare_floors(partner_id);
+
+    CREATE TABLE IF NOT EXISTS revshare_rounds (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      partner_id      INTEGER NOT NULL REFERENCES revshare_partners(id) ON DELETE CASCADE,
+      period_year     INTEGER NOT NULL,
+      period_month    INTEGER NOT NULL,
+      period_start    TEXT NOT NULL,                        -- YYYY-MM-DD
+      period_end      TEXT NOT NULL,
+      label           TEXT,                                 -- "15–21 มิ.ย."
+      sales_amount    REAL NOT NULL DEFAULT 0,
+      source          TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','pos_import')),
+      source_filename TEXT,
+      created_by      INTEGER REFERENCES users(id),
+      created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_revshare_rounds_partner
+      ON revshare_rounds(partner_id, period_year, period_month);
+
+    CREATE TABLE IF NOT EXISTS revshare_settlements (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      partner_id    INTEGER NOT NULL REFERENCES revshare_partners(id) ON DELETE CASCADE,
+      settle_year   INTEGER NOT NULL,
+      settle_month  INTEGER NOT NULL,
+      op_month      INTEGER NOT NULL,                       -- เดือนที่ของสัญญา ตอน settle
+      total_sales   REAL NOT NULL DEFAULT 0,
+      tier_gp       REAL NOT NULL DEFAULT 0,
+      floor_applied REAL NOT NULL DEFAULT 0,
+      topup         REAL NOT NULL DEFAULT 0,
+      billed_gp     REAL NOT NULL DEFAULT 0,
+      avg_gp_pct    REAL NOT NULL DEFAULT 0,
+      vat_amount    REAL NOT NULL DEFAULT 0,
+      wht_amount    REAL NOT NULL DEFAULT 0,
+      net_amount    REAL NOT NULL DEFAULT 0,
+      status        TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','issued','paid')),
+      invoice_no    TEXT,
+      issued_at     TEXT,
+      paid_at       TEXT,
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (partner_id, settle_year, settle_month)
+    );
+  `);
+
   // Daily attendance summary (TC-6) — per-branch HH:MM time at which
   // the cron job posts a 4-category roll-call to the executive group:
   //   • มาตรงเวลา (on time, within 5-min grace)
