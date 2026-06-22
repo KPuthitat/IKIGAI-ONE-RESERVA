@@ -140,7 +140,6 @@ export default function PendingClient({
       </div>
       <div className="rounded-2xl border-[1.5px] border-amber-300 bg-amber-50/50 p-4 space-y-3">
         <div className="flex items-center gap-2">
-          <span className="text-lg">⏳</span>
           <h2 className="font-bold text-amber-900">
             {t("admin.bookings.pending.title", { n: pendingBookings.length })}
           </h2>
@@ -178,7 +177,7 @@ export default function PendingClient({
                 )}
                 {b.occasion && (
                   <div className="text-sm text-amber-800 mt-1 font-medium">
-                    ✨ {t("admin.bookings.occasionLabel")}:{" "}
+                    {t("admin.bookings.occasionLabel")}:{" "}
                     {t(`booking.occasion.${b.occasion}`)}
                   </div>
                 )}

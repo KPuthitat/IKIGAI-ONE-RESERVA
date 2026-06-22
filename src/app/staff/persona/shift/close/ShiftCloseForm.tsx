@@ -493,7 +493,7 @@ export default function ShiftCloseForm({
     <form onSubmit={submit} className="space-y-4">
       {isEdit && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
-          ✏️ กำลัง<b>แก้ไข</b>รายงานที่เคยส่งแล้ว — บันทึกใหม่จะทับของเดิม (เก็บประวัติว่าใครแก้)
+          กำลัง<b>แก้ไข</b>รายงานที่เคยส่งแล้ว — บันทึกใหม่จะทับของเดิม (เก็บประวัติว่าใครแก้)
         </div>
       )}
       <div className="card space-y-4">
@@ -953,7 +953,7 @@ export default function ShiftCloseForm({
                       }`}
                     >
                       {hasNote
-                        ? `📝 ${t("staff.persona.shift.open.noteExists")}`
+                        ? `${t("staff.persona.shift.open.noteExists")}`
                         : `+ ${t("staff.persona.shift.open.addNote")}`}
                     </button>
                     {hasNote && !isOpen && (
@@ -1157,7 +1157,7 @@ function PreviewBlock(props: {
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between text-sm font-bold text-slate-700 hover:text-brand px-2 py-1.5"
       >
-        <span>🦉 ดูตัวอย่างการ์ดที่จะส่งเข้ากลุ่ม</span>
+        <span>ดูตัวอย่างการ์ดที่จะส่งเข้ากลุ่ม</span>
         <span className="text-xs">{open ? "▼ ซ่อน" : "▶ ดู"}</span>
       </button>
       {open && (

@@ -282,7 +282,7 @@ export default function RosterClient({
       <div className="card relative space-y-2">
         {focusedStaff ? (
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-slate-500">📌 มุ่งเน้นที่:</span>
+            <span className="text-xs text-slate-500">มุ่งเน้นที่:</span>
             <span className="text-sm font-bold bg-amber-100 text-amber-900 px-3 py-1 rounded-md">
               {nameWithPrefix(focusedStaff.title_prefix, focusedStaff.display_name)}
             </span>
@@ -479,7 +479,7 @@ export default function RosterClient({
           })}
         </div>
         <p className="text-[11px] text-slate-400 mt-2">
-          💡 คลิกชื่อพนักงานเพื่อมุ่งเน้น/ล้างการมุ่งเน้น
+          คลิกชื่อพนักงานเพื่อมุ่งเน้น/ล้างการมุ่งเน้น
         </p>
       </div>
 
@@ -496,12 +496,12 @@ export default function RosterClient({
         <button type="button"
           onClick={() => { setPublishKind("publish"); setPublishOpen(true); }}
           className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold hover:opacity-90">
-          📣 {t("admin.persona.roster.publish.publishBtn")}
+          {t("admin.persona.roster.publish.publishBtn")}
         </button>
         <button type="button"
           onClick={() => { setPublishKind("edit"); setPublishOpen(true); }}
           className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-          ✏️ {t("admin.persona.roster.publish.editBtn")}
+          {t("admin.persona.roster.publish.editBtn")}
         </button>
       </div>
 

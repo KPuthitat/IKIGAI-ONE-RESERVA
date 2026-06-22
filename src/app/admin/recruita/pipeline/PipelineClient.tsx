@@ -234,7 +234,7 @@ export default function PipelineClient({
       </div>
 
       <p className="text-[11px] text-slate-400 text-center">
-        💡 ลาก/เลือก stage = ส่งคำขอเปลี่ยนสถานะ · ต้องมีแอดมินคนที่ 2 อนุมัติด้วย PIN
+        ลาก/เลือก stage = ส่งคำขอเปลี่ยนสถานะ · ต้องมีแอดมินคนที่ 2 อนุมัติด้วย PIN
       </p>
 
       {/* ── Request / change modal (Admin A) ────────────────────────

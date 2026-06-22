@@ -64,7 +64,7 @@ export default function ReceivablesClient({
       <div className="card space-y-2">
         <div className="text-sm font-bold text-slate-800">รายการค้างชำระ ({rows.length})</div>
         {rows.length === 0 ? (
-          <p className="text-xs text-slate-400">ไม่มีรายการค้างชำระ — เก็บเงินครบแล้ว 🎉</p>
+          <p className="text-xs text-slate-400">ไม่มีรายการค้างชำระ — เก็บเงินครบแล้ว</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

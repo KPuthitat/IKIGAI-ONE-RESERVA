@@ -702,7 +702,7 @@ export default function ShiftOpenForm({
                       }`}
                     >
                       {hasNote
-                        ? `📝 ${t("staff.persona.shift.open.noteExists")}`
+                        ? `${t("staff.persona.shift.open.noteExists")}`
                         : `+ ${t("staff.persona.shift.open.addNote")}`}
                     </button>
                     {hasNote && !isOpen && (

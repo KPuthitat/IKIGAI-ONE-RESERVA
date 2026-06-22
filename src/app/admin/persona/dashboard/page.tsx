@@ -426,7 +426,7 @@ export default function HRDashboard({
           className="card bg-amber-50 border-2 border-amber-200 hover:shadow-md transition flex items-center justify-between">
           <div>
             <div className="text-sm font-bold text-amber-900">
-              ⏰ มีคำขอลา {pendingLeaves.n} รายการรอการอนุมัติ
+              มีคำขอลา {pendingLeaves.n} รายการรอการอนุมัติ
             </div>
             <div className="text-xs text-amber-700 mt-0.5">
               กดเพื่อไปจัดการ

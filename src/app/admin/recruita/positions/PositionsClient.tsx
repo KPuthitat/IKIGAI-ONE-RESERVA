@@ -353,7 +353,7 @@ function NewPositionDialog({
             </datalist>
           )}
           <p className="text-[10px] text-slate-400 mt-1">
-            💡 พิมพ์เพื่อค้นหาตำแหน่งใน PERSONA · หรือพิมพ์ตำแหน่งใหม่ที่ยังไม่เคยมี
+            พิมพ์เพื่อค้นหาตำแหน่งใน PERSONA · หรือพิมพ์ตำแหน่งใหม่ที่ยังไม่เคยมี
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2">

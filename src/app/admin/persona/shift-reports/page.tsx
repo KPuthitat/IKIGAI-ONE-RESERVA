@@ -250,7 +250,7 @@ export default function AdminShiftReportsPage() {
       <section>
         <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
           <h2 className="text-lg font-bold text-slate-800">
-            📋 สรุปการเข้างานวันนี้
+            สรุปการเข้างานวันนี้
           </h2>
           <SendAttendanceSummaryButton />
         </div>
@@ -290,7 +290,7 @@ export default function AdminShiftReportsPage() {
           </div>
           <div>
             <div className="text-xs font-bold text-sky-700 mb-1">
-              📅 ลางาน ({onLeave.length})
+              ลางาน ({onLeave.length})
             </div>
             {onLeave.length === 0 ? (
               <div className="text-xs text-slate-400">—</div>
@@ -306,7 +306,7 @@ export default function AdminShiftReportsPage() {
           </div>
           <div>
             <div className="text-xs font-bold text-slate-600 mb-1">
-              ⏰ ยังไม่ถึงเวลา ({notYet.length})
+              ยังไม่ถึงเวลา ({notYet.length})
             </div>
             {notYet.length === 0 ? (
               <div className="text-xs text-slate-400">—</div>

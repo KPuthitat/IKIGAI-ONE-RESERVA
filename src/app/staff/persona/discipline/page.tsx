@@ -82,7 +82,7 @@ export default function StaffDisciplineListPage() {
                       </span>
                     ) : (
                       <span className="text-[10px] px-2 py-0.5 rounded font-bold bg-rose-100 text-rose-700">
-                        ⏳ {t(lang, "staff.persona.discipline.pending")}
+                        {t(lang, "staff.persona.discipline.pending")}
                       </span>
                     )}
                   </div>

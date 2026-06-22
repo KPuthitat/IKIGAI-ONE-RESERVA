@@ -29,7 +29,7 @@ export default function ApplyThanksPage(
         <div className="text-sm text-slate-600 leading-relaxed">
           ขอบคุณที่ให้ความสนใจร่วมงานกับกลุ่มบริษัท อิคิไก ฟอร์ออล<br />
           หากได้รับคัดเลือกให้เข้าสัมภาษณ์ ทีมงานจะติดต่อกลับผ่านเบอร์ที่คุณให้ไว้<br />
-          <span className="text-emerald-700 font-bold">หวังว่าจะได้พบกันเร็วๆ นี้ค่ะ 🦉</span>
+          <span className="text-emerald-700 font-bold">หวังว่าจะได้พบกันเร็วๆ นี้ค่ะ</span>
         </div>
         <div className="border-t border-slate-100 pt-3 mt-3 space-y-2">
           <Link href="/recruita/positions"

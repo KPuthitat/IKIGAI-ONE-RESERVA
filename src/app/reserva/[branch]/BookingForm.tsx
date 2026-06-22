@@ -925,7 +925,6 @@ export default function BookingForm({
           last thing they read before sending the request. */}
       {mode === "customer" && (
         <div className="text-xs px-3 py-2.5 rounded-lg border border-sky-200 bg-sky-50 text-sky-900 leading-relaxed flex items-start gap-2">
-          <span aria-hidden>📌</span>
           <span>{t("booking.notice.noTableUntilConfirm")}</span>
         </div>
       )}

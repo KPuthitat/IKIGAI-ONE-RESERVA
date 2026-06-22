@@ -187,7 +187,7 @@ export default function AccountActions({
               </div>
               <button type="button" onClick={() => copy(directLink)}
                 className="w-full mt-2 py-2 rounded-lg border border-brand text-brand text-xs font-bold hover:bg-rose-50">
-                📋 คัดลอกลิงก์
+                คัดลอกลิงก์
               </button>
             </div>
 

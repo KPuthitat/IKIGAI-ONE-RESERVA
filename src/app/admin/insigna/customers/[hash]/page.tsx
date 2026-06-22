@@ -401,7 +401,7 @@ export default function CustomerDrillDown({
 
         <div className="card">
           <h2 className="text-sm font-bold text-slate-700 mb-3">
-            🎯 Attribution (first-touch)
+            Attribution (first-touch)
           </h2>
           {attribution.length === 0 ? (
             <div className="text-xs text-slate-400 py-6 text-center">

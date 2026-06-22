@@ -95,7 +95,7 @@ export default function InsignaDashboard() {
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <h1 className="text-2xl font-bold text-slate-800">
-              🦉 INSIGNA — Marketing Intelligence
+              INSIGNA — Marketing Intelligence
             </h1>
             <p className="text-sm text-slate-500 mt-1">
               Privacy-first dashboard · ทุก row เป็น pseudonymous (customer_hash)
@@ -233,7 +233,7 @@ export default function InsignaDashboard() {
       {/* Marketing headline */}
       <div className="card">
         <h2 className="text-sm font-bold text-slate-700 mb-3">
-          💰 Marketing — last 30 days
+          Marketing — last 30 days
         </h2>
         {headline.total_spend === 0 && headline.total_revenue === 0 ? (
           <div className="text-xs text-slate-400 py-6 text-center">
@@ -305,7 +305,7 @@ export default function InsignaDashboard() {
       {/* Recent audit events — proof of life */}
       <div className="card">
         <h2 className="text-sm font-bold text-slate-700 mb-3">
-          📋 Recent ingestion events
+          Recent ingestion events
         </h2>
         {recentEvents.length === 0 ? (
           <div className="text-xs text-slate-400 py-6 text-center">

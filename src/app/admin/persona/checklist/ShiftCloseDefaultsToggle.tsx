@@ -156,7 +156,7 @@ export default function ShiftCloseDefaultsToggle({
     <div className="card space-y-3">
       <div>
         <h2 className="text-sm font-bold text-slate-800">
-          🎯 ตัวเลขเด่นในกรอบแดง · เปลี่ยนชื่อ · เลื่อนลำดับ
+          ตัวเลขเด่นในกรอบแดง · เปลี่ยนชื่อ · เลื่อนลำดับ
         </h2>
         <p className="text-xs text-slate-500 mt-1">
           ติ๊ก = แสดงในกรอบแดงด้านบน · กล่องชื่อปล่อยว่าง = ใช้คำตั้งต้น

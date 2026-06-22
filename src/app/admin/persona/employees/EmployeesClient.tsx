@@ -1089,7 +1089,7 @@ function EditModal({
             {currentUserRole === "super_admin" && employee.role === "admin" && (
               <div className="border-t border-slate-200 pt-4">
                 <h4 className="text-sm font-semibold text-slate-700 mb-2">
-                  💰 สิทธิ์ดูข้อมูลเงินเดือน
+                  สิทธิ์ดูข้อมูลเงินเดือน
                 </h4>
                 <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg border border-slate-200 hover:bg-slate-50">
                   <input
@@ -1427,7 +1427,7 @@ function EditModal({
               <button type="button"
                 onClick={() => copyToClipboard(inviteLinkResp.direct_url)}
                 className="w-full mt-2 py-2 rounded-lg border border-brand text-brand text-xs font-bold hover:bg-rose-50">
-                📋 คัดลอกลิงก์
+                คัดลอกลิงก์
               </button>
             </div>
 

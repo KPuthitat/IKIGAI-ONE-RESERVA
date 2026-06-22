@@ -186,7 +186,6 @@ export default function ResignationClient({
       {/* Pending message */}
       {hasPending && (
         <div className="card border-2 border-amber-300 bg-amber-50 text-center py-6">
-          <div className="text-4xl mb-2">⏳</div>
           <h3 className="font-semibold text-slate-800">
             {t("staff.persona.resignation.alreadyPending")}
           </h3>

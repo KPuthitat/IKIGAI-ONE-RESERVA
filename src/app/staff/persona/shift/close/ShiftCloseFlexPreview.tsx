@@ -88,7 +88,7 @@ export default function ShiftCloseFlexPreview({
   if (!anyData) {
     return (
       <div className="card bg-slate-50 border-dashed border-slate-300 text-center text-xs text-slate-500 py-6">
-        🦉 พิมพ์ยอดและทำเครื่องหมายเช็คลิสต์เพื่อดูตัวอย่างการ์ดที่จะส่งเข้ากลุ่ม
+        พิมพ์ยอดและทำเครื่องหมายเช็คลิสต์เพื่อดูตัวอย่างการ์ดที่จะส่งเข้ากลุ่ม
       </div>
     );
   }
@@ -97,7 +97,7 @@ export default function ShiftCloseFlexPreview({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <h3 className="text-xs uppercase tracking-wider font-bold text-slate-500">
-          🦉 ตัวอย่างการ์ดที่จะส่งเข้ากลุ่ม LINE
+          ตัวอย่างการ์ดที่จะส่งเข้ากลุ่ม LINE
         </h3>
         <span className="text-[10px] text-slate-400">ปรับ live ตามที่พิมพ์</span>
       </div>

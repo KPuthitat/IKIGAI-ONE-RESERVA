@@ -281,7 +281,7 @@ export default function DisciplineClient({
                       </span>
                     ) : (
                       <span className="text-[10px] px-2 py-0.5 rounded font-bold bg-rose-100 text-rose-700">
-                        ⏳ {t("admin.persona.discipline.pendingAck")}
+                        {t("admin.persona.discipline.pendingAck")}
                       </span>
                     )}
                   </div>

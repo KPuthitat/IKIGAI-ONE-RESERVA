@@ -177,7 +177,7 @@ export default function MessagingClient({
       >
         <div>
           <div className="text-sm font-bold text-brand">
-            📊 {t(lang, "admin.messaging.quotaLinkTitle")}
+            {t(lang, "admin.messaging.quotaLinkTitle")}
           </div>
           <div className="text-xs text-slate-500 mt-0.5">
             {t(lang, "admin.messaging.quotaLinkDesc")}

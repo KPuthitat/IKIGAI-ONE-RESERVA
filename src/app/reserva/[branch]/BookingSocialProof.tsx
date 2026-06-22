@@ -122,7 +122,7 @@ export default function BookingSocialProof({
         <div className="border-t border-emerald-300/60 pt-2.5 space-y-1.5">
           {popularSlots.length > 0 && (
             <div className="text-xs text-emerald-800/90 font-bold">
-              🔥 {t("booking.proof.popularLabel")}
+              {t("booking.proof.popularLabel")}
             </div>
           )}
           <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs">

@@ -372,7 +372,7 @@ export default function ShiftReportsClient({
           heading 2026-05-25 to match the outer attendance-summary
           section's style (text-lg + emoji prefix). */}
       <h2 className="text-lg font-bold text-slate-800">
-        📝 สถานะรายงานของวันนี้
+        สถานะรายงานของวันนี้
         <span className="ml-2 text-xs font-medium text-slate-400">
           · {branchName} · {today}
         </span>
@@ -497,7 +497,7 @@ export default function ShiftReportsClient({
           so each section reads as a distinct box. */}
       <div>
         <h2 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
-          ✏️ {t("admin.persona.shiftReports.pendingTitle")}
+          {t("admin.persona.shiftReports.pendingTitle")}
           {pending.length > 0 && (
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand text-white font-bold">
               {pending.length}

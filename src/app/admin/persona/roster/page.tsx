@@ -189,7 +189,7 @@ export default function AdminRosterPage({
                 : "bg-white text-slate-600 hover:bg-slate-50"
             }`}
           >
-            📋 ตาราง
+            ตาราง
           </Link>
           <Link
             href={`/admin/persona/roster?month=${month}&view=calendar`}

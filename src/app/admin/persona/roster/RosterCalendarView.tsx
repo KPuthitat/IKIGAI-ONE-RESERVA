@@ -383,7 +383,7 @@ export default function RosterCalendarView({
                         วันเกิด {b.nickname_th?.trim() || b.display_name}
                       </span>
                       {isMe ? (
-                        <span className="text-[10px] text-slate-500 font-medium">วันเกิดคุณ 🎉</span>
+                        <span className="text-[10px] text-slate-500 font-medium">วันเกิดคุณ</span>
                       ) : (
                         <button
                           type="button"
@@ -610,7 +610,7 @@ export default function RosterCalendarView({
                 disabled={greetBusy || !greetMsg.trim()}
                 className="flex-1 btn-primary text-sm disabled:opacity-50"
               >
-                {greetBusy ? "กำลังส่ง..." : "🎉 ส่งคำอวยพร"}
+                {greetBusy ? "กำลังส่ง..." : "ส่งคำอวยพร"}
               </button>
             </div>
 

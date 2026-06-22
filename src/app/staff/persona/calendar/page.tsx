@@ -141,14 +141,14 @@ export default function StaffCalendarPage({
               ts: formatBkkDateTime(lastPublish.published_at)
           })}
           {lastPublish.note && (
-            <div className="text-xs text-emerald-700 mt-1">📝 {lastPublish.note}</div>
+            <div className="text-xs text-emerald-700 mt-1">{lastPublish.note}</div>
           )}
         </div>
       ) : (
         <div className="card bg-amber-50 border-amber-200 flex items-center gap-3">
           <OwlMascot size={64} mood="sleepy" showCoffee={false} />
           <div className="text-sm text-amber-800">
-            ⏳ {t(lang, "staff.persona.calendar.notPublishedYet")}
+            {t(lang, "staff.persona.calendar.notPublishedYet")}
           </div>
         </div>
       )}
@@ -184,7 +184,7 @@ export default function StaffCalendarPage({
                 : "bg-white text-slate-600 hover:bg-slate-50"
             }`}
           >
-            📋 รายการ
+            รายการ
           </Link>
           <Link
             href={`/staff/persona/calendar?month=${month}&view=calendar`}

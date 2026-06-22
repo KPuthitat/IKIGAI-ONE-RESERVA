@@ -320,7 +320,7 @@ export default function PortalClient({ liffId }: { liffId: string }) {
                         onClick={copyUserId}
                         className="flex-1 py-2 rounded-lg border border-brand text-brand text-xs font-bold hover:bg-rose-50"
                       >
-                        {copied ? "✓ คัดลอกแล้ว" : "📋 คัดลอก"}
+                        {copied ? "✓ คัดลอกแล้ว" : "คัดลอก"}
                       </button>
                       <button
                         type="button"

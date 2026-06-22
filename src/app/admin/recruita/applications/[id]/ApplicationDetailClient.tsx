@@ -1313,7 +1313,7 @@ function HireDialog({
                 </p>
               ) : application.expected_salary != null && (
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  💡 ผู้สมัครตั้งความคาดหวังไว้ที่ ฿{application.expected_salary.toLocaleString("th-TH")}
+                  ผู้สมัครตั้งความคาดหวังไว้ที่ ฿{application.expected_salary.toLocaleString("th-TH")}
                 </p>
               )}
             </div>

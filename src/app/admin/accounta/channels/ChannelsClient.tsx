@@ -128,7 +128,7 @@ export default function ChannelsClient({
                       ? "border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100"
                       : "border-slate-300 text-slate-400 hover:bg-slate-50"
                   }`}>
-                  {c.is_credit ? "⏳ ค้างชำระ" : "เงินเข้าวันนี้"}
+                  {c.is_credit ? "ค้างชำระ" : "เงินเข้าวันนี้"}
                 </button>
                 <button type="button" onClick={() => call("PATCH", { id: c.id, active: false })}
                   disabled={busy}
