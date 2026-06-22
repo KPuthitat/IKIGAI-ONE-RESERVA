@@ -37,13 +37,15 @@ export default function ShiftCloseFlexPreview({
   closerName,
   reportDate,
   defaultFields,
-  checklist
+  checklist,
+  channels = []
 }: {
   branchName: string;
   closerName: string;
   reportDate: string; // YYYY-MM-DD
   defaultFields: DefaultField[];
   checklist: ChecklistRow[];
+  channels?: Array<{ name: string; amount: number; isCredit?: boolean }>;
 }) {
   // Format the same way line.ts does — locale='th-TH' with up to 2
   // decimals, no fixed minimum so "23000" reads "23,000" not
@@ -168,6 +170,34 @@ export default function ShiftCloseFlexPreview({
                 ))}
               </div>
             )}
+
+            {/* Per-channel breakdown — mirrors channelBreakdownBlock() */}
+            {channels.filter((c) => c.amount > 0).length > 0 && (() => {
+              const rows = channels.filter((c) => c.amount > 0);
+              const cash = rows.filter((c) => !c.isCredit).reduce((s, c) => s + c.amount, 0);
+              const credit = rows.filter((c) => c.isCredit).reduce((s, c) => s + c.amount, 0);
+              return (
+                <div className="border-t border-slate-200 pt-2 space-y-1 text-xs">
+                  <div className="text-[10px] font-bold text-slate-400">ยอดขายแยกช่องทาง</div>
+                  {rows.map((c, i) => (
+                    <div key={i} className="flex justify-between">
+                      <span className="text-slate-600">{c.isCredit ? `${c.name} (ค้าง)` : c.name}</span>
+                      <span className={`font-bold ${c.isCredit ? "text-amber-700" : "text-slate-800"}`}>{fmt(c.amount)}</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-slate-200 pt-1 mt-1 flex justify-between">
+                    <span className="text-slate-600">เงินเข้าจริงวันนี้</span>
+                    <span className="font-bold text-emerald-700">{fmt(cash)} บาท</span>
+                  </div>
+                  {credit > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">ค้างชำระ (ลูกหนี้)</span>
+                      <span className="font-bold text-amber-700">{fmt(credit)} บาท</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Custom checklist body — render the same checked/unchecked
                 rows the server-side card shows. Capped at 8 visible

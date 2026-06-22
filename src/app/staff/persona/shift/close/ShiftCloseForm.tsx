@@ -1005,6 +1005,9 @@ export default function ShiftCloseForm({
         textValues={textValues}
         choices={choices}
         config={defaultFieldConfig}
+        channels={channelsActive
+          ? incomeChannels.map((c) => ({ name: c.name, amount: amtOf(c), isCredit: !!c.is_credit }))
+          : []}
       />
 
       {msg && (
@@ -1058,6 +1061,7 @@ function PreviewBlock(props: {
   textValues: Record<number, string>;
   choices: Record<number, string | null>;
   config?: DefaultFieldConfig;
+  channels?: Array<{ name: string; amount: number; isCredit?: boolean }>;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -1139,6 +1143,7 @@ function PreviewBlock(props: {
             reportDate={todayBkk()}
             defaultFields={defaultFields}
             checklist={checklist}
+            channels={props.channels}
           />
         </div>
       )}

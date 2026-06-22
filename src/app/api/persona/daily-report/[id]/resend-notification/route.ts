@@ -140,6 +140,7 @@ export async function POST(
     const d = data as {
       closing_drawer_amount: number | null;
       service_charge_amount?: number | null;
+      channel_amounts?: Array<{ channel: string; amount: number; is_credit?: boolean }>;
       checklist: ChecklistEntry[];
     };
     // 2026-05-28: daily revenue is stored in branch_daily_revenue
@@ -156,6 +157,9 @@ export async function POST(
       closingDrawerAmount: d.closing_drawer_amount,
       serviceChargeAmount: d.service_charge_amount ?? null,
       dailyRevenue: revRow?.revenue ?? null,
+      channels: (d.channel_amounts ?? [])
+        .filter((c) => c.amount > 0)
+        .map((c) => ({ name: c.channel, amount: c.amount, isCredit: !!c.is_credit })),
       checklist: normalizeChecklist(d.checklist ?? []),
       headlines: headlinesFor(d.checklist ?? []),
       isRevision,

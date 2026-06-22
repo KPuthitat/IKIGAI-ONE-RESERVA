@@ -1907,8 +1907,13 @@ export type ShiftCloseCardArgs = {
   serviceChargeAmount?: number | null;
   /** Daily sales revenue (ASCENDA feed) — added 2026-05-28 as a
    *  headline figure on the close report. null when the branch has
-   *  require_daily_revenue OFF or staff skipped it. */
+   *  require_daily_revenue OFF or staff skipped it. With the channel
+   *  model (2026-06-22) this equals the sum of `channels`. */
   dailyRevenue?: number | null;
+  /** Per-channel sales breakdown (owner 2026-06-22). Rendered as a
+   *  section under the red-box total: each channel + amount (credit ones
+   *  tagged), then a เงินเข้าจริง / ค้างชำระ split. Omit/empty = no block. */
+  channels?: Array<{ name: string; amount: number; isCredit?: boolean }>;
   // Same shape as ShiftOpenCardArgs.checklist — see that doc block.
   // Optional is_child + description fields propagate from admin rows
   // and are tolerated here so callers can pass a single normalized
@@ -2040,6 +2045,9 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
         ...(headlineFlexBlock(mergedHeadlines)
           ? [headlineFlexBlock(mergedHeadlines) as Record<string, unknown>]
           : []),
+        ...(channelBreakdownBlock(args.channels)
+          ? [channelBreakdownBlock(args.channels) as Record<string, unknown>]
+          : []),
         ...checklistFlexBlock(args.checklist)
       ]
     },
@@ -2092,6 +2100,35 @@ export type ReadinessCardArgs = {
 // (readinessSection helper deleted 2026-05-21 — the readiness card is
 // now built entirely from the admin checklist via checklistFlexBlock,
 // no labelled-section blocks needed.)
+
+/** Per-channel sales breakdown (owner 2026-06-22) — sits under the red-box
+ *  total. Lists each channel that had a value, tags ค้างชำระ ones, then shows
+ *  the เงินเข้าจริง (cash) vs ค้างชำระ (receivable) split. */
+function channelBreakdownBlock(
+  channels?: Array<{ name: string; amount: number; isCredit?: boolean }>
+): Record<string, unknown> | null {
+  const rows = (channels ?? []).filter((c) => c.amount > 0);
+  if (rows.length === 0) return null;
+  const fmt = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  const cash = rows.filter((c) => !c.isCredit).reduce((s, c) => s + c.amount, 0);
+  const credit = rows.filter((c) => c.isCredit).reduce((s, c) => s + c.amount, 0);
+  return {
+    type: "box", layout: "vertical", spacing: "xs", margin: "lg",
+    contents: [
+      { type: "text", text: "ยอดขายแยกช่องทาง", size: "xs", weight: "bold", color: COLOR_TEXT_MUTED },
+      ...rows.map((c) => ({
+        type: "box", layout: "horizontal", spacing: "sm",
+        contents: [
+          { type: "text", text: c.isCredit ? `${c.name} (ค้าง)` : c.name, size: "sm", color: COLOR_TEXT_DARK, flex: 5, wrap: true },
+          { type: "text", text: fmt(c.amount), size: "sm", weight: "bold", color: c.isCredit ? "#b45309" : COLOR_TEXT_DARK, flex: 4, align: "end", wrap: true }
+        ]
+      })),
+      { type: "separator", margin: "sm", color: COLOR_DIVIDER },
+      kvRow("เงินเข้าจริงวันนี้", `${fmt(cash)} บาท`, { valueWeight: "bold" }),
+      ...(credit > 0 ? [kvRow("ค้างชำระ (ลูกหนี้)", `${fmt(credit)} บาท`, { valueColor: "#b45309", valueWeight: "bold" })] : [])
+    ]
+  };
+}
 
 /** Headline block — the "ยอดเงินปิดกะ 32,999.00 บาท" stack that sits
  *  prominently above the checklist. Admin opts in by marking

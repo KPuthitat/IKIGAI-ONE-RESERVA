@@ -405,6 +405,9 @@ export async function POST(req: Request) {
       // handler) — we forward the in-flight value to the renderer
       // without persisting it in daily_reports.data.
       dailyRevenue: d.daily_revenue ?? null,
+      channels: (d.channel_amounts ?? [])
+        .filter((c) => c.amount > 0)
+        .map((c) => ({ name: c.channel, amount: c.amount, isCredit: !!c.is_credit })),
       checklist: normalizeChecklist(d.checklist),
       headlines: headlinesFor(d.checklist),
       isRevision,
