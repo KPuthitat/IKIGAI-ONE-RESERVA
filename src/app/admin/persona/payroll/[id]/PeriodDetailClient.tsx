@@ -138,7 +138,7 @@ export default function PeriodDetailClient({
   const isPaid = period.status === "paid";
 
   async function performAction(
-    action: "recompute" | "finalize" | "unfinalize" | "mark_paid",
+    action: "recompute" | "finalize" | "unfinalize" | "mark_paid" | "repost_accounta",
     pin?: string
   ): Promise<void> {
     setBusy(action);
@@ -154,6 +154,22 @@ export default function PeriodDetailClient({
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) {
+        if (action === "repost_accounta") {
+          // Show the concrete counts so the admin sees what landed in รายจ่าย.
+          const a = j.accounta as { salaries: number; tax: number; sso: number } | null;
+          setMsg({
+            kind: "ok",
+            text: a
+              ? t(lang, "admin.persona.payroll.action.repostAccountaDone", {
+                  n: String(a.salaries),
+                  tax: a.tax.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 }),
+                  sso: a.sso.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+                })
+              : t(lang, "admin.persona.payroll.action.repostAccountaDone", { n: "0", tax: "0", sso: "0" })
+          });
+          startTransition(() => router.refresh());
+          return;
+        }
         // Map snake_case action → camelCase i18n suffix (mark_paid → markPaidDone)
         const doneKey =
           action === "mark_paid" ? "admin.persona.payroll.action.markPaidDone" :
@@ -344,6 +360,14 @@ export default function PeriodDetailClient({
             >
               {t(lang, "admin.persona.payroll.action.downloadBankCsv")}
             </a>
+          )}
+          {(isFinalized || isPaid) && (
+            <button type="button" onClick={() => performAction("repost_accounta")}
+              disabled={busy !== null}
+              title={t(lang, "admin.persona.payroll.action.repostAccountaHint")}
+              className="text-sm px-3 py-1.5 rounded-md bg-white border border-slate-300 text-slate-700 hover:bg-slate-50">
+              {busy === "repost_accounta" ? "..." : t(lang, "admin.persona.payroll.action.repostAccounta")}
+            </button>
           )}
           {isPaid && (
             <>

@@ -10,7 +10,7 @@ import { postPayrollToAccounta, removePayrollFromAccounta } from "@/lib/accounta
 // DELETE /api/admin/persona/payroll/periods/[id] — delete (only if draft)
 
 const PatchBody = z.object({
-  action: z.enum(["recompute", "finalize", "unfinalize", "mark_paid", "unpay", "update_notes"]),
+  action: z.enum(["recompute", "finalize", "unfinalize", "mark_paid", "unpay", "update_notes", "repost_accounta"]),
   notes: z.string().max(500).optional(),
   pay_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   paid_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),  // backdated paid date
@@ -163,6 +163,24 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     vals.push(id);
     db.prepare(`UPDATE payroll_periods SET ${fields.join(", ")} WHERE id = ?`).run(...vals);
     return NextResponse.json({ ok: true });
+  }
+
+  if (d.action === "repost_accounta") {
+    // Manually (re)post this period's รายจ่าย to ACCOUNTA. For periods that
+    // were finalized BEFORE auto-post existed, or to refresh after a manual
+    // line edit. Idempotent (delete-then-insert by payroll_period_id), so
+    // safe to click repeatedly. Only finalized/paid periods carry committed
+    // numbers worth posting.
+    if (period.status !== "finalized" && period.status !== "paid") {
+      return NextResponse.json({ error: "must_be_finalized_or_paid" }, { status: 400 });
+    }
+    let posted: { salaries: number; tax: number; sso: number } | null = null;
+    try {
+      posted = postPayrollToAccounta(id, user.id);
+    } catch (e) {
+      return NextResponse.json({ error: "accounta_post_failed", detail: (e as Error).message }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, accounta: posted });
   }
 
   return NextResponse.json({ error: "unknown_action" }, { status: 400 });
