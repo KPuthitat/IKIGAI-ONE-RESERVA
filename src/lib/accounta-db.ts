@@ -1151,6 +1151,59 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
   };
 }
 
+// ── Dashboard redesign helpers (owner 2026-06-22, PEAK-style) ──────
+
+export type MonthlyTrendRow = { month: number; revenue: number; expense: number; profit: number };
+
+/** 12-month revenue (shift-close totals) vs expense (confirmed bills) + profit,
+ *  for one branch + calendar year — feeds the year combo chart. */
+export function monthlyTrend(branchId: number, year: number): MonthlyTrendRow[] {
+  const db = getDb();
+  const y = String(year);
+  const rev = db.prepare(
+    "SELECT CAST(substr(date,6,2) AS INTEGER) AS m, COALESCE(SUM(revenue),0) AS amt FROM branch_daily_revenue WHERE branch_id = ? AND substr(date,1,4) = ? GROUP BY m"
+  ).all(branchId, y) as Array<{ m: number; amt: number }>;
+  const exp = db.prepare(
+    "SELECT CAST(substr(bill_date,6,2) AS INTEGER) AS m, COALESCE(SUM(amount_total),0) AS amt FROM accounta_expenses WHERE review_status = 'confirmed' AND branch_id = ? AND substr(bill_date,1,4) = ? GROUP BY m"
+  ).all(branchId, y) as Array<{ m: number; amt: number }>;
+  const rmap = new Map(rev.map((r) => [r.m, round2(r.amt)]));
+  const emap = new Map(exp.map((r) => [r.m, round2(r.amt)]));
+  const out: MonthlyTrendRow[] = [];
+  for (let m = 1; m <= 12; m++) {
+    const revenue = rmap.get(m) ?? 0;
+    const expense = emap.get(m) ?? 0;
+    out.push({ month: m, revenue, expense, profit: round2(revenue - expense) });
+  }
+  return out;
+}
+
+export type AccountaPayables = {
+  whtUnpaid: number;          // ภาษีหัก ณ ที่จ่าย รอนำส่ง (org-wide — payroll posts at branch NULL)
+  ssoUnpaid: number;          // ประกันสังคม รอนำส่ง (org-wide)
+  branchUnpaidTotal: number;  // บิลค้างจ่ายอื่นของสาขานี้
+  branchUnpaidCount: number;
+};
+
+/** Outstanding payables for the tax/payable cards. WHT + SSO are company-level
+ *  (payroll posts them at branch_id NULL), shown as "ทั้งบริษัท"; other unpaid
+ *  bills are scoped to this branch. */
+export function accountaPayables(branchId: number): AccountaPayables {
+  const db = getDb();
+  const wht = db.prepare(
+    "SELECT COALESCE(SUM(amount_total),0) AS s FROM accounta_expenses WHERE review_status = 'confirmed' AND payment_status = 'unpaid' AND category = 'ภาษีหัก ณ ที่จ่าย'"
+  ).get() as { s: number };
+  const sso = db.prepare(
+    "SELECT COALESCE(SUM(amount_total),0) AS s FROM accounta_expenses WHERE review_status = 'confirmed' AND payment_status = 'unpaid' AND category = 'ประกันสังคม'"
+  ).get() as { s: number };
+  const bill = db.prepare(
+    "SELECT COALESCE(SUM(amount_total),0) AS s, COUNT(*) AS n FROM accounta_expenses WHERE review_status = 'confirmed' AND payment_status = 'unpaid' AND branch_id = ? AND COALESCE(category,'') NOT IN ('ภาษีหัก ณ ที่จ่าย','ประกันสังคม')"
+  ).get(branchId) as { s: number; n: number };
+  return {
+    whtUnpaid: round2(wht.s), ssoUnpaid: round2(sso.s),
+    branchUnpaidTotal: round2(bill.s), branchUnpaidCount: bill.n
+  };
+}
+
 // ── Material-purchase quota (owner 2026-06-21) ─────────────────────
 // Monthly raw-material budget = target sales (X) × max-material-% (Y).
 // Buying once a week on a chosen weekday; today's quota redistributes the
