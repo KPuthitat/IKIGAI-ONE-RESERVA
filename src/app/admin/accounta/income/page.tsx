@@ -24,6 +24,9 @@ export default function AccountaIncomePage() {
           <Link href="/admin/accounta/channels" className="text-sm text-brand hover:underline">
             จัดการช่องทางรับเงิน →
           </Link>
+          <Link href="/admin/accounta/receivables" className="text-sm text-brand hover:underline">
+            ลูกหนี้ค้างชำระ →
+          </Link>
           <Link href="/admin/accounta/daybook" className="text-sm text-brand hover:underline">
             ดูสมุดรายวัน (แบบเอกเซล) →
           </Link>
@@ -41,7 +44,7 @@ export default function AccountaIncomePage() {
         branches={listBranches()}
         companies={listCompanies()}
         channels={listIncomeChannels(user.activeBranchId)}
-        initialIncome={listIncome({ month })}
+        initialIncome={listIncome({ month, branchId: user.activeBranchId })}
         initialSummary={incomeSummary(month)}
       />
     </div>

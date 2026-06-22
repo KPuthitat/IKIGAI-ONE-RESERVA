@@ -251,6 +251,8 @@ export type IncomeRow = {
   amount: number;
   note: string | null;
   source: string;
+  is_outstanding: number;
+  settled_date: string | null;
 };
 
 export type IncomeInput = {
@@ -272,7 +274,7 @@ export function listIncome(f: IncomeFilter = {}): IncomeRow[] {
   if (f.month) { where.push("substr(i.income_date,1,7) = ?"); args.push(f.month); }
   const sql = `
     SELECT i.id, i.branch_id, b.name AS branch_name, i.company_id, c.name_th AS company_name,
-           i.income_date, i.channel, i.amount, i.note, i.source
+           i.income_date, i.channel, i.amount, i.note, i.source, i.is_outstanding, i.settled_date
       FROM accounta_income i
       LEFT JOIN branches b  ON b.id = i.branch_id
       LEFT JOIN companies c ON c.id = i.company_id
@@ -304,7 +306,7 @@ export function deleteIncome(id: number): boolean {
 export function getIncome(id: number): IncomeRow | null {
   return listIncome().find((r) => r.id === id) ?? getDb().prepare(`
     SELECT i.id, i.branch_id, b.name AS branch_name, i.company_id, c.name_th AS company_name,
-           i.income_date, i.channel, i.amount, i.note, i.source
+           i.income_date, i.channel, i.amount, i.note, i.source, i.is_outstanding, i.settled_date
       FROM accounta_income i
       LEFT JOIN branches b ON b.id = i.branch_id
       LEFT JOIN companies c ON c.id = i.company_id
@@ -386,6 +388,51 @@ export function incomeSummary(month: string, branchId?: number | null, companyId
   `).all(...args) as Array<{ channel: string; total: number }>;
   const total = round2(rows.reduce((s, r) => s + r.total, 0));
   return { total, byChannel: rows.map((r) => ({ channel: r.channel, total: round2(r.total) })) };
+}
+
+// ── Accounts receivable / ลูกหนี้ค้างชำระ (owner 2026-06-22) ─────────
+// A credit sale (is_outstanding=1) counts as revenue on its income_date but
+// the cash arrives later. settled_date = when it was collected (NULL = still
+// owed). Outstanding balance = is_outstanding=1 AND settled_date IS NULL.
+
+export type ReceivableRow = {
+  id: number; income_date: string; channel: string | null; amount: number; note: string | null;
+};
+
+/** Open receivables for a branch (oldest first). */
+export function listOutstandingReceivables(branchId: number): ReceivableRow[] {
+  return getDb().prepare(
+    `SELECT id, income_date, channel, amount, note FROM accounta_income
+      WHERE branch_id = ? AND is_outstanding = 1 AND settled_date IS NULL
+      ORDER BY income_date ASC, id ASC`
+  ).all(branchId) as ReceivableRow[];
+}
+
+/** Outstanding balance grouped by channel/entity (who owes how much). */
+export function receivablesByEntity(branchId: number): Array<{ channel: string; amount: number; count: number }> {
+  return (getDb().prepare(
+    `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS channel, COALESCE(SUM(amount),0) AS amount, COUNT(*) AS count
+       FROM accounta_income
+      WHERE branch_id = ? AND is_outstanding = 1 AND settled_date IS NULL
+      GROUP BY COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') ORDER BY amount DESC`
+  ).all(branchId) as Array<{ channel: string; amount: number; count: number }>)
+    .map((r) => ({ channel: r.channel, amount: round2(r.amount), count: r.count }));
+}
+
+/** Total open receivables for a branch. */
+export function receivablesTotal(branchId: number): number {
+  const r = getDb().prepare(
+    "SELECT COALESCE(SUM(amount),0) AS t FROM accounta_income WHERE branch_id = ? AND is_outstanding = 1 AND settled_date IS NULL"
+  ).get(branchId) as { t: number };
+  return round2(r.t);
+}
+
+/** Mark a receivable collected (รับชำระแล้ว) — records the cash-in date.
+ *  is_outstanding stays as the credit-sale marker so accrual history is intact. */
+export function settleReceivable(id: number, branchId: number, settledDate: string): boolean {
+  return getDb().prepare(
+    "UPDATE accounta_income SET settled_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND branch_id = ? AND is_outstanding = 1 AND settled_date IS NULL"
+  ).run(settledDate, id, branchId).changes > 0;
 }
 
 // ── Category vs benchmark % (owner 2026-06-18) ─────────────────────
@@ -854,6 +901,9 @@ export type LedgerDashboard = {
   incomeRows: Array<{ date: string; channel: string; amount: number }>;
   byVendor: Array<{ vendor: string; amount: number }>;
   byPaymentMethod: Array<{ method: string; amount: number }>;
+  cashReceived: number;                                          // เงินเข้าจริงในช่วง (cash basis)
+  outstandingTotal: number;                                      // ลูกหนี้ค้างชำระคงค้าง (สะสม)
+  outstandingByEntity: Array<{ channel: string; amount: number; count: number }>;
 };
 
 function bkkToday(): string {
@@ -980,6 +1030,18 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
   ).all(branchId, start, end) as Array<{ channel: string; amount: number }>;
   const incomeByChannel = channelRows.map((r) => ({ channel: r.channel, amount: round2(r.amount) }));
 
+  // Cash received in the period (cash basis): non-credit income recognised in
+  // the period + credit (AR) collected in the period (by settled_date).
+  const cashRow = db.prepare(
+    `SELECT
+       COALESCE(SUM(CASE WHEN is_outstanding = 0 AND income_date BETWEEN ? AND ? THEN amount ELSE 0 END), 0) +
+       COALESCE(SUM(CASE WHEN is_outstanding = 1 AND settled_date BETWEEN ? AND ? THEN amount ELSE 0 END), 0) AS cash
+       FROM accounta_income WHERE branch_id = ?`
+  ).get(start, end, start, end, branchId) as { cash: number };
+  const cashReceived = round2(cashRow.cash);
+  const outstandingTotal = receivablesTotal(branchId);
+  const outstandingByEntity = receivablesByEntity(branchId);
+
   // Per-day income rows (date + channel) so the client can show the
   // selected day's income detail in the drill-down panel.
   const incomeRows = (db.prepare(
@@ -1009,7 +1071,8 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
     inputVat, outputVat, vatPayable, vatRegistered,
     daysWithRevenue, avgPerDay, avgWeekday, avgWeekend,
     forecast, categories, uncategorized, dailyRows, incomeByChannel,
-    incomeRows, byVendor, byPaymentMethod
+    incomeRows, byVendor, byPaymentMethod,
+    cashReceived, outstandingTotal, outstandingByEntity
   };
 }
 

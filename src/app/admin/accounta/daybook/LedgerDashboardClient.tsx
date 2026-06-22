@@ -24,6 +24,9 @@ type Dash = {
   incomeRows: Array<{ date: string; channel: string; amount: number }>;
   byVendor: Array<{ vendor: string; amount: number }>;
   byPaymentMethod: Array<{ method: string; amount: number }>;
+  cashReceived: number;
+  outstandingTotal: number;
+  outstandingByEntity: Array<{ channel: string; amount: number; count: number }>;
 };
 export type LedgerExpenseRow = {
   id: number; bill_date: string; vendor_name: string | null; doc_type: string | null;
@@ -128,6 +131,40 @@ export default function LedgerDashboardClient({
           <div className={`text-2xl font-bold ${dash.net >= 0 ? "text-slate-800" : "text-rose-600"}`}>฿{fmtMoney(dash.net)}</div>
         </div>
       </div>
+
+      {/* Cash vs accrual + outstanding receivables (owner 2026-06-22) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="card text-center py-3">
+          <div className="text-[11px] text-slate-400">ยอดขายรวม (รวมค้างชำระ)</div>
+          <div className="text-lg font-bold text-slate-800">฿{fmtMoney(dash.revenue)}</div>
+        </div>
+        <div className="card text-center py-3">
+          <div className="text-[11px] text-slate-400">เงินเข้าจริงในช่วงนี้ (เงินสด)</div>
+          <div className="text-lg font-bold text-emerald-700">฿{fmtMoney(dash.cashReceived)}</div>
+        </div>
+        <Link href="/admin/accounta/receivables" className="card text-center py-3 hover:ring-1 hover:ring-amber-200 transition">
+          <div className="text-[11px] text-slate-400">ลูกหนี้ค้างชำระคงค้าง →</div>
+          <div className="text-lg font-bold text-amber-700">฿{fmtMoney(dash.outstandingTotal)}</div>
+        </Link>
+      </div>
+
+      {/* Outstanding by entity */}
+      {dash.outstandingByEntity.length > 0 && (
+        <div className="card space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-bold text-slate-800">ลูกหนี้ค้างชำระ แยกตามเจ้า</div>
+            <Link href="/admin/accounta/receivables" className="text-xs text-brand hover:underline">จัดการ / รับชำระ →</Link>
+          </div>
+          <div className="space-y-1">
+            {dash.outstandingByEntity.map((e) => (
+              <div key={e.channel} className="flex justify-between text-sm">
+                <span className="text-slate-700">{e.channel} <span className="text-[11px] text-slate-400">({e.count})</span></span>
+                <span className="font-mono text-amber-700">฿{fmtMoney(e.amount)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* VAT / ภพ.30 */}
       <div className="card space-y-2">

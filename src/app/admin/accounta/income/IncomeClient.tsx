@@ -14,6 +14,7 @@ type Income = {
   company_id: number | null; company_name: string | null;
   income_date: string; channel: string | null; amount: number; note: string | null;
   source: string;
+  is_outstanding: number; settled_date: string | null;
 };
 type Summary = { total: number; byChannel: Array<{ channel: string; total: number }> };
 
@@ -175,6 +176,11 @@ export default function IncomeClient(props: {
                       {r.channel || (r.source === "shift_close" ? "ยอดขายรวม" : "—")}
                       {r.source === "shift_close" && (
                         <span className="text-[10px] font-normal bg-sky-50 text-sky-700 border border-sky-200 rounded-full px-1.5 py-px">จากปิดกะ</span>
+                      )}
+                      {!!r.is_outstanding && (
+                        r.settled_date
+                          ? <span className="text-[10px] font-normal bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-1.5 py-px">รับชำระแล้ว</span>
+                          : <span className="text-[10px] font-normal bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-px">ค้างชำระ</span>
                       )}
                     </div>
                     {r.note && <div className="text-[11px] text-slate-500">{r.note}</div>}
