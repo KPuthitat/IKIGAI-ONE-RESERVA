@@ -70,8 +70,11 @@ const CAT_STATUS = {
 const DONUT_COLORS = ["#10b981", "#3b82f6", "#6366f1", "#f59e0b", "#ec4899", "#14b8a6", "#a855f7", "#94a3b8"];
 
 // 12-month revenue/expense bars + profit line — pure SVG (no chart lib).
+// Wide, short viewBox + maxHeight so it stays a tidy band on desktop instead of
+// scaling to ~700px tall (owner 2026-06-22). The wider box fits full Thai month
+// names horizontally (no abbreviations — owner standard).
 function MonthlyCombo({ rows }: { rows: MonthlyRow[] }) {
-  const W = 360, H = 120, padTop = 10, padBottom = 6;
+  const W = 900, H = 120, padTop = 12, padBottom = 8, labelBand = 22;
   const vals = rows.flatMap((m) => [m.revenue, m.expense, m.profit, 0]);
   const maxV = Math.max(...vals, 1);
   const minV = Math.min(...vals, 0);
@@ -79,31 +82,31 @@ function MonthlyCombo({ rows }: { rows: MonthlyRow[] }) {
   const mapY = (v: number) => padTop + ((maxV - v) / span) * (H - padTop - padBottom);
   const zeroY = mapY(0);
   const colW = W / rows.length;
-  const barW = Math.min(9, colW / 3);
-  const linePts = rows.map((m, i) => `${i * colW + colW / 2},${mapY(m.profit).toFixed(1)}`).join(" ");
+  const barW = Math.min(14, colW / 3.2);
+  const linePts = rows.map((m, i) => `${(i * colW + colW / 2).toFixed(1)},${mapY(m.profit).toFixed(1)}`).join(" ");
   return (
-    <svg viewBox={`0 0 ${W} ${H + 46}`} width="100%" preserveAspectRatio="xMidYMid meet" role="img"
-      aria-label="กราฟรายรับ รายจ่าย และกำไรรายเดือน">
+    <svg viewBox={`0 0 ${W} ${H + labelBand}`} preserveAspectRatio="xMidYMid meet" role="img"
+      aria-label="กราฟรายรับ รายจ่าย และกำไรรายเดือน"
+      style={{ display: "block", width: "100%", height: "auto", aspectRatio: `${W} / ${H + labelBand}`, maxHeight: 240 }}>
       <line x1={0} y1={zeroY} x2={W} y2={zeroY} stroke="#e2e8f0" strokeWidth={1} />
       {rows.map((m, i) => {
         const cx = i * colW + colW / 2;
         const rY = mapY(m.revenue), eY = mapY(m.expense);
         return (
           <g key={m.month}>
-            <rect x={cx - barW - 1} y={Math.min(rY, zeroY)} width={barW} height={Math.abs(zeroY - rY)} rx={1.5} fill="#10b981">
+            <rect x={cx - barW - 1} y={Math.min(rY, zeroY)} width={barW} height={Math.abs(zeroY - rY)} rx={2} fill="#10b981">
               <title>{`${TH_MON_FULL[m.month]} รายรับ ฿${fmtMoney(m.revenue)}`}</title>
             </rect>
-            <rect x={cx + 1} y={Math.min(eY, zeroY)} width={barW} height={Math.abs(zeroY - eY)} rx={1.5} fill="#fb7185">
+            <rect x={cx + 1} y={Math.min(eY, zeroY)} width={barW} height={Math.abs(zeroY - eY)} rx={2} fill="#fb7185">
               <title>{`${TH_MON_FULL[m.month]} รายจ่าย ฿${fmtMoney(m.expense)}`}</title>
             </rect>
-            <text x={cx} y={H + 9} fontSize={8} fill="#94a3b8" textAnchor="end"
-              transform={`rotate(-40 ${cx} ${H + 9})`}>{TH_MON_FULL[m.month]}</text>
+            <text x={cx} y={H + 15} fontSize={9} fill="#94a3b8" textAnchor="middle">{TH_MON_FULL[m.month]}</text>
           </g>
         );
       })}
-      <polyline points={linePts} fill="none" stroke="#6366f1" strokeWidth={1.6} strokeLinejoin="round" />
+      <polyline points={linePts} fill="none" stroke="#6366f1" strokeWidth={1.8} strokeLinejoin="round" />
       {rows.map((m, i) => (
-        <circle key={m.month} cx={i * colW + colW / 2} cy={mapY(m.profit)} r={1.8} fill="#6366f1">
+        <circle key={m.month} cx={i * colW + colW / 2} cy={mapY(m.profit)} r={2.2} fill="#6366f1">
           <title>{`${TH_MON_FULL[m.month]} กำไร ฿${fmtMoney(m.profit)}`}</title>
         </circle>
       ))}
@@ -328,12 +331,12 @@ export default function LedgerDashboardClient({
         <div className="card py-3">
           <div className="text-[11px] text-slate-400">ภาษีหัก ณ ที่จ่าย</div>
           <div className={`text-lg font-bold ${payables.whtUnpaid > 0 ? "text-amber-700" : "text-slate-400"}`}>฿{fmtMoney(payables.whtUnpaid)}</div>
-          <div className="text-[10px] text-slate-400">รอนำส่ง · ทั้งบริษัท</div>
+          <div className="text-[10px] text-slate-400">รอนำส่ง</div>
         </div>
         <div className="card py-3">
           <div className="text-[11px] text-slate-400">ประกันสังคม</div>
           <div className={`text-lg font-bold ${payables.ssoUnpaid > 0 ? "text-amber-700" : "text-slate-400"}`}>฿{fmtMoney(payables.ssoUnpaid)}</div>
-          <div className="text-[10px] text-slate-400">รอนำส่ง · ทั้งบริษัท</div>
+          <div className="text-[10px] text-slate-400">รอนำส่ง</div>
         </div>
         <div className="card py-3">
           <div className="text-[11px] text-slate-400">บิลค้างจ่ายของสาขา</div>

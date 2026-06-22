@@ -454,16 +454,22 @@ export function removePayrollFromAccounta(periodId: number): void {
 
 export function postPayrollToAccounta(periodId: number, userId: number): { salaries: number; tax: number; sso: number } {
   const db = getDb();
-  // Payroll runs org-wide (no branch on the period), so these post as
-  // company-level รายจ่าย: branch_id = NULL. company_id is filled only when
-  // the org has exactly one company, otherwise left NULL.
+  // Post to the period's branch so the รายจ่าย shows on that branch's daybook
+  // (owner 2026-06-22 — was branch NULL, so per-branch dashboards never saw it).
+  // Legacy all-branch periods (branch_id NULL) still post org-level; company_id
+  // comes from the branch, else the single company when there's exactly one.
   const period = db.prepare(
-    "SELECT id, period_start, period_end, pay_date FROM payroll_periods WHERE id = ?"
-  ).get(periodId) as { id: number; period_start: string; period_end: string; pay_date: string | null } | undefined;
+    "SELECT id, branch_id, period_start, period_end, pay_date FROM payroll_periods WHERE id = ?"
+  ).get(periodId) as { id: number; branch_id: number | null; period_start: string; period_end: string; pay_date: string | null } | undefined;
   if (!period) return { salaries: 0, tax: 0, sso: 0 };
-  const companies = db.prepare("SELECT id FROM companies").all() as Array<{ id: number }>;
-  const companyId = companies.length === 1 ? companies[0].id : null;
-  const branchId: number | null = null;
+  const branchId: number | null = period.branch_id ?? null;
+  let companyId: number | null = null;
+  if (branchId != null) {
+    companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?").get(branchId) as { company_id: number | null } | undefined)?.company_id ?? null;
+  } else {
+    const companies = db.prepare("SELECT id FROM companies").all() as Array<{ id: number }>;
+    companyId = companies.length === 1 ? companies[0].id : null;
+  }
   const lines = db.prepare(
     "SELECT display_name, employment_type, net_pay, tax_amount, sso_amount FROM payroll_lines WHERE period_id = ?"
   ).all(periodId) as Array<{ display_name: string; employment_type: string | null; net_pay: number; tax_amount: number; sso_amount: number }>;
@@ -1191,12 +1197,14 @@ export type AccountaPayables = {
  *  bills are scoped to this branch. */
 export function accountaPayables(branchId: number): AccountaPayables {
   const db = getDb();
+  // WHT/SSO are scoped to this branch + any legacy org-level (branch_id NULL)
+  // rows — payroll now posts these to the period's branch.
   const wht = db.prepare(
-    "SELECT COALESCE(SUM(amount_total),0) AS s FROM accounta_expenses WHERE review_status = 'confirmed' AND payment_status = 'unpaid' AND category = 'ภาษีหัก ณ ที่จ่าย'"
-  ).get() as { s: number };
+    "SELECT COALESCE(SUM(amount_total),0) AS s FROM accounta_expenses WHERE review_status = 'confirmed' AND payment_status = 'unpaid' AND category = 'ภาษีหัก ณ ที่จ่าย' AND (branch_id = ? OR branch_id IS NULL)"
+  ).get(branchId) as { s: number };
   const sso = db.prepare(
-    "SELECT COALESCE(SUM(amount_total),0) AS s FROM accounta_expenses WHERE review_status = 'confirmed' AND payment_status = 'unpaid' AND category = 'ประกันสังคม'"
-  ).get() as { s: number };
+    "SELECT COALESCE(SUM(amount_total),0) AS s FROM accounta_expenses WHERE review_status = 'confirmed' AND payment_status = 'unpaid' AND category = 'ประกันสังคม' AND (branch_id = ? OR branch_id IS NULL)"
+  ).get(branchId) as { s: number };
   const bill = db.prepare(
     "SELECT COALESCE(SUM(amount_total),0) AS s, COUNT(*) AS n FROM accounta_expenses WHERE review_status = 'confirmed' AND payment_status = 'unpaid' AND branch_id = ? AND COALESCE(category,'') NOT IN ('ภาษีหัก ณ ที่จ่าย','ประกันสังคม')"
   ).get(branchId) as { s: number; n: number };
