@@ -1,0 +1,199 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { apiUrl } from "@/lib/url";
+import { humanizeApiError } from "@/lib/error-messages";
+import { fmtMoney } from "@/lib/format";
+import { TH_MONTHS_FULL } from "@/lib/revshare";
+
+type Result = {
+  totalSales: number; tierGP: number; floorApplied: number; billedGP: number; topup: number;
+  avgGpPct: number; vatAmount: number; whtAmount: number; netAmount: number;
+};
+type BreakRow = { sales: number; roundGP: number; gpPct: number; round: { label: string | null; period_start: string; period_end: string } | null };
+type Stored = { status: "draft" | "issued" | "paid"; invoice_no: string | null; issued_at: string | null; paid_at: string | null } | null;
+type Preview = { result: Result; breakdown: BreakRow[]; opMonth: number; stored: Stored; stale: boolean };
+type Partner = { id: number; name: string; venue: string | null; vat_enabled: boolean };
+type Seller = { name: string; address: string | null; taxBranchCode: string | null; phone: string | null };
+
+export default function SettlementClient({
+  partner, seller, initial, year, month
+}: { partner: Partner; seller: Seller; initial: Preview; year: number; month: number }) {
+  const router = useRouter();
+  const [pv, setPv] = useState<Preview>(initial);
+  const [invoiceNo, setInvoiceNo] = useState(initial.stored?.invoice_no ?? "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const r = pv.result;
+  const monthLabel = `${TH_MONTHS_FULL[month]} ${year + 543}`;
+  const status = pv.stored?.status ?? "draft";
+  const withVat = partner.vat_enabled && r.vatAmount > 0;
+  const grandTotal = r.billedGP + r.vatAmount;   // ยอดบนใบกำกับภาษี
+
+  function shift(delta: number) {
+    const d = new Date(Date.UTC(year, month - 1 + delta, 1));
+    router.push(`/admin/accounta/revshare/settlement?partner=${partner.id}&year=${d.getUTCFullYear()}&month=${d.getUTCMonth() + 1}`);
+  }
+
+  async function action(act: "save" | "issue" | "mark_paid" | "revert") {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/accounta/revshare/settlement"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partner: partner.id, year, month, action: act, invoice_no: invoiceNo.trim() || null })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "ทำรายการไม่สำเร็จ")); return; }
+      setPv({ result: j.result, breakdown: j.breakdown, opMonth: j.opMonth, stored: j.stored, stale: j.stale });
+      router.refresh();
+    } finally { setBusy(false); }
+  }
+
+  function statementText(): string {
+    const L: string[] = [];
+    L.push(`ใบสรุปส่วนแบ่งยอดขาย (GP)`);
+    L.push(seller.name);
+    L.push(`คู่ค้า: ${partner.name}${partner.venue ? ` (${partner.venue})` : ""}`);
+    L.push(`รอบเดือน: ${monthLabel}`);
+    L.push(`────────────`);
+    L.push(`ยอดขายรวมทั้งเดือน: ฿${fmtMoney(r.totalSales)}`);
+    L.push(`GP เรียกเก็บ: ฿${fmtMoney(r.billedGP)} (เฉลี่ย ${(r.avgGpPct * 100).toFixed(2)}%)`);
+    if (r.topup > 0) L.push(`  • ถึงยอดขั้นต่ำเดือนนี้ ฿${fmtMoney(r.floorApplied)} (บวกส่วนต่าง ฿${fmtMoney(r.topup)})`);
+    if (withVat) {
+      L.push(`VAT 7%: ฿${fmtMoney(r.vatAmount)}`);
+      L.push(`รวมตามใบกำกับภาษี: ฿${fmtMoney(grandTotal)}`);
+    }
+    L.push(`หัก ณ ที่จ่าย 3%: −฿${fmtMoney(r.whtAmount)}`);
+    L.push(`รับสุทธิ: ฿${fmtMoney(r.netAmount)}`);
+    return L.join("\n");
+  }
+  async function copy() {
+    try { await navigator.clipboard.writeText(statementText()); setCopied(true); setTimeout(() => setCopied(false), 1800); }
+    catch { setErr("คัดลอกไม่สำเร็จ"); }
+  }
+
+  const STATUS = {
+    draft: { t: "ร่าง", c: "bg-amber-100 text-amber-700" },
+    issued: { t: "ออกใบเรียกเก็บแล้ว", c: "bg-emerald-100 text-emerald-700" },
+    paid: { t: "รับชำระแล้ว", c: "bg-sky-100 text-sky-700" }
+  } as const;
+
+  return (
+    <div className="space-y-4">
+      {err && <p className="text-sm text-rose-600">{err}</p>}
+
+      {/* Month nav + status */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => shift(-1)} disabled={busy} className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50">←</button>
+          <span className="text-sm font-bold text-slate-700">{monthLabel}</span>
+          <button type="button" onClick={() => shift(1)} disabled={busy} className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50">→</button>
+        </div>
+        <span className={`text-xs px-2 py-1 rounded font-medium ${STATUS[status].c}`}>{STATUS[status].t} · สัญญาเดือนที่ {pv.opMonth}</span>
+      </div>
+
+      {pv.stale && status !== "draft" && (
+        <div className="card bg-amber-50 border border-amber-200 text-sm text-amber-800">
+          ยอดขายของรอบมีการเปลี่ยนแปลงหลังออกใบเรียกเก็บ — ตัวเลขด้านล่างเป็นค่าล่าสุด กด “บันทึก/คำนวณใหม่” เพื่ออัปเดต snapshot
+        </div>
+      )}
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Card label="ยอดขายรวมทั้งเดือน" value={r.totalSales} />
+        <Card label="GP ขั้นบันได" value={r.tierGP} sub={`เฉลี่ย ${(r.avgGpPct * 100).toFixed(2)}%`} />
+        <Card label="ส่วนต่างขั้นต่ำ (top-up)" value={r.topup} sub={r.topup > 0 ? `ขั้นต่ำ ฿${fmtMoney(r.floorApplied)}` : "ไม่ถึงขั้นต่ำ"} tone={r.topup > 0 ? "amber" : undefined} />
+        <Card label="GP เรียกเก็บ" value={r.billedGP} tone="brand" big />
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {withVat && <Card label="VAT 7%" value={r.vatAmount} />}
+        {withVat && <Card label="รวมตามใบกำกับภาษี" value={grandTotal} />}
+        <Card label="หัก ณ ที่จ่าย 3%" value={-r.whtAmount} tone="rose" />
+        <Card label="รับสุทธิ" value={r.netAmount} tone="emerald" big />
+      </div>
+
+      {/* Money-direction note */}
+      <div className="card text-xs text-slate-500 space-y-1">
+        <div className="font-bold text-slate-700">ทิศทางเงิน</div>
+        <div>• รายสัปดาห์: {seller.name} โอนยอดขายเต็มจำนวนให้คู่ค้า (ยังไม่หัก GP)</div>
+        <div>• สิ้นเดือน: ออกใบเรียกเก็บ GP รวมครั้งเดียว ฿{fmtMoney(r.billedGP)}{withVat ? ` + VAT ฿${fmtMoney(r.vatAmount)} = ฿${fmtMoney(grandTotal)}` : ""} → คู่ค้าจ่ายแล้วหัก ณ ที่จ่าย 3% (฿{fmtMoney(r.whtAmount)}) → รับสุทธิ ฿{fmtMoney(r.netAmount)}</div>
+      </div>
+
+      {/* Round breakdown */}
+      <div className="card space-y-2">
+        <div className="text-sm font-bold text-slate-800">รายละเอียดรายรอบ</div>
+        {pv.breakdown.length === 0 ? (
+          <p className="text-xs text-slate-400">ยังไม่มีรอบในเดือนนี้ — <Link href={`/admin/accounta/revshare/rounds?partner=${partner.id}&year=${year}&month=${month}`} className="text-brand hover:underline">ไปเพิ่มรอบ</Link></p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm tabular-nums">
+              <thead><tr className="text-[11px] text-slate-400 border-b border-slate-200">
+                <th className="text-left py-1.5 px-2">รอบ</th><th className="text-right py-1.5 px-2">ยอดขาย</th>
+                <th className="text-right py-1.5 px-2">GP</th><th className="text-right py-1.5 px-2">GP%</th>
+              </tr></thead>
+              <tbody>
+                {pv.breakdown.map((b, i) => (
+                  <tr key={i} className="border-b border-slate-50">
+                    <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap">{b.round?.label ?? "—"}</td>
+                    <td className="py-1.5 px-2 text-right font-mono">{fmtMoney(b.sales)}</td>
+                    <td className="py-1.5 px-2 text-right font-mono text-emerald-700">{fmtMoney(b.roundGP)}</td>
+                    <td className="py-1.5 px-2 text-right font-mono text-slate-500">{(b.gpPct * 100).toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr className="border-t-2 border-slate-200 font-bold">
+                <td className="py-1.5 px-2">รวม</td>
+                <td className="py-1.5 px-2 text-right font-mono">฿{fmtMoney(r.totalSales)}</td>
+                <td className="py-1.5 px-2 text-right font-mono text-emerald-700">฿{fmtMoney(r.tierGP)}</td>
+                <td className="py-1.5 px-2 text-right font-mono text-slate-500">{(r.avgGpPct * 100).toFixed(1)}%</td>
+              </tr></tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="card space-y-3">
+        <div className="text-sm font-bold text-slate-800">ออกใบเรียกเก็บ</div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div><label className="label">เลขที่ใบเรียกเก็บ/ใบกำกับ (ถ้ามี)</label><input className="input w-48" value={invoiceNo} maxLength={60} placeholder="เช่น GP-2569-06" onChange={(e) => setInvoiceNo(e.target.value)} /></div>
+          <button type="button" onClick={() => action("save")} disabled={busy} className="btn-secondary text-sm">บันทึก/คำนวณใหม่ (ร่าง)</button>
+          {status === "draft" && <button type="button" onClick={() => action("issue")} disabled={busy || r.billedGP <= 0} className="btn-primary text-sm disabled:opacity-50">ออกใบเรียกเก็บ</button>}
+          {status === "issued" && <button type="button" onClick={() => action("mark_paid")} disabled={busy} className="rounded-md bg-sky-600 text-white px-4 py-1.5 text-sm font-medium hover:bg-sky-700">บันทึกรับชำระ</button>}
+          {status !== "draft" && <button type="button" onClick={() => action("revert")} disabled={busy} className="text-sm text-rose-600 hover:underline px-2">ย้อนกลับเป็นร่าง</button>}
+        </div>
+        {pv.stored?.issued_at && <p className="text-[11px] text-slate-400">ออกใบเมื่อ {new Date(pv.stored.issued_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}{pv.stored.paid_at ? ` · รับชำระ ${new Date(pv.stored.paid_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}` : ""}</p>}
+      </div>
+
+      {/* Statement (partner-ready) */}
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-sm font-bold text-slate-800">ใบสรุปสำหรับส่งคู่ค้า</div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={copy} className="btn-secondary text-sm">{copied ? "✓ คัดลอกแล้ว" : "คัดลอกข้อความ (ส่ง LINE)"}</button>
+            <a href={apiUrl(`/api/accounta/revshare/statement/pdf?partner=${partner.id}&year=${year}&month=${month}`)} className="btn-secondary text-sm" download>ดาวน์โหลด PDF</a>
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <pre className="whitespace-pre-wrap font-sans text-sm text-slate-700 leading-relaxed">{statementText()}</pre>
+        </div>
+        <p className="text-[11px] text-slate-400">ใช้ CI เดียวกับทั้งระบบ · ตัวเลขตรงกับด้านบน · PDF มีหัวเอกสาร {seller.name}</p>
+      </div>
+    </div>
+  );
+}
+
+function Card({ label, value, sub, tone, big }: { label: string; value: number; sub?: string; tone?: "brand" | "emerald" | "rose" | "amber"; big?: boolean }) {
+  const color = tone === "brand" ? "text-brand" : tone === "emerald" ? "text-emerald-700" : tone === "rose" ? "text-rose-600" : tone === "amber" ? "text-amber-700" : "text-slate-800";
+  return (
+    <div className="card py-3">
+      <div className="text-[11px] text-slate-400">{label}</div>
+      <div className={`font-bold ${big ? "text-2xl" : "text-lg"} ${color}`}>{value < 0 ? `(฿${fmtMoney(-value)})` : `฿${fmtMoney(value)}`}</div>
+      {sub && <div className="text-[10px] text-slate-400">{sub}</div>}
+    </div>
+  );
+}
