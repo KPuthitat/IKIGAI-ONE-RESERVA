@@ -21,7 +21,7 @@ type Dash = {
   forecast: number | null; categories: CatItem[]; uncategorized: number;
   dailyRows: Array<{ date: string; revenue: number; expense: number; net: number; balance: number }>;
   incomeByChannel: Array<{ channel: string; amount: number }>;
-  incomeRows: Array<{ date: string; channel: string; amount: number }>;
+  incomeRows: Array<{ date: string; channel: string; amount: number; ar: number; cash: number }>;
   byVendor: Array<{ vendor: string; amount: number }>;
   byPaymentMethod: Array<{ method: string; amount: number }>;
   cashReceived: number;
@@ -465,61 +465,100 @@ export default function LedgerDashboardClient({
         )}
       </div>
 
-      {/* Selected-day detail */}
-      {selectedDate && (
+      {/* Selected-day detail — Excel-style two-sided ledger (owner 2026-06-23):
+          รายรับ (แยกช่องทาง, ค้างชำระ/AR vs เงินเข้าจริง) left · รายจ่าย right ·
+          day totals + net at the bottom. */}
+      {selectedDate && (() => {
+        const incTotal = dayIncome.reduce((s, r) => s + r.amount, 0);
+        const incAR = dayIncome.reduce((s, r) => s + r.ar, 0);
+        const incCash = dayIncome.reduce((s, r) => s + r.cash, 0);
+        const expTotal = dayExpenses.reduce((s, e) => s + e.amount_total, 0);
+        const net = incTotal - expTotal;
+        return (
         <div className="card space-y-3 ring-1 ring-brand/20">
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="text-sm font-bold text-slate-800">เอกสารของวันที่ {fmtDayLabel(selectedDate)}</div>
+            <div className="text-sm font-bold text-slate-800">สมุดรายวัน · {fmtDayLabel(selectedDate)}</div>
             <button type="button" onClick={() => setSelectedDate(null)} className="text-xs text-slate-400 hover:text-slate-700">✕ ปิด</button>
           </div>
 
-          {dayIncome.length > 0 && (
-            <div>
-              <div className="text-[11px] font-bold text-emerald-700 mb-1">รายรับ (แยกช่องทาง)</div>
-              <div className="space-y-1">
-                {dayIncome.map((r) => (
-                  <div key={r.channel} className="flex justify-between text-sm">
-                    <span className="text-slate-600">{r.channel}</span>
-                    <span className="font-mono text-emerald-700">฿{fmtMoney(r.amount)}</span>
-                  </div>
-                ))}
-              </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+            {/* รายรับ */}
+            <div className="rounded-lg border border-emerald-100 overflow-hidden">
+              <div className="bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-800">รายรับ (แยกช่องทาง)</div>
+              {dayIncome.length === 0 ? (
+                <p className="text-xs text-slate-400 px-3 py-2">ไม่มีรายรับในวันนี้</p>
+              ) : (
+                <table className="w-full text-sm tabular-nums">
+                  <thead><tr className="text-[10px] text-slate-400 border-b border-slate-100">
+                    <th className="text-left py-1 px-2">ช่องทาง</th>
+                    <th className="text-right py-1 px-2">ค้างชำระ</th>
+                    <th className="text-right py-1 px-2">เงินเข้าจริง</th>
+                    <th className="text-right py-1 px-2">รวม</th>
+                  </tr></thead>
+                  <tbody>
+                    {dayIncome.map((r) => (
+                      <tr key={r.channel} className="border-b border-slate-50">
+                        <td className="py-1 px-2 text-slate-600">{r.channel}</td>
+                        <td className="py-1 px-2 text-right font-mono text-amber-700">{r.ar > 0 ? fmtMoney(r.ar) : "—"}</td>
+                        <td className="py-1 px-2 text-right font-mono text-slate-600">{r.cash > 0 ? fmtMoney(r.cash) : "—"}</td>
+                        <td className="py-1 px-2 text-right font-mono text-emerald-700">{fmtMoney(r.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot><tr className="border-t border-slate-200 font-bold bg-slate-50">
+                    <td className="py-1 px-2 text-slate-700">รวมรายรับ</td>
+                    <td className="py-1 px-2 text-right font-mono text-amber-700">{incAR > 0 ? fmtMoney(incAR) : "—"}</td>
+                    <td className="py-1 px-2 text-right font-mono text-slate-600">{fmtMoney(incCash)}</td>
+                    <td className="py-1 px-2 text-right font-mono text-emerald-700">฿{fmtMoney(incTotal)}</td>
+                  </tr></tfoot>
+                </table>
+              )}
             </div>
-          )}
 
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <div className="text-[11px] font-bold text-rose-700">รายจ่าย ({dayExpenses.length} รายการ)</div>
-              <Link href="/admin/accounta/expenses" className="text-[11px] text-brand hover:underline">ไปหน้ารายจ่าย →</Link>
-            </div>
-            {dayExpenses.length === 0 ? (
-              <p className="text-xs text-slate-400">ไม่มีเอกสารรายจ่ายในวันนี้</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+            {/* รายจ่าย */}
+            <div className="rounded-lg border border-rose-100 overflow-hidden">
+              <div className="bg-rose-50 px-3 py-1.5 flex items-center justify-between">
+                <span className="text-[11px] font-bold text-rose-800">รายจ่าย ({dayExpenses.length} รายการ)</span>
+                <Link href="/admin/accounta/expenses" className="text-[10px] text-brand hover:underline">ไปหน้ารายจ่าย →</Link>
+              </div>
+              {dayExpenses.length === 0 ? (
+                <p className="text-xs text-slate-400 px-3 py-2">ไม่มีรายจ่ายในวันนี้</p>
+              ) : (
+                <table className="w-full text-sm tabular-nums">
                   <tbody>
                     {dayExpenses.map((e) => (
                       <tr key={e.id} className="border-b border-slate-50 hover:bg-slate-50/60">
-                        <td className="py-1.5 px-2">
+                        <td className="py-1 px-2">
                           <div className="text-slate-700">{e.vendor_name || "—"}</div>
-                          <div className="text-[10px] text-slate-400">{e.category || "ไม่ระบุหมวด"}{e.payment_status === "unpaid" ? " · ค้างชำระ" : ""}</div>
+                          <div className="text-[10px] text-slate-400">{e.category || "ไม่ระบุหมวด"}{e.payment_status === "unpaid" ? " · ค้างชำระ" : ""}{e.vat_amount > 0 ? ` · VAT ฿${fmtMoney(e.vat_amount)}` : ""}</div>
                         </td>
-                        <td className="py-1.5 px-2 text-right font-mono">฿{fmtMoney(e.amount_total)}</td>
-                        <td className="py-1.5 px-2 text-right font-mono text-slate-500 whitespace-nowrap">{e.vat_amount > 0 ? `VAT ฿${fmtMoney(e.vat_amount)}` : "—"}</td>
-                        <td className="py-1.5 px-2 text-right whitespace-nowrap">
-                          <Link href={`/admin/accounta/expenses?edit=${e.id}`} className="text-[11px] text-brand hover:underline mr-2">แก้</Link>
-                          <button type="button" onClick={() => remove(e)} disabled={busyId === e.id}
-                            className="text-[11px] text-rose-500 hover:underline disabled:opacity-50">ลบ</button>
+                        <td className="py-1 px-2 text-right font-mono text-rose-700">{fmtMoney(e.amount_total)}</td>
+                        <td className="py-1 px-2 text-right whitespace-nowrap">
+                          <Link href={`/admin/accounta/expenses?edit=${e.id}`} className="text-[10px] text-brand hover:underline mr-2">แก้</Link>
+                          <button type="button" onClick={() => remove(e)} disabled={busyId === e.id} className="text-[10px] text-rose-500 hover:underline disabled:opacity-50">ลบ</button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot><tr className="border-t border-slate-200 font-bold bg-slate-50">
+                    <td className="py-1 px-2 text-slate-700">รวมรายจ่าย</td>
+                    <td className="py-1 px-2 text-right font-mono text-rose-700">฿{fmtMoney(expTotal)}</td>
+                    <td />
+                  </tr></tfoot>
                 </table>
-              </div>
-            )}
+              )}
+            </div>
+          </div>
+
+          {/* Day totals */}
+          <div className="grid grid-cols-3 gap-3 pt-1">
+            <div className="text-center"><div className="text-[10px] text-slate-400">รายรับรวม</div><div className="font-mono font-bold text-emerald-700">฿{fmtMoney(incTotal)}</div></div>
+            <div className="text-center"><div className="text-[10px] text-slate-400">รายจ่ายรวม</div><div className="font-mono font-bold text-rose-700">฿{fmtMoney(expTotal)}</div></div>
+            <div className="text-center"><div className="text-[10px] text-slate-400">กำไร/ขาดทุนวันนี้</div><div className={`font-mono font-bold ${net >= 0 ? "text-slate-800" : "text-rose-600"}`}>{net < 0 ? `(฿${fmtMoney(-net)})` : `฿${fmtMoney(net)}`}</div></div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* VAT detail (full) */}
       <div className="card space-y-2">

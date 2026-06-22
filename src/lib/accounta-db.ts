@@ -979,7 +979,7 @@ export type LedgerDashboard = {
   uncategorized: number;
   dailyRows: Array<{ date: string; revenue: number; expense: number; net: number; balance: number }>;
   incomeByChannel: Array<{ channel: string; amount: number }>;
-  incomeRows: Array<{ date: string; channel: string; amount: number }>;
+  incomeRows: Array<{ date: string; channel: string; amount: number; ar: number; cash: number }>;
   byVendor: Array<{ vendor: string; amount: number }>;
   byPaymentMethod: Array<{ method: string; amount: number }>;
   cashReceived: number;                                          // เงินเข้าจริงในช่วง (cash basis)
@@ -1128,11 +1128,14 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
   // Per-day income rows (date + channel) so the client can show the
   // selected day's income detail in the drill-down panel.
   const incomeRows = (db.prepare(
-    `SELECT income_date AS date, COALESCE(NULLIF(channel,''),'(ไม่ระบุช่องทาง)') AS channel, COALESCE(SUM(amount),0) AS amount
+    `SELECT income_date AS date, COALESCE(NULLIF(channel,''),'(ไม่ระบุช่องทาง)') AS channel,
+            COALESCE(SUM(amount),0) AS amount,
+            COALESCE(SUM(CASE WHEN is_outstanding = 1 THEN amount ELSE 0 END),0) AS ar,
+            COALESCE(SUM(CASE WHEN is_outstanding = 0 THEN amount ELSE 0 END),0) AS cash
        FROM accounta_income WHERE branch_id = ? AND income_date BETWEEN ? AND ?
       GROUP BY income_date, COALESCE(NULLIF(channel,''),'(ไม่ระบุช่องทาง)')`
-  ).all(branchId, start, end) as Array<{ date: string; channel: string; amount: number }>)
-    .map((r) => ({ date: r.date, channel: r.channel, amount: round2(r.amount) }));
+  ).all(branchId, start, end) as Array<{ date: string; channel: string; amount: number; ar: number; cash: number }>)
+    .map((r) => ({ date: r.date, channel: r.channel, amount: round2(r.amount), ar: round2(r.ar), cash: round2(r.cash) }));
 
   // Expense analysis — by vendor and by payment method (confirmed only).
   const byVendor = (db.prepare(
