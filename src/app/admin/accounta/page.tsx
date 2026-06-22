@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
+import { isRevshareBranch } from "@/lib/revshare-db";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ACCOUNTA · IKIGAI OS" };
@@ -10,9 +11,12 @@ export const metadata: Metadata = { title: "ACCOUNTA · IKIGAI OS" };
 // บัญชีรายรับรายจ่าย (the income/expense ledger hub) + แฟ้มวิเคราะห์โครงการลงทุน
 // (FEASIBILITY). English name shown in EN mode.
 export default function AccountaHome() {
-  requirePermission("accounta.manage");
+  const user = requirePermission("accounta.manage");
   const lang = getLang();
   const en = lang === "en";
+  // Revenue-Share (GP) appears only for branches that run a revenue-share
+  // partner (revshare_enabled — currently HYPOPLARAEMIA).
+  const showRevshare = user.activeBranchId != null && isRevshareBranch(user.activeBranchId);
 
   const cards = [
     {
@@ -28,7 +32,14 @@ export default function AccountaHome() {
       sub: en
         ? "Investment project feasibility + initial capital ledger and payback point"
         : "ประเมินความเป็นไปได้ของโปรเจคลงทุน + บัญชีเงินลงทุนตั้งต้น และจุดคืนทุน"
-    }
+    },
+    ...(showRevshare ? [{
+      href: "/admin/accounta/revshare",
+      title: en ? "Revenue-Share (GP)" : "ส่วนแบ่งยอดขาย (GP)",
+      sub: en
+        ? "Partner sales revenue split by progressive GP tiers — POS import + monthly billing statement"
+        : "คำนวณส่วนแบ่งยอดขายจากคู่ค้า (แบ่งขั้นบันได) + นำเข้า POS + ออกใบวางบิลรายเดือน"
+    }] : [])
   ];
 
   return (
