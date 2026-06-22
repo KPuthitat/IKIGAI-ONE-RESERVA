@@ -4,6 +4,7 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { computePayrollPeriod } from "@/lib/payroll-compute";
 import { verifyAdminPin } from "@/lib/admin-pin";
+import { postPayrollToAccounta, removePayrollFromAccounta } from "@/lib/accounta-db";
 
 // PATCH /api/admin/persona/payroll/periods/[id] — recompute, finalize, mark paid, unpay, update notes
 // DELETE /api/admin/persona/payroll/periods/[id] — delete (only if draft)
@@ -72,7 +73,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       SET status = 'finalized', finalized_by = ?, finalized_at = ?
       WHERE id = ?
     `).run(user.id, new Date().toISOString(), id);
-    return NextResponse.json({ ok: true });
+    // Auto-post to ACCOUNTA รายจ่าย: เงินเดือนต่อคน (จ่ายแล้ว) + ภาษีหัก ณ
+    // ที่จ่าย และ ประกันสังคม (รอจ่าย). Idempotent by payroll_period_id.
+    let posted: { salaries: number; tax: number; sso: number } | null = null;
+    try {
+      posted = postPayrollToAccounta(id, user.id);
+    } catch (e) {
+      console.error("[payroll] postPayrollToAccounta failed", e);
+    }
+    return NextResponse.json({ ok: true, accounta: posted });
   }
 
   if (d.action === "unfinalize") {
@@ -84,6 +93,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       SET status = 'draft', finalized_by = NULL, finalized_at = NULL
       WHERE id = ?
     `).run(id);
+    // Roll back the auto-posted รายจ่าย so a re-finalize starts clean.
+    try {
+      removePayrollFromAccounta(id);
+    } catch (e) {
+      console.error("[payroll] removePayrollFromAccounta failed", e);
+    }
     return NextResponse.json({ ok: true });
   }
 

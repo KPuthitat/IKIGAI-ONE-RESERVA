@@ -435,6 +435,81 @@ export function settleReceivable(id: number, branchId: number, settledDate: stri
   ).run(settledDate, id, branchId).changes > 0;
 }
 
+// ── Payroll → ACCOUNTA auto-posting (owner 2026-06-22) ──────────────
+// When a payroll run is finalized, post one รายจ่าย per employee (เงินเดือน =
+// net pay, จ่ายแล้ว) plus two payables for the period: ภาษีหัก ณ ที่จ่าย and
+// ประกันสังคม (รอจ่าย — admin picks the remit date when paid). Salary(net) +
+// WHT + SSO = gross, so nothing double-counts. Tagged with payroll_period_id
+// so a re-finalize replaces them and an unfinalize removes them.
+
+function ensureExpenseCategory(name: string, code: string | null): void {
+  getDb().prepare(
+    "INSERT OR IGNORE INTO accounta_categories (code, name, sort_order) VALUES (?, ?, 600)"
+  ).run(code, name);
+}
+
+export function removePayrollFromAccounta(periodId: number): void {
+  getDb().prepare("DELETE FROM accounta_expenses WHERE payroll_period_id = ?").run(periodId);
+}
+
+export function postPayrollToAccounta(periodId: number, userId: number): { salaries: number; tax: number; sso: number } {
+  const db = getDb();
+  // Payroll runs org-wide (no branch on the period), so these post as
+  // company-level รายจ่าย: branch_id = NULL. company_id is filled only when
+  // the org has exactly one company, otherwise left NULL.
+  const period = db.prepare(
+    "SELECT id, period_start, period_end, pay_date FROM payroll_periods WHERE id = ?"
+  ).get(periodId) as { id: number; period_start: string; period_end: string; pay_date: string | null } | undefined;
+  if (!period) return { salaries: 0, tax: 0, sso: 0 };
+  const companies = db.prepare("SELECT id FROM companies").all() as Array<{ id: number }>;
+  const companyId = companies.length === 1 ? companies[0].id : null;
+  const branchId: number | null = null;
+  const lines = db.prepare(
+    "SELECT display_name, employment_type, net_pay, tax_amount, sso_amount FROM payroll_lines WHERE period_id = ?"
+  ).all(periodId) as Array<{ display_name: string; employment_type: string | null; net_pay: number; tax_amount: number; sso_amount: number }>;
+
+  ensureExpenseCategory("เงินเดือน/ค่าจ้าง", "LB");
+  ensureExpenseCategory("ภาษีหัก ณ ที่จ่าย", "WHT");
+  ensureExpenseCategory("ประกันสังคม", "SSO");
+
+  const payDate = period.pay_date ?? bkkToday();
+  const periodLabel = `${period.period_start} – ${period.period_end}`;
+  const ins = db.prepare(`
+    INSERT INTO accounta_expenses
+      (branch_id, company_id, bill_date, vendor_name, category, amount_total, has_tax_invoice,
+       vat_amount, base_amount, payment_status, payment_method, paid_date, note, review_status, created_by, payroll_period_id)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, 'confirmed', ?, ?)`);
+
+  const run = db.transaction(() => {
+    db.prepare("DELETE FROM accounta_expenses WHERE payroll_period_id = ?").run(periodId);
+    let salaries = 0, totalTax = 0, totalSso = 0;
+    for (const l of lines) {
+      const net = round2(l.net_pay || 0);
+      totalTax += l.tax_amount || 0;
+      totalSso += l.sso_amount || 0;
+      if (net <= 0) continue;
+      const typeLabel = l.employment_type === "pt" ? "พนักงานพาร์ทไทม์ " : l.employment_type === "ft" ? "พนักงานประจำ " : "";
+      ins.run(branchId, companyId, payDate, `${typeLabel}${l.display_name}`,
+        "เงินเดือน/ค่าจ้าง", net, net, "paid", "transfer", payDate,
+        `เงินเดือน/ค่าจ้าง รอบ ${periodLabel}`, userId, periodId);
+      salaries += 1;
+    }
+    totalTax = round2(totalTax); totalSso = round2(totalSso);
+    if (totalTax > 0) {
+      ins.run(branchId, companyId, payDate, "กรมสรรพากร (ภาษีหัก ณ ที่จ่าย)",
+        "ภาษีหัก ณ ที่จ่าย", totalTax, totalTax, "unpaid", null, null,
+        `ภาษีหัก ณ ที่จ่าย รอนำส่ง · รอบ ${periodLabel} (${lines.length} คน)`, userId, periodId);
+    }
+    if (totalSso > 0) {
+      ins.run(branchId, companyId, payDate, "สำนักงานประกันสังคม",
+        "ประกันสังคม", totalSso, totalSso, "unpaid", null, null,
+        `ประกันสังคมรอนำส่ง · รอบ ${periodLabel}`, userId, periodId);
+    }
+    return { salaries, tax: totalTax, sso: totalSso };
+  });
+  return run();
+}
+
 // ── Category vs benchmark % (owner 2026-06-18) ─────────────────────
 // Each category's actual spend as a % of REVENUE for the month, compared to
 // its target band, so the owner can see what's over/under the F&B benchmark.

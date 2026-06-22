@@ -5439,6 +5439,14 @@ function runMigrations(db: Database.Database): void {
   if (!expCols.some((c) => c.name === "doc_type")) {
     db.exec("ALTER TABLE accounta_expenses ADD COLUMN doc_type TEXT");
   }
+  // payroll_period_id (owner 2026-06-22): when a payroll run is finalized, the
+  // salary + ภาษีหัก ณ ที่จ่าย + ประกันสังคม expenses it auto-posts are tagged with
+  // the period id so a re-finalize replaces them (delete-then-insert) and an
+  // unfinalize removes them. NULL for ordinary manually-entered expenses.
+  if (!expCols.some((c) => c.name === "payroll_period_id")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN payroll_period_id INTEGER REFERENCES payroll_periods(id) ON DELETE SET NULL");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_accounta_exp_payroll ON accounta_expenses(payroll_period_id)");
+  }
   // Extra attachments per expense (owner 2026-06-20, paypers-like #3.3):
   // the primary receipt stays on accounta_expenses.doc_path; ADDITIONAL
   // evidence (slips, a second invoice, …) lives here. Each row is uploaded
