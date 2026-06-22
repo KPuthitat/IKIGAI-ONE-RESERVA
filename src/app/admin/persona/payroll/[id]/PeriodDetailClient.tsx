@@ -1510,6 +1510,14 @@ function LineEditModal({
                           {p.schedIn && p.schedOut
                             ? `${p.schedIn}–${p.schedOut}`
                             : <span className="text-slate-300">—</span>}
+                          {/* OT marker — explains why the worked window ran past
+                              the scheduled end (employee requested / admin set OT). */}
+                          {!p.statusLabel && day.otUntil && (
+                            <span className="block text-[9px] font-sans text-blue-600"
+                              title="มีการขอทำงานล่วงเวลา ระบบจึงขยายเวลาเลิกงานถึงเวลานี้ — ถ้ารวมงานทั้งวันไม่ถึง 8 ชม. จะนับเป็นชั่วโมงปกติ ไม่ใช่ค่าล่วงเวลา">
+                              {day.otApprovedUntil ? "ขอ OT ถึง " : "ตั้ง OT ถึง "}{day.otUntil} น.
+                            </span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono text-slate-500">
                           {p.breakMinutes > 0 ? fmtMin(p.breakMinutes) : <span className="text-slate-300">—</span>}
