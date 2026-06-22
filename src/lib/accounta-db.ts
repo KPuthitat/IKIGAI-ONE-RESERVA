@@ -1001,7 +1001,9 @@ export function ledgerRange(period: LedgerPeriod, anchor: string): { start: stri
   const dow = dt.getUTCDay();                 // 0=Sun..6=Sat
   const mon = new Date(dt.getTime() + (dow === 0 ? -6 : 1 - dow) * 86400_000);
   const sun = new Date(mon.getTime() + 6 * 86400_000);
-  return { start: iso(mon), end: iso(sun), label: `สัปดาห์ ${iso(mon)} – ${iso(sun)}` };
+  const TH_M = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+  const thFull = (x: Date) => `${x.getUTCDate()} ${TH_M[x.getUTCMonth() + 1]} ${x.getUTCFullYear() + 543}`;
+  return { start: iso(mon), end: iso(sun), label: `สัปดาห์ ${thFull(mon)} – ${thFull(sun)}` };
 }
 
 function isWeekend(ymd: string): boolean {

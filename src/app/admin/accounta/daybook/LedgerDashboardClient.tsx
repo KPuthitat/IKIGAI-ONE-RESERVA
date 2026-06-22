@@ -48,12 +48,13 @@ function shiftAnchor(anchor: string, period: LedgerPeriod, dir: 1 | -1): string 
   return new Date(Date.UTC(y, m - 1, d) + dir * 7 * 86400_000).toISOString().slice(0, 10);
 }
 
-const TH_DOW = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
-const TH_MON_SHORT = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+const TH_DOW_FULL = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+const TH_MON_FULL = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+// Full Thai date, e.g. "วันพุธที่ 27 พฤษภาคม 2569" (owner 2026-06-22 — no abbreviations).
 function fmtDayLabel(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
-  const dow = TH_DOW[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
-  return `${dow} ${d} ${TH_MON_SHORT[m]}`;
+  const dow = TH_DOW_FULL[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `วัน${dow}ที่ ${d} ${TH_MON_FULL[m]} ${y + 543}`;
 }
 
 const CAT_STATUS = {
@@ -80,7 +81,7 @@ function MonthlyCombo({ rows }: { rows: MonthlyRow[] }) {
   const barW = Math.min(9, colW / 3);
   const linePts = rows.map((m, i) => `${i * colW + colW / 2},${mapY(m.profit).toFixed(1)}`).join(" ");
   return (
-    <svg viewBox={`0 0 ${W} ${H + 16}`} width="100%" preserveAspectRatio="xMidYMid meet" role="img"
+    <svg viewBox={`0 0 ${W} ${H + 46}`} width="100%" preserveAspectRatio="xMidYMid meet" role="img"
       aria-label="กราฟรายรับ รายจ่าย และกำไรรายเดือน">
       <line x1={0} y1={zeroY} x2={W} y2={zeroY} stroke="#e2e8f0" strokeWidth={1} />
       {rows.map((m, i) => {
@@ -89,19 +90,20 @@ function MonthlyCombo({ rows }: { rows: MonthlyRow[] }) {
         return (
           <g key={m.month}>
             <rect x={cx - barW - 1} y={Math.min(rY, zeroY)} width={barW} height={Math.abs(zeroY - rY)} rx={1.5} fill="#10b981">
-              <title>{`${TH_MON_SHORT[m.month]} รายรับ ฿${fmtMoney(m.revenue)}`}</title>
+              <title>{`${TH_MON_FULL[m.month]} รายรับ ฿${fmtMoney(m.revenue)}`}</title>
             </rect>
             <rect x={cx + 1} y={Math.min(eY, zeroY)} width={barW} height={Math.abs(zeroY - eY)} rx={1.5} fill="#fb7185">
-              <title>{`${TH_MON_SHORT[m.month]} รายจ่าย ฿${fmtMoney(m.expense)}`}</title>
+              <title>{`${TH_MON_FULL[m.month]} รายจ่าย ฿${fmtMoney(m.expense)}`}</title>
             </rect>
-            <text x={cx} y={H + 12} textAnchor="middle" fontSize={8} fill="#94a3b8">{TH_MON_SHORT[m.month]}</text>
+            <text x={cx} y={H + 9} fontSize={8} fill="#94a3b8" textAnchor="end"
+              transform={`rotate(-40 ${cx} ${H + 9})`}>{TH_MON_FULL[m.month]}</text>
           </g>
         );
       })}
       <polyline points={linePts} fill="none" stroke="#6366f1" strokeWidth={1.6} strokeLinejoin="round" />
       {rows.map((m, i) => (
         <circle key={m.month} cx={i * colW + colW / 2} cy={mapY(m.profit)} r={1.8} fill="#6366f1">
-          <title>{`${TH_MON_SHORT[m.month]} กำไร ฿${fmtMoney(m.profit)}`}</title>
+          <title>{`${TH_MON_FULL[m.month]} กำไร ฿${fmtMoney(m.profit)}`}</title>
         </circle>
       ))}
     </svg>
