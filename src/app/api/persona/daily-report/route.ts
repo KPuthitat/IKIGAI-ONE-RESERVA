@@ -122,8 +122,18 @@ const Body = z.object({
   data: z.unknown(),    // narrowed per-type below
   /** PIN required only for shift_close — confirms staff identity before
    *  submitting the closing report (amounts + checklist). */
-  pin: z.string().optional()
+  pin: z.string().optional(),
+  /** shift_close only (owner 2026-06-22): submit/edit for a past date within
+   *  the 7-day window. Omitted = today. */
+  report_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** When editing a date that already has a live report, supersede it instead
+   *  of returning 409. The close form sets this when it loaded an existing
+   *  report for editing. */
+  replace_existing: z.boolean().optional()
 });
+
+// 7-day back-date/edit window for shift_close (owner 2026-06-22).
+const BACKDATE_DAYS = 7;
 
 // Type-aware data validator. Returns the parsed data on success, or
 // a Zod error to send back as 400. Keeps the route handler tidy.
@@ -154,7 +164,22 @@ export async function POST(req: Request) {
     );
   }
   const { type, branch_id, data, pin } = parsed.data;
-  const report_date = todayBkk();
+  // report_date: today by default. shift_close may back-date within the last
+  // 7 days (owner 2026-06-22) to fix a past day. Future dates and anything
+  // older than the window are rejected.
+  const today = todayBkk();
+  let report_date = today;
+  if (type === "shift_close" && parsed.data.report_date) {
+    report_date = parsed.data.report_date;
+    const minDate = new Date(Date.now() + 7 * 3600_000 - (BACKDATE_DAYS - 1) * 86400_000)
+      .toISOString().slice(0, 10);
+    if (report_date > today || report_date < minDate) {
+      return NextResponse.json(
+        { error: "date_out_of_window", message: `ส่ง/แก้ย้อนหลังได้เฉพาะ ${BACKDATE_DAYS} วันล่าสุด (ตั้งแต่ ${minDate})` },
+        { status: 400 }
+      );
+    }
+  }
 
   // PIN gate — only for shift_close (the financially significant report).
   // shift_open and readiness reports are informational and don't carry
@@ -209,15 +234,26 @@ export async function POST(req: Request) {
   `).get(type, branch.id, report_date) as
     | { id: number; user_id: number; created_at: string; opener_name: string; opener_prefix: string | null }
     | undefined;
+  const insertedAt = new Date().toISOString();
+  // Edit flow (owner 2026-06-22): when the form loaded an existing report for
+  // a date and the user re-submits with replace_existing, supersede the live
+  // row (keeping it as history) and chain the new one to it. The PIN already
+  // recorded who made the edit. Without replace_existing a live row → 409.
+  let replacesId: number | null = null;
   if (existing) {
-    return NextResponse.json({
-      error: "already_submitted",
-      existing: {
-        id: existing.id,
-        opener_name: nameWithPrefix(existing.opener_prefix, existing.opener_name),
-        created_at: existing.created_at
-      }
-    }, { status: 409 });
+    if (type === "shift_close" && parsed.data.replace_existing) {
+      db.prepare("UPDATE daily_reports SET superseded_at = ? WHERE id = ?").run(insertedAt, existing.id);
+      replacesId = existing.id;
+    } else {
+      return NextResponse.json({
+        error: "already_submitted",
+        existing: {
+          id: existing.id,
+          opener_name: nameWithPrefix(existing.opener_prefix, existing.opener_name),
+          created_at: existing.created_at
+        }
+      }, { status: 409 });
+    }
   }
 
   // Per-channel model (owner 2026-06-22): the day's total IS the sum of the
@@ -231,20 +267,19 @@ export async function POST(req: Request) {
     }
   }
 
-  // If a previous row for the same (branch, type, date) is now
-  // superseded — i.e. admin granted an unlock and the staff is now
-  // re-submitting — chain the new row to the most recent superseded
-  // one via replaces_id. The locked-view + LINE card will surface
-  // "ฉบับแก้ไข" so reviewers know this is a revision.
-  const supersededPrev = db.prepare(`
-    SELECT id FROM daily_reports
-    WHERE type = ? AND branch_id = ? AND report_date = ?
-      AND superseded_at IS NOT NULL
-    ORDER BY id DESC LIMIT 1
-  `).get(type, branch.id, report_date) as { id: number } | undefined;
-  const isRevision = !!supersededPrev;
+  // Chain the new row to whatever it supersedes: the row we just replaced
+  // above, or (for the admin-unlock flow) the most recent superseded row.
+  const supersededPrev = replacesId == null
+    ? (db.prepare(`
+        SELECT id FROM daily_reports
+        WHERE type = ? AND branch_id = ? AND report_date = ?
+          AND superseded_at IS NOT NULL
+        ORDER BY id DESC LIMIT 1
+      `).get(type, branch.id, report_date) as { id: number } | undefined)
+    : undefined;
+  const effectiveReplacesId = replacesId ?? supersededPrev?.id ?? null;
+  const isRevision = effectiveReplacesId != null;
 
-  const insertedAt = new Date().toISOString();
   const result = db.prepare(`
     INSERT INTO daily_reports
       (type, branch_id, user_id, report_date, data, replaces_id, created_at, updated_at)
@@ -255,7 +290,7 @@ export async function POST(req: Request) {
     user.id,
     report_date,
     JSON.stringify(v.data),
-    supersededPrev?.id ?? null,
+    effectiveReplacesId,
     insertedAt,
     insertedAt
   );

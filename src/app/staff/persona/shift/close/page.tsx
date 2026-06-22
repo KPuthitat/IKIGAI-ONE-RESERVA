@@ -18,13 +18,14 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { nameWithPrefix } from "@/lib/name";
 import ShiftCloseForm from "./ShiftCloseForm";
-import ShiftReportLocked from "../ShiftReportLocked";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "Check list หลังเลิกงาน · PERSONA" };
 
-export default function ShiftClosePage() {
+export default function ShiftClosePage({
+  searchParams
+}: { searchParams: { date?: string } }) {
   const user = requireUser();
   const lang = getLang();
   if (user.branches.length === 0) {
@@ -49,46 +50,28 @@ export default function ShiftClosePage() {
   const today = todayBkk();
   const typeLabel = t(lang, "staff.persona.shiftReport.typeLabel.shiftClose");
 
-  const existing = db.prepare(`
-    SELECT r.id, r.user_id, r.created_at, u.display_name AS opener_name, u.title_prefix AS opener_prefix
-    FROM daily_reports r JOIN users u ON r.user_id = u.id
-    WHERE r.type = 'shift_close' AND r.branch_id = ? AND r.report_date = ?
-      AND r.superseded_at IS NULL
-  `).get(branch.id, today) as
-    | { id: number; user_id: number; created_at: string; opener_name: string; opener_prefix: string | null }
-    | undefined;
-  if (existing) {
-    const lastReq = db.prepare(`
-      SELECT id, status, decision_note FROM shift_unlock_requests
-      WHERE daily_report_id = ? AND requested_by = ?
-      ORDER BY created_at DESC LIMIT 1
-    `).get(existing.id, user.id) as
-      | { id: number; status: string; decision_note: string | null }
-      | undefined;
-    return (
-      <div className="space-y-4">
-        <div>
-          <Link href="/staff/persona" className="text-sm text-slate-500 hover:text-brand">
-            ← {t(lang, "common.back")}
-          </Link>
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold">{typeLabel}</h1>
-          <p className="text-sm text-slate-500">{branch.name}</p>
-        </div>
-        <ShiftReportLocked
-          branchName={branch.name}
-          typeLabel={typeLabel}
-          reportId={existing.id}
-          openerName={nameWithPrefix(existing.opener_prefix, existing.opener_name)}
-          openedAtIso={existing.created_at}
-          alreadyRequested={lastReq?.status === "pending"}
-          lastRejected={lastReq?.status === "rejected"
-            ? { decisionNote: lastReq.decision_note }
-            : null}
-        />
-      </div>
-    );
+  // 7-day back-date/edit window (owner 2026-06-22): today + 6 days back.
+  const windowDates = Array.from({ length: 7 }, (_, i) =>
+    new Date(Date.now() + 7 * 3600_000 - i * 86400_000).toISOString().slice(0, 10)
+  );
+  const selectedDate = searchParams.date && windowDates.includes(searchParams.date)
+    ? searchParams.date : today;
+
+  // Which dates in the window already have a live report (for the pill ✓).
+  const submitted = new Set(
+    (db.prepare(
+      "SELECT report_date FROM daily_reports WHERE type='shift_close' AND branch_id=? AND superseded_at IS NULL AND report_date >= ?"
+    ).all(branch.id, windowDates[6]) as Array<{ report_date: string }>).map((r) => r.report_date)
+  );
+
+  // The live report for the selected date → pre-fill + edit mode.
+  const liveRow = db.prepare(
+    "SELECT data FROM daily_reports WHERE type='shift_close' AND branch_id=? AND report_date=? AND superseded_at IS NULL"
+  ).get(branch.id, selectedDate) as { data: string } | undefined;
+  let previousData: Record<string, unknown> | null = null;
+  const isEdit = !!liveRow;
+  if (liveRow) {
+    try { previousData = JSON.parse(liveRow.data); } catch { previousData = null; }
   }
 
   const checklist = db.prepare(`
@@ -97,23 +80,11 @@ export default function ShiftClosePage() {
     ORDER BY display_order ASC, id ASC
   `).all(branch.id) as ShiftChecklistItem[];
 
-  // Prefill source — when admin previously granted an unlock for
-  // today's shift_close at this branch, the superseded row carries
-  // the values the staff already typed. Reading the latest one and
-  // passing it as initialValues spares staff from re-typing the
-  // whole form when they only need to fix one or two fields.
-  // Falls back to empty when there's no prior submission.
-  type PrevRow = { data: string };
-  const previousRow = db.prepare(`
-    SELECT data FROM daily_reports
-    WHERE type = 'shift_close' AND branch_id = ? AND report_date = ?
-      AND superseded_at IS NOT NULL
-    ORDER BY id DESC LIMIT 1
-  `).get(branch.id, today) as PrevRow | undefined;
-  let previousData: Record<string, unknown> | null = null;
-  if (previousRow) {
-    try { previousData = JSON.parse(previousRow.data); } catch { previousData = null; }
-  }
+  const dayLabel = (d: string) => {
+    if (d === today) return "วันนี้";
+    const [y, m, dd] = d.split("-").map(Number);
+    return `${dd}/${m}`;
+  };
 
   return (
     <div className="space-y-4">
@@ -126,7 +97,30 @@ export default function ShiftClosePage() {
         <h1 className="text-2xl font-bold">{typeLabel}</h1>
         <p className="text-sm text-slate-500">{branch.name}</p>
       </div>
+
+      {/* Date selector — submit/edit within the last 7 days (owner 2026-06-22). */}
+      <div className="card space-y-1.5">
+        <div className="text-xs font-bold text-slate-600">เลือกวันที่ของรายงาน (ย้อนหลังได้ 7 วัน)</div>
+        <div className="flex flex-wrap gap-1.5">
+          {windowDates.map((d) => (
+            <Link key={d} href={`/staff/persona/shift/close?date=${d}`}
+              className={`text-xs px-2.5 py-1.5 rounded-md border ${
+                d === selectedDate
+                  ? "bg-brand text-white border-brand"
+                  : "border-slate-300 text-slate-600 hover:bg-slate-50"
+              }`}>
+              {dayLabel(d)}{submitted.has(d) ? " ✓" : ""}
+            </Link>
+          ))}
+        </div>
+        <p className="text-[11px] text-slate-400">
+          ✓ = ส่งแล้ว (กดเพื่อแก้ไข) · ของเดิมจะถูกเก็บเป็นประวัติ
+        </p>
+      </div>
+
       <ShiftCloseForm
+        reportDate={selectedDate}
+        isEdit={isEdit}
         branchId={branch.id}
         branchName={branch.name}
         closerName={nameWithPrefix(user.title_prefix, user.display_name)}
@@ -141,7 +135,7 @@ export default function ShiftClosePage() {
         // Material-purchase quota for today (owner 2026-06-21). null when the
         // branch hasn't enabled it. The form shows today's quota + records how
         // much was ordered, flagging over-quota on the report.
-        materialQuota={materialPurchaseQuota(branch.id, today)}
+        materialQuota={materialPurchaseQuota(branch.id, selectedDate)}
         previousData={previousData}
         // Per-branch headline label + order + in-red-box knobs.
         // The form forwards these into the live FlexPreview so the

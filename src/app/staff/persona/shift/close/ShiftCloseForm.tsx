@@ -69,6 +69,8 @@ export default function ShiftCloseForm({
   incomeChannels = [],
   materialQuota = null,
   previousData = null,
+  reportDate,
+  isEdit = false,
   defaultFieldConfig
 }: {
   branchId: number;
@@ -104,10 +106,16 @@ export default function ShiftCloseForm({
    *  shift-close LINE Flex report. Optional — admin can backfill via
    *  /admin/ascenda/revenue if staff don't have the number at close. */
   requireDailyRevenue?: boolean;
-  /** Most recent superseded report's parsed `data` JSON, if any.
-   *  Passed in when admin previously granted an unlock so the form
-   *  re-renders pre-filled with what the staff typed before. */
+  /** Parsed `data` JSON to pre-fill the form — the report being edited
+   *  (back-date/edit flow 2026-06-22) or the most recent superseded report
+   *  (admin-unlock flow). */
   previousData?: Record<string, unknown> | null;
+  /** The date this report is for (YYYY-MM-DD). Sent in the payload so the
+   *  server can back-date within the 7-day window. Defaults to today. */
+  reportDate?: string;
+  /** True when a live report already exists for reportDate and we're editing
+   *  it — the submit supersedes the existing row instead of being rejected. */
+  isEdit?: boolean;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -159,16 +167,26 @@ export default function ShiftCloseForm({
   // staff can skip; admin backfills via /admin/ascenda/revenue.
   // Lands in branch_daily_revenue (NOT in daily_reports.data) so the
   // ASCENDA COL/sales-growth calculators have a clean source.
-  const [dailyRevenue, setDailyRevenue] = useState<string>("");
-  // Per-channel sales (owner 2026-06-21). Keyed by channel id. Empty is
-  // treated as 0 — every channel is always shown, staff fill the ones with
-  // sales. The sum must equal ยอดขายวันนี้ exactly or submit is blocked.
-  const [channelAmounts, setChannelAmounts] = useState<Record<number, string>>(() =>
-    Object.fromEntries(incomeChannels.map((c) => [c.id, ""]))
-  );
+  const [dailyRevenue, setDailyRevenue] = useState<string>(() => {
+    const v = previousData?.daily_revenue;
+    return typeof v === "number" ? String(v) : "";
+  });
+  // Per-channel sales (owner 2026-06-21). Keyed by channel id. Empty = 0; the
+  // day's total is the sum. Pre-fill from a report being edited (match by name).
+  const [channelAmounts, setChannelAmounts] = useState<Record<number, string>>(() => {
+    const prev = (previousData?.channel_amounts ?? []) as Array<{ channel?: string; amount?: number }>;
+    const byName = new Map(prev.map((p) => [p.channel, p.amount]));
+    return Object.fromEntries(incomeChannels.map((c) => {
+      const a = byName.get(c.name);
+      return [c.id, typeof a === "number" && a > 0 ? String(a) : ""];
+    }));
+  });
   // Material ordered today (owner 2026-06-21) — only when the branch enabled
   // the quota feature. Blank = 0. Compared to today's quota on the report.
-  const [materialOrdered, setMaterialOrdered] = useState<string>("");
+  const [materialOrdered, setMaterialOrdered] = useState<string>(() => {
+    const v = previousData?.material_ordered_today;
+    return typeof v === "number" ? String(v) : "";
+  });
   const [checked, setChecked] = useState<Record<number, boolean>>(() =>
     Object.fromEntries(checklistItems.map((it) => {
       const prev = prevByLabel.get(it.label);
@@ -392,6 +410,8 @@ export default function ShiftCloseForm({
       setPendingPayload({
         type: "shift_close",
         branch_id: branchId,
+        ...(reportDate ? { report_date: reportDate } : {}),
+        ...(isEdit ? { replace_existing: true } : {}),
         data: {
           closing_drawer_amount: closingParsed,
           service_charge_amount: svcParsed,
@@ -471,6 +491,11 @@ export default function ShiftCloseForm({
 
   return (
     <form onSubmit={submit} className="space-y-4">
+      {isEdit && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
+          ✏️ กำลัง<b>แก้ไข</b>รายงานที่เคยส่งแล้ว — บันทึกใหม่จะทับของเดิม (เก็บประวัติว่าใครแก้)
+        </div>
+      )}
       <div className="card space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
