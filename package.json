@@ -15,6 +15,7 @@
     "test:rbac": "node --import tsx scripts/test-rbac.ts",
     "test:payroll": "node --import tsx scripts/test-payroll.ts",
     "test:revshare": "node --import tsx scripts/test-revshare.ts",
+    "test:revshare-pos": "node --import tsx scripts/test-revshare-pos.ts",
     "db:init": "node --import tsx scripts/init-db.ts",
     "db:seed": "node --import tsx scripts/seed.ts",
     "db:backup": "node scripts/backup-local.mjs",
@@ -29,6 +30,7 @@
     "qrcode": "^1.5.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "xlsx": "^0.18.5",
     "zod": "^3.23.8"
   },
   "devDependencies": {
