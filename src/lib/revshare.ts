@@ -9,6 +9,7 @@
 
 export type Tier = { lower: number; upper: number | null; rate: number };
 export type Floor = { monthFrom: number; monthTo: number; amount: number };
+export type SalesBase = "gross" | "after_discount" | "nett";
 
 /** Half-up round to 2 dp (money). +1e-9 nudges past float artefacts like
  *  x*100 = 4619.9999999. */
