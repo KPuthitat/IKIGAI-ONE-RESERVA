@@ -5285,6 +5285,28 @@ function runMigrations(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- เงินสด/บัญชีธนาคารที่ติดตาม (owner 2026-06-22, PEAK-style "เงินคงเหลือ").
+    -- We don't tag each transaction to an account, so balances are tracked as
+    -- manual snapshots: the owner records each account's balance + the as-of
+    -- date; the dashboard shows them + a total. branch_id NULL = ทั้งบริษัท.
+    CREATE TABLE IF NOT EXISTS accounta_cash_accounts (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id     INTEGER REFERENCES branches(id),
+      name          TEXT NOT NULL,                 -- e.g. "เงินสดหน้าร้าน", "กสิกร xxxx"
+      type          TEXT NOT NULL DEFAULT 'cash',  -- 'cash' | 'bank'
+      bank_label    TEXT,                          -- free text: ธนาคาร/เลขบัญชีย่อ
+      balance       REAL NOT NULL DEFAULT 0,       -- ยอดคงเหลือล่าสุด (snapshot)
+      balance_as_of TEXT,                          -- YYYY-MM-DD ของยอดล่าสุด
+      sort_order    INTEGER NOT NULL DEFAULT 100,
+      active        INTEGER NOT NULL DEFAULT 1,
+      note          TEXT,
+      created_by    INTEGER REFERENCES users(id),
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_accounta_cash_accounts_branch
+      ON accounta_cash_accounts(branch_id, active, sort_order);
+
     -- รายรับ by payment channel (owner 2026-06-17, from the Excel income
     -- side). Channels are an owner-extensible picklist; income rows record
     -- one amount per channel per day per branch.

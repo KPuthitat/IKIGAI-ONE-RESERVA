@@ -30,6 +30,7 @@ type Dash = {
 };
 type MonthlyRow = { month: number; revenue: number; expense: number; profit: number };
 type Payables = { whtUnpaid: number; ssoUnpaid: number; branchUnpaidTotal: number; branchUnpaidCount: number };
+type CashAccount = { id: number; name: string; type: string; bank_label: string | null; balance: number; balance_as_of: string | null; company_wide: boolean };
 export type LedgerExpenseRow = {
   id: number; bill_date: string; vendor_name: string | null; doc_type: string | null;
   category: string | null; amount_total: number; vat_amount: number;
@@ -137,10 +138,11 @@ function Donut({ items }: { items: Array<{ label: string; amount: number }> }) {
 }
 
 export default function LedgerDashboardClient({
-  dash, expenses, period, anchor, monthly, trendYear, payables
+  dash, expenses, period, anchor, monthly, trendYear, payables, cashAccounts, cashTotal
 }: {
   dash: Dash; expenses: LedgerExpenseRow[]; period: LedgerPeriod; anchor: string;
   monthly: MonthlyRow[]; trendYear: number; payables: Payables;
+  cashAccounts: CashAccount[]; cashTotal: number;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -338,6 +340,37 @@ export default function LedgerDashboardClient({
           <div className={`text-lg font-bold ${payables.branchUnpaidTotal > 0 ? "text-rose-600" : "text-slate-400"}`}>฿{fmtMoney(payables.branchUnpaidTotal)}</div>
           <div className="text-[10px] text-slate-400">{payables.branchUnpaidCount} รายการ</div>
         </div>
+      </div>
+
+      {/* Cash / bank balances (manual snapshots) */}
+      <div className="card space-y-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-sm font-bold text-slate-800">เงินสด / บัญชีธนาคาร · เงินคงเหลือ</div>
+          <Link href="/admin/accounta/cash-accounts" className="text-xs text-brand hover:underline">จัดการบัญชี →</Link>
+        </div>
+        {cashAccounts.length === 0 ? (
+          <p className="text-xs text-slate-400">ยังไม่ได้ตั้งบัญชีเงินสด/ธนาคาร — <Link href="/admin/accounta/cash-accounts" className="text-brand hover:underline">เพิ่มบัญชีเพื่อเริ่มติดตามยอดเงิน</Link></p>
+        ) : (
+          <>
+            <div className="space-y-1">
+              {cashAccounts.map((a) => (
+                <div key={a.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="text-slate-600 truncate">
+                    {a.name}
+                    <span className="text-[10px] text-slate-400 ml-1">{a.type === "bank" ? "ธนาคาร" : "เงินสด"}{a.company_wide ? " · ทั้งบริษัท" : ""}</span>
+                    {a.balance_as_of && <span className="text-[10px] text-slate-300 ml-1">ณ {(() => { const [y, m, d] = a.balance_as_of!.split("-").map(Number); return `${d} ${TH_MON_FULL[m]} ${y + 543}`; })()}</span>}
+                  </span>
+                  <span className="font-mono text-slate-800 shrink-0">฿{fmtMoney(a.balance)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-slate-100 pt-1.5 flex items-center justify-between">
+              <span className="text-sm font-bold text-slate-700">เงินคงเหลือรวม</span>
+              <span className="font-mono font-bold text-slate-900">฿{fmtMoney(cashTotal)}</span>
+            </div>
+            <p className="text-[10px] text-slate-400">ยอดเป็นการบันทึกเอง (snapshot) ไม่ได้ผูกกับบิลอัตโนมัติ</p>
+          </>
+        )}
       </div>
 
       {/* Sales analytics */}

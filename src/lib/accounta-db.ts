@@ -1206,6 +1206,82 @@ export function accountaPayables(branchId: number): AccountaPayables {
   };
 }
 
+// ── Cash / bank balance tracking (owner 2026-06-22) ────────────────
+// Manual-snapshot balances (we don't tag transactions to accounts). The owner
+// records each account's balance + as-of date; the dashboard shows a total.
+
+export type CashAccount = {
+  id: number; branch_id: number | null; name: string; type: string;
+  bank_label: string | null; balance: number; balance_as_of: string | null;
+  sort_order: number; active: number; note: string | null;
+};
+
+/** Accounts visible to a branch = its own + company-wide (branch_id NULL). */
+export function listCashAccounts(branchId: number, includeInactive = false): CashAccount[] {
+  const where = includeInactive ? "" : "AND active = 1";
+  return getDb().prepare(
+    `SELECT id, branch_id, name, type, bank_label, balance, balance_as_of, sort_order, active, note
+       FROM accounta_cash_accounts
+      WHERE (branch_id = ? OR branch_id IS NULL) ${where}
+      ORDER BY active DESC, sort_order, name COLLATE NOCASE`
+  ).all(branchId) as CashAccount[];
+}
+
+export function cashAccountsTotal(branchId: number): number {
+  const r = getDb().prepare(
+    "SELECT COALESCE(SUM(balance),0) AS s FROM accounta_cash_accounts WHERE (branch_id = ? OR branch_id IS NULL) AND active = 1"
+  ).get(branchId) as { s: number };
+  return round2(r.s);
+}
+
+export function createCashAccount(d: {
+  branchId: number | null; name: string; type: string; bankLabel?: string | null;
+  balance?: number; balanceAsOf?: string | null; note?: string | null; createdBy: number;
+}): number {
+  const db = getDb();
+  const max = (db.prepare(
+    "SELECT COALESCE(MAX(sort_order),0) AS m FROM accounta_cash_accounts WHERE branch_id IS ?"
+  ).get(d.branchId) as { m: number }).m;
+  return Number(db.prepare(
+    `INSERT INTO accounta_cash_accounts (branch_id, name, type, bank_label, balance, balance_as_of, sort_order, note, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    d.branchId, d.name.trim(), d.type === "bank" ? "bank" : "cash", d.bankLabel ?? null,
+    round2(d.balance ?? 0), d.balanceAsOf ?? null, max + 10, d.note ?? null, d.createdBy
+  ).lastInsertRowid);
+}
+
+/** Update editable fields; branchId guards that the account belongs to this
+ *  branch or is company-wide (NULL). Only provided keys change. */
+export function updateCashAccount(id: number, branchId: number, d: {
+  name?: string; type?: string; bankLabel?: string | null;
+  balance?: number; balanceAsOf?: string | null; active?: boolean; note?: string | null;
+}): boolean {
+  const db = getDb();
+  const owned = db.prepare(
+    "SELECT id FROM accounta_cash_accounts WHERE id = ? AND (branch_id = ? OR branch_id IS NULL)"
+  ).get(id, branchId);
+  if (!owned) return false;
+  const sets: string[] = []; const vals: Array<string | number | null> = [];
+  if (d.name !== undefined) { sets.push("name = ?"); vals.push(d.name.trim()); }
+  if (d.type !== undefined) { sets.push("type = ?"); vals.push(d.type === "bank" ? "bank" : "cash"); }
+  if (d.bankLabel !== undefined) { sets.push("bank_label = ?"); vals.push(d.bankLabel); }
+  if (d.balance !== undefined) { sets.push("balance = ?"); vals.push(round2(d.balance)); }
+  if (d.balanceAsOf !== undefined) { sets.push("balance_as_of = ?"); vals.push(d.balanceAsOf); }
+  if (d.active !== undefined) { sets.push("active = ?"); vals.push(d.active ? 1 : 0); }
+  if (d.note !== undefined) { sets.push("note = ?"); vals.push(d.note); }
+  if (sets.length === 0) return false;
+  sets.push("updated_at = CURRENT_TIMESTAMP");
+  vals.push(id);
+  return db.prepare(`UPDATE accounta_cash_accounts SET ${sets.join(", ")} WHERE id = ?`).run(...vals).changes > 0;
+}
+
+export function deleteCashAccount(id: number, branchId: number): boolean {
+  return getDb().prepare(
+    "DELETE FROM accounta_cash_accounts WHERE id = ? AND (branch_id = ? OR branch_id IS NULL)"
+  ).run(id, branchId).changes > 0;
+}
+
 // ── Material-purchase quota (owner 2026-06-21) ─────────────────────
 // Monthly raw-material budget = target sales (X) × max-material-% (Y).
 // Buying once a week on a chosen weekday; today's quota redistributes the
