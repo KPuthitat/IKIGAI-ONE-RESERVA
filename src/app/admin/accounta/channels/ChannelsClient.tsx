@@ -86,13 +86,13 @@ export default function ChannelsClient({
           <ul className="divide-y divide-slate-100">
             {active.map((c, i) => (
               <li key={c.id} className="flex items-center gap-2 py-2">
-                <div className="flex flex-col">
+                <div className="flex flex-col gap-0.5">
                   <button type="button" onClick={() => call("PATCH", { id: c.id, move: "up" })}
-                    disabled={busy || i === 0}
-                    className="text-xs px-1.5 text-slate-500 hover:text-brand disabled:opacity-30" aria-label="ขึ้น">▲</button>
+                    disabled={busy || i === 0} title="เลื่อนขึ้น"
+                    className="w-6 h-5 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:bg-brand hover:text-white hover:border-brand disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-slate-500" aria-label="เลื่อนขึ้น">▲</button>
                   <button type="button" onClick={() => call("PATCH", { id: c.id, move: "down" })}
-                    disabled={busy || i === active.length - 1}
-                    className="text-xs px-1.5 text-slate-500 hover:text-brand disabled:opacity-30" aria-label="ลง">▼</button>
+                    disabled={busy || i === active.length - 1} title="เลื่อนลง"
+                    className="w-6 h-5 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:bg-brand hover:text-white hover:border-brand disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-slate-500" aria-label="เลื่อนลง">▼</button>
                 </div>
                 {editId === c.id ? (
                   <input
