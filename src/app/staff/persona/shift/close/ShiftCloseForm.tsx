@@ -637,7 +637,19 @@ export default function ShiftCloseForm({
           quota + records what was ordered; flags over-quota on the report. */}
       {materialQuota && (() => {
         const ordered = parseAmount(materialOrdered) ?? 0;
-        const over = ordered > materialQuota.quotaToday + 0.005;
+        const quota = materialQuota.quotaToday;
+        // diff > 0 = เกินโควตา, diff < 0 = ยังไม่ถึงโควตา (เหลอ/ขาด), ≈0 = พอดี.
+        const diff = ordered - quota;
+        const over = diff > 0.005;
+        const under = diff < -0.005;
+        const status = over
+          ? { tone: "bg-rose-50 border-rose-200 text-rose-700",
+              text: `⚠ เกินโควตา ฿${fmtThb(diff)} (สั่ง ฿${fmtThb(ordered)} / โควตา ฿${fmtThb(quota)})` }
+          : under
+          ? { tone: "bg-amber-50 border-amber-200 text-amber-700",
+              text: `ต่ำกว่าโควตา ฿${fmtThb(-diff)} — ยังสั่งได้อีก ฿${fmtThb(-diff)} (สั่ง ฿${fmtThb(ordered)} / โควตา ฿${fmtThb(quota)})` }
+          : { tone: "bg-emerald-50 border-emerald-200 text-emerald-700",
+              text: `✓ พอดีโควตา ฿${fmtThb(quota)}` };
         return (
           <div className="card space-y-3">
             <h2 className="font-bold text-slate-800">โควตาสั่งซื้อวัตถุดิบวันนี้</h2>
@@ -648,7 +660,7 @@ export default function ShiftCloseForm({
                   ? ` · วัน${materialQuota.weekdayLabel} (วันสั่งหลัก = งบเดือน ÷ 30)`
                   : " · วันปกติ (เฉลี่ยงบที่เหลือ)"}
               </div>
-              <div className="text-2xl font-bold text-emerald-700">฿{fmtThb(materialQuota.quotaToday)}</div>
+              <div className="text-2xl font-bold text-emerald-700">฿{fmtThb(quota)}</div>
               <div className="text-[11px] text-slate-500 mt-1">
                 งบเดือนนี้ ฿{fmtThb(materialQuota.monthBudget)} · ซื้อไปแล้ว ฿{fmtThb(materialQuota.spentThisMonth)}
                 {materialQuota.todayIsPurchaseDay
@@ -662,15 +674,10 @@ export default function ShiftCloseForm({
                 value={materialOrdered} placeholder="0.00 (ไม่มีก็ใส่ 0)"
                 onChange={(e) => setMaterialOrdered(e.target.value)} />
             </div>
-            {ordered > 0 && (
-              <div className={`rounded-lg p-2.5 text-sm font-bold text-center border ${
-                over ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-emerald-50 border-emerald-200 text-emerald-700"
-              }`}>
-                {over
-                  ? `⚠ เกินโควตา ฿${fmtThb(ordered - materialQuota.quotaToday)} (สั่ง ฿${fmtThb(ordered)} / โควตา ฿${fmtThb(materialQuota.quotaToday)})`
-                  : `✓ ปกติ — อยู่ในโควตา (สั่ง ฿${fmtThb(ordered)} / โควตา ฿${fmtThb(materialQuota.quotaToday)})`}
-              </div>
-            )}
+            {/* เกิน / ขาด คำนวณอัตโนมัติแบบ live — โชว์ตลอด (ยังไม่กรอก = เหลือเต็มโควตา) */}
+            <div className={`rounded-lg p-2.5 text-sm font-bold text-center border ${status.tone}`}>
+              {status.text}
+            </div>
           </div>
         );
       })()}
