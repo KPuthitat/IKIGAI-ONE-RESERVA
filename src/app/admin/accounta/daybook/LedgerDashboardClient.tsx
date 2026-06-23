@@ -69,44 +69,78 @@ const CAT_STATUS = {
 // same slice keeps the same colour across renders.
 const DONUT_COLORS = ["#10b981", "#3b82f6", "#6366f1", "#f59e0b", "#ec4899", "#14b8a6", "#a855f7", "#94a3b8"];
 
-// 12-month revenue/expense bars + profit line — pure SVG (no chart lib).
-// Wide, short viewBox + maxHeight so it stays a tidy band on desktop instead of
-// scaling to ~700px tall (owner 2026-06-22). The wider box fits full Thai month
-// names horizontally (no abbreviations — owner standard).
+// Compact money label for the chart axis/bars: 232000 → "232k", 1.5e6 → "1.5M".
+function fmtK(v: number): string {
+  const a = Math.abs(v);
+  if (a >= 1_000_000) return `${(v / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (a >= 1_000) return `${Math.round(v / 1_000)}k`;
+  return String(Math.round(v));
+}
+// Round a value up to a clean 1/2/2.5/5/10 × 10ⁿ for tidy gridline labels.
+function niceTop(v: number): number {
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / p;
+  const m = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
+  return m * p;
+}
+
+// 12-month revenue/expense bars + value labels + thin profit line — pure SVG
+// (no chart lib), "style C" (owner 2026-06-23). Y-axis gridlines + labels;
+// value above each revenue bar; peach expense bars; muted profit line. Wide,
+// short viewBox + aspect-ratio so it stays a tidy band, not a 700px wall.
 function MonthlyCombo({ rows }: { rows: MonthlyRow[] }) {
-  const W = 900, H = 120, padTop = 12, padBottom = 8, labelBand = 22;
-  const vals = rows.flatMap((m) => [m.revenue, m.expense, m.profit, 0]);
-  const maxV = Math.max(...vals, 1);
-  const minV = Math.min(...vals, 0);
-  const span = maxV - minV || 1;
-  const mapY = (v: number) => padTop + ((maxV - v) / span) * (H - padTop - padBottom);
+  const W = 900, Lm = 40, H = 132, padTop = 16, padBottom = 4, labelBand = 22;
+  const plotW = W - Lm;
+  const maxV = Math.max(...rows.map((m) => m.revenue), ...rows.map((m) => m.expense), ...rows.map((m) => m.profit), 0);
+  const minV = Math.min(...rows.map((m) => m.profit), 0);
+  const top = niceTop(maxV);
+  const bottom = minV < 0 ? -niceTop(-minV) : 0;
+  const span = top - bottom || 1;
+  const mapY = (v: number) => padTop + ((top - v) / span) * (H - padTop - padBottom);
   const zeroY = mapY(0);
-  const colW = W / rows.length;
-  const barW = Math.min(14, colW / 3.2);
-  const linePts = rows.map((m, i) => `${(i * colW + colW / 2).toFixed(1)},${mapY(m.profit).toFixed(1)}`).join(" ");
+  const colW = plotW / rows.length;
+  const barW = Math.min(13, colW / 3.4);
+  const N = 4;
+  const ticks = Array.from({ length: N + 1 }, (_, i) => bottom + (span * i) / N);
+  const linePts = rows.map((m, i) => `${(Lm + i * colW + colW / 2).toFixed(1)},${mapY(m.profit).toFixed(1)}`).join(" ");
   return (
     <svg viewBox={`0 0 ${W} ${H + labelBand}`} preserveAspectRatio="xMidYMid meet" role="img"
       aria-label="กราฟรายรับ รายจ่าย และกำไรรายเดือน"
-      style={{ display: "block", width: "100%", height: "auto", aspectRatio: `${W} / ${H + labelBand}`, maxHeight: 240 }}>
-      <line x1={0} y1={zeroY} x2={W} y2={zeroY} stroke="#e2e8f0" strokeWidth={1} />
+      style={{ display: "block", width: "100%", height: "auto", aspectRatio: `${W} / ${H + labelBand}`, maxHeight: 260 }}>
+      {/* Y gridlines + labels */}
+      {ticks.map((t, i) => {
+        const y = mapY(t);
+        return (
+          <g key={i}>
+            <line x1={Lm} y1={y} x2={W} y2={y} stroke={t === 0 && bottom < 0 ? "#cbd5e1" : "#eef2f7"} strokeWidth={1} />
+            <text x={Lm - 5} y={y + 3} textAnchor="end" fontSize={8} fill="#94a3b8">{fmtK(t)}</text>
+          </g>
+        );
+      })}
+      {/* Bars + value label on revenue */}
       {rows.map((m, i) => {
-        const cx = i * colW + colW / 2;
+        const cx = Lm + i * colW + colW / 2;
         const rY = mapY(m.revenue), eY = mapY(m.expense);
         return (
           <g key={m.month}>
             <rect x={cx - barW - 1} y={Math.min(rY, zeroY)} width={barW} height={Math.abs(zeroY - rY)} rx={2} fill="#10b981">
               <title>{`${TH_MON_FULL[m.month]} รายรับ ฿${fmtMoney(m.revenue)}`}</title>
             </rect>
-            <rect x={cx + 1} y={Math.min(eY, zeroY)} width={barW} height={Math.abs(zeroY - eY)} rx={2} fill="#fb7185">
+            <rect x={cx + 1} y={Math.min(eY, zeroY)} width={barW} height={Math.abs(zeroY - eY)} rx={2} fill="#f5c97a">
               <title>{`${TH_MON_FULL[m.month]} รายจ่าย ฿${fmtMoney(m.expense)}`}</title>
             </rect>
+            {m.revenue > 0 && (
+              <text x={cx - barW / 2 - 0.5} y={rY - 3} textAnchor="middle" fontSize={7.5} fontWeight={600} fill="#0F6E56">{fmtK(m.revenue)}</text>
+            )}
             <text x={cx} y={H + 15} fontSize={9} fill="#94a3b8" textAnchor="middle">{TH_MON_FULL[m.month]}</text>
           </g>
         );
       })}
-      <polyline points={linePts} fill="none" stroke="#6366f1" strokeWidth={1.8} strokeLinejoin="round" />
+      {/* Thin profit line + dots */}
+      <polyline points={linePts} fill="none" stroke="#6366f1" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
       {rows.map((m, i) => (
-        <circle key={m.month} cx={i * colW + colW / 2} cy={mapY(m.profit)} r={2.2} fill="#6366f1">
+        <circle key={m.month} cx={Lm + i * colW + colW / 2} cy={mapY(m.profit)} r={2} fill="#6366f1">
           <title>{`${TH_MON_FULL[m.month]} กำไร ฿${fmtMoney(m.profit)}`}</title>
         </circle>
       ))}
@@ -254,7 +288,7 @@ export default function LedgerDashboardClient({
           <div className="text-sm font-bold text-slate-800">ภาพรวมรายรับและรายจ่าย · ปี {trendYear + 543}</div>
           <div className="flex items-center gap-3 text-[11px] text-slate-500">
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />รายรับ</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-rose-400" />รายจ่าย</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#f5c97a" }} />รายจ่าย</span>
             <span className="flex items-center gap-1"><span className="w-3.5 h-[3px] rounded bg-indigo-500" />กำไร</span>
           </div>
         </div>
