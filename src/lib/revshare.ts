@@ -127,10 +127,10 @@ export const DEFAULT_TIERS: Tier[] = [
   { lower: 1_000_000, upper: null, rate: 0.10 }
 ];
 
+// Owner 2026-06-23: minimum billed GP is a flat 20,000 บาท/เดือน (20% of the
+// 100,000 baseline they agreed on) — if tier GP comes out below it, bill 20,000.
 export const DEFAULT_FLOORS: Floor[] = [
-  { monthFrom: 1, monthTo: 2, amount: 15_000 },
-  { monthFrom: 3, monthTo: 4, amount: 18_000 },
-  { monthFrom: 5, monthTo: 6, amount: 20_000 }
+  { monthFrom: 1, monthTo: 120, amount: 20_000 }
 ];
 
 // ── Thai date helpers (พ.ศ.) — small + local; the codebase has no shared one. ─
@@ -150,14 +150,18 @@ export function thaiDate(iso: string): string {
   return `${d} ${TH_MONTHS_FULL[m]} ${y + 543}`;
 }
 
-/** A compact label for a round's date span, e.g. "23 มิ.ย." (one day),
- *  "15–21 มิ.ย." (same month) or "30 มิ.ย.–6 ก.ค." (spanning two months). */
+/** A label for a round's date span — full month names + พ.ศ. year, no
+ *  abbreviations (owner 2026-06-23: ทั้งระบบไม่ใช้ตัวย่อ). e.g.
+ *  "19 มิถุนายน 2569" (one day), "15–21 มิถุนายน 2569" (same month/year),
+ *  "30 มิถุนายน – 6 กรกฎาคม 2569" (cross-month). */
 export function roundLabel(startIso: string, endIso: string): string {
-  const [, sm, sd] = startIso.split("-").map(Number);
-  const [, em, ed] = endIso.split("-").map(Number);
-  if (startIso === endIso) return `${sd} ${TH_MONTHS_ABBR[sm]}`;
-  if (sm === em) return `${sd}–${ed} ${TH_MONTHS_ABBR[sm]}`;
-  return `${sd} ${TH_MONTHS_ABBR[sm]}–${ed} ${TH_MONTHS_ABBR[em]}`;
+  const [sy, sm, sd] = startIso.split("-").map(Number);
+  const [ey, em, ed] = endIso.split("-").map(Number);
+  const syB = sy + 543, eyB = ey + 543;
+  if (startIso === endIso) return `${sd} ${TH_MONTHS_FULL[sm]} ${syB}`;
+  if (sy === ey && sm === em) return `${sd}–${ed} ${TH_MONTHS_FULL[sm]} ${syB}`;
+  if (sy === ey) return `${sd} ${TH_MONTHS_FULL[sm]} – ${ed} ${TH_MONTHS_FULL[em]} ${eyB}`;
+  return `${sd} ${TH_MONTHS_FULL[sm]} ${syB} – ${ed} ${TH_MONTHS_FULL[em]} ${eyB}`;
 }
 
 // ── Daily → weekly rollup (owner 2026-06-23: import POS daily, transfer weekly,

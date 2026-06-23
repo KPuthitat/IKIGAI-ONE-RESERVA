@@ -36,6 +36,9 @@ export default function RoundsClient({
   const [preview, setPreview] = useState<PosPreview | null>(null);
   const [selCats, setSelCats] = useState<Set<string>>(new Set());
   const [base, setBase] = useState<SalesBase>(partner.sales_base);
+  // Category selection is pre-filled from the partner's settings and LOCKED;
+  // changing it requires a PIN (owner 2026-06-23).
+  const [catsLocked, setCatsLocked] = useState(true);
 
   const totalSales = rounds.reduce((s, r) => s + r.sales_amount, 0);
   // Group daily entries into ISO weeks (the weekly TRANSFER amount).
@@ -86,6 +89,17 @@ export default function RoundsClient({
     return { ok: true };
   }
 
+  // Verify the caller's own PIN without a DB write (used to unlock category edit).
+  async function verifyPin(pin: string): Promise<{ ok: boolean; pinError?: boolean }> {
+    const res = await fetch(apiUrl("/api/auth/verify-pin"), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin })
+    });
+    return { ok: res.ok, pinError: !res.ok };
+  }
+  function unlockCats() {
+    void guarded(async (pin) => { const r = await verifyPin(pin); if (r.ok) setCatsLocked(false); return r; });
+  }
+
   async function saveSales(r: Round, value: string) {
     const v = Number(value);
     if (!Number.isFinite(v) || v === r.sales_amount) return;
@@ -93,7 +107,13 @@ export default function RoundsClient({
   }
   async function del(r: Round) {
     if (!window.confirm(`ลบยอดวันที่ ${roundLabel(r.period_start, r.period_start)} ?`)) return;
-    await guarded((pin) => mutate("DELETE", undefined, `?id=${r.id}&partner=${partner.id}&pin=${encodeURIComponent(pin)}`));
+    await guarded(async (pin) => {
+      const res = await mutate("DELETE", undefined, `?id=${r.id}&partner=${partner.id}&pin=${encodeURIComponent(pin)}`);
+      // DELETE doesn't echo the list back — drop the row locally so it disappears
+      // immediately (no manual refresh, owner 2026-06-23).
+      if (res.ok) setRounds((rs) => rs.filter((x) => x.id !== r.id));
+      return res;
+    });
   }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -110,6 +130,7 @@ export default function RoundsClient({
       const want = new Set(partner.pos_categories.map((s) => s.toLowerCase()));
       setSelCats(new Set(j.categories.filter((c: PosCat) => want.has(c.category.toLowerCase())).map((c: PosCat) => c.category)));
       setBase(partner.sales_base);
+      setCatsLocked(true);   // re-lock for every new file
     } finally { setBusy(false); }
   }
   function baseVal(c: PosCat): number { return base === "gross" ? c.gross : base === "after_discount" ? c.afterDiscount : c.nett; }
@@ -162,9 +183,19 @@ export default function RoundsClient({
             <button type="button" onClick={() => setPreview(null)} className="text-xs text-slate-400 hover:text-slate-700">✕ ยกเลิก</button>
           </div>
           {posMultiDay && <p className="text-[11px] text-amber-700">⚠ ไฟล์นี้ครอบหลายวัน ({preview.label}) — จะบันทึกเป็นรายการเดียว ถ้าต้องการรายวันให้ส่งออกจาก POS แบบ 1 วัน/ไฟล์</p>}
+          <div className="flex items-center justify-between gap-2 flex-wrap rounded-md bg-slate-50 px-3 py-2">
+            <span className="text-[11px] text-slate-500">
+              {catsLocked
+                ? "ระบบเลือกหมวดตามที่ตั้งค่าไว้ให้แล้ว — กดปลดล็อกด้วย PIN ถ้าต้องการแก้ไขการเลือก"
+                : <span className="text-emerald-600">✓ ปลดล็อกแล้ว — แก้ไขหมวด/ฐานยอดได้</span>}
+            </span>
+            {catsLocked
+              ? <button type="button" onClick={unlockCats} disabled={busy} className="text-[11px] text-brand hover:underline">✎ แก้ไขการเลือกหมวด (PIN)</button>
+              : <button type="button" onClick={() => setCatsLocked(true)} className="text-[11px] text-slate-400 hover:underline">ล็อกอีกครั้ง</button>}
+          </div>
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-slate-500">ฐานยอดขาย:</span>
-            <select className="input w-48 text-sm" value={base} onChange={(e) => setBase(e.target.value as SalesBase)}>
+            <select className="input w-48 text-sm disabled:bg-slate-100 disabled:text-slate-400" value={base} disabled={catsLocked} onChange={(e) => setBase(e.target.value as SalesBase)}>
               {(Object.keys(BASE_LABEL) as SalesBase[]).map((b) => <option key={b} value={b}>{BASE_LABEL[b]}</option>)}
             </select>
           </div>
@@ -177,7 +208,7 @@ export default function RoundsClient({
               <tbody>
                 {preview.categories.map((c) => (
                   <tr key={c.category} className="border-b border-slate-50">
-                    <td className="py-1.5 px-2"><input type="checkbox" checked={selCats.has(c.category)} onChange={(e) => {
+                    <td className="py-1.5 px-2"><input type="checkbox" checked={selCats.has(c.category)} disabled={catsLocked} onChange={(e) => {
                       setSelCats((s) => { const n = new Set(s); if (e.target.checked) n.add(c.category); else n.delete(c.category); return n; });
                     }} /></td>
                     <td className="py-1.5 px-2 text-slate-700">{c.category}</td>

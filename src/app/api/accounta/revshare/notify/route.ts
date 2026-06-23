@@ -52,7 +52,8 @@ export async function POST(req: Request) {
     const r = preview.result;
     flex = revshareSettlementFlex({
       sellerName: seller, partnerName: partner.name, venue: partner.venue, monthLabel,
-      totalSales: r.totalSales, billedGP: r.billedGP, avgGpPct: r.avgGpPct,
+      totalSales: r.totalSales, tierGP: r.tierGP, floorApplied: r.floorApplied, topup: r.topup,
+      billedGP: r.billedGP, avgGpPct: r.avgGpPct,
       vatEnabled: partner.vat_enabled, vatAmount: r.vatAmount, whtAmount: r.whtAmount, netAmount: r.netAmount,
       weeks: preview.breakdown.map((b) => ({ label: b.label, sales: b.sales })),
       invoiceNo: preview.stored?.invoice_no ?? null

@@ -61,15 +61,16 @@ export default function SettlementClient({
     L.push(`คู่ค้า: ${partner.name}${partner.venue ? ` (${partner.venue})` : ""}`);
     L.push(`รอบเดือน: ${monthLabel}`);
     L.push(`────────────`);
-    L.push(`ยอดขายรวมทั้งเดือน: ฿${fmtMoney(r.totalSales)}`);
-    L.push(`GP เรียกเก็บ: ฿${fmtMoney(r.billedGP)} (เฉลี่ย ${(r.avgGpPct * 100).toFixed(2)}%)`);
-    if (r.topup > 0) L.push(`  • ถึงยอดขั้นต่ำเดือนนี้ ฿${fmtMoney(r.floorApplied)} (บวกส่วนต่าง ฿${fmtMoney(r.topup)})`);
+    L.push(`ยอดขายรวมทั้งเดือน: ${fmtMoney(r.totalSales)} บาท`);
+    L.push(`GP ตามขั้นบันได: ${fmtMoney(r.tierGP)} บาท (เฉลี่ย ${(r.avgGpPct * 100).toFixed(2)}%)`);
+    if (r.topup > 0) L.push(`  • ยังไม่ถึงขั้นต่ำ — เรียกเก็บที่ยอดขั้นต่ำ ${fmtMoney(r.floorApplied)} บาท`);
+    L.push(`GP เรียกเก็บ: ${fmtMoney(r.billedGP)} บาท`);
     if (withVat) {
-      L.push(`VAT 7%: ฿${fmtMoney(r.vatAmount)}`);
-      L.push(`รวมตามใบกำกับภาษี: ฿${fmtMoney(grandTotal)}`);
+      L.push(`VAT 7%: ${fmtMoney(r.vatAmount)} บาท`);
+      L.push(`รวมตามใบกำกับภาษี: ${fmtMoney(grandTotal)} บาท`);
     }
-    L.push(`หัก ณ ที่จ่าย 3%: −฿${fmtMoney(r.whtAmount)}`);
-    L.push(`รับสุทธิ: ฿${fmtMoney(r.netAmount)}`);
+    L.push(`หัก ณ ที่จ่าย 3%: −${fmtMoney(r.whtAmount)} บาท`);
+    L.push(`รับสุทธิ: ${fmtMoney(r.netAmount)} บาท`);
     return L.join("\n");
   }
   async function copy() {
@@ -220,6 +221,8 @@ function FlexCardPreview({
   invoiceNo: string | null; weeks: Array<{ label: string; sales: number }>;
   r: Result; withVat: boolean; grandTotal: number;
 }) {
+  const baht = (n: number) => `${fmtMoney(n)} บาท`;
+  const belowFloor = r.topup > 0;   // tier GP didn't reach the agreed minimum
   const Row = ({ label, value, bold, color }: { label: string; value: string; bold?: boolean; color?: string }) => (
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-[13px] text-slate-500">{label}</span>
@@ -243,19 +246,26 @@ function FlexCardPreview({
           <>
             <div className="border-t border-slate-100 my-1" />
             <div className="text-[11px] font-bold text-slate-400">ยอดโอนรายสัปดาห์</div>
-            {weeks.map((w, i) => <Row key={i} label={w.label} value={`฿${fmtMoney(w.sales)}`} />)}
+            {weeks.map((w, i) => <Row key={i} label={w.label} value={baht(w.sales)} />)}
           </>
         )}
         <div className="border-t border-slate-100 my-1" />
-        <Row label="ยอดขายรวมทั้งเดือน" value={`฿${fmtMoney(r.totalSales)}`} />
-        <Row label={`GP เรียกเก็บ (${(r.avgGpPct * 100).toFixed(2)}%)`} value={`฿${fmtMoney(r.billedGP)}`} bold />
-        {withVat && <Row label="VAT 7%" value={`฿${fmtMoney(r.vatAmount)}`} />}
-        {withVat && <Row label="รวมใบกำกับภาษี" value={`฿${fmtMoney(grandTotal)}`} bold />}
-        <Row label="หัก ณ ที่จ่าย 3%" value={`−฿${fmtMoney(r.whtAmount)}`} color="#a32d2d" />
+        <Row label="ยอดขายรวมทั้งเดือน" value={baht(r.totalSales)} />
+        <Row label={`GP ตามขั้นบันได (${(r.avgGpPct * 100).toFixed(2)}%)`} value={baht(r.tierGP)} />
+        {belowFloor && (
+          <>
+            <Row label="ขั้นต่ำที่ตกลงกัน" value={baht(r.floorApplied)} color="#854f0b" />
+            <div className="text-[10px] leading-snug" style={{ color: "#854f0b" }}>ยังไม่ถึงขั้นต่ำ — เรียกเก็บที่ยอดขั้นต่ำ</div>
+          </>
+        )}
+        <Row label="GP เรียกเก็บ" value={baht(r.billedGP)} bold />
+        {withVat && <Row label="VAT 7%" value={baht(r.vatAmount)} />}
+        {withVat && <Row label="รวมใบกำกับภาษี" value={baht(grandTotal)} bold />}
+        <Row label="หัก ณ ที่จ่าย 3%" value={`−${baht(r.whtAmount)}`} color="#a32d2d" />
         <div className="border-t border-slate-100 my-1" />
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-[13px] font-bold text-slate-600">รับสุทธิ</span>
-          <span className="text-[15px] font-bold tabular-nums" style={{ color: "#0f6e56" }}>฿{fmtMoney(r.netAmount)}</span>
+          <span className="text-[15px] font-bold tabular-nums" style={{ color: "#0f6e56" }}>{baht(r.netAmount)}</span>
         </div>
       </div>
       {/* footer */}

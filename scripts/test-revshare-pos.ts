@@ -37,7 +37,7 @@ eq("6.month", r.periodMonth, 6);
 eq("6.year", r.periodYear, 2026);
 eq("6.start", r.periodStart, "2026-06-15");
 eq("6.end", r.periodEnd, "2026-06-21");
-eq("6.label", r.label, "15–21 มิ.ย.");
+eq("6.label", r.label, "15–21 มิถุนายน 2569");
 
 const sd = r.categories.find((c) => c.category === "SOFT DRINK");
 if (!sd) { console.error("✗ SOFT DRINK subtotal not found"); failed++; }

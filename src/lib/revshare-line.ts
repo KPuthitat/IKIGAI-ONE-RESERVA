@@ -7,7 +7,8 @@ import { getPlatformChannel } from "./messaging-channels";
 
 type FlexMsg = { type: "flex"; altText: string; contents: unknown };
 
-const baht = (n: number) => "฿" + n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Owner 2026-06-23: show amounts as "12,345.00 บาท" (not the ฿ glyph).
+const baht = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " บาท";
 
 function kv(label: string, value: string, opts?: { color?: string; bold?: boolean; size?: string }): unknown {
   return {
@@ -38,7 +39,7 @@ function footer(note: string): unknown {
 
 export type SettlementCard = {
   sellerName: string; partnerName: string; venue?: string | null; monthLabel: string;
-  totalSales: number; billedGP: number; avgGpPct: number;
+  totalSales: number; tierGP: number; floorApplied: number; topup: number; billedGP: number; avgGpPct: number;
   vatEnabled: boolean; vatAmount: number; whtAmount: number; netAmount: number;
   weeks: Array<{ label: string; sales: number }>;
   invoiceNo: string | null;
@@ -59,7 +60,12 @@ export function revshareSettlementFlex(d: SettlementCard): FlexMsg {
   }
   body.push(sep);
   body.push(kv("ยอดขายรวมทั้งเดือน", baht(d.totalSales)));
-  body.push(kv(`GP เรียกเก็บ (${(d.avgGpPct * 100).toFixed(2)}%)`, baht(d.billedGP), { bold: true }));
+  body.push(kv(`GP ตามขั้นบันได (${(d.avgGpPct * 100).toFixed(2)}%)`, baht(d.tierGP)));
+  if (d.topup > 0) {
+    body.push(kv("ขั้นต่ำที่ตกลงกัน", baht(d.floorApplied), { color: "#854f0b" }));
+    body.push({ type: "text", text: "ยังไม่ถึงขั้นต่ำ — เรียกเก็บที่ยอดขั้นต่ำ", size: "xxs", color: "#854f0b", wrap: true });
+  }
+  body.push(kv("GP เรียกเก็บ", baht(d.billedGP), { bold: true }));
   if (d.vatEnabled && d.vatAmount > 0) {
     body.push(kv("VAT 7%", baht(d.vatAmount)));
     body.push(kv("รวมใบกำกับภาษี", baht(d.billedGP + d.vatAmount), { bold: true }));

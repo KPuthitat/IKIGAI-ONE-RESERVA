@@ -1,8 +1,8 @@
 // Unit tests for the Revenue-Share GP core calc. Run: npm run test:revshare
 // Covers acceptance criteria 1–5 (POS parser = test-revshare-pos via RS3).
 import {
-  marginalGP, computeSettlement, computeRoundBreakdown, opMonthFor,
-  DEFAULT_TIERS, DEFAULT_FLOORS, roundLabel
+  marginalGP, computeSettlement, computeRoundBreakdown, opMonthFor, floorFor,
+  DEFAULT_TIERS, DEFAULT_FLOORS, roundLabel, type Floor
 } from "../src/lib/revshare";
 
 let failed = 0;
@@ -18,7 +18,14 @@ function ok(name: string, cond: boolean): void {
   if (!cond) { console.error(`✗ ${name}`); failed++; } else console.log(`✓ ${name}`);
 }
 
-const T = DEFAULT_TIERS, F = DEFAULT_FLOORS;
+// Engine tests use an explicit tiered floor fixture so they validate the calc
+// independently of whatever the DEFAULT_FLOORS template happens to be.
+const T = DEFAULT_TIERS;
+const F: Floor[] = [
+  { monthFrom: 1, monthTo: 2, amount: 15_000 },
+  { monthFrom: 3, monthTo: 4, amount: 18_000 },
+  { monthFrom: 5, monthTo: 6, amount: 20_000 }
+];
 
 // 1) totalSales 400,000 · opMonth 1
 {
@@ -82,8 +89,15 @@ const T = DEFAULT_TIERS, F = DEFAULT_FLOORS;
   eq("x.netNoVat", s.netAmount, 66_000 - 1_980);
   eq("x.opMonth jan→jan", opMonthFor("2026-01-15", 2026, 1), 1);
   eq("x.opMonth jan→aug", opMonthFor("2026-01-15", 2026, 8), 8);
-  ok("x.roundLabel same-month", roundLabel("2026-06-15", "2026-06-21") === "15–21 มิ.ย.");
-  ok("x.roundLabel cross-month", roundLabel("2026-06-30", "2026-07-06") === "30 มิ.ย.–6 ก.ค.");
+  ok("x.roundLabel same-month", roundLabel("2026-06-15", "2026-06-21") === "15–21 มิถุนายน 2569");
+  ok("x.roundLabel cross-month", roundLabel("2026-06-30", "2026-07-06") === "30 มิถุนายน – 6 กรกฎาคม 2569");
+  ok("x.roundLabel single", roundLabel("2026-06-19", "2026-06-19") === "19 มิถุนายน 2569");
+}
+
+// default floor template = flat 20,000/month (owner 2026-06-23)
+{
+  ok("x.defaultFloor flat 20k m1", floorFor(1, DEFAULT_FLOORS) === 20_000);
+  ok("x.defaultFloor flat 20k m12", floorFor(12, DEFAULT_FLOORS) === 20_000);
 }
 
 if (failed > 0) {
