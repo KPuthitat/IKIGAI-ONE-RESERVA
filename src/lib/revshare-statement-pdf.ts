@@ -6,8 +6,9 @@ import PDFDocument from "pdfkit";
 import path from "node:path";
 
 export type StatementPdfData = {
-  seller: { name: string; address: string | null; taxBranchCode: string | null; phone: string | null };
+  seller: { name: string; address: string | null; taxBranchCode: string | null; phone: string | null; taxId: string | null };
   partner: { name: string; venue: string | null };
+  buyer: { taxId: string | null; address: string | null; branchCode: string | null };
   monthLabel: string;        // "มิถุนายน 2569"
   invoiceNo: string | null;
   status: string;            // localised Thai status
@@ -50,12 +51,17 @@ export function generateStatementPdf(d: StatementPdfData): Promise<Buffer> {
       doc.font("th-b").fontSize(11).fillColor("#281a0e").text(d.seller.name, left + contentW / 2, top, { width: contentW / 2, align: "right" });
       doc.font("th").fontSize(9).fillColor("#555");
       if (d.seller.address) doc.text(d.seller.address, left + contentW / 2, doc.y + 1, { width: contentW / 2, align: "right" });
-      if (d.seller.taxBranchCode) doc.text(`รหัสสาขา ${d.seller.taxBranchCode}`, { width: contentW / 2, align: "right" });
+      if (d.seller.taxId) doc.text(`เลขผู้เสียภาษี ${d.seller.taxId}${d.seller.taxBranchCode ? ` (สาขา ${d.seller.taxBranchCode})` : ""}`, { width: contentW / 2, align: "right" });
+      else if (d.seller.taxBranchCode) doc.text(`รหัสสาขา ${d.seller.taxBranchCode}`, { width: contentW / 2, align: "right" });
       if (d.seller.phone) doc.text(`โทร. ${d.seller.phone}`, { width: contentW / 2, align: "right" });
 
+      // Buyer (partner) block — for the tax invoice.
       let y = Math.max(doc.y, top + 64) + 12;
-      doc.font("th").fontSize(10).fillColor("#666").text("คู่ค้า:", left, y, { continued: true });
+      doc.font("th").fontSize(10).fillColor("#666").text("ลูกค้า/ผู้ซื้อ:", left, y, { continued: true });
       doc.font("th-b").fillColor("#281a0e").text(` ${d.partner.name}${d.partner.venue ? ` (${d.partner.venue})` : ""}`);
+      doc.font("th").fontSize(9).fillColor("#555");
+      if (d.buyer.address) doc.text(d.buyer.address, left, doc.y + 1, { width: contentW * 0.7 });
+      if (d.buyer.taxId) doc.text(`เลขประจำตัวผู้เสียภาษี ${d.buyer.taxId}${d.buyer.branchCode ? ` (สาขา ${d.buyer.branchCode})` : ""}`, left, doc.y + 1, { width: contentW * 0.7 });
       y = doc.y + 12;
 
       // Round breakdown table

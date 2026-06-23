@@ -1444,11 +1444,15 @@ function runMigrations(db: Database.Database): void {
   // line_group_id (owner 2026-06-23): the partner's LINE group — the IKIGAI OS
   // platform OA is added to it so weekly-transfer / monthly-GP cards can be
   // pushed there. NULL = no group set (the send button is disabled).
+  // Partner billing identity for the tax invoice (owner 2026-06-23): the buyer
+  // block on the GP statement/ใบกำกับภาษี.
   {
     const rpCols = db.prepare("PRAGMA table_info(revshare_partners)").all() as Array<{ name: string }>;
-    if (!rpCols.some((c) => c.name === "line_group_id")) {
-      db.exec("ALTER TABLE revshare_partners ADD COLUMN line_group_id TEXT");
-    }
+    const has = (n: string) => rpCols.some((c) => c.name === n);
+    if (!has("line_group_id")) db.exec("ALTER TABLE revshare_partners ADD COLUMN line_group_id TEXT");
+    if (!has("tax_id")) db.exec("ALTER TABLE revshare_partners ADD COLUMN tax_id TEXT");
+    if (!has("address")) db.exec("ALTER TABLE revshare_partners ADD COLUMN address TEXT");
+    if (!has("branch_code")) db.exec("ALTER TABLE revshare_partners ADD COLUMN branch_code TEXT");
   }
 
   // Daily attendance summary (TC-6) — per-branch HH:MM time at which

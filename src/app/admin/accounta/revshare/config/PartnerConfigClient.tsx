@@ -12,6 +12,7 @@ type Partner = {
   sales_base: SalesBase; pos_categories: string[];
   vat_enabled: boolean; vat_rate: number; wht_rate: number; active: boolean; note: string | null;
   line_group_id: string | null;
+  tax_id: string | null; address: string | null; branch_code: string | null;
 };
 type TierRow = { lower: string; upper: string; rate: string };
 type FloorRow = { monthFrom: string; monthTo: string; amount: string };
@@ -28,6 +29,9 @@ export default function PartnerConfigClient({ partner, tiers, floors }: { partne
   const [salesBase, setSalesBase] = useState<SalesBase>(partner.sales_base);
   const [posCats, setPosCats] = useState(partner.pos_categories.join(", "));
   const [lineGroup, setLineGroup] = useState(partner.line_group_id ?? "");
+  const [taxId, setTaxId] = useState(partner.tax_id ?? "");
+  const [addr, setAddr] = useState(partner.address ?? "");
+  const [branchCode, setBranchCode] = useState(partner.branch_code ?? "");
   const [vatEnabled, setVatEnabled] = useState(partner.vat_enabled);
   const [vatRate, setVatRate] = useState(String(partner.vat_rate * 100));
   const [whtRate, setWhtRate] = useState(String(partner.wht_rate * 100));
@@ -62,6 +66,7 @@ export default function PartnerConfigClient({ partner, tiers, floors }: { partne
         sales_base: salesBase,
         pos_categories: posCats.split(",").map((s) => s.trim()).filter(Boolean),
         line_group_id: lineGroup.trim() || null,
+        tax_id: taxId.trim() || null, address: addr.trim() || null, branch_code: branchCode.trim() || null,
         vat_enabled: vatEnabled, vat_rate: Number(vatRate) / 100, wht_rate: Number(whtRate) / 100,
         tiers: tiersOut, floors: floorsOut
       };
@@ -100,6 +105,17 @@ export default function PartnerConfigClient({ partner, tiers, floors }: { partne
           <input className="input font-mono" value={lineGroup} placeholder="เช่น Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" onChange={(e) => setLineGroup(e.target.value)} />
           <p className="text-[11px] text-slate-400 mt-1">เพิ่ม OA “IKIGAI OS” เข้ากลุ่มคู่ค้าก่อน แล้วเอา group id มาใส่ (เว้นว่าง = ปิดการส่ง)</p>
         </div>
+      </div>
+
+      {/* Tax-invoice identity (buyer block) */}
+      <div className="card space-y-3">
+        <div className="text-sm font-bold text-slate-800">ข้อมูลออกใบกำกับภาษี (ของคู่ค้า/ผู้ซื้อ)</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div><label className="label">เลขประจำตัวผู้เสียภาษี</label><input className="input font-mono" value={taxId} maxLength={20} placeholder="เช่น 0105560000000" onChange={(e) => setTaxId(e.target.value)} /></div>
+          <div><label className="label">รหัสสาขา</label><input className="input font-mono" value={branchCode} maxLength={20} placeholder="เช่น 00000 (สำนักงานใหญ่)" onChange={(e) => setBranchCode(e.target.value)} /></div>
+          <div className="sm:col-span-2"><label className="label">ที่อยู่สำหรับออกเอกสาร</label><input className="input" value={addr} maxLength={300} placeholder="ที่อยู่ตามทะเบียน" onChange={(e) => setAddr(e.target.value)} /></div>
+        </div>
+        <p className="text-[11px] text-slate-400">ใช้แสดงในใบสรุป/PDF เป็นบล็อก “ผู้ซื้อ” · ฝั่งผู้ขายดึงจากสาขา/บริษัทอัตโนมัติ</p>
       </div>
 
       {/* VAT / WHT */}

@@ -24,7 +24,10 @@ const CreateZ = z.object({
   vat_rate: z.number().min(0).max(1).optional(),
   wht_rate: z.number().min(0).max(1).optional(),
   note: z.string().trim().max(500).optional(),
-  line_group_id: z.string().trim().max(80).nullable().optional()
+  line_group_id: z.string().trim().max(80).nullable().optional(),
+  tax_id: z.string().trim().max(20).nullable().optional(),
+  address: z.string().trim().max(300).nullable().optional(),
+  branch_code: z.string().trim().max(20).nullable().optional()
 });
 const PatchZ = z.object({
   id: z.number().int().positive(),
@@ -39,6 +42,9 @@ const PatchZ = z.object({
   active: z.boolean().optional(),
   note: z.string().trim().max(500).nullable().optional(),
   line_group_id: z.string().trim().max(80).nullable().optional(),
+  tax_id: z.string().trim().max(20).nullable().optional(),
+  address: z.string().trim().max(300).nullable().optional(),
+  branch_code: z.string().trim().max(20).nullable().optional(),
   tiers: z.array(TierZ).optional(),
   floors: z.array(FloorZ).optional()
 });

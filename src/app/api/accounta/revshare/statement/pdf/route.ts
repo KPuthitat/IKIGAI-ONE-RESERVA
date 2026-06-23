@@ -24,13 +24,15 @@ export async function GET(req: Request) {
   const preview = previewSettlement(partnerId, branchId, year, month);
   if (!preview) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  const seller = getDb().prepare(
-    "SELECT name, reg_address, tax_branch_code, contact_phone FROM branches WHERE id = ?"
-  ).get(branchId) as { name: string; reg_address: string | null; tax_branch_code: string | null; contact_phone: string | null };
+  const seller = getDb().prepare(`
+    SELECT b.name, b.reg_address, b.tax_branch_code, b.contact_phone, c.tax_id AS company_tax_id, c.address AS company_address
+    FROM branches b LEFT JOIN companies c ON c.id = b.company_id WHERE b.id = ?
+  `).get(branchId) as { name: string; reg_address: string | null; tax_branch_code: string | null; contact_phone: string | null; company_tax_id: string | null; company_address: string | null };
 
   const pdf = await generateStatementPdf({
-    seller: { name: seller.name, address: seller.reg_address, taxBranchCode: seller.tax_branch_code, phone: seller.contact_phone },
+    seller: { name: seller.name, address: seller.reg_address ?? seller.company_address, taxBranchCode: seller.tax_branch_code, phone: seller.contact_phone, taxId: seller.company_tax_id },
     partner: { name: partner.name, venue: partner.venue },
+    buyer: { taxId: partner.tax_id, address: partner.address, branchCode: partner.branch_code },
     monthLabel: `${TH_MONTHS_FULL[month]} ${year + 543}`,
     invoiceNo: preview.stored?.invoice_no ?? null,
     status: STATUS_TH[preview.stored?.status ?? "draft"],
