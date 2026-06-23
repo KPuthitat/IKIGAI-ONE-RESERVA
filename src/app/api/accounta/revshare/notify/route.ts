@@ -40,7 +40,10 @@ export async function POST(req: Request) {
   const preview = previewSettlement(partnerId, branchId, year, month);
   if (!preview) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  const seller = (getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string }).name;
+  const sellerRow = getDb().prepare(
+    `SELECT b.name, c.name_th AS company_name FROM branches b LEFT JOIN companies c ON c.id = b.company_id WHERE b.id = ?`
+  ).get(branchId) as { name: string; company_name: string | null };
+  const seller = sellerRow.name;
   const monthLabel = `${TH_MONTHS_FULL[month]} ${year + 543}`;
 
   let flex;
@@ -51,7 +54,7 @@ export async function POST(req: Request) {
   } else {
     const r = preview.result;
     flex = revshareSettlementFlex({
-      sellerName: seller, partnerName: partner.name, venue: partner.venue, monthLabel,
+      sellerName: seller, sellerCompany: sellerRow.company_name, partnerName: partner.name, venue: partner.venue, monthLabel,
       totalSales: r.totalSales, tierGP: r.tierGP, floorApplied: r.floorApplied, topup: r.topup,
       billedGP: r.billedGP, avgGpPct: r.avgGpPct,
       vatEnabled: partner.vat_enabled, vatAmount: r.vatAmount, whtAmount: r.whtAmount, netAmount: r.netAmount,

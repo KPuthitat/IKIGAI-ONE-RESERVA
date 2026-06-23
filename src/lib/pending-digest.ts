@@ -22,6 +22,7 @@
 
 import { getDb, type Branch } from "./db";
 import { nameWithPrefix } from "./name";
+import { listDraftExpensesForBranch } from "./accounta-db";
 
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
 const MAX_ROWS_PER_SECTION = 20;
@@ -54,6 +55,7 @@ export type PendingDigest = {
   shiftChange: PendingDigestItem[];
   leave: PendingDigestItem[];
   ot: PendingDigestItem[];
+  accountaDraft: PendingDigestItem[];   // scanned ACCOUNTA bills awaiting review
 };
 
 /** Collect the still-pending shift-change + leave requests for a
@@ -102,6 +104,10 @@ export function buildPendingDigest(branchId: number): PendingDigest {
     ORDER BY o.created_at ASC
   `).all(branchId) as OtRow[];
 
+  // Scanned bills sitting in the ACCOUNTA review inbox (review_status='draft')
+  // — owner 2026-06-23: remind in the daily pending digest so they don't pile up.
+  const draftRows = listDraftExpensesForBranch(branchId);
+
   return {
     shiftChange: shiftRows.map((r) => ({
       name: nameWithPrefix(r.title_prefix, r.display_name),
@@ -125,6 +131,11 @@ export function buildPendingDigest(branchId: number): PendingDigest {
       name: nameWithPrefix(r.title_prefix, r.display_name),
       detail: `ทำงานล่วงเวลาถึง ${r.requested_until} น. · ${r.work_date}`,
       ref: null
+    })),
+    accountaDraft: draftRows.map((r) => ({
+      name: r.vendor_name?.trim() || "เอกสารสแกน (ยังไม่ระบุผู้ขาย)",
+      detail: `รอตรวจสอบ · ${r.amount_total.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท${r.bill_date ? ` · ${r.bill_date}` : ""}`,
+      ref: null
     }))
   };
 }
@@ -133,7 +144,7 @@ export function buildPendingDigest(branchId: number): PendingDigest {
  *  uses this to decide whether to actually push (an empty digest is
  *  pointless), while still stamping the dedupe date either way. */
 export function hasPendingItems(d: PendingDigest): boolean {
-  return d.shiftChange.length > 0 || d.leave.length > 0 || d.ot.length > 0;
+  return d.shiftChange.length > 0 || d.leave.length > 0 || d.ot.length > 0 || d.accountaDraft.length > 0;
 }
 
 /** Build the LINE Flex card. Navy header + two name-bulleted sections
@@ -147,7 +158,7 @@ export function pendingDigestFlex(args: {
   headerColor?: string | null;
 }): { type: "flex"; altText: string; contents: Record<string, unknown> } {
   const headerColor = args.headerColor || "#1a2b50";
-  const total = args.digest.shiftChange.length + args.digest.leave.length + args.digest.ot.length;
+  const total = args.digest.shiftChange.length + args.digest.leave.length + args.digest.ot.length + args.digest.accountaDraft.length;
   const altText =
     `สรุปคำขอค้าง ${total} รายการ · ${args.branchName}`;
 
@@ -205,7 +216,8 @@ export function pendingDigestFlex(args: {
   const menuFor = [
     { items: args.digest.shiftChange, label: "ตอบรับคำขอเปลี่ยนเวลางาน", path: "/admin/persona/shift-requests" },
     { items: args.digest.leave, label: "ตอบรับคำขอลางาน", path: "/admin/persona/leave" },
-    { items: args.digest.ot, label: "ตอบรับคำขอ OT (ล่วงเวลา)", path: "/admin/persona/ot-approvals" }
+    { items: args.digest.ot, label: "ตอบรับคำขอ OT (ล่วงเวลา)", path: "/admin/persona/ot-approvals" },
+    { items: args.digest.accountaDraft, label: "ตรวจเอกสาร ACCOUNTA", path: "/admin/accounta/expenses" }
   ];
   const footerButtons: Array<Record<string, unknown>> = menuFor
     .filter((m) => m.items.length > 0)
@@ -241,7 +253,9 @@ export function pendingDigestFlex(args: {
           { type: "separator", margin: "lg", color: "#eeeeee" },
           ...section("คำขอลางานรออนุมัติ", args.digest.leave),
           { type: "separator", margin: "lg", color: "#eeeeee" },
-          ...section("คำขอทำงานล่วงเวลา", args.digest.ot)
+          ...section("คำขอทำงานล่วงเวลา", args.digest.ot),
+          { type: "separator", margin: "lg", color: "#eeeeee" },
+          ...section("เอกสาร ACCOUNTA รอตรวจสอบ", args.digest.accountaDraft)
         ]
       },
       footer: {

@@ -24,7 +24,7 @@ function header(title: string, subtitle: string): unknown {
   return {
     type: "box", layout: "vertical", backgroundColor: "#281a0e", paddingAll: "16px", spacing: "xs",
     contents: [
-      { type: "text", text: "IKIGAI OS · ส่วนแบ่งยอดขาย (GP)", size: "xxs", color: "#d6a14d" },
+      { type: "text", text: "IKIGAI OS · ส่วนแบ่งยอดขาย", size: "xxs", color: "#d6a14d" },
       { type: "text", text: title, size: "lg", weight: "bold", color: "#ffffff" },
       { type: "text", text: subtitle, size: "xs", color: "#cbb89a" }
     ]
@@ -38,7 +38,7 @@ function footer(note: string): unknown {
 }
 
 export type SettlementCard = {
-  sellerName: string; partnerName: string; venue?: string | null; monthLabel: string;
+  sellerName: string; sellerCompany?: string | null; partnerName: string; venue?: string | null; monthLabel: string;
   totalSales: number; tierGP: number; floorApplied: number; topup: number; billedGP: number; avgGpPct: number;
   vatEnabled: boolean; vatAmount: number; whtAmount: number; netAmount: number;
   weeks: Array<{ label: string; sales: number }>;
@@ -47,38 +47,47 @@ export type SettlementCard = {
 
 export function revshareSettlementFlex(d: SettlementCard): FlexMsg {
   // Shop/venue name (e.g. "จ้อจี้ & friends") leads — it's how the partner is
-  // known + the POS category. Legal entity shows small beneath it.
+  // known + the POS category. Two sections, each with its own ผู้เรียกเก็บ:
+  // ส่วนแบ่งยอดขาย is billed by the seller (HYPOPLARAEMIA · อิคิไก เวลล์เทรด);
+  // the weekly transfer by the partner shop (จ้อจี้ & friends · ศาลาชิลล์).
   const shop = d.venue?.trim() || d.partnerName;
+  const sellerIssuer = d.sellerCompany ? `${d.sellerName} · ${d.sellerCompany}` : d.sellerName;
+  const partnerIssuer = d.venue?.trim() ? `${shop} · ${d.partnerName}` : shop;
   const body: unknown[] = [
     { type: "text", text: shop, weight: "bold", size: "lg", wrap: true },
-    ...(d.venue?.trim() ? [{ type: "text", text: d.partnerName, size: "xxs", color: "#999999", wrap: true }] : []),
-    { type: "text", text: `ผู้เรียกเก็บ: ${d.sellerName}`, size: "xxs", color: "#999999" }
+    ...(d.venue?.trim() ? [{ type: "text", text: d.partnerName, size: "xxs", color: "#999999", wrap: true }] : [])
   ];
-  if (d.weeks.length) {
-    body.push(sep, { type: "text", text: "ยอดโอนรายสัปดาห์", size: "xs", color: "#888888", weight: "bold" });
-    for (const w of d.weeks) body.push(kv(w.label, baht(w.sales), { size: "xs" }));
-  }
+
+  // ── ส่วนแบ่งยอดขาย (billed by the seller) ──
   body.push(sep);
+  body.push({ type: "text", text: `ผู้เรียกเก็บ: ${sellerIssuer}`, size: "xxs", color: "#999999", wrap: true });
   body.push(kv("ยอดขายรวมทั้งเดือน", baht(d.totalSales)));
-  body.push(kv(`GP ตามขั้นบันได (${(d.avgGpPct * 100).toFixed(2)}%)`, baht(d.tierGP)));
   if (d.topup > 0) {
+    body.push(kv(`ส่วนแบ่งตามขั้นบันได (${(d.avgGpPct * 100).toFixed(2)}%)`, baht(d.tierGP)));
     body.push(kv("ขั้นต่ำที่ตกลงกัน", baht(d.floorApplied), { color: "#854f0b" }));
     body.push({ type: "text", text: "ยังไม่ถึงขั้นต่ำ — เรียกเก็บที่ยอดขั้นต่ำ", size: "xxs", color: "#854f0b", wrap: true });
   }
-  body.push(kv("GP เรียกเก็บ", baht(d.billedGP), { bold: true }));
+  body.push(kv("ส่วนแบ่งยอดขายทั้งหมด (ก่อนภาษี)", baht(d.billedGP), { bold: true }));
   if (d.vatEnabled && d.vatAmount > 0) {
     body.push(kv("VAT 7%", baht(d.vatAmount)));
-    body.push(kv("รวมใบกำกับภาษี", baht(d.billedGP + d.vatAmount), { bold: true }));
+    body.push(kv("ส่วนแบ่งยอดขายและภาษีทั้งหมด", baht(d.billedGP + d.vatAmount), { bold: true }));
   }
-  body.push(kv("หัก ณ ที่จ่าย 3%", "−" + baht(d.whtAmount), { color: "#a32d2d" }));
+  body.push(kv("หักภาษี ณ ที่จ่าย 3%", "−" + baht(d.whtAmount), { color: "#a32d2d" }));
   body.push(sep);
   body.push(kv("รับสุทธิ", baht(d.netAmount), { bold: true, color: "#0f6e56", size: "md" }));
 
+  // ── ยอดโอนรายสัปดาห์ (billed by the partner shop) ──
+  if (d.weeks.length) {
+    body.push(sep, { type: "text", text: "ยอดโอนรายสัปดาห์", size: "xs", color: "#888888", weight: "bold" });
+    body.push({ type: "text", text: `ผู้เรียกเก็บ: ${partnerIssuer}`, size: "xxs", color: "#999999", wrap: true });
+    for (const w of d.weeks) body.push(kv(w.label, baht(w.sales), { size: "xs" }));
+  }
+
   return {
     type: "flex",
-    altText: `สรุป GP ${d.monthLabel} · ${d.partnerName} · รับสุทธิ ${baht(d.netAmount)}`,
+    altText: `สรุปส่วนแบ่งยอดขาย ${d.monthLabel} · ${shop} · รับสุทธิ ${baht(d.netAmount)}`,
     contents: {
-      type: "bubble",
+      type: "bubble", size: "giga",
       header: header(`สรุปรอบ ${d.monthLabel}`, d.invoiceNo ? `เลขที่ ${d.invoiceNo}` : "ใบสรุปส่วนแบ่งยอดขาย"),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
       footer: footer("เอกสารแจ้งเตือนภายใน ไม่ใช่เอกสารทางภาษี")

@@ -16,7 +16,7 @@ type BreakRow = { label: string; start: string; end: string; sales: number; roun
 type Stored = { status: "draft" | "issued" | "paid"; invoice_no: string | null; issued_at: string | null; paid_at: string | null } | null;
 type Preview = { result: Result; breakdown: BreakRow[]; opMonth: number; stored: Stored; stale: boolean };
 type Partner = { id: number; name: string; venue: string | null; vat_enabled: boolean; line_group_id: string | null };
-type Seller = { name: string; address: string | null; taxBranchCode: string | null; phone: string | null };
+type Seller = { name: string; company: string | null; address: string | null; taxBranchCode: string | null; phone: string | null };
 
 export default function SettlementClient({
   partner, seller, initial, year, month
@@ -26,7 +26,6 @@ export default function SettlementClient({
   const [invoiceNo, setInvoiceNo] = useState(initial.stored?.invoice_no ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [sent, setSent] = useState(false);
 
   const r = pv.result;
@@ -54,29 +53,6 @@ export default function SettlementClient({
     } finally { setBusy(false); }
   }
 
-  function statementText(): string {
-    const L: string[] = [];
-    L.push(`ใบสรุปส่วนแบ่งยอดขาย (GP)`);
-    L.push(seller.name);
-    L.push(`คู่ค้า: ${partner.name}${partner.venue ? ` (${partner.venue})` : ""}`);
-    L.push(`รอบเดือน: ${monthLabel}`);
-    L.push(`────────────`);
-    L.push(`ยอดขายรวมทั้งเดือน: ${fmtMoney(r.totalSales)} บาท`);
-    L.push(`GP ตามขั้นบันได: ${fmtMoney(r.tierGP)} บาท (เฉลี่ย ${(r.avgGpPct * 100).toFixed(2)}%)`);
-    if (r.topup > 0) L.push(`  • ยังไม่ถึงขั้นต่ำ — เรียกเก็บที่ยอดขั้นต่ำ ${fmtMoney(r.floorApplied)} บาท`);
-    L.push(`GP เรียกเก็บ: ${fmtMoney(r.billedGP)} บาท`);
-    if (withVat) {
-      L.push(`VAT 7%: ${fmtMoney(r.vatAmount)} บาท`);
-      L.push(`รวมตามใบกำกับภาษี: ${fmtMoney(grandTotal)} บาท`);
-    }
-    L.push(`หัก ณ ที่จ่าย 3%: −${fmtMoney(r.whtAmount)} บาท`);
-    L.push(`รับสุทธิ: ${fmtMoney(r.netAmount)} บาท`);
-    return L.join("\n");
-  }
-  async function copy() {
-    try { await navigator.clipboard.writeText(statementText()); setCopied(true); setTimeout(() => setCopied(false), 1800); }
-    catch { setErr("คัดลอกไม่สำเร็จ"); }
-  }
   async function sendNotify() {
     setBusy(true); setErr(null);
     try {
@@ -119,9 +95,9 @@ export default function SettlementClient({
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Card label="ยอดขายรวมทั้งเดือน" value={r.totalSales} />
-        <Card label="GP ขั้นบันได" value={r.tierGP} sub={`เฉลี่ย ${(r.avgGpPct * 100).toFixed(2)}%`} />
+        <Card label="ส่วนแบ่งตามขั้นบันได" value={r.tierGP} sub={`เฉลี่ย ${(r.avgGpPct * 100).toFixed(2)}%`} />
         <Card label="ส่วนต่างขั้นต่ำ (top-up)" value={r.topup} sub={r.topup > 0 ? `ขั้นต่ำ ฿${fmtMoney(r.floorApplied)}` : "ไม่ถึงขั้นต่ำ"} tone={r.topup > 0 ? "amber" : undefined} />
-        <Card label="GP เรียกเก็บ" value={r.billedGP} tone="brand" big />
+        <Card label="ส่วนแบ่งยอดขาย (ก่อนภาษี)" value={r.billedGP} tone="brand" big />
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {withVat && <Card label="VAT 7%" value={r.vatAmount} />}
@@ -133,13 +109,13 @@ export default function SettlementClient({
       {/* Money-direction note */}
       <div className="card text-xs text-slate-500 space-y-1">
         <div className="font-bold text-slate-700">ทิศทางเงิน</div>
-        <div>• รายสัปดาห์: {seller.name} โอนยอดขายเต็มจำนวนให้คู่ค้า (ยังไม่หัก GP)</div>
-        <div>• สิ้นเดือน: ออกใบเรียกเก็บ GP รวมครั้งเดียว ฿{fmtMoney(r.billedGP)}{withVat ? ` + VAT ฿${fmtMoney(r.vatAmount)} = ฿${fmtMoney(grandTotal)}` : ""} → คู่ค้าจ่ายแล้วหัก ณ ที่จ่าย 3% (฿{fmtMoney(r.whtAmount)}) → รับสุทธิ ฿{fmtMoney(r.netAmount)}</div>
+        <div>• รายสัปดาห์: {seller.name} โอนยอดขายเต็มจำนวนให้คู่ค้า (ยังไม่หักส่วนแบ่ง)</div>
+        <div>• สิ้นเดือน: ออกใบเรียกเก็บส่วนแบ่งยอดขายรวมครั้งเดียว ฿{fmtMoney(r.billedGP)}{withVat ? ` + VAT ฿${fmtMoney(r.vatAmount)} = ฿${fmtMoney(grandTotal)}` : ""} → คู่ค้าจ่ายแล้วหัก ณ ที่จ่าย 3% (฿{fmtMoney(r.whtAmount)}) → รับสุทธิ ฿{fmtMoney(r.netAmount)}</div>
       </div>
 
       {/* Round breakdown */}
       <div className="card space-y-2">
-        <div className="text-sm font-bold text-slate-800">สรุปรายสัปดาห์ (ยอดโอน + GP)</div>
+        <div className="text-sm font-bold text-slate-800">สรุปรายสัปดาห์ (ยอดโอน + ส่วนแบ่ง)</div>
         {pv.breakdown.length === 0 ? (
           <p className="text-xs text-slate-400">ยังไม่มีข้อมูลในเดือนนี้ — <Link href={`/admin/accounta/revshare/rounds?partner=${partner.id}&year=${year}&month=${month}`} className="text-brand hover:underline">ไปนำเข้ายอดขายรายวัน</Link></p>
         ) : (
@@ -147,7 +123,7 @@ export default function SettlementClient({
             <table className="w-full text-sm tabular-nums">
               <thead><tr className="text-[11px] text-slate-400 border-b border-slate-200">
                 <th className="text-left py-1.5 px-2">สัปดาห์</th><th className="text-right py-1.5 px-2">ยอดโอน</th>
-                <th className="text-right py-1.5 px-2">GP</th><th className="text-right py-1.5 px-2">GP%</th>
+                <th className="text-right py-1.5 px-2">ส่วนแบ่ง</th><th className="text-right py-1.5 px-2">ส่วนแบ่ง %</th>
               </tr></thead>
               <tbody>
                 {pv.breakdown.map((b, i) => (
@@ -183,24 +159,24 @@ export default function SettlementClient({
         {pv.stored?.issued_at && <p className="text-[11px] text-slate-400">ออกใบเมื่อ {new Date(pv.stored.issued_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}{pv.stored.paid_at ? ` · รับชำระ ${new Date(pv.stored.paid_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}` : ""}</p>}
       </div>
 
-      {/* Statement (partner-ready) — visual preview of the LINE card */}
+      {/* Partner-ready notification — visual preview of the LINE message */}
       <div className="card space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-sm font-bold text-slate-800">การ์ดที่จะส่งให้คู่ค้า</div>
+          <div className="text-sm font-bold text-slate-800">ข้อความแจ้งเตือนที่จะส่งให้คู่ค้า</div>
           <div className="flex items-center gap-2 flex-wrap">
             {partner.line_group_id
-              ? <button type="button" onClick={sendNotify} disabled={busy} className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{sent ? "✓ ส่งแล้ว" : "ส่งการ์ดเข้ากลุ่มคู่ค้า (LINE)"}</button>
-              : <span className="text-[11px] text-slate-400">ตั้ง LINE group ในหน้าตั้งค่าคู่ค้าเพื่อส่งการ์ดได้</span>}
-            <button type="button" onClick={copy} className="btn-secondary text-sm">{copied ? "✓ คัดลอกแล้ว" : "คัดลอกข้อความ (ส่ง LINE)"}</button>
+              ? <button type="button" onClick={sendNotify} disabled={busy} className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{sent ? "✓ ส่งแล้ว" : "ส่งข้อความแจ้งเตือนเข้ากลุ่มคู่ค้า (LINE)"}</button>
+              : <span className="text-[11px] text-slate-400">ตั้ง LINE group ในหน้าตั้งค่าคู่ค้าเพื่อส่งได้</span>}
             <a href={apiUrl(`/api/accounta/revshare/statement/pdf?partner=${partner.id}&year=${year}&month=${month}`)} className="btn-secondary text-sm" download>ดาวน์โหลด PDF</a>
           </div>
         </div>
-        <p className="text-[11px] text-slate-400">ตัวอย่างการ์ดที่คู่ค้าจะเห็นใน LINE — ส่งแล้วหน้าตาเป็นแบบนี้</p>
-        <div className="rounded-2xl bg-slate-100 p-4 sm:p-6 flex justify-center">
+        <p className="text-[11px] text-slate-400">ตัวอย่างข้อความแจ้งเตือนที่คู่ค้าจะเห็นใน LINE — ส่งแล้วหน้าตาเป็นแบบนี้</p>
+        <div className="rounded-2xl bg-slate-100 p-4 sm:p-6">
           <FlexCardPreview
             shop={partner.venue?.trim() || partner.name}
-            legalName={partner.venue?.trim() ? partner.name : null}
+            partnerLegal={partner.venue?.trim() ? partner.name : null}
             sellerName={seller.name}
+            sellerCompany={seller.company}
             monthLabel={monthLabel}
             invoiceNo={invoiceNo.trim() || null}
             weeks={pv.breakdown.map((b) => ({ label: b.label, sales: b.sales }))}
@@ -212,64 +188,74 @@ export default function SettlementClient({
   );
 }
 
-/** Static mock of the LINE Flex bubble (mirrors revshareSettlementFlex) so the
- *  owner sees exactly what lands in the partner's group before sending. */
+/** Static mock of the LINE message (mirrors revshareSettlementFlex) so the owner
+ *  sees exactly what lands in the partner's group before sending. Full-width so
+ *  long baht amounts never wrap. Two sections, each with its own ผู้เรียกเก็บ:
+ *  the GP/ส่วนแบ่ง is billed by the seller (HYPOPLARAEMIA · อิคิไก เวลล์เทรด),
+ *  the weekly transfer by the partner shop (จ้อจี้ & friends · ศาลาชิลล์). */
 function FlexCardPreview({
-  shop, legalName, sellerName, monthLabel, invoiceNo, weeks, r, withVat, grandTotal
+  shop, partnerLegal, sellerName, sellerCompany, monthLabel, invoiceNo, weeks, r, withVat, grandTotal
 }: {
-  shop: string; legalName: string | null; sellerName: string; monthLabel: string;
+  shop: string; partnerLegal: string | null; sellerName: string; sellerCompany: string | null; monthLabel: string;
   invoiceNo: string | null; weeks: Array<{ label: string; sales: number }>;
   r: Result; withVat: boolean; grandTotal: number;
 }) {
   const baht = (n: number) => `${fmtMoney(n)} บาท`;
   const belowFloor = r.topup > 0;   // tier GP didn't reach the agreed minimum
+  const sellerIssuer = sellerCompany ? `${sellerName} · ${sellerCompany}` : sellerName;
+  const partnerIssuer = partnerLegal ? `${shop} · ${partnerLegal}` : shop;
   const Row = ({ label, value, bold, color }: { label: string; value: string; bold?: boolean; color?: string }) => (
-    <div className="flex items-baseline justify-between gap-3">
+    <div className="flex items-baseline justify-between gap-4">
       <span className="text-[13px] text-slate-500">{label}</span>
-      <span className={`text-[13px] tabular-nums ${bold ? "font-bold" : ""}`} style={color ? { color } : undefined}>{value}</span>
+      <span className={`text-[13px] tabular-nums whitespace-nowrap ${bold ? "font-bold" : ""}`} style={color ? { color } : undefined}>{value}</span>
     </div>
   );
   return (
-    <div className="w-full max-w-[320px] rounded-[18px] overflow-hidden bg-white shadow-lg ring-1 ring-black/5">
+    <div className="w-full rounded-[18px] overflow-hidden bg-white shadow-lg ring-1 ring-black/5">
       {/* header */}
-      <div className="px-4 py-4" style={{ backgroundColor: "#281a0e" }}>
-        <div className="text-[10px]" style={{ color: "#d6a14d" }}>IKIGAI OS · ส่วนแบ่งยอดขาย (GP)</div>
-        <div className="text-base font-bold text-white leading-tight mt-0.5">สรุปรอบ {monthLabel}</div>
+      <div className="px-5 py-4" style={{ backgroundColor: "#281a0e" }}>
+        <div className="text-[10px]" style={{ color: "#d6a14d" }}>IKIGAI OS · ส่วนแบ่งยอดขาย</div>
+        <div className="text-lg font-bold text-white leading-tight mt-0.5">สรุปรอบ {monthLabel}</div>
         <div className="text-[11px]" style={{ color: "#cbb89a" }}>{invoiceNo ? `เลขที่ ${invoiceNo}` : "ใบสรุปส่วนแบ่งยอดขาย"}</div>
       </div>
       {/* body */}
-      <div className="px-4 py-4 space-y-2">
+      <div className="px-5 py-4 space-y-2">
         <div className="text-[15px] font-bold text-slate-800 leading-tight">{shop}</div>
-        {legalName && <div className="text-[10px] text-slate-400 leading-tight">{legalName}</div>}
-        <div className="text-[10px] text-slate-400">ผู้เรียกเก็บ: {sellerName}</div>
-        {weeks.length > 0 && (
-          <>
-            <div className="border-t border-slate-100 my-1" />
-            <div className="text-[11px] font-bold text-slate-400">ยอดโอนรายสัปดาห์</div>
-            {weeks.map((w, i) => <Row key={i} label={w.label} value={baht(w.sales)} />)}
-          </>
-        )}
+        {partnerLegal && <div className="text-[10px] text-slate-400 leading-tight">{partnerLegal}</div>}
+
+        {/* ── ส่วนแบ่งยอดขาย (billed by the seller) ── */}
         <div className="border-t border-slate-100 my-1" />
+        <div className="text-[10px] text-slate-400">ผู้เรียกเก็บ: {sellerIssuer}</div>
         <Row label="ยอดขายรวมทั้งเดือน" value={baht(r.totalSales)} />
-        <Row label={`GP ตามขั้นบันได (${(r.avgGpPct * 100).toFixed(2)}%)`} value={baht(r.tierGP)} />
         {belowFloor && (
           <>
+            <Row label={`ส่วนแบ่งตามขั้นบันได (${(r.avgGpPct * 100).toFixed(2)}%)`} value={baht(r.tierGP)} />
             <Row label="ขั้นต่ำที่ตกลงกัน" value={baht(r.floorApplied)} color="#854f0b" />
             <div className="text-[10px] leading-snug" style={{ color: "#854f0b" }}>ยังไม่ถึงขั้นต่ำ — เรียกเก็บที่ยอดขั้นต่ำ</div>
           </>
         )}
-        <Row label="GP เรียกเก็บ" value={baht(r.billedGP)} bold />
+        <Row label="ส่วนแบ่งยอดขายทั้งหมด (ก่อนภาษี)" value={baht(r.billedGP)} bold />
         {withVat && <Row label="VAT 7%" value={baht(r.vatAmount)} />}
-        {withVat && <Row label="รวมใบกำกับภาษี" value={baht(grandTotal)} bold />}
-        <Row label="หัก ณ ที่จ่าย 3%" value={`−${baht(r.whtAmount)}`} color="#a32d2d" />
+        {withVat && <Row label="ส่วนแบ่งยอดขายและภาษีทั้งหมด" value={baht(grandTotal)} bold />}
+        <Row label="หักภาษี ณ ที่จ่าย 3%" value={`−${baht(r.whtAmount)}`} color="#a32d2d" />
         <div className="border-t border-slate-100 my-1" />
-        <div className="flex items-baseline justify-between gap-3">
+        <div className="flex items-baseline justify-between gap-4">
           <span className="text-[13px] font-bold text-slate-600">รับสุทธิ</span>
-          <span className="text-[15px] font-bold tabular-nums" style={{ color: "#0f6e56" }}>{baht(r.netAmount)}</span>
+          <span className="text-[15px] font-bold tabular-nums whitespace-nowrap" style={{ color: "#0f6e56" }}>{baht(r.netAmount)}</span>
         </div>
+
+        {/* ── ยอดโอนรายสัปดาห์ (billed by the partner shop) ── */}
+        {weeks.length > 0 && (
+          <>
+            <div className="border-t border-slate-100 my-1" />
+            <div className="text-[11px] font-bold text-slate-400">ยอดโอนรายสัปดาห์</div>
+            <div className="text-[10px] text-slate-400">ผู้เรียกเก็บ: {partnerIssuer}</div>
+            {weeks.map((w, i) => <Row key={i} label={w.label} value={baht(w.sales)} />)}
+          </>
+        )}
       </div>
       {/* footer */}
-      <div className="px-4 pb-3 pt-1">
+      <div className="px-5 pb-3 pt-1">
         <div className="text-[9px] text-slate-400 text-center">เอกสารแจ้งเตือนภายใน ไม่ใช่เอกสารทางภาษี</div>
       </div>
     </div>

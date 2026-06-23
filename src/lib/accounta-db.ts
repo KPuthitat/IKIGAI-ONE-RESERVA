@@ -669,6 +669,18 @@ export function countDraftExpenses(): number {
   ).get() as { n: number }).n;
 }
 
+/** Branch-scoped LINE-submitted drafts awaiting review — feeds the daily
+ *  pending-requests digest (owner 2026-06-23). Oldest first. */
+export function listDraftExpensesForBranch(branchId: number): Array<{
+  id: number; vendor_name: string | null; amount_total: number; bill_date: string | null; created_at: string;
+}> {
+  return getDb().prepare(
+    `SELECT id, vendor_name, amount_total, bill_date, created_at
+     FROM accounta_expenses WHERE review_status = 'draft' AND branch_id = ?
+     ORDER BY created_at ASC`
+  ).all(branchId) as Array<{ id: number; vendor_name: string | null; amount_total: number; bill_date: string | null; created_at: string }>;
+}
+
 /** Mark a draft as reviewed → it now counts in the ledger/summaries. */
 export function confirmExpense(id: number): boolean {
   return getDb().prepare(

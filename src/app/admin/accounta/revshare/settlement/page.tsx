@@ -35,8 +35,9 @@ export default function RevshareSettlementPage({ searchParams }: { searchParams:
   const preview = previewSettlement(partner.id, branchId, year, month)!;
 
   const seller = getDb().prepare(
-    "SELECT name, reg_address, tax_branch_code, contact_phone FROM branches WHERE id = ?"
-  ).get(branchId) as { name: string; reg_address: string | null; tax_branch_code: string | null; contact_phone: string | null };
+    `SELECT b.name, b.reg_address, b.tax_branch_code, b.contact_phone, c.name_th AS company_name
+     FROM branches b LEFT JOIN companies c ON c.id = b.company_id WHERE b.id = ?`
+  ).get(branchId) as { name: string; reg_address: string | null; tax_branch_code: string | null; contact_phone: string | null; company_name: string | null };
 
   return (
     <div className="space-y-4">
@@ -46,11 +47,11 @@ export default function RevshareSettlementPage({ searchParams }: { searchParams:
       </div>
       <div>
         <h1 className="text-2xl font-bold text-slate-800">สรุป / ใบวางบิล · {partner.name}</h1>
-        <p className="text-sm text-slate-500 mt-1">สรุปส่วนแบ่งรายเดือน → ออกใบเรียกเก็บ GP ครั้งเดียวสิ้นเดือน</p>
+        <p className="text-sm text-slate-500 mt-1">สรุปส่วนแบ่งรายเดือน → ออกใบเรียกเก็บส่วนแบ่งยอดขายครั้งเดียวสิ้นเดือน</p>
       </div>
       <SettlementClient
         partner={{ id: partner.id, name: partner.name, venue: partner.venue, vat_enabled: partner.vat_enabled, line_group_id: partner.line_group_id }}
-        seller={{ name: seller.name, address: seller.reg_address, taxBranchCode: seller.tax_branch_code, phone: seller.contact_phone }}
+        seller={{ name: seller.name, company: seller.company_name, address: seller.reg_address, taxBranchCode: seller.tax_branch_code, phone: seller.contact_phone }}
         initial={preview} year={year} month={month}
       />
     </div>

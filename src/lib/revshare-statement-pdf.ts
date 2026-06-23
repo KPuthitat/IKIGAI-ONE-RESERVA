@@ -22,7 +22,7 @@ export type StatementPdfData = {
 
 const FONT_REG = path.join(process.cwd(), "public", "fonts", "LINESeedSansTH-Regular.ttf");
 const FONT_BOLD = path.join(process.cwd(), "public", "fonts", "LINESeedSansTH-Bold.ttf");
-const baht = (n: number) => "฿" + n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const baht = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " บาท";
 
 export function generateStatementPdf(d: StatementPdfData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -41,7 +41,7 @@ export function generateStatementPdf(d: StatementPdfData): Promise<Buffer> {
       const r = d.result;
 
       // Header
-      doc.font("th-b").fontSize(20).fillColor("#281a0e").text("ใบสรุปส่วนแบ่งยอดขาย (GP)", left, doc.page.margins.top);
+      doc.font("th-b").fontSize(20).fillColor("#281a0e").text("ใบสรุปส่วนแบ่งยอดขาย", left, doc.page.margins.top);
       doc.font("th").fontSize(10).fillColor("#a06820").text(`รอบเดือน ${d.monthLabel}`, left, doc.y + 2);
       if (d.invoiceNo) doc.fillColor("#666").text(`เลขที่ ${d.invoiceNo}`);
       doc.fillColor("#666").text(`สถานะ: ${d.status}`);
@@ -67,7 +67,7 @@ export function generateStatementPdf(d: StatementPdfData): Promise<Buffer> {
       // Round breakdown table
       doc.moveTo(left, y).lineTo(right, y).strokeColor("#bbb").lineWidth(0.8).stroke(); y += 6;
       doc.font("th-b").fontSize(9).fillColor("#281a0e");
-      doc.text("รอบ", left + 3, y); doc.text("ยอดขาย", right - 230, y, { width: 110, align: "right" }); doc.text("GP", right - 110, y, { width: 110, align: "right" });
+      doc.text("รอบ", left + 3, y); doc.text("ยอดขาย", right - 230, y, { width: 110, align: "right" }); doc.text("ส่วนแบ่ง", right - 110, y, { width: 110, align: "right" });
       y += 16; doc.moveTo(left, y).lineTo(right, y).strokeColor("#ddd").lineWidth(0.5).stroke(); y += 4;
       doc.font("th").fontSize(9).fillColor("#333");
       for (const b of d.breakdown) {
@@ -86,10 +86,13 @@ export function generateStatementPdf(d: StatementPdfData): Promise<Buffer> {
         y = doc.y + (bold ? 6 : 4);
       };
       line("ยอดขายรวมทั้งเดือน", baht(r.totalSales));
-      line(`GP เรียกเก็บ (เฉลี่ย ${(r.avgGpPct * 100).toFixed(2)}%)`, baht(r.billedGP));
-      if (r.topup > 0) line(`  • ถึงยอดขั้นต่ำ ฿${r.floorApplied.toLocaleString("th-TH")} (ส่วนต่าง ${baht(r.topup)})`, "", false, "#854f0b");
-      if (d.withVat) { line("VAT 7%", baht(r.vatAmount)); line("รวมตามใบกำกับภาษี", baht(r.billedGP + r.vatAmount), true); }
-      line("หัก ณ ที่จ่าย 3%", "−" + baht(r.whtAmount), false, "#a32d2d");
+      if (r.topup > 0) {
+        line(`ส่วนแบ่งตามขั้นบันได (${(r.avgGpPct * 100).toFixed(2)}%)`, baht(r.tierGP));
+        line(`  • ยังไม่ถึงขั้นต่ำ — เรียกเก็บที่ยอดขั้นต่ำ ${baht(r.floorApplied)}`, "", false, "#854f0b");
+      }
+      line("ส่วนแบ่งยอดขายทั้งหมด (ก่อนภาษี)", baht(r.billedGP), true);
+      if (d.withVat) { line("VAT 7%", baht(r.vatAmount)); line("ส่วนแบ่งยอดขายและภาษีทั้งหมด", baht(r.billedGP + r.vatAmount), true); }
+      line("หักภาษี ณ ที่จ่าย 3%", "−" + baht(r.whtAmount), false, "#a32d2d");
       y += 4; doc.moveTo(left, y).lineTo(right, y).strokeColor("#bbb").lineWidth(0.8).stroke(); y += 8;
       line("รับสุทธิ", baht(r.netAmount), true, "#0f6e56");
 
