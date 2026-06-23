@@ -753,6 +753,29 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_shiftreq_branch_status ON shift_change_requests(branch_id, status, work_date);
   `);
 
+  // Same-day peer shift swap (owner 2026-06-23) — A trades their shift with
+  // B on the SAME day; B taps accept and the two roster_assignments rows swap
+  // user_id atomically. No admin approval (unlike shift_change_requests above).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shift_swap_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      swap_date TEXT NOT NULL,                 -- YYYY-MM-DD (BKK) — the day both work
+      initiator_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      target_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      initiator_shift TEXT,                    -- snapshot label e.g. "11:00–20:00 (A)"
+      target_shift TEXT,                       -- snapshot label
+      note TEXT,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','accepted','declined','cancelled')),
+      ref_no TEXT,
+      decided_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_shiftswap_target ON shift_swap_requests(target_user_id, status);
+    CREATE INDEX IF NOT EXISTS idx_shiftswap_initiator ON shift_swap_requests(initiator_user_id, status);
+  `);
+
   // Phase 1C v2 migrations — extend users + leave_requests
   const ucols2 = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
   const unames = new Set(ucols2.map((c) => c.name));
