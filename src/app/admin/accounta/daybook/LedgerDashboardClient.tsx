@@ -232,13 +232,20 @@ export default function LedgerDashboardClient({
         </div>
       </div>
 
-      {/* Range nav */}
-      <div className="flex items-center justify-center gap-3">
+      {/* Range nav — month shows a big number + small month/year (owner 2026-06-23) */}
+      <div className="flex items-center justify-center gap-5">
         <button type="button" onClick={() => go(period, shiftAnchor(anchor, period, -1))}
-          className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50" disabled={pending}>←</button>
-        <span className="text-sm font-bold text-slate-700">{dash.label}</span>
+          className="w-9 h-9 rounded-full border border-slate-300 text-slate-500 flex items-center justify-center hover:bg-brand hover:text-white hover:border-brand transition disabled:opacity-40" disabled={pending} aria-label="ก่อนหน้า">←</button>
+        {period === "month" ? (
+          <div className="text-center leading-none min-w-[7rem]">
+            <div className="text-4xl font-bold text-slate-800 tracking-tight tabular-nums">{anchor.slice(5, 7)}</div>
+            <div className="text-xs text-slate-500 mt-1">{TH_MON_FULL[Number(anchor.slice(5, 7))]} {Number(anchor.slice(0, 4)) + 543}</div>
+          </div>
+        ) : (
+          <span className="text-sm font-bold text-slate-700">{dash.label}</span>
+        )}
         <button type="button" onClick={() => go(period, shiftAnchor(anchor, period, 1))}
-          className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50" disabled={pending}>→</button>
+          className="w-9 h-9 rounded-full border border-slate-300 text-slate-500 flex items-center justify-center hover:bg-brand hover:text-white hover:border-brand transition disabled:opacity-40" disabled={pending} aria-label="ถัดไป">→</button>
       </div>
 
       {/* Hero metric cards */}
