@@ -20,6 +20,11 @@ type FloorRow = { monthFrom: string; monthTo: string; amount: string };
 const BASE_LABEL: Record<SalesBase, string> = {
   gross: "ยอดก่อนส่วนลด (Gross) — แนะนำ", after_discount: "หลังหักส่วนลด", nett: "ยอดสุทธิรวม VAT (Nett)"
 };
+// rate (0.07) → clean "7" (drops float artefacts like 7.000000000000001).
+const pctStr = (rate: number) => String(+(rate * 100).toFixed(4));
+// digits string → grouped "200,000" for display; empty stays empty.
+const grp = (s: string) => { const n = (s ?? "").replace(/[^\d]/g, ""); return n ? Number(n).toLocaleString("en-US") : ""; };
+const digits = (s: string) => s.replace(/[^\d]/g, "");
 
 export default function PartnerConfigClient({ partner, tiers, floors }: { partner: Partner; tiers: Tier[]; floors: Floor[] }) {
   const router = useRouter();
@@ -33,10 +38,10 @@ export default function PartnerConfigClient({ partner, tiers, floors }: { partne
   const [addr, setAddr] = useState(partner.address ?? "");
   const [branchCode, setBranchCode] = useState(partner.branch_code ?? "");
   const [vatEnabled, setVatEnabled] = useState(partner.vat_enabled);
-  const [vatRate, setVatRate] = useState(String(partner.vat_rate * 100));
-  const [whtRate, setWhtRate] = useState(String(partner.wht_rate * 100));
+  const [vatRate, setVatRate] = useState(pctStr(partner.vat_rate));
+  const [whtRate, setWhtRate] = useState(pctStr(partner.wht_rate));
   const [tierRows, setTierRows] = useState<TierRow[]>(
-    tiers.map((t) => ({ lower: String(t.lower), upper: t.upper == null ? "" : String(t.upper), rate: String(t.rate * 100) }))
+    tiers.map((t) => ({ lower: String(t.lower), upper: t.upper == null ? "" : String(t.upper), rate: pctStr(t.rate) }))
   );
   const [floorRows, setFloorRows] = useState<FloorRow[]>(
     floors.map((f) => ({ monthFrom: String(f.monthFrom), monthTo: String(f.monthTo), amount: String(f.amount) }))
@@ -140,9 +145,9 @@ export default function PartnerConfigClient({ partner, tiers, floors }: { partne
             <div key={i} className="flex items-center gap-2 text-sm">
               <span className="text-[11px] text-slate-400 w-8">ชั้น {i + 1}</span>
               <span className="text-[11px] text-slate-500">ตั้งแต่</span>
-              <input type="number" className="input w-28 text-right" value={r.lower} onChange={(e) => setTier(i, "lower", e.target.value)} />
+              <input type="text" inputMode="numeric" className="input w-28 text-right" value={grp(r.lower)} onChange={(e) => setTier(i, "lower", digits(e.target.value))} />
               <span className="text-[11px] text-slate-500">ถึง</span>
-              <input type="number" className="input w-28 text-right" value={r.upper} placeholder="ไม่จำกัด" onChange={(e) => setTier(i, "upper", e.target.value)} />
+              <input type="text" inputMode="numeric" className="input w-28 text-right" value={grp(r.upper)} placeholder="ไม่จำกัด" onChange={(e) => setTier(i, "upper", digits(e.target.value))} />
               <input type="number" step="0.01" className="input w-20 text-right" value={r.rate} onChange={(e) => setTier(i, "rate", e.target.value)} />
               <span className="text-[11px] text-slate-500">%</span>
               <button type="button" onClick={() => setTierRows((rs) => rs.filter((_, j) => j !== i))} className="text-[11px] text-rose-500 hover:underline">ลบ</button>
@@ -164,7 +169,7 @@ export default function PartnerConfigClient({ partner, tiers, floors }: { partne
               <span className="text-[11px] text-slate-500">ถึง</span>
               <input type="number" className="input w-16 text-right" value={r.monthTo} onChange={(e) => setFloor(i, "monthTo", e.target.value)} />
               <span className="text-[11px] text-slate-500">ขั้นต่ำ ฿</span>
-              <input type="number" className="input w-32 text-right" value={r.amount} onChange={(e) => setFloor(i, "amount", e.target.value)} />
+              <input type="text" inputMode="numeric" className="input w-32 text-right" value={grp(r.amount)} onChange={(e) => setFloor(i, "amount", digits(e.target.value))} />
               <button type="button" onClick={() => setFloorRows((rs) => rs.filter((_, j) => j !== i))} className="text-[11px] text-rose-500 hover:underline">ลบ</button>
             </div>
           ))}
