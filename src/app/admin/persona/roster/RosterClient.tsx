@@ -40,6 +40,13 @@ type Assignment = {
 
 const DOW_TH = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
 
+// Approved-leave type → short Thai label for the roster badge.
+const LEAVE_LABEL_TH: Record<string, string> = {
+  sick: "ลาป่วย", personal: "ลากิจ", annual: "ลาพักร้อน", pt_emergency: "ลาฉุกเฉิน",
+  maternity: "ลาคลอด", ordination: "ลาบวช", sterilization: "ลาทำหมัน", military: "ลาทหาร"
+};
+const leaveLabel = (type: string | undefined): string => (type ? LEAVE_LABEL_TH[type] ?? "ลา" : "");
+
 // Best-effort first/last split for a roster cell. Prefers the explicit
 // users.first_name_th / last_name_th columns; falls back to splitting
 // display_name on whitespace (stripping common Thai/English title
@@ -70,7 +77,7 @@ function splitName(
 }
 
 export default function RosterClient({
-  month, daysInMonth, positions, shiftCodes, staff, assignments
+  month, daysInMonth, positions, shiftCodes, staff, assignments, leaveMap
 }: {
   month: string;          // YYYY-MM
   daysInMonth: number;
@@ -78,6 +85,7 @@ export default function RosterClient({
   shiftCodes: ShiftCode[];
   staff: Staff[];
   assignments: Assignment[];
+  leaveMap: Record<string, string>;   // "${userId}:${date}" -> leave type
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -369,6 +377,7 @@ export default function RosterClient({
                 {dates.map((d) => {
                   const a = byCell.get(d)?.get(p.id);
                   const focused = inFocus(a);
+                  const onLeave = a ? leaveMap[`${a.user_id}:${d}`] : undefined;
                   return (
                     <td key={d}
                       className={`border border-slate-200 p-0 align-middle transition-opacity ${
@@ -388,7 +397,9 @@ export default function RosterClient({
                         className={`w-full h-full min-h-[42px] px-1 py-1 text-[10px] hover:bg-slate-50 transition ${
                           a ? "" : "text-slate-300"
                         }`}
-                        style={a?.shift_color ? { backgroundColor: a.shift_color } : undefined}
+                        // On-leave cells get a rose wash so the slot reads as
+                        // "needs a substitute" regardless of the shift colour.
+                        style={onLeave ? { backgroundColor: "#fff1f2" } : (a?.shift_color ? { backgroundColor: a.shift_color } : undefined)}
                       >
                         {a ? (
                           <>
@@ -398,12 +409,16 @@ export default function RosterClient({
                                 an internal view, so first name + role
                                 + shift code is enough to identify
                                 everyone without overflowing. */}
-                            <div className="font-bold leading-tight text-slate-800">
+                            <div className={`font-bold leading-tight ${onLeave ? "text-slate-400 line-through" : "text-slate-800"}`}>
                               {splitName(a.user_display_name, a.user_first_name, a.user_last_name).first}
                             </div>
-                            <div className="text-[10px] text-slate-700 mt-0.5">
-                              {a.shift_code}
-                            </div>
+                            {onLeave ? (
+                              <div className="text-[9px] font-bold text-rose-600 leading-tight mt-0.5">{leaveLabel(onLeave)} · หาคนแทน</div>
+                            ) : (
+                              <div className="text-[10px] text-slate-700 mt-0.5">
+                                {a.shift_code}
+                              </div>
+                            )}
                           </>
                         ) : (
                           "+"
@@ -515,6 +530,9 @@ export default function RosterClient({
           existing={byCell.get(editing.date)?.get(editing.positionId) ?? null}
           shiftCodes={shiftCodes}
           staff={staff}
+          leaveForDate={Object.fromEntries(
+            staff.map((s) => [s.id, leaveMap[`${s.id}:${editing.date}`]]).filter(([, ty]) => ty)
+          ) as Record<number, string>}
           busy={busy}
           onClose={() => setEditing(null)}
           onSave={saveAssignment}
@@ -542,7 +560,7 @@ export default function RosterClient({
 // ── Assign modal ─────────────────────────────────────────────────
 
 function AssignModal({
-  date, positionId, position, existing, shiftCodes, staff, busy,
+  date, positionId, position, existing, shiftCodes, staff, leaveForDate, busy,
   onClose, onSave, onClear, t
 }: {
   date: string; positionId: number;
@@ -550,13 +568,17 @@ function AssignModal({
   existing: Assignment | null;
   shiftCodes: ShiftCode[];
   staff: Staff[];
+  leaveForDate: Record<number, string>;   // userId -> leave type (for THIS date)
   busy: boolean;
   onClose: () => void;
   onSave: (a: { date: string; positionId: number; userId: number; shiftCodeId: number }) => void;
   onClear: (a: { date: string; positionId: number }) => void;
   t: (k: string, vars?: Record<string, string | number>) => string;
 }) {
-  const [userId, setUserId] = useState<number | "">(existing?.user_id ?? "");
+  // The current occupant is on leave this day → start with no staff picked so
+  // the admin is nudged to choose a substitute (owner 2026-06-23).
+  const existingOnLeave = existing ? leaveForDate[existing.user_id] : undefined;
+  const [userId, setUserId] = useState<number | "">(existingOnLeave ? "" : (existing?.user_id ?? ""));
   const [shiftCodeId, setShiftCodeId] = useState<number | "">(existing?.shift_code_id ?? "");
 
   function submit() {
@@ -581,16 +603,24 @@ function AssignModal({
             <p className="text-xs text-slate-500 mt-0.5">{position.description}</p>
           )}
         </div>
+        {existingOnLeave && existing && (
+          <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">
+            <b>{splitName(existing.user_display_name, existing.user_first_name, existing.user_last_name).first}</b> {leaveLabel(existingOnLeave)}วันนี้ — เลือกพนักงานคนอื่นมาทำแทน แล้วกดบันทึก (หรือกดลบเพื่อเว้นว่างไว้)
+          </div>
+        )}
         <div>
           <label className="label">{t("admin.persona.roster.modal.staff")}</label>
           <select className="input" value={userId}
             onChange={(e) => setUserId(e.target.value === "" ? "" : Number(e.target.value))}>
             <option value="">— {t("admin.persona.roster.modal.pickStaff")} —</option>
-            {staff.map((s) => (
-              <option key={s.id} value={s.id}>
-                {nameWithPrefix(s.title_prefix, s.display_name)} {s.employment_type ? `(${s.employment_type.toUpperCase()})` : ""}
-              </option>
-            ))}
+            {staff.map((s) => {
+              const ty = leaveForDate[s.id];
+              return (
+                <option key={s.id} value={s.id} disabled={!!ty && s.id !== existing?.user_id}>
+                  {nameWithPrefix(s.title_prefix, s.display_name)} {s.employment_type ? `(${s.employment_type.toUpperCase()})` : ""}{ty ? ` · ${leaveLabel(ty)}` : ""}
+                </option>
+              );
+            })}
           </select>
         </div>
         <div>

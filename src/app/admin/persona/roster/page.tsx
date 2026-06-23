@@ -24,7 +24,8 @@ import {
   listShiftCodes,
   listPositions,
   listAssignmentsForMonth,
-  getLastPublish
+  getLastPublish,
+  approvedLeaveDaysForBranchMonth
 } from "@/lib/roster";
 import RosterClient from "./RosterClient";
 import RosterCalendarView from "./RosterCalendarView";
@@ -75,6 +76,10 @@ export default function AdminRosterPage({
   const positions = listPositions(branch.id);
   const assignments = listAssignmentsForMonth(branch.id, month);
   const lastPublish = getLastPublish(branch.id, month);
+  // Approved-leave overlay → "${userId}:${date}" -> leave type. Lets the grid
+  // grey out on-leave staff so the admin sees the slot needs a substitute.
+  const leaveMap: Record<string, string> = {};
+  for (const l of approvedLeaveDaysForBranchMonth(branch.id, month)) leaveMap[`${l.user_id}:${l.date}`] = l.type;
 
   // Birthday layer (2026-05-30) — every staff in this branch with a
   // dob on file. We pre-extract MM-DD so the calendar can match by
@@ -276,6 +281,7 @@ export default function AdminRosterPage({
               shift_color: a.shift_color,
               shift_start_time: a.shift_start_time
             }))}
+            leaveMap={leaveMap}
           />
         )
       )}

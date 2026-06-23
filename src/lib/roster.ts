@@ -156,6 +156,36 @@ export function getLastPublish(
   return row ?? null;
 }
 
+/** Approved-leave days for the branch's staff that fall inside a month,
+ *  expanded one row per (user, date). Drives the roster's "on leave" badge so
+ *  the admin sees who's out and can drop in a substitute (owner 2026-06-23).
+ *  Scoped via user_branches so it works even for legacy leave rows with a
+ *  null branch_id. */
+export type RosterLeaveDay = { user_id: number; date: string; type: string };
+export function approvedLeaveDaysForBranchMonth(branchId: number, yearMonth: string): RosterLeaveDay[] {
+  const monthStart = `${yearMonth}-01`;
+  const [yy, mm] = yearMonth.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+  const monthEnd = `${yearMonth}-${String(lastDay).padStart(2, "0")}`;
+  const rows = getDb().prepare(`
+    SELECT DISTINCT l.user_id, l.date_from, l.date_to, l.type
+    FROM leave_requests l
+    JOIN user_branches ub ON ub.user_id = l.user_id AND ub.branch_id = ?
+    WHERE l.status = 'approved' AND l.date_from <= ? AND l.date_to >= ?
+  `).all(branchId, monthEnd, monthStart) as Array<{ user_id: number; date_from: string; date_to: string; type: string }>;
+  const out: RosterLeaveDay[] = [];
+  for (const r of rows) {
+    let cur = r.date_from < monthStart ? monthStart : r.date_from;
+    const end = r.date_to > monthEnd ? monthEnd : r.date_to;
+    while (cur <= end) {
+      out.push({ user_id: r.user_id, date: cur, type: r.type });
+      const d = new Date(`${cur}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1);
+      cur = d.toISOString().slice(0, 10);
+    }
+  }
+  return out;
+}
+
 // ── Effective shift lookup — the integration seam ────────────────
 
 /** What time should the staff have started work today, per the
