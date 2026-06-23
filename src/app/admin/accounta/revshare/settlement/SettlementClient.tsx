@@ -140,7 +140,7 @@ export default function SettlementClient({
       <div className="card space-y-2">
         <div className="text-sm font-bold text-slate-800">สรุปรายสัปดาห์ (ยอดโอน + GP)</div>
         {pv.breakdown.length === 0 ? (
-          <p className="text-xs text-slate-400">ยังไม่มีข้อมูลในเดือนนี้ — <Link href={`/admin/accounta/revshare/rounds?partner=${partner.id}&year=${year}&month=${month}`} className="text-brand hover:underline">ไปนำเข้า POS รายวัน</Link></p>
+          <p className="text-xs text-slate-400">ยังไม่มีข้อมูลในเดือนนี้ — <Link href={`/admin/accounta/revshare/rounds?partner=${partner.id}&year=${year}&month=${month}`} className="text-brand hover:underline">ไปนำเข้ายอดขายรายวัน</Link></p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm tabular-nums">
@@ -182,10 +182,10 @@ export default function SettlementClient({
         {pv.stored?.issued_at && <p className="text-[11px] text-slate-400">ออกใบเมื่อ {new Date(pv.stored.issued_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}{pv.stored.paid_at ? ` · รับชำระ ${new Date(pv.stored.paid_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}` : ""}</p>}
       </div>
 
-      {/* Statement (partner-ready) */}
+      {/* Statement (partner-ready) — visual preview of the LINE card */}
       <div className="card space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-sm font-bold text-slate-800">ใบสรุปสำหรับส่งคู่ค้า</div>
+          <div className="text-sm font-bold text-slate-800">การ์ดที่จะส่งให้คู่ค้า</div>
           <div className="flex items-center gap-2 flex-wrap">
             {partner.line_group_id
               ? <button type="button" onClick={sendNotify} disabled={busy} className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{sent ? "✓ ส่งแล้ว" : "ส่งการ์ดเข้ากลุ่มคู่ค้า (LINE)"}</button>
@@ -194,10 +194,73 @@ export default function SettlementClient({
             <a href={apiUrl(`/api/accounta/revshare/statement/pdf?partner=${partner.id}&year=${year}&month=${month}`)} className="btn-secondary text-sm" download>ดาวน์โหลด PDF</a>
           </div>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <pre className="whitespace-pre-wrap font-sans text-sm text-slate-700 leading-relaxed">{statementText()}</pre>
+        <p className="text-[11px] text-slate-400">ตัวอย่างการ์ดที่คู่ค้าจะเห็นใน LINE — ส่งแล้วหน้าตาเป็นแบบนี้</p>
+        <div className="rounded-2xl bg-slate-100 p-4 sm:p-6 flex justify-center">
+          <FlexCardPreview
+            shop={partner.venue?.trim() || partner.name}
+            legalName={partner.venue?.trim() ? partner.name : null}
+            sellerName={seller.name}
+            monthLabel={monthLabel}
+            invoiceNo={invoiceNo.trim() || null}
+            weeks={pv.breakdown.map((b) => ({ label: b.label, sales: b.sales }))}
+            r={r} withVat={withVat} grandTotal={grandTotal}
+          />
         </div>
-        <p className="text-[11px] text-slate-400">ใช้ CI เดียวกับทั้งระบบ · ตัวเลขตรงกับด้านบน · PDF มีหัวเอกสาร {seller.name}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Static mock of the LINE Flex bubble (mirrors revshareSettlementFlex) so the
+ *  owner sees exactly what lands in the partner's group before sending. */
+function FlexCardPreview({
+  shop, legalName, sellerName, monthLabel, invoiceNo, weeks, r, withVat, grandTotal
+}: {
+  shop: string; legalName: string | null; sellerName: string; monthLabel: string;
+  invoiceNo: string | null; weeks: Array<{ label: string; sales: number }>;
+  r: Result; withVat: boolean; grandTotal: number;
+}) {
+  const Row = ({ label, value, bold, color }: { label: string; value: string; bold?: boolean; color?: string }) => (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-[13px] text-slate-500">{label}</span>
+      <span className={`text-[13px] tabular-nums ${bold ? "font-bold" : ""}`} style={color ? { color } : undefined}>{value}</span>
+    </div>
+  );
+  return (
+    <div className="w-full max-w-[320px] rounded-[18px] overflow-hidden bg-white shadow-lg ring-1 ring-black/5">
+      {/* header */}
+      <div className="px-4 py-4" style={{ backgroundColor: "#281a0e" }}>
+        <div className="text-[10px]" style={{ color: "#d6a14d" }}>IKIGAI OS · ส่วนแบ่งยอดขาย (GP)</div>
+        <div className="text-base font-bold text-white leading-tight mt-0.5">สรุปรอบ {monthLabel}</div>
+        <div className="text-[11px]" style={{ color: "#cbb89a" }}>{invoiceNo ? `เลขที่ ${invoiceNo}` : "ใบสรุปส่วนแบ่งยอดขาย"}</div>
+      </div>
+      {/* body */}
+      <div className="px-4 py-4 space-y-2">
+        <div className="text-[15px] font-bold text-slate-800 leading-tight">{shop}</div>
+        {legalName && <div className="text-[10px] text-slate-400 leading-tight">{legalName}</div>}
+        <div className="text-[10px] text-slate-400">ผู้เรียกเก็บ: {sellerName}</div>
+        {weeks.length > 0 && (
+          <>
+            <div className="border-t border-slate-100 my-1" />
+            <div className="text-[11px] font-bold text-slate-400">ยอดโอนรายสัปดาห์</div>
+            {weeks.map((w, i) => <Row key={i} label={w.label} value={`฿${fmtMoney(w.sales)}`} />)}
+          </>
+        )}
+        <div className="border-t border-slate-100 my-1" />
+        <Row label="ยอดขายรวมทั้งเดือน" value={`฿${fmtMoney(r.totalSales)}`} />
+        <Row label={`GP เรียกเก็บ (${(r.avgGpPct * 100).toFixed(2)}%)`} value={`฿${fmtMoney(r.billedGP)}`} bold />
+        {withVat && <Row label="VAT 7%" value={`฿${fmtMoney(r.vatAmount)}`} />}
+        {withVat && <Row label="รวมใบกำกับภาษี" value={`฿${fmtMoney(grandTotal)}`} bold />}
+        <Row label="หัก ณ ที่จ่าย 3%" value={`−฿${fmtMoney(r.whtAmount)}`} color="#a32d2d" />
+        <div className="border-t border-slate-100 my-1" />
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-[13px] font-bold text-slate-600">รับสุทธิ</span>
+          <span className="text-[15px] font-bold tabular-nums" style={{ color: "#0f6e56" }}>฿{fmtMoney(r.netAmount)}</span>
+        </div>
+      </div>
+      {/* footer */}
+      <div className="px-4 pb-3 pt-1">
+        <div className="text-[9px] text-slate-400 text-center">เอกสารแจ้งเตือนภายใน ไม่ใช่เอกสารทางภาษี</div>
       </div>
     </div>
   );

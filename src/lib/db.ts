@@ -1454,6 +1454,12 @@ function runMigrations(db: Database.Database): void {
     if (!has("address")) db.exec("ALTER TABLE revshare_partners ADD COLUMN address TEXT");
     if (!has("branch_code")) db.exec("ALTER TABLE revshare_partners ADD COLUMN branch_code TEXT");
   }
+  {
+    // revshare_rounds.updated_by — who last edited a daily sales row (owner
+    // 2026-06-23: PIN-gated import/edit records the operator).
+    const rrCols = db.prepare("PRAGMA table_info(revshare_rounds)").all() as Array<{ name: string }>;
+    if (!rrCols.some((c) => c.name === "updated_by")) db.exec("ALTER TABLE revshare_rounds ADD COLUMN updated_by INTEGER REFERENCES users(id)");
+  }
 
   // Daily attendance summary (TC-6) — per-branch HH:MM time at which
   // the cron job posts a 4-category roll-call to the executive group:

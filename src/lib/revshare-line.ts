@@ -37,7 +37,7 @@ function footer(note: string): unknown {
 }
 
 export type SettlementCard = {
-  sellerName: string; partnerName: string; monthLabel: string;
+  sellerName: string; partnerName: string; venue?: string | null; monthLabel: string;
   totalSales: number; billedGP: number; avgGpPct: number;
   vatEnabled: boolean; vatAmount: number; whtAmount: number; netAmount: number;
   weeks: Array<{ label: string; sales: number }>;
@@ -45,8 +45,12 @@ export type SettlementCard = {
 };
 
 export function revshareSettlementFlex(d: SettlementCard): FlexMsg {
+  // Shop/venue name (e.g. "จ้อจี้ & friends") leads — it's how the partner is
+  // known + the POS category. Legal entity shows small beneath it.
+  const shop = d.venue?.trim() || d.partnerName;
   const body: unknown[] = [
-    { type: "text", text: d.partnerName, weight: "bold", size: "md" },
+    { type: "text", text: shop, weight: "bold", size: "lg", wrap: true },
+    ...(d.venue?.trim() ? [{ type: "text", text: d.partnerName, size: "xxs", color: "#999999", wrap: true }] : []),
     { type: "text", text: `ผู้เรียกเก็บ: ${d.sellerName}`, size: "xxs", color: "#999999" }
   ];
   if (d.weeks.length) {

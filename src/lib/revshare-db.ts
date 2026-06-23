@@ -195,7 +195,7 @@ export function createRound(partnerId: number, branchId: number, d: RoundInput, 
     d.source ?? "manual", d.source_filename ?? null, userId
   ).lastInsertRowid);
 }
-export function updateRound(roundId: number, partnerId: number, branchId: number, d: { sales_amount?: number; period_start?: string; period_end?: string }): boolean {
+export function updateRound(roundId: number, partnerId: number, branchId: number, d: { sales_amount?: number; period_start?: string; period_end?: string }, userId: number): boolean {
   if (!partnerGuard(partnerId, branchId)) return false;
   const sets: string[] = []; const vals: Array<string | number> = [];
   if (d.sales_amount !== undefined) { sets.push("sales_amount = ?"); vals.push(round2(d.sales_amount)); }
@@ -205,6 +205,7 @@ export function updateRound(roundId: number, partnerId: number, branchId: number
     vals.push(d.period_start, d.period_end, y, m, roundLabel(d.period_start, d.period_end));
   }
   if (!sets.length) return false;
+  sets.push("updated_by = ?"); vals.push(userId);
   vals.push(roundId, partnerId);
   return getDb().prepare(`UPDATE revshare_rounds SET ${sets.join(", ")} WHERE id = ? AND partner_id = ?`).run(...vals).changes > 0;
 }

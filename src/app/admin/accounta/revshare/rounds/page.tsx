@@ -40,13 +40,14 @@ export default function RevshareRoundsPage({ searchParams }: { searchParams: { p
       </div>
       <div>
         <h1 className="text-2xl font-bold text-slate-800">รอบยอดขาย · {partner.name}</h1>
-        <p className="text-sm text-slate-500 mt-1">บันทึกยอดขายรายสัปดาห์ (จันทร์–อาทิตย์) หรือนำเข้าจากไฟล์ POS · GP แสดงแบบสะสมต่อรอบ</p>
+        <p className="text-sm text-slate-500 mt-1">นำเข้าไฟล์ยอดขายประจำวัน · ระบบรวมยอดโอนรายสัปดาห์ (จันทร์–อาทิตย์) ให้อัตโนมัติ · GP คำนวณรายเดือนที่หน้าสรุป</p>
       </div>
       <RoundsClient
         partner={partner}
         tiers={getTiers(partner.id)}
         rounds={listRounds(partner.id, branchId, year, month)}
         year={year} month={month}
+        operatorName={user.display_name}
       />
     </div>
   );
