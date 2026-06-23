@@ -36,7 +36,7 @@ export async function GET(req: Request) {
     status: STATUS_TH[preview.stored?.status ?? "draft"],
     withVat: partner.vat_enabled && preview.result.vatAmount > 0,
     result: preview.result,
-    breakdown: preview.breakdown.map((b) => ({ label: b.round?.label ?? "—", sales: b.sales, roundGP: b.roundGP }))
+    breakdown: preview.breakdown.map((b) => ({ label: b.label, sales: b.sales, roundGP: b.roundGP }))
   });
 
   return new NextResponse(pdf as unknown as BodyInit, {

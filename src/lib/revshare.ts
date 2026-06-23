@@ -150,11 +150,43 @@ export function thaiDate(iso: string): string {
   return `${d} ${TH_MONTHS_FULL[m]} ${y + 543}`;
 }
 
-/** A compact label for a round's date span, e.g. "15–21 มิ.ย." (same month) or
- *  "30 มิ.ย.–6 ก.ค." (spanning two months). */
+/** A compact label for a round's date span, e.g. "23 มิ.ย." (one day),
+ *  "15–21 มิ.ย." (same month) or "30 มิ.ย.–6 ก.ค." (spanning two months). */
 export function roundLabel(startIso: string, endIso: string): string {
   const [, sm, sd] = startIso.split("-").map(Number);
   const [, em, ed] = endIso.split("-").map(Number);
+  if (startIso === endIso) return `${sd} ${TH_MONTHS_ABBR[sm]}`;
   if (sm === em) return `${sd}–${ed} ${TH_MONTHS_ABBR[sm]}`;
   return `${sd} ${TH_MONTHS_ABBR[sm]}–${ed} ${TH_MONTHS_ABBR[em]}`;
+}
+
+// ── Daily → weekly rollup (owner 2026-06-23: import POS daily, transfer weekly,
+//    GP monthly) ──────────────────────────────────────────────────────────────
+
+function addDaysIso(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+/** Monday (ISO week start) of the week containing `iso`. */
+export function mondayOf(iso: string): string {
+  const dow = new Date(`${iso}T00:00:00Z`).getUTCDay();   // 0=Sun..6=Sat
+  return addDaysIso(iso, dow === 0 ? -6 : 1 - dow);
+}
+
+export type WeekGroup = { weekStart: string; start: string; end: string; label: string; sales: number };
+
+/** Group daily entries into ISO weeks (Mon–Sun). Each group's label spans the
+ *  actual days present (so a partial week at a month edge reads "29–30 มิ.ย.").
+ *  Sorted by date. This is the weekly TRANSFER amount. */
+export function groupDailyIntoWeeks(entries: Array<{ date: string; amount: number }>): WeekGroup[] {
+  const m = new Map<string, { start: string; end: string; sales: number }>();
+  for (const e of entries) {
+    const wk = mondayOf(e.date);
+    const g = m.get(wk);
+    if (!g) m.set(wk, { start: e.date, end: e.date, sales: e.amount });
+    else { g.sales += e.amount; if (e.date < g.start) g.start = e.date; if (e.date > g.end) g.end = e.date; }
+  }
+  return [...m.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([wk, g]) => ({ weekStart: wk, start: g.start, end: g.end, label: roundLabel(g.start, g.end), sales: round2(g.sales) }));
 }

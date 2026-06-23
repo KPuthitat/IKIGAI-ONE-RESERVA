@@ -12,7 +12,7 @@ type Result = {
   totalSales: number; tierGP: number; floorApplied: number; billedGP: number; topup: number;
   avgGpPct: number; vatAmount: number; whtAmount: number; netAmount: number;
 };
-type BreakRow = { sales: number; roundGP: number; gpPct: number; round: { label: string | null; period_start: string; period_end: string } | null };
+type BreakRow = { label: string; start: string; end: string; sales: number; roundGP: number; gpPct: number };
 type Stored = { status: "draft" | "issued" | "paid"; invoice_no: string | null; issued_at: string | null; paid_at: string | null } | null;
 type Preview = { result: Result; breakdown: BreakRow[]; opMonth: number; stored: Stored; stale: boolean };
 type Partner = { id: number; name: string; venue: string | null; vat_enabled: boolean };
@@ -125,20 +125,20 @@ export default function SettlementClient({
 
       {/* Round breakdown */}
       <div className="card space-y-2">
-        <div className="text-sm font-bold text-slate-800">รายละเอียดรายรอบ</div>
+        <div className="text-sm font-bold text-slate-800">สรุปรายสัปดาห์ (ยอดโอน + GP)</div>
         {pv.breakdown.length === 0 ? (
-          <p className="text-xs text-slate-400">ยังไม่มีรอบในเดือนนี้ — <Link href={`/admin/accounta/revshare/rounds?partner=${partner.id}&year=${year}&month=${month}`} className="text-brand hover:underline">ไปเพิ่มรอบ</Link></p>
+          <p className="text-xs text-slate-400">ยังไม่มีข้อมูลในเดือนนี้ — <Link href={`/admin/accounta/revshare/rounds?partner=${partner.id}&year=${year}&month=${month}`} className="text-brand hover:underline">ไปนำเข้า POS รายวัน</Link></p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm tabular-nums">
               <thead><tr className="text-[11px] text-slate-400 border-b border-slate-200">
-                <th className="text-left py-1.5 px-2">รอบ</th><th className="text-right py-1.5 px-2">ยอดขาย</th>
+                <th className="text-left py-1.5 px-2">สัปดาห์</th><th className="text-right py-1.5 px-2">ยอดโอน</th>
                 <th className="text-right py-1.5 px-2">GP</th><th className="text-right py-1.5 px-2">GP%</th>
               </tr></thead>
               <tbody>
                 {pv.breakdown.map((b, i) => (
                   <tr key={i} className="border-b border-slate-50">
-                    <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap">{b.round?.label ?? "—"}</td>
+                    <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap">{b.label}</td>
                     <td className="py-1.5 px-2 text-right font-mono">{fmtMoney(b.sales)}</td>
                     <td className="py-1.5 px-2 text-right font-mono text-emerald-700">{fmtMoney(b.roundGP)}</td>
                     <td className="py-1.5 px-2 text-right font-mono text-slate-500">{(b.gpPct * 100).toFixed(1)}%</td>

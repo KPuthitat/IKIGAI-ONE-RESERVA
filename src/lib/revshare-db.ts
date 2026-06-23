@@ -6,8 +6,8 @@
 import { getDb } from "./db";
 import {
   computeSettlement, computeRoundBreakdown, opMonthFor, roundLabel, round2,
-  DEFAULT_TIERS, DEFAULT_FLOORS,
-  type Tier, type Floor, type SettlementResult, type RoundBreakdownRow
+  groupDailyIntoWeeks, DEFAULT_TIERS, DEFAULT_FLOORS,
+  type Tier, type Floor, type SettlementResult
 } from "./revshare";
 
 export type SalesBase = "gross" | "after_discount" | "nett";
@@ -239,9 +239,10 @@ export function generateAutoRounds(partnerId: number, branchId: number, year: nu
 }
 
 // ── settlement ──────────────────────────────────────────────────────
+export type WeekBreakdown = { label: string; start: string; end: string; sales: number; roundGP: number; gpPct: number };
 export type SettlementPreview = {
   result: SettlementResult;
-  breakdown: Array<RoundBreakdownRow & { round: RsRound }>;
+  breakdown: WeekBreakdown[];   // weekly transfer + GP (owner 2026-06-23: daily → weekly → monthly)
   opMonth: number;
   stored: RsSettlement | null;
   stale: boolean;   // a snapshot exists but no longer matches current rounds
@@ -261,8 +262,15 @@ export function previewSettlement(partnerId: number, branchId: number, year: num
     totalSales, opMonth, tiers, floors,
     vatEnabled: partner.vat_enabled, vatRate: partner.vat_rate, whtRate: partner.wht_rate
   });
-  const rb = computeRoundBreakdown(rounds.map((r) => r.sales_amount), tiers);
-  const breakdown = rb.map((row, i) => ({ ...row, round: rounds[i] }));
+  // Group the month's daily entries into ISO weeks (= the weekly transfer),
+  // then split GP per week via cumulative-difference so weeks sum to the
+  // monthly tier GP.
+  const weeks = groupDailyIntoWeeks(rounds.map((r) => ({ date: r.period_start, amount: r.sales_amount })));
+  const rb = computeRoundBreakdown(weeks.map((w) => w.sales), tiers);
+  const breakdown: WeekBreakdown[] = rb.map((row, i) => ({
+    label: weeks[i].label, start: weeks[i].start, end: weeks[i].end,
+    sales: row.sales, roundGP: row.roundGP, gpPct: row.gpPct
+  }));
   const stored = getStoredSettlement(partnerId, branchId, year, month);
   const stale = !!stored && round2(stored.totalSales) !== result.totalSales;
   return { result, breakdown, opMonth, stored, stale };
