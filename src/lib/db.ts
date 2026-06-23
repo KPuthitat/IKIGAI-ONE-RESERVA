@@ -4932,6 +4932,90 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_ascenda_results_branch_period
       ON ascenda_results (branch_id, period_key);
   `);
+
+  // ── Competency assessment (owner 2026-06-23) ──────────────────────
+  // Individual radar-chart skill assessment — separate from the branch-KPI
+  // evaluation above. Three groups (professional/soft/managing) on a 1–5 scale;
+  // dimensions below their target are "weak points" that feed an Individual
+  // Development Plan. competency_items is the per-track training-matrix catalog
+  // (restaurant/clinic/admin). Career-path levels link in a later phase.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS competency_dimensions (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      grp            TEXT NOT NULL CHECK (grp IN ('professional','soft','managing')),
+      name           TEXT NOT NULL,
+      description    TEXT,
+      default_target REAL NOT NULL DEFAULT 4,        -- target on the 1–5 scale
+      sort_order     INTEGER NOT NULL DEFAULT 0,
+      active         INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS competency_items (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      track        TEXT NOT NULL,                    -- 'restaurant' | 'clinic' | 'admin'
+      grp          TEXT NOT NULL CHECK (grp IN ('professional','soft','managing')),
+      name         TEXT NOT NULL,
+      dimension_id INTEGER REFERENCES competency_dimensions(id) ON DELETE SET NULL,
+      sort_order   INTEGER NOT NULL DEFAULT 0,
+      active       INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_competency_items_track ON competency_items(track, grp, sort_order);
+    CREATE TABLE IF NOT EXISTS competency_assessments (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      period_key  TEXT NOT NULL,                     -- "2026-Q2" / "2026-06"
+      track       TEXT,
+      reviewer_id INTEGER REFERENCES users(id),
+      status      TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','final')),
+      note        TEXT,
+      created_by  INTEGER REFERENCES users(id),
+      created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, period_key)
+    );
+    CREATE TABLE IF NOT EXISTS competency_scores (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      assessment_id  INTEGER NOT NULL REFERENCES competency_assessments(id) ON DELETE CASCADE,
+      dimension_id   INTEGER NOT NULL REFERENCES competency_dimensions(id) ON DELETE CASCADE,
+      self_score     REAL,
+      reviewer_score REAL,
+      target_score   REAL,
+      note           TEXT,
+      UNIQUE (assessment_id, dimension_id)
+    );
+  `);
+  // Seed the 7 radar dimensions + the per-track catalog once.
+  if ((db.prepare("SELECT COUNT(*) AS n FROM competency_dimensions").get() as { n: number }).n === 0) {
+    const dim = db.prepare("INSERT INTO competency_dimensions (grp, name, description, default_target, sort_order) VALUES (?, ?, ?, ?, ?)");
+    const dims: Array<[string, string, string, number]> = [
+      ["professional", "ทักษะวิชาชีพตามตำแหน่ง", "ความรู้/ทักษะเฉพาะงานของตำแหน่งนั้น", 4],
+      ["professional", "คุณภาพงาน/ความแม่นยำ", "ความถูกต้อง เรียบร้อย ได้มาตรฐาน", 4],
+      ["soft", "ใจรักบริการ", "ดูแลลูกค้า/คนไข้ด้วยความใส่ใจ", 4],
+      ["soft", "การสื่อสาร/ทำงานเป็นทีม", "สื่อสารชัดเจน ประสานงานกับทีมได้", 4],
+      ["soft", "ความรับผิดชอบ/วินัย/ตรงเวลา", "มาตรงเวลา รับผิดชอบงานที่ได้รับ", 4],
+      ["soft", "การแก้ปัญหา/ปรับตัว", "แก้ปัญหาหน้างาน ปรับตัวกับการเปลี่ยนแปลง", 4],
+      ["managing", "ภาวะผู้นำ/วางแผน/สอนงาน", "นำทีม วางแผน สอนงาน (ระดับหัวหน้า)", 3]
+    ];
+    dims.forEach((d, i) => dim.run(d[0], d[1], d[2], d[3], i));
+    const item = db.prepare("INSERT INTO competency_items (track, grp, name, sort_order) VALUES (?, ?, ?, ?)");
+    const items: Array<[string, string, string]> = [
+      // restaurant
+      ["restaurant", "professional", "ทำอาหารตามสูตร/มาตรฐานรสชาติ"], ["restaurant", "professional", "คุมต้นทุน-ของเสีย (food cost)"],
+      ["restaurant", "professional", "ความปลอดภัยอาหาร (GHP/ใบผู้สัมผัสอาหาร)"], ["restaurant", "professional", "ความรู้เมนู + POS/ปิดยอด"],
+      ["restaurant", "soft", "ใจรักบริการ + จัดการข้อร้องเรียน"], ["restaurant", "soft", "ทำงานเป็นทีม + รับมือช่วง peak"],
+      ["restaurant", "managing", "จัดเวร-กำลังคน"], ["restaurant", "managing", "ตรวจมาตรฐาน QSC"], ["restaurant", "managing", "สั่งของ/คุมสต็อก + OJT สอนงาน"],
+      // clinic
+      ["clinic", "professional", "หัตถการพื้นฐาน (V/S, ฉีดยา, ทำแผล)"], ["clinic", "professional", "BLS/CPR"],
+      ["clinic", "professional", "ความปลอดภัยด้านยา + IC ป้องกันการติดเชื้อ"], ["clinic", "professional", "เวชระเบียน-นัด + เบิกประกัน"],
+      ["clinic", "soft", "สื่อสารกับคนไข้ (empathy) + PDPA"], ["clinic", "soft", "จัดการคิว/ข้อร้องเรียน"],
+      ["clinic", "managing", "บริหารคิว-นัด"], ["clinic", "managing", "คุมสต็อกยา-เวชภัณฑ์"], ["clinic", "managing", "มาตรฐานคุณภาพคลินิก + สอนงาน"],
+      // admin
+      ["admin", "professional", "บัญชี-ภาษีพื้นฐาน"], ["admin", "professional", "จัดซื้อ-คุมสต็อก"],
+      ["admin", "professional", "ใช้ระบบ IKIGAI OS + payroll/HR"], ["admin", "professional", "Excel/ทำรายงาน"],
+      ["admin", "soft", "ประสานงาน/สื่อสาร + ความละเอียด"], ["admin", "soft", "รักษาความลับ"],
+      ["admin", "managing", "วางแผน-คุมงบ"], ["admin", "managing", "บริหารทีม + วิเคราะห์ข้อมูล"]
+    ];
+    items.forEach((it, i) => item.run(it[0], it[1], it[2], i));
+  }
   // company_id (2026-05-27 owner direction): company-scope KPIs
   // evaluated PER company, not aggregated to one global row. Owner
   // wording: "ASCENDA มีผลกับทุกบริษัท ทุกสาขา แต่ให้พิจารณาแยกกัน"
