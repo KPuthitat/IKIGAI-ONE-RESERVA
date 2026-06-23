@@ -90,7 +90,7 @@ function niceTop(v: number): number {
 // value above each revenue bar; peach expense bars; muted profit line. Wide,
 // short viewBox + aspect-ratio so it stays a tidy band, not a 700px wall.
 function MonthlyCombo({ rows }: { rows: MonthlyRow[] }) {
-  const W = 900, Lm = 40, H = 132, padTop = 16, padBottom = 4, labelBand = 22;
+  const W = 900, Lm = 40, H = 132, padTop = 16, padBottom = 4, labelBand = 24;
   const plotW = W - Lm;
   const maxV = Math.max(...rows.map((m) => m.revenue), ...rows.map((m) => m.expense), ...rows.map((m) => m.profit), 0);
   const minV = Math.min(...rows.map((m) => m.profit), 0);
@@ -133,7 +133,7 @@ function MonthlyCombo({ rows }: { rows: MonthlyRow[] }) {
             {m.revenue > 0 && (
               <text x={cx - barW / 2 - 0.5} y={rY - 3} textAnchor="middle" fontSize={7.5} fontWeight={600} fill="#0F6E56">{fmtK(m.revenue)}</text>
             )}
-            <text x={cx} y={H + 15} fontSize={9} fill="#94a3b8" textAnchor="middle">{TH_MON_FULL[m.month]}</text>
+            <text x={cx} y={H + 17} fontSize={11} fontWeight={600} fill="#475569" textAnchor="middle">{String(m.month).padStart(2, "0")}</text>
           </g>
         );
       })}
@@ -237,9 +237,9 @@ export default function LedgerDashboardClient({
         <button type="button" onClick={() => go(period, shiftAnchor(anchor, period, -1))}
           className="w-9 h-9 rounded-full border border-slate-300 text-slate-500 flex items-center justify-center hover:bg-brand hover:text-white hover:border-brand transition disabled:opacity-40" disabled={pending} aria-label="ก่อนหน้า">←</button>
         {period === "month" ? (
-          <div className="text-center leading-none min-w-[7rem]">
-            <div className="text-4xl font-bold text-slate-800 tracking-tight tabular-nums">{anchor.slice(5, 7)}</div>
-            <div className="text-xs text-slate-500 mt-1">{TH_MON_FULL[Number(anchor.slice(5, 7))]} {Number(anchor.slice(0, 4)) + 543}</div>
+          <div className="text-center min-w-[7rem]">
+            <div className="text-4xl font-bold text-slate-800 tracking-tight tabular-nums leading-none">{anchor.slice(5, 7)}</div>
+            <div className="text-xs text-slate-500 leading-none mt-0.5">{TH_MON_FULL[Number(anchor.slice(5, 7))]} {Number(anchor.slice(0, 4)) + 543}</div>
           </div>
         ) : (
           <span className="text-sm font-bold text-slate-700">{dash.label}</span>
