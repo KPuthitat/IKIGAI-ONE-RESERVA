@@ -11,6 +11,7 @@ type Partner = {
   id: number; name: string; venue: string | null; start_date: string;
   sales_base: SalesBase; pos_categories: string[];
   vat_enabled: boolean; vat_rate: number; wht_rate: number; active: boolean; note: string | null;
+  line_group_id: string | null;
 };
 type TierRow = { lower: string; upper: string; rate: string };
 type FloorRow = { monthFrom: string; monthTo: string; amount: string };
@@ -26,6 +27,7 @@ export default function PartnerConfigClient({ partner, tiers, floors }: { partne
   const [startDate, setStartDate] = useState(partner.start_date);
   const [salesBase, setSalesBase] = useState<SalesBase>(partner.sales_base);
   const [posCats, setPosCats] = useState(partner.pos_categories.join(", "));
+  const [lineGroup, setLineGroup] = useState(partner.line_group_id ?? "");
   const [vatEnabled, setVatEnabled] = useState(partner.vat_enabled);
   const [vatRate, setVatRate] = useState(String(partner.vat_rate * 100));
   const [whtRate, setWhtRate] = useState(String(partner.wht_rate * 100));
@@ -59,6 +61,7 @@ export default function PartnerConfigClient({ partner, tiers, floors }: { partne
         id: partner.id, name: name.trim(), venue: venue.trim() || null, start_date: startDate,
         sales_base: salesBase,
         pos_categories: posCats.split(",").map((s) => s.trim()).filter(Boolean),
+        line_group_id: lineGroup.trim() || null,
         vat_enabled: vatEnabled, vat_rate: Number(vatRate) / 100, wht_rate: Number(whtRate) / 100,
         tiers: tiersOut, floors: floorsOut
       };
@@ -91,6 +94,11 @@ export default function PartnerConfigClient({ partner, tiers, floors }: { partne
         <div className="sm:col-span-2">
           <label className="label">หมวด POS ที่นับเป็นยอดขายของคู่ค้า (คั่นด้วยจุลภาค)</label>
           <input className="input" value={posCats} placeholder="เช่น SOFT DRINK" onChange={(e) => setPosCats(e.target.value)} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="label">LINE group ID ของคู่ค้า (สำหรับส่งการ์ดแจ้งเตือน)</label>
+          <input className="input font-mono" value={lineGroup} placeholder="เช่น Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" onChange={(e) => setLineGroup(e.target.value)} />
+          <p className="text-[11px] text-slate-400 mt-1">เพิ่ม OA “IKIGAI OS” เข้ากลุ่มคู่ค้าก่อน แล้วเอา group id มาใส่ (เว้นว่าง = ปิดการส่ง)</p>
         </div>
       </div>
 

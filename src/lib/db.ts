@@ -1441,6 +1441,15 @@ function runMigrations(db: Database.Database): void {
       UNIQUE (partner_id, settle_year, settle_month)
     );
   `);
+  // line_group_id (owner 2026-06-23): the partner's LINE group — the IKIGAI OS
+  // platform OA is added to it so weekly-transfer / monthly-GP cards can be
+  // pushed there. NULL = no group set (the send button is disabled).
+  {
+    const rpCols = db.prepare("PRAGMA table_info(revshare_partners)").all() as Array<{ name: string }>;
+    if (!rpCols.some((c) => c.name === "line_group_id")) {
+      db.exec("ALTER TABLE revshare_partners ADD COLUMN line_group_id TEXT");
+    }
+  }
 
   // Daily attendance summary (TC-6) — per-branch HH:MM time at which
   // the cron job posts a 4-category roll-call to the executive group:

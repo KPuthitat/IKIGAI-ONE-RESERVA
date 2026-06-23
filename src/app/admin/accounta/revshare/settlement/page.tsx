@@ -49,7 +49,7 @@ export default function RevshareSettlementPage({ searchParams }: { searchParams:
         <p className="text-sm text-slate-500 mt-1">สรุปส่วนแบ่งรายเดือน → ออกใบเรียกเก็บ GP ครั้งเดียวสิ้นเดือน</p>
       </div>
       <SettlementClient
-        partner={{ id: partner.id, name: partner.name, venue: partner.venue, vat_enabled: partner.vat_enabled }}
+        partner={{ id: partner.id, name: partner.name, venue: partner.venue, vat_enabled: partner.vat_enabled, line_group_id: partner.line_group_id }}
         seller={{ name: seller.name, address: seller.reg_address, taxBranchCode: seller.tax_branch_code, phone: seller.contact_phone }}
         initial={preview} year={year} month={month}
       />

@@ -15,7 +15,7 @@ type Result = {
 type BreakRow = { label: string; start: string; end: string; sales: number; roundGP: number; gpPct: number };
 type Stored = { status: "draft" | "issued" | "paid"; invoice_no: string | null; issued_at: string | null; paid_at: string | null } | null;
 type Preview = { result: Result; breakdown: BreakRow[]; opMonth: number; stored: Stored; stale: boolean };
-type Partner = { id: number; name: string; venue: string | null; vat_enabled: boolean };
+type Partner = { id: number; name: string; venue: string | null; vat_enabled: boolean; line_group_id: string | null };
 type Seller = { name: string; address: string | null; taxBranchCode: string | null; phone: string | null };
 
 export default function SettlementClient({
@@ -27,6 +27,7 @@ export default function SettlementClient({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [sent, setSent] = useState(false);
 
   const r = pv.result;
   const monthLabel = `${TH_MONTHS_FULL[month]} ${year + 543}`;
@@ -74,6 +75,18 @@ export default function SettlementClient({
   async function copy() {
     try { await navigator.clipboard.writeText(statementText()); setCopied(true); setTimeout(() => setCopied(false), 1800); }
     catch { setErr("คัดลอกไม่สำเร็จ"); }
+  }
+  async function sendNotify() {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/accounta/revshare/notify"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partner: partner.id, year, month, kind: "settlement" })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "ส่ง LINE ไม่สำเร็จ")); return; }
+      setSent(true); setTimeout(() => setSent(false), 2200);
+    } finally { setBusy(false); }
   }
 
   const STATUS = {
@@ -173,7 +186,10 @@ export default function SettlementClient({
       <div className="card space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="text-sm font-bold text-slate-800">ใบสรุปสำหรับส่งคู่ค้า</div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {partner.line_group_id
+              ? <button type="button" onClick={sendNotify} disabled={busy} className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{sent ? "✓ ส่งแล้ว" : "ส่งการ์ดเข้ากลุ่มคู่ค้า (LINE)"}</button>
+              : <span className="text-[11px] text-slate-400">ตั้ง LINE group ในหน้าตั้งค่าคู่ค้าเพื่อส่งการ์ดได้</span>}
             <button type="button" onClick={copy} className="btn-secondary text-sm">{copied ? "✓ คัดลอกแล้ว" : "คัดลอกข้อความ (ส่ง LINE)"}</button>
             <a href={apiUrl(`/api/accounta/revshare/statement/pdf?partner=${partner.id}&year=${year}&month=${month}`)} className="btn-secondary text-sm" download>ดาวน์โหลด PDF</a>
           </div>

@@ -16,6 +16,7 @@ export type RsPartner = {
   id: number; branch_id: number; name: string; venue: string | null;
   start_date: string; sales_base: SalesBase; pos_categories: string[];
   vat_enabled: boolean; vat_rate: number; wht_rate: number; active: boolean; note: string | null;
+  line_group_id: string | null;
 };
 export type RsRound = {
   id: number; partner_id: number; period_year: number; period_month: number;
@@ -48,7 +49,7 @@ function shapePartner(r: any): RsPartner {
     start_date: r.start_date, sales_base: r.sales_base,
     pos_categories: safeJsonArr(r.pos_categories),
     vat_enabled: !!r.vat_enabled, vat_rate: r.vat_rate, wht_rate: r.wht_rate,
-    active: !!r.active, note: r.note
+    active: !!r.active, note: r.note, line_group_id: r.line_group_id ?? null
   };
 }
 function safeJsonArr(s: string | null): string[] {
@@ -77,6 +78,7 @@ export type PartnerInput = {
   name: string; venue?: string | null; start_date: string;
   sales_base?: SalesBase; pos_categories?: string[];
   vat_enabled?: boolean; vat_rate?: number; wht_rate?: number; note?: string | null;
+  line_group_id?: string | null;
 };
 
 /** Create a partner + seed the default Groggy tiers/floors (editable after). */
@@ -86,12 +88,12 @@ export function createPartner(branchId: number, d: PartnerInput): number | null 
   const tx = db.transaction(() => {
     const id = Number(db.prepare(`
       INSERT INTO revshare_partners (branch_id, name, venue, start_date, sales_base, pos_categories,
-        vat_enabled, vat_rate, wht_rate, note)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        vat_enabled, vat_rate, wht_rate, note, line_group_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       branchId, d.name.trim(), d.venue ?? null, d.start_date,
       d.sales_base ?? "gross", JSON.stringify(d.pos_categories ?? []),
-      d.vat_enabled === false ? 0 : 1, d.vat_rate ?? 0.07, d.wht_rate ?? 0.03, d.note ?? null
+      d.vat_enabled === false ? 0 : 1, d.vat_rate ?? 0.07, d.wht_rate ?? 0.03, d.note ?? null, d.line_group_id ?? null
     ).lastInsertRowid);
     writeTiers(db, id, DEFAULT_TIERS);
     writeFloors(db, id, DEFAULT_FLOORS);
@@ -113,6 +115,7 @@ export function updatePartner(partnerId: number, branchId: number, d: Partial<Pa
   if (d.vat_rate !== undefined) put("vat_rate", d.vat_rate);
   if (d.wht_rate !== undefined) put("wht_rate", d.wht_rate);
   if (d.note !== undefined) put("note", d.note);
+  if (d.line_group_id !== undefined) put("line_group_id", d.line_group_id);
   if (d.active !== undefined) put("active", d.active ? 1 : 0);
   if (!sets.length) return false;
   sets.push("updated_at = CURRENT_TIMESTAMP");
