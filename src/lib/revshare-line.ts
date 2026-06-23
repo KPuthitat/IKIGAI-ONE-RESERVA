@@ -68,13 +68,14 @@ export function revshareSettlementFlex(d: SettlementCard): FlexMsg {
     body.push({ type: "text", text: "ยังไม่ถึงขั้นต่ำ — เรียกเก็บที่ยอดขั้นต่ำ", size: "xxs", color: "#854f0b", wrap: true });
   }
   body.push(kv("ส่วนแบ่งยอดขายทั้งหมด (ก่อนภาษี)", baht(d.billedGP), { bold: true }));
+  body.push({ type: "text", text: `ส่วนแบ่งเฉลี่ย ${(d.avgGpPct * 100).toFixed(2)}% ของยอดขาย`, size: "xxs", color: "#999999", wrap: true });
   if (d.vatEnabled && d.vatAmount > 0) {
     body.push(kv("VAT 7%", baht(d.vatAmount)));
     body.push(kv("ส่วนแบ่งยอดขายและภาษีทั้งหมด", baht(d.billedGP + d.vatAmount), { bold: true }));
   }
   body.push(kv("หักภาษี ณ ที่จ่าย 3%", "−" + baht(d.whtAmount), { color: "#a32d2d" }));
   body.push(sep);
-  body.push(kv("รับสุทธิ", baht(d.netAmount), { bold: true, color: "#0f6e56", size: "md" }));
+  body.push(kv("ยอดสุทธิ", baht(d.netAmount), { bold: true, color: "#0f6e56", size: "md" }));
 
   // ── ยอดโอนรายสัปดาห์ (billed by the partner shop) ──
   if (d.weeks.length) {

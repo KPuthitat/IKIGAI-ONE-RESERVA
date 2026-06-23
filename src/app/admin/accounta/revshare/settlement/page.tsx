@@ -6,7 +6,7 @@ import { isRevshareBranch, getPartner, previewSettlement } from "@/lib/revshare-
 import SettlementClient from "./SettlementClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "ACCOUNTA · สรุป / ใบวางบิล GP" };
+export const metadata: Metadata = { title: "ACCOUNTA · สรุปยอด / สร้างใบวางบิล" };
 
 function nowBkk(): { y: number; m: number } {
   const d = new Date(Date.now() + 7 * 3600_000);
@@ -46,7 +46,7 @@ export default function RevshareSettlementPage({ searchParams }: { searchParams:
         <Link href="/admin/accounta/revshare" className="text-sm text-brand hover:underline">รายชื่อคู่ค้า</Link>
       </div>
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">สรุป / ใบวางบิล · {partner.name}</h1>
+        <h1 className="text-2xl font-bold text-slate-800">สรุปยอด / สร้างใบวางบิล · {partner.name}</h1>
         <p className="text-sm text-slate-500 mt-1">สรุปส่วนแบ่งรายเดือน → ออกใบเรียกเก็บส่วนแบ่งยอดขายครั้งเดียวสิ้นเดือน</p>
       </div>
       <SettlementClient

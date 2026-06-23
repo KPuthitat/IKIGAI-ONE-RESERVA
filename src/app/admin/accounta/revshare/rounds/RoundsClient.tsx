@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, Fragment } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
@@ -72,9 +73,11 @@ export default function RoundsClient({
   }
 
   // Run a PIN-stamped action. Reuse the verified PIN silently; re-prompt only if
-  // the server rejects it (or none is cached yet).
-  async function guarded(run: (pin: string) => Promise<{ ok: boolean; pinError?: boolean }>) {
-    if (pinRef.current) {
+  // the server rejects it (or none is cached yet). forcePrompt always shows the
+  // modal — used for import so every file is consciously confirmed (owner
+  // 2026-06-23: "บางครั้งไม่ถาม PIN บันทึกให้เลย").
+  async function guarded(run: (pin: string) => Promise<{ ok: boolean; pinError?: boolean }>, opts?: { forcePrompt?: boolean }) {
+    if (pinRef.current && !opts?.forcePrompt) {
       const r = await run(pinRef.current);
       if (r.ok || !r.pinError) return;
       pinRef.current = null; setVerified(false);
@@ -147,7 +150,7 @@ export default function RoundsClient({
       });
       if (r.ok) setPreview(null);
       return r;
-    });
+    }, { forcePrompt: true });
   }
 
   return (
@@ -161,7 +164,7 @@ export default function RoundsClient({
       </div>
 
       <div className="card text-[11px] text-slate-500">
-        จังหวะการทำงาน: <b className="text-slate-700">นำเข้าไฟล์ยอดขายประจำวัน</b> → ระบบรวม <b className="text-slate-700">ยอดโอนรายสัปดาห์</b> (จ–อา) ให้อัตโนมัติ → <b className="text-slate-700">คำนวณ GP รายเดือน</b> ที่หน้าสรุป
+        จังหวะการทำงาน: <b className="text-slate-700">นำเข้าไฟล์ยอดขายประจำวัน</b> → ระบบรวม <b className="text-slate-700">ยอดโอนรายสัปดาห์</b> (จ–อา) ให้อัตโนมัติ → <b className="text-slate-700">สรุปยอด / สร้างใบวางบิล</b> ที่หน้าสรุปยอด
       </div>
 
       <div className="card flex flex-wrap items-center gap-2">
@@ -173,6 +176,11 @@ export default function RoundsClient({
           1 วัน/ไฟล์ · นำเข้าจากไฟล์เท่านั้น (เพิ่มยอดเองไม่ได้) · แก้ไขได้หลังนำเข้า
           {verified && <span className="ml-1 text-emerald-600">· ✓ ยืนยันตัวตนแล้ว ({operatorName})</span>}
         </span>
+        <span className="flex-1" />
+        <Link href={`/admin/accounta/revshare/settlement?partner=${partner.id}&year=${year}&month=${month}`}
+          className="rounded-md bg-brand text-white px-4 py-2 text-sm font-bold hover:opacity-90">
+          สรุปยอด / สร้างใบวางบิล →
+        </Link>
       </div>
 
       {/* Sales-file import preview */}
@@ -248,7 +256,7 @@ export default function RoundsClient({
                       <tr key={r.id} className="border-b border-slate-50">
                         <td className="py-1 px-2 text-slate-600 whitespace-nowrap">{roundLabel(r.period_start, r.period_start)}</td>
                         <td className="py-1 px-2 text-right">
-                          <input type="number" defaultValue={r.sales_amount} step="0.01" className="input w-32 text-right text-sm py-1" onBlur={(e) => saveSales(r, e.target.value)} />
+                          <SalesInput value={r.sales_amount} disabled={busy} onSave={(v) => saveSales(r, v)} />
                         </td>
                         <td className="py-1 px-2 text-[11px] text-slate-400">{r.source === "pos_import" ? "นำเข้าไฟล์" : "กรอกเอง"}</td>
                         <td className="py-1 px-2 text-right"><button type="button" onClick={() => del(r)} disabled={busy} className="text-[11px] text-rose-500 hover:underline">ลบ</button></td>
@@ -265,7 +273,7 @@ export default function RoundsClient({
               <tfoot><tr className="border-t-2 border-slate-300 font-bold">
                 <td className="py-1.5 px-2 text-slate-700">รวมทั้งเดือน</td>
                 <td className="py-1.5 px-2 text-right font-mono">฿{fmtMoney(totalSales)}</td>
-                <td colSpan={2} className="py-1.5 px-2 text-[11px] text-slate-400">GP คำนวณรายเดือนที่หน้าสรุป</td>
+                <td colSpan={2} className="py-1.5 px-2 text-[11px] text-slate-400">ส่วนแบ่งคำนวณรายเดือนที่หน้าสรุปยอด</td>
               </tr></tfoot>
             </table>
           </div>
@@ -283,5 +291,27 @@ export default function RoundsClient({
         />
       )}
     </div>
+  );
+}
+
+// Editable daily-sales input: shows the value grouped with thousand separators
+// at rest (and in the app font, not the browser's number-input font), drops the
+// commas for clean editing on focus, re-formats + saves on blur.
+function SalesInput({ value, onSave, disabled }: { value: number; onSave: (v: string) => void; disabled?: boolean }) {
+  const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const [text, setText] = useState(fmt(value));
+  return (
+    <input
+      type="text" inputMode="decimal" disabled={disabled}
+      className="input w-32 text-right text-sm py-1 font-sans tabular-nums"
+      value={text}
+      onFocus={() => setText(value ? String(value) : "")}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={(e) => {
+        const n = Number(e.target.value.replace(/,/g, ""));
+        if (Number.isFinite(n)) { setText(fmt(n)); onSave(String(n)); }
+        else setText(fmt(value));
+      }}
+    />
   );
 }

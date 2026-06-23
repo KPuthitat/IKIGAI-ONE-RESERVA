@@ -91,10 +91,11 @@ export function generateStatementPdf(d: StatementPdfData): Promise<Buffer> {
         line(`  • ยังไม่ถึงขั้นต่ำ — เรียกเก็บที่ยอดขั้นต่ำ ${baht(r.floorApplied)}`, "", false, "#854f0b");
       }
       line("ส่วนแบ่งยอดขายทั้งหมด (ก่อนภาษี)", baht(r.billedGP), true);
+      line(`  ส่วนแบ่งเฉลี่ย ${(r.avgGpPct * 100).toFixed(2)}% ของยอดขาย`, "", false, "#999999");
       if (d.withVat) { line("VAT 7%", baht(r.vatAmount)); line("ส่วนแบ่งยอดขายและภาษีทั้งหมด", baht(r.billedGP + r.vatAmount), true); }
       line("หักภาษี ณ ที่จ่าย 3%", "−" + baht(r.whtAmount), false, "#a32d2d");
       y += 4; doc.moveTo(left, y).lineTo(right, y).strokeColor("#bbb").lineWidth(0.8).stroke(); y += 8;
-      line("รับสุทธิ", baht(r.netAmount), true, "#0f6e56");
+      line("ยอดสุทธิ", baht(r.netAmount), true, "#0f6e56");
 
       doc.font("th").fontSize(8).fillColor("#999").text(
         "เอกสารนี้ใช้ติดตามภายใน ไม่ใช่เอกสารทางภาษีอย่างเป็นทางการ", left, doc.page.height - doc.page.margins.bottom - 14, { width: contentW, align: "center" }

@@ -103,14 +103,14 @@ export default function SettlementClient({
         {withVat && <Card label="VAT 7%" value={r.vatAmount} />}
         {withVat && <Card label="รวมตามใบกำกับภาษี" value={grandTotal} />}
         <Card label="หัก ณ ที่จ่าย 3%" value={-r.whtAmount} tone="rose" />
-        <Card label="รับสุทธิ" value={r.netAmount} tone="emerald" big />
+        <Card label="ยอดสุทธิ" value={r.netAmount} tone="emerald" big />
       </div>
 
       {/* Money-direction note */}
       <div className="card text-xs text-slate-500 space-y-1">
         <div className="font-bold text-slate-700">ทิศทางเงิน</div>
         <div>• รายสัปดาห์: {seller.name} โอนยอดขายเต็มจำนวนให้คู่ค้า (ยังไม่หักส่วนแบ่ง)</div>
-        <div>• สิ้นเดือน: ออกใบเรียกเก็บส่วนแบ่งยอดขายรวมครั้งเดียว ฿{fmtMoney(r.billedGP)}{withVat ? ` + VAT ฿${fmtMoney(r.vatAmount)} = ฿${fmtMoney(grandTotal)}` : ""} → คู่ค้าจ่ายแล้วหัก ณ ที่จ่าย 3% (฿{fmtMoney(r.whtAmount)}) → รับสุทธิ ฿{fmtMoney(r.netAmount)}</div>
+        <div>• สิ้นเดือน: ออกใบเรียกเก็บส่วนแบ่งยอดขายรวมครั้งเดียว ฿{fmtMoney(r.billedGP)}{withVat ? ` + VAT ฿${fmtMoney(r.vatAmount)} = ฿${fmtMoney(grandTotal)}` : ""} → คู่ค้าจ่ายแล้วหักภาษี ณ ที่จ่าย 3% (฿{fmtMoney(r.whtAmount)}) → ยอดสุทธิ ฿{fmtMoney(r.netAmount)}</div>
       </div>
 
       {/* Round breakdown */}
@@ -165,7 +165,7 @@ export default function SettlementClient({
           <div className="text-sm font-bold text-slate-800">ข้อความแจ้งเตือนที่จะส่งให้คู่ค้า</div>
           <div className="flex items-center gap-2 flex-wrap">
             {partner.line_group_id
-              ? <button type="button" onClick={sendNotify} disabled={busy} className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{sent ? "✓ ส่งแล้ว" : "ส่งข้อความแจ้งเตือนเข้ากลุ่มคู่ค้า (LINE)"}</button>
+              ? <button type="button" onClick={sendNotify} disabled={busy} className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{sent ? "✓ ส่งแล้ว" : "ส่งข้อความแจ้งเตือนเข้ากลุ่มคู่ค้า"}</button>
               : <span className="text-[11px] text-slate-400">ตั้ง LINE group ในหน้าตั้งค่าคู่ค้าเพื่อส่งได้</span>}
             <a href={apiUrl(`/api/accounta/revshare/statement/pdf?partner=${partner.id}&year=${year}&month=${month}`)} className="btn-secondary text-sm" download>ดาวน์โหลด PDF</a>
           </div>
@@ -235,12 +235,13 @@ function FlexCardPreview({
           </>
         )}
         <Row label="ส่วนแบ่งยอดขายทั้งหมด (ก่อนภาษี)" value={baht(r.billedGP)} bold />
+        <div className="text-[10px] text-slate-400 -mt-1">ส่วนแบ่งเฉลี่ย {(r.avgGpPct * 100).toFixed(2)}% ของยอดขาย</div>
         {withVat && <Row label="VAT 7%" value={baht(r.vatAmount)} />}
         {withVat && <Row label="ส่วนแบ่งยอดขายและภาษีทั้งหมด" value={baht(grandTotal)} bold />}
         <Row label="หักภาษี ณ ที่จ่าย 3%" value={`−${baht(r.whtAmount)}`} color="#a32d2d" />
         <div className="border-t border-slate-100 my-1" />
         <div className="flex items-baseline justify-between gap-4">
-          <span className="text-[13px] font-bold text-slate-600">รับสุทธิ</span>
+          <span className="text-[13px] font-bold text-slate-600">ยอดสุทธิ</span>
           <span className="text-[15px] font-bold tabular-nums whitespace-nowrap" style={{ color: "#0f6e56" }}>{baht(r.netAmount)}</span>
         </div>
 

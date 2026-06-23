@@ -36,11 +36,11 @@ export default function RevshareRoundsPage({ searchParams }: { searchParams: { p
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <Link href="/admin/accounta/revshare" className="text-sm text-slate-500 hover:text-brand">← กลับรายชื่อคู่ค้า</Link>
-        <Link href={`/admin/accounta/revshare/settlement?partner=${partner.id}&year=${year}&month=${month}`} className="text-sm text-brand hover:underline">ไปหน้าสรุป / ใบวางบิล →</Link>
+        <Link href={`/admin/accounta/revshare/settlement?partner=${partner.id}&year=${year}&month=${month}`} className="text-sm text-brand hover:underline">สรุปยอด / สร้างใบวางบิล →</Link>
       </div>
       <div>
         <h1 className="text-2xl font-bold text-slate-800">รอบยอดขาย · {partner.name}</h1>
-        <p className="text-sm text-slate-500 mt-1">นำเข้าไฟล์ยอดขายประจำวัน · ระบบรวมยอดโอนรายสัปดาห์ (จันทร์–อาทิตย์) ให้อัตโนมัติ · GP คำนวณรายเดือนที่หน้าสรุป</p>
+        <p className="text-sm text-slate-500 mt-1">นำเข้าไฟล์ยอดขายประจำวัน · ระบบรวมยอดโอนรายสัปดาห์ (จันทร์–อาทิตย์) ให้อัตโนมัติ · ส่วนแบ่งคำนวณรายเดือนที่หน้าสรุปยอด</p>
       </div>
       <RoundsClient
         partner={partner}
