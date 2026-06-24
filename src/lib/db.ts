@@ -5091,6 +5091,14 @@ function runMigrations(db: Database.Database): void {
       ON branch_daily_revenue (branch_id, date);
   `);
 
+  // bill_count (owner 2026-06-25): จำนวนบิล/ใบเสร็จทั้งวัน — staff enter it next to
+  // ยอดขาย at shift-close; the ACCOUNTA daybook shows it per day. Nullable so
+  // existing rows + revenue-only backfills stay valid.
+  const bdrCols = db.prepare("PRAGMA table_info(branch_daily_revenue)").all() as Array<{ name: string }>;
+  if (!bdrCols.some((c) => c.name === "bill_count")) {
+    db.exec("ALTER TABLE branch_daily_revenue ADD COLUMN bill_count INTEGER");
+  }
+
   // Seed the 7 default KPIs the owner specified. Idempotent — only
   // inserts when ascenda_kpis is empty so editing/removing seeded
   // rows in production doesn't bring them back on next boot.

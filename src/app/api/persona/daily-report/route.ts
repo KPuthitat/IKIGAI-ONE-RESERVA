@@ -85,6 +85,9 @@ const ShiftCloseData = z.object({
   // read from there). Optional so staff can skip and admin backfills
   // later via /admin/ascenda/revenue.
   daily_revenue: z.number().min(0).max(10_000_000).nullable().optional(),
+  // จำนวนบิล/ใบเสร็จทั้งวัน (owner 2026-06-25) — single total entered next to
+  // ยอดขาย at close; mirrored into branch_daily_revenue and shown in the daybook.
+  bill_count: z.number().int().min(0).max(100_000).nullable().optional(),
   // Material ordered today (owner 2026-06-21) — stored in daily_reports.data
   // for the close report's quota comparison. null = branch quota feature off.
   material_ordered_today: z.number().min(0).max(10_000_000).nullable().optional(),
@@ -347,7 +350,8 @@ export async function POST(req: Request) {
           date: report_date,
           revenue: d.daily_revenue,
           userId: user.id,
-          source: "shift_close"
+          source: "shift_close",
+          billCount: d.bill_count ?? null
         });
         logPersonaAction(
           user.id,

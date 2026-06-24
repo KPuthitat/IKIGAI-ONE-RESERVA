@@ -33,7 +33,7 @@ type Dash = {
   inputVat: number; outputVat: number; vatPayable: number; vatRegistered: boolean;
   daysWithRevenue: number; avgPerDay: number; avgWeekday: number; avgWeekend: number;
   forecast: number | null; categories: CatItem[]; uncategorized: number;
-  dailyRows: Array<{ date: string; revenue: number; expense: number; net: number; balance: number }>;
+  dailyRows: Array<{ date: string; revenue: number; expense: number; net: number; balance: number; billCount: number | null }>;
   incomeByChannel: Array<{ channel: string; amount: number }>;
   incomeRows: Array<{ date: string; channel: string; amount: number; ar: number; cash: number }>;
   byVendor: Array<{ vendor: string; amount: number }>;
@@ -200,7 +200,7 @@ function Donut({ items }: { items: Array<{ label: string; amount: number }> }) {
 // รายจ่าย on the right, day totals beneath. shift-close income mirrors the
 // daily close report and stays read-only here (edit it at ยอดขายรายวัน).
 function DayDetail({
-  date, rows, loading, err, expenses, channels, categories, branchId, companyId,
+  date, rows, loading, err, expenses, channels, categories, branchId, companyId, billCount,
   onChanged, removeExpense, busyExpenseId
 }: {
   date: string;
@@ -212,6 +212,7 @@ function DayDetail({
   categories: Array<{ code: string | null; name: string }>;
   branchId: number;
   companyId: number | null;
+  billCount: number | null;
   onChanged: () => void;
   removeExpense: (e: LedgerExpenseRow) => void;
   busyExpenseId: number | null;
@@ -469,10 +470,11 @@ function DayDetail({
       </div>
 
       {/* Day totals */}
-      <div className="grid grid-cols-3 gap-3 pt-1">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
         <div className="text-center"><div className="text-[10px] text-slate-400">รายรับรวม</div><div className="font-mono font-bold text-emerald-700">฿{fmtMoney(incTotal)}</div></div>
         <div className="text-center"><div className="text-[10px] text-slate-400">รายจ่ายรวม</div><div className="font-mono font-bold text-rose-700">฿{fmtMoney(expTotal)}</div></div>
         <div className="text-center"><div className="text-[10px] text-slate-400">กำไร/ขาดทุนวันนี้</div><div className={`font-mono font-bold ${net >= 0 ? "text-slate-800" : "text-rose-600"}`}>{net < 0 ? `(฿${fmtMoney(-net)})` : `฿${fmtMoney(net)}`}</div></div>
+        <div className="text-center"><div className="text-[10px] text-slate-400">จำนวนบิลวันนี้</div><div className="font-mono font-bold text-slate-700">{billCount != null ? `${billCount.toLocaleString("en-US")} ใบ` : "—"}</div></div>
       </div>
 
       {pinRow && (
@@ -849,6 +851,7 @@ export default function LedgerDashboardClient({
                             categories={expenseCategories}
                             branchId={branchId}
                             companyId={companyId}
+                            billCount={r.billCount}
                             onChanged={() => { loadDayIncome(r.date, true); startTransition(() => router.refresh()); }}
                             removeExpense={remove}
                             busyExpenseId={busyId}

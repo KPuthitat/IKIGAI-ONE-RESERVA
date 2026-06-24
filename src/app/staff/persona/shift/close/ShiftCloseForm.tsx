@@ -171,6 +171,12 @@ export default function ShiftCloseForm({
     const v = previousData?.daily_revenue;
     return typeof v === "number" ? String(v) : "";
   });
+  // จำนวนบิลทั้งวัน (owner 2026-06-25) — single total next to ยอดขาย; lands in
+  // branch_daily_revenue and shows in the ACCOUNTA daybook.
+  const [billCount, setBillCount] = useState<string>(() => {
+    const v = previousData?.bill_count;
+    return typeof v === "number" ? String(v) : "";
+  });
   // Per-channel sales (owner 2026-06-21). Keyed by channel id. Empty = 0; the
   // day's total is the sum. Pre-fill from a report being edited (match by name).
   const [channelAmounts, setChannelAmounts] = useState<Record<number, string>>(() => {
@@ -416,6 +422,7 @@ export default function ShiftCloseForm({
           closing_drawer_amount: closingParsed,
           service_charge_amount: svcParsed,
           daily_revenue: dailyTotal,
+          bill_count: billCount.trim() ? Number(billCount.replace(/\D/g, "")) : null,
           material_ordered_today: materialQuota ? (parseAmount(materialOrdered) ?? 0) : null,
           channel_amounts: channelsActive
             ? incomeChannels.map((c) => ({
@@ -568,6 +575,19 @@ export default function ShiftCloseForm({
               onChange={(e) => setDailyRevenue(e.target.value)} />
             <p className="text-[10px] text-slate-400 mt-1">
               ใช้คำนวณ KPI ASCENDA (COL % และยอดขายโต) · เว้นว่างได้ถ้ายังไม่ทราบ
+            </p>
+          </div>
+        )}
+        {requireDailyRevenue && (
+          <div>
+            <label className="label">จำนวนบิลวันนี้ (ใบ)</label>
+            <input type="number" inputMode="numeric" min={0} step="1"
+              className="input"
+              value={billCount}
+              placeholder="เช่น 142 (ไม่บังคับ)"
+              onChange={(e) => setBillCount(e.target.value.replace(/\D/g, ""))} />
+            <p className="text-[10px] text-slate-400 mt-1">
+              จำนวนบิล/ใบเสร็จรวมทั้งวัน — แสดงในสมุดรายวัน ACCOUNTA · เว้นว่างได้
             </p>
           </div>
         )}

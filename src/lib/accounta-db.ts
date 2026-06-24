@@ -1007,7 +1007,7 @@ export type LedgerDashboard = {
   forecast: number | null;
   categories: LedgerCatItem[];
   uncategorized: number;
-  dailyRows: Array<{ date: string; revenue: number; expense: number; net: number; balance: number }>;
+  dailyRows: Array<{ date: string; revenue: number; expense: number; net: number; balance: number; billCount: number | null }>;
   incomeByChannel: Array<{ channel: string; amount: number }>;
   incomeRows: Array<{ date: string; channel: string; amount: number; ar: number; cash: number }>;
   byVendor: Array<{ vendor: string; amount: number }>;
@@ -1120,6 +1120,11 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
   ).all(branchId, start, end) as Array<{ d: string; amt: number }>;
   const revByDate = new Map(incDays.map((r) => [r.d, round2(r.amt)]));
   const expByDateMap = new Map(expByDate.map((r) => [r.d, round2(r.amt)]));
+  // จำนวนบิลต่อวัน (owner 2026-06-25) — captured at shift-close, stored on
+  // branch_daily_revenue. Shown in the daybook day detail.
+  const billByDate = new Map((db.prepare(
+    "SELECT date AS d, bill_count AS c FROM branch_daily_revenue WHERE branch_id = ? AND date BETWEEN ? AND ? AND bill_count IS NOT NULL"
+  ).all(branchId, start, end) as Array<{ d: string; c: number }>).map((r) => [r.d, r.c]));
   const allDates = [...new Set([...revByDate.keys(), ...expByDateMap.keys()])].sort();
   let bal = 0;
   const dailyRows = allDates.map((d) => {
@@ -1127,7 +1132,7 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
     const exp = expByDateMap.get(d) ?? 0;
     const net = round2(inc - exp);
     bal = round2(bal + net);
-    return { date: d, revenue: inc, expense: exp, net, balance: bal };
+    return { date: d, revenue: inc, expense: exp, net, balance: bal, billCount: billByDate.get(d) ?? null };
   });
 
   // Revenue split by payment channel for the period (owner 2026-06-21).

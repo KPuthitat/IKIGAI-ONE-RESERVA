@@ -77,6 +77,8 @@ export function upsertBranchDailyRevenue(args: {
   revenue: number;
   userId: number;
   source: "shift_close" | "admin_edit";
+  /** จำนวนบิลทั้งวัน (owner 2026-06-25). undefined = leave as-is on update. */
+  billCount?: number | null;
 }): { id: number; created: boolean } {
   const db = getDb();
   const existing = db.prepare(
@@ -84,18 +86,26 @@ export function upsertBranchDailyRevenue(args: {
   ).get(args.branchId, args.date) as { id: number } | undefined;
   const now = new Date().toISOString();
   if (existing) {
-    db.prepare(`
-      UPDATE branch_daily_revenue
-      SET revenue = ?, recorded_by = ?, recorded_at = ?, source = ?
-      WHERE id = ?
-    `).run(args.revenue, args.userId, now, args.source, existing.id);
+    if (args.billCount !== undefined) {
+      db.prepare(`
+        UPDATE branch_daily_revenue
+        SET revenue = ?, recorded_by = ?, recorded_at = ?, source = ?, bill_count = ?
+        WHERE id = ?
+      `).run(args.revenue, args.userId, now, args.source, args.billCount, existing.id);
+    } else {
+      db.prepare(`
+        UPDATE branch_daily_revenue
+        SET revenue = ?, recorded_by = ?, recorded_at = ?, source = ?
+        WHERE id = ?
+      `).run(args.revenue, args.userId, now, args.source, existing.id);
+    }
     return { id: existing.id, created: false };
   }
   const r = db.prepare(`
     INSERT INTO branch_daily_revenue
-      (branch_id, date, revenue, recorded_by, recorded_at, source)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(args.branchId, args.date, args.revenue, args.userId, now, args.source);
+      (branch_id, date, revenue, recorded_by, recorded_at, source, bill_count)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(args.branchId, args.date, args.revenue, args.userId, now, args.source, args.billCount ?? null);
   return { id: Number(r.lastInsertRowid), created: true };
   // Note: mirroring the revenue into the ACCOUNTA รายรับ ledger lives in
   // accounta-db.ts (syncShiftCloseIncomeOnSubmit / syncShiftCloseTotalIfNoChannels)
