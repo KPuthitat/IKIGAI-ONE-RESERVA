@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, type LedgerPeriod } from "@/lib/accounta-db";
+import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, type LedgerPeriod } from "@/lib/accounta-db";
 import LedgerDashboardClient, { type LedgerExpenseRow } from "./LedgerDashboardClient";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +44,7 @@ export default function DaybookPage({
     balance: a.balance, balance_as_of: a.balance_as_of, company_wide: a.branch_id == null
   }));
   const cashTotal = cashAccountsTotal(branchId);
+  const incomeChannels = listIncomeChannels(branchId);
   const expenses: LedgerExpenseRow[] = listExpensesInRange(branchId, dash.start, dash.end).map((e) => ({
     id: e.id, bill_date: e.bill_date, vendor_name: e.vendor_name, doc_type: e.doc_type,
     category: e.category, amount_total: e.amount_total, vat_amount: e.vat_amount,
@@ -66,7 +67,8 @@ export default function DaybookPage({
       </div>
       <LedgerDashboardClient dash={dash} expenses={expenses} period={period} anchor={anchor}
         monthly={monthly} trendYear={trendYear} payables={payables}
-        cashAccounts={cashAccounts} cashTotal={cashTotal} />
+        cashAccounts={cashAccounts} cashTotal={cashTotal}
+        branchId={branchId} incomeChannels={incomeChannels} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { Fragment, useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
@@ -35,6 +35,13 @@ export type LedgerExpenseRow = {
   id: number; bill_date: string; vendor_name: string | null; doc_type: string | null;
   category: string | null; amount_total: number; vat_amount: number;
   payment_status: "paid" | "unpaid"; has_doc: boolean;
+};
+// Raw income row (matches /api/accounta/income) — id + source let the inline
+// daybook detail edit manual rows while leaving shift-close rows read-only.
+type IncomeDayRow = {
+  id: number; branch_id: number | null; company_id: number | null;
+  income_date: string; channel: string | null; amount: number; note: string | null;
+  source: string; is_outstanding: number; settled_date: string | null;
 };
 
 const PERIOD_LABEL: Record<LedgerPeriod, string> = { week: "สัปดาห์", month: "เดือน", year: "ปี" };
@@ -174,12 +181,230 @@ function Donut({ items }: { items: Array<{ label: string; amount: number }> }) {
   );
 }
 
+// Inline drill-down under a day row (owner 2026-06-24): the two-sided ledger
+// for one day — รายรับ (per-channel, manual rows editable in place) on the left,
+// รายจ่าย on the right, day totals beneath. shift-close income mirrors the
+// daily close report and stays read-only here (edit it at ยอดขายรายวัน).
+function DayDetail({
+  date, rows, loading, err, expenses, channels, branchId, onChanged, removeExpense, busyExpenseId
+}: {
+  date: string;
+  rows: IncomeDayRow[] | undefined;
+  loading: boolean;
+  err: string | null;
+  expenses: LedgerExpenseRow[];
+  channels: Array<{ id: number; name: string }>;
+  branchId: number;
+  onChanged: () => void;
+  removeExpense: (e: LedgerExpenseRow) => void;
+  busyExpenseId: number | null;
+}) {
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editAmt, setEditAmt] = useState("");
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [addChannel, setAddChannel] = useState(channels[0]?.name ?? "");
+  const [addAmt, setAddAmt] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [rowErr, setRowErr] = useState<string | null>(null);
+
+  const inc = rows ?? [];
+  const incTotal = inc.reduce((s, r) => s + r.amount, 0);
+  const incAR = inc.reduce((s, r) => s + (r.is_outstanding ? r.amount : 0), 0);
+  const incCash = incTotal - incAR;
+  const expTotal = expenses.reduce((s, e) => s + e.amount_total, 0);
+  const net = incTotal - expTotal;
+
+  async function saveAmount(r: IncomeDayRow) {
+    const amt = Number(editAmt);
+    if (!Number.isFinite(amt) || amt <= 0) { setRowErr("กรอกยอดเงินให้ถูกต้อง"); return; }
+    setSavingId(r.id); setRowErr(null);
+    try {
+      const res = await fetch(apiUrl(`/api/accounta/income/${r.id}`), {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branch_id: r.branch_id, company_id: r.company_id, income_date: r.income_date,
+          channel: r.channel, amount: amt, note: r.note
+        })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setRowErr(j.message || "บันทึกไม่สำเร็จ"); return; }
+      setEditId(null); onChanged();
+    } finally { setSavingId(null); }
+  }
+
+  async function del(r: IncomeDayRow) {
+    if (!window.confirm(`ลบรายรับ ${r.channel ?? ""} ฿${fmtMoney(r.amount)} ?`)) return;
+    setSavingId(r.id); setRowErr(null);
+    try {
+      const res = await fetch(apiUrl(`/api/accounta/income/${r.id}`), { method: "DELETE" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setRowErr(j.message || "ลบไม่สำเร็จ"); return; }
+      onChanged();
+    } finally { setSavingId(null); }
+  }
+
+  async function add() {
+    const amt = Number(addAmt);
+    if (!Number.isFinite(amt) || amt <= 0) { setRowErr("กรอกยอดเงินให้ถูกต้อง"); return; }
+    setAdding(true); setRowErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/accounta/income"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branch_id: branchId, company_id: null, income_date: date,
+          channel: addChannel || null, amount: amt, note: null
+        })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setRowErr(j.message || "เพิ่มไม่สำเร็จ"); return; }
+      setAddAmt(""); onChanged();
+    } finally { setAdding(false); }
+  }
+
+  return (
+    <div className="space-y-3 px-1 py-2">
+      {rowErr && <p className="text-xs text-rose-600">{rowErr}</p>}
+      {err && <p className="text-xs text-rose-600">{err}</p>}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+        {/* รายรับ — per-channel, manual rows editable */}
+        <div className="rounded-lg border border-emerald-100 overflow-hidden">
+          <div className="bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-800">รายรับ (แยกช่องทาง)</div>
+          <table className="w-full text-sm tabular-nums">
+            <tbody>
+              {loading && inc.length === 0 ? (
+                <tr><td className="px-3 py-2 text-xs text-slate-400">กำลังโหลด…</td></tr>
+              ) : inc.length === 0 ? (
+                <tr><td className="px-3 py-2 text-xs text-slate-400">ไม่มีรายรับในวันนี้</td></tr>
+              ) : inc.map((r) => {
+                const auto = r.source === "shift_close";
+                const editing = editId === r.id;
+                return (
+                  <tr key={r.id} className="border-b border-slate-50">
+                    <td className="py-1 px-2">
+                      <div className="text-slate-700 flex items-center gap-1.5 flex-wrap">
+                        {r.channel || (auto ? "ยอดขายรวม" : "—")}
+                        {auto && <span className="text-[9px] font-normal bg-sky-50 text-sky-700 border border-sky-200 rounded-full px-1.5 py-px">จากปิดกะ</span>}
+                        {!!r.is_outstanding && (r.settled_date
+                          ? <span className="text-[9px] font-normal bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-1.5 py-px">รับชำระแล้ว</span>
+                          : <span className="text-[9px] font-normal bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-px">ค้างชำระ</span>)}
+                      </div>
+                    </td>
+                    <td className="py-1 px-2 text-right">
+                      {editing ? (
+                        <input type="number" inputMode="decimal" autoFocus value={editAmt}
+                          onChange={(e) => setEditAmt(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") saveAmount(r); if (e.key === "Escape") setEditId(null); }}
+                          className="input !w-28 !py-1 text-right font-mono" />
+                      ) : (
+                        <span className="font-mono text-emerald-700">{fmtMoney(r.amount)}</span>
+                      )}
+                    </td>
+                    <td className="py-1 px-2 text-right whitespace-nowrap">
+                      {auto ? (
+                        <span className="text-[10px] text-slate-300" title="ยอดนี้ดึงจากรายงานปิดกะอัตโนมัติ — แก้ไขได้ที่ยอดขายรายวัน">อัตโนมัติ</span>
+                      ) : editing ? (
+                        <>
+                          <button type="button" onClick={() => saveAmount(r)} disabled={savingId === r.id}
+                            className="text-[11px] text-brand hover:underline disabled:opacity-50">บันทึก</button>
+                          <button type="button" onClick={() => setEditId(null)}
+                            className="text-[11px] text-slate-400 hover:underline ml-2">ยกเลิก</button>
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" onClick={() => { setEditId(r.id); setEditAmt(String(r.amount)); setRowErr(null); }}
+                            className="text-[11px] text-slate-500 hover:text-brand">แก้</button>
+                          <button type="button" onClick={() => del(r)} disabled={savingId === r.id}
+                            className="text-[11px] text-slate-400 hover:text-rose-600 ml-2 disabled:opacity-50">ลบ</button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* add a manual channel row */}
+              <tr className="bg-slate-50/60">
+                <td className="py-1 px-2">
+                  <select value={addChannel} onChange={(e) => setAddChannel(e.target.value)}
+                    className="input !py-1 !text-xs">
+                    <option value="">— เลือกช่องทาง —</option>
+                    {channels.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </td>
+                <td className="py-1 px-2 text-right">
+                  <input type="number" inputMode="decimal" value={addAmt} placeholder="0.00"
+                    onChange={(e) => setAddAmt(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") add(); }}
+                    className="input !w-28 !py-1 text-right font-mono" />
+                </td>
+                <td className="py-1 px-2 text-right">
+                  <button type="button" onClick={add} disabled={adding || !addAmt}
+                    className="text-[11px] text-brand hover:underline disabled:opacity-40">+ เพิ่ม</button>
+                </td>
+              </tr>
+            </tbody>
+            <tfoot><tr className="border-t border-slate-200 font-bold bg-slate-50">
+              <td className="py-1 px-2 text-slate-700">รวมรายรับ</td>
+              <td className="py-1 px-2 text-right font-mono text-emerald-700">฿{fmtMoney(incTotal)}</td>
+              <td className="py-1 px-2 text-right text-[10px] font-normal text-slate-400 whitespace-nowrap">
+                {incAR > 0 ? `ค้าง ฿${fmtMoney(incAR)} · เข้าจริง ฿${fmtMoney(incCash)}` : ""}
+              </td>
+            </tr></tfoot>
+          </table>
+        </div>
+
+        {/* รายจ่าย */}
+        <div className="rounded-lg border border-rose-100 overflow-hidden">
+          <div className="bg-rose-50 px-3 py-1.5 flex items-center justify-between">
+            <span className="text-[11px] font-bold text-rose-800">รายจ่าย ({expenses.length} รายการ)</span>
+            <Link href="/admin/accounta/expenses" className="text-[10px] text-brand hover:underline">ไปหน้ารายจ่าย →</Link>
+          </div>
+          {expenses.length === 0 ? (
+            <p className="text-xs text-slate-400 px-3 py-2">ไม่มีรายจ่ายในวันนี้</p>
+          ) : (
+            <table className="w-full text-sm tabular-nums">
+              <tbody>
+                {expenses.map((e) => (
+                  <tr key={e.id} className="border-b border-slate-50 hover:bg-slate-50/60">
+                    <td className="py-1 px-2">
+                      <div className="text-slate-700">{e.vendor_name || "—"}</div>
+                      <div className="text-[10px] text-slate-400">{e.category || "ไม่ระบุหมวด"}{e.payment_status === "unpaid" ? " · ค้างชำระ" : ""}{e.vat_amount > 0 ? ` · VAT ฿${fmtMoney(e.vat_amount)}` : ""}</div>
+                    </td>
+                    <td className="py-1 px-2 text-right font-mono text-rose-700">{fmtMoney(e.amount_total)}</td>
+                    <td className="py-1 px-2 text-right whitespace-nowrap">
+                      <Link href={`/admin/accounta/expenses?edit=${e.id}`} className="text-[10px] text-brand hover:underline mr-2">แก้</Link>
+                      <button type="button" onClick={() => removeExpense(e)} disabled={busyExpenseId === e.id} className="text-[10px] text-rose-500 hover:underline disabled:opacity-50">ลบ</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr className="border-t border-slate-200 font-bold bg-slate-50">
+                <td className="py-1 px-2 text-slate-700">รวมรายจ่าย</td>
+                <td className="py-1 px-2 text-right font-mono text-rose-700">฿{fmtMoney(expTotal)}</td>
+                <td />
+              </tr></tfoot>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* Day totals */}
+      <div className="grid grid-cols-3 gap-3 pt-1">
+        <div className="text-center"><div className="text-[10px] text-slate-400">รายรับรวม</div><div className="font-mono font-bold text-emerald-700">฿{fmtMoney(incTotal)}</div></div>
+        <div className="text-center"><div className="text-[10px] text-slate-400">รายจ่ายรวม</div><div className="font-mono font-bold text-rose-700">฿{fmtMoney(expTotal)}</div></div>
+        <div className="text-center"><div className="text-[10px] text-slate-400">กำไร/ขาดทุนวันนี้</div><div className={`font-mono font-bold ${net >= 0 ? "text-slate-800" : "text-rose-600"}`}>{net < 0 ? `(฿${fmtMoney(-net)})` : `฿${fmtMoney(net)}`}</div></div>
+      </div>
+    </div>
+  );
+}
+
 export default function LedgerDashboardClient({
-  dash, expenses, period, anchor, monthly, trendYear, payables, cashAccounts, cashTotal
+  dash, expenses, period, anchor, monthly, trendYear, payables, cashAccounts, cashTotal,
+  branchId, incomeChannels
 }: {
   dash: Dash; expenses: LedgerExpenseRow[]; period: LedgerPeriod; anchor: string;
   monthly: MonthlyRow[]; trendYear: number; payables: Payables;
   cashAccounts: CashAccount[]; cashTotal: number;
+  branchId: number; incomeChannels: Array<{ id: number; name: string }>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -189,8 +414,35 @@ export default function LedgerDashboardClient({
   // an SSR/hydration text-node mismatch with Thai labels. Cards/tables SSR fine.
   const [chartsReady, setChartsReady] = useState(false);
   useEffect(() => { setChartsReady(true); }, []);
-  const dayExpenses = selectedDate ? expenses.filter((e) => e.bill_date === selectedDate) : [];
-  const dayIncome = selectedDate ? dash.incomeRows.filter((r) => r.date === selectedDate) : [];
+
+  // Per-day income rows (with id + source) for the inline drill-down — fetched
+  // on demand and cached by date, so the manual rows can be edited in place.
+  // (The dashboard ships only channel-aggregated rows, which can't be edited.)
+  const [incCache, setIncCache] = useState<Record<string, IncomeDayRow[]>>({});
+  const [incLoading, setIncLoading] = useState<string | null>(null);
+  const [incErr, setIncErr] = useState<string | null>(null);
+
+  async function loadDayIncome(date: string, force = false) {
+    if (!force && incCache[date]) return;
+    setIncLoading(date); setIncErr(null);
+    try {
+      const q = new URLSearchParams({ month: date.slice(0, 7), branch: String(branchId) });
+      const res = await fetch(apiUrl(`/api/accounta/income?${q}`));
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setIncErr("โหลดรายรับไม่สำเร็จ"); return; }
+      const rows = (j.income as IncomeDayRow[]).filter((r) => r.income_date === date);
+      setIncCache((c) => ({ ...c, [date]: rows }));
+    } catch { setIncErr("โหลดรายรับไม่สำเร็จ"); }
+    finally { setIncLoading(null); }
+  }
+
+  function toggleDay(date: string) {
+    setSelectedDate((d) => {
+      const next = d === date ? null : date;
+      if (next) loadDayIncome(next);
+      return next;
+    });
+  }
 
   function go(nextPeriod: LedgerPeriod, nextAnchor: string) {
     const q = new URLSearchParams({ period: nextPeriod, anchor: nextAnchor });
@@ -479,17 +731,37 @@ export default function LedgerDashboardClient({
               </thead>
               <tbody>
                 {dash.dailyRows.map((r) => (
-                  <tr key={r.date}
-                    onClick={() => setSelectedDate((d) => (d === r.date ? null : r.date))}
-                    className={`border-b border-slate-50 cursor-pointer hover:bg-slate-50 ${selectedDate === r.date ? "bg-brand/5 ring-1 ring-brand/20" : ""}`}>
-                    <td className="py-1.5 px-2 whitespace-nowrap text-slate-600">
-                      {selectedDate === r.date ? "▾ " : "▸ "}{fmtDayLabel(r.date)}
-                    </td>
-                    <td className="py-1.5 px-2 text-right font-mono text-emerald-600">{r.revenue > 0 ? fmtMoney(r.revenue) : "—"}</td>
-                    <td className="py-1.5 px-2 text-right font-mono text-rose-600">{r.expense > 0 ? fmtMoney(r.expense) : "—"}</td>
-                    <td className={`py-1.5 px-2 text-right font-mono ${r.net >= 0 ? "text-slate-700" : "text-rose-600"}`}>{r.net < 0 ? `(${fmtMoney(-r.net)})` : fmtMoney(r.net)}</td>
-                    <td className={`py-1.5 px-2 text-right font-mono font-bold ${r.balance >= 0 ? "text-slate-700" : "text-rose-600"}`}>{fmtMoney(r.balance)}</td>
-                  </tr>
+                  <Fragment key={r.date}>
+                    <tr
+                      onClick={() => toggleDay(r.date)}
+                      className={`border-b border-slate-50 cursor-pointer hover:bg-slate-50 ${selectedDate === r.date ? "bg-brand/5" : ""}`}>
+                      <td className="py-1.5 px-2 whitespace-nowrap text-slate-600">
+                        {selectedDate === r.date ? "▾ " : "▸ "}{fmtDayLabel(r.date)}
+                      </td>
+                      <td className="py-1.5 px-2 text-right font-mono text-emerald-600">{r.revenue > 0 ? fmtMoney(r.revenue) : "—"}</td>
+                      <td className="py-1.5 px-2 text-right font-mono text-rose-600">{r.expense > 0 ? fmtMoney(r.expense) : "—"}</td>
+                      <td className={`py-1.5 px-2 text-right font-mono ${r.net >= 0 ? "text-slate-700" : "text-rose-600"}`}>{r.net < 0 ? `(${fmtMoney(-r.net)})` : fmtMoney(r.net)}</td>
+                      <td className={`py-1.5 px-2 text-right font-mono font-bold ${r.balance >= 0 ? "text-slate-700" : "text-rose-600"}`}>{fmtMoney(r.balance)}</td>
+                    </tr>
+                    {selectedDate === r.date && (
+                      <tr className="bg-brand/5">
+                        <td colSpan={5} className="p-0 border-b border-brand/20">
+                          <DayDetail
+                            date={r.date}
+                            rows={incCache[r.date]}
+                            loading={incLoading === r.date}
+                            err={incErr}
+                            expenses={expenses.filter((e) => e.bill_date === r.date)}
+                            channels={incomeChannels}
+                            branchId={branchId}
+                            onChanged={() => { loadDayIncome(r.date, true); startTransition(() => router.refresh()); }}
+                            removeExpense={remove}
+                            busyExpenseId={busyId}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
               <tfoot>
@@ -505,101 +777,6 @@ export default function LedgerDashboardClient({
           </div>
         )}
       </div>
-
-      {/* Selected-day detail — Excel-style two-sided ledger (owner 2026-06-23):
-          รายรับ (แยกช่องทาง, ค้างชำระ/AR vs เงินเข้าจริง) left · รายจ่าย right ·
-          day totals + net at the bottom. */}
-      {selectedDate && (() => {
-        const incTotal = dayIncome.reduce((s, r) => s + r.amount, 0);
-        const incAR = dayIncome.reduce((s, r) => s + r.ar, 0);
-        const incCash = dayIncome.reduce((s, r) => s + r.cash, 0);
-        const expTotal = dayExpenses.reduce((s, e) => s + e.amount_total, 0);
-        const net = incTotal - expTotal;
-        return (
-        <div className="card space-y-3 ring-1 ring-brand/20">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="text-sm font-bold text-slate-800">สมุดรายวัน · {fmtDayLabel(selectedDate)}</div>
-            <button type="button" onClick={() => setSelectedDate(null)} className="text-xs text-slate-400 hover:text-slate-700">✕ ปิด</button>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
-            {/* รายรับ */}
-            <div className="rounded-lg border border-emerald-100 overflow-hidden">
-              <div className="bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-800">รายรับ (แยกช่องทาง)</div>
-              {dayIncome.length === 0 ? (
-                <p className="text-xs text-slate-400 px-3 py-2">ไม่มีรายรับในวันนี้</p>
-              ) : (
-                <table className="w-full text-sm tabular-nums">
-                  <thead><tr className="text-[10px] text-slate-400 border-b border-slate-100">
-                    <th className="text-left py-1 px-2">ช่องทาง</th>
-                    <th className="text-right py-1 px-2">ค้างชำระ</th>
-                    <th className="text-right py-1 px-2">เงินเข้าจริง</th>
-                    <th className="text-right py-1 px-2">รวม</th>
-                  </tr></thead>
-                  <tbody>
-                    {dayIncome.map((r) => (
-                      <tr key={r.channel} className="border-b border-slate-50">
-                        <td className="py-1 px-2 text-slate-600">{r.channel}</td>
-                        <td className="py-1 px-2 text-right font-mono text-amber-700">{r.ar > 0 ? fmtMoney(r.ar) : "—"}</td>
-                        <td className="py-1 px-2 text-right font-mono text-slate-600">{r.cash > 0 ? fmtMoney(r.cash) : "—"}</td>
-                        <td className="py-1 px-2 text-right font-mono text-emerald-700">{fmtMoney(r.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot><tr className="border-t border-slate-200 font-bold bg-slate-50">
-                    <td className="py-1 px-2 text-slate-700">รวมรายรับ</td>
-                    <td className="py-1 px-2 text-right font-mono text-amber-700">{incAR > 0 ? fmtMoney(incAR) : "—"}</td>
-                    <td className="py-1 px-2 text-right font-mono text-slate-600">{fmtMoney(incCash)}</td>
-                    <td className="py-1 px-2 text-right font-mono text-emerald-700">฿{fmtMoney(incTotal)}</td>
-                  </tr></tfoot>
-                </table>
-              )}
-            </div>
-
-            {/* รายจ่าย */}
-            <div className="rounded-lg border border-rose-100 overflow-hidden">
-              <div className="bg-rose-50 px-3 py-1.5 flex items-center justify-between">
-                <span className="text-[11px] font-bold text-rose-800">รายจ่าย ({dayExpenses.length} รายการ)</span>
-                <Link href="/admin/accounta/expenses" className="text-[10px] text-brand hover:underline">ไปหน้ารายจ่าย →</Link>
-              </div>
-              {dayExpenses.length === 0 ? (
-                <p className="text-xs text-slate-400 px-3 py-2">ไม่มีรายจ่ายในวันนี้</p>
-              ) : (
-                <table className="w-full text-sm tabular-nums">
-                  <tbody>
-                    {dayExpenses.map((e) => (
-                      <tr key={e.id} className="border-b border-slate-50 hover:bg-slate-50/60">
-                        <td className="py-1 px-2">
-                          <div className="text-slate-700">{e.vendor_name || "—"}</div>
-                          <div className="text-[10px] text-slate-400">{e.category || "ไม่ระบุหมวด"}{e.payment_status === "unpaid" ? " · ค้างชำระ" : ""}{e.vat_amount > 0 ? ` · VAT ฿${fmtMoney(e.vat_amount)}` : ""}</div>
-                        </td>
-                        <td className="py-1 px-2 text-right font-mono text-rose-700">{fmtMoney(e.amount_total)}</td>
-                        <td className="py-1 px-2 text-right whitespace-nowrap">
-                          <Link href={`/admin/accounta/expenses?edit=${e.id}`} className="text-[10px] text-brand hover:underline mr-2">แก้</Link>
-                          <button type="button" onClick={() => remove(e)} disabled={busyId === e.id} className="text-[10px] text-rose-500 hover:underline disabled:opacity-50">ลบ</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot><tr className="border-t border-slate-200 font-bold bg-slate-50">
-                    <td className="py-1 px-2 text-slate-700">รวมรายจ่าย</td>
-                    <td className="py-1 px-2 text-right font-mono text-rose-700">฿{fmtMoney(expTotal)}</td>
-                    <td />
-                  </tr></tfoot>
-                </table>
-              )}
-            </div>
-          </div>
-
-          {/* Day totals */}
-          <div className="grid grid-cols-3 gap-3 pt-1">
-            <div className="text-center"><div className="text-[10px] text-slate-400">รายรับรวม</div><div className="font-mono font-bold text-emerald-700">฿{fmtMoney(incTotal)}</div></div>
-            <div className="text-center"><div className="text-[10px] text-slate-400">รายจ่ายรวม</div><div className="font-mono font-bold text-rose-700">฿{fmtMoney(expTotal)}</div></div>
-            <div className="text-center"><div className="text-[10px] text-slate-400">กำไร/ขาดทุนวันนี้</div><div className={`font-mono font-bold ${net >= 0 ? "text-slate-800" : "text-rose-600"}`}>{net < 0 ? `(฿${fmtMoney(-net)})` : `฿${fmtMoney(net)}`}</div></div>
-          </div>
-        </div>
-        );
-      })()}
 
       {/* VAT detail (full) */}
       <div className="card space-y-2">
