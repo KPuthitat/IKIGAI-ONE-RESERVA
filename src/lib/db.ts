@@ -5689,6 +5689,12 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE accounta_expenses ADD COLUMN payroll_period_id INTEGER REFERENCES payroll_periods(id) ON DELETE SET NULL");
     db.exec("CREATE INDEX IF NOT EXISTS idx_accounta_exp_payroll ON accounta_expenses(payroll_period_id)");
   }
+  // due_date (owner 2026-06-24): for credit-term unpaid bills — when payment is
+  // due. Drives the "บิลค้างชำระ" reminder so overdue bills surface. NULL for
+  // paid bills / unpaid bills with no agreed due date.
+  if (!expCols.some((c) => c.name === "due_date")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN due_date TEXT");
+  }
   // Extra attachments per expense (owner 2026-06-20, paypers-like #3.3):
   // the primary receipt stays on accounta_expenses.doc_path; ADDITIONAL
   // evidence (slips, a second invoice, …) lives here. Each row is uploaded

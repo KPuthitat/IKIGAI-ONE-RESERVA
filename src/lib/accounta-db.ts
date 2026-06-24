@@ -36,6 +36,7 @@ export type ExpenseRow = {
   payment_status: PaymentStatus;
   payment_method: string | null;
   paid_date: string | null;
+  due_date: string | null;
   has_doc: boolean;
   doc_mime: string | null;
   ocr_source: string | null;
@@ -685,15 +686,15 @@ export function listDraftExpensesForBranch(branchId: number): Array<{
  *  digest (owner 2026-06-24). Excludes the company-level WHT/SSO postings;
  *  oldest bill first so the most overdue reads at the top. */
 export function listUnpaidExpensesForBranch(branchId: number): Array<{
-  id: number; vendor_name: string | null; amount_total: number; bill_date: string | null;
+  id: number; vendor_name: string | null; amount_total: number; bill_date: string | null; due_date: string | null;
 }> {
   return getDb().prepare(
-    `SELECT id, vendor_name, amount_total, bill_date
+    `SELECT id, vendor_name, amount_total, bill_date, due_date
      FROM accounta_expenses
      WHERE review_status = 'confirmed' AND payment_status = 'unpaid' AND branch_id = ?
        AND COALESCE(category,'') NOT IN ('ภาษีหัก ณ ที่จ่าย','ประกันสังคม')
-     ORDER BY bill_date ASC, id ASC`
-  ).all(branchId) as Array<{ id: number; vendor_name: string | null; amount_total: number; bill_date: string | null }>;
+     ORDER BY due_date IS NULL, due_date ASC, bill_date ASC, id ASC`
+  ).all(branchId) as Array<{ id: number; vendor_name: string | null; amount_total: number; bill_date: string | null; due_date: string | null }>;
 }
 
 /** Mark a draft as reviewed → it now counts in the ledger/summaries. */
@@ -740,7 +741,9 @@ function normalise(d: ExpenseInput): ExpenseInput {
     amount_total: total,
     vat_amount: vat,
     base_amount: base,
-    paid_date: d.payment_status === "paid" ? (d.paid_date || d.bill_date) : null
+    paid_date: d.payment_status === "paid" ? (d.paid_date || d.bill_date) : null,
+    // due date is only meaningful for unpaid (credit-term) bills.
+    due_date: d.payment_status === "unpaid" ? (d.due_date || null) : null
   };
 }
 
@@ -757,14 +760,14 @@ export function createExpense(
     INSERT INTO accounta_expenses (
       branch_id, company_id, bill_date, vendor_id, vendor_name, doc_type, category, description,
       amount_total, has_tax_invoice, vat_amount, base_amount,
-      payment_status, payment_method, paid_date,
+      payment_status, payment_method, paid_date, due_date,
       ocr_source, ocr_cost_baht, review_status, line_message_id, note, created_by
-    ) VALUES (?,?,?,?,?,?,?,?, ?,?,?,?, ?,?,?, ?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?,?)
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
     d.doc_type, d.category, d.description?.trim() || null,
     d.amount_total, d.has_tax_invoice ? 1 : 0, d.vat_amount, d.base_amount,
-    d.payment_status, d.payment_method, d.paid_date,
+    d.payment_status, d.payment_method, d.paid_date, d.due_date,
     ocr?.source ?? null, ocr?.costBaht ?? null,
     extra?.reviewStatus ?? "confirmed", extra?.lineMessageId ?? null,
     d.note?.trim() || null, userId
@@ -779,13 +782,13 @@ export function updateExpense(id: number, input: ExpenseInput): boolean {
       branch_id = ?, company_id = ?, bill_date = ?, vendor_id = ?, vendor_name = ?,
       doc_type = ?, category = ?, description = ?, amount_total = ?, has_tax_invoice = ?,
       vat_amount = ?, base_amount = ?, payment_status = ?, payment_method = ?,
-      paid_date = ?, note = ?, updated_at = CURRENT_TIMESTAMP
+      paid_date = ?, due_date = ?, note = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
     d.doc_type, d.category, d.description?.trim() || null, d.amount_total, d.has_tax_invoice ? 1 : 0,
     d.vat_amount, d.base_amount, d.payment_status, d.payment_method,
-    d.paid_date, d.note?.trim() || null, id
+    d.paid_date, d.due_date, d.note?.trim() || null, id
   );
   return info.changes > 0;
 }

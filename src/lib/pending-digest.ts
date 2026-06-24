@@ -142,7 +142,7 @@ export function buildPendingDigest(branchId: number): PendingDigest {
     })),
     accountaUnpaid: unpaidRows.map((r) => ({
       name: r.vendor_name?.trim() || "บิล (ยังไม่ระบุผู้ขาย)",
-      detail: `ค้างชำระ · ${r.amount_total.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท${r.bill_date ? ` · ${r.bill_date}` : ""}`,
+      detail: `ค้างชำระ · ${r.amount_total.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท${r.due_date ? ` · ครบกำหนด ${r.due_date}` : ""}`,
       ref: null
     }))
   };

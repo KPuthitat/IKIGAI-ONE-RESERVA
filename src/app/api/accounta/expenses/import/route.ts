@@ -103,6 +103,7 @@ export async function POST(req: Request) {
       payment_status: status,
       payment_method: status === "paid" ? (get(r, "payment_method") || null) : null,
       paid_date: status === "paid" ? dateRaw : null,
+      due_date: null,
       note: get(r, "note") || null
     };
     try { createExpense(user.id, input); imported++; }

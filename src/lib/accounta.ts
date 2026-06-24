@@ -129,6 +129,7 @@ export type ExpenseInput = {
   payment_status: PaymentStatus;
   payment_method: string | null; // method NAME (free text, from the picklist)
   paid_date: string | null;     // cash-flow date; required-ish when paid
+  due_date: string | null;      // วันที่ครบกำหนดชำระ — for credit-term unpaid bills
   note: string | null;
 };
 

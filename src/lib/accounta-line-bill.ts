@@ -129,6 +129,7 @@ export async function ingestLineBill(args: {
     payment_status: "unpaid",     // admin sets paid/method on review
     payment_method: null,
     paid_date: null,
+    due_date: null,               // admin sets the credit-term due date on review
     note: a.note
   });
 

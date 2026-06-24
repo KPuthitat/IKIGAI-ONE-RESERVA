@@ -34,7 +34,7 @@ type Expense = {
   bill_date: string; vendor_id: number | null; vendor_name: string | null;
   doc_type: string | null; category: string | null; description: string | null;
   amount_total: number; has_tax_invoice: number; vat_amount: number; base_amount: number;
-  payment_status: PaymentStatus; payment_method: string | null; paid_date: string | null;
+  payment_status: PaymentStatus; payment_method: string | null; paid_date: string | null; due_date: string | null;
   has_doc: boolean; ocr_source: string | null; ocr_cost_baht: number | null; note: string | null;
   review_status?: string;   // 'draft' (จากไลน์ รอตรวจ) | 'confirmed'
 };
@@ -51,7 +51,7 @@ type FormState = {
   branch_id: string; company_id: string;
   bill_date: string; vendor_name: string; doc_type: string; category: string; description: string;
   amount_total: string; has_tax_invoice: boolean; vat_override: string;
-  payment_status: PaymentStatus; payment_method: string; paid_date: string;
+  payment_status: PaymentStatus; payment_method: string; paid_date: string; due_date: string;
   note: string;
   rememberVendor: boolean;
 };
@@ -65,7 +65,7 @@ function blankForm(defaultMethod = ""): FormState {
     id: null, branch_id: "", company_id: "",
     bill_date: todayISO(), vendor_name: "", doc_type: "", category: "", description: "",
     amount_total: "", has_tax_invoice: false, vat_override: "",
-    payment_status: "paid", payment_method: defaultMethod, paid_date: todayISO(),
+    payment_status: "paid", payment_method: defaultMethod, paid_date: todayISO(), due_date: "",
     note: "", rememberVendor: true
   };
 }
@@ -138,6 +138,9 @@ export default function ExpensesClient(props: {
   // existing expense; the primary receipt is handled by stagedFile above.
   const [extraDocs, setExtraDocs] = useState<Array<{ id: number; doc_mime: string | null; label: string | null }>>([]);
   const [extraBusy, setExtraBusy] = useState(false);
+  // Whether the row being edited has a primary scanned document — drives the
+  // "ดูเอกสาร" button in the modal (owner 2026-06-24: ดูเอกสารตอนตรวจ).
+  const [editingHasDoc, setEditingHasDoc] = useState(false);
   const extraRef = useRef<HTMLInputElement>(null);
   // Mixed-bill split detected by OCR (owner 2026-06-18): when set, the form
   // offers "แยกเป็น 2 รายการ" (VAT row + non-VAT row).
@@ -180,12 +183,14 @@ export default function ExpensesClient(props: {
     setNewCat(null); setNewMethod(null);
     setDraftMode(false);
     setExtraDocs([]);
+    setEditingHasDoc(false);
     setErr(null);
     setModalOpen(true);
   }
 
   function openEdit(e: Expense) {
     setDraftMode(e.review_status === "draft");
+    setEditingHasDoc(!!e.has_doc);
     setForm({
       id: e.id,
       branch_id: e.branch_id != null ? String(e.branch_id) : "",
@@ -201,6 +206,7 @@ export default function ExpensesClient(props: {
       payment_status: e.payment_status,
       payment_method: e.payment_method || (methods[0]?.name ?? ""),
       paid_date: e.paid_date ?? e.bill_date,
+      due_date: e.due_date ?? "",
       note: e.note ?? "",
       // Reviewing a LINE draft: remember the vendor by default so a corrected
       // category is learned on confirm. Editing a confirmed row: off (no
@@ -300,7 +306,8 @@ export default function ExpensesClient(props: {
         description: form.description.trim() || null,
         payment_status: form.payment_status,
         payment_method: form.payment_status === "paid" ? form.payment_method : null,
-        paid_date: form.payment_status === "paid" ? form.paid_date : null
+        paid_date: form.payment_status === "paid" ? form.paid_date : null,
+        due_date: form.payment_status === "unpaid" ? (form.due_date || null) : null
       };
       const rows = [
         { ...common, amount_total: mixedSplit.vatable, has_tax_invoice: true, vat_amount: mixedSplit.vat, note: notePrefix + "ส่วนมี VAT" },
@@ -360,6 +367,7 @@ export default function ExpensesClient(props: {
         payment_status: form.payment_status,
         payment_method: form.payment_status === "paid" ? form.payment_method : null,
         paid_date: form.payment_status === "paid" ? form.paid_date : null,
+        due_date: form.payment_status === "unpaid" ? (form.due_date || null) : null,
         note: form.note.trim() || null
       };
       const url = form.id ? `/api/accounta/expenses/${form.id}` : "/api/accounta/expenses";
@@ -734,11 +742,17 @@ export default function ExpensesClient(props: {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4"
           onClick={() => !busy && setModalOpen(false)}>
           <div className="card w-full max-w-2xl my-8 space-y-3" onClick={(ev) => ev.stopPropagation()}>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <h3 className="font-bold text-slate-800">
                 {draftMode ? "ตรวจร่างจากไลน์" : form.id ? "แก้ไขรายจ่าย" : "เพิ่มรายจ่าย"}
               </h3>
-              <button type="button" onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+              <div className="flex items-center gap-2">
+                {form.id != null && editingHasDoc && (
+                  <a href={apiUrl(`/api/accounta/expenses/${form.id}/doc`)} target="_blank" rel="noreferrer"
+                    className="rounded-md border border-brand/40 text-brand px-3 py-1 text-sm font-medium hover:bg-brand/5 whitespace-nowrap">📄 ดูเอกสาร</a>
+                )}
+                <button type="button" onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+              </div>
             </div>
 
             {props.ocrAvailable && !form.id && (
@@ -919,6 +933,12 @@ export default function ExpensesClient(props: {
                     <input type="date" className="input" value={form.paid_date} onChange={(e) => set("paid_date", e.target.value)} />
                   </div>
                 </>
+              )}
+              {form.payment_status === "unpaid" && (
+                <div className="sm:col-span-2">
+                  <label className="label !text-xs">วันที่ครบกำหนดชำระ (เครดิตเทอม)</label>
+                  <input type="date" className="input sm:w-1/2" value={form.due_date} onChange={(e) => set("due_date", e.target.value)} />
+                </div>
               )}
             </div>
             {form.payment_status === "paid" && form.payment_method.includes("เครดิต") && (
