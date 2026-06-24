@@ -413,7 +413,7 @@ export default function RosterClient({
                               {splitName(a.user_display_name, a.user_first_name, a.user_last_name).first}
                             </div>
                             {onLeave ? (
-                              <div className="text-[9px] font-bold text-rose-600 leading-tight mt-0.5">{leaveLabel(onLeave)} · หาคนแทน</div>
+                              <div className="text-[9px] font-bold text-rose-600 leading-tight mt-0.5">{leaveLabel(onLeave)}</div>
                             ) : (
                               <div className="text-[10px] text-slate-700 mt-0.5">
                                 {a.shift_code}

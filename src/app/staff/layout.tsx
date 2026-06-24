@@ -123,7 +123,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/persona/discipline", label: t(lang, "staff.persona.nav.discipline") },
         { href: "/staff/persona/leave", label: t(lang, "staff.nav.leave") },
         { href: "/staff/persona/shift-request", label: "คำขอเปลี่ยนเวลางาน" },
-        { href: "/staff/persona/shift-swap", label: "สลับกะกับเพื่อน" },
+        { href: "/staff/persona/shift-swap", label: "สลับกะ" },
         { href: "/staff/persona/resignation", label: t(lang, "staff.nav.resignation") }
       ]
     },

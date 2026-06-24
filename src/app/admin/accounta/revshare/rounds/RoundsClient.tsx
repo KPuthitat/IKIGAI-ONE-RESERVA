@@ -8,8 +8,9 @@ import { humanizeApiError } from "@/lib/error-messages";
 import { fmtMoney } from "@/lib/format";
 import { roundLabel, mondayOf, TH_MONTHS_FULL, type Tier, type SalesBase } from "@/lib/revshare";
 import PinPromptModal from "@/app/components/PinPromptModal";
+import { DailyCardPreview, WeeklyCardPreview, SendPreviewModal } from "./CardPreviews";
 
-type Partner = { id: number; name: string; sales_base: SalesBase; pos_categories: string[]; line_group_id: string | null };
+type Partner = { id: number; name: string; sales_base: SalesBase; pos_categories: string[]; line_group_id: string | null; vat_enabled: boolean; vat_rate: number };
 type Round = {
   id: number; period_start: string; period_end: string; label: string | null;
   sales_amount: number; source: "manual" | "pos_import"; source_filename: string | null;
@@ -20,16 +21,18 @@ const BASE_LABEL: Record<SalesBase, string> = { gross: "Gross (ก่อนส�
 const PIN_ERRORS = new Set(["wrong_pin", "pin_invalid", "no_pin", "user_not_found"]);
 
 export default function RoundsClient({
-  partner, rounds: initialRounds, year, month, operatorName
-}: { partner: Partner; tiers: Tier[]; rounds: Round[]; year: number; month: number; operatorName: string }) {
+  partner, rounds: initialRounds, year, month, operatorName, sellerName
+}: { partner: Partner; tiers: Tier[]; rounds: Round[]; year: number; month: number; operatorName: string; sellerName: string }) {
   const router = useRouter();
   const [rounds, setRounds] = useState<Round[]>(initialRounds);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // LINE notify (daily / weekly) — owner 2026-06-23. `sending` holds the key of
-  // the row being sent; `sentKey` flashes a ✓ after success.
-  const [sending, setSending] = useState<string | null>(null);
+  // LINE notify (daily / weekly) — owner 2026-06-24: preview the card in a modal,
+  // confirm with PIN, then send. `sentKey` flashes a ✓ on the row after success.
   const [sentKey, setSentKey] = useState<string | null>(null);
+  const [sendModal, setSendModal] = useState<{ key: string; heading: string; preview: React.ReactNode; body: Record<string, unknown> } | null>(null);
+  const shop = partner.pos_categories.length ? partner.pos_categories.join(", ") : partner.name;
+  const vatRate = partner.vat_enabled ? partner.vat_rate : 0;
 
   // PIN gate — verify once, reuse for the session; re-prompt if the server
   // rejects it. Records the operator on every import/edit/delete.
@@ -123,23 +126,23 @@ export default function RoundsClient({
     });
   }
 
-  // Send a daily or weekly sales card to the partner's LINE group — PIN-gated
-  // (owner 2026-06-24: ตรวจสอบยอดแล้วกด PIN ก่อนส่งเข้ากลุ่ม).
-  function notifyPartner(key: string, body: Record<string, unknown>) {
-    void guarded(async (pin) => {
-      setSending(key); setErr(null);
-      try {
-        const res = await fetch(apiUrl("/api/accounta/revshare/notify"), {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ partner: partner.id, year, month, ...body, pin })
-        });
-        const j = await res.json().catch(() => ({}));
-        if (res.ok && j.ok) { setSentKey(key); setTimeout(() => setSentKey((k) => (k === key ? null : k)), 2200); return { ok: true }; }
-        const pinError = PIN_ERRORS.has(j.error);
-        if (!pinError) setErr(humanizeApiError(j, "ส่ง LINE ไม่สำเร็จ"));
-        return { ok: false, pinError };
-      } finally { setSending(null); }
-    }, { forcePrompt: true });
+  // Confirm + send the card that's currently previewed in the send modal. The
+  // notify route verifies the PIN for daily/weekly server-side.
+  async function confirmSend(pin: string): Promise<{ ok: boolean; message?: string }> {
+    if (!sendModal) return { ok: false };
+    const res = await fetch(apiUrl("/api/accounta/revshare/notify"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ partner: partner.id, year, month, ...sendModal.body, pin })
+    });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok && j.ok) {
+      const key = sendModal.key;
+      setSentKey(key); setTimeout(() => setSentKey((k) => (k === key ? null : k)), 2200);
+      setSendModal(null);
+      return { ok: true };
+    }
+    if (PIN_ERRORS.has(j.error)) return { ok: false, message: "pin_invalid" };
+    return { ok: false, message: humanizeApiError(j, "ส่ง LINE ไม่สำเร็จ") };
   }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -284,9 +287,12 @@ export default function RoundsClient({
                         <td className="py-1 px-2 text-[11px] text-slate-400">{r.source === "pos_import" ? "นำเข้าไฟล์" : "กรอกเอง"}</td>
                         <td className="py-1 px-2 text-right whitespace-nowrap">
                           {partner.line_group_id && (
-                            <button type="button" onClick={() => notifyPartner(`d:${r.period_start}`, { kind: "daily", date: r.period_start })}
-                              disabled={sending !== null} className="text-[11px] text-emerald-600 hover:underline mr-3 disabled:opacity-50">
-                              {sentKey === `d:${r.period_start}` ? "✓ ส่งแล้ว" : sending === `d:${r.period_start}` ? "กำลังส่ง…" : "ส่งยอดวันนี้"}
+                            <button type="button" onClick={() => setSendModal({
+                              key: `d:${r.period_start}`, heading: "ส่งสรุปยอดขายประจำวัน",
+                              preview: <DailyCardPreview shop={shop} sellerName={sellerName} dateLabel={roundLabel(r.period_start, r.period_start)} sales={r.sales_amount} vatRate={vatRate} />,
+                              body: { kind: "daily", date: r.period_start }
+                            })} className="text-[11px] text-emerald-600 hover:underline mr-3">
+                              {sentKey === `d:${r.period_start}` ? "✓ ส่งแล้ว" : "ส่งยอดวันนี้"}
                             </button>
                           )}
                           <button type="button" onClick={() => del(r)} disabled={busy} className="text-[11px] text-rose-500 hover:underline">ลบ</button>
@@ -299,9 +305,12 @@ export default function RoundsClient({
                       <td colSpan={2} className="py-1 px-2 text-[10px] text-slate-400">
                         โอนเต็มจำนวนให้คู่ค้า
                         {partner.line_group_id && (
-                          <button type="button" onClick={() => notifyPartner(`w:${w.rounds[0].period_start}`, { kind: "weekly", week_start: w.rounds[0].period_start })}
-                            disabled={sending !== null} className="ml-2 text-[11px] font-bold text-emerald-600 hover:underline disabled:opacity-50">
-                            {sentKey === `w:${w.rounds[0].period_start}` ? "✓ ส่งแล้ว" : sending === `w:${w.rounds[0].period_start}` ? "กำลังส่ง…" : "ส่งสรุปสัปดาห์"}
+                          <button type="button" onClick={() => setSendModal({
+                            key: `w:${w.rounds[0].period_start}`, heading: "ส่งสรุปยอดขายประจำสัปดาห์",
+                            preview: <WeeklyCardPreview shop={shop} sellerName={sellerName} weekLabel={w.label} transferAmount={w.total} dayCount={w.rounds.length} vatRate={vatRate} />,
+                            body: { kind: "weekly", week_start: w.rounds[0].period_start }
+                          })} className="ml-2 text-[11px] font-bold text-emerald-600 hover:underline">
+                            {sentKey === `w:${w.rounds[0].period_start}` ? "✓ ส่งแล้ว" : "ส่งสรุปสัปดาห์"}
                           </button>
                         )}
                       </td>
@@ -332,6 +341,16 @@ export default function RoundsClient({
           submitLabel="ยืนยัน"
           onSubmit={onPinSubmit}
           onClose={() => setPinRun(null)}
+        />
+      )}
+
+      {sendModal && (
+        <SendPreviewModal
+          heading={sendModal.heading}
+          preview={sendModal.preview}
+          busy={busy}
+          onConfirm={confirmSend}
+          onClose={() => setSendModal(null)}
         />
       )}
     </div>

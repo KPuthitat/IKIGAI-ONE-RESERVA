@@ -4,7 +4,7 @@ import { listIncomingSwaps, listMySentSwaps } from "@/lib/shift-swap";
 import SwapClient from "./SwapClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "สลับกะกับเพื่อน · IKIGAI OS" };
+export const metadata: Metadata = { title: "สลับกะ · IKIGAI OS" };
 
 // Staff self-service: A asks B to swap their shift on the same day. B taps
 // accept and the roster swaps automatically — no admin approval.

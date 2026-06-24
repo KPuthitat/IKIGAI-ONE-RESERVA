@@ -133,7 +133,7 @@ export function revshareWeeklyFlex(d: WeeklyCard): FlexMsg {
           kv("ฐานก่อน VAT", baht(v.base), { size: "xs" }),
           kv("VAT 7%", baht(v.vat), { size: "xs" }),
           { type: "box", layout: "vertical", margin: "md", contents: [
-            { type: "text", text: "ยอดโอนคืนให้ร้าน (เต็มจำนวน)", size: "xs", color: "#888888" },
+            { type: "text", text: "ยอดวางบิลประจำสัปดาห์", size: "xs", color: "#888888" },
             { type: "text", text: baht(d.transferAmount), size: "xxl", weight: "bold", color: "#0f6e56" }
           ] }
         ]

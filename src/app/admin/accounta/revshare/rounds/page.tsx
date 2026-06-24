@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
+import { getDb } from "@/lib/db";
 import { isRevshareBranch, getPartner, getTiers, listRounds } from "@/lib/revshare-db";
 import RoundsClient from "./RoundsClient";
 
@@ -31,6 +32,7 @@ export default function RevshareRoundsPage({ searchParams }: { searchParams: { p
   const now = nowBkk();
   const year = Number(searchParams.year) || now.y;
   const month = Number(searchParams.month) || now.m;
+  const sellerName = (getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string }).name;
 
   return (
     <div className="space-y-4">
@@ -48,6 +50,7 @@ export default function RevshareRoundsPage({ searchParams }: { searchParams: { p
         rounds={listRounds(partner.id, branchId, year, month)}
         year={year} month={month}
         operatorName={user.display_name}
+        sellerName={sellerName}
       />
     </div>
   );

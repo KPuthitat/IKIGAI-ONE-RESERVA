@@ -87,7 +87,7 @@ export default function SwapClient({ incoming, sent }: { incoming: SwapRowWithNa
   return (
     <div className="space-y-4 max-w-2xl mx-auto">
       <div>
-        <h1 className="text-xl font-bold text-slate-800">สลับกะกับเพื่อน</h1>
+        <h1 className="text-xl font-bold text-slate-800">สลับกะ</h1>
         <p className="text-sm text-slate-500">
           สลับกะกับเพื่อนที่เข้างานวันเดียวกัน — เมื่อส่งคำขอแล้วเพื่อนต้องกดรับ ตารางถึงจะสลับให้
           อัตโนมัติ (ไม่ต้องให้แอดมินอนุมัติ)
