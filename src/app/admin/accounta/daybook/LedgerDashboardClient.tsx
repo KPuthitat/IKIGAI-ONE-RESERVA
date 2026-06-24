@@ -32,6 +32,7 @@ type Dash = {
   revenue: number; expense: number; net: number;
   inputVat: number; outputVat: number; vatPayable: number; vatRegistered: boolean;
   daysWithRevenue: number; avgPerDay: number; avgWeekday: number; avgWeekend: number;
+  salesPerBillMonth: number | null; salesPerBillYear: number | null;
   forecast: number | null; categories: CatItem[]; uncategorized: number;
   dailyRows: Array<{ date: string; revenue: number; expense: number; net: number; balance: number; billCount: number | null }>;
   incomeByChannel: Array<{ channel: string; amount: number }>;
@@ -242,6 +243,21 @@ function DayDetail({
   const expTotal = expenses.reduce((s, e) => s + e.amount_total, 0);
   const net = incTotal - expTotal;
 
+  // Group รายจ่าย by category so a shared category shows once (owner 2026-06-25).
+  const expGroups = (() => {
+    const order: string[] = [];
+    const m = new Map<string, LedgerExpenseRow[]>();
+    for (const e of expenses) {
+      const k = e.category || "ไม่ระบุหมวด";
+      if (!m.has(k)) { m.set(k, []); order.push(k); }
+      m.get(k)!.push(e);
+    }
+    return order.map((cat) => {
+      const grp = m.get(cat)!;
+      return { cat, rows: grp, subtotal: grp.reduce((s, e) => s + e.amount_total, 0) };
+    });
+  })();
+
   async function saveAmount(r: IncomeDayRow) {
     const amt = parseMoney(editAmt);
     if (!Number.isFinite(amt) || amt <= 0) { setRowErr("กรอกยอดเงินให้ถูกต้อง"); return; }
@@ -424,18 +440,30 @@ function DayDetail({
             <tbody>
               {expenses.length === 0 ? (
                 <tr><td className="px-3 py-2 text-xs text-slate-400">ไม่มีรายจ่ายในวันนี้</td></tr>
-              ) : expenses.map((e) => (
-                <tr key={e.id} className="border-b border-slate-50 hover:bg-slate-50/60">
-                  <td className="py-1 px-2">
-                    <div className="text-slate-700">{e.vendor_name || "—"}</div>
-                    <div className="text-[10px] text-slate-400">{e.category || "ไม่ระบุหมวด"}{e.payment_status === "unpaid" ? " · ค้างชำระ" : ""}{e.vat_amount > 0 ? ` · VAT ฿${fmtMoney(e.vat_amount)}` : ""}</div>
-                  </td>
-                  <td className="py-1 px-2 text-right font-mono text-rose-700">{fmtMoney(e.amount_total)}</td>
-                  <td className="py-1 px-2 text-right whitespace-nowrap">
-                    <Link href={`/admin/accounta/expenses?edit=${e.id}`} className="text-[10px] text-brand hover:underline mr-2">แก้</Link>
-                    <button type="button" onClick={() => removeExpense(e)} disabled={busyExpenseId === e.id} className="text-[10px] text-rose-500 hover:underline disabled:opacity-50">ลบ</button>
-                  </td>
-                </tr>
+              ) : expGroups.map((g) => (
+                <Fragment key={g.cat}>
+                  <tr className="bg-rose-50/40 border-b border-rose-100">
+                    <td className="py-1 px-2 text-[11px] font-bold text-rose-800">{g.cat}{g.rows.length > 1 ? ` (${g.rows.length})` : ""}</td>
+                    <td className="py-1 px-2 text-right font-mono text-[11px] text-rose-700">{fmtMoney(g.subtotal)}</td>
+                    <td />
+                  </tr>
+                  {g.rows.map((e) => {
+                    const tag = [e.payment_status === "unpaid" ? "ค้างชำระ" : "", e.vat_amount > 0 ? `VAT ฿${fmtMoney(e.vat_amount)}` : ""].filter(Boolean).join(" · ");
+                    return (
+                      <tr key={e.id} className="border-b border-slate-50 hover:bg-slate-50/60">
+                        <td className="py-1 px-2 pl-5">
+                          <div className="text-slate-700">{e.vendor_name || "—"}</div>
+                          {tag && <div className="text-[10px] text-slate-400">{tag}</div>}
+                        </td>
+                        <td className="py-1 px-2 text-right font-mono text-rose-700">{fmtMoney(e.amount_total)}</td>
+                        <td className="py-1 px-2 text-right whitespace-nowrap">
+                          <Link href={`/admin/accounta/expenses?edit=${e.id}`} className="text-[10px] text-brand hover:underline mr-2">แก้</Link>
+                          <button type="button" onClick={() => removeExpense(e)} disabled={busyExpenseId === e.id} className="text-[10px] text-rose-500 hover:underline disabled:opacity-50">ลบ</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </Fragment>
               ))}
               {/* quick-add an expense for this day */}
               <tr className="bg-slate-50/60 border-t border-slate-100">
@@ -474,7 +502,7 @@ function DayDetail({
         <div className="text-center"><div className="text-[10px] text-slate-400">รายรับรวม</div><div className="font-mono font-bold text-emerald-700">฿{fmtMoney(incTotal)}</div></div>
         <div className="text-center"><div className="text-[10px] text-slate-400">รายจ่ายรวม</div><div className="font-mono font-bold text-rose-700">฿{fmtMoney(expTotal)}</div></div>
         <div className="text-center"><div className="text-[10px] text-slate-400">กำไร/ขาดทุนวันนี้</div><div className={`font-mono font-bold ${net >= 0 ? "text-slate-800" : "text-rose-600"}`}>{net < 0 ? `(฿${fmtMoney(-net)})` : `฿${fmtMoney(net)}`}</div></div>
-        <div className="text-center"><div className="text-[10px] text-slate-400">จำนวนบิลวันนี้</div><div className="font-mono font-bold text-slate-700">{billCount != null ? `${billCount.toLocaleString("en-US")} ใบ` : "—"}</div></div>
+        <div className="text-center"><div className="text-[10px] text-slate-400">จำนวนบิลวันนี้</div><div className="font-mono font-bold text-slate-700">{billCount != null ? `${billCount.toLocaleString("en-US")} ใบ` : "—"}</div>{billCount != null && billCount > 0 && <div className="text-[10px] text-slate-400">฿{fmtMoney(incTotal / billCount)}/บิล</div>}</div>
       </div>
 
       {pinRow && (
@@ -783,6 +811,16 @@ export default function LedgerDashboardClient({
           <div className="text-[11px] text-slate-400">ประมาณการยอดขายทั้งเดือน</div>
           <div className="text-lg font-bold text-brand">{dash.forecast != null ? `฿${fmtMoney(dash.forecast)}` : "—"}</div>
           {dash.forecast != null && <div className="text-[10px] text-slate-400">เฉลี่ย × จำนวนวันในเดือน</div>}
+        </div>
+        <div className="card text-center py-3">
+          <div className="text-[11px] text-slate-400">ยอดขายต่อบิล (เฉลี่ยเดือนนี้)</div>
+          <div className="text-lg font-bold text-slate-800">{dash.salesPerBillMonth != null ? `฿${fmtMoney(dash.salesPerBillMonth)}` : "—"}</div>
+          <div className="text-[10px] text-slate-400">ยอดขาย ÷ จำนวนบิล</div>
+        </div>
+        <div className="card text-center py-3">
+          <div className="text-[11px] text-slate-400">ยอดขายต่อบิล (เฉลี่ยปีนี้)</div>
+          <div className="text-lg font-bold text-slate-800">{dash.salesPerBillYear != null ? `฿${fmtMoney(dash.salesPerBillYear)}` : "—"}</div>
+          <div className="text-[10px] text-slate-400">ทั้งปีปัจจุบัน</div>
         </div>
       </div>
 

@@ -1004,6 +1004,7 @@ export type LedgerDashboard = {
   revenue: number; expense: number; net: number;
   inputVat: number; outputVat: number; vatPayable: number; vatRegistered: boolean;
   daysWithRevenue: number; avgPerDay: number; avgWeekday: number; avgWeekend: number;
+  salesPerBillMonth: number | null; salesPerBillYear: number | null;
   forecast: number | null;
   categories: LedgerCatItem[];
   uncategorized: number;
@@ -1073,6 +1074,20 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
   const avgPerDay = daysWithRevenue ? round2(revenue / daysWithRevenue) : 0;
   const avgWeekday = wkdayN ? round2(wkdaySum / wkdayN) : 0;
   const avgWeekend = wkendN ? round2(wkendSum / wkendN) : 0;
+
+  // ยอดขายต่อบิล (owner 2026-06-25): close revenue ÷ จำนวนบิล, over the days that
+  // have a bill count. Month = anchor's month, year = anchor's year — independent
+  // of the week/month/year view so both figures always show.
+  const perBill = (dateFilter: string, arg: string): number | null => {
+    const row = db.prepare(
+      `SELECT COALESCE(SUM(revenue),0) AS rev, COALESCE(SUM(bill_count),0) AS bills
+         FROM branch_daily_revenue
+        WHERE branch_id = ? AND bill_count IS NOT NULL AND bill_count > 0 AND ${dateFilter}`
+    ).get(branchId, arg) as { rev: number; bills: number };
+    return row.bills > 0 ? round2(row.rev / row.bills) : null;
+  };
+  const salesPerBillMonth = perBill("substr(date,1,7) = ?", anchor.slice(0, 7));
+  const salesPerBillYear = perBill("substr(date,1,4) = ?", anchor.slice(0, 4));
 
   // Expenses (confirmed) → total + input VAT + per-category.
   const expAgg = db.prepare(
@@ -1191,6 +1206,7 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
     revenue, expense, net: round2(revenue - expense),
     inputVat, outputVat, vatPayable, vatRegistered,
     daysWithRevenue, avgPerDay, avgWeekday, avgWeekend,
+    salesPerBillMonth, salesPerBillYear,
     forecast, categories, uncategorized, dailyRows, incomeByChannel,
     incomeRows, byVendor, byPaymentMethod,
     cashReceived, outstandingTotal, outstandingByEntity
