@@ -18,6 +18,7 @@ import { getSystemSettings } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import SystemSettingsForm from "./SystemSettingsForm";
+import DeployCopyButton from "./DeployCopyButton";
 import RecruitaOaSection from "./RecruitaOaSection";
 import PdpaImageUploader from "./PdpaImageUploader";
 import { DEFAULT_HEALTH_CHECK_MESSAGE } from "@/lib/recruita-notify";
@@ -48,6 +49,8 @@ export default function SystemSettingsPage() {
           {t(lang, "admin.systemSettings.subtitle")}
         </p>
       </div>
+
+      <DeployCopyButton />
 
       <SystemSettingsForm
         token={settings.global_line_channel_token}
