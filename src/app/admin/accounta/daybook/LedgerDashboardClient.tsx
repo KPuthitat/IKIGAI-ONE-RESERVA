@@ -357,7 +357,7 @@ function DayDetail({
               <tr className="bg-slate-50/60">
                 <td className="py-1 px-2">
                   <select value={addChannel} onChange={(e) => setAddChannel(e.target.value)}
-                    className="input !py-1 !text-xs">
+                    className="input !py-1">
                     <option value="">— เลือกช่องทาง —</option>
                     {channels.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
@@ -413,15 +413,15 @@ function DayDetail({
                   {expErr && <p className="text-[11px] text-rose-600 mb-1">{expErr}</p>}
                   <div className="flex flex-wrap items-center gap-1.5">
                     <input value={expVendor} onChange={(e) => setExpVendor(e.target.value)} placeholder="ผู้จำหน่าย / รายการ"
-                      className="input !py-1 !text-xs flex-1 !min-w-[8rem]" />
-                    <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)} className="input !py-1 !text-xs !w-auto">
+                      className="input !py-1 flex-1 !min-w-[8rem]" />
+                    <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)} className="input !py-1 !w-auto">
                       <option value="">— หมวด —</option>
                       {categories.map((c) => <option key={c.name} value={c.name}>{c.code ? `${c.code} · ${c.name}` : c.name}</option>)}
                     </select>
                     <input type="number" inputMode="decimal" value={expAmt} placeholder="0.00"
                       onChange={(e) => setExpAmt(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter") addExpense(); }}
-                      className="input !w-24 !py-1 text-right font-mono !text-xs" />
+                      className="input !w-28 !py-1 text-right font-mono" />
                     <label className="flex items-center gap-1 text-[11px] text-slate-500"><input type="checkbox" checked={expVat} onChange={(e) => setExpVat(e.target.checked)} />VAT</label>
                     <label className="flex items-center gap-1 text-[11px] text-slate-500"><input type="checkbox" checked={expUnpaid} onChange={(e) => setExpUnpaid(e.target.checked)} />ค้างชำระ</label>
                     <button type="button" onClick={addExpense} disabled={expAdding || !expAmt}
