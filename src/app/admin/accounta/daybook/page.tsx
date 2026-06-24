@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, type LedgerPeriod } from "@/lib/accounta-db";
+import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, type LedgerPeriod } from "@/lib/accounta-db";
 import LedgerDashboardClient, { type LedgerExpenseRow } from "./LedgerDashboardClient";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +34,7 @@ export default function DaybookPage({
   }
 
   const db = getDb();
-  const branch = db.prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined;
+  const branch = db.prepare("SELECT name, company_id FROM branches WHERE id = ?").get(branchId) as { name: string; company_id: number | null } | undefined;
   const dash = ledgerDashboard(branchId, period, anchor);
   const trendYear = Number(anchor.slice(0, 4));
   const monthly = monthlyTrend(branchId, trendYear);
@@ -45,6 +45,7 @@ export default function DaybookPage({
   }));
   const cashTotal = cashAccountsTotal(branchId);
   const incomeChannels = listIncomeChannels(branchId);
+  const expenseCategories = listCategories().map((c) => ({ code: c.code, name: c.name }));
   const expenses: LedgerExpenseRow[] = listExpensesInRange(branchId, dash.start, dash.end).map((e) => ({
     id: e.id, bill_date: e.bill_date, vendor_name: e.vendor_name, doc_type: e.doc_type,
     category: e.category, amount_total: e.amount_total, vat_amount: e.vat_amount,
@@ -68,7 +69,8 @@ export default function DaybookPage({
       <LedgerDashboardClient dash={dash} expenses={expenses} period={period} anchor={anchor}
         monthly={monthly} trendYear={trendYear} payables={payables}
         cashAccounts={cashAccounts} cashTotal={cashTotal}
-        branchId={branchId} incomeChannels={incomeChannels} />
+        branchId={branchId} companyId={branch?.company_id ?? null}
+        incomeChannels={incomeChannels} expenseCategories={expenseCategories} />
     </div>
   );
 }

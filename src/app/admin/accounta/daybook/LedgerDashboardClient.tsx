@@ -186,7 +186,8 @@ function Donut({ items }: { items: Array<{ label: string; amount: number }> }) {
 // รายจ่าย on the right, day totals beneath. shift-close income mirrors the
 // daily close report and stays read-only here (edit it at ยอดขายรายวัน).
 function DayDetail({
-  date, rows, loading, err, expenses, channels, branchId, onChanged, removeExpense, busyExpenseId
+  date, rows, loading, err, expenses, channels, categories, branchId, companyId,
+  onChanged, removeExpense, busyExpenseId
 }: {
   date: string;
   rows: IncomeDayRow[] | undefined;
@@ -194,7 +195,9 @@ function DayDetail({
   err: string | null;
   expenses: LedgerExpenseRow[];
   channels: Array<{ id: number; name: string }>;
+  categories: Array<{ code: string | null; name: string }>;
   branchId: number;
+  companyId: number | null;
   onChanged: () => void;
   removeExpense: (e: LedgerExpenseRow) => void;
   busyExpenseId: number | null;
@@ -206,6 +209,14 @@ function DayDetail({
   const [addAmt, setAddAmt] = useState("");
   const [adding, setAdding] = useState(false);
   const [rowErr, setRowErr] = useState<string | null>(null);
+  // รายจ่าย quick-add (vendor + category + amount + VAT + paid/unpaid)
+  const [expVendor, setExpVendor] = useState("");
+  const [expCategory, setExpCategory] = useState("");
+  const [expAmt, setExpAmt] = useState("");
+  const [expVat, setExpVat] = useState(false);
+  const [expUnpaid, setExpUnpaid] = useState(false);
+  const [expAdding, setExpAdding] = useState(false);
+  const [expErr, setExpErr] = useState<string | null>(null);
 
   const inc = rows ?? [];
   const incTotal = inc.reduce((s, r) => s + r.amount, 0);
@@ -259,6 +270,27 @@ function DayDetail({
       if (!res.ok || !j.ok) { setRowErr(j.message || "เพิ่มไม่สำเร็จ"); return; }
       setAddAmt(""); onChanged();
     } finally { setAdding(false); }
+  }
+
+  async function addExpense() {
+    const amt = Number(expAmt);
+    if (!Number.isFinite(amt) || amt <= 0) { setExpErr("กรอกยอดเงินให้ถูกต้อง"); return; }
+    setExpAdding(true); setExpErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/accounta/expenses"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branch_id: branchId, company_id: companyId, bill_date: date,
+          vendor_name: expVendor.trim() || null, category: expCategory || null,
+          amount_total: amt, has_tax_invoice: expVat,
+          payment_status: expUnpaid ? "unpaid" : "paid",
+          paid_date: expUnpaid ? null : date
+        })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setExpErr(j.message || "เพิ่มไม่สำเร็จ"); return; }
+      setExpVendor(""); setExpAmt(""); setExpVat(false); setExpUnpaid(false); onChanged();
+    } finally { setExpAdding(false); }
   }
 
   return (
@@ -358,32 +390,52 @@ function DayDetail({
             <span className="text-[11px] font-bold text-rose-800">รายจ่าย ({expenses.length} รายการ)</span>
             <Link href="/admin/accounta/expenses" className="text-[10px] text-brand hover:underline">ไปหน้ารายจ่าย →</Link>
           </div>
-          {expenses.length === 0 ? (
-            <p className="text-xs text-slate-400 px-3 py-2">ไม่มีรายจ่ายในวันนี้</p>
-          ) : (
-            <table className="w-full text-sm tabular-nums">
-              <tbody>
-                {expenses.map((e) => (
-                  <tr key={e.id} className="border-b border-slate-50 hover:bg-slate-50/60">
-                    <td className="py-1 px-2">
-                      <div className="text-slate-700">{e.vendor_name || "—"}</div>
-                      <div className="text-[10px] text-slate-400">{e.category || "ไม่ระบุหมวด"}{e.payment_status === "unpaid" ? " · ค้างชำระ" : ""}{e.vat_amount > 0 ? ` · VAT ฿${fmtMoney(e.vat_amount)}` : ""}</div>
-                    </td>
-                    <td className="py-1 px-2 text-right font-mono text-rose-700">{fmtMoney(e.amount_total)}</td>
-                    <td className="py-1 px-2 text-right whitespace-nowrap">
-                      <Link href={`/admin/accounta/expenses?edit=${e.id}`} className="text-[10px] text-brand hover:underline mr-2">แก้</Link>
-                      <button type="button" onClick={() => removeExpense(e)} disabled={busyExpenseId === e.id} className="text-[10px] text-rose-500 hover:underline disabled:opacity-50">ลบ</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot><tr className="border-t border-slate-200 font-bold bg-slate-50">
-                <td className="py-1 px-2 text-slate-700">รวมรายจ่าย</td>
-                <td className="py-1 px-2 text-right font-mono text-rose-700">฿{fmtMoney(expTotal)}</td>
-                <td />
-              </tr></tfoot>
-            </table>
-          )}
+          <table className="w-full text-sm tabular-nums">
+            <tbody>
+              {expenses.length === 0 ? (
+                <tr><td className="px-3 py-2 text-xs text-slate-400">ไม่มีรายจ่ายในวันนี้</td></tr>
+              ) : expenses.map((e) => (
+                <tr key={e.id} className="border-b border-slate-50 hover:bg-slate-50/60">
+                  <td className="py-1 px-2">
+                    <div className="text-slate-700">{e.vendor_name || "—"}</div>
+                    <div className="text-[10px] text-slate-400">{e.category || "ไม่ระบุหมวด"}{e.payment_status === "unpaid" ? " · ค้างชำระ" : ""}{e.vat_amount > 0 ? ` · VAT ฿${fmtMoney(e.vat_amount)}` : ""}</div>
+                  </td>
+                  <td className="py-1 px-2 text-right font-mono text-rose-700">{fmtMoney(e.amount_total)}</td>
+                  <td className="py-1 px-2 text-right whitespace-nowrap">
+                    <Link href={`/admin/accounta/expenses?edit=${e.id}`} className="text-[10px] text-brand hover:underline mr-2">แก้</Link>
+                    <button type="button" onClick={() => removeExpense(e)} disabled={busyExpenseId === e.id} className="text-[10px] text-rose-500 hover:underline disabled:opacity-50">ลบ</button>
+                  </td>
+                </tr>
+              ))}
+              {/* quick-add an expense for this day */}
+              <tr className="bg-slate-50/60 border-t border-slate-100">
+                <td colSpan={3} className="px-2 py-2">
+                  {expErr && <p className="text-[11px] text-rose-600 mb-1">{expErr}</p>}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <input value={expVendor} onChange={(e) => setExpVendor(e.target.value)} placeholder="ผู้จำหน่าย / รายการ"
+                      className="input !py-1 !text-xs flex-1 !min-w-[8rem]" />
+                    <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)} className="input !py-1 !text-xs !w-auto">
+                      <option value="">— หมวด —</option>
+                      {categories.map((c) => <option key={c.name} value={c.name}>{c.code ? `${c.code} · ${c.name}` : c.name}</option>)}
+                    </select>
+                    <input type="number" inputMode="decimal" value={expAmt} placeholder="0.00"
+                      onChange={(e) => setExpAmt(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") addExpense(); }}
+                      className="input !w-24 !py-1 text-right font-mono !text-xs" />
+                    <label className="flex items-center gap-1 text-[11px] text-slate-500"><input type="checkbox" checked={expVat} onChange={(e) => setExpVat(e.target.checked)} />VAT</label>
+                    <label className="flex items-center gap-1 text-[11px] text-slate-500"><input type="checkbox" checked={expUnpaid} onChange={(e) => setExpUnpaid(e.target.checked)} />ค้างชำระ</label>
+                    <button type="button" onClick={addExpense} disabled={expAdding || !expAmt}
+                      className="text-[11px] text-brand hover:underline disabled:opacity-40">+ เพิ่ม</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+            <tfoot><tr className="border-t border-slate-200 font-bold bg-slate-50">
+              <td className="py-1 px-2 text-slate-700">รวมรายจ่าย</td>
+              <td className="py-1 px-2 text-right font-mono text-rose-700">฿{fmtMoney(expTotal)}</td>
+              <td />
+            </tr></tfoot>
+          </table>
         </div>
       </div>
 
@@ -399,12 +451,14 @@ function DayDetail({
 
 export default function LedgerDashboardClient({
   dash, expenses, period, anchor, monthly, trendYear, payables, cashAccounts, cashTotal,
-  branchId, incomeChannels
+  branchId, companyId, incomeChannels, expenseCategories
 }: {
   dash: Dash; expenses: LedgerExpenseRow[]; period: LedgerPeriod; anchor: string;
   monthly: MonthlyRow[]; trendYear: number; payables: Payables;
   cashAccounts: CashAccount[]; cashTotal: number;
-  branchId: number; incomeChannels: Array<{ id: number; name: string }>;
+  branchId: number; companyId: number | null;
+  incomeChannels: Array<{ id: number; name: string }>;
+  expenseCategories: Array<{ code: string | null; name: string }>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -753,7 +807,9 @@ export default function LedgerDashboardClient({
                             err={incErr}
                             expenses={expenses.filter((e) => e.bill_date === r.date)}
                             channels={incomeChannels}
+                            categories={expenseCategories}
                             branchId={branchId}
+                            companyId={companyId}
                             onChanged={() => { loadDayIncome(r.date, true); startTransition(() => router.refresh()); }}
                             removeExpense={remove}
                             busyExpenseId={busyId}
