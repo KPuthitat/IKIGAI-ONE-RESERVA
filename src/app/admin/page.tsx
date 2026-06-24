@@ -145,6 +145,12 @@ export default function AdminHomePage() {
           </Link>
         )}
       </div>
+
+      <div className="flex flex-wrap gap-2 pt-2">
+        <Link href="/admin/notifications-catalog" className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">
+          🔔 แคตตาล็อกการ์ดแจ้งเตือน
+        </Link>
+      </div>
     </div>
   );
 }
