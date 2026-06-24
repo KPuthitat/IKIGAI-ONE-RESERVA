@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
+import { verifyAdminPin } from "@/lib/admin-pin";
 import { getIncome, updateIncome, deleteIncome } from "@/lib/accounta-db";
 
 const Body = z.object({
@@ -41,14 +42,25 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  requirePermission("accounta.manage");
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const user = requirePermission("accounta.manage");
   const id = parseId(params.id);
   if (id == null) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
   const existing = getIncome(id);
   if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  // Check-list (shift-close) rows mirror the close report and are normally
+  // read-only. Deleting one IS allowed with a valid admin PIN (owner 2026-06-25
+  // — e.g. to drop the lump-sum row after re-entering per-channel breakdowns).
+  // Note: it reappears if that day is closed again.
   if (existing.source === "shift_close") {
-    return NextResponse.json({ error: "auto_row_readonly", message: "ยอดนี้ดึงจากรายงานปิดกะอัตโนมัติ ลบไม่ได้" }, { status: 409 });
+    const pin = new URL(req.url).searchParams.get("pin") || "";
+    const status = verifyAdminPin(user.id, pin);
+    if (!status.ok) {
+      return NextResponse.json(
+        { error: "pin_required", message: "ยอดนี้มาจาก Check list หลังเลิกงาน — ใส่ PIN เพื่อยืนยันการลบ" },
+        { status: 403 }
+      );
+    }
   }
   const ok = deleteIncome(id);
   if (!ok) return NextResponse.json({ error: "not_found" }, { status: 404 });

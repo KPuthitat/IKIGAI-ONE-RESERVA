@@ -179,7 +179,7 @@ export default function IncomeClient(props: {
                     <div className="font-medium text-slate-800 flex items-center gap-1.5">
                       {r.channel || (r.source === "shift_close" ? "ยอดขายรวม" : "—")}
                       {r.source === "shift_close" && (
-                        <span className="text-[10px] font-normal bg-sky-50 text-sky-700 border border-sky-200 rounded-full px-1.5 py-px">จากปิดกะ</span>
+                        <span className="text-[10px] font-normal bg-sky-50 text-sky-700 border border-sky-200 rounded-full px-1.5 py-px">Check list หลังเลิกงาน</span>
                       )}
                       {!!r.is_outstanding && (
                         r.settled_date

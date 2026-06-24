@@ -5,6 +5,20 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
+import PinPromptModal from "@/app/components/PinPromptModal";
+
+// Group an in-progress money string with thousand separators while the user
+// keeps typing (keeps up to 2 decimals): "1234.5" → "1,234.5". parseMoney
+// reverses it for the API. (owner 2026-06-25: separators while typing.)
+function grpMoney(s: string): string {
+  const cleaned = (s ?? "").replace(/[^\d.]/g, "");
+  const dot = cleaned.indexOf(".");
+  const intPart = (dot >= 0 ? cleaned.slice(0, dot) : cleaned).replace(/^0+(?=\d)/, "");
+  const dec = dot >= 0 ? cleaned.slice(dot + 1).replace(/\./g, "").slice(0, 2) : null;
+  const grouped = intPart === "" ? "" : Number(intPart).toLocaleString("en-US");
+  return dec !== null ? `${grouped === "" ? "0" : grouped}.${dec}` : grouped;
+}
+const parseMoney = (s: string): number => Number((s ?? "").replace(/,/g, ""));
 
 type LedgerPeriod = "week" | "month" | "year";
 
@@ -217,8 +231,10 @@ function DayDetail({
   const [expUnpaid, setExpUnpaid] = useState(false);
   const [expAdding, setExpAdding] = useState(false);
   const [expErr, setExpErr] = useState<string | null>(null);
+  const [pinRow, setPinRow] = useState<IncomeDayRow | null>(null); // auto row pending PIN-delete
 
-  const inc = rows ?? [];
+  // Insertion order: earliest added on top, latest at the bottom (owner 2026-06-25).
+  const inc = (rows ?? []).slice().sort((a, b) => a.id - b.id);
   const incTotal = inc.reduce((s, r) => s + r.amount, 0);
   const incAR = inc.reduce((s, r) => s + (r.is_outstanding ? r.amount : 0), 0);
   const incCash = incTotal - incAR;
@@ -226,7 +242,7 @@ function DayDetail({
   const net = incTotal - expTotal;
 
   async function saveAmount(r: IncomeDayRow) {
-    const amt = Number(editAmt);
+    const amt = parseMoney(editAmt);
     if (!Number.isFinite(amt) || amt <= 0) { setRowErr("กรอกยอดเงินให้ถูกต้อง"); return; }
     setSavingId(r.id); setRowErr(null);
     try {
@@ -254,8 +270,19 @@ function DayDetail({
     } finally { setSavingId(null); }
   }
 
+  // Auto (Check list หลังเลิกงาน) row → confirm with a PIN before deleting.
+  async function delAuto(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    const r = pinRow;
+    if (!r) return { ok: false, message: "ไม่พบรายการ" };
+    const res = await fetch(apiUrl(`/api/accounta/income/${r.id}?pin=${encodeURIComponent(pin)}`), { method: "DELETE" });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.ok) return { ok: false, message: j.message === undefined ? "ลบไม่สำเร็จ" : (j.error === "pin_required" ? "PIN ไม่ถูกต้อง" : j.message) };
+    setPinRow(null); onChanged();
+    return { ok: true };
+  }
+
   async function add() {
-    const amt = Number(addAmt);
+    const amt = parseMoney(addAmt);
     if (!Number.isFinite(amt) || amt <= 0) { setRowErr("กรอกยอดเงินให้ถูกต้อง"); return; }
     setAdding(true); setRowErr(null);
     try {
@@ -273,7 +300,7 @@ function DayDetail({
   }
 
   async function addExpense() {
-    const amt = Number(expAmt);
+    const amt = parseMoney(expAmt);
     if (!Number.isFinite(amt) || amt <= 0) { setExpErr("กรอกยอดเงินให้ถูกต้อง"); return; }
     setExpAdding(true); setExpErr(null);
     try {
@@ -315,7 +342,7 @@ function DayDetail({
                     <td className="py-1 px-2">
                       <div className="text-slate-700 flex items-center gap-1.5 flex-wrap">
                         {r.channel || (auto ? "ยอดขายรวม" : "—")}
-                        {auto && <span className="text-[9px] font-normal bg-sky-50 text-sky-700 border border-sky-200 rounded-full px-1.5 py-px">จากปิดกะ</span>}
+                        {auto && <span className="text-[9px] font-normal bg-sky-50 text-sky-700 border border-sky-200 rounded-full px-1.5 py-px">Check list หลังเลิกงาน</span>}
                         {!!r.is_outstanding && (r.settled_date
                           ? <span className="text-[9px] font-normal bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-1.5 py-px">รับชำระแล้ว</span>
                           : <span className="text-[9px] font-normal bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-px">ค้างชำระ</span>)}
@@ -323,8 +350,8 @@ function DayDetail({
                     </td>
                     <td className="py-1 px-2 text-right">
                       {editing ? (
-                        <input type="number" inputMode="decimal" autoFocus value={editAmt}
-                          onChange={(e) => setEditAmt(e.target.value)}
+                        <input type="text" inputMode="decimal" autoFocus value={editAmt}
+                          onChange={(e) => setEditAmt(grpMoney(e.target.value))}
                           onKeyDown={(e) => { if (e.key === "Enter") saveAmount(r); if (e.key === "Escape") setEditId(null); }}
                           className="input !w-28 !py-1 text-right font-mono" />
                       ) : (
@@ -333,7 +360,9 @@ function DayDetail({
                     </td>
                     <td className="py-1 px-2 text-right whitespace-nowrap">
                       {auto ? (
-                        <span className="text-[10px] text-slate-300" title="ยอดนี้ดึงจากรายงานปิดกะอัตโนมัติ — แก้ไขได้ที่ยอดขายรายวัน">อัตโนมัติ</span>
+                        <button type="button" onClick={() => { setPinRow(r); setRowErr(null); }} disabled={savingId === r.id}
+                          className="text-[11px] text-slate-400 hover:text-rose-600 disabled:opacity-50"
+                          title="ยอดนี้มาจาก Check list หลังเลิกงาน — ใส่ PIN เพื่อยืนยันการลบ">ลบ (PIN)</button>
                       ) : editing ? (
                         <>
                           <button type="button" onClick={() => saveAmount(r)} disabled={savingId === r.id}
@@ -343,7 +372,7 @@ function DayDetail({
                         </>
                       ) : (
                         <>
-                          <button type="button" onClick={() => { setEditId(r.id); setEditAmt(String(r.amount)); setRowErr(null); }}
+                          <button type="button" onClick={() => { setEditId(r.id); setEditAmt(grpMoney(String(r.amount))); setRowErr(null); }}
                             className="text-[11px] text-slate-500 hover:text-brand">แก้</button>
                           <button type="button" onClick={() => del(r)} disabled={savingId === r.id}
                             className="text-[11px] text-slate-400 hover:text-rose-600 ml-2 disabled:opacity-50">ลบ</button>
@@ -363,8 +392,8 @@ function DayDetail({
                   </select>
                 </td>
                 <td className="py-1 px-2 text-right">
-                  <input type="number" inputMode="decimal" value={addAmt} placeholder="0.00"
-                    onChange={(e) => setAddAmt(e.target.value)}
+                  <input type="text" inputMode="decimal" value={addAmt} placeholder="0.00"
+                    onChange={(e) => setAddAmt(grpMoney(e.target.value))}
                     onKeyDown={(e) => { if (e.key === "Enter") add(); }}
                     className="input !w-28 !py-1 text-right font-mono" />
                 </td>
@@ -418,8 +447,8 @@ function DayDetail({
                       <option value="">— หมวด —</option>
                       {categories.map((c) => <option key={c.name} value={c.name}>{c.code ? `${c.code} · ${c.name}` : c.name}</option>)}
                     </select>
-                    <input type="number" inputMode="decimal" value={expAmt} placeholder="0.00"
-                      onChange={(e) => setExpAmt(e.target.value)}
+                    <input type="text" inputMode="decimal" value={expAmt} placeholder="0.00"
+                      onChange={(e) => setExpAmt(grpMoney(e.target.value))}
                       onKeyDown={(e) => { if (e.key === "Enter") addExpense(); }}
                       className="input !w-28 !py-1 text-right font-mono" />
                     <label className="flex items-center gap-1 text-[11px] text-slate-500"><input type="checkbox" checked={expVat} onChange={(e) => setExpVat(e.target.checked)} />VAT</label>
@@ -445,6 +474,16 @@ function DayDetail({
         <div className="text-center"><div className="text-[10px] text-slate-400">รายจ่ายรวม</div><div className="font-mono font-bold text-rose-700">฿{fmtMoney(expTotal)}</div></div>
         <div className="text-center"><div className="text-[10px] text-slate-400">กำไร/ขาดทุนวันนี้</div><div className={`font-mono font-bold ${net >= 0 ? "text-slate-800" : "text-rose-600"}`}>{net < 0 ? `(฿${fmtMoney(-net)})` : `฿${fmtMoney(net)}`}</div></div>
       </div>
+
+      {pinRow && (
+        <PinPromptModal
+          title="ลบยอดจาก Check list หลังเลิกงาน"
+          description={<>ยอด <b>{pinRow.channel || "ยอดขายรวม"} ฿{fmtMoney(pinRow.amount)}</b> มาจากรายงานปิดกะ — ใส่ PIN เพื่อยืนยันการลบ (จะกลับมาอีกถ้าปิดกะวันนี้ใหม่)</>}
+          submitLabel="ลบ"
+          onSubmit={delAuto}
+          onClose={() => setPinRow(null)}
+        />
+      )}
     </div>
   );
 }
