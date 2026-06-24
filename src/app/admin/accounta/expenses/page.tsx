@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { getSystemSettings } from "@/lib/db";
 import {
   listBranches, listCompanies, listVendors, listExpenses, summarise, ocrUsageStats,
-  listCategories, listPaymentMethods, categoryBudget
+  listCategories, listPaymentMethods, categoryBudget, listPaymentChannels
 } from "@/lib/accounta-db";
 import ExpensesClient from "./ExpensesClient";
 
@@ -20,6 +20,9 @@ export default function AccountaExpensesPage() {
   const month = thisMonth();
   const settings = getSystemSettings();
   const ocrAvailable = !!settings.accounta_ocr_enabled && !!process.env.ANTHROPIC_API_KEY;
+  const expenseChannels = user.activeBranchId != null
+    ? listPaymentChannels(user.activeBranchId, "expense").map((c) => c.label)
+    : [];
 
   return (
     <div className="space-y-4">
@@ -55,6 +58,7 @@ export default function AccountaExpensesPage() {
         vendors={listVendors()}
         categories={listCategories()}
         paymentMethods={listPaymentMethods()}
+        expenseChannels={expenseChannels}
         initialExpenses={listExpenses({ month })}
         initialSummary={summarise(month)}
         initialDrafts={listExpenses({ reviewStatus: "draft" })}

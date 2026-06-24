@@ -5553,6 +5553,26 @@ function runMigrations(db: Database.Database): void {
       ON accounta_income(branch_id, income_date DESC);
   `);
 
+  // Financial-channel master (owner 2026-06-25): accounta_cash_accounts grows
+  // from a plain cash/bank snapshot into the PEAK-style "ช่องทางการเงิน" master —
+  // bank-account detail + กรรมการ credit-card detail (last 4 only, never the full
+  // PAN/CVV) + ใช้รับเงิน/ใช้จ่ายเงิน flags. Feeds the วิธีจ่าย dropdown on รายจ่าย.
+  // All additive + nullable; existing rows keep working as cash/bank.
+  const cashCols = db.prepare("PRAGMA table_info(accounta_cash_accounts)").all() as Array<{ name: string }>;
+  const addCashCol = (name: string, ddl: string) => {
+    if (!cashCols.some((c) => c.name === name)) db.exec(`ALTER TABLE accounta_cash_accounts ADD COLUMN ${ddl}`);
+  };
+  addCashCol("bank_name", "bank_name TEXT");                 // ธนาคาร (ธ.ไทยพาณิชย์)
+  addCashCol("account_type", "account_type TEXT");           // ประเภทบัญชี (ออมทรัพย์/กระแสรายวัน)
+  addCashCol("account_name", "account_name TEXT");           // ชื่อบัญชี
+  addCashCol("account_no", "account_no TEXT");               // เลขบัญชี (full — owner's own accounts)
+  addCashCol("account_branch", "account_branch TEXT");       // ชื่อสาขาธนาคาร
+  addCashCol("account_branch_no", "account_branch_no TEXT"); // เลขที่สาขาธนาคาร
+  addCashCol("description", "description TEXT");              // คำอธิบายช่องทาง
+  addCashCol("card_last4", "card_last4 TEXT");               // บัตรเครดิตกรรมการ: 4 ตัวท้ายเท่านั้น
+  addCashCol("use_income", "use_income INTEGER NOT NULL DEFAULT 1");   // ใช้รับเงิน
+  addCashCol("use_expense", "use_expense INTEGER NOT NULL DEFAULT 1"); // ใช้จ่ายเงิน
+
   // Per-branch income channels (owner 2026-06-21). Each branch records money
   // through a DIFFERENT set of channels (a restaurant: Cash/QR/Grab/cards; a
   // clinic: Cash/PromptPay + insurer credit accounts). The original table had

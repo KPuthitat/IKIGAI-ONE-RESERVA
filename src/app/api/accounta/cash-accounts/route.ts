@@ -14,25 +14,42 @@ import {
 // DELETE — remove an account (?id=)
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const TYPE = z.enum(["cash", "bank", "ewallet", "credit_card"]);
+// Detail fields shared by create + update. card_last4 is constrained to ≤4
+// digits — the UI never collects a full card number and the lib strips to 4.
+const detail = {
+  bank_name: z.string().trim().max(80).nullable().optional(),
+  account_type: z.string().trim().max(40).nullable().optional(),
+  account_name: z.string().trim().max(120).nullable().optional(),
+  account_no: z.string().trim().max(40).nullable().optional(),
+  account_branch: z.string().trim().max(80).nullable().optional(),
+  account_branch_no: z.string().trim().max(20).nullable().optional(),
+  description: z.string().trim().max(300).nullable().optional(),
+  card_last4: z.string().trim().regex(/^\d{0,4}$/).nullable().optional(),
+  use_income: z.boolean().optional(),
+  use_expense: z.boolean().optional()
+};
 
 const Body = z.object({
   name: z.string().trim().min(1).max(80),
-  type: z.enum(["cash", "bank"]).default("cash"),
+  type: TYPE.default("cash"),
   bank_label: z.string().trim().max(80).optional(),
   balance: z.number().finite().optional(),
   balance_as_of: z.string().regex(ISO).optional(),
   note: z.string().trim().max(300).optional(),
-  company_wide: z.boolean().optional()
+  company_wide: z.boolean().optional(),
+  ...detail
 });
 const PatchBody = z.object({
   id: z.number().int().positive(),
   name: z.string().trim().min(1).max(80).optional(),
-  type: z.enum(["cash", "bank"]).optional(),
+  type: TYPE.optional(),
   bank_label: z.string().trim().max(80).nullable().optional(),
   balance: z.number().finite().optional(),
   balance_as_of: z.string().regex(ISO).nullable().optional(),
   active: z.boolean().optional(),
-  note: z.string().trim().max(300).nullable().optional()
+  note: z.string().trim().max(300).nullable().optional(),
+  ...detail
 });
 
 function branchOf(): number | null {
@@ -60,7 +77,11 @@ export async function POST(req: Request) {
     branchId: d.company_wide ? null : branchId,
     name: d.name, type: d.type, bankLabel: d.bank_label ?? null,
     balance: d.balance ?? 0, balanceAsOf: d.balance_as_of ?? null,
-    note: d.note ?? null, createdBy: user.id
+    note: d.note ?? null, createdBy: user.id,
+    bankName: d.bank_name ?? null, accountType: d.account_type ?? null, accountName: d.account_name ?? null,
+    accountNo: d.account_no ?? null, accountBranch: d.account_branch ?? null, accountBranchNo: d.account_branch_no ?? null,
+    description: d.description ?? null, cardLast4: d.card_last4 ?? null,
+    useIncome: d.use_income, useExpense: d.use_expense
   });
   return NextResponse.json({ ok: true, accounts: listCashAccounts(branchId, true) });
 }
@@ -75,7 +96,11 @@ export async function PATCH(req: Request) {
   const { id, ...rest } = parsed.data;
   const ok = updateCashAccount(id, branchId, {
     name: rest.name, type: rest.type, bankLabel: rest.bank_label,
-    balance: rest.balance, balanceAsOf: rest.balance_as_of, active: rest.active, note: rest.note
+    balance: rest.balance, balanceAsOf: rest.balance_as_of, active: rest.active, note: rest.note,
+    bankName: rest.bank_name, accountType: rest.account_type, accountName: rest.account_name,
+    accountNo: rest.account_no, accountBranch: rest.account_branch, accountBranchNo: rest.account_branch_no,
+    description: rest.description, cardLast4: rest.card_last4,
+    useIncome: rest.use_income, useExpense: rest.use_expense
   });
   if (!ok) return NextResponse.json({ error: "update_failed" }, { status: 400 });
   return NextResponse.json({ ok: true, accounts: listCashAccounts(branchId, true) });

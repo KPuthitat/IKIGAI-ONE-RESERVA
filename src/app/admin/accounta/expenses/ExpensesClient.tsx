@@ -77,6 +77,7 @@ export default function ExpensesClient(props: {
   vendors: Vendor[];
   categories: Category[];
   paymentMethods: Method[];
+  expenseChannels: string[];
   initialExpenses: Expense[];
   initialSummary: Summary;
   initialDrafts: Expense[];
@@ -915,8 +916,15 @@ export default function ExpensesClient(props: {
                     {newMethod === null ? (
                       <select className="input" value={form.payment_method}
                         onChange={(e) => { if (e.target.value === "__add__") setNewMethod(""); else set("payment_method", e.target.value); }}>
-                        {methods.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
-                        <option value="__add__">+ เพิ่มช่องทาง…</option>
+                        {props.expenseChannels.length > 0 && (
+                          <optgroup label="ช่องทางที่ตั้งค่าไว้">
+                            {props.expenseChannels.map((c) => <option key={`ch:${c}`} value={c}>{c}</option>)}
+                          </optgroup>
+                        )}
+                        <optgroup label="อื่น ๆ">
+                          {methods.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
+                          <option value="__add__">+ เพิ่มช่องทาง…</option>
+                        </optgroup>
                       </select>
                     ) : (
                       <div className="flex gap-1">

@@ -1251,21 +1251,62 @@ export function accountaPayables(branchId: number): AccountaPayables {
 // Manual-snapshot balances (we don't tag transactions to accounts). The owner
 // records each account's balance + as-of date; the dashboard shows a total.
 
+// Financial-channel master. 'type' is one of cash | bank | ewallet |
+// credit_card. Bank rows carry account detail; credit_card rows carry only the
+// holder name + bank + last 4 (card_last4) — never the full PAN. use_income /
+// use_expense flag which sides may pick the channel (PEAK ใช้รับเงิน/ใช้จ่ายเงิน).
+export type CashAccountType = "cash" | "bank" | "ewallet" | "credit_card";
+const CASH_ACCOUNT_TYPES: CashAccountType[] = ["cash", "bank", "ewallet", "credit_card"];
+const normCashType = (t: string | undefined): CashAccountType =>
+  (CASH_ACCOUNT_TYPES as string[]).includes(t ?? "") ? (t as CashAccountType) : "cash";
+
 export type CashAccount = {
   id: number; branch_id: number | null; name: string; type: string;
   bank_label: string | null; balance: number; balance_as_of: string | null;
   sort_order: number; active: number; note: string | null;
+  bank_name: string | null; account_type: string | null; account_name: string | null;
+  account_no: string | null; account_branch: string | null; account_branch_no: string | null;
+  description: string | null; card_last4: string | null;
+  use_income: number; use_expense: number;
 };
+
+const CASH_ACCOUNT_COLS =
+  `id, branch_id, name, type, bank_label, balance, balance_as_of, sort_order, active, note,
+   bank_name, account_type, account_name, account_no, account_branch, account_branch_no,
+   description, card_last4, use_income, use_expense`;
 
 /** Accounts visible to a branch = its own + company-wide (branch_id NULL). */
 export function listCashAccounts(branchId: number, includeInactive = false): CashAccount[] {
   const where = includeInactive ? "" : "AND active = 1";
   return getDb().prepare(
-    `SELECT id, branch_id, name, type, bank_label, balance, balance_as_of, sort_order, active, note
+    `SELECT ${CASH_ACCOUNT_COLS}
        FROM accounta_cash_accounts
       WHERE (branch_id = ? OR branch_id IS NULL) ${where}
       ORDER BY active DESC, sort_order, name COLLATE NOCASE`
   ).all(branchId) as CashAccount[];
+}
+
+/** Display label for a channel in a dropdown, e.g.
+ *  "ไทยพาณิชย์ · ออมทรัพย์ ···8595" or "บัตรเครดิตกรรมการ ···1234". */
+export function cashAccountLabel(a: CashAccount): string {
+  if (a.type === "credit_card") {
+    const tail = a.card_last4 ? ` ···${a.card_last4}` : "";
+    return a.bank_name ? `${a.name} · ${a.bank_name}${tail}` : `${a.name}${tail}`;
+  }
+  if (a.type === "bank") {
+    const tail = a.account_no ? ` ···${a.account_no.slice(-4)}` : "";
+    const bank = a.bank_name || a.bank_label || "";
+    return bank ? `${a.name} · ${bank}${tail}` : `${a.name}${tail}`;
+  }
+  return a.name;
+}
+
+/** Channels usable on one side (income/expense), active only, with labels. */
+export function listPaymentChannels(branchId: number, side: "income" | "expense"): Array<{ id: number; label: string }> {
+  const flag = side === "income" ? "use_income" : "use_expense";
+  return listCashAccounts(branchId, false)
+    .filter((a) => (a as unknown as Record<string, number>)[flag] === 1)
+    .map((a) => ({ id: a.id, label: cashAccountLabel(a) }));
 }
 
 export function cashAccountsTotal(branchId: number): number {
@@ -1275,29 +1316,47 @@ export function cashAccountsTotal(branchId: number): number {
   return round2(r.s);
 }
 
-export function createCashAccount(d: {
-  branchId: number | null; name: string; type: string; bankLabel?: string | null;
-  balance?: number; balanceAsOf?: string | null; note?: string | null; createdBy: number;
-}): number {
+// Keep only the last ≤4 digits of a card number — defensive even though the UI
+// already restricts input. We never persist a full PAN.
+const last4 = (v: string | null | undefined): string | null => {
+  if (!v) return null;
+  const digits = v.replace(/\D/g, "").slice(-4);
+  return digits || null;
+};
+
+export type CashAccountFields = {
+  name?: string; type?: string; bankLabel?: string | null;
+  balance?: number; balanceAsOf?: string | null; note?: string | null;
+  bankName?: string | null; accountType?: string | null; accountName?: string | null;
+  accountNo?: string | null; accountBranch?: string | null; accountBranchNo?: string | null;
+  description?: string | null; cardLast4?: string | null;
+  useIncome?: boolean; useExpense?: boolean;
+};
+
+export function createCashAccount(d: CashAccountFields & { branchId: number | null; name: string; createdBy: number }): number {
   const db = getDb();
   const max = (db.prepare(
     "SELECT COALESCE(MAX(sort_order),0) AS m FROM accounta_cash_accounts WHERE branch_id IS ?"
   ).get(d.branchId) as { m: number }).m;
   return Number(db.prepare(
-    `INSERT INTO accounta_cash_accounts (branch_id, name, type, bank_label, balance, balance_as_of, sort_order, note, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO accounta_cash_accounts
+       (branch_id, name, type, bank_label, balance, balance_as_of, sort_order, note, created_by,
+        bank_name, account_type, account_name, account_no, account_branch, account_branch_no,
+        description, card_last4, use_income, use_expense)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
-    d.branchId, d.name.trim(), d.type === "bank" ? "bank" : "cash", d.bankLabel ?? null,
-    round2(d.balance ?? 0), d.balanceAsOf ?? null, max + 10, d.note ?? null, d.createdBy
+    d.branchId, d.name.trim(), normCashType(d.type), d.bankLabel ?? null,
+    round2(d.balance ?? 0), d.balanceAsOf ?? null, max + 10, d.note ?? null, d.createdBy,
+    d.bankName ?? null, d.accountType ?? null, d.accountName ?? null, d.accountNo ?? null,
+    d.accountBranch ?? null, d.accountBranchNo ?? null, d.description ?? null,
+    normCashType(d.type) === "credit_card" ? last4(d.cardLast4) : null,
+    d.useIncome === false ? 0 : 1, d.useExpense === false ? 0 : 1
   ).lastInsertRowid);
 }
 
 /** Update editable fields; branchId guards that the account belongs to this
  *  branch or is company-wide (NULL). Only provided keys change. */
-export function updateCashAccount(id: number, branchId: number, d: {
-  name?: string; type?: string; bankLabel?: string | null;
-  balance?: number; balanceAsOf?: string | null; active?: boolean; note?: string | null;
-}): boolean {
+export function updateCashAccount(id: number, branchId: number, d: CashAccountFields & { active?: boolean }): boolean {
   const db = getDb();
   const owned = db.prepare(
     "SELECT id FROM accounta_cash_accounts WHERE id = ? AND (branch_id = ? OR branch_id IS NULL)"
@@ -1305,12 +1364,22 @@ export function updateCashAccount(id: number, branchId: number, d: {
   if (!owned) return false;
   const sets: string[] = []; const vals: Array<string | number | null> = [];
   if (d.name !== undefined) { sets.push("name = ?"); vals.push(d.name.trim()); }
-  if (d.type !== undefined) { sets.push("type = ?"); vals.push(d.type === "bank" ? "bank" : "cash"); }
+  if (d.type !== undefined) { sets.push("type = ?"); vals.push(normCashType(d.type)); }
   if (d.bankLabel !== undefined) { sets.push("bank_label = ?"); vals.push(d.bankLabel); }
   if (d.balance !== undefined) { sets.push("balance = ?"); vals.push(round2(d.balance)); }
   if (d.balanceAsOf !== undefined) { sets.push("balance_as_of = ?"); vals.push(d.balanceAsOf); }
   if (d.active !== undefined) { sets.push("active = ?"); vals.push(d.active ? 1 : 0); }
   if (d.note !== undefined) { sets.push("note = ?"); vals.push(d.note); }
+  if (d.bankName !== undefined) { sets.push("bank_name = ?"); vals.push(d.bankName); }
+  if (d.accountType !== undefined) { sets.push("account_type = ?"); vals.push(d.accountType); }
+  if (d.accountName !== undefined) { sets.push("account_name = ?"); vals.push(d.accountName); }
+  if (d.accountNo !== undefined) { sets.push("account_no = ?"); vals.push(d.accountNo); }
+  if (d.accountBranch !== undefined) { sets.push("account_branch = ?"); vals.push(d.accountBranch); }
+  if (d.accountBranchNo !== undefined) { sets.push("account_branch_no = ?"); vals.push(d.accountBranchNo); }
+  if (d.description !== undefined) { sets.push("description = ?"); vals.push(d.description); }
+  if (d.cardLast4 !== undefined) { sets.push("card_last4 = ?"); vals.push(last4(d.cardLast4)); }
+  if (d.useIncome !== undefined) { sets.push("use_income = ?"); vals.push(d.useIncome ? 1 : 0); }
+  if (d.useExpense !== undefined) { sets.push("use_expense = ?"); vals.push(d.useExpense ? 1 : 0); }
   if (sets.length === 0) return false;
   sets.push("updated_at = CURRENT_TIMESTAMP");
   vals.push(id);

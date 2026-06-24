@@ -34,13 +34,13 @@ export default function CashAccountsPage() {
         <Link href="/admin/accounta/daybook" className="text-sm text-brand hover:underline">ไปหน้าภาพรวมบัญชี →</Link>
       </div>
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">เงินสด / บัญชีธนาคาร</h1>
+        <h1 className="text-2xl font-bold text-slate-800">ช่องทางการเงิน / บัญชี</h1>
         <p className="text-sm text-slate-500 mt-1">
-          สาขา <b>{branch?.name ?? `#${branchId}`}</b> · ติดตามยอดเงินคงเหลือของแต่ละบัญชี
+          สาขา <b>{branch?.name ?? `#${branchId}`}</b> · เงินสด · บัญชีธนาคาร · บัตรเครดิตกรรมการ — ตั้งค่าครั้งเดียว ใช้เป็นช่องทางรับ/จ่ายเงิน
         </p>
         <p className="text-[11px] text-slate-400 mt-1">
-          ยอดเป็นการบันทึกเอง (snapshot) — ระบบยังไม่ได้ผูกทุกบิลเข้าบัญชีอัตโนมัติ จึงให้กรอกยอดคงเหลือ + วันที่ของยอดเอง ·
-          บัญชีแบบ “ทั้งบริษัท” จะเห็นในทุกสาขา
+          ช่องทางที่ติ๊ก “ใช้จ่ายเงิน” จะมาเป็นตัวเลือกวิธีจ่ายตอนบันทึกรายจ่าย · ยอดคงเหลือเป็นการบันทึกเอง (snapshot) ·
+          บัตรเครดิตเก็บเฉพาะ 4 ตัวท้าย ไม่เก็บเลขบัตรเต็ม · ช่องทาง “ทั้งบริษัท” เห็นในทุกสาขา
         </p>
       </div>
       <CashAccountsClient initialAccounts={listCashAccounts(branchId, true)} branchName={branch?.name ?? `#${branchId}`} />
