@@ -41,7 +41,7 @@ export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate }
       <div className="text-[10px] text-slate-400">บันทึกโดย: {sellerName}</div>
       <div className="border-t border-slate-100 my-1" />
       <Row label="ยอดขายวันนี้ (รวม VAT)" value={baht(v.total)} bold />
-      <Row label="ฐานก่อน VAT" value={baht(v.base)} />
+      <Row label="ยอดขายก่อนภาษี" value={baht(v.base)} />
       <Row label="VAT 7%" value={baht(v.vat)} />
       <div className="border-t border-slate-100 my-1" />
       <div className="text-[9px] text-slate-400 text-center">ยอดสะสมจะสรุปอีกครั้งในใบประจำสัปดาห์/เดือน</div>
@@ -59,7 +59,7 @@ export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount,
       <div className="text-[10px] text-slate-400">สรุปโดย: {sellerName} · รวม {dayCount} วัน</div>
       <div className="border-t border-slate-100 my-1" />
       <Row label="ยอดขายรวมสัปดาห์ (รวม VAT)" value={baht(v.total)} bold />
-      <Row label="ฐานก่อน VAT" value={baht(v.base)} />
+      <Row label="ยอดขายก่อนภาษี" value={baht(v.base)} />
       <Row label="VAT 7%" value={baht(v.vat)} />
       <div className="rounded-lg bg-emerald-50 px-3 py-2 mt-1">
         <div className="text-[11px] text-slate-500">ยอดวางบิลประจำสัปดาห์</div>

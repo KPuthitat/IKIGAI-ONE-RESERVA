@@ -102,7 +102,7 @@ export function revshareDailyFlex(d: DailyCard): FlexMsg {
           { type: "text", text: `บันทึกโดย: ${d.sellerName}`, size: "xxs", color: "#999999" },
           sep,
           kv("ยอดขายวันนี้ (รวม VAT)", baht(v.total), { bold: true }),
-          kv("ฐานก่อน VAT", baht(v.base), { size: "xs" }),
+          kv("ยอดขายก่อนภาษี", baht(v.base), { size: "xs" }),
           kv("VAT 7%", baht(v.vat), { size: "xs" })
         ]
       },
@@ -130,7 +130,7 @@ export function revshareWeeklyFlex(d: WeeklyCard): FlexMsg {
           { type: "text", text: `สรุปโดย: ${d.sellerName} · รวม ${d.dayCount} วัน`, size: "xxs", color: "#999999", wrap: true },
           sep,
           kv("ยอดขายรวมสัปดาห์ (รวม VAT)", baht(v.total), { bold: true }),
-          kv("ฐานก่อน VAT", baht(v.base), { size: "xs" }),
+          kv("ยอดขายก่อนภาษี", baht(v.base), { size: "xs" }),
           kv("VAT 7%", baht(v.vat), { size: "xs" }),
           { type: "box", layout: "vertical", margin: "md", contents: [
             { type: "text", text: "ยอดวางบิลประจำสัปดาห์", size: "xs", color: "#888888" },
