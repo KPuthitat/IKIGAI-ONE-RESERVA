@@ -50,7 +50,8 @@ function cards(): CatalogCard[] {
       shiftChange: [{ name: "นาย ก", detail: "ขอเพิ่มกะ · 2026-06-25", ref: "SC2569-12" }],
       leave: [{ name: "นางสาว ข", detail: "ลาป่วย · 2026-06-26", ref: "L2569-5" }],
       ot: [],
-      accountaDraft: [{ name: "ร้านวัตถุดิบเอ", detail: "รอตรวจสอบ · 1,200.00 บาท · 2026-06-23", ref: null }]
+      accountaDraft: [{ name: "ร้านวัตถุดิบเอ", detail: "รอตรวจสอบ · 1,200.00 บาท · 2026-06-23", ref: null }],
+      accountaUnpaid: [{ name: "บริษัทแก๊สบี", detail: "ค้างชำระ · 3,500.00 บาท · 2026-06-20", ref: null }]
     }
   })));
   add("PERSONA", "ยืนยันลงเวลาเข้างาน", "อัตโนมัติ", build(() => personaClockInFlex({

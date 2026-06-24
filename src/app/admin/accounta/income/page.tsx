@@ -41,11 +41,12 @@ export default function AccountaIncomePage() {
       </div>
       <IncomeClient
         month={month}
+        activeBranchId={user.activeBranchId}
         branches={listBranches()}
         companies={listCompanies()}
         channels={listIncomeChannels(user.activeBranchId)}
         initialIncome={listIncome({ month, branchId: user.activeBranchId })}
-        initialSummary={incomeSummary(month)}
+        initialSummary={incomeSummary(month, user.activeBranchId)}
       />
     </div>
   );

@@ -681,6 +681,21 @@ export function listDraftExpensesForBranch(branchId: number): Array<{
   ).all(branchId) as Array<{ id: number; vendor_name: string | null; amount_total: number; bill_date: string | null; created_at: string }>;
 }
 
+/** Branch-scoped confirmed bills still unpaid (ค้างชำระ) — feeds the daily
+ *  digest (owner 2026-06-24). Excludes the company-level WHT/SSO postings;
+ *  oldest bill first so the most overdue reads at the top. */
+export function listUnpaidExpensesForBranch(branchId: number): Array<{
+  id: number; vendor_name: string | null; amount_total: number; bill_date: string | null;
+}> {
+  return getDb().prepare(
+    `SELECT id, vendor_name, amount_total, bill_date
+     FROM accounta_expenses
+     WHERE review_status = 'confirmed' AND payment_status = 'unpaid' AND branch_id = ?
+       AND COALESCE(category,'') NOT IN ('ภาษีหัก ณ ที่จ่าย','ประกันสังคม')
+     ORDER BY bill_date ASC, id ASC`
+  ).all(branchId) as Array<{ id: number; vendor_name: string | null; amount_total: number; bill_date: string | null }>;
+}
+
 /** Mark a draft as reviewed → it now counts in the ledger/summaries. */
 export function confirmExpense(id: number): boolean {
   return getDb().prepare(

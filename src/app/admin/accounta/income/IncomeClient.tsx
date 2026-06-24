@@ -29,12 +29,16 @@ function blank(channel = ""): Form {
 }
 
 export default function IncomeClient(props: {
-  month: string; branches: Ref[]; companies: Ref[]; channels: Channel[];
+  month: string; activeBranchId: number | null; branches: Ref[]; companies: Ref[]; channels: Channel[];
   initialIncome: Income[]; initialSummary: Summary;
 }) {
   const router = useRouter();
   const [month, setMonth] = useState(props.month);
-  const [branchId, setBranchId] = useState("");
+  // Default to the active branch so the list + summary + dropdown all agree —
+  // previously the filter defaulted to "ทุกสาขา" while the page pre-scoped the
+  // list to the active branch, so the top totals showed other branches' income
+  // (owner 2026-06-24: "มียอดขายที่ไม่ใช่ของนามะ").
+  const [branchId, setBranchId] = useState(props.activeBranchId != null ? String(props.activeBranchId) : "");
   const [companyId, setCompanyId] = useState("");
   const [rows, setRows] = useState<Income[]>(props.initialIncome);
   const [summary, setSummary] = useState<Summary>(props.initialSummary);
