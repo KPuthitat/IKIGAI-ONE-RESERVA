@@ -268,7 +268,7 @@ export default function RoundsClient({
           <p className="text-xs text-slate-400">ยังไม่มีข้อมูล — กดปุ่ม “นำเข้าไฟล์ยอดขายประจำวัน” ด้านบน</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm tabular-nums">
+            <table className="w-full text-sm">
               <thead><tr className="text-[11px] text-slate-400 border-b border-slate-200">
                 <th className="text-left py-1.5 px-2">วันที่</th>
                 <th className="text-right py-1.5 px-2">ยอดขาย</th>
@@ -366,7 +366,7 @@ function SalesInput({ value, onSave, disabled }: { value: number; onSave: (v: st
   return (
     <input
       type="text" inputMode="decimal" disabled={disabled}
-      className="input w-32 text-right text-sm py-1 font-mono"
+      className="input w-32 text-right text-sm py-1 font-sans"
       value={text}
       onFocus={() => setText(value ? String(value) : "")}
       onChange={(e) => setText(e.target.value)}
