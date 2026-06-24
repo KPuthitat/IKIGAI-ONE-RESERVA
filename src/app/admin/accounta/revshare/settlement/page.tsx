@@ -50,7 +50,7 @@ export default function RevshareSettlementPage({ searchParams }: { searchParams:
         <p className="text-sm text-slate-500 mt-1">สรุปส่วนแบ่งรายเดือน → ออกใบเรียกเก็บส่วนแบ่งยอดขายครั้งเดียวสิ้นเดือน</p>
       </div>
       <SettlementClient
-        partner={{ id: partner.id, name: partner.name, venue: partner.venue, vat_enabled: partner.vat_enabled, line_group_id: partner.line_group_id }}
+        partner={{ id: partner.id, name: partner.name, venue: partner.venue, pos_categories: partner.pos_categories, vat_enabled: partner.vat_enabled, line_group_id: partner.line_group_id }}
         seller={{ name: seller.name, company: seller.company_name, address: seller.reg_address, taxBranchCode: seller.tax_branch_code, phone: seller.contact_phone }}
         initial={preview} year={year} month={month}
       />

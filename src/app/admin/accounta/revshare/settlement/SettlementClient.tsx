@@ -15,7 +15,7 @@ type Result = {
 type BreakRow = { label: string; start: string; end: string; sales: number; roundGP: number; gpPct: number };
 type Stored = { status: "draft" | "issued" | "paid"; invoice_no: string | null; issued_at: string | null; paid_at: string | null } | null;
 type Preview = { result: Result; breakdown: BreakRow[]; opMonth: number; stored: Stored; stale: boolean };
-type Partner = { id: number; name: string; venue: string | null; vat_enabled: boolean; line_group_id: string | null };
+type Partner = { id: number; name: string; venue: string | null; pos_categories: string[]; vat_enabled: boolean; line_group_id: string | null };
 type Seller = { name: string; company: string | null; address: string | null; taxBranchCode: string | null; phone: string | null };
 
 export default function SettlementClient({
@@ -30,6 +30,7 @@ export default function SettlementClient({
 
   const r = pv.result;
   const monthLabel = `${TH_MONTHS_FULL[month]} ${year + 543}`;
+  const shop = partner.pos_categories.length ? partner.pos_categories.join(", ") : (partner.venue?.trim() || partner.name);
   const status = pv.stored?.status ?? "draft";
   const withVat = partner.vat_enabled && r.vatAmount > 0;
   const grandTotal = r.billedGP + r.vatAmount;   // ยอดบนใบกำกับภาษี
@@ -162,24 +163,23 @@ export default function SettlementClient({
       {/* Partner-ready notification — visual preview of the LINE message */}
       <div className="card space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-sm font-bold text-slate-800">ข้อความแจ้งเตือนที่จะส่งให้คู่ค้า</div>
+          <div className="text-sm font-bold text-slate-800">สรุปยอดขายประจำเดือน (พร้อมส่วนแบ่งยอดขาย)</div>
           <div className="flex items-center gap-2 flex-wrap">
             {partner.line_group_id
-              ? <button type="button" onClick={sendNotify} disabled={busy} className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{sent ? "✓ ส่งแล้ว" : "ส่งข้อความแจ้งเตือนเข้ากลุ่มคู่ค้า"}</button>
+              ? <button type="button" onClick={sendNotify} disabled={busy} className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{sent ? "✓ ส่งแล้ว" : "ส่งสรุปประจำเดือนเข้ากลุ่มคู่ค้า"}</button>
               : <span className="text-[11px] text-slate-400">ตั้ง LINE group ในหน้าตั้งค่าคู่ค้าเพื่อส่งได้</span>}
             <a href={apiUrl(`/api/accounta/revshare/statement/pdf?partner=${partner.id}&year=${year}&month=${month}`)} className="btn-secondary text-sm" download>ดาวน์โหลด PDF</a>
           </div>
         </div>
-        <p className="text-[11px] text-slate-400">ตัวอย่างข้อความแจ้งเตือนที่คู่ค้าจะเห็นใน LINE — ส่งแล้วหน้าตาเป็นแบบนี้</p>
+        <p className="text-[11px] text-slate-400">ตัวอย่างข้อความแจ้งเตือนที่คู่ค้าจะเห็นใน LINE · ยอดขายรายวัน/รายสัปดาห์ส่งจากหน้ารอบยอดขาย</p>
         <div className="rounded-2xl bg-slate-100 p-4 sm:p-6">
           <FlexCardPreview
-            shop={partner.venue?.trim() || partner.name}
-            partnerLegal={partner.venue?.trim() ? partner.name : null}
+            shop={shop}
+            partnerLegal={partner.name !== shop ? partner.name : null}
             sellerName={seller.name}
             sellerCompany={seller.company}
             monthLabel={monthLabel}
             invoiceNo={invoiceNo.trim() || null}
-            weeks={pv.breakdown.map((b) => ({ label: b.label, sales: b.sales }))}
             r={r} withVat={withVat} grandTotal={grandTotal}
           />
         </div>
@@ -188,22 +188,20 @@ export default function SettlementClient({
   );
 }
 
-/** Static mock of the LINE message (mirrors revshareSettlementFlex) so the owner
- *  sees exactly what lands in the partner's group before sending. Full-width so
- *  long baht amounts never wrap. Two sections, each with its own ผู้เรียกเก็บ:
- *  the GP/ส่วนแบ่ง is billed by the seller (HYPOPLARAEMIA · อิคิไก เวลล์เทรด),
- *  the weekly transfer by the partner shop (จ้อจี้ & friends · ศาลาชิลล์). */
+/** Static mock of the monthly LINE message (mirrors revshareSettlementFlex) so
+ *  the owner sees exactly what lands in the partner's group before sending.
+ *  Full-width so long baht amounts never wrap. Billed by the seller
+ *  (HYPOPLARAEMIA · อิคิไก เวลล์เทรด). The daily/weekly cards are separate. */
 function FlexCardPreview({
-  shop, partnerLegal, sellerName, sellerCompany, monthLabel, invoiceNo, weeks, r, withVat, grandTotal
+  shop, partnerLegal, sellerName, sellerCompany, monthLabel, invoiceNo, r, withVat, grandTotal
 }: {
   shop: string; partnerLegal: string | null; sellerName: string; sellerCompany: string | null; monthLabel: string;
-  invoiceNo: string | null; weeks: Array<{ label: string; sales: number }>;
+  invoiceNo: string | null;
   r: Result; withVat: boolean; grandTotal: number;
 }) {
   const baht = (n: number) => `${fmtMoney(n)} บาท`;
   const belowFloor = r.topup > 0;   // tier GP didn't reach the agreed minimum
   const sellerIssuer = sellerCompany ? `${sellerName} · ${sellerCompany}` : sellerName;
-  const partnerIssuer = partnerLegal ? `${shop} · ${partnerLegal}` : shop;
   const Row = ({ label, value, bold, color }: { label: string; value: string; bold?: boolean; color?: string }) => (
     <div className="flex items-baseline justify-between gap-4">
       <span className="text-[13px] text-slate-500">{label}</span>
@@ -215,8 +213,8 @@ function FlexCardPreview({
       {/* header */}
       <div className="px-5 py-4" style={{ backgroundColor: "#281a0e" }}>
         <div className="text-[10px]" style={{ color: "#d6a14d" }}>IKIGAI OS · ส่วนแบ่งยอดขาย</div>
-        <div className="text-lg font-bold text-white leading-tight mt-0.5">สรุปรอบ {monthLabel}</div>
-        <div className="text-[11px]" style={{ color: "#cbb89a" }}>{invoiceNo ? `เลขที่ ${invoiceNo}` : "ใบสรุปส่วนแบ่งยอดขาย"}</div>
+        <div className="text-lg font-bold text-white leading-tight mt-0.5">สรุปยอดขายประจำเดือน · {monthLabel}</div>
+        <div className="text-[11px]" style={{ color: "#cbb89a" }}>{invoiceNo ? `ส่วนแบ่งยอดขาย · เลขที่ ${invoiceNo}` : "พร้อมส่วนแบ่งยอดขาย"}</div>
       </div>
       {/* body */}
       <div className="px-5 py-4 space-y-2">
@@ -244,16 +242,6 @@ function FlexCardPreview({
           <span className="text-[13px] font-bold text-slate-600">ยอดสุทธิ</span>
           <span className="text-[15px] font-bold tabular-nums whitespace-nowrap" style={{ color: "#0f6e56" }}>{baht(r.netAmount)}</span>
         </div>
-
-        {/* ── ยอดโอนรายสัปดาห์ (billed by the partner shop) ── */}
-        {weeks.length > 0 && (
-          <>
-            <div className="border-t border-slate-100 my-1" />
-            <div className="text-[11px] font-bold text-slate-400">ยอดโอนรายสัปดาห์</div>
-            <div className="text-[10px] text-slate-400">ผู้เรียกเก็บ: {partnerIssuer}</div>
-            {weeks.map((w, i) => <Row key={i} label={w.label} value={baht(w.sales)} />)}
-          </>
-        )}
       </div>
       {/* footer */}
       <div className="px-5 pb-3 pt-1">

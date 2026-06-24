@@ -9,7 +9,7 @@ import { fmtMoney } from "@/lib/format";
 import { roundLabel, mondayOf, TH_MONTHS_FULL, type Tier, type SalesBase } from "@/lib/revshare";
 import PinPromptModal from "@/app/components/PinPromptModal";
 
-type Partner = { id: number; name: string; sales_base: SalesBase; pos_categories: string[] };
+type Partner = { id: number; name: string; sales_base: SalesBase; pos_categories: string[]; line_group_id: string | null };
 type Round = {
   id: number; period_start: string; period_end: string; label: string | null;
   sales_amount: number; source: "manual" | "pos_import"; source_filename: string | null;
@@ -26,6 +26,10 @@ export default function RoundsClient({
   const [rounds, setRounds] = useState<Round[]>(initialRounds);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // LINE notify (daily / weekly) — owner 2026-06-23. `sending` holds the key of
+  // the row being sent; `sentKey` flashes a ✓ after success.
+  const [sending, setSending] = useState<string | null>(null);
+  const [sentKey, setSentKey] = useState<string | null>(null);
 
   // PIN gate — verify once, reuse for the session; re-prompt if the server
   // rejects it. Records the operator on every import/edit/delete.
@@ -117,6 +121,20 @@ export default function RoundsClient({
       if (res.ok) setRounds((rs) => rs.filter((x) => x.id !== r.id));
       return res;
     });
+  }
+
+  // Send a daily or weekly sales card to the partner's LINE group.
+  async function notifyPartner(key: string, body: Record<string, unknown>) {
+    setSending(key); setErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/accounta/revshare/notify"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partner: partner.id, year, month, ...body })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "ส่ง LINE ไม่สำเร็จ")); return; }
+      setSentKey(key); setTimeout(() => setSentKey((k) => (k === key ? null : k)), 2200);
+    } finally { setSending(null); }
   }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -259,13 +277,29 @@ export default function RoundsClient({
                           <SalesInput value={r.sales_amount} disabled={busy} onSave={(v) => saveSales(r, v)} />
                         </td>
                         <td className="py-1 px-2 text-[11px] text-slate-400">{r.source === "pos_import" ? "นำเข้าไฟล์" : "กรอกเอง"}</td>
-                        <td className="py-1 px-2 text-right"><button type="button" onClick={() => del(r)} disabled={busy} className="text-[11px] text-rose-500 hover:underline">ลบ</button></td>
+                        <td className="py-1 px-2 text-right whitespace-nowrap">
+                          {partner.line_group_id && (
+                            <button type="button" onClick={() => notifyPartner(`d:${r.period_start}`, { kind: "daily", date: r.period_start })}
+                              disabled={sending !== null} className="text-[11px] text-emerald-600 hover:underline mr-3 disabled:opacity-50">
+                              {sentKey === `d:${r.period_start}` ? "✓ ส่งแล้ว" : sending === `d:${r.period_start}` ? "กำลังส่ง…" : "ส่งยอดวันนี้"}
+                            </button>
+                          )}
+                          <button type="button" onClick={() => del(r)} disabled={busy} className="text-[11px] text-rose-500 hover:underline">ลบ</button>
+                        </td>
                       </tr>
                     ))}
                     <tr className="bg-slate-50 border-b border-slate-200">
                       <td className="py-1 px-2 text-[11px] font-bold text-slate-600">ยอดโอนสัปดาห์ {w.label}</td>
                       <td className="py-1 px-2 text-right font-mono font-bold text-brand">฿{fmtMoney(w.total)}</td>
-                      <td colSpan={2} className="py-1 px-2 text-[10px] text-slate-400">โอนเต็มจำนวนให้คู่ค้า</td>
+                      <td colSpan={2} className="py-1 px-2 text-[10px] text-slate-400">
+                        โอนเต็มจำนวนให้คู่ค้า
+                        {partner.line_group_id && (
+                          <button type="button" onClick={() => notifyPartner(`w:${w.rounds[0].period_start}`, { kind: "weekly", week_start: w.rounds[0].period_start })}
+                            disabled={sending !== null} className="ml-2 text-[11px] font-bold text-emerald-600 hover:underline disabled:opacity-50">
+                            {sentKey === `w:${w.rounds[0].period_start}` ? "✓ ส่งแล้ว" : sending === `w:${w.rounds[0].period_start}` ? "กำลังส่ง…" : "ส่งสรุปสัปดาห์"}
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   </Fragment>
                 ))}
@@ -278,7 +312,12 @@ export default function RoundsClient({
             </table>
           </div>
         )}
-        <p className="text-[11px] text-slate-400">แก้ยอดได้โดยพิมพ์แล้วคลิกออก (ต้องยืนยัน PIN) · ยอดโอนรายสัปดาห์รวมจันทร์–อาทิตย์ให้อัตโนมัติ</p>
+        <p className="text-[11px] text-slate-400">
+          แก้ยอดได้โดยพิมพ์แล้วคลิกออก (ต้องยืนยัน PIN) · ยอดโอนรายสัปดาห์รวมจันทร์–อาทิตย์ให้อัตโนมัติ
+          {partner.line_group_id
+            ? " · กด “ส่งยอดวันนี้” แจ้งคู่ค้าตอนนำเข้า, “ส่งสรุปสัปดาห์” ตอนจะโอน"
+            : " · ตั้ง LINE group ในหน้าตั้งค่าคู่ค้าเพื่อส่งแจ้งเตือนรายวัน/สัปดาห์ได้"}
+        </p>
       </div>
 
       {pinRun && (

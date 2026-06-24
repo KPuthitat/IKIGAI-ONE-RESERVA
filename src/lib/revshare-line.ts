@@ -4,6 +4,7 @@
 
 import { sendLinePush } from "./line";
 import { getPlatformChannel } from "./messaging-channels";
+import { vatInclusive } from "./revshare";
 
 type FlexMsg = { type: "flex"; altText: string; contents: unknown };
 
@@ -38,29 +39,24 @@ function footer(note: string): unknown {
 }
 
 export type SettlementCard = {
-  sellerName: string; sellerCompany?: string | null; partnerName: string; venue?: string | null; monthLabel: string;
+  shop: string; sellerName: string; sellerCompany?: string | null; partnerName: string; monthLabel: string;
   totalSales: number; tierGP: number; floorApplied: number; topup: number; billedGP: number; avgGpPct: number;
   vatEnabled: boolean; vatAmount: number; whtAmount: number; netAmount: number;
-  weeks: Array<{ label: string; sales: number }>;
   invoiceNo: string | null;
 };
 
 export function revshareSettlementFlex(d: SettlementCard): FlexMsg {
-  // Shop/venue name (e.g. "จ้อจี้ & friends") leads — it's how the partner is
-  // known + the POS category. Two sections, each with its own ผู้เรียกเก็บ:
-  // ส่วนแบ่งยอดขาย is billed by the seller (HYPOPLARAEMIA · อิคิไก เวลล์เทรด);
-  // the weekly transfer by the partner shop (จ้อจี้ & friends · ศาลาชิลล์).
-  const shop = d.venue?.trim() || d.partnerName;
+  // Monthly GP summary, billed by the seller (HYPOPLARAEMIA · อิคิไก เวลล์เทรด)
+  // to the shop. Shop name leads (from the POS category); legal entity below.
+  // The weekly transfer is now its own card (revshareWeeklyFlex).
   const sellerIssuer = d.sellerCompany ? `${d.sellerName} · ${d.sellerCompany}` : d.sellerName;
-  const partnerIssuer = d.venue?.trim() ? `${shop} · ${d.partnerName}` : shop;
   const body: unknown[] = [
-    { type: "text", text: shop, weight: "bold", size: "lg", wrap: true },
-    ...(d.venue?.trim() ? [{ type: "text", text: d.partnerName, size: "xxs", color: "#999999", wrap: true }] : [])
+    { type: "text", text: d.shop, weight: "bold", size: "lg", wrap: true },
+    ...(d.partnerName && d.partnerName !== d.shop ? [{ type: "text", text: d.partnerName, size: "xxs", color: "#999999", wrap: true }] : []),
+    { type: "text", text: `ผู้เรียกเก็บ: ${sellerIssuer}`, size: "xxs", color: "#999999", wrap: true }
   ];
 
-  // ── ส่วนแบ่งยอดขาย (billed by the seller) ──
   body.push(sep);
-  body.push({ type: "text", text: `ผู้เรียกเก็บ: ${sellerIssuer}`, size: "xxs", color: "#999999", wrap: true });
   body.push(kv("ยอดขายรวมทั้งเดือน", baht(d.totalSales)));
   if (d.topup > 0) {
     body.push(kv(`ส่วนแบ่งตามขั้นบันได (${(d.avgGpPct * 100).toFixed(2)}%)`, baht(d.tierGP)));
@@ -77,49 +73,72 @@ export function revshareSettlementFlex(d: SettlementCard): FlexMsg {
   body.push(sep);
   body.push(kv("ยอดสุทธิ", baht(d.netAmount), { bold: true, color: "#0f6e56", size: "md" }));
 
-  // ── ยอดโอนรายสัปดาห์ (billed by the partner shop) ──
-  if (d.weeks.length) {
-    body.push(sep, { type: "text", text: "ยอดโอนรายสัปดาห์", size: "xs", color: "#888888", weight: "bold" });
-    body.push({ type: "text", text: `ผู้เรียกเก็บ: ${partnerIssuer}`, size: "xxs", color: "#999999", wrap: true });
-    for (const w of d.weeks) body.push(kv(w.label, baht(w.sales), { size: "xs" }));
-  }
-
   return {
     type: "flex",
-    altText: `สรุปส่วนแบ่งยอดขาย ${d.monthLabel} · ${shop} · รับสุทธิ ${baht(d.netAmount)}`,
+    altText: `สรุปยอดขายประจำเดือน ${d.monthLabel} · ${d.shop} · ยอดสุทธิ ${baht(d.netAmount)}`,
     contents: {
       type: "bubble", size: "giga",
-      header: header(`สรุปรอบ ${d.monthLabel}`, d.invoiceNo ? `เลขที่ ${d.invoiceNo}` : "ใบสรุปส่วนแบ่งยอดขาย"),
+      header: header(`สรุปยอดขายประจำเดือน · ${d.monthLabel}`, d.invoiceNo ? `ส่วนแบ่งยอดขาย · เลขที่ ${d.invoiceNo}` : "พร้อมส่วนแบ่งยอดขาย"),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
       footer: footer("เอกสารแจ้งเตือนภายใน ไม่ใช่เอกสารทางภาษี")
     }
   };
 }
 
-export type WeeklyCard = {
-  sellerName: string; partnerName: string; weekLabel: string; transferAmount: number; dayCount: number;
-};
-export function revshareWeeklyFlex(d: WeeklyCard): FlexMsg {
+// ── Daily sales heads-up (owner 2026-06-23: ส่งทุกวันที่นำเข้ายอด) ──
+export type DailyCard = { shop: string; sellerName: string; dateLabel: string; sales: number; vatRate: number };
+export function revshareDailyFlex(d: DailyCard): FlexMsg {
+  const v = vatInclusive(d.sales, d.vatRate);
   return {
     type: "flex",
-    altText: `ยอดโอนสัปดาห์ ${d.weekLabel} · ${d.partnerName} · ${baht(d.transferAmount)}`,
+    altText: `ยอดขายประจำวัน ${d.dateLabel} · ${d.shop} · ${baht(d.sales)}`,
     contents: {
-      type: "bubble",
-      header: header(`ยอดโอนสัปดาห์ ${d.weekLabel}`, "สรุปเพื่อโอนให้คู่ค้า"),
+      type: "bubble", size: "giga",
+      header: header("ยอดขายประจำวัน", d.dateLabel),
       body: {
         type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
         contents: [
-          { type: "text", text: d.partnerName, weight: "bold", size: "md" },
-          { type: "text", text: `จาก: ${d.sellerName}`, size: "xxs", color: "#999999" },
+          { type: "text", text: d.shop, weight: "bold", size: "lg", wrap: true },
+          { type: "text", text: `บันทึกโดย: ${d.sellerName}`, size: "xxs", color: "#999999" },
           sep,
-          kv(`รวม ${d.dayCount} วัน`, "", { size: "xs" }),
+          kv("ยอดขายวันนี้ (รวม VAT)", baht(v.total), { bold: true }),
+          kv("ฐานก่อน VAT", baht(v.base), { size: "xs" }),
+          kv("VAT 7%", baht(v.vat), { size: "xs" })
+        ]
+      },
+      footer: footer("ยอดสะสมจะสรุปอีกครั้งในใบประจำสัปดาห์/เดือน")
+    }
+  };
+}
+
+// ── Weekly sales summary (the amount HYPOPLARAEMIA transfers back to the shop) ──
+export type WeeklyCard = {
+  shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number;
+};
+export function revshareWeeklyFlex(d: WeeklyCard): FlexMsg {
+  const v = vatInclusive(d.transferAmount, d.vatRate);
+  return {
+    type: "flex",
+    altText: `สรุปยอดขายประจำสัปดาห์ ${d.weekLabel} · ${d.shop} · ${baht(d.transferAmount)}`,
+    contents: {
+      type: "bubble", size: "giga",
+      header: header("สรุปยอดขายประจำสัปดาห์", d.weekLabel),
+      body: {
+        type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
+        contents: [
+          { type: "text", text: d.shop, weight: "bold", size: "lg", wrap: true },
+          { type: "text", text: `สรุปโดย: ${d.sellerName} · รวม ${d.dayCount} วัน`, size: "xxs", color: "#999999", wrap: true },
+          sep,
+          kv("ยอดขายรวมสัปดาห์ (รวม VAT)", baht(v.total), { bold: true }),
+          kv("ฐานก่อน VAT", baht(v.base), { size: "xs" }),
+          kv("VAT 7%", baht(v.vat), { size: "xs" }),
           { type: "box", layout: "vertical", margin: "md", contents: [
-            { type: "text", text: "ยอดโอนสัปดาห์นี้ (เต็มจำนวน)", size: "xs", color: "#888888" },
+            { type: "text", text: "ยอดโอนคืนให้ร้าน (เต็มจำนวน)", size: "xs", color: "#888888" },
             { type: "text", text: baht(d.transferAmount), size: "xxl", weight: "bold", color: "#0f6e56" }
           ] }
         ]
       },
-      footer: footer("GP จะหักตอนสรุปสิ้นเดือน")
+      footer: footer("ส่วนแบ่งยอดขายจะเรียกเก็บอีกครั้งตอนสรุปสิ้นเดือน")
     }
   };
 }

@@ -17,6 +17,16 @@ export function round2(x: number): number {
   return Math.round((x + (x >= 0 ? 1e-9 : -1e-9)) * 100) / 100;
 }
 
+/** Split a VAT-INCLUSIVE amount (retail sales already carry VAT) into its base
+ *  and VAT parts. Used by the daily/weekly sales notifications — both parties
+ *  are VAT-registered so the transfer carries the partner's output VAT (owner
+ *  2026-06-23). GP (a service fee) adds VAT on top instead — see computeSettlement. */
+export function vatInclusive(amount: number, rate = 0.07): { base: number; vat: number; total: number } {
+  const total = round2(Math.max(0, amount));
+  const base = round2(total / (1 + rate));
+  return { base, vat: round2(total - base), total };
+}
+
 /** Progressive (marginal) GP on a month's total sales. Each tier contributes
  *  rate × (the part of `sales` that falls inside [lower, upper]). NOT rounded —
  *  callers round at the boundary. */
