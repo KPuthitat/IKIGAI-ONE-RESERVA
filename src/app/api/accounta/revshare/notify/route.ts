@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
+import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
 import { isRevshareBranch, getPartner, previewSettlement, listRounds } from "@/lib/revshare-db";
 import { revshareSettlementFlex, revshareWeeklyFlex, revshareDailyFlex, notifyRevsharePartner } from "@/lib/revshare-line";
@@ -18,7 +19,8 @@ const Body = z.object({
   month: z.number().int().min(1).max(12),
   kind: z.enum(["settlement", "weekly", "daily"]),
   week_start: z.string().regex(ISO).optional(),
-  date: z.string().regex(ISO).optional()
+  date: z.string().regex(ISO).optional(),
+  pin: z.string().optional()
 });
 
 function daySpan(start: string, end: string): number {
@@ -33,7 +35,17 @@ export async function POST(req: Request) {
   }
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
-  const { partner: partnerId, year, month, kind, week_start, date } = parsed.data;
+  const { partner: partnerId, year, month, kind, week_start, date, pin } = parsed.data;
+
+  // Daily + weekly sends are PIN-gated (owner 2026-06-24: ตรวจสอบยอดแล้วกด PIN
+  // ก่อนส่งเข้ากลุ่ม) — proves the operator verified the figure before it goes
+  // out to the partner.
+  if (kind === "daily" || kind === "weekly") {
+    const status = verifyAdminPin(user.id, pin ?? "");
+    if (!status.ok) {
+      return NextResponse.json({ error: status.reason }, { status: status.reason === "no_pin" ? 400 : 403 });
+    }
+  }
 
   const partner = getPartner(partnerId, branchId);
   if (!partner) return NextResponse.json({ error: "not_found" }, { status: 404 });

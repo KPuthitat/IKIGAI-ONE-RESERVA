@@ -123,18 +123,23 @@ export default function RoundsClient({
     });
   }
 
-  // Send a daily or weekly sales card to the partner's LINE group.
-  async function notifyPartner(key: string, body: Record<string, unknown>) {
-    setSending(key); setErr(null);
-    try {
-      const res = await fetch(apiUrl("/api/accounta/revshare/notify"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ partner: partner.id, year, month, ...body })
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "ส่ง LINE ไม่สำเร็จ")); return; }
-      setSentKey(key); setTimeout(() => setSentKey((k) => (k === key ? null : k)), 2200);
-    } finally { setSending(null); }
+  // Send a daily or weekly sales card to the partner's LINE group — PIN-gated
+  // (owner 2026-06-24: ตรวจสอบยอดแล้วกด PIN ก่อนส่งเข้ากลุ่ม).
+  function notifyPartner(key: string, body: Record<string, unknown>) {
+    void guarded(async (pin) => {
+      setSending(key); setErr(null);
+      try {
+        const res = await fetch(apiUrl("/api/accounta/revshare/notify"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ partner: partner.id, year, month, ...body, pin })
+        });
+        const j = await res.json().catch(() => ({}));
+        if (res.ok && j.ok) { setSentKey(key); setTimeout(() => setSentKey((k) => (k === key ? null : k)), 2200); return { ok: true }; }
+        const pinError = PIN_ERRORS.has(j.error);
+        if (!pinError) setErr(humanizeApiError(j, "ส่ง LINE ไม่สำเร็จ"));
+        return { ok: false, pinError };
+      } finally { setSending(null); }
+    }, { forcePrompt: true });
   }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -323,7 +328,7 @@ export default function RoundsClient({
       {pinRun && (
         <PinPromptModal
           title="ยืนยันตัวตนด้วย PIN"
-          description={<>กรอก PIN 4 หลักของคุณเพื่อบันทึกผู้ทำรายการ (นำเข้า/แก้ไข/ลบยอดขาย)</>}
+          description={<>กรอก PIN 4 หลักของคุณเพื่อยืนยันผู้ทำรายการ (นำเข้า/แก้ไข/ลบยอดขาย หรือส่งแจ้งเตือนเข้ากลุ่มคู่ค้า)</>}
           submitLabel="ยืนยัน"
           onSubmit={onPinSubmit}
           onClose={() => setPinRun(null)}

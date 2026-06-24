@@ -91,10 +91,10 @@ export function revshareDailyFlex(d: DailyCard): FlexMsg {
   const v = vatInclusive(d.sales, d.vatRate);
   return {
     type: "flex",
-    altText: `ยอดขายประจำวัน ${d.dateLabel} · ${d.shop} · ${baht(d.sales)}`,
+    altText: `สรุปยอดขายประจำวัน ${d.dateLabel} · ${d.shop} · ${baht(d.sales)}`,
     contents: {
       type: "bubble", size: "giga",
-      header: header("ยอดขายประจำวัน", d.dateLabel),
+      header: header("สรุปยอดขายประจำวัน", d.dateLabel),
       body: {
         type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
         contents: [
