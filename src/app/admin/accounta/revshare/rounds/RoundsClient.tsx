@@ -347,7 +347,7 @@ function SalesInput({ value, onSave, disabled }: { value: number; onSave: (v: st
   return (
     <input
       type="text" inputMode="decimal" disabled={disabled}
-      className="input w-32 text-right text-sm py-1 font-sans tabular-nums"
+      className="input w-32 text-right text-sm py-1 font-mono"
       value={text}
       onFocus={() => setText(value ? String(value) : "")}
       onChange={(e) => setText(e.target.value)}
