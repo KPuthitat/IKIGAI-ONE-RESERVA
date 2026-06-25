@@ -71,6 +71,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const set = (col: string, v: string | number | null | undefined) => {
     if (v !== undefined) { fields.push(`${col} = ?`); vals.push(v ?? null); }
   };
+  // Money fields the owner types are clean 2-dp values — round to kill any
+  // floating-point noise (owner 2026-06-25: typed 50 was showing as 49.9999).
+  const r2 = (n: number | null | undefined) => (n == null ? n : Math.round(n * 100) / 100);
   set("item_code", d.item_code);
   set("barcode", d.barcode);
   if (d.name !== undefined) set("name", d.name.trim());
@@ -81,7 +84,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   set("item_type", d.item_type);
   set("item_type_label", d.item_type_label);
   set("unit", d.unit);
-  set("cost_price", d.cost_price);
+  set("cost_price", r2(d.cost_price));
   set("price_opd", d.price_opd);
   set("price_ipd", d.price_ipd);
   set("price_uc", d.price_uc);
@@ -111,7 +114,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     fields.push("unit_cost = ?");
     vals.push(unitCostFrom(d.last_purchase_price, d.last_purchase_units));
   } else if (d.unit_cost !== undefined) {
-    set("unit_cost", d.unit_cost);
+    // Directly-typed selling price → clean 2-dp money (not the 4-dp derived cost).
+    set("unit_cost", r2(d.unit_cost));
   }
 
   if (fields.length === 0) {

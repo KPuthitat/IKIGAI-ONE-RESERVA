@@ -861,7 +861,7 @@ function ItemModal({
               reads. price_opd column/state kept for back-compat; not edited. */}
           <div className="col-span-2">
             <label className="label">{t("inv.f.cost")}</label>
-            <input className="input" type="number" min="0" step="0.0001"
+            <input className="input" type="number" min="0" step="0.01"
               value={f.unit_cost}
               onChange={(e) => up("unit_cost", e.target.value)}
               placeholder={t("inv.f.costPh")} />

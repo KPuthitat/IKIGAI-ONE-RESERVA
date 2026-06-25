@@ -97,11 +97,14 @@ export async function POST(req: Request) {
     );
   }
   const d = parsed.data;
-  // Prefer the explicit purchase line; fall back to a directly-typed
-  // unit_cost; else 0.
+  // Money typed by the owner is a clean 2-dp value — round to kill FP noise
+  // (owner 2026-06-25: typed 50 saved as 49.9999). The derived purchase-line
+  // cost keeps its 4-dp precision (sub-cent per-unit from large packs).
+  const r2 = (n: number) => Math.round(n * 100) / 100;
   const unitCost = d.last_purchase_price != null && d.last_purchase_units
     ? unitCostFrom(d.last_purchase_price, d.last_purchase_units)
-    : (d.unit_cost ?? 0);
+    : r2(d.unit_cost ?? 0);
+  const costPrice = d.cost_price != null ? r2(d.cost_price) : null;
 
   // Fractional items: safety_stock is a "% of a bottle" (clamp 0-100), the
   // on-hand lives in qty_frac (bottles, decimal) and current_qty stays 0.
@@ -125,7 +128,7 @@ export async function POST(req: Request) {
     d.item_code ?? null, d.barcode ?? null, d.name.trim(),
     d.generic_name ?? null, d.cgd_code ?? null, d.category ?? null,
     d.storage_location ?? null, d.item_type, d.item_type_label ?? null, d.unit ?? null, unitCost,
-    d.cost_price ?? null,
+    costPrice,
     d.last_purchase_price ?? null, d.last_purchase_units ?? null,
     d.price_opd ?? null, d.price_ipd ?? null, d.price_uc ?? null,
     d.supplier_id ?? null, d.grid_row ?? null, d.grid_col ?? null,
