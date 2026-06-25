@@ -27,6 +27,26 @@ function todayISO(): string { return new Date().toISOString().slice(0, 10); }
 function blank(channel = ""): Form {
   return { id: null, branch_id: "", company_id: "", income_date: todayISO(), channel, amount: "", note: "" };
 }
+const TH_MON = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+function monthLabel(ym: string): string { const [y, m] = ym.split("-").map(Number); return `${TH_MON[m]} ${y + 543}`; }
+
+// Group rows month → day, preserving the query's desc order (owner 2026-06-25:
+// this page is now for reviewing/editing entered rows, แยกเดือน → แยกวัน).
+function groupByMonthDay(rows: Income[]) {
+  const mOrder: string[] = [];
+  const mMap = new Map<string, Map<string, Income[]>>();
+  for (const r of rows) {
+    const mk = r.income_date.slice(0, 7);
+    if (!mMap.has(mk)) { mMap.set(mk, new Map()); mOrder.push(mk); }
+    const dMap = mMap.get(mk)!;
+    if (!dMap.has(r.income_date)) dMap.set(r.income_date, []);
+    dMap.get(r.income_date)!.push(r);
+  }
+  return mOrder.map((mk) => {
+    const days = [...mMap.get(mk)!.entries()].map(([date, rs]) => ({ date, total: rs.reduce((s, x) => s + x.amount, 0), rows: rs }));
+    return { month: mk, total: days.reduce((s, d) => s + d.total, 0), days };
+  });
+}
 
 export default function IncomeClient(props: {
   month: string; activeBranchId: number | null; branches: Ref[]; companies: Ref[]; channels: Channel[];
@@ -163,53 +183,58 @@ export default function IncomeClient(props: {
       </div>
 
       {rows.length === 0 ? (
-        <div className="card text-center py-10 text-slate-500">ยังไม่มีรายรับในเดือนนี้</div>
+        <div className="card text-center py-10 text-slate-500">ยังไม่มีรายรับในช่วงที่เลือก</div>
       ) : (
-        <div className="card overflow-x-auto p-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-[11px] text-slate-400 border-b border-slate-100">
-                <th className="px-3 py-2">วันที่</th>
-                <th className="px-3 py-2">ช่องทาง</th>
-                <th className="px-3 py-2">สาขา</th>
-                <th className="px-3 py-2 text-right">จำนวนเงิน</th>
-                <th className="px-3 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/60">
-                  <td className="px-3 py-2 whitespace-nowrap text-slate-600">{formatLongDate(r.income_date, "th")}</td>
-                  <td className="px-3 py-2">
-                    <div className="font-medium text-slate-800 flex items-center gap-1.5">
-                      {r.channel || (r.source === "shift_close" ? "ยอดขายรวม" : "—")}
-                      {r.source === "shift_close" && (
-                        <span className="text-[10px] font-normal bg-sky-50 text-sky-700 border border-sky-200 rounded-full px-1.5 py-px">Check list หลังเลิกงาน</span>
-                      )}
-                      {!!r.is_outstanding && (
-                        r.settled_date
-                          ? <span className="text-[10px] font-normal bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-1.5 py-px">รับชำระแล้ว</span>
-                          : <span className="text-[10px] font-normal bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-px">ค้างชำระ</span>
-                      )}
-                    </div>
-                    {r.note && <div className="text-[11px] text-slate-500">{r.note}</div>}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-slate-500">{r.branch_name || "—"}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-emerald-700 whitespace-nowrap">฿{fmtMoney(r.amount)}</td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                    {r.source === "shift_close" ? (
-                      <span className="text-[11px] text-slate-300" title="ยอดนี้ดึงจากรายงานปิดกะอัตโนมัติ — แก้ไขได้ที่ยอดขายรายวัน">อัตโนมัติ</span>
-                    ) : (
-                      <>
-                        <button type="button" onClick={() => openEdit(r)} disabled={busy} className="text-xs text-slate-500 hover:text-brand">แก้</button>
-                        <button type="button" onClick={() => remove(r)} disabled={busy} className="text-xs text-slate-400 hover:text-rose-600 ml-3">ลบ</button>
-                      </>
-                    )}
-                  </td>
-                </tr>
+        <div className="space-y-4">
+          {groupByMonthDay(rows).map((mo) => (
+            <div key={mo.month} className="space-y-2">
+              <div className="flex items-baseline justify-between border-b border-slate-200 pb-1">
+                <span className="text-sm font-bold text-slate-700">{monthLabel(mo.month)}</span>
+                <span className="text-sm font-bold text-emerald-700">฿{fmtMoney(mo.total)}</span>
+              </div>
+              {mo.days.map((d) => (
+                <div key={d.date} className="card p-0 overflow-hidden">
+                  <div className="flex items-baseline justify-between bg-slate-50 px-3 py-1.5 border-b border-slate-100">
+                    <span className="text-xs font-semibold text-slate-600">{formatLongDate(d.date, "th")}</span>
+                    <span className="text-xs font-mono font-bold text-emerald-700">฿{fmtMoney(d.total)}</span>
+                  </div>
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {d.rows.map((r) => (
+                        <tr key={r.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
+                          <td className="px-3 py-2">
+                            <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
+                              {r.channel || (r.source === "shift_close" ? "ยอดขายรวม" : "—")}
+                              {r.source === "shift_close" && (
+                                <span className="text-[10px] font-normal bg-sky-50 text-sky-700 border border-sky-200 rounded-full px-1.5 py-px">Check list หลังเลิกงาน</span>
+                              )}
+                              {!!r.is_outstanding && (
+                                r.settled_date
+                                  ? <span className="text-[10px] font-normal bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-1.5 py-px">รับชำระแล้ว</span>
+                                  : <span className="text-[10px] font-normal bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-px">ค้างชำระ</span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-500">{r.branch_name || "—"}{r.note ? ` · ${r.note}` : ""}</div>
+                          </td>
+                          <td className="px-3 py-2 text-right font-semibold text-emerald-700 whitespace-nowrap">฿{fmtMoney(r.amount)}</td>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                            {r.source === "shift_close" ? (
+                              <span className="text-[11px] text-slate-300" title="ยอดนี้ดึงจากรายงานปิดกะอัตโนมัติ — แก้ไขได้ที่สมุดรายวัน">อัตโนมัติ</span>
+                            ) : (
+                              <>
+                                <button type="button" onClick={() => openEdit(r)} disabled={busy} className="text-xs text-slate-500 hover:text-brand">แก้ไข</button>
+                                <button type="button" onClick={() => remove(r)} disabled={busy} className="text-xs text-slate-400 hover:text-rose-600 ml-3">ลบออก</button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          ))}
         </div>
       )}
 

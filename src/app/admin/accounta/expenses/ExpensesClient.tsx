@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useTransition, useMemo } from "react";
+import { Fragment, useState, useRef, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
@@ -58,6 +58,24 @@ type FormState = {
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
+}
+const TH_MON = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+function monthLabel(ym: string): string { const [y, m] = ym.split("-").map(Number); return `${TH_MON[m]} ${y + 543}`; }
+// Group expenses month → day, preserving the listing's date-desc order.
+function groupExpenses<T extends { bill_date: string; amount_total: number }>(rows: T[]) {
+  const mOrder: string[] = [];
+  const mMap = new Map<string, Map<string, T[]>>();
+  for (const e of rows) {
+    const mk = e.bill_date.slice(0, 7);
+    if (!mMap.has(mk)) { mMap.set(mk, new Map()); mOrder.push(mk); }
+    const dMap = mMap.get(mk)!;
+    if (!dMap.has(e.bill_date)) dMap.set(e.bill_date, []);
+    dMap.get(e.bill_date)!.push(e);
+  }
+  return mOrder.map((mk) => {
+    const days = [...mMap.get(mk)!.entries()].map(([date, rs]) => ({ date, total: rs.reduce((s, x) => s + x.amount_total, 0), rows: rs }));
+    return { month: mk, total: days.reduce((s, d) => s + d.total, 0), days };
+  });
 }
 
 function blankForm(defaultMethod = ""): FormState {
@@ -677,7 +695,7 @@ export default function ExpensesClient(props: {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[11px] text-slate-400 border-b border-slate-100">
-                <th className="px-3 py-2">วันที่เอกสาร</th>
+                <th className="px-3 py-2">สาขา</th>
                 <th className="px-3 py-2">ผู้ค้า / รายการ</th>
                 <th className="px-3 py-2">หมวด</th>
                 <th className="px-3 py-2 text-right">ยอดรวม</th>
@@ -689,11 +707,30 @@ export default function ExpensesClient(props: {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((e) => (
+              {groupExpenses(filtered).map((mo) => (
+                <Fragment key={mo.month}>
+                  <tr className="bg-slate-100/70 border-y border-slate-200">
+                    <td colSpan={9} className="px-3 py-1.5">
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-xs font-bold text-slate-700">{monthLabel(mo.month)}</span>
+                        <span className="text-xs font-bold text-rose-700">฿{fmtMoney(mo.total)}</span>
+                      </div>
+                    </td>
+                  </tr>
+                  {mo.days.map((d) => (
+                    <Fragment key={d.date}>
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <td colSpan={9} className="px-3 py-1">
+                          <div className="flex items-baseline justify-between">
+                            <span className="text-[11px] font-semibold text-slate-500">{formatLongDate(d.date, "th")}</span>
+                            <span className="text-[11px] font-mono font-bold text-rose-700">฿{fmtMoney(d.total)}</span>
+                          </div>
+                        </td>
+                      </tr>
+                      {d.rows.map((e) => (
                 <tr key={e.id} className="border-b border-slate-50 hover:bg-slate-50/60">
                   <td className="px-3 py-2 whitespace-nowrap text-slate-600">
-                    {formatLongDate(e.bill_date, "th")}
-                    {e.branch_name && <div className="text-[10px] text-slate-400">{e.branch_name}</div>}
+                    {e.branch_name ? <div className="text-[10px] text-slate-400">{e.branch_name}</div> : "—"}
                   </td>
                   <td className="px-3 py-2">
                     <div className="font-medium text-slate-800">{e.vendor_name || "—"}</div>
@@ -727,11 +764,15 @@ export default function ExpensesClient(props: {
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-right">
                     <button type="button" onClick={() => openEdit(e)} disabled={busy}
-                      className="text-xs text-slate-500 hover:text-brand">แก้</button>
+                      className="text-xs text-slate-500 hover:text-brand">แก้ไข</button>
                     <button type="button" onClick={() => remove(e)} disabled={busy}
-                      className="text-xs text-slate-400 hover:text-rose-600 ml-3">ลบ</button>
+                      className="text-xs text-slate-400 hover:text-rose-600 ml-3">ลบออก</button>
                   </td>
                 </tr>
+                      ))}
+                    </Fragment>
+                  ))}
+                </Fragment>
               ))}
             </tbody>
           </table>
