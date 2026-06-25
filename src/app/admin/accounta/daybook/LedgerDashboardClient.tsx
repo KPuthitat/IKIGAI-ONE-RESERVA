@@ -107,28 +107,33 @@ function niceTop(v: number): number {
   return m * p;
 }
 
-// 12-month revenue/expense bars + value labels + thin profit line — pure SVG
-// (no chart lib), "style C" (owner 2026-06-23). Y-axis gridlines + labels;
-// value above each revenue bar; peach expense bars; muted profit line. Wide,
-// short viewBox + aspect-ratio so it stays a tidy band, not a 700px wall.
-function MonthlyCombo({ rows }: { rows: MonthlyRow[] }) {
+type ComboPoint = { key: string; label: string; revenue: number; expense: number; profit: number; tip: string };
+
+// Revenue/expense bars + value labels + thin profit line — pure SVG (no chart
+// lib), "style C" (owner 2026-06-23). Period-aware (owner 2026-06-25): year →
+// one bar per month, month/week → one bar per day. Value labels only show when
+// the bars are few enough not to crowd; x-labels thin out for long series.
+function ComboChart({ points }: { points: ComboPoint[] }) {
   const W = 900, Lm = 40, H = 132, padTop = 16, padBottom = 4, labelBand = 24;
   const plotW = W - Lm;
-  const maxV = Math.max(...rows.map((m) => m.revenue), ...rows.map((m) => m.expense), ...rows.map((m) => m.profit), 0);
-  const minV = Math.min(...rows.map((m) => m.profit), 0);
+  const n = Math.max(points.length, 1);
+  const maxV = Math.max(...points.map((m) => m.revenue), ...points.map((m) => m.expense), ...points.map((m) => m.profit), 0);
+  const minV = Math.min(...points.map((m) => m.profit), 0);
   const top = niceTop(maxV);
   const bottom = minV < 0 ? -niceTop(-minV) : 0;
   const span = top - bottom || 1;
   const mapY = (v: number) => padTop + ((top - v) / span) * (H - padTop - padBottom);
   const zeroY = mapY(0);
-  const colW = plotW / rows.length;
-  const barW = Math.min(13, colW / 3.4);
+  const colW = plotW / n;
+  const barW = Math.min(13, Math.max(2.5, colW / 3.4));
   const N = 4;
   const ticks = Array.from({ length: N + 1 }, (_, i) => bottom + (span * i) / N);
-  const linePts = rows.map((m, i) => `${(Lm + i * colW + colW / 2).toFixed(1)},${mapY(m.profit).toFixed(1)}`).join(" ");
+  const linePts = points.map((m, i) => `${(Lm + i * colW + colW / 2).toFixed(1)},${mapY(m.profit).toFixed(1)}`).join(" ");
+  const showValues = n <= 14;            // skip per-bar value labels for long series
+  const stride = Math.ceil(n / 13);      // keep ~13 x-axis labels at most
   return (
     <svg viewBox={`0 0 ${W} ${H + labelBand}`} preserveAspectRatio="xMidYMid meet" role="img"
-      aria-label="กราฟรายรับ รายจ่าย และกำไรรายเดือน"
+      aria-label="กราฟรายรับ รายจ่าย และกำไร"
       style={{ display: "block", width: "100%", height: "auto", aspectRatio: `${W} / ${H + labelBand}`, maxHeight: 260 }}>
       {/* Y gridlines + labels */}
       {ticks.map((t, i) => {
@@ -141,33 +146,50 @@ function MonthlyCombo({ rows }: { rows: MonthlyRow[] }) {
         );
       })}
       {/* Bars + value label on revenue */}
-      {rows.map((m, i) => {
+      {points.map((m, i) => {
         const cx = Lm + i * colW + colW / 2;
         const rY = mapY(m.revenue), eY = mapY(m.expense);
         return (
-          <g key={m.month}>
+          <g key={m.key}>
             <rect x={cx - barW - 1} y={Math.min(rY, zeroY)} width={barW} height={Math.abs(zeroY - rY)} rx={2} fill="#10b981">
-              <title>{`${TH_MON_FULL[m.month]} รายรับ ฿${fmtMoney(m.revenue)}`}</title>
+              <title>{`${m.tip} รายรับ ฿${fmtMoney(m.revenue)}`}</title>
             </rect>
             <rect x={cx + 1} y={Math.min(eY, zeroY)} width={barW} height={Math.abs(zeroY - eY)} rx={2} fill="#f5c97a">
-              <title>{`${TH_MON_FULL[m.month]} รายจ่าย ฿${fmtMoney(m.expense)}`}</title>
+              <title>{`${m.tip} รายจ่าย ฿${fmtMoney(m.expense)}`}</title>
             </rect>
-            {m.revenue > 0 && (
+            {showValues && m.revenue > 0 && (
               <text x={cx - barW / 2 - 0.5} y={rY - 3} textAnchor="middle" fontSize={7.5} fontWeight={600} fill="#0F6E56">{fmtK(m.revenue)}</text>
             )}
-            <text x={cx} y={H + 17} fontSize={11} fontWeight={600} fill="#475569" textAnchor="middle">{String(m.month).padStart(2, "0")}</text>
+            {(i % stride === 0 || i === n - 1) && (
+              <text x={cx} y={H + 17} fontSize={n > 16 ? 9 : 11} fontWeight={600} fill="#475569" textAnchor="middle">{m.label}</text>
+            )}
           </g>
         );
       })}
       {/* Thin profit line + dots */}
       <polyline points={linePts} fill="none" stroke="#6366f1" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
-      {rows.map((m, i) => (
-        <circle key={m.month} cx={Lm + i * colW + colW / 2} cy={mapY(m.profit)} r={2} fill="#6366f1">
-          <title>{`${TH_MON_FULL[m.month]} กำไร ฿${fmtMoney(m.profit)}`}</title>
+      {points.map((m, i) => (
+        <circle key={m.key} cx={Lm + i * colW + colW / 2} cy={mapY(m.profit)} r={n > 16 ? 1.4 : 2} fill="#6366f1">
+          <title>{`${m.tip} กำไร ฿${fmtMoney(m.profit)}`}</title>
         </circle>
       ))}
     </svg>
   );
+}
+
+// All YYYY-MM-DD dates in [start, end] inclusive (for the per-day chart axis).
+function enumerateDays(start: string, end: string): string[] {
+  const out: string[] = [];
+  const [ys, ms, ds] = start.split("-").map(Number);
+  const [ye, me, de] = end.split("-").map(Number);
+  let t = Date.UTC(ys, ms - 1, ds);
+  const tEnd = Date.UTC(ye, me - 1, de);
+  let guard = 0;
+  while (t <= tEnd && guard++ < 400) {
+    out.push(new Date(t).toISOString().slice(0, 10));
+    t += 86400_000;
+  }
+  return out;
 }
 
 // Donut chart — pure SVG. items already sorted desc; colour by index.
@@ -389,7 +411,7 @@ function DayDetail({
                       {auto ? (
                         <button type="button" onClick={() => { setPinRow(r); setRowErr(null); }} disabled={savingId === r.id}
                           className="text-[11px] text-slate-400 hover:text-rose-600 disabled:opacity-50"
-                          title="ยอดนี้มาจาก Check list หลังเลิกงาน — ใส่ PIN เพื่อยืนยันการลบ">ลบ (PIN)</button>
+                          title="ยอดนี้มาจาก Check list หลังเลิกงาน — ใส่ PIN เพื่อยืนยันการลบ">ลบออก (PIN)</button>
                       ) : editing ? (
                         <>
                           <button type="button" onClick={() => saveAmount(r)} disabled={savingId === r.id}
@@ -400,9 +422,9 @@ function DayDetail({
                       ) : (
                         <>
                           <button type="button" onClick={() => { setEditId(r.id); setEditAmt(grpMoney(String(r.amount))); setRowErr(null); }}
-                            className="text-[11px] text-slate-500 hover:text-brand">แก้</button>
+                            className="text-[11px] text-slate-500 hover:text-brand">แก้ไข</button>
                           <button type="button" onClick={() => del(r)} disabled={savingId === r.id}
-                            className="text-[11px] text-slate-400 hover:text-rose-600 ml-2 disabled:opacity-50">ลบ</button>
+                            className="text-[11px] text-slate-400 hover:text-rose-600 ml-2 disabled:opacity-50">ลบออก</button>
                         </>
                       )}
                     </td>
@@ -594,6 +616,7 @@ export default function LedgerDashboardClient({
   const margin = dash.revenue > 0 ? Math.round((dash.net / dash.revenue) * 100) : null;
   const payableTotal = payables.whtUnpaid + payables.ssoUnpaid + payables.branchUnpaidTotal;
   const payableCount = payables.branchUnpaidCount + (payables.whtUnpaid > 0 ? 1 : 0) + (payables.ssoUnpaid > 0 ? 1 : 0);
+  const dayRowMap = new Map(dash.dailyRows.map((r) => [r.date, r]));
   const incomeTop = [...dash.incomeByChannel].slice(0, 8);
   const expenseTop = [...dash.categories].sort((a, b) => b.spent - a.spent).slice(0, 8)
     .map((c) => ({ label: c.code ? `${c.code} · ${c.name}` : c.name, amount: c.spent }));
@@ -674,18 +697,37 @@ export default function LedgerDashboardClient({
         </Link>
       </div>
 
-      {/* 12-month overview chart */}
-      <div className="card space-y-2">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-sm font-bold text-slate-800">ภาพรวมรายรับและรายจ่าย · ปี {trendYear + 543}</div>
-          <div className="flex items-center gap-3 text-[11px] text-slate-500">
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />รายรับ</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#f5c97a" }} />รายจ่าย</span>
-            <span className="flex items-center gap-1"><span className="w-3.5 h-[3px] rounded bg-indigo-500" />กำไร</span>
+      {/* Overview chart — period-aware: year → per month, month/week → per day */}
+      {(() => {
+        const comboPoints: ComboPoint[] = period === "year"
+          ? monthly.map((m) => ({
+              key: `m${m.month}`, label: String(m.month).padStart(2, "0"),
+              revenue: m.revenue, expense: m.expense, profit: m.profit, tip: `${TH_MON_FULL[m.month]} ${trendYear + 543}`
+            }))
+          : enumerateDays(dash.start, dash.end).map((d) => {
+              const r = dayRowMap.get(d);
+              return {
+                key: d, label: String(Number(d.slice(8, 10))),
+                revenue: r?.revenue ?? 0, expense: r?.expense ?? 0, profit: r?.net ?? 0, tip: fmtDayLabel(d)
+              };
+            });
+        const chartTitle = period === "year"
+          ? `ภาพรวมรายรับและรายจ่าย · ปี ${trendYear + 543}`
+          : `ภาพรวมรายรับและรายจ่ายรายวัน · ${dash.label}`;
+        return (
+          <div className="card space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-sm font-bold text-slate-800">{chartTitle}</div>
+              <div className="flex items-center gap-3 text-[11px] text-slate-500">
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />รายรับ</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#f5c97a" }} />รายจ่าย</span>
+                <span className="flex items-center gap-1"><span className="w-3.5 h-[3px] rounded bg-indigo-500" />กำไร</span>
+              </div>
+            </div>
+            {chartsReady ? <ComboChart points={comboPoints} /> : <div style={{ height: 136 }} />}
           </div>
-        </div>
-        {chartsReady ? <MonthlyCombo rows={monthly} /> : <div style={{ height: 136 }} />}
-      </div>
+        );
+      })()}
 
       {/* Two donuts — income by channel + expense by category */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
