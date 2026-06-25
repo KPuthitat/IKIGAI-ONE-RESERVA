@@ -123,6 +123,50 @@ export async function notifyTimeCertDecision(input: CertDecisionInput): Promise<
   }
 }
 
+// Verbal-warning nudge (owner 2026-06-25): when an admin APPROVES a
+// missing-punch cert and this is the staff's Nth ลงเวลา offence (threshold),
+// LINE them a gentle "this is your Nth time" verbal reminder. The formal
+// disciplinary letter still exists separately; this is just a heads-up so the
+// pattern is visible without an admin having to chase it. Fire-and-forget.
+export async function notifyMissingPunchOffence(args: {
+  userId: number;
+  entryType: "in" | "out";
+  count: number;
+  workDate: string | null;
+}): Promise<void> {
+  const db = getDb();
+  const u = db.prepare(
+    "SELECT line_user_id, nickname_th FROM users WHERE id = ?"
+  ).get(args.userId) as { line_user_id: string | null; nickname_th: string | null } | undefined;
+  if (!u?.line_user_id) return; // not bound to the OA — skip silently
+
+  const channel = getPlatformChannel();
+  if (!isChannelReady(channel) || !channel || !channel.channel_token) {
+    console.warn("[discipline-notify] platform channel not ready, skipping");
+    return;
+  }
+
+  const nick = u.nickname_th?.trim() || "";
+  const greet = nick ? `พี่${nick}` : "พี่";
+  const th = args.entryType === "out" ? "ออกงาน" : "เข้างาน";
+  const dateTh = args.workDate ? ` (วันที่ ${args.workDate})` : "";
+  const text = [
+    `⚠️ เตือนด้วยวาจา — ${greet}ลืมลงเวลา${th}${dateTh} และแอดมินได้รับรองเวลาให้แล้วครับ`,
+    ``,
+    `นับรวมแล้วเป็น “ครั้งที่ ${args.count}” ของการลืมลงเวลา`,
+    `รบกวนช่วยกันลงเวลาเข้า–ออกให้ครบทุกครั้งนะครับ 🙏`,
+    `(เป็นการเตือนเพื่อทราบ ยังไม่มีผลทางวินัยเพิ่มเติม)`
+  ].join("\n");
+
+  const result = await sendLinePush(channel.channel_token, {
+    to: u.line_user_id,
+    messages: [{ type: "text", text }]
+  });
+  if (!result.ok) {
+    console.warn(`[discipline-notify] user#${args.userId} push failed: status=${result.status} error=${result.error}`);
+  }
+}
+
 // Alert the HR / exec LINE group ("IKIGAI RECRUIT x HR") when a staff
 // SUBMITS a time-certification request, so an admin actually goes and
 // approves it (owner 2026-06-10: certs were sitting unapproved because

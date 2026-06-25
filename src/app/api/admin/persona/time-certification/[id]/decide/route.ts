@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
-import { notifyTimeCertDecision } from "@/lib/time-cert-notify";
+import { notifyTimeCertDecision, notifyMissingPunchOffence } from "@/lib/time-cert-notify";
+import { countWarningsByCategory } from "@/lib/discipline";
 import { recomputeLine } from "@/lib/payroll-compute";
+
+// Send the verbal-warning LINE nudge from this offence onward (owner 2026-06-25).
+const MISSING_PUNCH_NUDGE_FROM = 3;
 
 // POST /api/admin/persona/time-certification/[id]/decide
 //
@@ -197,6 +201,24 @@ export async function POST(
     decision: parsed.data.decision,
     decisionNote: note
   }).catch((e) => console.warn("[time-cert] notify failed:", e));
+
+  // Verbal-warning nudge: on approving a missing-punch cert, if the staff has
+  // now reached the offence threshold for ลงเวลา, LINE them a "Nth time" heads-up.
+  // The formal auto-letter is created separately (on request); this is additive.
+  if (parsed.data.decision === "approved" && row.kind === "missing"
+      && (row.cert_entry_type === "in" || row.cert_entry_type === "out")) {
+    try {
+      const count = countWarningsByCategory(row.requested_by, "ลงเวลา");
+      if (count >= MISSING_PUNCH_NUDGE_FROM) {
+        void notifyMissingPunchOffence({
+          userId: row.requested_by, entryType: row.cert_entry_type,
+          count, workDate: row.work_date
+        }).catch((e) => console.warn("[discipline] offence nudge failed:", e));
+      }
+    } catch (e) {
+      console.warn("[discipline] offence count failed:", e);
+    }
+  }
 
   return NextResponse.json({ ok: true, decision: parsed.data.decision });
 }

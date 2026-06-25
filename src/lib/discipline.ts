@@ -60,6 +60,16 @@ export function createWarning(args: {
   return Number(r.lastInsertRowid);
 }
 
+/** How many warnings this user has in a given reason category (e.g. "ลงเวลา").
+ *  Used to decide when to send the verbal-warning LINE nudge (owner 2026-06-25:
+ *  notify on the Nth offence). */
+export function countWarningsByCategory(userId: number, category: string): number {
+  const r = getDb().prepare(
+    "SELECT COUNT(*) AS n FROM disciplinary_warnings WHERE user_id = ? AND reason_category = ?"
+  ).get(userId, category) as { n: number };
+  return r.n;
+}
+
 export type WarningWithUsers = DisciplinaryWarning & {
   user_display_name: string;
   user_title_prefix: string | null;
