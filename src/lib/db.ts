@@ -4238,6 +4238,53 @@ function runMigrations(db: Database.Database): void {
   if (!supplierCols.some((c) => c.name === "display_order")) {
     db.exec("ALTER TABLE inventa_suppliers ADD COLUMN display_order INTEGER NOT NULL DEFAULT 100");
   }
+  // Unified vendor master (owner 2026-06-25): inventa_suppliers becomes the one
+  // branch-scoped ผู้จำหน่าย/คู่ค้า list shared with ACCOUNTA. Carry the ACCOUNTA
+  // fields (tax id + default category) + a needs_review flag for OCR auto-creates.
+  if (!supplierCols.some((c) => c.name === "tax_id")) {
+    db.exec("ALTER TABLE inventa_suppliers ADD COLUMN tax_id TEXT");
+  }
+  if (!supplierCols.some((c) => c.name === "category")) {
+    db.exec("ALTER TABLE inventa_suppliers ADD COLUMN category TEXT");
+  }
+  if (!supplierCols.some((c) => c.name === "created_by")) {
+    db.exec("ALTER TABLE inventa_suppliers ADD COLUMN created_by INTEGER REFERENCES users(id)");
+  }
+  if (!supplierCols.some((c) => c.name === "needs_review")) {
+    db.exec("ALTER TABLE inventa_suppliers ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0");
+  }
+  // One-time seed: bring existing ACCOUNTA vendors into the per-branch master,
+  // scoped to the branches that actually used them (distinct branch on their
+  // bills). Additive + idempotent — only inserts a (branch, name) that's
+  // missing, carrying tax_id/category from the matching accounta_vendor. No
+  // deletes, no FK remap (expense display reads the denormalised vendor_name).
+  try {
+    const usage = db.prepare(`
+      SELECT DISTINCT e.branch_id AS branch_id, TRIM(e.vendor_name) AS name
+        FROM accounta_expenses e
+       WHERE e.branch_id IS NOT NULL AND TRIM(COALESCE(e.vendor_name,'')) <> ''
+    `).all() as Array<{ branch_id: number; name: string }>;
+    const findSup = db.prepare(
+      "SELECT id FROM inventa_suppliers WHERE branch_id = ? AND name = ? COLLATE NOCASE"
+    );
+    const findVen = db.prepare(
+      "SELECT tax_id, category FROM accounta_vendors WHERE name = ? COLLATE NOCASE LIMIT 1"
+    );
+    const insSup = db.prepare(`
+      INSERT INTO inventa_suppliers (branch_id, name, tax_id, category, display_order, active, needs_review)
+      VALUES (?, ?, ?, ?, 100, 1, 0)
+    `);
+    const seed = db.transaction(() => {
+      for (const u of usage) {
+        if (findSup.get(u.branch_id, u.name)) continue;
+        const v = findVen.get(u.name) as { tax_id: string | null; category: string | null } | undefined;
+        insSup.run(u.branch_id, u.name, v?.tax_id ?? null, v?.category ?? null);
+      }
+    });
+    seed();
+  } catch (e) {
+    console.warn("[migrate] vendor master seed skipped:", e);
+  }
 
   // inventa_counts: reopen tracking (owner 2026-06-03). A submitted
   // count round can be reopened for correction with a PIN; we stamp who

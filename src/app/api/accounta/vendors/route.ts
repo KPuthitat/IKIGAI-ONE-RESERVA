@@ -13,16 +13,19 @@ const Body = z.object({
 });
 
 export async function GET() {
-  requirePermission("accounta.manage");
-  return NextResponse.json({ ok: true, vendors: listVendors() });
+  const user = requirePermission("accounta.manage");
+  return NextResponse.json({ ok: true, vendors: listVendors(user.activeBranchId ?? null) });
 }
 
 export async function POST(req: Request) {
   const user = requirePermission("accounta.manage");
+  if (user.activeBranchId == null) {
+    return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
+  }
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
   }
-  const id = createVendor(user.id, parsed.data);
+  const id = createVendor(user.activeBranchId, user.id, parsed.data);
   return NextResponse.json({ ok: true, id });
 }

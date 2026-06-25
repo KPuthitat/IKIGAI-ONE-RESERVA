@@ -1058,6 +1058,8 @@ function SuppliersModal({
   const [name, setName] = useState("");
   const [cycle, setCycle] = useState("");
   const [lead, setLead] = useState("");
+  const [taxId, setTaxId] = useState("");
+  const [category, setCategory] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function add() {
@@ -1069,11 +1071,13 @@ function SuppliersModal({
         body: JSON.stringify({
           name: name.trim(),
           order_cycle: cycle.trim() || null,
-          lead_time: lead.trim() || null
+          lead_time: lead.trim() || null,
+          tax_id: taxId.trim() || null,
+          category: category.trim() || null
         })
       });
       if (res.ok) {
-        setName(""); setCycle(""); setLead("");
+        setName(""); setCycle(""); setLead(""); setTaxId(""); setCategory("");
         onChanged();
       }
     } finally { setBusy(false); }
@@ -1108,7 +1112,14 @@ function SuppliersModal({
             <input className="input text-sm" value={lead}
               placeholder={t("inv.sup.leadPh")}
               onChange={(e) => setLead(e.target.value)} />
+            <input className="input text-sm" value={taxId} inputMode="numeric"
+              placeholder="เลขผู้เสียภาษี (ใช้ใน ACCOUNTA)"
+              onChange={(e) => setTaxId(e.target.value)} />
+            <input className="input text-sm" value={category}
+              placeholder="หมวดเริ่มต้น (เช่น ยา/เวชภัณฑ์)"
+              onChange={(e) => setCategory(e.target.value)} />
           </div>
+          <p className="text-[10px] text-slate-400">เลขผู้เสียภาษี + หมวด ใช้ร่วมกับ ACCOUNTA — คู่ค้านี้จะใช้ตอนวางบิลรายจ่ายได้เลย</p>
           <button type="button" onClick={add} disabled={busy || !name.trim()}
             className="w-full py-2 rounded-lg bg-brand text-white text-sm font-bold disabled:opacity-50">
             {t("inv.sup.add")}
@@ -1119,10 +1130,15 @@ function SuppliersModal({
           {suppliers.map((s) => (
             <div key={s.id} className="py-2 flex items-start justify-between gap-2">
               <div>
-                <div className="font-medium text-slate-800 text-sm">{s.name}</div>
+                <div className="font-medium text-slate-800 text-sm flex items-center gap-1.5 flex-wrap">
+                  {s.name}
+                  {!!s.needs_review && <span className="text-[10px] font-normal bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-px">รอตรวจ (จาก OCR)</span>}
+                </div>
                 <div className="text-xs text-slate-500">
                   {s.order_cycle ? `${t("inv.sup.order")}: ${s.order_cycle}` : ""}
                   {s.lead_time ? ` · ${t("inv.sup.deliver")}: ${s.lead_time}` : ""}
+                  {s.tax_id ? ` · เลขภาษี ${s.tax_id}` : ""}
+                  {s.category ? ` · ${s.category}` : ""}
                 </div>
               </div>
               <button type="button" onClick={() => del(s.id, s.name)}

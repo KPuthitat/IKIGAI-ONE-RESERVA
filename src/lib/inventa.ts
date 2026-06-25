@@ -154,6 +154,10 @@ export type InventaSupplier = {
   note: string | null;
   active: number;
   created_at: string;
+  // Shared vendor master fields (owner 2026-06-25) — used by ACCOUNTA too.
+  tax_id?: string | null;
+  category?: string | null;
+  needs_review?: number;
 };
 
 /** A single received-on-date lot inside one inventa_item. Multiple

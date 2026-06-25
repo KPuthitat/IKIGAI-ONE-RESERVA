@@ -569,50 +569,53 @@ export function categoryBudget(month: string, branchId?: number | null, companyI
   return { month, revenue, totalExpense, items, uncategorized: round2(uncategorized) };
 }
 
-export function listVendors(): VendorRow[] {
+// Vendors/suppliers are ONE branch-scoped master shared with INVENTA, stored in
+// inventa_suppliers (owner 2026-06-25). ACCOUNTA reads/writes the same per-branch
+// list so a คู่ค้า added in either module shows in both.
+export function listVendors(branchId: number | null): VendorRow[] {
+  if (branchId == null) return [];
   return getDb().prepare(
-    "SELECT id, name, tax_id, category FROM accounta_vendors WHERE active = 1 ORDER BY name COLLATE NOCASE"
-  ).all() as VendorRow[];
+    "SELECT id, name, tax_id, category FROM inventa_suppliers WHERE active = 1 AND branch_id = ? ORDER BY name COLLATE NOCASE"
+  ).all(branchId) as VendorRow[];
 }
 
 export function createVendor(
+  branchId: number,
   userId: number,
-  d: { name: string; tax_id?: string | null; category?: string | null }
+  d: { name: string; tax_id?: string | null; category?: string | null; needsReview?: boolean }
 ): number {
   const name = d.name.trim();
   const cat = d.category?.trim() || null;
   const tax = d.tax_id?.trim() || null;
-  // De-dup on name (case-insensitive) so the picker doesn't accrue twins.
+  // De-dup on (branch, name) case-insensitive so the picker doesn't accrue twins.
   const existing = getDb().prepare(
-    "SELECT id FROM accounta_vendors WHERE active = 1 AND name = ? COLLATE NOCASE"
-  ).get(name) as { id: number } | undefined;
+    "SELECT id FROM inventa_suppliers WHERE active = 1 AND branch_id = ? AND name = ? COLLATE NOCASE"
+  ).get(branchId, name) as { id: number } | undefined;
   if (existing) {
-    // "Learn from edits": when the admin saves a bill with a corrected
-    // category/tax_id for a known vendor, remember the latest values so the
-    // next bill from that vendor auto-fills them. Only overwrite with a real
-    // value — never blank out a good one (owner 2026-06-18).
+    // "Learn from edits": remember a corrected category/tax_id for next time.
+    // Only overwrite with a real value — never blank a good one (owner 2026-06-18).
     if (cat || tax) {
       getDb().prepare(
-        "UPDATE accounta_vendors SET category = COALESCE(?, category), tax_id = COALESCE(?, tax_id) WHERE id = ?"
+        "UPDATE inventa_suppliers SET category = COALESCE(?, category), tax_id = COALESCE(?, tax_id) WHERE id = ?"
       ).run(cat, tax, existing.id);
     }
     return existing.id;
   }
   const info = getDb().prepare(`
-    INSERT INTO accounta_vendors (name, tax_id, category, created_by)
-    VALUES (?, ?, ?, ?)
-  `).run(name, tax, cat, userId);
+    INSERT INTO inventa_suppliers (branch_id, name, tax_id, category, created_by, display_order, active, needs_review)
+    VALUES (?, ?, ?, ?, ?, 100, 1, ?)
+  `).run(branchId, name, tax, cat, userId, d.needsReview ? 1 : 0);
   return Number(info.lastInsertRowid);
 }
 
-/** Look up an active vendor by name (case-insensitive). Used to auto-fill the
- *  remembered category/tax_id when OCR reads a known vendor. */
-export function findVendorByName(name: string): VendorRow | null {
+/** Look up an active vendor by name within a branch (case-insensitive). Used to
+ *  auto-fill the remembered category/tax_id when OCR reads a known vendor. */
+export function findVendorByName(name: string, branchId: number | null): VendorRow | null {
   const v = name.trim();
-  if (!v) return null;
+  if (!v || branchId == null) return null;
   return getDb().prepare(
-    "SELECT id, name, tax_id, category FROM accounta_vendors WHERE active = 1 AND name = ? COLLATE NOCASE"
-  ).get(v) as VendorRow | undefined ?? null;
+    "SELECT id, name, tax_id, category FROM inventa_suppliers WHERE active = 1 AND branch_id = ? AND name = ? COLLATE NOCASE"
+  ).get(branchId, v) as VendorRow | undefined ?? null;
 }
 
 // ── Expense CRUD ───────────────────────────────────────────────────

@@ -16,7 +16,10 @@ const Body = z.object({
   order_cycle: z.string().max(200).nullable().optional(),
   lead_time: z.string().max(200).nullable().optional(),
   contact: z.string().max(200).nullable().optional(),
-  note: z.string().max(1000).nullable().optional()
+  note: z.string().max(1000).nullable().optional(),
+  // Shared with ACCOUNTA (owner 2026-06-25): เลขผู้เสียภาษี + หมวดเริ่มต้น.
+  tax_id: z.string().trim().max(30).nullable().optional(),
+  category: z.string().trim().max(100).nullable().optional()
 });
 
 export async function GET() {
@@ -55,14 +58,16 @@ export async function POST(req: Request) {
   const nextOrder = (maxRow.m ?? 0) + 10;
   const info = db.prepare(`
     INSERT INTO inventa_suppliers
-      (branch_id, name, code, display_order, order_cycle, lead_time, contact, note)
-    VALUES (?,?,?,?,?,?,?,?)
+      (branch_id, name, code, display_order, order_cycle, lead_time, contact, note,
+       tax_id, category, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     branchId, d.name.trim(),
     d.code?.trim() || null,
     nextOrder,
     d.order_cycle ?? null, d.lead_time ?? null,
-    d.contact ?? null, d.note ?? null
+    d.contact ?? null, d.note ?? null,
+    d.tax_id?.trim() || null, d.category?.trim() || null, user.id
   );
   return NextResponse.json({ ok: true, id: Number(info.lastInsertRowid) });
 }

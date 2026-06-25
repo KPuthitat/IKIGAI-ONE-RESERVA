@@ -17,7 +17,7 @@ import { sendLinePush, downloadLineContent, accountaBillAckFlex } from "./line";
 import { scanBill, ocrEnabled } from "./accounta-ocr";
 import {
   listCategories, createExpense, setExpenseDoc, logOcrUsage,
-  expenseExistsForLineMessage, findVendorByName
+  expenseExistsForLineMessage, findVendorByName, createVendor
 } from "./accounta-db";
 import { saveReceiptImage, RECEIPT_ALLOWED_MIME } from "./accounta-receipts";
 import { ocrCostBaht, round2, splitMixedBill, isDocType, DOC_TYPE_LABEL, type DocType, type ExpenseInput, type OcrBillResult } from "./accounta";
@@ -94,13 +94,6 @@ export async function ingestLineBill(args: {
     parsed = r.result; usage = r.usage; model = r.model;
   } catch { /* keep the draft + photo; parsed stays null */ }
 
-  // Vendor memory: if OCR read a known vendor, inherit its remembered
-  // category/tax-id link so repeat bills auto-fill (owner 2026-06-18).
-  const known = parsed?.vendor_name ? findVendorByName(parsed.vendor_name) : null;
-  const cat = parsed?.category ?? known?.category ?? null;
-  const docType: DocType | null = parsed?.doc_type && isDocType(parsed.doc_type) ? parsed.doc_type : null;
-  const baseNote = `ส่งโดย ${senderName} ทางไลน์`;
-
   // Attribute the draft to the submitter's own branch + its company (owner
   // 2026-06-18 — a bill a branch's staff sends in belongs to that branch and
   // company). The admin can still change it on review.
@@ -109,6 +102,24 @@ export async function ingestLineBill(args: {
     FROM user_branches ub JOIN branches b ON b.id = ub.branch_id
     WHERE ub.user_id = ? ORDER BY ub.branch_id LIMIT 1
   `).get(user.id) as { branch_id: number; company_id: number | null } | undefined;
+  const branchId = ub?.branch_id ?? null;
+
+  // Vendor memory (branch-scoped, owner 2026-06-25): if OCR read a known vendor
+  // in this branch, inherit its remembered category/tax-id. An UNKNOWN vendor is
+  // auto-created into the shared master flagged "needs review" so it shows up in
+  // INVENTA/ACCOUNTA for the admin to complete (รอบสั่ง/เลขภาษี).
+  let known = parsed?.vendor_name ? findVendorByName(parsed.vendor_name, branchId) : null;
+  if (!known && parsed?.vendor_name?.trim() && branchId != null) {
+    try {
+      const id = createVendor(branchId, user.id, {
+        name: parsed.vendor_name, category: parsed.category ?? null, needsReview: true
+      });
+      known = { id, name: parsed.vendor_name.trim(), tax_id: null, category: parsed.category ?? null };
+    } catch { /* non-fatal — the draft still files with the free-text vendor_name */ }
+  }
+  const cat = parsed?.category ?? known?.category ?? null;
+  const docType: DocType | null = parsed?.doc_type && isDocType(parsed.doc_type) ? parsed.doc_type : null;
+  const baseNote = `ส่งโดย ${senderName} ทางไลน์`;
 
   // Build one draft row's input from a VAT-resolved amount slice.
   const buildInput = (a: {

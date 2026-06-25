@@ -56,7 +56,7 @@ export default function AccountaExpensesPage() {
         month={month}
         branches={listBranches()}
         companies={listCompanies()}
-        vendors={listVendors()}
+        vendors={listVendors(user.activeBranchId ?? null)}
         categories={listCategories()}
         paymentMethods={listPaymentMethods()}
         expenseChannels={expenseChannels}
