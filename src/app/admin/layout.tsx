@@ -149,6 +149,22 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/discipline", label: t(lang, "admin.persona.nav.discipline") }
       ]
     },
+    // ACCOUNTA — contextual section (owner 2026-06-25). Shown when inside
+    // /admin/accounta. The เอกสารรอลงบัญชี inbox + สิทธิ์ matrix live here.
+    ...(canModule(user, "accounta.manage") ? [{
+      label: "ACCOUNTA",
+      pathPrefix: "/admin/accounta",
+      items: [
+        { href: "/admin/accounta", label: "ภาพรวม ACCOUNTA" },
+        { href: "/admin/accounta/daybook", label: "บัญชีรายรับรายจ่าย" },
+        { href: "/admin/accounta/inbox", label: "เอกสารรอลงบัญชี" },
+        { href: "/admin/accounta/expenses", label: "รายจ่าย" },
+        { href: "/admin/accounta/income", label: "รายรับ" },
+        { href: "/admin/accounta/receivables", label: "ลูกหนี้ค้างชำระ" },
+        { href: "/admin/accounta/cash-accounts", label: "ช่องทางการเงิน / บัญชี" },
+        ...(isSuperAdmin ? [{ href: "/admin/accounta/access", label: "สิทธิ์เข้าถึงตามสาขา" }] : [])
+      ]
+    }] : []),
     // สุขภาพพนักงาน — รวม "ผลตรวจสุขภาพ" (ย้ายมาจาก PERSONA) + โครงการ Mounjaro.
     // Mounjaro (คลินิก) เห็นเฉพาะแพทย์ · ภาพรวม (HR) เห็นเฉพาะผู้มีสิทธิ์ aggregate.
     {

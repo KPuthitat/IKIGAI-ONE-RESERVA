@@ -27,6 +27,13 @@ export default function AccountaHome() {
         : "ลงรายรับ-รายจ่าย ภาษีซื้อ-ขาย — เพิ่มรายรับ เพิ่มรายจ่าย แล้วดูบัญชีรายรับรายจ่าย"
     },
     {
+      href: "/admin/accounta/inbox",
+      title: en ? "Documents to post" : "เอกสารรอลงบัญชี",
+      sub: en
+        ? "Bills scanned via the LINE OA, grouped by branch — review and post into the ledger"
+        : "บิล/ใบเสร็จที่สแกนผ่านน้องฮูก รวมไว้ที่เดียว แยกตามสาขา — ตรวจแล้วยืนยันลงบัญชี"
+    },
+    {
       href: "/admin/accounta/feasibility",
       title: en ? "Financial Feasibility Study" : "แฟ้มวิเคราะห์โครงการลงทุน",
       sub: en
@@ -39,6 +46,13 @@ export default function AccountaHome() {
       sub: en
         ? "Partner sales revenue split by progressive GP tiers — POS import + monthly billing statement"
         : "คำนวณส่วนแบ่งยอดขายจากคู่ค้า (แบ่งขั้นบันได) + นำเข้า POS + ออกใบวางบิลรายเดือน"
+    }] : []),
+    ...(user.role === "super_admin" ? [{
+      href: "/admin/accounta/access",
+      title: en ? "Branch access" : "สิทธิ์เข้าถึงตามสาขา",
+      sub: en
+        ? "Grant each person view / post access to specific branches' accounting"
+        : "กำหนดสิทธิ์แต่ละคนว่าเข้าถึง (ดู/ยืนยันลงบัญชี) ของสาขาไหนได้บ้าง"
     }] : [])
   ];
 

@@ -5674,6 +5674,22 @@ function runMigrations(db: Database.Database): void {
   if (!chCols2.some((c) => c.name === "is_credit")) {
     db.exec("ALTER TABLE accounta_income_channels ADD COLUMN is_credit INTEGER NOT NULL DEFAULT 0");
   }
+
+  // Per-user ACCOUNTA branch access (owner 2026-06-25): who can see/process a
+  // branch's accounting data — separate from staff membership (user_branches),
+  // so a central bookkeeper can be granted branches they don't work at. A row =
+  // view access; can_confirm = may post drafts into the ledger. super_admin is
+  // implicitly all-branches/confirm (not stored).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS accounta_access (
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      branch_id   INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      can_confirm INTEGER NOT NULL DEFAULT 0,
+      granted_by  INTEGER REFERENCES users(id),
+      created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, branch_id)
+    );
+  `);
   // Seed each branch's real channels (owner 2026-06-22, "สร้างให้ตามที่เห็น").
   // Guarded: only seeds a branch that has NO channels of its own yet, so it
   // never overwrites the owner's later edits. Matched by branch name.

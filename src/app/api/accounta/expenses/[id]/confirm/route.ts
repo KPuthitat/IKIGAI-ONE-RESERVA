@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getExpense, confirmExpense } from "@/lib/accounta-db";
+import { canConfirmBranch } from "@/lib/accounta-access";
 import { syncReceiptToDrive } from "@/lib/google-drive";
 
 // POST /api/accounta/expenses/[id]/confirm — promote a LINE draft into the
@@ -13,7 +14,7 @@ function parseId(raw: string): number | null {
 }
 
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
-  requirePermission("accounta.manage");
+  const user = requirePermission("accounta.manage");
   const id = parseId(params.id);
   if (id == null) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
 
@@ -23,6 +24,14 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     return NextResponse.json(
       { error: "no_branch", message: "เลือกสาขาก่อนยืนยันเข้าสมุด" },
       { status: 400 }
+    );
+  }
+  // ACCOUNTA branch access (owner 2026-06-25): only someone with confirm-level
+  // on this branch may post it into the ledger.
+  if (!canConfirmBranch(user.id, user.role, exp.branch_id)) {
+    return NextResponse.json(
+      { error: "forbidden_branch", message: "คุณไม่มีสิทธิ์ยืนยันลงบัญชีของสาขานี้" },
+      { status: 403 }
     );
   }
 
