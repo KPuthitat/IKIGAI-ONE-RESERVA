@@ -1059,11 +1059,29 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
   ).get(branchId) as { vat: number | null } | undefined;
   const vatRegistered = !!co?.vat;
 
-  // Revenue by day — pulled from the shift-close daily total
-  // (branch_daily_revenue, recorded by the closing staff). One row per day.
-  const incDays = db.prepare(
-    "SELECT date AS d, revenue AS amt FROM branch_daily_revenue WHERE branch_id = ? AND date BETWEEN ? AND ? ORDER BY date"
-  ).all(branchId, start, end) as Array<{ d: string; amt: number }>;
+  // Revenue by day — the ACCOUNTA ledger view (owner 2026-06-25): sum the
+  // accounta_income rows so manual per-channel edits reflect in the headline.
+  // Supersede rule: once a day has a per-channel breakdown, the channel-less
+  // shift_close lump is redundant — exclude it so the breakdown replaces it
+  // (no double-count). Days with NO ledger rows fall back to the close total in
+  // branch_daily_revenue (preserves pre-mirror history).
+  const incLedger = db.prepare(
+    `SELECT income_date AS d,
+            COALESCE(SUM(amount),0) AS total,
+            COALESCE(SUM(CASE WHEN COALESCE(NULLIF(TRIM(channel),''),NULL) IS NOT NULL THEN 1 ELSE 0 END),0) AS channelled,
+            COALESCE(SUM(CASE WHEN source='shift_close' AND COALESCE(NULLIF(TRIM(channel),''),NULL) IS NULL THEN amount ELSE 0 END),0) AS lump
+       FROM accounta_income
+      WHERE branch_id = ? AND income_date BETWEEN ? AND ?
+      GROUP BY income_date`
+  ).all(branchId, start, end) as Array<{ d: string; total: number; channelled: number; lump: number }>;
+  const ledgerByDate = new Map(incLedger.map((r) => [r.d, r.channelled > 0 ? round2(r.total - r.lump) : round2(r.total)]));
+  const bdrByDate = new Map((db.prepare(
+    "SELECT date AS d, revenue AS amt FROM branch_daily_revenue WHERE branch_id = ? AND date BETWEEN ? AND ?"
+  ).all(branchId, start, end) as Array<{ d: string; amt: number }>).map((r) => [r.d, round2(r.amt)]));
+  const incDays = [...new Set([...ledgerByDate.keys(), ...bdrByDate.keys()])]
+    .map((d) => ({ d, amt: ledgerByDate.has(d) ? ledgerByDate.get(d)! : (bdrByDate.get(d) ?? 0) }))
+    .filter((r) => r.amt !== 0)
+    .sort((a, b) => (a.d < b.d ? -1 : 1));
   let revenue = 0, wkdaySum = 0, wkdayN = 0, wkendSum = 0, wkendN = 0;
   for (const r of incDays) {
     revenue += r.amt;

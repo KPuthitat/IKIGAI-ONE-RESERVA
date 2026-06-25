@@ -236,7 +236,17 @@ function DayDetail({
   const [pinRow, setPinRow] = useState<IncomeDayRow | null>(null); // auto row pending PIN-delete
 
   // Insertion order: earliest added on top, latest at the bottom (owner 2026-06-25).
-  const inc = (rows ?? []).slice().sort((a, b) => a.id - b.id);
+  const allRows = (rows ?? []).slice().sort((a, b) => a.id - b.id);
+  const isChannelled = (r: IncomeDayRow) => !!(r.channel && r.channel.trim());
+  // Supersede rule (owner 2026-06-25): once a day has a per-channel breakdown,
+  // the channel-less close lump is redundant — hide it + drop it from the sum so
+  // the breakdown REPLACES it (no double-count, and it's harmless if it regenerates).
+  const hasBreakdown = allRows.some(isChannelled);
+  const inc = hasBreakdown
+    ? allRows.filter((r) => !(r.source === "shift_close" && !isChannelled(r)))
+    : allRows;
+  const usedChannels = new Set(inc.map((r) => (r.channel || "").trim()).filter(Boolean));
+  const availableChannels = channels.filter((c) => !usedChannels.has(c.name));
   const incTotal = inc.reduce((s, r) => s + r.amount, 0);
   const incAR = inc.reduce((s, r) => s + (r.is_outstanding ? r.amount : 0), 0);
   const incCash = incTotal - incAR;
@@ -402,10 +412,10 @@ function DayDetail({
               {/* add a manual channel row */}
               <tr className="bg-slate-50/60">
                 <td className="py-1 px-2">
-                  <select value={addChannel} onChange={(e) => setAddChannel(e.target.value)}
+                  <select value={usedChannels.has(addChannel) ? "" : addChannel} onChange={(e) => setAddChannel(e.target.value)}
                     className="input !py-1">
                     <option value="">— เลือกช่องทาง —</option>
-                    {channels.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    {availableChannels.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
                 </td>
                 <td className="py-1 px-2 text-right">
