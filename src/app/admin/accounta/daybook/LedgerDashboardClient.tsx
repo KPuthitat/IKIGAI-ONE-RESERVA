@@ -155,6 +155,7 @@ function ComboChart({ points }: { points: ComboPoint[] }) {
   const showValues = n <= 14;            // skip per-bar value labels for long series
   const showDots = n <= 14;              // dots clutter a long daily series
   const stride = Math.ceil(n / 13);      // keep ~13 x-axis labels at most
+  const [hover, setHover] = useState<number | null>(null);
   return (
     <svg viewBox={`0 0 ${W} ${H + labelBand}`} preserveAspectRatio="xMidYMid meet" role="img"
       aria-label="กราฟรายรับ รายจ่าย และกำไร"
@@ -200,10 +201,29 @@ function ComboChart({ points }: { points: ComboPoint[] }) {
       {areaD && <path d={areaD} fill="url(#profitFill)" stroke="none" />}
       <path d={lineD} fill="none" stroke="#6366f1" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
       {showDots && points.map((m, i) => (
-        <circle key={m.key} cx={Lm + i * colW + colW / 2} cy={mapY(m.profit)} r={2} fill="#6366f1">
-          <title>{`${m.tip} กำไร ฿${fmtMoney(m.profit)}`}</title>
-        </circle>
+        <circle key={m.key} cx={Lm + i * colW + colW / 2} cy={mapY(m.profit)} r={2} fill="#6366f1" />
       ))}
+      {/* Hover layer: full-column capture + a value tooltip for the pointed day */}
+      {points.map((m, i) => (
+        <rect key={`h${m.key}`} x={Lm + i * colW} y={padTop} width={colW} height={H - padTop} fill="transparent"
+          onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover((h) => (h === i ? null : h))} />
+      ))}
+      {hover != null && points[hover] && (() => {
+        const m = points[hover];
+        const cx = Lm + hover * colW + colW / 2;
+        const boxW = 150, boxH = 56, by = 4;
+        const bx = Math.min(Math.max(cx - boxW / 2, Lm), W - boxW);
+        return (
+          <g pointerEvents="none">
+            <line x1={cx} y1={padTop} x2={cx} y2={H} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
+            <rect x={bx} y={by} width={boxW} height={boxH} rx={5} fill="#1e293b" opacity={0.95} />
+            <text x={bx + 8} y={by + 15} fontSize={9} fontWeight={700} fill="#ffffff">{m.tip}</text>
+            <text x={bx + 8} y={by + 28} fontSize={8.5} fill="#6ee7b7">รายรับ ฿{fmtMoney(m.revenue)}</text>
+            <text x={bx + 8} y={by + 39} fontSize={8.5} fill="#fcd34d">รายจ่าย ฿{fmtMoney(m.expense)}</text>
+            <text x={bx + 8} y={by + 50} fontSize={8.5} fill="#c7d2fe">กำไร ฿{fmtMoney(m.profit)}</text>
+          </g>
+        );
+      })()}
     </svg>
   );
 }

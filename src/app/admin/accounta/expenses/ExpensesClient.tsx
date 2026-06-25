@@ -160,6 +160,9 @@ export default function ExpensesClient(props: {
   // Whether the row being edited has a primary scanned document — drives the
   // "ดูเอกสาร" button in the modal (owner 2026-06-24: ดูเอกสารตอนตรวจ).
   const [editingHasDoc, setEditingHasDoc] = useState(false);
+  // Show the document INLINE beside the form (owner 2026-06-25: a new tab is
+  // awkward — read while you key).
+  const [showDoc, setShowDoc] = useState(false);
   const extraRef = useRef<HTMLInputElement>(null);
   // Mixed-bill split detected by OCR (owner 2026-06-18): when set, the form
   // offers "แยกเป็น 2 รายการ" (VAT row + non-VAT row).
@@ -204,7 +207,7 @@ export default function ExpensesClient(props: {
     setExtraDocs([]);
     setEditingHasDoc(false);
     setErr(null);
-    setModalOpen(true);
+    setShowDoc(false); setModalOpen(true);
   }
 
   function openEdit(e: Expense) {
@@ -238,7 +241,7 @@ export default function ExpensesClient(props: {
     setExtraDocs([]);
     void loadExtraDocs(e.id);
     setErr(null);
-    setModalOpen(true);
+    setShowDoc(false); setModalOpen(true);
   }
 
   async function runOcr(file: File) {
@@ -783,15 +786,25 @@ export default function ExpensesClient(props: {
       {modalOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4"
           onClick={() => !busy && setModalOpen(false)}>
-          <div className="card w-full max-w-2xl my-8 space-y-3" onClick={(ev) => ev.stopPropagation()}>
+          <div className={`card w-full ${showDoc ? "max-w-6xl" : "max-w-2xl"} my-8`} onClick={(ev) => ev.stopPropagation()}>
+            <div className="flex flex-col lg:flex-row gap-4 items-start">
+            {showDoc && form.id != null && (
+              <div className="w-full lg:w-[46%] shrink-0 lg:sticky lg:top-2 self-start order-first lg:order-last">
+                <iframe src={apiUrl(`/api/accounta/expenses/${form.id}/doc`)} title="เอกสาร"
+                  className="w-full h-[45vh] lg:h-[80vh] rounded-lg border border-slate-200 bg-slate-50" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-bold text-slate-800">
                 {draftMode ? "ตรวจร่างจากไลน์" : form.id ? "แก้ไขรายจ่าย" : "เพิ่มรายจ่าย"}
               </h3>
               <div className="flex items-center gap-2">
                 {form.id != null && editingHasDoc && (
-                  <a href={apiUrl(`/api/accounta/expenses/${form.id}/doc`)} target="_blank" rel="noreferrer"
-                    className="rounded-md border border-brand/40 text-brand px-3 py-1 text-sm font-medium hover:bg-brand/5 whitespace-nowrap">📄 ดูเอกสาร</a>
+                  <button type="button" onClick={() => setShowDoc((v) => !v)}
+                    className="rounded-md border border-brand/40 text-brand px-3 py-1 text-sm font-medium hover:bg-brand/5 whitespace-nowrap">
+                    {showDoc ? "📄 ซ่อนเอกสาร" : "📄 ดูเอกสาร"}
+                  </button>
                 )}
                 <button type="button" onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-slate-700">✕</button>
               </div>
@@ -1061,6 +1074,8 @@ export default function ExpensesClient(props: {
                   </button>
                 )}
               </div>
+            </div>
+            </div>
             </div>
           </div>
         </div>

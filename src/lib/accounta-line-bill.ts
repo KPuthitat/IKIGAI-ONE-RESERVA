@@ -78,7 +78,13 @@ export async function ingestLineBill(args: {
   }
   const buffer = content.buffer;
   let mime = content.mime;
-  if (!RECEIPT_ALLOWED_MIME.has(mime)) mime = "image/jpeg"; // LINE photos are jpeg
+  // LINE forwards a file's content-type inconsistently (often
+  // application/octet-stream for a PDF), which used to get mis-coerced to jpeg
+  // and made the OCR read a PDF as a broken image — "อ่านไม่ออก" (owner 2026-06-25).
+  // Sniff the magic bytes so a real PDF is always sent as a document block.
+  const isPdfBytes = buffer.length > 4 && buffer.subarray(0, 5).toString("latin1") === "%PDF-";
+  if (isPdfBytes) mime = "application/pdf";
+  else if (!RECEIPT_ALLOWED_MIME.has(mime)) mime = "image/jpeg"; // LINE photos are jpeg
 
   const base64 = buffer.toString("base64");
   const today = bkkToday();
