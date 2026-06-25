@@ -48,7 +48,7 @@ export default function InboxClient({
   })();
 
   if (drafts.length === 0) {
-    return <div className="card text-center py-10 text-slate-500">ไม่มีเอกสารรอลงบัญชี 🎉</div>;
+    return <div className="card text-center py-10 text-slate-500">ไม่มีเอกสารรอลงบัญชี</div>;
   }
 
   return (

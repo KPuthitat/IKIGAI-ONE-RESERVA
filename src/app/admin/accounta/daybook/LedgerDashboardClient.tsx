@@ -596,7 +596,7 @@ function DayDetail({
                   <div className="mb-1.5">
                     <button type="button" onClick={() => setDraftPickerOpen((v) => !v)}
                       className="text-[11px] text-brand hover:underline disabled:opacity-40" disabled={draftExpenses.length === 0}>
-                      📄 ดึงจากเอกสารรอลงบัญชี ({draftExpenses.length})
+                      ดึงจากเอกสารรอลงบัญชี ({draftExpenses.length})
                     </button>
                     {draftPickerOpen && draftExpenses.length > 0 && (
                       <div className="mt-1 border border-slate-200 rounded-md bg-white max-h-44 overflow-y-auto divide-y divide-slate-50">

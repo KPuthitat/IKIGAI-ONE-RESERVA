@@ -803,7 +803,7 @@ export default function ExpensesClient(props: {
                 {form.id != null && editingHasDoc && (
                   <button type="button" onClick={() => setShowDoc((v) => !v)}
                     className="rounded-md border border-brand/40 text-brand px-3 py-1 text-sm font-medium hover:bg-brand/5 whitespace-nowrap">
-                    {showDoc ? "📄 ซ่อนเอกสาร" : "📄 ดูเอกสาร"}
+                    {showDoc ? "ซ่อนเอกสาร" : "ดูเอกสาร"}
                   </button>
                 )}
                 <button type="button" onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-slate-700">✕</button>
