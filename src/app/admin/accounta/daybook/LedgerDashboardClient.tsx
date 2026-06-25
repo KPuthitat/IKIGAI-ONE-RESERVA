@@ -58,6 +58,12 @@ type IncomeDayRow = {
   income_date: string; channel: string | null; amount: number; note: string | null;
   source: string; is_outstanding: number; settled_date: string | null;
 };
+// Pending scanned-bill draft the รายจ่าย panel can pull in (owner 2026-06-25).
+type DraftLite = {
+  id: number; vendor_name: string | null; category: string | null;
+  amount_total: number; has_tax_invoice: boolean; payment_status: "paid" | "unpaid";
+  has_doc: boolean; bill_date: string;
+};
 
 const PERIOD_LABEL: Record<LedgerPeriod, string> = { week: "สัปดาห์", month: "เดือน", year: "ปี" };
 
@@ -275,7 +281,7 @@ function Donut({ items }: { items: Array<{ label: string; amount: number }> }) {
 // daily close report and stays read-only here (edit it at ยอดขายรายวัน).
 function DayDetail({
   date, rows, loading, err, expenses, channels, categories, branchId, companyId, billCount,
-  onChanged, removeExpense, busyExpenseId
+  draftExpenses, onChanged, removeExpense, busyExpenseId
 }: {
   date: string;
   rows: IncomeDayRow[] | undefined;
@@ -287,6 +293,7 @@ function DayDetail({
   branchId: number;
   companyId: number | null;
   billCount: number | null;
+  draftExpenses: DraftLite[];
   onChanged: () => void;
   removeExpense: (e: LedgerExpenseRow) => void;
   busyExpenseId: number | null;
@@ -307,6 +314,23 @@ function DayDetail({
   const [expAdding, setExpAdding] = useState(false);
   const [expErr, setExpErr] = useState<string | null>(null);
   const [pinRow, setPinRow] = useState<IncomeDayRow | null>(null); // auto row pending PIN-delete
+  const [draftPickerOpen, setDraftPickerOpen] = useState(false);
+  const [fromDraftId, setFromDraftId] = useState<number | null>(null); // pulling a scanned draft
+
+  function pickDraft(d: DraftLite) {
+    setExpVendor(d.vendor_name || "");
+    setExpCategory(d.category || "");
+    setExpAmt(grpMoney(String(d.amount_total)));
+    setExpVat(d.has_tax_invoice);
+    setExpUnpaid(d.payment_status === "unpaid");
+    setFromDraftId(d.id);
+    setDraftPickerOpen(false);
+    setExpErr(null);
+  }
+  function clearDraft() {
+    setFromDraftId(null);
+    setExpVendor(""); setExpCategory(""); setExpAmt(""); setExpVat(false); setExpUnpaid(false);
+  }
 
   // Insertion order: earliest added on top, latest at the bottom (owner 2026-06-25).
   const allRows = (rows ?? []).slice().sort((a, b) => a.id - b.id);
@@ -403,20 +427,34 @@ function DayDetail({
     const amt = parseMoney(expAmt);
     if (!Number.isFinite(amt) || amt <= 0) { setExpErr("กรอกยอดเงินให้ถูกต้อง"); return; }
     setExpAdding(true); setExpErr(null);
+    const body = {
+      branch_id: branchId, company_id: companyId, bill_date: date,
+      vendor_name: expVendor.trim() || null, category: expCategory || null,
+      amount_total: amt, has_tax_invoice: expVat,
+      payment_status: expUnpaid ? "unpaid" : "paid",
+      paid_date: expUnpaid ? null : date
+    };
     try {
-      const res = await fetch(apiUrl("/api/accounta/expenses"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          branch_id: branchId, company_id: companyId, bill_date: date,
-          vendor_name: expVendor.trim() || null, category: expCategory || null,
-          amount_total: amt, has_tax_invoice: expVat,
-          payment_status: expUnpaid ? "unpaid" : "paid",
-          paid_date: expUnpaid ? null : date
-        })
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setExpErr(j.message || "เพิ่มไม่สำเร็จ"); return; }
-      setExpVendor(""); setExpAmt(""); setExpVat(false); setExpUnpaid(false); onChanged();
+      if (fromDraftId != null) {
+        // Pulling a scanned draft → update it with the reviewed fields then post
+        // it (keeps the attached document; no duplicate row).
+        const pr = await fetch(apiUrl(`/api/accounta/expenses/${fromDraftId}`), {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+        });
+        const pj = await pr.json().catch(() => ({}));
+        if (!pr.ok || !pj.ok) { setExpErr(pj.message || "บันทึกไม่สำเร็จ"); return; }
+        const cr = await fetch(apiUrl(`/api/accounta/expenses/${fromDraftId}/confirm`), { method: "POST" });
+        const cj = await cr.json().catch(() => ({}));
+        if (!cr.ok || !cj.ok) { setExpErr(cj.message || "ยืนยันลงบัญชีไม่สำเร็จ"); return; }
+      } else {
+        const res = await fetch(apiUrl("/api/accounta/expenses"), {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || !j.ok) { setExpErr(j.message || "เพิ่มไม่สำเร็จ"); return; }
+      }
+      setFromDraftId(null);
+      setExpVendor(""); setExpAmt(""); setExpVat(false); setExpUnpaid(false); setExpCategory(""); onChanged();
     } finally { setExpAdding(false); }
   }
 
@@ -554,6 +592,34 @@ function DayDetail({
               <tr className="bg-slate-50/60 border-t border-slate-100">
                 <td colSpan={3} className="px-2 py-2">
                   {expErr && <p className="text-[11px] text-rose-600 mb-1">{expErr}</p>}
+                  {/* pull from scanned-bill drafts */}
+                  <div className="mb-1.5">
+                    <button type="button" onClick={() => setDraftPickerOpen((v) => !v)}
+                      className="text-[11px] text-brand hover:underline disabled:opacity-40" disabled={draftExpenses.length === 0}>
+                      📄 ดึงจากเอกสารรอลงบัญชี ({draftExpenses.length})
+                    </button>
+                    {draftPickerOpen && draftExpenses.length > 0 && (
+                      <div className="mt-1 border border-slate-200 rounded-md bg-white max-h-44 overflow-y-auto divide-y divide-slate-50">
+                        {draftExpenses.map((d) => (
+                          <button type="button" key={d.id} onClick={() => pickDraft(d)}
+                            className="w-full text-left px-2 py-1.5 hover:bg-slate-50 flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-slate-700 truncate">
+                              {d.vendor_name || "— ยังไม่ระบุร้าน —"}
+                              <span className="text-slate-400"> · {fmtDayLabel(d.bill_date).replace("วัน", "")}</span>
+                              {d.has_doc && <span className="text-brand"> · มีเอกสาร</span>}
+                            </span>
+                            <span className="text-[11px] font-mono text-rose-700 shrink-0">฿{fmtMoney(d.amount_total)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {fromDraftId != null && (
+                      <div className="mt-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 inline-flex items-center gap-1.5">
+                        กำลังลงจากเอกสาร #{fromDraftId} — ตรวจแล้วกด “เพิ่ม” เพื่อยืนยันลงบัญชี
+                        <button type="button" onClick={clearDraft} className="text-slate-400 hover:text-rose-600">✕</button>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <input value={expVendor} onChange={(e) => setExpVendor(e.target.value)} placeholder="ผู้จำหน่าย / รายการ"
                       className="input !py-1 flex-1 !min-w-[8rem]" />
@@ -568,7 +634,7 @@ function DayDetail({
                     <label className="flex items-center gap-1 text-[11px] text-slate-500"><input type="checkbox" checked={expVat} onChange={(e) => setExpVat(e.target.checked)} />VAT</label>
                     <label className="flex items-center gap-1 text-[11px] text-slate-500"><input type="checkbox" checked={expUnpaid} onChange={(e) => setExpUnpaid(e.target.checked)} />ค้างชำระ</label>
                     <button type="button" onClick={addExpense} disabled={expAdding || !expAmt}
-                      className="text-[11px] text-brand hover:underline disabled:opacity-40">+ เพิ่ม</button>
+                      className="text-[11px] text-brand hover:underline disabled:opacity-40">{fromDraftId != null ? "+ ยืนยันลงบัญชี" : "+ เพิ่ม"}</button>
                   </div>
                 </td>
               </tr>
@@ -605,7 +671,7 @@ function DayDetail({
 
 export default function LedgerDashboardClient({
   dash, expenses, period, anchor, monthly, trendYear, payables, cashAccounts, cashTotal,
-  branchId, companyId, branchName, incomeChannels, expenseCategories
+  branchId, companyId, branchName, incomeChannels, expenseCategories, draftExpenses
 }: {
   dash: Dash; expenses: LedgerExpenseRow[]; period: LedgerPeriod; anchor: string;
   monthly: MonthlyRow[]; trendYear: number; payables: Payables;
@@ -613,6 +679,7 @@ export default function LedgerDashboardClient({
   branchId: number; companyId: number | null; branchName: string;
   incomeChannels: Array<{ id: number; name: string }>;
   expenseCategories: Array<{ code: string | null; name: string }>;
+  draftExpenses: DraftLite[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -1058,6 +1125,7 @@ export default function LedgerDashboardClient({
                             branchId={branchId}
                             companyId={companyId}
                             billCount={r.billCount}
+                            draftExpenses={draftExpenses}
                             onChanged={() => { loadDayIncome(r.date, true); startTransition(() => router.refresh()); }}
                             removeExpense={remove}
                             busyExpenseId={busyId}

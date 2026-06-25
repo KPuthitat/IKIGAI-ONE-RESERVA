@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, type LedgerPeriod } from "@/lib/accounta-db";
+import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, type LedgerPeriod } from "@/lib/accounta-db";
 import LedgerDashboardClient, { type LedgerExpenseRow } from "./LedgerDashboardClient";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +46,15 @@ export default function DaybookPage({
   const cashTotal = cashAccountsTotal(branchId);
   const incomeChannels = listIncomeChannels(branchId);
   const expenseCategories = listCategories().map((c) => ({ code: c.code, name: c.name }));
+  // Pending scanned-bill drafts the day's รายจ่าย panel can pull in (owner
+  // 2026-06-25). This branch's drafts + any not-yet-assigned ones.
+  const draftExpenses = listExpenses({ reviewStatus: "draft" })
+    .filter((d) => d.branch_id === branchId || d.branch_id == null)
+    .map((d) => ({
+      id: d.id, vendor_name: d.vendor_name, category: d.category,
+      amount_total: d.amount_total, has_tax_invoice: !!d.has_tax_invoice,
+      payment_status: d.payment_status, has_doc: d.has_doc, bill_date: d.bill_date
+    }));
   const expenses: LedgerExpenseRow[] = listExpensesInRange(branchId, dash.start, dash.end).map((e) => ({
     id: e.id, bill_date: e.bill_date, vendor_name: e.vendor_name, doc_type: e.doc_type,
     category: e.category, amount_total: e.amount_total, vat_amount: e.vat_amount,
@@ -70,7 +79,8 @@ export default function DaybookPage({
         monthly={monthly} trendYear={trendYear} payables={payables}
         cashAccounts={cashAccounts} cashTotal={cashTotal}
         branchId={branchId} companyId={branch?.company_id ?? null} branchName={branch?.name ?? `#${branchId}`}
-        incomeChannels={incomeChannels} expenseCategories={expenseCategories} />
+        incomeChannels={incomeChannels} expenseCategories={expenseCategories}
+        draftExpenses={draftExpenses} />
     </div>
   );
 }
