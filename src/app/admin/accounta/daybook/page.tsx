@@ -69,7 +69,7 @@ export default function DaybookPage({
       <LedgerDashboardClient dash={dash} expenses={expenses} period={period} anchor={anchor}
         monthly={monthly} trendYear={trendYear} payables={payables}
         cashAccounts={cashAccounts} cashTotal={cashTotal}
-        branchId={branchId} companyId={branch?.company_id ?? null}
+        branchId={branchId} companyId={branch?.company_id ?? null} branchName={branch?.name ?? `#${branchId}`}
         incomeChannels={incomeChannels} expenseCategories={expenseCategories} />
     </div>
   );

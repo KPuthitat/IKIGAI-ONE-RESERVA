@@ -552,12 +552,12 @@ function DayDetail({
 
 export default function LedgerDashboardClient({
   dash, expenses, period, anchor, monthly, trendYear, payables, cashAccounts, cashTotal,
-  branchId, companyId, incomeChannels, expenseCategories
+  branchId, companyId, branchName, incomeChannels, expenseCategories
 }: {
   dash: Dash; expenses: LedgerExpenseRow[]; period: LedgerPeriod; anchor: string;
   monthly: MonthlyRow[]; trendYear: number; payables: Payables;
   cashAccounts: CashAccount[]; cashTotal: number;
-  branchId: number; companyId: number | null;
+  branchId: number; companyId: number | null; branchName: string;
   incomeChannels: Array<{ id: number; name: string }>;
   expenseCategories: Array<{ code: string | null; name: string }>;
 }) {
@@ -604,6 +604,69 @@ export default function LedgerDashboardClient({
     startTransition(() => router.push(`/admin/accounta/daybook?${q.toString()}`));
   }
 
+  // Direct add (owner 2026-06-25): add รายรับ/รายจ่าย for ANY date right here,
+  // always scoped to the ACTIVE branch (no cross-branch keying). Lets you record
+  // a day that never had a shift-close.
+  const bkkToday = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  const [addMode, setAddMode] = useState<null | "income" | "expense">(null);
+  const [aDate, setADate] = useState(bkkToday);
+  const [aChannel, setAChannel] = useState(incomeChannels[0]?.name ?? "");
+  const [aAmt, setAAmt] = useState("");
+  const [aVendor, setAVendor] = useState("");
+  const [aCategory, setACategory] = useState("");
+  const [aVat, setAVat] = useState(false);
+  const [aUnpaid, setAUnpaid] = useState(false);
+  const [aBusy, setABusy] = useState(false);
+  const [aErr, setAErr] = useState<string | null>(null);
+
+  function openAdd(mode: "income" | "expense") {
+    setADate(selectedDate ?? bkkToday);
+    setAChannel(incomeChannels[0]?.name ?? ""); setAAmt("");
+    setAVendor(""); setACategory(""); setAVat(false); setAUnpaid(false);
+    setAErr(null); setAddMode(mode);
+  }
+  function afterAdd() {
+    const d = aDate;
+    setAddMode(null);
+    setSelectedDate(d);
+    loadDayIncome(d, true);
+    if (d >= dash.start && d <= dash.end) startTransition(() => router.refresh());
+    else go("month", d); // jump to the month that now has the new entry
+  }
+  async function submitAdd() {
+    const amt = parseMoney(aAmt);
+    if (addMode === "income") {
+      if (!Number.isFinite(amt) || amt <= 0) { setAErr("กรอกยอดเงินให้ถูกต้อง"); return; }
+      setABusy(true); setAErr(null);
+      try {
+        const res = await fetch(apiUrl("/api/accounta/income"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ branch_id: branchId, company_id: companyId, income_date: aDate, channel: aChannel || null, amount: amt, note: null })
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || !j.ok) { setAErr(j.message || "บันทึกไม่สำเร็จ"); return; }
+        afterAdd();
+      } finally { setABusy(false); }
+    } else {
+      if (!Number.isFinite(amt) || amt <= 0) { setAErr("กรอกยอดเงินให้ถูกต้อง"); return; }
+      setABusy(true); setAErr(null);
+      try {
+        const res = await fetch(apiUrl("/api/accounta/expenses"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            branch_id: branchId, company_id: companyId, bill_date: aDate,
+            vendor_name: aVendor.trim() || null, category: aCategory || null,
+            amount_total: amt, has_tax_invoice: aVat,
+            payment_status: aUnpaid ? "unpaid" : "paid", paid_date: aUnpaid ? null : aDate
+          })
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || !j.ok) { setAErr(j.message || "บันทึกไม่สำเร็จ"); return; }
+        afterAdd();
+      } finally { setABusy(false); }
+    }
+  }
+
   async function remove(e: LedgerExpenseRow) {
     if (!window.confirm(`ลบรายจ่าย "${e.vendor_name ?? "รายการนี้"}" ฿${fmtMoney(e.amount_total)} ? กู้คืนไม่ได้`)) return;
     setBusyId(e.id);
@@ -635,8 +698,8 @@ export default function LedgerDashboardClient({
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/admin/accounta/income" className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700">+ เพิ่มรายรับ</Link>
-          <Link href="/admin/accounta/expenses" className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ เพิ่มรายจ่าย</Link>
+          <button type="button" onClick={() => openAdd("income")} className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700">+ เพิ่มรายรับ</button>
+          <button type="button" onClick={() => openAdd("expense")} className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ เพิ่มรายจ่าย</button>
         </div>
       </div>
 
@@ -1070,6 +1133,72 @@ export default function LedgerDashboardClient({
           )}
         </div>
       </div>
+
+      {/* Direct add modal — date picker, locked to the active branch */}
+      {addMode && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4"
+          onClick={() => !aBusy && setAddMode(null)}>
+          <div className="card w-full max-w-md my-8 space-y-3" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-slate-800">{addMode === "income" ? "เพิ่มรายรับ" : "เพิ่มรายจ่าย"}</h3>
+              <button type="button" onClick={() => setAddMode(null)} className="text-slate-400 hover:text-slate-700">✕</button>
+            </div>
+            <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded px-2 py-1">
+              บันทึกเข้าสาขา <b>{branchName}</b> (สาขาที่เปิดอยู่) — สลับสาขาที่มุมบนซ้ายหากต้องการบันทึกสาขาอื่น
+            </div>
+            {aErr && <p className="text-sm text-rose-600">{aErr}</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label !text-xs">วันที่</label>
+                <input type="date" className="input" value={aDate} onChange={(e) => setADate(e.target.value)} />
+              </div>
+              {addMode === "income" ? (
+                <>
+                  <div>
+                    <label className="label !text-xs">ช่องทาง</label>
+                    <select className="input" value={aChannel} onChange={(e) => setAChannel(e.target.value)}>
+                      <option value="">— เลือกช่องทาง —</option>
+                      {incomeChannels.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="label !text-xs">จำนวนเงิน</label>
+                    <input type="text" inputMode="decimal" className="input text-right font-mono" value={aAmt} placeholder="0.00"
+                      onChange={(e) => setAAmt(grpMoney(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="label !text-xs">หมวด</label>
+                    <select className="input" value={aCategory} onChange={(e) => setACategory(e.target.value)}>
+                      <option value="">— เลือกหมวด —</option>
+                      {expenseCategories.map((c) => <option key={c.name} value={c.name}>{c.code ? `${c.code} · ${c.name}` : c.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="label !text-xs">ผู้จำหน่าย / รายการ</label>
+                    <input className="input" value={aVendor} onChange={(e) => setAVendor(e.target.value)} placeholder="เช่น แม็คโคร" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="label !text-xs">จำนวนเงิน</label>
+                    <input type="text" inputMode="decimal" className="input text-right font-mono" value={aAmt} placeholder="0.00"
+                      onChange={(e) => setAAmt(grpMoney(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }} />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={aVat} onChange={(e) => setAVat(e.target.checked)} />มี VAT</label>
+                  <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={aUnpaid} onChange={(e) => setAUnpaid(e.target.checked)} />ค้างชำระ</label>
+                </>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <button type="button" onClick={() => setAddMode(null)} className="btn-secondary" disabled={aBusy}>ยกเลิก</button>
+              <button type="button" onClick={submitAdd} className="btn-primary disabled:opacity-50" disabled={aBusy || !aAmt}>
+                {aBusy ? "กำลังบันทึก…" : "บันทึก"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -65,7 +65,12 @@ export default function IncomeClient(props: {
     } finally { setBusy(false); }
   }
 
-  function openAdd() { setForm(blank(channels[0]?.name ?? "")); setNewChan(null); setErr(null); setOpen(true); }
+  // New income is always keyed to the active branch (owner 2026-06-25: no
+  // cross-branch entry — switch branch at the top-left to record another).
+  function openAdd() {
+    setForm({ ...blank(channels[0]?.name ?? ""), branch_id: props.activeBranchId != null ? String(props.activeBranchId) : "" });
+    setNewChan(null); setErr(null); setOpen(true);
+  }
   function openEdit(r: Income) {
     setForm({
       id: r.id, branch_id: r.branch_id != null ? String(r.branch_id) : "",
@@ -242,10 +247,16 @@ export default function IncomeClient(props: {
               </div>
               <div>
                 <label className="label !text-xs">สาขา</label>
-                <select className="input" value={form.branch_id} onChange={(e) => set("branch_id", e.target.value)}>
-                  <option value="">— ไม่ระบุ —</option>
-                  {props.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
+                {form.id == null ? (
+                  <div className="input bg-slate-50 text-slate-600 flex items-center">
+                    {props.branches.find((b) => String(b.id) === form.branch_id)?.name ?? "สาขาที่เปิดอยู่"}
+                  </div>
+                ) : (
+                  <select className="input" value={form.branch_id} onChange={(e) => set("branch_id", e.target.value)}>
+                    <option value="">— ไม่ระบุ —</option>
+                    {props.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                )}
               </div>
               <div>
                 <label className="label !text-xs">บริษัท</label>
