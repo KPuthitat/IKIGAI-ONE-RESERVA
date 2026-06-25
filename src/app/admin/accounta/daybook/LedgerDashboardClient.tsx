@@ -315,20 +315,20 @@ function DayDetail({
   const [expErr, setExpErr] = useState<string | null>(null);
   const [pinRow, setPinRow] = useState<IncomeDayRow | null>(null); // auto row pending PIN-delete
   const [draftPickerOpen, setDraftPickerOpen] = useState(false);
-  const [fromDraftId, setFromDraftId] = useState<number | null>(null); // pulling a scanned draft
+  const [fromDraft, setFromDraft] = useState<DraftLite | null>(null); // pulling a scanned draft
 
   function pickDraft(d: DraftLite) {
     setExpVendor(d.vendor_name || "");
     setExpCategory(d.category || "");
-    setExpAmt(grpMoney(String(d.amount_total)));
+    setExpAmt(d.amount_total > 0 ? grpMoney(String(d.amount_total)) : "");
     setExpVat(d.has_tax_invoice);
     setExpUnpaid(d.payment_status === "unpaid");
-    setFromDraftId(d.id);
+    setFromDraft(d);
     setDraftPickerOpen(false);
     setExpErr(null);
   }
   function clearDraft() {
-    setFromDraftId(null);
+    setFromDraft(null);
     setExpVendor(""); setExpCategory(""); setExpAmt(""); setExpVat(false); setExpUnpaid(false);
   }
 
@@ -435,15 +435,15 @@ function DayDetail({
       paid_date: expUnpaid ? null : date
     };
     try {
-      if (fromDraftId != null) {
+      if (fromDraft != null) {
         // Pulling a scanned draft → update it with the reviewed fields then post
         // it (keeps the attached document; no duplicate row).
-        const pr = await fetch(apiUrl(`/api/accounta/expenses/${fromDraftId}`), {
+        const pr = await fetch(apiUrl(`/api/accounta/expenses/${fromDraft.id}`), {
           method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
         });
         const pj = await pr.json().catch(() => ({}));
         if (!pr.ok || !pj.ok) { setExpErr(pj.message || "บันทึกไม่สำเร็จ"); return; }
-        const cr = await fetch(apiUrl(`/api/accounta/expenses/${fromDraftId}/confirm`), { method: "POST" });
+        const cr = await fetch(apiUrl(`/api/accounta/expenses/${fromDraft.id}/confirm`), { method: "POST" });
         const cj = await cr.json().catch(() => ({}));
         if (!cr.ok || !cj.ok) { setExpErr(cj.message || "ยืนยันลงบัญชีไม่สำเร็จ"); return; }
       } else {
@@ -453,7 +453,7 @@ function DayDetail({
         const j = await res.json().catch(() => ({}));
         if (!res.ok || !j.ok) { setExpErr(j.message || "เพิ่มไม่สำเร็จ"); return; }
       }
-      setFromDraftId(null);
+      setFromDraft(null);
       setExpVendor(""); setExpAmt(""); setExpVat(false); setExpUnpaid(false); setExpCategory(""); onChanged();
     } finally { setExpAdding(false); }
   }
@@ -613,10 +613,22 @@ function DayDetail({
                         ))}
                       </div>
                     )}
-                    {fromDraftId != null && (
-                      <div className="mt-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 inline-flex items-center gap-1.5">
-                        กำลังลงจากเอกสาร #{fromDraftId} — ตรวจแล้วกด “เพิ่ม” เพื่อยืนยันลงบัญชี
-                        <button type="button" onClick={clearDraft} className="text-slate-400 hover:text-rose-600">✕</button>
+                    {fromDraft != null && (
+                      <div className="mt-1 space-y-1.5">
+                        <div className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 inline-flex items-center gap-1.5">
+                          กำลังลงจากเอกสาร #{fromDraft.id} — ตรวจแล้วกด “ยืนยันลงบัญชี”
+                          <button type="button" onClick={clearDraft} className="text-slate-400 hover:text-rose-600">✕</button>
+                        </div>
+                        {fromDraft.has_doc ? (
+                          <div className="rounded-lg border border-slate-200 overflow-hidden bg-slate-50">
+                            <iframe src={apiUrl(`/api/accounta/expenses/${fromDraft.id}/doc`)} title="เอกสาร"
+                              className="w-full h-[42vh] md:h-[55vh]" />
+                            <a href={apiUrl(`/api/accounta/expenses/${fromDraft.id}/doc`)} target="_blank" rel="noreferrer"
+                              className="block text-center text-[11px] text-brand hover:underline py-1 border-t border-slate-100">เปิดเอกสารเต็มจอ</a>
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-amber-600">เอกสารนี้ไม่มีไฟล์แนบ</p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -634,7 +646,7 @@ function DayDetail({
                     <label className="flex items-center gap-1 text-[11px] text-slate-500"><input type="checkbox" checked={expVat} onChange={(e) => setExpVat(e.target.checked)} />VAT</label>
                     <label className="flex items-center gap-1 text-[11px] text-slate-500"><input type="checkbox" checked={expUnpaid} onChange={(e) => setExpUnpaid(e.target.checked)} />ค้างชำระ</label>
                     <button type="button" onClick={addExpense} disabled={expAdding || !expAmt}
-                      className="text-[11px] text-brand hover:underline disabled:opacity-40">{fromDraftId != null ? "+ ยืนยันลงบัญชี" : "+ เพิ่ม"}</button>
+                      className="text-[11px] text-brand hover:underline disabled:opacity-40">{fromDraft != null ? "+ ยืนยันลงบัญชี" : "+ เพิ่ม"}</button>
                   </div>
                 </td>
               </tr>
