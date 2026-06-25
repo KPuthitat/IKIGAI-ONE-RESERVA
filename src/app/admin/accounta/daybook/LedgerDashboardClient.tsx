@@ -106,6 +106,25 @@ function niceTop(v: number): number {
   const m = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
   return m * p;
 }
+// Smooth (Catmull-Rom → bezier) path through points, so the profit line flows
+// instead of zig-zagging. Gentle tension to avoid big overshoot on spikes.
+function smoothPath(pts: Array<{ x: number; y: number }>, tension = 0.16): string {
+  if (pts.length === 0) return "";
+  if (pts.length < 3) return pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const d = [`M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] ?? pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] ?? p2;
+    const c1x = p1.x + (p2.x - p0.x) * tension;
+    const c1y = p1.y + (p2.y - p0.y) * tension;
+    const c2x = p2.x - (p3.x - p1.x) * tension;
+    const c2y = p2.y - (p3.y - p1.y) * tension;
+    d.push(`C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`);
+  }
+  return d.join(" ");
+}
 
 type ComboPoint = { key: string; label: string; revenue: number; expense: number; profit: number; tip: string };
 
@@ -128,13 +147,24 @@ function ComboChart({ points }: { points: ComboPoint[] }) {
   const barW = Math.min(13, Math.max(2.5, colW / 3.4));
   const N = 4;
   const ticks = Array.from({ length: N + 1 }, (_, i) => bottom + (span * i) / N);
-  const linePts = points.map((m, i) => `${(Lm + i * colW + colW / 2).toFixed(1)},${mapY(m.profit).toFixed(1)}`).join(" ");
+  const linePoints = points.map((m, i) => ({ x: Lm + i * colW + colW / 2, y: mapY(m.profit) }));
+  const lineD = smoothPath(linePoints);
+  const areaD = linePoints.length
+    ? `${lineD} L${linePoints[linePoints.length - 1].x.toFixed(1)},${zeroY.toFixed(1)} L${linePoints[0].x.toFixed(1)},${zeroY.toFixed(1)} Z`
+    : "";
   const showValues = n <= 14;            // skip per-bar value labels for long series
+  const showDots = n <= 14;              // dots clutter a long daily series
   const stride = Math.ceil(n / 13);      // keep ~13 x-axis labels at most
   return (
     <svg viewBox={`0 0 ${W} ${H + labelBand}`} preserveAspectRatio="xMidYMid meet" role="img"
       aria-label="กราฟรายรับ รายจ่าย และกำไร"
       style={{ display: "block", width: "100%", height: "auto", aspectRatio: `${W} / ${H + labelBand}`, maxHeight: 260 }}>
+      <defs>
+        <linearGradient id="profitFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#6366f1" stopOpacity="0.16" />
+          <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+        </linearGradient>
+      </defs>
       {/* Y gridlines + labels */}
       {ticks.map((t, i) => {
         const y = mapY(t);
@@ -151,10 +181,10 @@ function ComboChart({ points }: { points: ComboPoint[] }) {
         const rY = mapY(m.revenue), eY = mapY(m.expense);
         return (
           <g key={m.key}>
-            <rect x={cx - barW - 1} y={Math.min(rY, zeroY)} width={barW} height={Math.abs(zeroY - rY)} rx={2} fill="#10b981">
+            <rect x={cx - barW - 1} y={Math.min(rY, zeroY)} width={barW} height={Math.abs(zeroY - rY)} rx={3} fill="#10b981" opacity={0.92}>
               <title>{`${m.tip} รายรับ ฿${fmtMoney(m.revenue)}`}</title>
             </rect>
-            <rect x={cx + 1} y={Math.min(eY, zeroY)} width={barW} height={Math.abs(zeroY - eY)} rx={2} fill="#f5c97a">
+            <rect x={cx + 1} y={Math.min(eY, zeroY)} width={barW} height={Math.abs(zeroY - eY)} rx={3} fill="#f5c97a">
               <title>{`${m.tip} รายจ่าย ฿${fmtMoney(m.expense)}`}</title>
             </rect>
             {showValues && m.revenue > 0 && (
@@ -166,10 +196,11 @@ function ComboChart({ points }: { points: ComboPoint[] }) {
           </g>
         );
       })}
-      {/* Thin profit line + dots */}
-      <polyline points={linePts} fill="none" stroke="#6366f1" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
-      {points.map((m, i) => (
-        <circle key={m.key} cx={Lm + i * colW + colW / 2} cy={mapY(m.profit)} r={n > 16 ? 1.4 : 2} fill="#6366f1">
+      {/* Soft profit area + smooth line + dots (dots only when few points) */}
+      {areaD && <path d={areaD} fill="url(#profitFill)" stroke="none" />}
+      <path d={lineD} fill="none" stroke="#6366f1" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+      {showDots && points.map((m, i) => (
+        <circle key={m.key} cx={Lm + i * colW + colW / 2} cy={mapY(m.profit)} r={2} fill="#6366f1">
           <title>{`${m.tip} กำไร ฿${fmtMoney(m.profit)}`}</title>
         </circle>
       ))}
