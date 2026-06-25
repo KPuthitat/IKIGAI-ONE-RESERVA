@@ -462,7 +462,7 @@ function DayDetail({
                       {auto ? (
                         <button type="button" onClick={() => { setPinRow(r); setRowErr(null); }} disabled={savingId === r.id}
                           className="text-[11px] text-slate-400 hover:text-rose-600 disabled:opacity-50"
-                          title="ยอดนี้มาจาก Check list หลังเลิกงาน — ใส่ PIN เพื่อยืนยันการลบ">ลบออก (PIN)</button>
+                          title="ยอดนี้มาจาก Check list หลังเลิกงาน — กดแล้วจะให้ใส่ PIN ยืนยัน">ลบออก</button>
                       ) : editing ? (
                         <>
                           <button type="button" onClick={() => saveAmount(r)} disabled={savingId === r.id}
@@ -540,8 +540,8 @@ function DayDetail({
                         </td>
                         <td className="py-1 px-2 text-right font-mono text-rose-700">{fmtMoney(e.amount_total)}</td>
                         <td className="py-1 px-2 text-right whitespace-nowrap">
-                          <Link href={`/admin/accounta/expenses?edit=${e.id}`} className="text-[10px] text-brand hover:underline mr-2">แก้</Link>
-                          <button type="button" onClick={() => removeExpense(e)} disabled={busyExpenseId === e.id} className="text-[10px] text-rose-500 hover:underline disabled:opacity-50">ลบ</button>
+                          <Link href={`/admin/accounta/expenses?edit=${e.id}`} className="text-[10px] text-brand hover:underline mr-2">แก้ไข</Link>
+                          <button type="button" onClick={() => removeExpense(e)} disabled={busyExpenseId === e.id} className="text-[10px] text-rose-500 hover:underline disabled:opacity-50">ลบออก</button>
                         </td>
                       </tr>
                     );
