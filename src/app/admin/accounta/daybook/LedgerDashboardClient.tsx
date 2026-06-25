@@ -424,7 +424,9 @@ function DayDetail({
     <div className="space-y-3 px-1 py-2">
       {rowErr && <p className="text-xs text-rose-600">{rowErr}</p>}
       {err && <p className="text-xs text-rose-600">{err}</p>}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+      <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-7 items-start">
+        {/* Centre rule — ledger / T-account look between รายรับ | รายจ่าย */}
+        <div className="hidden lg:block absolute left-1/2 top-1 bottom-1 -translate-x-1/2 border-l border-slate-300" aria-hidden />
         {/* รายรับ — per-channel, manual rows editable */}
         <div className="rounded-lg border border-emerald-100 overflow-hidden">
           <div className="bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-800">รายรับ (แยกช่องทาง)</div>
