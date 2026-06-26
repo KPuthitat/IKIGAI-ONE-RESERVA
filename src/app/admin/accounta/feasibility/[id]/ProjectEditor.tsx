@@ -499,7 +499,7 @@ function StartupItemsModal({ projectId, category, items, setItems, onClose }: {
 
   const catSum = catItems.reduce((s, i) => s + i.amount, 0);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-2xl shadow-xl max-w-xl w-full p-5 space-y-3 max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-2">

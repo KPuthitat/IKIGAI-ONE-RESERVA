@@ -130,7 +130,7 @@ export default function StockGrid({ items }: { items: GridItem[] }) {
 
       {cell && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setCell(null)}>
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setCell(null); }}>
           <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-slate-800 text-lg">

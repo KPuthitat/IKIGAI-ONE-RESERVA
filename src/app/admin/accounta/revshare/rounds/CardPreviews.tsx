@@ -97,7 +97,7 @@ function SendPreviewInner({ heading, preview, busy, onConfirm, onClose }: {
     } finally { setSending(false); }
   }
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-3 my-8" onClick={(e) => e.stopPropagation()}>
         <h3 className="font-bold text-slate-800">{heading}</h3>
         <p className="text-[11px] text-slate-400">ตัวอย่างข้อความที่คู่ค้าจะเห็นใน LINE</p>

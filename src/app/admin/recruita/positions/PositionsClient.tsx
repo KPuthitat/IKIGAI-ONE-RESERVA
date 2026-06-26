@@ -317,7 +317,7 @@ function NewPositionDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}>
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-3"
         onClick={(e) => e.stopPropagation()}>
         <h3 className="font-bold text-slate-800 text-lg">ตำแหน่งงานใหม่</h3>

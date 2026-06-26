@@ -117,7 +117,7 @@ export default function BarcodeScanner({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"
-      onClick={onClose}>
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-sm w-full p-4 space-y-3"
         onClick={(e) => e.stopPropagation()}>
         <h3 className="font-bold text-slate-800 text-base">{title}</h3>

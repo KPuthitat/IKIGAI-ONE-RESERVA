@@ -244,7 +244,7 @@ export default function PrintActions({
           The faint number under each input is the moving-average cost, to
           guide a cost adjustment (owner 2026-06-09). */}
       {showReceive && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setShowReceive(false)}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowReceive(false); }}>
           <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}>
             <div>

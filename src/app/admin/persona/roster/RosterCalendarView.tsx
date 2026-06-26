@@ -521,7 +521,7 @@ export default function RosterCalendarView({
       {greetTarget && (
         <div
           className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          onClick={() => !greetBusy && setGreetTarget(null)}
+          onMouseDown={(e) => { if (e.target === e.currentTarget && !greetBusy) setGreetTarget(null); }}
         >
           <div
             className="bg-white rounded-2xl max-w-md w-full p-5 space-y-3 shadow-xl"

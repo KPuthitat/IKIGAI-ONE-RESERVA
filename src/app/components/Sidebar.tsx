@@ -193,7 +193,7 @@ export default function Sidebar({
       {open && (
         <div
           className="md:hidden fixed inset-0 z-30 bg-black/40"
-          onClick={() => setOpen(false)}
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
         />
       )}
 

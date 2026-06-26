@@ -75,7 +75,7 @@ export default function MonthPicker({
       {open && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setOpen(false)}
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
         >
           <div
             className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-sm w-full p-5"

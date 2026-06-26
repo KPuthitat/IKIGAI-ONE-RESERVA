@@ -240,7 +240,7 @@ export default function IncomeClient(props: {
 
       {open && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4"
-          onClick={() => !busy && setOpen(false)}>
+          onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setOpen(false); }}>
           <div className="card w-full max-w-lg my-8 space-y-3" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-slate-800">{form.id ? "แก้ไขรายรับ" : "เพิ่มรายรับ"}</h3>

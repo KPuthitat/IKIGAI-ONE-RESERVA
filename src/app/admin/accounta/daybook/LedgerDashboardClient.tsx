@@ -1283,7 +1283,7 @@ export default function LedgerDashboardClient({
       {/* Direct add modal — date picker, locked to the active branch */}
       {addMode && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4"
-          onClick={() => !aBusy && setAddMode(null)}>
+          onMouseDown={(e) => { if (e.target === e.currentTarget && !aBusy) setAddMode(null); }}>
           <div className="card w-full max-w-md my-8 space-y-3" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-slate-800">{addMode === "income" ? "เพิ่มรายรับ" : "เพิ่มรายจ่าย"}</h3>

@@ -363,7 +363,7 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 backdrop-blur-[2px] p-4 sm:p-10 overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 backdrop-blur-[2px] p-4 sm:p-10 overflow-y-auto" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white w-full max-w-3xl rounded-xl border-t-[3px] border-[#a06820] shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
           <div>
@@ -561,7 +561,7 @@ function InviteModal({ onClose, onSent }: { onClose: () => void; onSent: () => v
   const selected = employees.find((e) => e.id === selectedId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-[2px] p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-[2px] p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white w-full max-w-md rounded-xl border-t-[3px] border-[#a06820] shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}

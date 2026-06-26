@@ -45,7 +45,7 @@ export default function PinPromptModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
         className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-3"

@@ -785,7 +785,7 @@ export default function ExpensesClient(props: {
       {/* Add / edit modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4"
-          onClick={() => !busy && setModalOpen(false)}>
+          onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setModalOpen(false); }}>
           <div className={`card w-full ${showDoc ? "max-w-6xl" : "max-w-2xl"} my-8`} onClick={(ev) => ev.stopPropagation()}>
             <div className="flex flex-col lg:flex-row gap-4 items-start">
             {showDoc && form.id != null && (
