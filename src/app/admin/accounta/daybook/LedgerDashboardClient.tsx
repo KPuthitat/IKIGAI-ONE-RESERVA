@@ -615,9 +615,16 @@ function DayDetail({
                     )}
                     {fromDraft != null && (
                       <div className="mt-1 space-y-1.5">
-                        <div className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 inline-flex items-center gap-1.5">
-                          กำลังลงจากเอกสาร #{fromDraft.id} — ตรวจแล้วกด “ยืนยันลงบัญชี”
-                          <button type="button" onClick={clearDraft} className="text-slate-400 hover:text-rose-600">✕</button>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">
+                            กำลังลงจากเอกสาร #{fromDraft.id} — ตรวจแล้วกด “ยืนยันลงบัญชี”
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={() => { clearDraft(); setDraftPickerOpen(true); }}
+                              className="text-[11px] text-brand hover:underline">เลือกใบอื่น</button>
+                            <button type="button" onClick={clearDraft}
+                              className="text-[11px] text-rose-500 hover:underline">ยกเลิก</button>
+                          </div>
                         </div>
                         {fromDraft.has_doc ? (
                           <div className="rounded-lg border border-slate-200 overflow-hidden bg-slate-100">
