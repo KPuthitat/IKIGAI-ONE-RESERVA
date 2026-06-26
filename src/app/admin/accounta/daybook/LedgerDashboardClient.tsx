@@ -281,7 +281,7 @@ function Donut({ items }: { items: Array<{ label: string; amount: number }> }) {
 // daily close report and stays read-only here (edit it at ยอดขายรายวัน).
 function DayDetail({
   date, rows, loading, err, expenses, channels, categories, branchId, companyId, billCount,
-  draftExpenses, onChanged, removeExpense, busyExpenseId
+  draftExpenses, expenseVendors, onChanged, removeExpense, busyExpenseId
 }: {
   date: string;
   rows: IncomeDayRow[] | undefined;
@@ -294,6 +294,7 @@ function DayDetail({
   companyId: number | null;
   billCount: number | null;
   draftExpenses: DraftLite[];
+  expenseVendors: string[];
   onChanged: () => void;
   removeExpense: (e: LedgerExpenseRow) => void;
   busyExpenseId: number | null;
@@ -647,10 +648,14 @@ function DayDetail({
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <input value={expVendor} onChange={(e) => setExpVendor(e.target.value)} placeholder="ผู้จำหน่าย / รายการ"
-                      className="input !py-1 flex-1 !min-w-[8rem]" />
-                    <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)} className="input !py-1 !w-auto">
-                      <option value="">— หมวด —</option>
-                      {categories.map((c) => <option key={c.name} value={c.name}>{c.code ? `${c.code} · ${c.name}` : c.name}</option>)}
+                      list="daybook-exp-vendors" className="input !py-1 flex-[2] !min-w-[12rem]" />
+                    <datalist id="daybook-exp-vendors">
+                      {expenseVendors.map((v) => <option key={v} value={v} />)}
+                    </datalist>
+                    <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)} title="หมวดหมู่"
+                      className="input !py-1 !w-auto !min-w-[5.5rem]">
+                      <option value="">หมวด</option>
+                      {categories.map((c) => <option key={c.name} value={c.name} title={c.name}>{c.code || c.name}</option>)}
                     </select>
                     <input type="text" inputMode="decimal" value={expAmt} placeholder="0.00"
                       onChange={(e) => setExpAmt(grpMoney(e.target.value))}
@@ -696,7 +701,7 @@ function DayDetail({
 
 export default function LedgerDashboardClient({
   dash, expenses, period, anchor, monthly, trendYear, payables, cashAccounts, cashTotal,
-  branchId, companyId, branchName, incomeChannels, expenseCategories, draftExpenses
+  branchId, companyId, branchName, incomeChannels, expenseCategories, draftExpenses, expenseVendors
 }: {
   dash: Dash; expenses: LedgerExpenseRow[]; period: LedgerPeriod; anchor: string;
   monthly: MonthlyRow[]; trendYear: number; payables: Payables;
@@ -705,6 +710,7 @@ export default function LedgerDashboardClient({
   incomeChannels: Array<{ id: number; name: string }>;
   expenseCategories: Array<{ code: string | null; name: string }>;
   draftExpenses: DraftLite[];
+  expenseVendors: string[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -1151,6 +1157,7 @@ export default function LedgerDashboardClient({
                             companyId={companyId}
                             billCount={r.billCount}
                             draftExpenses={draftExpenses}
+                            expenseVendors={expenseVendors}
                             onChanged={() => { loadDayIncome(r.date, true); startTransition(() => router.refresh()); }}
                             removeExpense={remove}
                             busyExpenseId={busyId}
