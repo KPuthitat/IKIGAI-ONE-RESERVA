@@ -17,7 +17,7 @@ import { sendLinePush, downloadLineContent, accountaBillAckFlex } from "./line";
 import { scanBill, ocrEnabled } from "./accounta-ocr";
 import {
   listCategories, createExpense, setExpenseDoc, logOcrUsage,
-  expenseExistsForLineMessage, findVendorByName, createVendor
+  expenseExistsForLineMessage, findVendorByName, findVendorByTaxId, createVendor
 } from "./accounta-db";
 import { saveReceiptImage, RECEIPT_ALLOWED_MIME } from "./accounta-receipts";
 import { ocrCostBaht, round2, splitMixedBill, isDocType, DOC_TYPE_LABEL, type DocType, type ExpenseInput, type OcrBillResult } from "./accounta";
@@ -110,19 +110,30 @@ export async function ingestLineBill(args: {
   `).get(user.id) as { branch_id: number; company_id: number | null } | undefined;
   const branchId = ub?.branch_id ?? null;
 
-  // Vendor memory (branch-scoped, owner 2026-06-25): if OCR read a known vendor
-  // in this branch, inherit its remembered category/tax-id. An UNKNOWN vendor is
-  // auto-created into the shared master flagged "needs review" so it shows up in
-  // INVENTA/ACCOUNTA for the admin to complete (รอบสั่ง/เลขภาษี).
-  let known = parsed?.vendor_name ? findVendorByName(parsed.vendor_name, branchId) : null;
-  if (!known && parsed?.vendor_name?.trim() && branchId != null) {
+  // Vendor matching (branch-scoped). Prefer the 13-digit เลขผู้เสียภาษี — it reads
+  // cleanly off the bill so repeat vendors auto-attribute even when OCR garbles
+  // the name (owner 2026-06-26). Fall back to a name match. An UNKNOWN vendor is
+  // auto-created into the shared master flagged "รอตรวจ" (carrying the tax id) so
+  // the next bill from them matches by tax id, and the admin can complete it.
+  const taxId = (parsed?.tax_id ?? "").replace(/\D/g, "");
+  let known = taxId.length >= 10 ? findVendorByTaxId(taxId, branchId) : null;
+  if (!known && parsed?.vendor_name?.trim()) known = findVendorByName(parsed.vendor_name, branchId);
+  if (!known && (parsed?.vendor_name?.trim() || taxId.length >= 10) && branchId != null) {
     try {
+      const name = parsed?.vendor_name?.trim() || `ผู้ขาย (เลขภาษี ${taxId})`;
       const id = createVendor(branchId, user.id, {
-        name: parsed.vendor_name, category: parsed.category ?? null, needsReview: true
+        name, tax_id: taxId || null, category: parsed?.category ?? null, needsReview: true
       });
-      known = { id, name: parsed.vendor_name.trim(), tax_id: null, category: parsed.category ?? null };
+      known = { id, name, tax_id: taxId || null, category: parsed?.category ?? null };
     } catch { /* non-fatal — the draft still files with the free-text vendor_name */ }
+  } else if (known && taxId.length >= 10 && !known.tax_id) {
+    // Backfill the tax id onto a vendor we only knew by name, so it matches by
+    // tax id next time.
+    try { createVendor(branchId!, user.id, { name: known.name, tax_id: taxId }); } catch { /* non-fatal */ }
   }
+  // Use the master's canonical name when matched, so repeat bills report under
+  // one vendor even if OCR read the name slightly differently.
+  const vendorName = known?.name ?? parsed?.vendor_name ?? null;
   const cat = parsed?.category ?? known?.category ?? null;
   const docType: DocType | null = parsed?.doc_type && isDocType(parsed.doc_type) ? parsed.doc_type : null;
   const baseNote = `ส่งโดย ${senderName} ทางไลน์`;
@@ -135,7 +146,7 @@ export async function ingestLineBill(args: {
     company_id: ub?.company_id ?? null,
     bill_date: parsed?.bill_date || today,
     vendor_id: known?.id ?? null,
-    vendor_name: parsed?.vendor_name ?? null,
+    vendor_name: vendorName,
     doc_type: docType,
     category: cat,
     description: parsed?.description ?? null,

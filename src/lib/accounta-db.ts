@@ -608,6 +608,19 @@ export function createVendor(
   return Number(info.lastInsertRowid);
 }
 
+/** Look up an active vendor by its 13-digit tax id within a branch (digits-only
+ *  compare). The most reliable OCR match for repeat vendors — the printed tax id
+ *  reads cleanly even when the name is garbled (owner 2026-06-26). */
+export function findVendorByTaxId(taxId: string, branchId: number | null): VendorRow | null {
+  const t = (taxId || "").replace(/\D/g, "");
+  if (t.length < 10 || branchId == null) return null;
+  return getDb().prepare(
+    `SELECT id, name, tax_id, category FROM inventa_suppliers
+      WHERE active = 1 AND branch_id = ?
+        AND REPLACE(REPLACE(COALESCE(tax_id,''),'-',''),' ','') = ?`
+  ).get(branchId, t) as VendorRow | undefined ?? null;
+}
+
 /** Look up an active vendor by name within a branch (case-insensitive). Used to
  *  auto-fill the remembered category/tax_id when OCR reads a known vendor. */
 export function findVendorByName(name: string, branchId: number | null): VendorRow | null {
