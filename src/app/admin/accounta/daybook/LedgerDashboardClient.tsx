@@ -62,7 +62,7 @@ type IncomeDayRow = {
 type DraftLite = {
   id: number; vendor_name: string | null; category: string | null;
   amount_total: number; has_tax_invoice: boolean; payment_status: "paid" | "unpaid";
-  has_doc: boolean; bill_date: string;
+  has_doc: boolean; doc_mime: string | null; bill_date: string;
 };
 
 const PERIOD_LABEL: Record<LedgerPeriod, string> = { week: "สัปดาห์", month: "เดือน", year: "ปี" };
@@ -620,11 +620,17 @@ function DayDetail({
                           <button type="button" onClick={clearDraft} className="text-slate-400 hover:text-rose-600">✕</button>
                         </div>
                         {fromDraft.has_doc ? (
-                          <div className="rounded-lg border border-slate-200 overflow-hidden bg-slate-50">
-                            <iframe src={apiUrl(`/api/accounta/expenses/${fromDraft.id}/doc`)} title="เอกสาร"
-                              className="w-full h-[42vh] md:h-[55vh]" />
+                          <div className="rounded-lg border border-slate-200 overflow-hidden bg-slate-100">
+                            {(fromDraft.doc_mime ?? "").startsWith("image/") ? (
+                              // Fit the whole page in the box first; tap "เต็มจอ" to zoom.
+                              <img src={apiUrl(`/api/accounta/expenses/${fromDraft.id}/doc`)} alt="เอกสาร"
+                                className="w-full h-[42vh] md:h-[55vh] object-contain" />
+                            ) : (
+                              <iframe src={apiUrl(`/api/accounta/expenses/${fromDraft.id}/doc#view=FitH`)} title="เอกสาร"
+                                className="w-full h-[42vh] md:h-[55vh]" />
+                            )}
                             <a href={apiUrl(`/api/accounta/expenses/${fromDraft.id}/doc`)} target="_blank" rel="noreferrer"
-                              className="block text-center text-[11px] text-brand hover:underline py-1 border-t border-slate-100">เปิดเอกสารเต็มจอ</a>
+                              className="block text-center text-[11px] text-brand hover:underline py-1 border-t border-slate-200 bg-white">เปิดเอกสารเต็มจอ (ซูมได้)</a>
                           </div>
                         ) : (
                           <p className="text-[10px] text-amber-600">เอกสารนี้ไม่มีไฟล์แนบ</p>

@@ -53,7 +53,7 @@ export default function DaybookPage({
     .map((d) => ({
       id: d.id, vendor_name: d.vendor_name, category: d.category,
       amount_total: d.amount_total, has_tax_invoice: !!d.has_tax_invoice,
-      payment_status: d.payment_status, has_doc: d.has_doc, bill_date: d.bill_date
+      payment_status: d.payment_status, has_doc: d.has_doc, doc_mime: d.doc_mime, bill_date: d.bill_date
     }));
   const expenses: LedgerExpenseRow[] = listExpensesInRange(branchId, dash.start, dash.end).map((e) => ({
     id: e.id, bill_date: e.bill_date, vendor_name: e.vendor_name, doc_type: e.doc_type,
