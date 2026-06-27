@@ -35,6 +35,11 @@ export default function DaybookPage({
 
   const db = getDb();
   const branch = db.prepare("SELECT name, company_id FROM branches WHERE id = ?").get(branchId) as { name: string; company_id: number | null } | undefined;
+  // Company weekly รอบจ่าย day (0=Sun..6=Sat, default จันทร์) — drives the
+  // "ตามรอบบริษัท" due-date default for credit bills (owner 2026-06-27).
+  const payCycleWeekday = branch?.company_id != null
+    ? ((db.prepare("SELECT pay_cycle_weekday AS w FROM companies WHERE id = ?").get(branch.company_id) as { w: number } | undefined)?.w ?? 1)
+    : 1;
   const dash = ledgerDashboard(branchId, period, anchor);
   const trendYear = Number(anchor.slice(0, 4));
   const monthly = monthlyTrend(branchId, trendYear);
@@ -83,7 +88,8 @@ export default function DaybookPage({
         cashAccounts={cashAccounts} cashTotal={cashTotal}
         branchId={branchId} companyId={branch?.company_id ?? null} branchName={branch?.name ?? `#${branchId}`}
         incomeChannels={incomeChannels} expenseCategories={expenseCategories}
-        draftExpenses={draftExpenses} expenseVendors={expenseVendors} />
+        draftExpenses={draftExpenses} expenseVendors={expenseVendors}
+        payCycleWeekday={payCycleWeekday} />
     </div>
   );
 }

@@ -2963,6 +2963,13 @@ function runMigrations(db: Database.Database): void {
   if (!compCols.some((c) => c.name === "vat_registered")) {
     db.exec("ALTER TABLE companies ADD COLUMN vat_registered INTEGER NOT NULL DEFAULT 0");
   }
+  // pay_cycle_weekday (owner 2026-06-27): the company's weekly รอบจ่าย day,
+  // 0=Sun..6=Sat. A credit (ค้างชำระ) bill whose vendor gave no explicit due
+  // date defaults its ครบกำหนดชำระ to the next occurrence of this weekday.
+  // Default 1 = จันทร์.
+  if (!compCols.some((c) => c.name === "pay_cycle_weekday")) {
+    db.exec("ALTER TABLE companies ADD COLUMN pay_cycle_weekday INTEGER NOT NULL DEFAULT 1");
+  }
 
   // Seed the default company on first run so existing branches have
   // somewhere to point. Name comes from the owner's empeo screenshot.
@@ -6535,6 +6542,7 @@ export type Company = {
   logo_url: string | null;
   active: number;
   vat_registered?: number | null;
+  pay_cycle_weekday?: number | null;   // 0=Sun..6=Sat weekly รอบจ่าย day (default 1=Mon)
   created_at: string;
 };
 

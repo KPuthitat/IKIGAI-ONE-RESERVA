@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { useAnchoredRect, anchorStyle } from "./dropdownPortal";
 
 // System-styled combobox — replaces browser <datalist> autocompletes.
 // Free-text input with a filtering dropdown of options (the app's own design).
@@ -48,6 +50,8 @@ export default function Combobox({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const rect = useAnchoredRect(open, wrapRef);
 
   const all = options.map(norm);
   const q = (value ?? "").trim().toLowerCase();
@@ -68,7 +72,7 @@ export default function Combobox({
   }
 
   return (
-    <div className={`relative ${className ?? ""}`}>
+    <div ref={wrapRef} className={`relative ${className ?? ""}`}>
       <input
         id={id}
         className={`input ${inputClassName ?? ""}`}
@@ -104,8 +108,11 @@ export default function Combobox({
           }
         }}
       />
-      {open && filtered.length > 0 && (
-        <ul className="absolute left-0 right-0 top-full mt-1.5 z-50 min-w-[16rem] max-h-64 overflow-auto bg-white border border-slate-200 rounded-xl shadow-xl ring-1 ring-black/5 py-1 text-sm">
+      {open && rect && filtered.length > 0 && createPortal(
+        <ul
+          style={anchorStyle(rect)}
+          className="z-[60] min-w-[16rem] max-h-64 overflow-auto bg-white border border-slate-200 rounded-xl shadow-xl ring-1 ring-black/5 py-1 text-sm"
+        >
           {filtered.map((o, i) => (
             <li
               key={`${o.value}-${i}`}
@@ -124,7 +131,8 @@ export default function Combobox({
               )}
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body
       )}
     </div>
   );

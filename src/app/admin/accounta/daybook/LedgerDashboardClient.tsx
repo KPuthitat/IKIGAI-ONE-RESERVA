@@ -7,6 +7,7 @@ import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import Combobox, { type ComboOption } from "@/app/components/Combobox";
+import Select from "@/app/components/Select";
 import { useConfirm } from "@/app/components/useConfirm";
 
 // Group an in-progress money string with thousand separators while the user
@@ -69,6 +70,19 @@ type DraftLite = {
 
 // Vendor picker option — name is shown/saved; tax_id is searchable + shown muted.
 type VendorOpt = { name: string; tax_id: string | null };
+
+const WEEKDAY_TH = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+
+// Next occurrence of `weekday` (0=Sun..6=Sat) on or after `isoDate` (YYYY-MM-DD).
+// "จ่ายตามรอบบริษัท": a credit bill with no explicit due date defaults to the
+// company's weekly pay day. Same weekday as the bill date → that day.
+function nextPayDate(isoDate: string, weekday: number): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const add = (weekday - dt.getUTCDay() + 7) % 7;
+  dt.setUTCDate(dt.getUTCDate() + add);
+  return dt.toISOString().slice(0, 10);
+}
 
 // Build Combobox options so the field matches on name OR 13-digit tax id
 // (with or without dashes). The name is what gets stored.
@@ -299,7 +313,7 @@ function Donut({ items }: { items: Array<{ label: string; amount: number }> }) {
 // daily close report and stays read-only here (edit it at ยอดขายรายวัน).
 function DayDetail({
   date, rows, loading, err, expenses, channels, categories, branchId, companyId, billCount,
-  draftExpenses, expenseVendors, onChanged, removeExpense, busyExpenseId
+  draftExpenses, expenseVendors, payCycleWeekday, onChanged, removeExpense, busyExpenseId
 }: {
   date: string;
   rows: IncomeDayRow[] | undefined;
@@ -313,6 +327,7 @@ function DayDetail({
   billCount: number | null;
   draftExpenses: DraftLite[];
   expenseVendors: VendorOpt[];
+  payCycleWeekday: number;
   onChanged: () => void;
   removeExpense: (e: LedgerExpenseRow) => void;
   busyExpenseId: number | null;
@@ -331,6 +346,9 @@ function DayDetail({
   const [expAmt, setExpAmt] = useState("");
   const [expVat, setExpVat] = useState(false);
   const [expUnpaid, setExpUnpaid] = useState(false);
+  // Credit-bill due date: "cycle" = บริษัทจ่ายตามรอบ (วันจ่ายถัดไป) | "date" = ระบุวันเอง
+  const [expDueMode, setExpDueMode] = useState<"cycle" | "date">("cycle");
+  const [expDueDate, setExpDueDate] = useState("");
   const [expAdding, setExpAdding] = useState(false);
   const [expErr, setExpErr] = useState<string | null>(null);
   const [pinRow, setPinRow] = useState<IncomeDayRow | null>(null); // auto row pending PIN-delete
@@ -350,6 +368,7 @@ function DayDetail({
   function clearDraft() {
     setFromDraft(null);
     setExpVendor(""); setExpCategory(""); setExpAmt(""); setExpVat(false); setExpUnpaid(false);
+    setExpDueMode("cycle"); setExpDueDate("");
   }
 
   // Insertion order: earliest added on top, latest at the bottom (owner 2026-06-25).
@@ -448,12 +467,16 @@ function DayDetail({
     const amt = parseMoney(expAmt);
     if (!Number.isFinite(amt) || amt <= 0) { setExpErr("กรอกยอดเงินให้ถูกต้อง"); return; }
     setExpAdding(true); setExpErr(null);
+    const dueDate = expUnpaid
+      ? (expDueMode === "date" ? (expDueDate || null) : nextPayDate(date, payCycleWeekday))
+      : null;
     const body = {
       branch_id: branchId, company_id: companyId, bill_date: date,
       vendor_name: expVendor.trim() || null, category: expCategory || null,
       amount_total: amt, has_tax_invoice: expVat,
       payment_status: expUnpaid ? "unpaid" : "paid",
-      paid_date: expUnpaid ? null : date
+      paid_date: expUnpaid ? null : date,
+      due_date: dueDate
     };
     try {
       if (fromDraft != null) {
@@ -475,7 +498,8 @@ function DayDetail({
         if (!res.ok || !j.ok) { setExpErr(j.message || "เพิ่มไม่สำเร็จ"); return; }
       }
       setFromDraft(null);
-      setExpVendor(""); setExpAmt(""); setExpVat(false); setExpUnpaid(false); setExpCategory(""); onChanged();
+      setExpVendor(""); setExpAmt(""); setExpVat(false); setExpUnpaid(false); setExpCategory("");
+      setExpDueMode("cycle"); setExpDueDate(""); onChanged();
     } finally { setExpAdding(false); }
   }
 
@@ -547,11 +571,9 @@ function DayDetail({
               {/* add a manual channel row */}
               <tr className="bg-slate-50/60">
                 <td className="py-1 px-2">
-                  <select value={usedChannels.has(addChannel) ? "" : addChannel} onChange={(e) => setAddChannel(e.target.value)}
-                    className="input !py-1">
-                    <option value="">— เลือกช่องทาง —</option>
-                    {availableChannels.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-                  </select>
+                  <Select value={usedChannels.has(addChannel) ? "" : addChannel} onChange={setAddChannel}
+                    buttonClassName="!py-1" placeholder="— เลือกช่องทาง —"
+                    options={availableChannels.map((c) => ({ value: c.name, label: c.name }))} />
                 </td>
                 <td className="py-1 px-2 text-right">
                   <input type="text" inputMode="decimal" value={addAmt} placeholder="0.00"
@@ -670,11 +692,9 @@ function DayDetail({
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Combobox value={expVendor} onChange={setExpVendor} options={vendorOptions(expenseVendors)}
                       placeholder="ผู้จำหน่าย / รายการ (พิมพ์ชื่อหรือเลขภาษี)" className="flex-[3] !min-w-[15rem]" inputClassName="!py-1" />
-                    <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)} title="หมวดหมู่"
-                      className="input !py-1 !w-auto !min-w-[5.5rem]">
-                      <option value="">หมวด</option>
-                      {categories.map((c) => <option key={c.name} value={c.name} title={c.name}>{c.code || c.name}</option>)}
-                    </select>
+                    <Select value={expCategory} onChange={setExpCategory} title="หมวดหมู่"
+                      className="!w-auto !min-w-[5.5rem]" buttonClassName="!py-1" placeholder="หมวด"
+                      options={categories.map((c) => ({ value: c.name, label: c.code || c.name }))} />
                     <input type="text" inputMode="decimal" value={expAmt} placeholder="0.00"
                       onChange={(e) => setExpAmt(grpMoney(e.target.value))}
                       onKeyDown={(e) => { if (e.key === "Enter") addExpense(); }}
@@ -684,6 +704,23 @@ function DayDetail({
                     <button type="button" onClick={addExpense} disabled={expAdding || !expAmt}
                       className="text-[11px] text-brand hover:underline disabled:opacity-40">{fromDraft != null ? "+ ยืนยันลงบัญชี" : "+ เพิ่ม"}</button>
                   </div>
+                  {expUnpaid && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+                      <span className="text-slate-400">ครบกำหนดชำระ</span>
+                      <Select value={expDueMode} onChange={(v) => setExpDueMode(v as "cycle" | "date")}
+                        className="!w-auto !min-w-[12rem]" buttonClassName="!py-1"
+                        options={[
+                          { value: "cycle", label: `ตามรอบบริษัท (ทุกวัน${WEEKDAY_TH[payCycleWeekday]})` },
+                          { value: "date", label: "ระบุวันเอง" }
+                        ]} />
+                      {expDueMode === "date" ? (
+                        <input type="date" value={expDueDate} onChange={(e) => setExpDueDate(e.target.value)}
+                          className="input !py-1 !w-auto" />
+                      ) : (
+                        <span className="text-slate-500">→ {fmtDayLabel(nextPayDate(date, payCycleWeekday))}</span>
+                      )}
+                    </div>
+                  )}
                 </td>
               </tr>
             </tbody>
@@ -719,7 +756,8 @@ function DayDetail({
 
 export default function LedgerDashboardClient({
   dash, expenses, period, anchor, monthly, trendYear, payables, cashAccounts, cashTotal,
-  branchId, companyId, branchName, incomeChannels, expenseCategories, draftExpenses, expenseVendors
+  branchId, companyId, branchName, incomeChannels, expenseCategories, draftExpenses, expenseVendors,
+  payCycleWeekday
 }: {
   dash: Dash; expenses: LedgerExpenseRow[]; period: LedgerPeriod; anchor: string;
   monthly: MonthlyRow[]; trendYear: number; payables: Payables;
@@ -729,6 +767,7 @@ export default function LedgerDashboardClient({
   expenseCategories: Array<{ code: string | null; name: string }>;
   draftExpenses: DraftLite[];
   expenseVendors: VendorOpt[];
+  payCycleWeekday: number;
 }) {
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
@@ -786,6 +825,8 @@ export default function LedgerDashboardClient({
   const [aCategory, setACategory] = useState("");
   const [aVat, setAVat] = useState(false);
   const [aUnpaid, setAUnpaid] = useState(false);
+  const [aDueMode, setADueMode] = useState<"cycle" | "date">("cycle");
+  const [aDueDate, setADueDate] = useState("");
   const [aBusy, setABusy] = useState(false);
   const [aErr, setAErr] = useState<string | null>(null);
 
@@ -793,6 +834,7 @@ export default function LedgerDashboardClient({
     setADate(selectedDate ?? bkkToday);
     setAChannel(incomeChannels[0]?.name ?? ""); setAAmt("");
     setAVendor(""); setACategory(""); setAVat(false); setAUnpaid(false);
+    setADueMode("cycle"); setADueDate("");
     setAErr(null); setAddMode(mode);
   }
   function afterAdd() {
@@ -827,7 +869,10 @@ export default function LedgerDashboardClient({
             branch_id: branchId, company_id: companyId, bill_date: aDate,
             vendor_name: aVendor.trim() || null, category: aCategory || null,
             amount_total: amt, has_tax_invoice: aVat,
-            payment_status: aUnpaid ? "unpaid" : "paid", paid_date: aUnpaid ? null : aDate
+            payment_status: aUnpaid ? "unpaid" : "paid", paid_date: aUnpaid ? null : aDate,
+            due_date: aUnpaid
+              ? (aDueMode === "date" ? (aDueDate || null) : nextPayDate(aDate, payCycleWeekday))
+              : null
           })
         });
         const j = await res.json().catch(() => ({}));
@@ -1179,6 +1224,7 @@ export default function LedgerDashboardClient({
                             billCount={r.billCount}
                             draftExpenses={draftExpenses}
                             expenseVendors={expenseVendors}
+                            payCycleWeekday={payCycleWeekday}
                             onChanged={() => { loadDayIncome(r.date, true); startTransition(() => router.refresh()); }}
                             removeExpense={remove}
                             busyExpenseId={busyId}
@@ -1330,10 +1376,8 @@ export default function LedgerDashboardClient({
                 <>
                   <div>
                     <label className="label !text-xs">ช่องทาง</label>
-                    <select className="input" value={aChannel} onChange={(e) => setAChannel(e.target.value)}>
-                      <option value="">— เลือกช่องทาง —</option>
-                      {incomeChannels.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-                    </select>
+                    <Select value={aChannel} onChange={setAChannel} placeholder="— เลือกช่องทาง —"
+                      options={incomeChannels.map((c) => ({ value: c.name, label: c.name }))} />
                   </div>
                   <div className="sm:col-span-2">
                     <label className="label !text-xs">จำนวนเงิน</label>
@@ -1345,10 +1389,8 @@ export default function LedgerDashboardClient({
                 <>
                   <div>
                     <label className="label !text-xs">หมวด</label>
-                    <select className="input" value={aCategory} onChange={(e) => setACategory(e.target.value)}>
-                      <option value="">— เลือกหมวด —</option>
-                      {expenseCategories.map((c) => <option key={c.name} value={c.name}>{c.code ? `${c.code} · ${c.name}` : c.name}</option>)}
-                    </select>
+                    <Select value={aCategory} onChange={setACategory} placeholder="— เลือกหมวด —"
+                      options={expenseCategories.map((c) => ({ value: c.name, label: c.code ? `${c.code} · ${c.name}` : c.name }))} />
                   </div>
                   <div className="sm:col-span-2">
                     <label className="label !text-xs">ผู้จำหน่าย / รายการ</label>
@@ -1362,6 +1404,24 @@ export default function LedgerDashboardClient({
                   </div>
                   <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={aVat} onChange={(e) => setAVat(e.target.checked)} />มี VAT</label>
                   <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={aUnpaid} onChange={(e) => setAUnpaid(e.target.checked)} />ค้างชำระ</label>
+                  {aUnpaid && (
+                    <div className="sm:col-span-2">
+                      <label className="label !text-xs">ครบกำหนดชำระ</label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Select value={aDueMode} onChange={(v) => setADueMode(v as "cycle" | "date")}
+                          className="!w-auto !min-w-[12rem]"
+                          options={[
+                            { value: "cycle", label: `ตามรอบบริษัท (ทุกวัน${WEEKDAY_TH[payCycleWeekday]})` },
+                            { value: "date", label: "ระบุวันเอง" }
+                          ]} />
+                        {aDueMode === "date" ? (
+                          <input type="date" value={aDueDate} onChange={(e) => setADueDate(e.target.value)} className="input !w-auto" />
+                        ) : (
+                          <span className="text-xs text-slate-500">→ {fmtDayLabel(nextPayDate(aDate, payCycleWeekday))}</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>

@@ -7,6 +7,9 @@ import { useLang } from "@/lib/LangProvider";
 import { nameWithPrefix } from "@/lib/name";
 import type { Company } from "@/lib/db";
 import { useConfirm } from "@/app/components/useConfirm";
+import Select from "@/app/components/Select";
+
+const WEEKDAYS_TH = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
 
 type CompanyRowT = Company & { branch_count: number };
 type BranchLite = {
@@ -496,6 +499,7 @@ function CompanyForm({
   const [phone, setPhone] = useState(company?.phone ?? "");
   const [email, setEmail] = useState(company?.email ?? "");
   const [vatReg, setVatReg] = useState<boolean>(!!company?.vat_registered);
+  const [payDay, setPayDay] = useState<number>(company?.pay_cycle_weekday ?? 1);
 
   return (
     <div className="space-y-2">
@@ -539,6 +543,15 @@ function CompanyForm({
             เปิด = หน้าบัญชีคิดภาษีขาย + ภพ.30 ให้ · ปิด = แสดงเฉพาะภาษีซื้อสะสม (เช่น คลินิกที่ยกเว้น VAT)
           </p>
         </div>
+        <div className="md:col-span-2">
+          <label className="label text-[11px]">รอบจ่ายเจ้าหนี้ (วันจ่ายประจำสัปดาห์)</label>
+          <Select value={String(payDay)} onChange={(v) => setPayDay(Number(v))}
+            className="!w-auto !min-w-[10rem]"
+            options={WEEKDAYS_TH.map((d, i) => ({ value: String(i), label: `ทุกวัน${d}` }))} />
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            บิลค้างชำระที่ไม่ได้ระบุวันครบกำหนด จะตั้งครบกำหนด = วันนี้ของสัปดาห์ถัดไปให้อัตโนมัติ
+          </p>
+        </div>
       </div>
       <div className="flex gap-2">
         <button type="button" disabled={busy || !nameTh.trim()}
@@ -546,7 +559,7 @@ function CompanyForm({
             name_th: nameTh, name_en: nameEn || null,
             tax_id: taxId || null, address: address || null,
             phone: phone || null, email: email || null,
-            vat_registered: vatReg
+            vat_registered: vatReg, pay_cycle_weekday: payDay
           })}
           className="flex-1 py-1.5 rounded bg-brand text-white text-xs font-bold disabled:opacity-50">
           {busy ? "…" : t("common.save")}
