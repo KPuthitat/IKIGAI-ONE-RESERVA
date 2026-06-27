@@ -4259,10 +4259,14 @@ function runMigrations(db: Database.Database): void {
   // missing, carrying tax_id/category from the matching accounta_vendor. No
   // deletes, no FK remap (expense display reads the denormalised vendor_name).
   try {
+    // EXCLUDE payroll-posted bills (payroll_period_id IS NOT NULL) — their
+    // vendor_name is the EMPLOYEE being paid ("พนักงานพาร์ทไทม์ X"), not a
+    // supplier (owner 2026-06-27: "พนักงานไม่ใช่ผู้จำหน่าย").
     const usage = db.prepare(`
       SELECT DISTINCT e.branch_id AS branch_id, TRIM(e.vendor_name) AS name
         FROM accounta_expenses e
-       WHERE e.branch_id IS NOT NULL AND TRIM(COALESCE(e.vendor_name,'')) <> ''
+       WHERE e.branch_id IS NOT NULL AND e.payroll_period_id IS NULL
+         AND TRIM(COALESCE(e.vendor_name,'')) <> ''
     `).all() as Array<{ branch_id: number; name: string }>;
     const findSup = db.prepare(
       "SELECT id FROM inventa_suppliers WHERE branch_id = ? AND name = ? COLLATE NOCASE"
@@ -4282,6 +4286,23 @@ function runMigrations(db: Database.Database): void {
       }
     });
     seed();
+    // Clean up employee names the FIRST seed (before this fix) pulled in:
+    // suppliers whose name appears ONLY on payroll bills and is not referenced
+    // by any INVENTA item. Idempotent — a no-op once removed.
+    db.exec(`
+      DELETE FROM inventa_suppliers WHERE id IN (
+        SELECT s.id FROM inventa_suppliers s
+        WHERE s.name COLLATE NOCASE IN (
+          SELECT DISTINCT TRIM(vendor_name) FROM accounta_expenses
+           WHERE payroll_period_id IS NOT NULL AND TRIM(COALESCE(vendor_name,'')) <> ''
+        )
+        AND s.name COLLATE NOCASE NOT IN (
+          SELECT DISTINCT TRIM(vendor_name) FROM accounta_expenses
+           WHERE payroll_period_id IS NULL AND TRIM(COALESCE(vendor_name,'')) <> ''
+        )
+        AND NOT EXISTS (SELECT 1 FROM inventa_items i WHERE i.supplier_id = s.id)
+      )
+    `);
   } catch (e) {
     console.warn("[migrate] vendor master seed skipped:", e);
   }
