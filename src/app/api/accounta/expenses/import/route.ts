@@ -37,6 +37,23 @@ function parseCsv(text: string): string[][] {
 
 const truthy = (v: string) => /^(1|true|yes|y|ใช่|มี)$/i.test(v.trim());
 
+// Excel rewrites CSV dates into the locale format (Thai = DD/MM/YYYY) the moment
+// the file is opened before upload, which made a strict YYYY-MM-DD check reject
+// every row (owner 2026-06-27). Accept YYYY-MM-DD as-is, and convert a day-first
+// DD/MM/YYYY or DD-MM-YYYY — incl. a Buddhist year (>2500 → −543). Returns the
+// normalised YYYY-MM-DD, or null when unparseable.
+function normDate(raw: string): string | null {
+  const s = raw.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (m) {
+    let y = Number(m[3]);
+    if (y > 2500) y -= 543;
+    return `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  }
+  return null;
+}
+
 export async function POST(req: Request) {
   const user = requirePermission("accounta.manage");
 
@@ -79,9 +96,9 @@ export async function POST(req: Request) {
   const errors: Array<{ row: number; message: string }> = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
-    const dateRaw = get(r, "bill_date");
+    const dateRaw = normDate(get(r, "bill_date"));
     const amount = Number(get(r, "amount").replace(/,/g, ""));
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) { errors.push({ row: i + 1, message: "bill_date ต้องเป็น YYYY-MM-DD" }); continue; }
+    if (!dateRaw) { errors.push({ row: i + 1, message: "bill_date ต้องเป็น YYYY-MM-DD หรือ DD/MM/YYYY" }); continue; }
     if (!Number.isFinite(amount) || amount <= 0) { errors.push({ row: i + 1, message: "amount ไม่ถูกต้อง" }); continue; }
 
     const hasTax = truthy(get(r, "has_tax_invoice"));
