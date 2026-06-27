@@ -131,9 +131,21 @@ export default function ExpensesClient(props: {
   const [newCat, setNewCat] = useState<string | null>(null);   // null = closed
   const [newMethod, setNewMethod] = useState<string | null>(null);
 
-  // Bulk CSV import (owner 2026-06-17).
+  // Bulk CSV import (owner 2026-06-17). Preview-before-commit (owner 2026-06-27):
+  // a dry run shows what WILL import; the owner confirms before any DB write,
+  // since import has no undo.
   const importRef = useRef<HTMLInputElement>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  type ImportPreview = {
+    willImport: number; total: number; failed: number; unresolvedBranch: number;
+    dateFrom: string | null; dateTo: string | null;
+    byCategory: Array<{ name: string; count: number; amount: number }>;
+    sample: Array<{ bill_date: string; vendor: string | null; category: string | null; amount: number; payment_status: string }>;
+    errors: Array<{ row: number; message: string }>;
+  };
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [previewFile, setPreviewFile] = useState<File | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -511,15 +523,33 @@ export default function ExpensesClient(props: {
     URL.revokeObjectURL(a.href);
   }
 
-  async function importCsv(file: File) {
-    setBusy(true); setErr(null); setImportMsg("กำลังนำเข้า…");
+  // Step 1: dry-run the file → show a preview the owner confirms before commit.
+  async function previewCsv(file: File) {
+    setPreviewBusy(true); setErr(null); setImportMsg(null); setPreview(null);
     try {
       const fd = new FormData();
       fd.append("csv", file);
+      fd.append("dry_run", "1");
+      const res = await fetch(apiUrl("/api/accounta/expenses/import"), { method: "POST", body: fd });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "อ่านไฟล์ไม่สำเร็จ")); return; }
+      setPreview(j as ImportPreview);
+      setPreviewFile(file);
+    } finally { setPreviewBusy(false); }
+  }
+
+  // Step 2: commit the previewed file for real.
+  async function confirmImport() {
+    if (!previewFile) return;
+    setBusy(true); setErr(null); setImportMsg("กำลังนำเข้า…");
+    try {
+      const fd = new FormData();
+      fd.append("csv", previewFile);
       const res = await fetch(apiUrl("/api/accounta/expenses/import"), { method: "POST", body: fd });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setImportMsg(null); setErr(humanizeApiError(j, "นำเข้าไม่สำเร็จ")); return; }
       setImportMsg(`นำเข้าสำเร็จ ${j.imported} รายการ${j.failed ? ` · ข้าม ${j.failed} (ผิดรูปแบบ)` : ""}`);
+      setPreview(null); setPreviewFile(null);
       await reload();
       startTransition(() => router.refresh());
     } finally { setBusy(false); }
@@ -557,15 +587,96 @@ export default function ExpensesClient(props: {
           <button type="button" onClick={downloadTemplate} className="text-xs text-slate-500 hover:text-brand underline">
             เทมเพลต CSV
           </button>
-          <button type="button" onClick={() => importRef.current?.click()} disabled={busy}
+          <button type="button" onClick={() => importRef.current?.click()} disabled={busy || previewBusy}
             className="btn-secondary !py-1.5 disabled:opacity-50">
-            นำเข้า CSV
+            {previewBusy ? "กำลังอ่านไฟล์…" : "นำเข้า CSV"}
           </button>
           <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) importCsv(f); e.target.value = ""; }} />
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) previewCsv(f); e.target.value = ""; }} />
         </span>
       </div>
       {importMsg && <p className="text-sm text-emerald-700">{importMsg}</p>}
+
+      {preview && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) { setPreview(null); setPreviewFile(null); } }}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-8 p-5 space-y-4">
+            <div>
+              <h3 className="text-lg font-bold text-slate-800">ตรวจสอบก่อนนำเข้า</h3>
+              <p className="text-xs text-slate-500 mt-0.5">ยังไม่บันทึกจนกว่าจะกด “ยืนยันนำเข้า” · การนำเข้าไม่มีปุ่มย้อนกลับ</p>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-center">
+                <div className="text-[11px] text-slate-500">จะนำเข้า</div>
+                <div className="text-xl font-bold text-emerald-700">{preview.willImport.toLocaleString("en-US")}</div>
+                <div className="text-[10px] text-slate-400">รายการ</div>
+              </div>
+              <div className="rounded-lg bg-rose-50 border border-rose-100 p-3 text-center">
+                <div className="text-[11px] text-slate-500">ยอดรวม</div>
+                <div className="text-xl font-bold text-rose-700">฿{fmtMoney(preview.total)}</div>
+                <div className="text-[10px] text-slate-400">{preview.dateFrom && preview.dateTo ? `${preview.dateFrom} → ${preview.dateTo}` : "—"}</div>
+              </div>
+              <div className={`rounded-lg border p-3 text-center ${preview.failed > 0 ? "bg-amber-50 border-amber-200" : "bg-slate-50 border-slate-100"}`}>
+                <div className="text-[11px] text-slate-500">ข้าม (ผิดรูปแบบ)</div>
+                <div className={`text-xl font-bold ${preview.failed > 0 ? "text-amber-700" : "text-slate-400"}`}>{preview.failed.toLocaleString("en-US")}</div>
+                <div className="text-[10px] text-slate-400">รายการ</div>
+              </div>
+            </div>
+
+            {preview.unresolvedBranch > 0 && (
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                ⚠ {preview.unresolvedBranch} รายการระบุสาขาที่จับคู่ไม่ได้ — จะลงเป็นยังไม่ผูกสาขา
+              </p>
+            )}
+
+            <div>
+              <div className="text-xs font-bold text-slate-600 mb-1">แยกตามหมวด</div>
+              <div className="border border-slate-100 rounded-lg divide-y divide-slate-50 max-h-40 overflow-y-auto">
+                {preview.byCategory.map((c) => (
+                  <div key={c.name} className="flex items-center justify-between px-3 py-1.5 text-sm">
+                    <span className="text-slate-700">{c.name} <span className="text-slate-400 text-[11px]">×{c.count}</span></span>
+                    <span className="font-mono text-rose-700">฿{fmtMoney(c.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-xs font-bold text-slate-600 mb-1">ตัวอย่าง {preview.sample.length} แถวแรก</div>
+              <div className="border border-slate-100 rounded-lg divide-y divide-slate-50 max-h-44 overflow-y-auto text-[12px]">
+                {preview.sample.map((s, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2 px-3 py-1.5">
+                    <span className="text-slate-400 shrink-0 w-20">{s.bill_date}</span>
+                    <span className="text-slate-700 truncate flex-1">{s.vendor || "—"}</span>
+                    <span className="text-slate-400 shrink-0 text-[11px]">{s.category || "—"}</span>
+                    <span className="font-mono text-rose-700 shrink-0">฿{fmtMoney(s.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {preview.errors.length > 0 && (
+              <div>
+                <div className="text-xs font-bold text-amber-700 mb-1">แถวที่ข้าม (ตัวอย่าง)</div>
+                <div className="border border-amber-100 rounded-lg divide-y divide-amber-50 max-h-28 overflow-y-auto text-[11px]">
+                  {preview.errors.slice(0, 10).map((e, i) => (
+                    <div key={i} className="px-3 py-1 text-amber-700">แถว {e.row}: {e.message}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button type="button" onClick={() => { setPreview(null); setPreviewFile(null); }} disabled={busy}
+                className="btn-secondary disabled:opacity-50">ยกเลิก</button>
+              <button type="button" onClick={confirmImport} disabled={busy || preview.willImport === 0}
+                className="btn-primary disabled:opacity-50">
+                {busy ? "กำลังนำเข้า…" : `ยืนยันนำเข้า ${preview.willImport.toLocaleString("en-US")} รายการ`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {err && <p className="text-sm text-rose-600">{err}</p>}
 

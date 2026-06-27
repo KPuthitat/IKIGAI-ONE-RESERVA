@@ -58,14 +58,17 @@ export async function POST(req: Request) {
   const user = requirePermission("accounta.manage");
 
   let csv = "";
+  let dryRun = false;
   const ctype = req.headers.get("content-type") || "";
   if (ctype.includes("multipart/form-data")) {
     const form = await req.formData().catch(() => null);
     const f = form?.get("csv");
     if (f instanceof File) csv = await f.text();
+    dryRun = truthy(String(form?.get("dry_run") ?? ""));
   } else {
-    const j = await req.json().catch(() => ({})) as { csv?: string };
+    const j = await req.json().catch(() => ({})) as { csv?: string; dry_run?: boolean };
     csv = j.csv ?? "";
+    dryRun = !!j.dry_run;
   }
   if (!csv.trim()) return NextResponse.json({ error: "no_csv" }, { status: 400 });
 
@@ -92,8 +95,10 @@ export async function POST(req: Request) {
   };
   const get = (r: string[], k: string) => (idx[k] >= 0 ? (r[idx[k]] ?? "").trim() : "");
 
-  let imported = 0;
+  // Pass 1 — validate + build every row's ExpenseInput (no DB writes yet). Used
+  // both for the dry-run preview and the real commit so they can never diverge.
   const errors: Array<{ row: number; message: string }> = [];
+  const ready: Array<{ input: ExpenseInput; branchRaw: string }> = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     const dateRaw = normDate(get(r, "bill_date"));
@@ -104,8 +109,9 @@ export async function POST(req: Request) {
     const hasTax = truthy(get(r, "has_tax_invoice"));
     const status = /unpaid|ค้าง|รอ/i.test(get(r, "payment_status")) ? "unpaid" : "paid";
     const vat = splitVat(round2(amount), hasTax);
+    const branchRaw = get(r, "branch");
     const input: ExpenseInput = {
-      branch_id: matchId(branches, get(r, "branch")),
+      branch_id: matchId(branches, branchRaw),
       company_id: matchId(companies, get(r, "company")),
       bill_date: dateRaw,
       vendor_id: null,
@@ -123,9 +129,48 @@ export async function POST(req: Request) {
       due_date: null,
       note: get(r, "note") || null
     };
-    try { createExpense(user.id, input); imported++; }
-    catch { errors.push({ row: i + 1, message: "บันทึกไม่สำเร็จ" }); }
+    ready.push({ input, branchRaw });
   }
 
+  // Dry run — return a preview so the owner can eyeball it before committing
+  // (import has no undo; owner 2026-06-27). Summarise without touching the DB.
+  if (dryRun) {
+    const byCat = new Map<string, { count: number; amount: number }>();
+    let total = 0; let unresolvedBranch = 0;
+    const dates: string[] = [];
+    for (const { input, branchRaw } of ready) {
+      total += input.amount_total;
+      dates.push(input.bill_date);
+      if (branchRaw && input.branch_id == null) unresolvedBranch++;
+      const k = input.category || "— ไม่ระบุหมวด —";
+      const c = byCat.get(k) ?? { count: 0, amount: 0 };
+      c.count++; c.amount += input.amount_total; byCat.set(k, c);
+    }
+    dates.sort();
+    const sample = ready.slice(0, 8).map(({ input }) => ({
+      bill_date: input.bill_date, vendor: input.vendor_name, category: input.category,
+      amount: input.amount_total, payment_status: input.payment_status
+    }));
+    return NextResponse.json({
+      ok: true, dryRun: true,
+      willImport: ready.length,
+      total: round2(total),
+      failed: errors.length,
+      unresolvedBranch,
+      dateFrom: dates[0] ?? null,
+      dateTo: dates[dates.length - 1] ?? null,
+      byCategory: [...byCat.entries()].map(([name, v]) => ({ name, count: v.count, amount: round2(v.amount) }))
+        .sort((a, b) => b.amount - a.amount),
+      sample,
+      errors: errors.slice(0, 50)
+    });
+  }
+
+  // Commit.
+  let imported = 0;
+  for (const { input } of ready) {
+    try { createExpense(user.id, input); imported++; }
+    catch { errors.push({ row: 0, message: "บันทึกไม่สำเร็จ" }); }
+  }
   return NextResponse.json({ ok: true, imported, failed: errors.length, errors: errors.slice(0, 50) });
 }
