@@ -34,6 +34,13 @@ export default function AccountaHome() {
         : "บิล/ใบเสร็จที่สแกนผ่านน้องฮูก รวมไว้ที่เดียว แยกตามสาขา — ตรวจแล้วยืนยันลงบัญชี"
     },
     {
+      href: "/admin/accounta/vendors",
+      title: en ? "Vendors / suppliers" : "ผู้จำหน่าย / คู่ค้า",
+      sub: en
+        ? "Manage the branch's vendor list — name, tax id, default category (shared with INVENTA)"
+        : "จัดการรายชื่อคู่ค้าของสาขา — ชื่อ เลขผู้เสียภาษี หมวดเริ่มต้น (ใช้ร่วมกับ INVENTA)"
+    },
+    {
       href: "/admin/accounta/feasibility",
       title: en ? "Financial Feasibility Study" : "แฟ้มวิเคราะห์โครงการลงทุน",
       sub: en

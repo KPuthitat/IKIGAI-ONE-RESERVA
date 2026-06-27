@@ -608,6 +608,40 @@ export function createVendor(
   return Number(info.lastInsertRowid);
 }
 
+export type VendorManageRow = { id: number; name: string; tax_id: string | null; category: string | null; needs_review: number };
+
+/** Full vendor list for the manage page (incl. id + needs_review flag). */
+export function listVendorsManage(branchId: number | null): VendorManageRow[] {
+  if (branchId == null) return [];
+  return getDb().prepare(
+    `SELECT id, name, tax_id, category, COALESCE(needs_review,0) AS needs_review
+       FROM inventa_suppliers WHERE active = 1 AND branch_id = ?
+      ORDER BY needs_review DESC, name COLLATE NOCASE`
+  ).all(branchId) as VendorManageRow[];
+}
+
+/** Edit a vendor in this branch (rename / fix tax id / category). Clears the
+ *  needs_review flag — an admin has now looked at it. */
+export function updateVendor(
+  id: number, branchId: number,
+  d: { name?: string; tax_id?: string | null; category?: string | null }
+): boolean {
+  const sets: string[] = ["needs_review = 0"]; const vals: Array<string | number | null> = [];
+  if (d.name !== undefined) { sets.push("name = ?"); vals.push(d.name.trim()); }
+  if (d.tax_id !== undefined) { sets.push("tax_id = ?"); vals.push(d.tax_id?.trim() || null); }
+  if (d.category !== undefined) { sets.push("category = ?"); vals.push(d.category?.trim() || null); }
+  vals.push(id, branchId);
+  return getDb().prepare(
+    `UPDATE inventa_suppliers SET ${sets.join(", ")} WHERE id = ? AND branch_id = ?`
+  ).run(...vals).changes > 0;
+}
+
+export function deleteVendor(id: number, branchId: number): boolean {
+  return getDb().prepare(
+    "DELETE FROM inventa_suppliers WHERE id = ? AND branch_id = ?"
+  ).run(id, branchId).changes > 0;
+}
+
 /** Look up an active vendor by its 13-digit tax id within a branch (digits-only
  *  compare). The most reliable OCR match for repeat vendors — the printed tax id
  *  reads cleanly even when the name is garbled (owner 2026-06-26). */
