@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { useConfirm } from "@/app/components/useConfirm";
 import type { ShiftChecklistItem } from "@/lib/db";
 import { parseChecklistOptions } from "@/lib/checklist-options";
 
@@ -32,6 +33,7 @@ export default function ChecklistEditor({
 }) {
   const router = useRouter();
   const { t } = useLang();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [items, setItems] = useState<ShiftChecklistItem[]>(initialItems);
   // Re-sync from props whenever the server data changes — happens after
   // every router.refresh() that follows an add/PATCH/delete. Without
@@ -72,7 +74,8 @@ export default function ChecklistEditor({
   }
 
   async function deleteItem(id: number) {
-    if (!confirm(t("admin.persona.checklist.confirmDelete"))) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: t("admin.persona.checklist.confirmDelete"), confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusyId(id);
     try {
       const res = await fetch(apiUrl(`/api/admin/persona/checklist/${id}`), {
@@ -237,6 +240,7 @@ export default function ChecklistEditor({
 
   return (
     <div className="space-y-3">
+      {ConfirmDialog}
       <div className="card space-y-3">
         <h2 className="font-bold text-slate-800 text-sm">
           {t("admin.persona.checklist.listTitle")}

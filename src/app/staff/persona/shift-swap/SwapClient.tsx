@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { SwapRowWithNames, SwapCandidate } from "@/lib/shift-swap";
+import { useConfirm } from "@/app/components/useConfirm";
 
 const STATUS_TH: Record<string, { t: string; c: string }> = {
   pending: { t: "รอตอบรับ", c: "bg-amber-100 text-amber-700" },
@@ -21,6 +22,7 @@ const MY_SHIFT_REASON: Record<string, string> = {
 
 export default function SwapClient({ incoming, sent }: { incoming: SwapRowWithNames[]; sent: SwapRowWithNames[] }) {
   const router = useRouter();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [date, setDate] = useState(todayBkk());
   const [myShift, setMyShift] = useState<string | null>(null);
   const [myReason, setMyReason] = useState<string | null>(null);
@@ -65,7 +67,10 @@ export default function SwapClient({ incoming, sent }: { incoming: SwapRowWithNa
   }
 
   async function respond(id: number, action: "accept" | "decline") {
-    if (action === "decline" && !window.confirm("ปฏิเสธคำขอสลับกะนี้?")) return;
+    if (action === "decline") {
+      const ok = await confirm({ title: "ปฏิเสธคำขอสลับกะนี้?", confirmLabel: "ปฏิเสธ", cancelLabel: "ยกเลิก", variant: "warning" });
+      if (ok === null) return;
+    }
     setBusy(true); setMsg(null);
     try {
       const res = await fetch(apiUrl(`/api/persona/shift-swap/${id}/respond`), {
@@ -79,13 +84,15 @@ export default function SwapClient({ incoming, sent }: { incoming: SwapRowWithNa
   }
 
   async function cancel(id: number) {
-    if (!window.confirm("ยกเลิกคำขอนี้?")) return;
+    const ok = await confirm({ title: "ยกเลิกคำขอนี้?", confirmLabel: "ยกเลิกคำขอ", cancelLabel: "ปิด", variant: "warning" });
+    if (ok === null) return;
     const res = await fetch(apiUrl(`/api/persona/shift-swap/${id}/cancel`), { method: "POST" });
     if (res.ok) router.refresh();
   }
 
   return (
     <div className="space-y-4 max-w-2xl mx-auto">
+      {ConfirmDialog}
       <div>
         <h1 className="text-xl font-bold text-slate-800">สลับกะ</h1>
         <p className="text-sm text-slate-500">

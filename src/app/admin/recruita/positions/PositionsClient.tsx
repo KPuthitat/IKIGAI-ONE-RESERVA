@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
+import Combobox from "@/app/components/Combobox";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type Position = {
   id: number;
@@ -86,6 +88,7 @@ export default function PositionsClient({
   personaTitles: PersonaTitle[];
 }) {
   const router = useRouter();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [, startTransition] = useTransition();
   const [showNew, setShowNew] = useState(false);
   const [filter, setFilter] = useState<Position["status"] | "all">("all");
@@ -119,7 +122,8 @@ export default function PositionsClient({
   })();
 
   async function quickClose(id: number, title: string) {
-    if (!confirm(`ปิดรับสมัครตำแหน่ง "${title}" ?`)) return;
+    const ok = await confirm({ title: "ยืนยัน", body: `ปิดรับสมัครตำแหน่ง "${title}" ?`, confirmLabel: "ตกลง", cancelLabel: "ยกเลิก", variant: "default" });
+    if (ok === null) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl(`/api/recruita/positions/${id}`), {
@@ -144,7 +148,8 @@ export default function PositionsClient({
   }
 
   async function del(id: number, title: string) {
-    if (!confirm(`ลบตำแหน่ง "${title}" ?\n\n(ถ้ามีใบสมัครแล้ว ระบบจะเปลี่ยนเป็นปิดรับแทน — ใบสมัครเดิมจะไม่หาย)`)) return;
+    const ok = await confirm({ title: `ลบตำแหน่ง "${title}" ?`, body: "(ถ้ามีใบสมัครแล้ว ระบบจะเปลี่ยนเป็นปิดรับแทน — ใบสมัครเดิมจะไม่หาย)", confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl(`/api/recruita/positions/${id}`), {
@@ -156,6 +161,7 @@ export default function PositionsClient({
 
   return (
     <div className="space-y-3">
+      {ConfirmDialog}
       {/* Filter chips + new button */}
       <div className="card flex items-center justify-between gap-3 flex-wrap">
         <div className="flex gap-1.5 flex-wrap">
@@ -339,19 +345,9 @@ function NewPositionDialog({
               )
             )}
           </label>
-          <input className="input" value={title}
-            list="recruita-persona-titles"
-            onChange={(e) => setTitle(e.target.value)}
+          <Combobox value={title} onChange={setTitle}
+            options={personaTitles.map((p) => p.title)}
             placeholder="เลือกจากตำแหน่งที่มีอยู่ใน PERSONA หรือพิมพ์ใหม่" />
-          {personaTitles.length > 0 && (
-            <datalist id="recruita-persona-titles">
-              {personaTitles.map((p) => (
-                <option key={p.title} value={p.title}>
-                  {p.description ? `— ${p.description}` : ""}
-                </option>
-              ))}
-            </datalist>
-          )}
           <p className="text-[10px] text-slate-400 mt-1">
             พิมพ์เพื่อค้นหาตำแหน่งใน PERSONA · หรือพิมพ์ตำแหน่งใหม่ที่ยังไม่เคยมี
           </p>

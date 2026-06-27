@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { nameWithPrefix } from "@/lib/name";
+import Combobox from "@/app/components/Combobox";
 
 // ── Mounjaro clinical dashboard — patient registry ──────────────────
 // Visual language follows the app CI (owner #10 2026-06-06): espresso
@@ -400,12 +401,9 @@ function IntakeModal({ pending, onClose }: { pending: PendingRow[]; onClose: () 
               </div>
               <div>
                 <label className={labelCls}>คำนำหน้า</label>
-                <input className={inputCls + " mt-1"} value={prefix} list="mj-prefix-list"
-                  onChange={(e) => setPrefix(e.target.value)} placeholder="เช่น นางสาว" maxLength={20} />
-                <datalist id="mj-prefix-list">
-                  <option value="นาย" /><option value="นาง" /><option value="นางสาว" />
-                  <option value="เด็กชาย" /><option value="เด็กหญิง" />
-                </datalist>
+                <Combobox value={prefix} onChange={setPrefix}
+                  options={["นาย", "นาง", "นางสาว", "เด็กชาย", "เด็กหญิง"]}
+                  placeholder="เช่น นางสาว" className="mt-1" inputClassName={inputCls} />
               </div>
               <div>
                 <label className={labelCls}>ชื่อ-สกุล</label>

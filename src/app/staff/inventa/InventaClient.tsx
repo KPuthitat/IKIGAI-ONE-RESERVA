@@ -6,6 +6,7 @@ import Link from "next/link";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import BarcodeScanner from "@/app/components/BarcodeScanner";
+import { useConfirm } from "@/app/components/useConfirm";
 import {
   PICK_FREQ_META, isLowStock, isLowStockItem, isFractionalItem, formatFracQty,
   expiryBucket, packRelationCaption,
@@ -577,6 +578,7 @@ function ItemModal({
   onSaved: () => void;
 }) {
   const { t } = useLang();
+  const { confirm, alert, ConfirmDialog } = useConfirm();
   const opts = (kind: string) =>
     lookups.filter((l) => l.kind === kind).map((l) => l.value);
   const storageOpts = opts("storage");
@@ -590,7 +592,7 @@ function ItemModal({
   // Add a new category lookup inline (super_admin only — matches the
   // /api/inventa/lookups POST guard). Then select it.
   async function addCategoryInline() {
-    const value = window.prompt("ชื่อหมวดหมู่ใหม่");
+    const value = await confirm({ title: "ชื่อหมวดหมู่ใหม่", withInput: true, inputDefaultValue: "", confirmLabel: "ตกลง", cancelLabel: "ยกเลิก" });
     if (!value || !value.trim()) return;
     setAddingCat(true);
     try {
@@ -604,9 +606,9 @@ function ItemModal({
         setCategoryOpts((p) => (p.includes(v) ? p : [...p, v]));
         up("category", v);
       } else {
-        window.alert(j?.error === "super_admin_only"
+        await alert({ title: j?.error === "super_admin_only"
           ? "เพิ่มหมวดหมู่ได้เฉพาะผู้ดูแลระบบสูงสุด"
-          : "เพิ่มหมวดหมู่ไม่สำเร็จ");
+          : "เพิ่มหมวดหมู่ไม่สำเร็จ", variant: "danger" });
       }
     } finally { setAddingCat(false); }
   }
@@ -708,7 +710,8 @@ function ItemModal({
 
   async function del() {
     if (!item) return;
-    if (!confirm(t("inv.confirm.del", { name: item.name }))) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: t("inv.confirm.del", { name: item.name }), confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl(`/api/inventa/items/${item.id}`), { method: "DELETE" });
@@ -721,6 +724,7 @@ function ItemModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      {ConfirmDialog}
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-2xl w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
         <h3 className="font-bold text-slate-800 text-lg">
@@ -1055,6 +1059,7 @@ function SuppliersModal({
   onChanged: () => void;
 }) {
   const { t } = useLang();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [name, setName] = useState("");
   const [cycle, setCycle] = useState("");
   const [lead, setLead] = useState("");
@@ -1084,7 +1089,8 @@ function SuppliersModal({
   }
 
   async function del(id: number, nm: string) {
-    if (!confirm(t("inv.sup.delConfirm", { name: nm }))) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: t("inv.sup.delConfirm", { name: nm }), confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl(`/api/inventa/suppliers/${id}`), { method: "DELETE" });
@@ -1095,6 +1101,7 @@ function SuppliersModal({
   return (
     <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/40 p-4"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      {ConfirmDialog}
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
         <h3 className="font-bold text-slate-800 text-lg">{t("inv.sup.title")}</h3>
@@ -1377,6 +1384,7 @@ function LotsSection({ itemId, unitLabel, currentCost }: {
   itemId: number; unitLabel: string; currentCost: number | null;
 }) {
   const { t } = useLang();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [lots, setLots] = useState<InventaItemLot[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1427,7 +1435,8 @@ function LotsSection({ itemId, unitLabel, currentCost }: {
     } finally { setBusy(false); }
   }
   async function del(lotId: number) {
-    if (!confirm(t("inv.lot.delConfirm"))) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: t("inv.lot.delConfirm"), confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl(`/api/inventa/items/${itemId}/lots/${lotId}`),
@@ -1440,6 +1449,7 @@ function LotsSection({ itemId, unitLabel, currentCost }: {
 
   return (
     <details className="group">
+      {ConfirmDialog}
       <summary className="cursor-pointer list-none select-none flex items-center justify-between">
         <span className="text-xs font-bold text-slate-700">
           {t("inv.lot.title")}

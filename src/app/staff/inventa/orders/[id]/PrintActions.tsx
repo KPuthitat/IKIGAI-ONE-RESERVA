@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import PinPromptModal from "@/app/components/PinPromptModal";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type Status = "draft" | "sent" | "approved" | "paid" | "shipping" | "received" | "returned" | "cancelled";
 
@@ -35,6 +36,7 @@ export default function PrintActions({
 }) {
   const router = useRouter();
   const { t } = useLang();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showSendBack, setShowSendBack] = useState(false);
@@ -89,7 +91,8 @@ export default function PrintActions({
     action: "approve" | "cancel" | "receive" | "pay" | "credit" | "ship" | "return" | "apply_stock",
     confirmMsg: string
   ) {
-    if (!window.confirm(confirmMsg)) return;
+    const ok = await confirm({ title: "ยืนยัน", body: confirmMsg, confirmLabel: "ตกลง", cancelLabel: "ยกเลิก", variant: "default" });
+    if (ok === null) return;
     setBusy(true); setErr(null);
     try {
       const res = await fetch(apiUrl(`/api/inventa/orders/${orderId}/status`), {
@@ -122,6 +125,7 @@ export default function PrintActions({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {ConfirmDialog}
       {err && <span className="text-xs text-rose-600">{err}</span>}
 
       {canApprove && status === "sent" && (

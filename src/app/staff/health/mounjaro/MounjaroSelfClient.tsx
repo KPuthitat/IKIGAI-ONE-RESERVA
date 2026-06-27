@@ -8,6 +8,7 @@ import {
   EXERCISE_CATALOG, EXERCISE_LEVELS, RPE_SCALE, getActivity, kcalEstimate,
   levelLabel, rpeLabel, activityLabel, REST_ACTIVITY_ID, type ExerciseLevel
 } from "@/lib/exercise-catalog";
+import { useConfirm } from "@/app/components/useConfirm";
 
 // Mounjaro Employee Wellness — employee self-service. Thai (official),
 // mobile-first (the self-log is meant to be filled on a phone).
@@ -193,6 +194,7 @@ export default function MounjaroSelfClient({
   facility: Facility;
 }) {
   const router = useRouter();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   // Destructive action awaiting PIN + typed-phrase confirmation.
@@ -221,6 +223,7 @@ export default function MounjaroSelfClient({
 
   return (
     <div className="space-y-4 max-w-2xl mx-auto">
+      {ConfirmDialog}
       <div className="card space-y-1">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-3">
@@ -307,7 +310,7 @@ export default function MounjaroSelfClient({
             <div className="pt-1 border-t border-slate-100 mt-1">
               <p className="text-xs text-slate-600 mb-2">เปลี่ยนใจอยากกลับเข้าร่วมอีกครั้งใช่ไหม?</p>
               <button type="button" disabled={busy !== null}
-                onClick={() => { if (window.confirm("ส่งคำขอกลับเข้าร่วมโครงการอีกครั้ง? คลินิกจะติดต่อนัดตรวจคัดกรองกลับ")) act("enroll"); }}
+                onClick={async () => { const ok = await confirm({ title: "ยืนยัน", body: "ส่งคำขอกลับเข้าร่วมโครงการอีกครั้ง? คลินิกจะติดต่อนัดตรวจคัดกรองกลับ", confirmLabel: "ตกลง", cancelLabel: "ยกเลิก", variant: "default" }); if (ok !== null) act("enroll"); }}
                 className="btn-primary w-full py-2.5 disabled:opacity-50">
                 {busy === "enroll" ? "กำลังส่ง…" : "สนใจกลับเข้าร่วมโครงการอีกครั้ง"}
               </button>

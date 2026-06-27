@@ -21,7 +21,7 @@ export default function FloorPlanEditor({
 }: { branchId: number; initialTables: TableRow[]; zones: Zone[] }) {
   const router = useRouter();
   const { t } = useLang();
-  const { confirm, ConfirmDialog } = useConfirm();
+  const { confirm, alert, ConfirmDialog } = useConfirm();
   const [tables, setTables] = useState<Draft[]>(initialTables);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -131,7 +131,7 @@ export default function FloorPlanEditor({
     setSaving(false);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      alert(j.error || t("admin.floorplan.saveFailed"));
+      await alert({ title: j.error || t("admin.floorplan.saveFailed"), variant: "danger" });
       return;
     }
     router.refresh();

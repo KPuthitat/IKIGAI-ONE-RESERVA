@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import BarcodeScanner from "@/app/components/BarcodeScanner";
 import PinPromptModal from "@/app/components/PinPromptModal";
+import { useConfirm } from "@/app/components/useConfirm";
 import {
   PICK_FREQ_META, hasPack, packToBase, packBreakdown, packRelationCaption,
   isFractionalItem, formatFracQty,
@@ -57,6 +58,7 @@ export default function CountClient({
 }) {
   const router = useRouter();
   const { t } = useLang();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [, startTransition] = useTransition();
   const refresh = () => startTransition(() => router.refresh());
 
@@ -251,8 +253,14 @@ export default function CountClient({
   // "submit + announce + go build the PO" flow.
   async function submit(silent = false) {
     if (!session) return;
-    if (!silent && !confirm(t("inv.cnt.submitConfirm", { done, total }))) return;
-    if (silent && !confirm("บันทึกการนับโดยไม่แจ้งกลุ่มไลน์?")) return;
+    if (!silent) {
+      const ok = await confirm({ title: "ยืนยัน", body: t("inv.cnt.submitConfirm", { done, total }), confirmLabel: "ตกลง", cancelLabel: "ยกเลิก", variant: "default" });
+      if (ok === null) return;
+    }
+    if (silent) {
+      const ok = await confirm({ title: "บันทึกการนับโดยไม่แจ้งกลุ่มไลน์?", confirmLabel: "ตกลง", cancelLabel: "ยกเลิก", variant: "default" });
+      if (ok === null) return;
+    }
     setBusy(true);
     setMsg(null);
     try {
@@ -289,10 +297,12 @@ export default function CountClient({
       setMsg("ทุกรายการนับครบแล้ว — ไม่มีอะไรให้กรอกเพิ่ม");
       return;
     }
-    if (!confirm(
-      `จะใช้ "จำนวนคงเหลือปัจจุบัน" เป็นค่าเริ่มต้นกับ ${remaining} รายการที่ยังไม่ได้นับ\n` +
-      `รายการที่นับไปแล้วจะไม่ถูกแก้ · หลังจากนี้คุณยังกดแก้ตัวเลขเป็นรายๆ ได้`
-    )) return;
+    const ok = await confirm({
+      title: `จะใช้ "จำนวนคงเหลือปัจจุบัน" เป็นค่าเริ่มต้นกับ ${remaining} รายการที่ยังไม่ได้นับ`,
+      body: "รายการที่นับไปแล้วจะไม่ถูกแก้ · หลังจากนี้คุณยังกดแก้ตัวเลขเป็นรายๆ ได้",
+      confirmLabel: "ตกลง", cancelLabel: "ยกเลิก", variant: "default"
+    });
+    if (ok === null) return;
     setBusy(true);
     setMsg(null);
     try {
@@ -354,6 +364,7 @@ export default function CountClient({
 
   return (
     <>
+      {ConfirmDialog}
       <div className="card space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="text-sm text-slate-600">

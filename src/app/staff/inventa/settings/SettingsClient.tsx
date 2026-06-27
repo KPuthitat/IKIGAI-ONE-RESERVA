@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import type { LookupKind, InventaLookup, InventaSupplier } from "@/lib/inventa";
+import { useConfirm } from "@/app/components/useConfirm";
 
 const KINDS: LookupKind[] = ["item_type", "category", "storage", "unit"];
 
@@ -135,6 +136,7 @@ export default function SettingsClient({
 
 function ResetDataBody({ onChanged }: { onChanged: () => void }) {
   const { t } = useLang();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [phrase, setPhrase] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -146,7 +148,8 @@ function ResetDataBody({ onChanged }: { onChanged: () => void }) {
       setMsg(t("inv.reset.mismatch", { w: CONFIRM }));
       return;
     }
-    if (!window.confirm(t("inv.reset.confirm2"))) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: t("inv.reset.confirm2"), confirmLabel: "ล้างข้อมูล", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true);
     setMsg(null);
     try {
@@ -173,6 +176,7 @@ function ResetDataBody({ onChanged }: { onChanged: () => void }) {
 
   return (
     <div className="space-y-3">
+      {ConfirmDialog}
       <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 leading-relaxed">
         {t("inv.reset.warn")}
       </div>
@@ -357,6 +361,7 @@ function SupplierBody({
   onChanged: () => void;
 }) {
   const { t } = useLang();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [cycle, setCycle] = useState("");
@@ -428,7 +433,8 @@ function SupplierBody({
     } finally { setBusy(false); }
   }
   async function del(id: number, nm: string) {
-    if (!confirm(t("inv.sup.delConfirm", { name: nm }))) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: t("inv.sup.delConfirm", { name: nm }), confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl(`/api/inventa/suppliers/${id}`), { method: "DELETE" });
@@ -438,6 +444,7 @@ function SupplierBody({
 
   return (
     <>
+      {ConfirmDialog}
       <div className="border border-slate-200 rounded-lg p-3 space-y-2">
         <div className="grid grid-cols-[100px_1fr] gap-2">
           <input className="input uppercase tracking-wide font-bold"

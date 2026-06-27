@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useConfirm } from "@/app/components/useConfirm";
 
 export type DriveRow = {
   branch_id: number;
@@ -25,6 +26,7 @@ export default function DriveClient({ rows, serverReady }: { rows: DriveRow[]; s
 
 function BranchCard({ row, serverReady }: { row: DriveRow; serverReady: boolean }) {
   const router = useRouter();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [enabled, setEnabled] = useState(row.enabled);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -53,7 +55,8 @@ function BranchCard({ row, serverReady }: { row: DriveRow; serverReady: boolean 
   }
 
   async function disconnect() {
-    if (!confirm("ยกเลิกการเชื่อมต่อ Google Drive ของสาขานี้?")) return;
+    const ok = await confirm({ title: "ยกเลิกการเชื่อมต่อ Google Drive ของสาขานี้?", confirmLabel: "ยกเลิกการเชื่อมต่อ", cancelLabel: "ปิด", variant: "warning" });
+    if (ok === null) return;
     setBusy(true); setMsg(null);
     try {
       const res = await fetch(`/api/accounta/drive/${row.branch_id}/disconnect`, { method: "POST" });
@@ -63,6 +66,7 @@ function BranchCard({ row, serverReady }: { row: DriveRow; serverReady: boolean 
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+      {ConfirmDialog}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <div className="font-semibold text-slate-800">

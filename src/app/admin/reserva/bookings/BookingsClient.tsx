@@ -137,7 +137,7 @@ export default function BookingsClient({
     setBusyId(null);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      alert(j.error || t("admin.bookings.errorGeneric"));
+      await alert({ title: j.error || t("admin.bookings.errorGeneric"), variant: "danger" });
     }
     router.refresh();
   }

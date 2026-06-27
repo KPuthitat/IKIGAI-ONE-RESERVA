@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type AccType = "cash" | "bank" | "ewallet" | "credit_card";
 type Account = {
@@ -49,6 +50,7 @@ const emptyDraft = (): Draft => ({
 export default function CashAccountsClient({
   initialAccounts, branchName
 }: { initialAccounts: Account[]; branchName: string }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>(initialAccounts);
   const [busy, setBusy] = useState(false);
@@ -245,6 +247,7 @@ export default function CashAccountsClient({
 
   return (
     <div className="space-y-4">
+      {ConfirmDialog}
       {err && <p className="text-sm text-rose-600">{err}</p>}
 
       {/* Total */}
@@ -297,7 +300,7 @@ export default function CashAccountsClient({
                       <button type="button" onClick={() => call("PATCH", { id: a.id, active: !a.active })} disabled={busy}
                         className="text-[11px] text-slate-500 hover:underline">{a.active ? "ปิดใช้งาน" : "เปิดใช้งาน"}</button>
                       <button type="button"
-                        onClick={() => { if (window.confirm(`ลบช่องทาง "${a.name}" ? กู้คืนไม่ได้`)) call("DELETE", undefined, `?id=${a.id}`); }}
+                        onClick={async () => { const ok = await confirm({ title: "ยืนยันการลบ", body: `ลบช่องทาง "${a.name}" ? กู้คืนไม่ได้`, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" }); if (ok !== null) call("DELETE", undefined, `?id=${a.id}`); }}
                         disabled={busy} className="text-[11px] text-rose-500 hover:underline">ลบ</button>
                     </div>
                   </div>

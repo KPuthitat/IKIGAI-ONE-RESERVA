@@ -2,18 +2,21 @@
 
 import { useState } from "react";
 import { apiUrl } from "@/lib/url";
+import { useConfirm } from "@/app/components/useConfirm";
 
 // "แจ้งเตือนเวรวันนี้" — fires the personal-LINE shift reminder for
 // today on demand (the admin's active branch). Mirrors the automatic
 // morning cron; useful for testing or an ad-hoc resend. Shows a
 // one-line result so the admin sees how many messages went out.
 export default function NotifyShiftsButton() {
+  const { confirm, ConfirmDialog } = useConfirm();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   async function send() {
     if (busy) return;
-    if (!window.confirm("ส่งแจ้งเตือนเวรวันนี้เข้าไลน์ส่วนตัวพนักงานที่มีเวร?")) return;
+    const ok = await confirm({ title: "ยืนยัน", body: "ส่งแจ้งเตือนเวรวันนี้เข้าไลน์ส่วนตัวพนักงานที่มีเวร?", confirmLabel: "ตกลง", cancelLabel: "ยกเลิก", variant: "default" });
+    if (ok === null) return;
     setBusy(true);
     setMsg(null);
     try {
@@ -41,6 +44,7 @@ export default function NotifyShiftsButton() {
 
   return (
     <span className="inline-flex items-center gap-2">
+      {ConfirmDialog}
       <button
         type="button"
         onClick={send}

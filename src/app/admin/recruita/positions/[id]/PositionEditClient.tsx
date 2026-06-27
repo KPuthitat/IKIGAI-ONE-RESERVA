@@ -7,6 +7,7 @@ import { humanizeApiError } from "@/lib/error-messages";
 import {
   parseCustomQuestions, type CustomQuestion, type CustomQuestionType
 } from "@/lib/recruita";
+import Combobox from "@/app/components/Combobox";
 
 type Position = {
   id: number;
@@ -230,18 +231,8 @@ export default function PositionEditClient({
                 )
               )}
             </label>
-            <input className="input" value={title}
-              list="recruita-edit-persona-titles"
-              onChange={(e) => setTitle(e.target.value)} />
-            {personaTitles.length > 0 && (
-              <datalist id="recruita-edit-persona-titles">
-                {personaTitles.map((p) => (
-                  <option key={p.title} value={p.title}>
-                    {p.description ? `— ${p.description}` : ""}
-                  </option>
-                ))}
-              </datalist>
-            )}
+            <Combobox value={title} onChange={setTitle}
+              options={personaTitles.map((p) => p.title)} />
           </div>
           <div>
             <label className="label">รหัส</label>

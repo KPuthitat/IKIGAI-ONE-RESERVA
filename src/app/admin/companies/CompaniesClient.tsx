@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { nameWithPrefix } from "@/lib/name";
 import type { Company } from "@/lib/db";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type CompanyRowT = Company & { branch_count: number };
 type BranchLite = {
@@ -35,6 +36,7 @@ export default function CompaniesClient({
   users: UserLite[];
   grants: GrantRow[];
 }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const { t } = useLang();
   const [pending, startTransition] = useTransition();
@@ -98,16 +100,18 @@ export default function CompaniesClient({
   }
 
   async function deleteCompany(c: CompanyRowT) {
-    const warn =
+    const body =
       c.branch_count > 0
-        ? `ลบบริษัท “${c.name_th}” ?\n\nสาขา ${c.branch_count} แห่งที่ผูกอยู่จะถูกปลดออก (ไม่ระบุบริษัท)`
-        : `ลบบริษัท “${c.name_th}” ?`;
-    if (!window.confirm(warn)) return;
+        ? `สาขา ${c.branch_count} แห่งที่ผูกอยู่จะถูกปลดออก (ไม่ระบุบริษัท)`
+        : undefined;
+    const ok = await confirm({ title: `ลบบริษัท “${c.name_th}” ?`, body, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     if (await call("/api/admin/companies", "DELETE", { id: c.id })) refresh();
   }
 
   return (
     <div className="space-y-4">
+      {ConfirmDialog}
       <div className="flex items-center justify-between">
         <p className="text-[11px] text-slate-500 flex-1">
           โครงสร้าง: บริษัท → สาขา → ผู้ดูแลระบบของสาขา · บริษัทที่ไม่มีสาขา

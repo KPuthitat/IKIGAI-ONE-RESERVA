@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/url";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
 import Switch from "@/app/components/Switch";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type ZoneRow = {
   id: number;
@@ -24,6 +25,7 @@ export default function ZonesClient({
   zones: ZoneRow[];
   unassignedCount: number;
 }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [editing, setEditing] = useState<ZoneRow | "new" | null>(null);
@@ -31,15 +33,11 @@ export default function ZonesClient({
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   async function deleteZone(zone: ZoneRow): Promise<void> {
-    if (zone.table_count > 0) {
-      const ok = window.confirm(
-        t(lang, "admin.reserva.zones.confirmDeleteWithTables", { count: String(zone.table_count) })
-      );
-      if (!ok) return;
-    } else {
-      const ok = window.confirm(t(lang, "admin.reserva.zones.confirmDelete", { name: zone.name }));
-      if (!ok) return;
-    }
+    const body = zone.table_count > 0
+      ? t(lang, "admin.reserva.zones.confirmDeleteWithTables", { count: String(zone.table_count) })
+      : t(lang, "admin.reserva.zones.confirmDelete", { name: zone.name });
+    const ok = await confirm({ title: "ยืนยันการลบ", body, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl(`/api/admin/reserva/zones/${zone.id}`), { method: "DELETE" });
@@ -57,6 +55,7 @@ export default function ZonesClient({
 
   return (
     <div className="space-y-3">
+      {ConfirmDialog}
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-slate-500">
           {t(lang, "admin.reserva.zones.intro")}

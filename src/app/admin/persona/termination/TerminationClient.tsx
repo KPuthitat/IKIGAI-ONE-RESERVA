@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useConfirm } from "@/app/components/useConfirm";
 
 export type TermEmployee = {
   id: number;
@@ -99,6 +100,7 @@ export default function TerminationClient({
   canSeeSalary: boolean;
 }) {
   const router = useRouter();
+  const { confirm, alert, ConfirmDialog } = useConfirm();
   const [employeeId, setEmployeeId] = useState<number | "">("");
   const [type, setType] = useState<TerminationType>("no_cause");
   const [effectiveDate, setEffectiveDate] = useState<string>(bkkToday());
@@ -175,14 +177,15 @@ export default function TerminationClient({
   }
 
   async function cancel(id: number) {
-    if (!confirm("ยกเลิกการเลิกจ้างรายการนี้? พนักงานจะยังทำงานต่อ")) return;
+    const ok = await confirm({ title: "ยกเลิกการเลิกจ้างรายการนี้?", body: "พนักงานจะยังทำงานต่อ", confirmLabel: "ยกเลิกการเลิกจ้าง", cancelLabel: "ปิด", variant: "warning" });
+    if (ok === null) return;
     setCancelling(id);
     try {
       const res = await fetch(`/api/admin/persona/termination/${id}/cancel`, { method: "POST" });
       if (res.ok) router.refresh();
       else {
         const d = await res.json().catch(() => ({}));
-        alert(errorTh(d?.error));
+        await alert({ title: errorTh(d?.error), variant: "danger" });
       }
     } finally {
       setCancelling(null);
@@ -194,6 +197,7 @@ export default function TerminationClient({
 
   return (
     <div className="space-y-6">
+      {ConfirmDialog}
       {/* ── Create form ── */}
       <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
         <h2 className="font-semibold text-slate-800">บันทึกการเลิกจ้างใหม่</h2>

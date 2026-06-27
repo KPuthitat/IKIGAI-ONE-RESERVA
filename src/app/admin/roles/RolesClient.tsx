@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RbacPermissionDef } from "@/lib/rbac";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type Role = {
   id: number;
@@ -21,6 +22,7 @@ export default function RolesClient({
   roles: Role[];
   catalog: RbacPermissionDef[];
 }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [editing, setEditing] = useState<Role | "new" | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -32,7 +34,8 @@ export default function RolesClient({
       role.user_count > 0
         ? `บทบาท "${role.name}" มีพนักงานถืออยู่ ${role.user_count} คน — ลบแล้วคนเหล่านั้นจะเสียสิทธิ์ที่บทบาทนี้ให้ ต้องการลบหรือไม่?`
         : `ลบบทบาท "${role.name}" หรือไม่?`;
-    if (!window.confirm(warn)) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: warn, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusyId(role.id);
     setErr(null);
     try {
@@ -50,6 +53,7 @@ export default function RolesClient({
 
   return (
     <div className="space-y-4">
+      {ConfirmDialog}
       <div className="flex justify-end">
         <button className="btn-primary" onClick={() => { setErr(null); setEditing("new"); }}>
           + สร้างบทบาทใหม่

@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { formatLongDate } from "@/lib/time";
 import { humanizeApiError } from "@/lib/error-messages";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type Summary = { verdict: "go" | "caution" | "no"; profit: number; paybackMonths: number };
 type Card = {
@@ -29,6 +30,7 @@ function payback(m: number): string {
 }
 
 export default function FeasibilityClient({ projects, companies }: { projects: Card[]; companies: string[] }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [, startTransition] = useTransition();
   const refresh = () => startTransition(() => router.refresh());
@@ -81,7 +83,8 @@ export default function FeasibilityClient({ projects, companies }: { projects: C
   }
 
   async function remove(id: number, name: string) {
-    if (!window.confirm(`ลบโปรเจค "${name}" ? การลบนี้กู้คืนไม่ได้`)) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: `ลบโปรเจค "${name}" ? การลบนี้กู้คืนไม่ได้`, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true); setErr(null);
     try {
       const res = await fetch(apiUrl(`/api/feasibility/${id}`), { method: "DELETE" });
@@ -93,6 +96,7 @@ export default function FeasibilityClient({ projects, companies }: { projects: C
 
   return (
     <div className="space-y-3">
+      {ConfirmDialog}
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={createNew} disabled={busy}
           className="btn-primary disabled:opacity-50">

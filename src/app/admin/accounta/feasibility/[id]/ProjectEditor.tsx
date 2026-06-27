@@ -10,6 +10,7 @@ import {
   STARTUP_CATEGORIES, whtBaht,
   type FeasibilityInputs, type Scenario, type PnlResult, type SweetSpot
 } from "@/lib/feasibility";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type Meta = {
   company: string; project_name: string;
@@ -437,6 +438,7 @@ function StartupItemsModal({ projectId, category, items, setItems, onClose }: {
   items: StartupItem[]; setItems: React.Dispatch<React.SetStateAction<StartupItem[]>>;
   onClose: () => void;
 }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const catItems = items.filter((i) => i.category === category);
   const blank = (): Omit<StartupItem, "id"> => ({
     category, paid_date: null, item_name: "", payee: null, amount: 0,
@@ -486,7 +488,8 @@ function StartupItemsModal({ projectId, category, items, setItems, onClose }: {
   }
 
   async function remove(it: StartupItem) {
-    if (!window.confirm(`ลบรายการ "${it.item_name}" ?`)) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: `ลบรายการ "${it.item_name}" ?`, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true); setErr(null);
     try {
       const res = await fetch(apiUrl(`/api/feasibility/${projectId}/startup-items/${it.id}`), { method: "DELETE" });
@@ -500,6 +503,7 @@ function StartupItemsModal({ projectId, category, items, setItems, onClose }: {
   const catSum = catItems.reduce((s, i) => s + i.amount, 0);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      {ConfirmDialog}
       <div className="bg-white rounded-2xl shadow-xl max-w-xl w-full p-5 space-y-3 max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-2">

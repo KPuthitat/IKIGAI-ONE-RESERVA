@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { formatLongDate } from "@/lib/time";
 import { humanizeApiError } from "@/lib/error-messages";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type Row = { id: number; income_date: string; channel: string | null; amount: number; note: string | null };
 type Entity = { channel: string; amount: number; count: number };
@@ -13,6 +14,7 @@ type Entity = { channel: string; amount: number; count: number };
 export default function ReceivablesClient({
   initialRows, initialByEntity, initialTotal
 }: { initialRows: Row[]; initialByEntity: Entity[]; initialTotal: number }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [byEntity, setByEntity] = useState<Entity[]>(initialByEntity);
@@ -21,7 +23,8 @@ export default function ReceivablesClient({
   const [err, setErr] = useState<string | null>(null);
 
   async function settle(r: Row) {
-    if (!window.confirm(`บันทึกรับชำระ "${r.channel ?? "ลูกหนี้"}" ฿${fmtMoney(r.amount)} วันนี้?`)) return;
+    const ok = await confirm({ title: "ยืนยัน", body: `บันทึกรับชำระ "${r.channel ?? "ลูกหนี้"}" ฿${fmtMoney(r.amount)} วันนี้?`, confirmLabel: "ตกลง", cancelLabel: "ยกเลิก", variant: "default" });
+    if (ok === null) return;
     setBusyId(r.id); setErr(null);
     try {
       const res = await fetch(apiUrl("/api/accounta/receivables"), {
@@ -36,6 +39,7 @@ export default function ReceivablesClient({
 
   return (
     <div className="space-y-4">
+      {ConfirmDialog}
       {err && <p className="text-sm text-rose-600">{err}</p>}
 
       <div className="card text-center py-3">

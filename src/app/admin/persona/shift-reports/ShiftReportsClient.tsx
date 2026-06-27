@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { nameWithPrefix } from "@/lib/name";
 import ReportDetailView, { type ReportDetail } from "@/app/components/ReportDetailView";
+import { useConfirm } from "@/app/components/useConfirm";
 
 export type ReportType =
   | "shift_open"
@@ -191,6 +192,7 @@ export default function ShiftReportsClient({
 }) {
   const router = useRouter();
   const { t } = useLang();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [busyId, setBusyId] = useState<number | null>(null);
   // Which request id has the reject-form expanded + the note text in
   // its textarea. Reject is a 2-step: open the form, type the note,
@@ -320,7 +322,8 @@ export default function ShiftReportsClient({
   }
 
   async function grant(requestId: number) {
-    if (!confirm(t("admin.persona.shiftReports.confirmGrant"))) return;
+    const ok = await confirm({ title: "ยืนยัน", body: t("admin.persona.shiftReports.confirmGrant"), confirmLabel: "ตกลง", cancelLabel: "ยกเลิก", variant: "default" });
+    if (ok === null) return;
     setBusyId(requestId);
     try {
       const res = await fetch(
@@ -363,6 +366,7 @@ export default function ShiftReportsClient({
 
   return (
     <div className="space-y-4">
+      {ConfirmDialog}
       {/* Today's report status — one row per type (4 total). Each row
           is ✓ when a LIVE daily_reports exists, ○ otherwise. The amber
           "แก้ไข N×" chip is a button when revision_count ≥ 1; clicking

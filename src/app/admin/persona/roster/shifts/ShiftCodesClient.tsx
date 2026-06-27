@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { useConfirm } from "@/app/components/useConfirm";
 import type { ShiftCode } from "@/lib/db";
 
 // Inline editor for the branch's shift codes. Each row is editable
@@ -16,6 +17,7 @@ const DEFAULT_COLOR = "#cbd5e1";
 export default function ShiftCodesClient({ codes }: { codes: ShiftCode[] }) {
   const router = useRouter();
   const { t } = useLang();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [pending, startTransition] = useTransition();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
@@ -51,7 +53,8 @@ export default function ShiftCodesClient({ codes }: { codes: ShiftCode[] }) {
   }
 
   async function remove(id: number) {
-    if (!confirm(t("admin.persona.roster.shifts.confirmDelete"))) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: t("admin.persona.roster.shifts.confirmDelete"), confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true); setErr(null);
     try {
       const res = await fetch(apiUrl(`/api/admin/persona/roster/shift-code?id=${id}`), { method: "DELETE" });
@@ -65,6 +68,7 @@ export default function ShiftCodesClient({ codes }: { codes: ShiftCode[] }) {
 
   return (
     <div className="card space-y-3">
+      {ConfirmDialog}
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-slate-800 text-sm">
           {t("admin.persona.roster.shifts.listTitle")} ({codes.length})

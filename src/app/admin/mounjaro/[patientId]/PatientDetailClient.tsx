@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { Alert } from "@/lib/mounjaro-alerts";
 import { levelLabel, rpeLabel, activityLabel, REST_ACTIVITY_ID } from "@/lib/exercise-catalog";
+import { useConfirm } from "@/app/components/useConfirm";
 
 // ── Mounjaro patient detail — clinical tracker view ─────────────────
 // Themed to the app CI (owner #10 2026-06-06): espresso-brown header +
@@ -108,6 +109,7 @@ export default function PatientDetailClient(props: {
   const displayAge = num(baseline, "age") ?? ageFromDob(employeeDob);
   const displayPhone = (baseline.phone as string)?.trim() || employeePhone || null;
   const router = useRouter();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [tab, setTab] = useState<"titration" | "visits" | "chart" | "baseline" | "exercise">("titration");
   const [showVisit, setShowVisit] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -118,7 +120,8 @@ export default function PatientDetailClient(props: {
     const msg = decision === "approve"
       ? `อนุมัติคำขอ${verb}ของผู้ป่วยรายนี้?`
       : `ไม่อนุมัติคำขอ${verb}ของผู้ป่วยรายนี้?`;
-    if (!window.confirm(msg)) return;
+    const ok = await confirm({ title: "ยืนยัน", body: msg, confirmLabel: "ตกลง", cancelLabel: "ยกเลิก", variant: "default" });
+    if (ok === null) return;
     setDecidingPending(true);
     try {
       const res = await fetch(apiUrl(`/api/admin/mounjaro/patient/${patientId}/pending-action`), {
@@ -157,13 +160,15 @@ export default function PatientDetailClient(props: {
   const warnings = alerts.filter((a) => a.level === "warning");
 
   async function deletePatient() {
-    if (!window.confirm("ลบผู้ป่วยรายนี้ออกจากความดูแล? (เวชระเบียนยังถูกเก็บไว้ตามกฎหมาย)")) return;
+    const ok = await confirm({ title: "ลบผู้ป่วยรายนี้ออกจากความดูแล?", body: "(เวชระเบียนยังถูกเก็บไว้ตามกฎหมาย)", confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     const res = await fetch(apiUrl(`/api/admin/mounjaro/patient/${patientId}`), { method: "DELETE" });
     if (res.ok) router.push("/admin/mounjaro");
   }
 
   return (
     <div className="space-y-5">
+      {ConfirmDialog}
       {/* Header */}
       <div className="relative bg-white border border-slate-200 rounded-2xl shadow-card px-6 py-6 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-20 after:h-[3px] after:bg-[#a06820] after:rounded-bl-2xl">
         <button onClick={() => router.push("/admin/mounjaro")}
@@ -544,9 +549,11 @@ function FlagList({ title, labels, danger, empty }: { title: string; labels: str
 
 // Visit row + inline delete (separate component to hold local busy state).
 function FragmentRow({ v, se, patientId, onChange }: { v: Visit; se: string; patientId: number; onChange: () => void }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const [busy, setBusy] = useState(false);
   async function del() {
-    if (!window.confirm("ลบการนัดนี้?")) return;
+    const ok = await confirm({ title: "ลบการนัดนี้?", confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true);
     try {
       const res = await fetch(apiUrl(`/api/admin/mounjaro/visit/${v.id}`), { method: "DELETE" });
@@ -574,6 +581,7 @@ function FragmentRow({ v, se, patientId, onChange }: { v: Visit; se: string; pat
           </span>
         </td>
         <td className="py-3 px-4 text-right">
+          {ConfirmDialog}
           <button onClick={del} disabled={busy} className="text-[12px] text-[#B91C1C] hover:underline disabled:opacity-50">ลบ</button>
         </td>
       </tr>

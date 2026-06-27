@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { HealthFacility } from "@/lib/health-facility";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type Editing = {
   id: number | null;
@@ -20,6 +21,7 @@ const BLANK: Editing = {
 };
 
 export default function FacilitiesClient({ facilities }: { facilities: HealthFacility[] }) {
+  const { confirm, alert, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [editing, setEditing] = useState<Editing | null>(null);
   const [busy, setBusy] = useState(false);
@@ -65,11 +67,12 @@ export default function FacilitiesClient({ facilities }: { facilities: HealthFac
   }
 
   async function remove(f: HealthFacility) {
-    if (!window.confirm(`ลบสถานพยาบาล "${f.name}"?`)) return;
+    const ok = await confirm({ title: `ลบสถานพยาบาล "${f.name}"?`, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     const res = await fetch(apiUrl(`/api/admin/health/facilities/${f.id}`), { method: "DELETE" });
     const j = await res.json().catch(() => ({}));
     if (!res.ok || !j.ok) {
-      window.alert(j.error === "last_facility" ? "ต้องเหลือสถานพยาบาลอย่างน้อย 1 แห่ง" : "ลบไม่สำเร็จ");
+      await alert({ title: j.error === "last_facility" ? "ต้องเหลือสถานพยาบาลอย่างน้อย 1 แห่ง" : "ลบไม่สำเร็จ", variant: "danger" });
       return;
     }
     router.refresh();
@@ -77,6 +80,7 @@ export default function FacilitiesClient({ facilities }: { facilities: HealthFac
 
   return (
     <div className="space-y-4">
+      {ConfirmDialog}
       <div className="space-y-2">
         {facilities.map((f) => (
           <div key={f.id} className="card flex items-start justify-between gap-3 flex-wrap">

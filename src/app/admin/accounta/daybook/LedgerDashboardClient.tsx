@@ -6,6 +6,8 @@ import Link from "next/link";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import PinPromptModal from "@/app/components/PinPromptModal";
+import Combobox from "@/app/components/Combobox";
+import { useConfirm } from "@/app/components/useConfirm";
 
 // Group an in-progress money string with thousand separators while the user
 // keeps typing (keeps up to 2 decimals): "1234.5" → "1,234.5". parseMoney
@@ -299,6 +301,7 @@ function DayDetail({
   removeExpense: (e: LedgerExpenseRow) => void;
   busyExpenseId: number | null;
 }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const [editId, setEditId] = useState<number | null>(null);
   const [editAmt, setEditAmt] = useState("");
   const [savingId, setSavingId] = useState<number | null>(null);
@@ -385,7 +388,8 @@ function DayDetail({
   }
 
   async function del(r: IncomeDayRow) {
-    if (!window.confirm(`ลบรายรับ ${r.channel ?? ""} ฿${fmtMoney(r.amount)} ?`)) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: `ลบรายรับ ${r.channel ?? ""} ฿${fmtMoney(r.amount)} ?`, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setSavingId(r.id); setRowErr(null);
     try {
       const res = await fetch(apiUrl(`/api/accounta/income/${r.id}`), { method: "DELETE" });
@@ -461,6 +465,7 @@ function DayDetail({
 
   return (
     <div className="space-y-3 px-1 py-2">
+      {ConfirmDialog}
       {rowErr && <p className="text-xs text-rose-600">{rowErr}</p>}
       {err && <p className="text-xs text-rose-600">{err}</p>}
       <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-7 items-start">
@@ -647,11 +652,8 @@ function DayDetail({
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <input value={expVendor} onChange={(e) => setExpVendor(e.target.value)} placeholder="ผู้จำหน่าย / รายการ"
-                      list="daybook-exp-vendors" className="input !py-1 flex-[2] !min-w-[12rem]" />
-                    <datalist id="daybook-exp-vendors">
-                      {expenseVendors.map((v) => <option key={v} value={v} />)}
-                    </datalist>
+                    <Combobox value={expVendor} onChange={setExpVendor} options={expenseVendors}
+                      placeholder="ผู้จำหน่าย / รายการ" className="flex-[2] !min-w-[12rem]" inputClassName="!py-1" />
                     <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)} title="หมวดหมู่"
                       className="input !py-1 !w-auto !min-w-[5.5rem]">
                       <option value="">หมวด</option>
@@ -712,6 +714,7 @@ export default function LedgerDashboardClient({
   draftExpenses: DraftLite[];
   expenseVendors: string[];
 }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -819,7 +822,8 @@ export default function LedgerDashboardClient({
   }
 
   async function remove(e: LedgerExpenseRow) {
-    if (!window.confirm(`ลบรายจ่าย "${e.vendor_name ?? "รายการนี้"}" ฿${fmtMoney(e.amount_total)} ? กู้คืนไม่ได้`)) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: `ลบรายจ่าย "${e.vendor_name ?? "รายการนี้"}" ฿${fmtMoney(e.amount_total)} ? กู้คืนไม่ได้`, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusyId(e.id);
     try {
       const res = await fetch(apiUrl(`/api/accounta/expenses/${e.id}`), { method: "DELETE" });
@@ -837,6 +841,7 @@ export default function LedgerDashboardClient({
 
   return (
     <div className="space-y-4">
+      {ConfirmDialog}
       {/* Period selector + add buttons */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1">

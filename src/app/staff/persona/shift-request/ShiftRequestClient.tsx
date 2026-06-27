@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { ShiftRequestRow } from "@/lib/shift-requests";
+import { useConfirm } from "@/app/components/useConfirm";
 
 const KIND_TH: Record<string, string> = { extra_shift: "ขอเพิ่มกะ", swap: "ขอสลับวันหยุด" };
 const STATUS_TH: Record<string, { t: string; c: string }> = {
@@ -18,6 +19,7 @@ function todayBkk(): string {
 
 export default function ShiftRequestClient({ requests }: { requests: ShiftRequestRow[] }) {
   const router = useRouter();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [kind, setKind] = useState<"extra_shift" | "swap">("extra_shift");
   const [workDate, setWorkDate] = useState("");
   const [offDate, setOffDate] = useState("");
@@ -47,13 +49,15 @@ export default function ShiftRequestClient({ requests }: { requests: ShiftReques
   }
 
   async function cancel(id: number) {
-    if (!window.confirm("ยกเลิกคำขอนี้?")) return;
+    const ok = await confirm({ title: "ยกเลิกคำขอนี้?", confirmLabel: "ยกเลิกคำขอ", cancelLabel: "ปิด", variant: "warning" });
+    if (ok === null) return;
     const res = await fetch(apiUrl(`/api/persona/shift-request/${id}/cancel`), { method: "POST" });
     if (res.ok) router.refresh();
   }
 
   return (
     <div className="space-y-4 max-w-2xl mx-auto">
+      {ConfirmDialog}
       <div>
         <h1 className="text-xl font-bold text-slate-800">คำขอเปลี่ยนเวลางาน</h1>
         <p className="text-sm text-slate-500">

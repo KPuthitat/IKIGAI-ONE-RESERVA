@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { formatLongDate } from "@/lib/time";
 import { humanizeApiError } from "@/lib/error-messages";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type Ref = { id: number; name: string };
 type Channel = { id: number; name: string };
@@ -52,6 +53,7 @@ export default function IncomeClient(props: {
   month: string; activeBranchId: number | null; branches: Ref[]; companies: Ref[]; channels: Channel[];
   initialIncome: Income[]; initialSummary: Summary;
 }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [month, setMonth] = useState(props.month);
   // Default to the active branch so the list + summary + dropdown all agree —
@@ -135,7 +137,8 @@ export default function IncomeClient(props: {
   }
 
   async function remove(r: Income) {
-    if (!window.confirm(`ลบรายรับ ${r.channel ?? ""} ฿${fmtMoney(r.amount)} ?`)) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: `ลบรายรับ ${r.channel ?? ""} ฿${fmtMoney(r.amount)} ?`, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true); setErr(null);
     try {
       const res = await fetch(apiUrl(`/api/accounta/income/${r.id}`), { method: "DELETE" });
@@ -147,6 +150,7 @@ export default function IncomeClient(props: {
 
   return (
     <div className="space-y-4">
+      {ConfirmDialog}
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={openAdd} disabled={busy} className="btn-primary disabled:opacity-50">+ เพิ่มรายรับ</button>
         <input type="month" className="input !w-auto" value={month}

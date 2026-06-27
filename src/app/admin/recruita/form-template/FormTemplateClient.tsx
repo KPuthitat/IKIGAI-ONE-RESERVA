@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
+import { useConfirm } from "@/app/components/useConfirm";
 import type { Lang } from "@/lib/i18n";
 import type { FormTemplate, FormSection, FormField } from "@/lib/recruita-form-template";
 
@@ -30,6 +31,7 @@ export default function FormTemplateClient({
   lang: Lang;
 }) {
   const router = useRouter();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [, startTransition] = useTransition();
   const [tpl, setTpl] = useState<FormTemplate>(initialTemplate);
   const [busy, setBusy] = useState(false);
@@ -102,8 +104,9 @@ export default function FormTemplateClient({
     } finally { setBusy(false); }
   }
 
-  function resetToInitial() {
-    if (!confirm("ยกเลิกการแก้ไขทั้งหมดที่ยังไม่ได้บันทึก?")) return;
+  async function resetToInitial() {
+    const ok = await confirm({ title: "ยกเลิกการแก้ไขทั้งหมดที่ยังไม่ได้บันทึก?", confirmLabel: "ยกเลิกการแก้ไข", cancelLabel: "ปิด", variant: "warning" });
+    if (ok === null) return;
     setTpl(initialTemplate);
     setMsg(null); setErr(null);
   }
@@ -116,6 +119,7 @@ export default function FormTemplateClient({
 
   return (
     <div className="space-y-4">
+      {ConfirmDialog}
       <div>
         <h1 className="text-2xl font-bold text-slate-800">
           RECRUITA · <span className="font-medium text-slate-600">

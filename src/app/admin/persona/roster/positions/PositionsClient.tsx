@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import Switch from "@/app/components/Switch";
+import { useConfirm } from "@/app/components/useConfirm";
 import type { RosterPosition } from "@/lib/db";
 
 export default function PositionsClient({ positions }: { positions: RosterPosition[] }) {
   const router = useRouter();
   const { t } = useLang();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [pending, startTransition] = useTransition();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
@@ -43,7 +45,8 @@ export default function PositionsClient({ positions }: { positions: RosterPositi
   }
 
   async function remove(id: number) {
-    if (!confirm(t("admin.persona.roster.positions.confirmDelete"))) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: t("admin.persona.roster.positions.confirmDelete"), confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true); setErr(null);
     try {
       const res = await fetch(apiUrl(`/api/admin/persona/roster/position?id=${id}`), { method: "DELETE" });
@@ -70,6 +73,7 @@ export default function PositionsClient({ positions }: { positions: RosterPositi
 
   return (
     <div className="card space-y-3">
+      {ConfirmDialog}
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-slate-800 text-sm">
           {t("admin.persona.roster.positions.listTitle")} ({positions.length})

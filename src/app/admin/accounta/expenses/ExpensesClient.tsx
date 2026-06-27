@@ -11,6 +11,8 @@ import {
   DOC_TYPES, DOC_TYPE_LABEL, docTypeLabel,
   type PaymentStatus, type OcrBillResult
 } from "@/lib/accounta";
+import Combobox from "@/app/components/Combobox";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type Ref = { id: number; name: string };
 type Category = {
@@ -116,6 +118,7 @@ export default function ExpensesClient(props: {
   // scoped to the month/branch filter.
   const [drafts, setDrafts] = useState<Expense[]>(props.initialDrafts);
   // Category vs benchmark % (owner 2026-06-18).
+  const { confirm, ConfirmDialog } = useConfirm();
   const [budget, setBudget] = useState<Budget>(props.initialBudget);
   // True while the modal is reviewing a draft → shows the "ยืนยันเข้าสมุด" CTA.
   const [draftMode, setDraftMode] = useState(false);
@@ -426,7 +429,8 @@ export default function ExpensesClient(props: {
   }
 
   async function remove(e: Expense) {
-    if (!window.confirm(`ลบรายจ่าย "${e.vendor_name ?? e.description ?? "รายการนี้"}" ฿${fmtMoney(e.amount_total)} ? กู้คืนไม่ได้`)) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: `ลบรายจ่าย "${e.vendor_name ?? e.description ?? "รายการนี้"}" ฿${fmtMoney(e.amount_total)} ? กู้คืนไม่ได้`, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true); setErr(null);
     try {
       const res = await fetch(apiUrl(`/api/accounta/expenses/${e.id}`), { method: "DELETE" });
@@ -458,7 +462,8 @@ export default function ExpensesClient(props: {
   }
   async function removeExtraDoc(docId: number) {
     if (form.id == null) return;
-    if (!window.confirm("ลบไฟล์แนบนี้?")) return;
+    const ok = await confirm({ title: "ลบไฟล์แนบนี้?", confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setExtraBusy(true);
     try {
       await fetch(apiUrl(`/api/accounta/expenses/${form.id}/docs/${docId}`), { method: "DELETE" });
@@ -524,6 +529,7 @@ export default function ExpensesClient(props: {
 
   return (
     <div className="space-y-4">
+      {ConfirmDialog}
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={openAdd} disabled={busy} className="btn-primary disabled:opacity-50">
@@ -917,11 +923,8 @@ export default function ExpensesClient(props: {
               </div>
               <div className="sm:col-span-2">
                 <label className="label !text-xs">ผู้ค้า / ผู้รับเงิน</label>
-                <input className="input" list="accounta-vendors" value={form.vendor_name}
-                  onChange={(e) => set("vendor_name", e.target.value)} placeholder="พิมพ์ชื่อ หรือเลือกจากรายการ" />
-                <datalist id="accounta-vendors">
-                  {vendors.map((v) => <option key={v.id} value={v.name} />)}
-                </datalist>
+                <Combobox value={form.vendor_name} onChange={(v) => set("vendor_name", v)}
+                  options={vendors.map((v) => v.name)} placeholder="พิมพ์ชื่อ หรือเลือกจากรายการ" />
               </div>
               <div className="sm:col-span-2">
                 <label className="label !text-xs">รายละเอียด</label>

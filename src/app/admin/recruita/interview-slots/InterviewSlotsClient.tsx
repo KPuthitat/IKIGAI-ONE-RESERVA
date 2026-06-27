@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { formatLongDate } from "@/lib/time";
 import type { AdminInterviewSlot, InterviewApplicant } from "@/lib/recruita-interview-slots";
+import { useConfirm } from "@/app/components/useConfirm";
 
 // Thai week, calendar order (Mon first). idx = JS getUTCDay() value.
 const WEEKDAYS: Array<{ idx: number; label: string; short: string }> = [
@@ -41,6 +42,7 @@ export default function InterviewSlotsClient({
   /** Venue map/navigation link (shared with the invite-card button). */
   mapUrl?: string;
 }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -115,7 +117,8 @@ export default function InterviewSlotsClient({
   }
 
   async function clearOpen() {
-    if (!window.confirm("ล้างช่วงเวลาที่ยังว่างทั้งหมด? (ช่วงที่ถูกจองแล้วจะไม่ถูกลบ)")) return;
+    const ok = await confirm({ title: "ล้างช่วงเวลาที่ยังว่างทั้งหมด?", body: "(ช่วงที่ถูกจองแล้วจะไม่ถูกลบ)", confirmLabel: "ล้าง", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     setBusy(true);
     setMsg(null);
     try {
@@ -209,6 +212,7 @@ export default function InterviewSlotsClient({
 
   return (
     <div className="space-y-4">
+      {ConfirmDialog}
       {/* Venue location link — shared with the invite-card navigate button. */}
       <div className="card space-y-2">
         <h2 className="font-bold text-slate-800 text-sm">ลิงก์สถานที่นัดสัมภาษณ์ (แผนที่/นำทาง)</h2>

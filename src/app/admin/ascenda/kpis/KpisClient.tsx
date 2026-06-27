@@ -7,6 +7,7 @@ import { apiUrl } from "@/lib/url";
 // doesn't pull in better-sqlite3 via @/lib/ascenda.
 import type { AscendaKpi, KpiKind, KpiScope, TargetOp } from "@/lib/ascenda-types";
 import { kindLabelTh } from "@/lib/ascenda-types";
+import { useConfirm } from "@/app/components/useConfirm";
 
 // Interactive KPI manager. Inline modal for add/edit, per-row buttons
 // for reorder / toggle active / delete. Uses router.refresh() after
@@ -22,6 +23,7 @@ const KIND_GROUPS: Array<{ label: string; kinds: KpiKind[] }> = [
 ];
 
 export default function KpisClient({ kpis }: { kpis: AscendaKpi[] }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [modal, setModal] = useState<
     | { mode: "create" }
@@ -68,11 +70,12 @@ export default function KpisClient({ kpis }: { kpis: AscendaKpi[] }) {
   }
 
   async function removeKpi(kpi: AscendaKpi) {
-    const confirm = window.confirm(
-      `ลบเกณฑ์ "${kpi.title}" จริงๆ ใช่ไหม?\n\n` +
-      `ข้อมูลผลการประเมินย้อนหลังของเกณฑ์นี้จะหายตามไปด้วย — แนะนำให้ "ปิดใช้งาน" แทนถ้ายังอยากเก็บประวัติไว้`
-    );
-    if (!confirm) return;
+    const confirmed = await confirm({
+      title: `ลบเกณฑ์ "${kpi.title}" จริงๆ ใช่ไหม?`,
+      body: `ข้อมูลผลการประเมินย้อนหลังของเกณฑ์นี้จะหายตามไปด้วย — แนะนำให้ "ปิดใช้งาน" แทนถ้ายังอยากเก็บประวัติไว้`,
+      confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger"
+    });
+    if (confirmed === null) return;
     setBusyId(kpi.id);
     setMsg(null);
     const ok = await callApi(`/api/admin/ascenda/kpis/${kpi.id}`, {
@@ -87,6 +90,7 @@ export default function KpisClient({ kpis }: { kpis: AscendaKpi[] }) {
 
   return (
     <div className="space-y-4">
+      {ConfirmDialog}
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs text-slate-500">
           {kpis.length} เกณฑ์ · ลำดับใน column &quot;#&quot; กำหนดลำดับที่แสดงในตารางสรุป

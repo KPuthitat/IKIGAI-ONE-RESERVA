@@ -11,12 +11,14 @@ import { useRouter } from "next/navigation";
 import type { Branch, TableRow, Zone } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { useConfirm } from "@/app/components/useConfirm";
 
 type Props = { branch: Branch; tables: TableRow[]; zones: Zone[] };
 
 export default function TableManager({ branch, tables, zones }: Props) {
   const router = useRouter();
   const { t } = useLang();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -73,6 +75,7 @@ export default function TableManager({ branch, tables, zones }: Props) {
 
   return (
     <div className="card !p-0 overflow-hidden">
+      {ConfirmDialog}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -106,10 +109,13 @@ export default function TableManager({ branch, tables, zones }: Props) {
                     id: tbl.id, label, capacity, zone_id: zoneId
                   })
                 }
-                onDelete={() => {
-                  if (!window.confirm(
-                    t("admin.reserva.tableMgr.deleteConfirm", { label: tbl.label })
-                  )) return;
+                onDelete={async () => {
+                  const ok = await confirm({
+                    title: "ยืนยันการลบ",
+                    body: t("admin.reserva.tableMgr.deleteConfirm", { label: tbl.label }),
+                    confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger"
+                  });
+                  if (ok === null) return;
                   void call("DELETE", `/api/admin/reserva/tables?id=${tbl.id}`);
                 }}
               />

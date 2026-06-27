@@ -8,6 +8,7 @@ import { humanizeApiError } from "@/lib/error-messages";
 import { fmtMoney } from "@/lib/format";
 import { roundLabel, mondayOf, TH_MONTHS_FULL, type Tier, type SalesBase } from "@/lib/revshare";
 import PinPromptModal from "@/app/components/PinPromptModal";
+import { useConfirm } from "@/app/components/useConfirm";
 import { DailyCardPreview, WeeklyCardPreview, SendPreviewModal } from "./CardPreviews";
 
 type Partner = { id: number; name: string; sales_base: SalesBase; pos_categories: string[]; line_group_id: string | null; vat_enabled: boolean; vat_rate: number };
@@ -23,6 +24,7 @@ const PIN_ERRORS = new Set(["wrong_pin", "pin_invalid", "no_pin", "user_not_foun
 export default function RoundsClient({
   partner, rounds: initialRounds, year, month, operatorName, sellerName
 }: { partner: Partner; tiers: Tier[]; rounds: Round[]; year: number; month: number; operatorName: string; sellerName: string }) {
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [rounds, setRounds] = useState<Round[]>(initialRounds);
   const [busy, setBusy] = useState(false);
@@ -116,7 +118,8 @@ export default function RoundsClient({
     await guarded((pin) => mutate("PATCH", { id: r.id, partner: partner.id, sales_amount: v, pin }));
   }
   async function del(r: Round) {
-    if (!window.confirm(`ลบยอดวันที่ ${roundLabel(r.period_start, r.period_start)} ?`)) return;
+    const ok = await confirm({ title: "ยืนยันการลบ", body: `ลบยอดวันที่ ${roundLabel(r.period_start, r.period_start)} ?`, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
     await guarded(async (pin) => {
       const res = await mutate("DELETE", undefined, `?id=${r.id}&partner=${partner.id}&pin=${encodeURIComponent(pin)}`);
       // DELETE doesn't echo the list back — drop the row locally so it disappears
@@ -181,6 +184,7 @@ export default function RoundsClient({
 
   return (
     <div className="space-y-4">
+      {ConfirmDialog}
       {err && <p className="text-sm text-rose-600">{err}</p>}
 
       <div className="flex items-center justify-center gap-3">
