@@ -747,6 +747,22 @@ export function listUnpaidExpensesForBranch(branchId: number): Array<{
   ).all(branchId) as Array<{ id: number; vendor_name: string | null; amount_total: number; bill_date: string | null; due_date: string | null }>;
 }
 
+/** Mark one confirmed-unpaid bill as ชำระแล้ว with the cash-out date (owner
+ *  2026-06-27). Mirrors settleReceivable on the AP side: only flips a row that
+ *  is still unpaid + confirmed in this branch, so a double-tap or stale id is a
+ *  no-op. Clears due_date (no longer pending). Returns false if nothing matched. */
+export function markExpensePaid(
+  id: number, branchId: number, paidDate: string, method?: string | null
+): boolean {
+  return getDb().prepare(
+    `UPDATE accounta_expenses
+        SET payment_status = 'paid', paid_date = ?,
+            payment_method = COALESCE(?, payment_method), due_date = NULL,
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND branch_id = ? AND review_status = 'confirmed' AND payment_status = 'unpaid'`
+  ).run(paidDate, method ?? null, id, branchId).changes > 0;
+}
+
 /** Mark a draft as reviewed → it now counts in the ledger/summaries. */
 export function confirmExpense(id: number): boolean {
   return getDb().prepare(

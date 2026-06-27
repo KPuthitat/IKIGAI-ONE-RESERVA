@@ -52,7 +52,7 @@ type CashAccount = { id: number; name: string; type: string; bank_label: string 
 export type LedgerExpenseRow = {
   id: number; bill_date: string; vendor_name: string | null; doc_type: string | null;
   category: string | null; amount_total: number; vat_amount: number;
-  payment_status: "paid" | "unpaid"; has_doc: boolean;
+  payment_status: "paid" | "unpaid"; has_doc: boolean; due_date: string | null;
 };
 // Raw income row (matches /api/accounta/income) — id + source let the inline
 // daybook detail edit manual rows while leaving shift-close rows read-only.
@@ -333,6 +333,8 @@ function DayDetail({
   busyExpenseId: number | null;
 }) {
   const { confirm, ConfirmDialog } = useConfirm();
+  // Bangkok today — for measuring whether a credit bill is past due / due today.
+  const todayStr = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
   const [editId, setEditId] = useState<number | null>(null);
   const [editAmt, setEditAmt] = useState("");
   const [savingId, setSavingId] = useState<number | null>(null);
@@ -354,6 +356,30 @@ function DayDetail({
   const [pinRow, setPinRow] = useState<IncomeDayRow | null>(null); // auto row pending PIN-delete
   const [draftPickerOpen, setDraftPickerOpen] = useState(false);
   const [fromDraft, setFromDraft] = useState<DraftLite | null>(null); // pulling a scanned draft
+  // Mark-a-credit-bill-paid inline form: which row + the chosen cash-out date.
+  const [payId, setPayId] = useState<number | null>(null);
+  const [payDate, setPayDate] = useState("");
+  const [payBusy, setPayBusy] = useState(false);
+
+  function openPay(e: LedgerExpenseRow) {
+    // Default the cash-out date to today (you're usually marking a bill paid now);
+    // editable, and the API rejects a future date.
+    const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+    setPayId(e.id); setPayDate(today); setExpErr(null);
+  }
+  async function confirmPay() {
+    if (payId == null) return;
+    setPayBusy(true); setExpErr(null);
+    try {
+      const res = await fetch(apiUrl(`/api/accounta/expenses/${payId}/pay`), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paid_date: payDate || undefined })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setExpErr(j.message || "บันทึกการจ่ายไม่สำเร็จ"); return; }
+      setPayId(null); onChanged();
+    } finally { setPayBusy(false); }
+  }
 
   function pickDraft(d: DraftLite) {
     setExpVendor(d.vendor_name || "");
@@ -615,15 +641,40 @@ function DayDetail({
                     <td />
                   </tr>
                   {g.rows.map((e) => {
-                    const tag = [e.payment_status === "unpaid" ? "ค้างชำระ" : "", e.vat_amount > 0 ? `VAT ฿${fmtMoney(e.vat_amount)}` : ""].filter(Boolean).join(" · ");
+                    const unpaid = e.payment_status === "unpaid";
+                    // Overdue/due is measured against TODAY (a bill sits under its
+                    // bill_date row, but whether it's past due depends on now).
+                    const overdue = unpaid && e.due_date != null && e.due_date < todayStr;
+                    const dueToday = unpaid && e.due_date != null && e.due_date === todayStr;
+                    const tag = [
+                      unpaid ? "ค้างชำระ" : "",
+                      e.vat_amount > 0 ? `VAT ฿${fmtMoney(e.vat_amount)}` : ""
+                    ].filter(Boolean).join(" · ");
                     return (
                       <tr key={e.id} className="border-b border-slate-50 hover:bg-slate-50/60">
                         <td className="py-1 px-2 pl-5">
-                          <div className="text-slate-700">{e.vendor_name || "—"}</div>
-                          {tag && <div className="text-[10px] text-slate-400">{tag}</div>}
+                          <div className="text-slate-700 flex items-center gap-1.5 flex-wrap">
+                            {e.vendor_name || "—"}
+                            {overdue && <span className="text-[9px] font-normal bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-1.5 py-px">เลยกำหนด</span>}
+                            {dueToday && <span className="text-[9px] font-normal bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-px">ครบกำหนดวันนี้</span>}
+                          </div>
+                          {tag && <div className="text-[10px] text-slate-400">{tag}{unpaid && e.due_date && !overdue && !dueToday ? ` · ครบกำหนด ${e.due_date}` : ""}</div>}
+                          {payId === e.id && (
+                            <div className="mt-1 flex items-center gap-1.5">
+                              <input type="date" value={payDate}
+                                onChange={(ev) => setPayDate(ev.target.value)} className="input !py-0.5 !w-auto text-[11px]" />
+                              <button type="button" onClick={confirmPay} disabled={payBusy || !payDate}
+                                className="text-[10px] text-white bg-emerald-600 hover:bg-emerald-700 rounded px-2 py-0.5 disabled:opacity-50">ยืนยันจ่าย</button>
+                              <button type="button" onClick={() => setPayId(null)} disabled={payBusy}
+                                className="text-[10px] text-slate-400 hover:text-slate-600">ยกเลิก</button>
+                            </div>
+                          )}
                         </td>
                         <td className="py-1 px-2 text-right font-mono text-rose-700">{fmtMoney(e.amount_total)}</td>
                         <td className="py-1 px-2 text-right whitespace-nowrap">
+                          {unpaid && payId !== e.id && (
+                            <button type="button" onClick={() => openPay(e)} className="text-[10px] text-emerald-600 hover:underline mr-2">จ่ายแล้ว</button>
+                          )}
                           <Link href={`/admin/accounta/expenses?edit=${e.id}`} className="text-[10px] text-brand hover:underline mr-2">แก้ไข</Link>
                           <button type="button" onClick={() => removeExpense(e)} disabled={busyExpenseId === e.id} className="text-[10px] text-rose-500 hover:underline disabled:opacity-50">ลบออก</button>
                         </td>

@@ -109,7 +109,16 @@ export function buildPendingDigest(branchId: number): PendingDigest {
   // — owner 2026-06-23: remind in the daily pending digest so they don't pile up.
   const draftRows = listDraftExpensesForBranch(branchId);
   // Confirmed bills still unpaid (owner 2026-06-24: เตือนบิลค้างชำระในรอบ 22.00).
+  // Flag ครบกำหนดวันนี้ / เลยกำหนด against Bangkok today so a bill that has
+  // reached its due date stands out, not just sits in the list (owner 2026-06-27).
   const unpaidRows = listUnpaidExpensesForBranch(branchId);
+  const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  const dueLabel = (due: string | null): string => {
+    if (!due) return "";
+    if (due < today) return " · เลยกำหนดแล้ว";
+    if (due === today) return " · ครบกำหนดวันนี้";
+    return ` · ครบกำหนด ${due}`;
+  };
 
   return {
     shiftChange: shiftRows.map((r) => ({
@@ -142,7 +151,7 @@ export function buildPendingDigest(branchId: number): PendingDigest {
     })),
     accountaUnpaid: unpaidRows.map((r) => ({
       name: r.vendor_name?.trim() || "บิล (ยังไม่ระบุผู้ขาย)",
-      detail: `ค้างชำระ · ${r.amount_total.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท${r.due_date ? ` · ครบกำหนด ${r.due_date}` : ""}`,
+      detail: `ค้างชำระ · ${r.amount_total.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท${dueLabel(r.due_date)}`,
       ref: null
     }))
   };
