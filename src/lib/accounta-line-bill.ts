@@ -13,14 +13,14 @@
 
 import { getDb } from "./db";
 import { nameWithPrefix } from "./name";
-import { sendLinePush, downloadLineContent, accountaBillAckFlex } from "./line";
+import { sendLinePush, downloadLineContent, accountaBillVerifyFlex } from "./line";
 import { scanBill, ocrEnabled } from "./accounta-ocr";
 import {
   listCategories, createExpense, setExpenseDoc, logOcrUsage,
-  expenseExistsForLineMessage, findVendorByName, findVendorByTaxId, createVendor
+  expenseExistsForLineMessage, findVendorByTaxId, markDraftSenderVerify
 } from "./accounta-db";
 import { saveReceiptImage, RECEIPT_ALLOWED_MIME } from "./accounta-receipts";
-import { ocrCostBaht, round2, splitMixedBill, isDocType, DOC_TYPE_LABEL, type DocType, type ExpenseInput, type OcrBillResult } from "./accounta";
+import { ocrCostBaht, round2, type ExpenseInput, type OcrBillResult } from "./accounta";
 
 type SenderRow = {
   id: number;
@@ -110,64 +110,24 @@ export async function ingestLineBill(args: {
   `).get(user.id) as { branch_id: number; company_id: number | null } | undefined;
   const branchId = ub?.branch_id ?? null;
 
-  // Vendor matching (branch-scoped). Prefer the 13-digit เลขผู้เสียภาษี — it reads
-  // cleanly off the bill so repeat vendors auto-attribute even when OCR garbles
-  // the name (owner 2026-06-26). Fall back to a name match. An UNKNOWN vendor is
-  // auto-created into the shared master flagged "รอตรวจ" (carrying the tax id) so
-  // the next bill from them matches by tax id, and the admin can complete it.
+  // Vendor matching — by the 13-digit เลขผู้เสียภาษี ONLY (owner 2026-06-27). OCR's
+  // job is now just to read the tax id + the bill total; it no longer guesses
+  // the vendor name or category off the image. A tax id that matches the
+  // branch's vendor master attributes the bill to that vendor (canonical name);
+  // an unreadable or unknown tax id leaves the draft's ผู้จำหน่าย blank — a plain
+  // "รอตรวจ" draft for the admin to complete. The sender confirms what we matched
+  // via the verify card below.
   const taxId = (parsed?.tax_id ?? "").replace(/\D/g, "");
-  let known = taxId.length >= 10 ? findVendorByTaxId(taxId, branchId) : null;
-  if (!known && parsed?.vendor_name?.trim()) known = findVendorByName(parsed.vendor_name, branchId);
-  if (!known && (parsed?.vendor_name?.trim() || taxId.length >= 10) && branchId != null) {
-    try {
-      const name = parsed?.vendor_name?.trim() || `ผู้ขาย (เลขภาษี ${taxId})`;
-      const id = createVendor(branchId, user.id, {
-        name, tax_id: taxId || null, category: parsed?.category ?? null, needsReview: true
-      });
-      known = { id, name, tax_id: taxId || null, category: parsed?.category ?? null };
-    } catch { /* non-fatal — the draft still files with the free-text vendor_name */ }
-  } else if (known && taxId.length >= 10 && !known.tax_id) {
-    // Backfill the tax id onto a vendor we only knew by name, so it matches by
-    // tax id next time.
-    try { createVendor(branchId!, user.id, { name: known.name, tax_id: taxId }); } catch { /* non-fatal */ }
-  }
-  // Use the master's canonical name when matched, so repeat bills report under
-  // one vendor even if OCR read the name slightly differently.
-  const vendorName = known?.name ?? parsed?.vendor_name ?? null;
-  const cat = parsed?.category ?? known?.category ?? null;
-  const docType: DocType | null = parsed?.doc_type && isDocType(parsed.doc_type) ? parsed.doc_type : null;
+  const known = taxId.length >= 10 ? findVendorByTaxId(taxId, branchId) : null;
+  const vendorName = known?.name ?? null;
   const baseNote = `ส่งโดย ${senderName} ทางไลน์`;
-
-  // Build one draft row's input from a VAT-resolved amount slice.
-  const buildInput = (a: {
-    amount: number; hasTax: boolean; vat: number; base: number; note: string;
-  }): ExpenseInput => ({
-    branch_id: ub?.branch_id ?? null,
-    company_id: ub?.company_id ?? null,
-    bill_date: parsed?.bill_date || today,
-    vendor_id: known?.id ?? null,
-    vendor_name: vendorName,
-    doc_type: docType,
-    category: cat,
-    description: parsed?.description ?? null,
-    amount_total: a.amount,
-    has_tax_invoice: a.hasTax,
-    vat_amount: a.vat,
-    base_amount: a.base,
-    payment_status: "unpaid",     // admin sets paid/method on review
-    payment_method: null,
-    paid_date: null,
-    due_date: null,               // admin sets the credit-term due date on review
-    note: a.note
-  });
 
   const ocrMeta = model && usage
     ? { source: model, costBaht: ocrCostBaht(model, usage.input_tokens, usage.output_tokens) }
     : undefined;
 
-  // Create one draft row + attach its own copy of the photo. `claimMsgId`
-  // is set only on the row that "owns" the LINE message id (dedup); the
-  // second split row passes null. Returns the new id, or null if the unique
+  // Create one draft row + attach its own copy of the photo. `claimMsgId` owns
+  // the LINE message id (dedup). Returns the new id, or null if the unique
   // line_message_id index rejected a concurrent retry.
   const createDraftRow = async (input: ExpenseInput, claimMsgId: string | null): Promise<number | null> => {
     let id: number;
@@ -183,30 +143,31 @@ export async function ingestLineBill(args: {
     return id;
   };
 
-  const split = parsed ? splitMixedBill(parsed) : null;
-  let firstId: number | null;
-  if (split) {
-    // Mixed bill → two drafts: one VAT-able, one VAT-exempt (owner 2026-06-18).
-    firstId = await createDraftRow(
-      buildInput({ amount: split.vatable, hasTax: true, vat: split.vat, base: round2(split.vatable - split.vat), note: `${baseNote} · ส่วนมี VAT` }),
-      messageId
-    );
-    if (firstId == null) return; // concurrent retry already claimed it
-    await createDraftRow(
-      buildInput({ amount: split.nonvat, hasTax: false, vat: 0, base: split.nonvat, note: `${baseNote} · ส่วนไม่มี VAT` }),
-      null
-    );
-  } else {
-    const total = parsed?.amount_total ?? 0;
-    const hasTax = parsed?.has_tax_invoice ?? false;
-    // Prefer the VAT printed on the bill; else 0/0 → normalise() derives 7%.
-    const printedVat = hasTax && parsed?.vat_amount != null ? round2(parsed.vat_amount) : 0;
-    firstId = await createDraftRow(
-      buildInput({ amount: total, hasTax, vat: printedVat, base: printedVat > 0 ? round2(total - printedVat) : 0, note: baseNote }),
-      messageId
-    );
-    if (firstId == null) return;
-  }
+  // A single draft — amount from OCR, VAT as printed on the bill (if any). No
+  // mixed-bill split / no auto-category: those are now the admin's call on review.
+  const total = parsed?.amount_total ?? 0;
+  const hasTax = parsed?.has_tax_invoice ?? false;
+  const printedVat = hasTax && parsed?.vat_amount != null ? round2(parsed.vat_amount) : 0;
+  const firstId = await createDraftRow({
+    branch_id: ub?.branch_id ?? null,
+    company_id: ub?.company_id ?? null,
+    bill_date: parsed?.bill_date || today,
+    vendor_id: known?.id ?? null,
+    vendor_name: vendorName,
+    doc_type: null,
+    category: null,
+    description: null,
+    amount_total: total,
+    has_tax_invoice: hasTax,
+    vat_amount: printedVat,
+    base_amount: printedVat > 0 ? round2(total - printedVat) : 0,
+    payment_status: "unpaid",     // admin sets paid/method on review
+    payment_method: null,
+    paid_date: null,
+    due_date: null,               // admin sets the credit-term due date on review
+    note: baseNote
+  }, messageId);
+  if (firstId == null) return; // concurrent retry already claimed it
 
   if (model && usage) {
     logOcrUsage({
@@ -218,17 +179,43 @@ export async function ingestLineBill(args: {
     });
   }
 
+  // Ask the sender to eyeball ผู้จำหน่าย (matched by tax id) + ยอด and tap
+  // ถูกต้อง / ไม่ตรง. Their answer is recorded on the draft for the admin (see
+  // handleBillVerifyPostback). Nothing is posted to the ledger from this card.
   await sendLinePush(channelToken, {
     to: senderUserId,
-    messages: [accountaBillAckFlex({
+    messages: [accountaBillVerifyFlex({
+      expenseId: firstId,
       senderName,
-      vendor: parsed?.vendor_name ?? null,
+      vendorName,
       amount: parsed?.amount_total ?? null,
-      category: cat,
-      docTypeLabel: docType ? DOC_TYPE_LABEL[docType] : null,
-      billDate: parsed?.bill_date ?? null,
-      parsed: !!parsed,
-      extraLine: split ? "บิลผสม — แยกเป็น 2 รายการ (มี VAT / ไม่มี VAT)" : null
+      billDate: parsed?.bill_date ?? null
     })]
   });
+}
+
+/** Handle a tap on the "ตรวจสอบบิล" verify card (postback acct_bill_ok /
+ *  acct_bill_fix). Records the sender's answer on their own draft and replies.
+ *  Returns true if the postback was one of ours (handled). */
+export async function handleBillVerifyPostback(args: {
+  channelToken: string;
+  senderUserId: string;
+  data: string;
+}): Promise<boolean> {
+  const m = args.data.match(/^acct_bill_(ok|fix)=(\d+)$/);
+  if (!m) return false;
+  const ok = m[1] === "ok";
+  const id = Number(m[2]);
+  const db = getDb();
+  const user = db.prepare("SELECT id FROM users WHERE line_user_id = ?")
+    .get(args.senderUserId) as { id: number } | undefined;
+  const pushText = (text: string) =>
+    sendLinePush(args.channelToken, { to: args.senderUserId, messages: [{ type: "text", text }] });
+  if (!user) { await pushText("ไม่พบบัญชีพนักงานที่ผูกไลน์นี้ครับ"); return true; }
+  const updated = markDraftSenderVerify(id, user.id, ok);
+  if (!updated) { await pushText("รายการนี้ถูกตรวจหรือลงบัญชีไปแล้ว หรือไม่พบในระบบครับ"); return true; }
+  await pushText(ok
+    ? "รับทราบครับ ทำเครื่องหมายว่าตรวจแล้วถูกต้อง — ทีมบัญชีจะลงรายการให้ครับ"
+    : "รับทราบครับ ทำเครื่องหมายว่ายังไม่ตรง — ทีมบัญชีจะตรวจแก้ก่อนลงรายการครับ");
+  return true;
 }

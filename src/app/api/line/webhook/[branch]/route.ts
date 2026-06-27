@@ -20,7 +20,7 @@ import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { getDb, type Branch } from "@/lib/db";
 import { sendLinePush } from "@/lib/line";
-import { ingestLineBill } from "@/lib/accounta-line-bill";
+import { ingestLineBill, handleBillVerifyPostback } from "@/lib/accounta-line-bill";
 import { getChannelByCode } from "@/lib/messaging-channels";
 
 type LineEvent = {
@@ -32,6 +32,7 @@ type LineEvent = {
     roomId?: string;
   };
   message?: { type: string; text?: string; id?: string; fileName?: string };
+  postback?: { data?: string };
   replyToken?: string;
 };
 
@@ -180,6 +181,21 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       // the OA's own Greeting message (set in LINE OA Manager), which points
       // at the Rich Menu button. The "ID" text-reply fallback below still
       // works for anyone who needs manual linking.
+      continue;
+    }
+
+    // ACCOUNTA bill verify (owner 2026-06-27). The staff member taps
+    // ถูกต้อง / ไม่ตรง on the bill-verify card → record it on their draft.
+    // Platform OA only; the data prefix keeps us off any unrelated postback.
+    if (ev.type === "postback") {
+      const data = ev.postback?.data ?? "";
+      if (channel.scope === "platform" && data.startsWith("acct_bill_")) {
+        await handleBillVerifyPostback({
+          channelToken: channel.channel_token,
+          senderUserId: userId,
+          data
+        });
+      }
       continue;
     }
 

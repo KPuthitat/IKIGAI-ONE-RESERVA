@@ -6,7 +6,7 @@ import Link from "next/link";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import PinPromptModal from "@/app/components/PinPromptModal";
-import Combobox from "@/app/components/Combobox";
+import Combobox, { type ComboOption } from "@/app/components/Combobox";
 import { useConfirm } from "@/app/components/useConfirm";
 
 // Group an in-progress money string with thousand separators while the user
@@ -66,6 +66,22 @@ type DraftLite = {
   amount_total: number; has_tax_invoice: boolean; payment_status: "paid" | "unpaid";
   has_doc: boolean; doc_mime: string | null; bill_date: string;
 };
+
+// Vendor picker option — name is shown/saved; tax_id is searchable + shown muted.
+type VendorOpt = { name: string; tax_id: string | null };
+
+// Build Combobox options so the field matches on name OR 13-digit tax id
+// (with or without dashes). The name is what gets stored.
+function vendorOptions(vendors: VendorOpt[]): ComboOption[] {
+  return vendors.map((v) => {
+    const digits = (v.tax_id ?? "").replace(/\D/g, "");
+    return {
+      value: v.name,
+      hint: v.tax_id ?? undefined,
+      search: `${v.name} ${v.tax_id ?? ""} ${digits}`
+    };
+  });
+}
 
 const PERIOD_LABEL: Record<LedgerPeriod, string> = { week: "สัปดาห์", month: "เดือน", year: "ปี" };
 
@@ -296,7 +312,7 @@ function DayDetail({
   companyId: number | null;
   billCount: number | null;
   draftExpenses: DraftLite[];
-  expenseVendors: string[];
+  expenseVendors: VendorOpt[];
   onChanged: () => void;
   removeExpense: (e: LedgerExpenseRow) => void;
   busyExpenseId: number | null;
@@ -652,8 +668,8 @@ function DayDetail({
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Combobox value={expVendor} onChange={setExpVendor} options={expenseVendors}
-                      placeholder="ผู้จำหน่าย / รายการ" className="flex-[2] !min-w-[12rem]" inputClassName="!py-1" />
+                    <Combobox value={expVendor} onChange={setExpVendor} options={vendorOptions(expenseVendors)}
+                      placeholder="ผู้จำหน่าย / รายการ (พิมพ์ชื่อหรือเลขภาษี)" className="flex-[3] !min-w-[15rem]" inputClassName="!py-1" />
                     <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)} title="หมวดหมู่"
                       className="input !py-1 !w-auto !min-w-[5.5rem]">
                       <option value="">หมวด</option>
@@ -712,7 +728,7 @@ export default function LedgerDashboardClient({
   incomeChannels: Array<{ id: number; name: string }>;
   expenseCategories: Array<{ code: string | null; name: string }>;
   draftExpenses: DraftLite[];
-  expenseVendors: string[];
+  expenseVendors: VendorOpt[];
 }) {
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
@@ -1336,7 +1352,8 @@ export default function LedgerDashboardClient({
                   </div>
                   <div className="sm:col-span-2">
                     <label className="label !text-xs">ผู้จำหน่าย / รายการ</label>
-                    <input className="input" value={aVendor} onChange={(e) => setAVendor(e.target.value)} placeholder="เช่น แม็คโคร" />
+                    <Combobox value={aVendor} onChange={setAVendor} options={vendorOptions(expenseVendors)}
+                      placeholder="พิมพ์ชื่อหรือเลขผู้เสียภาษี" />
                   </div>
                   <div className="sm:col-span-2">
                     <label className="label !text-xs">จำนวนเงิน</label>

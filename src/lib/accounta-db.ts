@@ -767,6 +767,27 @@ export function getExpense(id: number): ExpenseRow | null {
   return r ? shape(r) : null;
 }
 
+const SENDER_VERIFY_RE = /\s*·\s*ผู้ส่ง(ยืนยันว่าถูกต้อง|แจ้งว่าไม่ตรง \(รอแก้ไข\))/g;
+
+/** Record a LINE sender's reply to the "ตรวจสอบผู้จำหน่าย/ยอด" verify card on
+ *  their own draft bill (owner 2026-06-27). ok=true → looks right (admin still
+ *  confirms it into the ledger); ok=false → flag it so the admin fixes it first.
+ *  Stored as a tag on the note; review_status stays 'draft'. Scoped to the
+ *  draft's own submitter so one staff member can't touch another's bill.
+ *  Returns false if the row isn't a draft they own. */
+export function markDraftSenderVerify(id: number, userId: number, ok: boolean): boolean {
+  const e = getDb().prepare(
+    "SELECT note, review_status, created_by FROM accounta_expenses WHERE id = ?"
+  ).get(id) as { note: string | null; review_status: string; created_by: number | null } | undefined;
+  if (!e || e.review_status !== "draft" || e.created_by !== userId) return false;
+  const tag = ok ? "ผู้ส่งยืนยันว่าถูกต้อง" : "ผู้ส่งแจ้งว่าไม่ตรง (รอแก้ไข)";
+  // Strip any previous verify tag so a re-tap replaces (not stacks) it.
+  const base = (e.note ?? "").replace(SENDER_VERIFY_RE, "").trim();
+  const note = base ? `${base} · ${tag}` : tag;
+  getDb().prepare("UPDATE accounta_expenses SET note = ? WHERE id = ?").run(note, id);
+  return true;
+}
+
 /** Raw doc path for serving / cleanup (not exposed to clients). */
 export function getExpenseDoc(id: number): { doc_path: string | null; doc_mime: string | null } | null {
   return getDb().prepare(

@@ -383,48 +383,40 @@ export function personaClockInFlex(args: ClockInCardArgs): LineFlexMessage {
   };
 }
 
-// ── ACCOUNTA: bill-received acknowledgement Flex card ───────────────
+// ── ACCOUNTA: bill verify card (owner 2026-06-27) ───────────────────
+// On a LINE bill upload, OCR now only matches the 13-digit tax id (→ผู้จำหน่าย
+// from the master) and reads the ยอด. This card asks the sender to eyeball
+// those two fields and tap ถูกต้อง / ไม่ตรง — the answer is recorded on the
+// draft for the admin. Nothing is committed to the ledger from this card.
 
-export type AccountaBillAckArgs = {
+export type AccountaBillVerifyArgs = {
+  expenseId: number;           // draft id the postback buttons act on
   senderName: string;          // already prefixed staff name
-  vendor: string | null;       // OCR'd ร้านค้า (null = couldn't read)
-  amount: number | null;       // OCR'd ยอดรวม (null = couldn't read)
-  category: string | null;     // OCR'd หมวด (null = ยังไม่ระบุ)
-  docTypeLabel?: string | null; // OCR'd ประเภทเอกสาร label (null = ไม่ระบุ)
+  vendorName: string | null;   // matched master vendor (null = ไม่พบ → รอแอดมิน)
+  amount: number | null;       // OCR'd ยอดรวม (null = อ่านไม่ออก)
   billDate: string | null;     // YYYY-MM-DD or null
-  parsed: boolean;             // false → OCR failed; card asks admin to key it
-  extraLine?: string | null;   // optional note, e.g. mixed-bill split info
 };
 
-/** Small confirmation card pushed back to the staff member who sent a bill
- *  photo. Reassures them the bill landed and was filed as a draft for admin
- *  review — no figures are committed to the ledger from this card. */
-export function accountaBillAckFlex(args: AccountaBillAckArgs): LineFlexMessage {
+export function accountaBillVerifyFlex(args: AccountaBillVerifyArgs): LineFlexMessage {
   const baht = (n: number) =>
     n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const row = (label: string, value: string, strong?: boolean) => ({
+  const row = (label: string, value: string, strong?: boolean, muted?: boolean) => ({
     type: "box", layout: "horizontal", spacing: "sm",
     contents: [
       { type: "text", text: label, size: "sm", color: COLOR_LABEL, flex: 4, wrap: true },
       {
         type: "text", text: value, size: "sm",
-        color: strong ? COLOR_BRAND : COLOR_TEXT_DARK,
+        color: muted ? COLOR_TEXT_MUTED : strong ? COLOR_BRAND : COLOR_TEXT_DARK,
         weight: "bold", flex: 6, align: "end", wrap: true
       }
     ]
   });
 
   const rows: unknown[] = [
-    row("ร้านค้า", args.vendor ?? "— อ่านไม่ออก —"),
-    row("ยอดรวม", args.amount != null ? `${baht(args.amount)} บาท` : "— อ่านไม่ออก —", true),
-    row("หมวด", args.category ?? "ยังไม่ระบุ")
+    row("ผู้จำหน่าย", args.vendorName ?? "— ไม่พบ (รอแอดมินระบุ) —", false, args.vendorName == null),
+    row("ยอดรวม", args.amount != null ? `${baht(args.amount)} บาท` : "— อ่านไม่ออก —", true)
   ];
-  if (args.docTypeLabel) rows.push(row("ประเภทเอกสาร", args.docTypeLabel));
   if (args.billDate) rows.push(row("วันที่บิล", args.billDate));
-
-  const tail = args.parsed
-    ? "บันทึกเป็นร่างให้แล้ว รอแอดมินตรวจสอบและผูกสาขา"
-    : "อ่านตัวเลขไม่ออก แต่เก็บรูปเป็นร่างไว้ให้แล้ว รบกวนแอดมินกรอกข้อมูลเองครับ";
 
   const bubble = {
     type: "bubble",
@@ -442,8 +434,8 @@ export function accountaBillAckFlex(args: AccountaBillAckArgs): LineFlexMessage 
         {
           type: "box", layout: "baseline", spacing: "sm", margin: "md",
           contents: [
-            { type: "text", text: "✓", color: COLOR_BRAND_LIGHT, size: "lg", weight: "bold", flex: 0 },
-            { type: "text", text: "รับบิลแล้ว", color: "#ffffff", size: "lg", weight: "bold" }
+            { type: "text", text: "?", color: COLOR_BRAND_LIGHT, size: "lg", weight: "bold", flex: 0 },
+            { type: "text", text: "ตรวจสอบบิล", color: "#ffffff", size: "lg", weight: "bold" }
           ]
         }
       ]
@@ -455,21 +447,32 @@ export function accountaBillAckFlex(args: AccountaBillAckArgs): LineFlexMessage 
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
         { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: rows },
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
-        ...(args.extraLine ? [{
-          type: "text", text: args.extraLine, size: "xs", color: COLOR_BRAND, weight: "bold", wrap: true, margin: "sm"
-        }] : []),
-        { type: "text", text: tail, size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "sm" }
+        { type: "text", text: "ผู้จำหน่ายกับยอดตรงกับบิลไหมครับ?", size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "sm" }
+      ]
+    },
+    footer: {
+      type: "box", layout: "horizontal", spacing: "sm", paddingAll: "16px",
+      contents: [
+        {
+          type: "button", style: "secondary", height: "sm", flex: 1,
+          action: { type: "postback", label: "ไม่ตรง", data: `acct_bill_fix=${args.expenseId}`, displayText: "บิลนี้ไม่ตรง" }
+        },
+        {
+          type: "button", style: "primary", height: "sm", flex: 1, color: COLOR_BRAND,
+          action: { type: "postback", label: "ถูกต้อง", data: `acct_bill_ok=${args.expenseId}`, displayText: "ยืนยันว่าถูกต้อง" }
+        }
       ]
     },
     styles: {
       header: { backgroundColor: COLOR_INK_700 },
-      body: { backgroundColor: "#ffffff" }
+      body: { backgroundColor: "#ffffff" },
+      footer: { backgroundColor: "#ffffff", separator: true, separatorColor: COLOR_DIVIDER }
     }
   };
 
   return {
     type: "flex",
-    altText: args.amount != null ? `รับบิลแล้ว · ${baht(args.amount)} บาท` : "รับบิลแล้ว (รอตรวจ)",
+    altText: args.amount != null ? `ตรวจสอบบิล · ${baht(args.amount)} บาท` : "ตรวจสอบบิล (รอตรวจ)",
     contents: bubble
   };
 }

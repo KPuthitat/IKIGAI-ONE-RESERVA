@@ -46,7 +46,9 @@ export default function DaybookPage({
   const cashTotal = cashAccountsTotal(branchId);
   const incomeChannels = listIncomeChannels(branchId);
   const expenseCategories = listCategories().map((c) => ({ code: c.code, name: c.name }));
-  const expenseVendors = listVendors(branchId).map((v) => v.name);
+  // Vendor picker options carry the tax id so the field can be searched by
+  // 13-digit เลขผู้เสียภาษี too, while still showing/saving the name (owner 2026-06-27).
+  const expenseVendors = listVendors(branchId).map((v) => ({ name: v.name, tax_id: v.tax_id }));
   // Pending scanned-bill drafts the day's รายจ่าย panel can pull in (owner
   // 2026-06-25). This branch's drafts + any not-yet-assigned ones.
   const draftExpenses = listExpenses({ reviewStatus: "draft" })
