@@ -15,19 +15,37 @@ type Income = {
   company_id: number | null; company_name: string | null;
   income_date: string; channel: string | null; amount: number; note: string | null;
   source: string;
-  is_outstanding: number; settled_date: string | null; is_vat: number;
+  is_outstanding: number; settled_date: string | null; is_vat: number; is_revenue: number;
 };
 type Summary = { total: number; byChannel: Array<{ channel: string; total: number }> };
 
 type Form = {
   id: number | null; branch_id: string; company_id: string;
-  income_date: string; channel: string; amount: string; note: string; is_vat: boolean;
+  income_date: string; channel: string; amount: string; note: string;
+  is_vat: boolean; is_revenue: boolean;
 };
 
 function todayISO(): string { return new Date().toISOString().slice(0, 10); }
 function blank(channel = ""): Form {
-  return { id: null, branch_id: "", company_id: "", income_date: todayISO(), channel, amount: "", note: "", is_vat: true };
+  return { id: null, branch_id: "", company_id: "", income_date: todayISO(), channel, amount: "", note: "", is_vat: true, is_revenue: true };
 }
+
+// ประเภทรายรับ → (is_vat, is_revenue). A VAT-exempt SALE is still revenue.
+type IncKind = "sale_vat" | "sale_novat" | "financing";
+function kindOf(f: { is_vat: boolean; is_revenue: boolean }): IncKind {
+  if (!f.is_revenue) return "financing";
+  return f.is_vat ? "sale_vat" : "sale_novat";
+}
+const KIND_FLAGS: Record<IncKind, { is_vat: boolean; is_revenue: boolean }> = {
+  sale_vat: { is_vat: true, is_revenue: true },
+  sale_novat: { is_vat: false, is_revenue: true },
+  financing: { is_vat: false, is_revenue: false }
+};
+const KIND_OPTS: Array<{ v: IncKind; label: string }> = [
+  { v: "sale_vat", label: "ขาย/บริการ — มี VAT 7%" },
+  { v: "sale_novat", label: "ขาย/บริการ — ยกเว้น VAT" },
+  { v: "financing", label: "เงินกู้/เงินเข้าอื่น — ไม่นับยอดขาย ไม่มีภาษี" }
+];
 const TH_MON = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 function monthLabel(ym: string): string { const [y, m] = ym.split("-").map(Number); return `${TH_MON[m]} ${y + 543}`; }
 
@@ -88,10 +106,10 @@ export default function IncomeClient(props: {
   const [previewBusy, setPreviewBusy] = useState(false);
 
   function downloadTemplate() {
-    const header = "branch,company,income_date,channel,amount,note,is_vat";
+    const header = "branch,company,income_date,channel,amount,note,is_vat,is_revenue";
     const sample = [
-      "NAMA PASTA SRIRACHA,,2026-01-05,เงินสด,5000,ขายหน้าร้าน,1",
-      "HYPOPLARAEMIA,,2026-01-06,เงินยืมกรรมการ,100000,กรรมการให้กู้ยืม,0"
+      "NAMA PASTA SRIRACHA,,2026-01-05,เงินสด,5000,ขายหน้าร้าน,1,1",
+      "HYPOPLARAEMIA,,2026-01-06,เงินยืมกรรมการ,100000,กรรมการให้กู้ยืม,0,0"
     ];
     const blob = new Blob(["﻿" + [header, ...sample].join("\r\n")], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
@@ -155,7 +173,7 @@ export default function IncomeClient(props: {
       id: r.id, branch_id: r.branch_id != null ? String(r.branch_id) : "",
       company_id: r.company_id != null ? String(r.company_id) : "",
       income_date: r.income_date, channel: r.channel ?? "", amount: String(r.amount), note: r.note ?? "",
-      is_vat: r.is_vat !== 0
+      is_vat: r.is_vat !== 0, is_revenue: r.is_revenue !== 0
     });
     setNewChan(null); setErr(null); setOpen(true);
   }
@@ -181,7 +199,7 @@ export default function IncomeClient(props: {
         branch_id: form.branch_id ? Number(form.branch_id) : null,
         company_id: form.company_id ? Number(form.company_id) : null,
         income_date: form.income_date, channel: form.channel || null,
-        amount: amt, note: form.note.trim() || null, is_vat: form.is_vat
+        amount: amt, note: form.note.trim() || null, is_vat: form.is_vat, is_revenue: form.is_revenue
       };
       const url = form.id ? `/api/accounta/income/${form.id}` : "/api/accounta/income";
       const res = await fetch(apiUrl(url), {
@@ -455,12 +473,13 @@ export default function IncomeClient(props: {
                 <input className="input" value={form.note} onChange={(e) => set("note", e.target.value)} />
               </div>
               <div className="sm:col-span-2">
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input type="checkbox" checked={form.is_vat} onChange={(e) => set("is_vat", e.target.checked)} />
-                  มีภาษีขาย (VAT 7%)
-                </label>
+                <label className="label !text-xs">ประเภทรายรับ</label>
+                <select className="input" value={kindOf(form)}
+                  onChange={(e) => { const f = KIND_FLAGS[e.target.value as IncKind]; setForm((s) => ({ ...s, ...f })); }}>
+                  {KIND_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+                </select>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  ติ๊ก = รายได้จากการขาย (คิดภาษีขาย) · ไม่ติ๊ก = เงินเข้าที่ไม่ใช่รายได้ เช่น เงินยืมกรรมการ / เงินกู้ธนาคาร (ไม่คิดภาษี)
+                  เงินกู้/เงินยืมกรรมการ เลือก “ไม่นับยอดขาย” — ยังเป็นเงินเข้าในช่องทาง แต่ไม่รวมในยอดขายเฉลี่ย/ประมาณการ และไม่คิดภาษี
                 </p>
               </div>
             </div>

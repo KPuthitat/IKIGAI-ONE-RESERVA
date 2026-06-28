@@ -5772,11 +5772,19 @@ function runMigrations(db: Database.Database): void {
   if (!incCols.some((c) => c.name === "is_vat")) {
     db.exec("ALTER TABLE accounta_income ADD COLUMN is_vat INTEGER NOT NULL DEFAULT 1");
   }
-  // One-time fix for loans bulk-imported before is_vat existed (owner 2026-06-27):
-  // financing inflows on these exact channels are never taxable sales, so flip
-  // them to is_vat=0 so they stop generating ภาษีขาย. Idempotent (no-op once set).
+  // is_revenue (owner 2026-06-28): whether this line counts as ยอดขาย (sales).
+  // Sales → 1 (drives the sales averages / forecast / per-bill). Financing
+  // inflows (เงินกู้/เงินยืม) → 0: money-in (still in รายรับ + the channel donut)
+  // but NOT sales, so they don't inflate ยอดขายเฉลี่ย/ประมาณการ. DEFAULT 1.
+  // (Distinct from is_vat: a VAT-exempt sale is is_vat=0 but is_revenue=1.)
+  if (!incCols.some((c) => c.name === "is_revenue")) {
+    db.exec("ALTER TABLE accounta_income ADD COLUMN is_revenue INTEGER NOT NULL DEFAULT 1");
+  }
+  // One-time fix for loans bulk-imported before these flags existed (owner
+  // 2026-06-27/28): financing inflows on these exact channels are never taxable
+  // sales, so flip is_vat + is_revenue to 0. Idempotent (no-op once set).
   db.prepare(
-    "UPDATE accounta_income SET is_vat = 0 WHERE is_vat = 1 AND channel IN ('เงินยืมกรรมการ','เงินกู้ธนาคาร')"
+    "UPDATE accounta_income SET is_vat = 0, is_revenue = 0 WHERE (is_vat = 1 OR is_revenue = 1) AND channel IN ('เงินยืมกรรมการ','เงินกู้ธนาคาร','เงินกู้กรรมการ')"
   ).run();
   // Mirror every recorded shift-close day into the รายรับ ledger. Self-
   // guarding (NOT EXISTS) so it backfills June history once and is a no-op

@@ -255,6 +255,7 @@ export type IncomeRow = {
   is_outstanding: number;
   settled_date: string | null;
   is_vat: number;
+  is_revenue: number;
 };
 
 export type IncomeInput = {
@@ -267,6 +268,9 @@ export type IncomeInput = {
   /** carries 7% output VAT (true for sales; false for non-revenue inflows like
    *  loans). Defaults to true so existing callers keep the sales behavior. */
   is_vat?: boolean;
+  /** counts as ยอดขาย/sales (true). false for financing inflows (loans) that are
+   *  money-in but not sales. Defaults to true. */
+  is_revenue?: boolean;
 };
 
 export type IncomeFilter = { branchId?: number | null; companyId?: number | null; month?: string | null };
@@ -280,7 +284,7 @@ export function listIncome(f: IncomeFilter = {}): IncomeRow[] {
   const sql = `
     SELECT i.id, i.branch_id, b.name AS branch_name, i.company_id, c.name_th AS company_name,
            i.income_date, i.channel, i.amount, i.note, i.source, i.is_outstanding, i.settled_date,
-           COALESCE(i.is_vat,1) AS is_vat
+           COALESCE(i.is_vat,1) AS is_vat, COALESCE(i.is_revenue,1) AS is_revenue
       FROM accounta_income i
       LEFT JOIN branches b  ON b.id = i.branch_id
       LEFT JOIN companies c ON c.id = i.company_id
@@ -291,17 +295,17 @@ export function listIncome(f: IncomeFilter = {}): IncomeRow[] {
 
 export function createIncome(userId: number, d: IncomeInput): number {
   const info = getDb().prepare(`
-    INSERT INTO accounta_income (branch_id, company_id, income_date, channel, amount, note, is_vat, created_by)
-    VALUES (?,?,?,?,?,?,?,?)
-  `).run(d.branch_id, d.company_id, d.income_date, d.channel, round2(Number(d.amount) || 0), d.note?.trim() || null, d.is_vat === false ? 0 : 1, userId);
+    INSERT INTO accounta_income (branch_id, company_id, income_date, channel, amount, note, is_vat, is_revenue, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?)
+  `).run(d.branch_id, d.company_id, d.income_date, d.channel, round2(Number(d.amount) || 0), d.note?.trim() || null, d.is_vat === false ? 0 : 1, d.is_revenue === false ? 0 : 1, userId);
   return Number(info.lastInsertRowid);
 }
 
 export function updateIncome(id: number, d: IncomeInput): boolean {
   const info = getDb().prepare(`
     UPDATE accounta_income SET branch_id = ?, company_id = ?, income_date = ?, channel = ?,
-      amount = ?, note = ?, is_vat = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-  `).run(d.branch_id, d.company_id, d.income_date, d.channel, round2(Number(d.amount) || 0), d.note?.trim() || null, d.is_vat === false ? 0 : 1, id);
+      amount = ?, note = ?, is_vat = ?, is_revenue = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+  `).run(d.branch_id, d.company_id, d.income_date, d.channel, round2(Number(d.amount) || 0), d.note?.trim() || null, d.is_vat === false ? 0 : 1, d.is_revenue === false ? 0 : 1, id);
   return info.changes > 0;
 }
 
@@ -313,7 +317,7 @@ export function getIncome(id: number): IncomeRow | null {
   return listIncome().find((r) => r.id === id) ?? getDb().prepare(`
     SELECT i.id, i.branch_id, b.name AS branch_name, i.company_id, c.name_th AS company_name,
            i.income_date, i.channel, i.amount, i.note, i.source, i.is_outstanding, i.settled_date,
-           COALESCE(i.is_vat,1) AS is_vat
+           COALESCE(i.is_vat,1) AS is_vat, COALESCE(i.is_revenue,1) AS is_revenue
       FROM accounta_income i
       LEFT JOIN branches b ON b.id = i.branch_id
       LEFT JOIN companies c ON c.id = i.company_id
@@ -1158,16 +1162,22 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
   // shift_close lump is redundant — exclude it so the breakdown replaces it
   // (no double-count). Days with NO ledger rows fall back to the close total in
   // branch_daily_revenue (preserves pre-mirror history).
+  // `total` = all money-in (รายรับ/cash-in, incl financing). `salesTotal` =
+  // ยอดขาย only (is_revenue=1) — loans are money-in but not sales (owner 2026-06-28).
+  // `channelled` counts only SALES per-channel rows so a loan never trips the
+  // shift-close lump supersede.
   const incLedger = db.prepare(
     `SELECT income_date AS d,
             COALESCE(SUM(amount),0) AS total,
-            COALESCE(SUM(CASE WHEN COALESCE(NULLIF(TRIM(channel),''),NULL) IS NOT NULL THEN 1 ELSE 0 END),0) AS channelled,
+            COALESCE(SUM(CASE WHEN COALESCE(is_revenue,1)=1 THEN amount ELSE 0 END),0) AS salesTotal,
+            COALESCE(SUM(CASE WHEN COALESCE(NULLIF(TRIM(channel),''),NULL) IS NOT NULL AND COALESCE(is_revenue,1)=1 THEN 1 ELSE 0 END),0) AS channelled,
             COALESCE(SUM(CASE WHEN source='shift_close' AND COALESCE(NULLIF(TRIM(channel),''),NULL) IS NULL THEN amount ELSE 0 END),0) AS lump
        FROM accounta_income
       WHERE branch_id = ? AND income_date BETWEEN ? AND ?
       GROUP BY income_date`
-  ).all(branchId, start, end) as Array<{ d: string; total: number; channelled: number; lump: number }>;
+  ).all(branchId, start, end) as Array<{ d: string; total: number; salesTotal: number; channelled: number; lump: number }>;
   const ledgerByDate = new Map(incLedger.map((r) => [r.d, r.channelled > 0 ? round2(r.total - r.lump) : round2(r.total)]));
+  const salesByDate = new Map(incLedger.map((r) => [r.d, r.channelled > 0 ? round2(r.salesTotal - r.lump) : round2(r.salesTotal)]));
   const bdrByDate = new Map((db.prepare(
     "SELECT date AS d, revenue AS amt FROM branch_daily_revenue WHERE branch_id = ? AND date BETWEEN ? AND ?"
   ).all(branchId, start, end) as Array<{ d: string; amt: number }>).map((r) => [r.d, round2(r.amt)]));
@@ -1175,14 +1185,23 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
     .map((d) => ({ d, amt: ledgerByDate.has(d) ? ledgerByDate.get(d)! : (bdrByDate.get(d) ?? 0) }))
     .filter((r) => r.amt !== 0)
     .sort((a, b) => (a.d < b.d ? -1 : 1));
-  let revenue = 0, wkdaySum = 0, wkdayN = 0, wkendSum = 0, wkendN = 0;
-  for (const r of incDays) {
-    revenue += r.amt;
+  let revenue = 0;
+  for (const r of incDays) revenue += r.amt;
+  revenue = round2(revenue);
+  // Sales-only days drive the ยอดขาย averages + forecast (loans excluded). bdr
+  // (shift-close) is always sales, so it's the fallback for pre-mirror days.
+  const salesDays = [...new Set([...salesByDate.keys(), ...bdrByDate.keys()])]
+    .map((d) => ({ d, amt: salesByDate.has(d) ? salesByDate.get(d)! : (bdrByDate.get(d) ?? 0) }))
+    .filter((r) => r.amt !== 0)
+    .sort((a, b) => (a.d < b.d ? -1 : 1));
+  let salesRevenue = 0, wkdaySum = 0, wkdayN = 0, wkendSum = 0, wkendN = 0;
+  for (const r of salesDays) {
+    salesRevenue += r.amt;
     if (isWeekend(r.d)) { wkendSum += r.amt; wkendN += 1; } else { wkdaySum += r.amt; wkdayN += 1; }
   }
-  revenue = round2(revenue);
-  const daysWithRevenue = incDays.length;
-  const avgPerDay = daysWithRevenue ? round2(revenue / daysWithRevenue) : 0;
+  salesRevenue = round2(salesRevenue);
+  const daysWithRevenue = salesDays.length;
+  const avgPerDay = daysWithRevenue ? round2(salesRevenue / daysWithRevenue) : 0;
   const avgWeekday = wkdayN ? round2(wkdaySum / wkdayN) : 0;
   const avgWeekend = wkendN ? round2(wkendSum / wkendN) : 0;
 
@@ -1234,8 +1253,8 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
   const outputVat = vatRegistered ? round2((taxableRevenue * 7) / 107) : 0;
   const vatPayable = vatRegistered ? round2(outputVat - inputVat) : 0;
 
-  // Run-rate forecast — month period only: revenue-so-far / days-elapsed ×
-  // days-in-month. Past months use all days; future months → no forecast.
+  // Run-rate forecast (ประมาณการยอดขาย) — month period only: SALES-so-far /
+  // days-elapsed × days-in-month (loans excluded). Future months → no forecast.
   let forecast: number | null = null;
   if (period === "month") {
     const daysInMonth = Number(end.slice(8, 10));
@@ -1243,7 +1262,7 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
     let elapsed = daysInMonth;
     if (today >= start && today <= end) elapsed = Number(today.slice(8, 10));
     else if (today < start) elapsed = 0;
-    if (elapsed > 0) forecast = round2((revenue / elapsed) * daysInMonth);
+    if (elapsed > 0) forecast = round2((salesRevenue / elapsed) * daysInMonth);
   }
 
   // Excel-style daily rows: revenue (shift-close) vs expense per day, with a

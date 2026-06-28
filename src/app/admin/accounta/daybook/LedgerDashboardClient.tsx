@@ -875,7 +875,8 @@ export default function LedgerDashboardClient({
   const [aVendor, setAVendor] = useState("");
   const [aCategory, setACategory] = useState("");
   const [aVat, setAVat] = useState(false);
-  const [aIncVat, setAIncVat] = useState(true);   // รายรับ: มีภาษีขาย (sales) by default
+  // รายรับ: ประเภท sale_vat (default) | sale_novat | financing(เงินกู้ ไม่นับยอดขาย)
+  const [aIncKind, setAIncKind] = useState<"sale_vat" | "sale_novat" | "financing">("sale_vat");
   const [aUnpaid, setAUnpaid] = useState(false);
   const [aDueMode, setADueMode] = useState<"cycle" | "date">("cycle");
   const [aDueDate, setADueDate] = useState("");
@@ -886,7 +887,7 @@ export default function LedgerDashboardClient({
     setADate(selectedDate ?? bkkToday);
     setAChannel(incomeChannels[0]?.name ?? ""); setAAmt("");
     setAVendor(""); setACategory(""); setAVat(false); setAUnpaid(false);
-    setADueMode("cycle"); setADueDate(""); setAIncVat(true);
+    setADueMode("cycle"); setADueDate(""); setAIncKind("sale_vat");
     setAErr(null); setAddMode(mode);
   }
   function afterAdd() {
@@ -905,7 +906,7 @@ export default function LedgerDashboardClient({
       try {
         const res = await fetch(apiUrl("/api/accounta/income"), {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ branch_id: branchId, company_id: companyId, income_date: aDate, channel: aChannel || null, amount: amt, note: null, is_vat: aIncVat })
+          body: JSON.stringify({ branch_id: branchId, company_id: companyId, income_date: aDate, channel: aChannel || null, amount: amt, note: null, is_vat: aIncKind === "sale_vat", is_revenue: aIncKind !== "financing" })
         });
         const j = await res.json().catch(() => ({}));
         if (!res.ok || !j.ok) { setAErr(j.message || "บันทึกไม่สำเร็จ"); return; }
@@ -1437,11 +1438,14 @@ export default function LedgerDashboardClient({
                       onChange={(e) => setAAmt(grpMoney(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }} />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="flex items-center gap-2 text-sm text-slate-600">
-                      <input type="checkbox" checked={aIncVat} onChange={(e) => setAIncVat(e.target.checked)} />
-                      มีภาษีขาย (VAT 7%)
-                    </label>
-                    <p className="text-[11px] text-slate-400 mt-0.5">ไม่ติ๊ก = เงินเข้าที่ไม่ใช่รายได้ (เช่น เงินยืมกรรมการ/เงินกู้) ไม่คิดภาษี</p>
+                    <label className="label !text-xs">ประเภทรายรับ</label>
+                    <Select value={aIncKind} onChange={(v) => setAIncKind(v as typeof aIncKind)}
+                      options={[
+                        { value: "sale_vat", label: "ขาย/บริการ — มี VAT 7%" },
+                        { value: "sale_novat", label: "ขาย/บริการ — ยกเว้น VAT" },
+                        { value: "financing", label: "เงินกู้/เงินเข้าอื่น — ไม่นับยอดขาย" }
+                      ]} />
+                    <p className="text-[11px] text-slate-400 mt-0.5">เงินกู้/เงินยืมกรรมการ เลือก “ไม่นับยอดขาย” — เป็นเงินเข้าแต่ไม่รวมในยอดขาย/ภาษี</p>
                   </div>
                 </>
               ) : (
