@@ -7,15 +7,25 @@ import { fmtMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
 import {
   evaluate, computeScenario, decide,
-  STARTUP_CATEGORIES, whtBaht,
+  STARTUP_CATEGORIES, STARTUP_CATEGORY_LABEL, whtBaht,
   type FeasibilityInputs, type Scenario, type PnlResult, type SweetSpot
 } from "@/lib/feasibility";
 import { useConfirm } from "@/app/components/useConfirm";
 
 type Meta = {
   company: string; project_name: string;
-  location: string; business_type: string; status: string;
+  location: string; business_type: string;
+  branch_id: number | null;   // ACCOUNTA branch whose CapEx feeds เงินลงทุนตั้งต้น
+  status: string;
 };
+
+// CapEx pulled live from ACCOUNTA — confirmed bills tagged to a feasibility
+// bucket for the linked branch, grouped per bucket (read-only in the editor).
+export type AccountaCapexLineDTO = {
+  id: number; bill_date: string; payee: string | null;
+  amount: number; payment_status: string; has_doc: boolean;
+};
+export type AccountaCapex = Record<string, { sum: number; lines: AccountaCapexLineDTO[] }>;
 
 export type StartupItem = {
   id: number;
@@ -30,11 +40,8 @@ export type StartupItem = {
   payment_status: string;
 };
 
-const STARTUP_LABELS: Record<string, string> = {
-  construction: "ก่อสร้าง/ตกแต่ง", ffe: "เฟอร์นิเจอร์/อุปกรณ์", stock: "สต๊อกเริ่มต้น",
-  hardOther: "ฮาร์ดแวร์อื่นๆ", franchise: "ค่าแฟรนไชส์", deposit: "เงินมัดจำ",
-  permit: "ใบอนุญาต", professional: "ค่าวิชาชีพ", preOpening: "ก่อนเปิดร้าน", softOther: "อื่นๆ (soft)"
-};
+// Single source of bucket labels (shared with the ACCOUNTA expense form).
+const STARTUP_LABELS: Record<string, string> = { ...STARTUP_CATEGORY_LABEL };
 const round2 = (n: number) => Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
@@ -93,16 +100,32 @@ function Section({ title, defaultOpen = true, footer, children }: {
   );
 }
 
-export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startupItems: items0, companies }: {
+export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startupItems: items0, companies, branches, accountaCapex }: {
   id: number; meta: Meta; inputs: FeasibilityInputs; startupItems: StartupItem[]; companies: string[];
+  branches: Array<{ id: number; name: string }>; accountaCapex: AccountaCapex;
 }) {
   const router = useRouter();
   const [meta, setMeta] = useState<Meta>(meta0);
   const [inputs, setInputs] = useState<FeasibilityInputs>(inputs0);
   const [items, setItems] = useState<StartupItem[]>(items0);
   const [startupModalCat, setStartupModalCat] = useState<string | null>(null);
+  const [openCapexCat, setOpenCapexCat] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  // Live ACCOUNTA CapEx is ADDED on top of the manual startup numbers — for the
+  // KPIs + totals only, never persisted (the saved inputs stay manual). Editing
+  // a bill in รายจ่าย reflects here on next load (owner 2026-06-29).
+  const capexSum = (cat: string) => round2(accountaCapex[cat]?.sum ?? 0);
+  const effectiveInputs = useMemo<FeasibilityInputs>(() => {
+    const startup = { ...inputs.startup };
+    for (const cat of STARTUP_CATEGORIES) {
+      const k = cat as keyof typeof startup;
+      startup[k] = round2((startup[k] ?? 0) + capexSum(cat));
+    }
+    return { ...inputs, startup };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputs, accountaCapex]);
 
   // Keep inputs.startup.<category> = sum of that category's items (mirrors the
   // server's syncCategory) so the live KPIs reflect the ledger immediately.
@@ -122,7 +145,7 @@ export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startu
     });
   }, [items]);
 
-  const result = useMemo(() => evaluate(inputs), [inputs]);
+  const result = useMemo(() => evaluate(effectiveInputs), [effectiveInputs]);
 
   // nested setters
   const mset = <K extends keyof Meta>(k: K, v: Meta[K]) => setMeta((p) => ({ ...p, [k]: v }));
@@ -155,6 +178,7 @@ export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startu
           project_name: meta.project_name,
           location: meta.location || null,
           business_type: meta.business_type || null,
+          branch_id: meta.branch_id,
           status: meta.status,
           inputs
         })
@@ -218,6 +242,17 @@ export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startu
               </select>
             </div>
             <div className="sm:col-span-2">
+              <label className="label !text-xs">สาขา (เชื่อมบัญชี — ดึงงบลงทุน CapEx มาแสดง)</label>
+              <select className="input" value={meta.branch_id ?? ""}
+                onChange={(e) => mset("branch_id", e.target.value === "" ? null : Number(e.target.value))}>
+                <option value="">— ไม่เชื่อมบัญชี —</option>
+                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+              <p className="text-[11px] text-slate-400 mt-1">
+                บิลที่ลงหมวด CapEx แล้วเลือกหมวดย่อยของสาขานี้ จะถูกดึงมารวมใน&ldquo;เงินลงทุนตั้งต้น&rdquo;อัตโนมัติ · กดบันทึกเพื่อโหลดล่าสุด
+              </p>
+            </div>
+            <div className="sm:col-span-2">
               <label className="label !text-xs">ทำเล (ที่อยู่ / พิกัด หรือลิงก์ Google Maps)</label>
               <input className="input" value={meta.location}
                 onChange={(e) => mset("location", e.target.value)}
@@ -267,25 +302,53 @@ export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startu
           <div className="space-y-1.5">
             <p className="text-[11px] text-slate-400">
               กดหัวข้อเพื่อเพิ่มรายการจ่ายจริง (วันที่ · ผู้รับเงิน · เอกสาร · สถานะ) — ยอดรวมจะคำนวณอัตโนมัติ
+              {meta.branch_id != null && <> · ยอด <span className="text-emerald-700">จากบัญชี</span> ดึงจากบิล CapEx ของสาขาที่เชื่อมไว้อัตโนมัติ</>}
             </p>
             {STARTUP_CATEGORIES.map((cat) => {
               const k = cat as keyof FeasibilityInputs["startup"];
               const catItems = items.filter((i) => i.category === cat);
               const sum = round2(catItems.reduce((s, i) => s + i.amount, 0));
+              const acc = accountaCapex[cat];
+              const accSum = round2(acc?.sum ?? 0);
               return (
-                <div key={cat} className="flex items-center gap-2">
-                  <div className="flex-1 text-sm text-slate-600 min-w-0 truncate">{STARTUP_LABELS[cat]}</div>
-                  {catItems.length > 0 ? (
-                    <div className="w-28 text-right text-sm font-semibold tabular-nums">{baht(sum)}</div>
-                  ) : (
-                    <input className="input !py-1 text-sm !w-28 text-right" type="number" inputMode="decimal"
-                      value={inputs.startup[k] === 0 ? "" : inputs.startup[k]} placeholder="0"
-                      onChange={(e) => setS(k, e.target.value === "" ? 0 : Number(e.target.value))} />
+                <div key={cat}>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 text-sm text-slate-600 min-w-0 truncate">{STARTUP_LABELS[cat]}</div>
+                    {catItems.length > 0 ? (
+                      <div className="w-28 text-right text-sm font-semibold tabular-nums">{baht(sum)}</div>
+                    ) : (
+                      <input className="input !py-1 text-sm !w-28 text-right" type="number" inputMode="decimal"
+                        value={inputs.startup[k] === 0 ? "" : inputs.startup[k]} placeholder="0"
+                        onChange={(e) => setS(k, e.target.value === "" ? 0 : Number(e.target.value))} />
+                    )}
+                    <button type="button" onClick={() => setStartupModalCat(cat)}
+                      className="text-xs text-brand hover:underline whitespace-nowrap w-24 text-right">
+                      {catItems.length > 0 ? `จัดการ (${catItems.length})` : "+ เพิ่มรายการ"}
+                    </button>
+                  </div>
+                  {accSum > 0 && acc && (
+                    <div className="ml-1 mt-0.5">
+                      <button type="button" onClick={() => setOpenCapexCat(openCapexCat === cat ? null : cat)}
+                        className="flex items-center gap-1 text-[11px] text-emerald-700 hover:underline">
+                        <span>{openCapexCat === cat ? "▾" : "▸"}</span>
+                        <span>จากบัญชี +{baht(accSum)} · {acc.lines.length} บิล</span>
+                      </button>
+                      {openCapexCat === cat && (
+                        <div className="mt-1 ml-3 border-l-2 border-emerald-100 pl-2 space-y-0.5">
+                          {acc.lines.map((l) => (
+                            <div key={l.id} className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                              <span className="truncate">
+                                {l.bill_date} · {l.payee || "—"}
+                                {l.payment_status === "unpaid" ? " · ค้างชำระ" : ""}{l.has_doc ? " · มีเอกสาร" : ""}
+                              </span>
+                              <span className="tabular-nums shrink-0">{baht(l.amount)}</span>
+                            </div>
+                          ))}
+                          <div className="text-[10px] text-slate-400 pt-0.5">แก้ไขที่เมนูรายจ่าย — อัปเดตที่นี่อัตโนมัติ</div>
+                        </div>
+                      )}
+                    </div>
                   )}
-                  <button type="button" onClick={() => setStartupModalCat(cat)}
-                    className="text-xs text-brand hover:underline whitespace-nowrap w-24 text-right">
-                    {catItems.length > 0 ? `จัดการ (${catItems.length})` : "+ เพิ่มรายการ"}
-                  </button>
                 </div>
               );
             })}

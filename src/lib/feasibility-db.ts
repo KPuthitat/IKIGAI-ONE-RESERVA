@@ -6,9 +6,25 @@
 
 import { getDb } from "./db";
 import {
-  coerceInputs, evaluate, FEASIBILITY_COMPANIES,
+  coerceInputs, evaluate, FEASIBILITY_COMPANIES, STARTUP_CATEGORIES,
   type FeasibilityCompany, type FeasibilityStatus, type FeasibilityInputs
 } from "./feasibility";
+import { listCapexForFeasibility } from "./accounta-db";
+
+const round2 = (n: number) => Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
+
+/** Inputs with the linked branch's live CapEx ADDED on top of the manual
+ *  startup numbers — used so the cached summary (list cards) matches the editor,
+ *  which shows the same augmented total (owner 2026-06-29). branchId null → as-is. */
+function withBranchCapex(inputs: FeasibilityInputs, branchId: number | null | undefined): FeasibilityInputs {
+  if (branchId == null) return inputs;
+  const startup = { ...inputs.startup };
+  for (const l of listCapexForFeasibility(branchId)) {
+    const k = l.bucket as keyof typeof startup;
+    if ((STARTUP_CATEGORIES as readonly string[]).includes(l.bucket)) startup[k] = round2((startup[k] ?? 0) + l.amount);
+  }
+  return { ...inputs, startup };
+}
 
 // Re-export so existing server-side importers keep working; the canonical
 // definitions live in feasibility.ts (client-safe — no db import).
@@ -28,6 +44,7 @@ export type FeasibilityRow = {
   project_name: string;
   location: string | null;
   business_type: string | null;
+  branch_id: number | null;   // ACCOUNTA branch whose CapEx feeds เงินลงทุนตั้งต้น
   status: string;
   inputs: string;        // JSON
   summary_cache: string | null;
@@ -96,20 +113,21 @@ export type FeasibilityWrite = {
   project_name: string;
   location?: string | null;
   business_type?: string | null;
+  branch_id?: number | null;
   status?: FeasibilityStatus;
   inputs: FeasibilityInputs;
 };
 
 /** Create a project for the user. Returns the new id. */
 export function createProject(userId: number, d: FeasibilityWrite): number {
-  const summary = JSON.stringify(summaryOf(d.inputs));
+  const summary = JSON.stringify(summaryOf(withBranchCapex(d.inputs, d.branch_id)));
   const info = getDb().prepare(`
     INSERT INTO feasibility_projects
-      (created_by, company, project_name, location, business_type, status, inputs, summary_cache)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (created_by, company, project_name, location, business_type, branch_id, status, inputs, summary_cache)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     userId, d.company, d.project_name.trim(),
-    d.location ?? null, d.business_type ?? null,
+    d.location ?? null, d.business_type ?? null, d.branch_id ?? null,
     d.status ?? "draft", JSON.stringify(d.inputs), summary
   );
   return Number(info.lastInsertRowid);
@@ -117,14 +135,14 @@ export function createProject(userId: number, d: FeasibilityWrite): number {
 
 /** Update a project the user owns. Recomputes the summary cache. */
 export function updateProject(id: number, _userId: number, d: FeasibilityWrite): boolean {
-  const summary = JSON.stringify(summaryOf(d.inputs));
+  const summary = JSON.stringify(summaryOf(withBranchCapex(d.inputs, d.branch_id)));
   const info = getDb().prepare(`
     UPDATE feasibility_projects
-    SET company = ?, project_name = ?, location = ?, business_type = ?,
+    SET company = ?, project_name = ?, location = ?, business_type = ?, branch_id = ?,
         status = ?, inputs = ?, summary_cache = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
-    d.company, d.project_name.trim(), d.location ?? null, d.business_type ?? null,
+    d.company, d.project_name.trim(), d.location ?? null, d.business_type ?? null, d.branch_id ?? null,
     d.status ?? "draft", JSON.stringify(d.inputs), summary, id
   );
   return info.changes > 0;

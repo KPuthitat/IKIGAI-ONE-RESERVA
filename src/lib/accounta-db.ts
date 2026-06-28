@@ -6,7 +6,7 @@
 
 import { getDb } from "./db";
 import {
-  splitVat, round2, ocrCostBaht,
+  splitVat, round2, ocrCostBaht, CAPEX_CATEGORY_NAME,
   type ExpenseInput, type PaymentStatus
 } from "./accounta";
 
@@ -28,6 +28,7 @@ export type ExpenseRow = {
   vendor_name: string | null;
   doc_type: string | null;
   category: string | null;
+  capex_bucket: string | null;    // FEASIBILITY investment bucket when category is CapEx
   description: string | null;
   amount_total: number;
   has_tax_invoice: number;
@@ -840,7 +841,10 @@ function normalise(d: ExpenseInput): ExpenseInput {
     base_amount: base,
     paid_date: d.payment_status === "paid" ? (d.paid_date || d.bill_date) : null,
     // due date is only meaningful for unpaid (credit-term) bills.
-    due_date: d.payment_status === "unpaid" ? (d.due_date || null) : null
+    due_date: d.payment_status === "unpaid" ? (d.due_date || null) : null,
+    // capex_bucket only applies to CapEx bills — drop a stale value if the
+    // category was changed away, so it can't keep feeding FEASIBILITY.
+    capex_bucket: d.category === CAPEX_CATEGORY_NAME ? (d.capex_bucket || null) : null
   };
 }
 
@@ -855,14 +859,14 @@ export function createExpense(
   const d = normalise(input);
   const info = getDb().prepare(`
     INSERT INTO accounta_expenses (
-      branch_id, company_id, bill_date, vendor_id, vendor_name, doc_type, category, description,
+      branch_id, company_id, bill_date, vendor_id, vendor_name, doc_type, category, capex_bucket, description,
       amount_total, has_tax_invoice, vat_amount, base_amount,
       payment_status, payment_method, paid_date, due_date,
       ocr_source, ocr_cost_baht, review_status, line_message_id, note, created_by
-    ) VALUES (?,?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?,?)
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
-    d.doc_type, d.category, d.description?.trim() || null,
+    d.doc_type, d.category, d.capex_bucket ?? null, d.description?.trim() || null,
     d.amount_total, d.has_tax_invoice ? 1 : 0, d.vat_amount, d.base_amount,
     d.payment_status, d.payment_method, d.paid_date, d.due_date,
     ocr?.source ?? null, ocr?.costBaht ?? null,
@@ -877,13 +881,13 @@ export function updateExpense(id: number, input: ExpenseInput): boolean {
   const info = getDb().prepare(`
     UPDATE accounta_expenses SET
       branch_id = ?, company_id = ?, bill_date = ?, vendor_id = ?, vendor_name = ?,
-      doc_type = ?, category = ?, description = ?, amount_total = ?, has_tax_invoice = ?,
+      doc_type = ?, category = ?, capex_bucket = ?, description = ?, amount_total = ?, has_tax_invoice = ?,
       vat_amount = ?, base_amount = ?, payment_status = ?, payment_method = ?,
       paid_date = ?, due_date = ?, note = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
-    d.doc_type, d.category, d.description?.trim() || null, d.amount_total, d.has_tax_invoice ? 1 : 0,
+    d.doc_type, d.category, d.capex_bucket ?? null, d.description?.trim() || null, d.amount_total, d.has_tax_invoice ? 1 : 0,
     d.vat_amount, d.base_amount, d.payment_status, d.payment_method,
     d.paid_date, d.due_date, d.note?.trim() || null, id
   );
@@ -1622,6 +1626,27 @@ export function materialPurchaseQuota(branchId: number, date: string): MaterialQ
     monthBudget, spentThisMonth: spent, remainingBudget,
     otherDaysLeft, todayIsPurchaseDay, quotaToday
   };
+}
+
+export type CapexBucketLine = {
+  id: number; bill_date: string; payee: string | null; amount: number;
+  bucket: string; payment_status: PaymentStatus; has_doc: boolean;
+};
+
+/** Confirmed CapEx bills for a branch that carry a FEASIBILITY bucket tag —
+ *  feeds the project editor's "เงินลงทุนตั้งต้น" live (owner 2026-06-29). Uses
+ *  amount_total (gross cash out, what the investment actually cost). Chronological
+ *  within each bucket. */
+export function listCapexForFeasibility(branchId: number): CapexBucketLine[] {
+  const rows = getDb().prepare(
+    `SELECT id, bill_date, vendor_name AS payee, amount_total AS amount,
+            capex_bucket AS bucket, payment_status, (doc_path IS NOT NULL) AS has_doc
+       FROM accounta_expenses
+      WHERE branch_id = ? AND review_status = 'confirmed'
+        AND category = ? AND capex_bucket IS NOT NULL
+      ORDER BY capex_bucket, bill_date, id`
+  ).all(branchId, CAPEX_CATEGORY_NAME) as Array<Omit<CapexBucketLine, "has_doc"> & { has_doc: number }>;
+  return rows.map((r) => ({ ...r, has_doc: !!r.has_doc }));
 }
 
 /** Confirmed expenses in a date range (for the dashboard's editable list). */

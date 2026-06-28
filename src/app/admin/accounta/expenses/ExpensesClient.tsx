@@ -7,10 +7,11 @@ import { fmtMoney } from "@/lib/format";
 import { formatLongDate } from "@/lib/time";
 import { humanizeApiError } from "@/lib/error-messages";
 import {
-  PAYMENT_STATUS_LABEL, splitVat, round2, splitMixedBill,
+  PAYMENT_STATUS_LABEL, splitVat, round2, splitMixedBill, CAPEX_CATEGORY_CODE,
   DOC_TYPES, DOC_TYPE_LABEL, docTypeLabel,
   type PaymentStatus, type OcrBillResult
 } from "@/lib/accounta";
+import { STARTUP_CATEGORIES, STARTUP_CATEGORY_LABEL } from "@/lib/feasibility";
 import Combobox from "@/app/components/Combobox";
 import { useConfirm } from "@/app/components/useConfirm";
 
@@ -63,7 +64,7 @@ type Expense = {
   id: number; branch_id: number | null; branch_name: string | null;
   company_id: number | null; company_name: string | null;
   bill_date: string; vendor_id: number | null; vendor_name: string | null;
-  doc_type: string | null; category: string | null; description: string | null;
+  doc_type: string | null; category: string | null; capex_bucket: string | null; description: string | null;
   amount_total: number; has_tax_invoice: number; vat_amount: number; base_amount: number;
   payment_status: PaymentStatus; payment_method: string | null; paid_date: string | null; due_date: string | null;
   has_doc: boolean; ocr_source: string | null; ocr_cost_baht: number | null; note: string | null;
@@ -80,7 +81,7 @@ type Usage = { monthCount: number; monthBaht: number; totalCount: number; totalB
 type FormState = {
   id: number | null;
   branch_id: string; company_id: string;
-  bill_date: string; vendor_name: string; doc_type: string; category: string; description: string;
+  bill_date: string; vendor_name: string; doc_type: string; category: string; capex_bucket: string; description: string;
   amount_total: string; has_tax_invoice: boolean; vat_override: string;
   payment_status: PaymentStatus; payment_method: string; paid_date: string; due_date: string;
   note: string;
@@ -112,7 +113,7 @@ function groupExpenses<T extends { bill_date: string; amount_total: number }>(ro
 function blankForm(defaultMethod = ""): FormState {
   return {
     id: null, branch_id: "", company_id: "",
-    bill_date: todayISO(), vendor_name: "", doc_type: "", category: "", description: "",
+    bill_date: todayISO(), vendor_name: "", doc_type: "", category: "", capex_bucket: "", description: "",
     amount_total: "", has_tax_invoice: false, vat_override: "",
     payment_status: "paid", payment_method: defaultMethod, paid_date: todayISO(), due_date: "",
     note: "", rememberVendor: true
@@ -269,6 +270,7 @@ export default function ExpensesClient(props: {
       // silently blocking every edit (owner 2026-06-28). Mirror the OCR guard below.
       doc_type: e.doc_type && DOC_TYPES.includes(e.doc_type as never) ? e.doc_type : "",
       category: e.category ?? "",
+      capex_bucket: e.capex_bucket && STARTUP_CATEGORIES.includes(e.capex_bucket as never) ? e.capex_bucket : "",
       description: e.description ?? "",
       amount_total: String(e.amount_total),
       has_tax_invoice: !!e.has_tax_invoice,
@@ -373,6 +375,7 @@ export default function ExpensesClient(props: {
         vendor_name: form.vendor_name.trim() || null,
         doc_type: form.doc_type || null,
         category: form.category || null,
+        capex_bucket: form.capex_bucket || null,   // server drops it if category ≠ CapEx
         description: form.description.trim() || null,
         payment_status: form.payment_status,
         payment_method: form.payment_status === "paid" ? form.payment_method : null,
@@ -429,6 +432,7 @@ export default function ExpensesClient(props: {
         vendor_name: form.vendor_name.trim() || null,
         doc_type: form.doc_type || null,
         category: form.category || null,
+        capex_bucket: form.capex_bucket || null,   // server drops it if category ≠ CapEx
         description: form.description.trim() || null,
         amount_total: total,
         has_tax_invoice: form.has_tax_invoice,
@@ -1063,6 +1067,18 @@ export default function ExpensesClient(props: {
                   </div>
                 )}
               </div>
+              {categories.find((c) => c.name === form.category)?.code === CAPEX_CATEGORY_CODE && (
+                <div className="sm:col-span-2">
+                  <label className="label !text-xs">หมวดลงทุน (สำหรับ FEASIBILITY)</label>
+                  <select className="input" value={form.capex_bucket} onChange={(e) => set("capex_bucket", e.target.value)}>
+                    <option value="">— ไม่ระบุ (ไม่ดึงเข้าโปรเจค) —</option>
+                    {STARTUP_CATEGORIES.map((b) => <option key={b} value={b}>{STARTUP_CATEGORY_LABEL[b]}</option>)}
+                  </select>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    เลือกหมวดย่อย แล้วบิลนี้จะถูกดึงเข้า &ldquo;เงินลงทุนตั้งต้น&rdquo; ของโปรเจค FEASIBILITY ที่เชื่อมสาขานี้อัตโนมัติ
+                  </p>
+                </div>
+              )}
               <div className="sm:col-span-2">
                 <label className="label !text-xs">ผู้ค้า / ผู้รับเงิน</label>
                 <Combobox value={form.vendor_name} onChange={(v) => set("vendor_name", v)}

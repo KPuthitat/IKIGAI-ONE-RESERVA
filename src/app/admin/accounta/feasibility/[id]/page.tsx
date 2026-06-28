@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/auth";
 import { getProject, listCompanies } from "@/lib/feasibility-db";
 import { listItems } from "@/lib/feasibility-startup-db";
-import ProjectEditor from "./ProjectEditor";
+import { listBranches, listCapexForFeasibility } from "@/lib/accounta-db";
+import ProjectEditor, { type AccountaCapex } from "./ProjectEditor";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "FEASIBILITY · โปรเจค" };
@@ -16,6 +17,17 @@ export default function FeasibilityProjectPage({ params }: { params: { id: strin
   const project = getProject(id, user.id);
   if (!project) notFound();
 
+  // Live CapEx pulled from ACCOUNTA — confirmed bills tagged with a feasibility
+  // bucket for this project's linked branch, grouped per bucket (owner 2026-06-29).
+  const accountaCapex: AccountaCapex = {};
+  if (project.branch_id != null) {
+    for (const l of listCapexForFeasibility(project.branch_id)) {
+      const g = (accountaCapex[l.bucket] ??= { sum: 0, lines: [] });
+      g.sum += l.amount;
+      g.lines.push({ id: l.id, bill_date: l.bill_date, payee: l.payee, amount: l.amount, payment_status: l.payment_status, has_doc: l.has_doc });
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -26,11 +38,14 @@ export default function FeasibilityProjectPage({ params }: { params: { id: strin
       <ProjectEditor
         id={project.id}
         companies={listCompanies()}
+        branches={listBranches().map((b) => ({ id: b.id, name: b.name }))}
+        accountaCapex={accountaCapex}
         meta={{
           company: project.company,
           project_name: project.project_name,
           location: project.location ?? "",
           business_type: project.business_type ?? "",
+          branch_id: project.branch_id,
           status: project.status
         }}
         inputs={project.inputs}

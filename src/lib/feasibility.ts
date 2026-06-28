@@ -28,6 +28,15 @@ export const STARTUP_CATEGORIES = [
   "deposit", "permit", "professional", "preOpening", "softOther"
 ] as const;
 export type StartupCategory = (typeof STARTUP_CATEGORIES)[number];
+
+/** Thai labels for the startup/CapEx buckets — single source shared by the
+ *  FEASIBILITY editor AND the ACCOUNTA expense form's CapEx sub-category picker
+ *  (so a bill tagged CapEx flows into the right investment bucket). */
+export const STARTUP_CATEGORY_LABEL: Record<StartupCategory, string> = {
+  construction: "ก่อสร้าง/ตกแต่ง", ffe: "เฟอร์นิเจอร์/อุปกรณ์", stock: "สต๊อกเริ่มต้น",
+  hardOther: "ฮาร์ดแวร์อื่นๆ", franchise: "ค่าแฟรนไชส์", deposit: "เงินมัดจำ",
+  permit: "ใบอนุญาต", professional: "ค่าวิชาชีพ", preOpening: "ก่อนเปิดร้าน", softOther: "อื่นๆ (soft)"
+};
 export type WhtMode = "none" | "baht" | "pct";
 
 /** Withholding-tax amount in baht for a line item (mode = baht | pct | none). */

@@ -12,6 +12,7 @@ const Body = z.object({
   project_name: z.string().trim().min(1).max(200),
   location: z.string().trim().max(200).nullable().optional(),
   business_type: z.string().trim().max(200).nullable().optional(),
+  branch_id: z.number().int().positive().nullable().optional(),
   status: z.enum(["draft", "active", "archived"]).optional(),
   inputs: z.unknown().optional()
 });
@@ -43,6 +44,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     project_name: d.project_name,
     location: d.location ?? null,
     business_type: d.business_type ?? null,
+    branch_id: d.branch_id ?? null,
     status: d.status ?? "draft",
     inputs: coerceInputs(d.inputs)
   });

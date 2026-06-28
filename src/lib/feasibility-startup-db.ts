@@ -84,6 +84,7 @@ function syncCategory(projectId: number, userId: number, category: string): void
     project_name: proj.project_name,
     location: proj.location,
     business_type: proj.business_type,
+    branch_id: proj.branch_id,
     status: proj.status as never,
     inputs: { ...proj.inputs, startup }
   });

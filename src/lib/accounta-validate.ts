@@ -3,6 +3,7 @@
 
 import { z } from "zod";
 import { splitVat, round2, DOC_TYPES, type DocType, type ExpenseInput } from "./accounta";
+import { STARTUP_CATEGORIES } from "./feasibility";
 
 export const ExpenseBody = z.object({
   branch_id: z.number().int().positive().nullable().optional(),
@@ -22,6 +23,12 @@ export const ExpenseBody = z.object({
   amount_total: z.number().min(0).max(1e9),
   has_tax_invoice: z.boolean().optional(),
   vat_amount: z.number().min(0).max(1e9).nullable().optional(),
+  // FEASIBILITY investment bucket for a CapEx bill — coerce an unknown value to
+  // null (don't reject the save). accounta-db drops it when category ≠ CapEx.
+  capex_bucket: z.preprocess(
+    (v) => (typeof v === "string" && (STARTUP_CATEGORIES as readonly string[]).includes(v) ? v : null),
+    z.string().nullable()
+  ).optional(),
   payment_status: z.enum(["paid", "unpaid"]).optional(),
   payment_method: z.string().trim().max(60).nullable().optional(),
   paid_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
@@ -47,6 +54,7 @@ export function toExpenseInput(d: ExpenseBodyT): ExpenseInput {
     vendor_name: d.vendor_name ?? null,
     doc_type: d.doc_type ?? null,
     category: d.category ?? null,
+    capex_bucket: d.capex_bucket ?? null,
     description: d.description ?? null,
     amount_total: total,
     has_tax_invoice: hasTax,

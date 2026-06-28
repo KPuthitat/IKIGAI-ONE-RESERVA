@@ -5839,6 +5839,19 @@ function runMigrations(db: Database.Database): void {
   if (!expCols.some((c) => c.name === "due_date")) {
     db.exec("ALTER TABLE accounta_expenses ADD COLUMN due_date TEXT");
   }
+  // capex_bucket (owner 2026-06-29): when a bill is CapEx (category "CP"), which
+  // FEASIBILITY investment bucket it belongs to (construction/ffe/…). Lets a
+  // tagged bill flow live into the project editor's "เงินลงทุนตั้งต้น". NULL for
+  // non-CapEx / unassigned.
+  if (!expCols.some((c) => c.name === "capex_bucket")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN capex_bucket TEXT");
+  }
+  // feasibility_projects.branch_id (owner 2026-06-29): which branch's CapEx bills
+  // feed this project's "เงินลงทุนตั้งต้น" live. NULL = no accounting link.
+  const feasCols = db.prepare("PRAGMA table_info(feasibility_projects)").all() as Array<{ name: string }>;
+  if (!feasCols.some((c) => c.name === "branch_id")) {
+    db.exec("ALTER TABLE feasibility_projects ADD COLUMN branch_id INTEGER REFERENCES branches(id)");
+  }
   // Extra attachments per expense (owner 2026-06-20, paypers-like #3.3):
   // the primary receipt stays on accounta_expenses.doc_path; ADDITIONAL
   // evidence (slips, a second invoice, …) lives here. Each row is uploaded

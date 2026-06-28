@@ -131,7 +131,16 @@ export type ExpenseInput = {
   paid_date: string | null;     // cash-flow date; required-ish when paid
   due_date: string | null;      // วันที่ครบกำหนดชำระ — for credit-term unpaid bills
   note: string | null;
+  // When this bill is CapEx (category === CAPEX_CATEGORY_NAME), the FEASIBILITY
+  // investment bucket it belongs to (a StartupCategory key) — feeds the project
+  // editor's "เงินลงทุนตั้งต้น" live. Optional/null for non-CapEx / unassigned.
+  capex_bucket?: string | null;
 };
+
+// The investment category — bills tagged this (code "CP") may carry a
+// capex_bucket and flow into FEASIBILITY's initial-investment section.
+export const CAPEX_CATEGORY_CODE = "CP";
+export const CAPEX_CATEGORY_NAME = "รายจ่ายลงทุน/ครุภัณฑ์ (CapEx)";
 
 /** What an OCR scan returns to pre-fill the add form. All fields optional —
  *  the model fills what it can read; the human confirms before saving. */
