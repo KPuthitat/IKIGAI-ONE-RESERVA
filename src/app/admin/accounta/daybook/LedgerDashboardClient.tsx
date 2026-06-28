@@ -32,12 +32,12 @@ type CatItem = {
 };
 type Dash = {
   period: LedgerPeriod; start: string; end: string; label: string;
-  revenue: number; expense: number; net: number;
+  revenue: number; salesRevenue: number; financing: number; expense: number; net: number;
   inputVat: number; outputVat: number; vatPayable: number; vatRegistered: boolean;
   daysWithRevenue: number; avgPerDay: number; avgWeekday: number; avgWeekend: number;
   salesPerBillMonth: number | null; salesPerBillYear: number | null;
   forecast: number | null; categories: CatItem[]; uncategorized: number;
-  dailyRows: Array<{ date: string; revenue: number; expense: number; net: number; balance: number; billCount: number | null }>;
+  dailyRows: Array<{ date: string; revenue: number; financing: number; expense: number; net: number; balance: number; billCount: number | null }>;
   incomeByChannel: Array<{ channel: string; amount: number }>;
   incomeRows: Array<{ date: string; channel: string; amount: number; ar: number; cash: number }>;
   byVendor: Array<{ vendor: string; amount: number }>;
@@ -164,7 +164,7 @@ function smoothPath(pts: Array<{ x: number; y: number }>, tension = 0.16): strin
   return d.join(" ");
 }
 
-type ComboPoint = { key: string; label: string; revenue: number; expense: number; profit: number; tip: string };
+type ComboPoint = { key: string; label: string; revenue: number; financing: number; expense: number; profit: number; tip: string };
 
 // Revenue/expense bars + value labels + thin profit line — pure SVG (no chart
 // lib), "style C" (owner 2026-06-23). Period-aware (owner 2026-06-25): year →
@@ -174,7 +174,7 @@ function ComboChart({ points }: { points: ComboPoint[] }) {
   const W = 900, Lm = 40, H = 132, padTop = 16, padBottom = 4, labelBand = 24;
   const plotW = W - Lm;
   const n = Math.max(points.length, 1);
-  const maxV = Math.max(...points.map((m) => m.revenue), ...points.map((m) => m.expense), ...points.map((m) => m.profit), 0);
+  const maxV = Math.max(...points.map((m) => m.revenue + m.financing), ...points.map((m) => m.expense), ...points.map((m) => m.profit), 0);
   const minV = Math.min(...points.map((m) => m.profit), 0);
   const top = niceTop(maxV);
   const bottom = minV < 0 ? -niceTop(-minV) : 0;
@@ -218,16 +218,23 @@ function ComboChart({ points }: { points: ComboPoint[] }) {
       {points.map((m, i) => {
         const cx = Lm + i * colW + colW / 2;
         const rY = mapY(m.revenue), eY = mapY(m.expense);
+        const fTopY = mapY(m.revenue + m.financing);   // financing stacks on top of sales
+        const inX = cx - barW - 1;                       // money-in bar (sales + financing)
         return (
           <g key={m.key}>
-            <rect x={cx - barW - 1} y={Math.min(rY, zeroY)} width={barW} height={Math.abs(zeroY - rY)} rx={3} fill="#10b981" opacity={0.92}>
-              <title>{`${m.tip} รายรับ ฿${fmtMoney(m.revenue)}`}</title>
+            <rect x={inX} y={Math.min(rY, zeroY)} width={barW} height={Math.abs(zeroY - rY)} rx={3} fill="#10b981" opacity={0.92}>
+              <title>{`${m.tip} ยอดขาย ฿${fmtMoney(m.revenue)}`}</title>
             </rect>
+            {m.financing > 0 && (
+              <rect x={inX} y={fTopY} width={barW} height={Math.max(0, rY - fTopY)} rx={3} fill="#38bdf8" opacity={0.9}>
+                <title>{`${m.tip} เงินกู้/เงินเข้าอื่น ฿${fmtMoney(m.financing)}`}</title>
+              </rect>
+            )}
             <rect x={cx + 1} y={Math.min(eY, zeroY)} width={barW} height={Math.abs(zeroY - eY)} rx={3} fill="#f5c97a">
               <title>{`${m.tip} รายจ่าย ฿${fmtMoney(m.expense)}`}</title>
             </rect>
-            {showValues && m.revenue > 0 && (
-              <text x={cx - barW / 2 - 0.5} y={rY - 3} textAnchor="middle" fontSize={7.5} fontWeight={600} fill="#0F6E56">{fmtK(m.revenue)}</text>
+            {showValues && m.revenue + m.financing > 0 && (
+              <text x={cx - barW / 2 - 0.5} y={fTopY - 3} textAnchor="middle" fontSize={7.5} fontWeight={600} fill="#0F6E56">{fmtK(m.revenue + m.financing)}</text>
             )}
             {(i % stride === 0 || i === n - 1) && (
               <text x={cx} y={H + 17} fontSize={n > 16 ? 9 : 11} fontWeight={600} fill="#475569" textAnchor="middle">{m.label}</text>
@@ -249,16 +256,20 @@ function ComboChart({ points }: { points: ComboPoint[] }) {
       {hover != null && points[hover] && (() => {
         const m = points[hover];
         const cx = Lm + hover * colW + colW / 2;
-        const boxW = 150, boxH = 56, by = 4;
+        const hasFin = m.financing > 0;
+        const boxH = hasFin ? 68 : 56;
+        const boxW = 160, by = 4;
         const bx = Math.min(Math.max(cx - boxW / 2, Lm), W - boxW);
+        let yy = by + 28;
         return (
           <g pointerEvents="none">
             <line x1={cx} y1={padTop} x2={cx} y2={H} stroke="#94a3b8" strokeWidth={1} strokeDasharray="3 3" />
             <rect x={bx} y={by} width={boxW} height={boxH} rx={5} fill="#1e293b" opacity={0.95} />
             <text x={bx + 8} y={by + 15} fontSize={9} fontWeight={700} fill="#ffffff">{m.tip}</text>
-            <text x={bx + 8} y={by + 28} fontSize={8.5} fill="#6ee7b7">รายรับ ฿{fmtMoney(m.revenue)}</text>
-            <text x={bx + 8} y={by + 39} fontSize={8.5} fill="#fcd34d">รายจ่าย ฿{fmtMoney(m.expense)}</text>
-            <text x={bx + 8} y={by + 50} fontSize={8.5} fill="#c7d2fe">กำไร ฿{fmtMoney(m.profit)}</text>
+            <text x={bx + 8} y={yy} fontSize={8.5} fill="#6ee7b7">ยอดขาย ฿{fmtMoney(m.revenue)}</text>
+            {hasFin && (<text x={bx + 8} y={(yy += 11)} fontSize={8.5} fill="#7dd3fc">เงินกู้/เงินเข้าอื่น ฿{fmtMoney(m.financing)}</text>)}
+            <text x={bx + 8} y={(yy += 11)} fontSize={8.5} fill="#fcd34d">รายจ่าย ฿{fmtMoney(m.expense)}</text>
+            <text x={bx + 8} y={(yy += 11)} fontSize={8.5} fill="#c7d2fe">กำไร ฿{fmtMoney(m.profit)}</text>
           </g>
         );
       })()}
@@ -945,7 +956,7 @@ export default function LedgerDashboardClient({
     } finally { setBusyId(null); }
   }
 
-  const margin = dash.revenue > 0 ? Math.round((dash.net / dash.revenue) * 100) : null;
+  const margin = dash.salesRevenue > 0 ? Math.round((dash.net / dash.salesRevenue) * 100) : null;
   const payableTotal = payables.whtUnpaid + payables.ssoUnpaid + payables.branchUnpaidTotal;
   const payableCount = payables.branchUnpaidCount + (payables.whtUnpaid > 0 ? 1 : 0) + (payables.ssoUnpaid > 0 ? 1 : 0);
   const dayRowMap = new Map(dash.dailyRows.map((r) => [r.date, r]));
@@ -992,9 +1003,11 @@ export default function LedgerDashboardClient({
       {/* Hero metric cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="card py-3">
-          <div className="text-[11px] text-slate-400">รายรับ</div>
-          <div className="text-2xl font-bold text-emerald-600">฿{fmtMoney(dash.revenue)}</div>
-          <div className="text-[11px] text-slate-400">เงินเข้าจริง ฿{fmtMoney(dash.cashReceived)}</div>
+          <div className="text-[11px] text-slate-400">รายรับ (ยอดขาย)</div>
+          <div className="text-2xl font-bold text-emerald-600">฿{fmtMoney(dash.salesRevenue)}</div>
+          {dash.financing > 0
+            ? <div className="text-[11px] text-sky-600">+ เงินกู้/เงินเข้าอื่น ฿{fmtMoney(dash.financing)}</div>
+            : <div className="text-[11px] text-slate-400">เงินเข้าจริง ฿{fmtMoney(dash.cashReceived)}</div>}
         </div>
         <div className="card py-3">
           <div className="text-[11px] text-slate-400">รายจ่าย</div>
@@ -1035,13 +1048,13 @@ export default function LedgerDashboardClient({
         const comboPoints: ComboPoint[] = period === "year"
           ? monthly.map((m) => ({
               key: `m${m.month}`, label: String(m.month).padStart(2, "0"),
-              revenue: m.revenue, expense: m.expense, profit: m.profit, tip: `${TH_MON_FULL[m.month]} ${trendYear + 543}`
+              revenue: m.revenue, financing: 0, expense: m.expense, profit: m.profit, tip: `${TH_MON_FULL[m.month]} ${trendYear + 543}`
             }))
           : enumerateDays(dash.start, dash.end).map((d) => {
               const r = dayRowMap.get(d);
               return {
                 key: d, label: String(Number(d.slice(8, 10))),
-                revenue: r?.revenue ?? 0, expense: r?.expense ?? 0, profit: r?.net ?? 0, tip: fmtDayLabel(d)
+                revenue: r?.revenue ?? 0, financing: r?.financing ?? 0, expense: r?.expense ?? 0, profit: r?.net ?? 0, tip: fmtDayLabel(d)
               };
             });
         const chartTitle = period === "year"
@@ -1052,7 +1065,8 @@ export default function LedgerDashboardClient({
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="text-sm font-bold text-slate-800">{chartTitle}</div>
               <div className="flex items-center gap-3 text-[11px] text-slate-500">
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />รายรับ</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />ยอดขาย</span>
+                {dash.financing > 0 && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#38bdf8" }} />เงินกู้/เงินเข้าอื่น</span>}
                 <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#f5c97a" }} />รายจ่าย</span>
                 <span className="flex items-center gap-1"><span className="w-3.5 h-[3px] rounded bg-indigo-500" />กำไร</span>
               </div>
