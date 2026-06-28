@@ -10,7 +10,13 @@ export const ExpenseBody = z.object({
   bill_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   vendor_id: z.number().int().positive().nullable().optional(),
   vendor_name: z.string().trim().max(200).nullable().optional(),
-  doc_type: z.enum(DOC_TYPES as [DocType, ...DocType[]]).nullable().optional(),
+  // Coerce an unknown/legacy doc_type (e.g. a Thai label on an imported row) to
+  // null instead of 400-rejecting the whole save — a bad doc_type must never make
+  // an otherwise-valid bill uneditable (owner 2026-06-28).
+  doc_type: z.preprocess(
+    (v) => (typeof v === "string" && (DOC_TYPES as readonly string[]).includes(v) ? v : null),
+    z.enum(DOC_TYPES as [DocType, ...DocType[]]).nullable()
+  ).optional(),
   category: z.string().trim().max(100).nullable().optional(),
   description: z.string().trim().max(500).nullable().optional(),
   amount_total: z.number().min(0).max(1e9),

@@ -263,7 +263,11 @@ export default function ExpensesClient(props: {
       company_id: e.company_id != null ? String(e.company_id) : "",
       bill_date: e.bill_date,
       vendor_name: e.vendor_name ?? "",
-      doc_type: e.doc_type ?? "",
+      // Only keep a doc_type the dropdown can actually represent — legacy/imported
+      // rows may carry a non-standard value (e.g. a Thai label) that the <select>
+      // can't show but would still be re-sent and rejected by z.enum on save,
+      // silently blocking every edit (owner 2026-06-28). Mirror the OCR guard below.
+      doc_type: e.doc_type && DOC_TYPES.includes(e.doc_type as never) ? e.doc_type : "",
       category: e.category ?? "",
       description: e.description ?? "",
       amount_total: String(e.amount_total),
