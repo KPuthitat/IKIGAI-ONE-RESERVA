@@ -137,7 +137,7 @@ export default function AdminHomePage() {
               ACCOUNTA
             </h2>
             <p className="text-slate-500 text-sm mt-1">
-              บัญชีรายรับ-รายจ่าย · ภาษีซื้อ-ขาย · สมุดรายวัน · ประเมินความเป็นไปได้ (FEASIBILITY)
+              บัญชีรายรับ-รายจ่าย · ภาษีซื้อ-ขาย · บัญชีรายวัน · ประเมินความเป็นไปได้ (FEASIBILITY)
             </p>
             <p className="mt-4 text-brand font-bold text-sm">
               {t(lang, "portal.openBackend")}

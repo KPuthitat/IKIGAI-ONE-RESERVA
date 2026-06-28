@@ -587,7 +587,7 @@ export default function ShiftCloseForm({
               placeholder="เช่น 142 (ไม่บังคับ)"
               onChange={(e) => setBillCount(e.target.value.replace(/\D/g, ""))} />
             <p className="text-[10px] text-slate-400 mt-1">
-              จำนวนบิล/ใบเสร็จรวมทั้งวัน — แสดงในสมุดรายวัน ACCOUNTA · เว้นว่างได้
+              จำนวนบิล/ใบเสร็จรวมทั้งวัน — แสดงในบัญชีรายวัน ACCOUNTA · เว้นว่างได้
             </p>
           </div>
         )}

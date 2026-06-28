@@ -1244,7 +1244,7 @@ export default function LedgerDashboardClient({
       {/* Excel-style daily comparison — revenue (shift-close) vs expense, running balance */}
       <div className="card space-y-2">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-sm font-bold text-slate-800">สมุดรายวัน · เปรียบเทียบรายรับ–รายจ่ายรายวัน</div>
+          <div className="text-sm font-bold text-slate-800">บัญชีรายวัน · เปรียบเทียบรายรับ–รายจ่ายรายวัน</div>
           <span className="text-[11px] text-slate-400">กดที่วันเพื่อดูเอกสารของวันนั้น</span>
         </div>
         {dash.dailyRows.length === 0 ? (
@@ -1270,8 +1270,8 @@ export default function LedgerDashboardClient({
                       <td className="py-1.5 px-2 whitespace-nowrap text-slate-600">
                         {selectedDate === r.date ? "▾ " : "▸ "}{fmtDayLabel(r.date)}
                       </td>
-                      <td className="py-1.5 px-2 text-right font-mono text-emerald-600">{r.revenue > 0 ? fmtMoney(r.revenue) : "—"}</td>
-                      <td className="py-1.5 px-2 text-right font-mono text-rose-600">{r.expense > 0 ? fmtMoney(r.expense) : "—"}</td>
+                      <td className={`py-1.5 px-2 text-right font-mono ${r.revenue > 0 ? "text-emerald-600" : "text-slate-300"}`}>{fmtMoney(r.revenue)}</td>
+                      <td className={`py-1.5 px-2 text-right font-mono ${r.expense > 0 ? "text-rose-600" : "text-slate-300"}`}>{fmtMoney(r.expense)}</td>
                       <td className={`py-1.5 px-2 text-right font-mono ${r.net >= 0 ? "text-slate-700" : "text-rose-600"}`}>{r.net < 0 ? `(${fmtMoney(-r.net)})` : fmtMoney(r.net)}</td>
                       <td className={`py-1.5 px-2 text-right font-mono font-bold ${r.balance >= 0 ? "text-slate-700" : "text-rose-600"}`}>{fmtMoney(r.balance)}</td>
                     </tr>

@@ -392,7 +392,7 @@ export default function IncomeClient(props: {
                           <td className="px-3 py-2 text-right font-semibold text-emerald-700 whitespace-nowrap">฿{fmtMoney(r.amount)}</td>
                           <td className="px-3 py-2 text-right whitespace-nowrap">
                             {r.source === "shift_close" ? (
-                              <span className="text-[11px] text-slate-300" title="ยอดนี้ดึงจากรายงานปิดกะอัตโนมัติ — แก้ไขได้ที่สมุดรายวัน">อัตโนมัติ</span>
+                              <span className="text-[11px] text-slate-300" title="ยอดนี้ดึงจากรายงานปิดกะอัตโนมัติ — แก้ไขได้ที่บัญชีรายวัน">อัตโนมัติ</span>
                             ) : (
                               <>
                                 <button type="button" onClick={() => openEdit(r)} disabled={busy} className="text-xs text-slate-500 hover:text-brand">แก้ไข</button>

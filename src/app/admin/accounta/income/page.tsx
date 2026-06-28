@@ -28,14 +28,14 @@ export default function AccountaIncomePage() {
             ลูกหนี้ค้างชำระ →
           </Link>
           <Link href="/admin/accounta/daybook" className="text-sm text-brand hover:underline">
-            ดูสมุดรายวัน (แบบเอกเซล) →
+            ดูบัญชีรายวัน (แบบเอกเซล) →
           </Link>
         </div>
       </div>
       <div>
         <h1 className="text-2xl font-bold text-slate-800">รายรับ · ตรวจ/แก้ไข</h1>
         <p className="text-sm text-slate-500 mt-1">
-          ดู/แก้ไขรายรับที่ลงไว้ แยกตามเดือน → วัน · เพิ่มรายการใหม่สะดวกกว่าที่ <Link href="/admin/accounta/daybook" className="text-brand hover:underline">สมุดรายวัน</Link>
+          ดู/แก้ไขรายรับที่ลงไว้ แยกตามเดือน → วัน · เพิ่มรายการใหม่สะดวกกว่าที่ <Link href="/admin/accounta/daybook" className="text-brand hover:underline">บัญชีรายวัน</Link>
         </p>
         <p className="text-[11px] text-slate-400 mt-1">การลงบันทึกนี้ไม่ได้อ้างอิงหลักการบัญชี</p>
       </div>

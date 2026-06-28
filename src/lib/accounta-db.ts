@@ -1115,6 +1115,18 @@ export type LedgerDashboard = {
   outstandingByEntity: Array<{ channel: string; amount: number; count: number }>;
 };
 
+// Every YYYY-MM-DD in [start, end] inclusive — so the daybook table can show
+// every day of a month even when a day has no activity (owner 2026-06-28).
+function enumDays(start: string, end: string): string[] {
+  const toT = (s: string) => { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d); };
+  const out: string[] = [];
+  const endT = toT(end);
+  for (let t = toT(start), i = 0; t <= endT && i < 400; t += 86400000, i++) {
+    out.push(new Date(t).toISOString().slice(0, 10));
+  }
+  return out;
+}
+
 function bkkToday(): string {
   return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 }
@@ -1277,17 +1289,21 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
     "SELECT date AS d, bill_count AS c FROM branch_daily_revenue WHERE branch_id = ? AND date BETWEEN ? AND ? AND bill_count IS NOT NULL"
   ).all(branchId, start, end) as Array<{ d: string; c: number }>).map((r) => [r.d, r.c]));
   // Per day: revenue = ยอดขาย (sales), financing = เงินกู้/เงินเข้าอื่น (loans),
-  // net = sales − expense (true profit, excl financing), balance = running cash
-  // (sales + financing − expense) (owner 2026-06-28).
-  const allDates = [...new Set([...ledgerByDate.keys(), ...bdrByDate.keys(), ...expByDateMap.keys()])].sort();
+  // net = sales − expense (true profit), balance = running cumulative profit so
+  // the table stays internally consistent (balance = prev + net). Week/month show
+  // EVERY calendar day (0 when no activity, no day disappears — owner 2026-06-28);
+  // year stays data-only (365 daily rows would be unwieldy).
+  const dayList = period === "year"
+    ? [...new Set([...ledgerByDate.keys(), ...bdrByDate.keys(), ...expByDateMap.keys()])].sort()
+    : enumDays(start, end);
   let bal = 0;
-  const dailyRows = allDates.map((d) => {
+  const dailyRows = dayList.map((d) => {
     const sales = salesByDate.has(d) ? round2(salesByDate.get(d)!) : (bdrByDate.get(d) ?? 0);
     const allInc = ledgerByDate.has(d) ? ledgerByDate.get(d)! : (bdrByDate.get(d) ?? 0);
     const financing = round2(allInc - sales);
     const exp = expByDateMap.get(d) ?? 0;
     const net = round2(sales - exp);
-    bal = round2(bal + sales + financing - exp);
+    bal = round2(bal + net);
     return { date: d, revenue: sales, financing, expense: exp, net, balance: bal, billCount: billByDate.get(d) ?? null };
   });
 
