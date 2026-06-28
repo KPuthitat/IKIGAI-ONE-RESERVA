@@ -14,6 +14,35 @@ import {
 import Combobox from "@/app/components/Combobox";
 import { useConfirm } from "@/app/components/useConfirm";
 
+// POST/PATCH JSON with a hard timeout + session-expiry detection so a save can
+// never hang on "กำลังบันทึก…" silently (owner 2026-06-28). Throws Error("session")
+// when the request was redirected to /login (session expired), Error("timeout")
+// when it exceeds the deadline, or Error("network") on a transport failure.
+async function submitJson(url: string, method: "POST" | "PATCH", body: unknown): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 25000);
+  try {
+    const res = await fetch(apiUrl(url), {
+      method, headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body), signal: ctrl.signal
+    });
+    if (res.redirected && /\/login(\?|$)/.test(res.url)) throw new Error("session");
+    return res;
+  } catch (e) {
+    if (e instanceof Error && e.message === "session") throw e;
+    throw new Error((e as { name?: string })?.name === "AbortError" ? "timeout" : "network");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function submitErrMsg(e: unknown): string | null {
+  const m = e instanceof Error ? e.message : "";
+  if (m === "session") return "เซสชันหมดอายุ — กรุณาเข้าสู่ระบบใหม่แล้วลองบันทึกอีกครั้ง (ข้อมูลที่กรอกยังอยู่)";
+  if (m === "timeout") return "บันทึกใช้เวลานานเกินไป (เซิร์ฟเวอร์อาจกำลังประมวลผลอื่นอยู่) — ลองอีกครั้ง";
+  if (m === "network") return "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ตรวจอินเทอร์เน็ตแล้วลองอีกครั้ง";
+  return null;
+}
+
 type Ref = { id: number; name: string };
 type Category = {
   id: number; code: string | null; name: string;
@@ -352,9 +381,9 @@ export default function ExpensesClient(props: {
       ];
       const ids: number[] = [];
       for (const body of rows) {
-        const res = await fetch(apiUrl("/api/accounta/expenses"), {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
-        });
+        let res: Response;
+        try { res = await submitJson("/api/accounta/expenses", "POST", body); }
+        catch (e) { setErr(submitErrMsg(e) ?? "บันทึกไม่สำเร็จ"); return; }
         const j = await res.json().catch(() => ({}));
         if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "บันทึกไม่สำเร็จ")); return; }
         ids.push(j.id);
@@ -408,11 +437,9 @@ export default function ExpensesClient(props: {
         note: form.note.trim() || null
       };
       const url = form.id ? `/api/accounta/expenses/${form.id}` : "/api/accounta/expenses";
-      const res = await fetch(apiUrl(url), {
-        method: form.id ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
+      let res: Response;
+      try { res = await submitJson(url, form.id ? "PATCH" : "POST", body); }
+      catch (e) { setErr(submitErrMsg(e) ?? "บันทึกไม่สำเร็จ"); return; }
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "บันทึกไม่สำเร็จ")); return; }
       const expenseId = form.id ?? j.id;

@@ -14,6 +14,10 @@ export function getDb(): Database.Database {
   const db = new Database(DB_PATH);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  // Wait (don't fail) up to 8s if another write holds the lock — concurrent
+  // saves on the 1-vCPU droplet (OCR ingest + staff edits) otherwise risk an
+  // intermittent SQLITE_BUSY (owner 2026-06-28). WAL keeps reads non-blocking.
+  db.pragma("busy_timeout = 8000");
   // bootstrap schema if needed
   const schemaPath = path.join(process.cwd(), "src/lib/schema.sql");
   if (fs.existsSync(schemaPath)) {
