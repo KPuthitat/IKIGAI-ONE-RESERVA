@@ -15,18 +15,18 @@ type Income = {
   company_id: number | null; company_name: string | null;
   income_date: string; channel: string | null; amount: number; note: string | null;
   source: string;
-  is_outstanding: number; settled_date: string | null;
+  is_outstanding: number; settled_date: string | null; is_vat: number;
 };
 type Summary = { total: number; byChannel: Array<{ channel: string; total: number }> };
 
 type Form = {
   id: number | null; branch_id: string; company_id: string;
-  income_date: string; channel: string; amount: string; note: string;
+  income_date: string; channel: string; amount: string; note: string; is_vat: boolean;
 };
 
 function todayISO(): string { return new Date().toISOString().slice(0, 10); }
 function blank(channel = ""): Form {
-  return { id: null, branch_id: "", company_id: "", income_date: todayISO(), channel, amount: "", note: "" };
+  return { id: null, branch_id: "", company_id: "", income_date: todayISO(), channel, amount: "", note: "", is_vat: true };
 }
 const TH_MON = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 function monthLabel(ym: string): string { const [y, m] = ym.split("-").map(Number); return `${TH_MON[m]} ${y + 543}`; }
@@ -88,10 +88,10 @@ export default function IncomeClient(props: {
   const [previewBusy, setPreviewBusy] = useState(false);
 
   function downloadTemplate() {
-    const header = "branch,company,income_date,channel,amount,note";
+    const header = "branch,company,income_date,channel,amount,note,is_vat";
     const sample = [
-      "HYPOPLARAEMIA,,2026-01-05,เงินยืมกรรมการ,100000,กรรมการให้กู้ยืม",
-      "HYPOPLARAEMIA,,2026-01-06,เงินกู้ธนาคาร,500000,สินเชื่อธนาคาร"
+      "NAMA PASTA SRIRACHA,,2026-01-05,เงินสด,5000,ขายหน้าร้าน,1",
+      "HYPOPLARAEMIA,,2026-01-06,เงินยืมกรรมการ,100000,กรรมการให้กู้ยืม,0"
     ];
     const blob = new Blob(["﻿" + [header, ...sample].join("\r\n")], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
@@ -154,7 +154,8 @@ export default function IncomeClient(props: {
     setForm({
       id: r.id, branch_id: r.branch_id != null ? String(r.branch_id) : "",
       company_id: r.company_id != null ? String(r.company_id) : "",
-      income_date: r.income_date, channel: r.channel ?? "", amount: String(r.amount), note: r.note ?? ""
+      income_date: r.income_date, channel: r.channel ?? "", amount: String(r.amount), note: r.note ?? "",
+      is_vat: r.is_vat !== 0
     });
     setNewChan(null); setErr(null); setOpen(true);
   }
@@ -180,7 +181,7 @@ export default function IncomeClient(props: {
         branch_id: form.branch_id ? Number(form.branch_id) : null,
         company_id: form.company_id ? Number(form.company_id) : null,
         income_date: form.income_date, channel: form.channel || null,
-        amount: amt, note: form.note.trim() || null
+        amount: amt, note: form.note.trim() || null, is_vat: form.is_vat
       };
       const url = form.id ? `/api/accounta/income/${form.id}` : "/api/accounta/income";
       const res = await fetch(apiUrl(url), {
@@ -452,6 +453,15 @@ export default function IncomeClient(props: {
               <div>
                 <label className="label !text-xs">หมายเหตุ</label>
                 <input className="input" value={form.note} onChange={(e) => set("note", e.target.value)} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={form.is_vat} onChange={(e) => set("is_vat", e.target.checked)} />
+                  มีภาษีขาย (VAT 7%)
+                </label>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  ติ๊ก = รายได้จากการขาย (คิดภาษีขาย) · ไม่ติ๊ก = เงินเข้าที่ไม่ใช่รายได้ เช่น เงินยืมกรรมการ / เงินกู้ธนาคาร (ไม่คิดภาษี)
+                </p>
               </div>
             </div>
             <div className="flex items-center justify-end gap-2">

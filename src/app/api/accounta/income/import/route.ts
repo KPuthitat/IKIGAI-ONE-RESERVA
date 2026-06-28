@@ -9,7 +9,10 @@ import { parseCsv, truthy, normDate } from "@/lib/csv-import";
 // the expense importer: forgiving parse, branch/company matched by name,
 // DD/MM/YYYY accepted, per-row errors, and a dry_run=1 preview before commit.
 
-const HEADERS = ["branch", "company", "income_date", "channel", "amount", "note"] as const;
+const HEADERS = ["branch", "company", "income_date", "channel", "amount", "note", "is_vat"] as const;
+
+// is_vat column: default taxable (sales). Explicit "0"/"no"/"ไม่มี"/"ไม่" → not taxable.
+const isVatCell = (v: string): boolean => !/^(0|false|no|n|ไม่มี|ไม่)$/i.test(v.trim());
 
 export async function POST(req: Request) {
   const user = requirePermission("accounta.manage");
@@ -69,7 +72,8 @@ export async function POST(req: Request) {
         income_date: dateRaw,
         channel: get(r, "channel") || null,
         amount: round2(amount),
-        note: get(r, "note") || null
+        note: get(r, "note") || null,
+        is_vat: idx.is_vat >= 0 ? isVatCell(get(r, "is_vat")) : true
       }
     });
   }

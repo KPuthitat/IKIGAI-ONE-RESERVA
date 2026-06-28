@@ -10,7 +10,8 @@ const Body = z.object({
   income_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   channel: z.string().trim().max(60).nullable().optional(),
   amount: z.number().min(0).max(1e9),
-  note: z.string().trim().max(300).nullable().optional()
+  note: z.string().trim().max(300).nullable().optional(),
+  is_vat: z.boolean().optional()
 });
 
 function parseId(raw: string): number | null {
@@ -37,7 +38,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   updateIncome(id, {
     branch_id: d.branch_id ?? null, company_id: d.company_id ?? null,
     income_date: d.income_date, channel: d.channel ?? null,
-    amount: d.amount, note: d.note ?? null
+    amount: d.amount, note: d.note ?? null,
+    is_vat: d.is_vat ?? (existing.is_vat !== 0)
   });
   return NextResponse.json({ ok: true });
 }

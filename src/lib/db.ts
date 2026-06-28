@@ -5765,6 +5765,19 @@ function runMigrations(db: Database.Database): void {
   if (!incCols.some((c) => c.name === "settled_date")) {
     db.exec("ALTER TABLE accounta_income ADD COLUMN settled_date TEXT");
   }
+  // is_vat (owner 2026-06-27): whether this income line carries 7% output VAT.
+  // Sales are taxable → DEFAULT 1 (preserves every existing row). Non-revenue
+  // inflows (เงินยืมกรรมการ / เงินกู้ธนาคาร) are is_vat=0 so they don't inflate
+  // ภาษีขาย/ภพ.30. Only the taxable portion feeds outputVat in the dashboard.
+  if (!incCols.some((c) => c.name === "is_vat")) {
+    db.exec("ALTER TABLE accounta_income ADD COLUMN is_vat INTEGER NOT NULL DEFAULT 1");
+  }
+  // One-time fix for loans bulk-imported before is_vat existed (owner 2026-06-27):
+  // financing inflows on these exact channels are never taxable sales, so flip
+  // them to is_vat=0 so they stop generating ภาษีขาย. Idempotent (no-op once set).
+  db.prepare(
+    "UPDATE accounta_income SET is_vat = 0 WHERE is_vat = 1 AND channel IN ('เงินยืมกรรมการ','เงินกู้ธนาคาร')"
+  ).run();
   // Mirror every recorded shift-close day into the รายรับ ledger. Self-
   // guarding (NOT EXISTS) so it backfills June history once and is a no-op
   // thereafter — the shift_close row is the authoritative mirror of

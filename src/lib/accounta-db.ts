@@ -254,6 +254,7 @@ export type IncomeRow = {
   source: string;
   is_outstanding: number;
   settled_date: string | null;
+  is_vat: number;
 };
 
 export type IncomeInput = {
@@ -263,6 +264,9 @@ export type IncomeInput = {
   channel: string | null;
   amount: number;
   note: string | null;
+  /** carries 7% output VAT (true for sales; false for non-revenue inflows like
+   *  loans). Defaults to true so existing callers keep the sales behavior. */
+  is_vat?: boolean;
 };
 
 export type IncomeFilter = { branchId?: number | null; companyId?: number | null; month?: string | null };
@@ -275,7 +279,8 @@ export function listIncome(f: IncomeFilter = {}): IncomeRow[] {
   if (f.month) { where.push("substr(i.income_date,1,7) = ?"); args.push(f.month); }
   const sql = `
     SELECT i.id, i.branch_id, b.name AS branch_name, i.company_id, c.name_th AS company_name,
-           i.income_date, i.channel, i.amount, i.note, i.source, i.is_outstanding, i.settled_date
+           i.income_date, i.channel, i.amount, i.note, i.source, i.is_outstanding, i.settled_date,
+           COALESCE(i.is_vat,1) AS is_vat
       FROM accounta_income i
       LEFT JOIN branches b  ON b.id = i.branch_id
       LEFT JOIN companies c ON c.id = i.company_id
@@ -286,17 +291,17 @@ export function listIncome(f: IncomeFilter = {}): IncomeRow[] {
 
 export function createIncome(userId: number, d: IncomeInput): number {
   const info = getDb().prepare(`
-    INSERT INTO accounta_income (branch_id, company_id, income_date, channel, amount, note, created_by)
-    VALUES (?,?,?,?,?,?,?)
-  `).run(d.branch_id, d.company_id, d.income_date, d.channel, round2(Number(d.amount) || 0), d.note?.trim() || null, userId);
+    INSERT INTO accounta_income (branch_id, company_id, income_date, channel, amount, note, is_vat, created_by)
+    VALUES (?,?,?,?,?,?,?,?)
+  `).run(d.branch_id, d.company_id, d.income_date, d.channel, round2(Number(d.amount) || 0), d.note?.trim() || null, d.is_vat === false ? 0 : 1, userId);
   return Number(info.lastInsertRowid);
 }
 
 export function updateIncome(id: number, d: IncomeInput): boolean {
   const info = getDb().prepare(`
     UPDATE accounta_income SET branch_id = ?, company_id = ?, income_date = ?, channel = ?,
-      amount = ?, note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-  `).run(d.branch_id, d.company_id, d.income_date, d.channel, round2(Number(d.amount) || 0), d.note?.trim() || null, id);
+      amount = ?, note = ?, is_vat = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+  `).run(d.branch_id, d.company_id, d.income_date, d.channel, round2(Number(d.amount) || 0), d.note?.trim() || null, d.is_vat === false ? 0 : 1, id);
   return info.changes > 0;
 }
 
@@ -307,7 +312,8 @@ export function deleteIncome(id: number): boolean {
 export function getIncome(id: number): IncomeRow | null {
   return listIncome().find((r) => r.id === id) ?? getDb().prepare(`
     SELECT i.id, i.branch_id, b.name AS branch_name, i.company_id, c.name_th AS company_name,
-           i.income_date, i.channel, i.amount, i.note, i.source, i.is_outstanding, i.settled_date
+           i.income_date, i.channel, i.amount, i.note, i.source, i.is_outstanding, i.settled_date,
+           COALESCE(i.is_vat,1) AS is_vat
       FROM accounta_income i
       LEFT JOIN branches b ON b.id = i.branch_id
       LEFT JOIN companies c ON c.id = i.company_id
@@ -1217,8 +1223,15 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
     return { code: c.code, name: c.name, spent, pct, targetMin: c.target_pct_min ?? null, targetMax: c.target_pct_max ?? null, status };
   }).filter((i) => i.spent > 0);
 
-  // Output VAT (ภาษีขาย) + ภพ.30 — only when the company is VAT-registered.
-  const outputVat = vatRegistered ? round2((revenue * 7) / 107) : 0;
+  // Output VAT (ภาษีขาย) + ภพ.30 — only when the company is VAT-registered, and
+  // only on the TAXABLE portion of income. Non-revenue inflows (เงินยืมกรรมการ /
+  // เงินกู้ธนาคาร, is_vat=0) are money-in but carry no output VAT (owner 2026-06-27),
+  // so subtract them before deriving 7%.
+  const nonTaxable = round2((db.prepare(
+    "SELECT COALESCE(SUM(amount),0) AS s FROM accounta_income WHERE branch_id = ? AND income_date BETWEEN ? AND ? AND COALESCE(is_vat,1) = 0"
+  ).get(branchId, start, end) as { s: number }).s);
+  const taxableRevenue = Math.max(0, round2(revenue - nonTaxable));
+  const outputVat = vatRegistered ? round2((taxableRevenue * 7) / 107) : 0;
   const vatPayable = vatRegistered ? round2(outputVat - inputVat) : 0;
 
   // Run-rate forecast — month period only: revenue-so-far / days-elapsed ×

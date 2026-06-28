@@ -875,6 +875,7 @@ export default function LedgerDashboardClient({
   const [aVendor, setAVendor] = useState("");
   const [aCategory, setACategory] = useState("");
   const [aVat, setAVat] = useState(false);
+  const [aIncVat, setAIncVat] = useState(true);   // รายรับ: มีภาษีขาย (sales) by default
   const [aUnpaid, setAUnpaid] = useState(false);
   const [aDueMode, setADueMode] = useState<"cycle" | "date">("cycle");
   const [aDueDate, setADueDate] = useState("");
@@ -885,7 +886,7 @@ export default function LedgerDashboardClient({
     setADate(selectedDate ?? bkkToday);
     setAChannel(incomeChannels[0]?.name ?? ""); setAAmt("");
     setAVendor(""); setACategory(""); setAVat(false); setAUnpaid(false);
-    setADueMode("cycle"); setADueDate("");
+    setADueMode("cycle"); setADueDate(""); setAIncVat(true);
     setAErr(null); setAddMode(mode);
   }
   function afterAdd() {
@@ -904,7 +905,7 @@ export default function LedgerDashboardClient({
       try {
         const res = await fetch(apiUrl("/api/accounta/income"), {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ branch_id: branchId, company_id: companyId, income_date: aDate, channel: aChannel || null, amount: amt, note: null })
+          body: JSON.stringify({ branch_id: branchId, company_id: companyId, income_date: aDate, channel: aChannel || null, amount: amt, note: null, is_vat: aIncVat })
         });
         const j = await res.json().catch(() => ({}));
         if (!res.ok || !j.ok) { setAErr(j.message || "บันทึกไม่สำเร็จ"); return; }
@@ -1434,6 +1435,13 @@ export default function LedgerDashboardClient({
                     <label className="label !text-xs">จำนวนเงิน</label>
                     <input type="text" inputMode="decimal" className="input text-right font-mono" value={aAmt} placeholder="0.00"
                       onChange={(e) => setAAmt(grpMoney(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="flex items-center gap-2 text-sm text-slate-600">
+                      <input type="checkbox" checked={aIncVat} onChange={(e) => setAIncVat(e.target.checked)} />
+                      มีภาษีขาย (VAT 7%)
+                    </label>
+                    <p className="text-[11px] text-slate-400 mt-0.5">ไม่ติ๊ก = เงินเข้าที่ไม่ใช่รายได้ (เช่น เงินยืมกรรมการ/เงินกู้) ไม่คิดภาษี</p>
                   </div>
                 </>
               ) : (

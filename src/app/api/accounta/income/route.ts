@@ -12,7 +12,8 @@ const Body = z.object({
   income_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   channel: z.string().trim().max(60).nullable().optional(),
   amount: z.number().min(0).max(1e9),
-  note: z.string().trim().max(300).nullable().optional()
+  note: z.string().trim().max(300).nullable().optional(),
+  is_vat: z.boolean().optional()
 });
 
 function thisMonth(): string { return new Date().toISOString().slice(0, 7); }
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
   const id = createIncome(user.id, {
     branch_id: d.branch_id ?? null, company_id: d.company_id ?? null,
     income_date: d.income_date, channel: d.channel ?? null,
-    amount: d.amount, note: d.note ?? null
+    amount: d.amount, note: d.note ?? null, is_vat: d.is_vat ?? true
   });
   return NextResponse.json({ ok: true, id });
 }
