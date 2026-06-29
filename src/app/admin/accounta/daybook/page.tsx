@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, listVendors, type LedgerPeriod } from "@/lib/accounta-db";
+import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, listVendors, listPaymentMethods, type LedgerPeriod } from "@/lib/accounta-db";
 import LedgerDashboardClient, { type LedgerExpenseRow } from "./LedgerDashboardClient";
 
 export const dynamic = "force-dynamic";
@@ -66,8 +66,11 @@ export default function DaybookPage({
   const expenses: LedgerExpenseRow[] = listExpensesInRange(branchId, dash.start, dash.end).map((e) => ({
     id: e.id, bill_date: e.bill_date, vendor_name: e.vendor_name, doc_type: e.doc_type,
     category: e.category, amount_total: e.amount_total, vat_amount: e.vat_amount,
-    payment_status: e.payment_status, has_doc: e.has_doc, due_date: e.due_date
+    payment_status: e.payment_status, has_doc: e.has_doc, due_date: e.due_date,
+    capex_bucket: e.capex_bucket, description: e.description, has_tax_invoice: !!e.has_tax_invoice,
+    payment_method: e.payment_method, paid_date: e.paid_date, branch_id: e.branch_id, company_id: e.company_id
   }));
+  const paymentMethods = listPaymentMethods();
 
   return (
     <div className="space-y-4">
@@ -89,6 +92,7 @@ export default function DaybookPage({
         branchId={branchId} companyId={branch?.company_id ?? null} branchName={branch?.name ?? `#${branchId}`}
         incomeChannels={incomeChannels} expenseCategories={expenseCategories}
         draftExpenses={draftExpenses} expenseVendors={expenseVendors}
+        paymentMethods={paymentMethods}
         payCycleWeekday={payCycleWeekday} />
     </div>
   );

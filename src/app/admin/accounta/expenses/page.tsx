@@ -15,9 +15,12 @@ function thisMonth(): string {
   return new Date().toISOString().slice(0, 7);
 }
 
-export default function AccountaExpensesPage() {
+export default function AccountaExpensesPage({ searchParams }: { searchParams: { month?: string } }) {
   const user = requirePermission("accounta.manage");
-  const month = thisMonth();
+  // Honour ?month so deep-links from บัญชีรายวัน land on the month that has the
+  // data (owner 2026-06-29) — was always the current month, so old links showed
+  // an empty list when the bill was in another month.
+  const month = /^\d{4}-\d{2}$/.test(searchParams.month ?? "") ? searchParams.month! : thisMonth();
   const settings = getSystemSettings();
   const ocrAvailable = !!settings.accounta_ocr_enabled && !!process.env.ANTHROPIC_API_KEY;
   const expenseChannels = user.activeBranchId != null

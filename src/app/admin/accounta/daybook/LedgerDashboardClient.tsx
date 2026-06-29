@@ -7,6 +7,7 @@ import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import Combobox, { type ComboOption } from "@/app/components/Combobox";
+import ExpenseEditModal from "./ExpenseEditModal";
 import Select from "@/app/components/Select";
 import { useConfirm } from "@/app/components/useConfirm";
 
@@ -53,6 +54,10 @@ export type LedgerExpenseRow = {
   id: number; bill_date: string; vendor_name: string | null; doc_type: string | null;
   category: string | null; amount_total: number; vat_amount: number;
   payment_status: "paid" | "unpaid"; has_doc: boolean; due_date: string | null;
+  // extra fields so the in-page edit modal has the full row (owner 2026-06-29)
+  capex_bucket: string | null; description: string | null; has_tax_invoice: boolean;
+  payment_method: string | null; paid_date: string | null;
+  branch_id: number | null; company_id: number | null;
 };
 // Raw income row (matches /api/accounta/income) — id + source let the inline
 // daybook detail edit manual rows while leaving shift-close rows read-only.
@@ -345,7 +350,7 @@ function Donut({ items }: { items: Array<{ label: string; amount: number }> }) {
 // daily close report and stays read-only here (edit it at ยอดขายรายวัน).
 function DayDetail({
   date, rows, loading, err, expenses, channels, categories, branchId, companyId, billCount,
-  draftExpenses, expenseVendors, payCycleWeekday, onChanged, removeExpense, busyExpenseId
+  draftExpenses, expenseVendors, payCycleWeekday, onChanged, removeExpense, onEditExpense, busyExpenseId
 }: {
   date: string;
   rows: IncomeDayRow[] | undefined;
@@ -362,6 +367,7 @@ function DayDetail({
   payCycleWeekday: number;
   onChanged: () => void;
   removeExpense: (e: LedgerExpenseRow) => void;
+  onEditExpense: (e: LedgerExpenseRow) => void;
   busyExpenseId: number | null;
 }) {
   const { confirm, ConfirmDialog } = useConfirm();
@@ -659,7 +665,7 @@ function DayDetail({
         <div className="rounded-lg border border-rose-100 overflow-hidden">
           <div className="bg-rose-50 px-3 py-1.5 flex items-center justify-between">
             <span className="text-[11px] font-bold text-rose-800">รายจ่าย ({expenses.length} รายการ)</span>
-            <Link href="/admin/accounta/expenses" className="text-[10px] text-brand hover:underline">ไปหน้ารายจ่าย →</Link>
+            <Link href={`/admin/accounta/expenses?month=${date.slice(0, 7)}`} className="text-[10px] text-brand hover:underline">ไปหน้ารายจ่าย →</Link>
           </div>
           <table className="w-full text-sm tabular-nums">
             <tbody>
@@ -707,7 +713,7 @@ function DayDetail({
                           {unpaid && payId !== e.id && (
                             <button type="button" onClick={() => openPay(e)} className="text-[10px] text-emerald-600 hover:underline mr-2">จ่ายแล้ว</button>
                           )}
-                          <Link href={`/admin/accounta/expenses?edit=${e.id}`} className="text-[10px] text-brand hover:underline mr-2">แก้ไข</Link>
+                          <button type="button" onClick={() => onEditExpense(e)} className="text-[10px] text-brand hover:underline mr-2">แก้ไข</button>
                           <button type="button" onClick={() => removeExpense(e)} disabled={busyExpenseId === e.id} className="text-[10px] text-rose-500 hover:underline disabled:opacity-50">ลบออก</button>
                         </td>
                       </tr>
@@ -840,7 +846,7 @@ function DayDetail({
 export default function LedgerDashboardClient({
   dash, expenses, period, anchor, monthly, trendYear, payables, cashAccounts, cashTotal,
   branchId, companyId, branchName, incomeChannels, expenseCategories, draftExpenses, expenseVendors,
-  payCycleWeekday
+  paymentMethods, payCycleWeekday
 }: {
   dash: Dash; expenses: LedgerExpenseRow[]; period: LedgerPeriod; anchor: string;
   monthly: MonthlyRow[]; trendYear: number; payables: Payables;
@@ -850,6 +856,7 @@ export default function LedgerDashboardClient({
   expenseCategories: Array<{ code: string | null; name: string }>;
   draftExpenses: DraftLite[];
   expenseVendors: VendorOpt[];
+  paymentMethods: Array<{ id: number; name: string }>;
   payCycleWeekday: number;
 }) {
   const { confirm, ConfirmDialog } = useConfirm();
@@ -857,6 +864,9 @@ export default function LedgerDashboardClient({
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<number | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  // In-page รายจ่าย edit modal (owner 2026-06-29) — the daybook is the main
+  // workspace, so editing a bill opens here instead of jumping to หน้ารายจ่าย.
+  const [editExpense, setEditExpense] = useState<LedgerExpenseRow | null>(null);
   // SVG charts render client-only — their <title> tooltips otherwise produce
   // an SSR/hydration text-node mismatch with Thai labels. Cards/tables SSR fine.
   const [chartsReady, setChartsReady] = useState(false);
@@ -992,6 +1002,16 @@ export default function LedgerDashboardClient({
   return (
     <div className="space-y-4">
       {ConfirmDialog}
+      {editExpense && (
+        <ExpenseEditModal
+          expense={editExpense}
+          categories={expenseCategories}
+          vendors={expenseVendors}
+          paymentMethods={paymentMethods}
+          onClose={() => setEditExpense(null)}
+          onSaved={() => { setEditExpense(null); startTransition(() => router.refresh()); }}
+        />
+      )}
       {/* Period selector + add buttons */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1">
@@ -1326,6 +1346,7 @@ export default function LedgerDashboardClient({
                             payCycleWeekday={payCycleWeekday}
                             onChanged={() => { loadDayIncome(r.date, true); startTransition(() => router.refresh()); }}
                             removeExpense={remove}
+                            onEditExpense={setEditExpense}
                             busyExpenseId={busyId}
                           />
                         </td>
