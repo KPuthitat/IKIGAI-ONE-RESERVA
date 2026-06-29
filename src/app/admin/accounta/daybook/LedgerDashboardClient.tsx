@@ -125,17 +125,15 @@ function isoWeekNo(isoDate: string): number {
   firstThu.setUTCDate(firstThu.getUTCDate() - ((firstThu.getUTCDay() + 6) % 7) + 3);
   return 1 + Math.round((dt.getTime() - firstThu.getTime()) / 604800000);
 }
-// "สัปดาห์ที่ 7 : 14 – 20 กุมภาพันธ์ 2565" — collapses the month/year when the
-// week sits inside one month; expands when it straddles months/years.
-function weekRangeLabel(start: string, end: string): string {
+// Date range of a week, e.g. "14 – 20 มิถุนายน 2570" — collapses the month/year
+// when the week sits inside one month; expands when it straddles months/years.
+function weekDateRange(start: string, end: string): string {
   const [sy, sm, sd] = start.split("-").map(Number);
   const [ey, em, ed] = end.split("-").map(Number);
-  const wk = isoWeekNo(start);
   const beS = sy + 543, beE = ey + 543;
-  const head = `สัปดาห์ที่ ${wk} : `;
-  if (sy === ey && sm === em) return `${head}${sd} – ${ed} ${TH_MON_FULL[sm]} ${beE}`;
-  if (sy === ey) return `${head}${sd} ${TH_MON_FULL[sm]} – ${ed} ${TH_MON_FULL[em]} ${beE}`;
-  return `${head}${sd} ${TH_MON_FULL[sm]} ${beS} – ${ed} ${TH_MON_FULL[em]} ${beE}`;
+  if (sy === ey && sm === em) return `${sd} – ${ed} ${TH_MON_FULL[sm]} ${beE}`;
+  if (sy === ey) return `${sd} ${TH_MON_FULL[sm]} – ${ed} ${TH_MON_FULL[em]} ${beE}`;
+  return `${sd} ${TH_MON_FULL[sm]} ${beS} – ${ed} ${TH_MON_FULL[em]} ${beE}`;
 }
 // Full Thai date, e.g. "วันพุธที่ 27 พฤษภาคม 2569" (owner 2026-06-22 — no abbreviations).
 function fmtDayLabel(iso: string): string {
@@ -1041,10 +1039,12 @@ export default function LedgerDashboardClient({
         ) : period === "year" ? (
           <div className="text-center min-w-[7rem]">
             <div className="text-4xl font-bold text-slate-800 tracking-tight tabular-nums leading-none">{Number(anchor.slice(0, 4)) + 543}</div>
-            <div className="text-xs text-slate-500 leading-none mt-0.5">ปี</div>
           </div>
         ) : (
-          <span className="text-base font-bold text-slate-700">{weekRangeLabel(dash.start, dash.end)}</span>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-slate-800 tracking-tight leading-none whitespace-nowrap">สัปดาห์ที่ {isoWeekNo(dash.start)}</div>
+            <div className="text-xs text-slate-500 leading-none mt-1">{weekDateRange(dash.start, dash.end)}</div>
+          </div>
         )}
         <button type="button" onClick={() => go(period, shiftAnchor(anchor, period, 1))}
           className="w-9 h-9 rounded-full border border-slate-300 text-slate-500 flex items-center justify-center hover:bg-brand hover:text-white hover:border-brand transition disabled:opacity-40" disabled={pending} aria-label="ถัดไป">→</button>
