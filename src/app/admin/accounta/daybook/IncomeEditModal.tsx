@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
+import Select from "@/app/components/Select";
 
 export type EditableIncome = {
   id: number;
@@ -91,9 +92,8 @@ export default function IncomeEditModal({
         <div className="p-4 space-y-3">
           <div>
             <label className="label !text-xs">ประเภทรายรับ</label>
-            <select className="input" value={kind} onChange={(e) => setKind(e.target.value as IncKind)}>
-              {KIND_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-            </select>
+            <Select value={kind} onChange={(v) => setKind(v as IncKind)}
+              options={KIND_OPTS.map((o) => ({ value: o.v, label: o.label }))} />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>

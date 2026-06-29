@@ -6,6 +6,7 @@ import { fmtMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
 import { splitVat, round2, CAPEX_CATEGORY_CODE } from "@/lib/accounta";
 import { STARTUP_CATEGORIES, STARTUP_CATEGORY_LABEL } from "@/lib/feasibility";
+import Select from "@/app/components/Select";
 
 // Full editable shape of an expense row (the daybook passes these fields through).
 export type EditableExpense = {
@@ -108,20 +109,16 @@ export default function ExpenseEditModal({
             </div>
             <div>
               <label className="label !text-xs">หมวดหมู่</label>
-              <select className="input" value={category} onChange={(e) => setCategory(e.target.value)}>
-                <option value="">— เลือก —</option>
-                {categories.map((c) => <option key={c.name} value={c.name}>{c.code ? `${c.code} · ${c.name}` : c.name}</option>)}
-              </select>
+              <Select value={category} onChange={setCategory} placeholder="— เลือก —"
+                options={categories.map((c) => ({ value: c.name, label: c.code ? `${c.code} · ${c.name}` : c.name }))} />
             </div>
           </div>
 
           {isCapex && (
             <div>
               <label className="label !text-xs">หมวดลงทุน (สำหรับ FEASIBILITY)</label>
-              <select className="input" value={capexBucket} onChange={(e) => setCapexBucket(e.target.value)}>
-                <option value="">— ไม่ระบุ (ไม่ดึงเข้าโปรเจค) —</option>
-                {STARTUP_CATEGORIES.map((b) => <option key={b} value={b}>{STARTUP_CATEGORY_LABEL[b]}</option>)}
-              </select>
+              <Select value={capexBucket} onChange={setCapexBucket} placeholder="— ไม่ระบุ (ไม่ดึงเข้าโปรเจค) —"
+                options={STARTUP_CATEGORIES.map((b) => ({ value: b, label: STARTUP_CATEGORY_LABEL[b] }))} />
             </div>
           )}
 
@@ -151,18 +148,17 @@ export default function ExpenseEditModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label !text-xs">สถานะ</label>
-              <select className="input" value={status} onChange={(e) => setStatus(e.target.value as "paid" | "unpaid")}>
-                <option value="paid">ชำระแล้ว</option>
-                <option value="unpaid">ค้างชำระ (เครดิตเทอม)</option>
-              </select>
+              <Select value={status} onChange={(v) => setStatus(v as "paid" | "unpaid")}
+                options={[{ value: "paid", label: "ชำระแล้ว" }, { value: "unpaid", label: "ค้างชำระ (เครดิตเทอม)" }]} />
             </div>
             {status === "paid" ? (
               <div>
                 <label className="label !text-xs">จ่ายโดย</label>
-                <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
-                  {!paymentMethods.some((m) => m.name === method) && method && <option value={method}>{method}</option>}
-                  {paymentMethods.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
-                </select>
+                <Select value={method} onChange={setMethod} placeholder="— เลือก —"
+                  options={[
+                    ...(method && !paymentMethods.some((m) => m.name === method) ? [{ value: method, label: method }] : []),
+                    ...paymentMethods.map((m) => ({ value: m.name, label: m.name }))
+                  ]} />
               </div>
             ) : (
               <div>

@@ -5,6 +5,7 @@ import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
 import { splitVat, round2, DOC_TYPES, DOC_TYPE_LABEL } from "@/lib/accounta";
+import Select from "@/app/components/Select";
 
 type Initial = {
   doc_type: string | null; vendor_name: string | null; ocr_tax_id: string | null;
@@ -79,10 +80,8 @@ export default function BillForm({
       <div className="p-5 space-y-4">
         <div>
           <label className="label !text-xs">ประเภทเอกสาร *</label>
-          <select className="input" value={docType} onChange={(e) => setDocType(e.target.value)}>
-            <option value="">— เลือกประเภท —</option>
-            {DOC_TYPES.map((d) => <option key={d} value={d}>{DOC_TYPE_LABEL[d]}</option>)}
-          </select>
+          <Select value={docType} onChange={setDocType} placeholder="— เลือกประเภท —"
+            options={DOC_TYPES.map((d) => ({ value: d, label: DOC_TYPE_LABEL[d] }))} />
         </div>
 
         <div>
@@ -97,10 +96,8 @@ export default function BillForm({
 
         <div>
           <label className="label !text-xs">หมวดหมู่</label>
-          <select className="input" value={category} onChange={(e) => setCategory(e.target.value)}>
-            <option value="">— ให้แอดมินจัดหมวด —</option>
-            {categories.map((c) => <option key={c.name} value={c.name}>{c.code ? `${c.code} · ${c.name}` : c.name}</option>)}
-          </select>
+          <Select value={category} onChange={setCategory} placeholder="— ให้แอดมินจัดหมวด —"
+            options={categories.map((c) => ({ value: c.name, label: c.code ? `${c.code} · ${c.name}` : c.name }))} />
         </div>
 
         <div>
