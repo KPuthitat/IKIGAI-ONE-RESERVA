@@ -960,6 +960,10 @@ export default function LedgerDashboardClient({
   const payableTotal = payables.whtUnpaid + payables.ssoUnpaid + payables.branchUnpaidTotal;
   const payableCount = payables.branchUnpaidCount + (payables.whtUnpaid > 0 ? 1 : 0) + (payables.ssoUnpaid > 0 ? 1 : 0);
   const dayRowMap = new Map(dash.dailyRows.map((r) => [r.date, r]));
+  // Daybook footer totals: financing (loans/other inflows) + running cash on hand
+  // = sales + financing − expense (owner 2026-06-29).
+  const financingTotal = dash.dailyRows.reduce((s, r) => s + r.financing, 0);
+  const runningCashTotal = Math.round((dash.revenue + financingTotal - dash.expense) * 100) / 100;
   const incomeTop = [...dash.incomeByChannel].slice(0, 8);
   const expenseTop = [...dash.categories].sort((a, b) => b.spent - a.spent).slice(0, 8)
     .map((c) => ({ label: c.code ? `${c.code} · ${c.name}` : c.name, amount: c.spent }));
@@ -1255,10 +1259,11 @@ export default function LedgerDashboardClient({
               <thead>
                 <tr className="text-[11px] text-slate-400 border-b border-slate-200">
                   <th className="text-left py-1.5 px-2">วันที่</th>
-                  <th className="text-right py-1.5 px-2">รายรับ</th>
+                  <th className="text-right py-1.5 px-2">รายรับ (ขาย)</th>
+                  <th className="text-right py-1.5 px-2">เงินกู้/เข้าอื่น</th>
                   <th className="text-right py-1.5 px-2">รายจ่าย</th>
                   <th className="text-right py-1.5 px-2">กำไร/ขาดทุนวันนี้</th>
-                  <th className="text-right py-1.5 px-2">คงเหลือสะสม</th>
+                  <th className="text-right py-1.5 px-2">คงเหลือสะสม (เงินสด)</th>
                 </tr>
               </thead>
               <tbody>
@@ -1271,13 +1276,14 @@ export default function LedgerDashboardClient({
                         {selectedDate === r.date ? "▾ " : "▸ "}{fmtDayLabel(r.date)}
                       </td>
                       <td className={`py-1.5 px-2 text-right font-mono ${r.revenue > 0 ? "text-emerald-600" : "text-slate-300"}`}>{fmtMoney(r.revenue)}</td>
+                      <td className={`py-1.5 px-2 text-right font-mono ${r.financing > 0 ? "text-sky-600" : "text-slate-300"}`}>{fmtMoney(r.financing)}</td>
                       <td className={`py-1.5 px-2 text-right font-mono ${r.expense > 0 ? "text-rose-600" : "text-slate-300"}`}>{fmtMoney(r.expense)}</td>
                       <td className={`py-1.5 px-2 text-right font-mono ${r.net >= 0 ? "text-slate-700" : "text-rose-600"}`}>{r.net < 0 ? `(${fmtMoney(-r.net)})` : fmtMoney(r.net)}</td>
                       <td className={`py-1.5 px-2 text-right font-mono font-bold ${r.balance >= 0 ? "text-slate-700" : "text-rose-600"}`}>{fmtMoney(r.balance)}</td>
                     </tr>
                     {selectedDate === r.date && (
                       <tr className="bg-brand/5">
-                        <td colSpan={5} className="p-0 border-b border-brand/20">
+                        <td colSpan={6} className="p-0 border-b border-brand/20">
                           <DayDetail
                             date={r.date}
                             rows={incCache[r.date]}
@@ -1306,9 +1312,10 @@ export default function LedgerDashboardClient({
                 <tr className="border-t-2 border-slate-200 font-bold">
                   <td className="py-1.5 px-2 text-slate-700">รวมทั้งสิ้น</td>
                   <td className="py-1.5 px-2 text-right font-mono text-emerald-700">฿{fmtMoney(dash.revenue)}</td>
+                  <td className="py-1.5 px-2 text-right font-mono text-sky-700">฿{fmtMoney(financingTotal)}</td>
                   <td className="py-1.5 px-2 text-right font-mono text-rose-700">฿{fmtMoney(dash.expense)}</td>
                   <td className={`py-1.5 px-2 text-right font-mono ${dash.net >= 0 ? "text-slate-800" : "text-rose-600"}`}>{dash.net < 0 ? `(฿${fmtMoney(-dash.net)})` : `฿${fmtMoney(dash.net)}`}</td>
-                  <td className={`py-1.5 px-2 text-right font-mono ${dash.net >= 0 ? "text-slate-800" : "text-rose-600"}`}>฿{fmtMoney(dash.net)}</td>
+                  <td className={`py-1.5 px-2 text-right font-mono ${runningCashTotal >= 0 ? "text-slate-800" : "text-rose-600"}`}>{runningCashTotal < 0 ? `(฿${fmtMoney(-runningCashTotal)})` : `฿${fmtMoney(runningCashTotal)}`}</td>
                 </tr>
               </tfoot>
             </table>

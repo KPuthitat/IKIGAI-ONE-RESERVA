@@ -1293,10 +1293,11 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
     "SELECT date AS d, bill_count AS c FROM branch_daily_revenue WHERE branch_id = ? AND date BETWEEN ? AND ? AND bill_count IS NOT NULL"
   ).all(branchId, start, end) as Array<{ d: string; c: number }>).map((r) => [r.d, r.c]));
   // Per day: revenue = ยอดขาย (sales), financing = เงินกู้/เงินเข้าอื่น (loans),
-  // net = sales − expense (true profit), balance = running cumulative profit so
-  // the table stays internally consistent (balance = prev + net). Week/month show
-  // EVERY calendar day (0 when no activity, no day disappears — owner 2026-06-28);
-  // year stays data-only (365 daily rows would be unwieldy).
+  // net = sales − expense (true operating profit, excl financing), balance =
+  // running CASH on hand = cumulative (sales + financing − expense), so loan
+  // inflows show up and the balance reconciles with money actually in/out (owner
+  // 2026-06-29). Week/month show EVERY calendar day (0 when no activity, no day
+  // disappears — owner 2026-06-28); year stays data-only (365 rows is unwieldy).
   const dayList = period === "year"
     ? [...new Set([...ledgerByDate.keys(), ...bdrByDate.keys(), ...expByDateMap.keys()])].sort()
     : enumDays(start, end);
@@ -1307,7 +1308,7 @@ export function ledgerDashboard(branchId: number, period: LedgerPeriod, anchor: 
     const financing = round2(allInc - sales);
     const exp = expByDateMap.get(d) ?? 0;
     const net = round2(sales - exp);
-    bal = round2(bal + net);
+    bal = round2(bal + sales + financing - exp);
     return { date: d, revenue: sales, financing, expense: exp, net, balance: bal, billCount: billByDate.get(d) ?? null };
   });
 
