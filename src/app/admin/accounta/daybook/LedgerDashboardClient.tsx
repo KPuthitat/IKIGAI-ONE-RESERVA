@@ -8,6 +8,7 @@ import { fmtMoney } from "@/lib/format";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import Combobox, { type ComboOption } from "@/app/components/Combobox";
 import ExpenseEditModal from "./ExpenseEditModal";
+import IncomeEditModal from "./IncomeEditModal";
 import Select from "@/app/components/Select";
 import { useConfirm } from "@/app/components/useConfirm";
 
@@ -65,6 +66,7 @@ type IncomeDayRow = {
   id: number; branch_id: number | null; company_id: number | null;
   income_date: string; channel: string | null; amount: number; note: string | null;
   source: string; is_outstanding: number; settled_date: string | null;
+  is_vat?: number; is_revenue?: number;
 };
 // Pending scanned-bill draft the รายจ่าย panel can pull in (owner 2026-06-25).
 type DraftLite = {
@@ -348,7 +350,7 @@ function Donut({ items }: { items: Array<{ label: string; amount: number }> }) {
 // daily close report and stays read-only here (edit it at ยอดขายรายวัน).
 function DayDetail({
   date, rows, loading, err, expenses, channels, categories, branchId, companyId, billCount,
-  draftExpenses, expenseVendors, payCycleWeekday, onChanged, removeExpense, onEditExpense, busyExpenseId
+  draftExpenses, expenseVendors, payCycleWeekday, onChanged, removeExpense, onEditExpense, onEditIncome, busyExpenseId
 }: {
   date: string;
   rows: IncomeDayRow[] | undefined;
@@ -366,6 +368,7 @@ function DayDetail({
   onChanged: () => void;
   removeExpense: (e: LedgerExpenseRow) => void;
   onEditExpense: (e: LedgerExpenseRow) => void;
+  onEditIncome: (r: IncomeDayRow) => void;
   busyExpenseId: number | null;
 }) {
   const { confirm, ConfirmDialog } = useConfirm();
@@ -620,7 +623,7 @@ function DayDetail({
                         </>
                       ) : (
                         <>
-                          <button type="button" onClick={() => { setEditId(r.id); setEditAmt(grpMoney(String(r.amount))); setRowErr(null); }}
+                          <button type="button" onClick={() => onEditIncome(r)}
                             className="text-[11px] text-slate-500 hover:text-brand">แก้ไข</button>
                           <button type="button" onClick={() => del(r)} disabled={savingId === r.id}
                             className="text-[11px] text-slate-400 hover:text-rose-600 ml-2 disabled:opacity-50">ลบออก</button>
@@ -865,6 +868,7 @@ export default function LedgerDashboardClient({
   // In-page รายจ่าย edit modal (owner 2026-06-29) — the daybook is the main
   // workspace, so editing a bill opens here instead of jumping to หน้ารายจ่าย.
   const [editExpense, setEditExpense] = useState<LedgerExpenseRow | null>(null);
+  const [editIncome, setEditIncome] = useState<IncomeDayRow | null>(null);
   // SVG charts render client-only — their <title> tooltips otherwise produce
   // an SSR/hydration text-node mismatch with Thai labels. Cards/tables SSR fine.
   const [chartsReady, setChartsReady] = useState(false);
@@ -1008,6 +1012,14 @@ export default function LedgerDashboardClient({
           paymentMethods={paymentMethods}
           onClose={() => setEditExpense(null)}
           onSaved={() => { setEditExpense(null); startTransition(() => router.refresh()); }}
+        />
+      )}
+      {editIncome && (
+        <IncomeEditModal
+          income={editIncome}
+          channels={incomeChannels}
+          onClose={() => setEditIncome(null)}
+          onSaved={() => { const d = editIncome.income_date; setEditIncome(null); loadDayIncome(d, true); startTransition(() => router.refresh()); }}
         />
       )}
       {/* Period selector + add buttons */}
@@ -1347,6 +1359,7 @@ export default function LedgerDashboardClient({
                             onChanged={() => { loadDayIncome(r.date, true); startTransition(() => router.refresh()); }}
                             removeExpense={remove}
                             onEditExpense={setEditExpense}
+                            onEditIncome={setEditIncome}
                             busyExpenseId={busyId}
                           />
                         </td>
