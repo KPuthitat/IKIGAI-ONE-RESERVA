@@ -395,6 +395,8 @@ export type AccountaBillVerifyArgs = {
   vendorName: string | null;   // matched master vendor (null = ไม่พบ → รอแอดมิน)
   amount: number | null;       // OCR'd ยอดรวม (null = อ่านไม่ออก)
   billDate: string | null;     // YYYY-MM-DD or null
+  taxId?: string | null;       // 13-digit เลขผู้เสียภาษี OCR read (optional)
+  formUrl?: string | null;     // tokenised link to the detail form (optional)
 };
 
 export function accountaBillVerifyFlex(args: AccountaBillVerifyArgs): LineFlexMessage {
@@ -417,6 +419,7 @@ export function accountaBillVerifyFlex(args: AccountaBillVerifyArgs): LineFlexMe
     row("ยอดรวม", args.amount != null ? `${baht(args.amount)} บาท` : "— อ่านไม่ออก —", true)
   ];
   if (args.billDate) rows.push(row("วันที่บิล", args.billDate));
+  if (args.taxId) rows.push(row("เลขผู้เสียภาษี", args.taxId));
 
   const bubble = {
     type: "bubble",
@@ -447,19 +450,34 @@ export function accountaBillVerifyFlex(args: AccountaBillVerifyArgs): LineFlexMe
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
         { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: rows },
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
-        { type: "text", text: "ผู้จำหน่ายกับยอดตรงกับบิลไหมครับ?", size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "sm" }
+        {
+          type: "text",
+          text: args.formUrl
+            ? "กด“กรอก/แก้ไขรายละเอียด” เพื่อเลือกประเภทเอกสาร + ใส่ยอด/ภาษี แล้วส่งให้แอดมินตรวจ"
+            : "ผู้จำหน่ายกับยอดตรงกับบิลไหมครับ?",
+          size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "sm"
+        }
       ]
     },
     footer: {
-      type: "box", layout: "horizontal", spacing: "sm", paddingAll: "16px",
+      type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
       contents: [
+        ...(args.formUrl ? [{
+          type: "button", style: "primary", height: "sm", color: COLOR_BRAND,
+          action: { type: "uri", label: "กรอก/แก้ไขรายละเอียด", uri: args.formUrl }
+        }] : []),
         {
-          type: "button", style: "secondary", height: "sm", flex: 1,
-          action: { type: "postback", label: "ไม่ตรง", data: `acct_bill_fix=${args.expenseId}`, displayText: "บิลนี้ไม่ตรง" }
-        },
-        {
-          type: "button", style: "primary", height: "sm", flex: 1, color: COLOR_BRAND,
-          action: { type: "postback", label: "ถูกต้อง", data: `acct_bill_ok=${args.expenseId}`, displayText: "ยืนยันว่าถูกต้อง" }
+          type: "box", layout: "horizontal", spacing: "sm",
+          contents: [
+            {
+              type: "button", style: "secondary", height: "sm", flex: 1,
+              action: { type: "postback", label: "ไม่ตรง", data: `acct_bill_fix=${args.expenseId}`, displayText: "บิลนี้ไม่ตรง" }
+            },
+            {
+              type: "button", style: args.formUrl ? "secondary" : "primary", height: "sm", flex: 1, ...(args.formUrl ? {} : { color: COLOR_BRAND }),
+              action: { type: "postback", label: "ถูกต้อง", data: `acct_bill_ok=${args.expenseId}`, displayText: "ยืนยันว่าถูกต้อง" }
+            }
+          ]
         }
       ]
     },

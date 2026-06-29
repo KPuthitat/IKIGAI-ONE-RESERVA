@@ -21,6 +21,9 @@ import {
 } from "./accounta-db";
 import { saveReceiptImage, RECEIPT_ALLOWED_MIME } from "./accounta-receipts";
 import { ocrCostBaht, round2, type ExpenseInput, type OcrBillResult } from "./accounta";
+import { signBillToken } from "./accounta-bill-token";
+
+const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
 
 type SenderRow = {
   id: number;
@@ -156,6 +159,7 @@ export async function ingestLineBill(args: {
     vendor_name: vendorName,
     doc_type: null,
     category: null,
+    ocr_tax_id: taxId.length >= 10 ? taxId : null,
     description: null,
     amount_total: total,
     has_tax_invoice: hasTax,
@@ -189,7 +193,9 @@ export async function ingestLineBill(args: {
       senderName,
       vendorName,
       amount: parsed?.amount_total ?? null,
-      billDate: parsed?.bill_date ?? null
+      billDate: parsed?.bill_date ?? null,
+      taxId: taxId.length >= 10 ? taxId : null,
+      formUrl: `${PUBLIC_BASE}/bill/${signBillToken(firstId)}`
     })]
   });
 }

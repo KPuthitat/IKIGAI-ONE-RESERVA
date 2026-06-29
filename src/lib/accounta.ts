@@ -26,10 +26,11 @@ export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
 // only doc you can claim ภาษีซื้อ on). The form pre-checks has_tax_invoice
 // when the owner picks "ใบกำกับภาษี (เต็มรูป)". (owner 2026-06-20.)
 export type DocType =
-  | "receipt" | "tax_invoice" | "tax_invoice_abbr"
+  | "quotation" | "receipt" | "tax_invoice" | "tax_invoice_abbr"
   | "cash_bill" | "transfer_slip" | "invoice" | "other";
 
 export const DOC_TYPE_LABEL: Record<DocType, string> = {
+  quotation: "ใบเสนอราคา",
   receipt: "ใบเสร็จรับเงิน",
   tax_invoice: "ใบกำกับภาษี (เต็มรูป)",
   tax_invoice_abbr: "ใบกำกับภาษีอย่างย่อ",
@@ -135,6 +136,9 @@ export type ExpenseInput = {
   // investment bucket it belongs to (a StartupCategory key) — feeds the project
   // editor's "เงินลงทุนตั้งต้น" live. Optional/null for non-CapEx / unassigned.
   capex_bucket?: string | null;
+  // 13-digit เลขผู้เสียภาษี OCR read off a LINE bill (kept for the sender form +
+  // admin review even when no vendor matched). Optional/null.
+  ocr_tax_id?: string | null;
 };
 
 // The investment category — bills tagged this (code "CP") may carry a

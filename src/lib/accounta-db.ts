@@ -29,6 +29,7 @@ export type ExpenseRow = {
   doc_type: string | null;
   category: string | null;
   capex_bucket: string | null;    // FEASIBILITY investment bucket when category is CapEx
+  ocr_tax_id: string | null;      // 13-digit เลขผู้เสียภาษี OCR read off a LINE bill
   description: string | null;
   amount_total: number;
   has_tax_invoice: number;
@@ -794,6 +795,31 @@ export function getExpense(id: number): ExpenseRow | null {
   return r ? shape(r) : null;
 }
 
+/** Sender-filled detail from the LINE bill-detail form (owner 2026-06-29) —
+ *  updates a DRAFT in place and keeps it 'draft' for admin review. Re-derives
+ *  base from total/vat. Returns false if the row isn't a draft (already reviewed
+ *  or gone). Branch attribution is untouched (set from the sender at ingest). */
+export function submitLineBillDetail(id: number, d: {
+  doc_type: string | null; vendor_name: string | null; ocr_tax_id: string | null;
+  category: string | null; amount_total: number; has_tax_invoice: boolean;
+  vat_amount: number; note: string | null;
+}): boolean {
+  const row = getDb().prepare("SELECT review_status FROM accounta_expenses WHERE id = ?")
+    .get(id) as { review_status: string } | undefined;
+  if (!row || row.review_status !== "draft") return false;
+  const total = round2(d.amount_total);
+  const vat = d.has_tax_invoice ? round2(d.vat_amount) : 0;
+  const base = round2(total - vat);
+  return getDb().prepare(`
+    UPDATE accounta_expenses SET
+      doc_type = ?, vendor_name = ?, ocr_tax_id = ?, category = ?,
+      amount_total = ?, has_tax_invoice = ?, vat_amount = ?, base_amount = ?,
+      note = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND review_status = 'draft'
+  `).run(d.doc_type, d.vendor_name?.trim() || null, d.ocr_tax_id?.trim() || null, d.category,
+    total, d.has_tax_invoice ? 1 : 0, vat, base, d.note?.trim() || null, id).changes > 0;
+}
+
 const SENDER_VERIFY_RE = /\s*·\s*ผู้ส่ง(ยืนยันว่าถูกต้อง|แจ้งว่าไม่ตรง \(รอแก้ไข\))/g;
 
 /** Record a LINE sender's reply to the "ตรวจสอบผู้จำหน่าย/ยอด" verify card on
@@ -859,14 +885,14 @@ export function createExpense(
   const d = normalise(input);
   const info = getDb().prepare(`
     INSERT INTO accounta_expenses (
-      branch_id, company_id, bill_date, vendor_id, vendor_name, doc_type, category, capex_bucket, description,
+      branch_id, company_id, bill_date, vendor_id, vendor_name, doc_type, category, capex_bucket, ocr_tax_id, description,
       amount_total, has_tax_invoice, vat_amount, base_amount,
       payment_status, payment_method, paid_date, due_date,
       ocr_source, ocr_cost_baht, review_status, line_message_id, note, created_by
-    ) VALUES (?,?,?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?,?)
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
-    d.doc_type, d.category, d.capex_bucket ?? null, d.description?.trim() || null,
+    d.doc_type, d.category, d.capex_bucket ?? null, d.ocr_tax_id ?? null, d.description?.trim() || null,
     d.amount_total, d.has_tax_invoice ? 1 : 0, d.vat_amount, d.base_amount,
     d.payment_status, d.payment_method, d.paid_date, d.due_date,
     ocr?.source ?? null, ocr?.costBaht ?? null,

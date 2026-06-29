@@ -5846,6 +5846,12 @@ function runMigrations(db: Database.Database): void {
   if (!expCols.some((c) => c.name === "capex_bucket")) {
     db.exec("ALTER TABLE accounta_expenses ADD COLUMN capex_bucket TEXT");
   }
+  // ocr_tax_id (owner 2026-06-29): the 13-digit เลขผู้เสียภาษี OCR read off a
+  // LINE bill, kept so the sender's detail form + the admin review can see/confirm
+  // it even when no vendor matched. NULL when not detected.
+  if (!expCols.some((c) => c.name === "ocr_tax_id")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN ocr_tax_id TEXT");
+  }
   // feasibility_projects.branch_id (owner 2026-06-29): which branch's CapEx bills
   // feed this project's "เงินลงทุนตั้งต้น" live. NULL = no accounting link.
   const feasCols = db.prepare("PRAGMA table_info(feasibility_projects)").all() as Array<{ name: string }>;
