@@ -175,10 +175,13 @@ export default function ExpenseEditModal({
 
           {err && <div className="sm:col-span-2 text-xs text-rose-600">{err}</div>}
         </div>
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-slate-100">
-          <button type="button" onClick={onClose} className="btn-secondary">ยกเลิก</button>
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-100">
+          <button type="button" onClick={onClose}
+            className="rounded-md border border-slate-300 bg-white text-slate-600 px-5 py-2 text-sm font-medium hover:bg-slate-50">
+            ยกเลิก
+          </button>
           <button type="button" onClick={save} disabled={busy}
-            className="rounded-md bg-brand text-white px-4 py-1.5 text-sm font-medium hover:opacity-90 disabled:opacity-50">
+            className="rounded-md bg-brand text-white px-5 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
             {busy ? "กำลังบันทึก…" : "บันทึก"}
           </button>
         </div>

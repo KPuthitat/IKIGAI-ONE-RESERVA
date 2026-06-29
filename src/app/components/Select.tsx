@@ -69,9 +69,9 @@ export default function Select({
           else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
           else if (e.key === "Enter" && open && active >= 0) { e.preventDefault(); choose(options[active]); }
         }}
-        className={`input w-full flex items-center justify-between gap-2 text-left ${buttonClassName ?? ""}`}
+        className={`input w-full !flex items-center justify-between gap-2 text-left ${buttonClassName ?? ""}`}
       >
-        <span className={`truncate ${selected ? "" : "text-slate-400"}`}>
+        <span className={`min-w-0 truncate ${selected ? "" : "text-slate-400"}`}>
           {selected ? selected.label : (placeholder ?? "—")}
         </span>
         <svg className={`w-4 h-4 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
