@@ -96,90 +96,84 @@ export default function ExpenseEditModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg my-4" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl my-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
           <div className="text-sm font-bold text-slate-800">แก้ไขรายจ่าย</div>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
         </div>
-        <div className="p-4 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="label !text-xs">วันที่เอกสาร</label>
-              <input type="date" className="input" value={billDate} onChange={(e) => setBillDate(e.target.value)} />
-            </div>
-            <div>
-              <label className="label !text-xs">หมวดหมู่</label>
-              <Select value={category} onChange={setCategory} placeholder="— เลือก —"
-                options={categories.map((c) => ({ value: c.name, label: c.code ? `${c.code} · ${c.name}` : c.name }))} />
-            </div>
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5">
+          <div>
+            <label className="label !text-xs">วันที่เอกสาร</label>
+            <input type="date" className="input" value={billDate} onChange={(e) => setBillDate(e.target.value)} />
+          </div>
+          <div>
+            <label className="label !text-xs">หมวดหมู่</label>
+            <Select value={category} onChange={setCategory} placeholder="— เลือก —"
+              options={categories.map((c) => ({ value: c.name, label: c.code ? `${c.code} · ${c.name}` : c.name }))} />
           </div>
 
           {isCapex && (
-            <div>
+            <div className="sm:col-span-2">
               <label className="label !text-xs">หมวดลงทุน (สำหรับ FEASIBILITY)</label>
               <Select value={capexBucket} onChange={setCapexBucket} placeholder="— ไม่ระบุ (ไม่ดึงเข้าโปรเจค) —"
                 options={STARTUP_CATEGORIES.map((b) => ({ value: b, label: STARTUP_CATEGORY_LABEL[b] }))} />
             </div>
           )}
 
-          <div>
+          <div className="sm:col-span-2">
             <label className="label !text-xs">ผู้จำหน่าย / ผู้รับเงิน</label>
             <input className="input" list="exp-edit-vendors" value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="ชื่อผู้ค้า" />
             <datalist id="exp-edit-vendors">{vendors.map((v) => <option key={v.name} value={v.name} />)}</datalist>
           </div>
 
-          <div>
+          <div className="sm:col-span-2">
             <label className="label !text-xs">รายละเอียด</label>
             <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="เช่น ค่าวัสดุ" />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-            <div>
-              <label className="label !text-xs">ยอดรวมที่จ่าย (รวม VAT)</label>
-              <input type="number" inputMode="decimal" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} />
-            </div>
-            <label className="flex items-center gap-2 text-sm text-slate-600 pb-2">
-              <input type="checkbox" checked={hasVat} onChange={(e) => setHasVat(e.target.checked)} />
-              มีใบกำกับภาษีเต็มรูป (แยก VAT 7%)
-            </label>
+          <div>
+            <label className="label !text-xs">ยอดรวมที่จ่าย (รวม VAT)</label>
+            <input type="number" inputMode="decimal" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </div>
-          {hasVat && <div className="text-[11px] text-slate-400 -mt-1">ฐานภาษี ฿{fmtMoney(round2(total - vat))} · ภาษีซื้อ ฿{fmtMoney(vat)}</div>}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="label !text-xs">สถานะ</label>
-              <Select value={status} onChange={(v) => setStatus(v as "paid" | "unpaid")}
-                options={[{ value: "paid", label: "ชำระแล้ว" }, { value: "unpaid", label: "ค้างชำระ (เครดิตเทอม)" }]} />
-            </div>
-            {status === "paid" ? (
-              <div>
-                <label className="label !text-xs">จ่ายโดย</label>
-                <Select value={method} onChange={setMethod} placeholder="— เลือก —"
-                  options={[
-                    ...(method && !paymentMethods.some((m) => m.name === method) ? [{ value: method, label: method }] : []),
-                    ...paymentMethods.map((m) => ({ value: m.name, label: m.name }))
-                  ]} />
-              </div>
-            ) : (
-              <div>
-                <label className="label !text-xs">วันครบกำหนดชำระ</label>
-                <input type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              </div>
-            )}
-            {status === "paid" && (
-              <div>
-                <label className="label !text-xs">วันที่เงินออกจริง</label>
-                <input type="date" className="input" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} />
-              </div>
-            )}
-          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-600 self-end pb-2">
+            <input type="checkbox" checked={hasVat} onChange={(e) => setHasVat(e.target.checked)} />
+            มีใบกำกับภาษีเต็มรูป (แยก VAT 7%)
+          </label>
+          {hasVat && <div className="sm:col-span-2 text-[11px] text-slate-400 -mt-2">ฐานภาษี ฿{fmtMoney(round2(total - vat))} · ภาษีซื้อ ฿{fmtMoney(vat)}</div>}
 
           <div>
+            <label className="label !text-xs">สถานะ</label>
+            <Select value={status} onChange={(v) => setStatus(v as "paid" | "unpaid")}
+              options={[{ value: "paid", label: "ชำระแล้ว" }, { value: "unpaid", label: "ค้างชำระ (เครดิตเทอม)" }]} />
+          </div>
+          {status === "paid" ? (
+            <div>
+              <label className="label !text-xs">จ่ายโดย</label>
+              <Select value={method} onChange={setMethod} placeholder="— เลือก —"
+                options={[
+                  ...(method && !paymentMethods.some((m) => m.name === method) ? [{ value: method, label: method }] : []),
+                  ...paymentMethods.map((m) => ({ value: m.name, label: m.name }))
+                ]} />
+            </div>
+          ) : (
+            <div>
+              <label className="label !text-xs">วันครบกำหนดชำระ</label>
+              <input type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </div>
+          )}
+          {status === "paid" && (
+            <div>
+              <label className="label !text-xs">วันที่เงินออกจริง</label>
+              <input type="date" className="input" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} />
+            </div>
+          )}
+
+          <div className="sm:col-span-2">
             <label className="label !text-xs">หมายเหตุ (เพิ่มเติม)</label>
             <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="เว้นว่างได้" />
           </div>
 
-          {err && <div className="text-xs text-rose-600">{err}</div>}
+          {err && <div className="sm:col-span-2 text-xs text-rose-600">{err}</div>}
         </div>
         <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-slate-100">
           <button type="button" onClick={onClose} className="btn-secondary">ยกเลิก</button>
