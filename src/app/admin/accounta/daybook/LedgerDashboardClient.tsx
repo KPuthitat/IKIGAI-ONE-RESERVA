@@ -998,6 +998,9 @@ export default function LedgerDashboardClient({
   const financingTotal = dash.dailyRows.reduce((s, r) => s + r.financing, 0);
   const runningCashTotal = Math.round((dash.revenue + financingTotal - dash.expense) * 100) / 100;
   const incomeTop = [...dash.incomeByChannel].slice(0, 8);
+  // Top spending — the biggest individual bills this period (owner 2026-06-29).
+  // From the already-loaded `expenses`; tap a row to edit it in place.
+  const topExpenses = [...expenses].sort((a, b) => b.amount_total - a.amount_total).slice(0, 10);
   const expenseTop = [...dash.categories].sort((a, b) => b.spent - a.spent).slice(0, 8)
     .map((c) => ({ label: c.code ? `${c.code} · ${c.name}` : c.name, amount: c.spent }));
 
@@ -1486,6 +1489,39 @@ export default function LedgerDashboardClient({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Top spending — biggest individual bills this period (tap to edit) */}
+      <div className="card space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-bold text-slate-800">รายจ่ายสูงสุด · Top spending</div>
+          <span className="text-[11px] text-slate-400">บิลใหญ่สุดในช่วงนี้ · กดเพื่อแก้ไข</span>
+        </div>
+        {topExpenses.length === 0 ? (
+          <p className="text-xs text-slate-400">ไม่พบรายการรายจ่ายในช่วงเวลานี้</p>
+        ) : (
+          <div className="space-y-1">
+            {topExpenses.map((e, i) => {
+              const pct = topExpenses[0].amount_total > 0 ? (e.amount_total / topExpenses[0].amount_total) * 100 : 0;
+              return (
+                <button type="button" key={e.id} onClick={() => setEditExpense(e)}
+                  className="w-full flex items-center gap-2 text-left rounded-md px-1.5 py-1 hover:bg-slate-50">
+                  <span className="w-5 text-xs font-bold text-slate-400 text-right shrink-0">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-slate-700 truncate">{e.vendor_name || e.description || e.category || "ไม่ระบุ"}</div>
+                    <div className="text-[11px] text-slate-400 truncate">
+                      {fmtDayLabel(e.bill_date)}{e.category ? ` · ${e.category}` : ""}{e.payment_status === "unpaid" ? " · ค้างชำระ" : ""}
+                    </div>
+                    <div className="mt-0.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-full bg-rose-300" style={{ width: `${Math.min(100, pct)}%` }} />
+                    </div>
+                  </div>
+                  <span className="font-mono text-sm text-rose-700 shrink-0 text-right">฿{fmtMoney(e.amount_total)}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Direct add modal — date picker, locked to the active branch */}
