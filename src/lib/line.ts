@@ -100,6 +100,26 @@ export async function sendLineReply(
   }
 }
 
+// Show LINE's built-in loading animation in a 1:1 chat (the "…" dots) while the
+// bot is busy — FREE, doesn't count as a message. Lets a slow step (bill OCR)
+// feel responsive (owner 2026-06-30: "อ่านนานมาก"). 1:1 only; best-effort.
+export async function showLineLoading(
+  channelToken: string,
+  chatId: string,
+  seconds = 20
+): Promise<void> {
+  if (process.env.NODE_ENV !== "production" && process.env.LINE_DEV_SEND !== "1") return;
+  // loadingSeconds must be 5–60 in steps of 5.
+  const loadingSeconds = Math.min(60, Math.max(5, Math.round(seconds / 5) * 5));
+  try {
+    await fetch("https://api.line.me/v2/bot/chat/loading", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${channelToken}` },
+      body: JSON.stringify({ chatId, loadingSeconds })
+    });
+  } catch { /* best-effort — never block the bill flow on the spinner */ }
+}
+
 /** Download a message's binary content (image/file) from LINE's data API.
  *  Used by the ACCOUNTA bill-ingest webhook to pull a bill photo a staff
  *  member sent to the OA. Returns bytes + mime, or null on any failure.

@@ -13,7 +13,7 @@
 
 import { getDb } from "./db";
 import { nameWithPrefix } from "./name";
-import { sendLinePush, sendLineReply, downloadLineContent, accountaBillVerifyFlex } from "./line";
+import { sendLinePush, sendLineReply, showLineLoading, downloadLineContent, accountaBillVerifyFlex } from "./line";
 import type { LineMessage } from "./line";
 import { scanBill, ocrEnabled } from "./accounta-ocr";
 import {
@@ -86,6 +86,10 @@ export async function ingestLineBill(args: {
 
   // LINE retries deliveries; skip if this exact message already produced a row.
   if (expenseExistsForLineMessage(messageId)) return;
+
+  // Show the loading "…" animation right away — OCR on a full-size photo takes a
+  // few seconds and otherwise looks like nothing is happening (owner 2026-06-30).
+  if (isDirect) await showLineLoading(channelToken, senderUserId);
 
   const senderName = nameWithPrefix(user.title_prefix, user.display_name);
 
