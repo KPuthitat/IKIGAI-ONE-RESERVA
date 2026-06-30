@@ -858,6 +858,9 @@ export default function LedgerDashboardClient({
   // workspace, so editing a bill opens here instead of jumping to หน้ารายจ่าย.
   const [editExpense, setEditExpense] = useState<LedgerExpenseRow | null>(null);
   const [editIncome, setEditIncome] = useState<IncomeDayRow | null>(null);
+  // Top spending view: sum per vendor (default — "พรชัยการไฟฟ้า ทั้งเดือนเท่าไหร่")
+  // or biggest individual bills (owner 2026-06-30).
+  const [topMode, setTopMode] = useState<"vendor" | "bill">("vendor");
   // SVG charts render client-only — their <title> tooltips otherwise produce
   // an SSR/hydration text-node mismatch with Thai labels. Cards/tables SSR fine.
   const [chartsReady, setChartsReady] = useState(false);
@@ -990,6 +993,17 @@ export default function LedgerDashboardClient({
   // Top spending — the biggest individual bills this period (owner 2026-06-29).
   // From the already-loaded `expenses`; tap a row to edit it in place.
   const topExpenses = [...expenses].sort((a, b) => b.amount_total - a.amount_total).slice(0, 10);
+  // Aggregated per vendor: total spent + bill count this period, biggest first.
+  const topVendors = (() => {
+    const m = new Map<string, { vendor: string; amount: number; count: number }>();
+    for (const e of expenses) {
+      const v = (e.vendor_name || "").trim() || "ไม่ระบุผู้จำหน่าย";
+      const g = m.get(v) ?? { vendor: v, amount: 0, count: 0 };
+      g.amount += e.amount_total; g.count += 1;
+      m.set(v, g);
+    }
+    return [...m.values()].sort((a, b) => b.amount - a.amount).slice(0, 10);
+  })();
   const expenseTop = [...dash.categories].sort((a, b) => b.spent - a.spent).slice(0, 8)
     .map((c) => ({ label: c.code ? `${c.code} · ${c.name}` : c.name, amount: c.spent }));
 
@@ -1480,14 +1494,38 @@ export default function LedgerDashboardClient({
         </div>
       </div>
 
-      {/* Top spending — biggest individual bills this period (tap to edit) */}
+      {/* Top spending — per vendor (summed) or biggest individual bills */}
       <div className="card space-y-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="text-sm font-bold text-slate-800">รายจ่ายสูงสุด · Top spending</div>
-          <span className="text-[11px] text-slate-400">บิลใหญ่สุดในช่วงนี้ · กดเพื่อแก้ไข</span>
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-[11px]">
+            <button type="button" onClick={() => setTopMode("vendor")}
+              className={`px-2.5 py-1 rounded-md ${topMode === "vendor" ? "bg-white shadow-sm font-semibold text-slate-700" : "text-slate-500"}`}>รวมตามผู้จำหน่าย</button>
+            <button type="button" onClick={() => setTopMode("bill")}
+              className={`px-2.5 py-1 rounded-md ${topMode === "bill" ? "bg-white shadow-sm font-semibold text-slate-700" : "text-slate-500"}`}>รายใบ</button>
+          </div>
         </div>
         {topExpenses.length === 0 ? (
           <p className="text-xs text-slate-400">ไม่พบรายการรายจ่ายในช่วงเวลานี้</p>
+        ) : topMode === "vendor" ? (
+          <div className="space-y-1">
+            {topVendors.map((v, i) => {
+              const pct = topVendors[0].amount > 0 ? (v.amount / topVendors[0].amount) * 100 : 0;
+              return (
+                <div key={v.vendor} className="w-full flex items-center gap-2 px-1.5 py-1">
+                  <span className="w-5 text-xs font-bold text-slate-400 text-right shrink-0">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-slate-700 truncate">{v.vendor}</div>
+                    <div className="text-[11px] text-slate-400">{v.count.toLocaleString("en-US")} บิล</div>
+                    <div className="mt-0.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-full bg-rose-300" style={{ width: `${Math.min(100, pct)}%` }} />
+                    </div>
+                  </div>
+                  <span className="font-mono text-sm text-rose-700 shrink-0 text-right">฿{fmtMoney(v.amount)}</span>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div className="space-y-1">
             {topExpenses.map((e, i) => {
@@ -1511,6 +1549,7 @@ export default function LedgerDashboardClient({
             })}
           </div>
         )}
+        <p className="text-[11px] text-slate-400">{topMode === "vendor" ? "รวมยอดทั้งช่วงต่อผู้จำหน่าย" : "บิลใหญ่สุดรายใบ · กดเพื่อแก้ไข"}</p>
       </div>
 
       {/* Direct add modal — date picker, locked to the active branch */}
