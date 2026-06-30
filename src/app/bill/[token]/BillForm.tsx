@@ -29,6 +29,9 @@ export default function BillForm({
   const [hasVat, setHasVat] = useState(initial.has_tax_invoice);
   const [vatManual, setVatManual] = useState(initial.vat_amount ? grpMoney(String(initial.vat_amount)) : "");
   const [note, setNote] = useState(initial.note ?? "");
+  // No vendor matched the OCR'd tax id → offer to register it (default ON) so the
+  // next bill auto-matches (owner 2026-06-30).
+  const [saveVendor, setSaveVendor] = useState(!initial.vendor_name);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -49,7 +52,8 @@ export default function BillForm({
           token, doc_type: docType || null, vendor_name: vendor.trim() || null,
           ocr_tax_id: taxId.replace(/\D/g, "") || null, category: category || null,
           amount_total: round2(total), has_tax_invoice: hasVat, vat_amount: vat,
-          note: note.trim() || null
+          note: note.trim() || null,
+          save_vendor: saveVendor && !!vendor.trim()
         })
       });
       const j = await res.json().catch(() => ({}));
@@ -93,6 +97,15 @@ export default function BillForm({
           <label className="label !text-xs">เลขผู้เสียภาษี (13 หลัก)</label>
           <input className="input" inputMode="numeric" value={taxId} onChange={(e) => setTaxId(e.target.value)} placeholder="เว้นว่างได้ถ้าไม่มี" />
         </div>
+
+        {!initial.vendor_name && vendor.trim() && (
+          <label className="flex items-start gap-2 text-sm text-slate-700 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
+            <input type="checkbox" className="mt-0.5" checked={saveVendor} onChange={(e) => setSaveVendor(e.target.checked)} />
+            <span>เพิ่มผู้จำหน่ายนี้เข้าระบบ
+              <span className="block text-[11px] text-emerald-700/80">ยังไม่มีผู้จำหน่ายที่ตรงกับเลขภาษีนี้ — บันทึกไว้แล้วครั้งหน้าจะจับคู่อัตโนมัติ</span>
+            </span>
+          </label>
+        )}
 
         <div>
           <label className="label !text-xs">หมวดหมู่</label>

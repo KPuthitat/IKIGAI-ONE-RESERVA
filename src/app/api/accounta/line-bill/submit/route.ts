@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getDb } from "@/lib/db";
 import { verifyBillToken } from "@/lib/accounta-bill-token";
-import { submitLineBillDetail } from "@/lib/accounta-db";
+import { submitLineBillDetail, createVendor, findVendorByTaxId } from "@/lib/accounta-db";
 import { DOC_TYPES } from "@/lib/accounta";
 
 // POST /api/accounta/line-bill/submit — sender fills the bill detail form opened
@@ -17,7 +18,8 @@ const Body = z.object({
   amount_total: z.number().min(0).max(1e9),
   has_tax_invoice: z.boolean().optional(),
   vat_amount: z.number().min(0).max(1e9).nullable().optional(),
-  note: z.string().trim().max(500).nullable().optional()
+  note: z.string().trim().max(500).nullable().optional(),
+  save_vendor: z.boolean().optional()   // register this vendor in the branch master
 });
 
 const SENDER_FILLED = "ผู้ส่งกรอกรายละเอียดแล้ว";
@@ -47,5 +49,22 @@ export async function POST(req: Request) {
     note
   });
   if (!ok) return NextResponse.json({ error: "not_draft", message: "บิลนี้ถูกตรวจ/บันทึกแล้ว" }, { status: 409 });
-  return NextResponse.json({ ok: true });
+
+  // Register the vendor in the branch master so the next bill with this tax id
+  // auto-matches (owner 2026-06-30). needs_review = the admin still vets it.
+  // De-dups by tax id; createVendor also de-dups by name.
+  let vendorSaved = false;
+  if (d.save_vendor && d.vendor_name) {
+    const tax = (d.ocr_tax_id ?? "").replace(/\D/g, "");
+    const row = getDb().prepare("SELECT branch_id, created_by FROM accounta_expenses WHERE id = ?")
+      .get(id) as { branch_id: number | null; created_by: number | null } | undefined;
+    if (row?.branch_id != null && (tax.length >= 10 || d.vendor_name.trim()) && !(tax.length >= 10 && findVendorByTaxId(tax, row.branch_id))) {
+      createVendor(row.branch_id, row.created_by ?? 1, {
+        name: d.vendor_name, tax_id: tax.length >= 10 ? tax : null,
+        category: d.category ?? null, needsReview: true
+      });
+      vendorSaved = true;
+    }
+  }
+  return NextResponse.json({ ok: true, vendorSaved });
 }
