@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { apiUrl } from "@/lib/url";
-import { fmtMoney } from "@/lib/format";
+import { fmtMoney, grpMoney, parseMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
 import { splitVat, round2, CAPEX_CATEGORY_CODE } from "@/lib/accounta";
 import { STARTUP_CATEGORIES, STARTUP_CATEGORY_LABEL } from "@/lib/feasibility";
@@ -47,7 +47,7 @@ export default function ExpenseEditModal({
   );
   const [description, setDescription] = useState(expense.description ?? "");
   const [billDate, setBillDate] = useState(expense.bill_date);
-  const [amount, setAmount] = useState(String(expense.amount_total));
+  const [amount, setAmount] = useState(grpMoney(String(expense.amount_total)));
   const [hasVat, setHasVat] = useState(expense.has_tax_invoice);
   const [status, setStatus] = useState<"paid" | "unpaid">(expense.payment_status);
   const [method, setMethod] = useState(expense.payment_method ?? (paymentMethods[0]?.name ?? ""));
@@ -58,7 +58,7 @@ export default function ExpenseEditModal({
   const [err, setErr] = useState<string | null>(null);
 
   const isCapex = categories.find((c) => c.name === category)?.code === CAPEX_CATEGORY_CODE;
-  const total = Number(amount) || 0;
+  const total = parseMoney(amount) || 0;
   const vat = hasVat ? splitVat(round2(total), true).vat : 0;
 
   async function save() {
@@ -133,7 +133,7 @@ export default function ExpenseEditModal({
 
           <div>
             <label className="label !text-xs">ยอดรวมที่จ่าย (รวม VAT)</label>
-            <input type="number" inputMode="decimal" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <input type="text" inputMode="decimal" className="input text-right font-mono" value={amount} onChange={(e) => setAmount(grpMoney(e.target.value))} />
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-600 self-end pb-2">
             <input type="checkbox" checked={hasVat} onChange={(e) => setHasVat(e.target.checked)} />

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { apiUrl } from "@/lib/url";
+import { grpMoney, parseMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
 import Select from "@/app/components/Select";
 
@@ -48,14 +49,14 @@ export default function IncomeEditModal({
 }) {
   const [incomeDate, setIncomeDate] = useState(income.income_date);
   const [channel, setChannel] = useState(income.channel ?? "");
-  const [amount, setAmount] = useState(String(income.amount));
+  const [amount, setAmount] = useState(grpMoney(String(income.amount)));
   const [kind, setKind] = useState<IncKind>(kindOf(income));
   const [note, setNote] = useState(income.note ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function save() {
-    const total = Number(amount) || 0;
+    const total = parseMoney(amount) || 0;
     if (!Number.isFinite(total) || total <= 0) { setErr("กรอกยอดเงินให้ถูกต้อง"); return; }
     setBusy(true); setErr(null);
     const ctrl = new AbortController();
@@ -102,7 +103,7 @@ export default function IncomeEditModal({
             </div>
             <div>
               <label className="label !text-xs">ยอดเงิน</label>
-              <input type="number" inputMode="decimal" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <input type="text" inputMode="decimal" className="input text-right font-mono" value={amount} onChange={(e) => setAmount(grpMoney(e.target.value))} />
             </div>
           </div>
           <div>

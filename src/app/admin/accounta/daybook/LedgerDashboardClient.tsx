@@ -4,7 +4,7 @@ import { Fragment, useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
-import { fmtMoney } from "@/lib/format";
+import { fmtMoney, grpMoney, parseMoney } from "@/lib/format";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import Combobox, { type ComboOption } from "@/app/components/Combobox";
 import ExpenseEditModal from "./ExpenseEditModal";
@@ -12,18 +12,7 @@ import IncomeEditModal from "./IncomeEditModal";
 import Select from "@/app/components/Select";
 import { useConfirm } from "@/app/components/useConfirm";
 
-// Group an in-progress money string with thousand separators while the user
-// keeps typing (keeps up to 2 decimals): "1234.5" → "1,234.5". parseMoney
-// reverses it for the API. (owner 2026-06-25: separators while typing.)
-function grpMoney(s: string): string {
-  const cleaned = (s ?? "").replace(/[^\d.]/g, "");
-  const dot = cleaned.indexOf(".");
-  const intPart = (dot >= 0 ? cleaned.slice(0, dot) : cleaned).replace(/^0+(?=\d)/, "");
-  const dec = dot >= 0 ? cleaned.slice(dot + 1).replace(/\./g, "").slice(0, 2) : null;
-  const grouped = intPart === "" ? "" : Number(intPart).toLocaleString("en-US");
-  return dec !== null ? `${grouped === "" ? "0" : grouped}.${dec}` : grouped;
-}
-const parseMoney = (s: string): number => Number((s ?? "").replace(/,/g, ""));
+// grpMoney / parseMoney now shared from @/lib/format (separators in every money input).
 
 type LedgerPeriod = "week" | "month" | "year";
 

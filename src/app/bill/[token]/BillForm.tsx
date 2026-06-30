@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { apiUrl } from "@/lib/url";
-import { fmtMoney } from "@/lib/format";
+import { fmtMoney, grpMoney, parseMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
 import { splitVat, round2, DOC_TYPES, DOC_TYPE_LABEL } from "@/lib/accounta";
 import Select from "@/app/components/Select";
@@ -25,18 +25,18 @@ export default function BillForm({
   const [vendor, setVendor] = useState(initial.vendor_name ?? "");
   const [taxId, setTaxId] = useState(initial.ocr_tax_id ?? "");
   const [category, setCategory] = useState(initial.category ?? "");
-  const [amount, setAmount] = useState(initial.amount_total ? String(initial.amount_total) : "");
+  const [amount, setAmount] = useState(initial.amount_total ? grpMoney(String(initial.amount_total)) : "");
   const [hasVat, setHasVat] = useState(initial.has_tax_invoice);
-  const [vatManual, setVatManual] = useState(initial.vat_amount ? String(initial.vat_amount) : "");
+  const [vatManual, setVatManual] = useState(initial.vat_amount ? grpMoney(String(initial.vat_amount)) : "");
   const [note, setNote] = useState(initial.note ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  const total = Number(amount) || 0;
+  const total = parseMoney(amount) || 0;
   // VAT: use the typed value if given, else derive 7% from the total.
   const vat = hasVat
-    ? (vatManual.trim() !== "" ? round2(Number(vatManual) || 0) : splitVat(round2(total), true).vat)
+    ? (vatManual.trim() !== "" ? round2(parseMoney(vatManual) || 0) : splitVat(round2(total), true).vat)
     : 0;
 
   async function submit() {
@@ -102,7 +102,7 @@ export default function BillForm({
 
         <div>
           <label className="label !text-xs">ยอดรวมของบิล (รวม VAT) *</label>
-          <input type="number" inputMode="decimal" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+          <input type="text" inputMode="decimal" className="input text-right font-mono" value={amount} onChange={(e) => setAmount(grpMoney(e.target.value))} placeholder="0.00" />
         </div>
 
         <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -112,7 +112,7 @@ export default function BillForm({
         {hasVat && (
           <div>
             <label className="label !text-xs">ยอดภาษี (VAT) — เว้นว่างเพื่อคิด 7% ให้อัตโนมัติ</label>
-            <input type="number" inputMode="decimal" className="input" value={vatManual} onChange={(e) => setVatManual(e.target.value)} placeholder={String(splitVat(round2(total), true).vat)} />
+            <input type="text" inputMode="decimal" className="input text-right font-mono" value={vatManual} onChange={(e) => setVatManual(grpMoney(e.target.value))} placeholder={fmtMoney(splitVat(round2(total), true).vat)} />
             <div className="text-[11px] text-slate-400 mt-1">ฐานภาษี ฿{fmtMoney(round2(total - vat))} · ภาษี ฿{fmtMoney(vat)}</div>
           </div>
         )}

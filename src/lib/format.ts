@@ -30,3 +30,23 @@ export function fmtMoney(v: number): string {
     maximumFractionDigits: 2
   });
 }
+
+/**
+ * Group an in-progress money string with thousand separators WHILE the user
+ * types (keeps up to 2 decimals): "1234.5" → "1,234.5". Pair with a text input
+ * (type="number" can't show commas). parseMoney() reverses it for the API.
+ * (Shared so every money input shows separators — owner 2026-06-30.)
+ */
+export function grpMoney(s: string): string {
+  const cleaned = (s ?? "").replace(/[^\d.]/g, "");
+  const dot = cleaned.indexOf(".");
+  const intPart = (dot >= 0 ? cleaned.slice(0, dot) : cleaned).replace(/^0+(?=\d)/, "");
+  const dec = dot >= 0 ? cleaned.slice(dot + 1).replace(/\./g, "").slice(0, 2) : null;
+  const grouped = intPart === "" ? "" : Number(intPart).toLocaleString("en-US");
+  return dec !== null ? `${grouped === "" ? "0" : grouped}.${dec}` : grouped;
+}
+
+/** Reverse grpMoney() — strip separators back to a number (NaN-safe → caller checks). */
+export function parseMoney(s: string): number {
+  return Number((s ?? "").replace(/,/g, ""));
+}
