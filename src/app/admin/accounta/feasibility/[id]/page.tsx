@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/auth";
-import { getProject, listCompanies } from "@/lib/feasibility-db";
+import { getDb } from "@/lib/db";
+import { getProject } from "@/lib/feasibility-db";
 import { listItems } from "@/lib/feasibility-startup-db";
-import { listBranches, listCapexForFeasibility } from "@/lib/accounta-db";
+import { listCapexForFeasibility } from "@/lib/accounta-db";
 import ProjectEditor, { type AccountaCapex } from "./ProjectEditor";
 
 export const dynamic = "force-dynamic";
@@ -17,11 +18,22 @@ export default function FeasibilityProjectPage({ params }: { params: { id: strin
   const project = getProject(id, user.id);
   if (!project) notFound();
 
-  // Live CapEx pulled from ACCOUNTA — confirmed bills tagged with a feasibility
-  // bucket for this project's linked branch, grouped per bucket (owner 2026-06-29).
+  // The project is locked to ONE branch (owner 2026-06-30): the branch it was
+  // created for, else the admin's active branch. Company is derived from it — no
+  // cross-branch / cross-company picker. CapEx is pulled from this same branch.
+  const branchId = project.branch_id ?? user.activeBranchId ?? null;
+  let branchName: string | null = null;
+  let companyName = project.company;
+  if (branchId != null) {
+    const b = getDb().prepare(
+      "SELECT b.name AS name, c.name_th AS company FROM branches b LEFT JOIN companies c ON c.id = b.company_id WHERE b.id = ?"
+    ).get(branchId) as { name: string; company: string | null } | undefined;
+    if (b) { branchName = b.name; companyName = b.company ?? project.company; }
+  }
+
   const accountaCapex: AccountaCapex = {};
-  if (project.branch_id != null) {
-    for (const l of listCapexForFeasibility(project.branch_id)) {
+  if (branchId != null) {
+    for (const l of listCapexForFeasibility(branchId)) {
       const g = (accountaCapex[l.bucket] ??= { sum: 0, lines: [] });
       g.sum += l.amount;
       g.lines.push({ id: l.id, bill_date: l.bill_date, payee: l.payee, amount: l.amount, payment_status: l.payment_status, has_doc: l.has_doc });
@@ -37,15 +49,14 @@ export default function FeasibilityProjectPage({ params }: { params: { id: strin
       </div>
       <ProjectEditor
         id={project.id}
-        companies={listCompanies()}
-        branches={listBranches().map((b) => ({ id: b.id, name: b.name }))}
+        branchName={branchName}
         accountaCapex={accountaCapex}
         meta={{
-          company: project.company,
+          company: companyName,
           project_name: project.project_name,
           location: project.location ?? "",
           business_type: project.business_type ?? "",
-          branch_id: project.branch_id,
+          branch_id: branchId,
           status: project.status
         }}
         inputs={project.inputs}

@@ -100,9 +100,9 @@ function Section({ title, defaultOpen = true, footer, children }: {
   );
 }
 
-export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startupItems: items0, companies, branches, accountaCapex }: {
-  id: number; meta: Meta; inputs: FeasibilityInputs; startupItems: StartupItem[]; companies: string[];
-  branches: Array<{ id: number; name: string }>; accountaCapex: AccountaCapex;
+export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startupItems: items0, branchName, accountaCapex }: {
+  id: number; meta: Meta; inputs: FeasibilityInputs; startupItems: StartupItem[];
+  branchName: string | null; accountaCapex: AccountaCapex;
 }) {
   const router = useRouter();
   const [meta, setMeta] = useState<Meta>(meta0);
@@ -228,12 +228,6 @@ export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startu
                 onChange={(e) => mset("project_name", e.target.value)} />
             </div>
             <div>
-              <label className="label !text-xs">บริษัท</label>
-              <select className="input" value={meta.company} onChange={(e) => mset("company", e.target.value)}>
-                {[...new Set([meta.company, ...companies].filter(Boolean))].map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
               <label className="label !text-xs">สถานะ</label>
               <select className="input" value={meta.status} onChange={(e) => mset("status", e.target.value)}>
                 <option value="draft">ร่าง</option>
@@ -241,15 +235,15 @@ export default function ProjectEditor({ id, meta: meta0, inputs: inputs0, startu
                 <option value="archived">เก็บถาวร</option>
               </select>
             </div>
-            <div className="sm:col-span-2">
-              <label className="label !text-xs">สาขา (เชื่อมบัญชี — ดึงงบลงทุน CapEx มาแสดง)</label>
-              <select className="input" value={meta.branch_id ?? ""}
-                onChange={(e) => mset("branch_id", e.target.value === "" ? null : Number(e.target.value))}>
-                <option value="">— ไม่เชื่อมบัญชี —</option>
-                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-              <p className="text-[11px] text-slate-400 mt-1">
-                บิลที่ลงหมวด CapEx แล้วเลือกหมวดย่อยของสาขานี้ จะถูกดึงมารวมใน&ldquo;เงินลงทุนตั้งต้น&rdquo;อัตโนมัติ · กดบันทึกเพื่อโหลดล่าสุด
+            <div>
+              <label className="label !text-xs">สาขา</label>
+              <div className="input flex items-center !bg-slate-100 text-slate-600">
+                {branchName ?? "— เลือกสาขาที่มุมบนซ้ายก่อน —"}
+              </div>
+            </div>
+            <div className="sm:col-span-2 -mt-1">
+              <p className="text-[11px] text-slate-400">
+                โปรเจคนี้ผูกกับสาขา <b>{branchName ?? "—"}</b>{meta.company ? ` · บริษัท ${meta.company}` : ""} — บิลที่ลงหมวด CapEx ของสาขานี้จะถูกดึงเข้า&ldquo;เงินลงทุนตั้งต้น&rdquo;อัตโนมัติ
               </p>
             </div>
             <div className="sm:col-span-2">
