@@ -30,7 +30,7 @@ export const ExpenseBody = z.object({
     z.string().nullable()
   ).optional(),
   payment_status: z.enum(["paid", "unpaid"]).optional(),
-  payment_method: z.string().trim().max(60).nullable().optional(),
+  payment_method: z.string().trim().max(200).nullable().optional(),  // channel master bank-account names can be long
   paid_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   note: z.string().trim().max(500).nullable().optional()
