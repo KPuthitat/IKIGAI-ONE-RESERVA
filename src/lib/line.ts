@@ -18,7 +18,7 @@ import { nameWithPrefix } from "./name";
 // large JSON blobs and the API spec already documents the shape.
 type LineTextMessage = { type: "text"; text: string };
 type LineFlexMessage = { type: "flex"; altText: string; contents: unknown };
-type LineMessage = LineTextMessage | LineFlexMessage;
+export type LineMessage = LineTextMessage | LineFlexMessage;
 
 type LinePushPayload = {
   to: string;
@@ -68,6 +68,32 @@ export async function sendLinePush(
       }
       return { ok: false, status: res.status, error: text };
     }
+    return { ok: true, status: res.status };
+  } catch (e: unknown) {
+    return { ok: false, status: 0, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// Reply to a webhook event using its replyToken. Reply messages are FREE — they
+// do NOT count against the LINE OA monthly push quota (owner 2026-06-30: bill
+// cards stopped after the push quota ran out). Token is single-use + short-lived
+// (~1 min), so use it promptly and fall back to push if it fails/expires.
+export async function sendLineReply(
+  channelToken: string,
+  replyToken: string,
+  messages: LineMessage[]
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  if (process.env.NODE_ENV !== "production" && process.env.LINE_DEV_SEND !== "1") {
+    console.warn(`[line] DEV GUARD — skipped LINE reply (${messages.length} msg). Set LINE_DEV_SEND=1 to send for real.`);
+    return { ok: true, status: 200 };
+  }
+  try {
+    const res = await fetch("https://api.line.me/v2/bot/message/reply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${channelToken}` },
+      body: JSON.stringify({ replyToken, messages })
+    });
+    if (!res.ok) return { ok: false, status: res.status, error: await res.text() };
     return { ok: true, status: res.status };
   } catch (e: unknown) {
     return { ok: false, status: 0, error: e instanceof Error ? e.message : String(e) };

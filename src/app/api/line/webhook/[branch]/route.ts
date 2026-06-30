@@ -224,6 +224,7 @@ export async function POST(req: Request, { params }: { params: { branch: string 
           channelToken: channel.channel_token,
           senderUserId: userId,
           messageId: msg.id,
+          replyToken: ev.replyToken,
           isDirect: true
         });
       }

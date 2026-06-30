@@ -13,7 +13,8 @@
 
 import { getDb } from "./db";
 import { nameWithPrefix } from "./name";
-import { sendLinePush, downloadLineContent, accountaBillVerifyFlex } from "./line";
+import { sendLinePush, sendLineReply, downloadLineContent, accountaBillVerifyFlex } from "./line";
+import type { LineMessage } from "./line";
 import { scanBill, ocrEnabled } from "./accounta-ocr";
 import {
   listCategories, createExpense, setExpenseDoc, logOcrUsage,
@@ -40,15 +41,29 @@ export async function ingestLineBill(args: {
   channelToken: string;
   senderUserId: string;
   messageId: string;
+  /** Webhook reply token — reply messages are FREE (don't burn the monthly push
+   *  quota). Single-use + short-lived; we fall back to push if it fails. */
+  replyToken?: string;
   /** 1:1 chat → we reply helpful hints. Group → stay quiet for unbound
    *  senders / disabled features so we don't OCR or spam every photo. */
   isDirect: boolean;
 }): Promise<void> {
-  const { channelToken, senderUserId, messageId, isDirect } = args;
+  const { channelToken, senderUserId, messageId, replyToken, isDirect } = args;
   const db = getDb();
 
-  const pushText = (text: string) =>
-    sendLinePush(channelToken, { to: senderUserId, messages: [{ type: "text", text }] });
+  // Reply first (free, works even when the monthly push quota is exhausted —
+  // owner 2026-06-30: cards stopped after quota ran out); push only as fallback.
+  // Single reply per ingest (one path ends in exactly one say()).
+  let replyUsed = false;
+  const say = async (messages: LineMessage[]) => {
+    if (replyToken && !replyUsed) {
+      replyUsed = true;
+      const r = await sendLineReply(channelToken, replyToken, messages);
+      if (r.ok) return;
+    }
+    await sendLinePush(channelToken, { to: senderUserId, messages });
+  };
+  const pushText = (text: string) => say([{ type: "text", text }]);
 
   // Feature gate: tied to the OCR toggle. Off → no LINE ingest.
   if (!ocrEnabled()) {
@@ -186,18 +201,15 @@ export async function ingestLineBill(args: {
   // Ask the sender to eyeball ผู้จำหน่าย (matched by tax id) + ยอด and tap
   // ถูกต้อง / ไม่ตรง. Their answer is recorded on the draft for the admin (see
   // handleBillVerifyPostback). Nothing is posted to the ledger from this card.
-  await sendLinePush(channelToken, {
-    to: senderUserId,
-    messages: [accountaBillVerifyFlex({
-      expenseId: firstId,
-      senderName,
-      vendorName,
-      amount: parsed?.amount_total ?? null,
-      billDate: parsed?.bill_date ?? null,
-      taxId: taxId.length >= 10 ? taxId : null,
-      formUrl: `${PUBLIC_BASE}/bill/${signBillToken(firstId)}`
-    })]
-  });
+  await say([accountaBillVerifyFlex({
+    expenseId: firstId,
+    senderName,
+    vendorName,
+    amount: parsed?.amount_total ?? null,
+    billDate: parsed?.bill_date ?? null,
+    taxId: taxId.length >= 10 ? taxId : null,
+    formUrl: `${PUBLIC_BASE}/bill/${signBillToken(firstId)}`
+  })]);
 }
 
 /** Handle a tap on the "ตรวจสอบบิล" verify card (postback acct_bill_ok /
