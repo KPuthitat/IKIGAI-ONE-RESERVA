@@ -5858,6 +5858,38 @@ function runMigrations(db: Database.Database): void {
   if (!feasCols.some((c) => c.name === "branch_id")) {
     db.exec("ALTER TABLE feasibility_projects ADD COLUMN branch_id INTEGER REFERENCES branches(id)");
   }
+  // Recurring expense templates (owner 2026-06-30): "ตั้งรายจ่ายอัตโนมัติ ไม่ต้อง
+  // ลงทุกเดือน". Monthly only — post a confirmed expense on day_of_month each
+  // month from start_month to end_month (inclusive). last_posted_month guards
+  // double-posting since cron pings every few minutes.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS accounta_recurring_expenses (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id      INTEGER REFERENCES branches(id),
+      company_id     INTEGER REFERENCES companies(id),
+      vendor_name    TEXT,
+      category       TEXT,
+      capex_bucket   TEXT,
+      doc_type       TEXT,
+      description    TEXT,
+      amount_total   REAL NOT NULL DEFAULT 0,
+      has_tax_invoice INTEGER NOT NULL DEFAULT 0,
+      vat_amount     REAL NOT NULL DEFAULT 0,
+      payment_status TEXT NOT NULL DEFAULT 'unpaid',   -- generated rows' status
+      payment_method TEXT,
+      note           TEXT,
+      day_of_month   INTEGER NOT NULL DEFAULT 1,        -- 1..31, clamped to month length
+      start_month    TEXT NOT NULL,                     -- 'YYYY-MM' first month to post
+      end_month      TEXT,                              -- 'YYYY-MM' last month (null = ต่อเนื่อง)
+      active         INTEGER NOT NULL DEFAULT 1,
+      last_posted_month TEXT,                           -- 'YYYY-MM' dedup guard
+      created_by     INTEGER REFERENCES users(id),
+      created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_accounta_recurring_branch
+      ON accounta_recurring_expenses(branch_id, active);
+  `);
   // Extra attachments per expense (owner 2026-06-20, paypers-like #3.3):
   // the primary receipt stays on accounta_expenses.doc_path; ADDITIONAL
   // evidence (slips, a second invoice, …) lives here. Each row is uploaded

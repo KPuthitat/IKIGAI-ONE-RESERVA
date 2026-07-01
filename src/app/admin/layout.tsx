@@ -159,6 +159,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/accounta/daybook", label: "บัญชีรายรับรายจ่าย" },
         { href: "/admin/accounta/inbox", label: "เอกสารรอลงบัญชี" },
         { href: "/admin/accounta/expenses", label: "รายจ่าย" },
+        { href: "/admin/accounta/recurring", label: "รายจ่ายประจำ (อัตโนมัติ)" },
         { href: "/admin/accounta/income", label: "รายรับ" },
         { href: "/admin/accounta/receivables", label: "ลูกหนี้ค้างชำระ" },
         { href: "/admin/accounta/vendors", label: "ผู้จำหน่าย / คู่ค้า" },

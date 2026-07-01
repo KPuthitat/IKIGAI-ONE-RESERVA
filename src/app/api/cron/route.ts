@@ -10,6 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { getDb, type Branch, type Booking } from "@/lib/db";
+import { postDueRecurringExpenses } from "@/lib/accounta-db";
 import {
   notifyCustomer,
   notifyStaff,
@@ -112,6 +113,18 @@ async function runCron(): Promise<NextResponse> {
   const nowBkk = new Date(Date.now() + 7 * 60 * 60 * 1000);
   const todayBkk = nowBkk.toISOString().slice(0, 10);  // YYYY-MM-DD
   const nowHhmmBkk = nowBkk.toISOString().slice(11, 16); // HH:MM
+
+  // ── Recurring expenses (owner 2026-06-30) ────────────────────────
+  // Auto-post monthly รายจ่ายประจำ that are due today. Idempotent (last_posted_
+  // month guard), so running every cron ping is safe. Isolated try/catch.
+  let recurringExpensesPosted = 0;
+  try {
+    recurringExpensesPosted = postDueRecurringExpenses(todayBkk);
+  } catch (e) {
+    console.error("cron recurring expenses error", e);
+    reportError(e, "cron recurring expenses", {});
+  }
+
   // Multi-time path: check which configured time slots are due for each branch.
   // Routes to the HR group (recruita_exec_group_id = "IKIGAI RECRUIT x HR").
   for (const branch of branches) {
@@ -494,6 +507,7 @@ async function runCron(): Promise<NextResponse> {
   return NextResponse.json({
     ok: true,
     reminders_sent: remindersSent,
+    recurring_expenses_posted: recurringExpensesPosted,
     attendance_summaries_sent: attendanceSummariesSent,
     shift_notifications_sent: shiftNotificationsSent,
     pending_digests_sent: pendingDigestsSent,

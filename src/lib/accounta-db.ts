@@ -1684,6 +1684,140 @@ export function listExpensesInRange(branchId: number, start: string, end: string
   return r.map(shape);
 }
 
+// ── Recurring expense templates (owner 2026-06-30) ─────────────────
+// Monthly auto-posting: cron creates a CONFIRMED expense on day_of_month each
+// month from start_month..end_month; last_posted_month guards double-posting.
+
+export type RecurringRow = {
+  id: number;
+  branch_id: number | null; branch_name: string | null;
+  company_id: number | null; company_name: string | null;
+  vendor_name: string | null; category: string | null; capex_bucket: string | null;
+  doc_type: string | null; description: string | null;
+  amount_total: number; has_tax_invoice: number; vat_amount: number;
+  payment_status: PaymentStatus; payment_method: string | null; note: string | null;
+  day_of_month: number; start_month: string; end_month: string | null;
+  active: number; last_posted_month: string | null; created_by: number | null;
+  created_at: string; updated_at: string;
+};
+
+export type RecurringInput = {
+  branch_id: number | null; company_id: number | null;
+  vendor_name: string | null; category: string | null; capex_bucket: string | null;
+  doc_type: string | null; description: string | null;
+  amount_total: number; has_tax_invoice: boolean; vat_amount: number;
+  payment_status: PaymentStatus; payment_method: string | null; note: string | null;
+  day_of_month: number; start_month: string; end_month: string | null; active: boolean;
+};
+
+const SELECT_RECURRING = `
+  SELECT r.*, b.name AS branch_name, c.name_th AS company_name
+    FROM accounta_recurring_expenses r
+    LEFT JOIN branches b  ON b.id = r.branch_id
+    LEFT JOIN companies c ON c.id = r.company_id
+`;
+
+export function listRecurring(branchId?: number | null): RecurringRow[] {
+  const order = " ORDER BY r.active DESC, r.day_of_month, r.id DESC";
+  if (branchId != null) {
+    return getDb().prepare(`${SELECT_RECURRING} WHERE r.branch_id = ?${order}`).all(branchId) as RecurringRow[];
+  }
+  return getDb().prepare(SELECT_RECURRING + order).all() as RecurringRow[];
+}
+
+export function getRecurring(id: number): RecurringRow | null {
+  return getDb().prepare(`${SELECT_RECURRING} WHERE r.id = ?`).get(id) as RecurringRow | undefined ?? null;
+}
+
+function normRecurring(d: RecurringInput) {
+  const total = round2(Number(d.amount_total) || 0);
+  const vat = d.has_tax_invoice ? round2(Number(d.vat_amount) || 0) : 0;
+  const dom = Math.min(31, Math.max(1, Math.round(Number(d.day_of_month)) || 1));
+  const capex = d.category === CAPEX_CATEGORY_NAME ? (d.capex_bucket || null) : null;
+  return { total, vat, dom, capex };
+}
+
+export function createRecurring(userId: number, d: RecurringInput): number {
+  const { total, vat, dom, capex } = normRecurring(d);
+  const info = getDb().prepare(`
+    INSERT INTO accounta_recurring_expenses
+      (branch_id, company_id, vendor_name, category, capex_bucket, doc_type, description,
+       amount_total, has_tax_invoice, vat_amount, payment_status, payment_method, note,
+       day_of_month, start_month, end_month, active, created_by)
+    VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?)
+  `).run(
+    d.branch_id, d.company_id, d.vendor_name?.trim() || null, d.category, capex, d.doc_type, d.description?.trim() || null,
+    total, d.has_tax_invoice ? 1 : 0, vat, d.payment_status, d.payment_method?.trim() || null, d.note?.trim() || null,
+    dom, d.start_month, d.end_month || null, d.active ? 1 : 0, userId
+  );
+  return Number(info.lastInsertRowid);
+}
+
+export function updateRecurring(id: number, d: RecurringInput): boolean {
+  const { total, vat, dom, capex } = normRecurring(d);
+  return getDb().prepare(`
+    UPDATE accounta_recurring_expenses SET
+      branch_id = ?, company_id = ?, vendor_name = ?, category = ?, capex_bucket = ?, doc_type = ?, description = ?,
+      amount_total = ?, has_tax_invoice = ?, vat_amount = ?, payment_status = ?, payment_method = ?, note = ?,
+      day_of_month = ?, start_month = ?, end_month = ?, active = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(
+    d.branch_id, d.company_id, d.vendor_name?.trim() || null, d.category, capex, d.doc_type, d.description?.trim() || null,
+    total, d.has_tax_invoice ? 1 : 0, vat, d.payment_status, d.payment_method?.trim() || null, d.note?.trim() || null,
+    dom, d.start_month, d.end_month || null, d.active ? 1 : 0, id
+  ).changes > 0;
+}
+
+export function setRecurringActive(id: number, active: boolean): boolean {
+  return getDb().prepare("UPDATE accounta_recurring_expenses SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+    .run(active ? 1 : 0, id).changes > 0;
+}
+
+export function deleteRecurring(id: number): boolean {
+  return getDb().prepare("DELETE FROM accounta_recurring_expenses WHERE id = ?").run(id).changes > 0;
+}
+
+/** Post recurring templates due as of `today` (YYYY-MM-DD, Bangkok). Idempotent
+ *  via last_posted_month (cron pings often). Posts a CONFIRMED expense dated the
+ *  intended day; catch-up if today is on/after the day and this month isn't
+ *  posted. Auto-deactivates once past end_month. Returns count posted. */
+export function postDueRecurringExpenses(today: string): number {
+  const db = getDb();
+  const [y, m, d] = today.split("-").map(Number);
+  const month = today.slice(0, 7);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const rows = db.prepare("SELECT * FROM accounta_recurring_expenses WHERE active = 1").all() as RecurringRow[];
+  let posted = 0;
+  for (const r of rows) {
+    if (r.end_month && month > r.end_month) {
+      db.prepare("UPDATE accounta_recurring_expenses SET active = 0 WHERE id = ?").run(r.id);
+      continue;
+    }
+    if (month < r.start_month) continue;
+    if (r.last_posted_month === month) continue;
+    const postDay = Math.min(r.day_of_month, lastDay);
+    if (d < postDay) continue;
+    const billDate = `${month}-${String(postDay).padStart(2, "0")}`;
+    try {
+      createExpense(r.created_by ?? 1, {
+        branch_id: r.branch_id, company_id: r.company_id, bill_date: billDate, vendor_id: null,
+        vendor_name: r.vendor_name, doc_type: r.doc_type as never, category: r.category,
+        capex_bucket: r.capex_bucket, description: r.description, amount_total: r.amount_total,
+        has_tax_invoice: r.has_tax_invoice !== 0, vat_amount: r.vat_amount,
+        base_amount: round2(r.amount_total - r.vat_amount),
+        payment_status: r.payment_status,
+        payment_method: r.payment_status === "paid" ? r.payment_method : null,
+        paid_date: r.payment_status === "paid" ? billDate : null,
+        due_date: r.payment_status === "unpaid" ? billDate : null,
+        note: [r.note, "สร้างอัตโนมัติ (รายจ่ายประจำ)"].filter(Boolean).join(" · ")
+      }, undefined, { reviewStatus: "confirmed" });
+      db.prepare("UPDATE accounta_recurring_expenses SET last_posted_month = ? WHERE id = ?").run(month, r.id);
+      posted++;
+    } catch { /* skip a bad template; others still post */ }
+  }
+  return posted;
+}
+
 // ── OCR usage log ──────────────────────────────────────────────────
 
 export function logOcrUsage(d: {
