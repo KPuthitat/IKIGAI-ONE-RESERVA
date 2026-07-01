@@ -9,6 +9,7 @@ import PinPromptModal from "@/app/components/PinPromptModal";
 import Combobox, { type ComboOption } from "@/app/components/Combobox";
 import ExpenseEditModal from "./ExpenseEditModal";
 import IncomeEditModal from "./IncomeEditModal";
+import { STARTUP_CATEGORY_LABEL } from "@/lib/feasibility";
 import Select from "@/app/components/Select";
 import { useConfirm } from "@/app/components/useConfirm";
 
@@ -683,6 +684,7 @@ function DayDetail({
                         <td className="py-1 px-2 pl-5">
                           <div className="text-slate-700 flex items-center gap-1.5 flex-wrap">
                             {e.vendor_name || "—"}
+                            {e.capex_bucket && <span className="text-[9px] font-normal bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-1.5 py-px" title="ผูกกับ FEASIBILITY (เงินลงทุนตั้งต้น)">FEASIBILITY · {STARTUP_CATEGORY_LABEL[e.capex_bucket as keyof typeof STARTUP_CATEGORY_LABEL] ?? "ลงทุน"}</span>}
                             {overdue && <span className="text-[9px] font-normal bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-1.5 py-px">เลยกำหนด</span>}
                             {dueToday && <span className="text-[9px] font-normal bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-px">ครบกำหนดวันนี้</span>}
                           </div>
@@ -1537,7 +1539,8 @@ export default function LedgerDashboardClient({
                   <div className="flex-1 min-w-0">
                     <div className="text-sm text-slate-700 truncate">{e.vendor_name || e.description || e.category || "ไม่ระบุ"}</div>
                     <div className="text-[11px] text-slate-400 truncate">
-                      {fmtDayLabel(e.bill_date)}{e.category ? ` · ${e.category}` : ""}{e.payment_status === "unpaid" ? " · ค้างชำระ" : ""}
+                      {fmtDayLabel(e.bill_date)}{e.category ? ` · ${e.category}` : ""}{e.payment_status === "unpaid" ? " · ค้างชำระ" : ""}{e.capex_bucket ? " · " : ""}
+                      {e.capex_bucket ? <span className="text-violet-600">FEASIBILITY</span> : null}
                     </div>
                     <div className="mt-0.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
                       <div className="h-full bg-rose-300" style={{ width: `${Math.min(100, pct)}%` }} />

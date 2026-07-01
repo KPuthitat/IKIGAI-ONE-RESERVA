@@ -888,7 +888,10 @@ export default function ExpensesClient(props: {
                     {e.branch_name ? <div className="text-[10px] text-slate-400">{e.branch_name}</div> : "—"}
                   </td>
                   <td className="px-3 py-2">
-                    <div className="font-medium text-slate-800">{e.vendor_name || "—"}</div>
+                    <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
+                      {e.vendor_name || "—"}
+                      {e.capex_bucket && <span className="text-[10px] font-normal bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-1.5 py-px" title="ผูกกับ FEASIBILITY (เงินลงทุนตั้งต้น)">FEASIBILITY · {STARTUP_CATEGORY_LABEL[e.capex_bucket as keyof typeof STARTUP_CATEGORY_LABEL] ?? "ลงทุน"}</span>}
+                    </div>
                     {docTypeLabel(e.doc_type) && (
                       <span className="inline-block text-[10px] bg-slate-100 text-slate-500 rounded px-1.5 py-0.5 mt-0.5">{docTypeLabel(e.doc_type)}</span>
                     )}
