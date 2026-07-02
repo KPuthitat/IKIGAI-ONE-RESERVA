@@ -1818,6 +1818,117 @@ export function postDueRecurringExpenses(today: string): number {
   return posted;
 }
 
+// ── Director credit-card charges + reserve schedule (owner 2026-07-02) ──
+// Track each รูดบัตรกรรมการ (full or ผ่อน) → month-by-month amount to set aside to
+// pay the bank on schedule, so that cash isn't accidentally spent.
+
+export type CCChargeRow = {
+  id: number; branch_id: number | null; card_id: number | null; card_name: string | null;
+  merchant: string | null; description: string | null; purchase_date: string;
+  total_amount: number; installments: number; first_due_month: string;
+  note: string | null; created_by: number | null; created_at: string; updated_at: string;
+};
+export type CCChargeInput = {
+  branch_id: number | null; card_id: number | null; card_name: string | null;
+  merchant: string | null; description: string | null; purchase_date: string;
+  total_amount: number; installments: number; first_due_month: string; note: string | null;
+};
+
+function addMonth(ym: string, n: number): string {
+  const [y, m] = ym.split("-").map(Number);
+  const t = y * 12 + (m - 1) + n;
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`;
+}
+
+export function listCCCharges(branchId: number): CCChargeRow[] {
+  return getDb().prepare(
+    "SELECT * FROM accounta_cc_charges WHERE branch_id = ? ORDER BY purchase_date DESC, id DESC"
+  ).all(branchId) as CCChargeRow[];
+}
+export function getCCCharge(id: number): CCChargeRow | null {
+  return getDb().prepare("SELECT * FROM accounta_cc_charges WHERE id = ?").get(id) as CCChargeRow | undefined ?? null;
+}
+function normCC(d: CCChargeInput) {
+  return { total: round2(Number(d.total_amount) || 0), inst: Math.min(60, Math.max(1, Math.round(Number(d.installments)) || 1)) };
+}
+export function createCCCharge(userId: number, d: CCChargeInput): number {
+  const { total, inst } = normCC(d);
+  const info = getDb().prepare(`
+    INSERT INTO accounta_cc_charges
+      (branch_id, card_id, card_name, merchant, description, purchase_date, total_amount, installments, first_due_month, note, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+  `).run(d.branch_id, d.card_id, d.card_name?.trim() || null, d.merchant?.trim() || null, d.description?.trim() || null,
+    d.purchase_date, total, inst, d.first_due_month, d.note?.trim() || null, userId);
+  return Number(info.lastInsertRowid);
+}
+export function updateCCCharge(id: number, d: CCChargeInput): boolean {
+  const { total, inst } = normCC(d);
+  return getDb().prepare(`
+    UPDATE accounta_cc_charges SET branch_id = ?, card_id = ?, card_name = ?, merchant = ?, description = ?, purchase_date = ?,
+      total_amount = ?, installments = ?, first_due_month = ?, note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+  `).run(d.branch_id, d.card_id, d.card_name?.trim() || null, d.merchant?.trim() || null, d.description?.trim() || null,
+    d.purchase_date, total, inst, d.first_due_month, d.note?.trim() || null, id).changes > 0;
+}
+export function deleteCCCharge(id: number): boolean {
+  return getDb().prepare("DELETE FROM accounta_cc_charges WHERE id = ?").run(id).changes > 0;
+}
+
+/** Per-installment amounts for one charge (last month absorbs the rounding). */
+function chargeSchedule(total: number, inst: number, firstMonth: string): Array<{ month: string; amount: number }> {
+  const per = round2(total / inst);
+  const out: Array<{ month: string; amount: number }> = [];
+  for (let i = 0; i < inst; i++) {
+    out.push({ month: addMonth(firstMonth, i), amount: i === inst - 1 ? round2(total - per * (inst - 1)) : per });
+  }
+  return out;
+}
+
+export type CardReserve = {
+  card_id: number | null; card_name: string; bank_label: string | null; last4: string | null;
+  months: string[]; byMonth: Record<string, number>;
+  thisMonth: number; outstanding: number; charges: CCChargeRow[];
+};
+
+/** Group charges by card → month-by-month due + reserve. `outstanding` = total
+ *  still owed to the bank from currentMonth onward = the amount to keep set aside.
+ *  Includes every director credit-card channel (even with no charges yet). */
+export function creditCardReserve(branchId: number, currentMonth: string): CardReserve[] {
+  const cards = getDb().prepare(
+    "SELECT id, name, bank_label, card_last4 FROM accounta_cash_accounts WHERE branch_id = ? AND type = 'credit_card' ORDER BY sort_order, name"
+  ).all(branchId) as Array<{ id: number; name: string; bank_label: string | null; card_last4: string | null }>;
+
+  const groups = new Map<string, CardReserve>();
+  const mk = (key: string, base: Partial<CardReserve>): CardReserve => {
+    const g: CardReserve = { card_id: null, card_name: "บัตรอื่น", bank_label: null, last4: null,
+      months: [], byMonth: {}, thisMonth: 0, outstanding: 0, charges: [], ...base };
+    groups.set(key, g); return g;
+  };
+  for (const c of cards) mk(`id:${c.id}`, { card_id: c.id, card_name: c.name, bank_label: c.bank_label, last4: c.card_last4 });
+
+  for (const ch of listCCCharges(branchId)) {
+    const key = ch.card_id != null ? `id:${ch.card_id}` : `name:${ch.card_name ?? "บัตรอื่น"}`;
+    const g = groups.get(key) ?? mk(key, { card_id: ch.card_id ?? null, card_name: ch.card_name ?? "บัตรอื่น" });
+    g.charges.push(ch);
+    for (const s of chargeSchedule(ch.total_amount, ch.installments, ch.first_due_month)) {
+      g.byMonth[s.month] = round2((g.byMonth[s.month] ?? 0) + s.amount);
+    }
+  }
+
+  const out: CardReserve[] = [];
+  for (const g of groups.values()) {
+    const dueMonths = Object.keys(g.byMonth).sort();
+    if (dueMonths.length) {
+      const startM = dueMonths[0] < currentMonth ? dueMonths[0] : currentMonth;
+      const lastM = dueMonths[dueMonths.length - 1] < currentMonth ? currentMonth : dueMonths[dueMonths.length - 1];
+      for (let mth = startM; mth <= lastM && g.months.length <= 60; mth = addMonth(mth, 1)) g.months.push(mth);
+    }
+    g.thisMonth = round2(g.byMonth[currentMonth] ?? 0);
+    g.outstanding = round2(Object.keys(g.byMonth).filter((m) => m >= currentMonth).reduce((s, m) => s + g.byMonth[m], 0));
+    out.push(g);
+  }
+  return out.sort((a, b) => b.outstanding - a.outstanding);
+}
+
 // ── OCR usage log ──────────────────────────────────────────────────
 
 export function logOcrUsage(d: {

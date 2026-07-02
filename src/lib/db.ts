@@ -5890,6 +5890,30 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_accounta_recurring_branch
       ON accounta_recurring_expenses(branch_id, active);
   `);
+  // Director credit-card charges (owner 2026-07-02): each รูดบัตร (full or ผ่อน N
+  // งวด) so the app can show how much to set aside per month to pay the bank on
+  // schedule. Links to a cash_accounts credit_card row. Monthly due =
+  // total_amount / installments over first_due_month .. +installments-1.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS accounta_cc_charges (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id      INTEGER REFERENCES branches(id),
+      card_id        INTEGER REFERENCES accounta_cash_accounts(id),
+      card_name      TEXT,                              -- denormalised for display
+      merchant       TEXT,                              -- ร้าน/ที่รูด
+      description    TEXT,
+      purchase_date  TEXT NOT NULL,                     -- YYYY-MM-DD
+      total_amount   REAL NOT NULL DEFAULT 0,
+      installments   INTEGER NOT NULL DEFAULT 1,        -- 1 = จ่ายเต็ม, N = ผ่อน N งวด
+      first_due_month TEXT NOT NULL,                    -- 'YYYY-MM' bank first bills this
+      note           TEXT,
+      created_by     INTEGER REFERENCES users(id),
+      created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_accounta_cc_charges_branch
+      ON accounta_cc_charges(branch_id, card_id);
+  `);
   // Extra attachments per expense (owner 2026-06-20, paypers-like #3.3):
   // the primary receipt stays on accounta_expenses.doc_path; ADDITIONAL
   // evidence (slips, a second invoice, …) lives here. Each row is uploaded
