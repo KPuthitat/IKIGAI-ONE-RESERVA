@@ -40,16 +40,18 @@ function kindOf(r: { is_vat?: number; is_revenue?: number }): IncKind {
 // daybook is the single workspace (owner 2026-06-29). Only manual rows reach
 // here; shift-close rows stay read-only (edited at ยอดขายรายวัน).
 export default function IncomeEditModal({
-  income, channels, onClose, onSaved
+  income, channels, mode = "edit", onClose, onSaved
 }: {
   income: EditableIncome;
   channels: Array<{ id: number; name: string }>;
+  mode?: "edit" | "create";
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (savedDate?: string) => void;
 }) {
+  const isCreate = mode === "create";
   const [incomeDate, setIncomeDate] = useState(income.income_date);
   const [channel, setChannel] = useState(income.channel ?? "");
-  const [amount, setAmount] = useState(grpMoney(String(income.amount)));
+  const [amount, setAmount] = useState(isCreate ? "" : grpMoney(String(income.amount)));
   const [kind, setKind] = useState<IncKind>(kindOf(income));
   const [note, setNote] = useState(income.note ?? "");
   const [busy, setBusy] = useState(false);
@@ -70,8 +72,9 @@ export default function IncomeEditModal({
         is_vat: flags.is_vat, is_revenue: flags.is_revenue
       };
       let res: Response;
-      try { res = await fetch(apiUrl(`/api/accounta/income/${income.id}`), {
-        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
+      try { res = await fetch(
+        apiUrl(isCreate ? "/api/accounta/income" : `/api/accounta/income/${income.id}`), {
+        method: isCreate ? "POST" : "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
       } catch (e) {
         setErr((e as { name?: string })?.name === "AbortError" ? "ใช้เวลานานเกินไป — ลองอีกครั้ง" : "เชื่อมต่อไม่ได้ — ลองอีกครั้ง");
         return;
@@ -79,7 +82,7 @@ export default function IncomeEditModal({
       if (res.redirected && /\/login(\?|$)/.test(res.url)) { setErr("เซสชันหมดอายุ — เข้าสู่ระบบใหม่แล้วลองอีกครั้ง"); return; }
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "บันทึกไม่สำเร็จ")); return; }
-      onSaved();
+      onSaved(incomeDate);
     } finally { clearTimeout(timer); setBusy(false); }
   }
 
@@ -87,7 +90,7 @@ export default function IncomeEditModal({
     <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-xl my-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-          <div className="text-sm font-bold text-slate-800">แก้ไขรายรับ</div>
+          <div className="text-sm font-bold text-slate-800">{isCreate ? "เพิ่มรายรับ" : "แก้ไขรายรับ"}</div>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
         </div>
         <div className="p-4 space-y-3">
@@ -124,7 +127,7 @@ export default function IncomeEditModal({
           </button>
           <button type="button" onClick={save} disabled={busy}
             className="rounded-md bg-brand text-white px-5 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
-            {busy ? "กำลังบันทึก…" : "บันทึก"}
+            {busy ? "กำลังบันทึก…" : isCreate ? "เพิ่ม" : "บันทึก"}
           </button>
         </div>
       </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
@@ -228,7 +229,8 @@ export default function IncomeClient(props: {
     <div className="space-y-4">
       {ConfirmDialog}
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={openAdd} disabled={busy} className="btn-primary disabled:opacity-50">+ เพิ่มรายรับ</button>
+        <Link href="/admin/accounta/daybook" className="btn-primary">+ เพิ่มที่บัญชีรายวัน</Link>
+        <button type="button" onClick={openAdd} disabled={busy} className="btn-secondary disabled:opacity-50">+ เพิ่มด่วนที่นี่</button>
         <input type="month" className="input !w-auto" value={month}
           onChange={(e) => { setMonth(e.target.value); reload({ month: e.target.value }); }} />
         <select className="input !w-auto" value={companyId}

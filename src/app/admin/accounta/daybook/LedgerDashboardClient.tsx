@@ -7,8 +7,8 @@ import { apiUrl } from "@/lib/url";
 import { fmtMoney, grpMoney, parseMoney } from "@/lib/format";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import Combobox, { type ComboOption } from "@/app/components/Combobox";
-import ExpenseEditModal from "./ExpenseEditModal";
-import IncomeEditModal from "./IncomeEditModal";
+import ExpenseEditModal, { type EditableExpense } from "./ExpenseEditModal";
+import IncomeEditModal, { type EditableIncome } from "./IncomeEditModal";
 import { STARTUP_CATEGORY_LABEL } from "@/lib/feasibility";
 import Select from "@/app/components/Select";
 import { useConfirm } from "@/app/components/useConfirm";
@@ -902,75 +902,36 @@ export default function LedgerDashboardClient({
     startTransition(() => router.push(`/admin/accounta/daybook?${q.toString()}`));
   }
 
-  // Direct add (owner 2026-06-25): add รายรับ/รายจ่าย for ANY date right here,
-  // always scoped to the ACTIVE branch (no cross-branch keying). Lets you record
-  // a day that never had a shift-close.
+  // Direct add (owner 2026-06-25; full-field via the shared edit modal 2026-07-02):
+  // add รายรับ/รายจ่าย for ANY date right here — the daybook is now the primary
+  // entry point (owner 2026-07-02), so it opens the SAME full form as editing
+  // (วิธีจ่าย · หมวดลงทุน CapEx · ครบกำหนด). Always scoped to the ACTIVE branch.
   const bkkToday = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-  const [addMode, setAddMode] = useState<null | "income" | "expense">(null);
-  const [aDate, setADate] = useState(bkkToday);
-  const [aChannel, setAChannel] = useState(incomeChannels[0]?.name ?? "");
-  const [aAmt, setAAmt] = useState("");
-  const [aVendor, setAVendor] = useState("");
-  const [aCategory, setACategory] = useState("");
-  const [aVat, setAVat] = useState(false);
-  // รายรับ: ประเภท sale_vat (default) | sale_novat | financing(เงินกู้ ไม่นับยอดขาย)
-  const [aIncKind, setAIncKind] = useState<"sale_vat" | "sale_novat" | "financing">("sale_vat");
-  const [aUnpaid, setAUnpaid] = useState(false);
-  const [aDueMode, setADueMode] = useState<"cycle" | "date">("cycle");
-  const [aDueDate, setADueDate] = useState("");
-  const [aBusy, setABusy] = useState(false);
-  const [aErr, setAErr] = useState<string | null>(null);
+  const [addExpense, setAddExpense] = useState<EditableExpense | null>(null);
+  const [addIncome, setAddIncome] = useState<EditableIncome | null>(null);
 
   function openAdd(mode: "income" | "expense") {
-    setADate(selectedDate ?? bkkToday);
-    setAChannel(incomeChannels[0]?.name ?? ""); setAAmt("");
-    setAVendor(""); setACategory(""); setAVat(false); setAUnpaid(false);
-    setADueMode("cycle"); setADueDate(""); setAIncKind("sale_vat");
-    setAErr(null); setAddMode(mode);
+    const d = selectedDate ?? bkkToday;
+    if (mode === "income") {
+      setAddIncome({
+        id: 0, branch_id: branchId, company_id: companyId, income_date: d,
+        channel: incomeChannels[0]?.name ?? null, amount: 0, note: null, is_vat: 1, is_revenue: 1
+      });
+    } else {
+      setAddExpense({
+        id: 0, bill_date: d, vendor_name: null, doc_type: null, category: null,
+        capex_bucket: null, description: null, amount_total: 0, has_tax_invoice: false,
+        payment_status: "paid", payment_method: null, paid_date: d, due_date: null,
+        branch_id: branchId, company_id: companyId
+      });
+    }
   }
-  function afterAdd() {
-    const d = aDate;
-    setAddMode(null);
+  function afterAdd(d: string) {
+    setAddExpense(null); setAddIncome(null);
     setSelectedDate(d);
     loadDayIncome(d, true);
     if (d >= dash.start && d <= dash.end) startTransition(() => router.refresh());
     else go("month", d); // jump to the month that now has the new entry
-  }
-  async function submitAdd() {
-    const amt = parseMoney(aAmt);
-    if (addMode === "income") {
-      if (!Number.isFinite(amt) || amt <= 0) { setAErr("กรอกยอดเงินให้ถูกต้อง"); return; }
-      setABusy(true); setAErr(null);
-      try {
-        const res = await fetch(apiUrl("/api/accounta/income"), {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ branch_id: branchId, company_id: companyId, income_date: aDate, channel: aChannel || null, amount: amt, note: null, is_vat: aIncKind === "sale_vat", is_revenue: aIncKind !== "financing" })
-        });
-        const j = await res.json().catch(() => ({}));
-        if (!res.ok || !j.ok) { setAErr(j.message || "บันทึกไม่สำเร็จ"); return; }
-        afterAdd();
-      } finally { setABusy(false); }
-    } else {
-      if (!Number.isFinite(amt) || amt <= 0) { setAErr("กรอกยอดเงินให้ถูกต้อง"); return; }
-      setABusy(true); setAErr(null);
-      try {
-        const res = await fetch(apiUrl("/api/accounta/expenses"), {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            branch_id: branchId, company_id: companyId, bill_date: aDate,
-            vendor_name: aVendor.trim() || null, category: aCategory || null,
-            amount_total: amt, has_tax_invoice: aVat,
-            payment_status: aUnpaid ? "unpaid" : "paid", paid_date: aUnpaid ? null : aDate,
-            due_date: aUnpaid
-              ? (aDueMode === "date" ? (aDueDate || null) : nextPayDate(aDate, payCycleWeekday))
-              : null
-          })
-        });
-        const j = await res.json().catch(() => ({}));
-        if (!res.ok || !j.ok) { setAErr(j.message || "บันทึกไม่สำเร็จ"); return; }
-        afterAdd();
-      } finally { setABusy(false); }
-    }
   }
 
   async function remove(e: LedgerExpenseRow) {
@@ -1028,6 +989,26 @@ export default function LedgerDashboardClient({
           channels={incomeChannels}
           onClose={() => setEditIncome(null)}
           onSaved={() => { const d = editIncome.income_date; setEditIncome(null); loadDayIncome(d, true); startTransition(() => router.refresh()); }}
+        />
+      )}
+      {addExpense && (
+        <ExpenseEditModal
+          mode="create"
+          expense={addExpense}
+          categories={expenseCategories}
+          vendors={expenseVendors}
+          paymentMethods={paymentMethods}
+          onClose={() => setAddExpense(null)}
+          onSaved={(d) => afterAdd(d ?? bkkToday)}
+        />
+      )}
+      {addIncome && (
+        <IncomeEditModal
+          mode="create"
+          income={addIncome}
+          channels={incomeChannels}
+          onClose={() => setAddIncome(null)}
+          onSaved={(d) => afterAdd(d ?? bkkToday)}
         />
       )}
       {/* Period selector + add buttons */}
@@ -1555,96 +1536,6 @@ export default function LedgerDashboardClient({
         <p className="text-[11px] text-slate-400">{topMode === "vendor" ? "รวมยอดทั้งช่วงต่อผู้จำหน่าย" : "บิลใหญ่สุดรายใบ · กดเพื่อแก้ไข"}</p>
       </div>
 
-      {/* Direct add modal — date picker, locked to the active branch */}
-      {addMode && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4"
-          onMouseDown={(e) => { if (e.target === e.currentTarget && !aBusy) setAddMode(null); }}>
-          <div className="card w-full max-w-md my-8 space-y-3" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-slate-800">{addMode === "income" ? "เพิ่มรายรับ" : "เพิ่มรายจ่าย"}</h3>
-              <button type="button" onClick={() => setAddMode(null)} className="text-slate-400 hover:text-slate-700">✕</button>
-            </div>
-            <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded px-2 py-1">
-              บันทึกเข้าสาขา <b>{branchName}</b> (สาขาที่เปิดอยู่) — สลับสาขาที่มุมบนซ้ายหากต้องการบันทึกสาขาอื่น
-            </div>
-            {aErr && <p className="text-sm text-rose-600">{aErr}</p>}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="label !text-xs">วันที่</label>
-                <input type="date" className="input" value={aDate} onChange={(e) => setADate(e.target.value)} />
-              </div>
-              {addMode === "income" ? (
-                <>
-                  <div>
-                    <label className="label !text-xs">ช่องทาง</label>
-                    <Select value={aChannel} onChange={setAChannel} placeholder="— เลือกช่องทาง —"
-                      options={incomeChannels.map((c) => ({ value: c.name, label: c.name }))} />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="label !text-xs">จำนวนเงิน</label>
-                    <input type="text" inputMode="decimal" className="input text-right font-mono" value={aAmt} placeholder="0.00"
-                      onChange={(e) => setAAmt(grpMoney(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }} />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="label !text-xs">ประเภทรายรับ</label>
-                    <Select value={aIncKind} onChange={(v) => setAIncKind(v as typeof aIncKind)}
-                      options={[
-                        { value: "sale_vat", label: "ขาย/บริการ — มี VAT 7%" },
-                        { value: "sale_novat", label: "ขาย/บริการ — ยกเว้น VAT" },
-                        { value: "financing", label: "เงินกู้/เงินเข้าอื่น — ไม่นับยอดขาย" }
-                      ]} />
-                    <p className="text-[11px] text-slate-400 mt-0.5">เงินกู้/เงินยืมกรรมการ เลือก “ไม่นับยอดขาย” — เป็นเงินเข้าแต่ไม่รวมในยอดขาย/ภาษี</p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="label !text-xs">หมวด</label>
-                    <Select value={aCategory} onChange={setACategory} placeholder="— เลือกหมวด —"
-                      options={expenseCategories.map((c) => ({ value: c.name, label: c.code ? `${c.code} · ${c.name}` : c.name }))} />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="label !text-xs">ผู้จำหน่าย / รายการ</label>
-                    <Combobox value={aVendor} onChange={setAVendor} options={vendorOptions(expenseVendors)}
-                      placeholder="พิมพ์ชื่อหรือเลขผู้เสียภาษี" />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="label !text-xs">จำนวนเงิน</label>
-                    <input type="text" inputMode="decimal" className="input text-right font-mono" value={aAmt} placeholder="0.00"
-                      onChange={(e) => setAAmt(grpMoney(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }} />
-                  </div>
-                  <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={aVat} onChange={(e) => setAVat(e.target.checked)} />มี VAT</label>
-                  <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={aUnpaid} onChange={(e) => setAUnpaid(e.target.checked)} />ค้างชำระ</label>
-                  {aUnpaid && (
-                    <div className="sm:col-span-2">
-                      <label className="label !text-xs">ครบกำหนดชำระ</label>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Select value={aDueMode} onChange={(v) => setADueMode(v as "cycle" | "date")}
-                          className="!w-auto !min-w-[12rem]"
-                          options={[
-                            { value: "cycle", label: `ตามรอบบริษัท (ทุกวัน${WEEKDAY_TH[payCycleWeekday]})` },
-                            { value: "date", label: "ระบุวันเอง" }
-                          ]} />
-                        {aDueMode === "date" ? (
-                          <input type="date" value={aDueDate} onChange={(e) => setADueDate(e.target.value)} className="input !w-auto" />
-                        ) : (
-                          <span className="text-xs text-slate-500">→ {fmtDayLabel(nextPayDate(aDate, payCycleWeekday))}</span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-            <div className="flex items-center justify-end gap-2">
-              <button type="button" onClick={() => setAddMode(null)} className="btn-secondary" disabled={aBusy}>ยกเลิก</button>
-              <button type="button" onClick={submitAdd} className="btn-primary disabled:opacity-50" disabled={aBusy || !aAmt}>
-                {aBusy ? "กำลังบันทึก…" : "บันทึก"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

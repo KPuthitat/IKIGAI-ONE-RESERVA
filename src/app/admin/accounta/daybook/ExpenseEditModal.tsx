@@ -31,15 +31,17 @@ export type EditableExpense = {
 // workspace and editing never leaves the page (owner 2026-06-29). Covers the
 // fields that matter for an existing bill; OCR/doc-attach live on the รายจ่าย page.
 export default function ExpenseEditModal({
-  expense, categories, vendors, paymentMethods, onClose, onSaved
+  expense, categories, vendors, paymentMethods, mode = "edit", onClose, onSaved
 }: {
   expense: EditableExpense;
   categories: Array<{ code: string | null; name: string }>;
   vendors: Array<{ name: string; tax_id: string | null }>;
   paymentMethods: Array<{ id: number; name: string }>;
+  mode?: "edit" | "create";
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (savedDate?: string) => void;
 }) {
+  const isCreate = mode === "create";
   const [vendor, setVendor] = useState(expense.vendor_name ?? "");
   const [category, setCategory] = useState(expense.category ?? "");
   const [capexBucket, setCapexBucket] = useState(
@@ -47,7 +49,7 @@ export default function ExpenseEditModal({
   );
   const [description, setDescription] = useState(expense.description ?? "");
   const [billDate, setBillDate] = useState(expense.bill_date);
-  const [amount, setAmount] = useState(grpMoney(String(expense.amount_total)));
+  const [amount, setAmount] = useState(isCreate ? "" : grpMoney(String(expense.amount_total)));
   const [hasVat, setHasVat] = useState(expense.has_tax_invoice);
   const [status, setStatus] = useState<"paid" | "unpaid">(expense.payment_status);
   const [method, setMethod] = useState(expense.payment_method ?? (paymentMethods[0]?.name ?? ""));
@@ -81,8 +83,9 @@ export default function ExpenseEditModal({
         note: note.trim() || null
       };
       let res: Response;
-      try { res = await fetch(apiUrl(`/api/accounta/expenses/${expense.id}`), {
-        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
+      try { res = await fetch(
+        apiUrl(isCreate ? "/api/accounta/expenses" : `/api/accounta/expenses/${expense.id}`), {
+        method: isCreate ? "POST" : "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
       } catch (e) {
         setErr((e as { name?: string })?.name === "AbortError" ? "ใช้เวลานานเกินไป — ลองอีกครั้ง" : "เชื่อมต่อไม่ได้ — ลองอีกครั้ง");
         return;
@@ -90,7 +93,7 @@ export default function ExpenseEditModal({
       if (res.redirected && /\/login(\?|$)/.test(res.url)) { setErr("เซสชันหมดอายุ — เข้าสู่ระบบใหม่แล้วลองอีกครั้ง"); return; }
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "บันทึกไม่สำเร็จ")); return; }
-      onSaved();
+      onSaved(billDate);
     } finally { clearTimeout(timer); setBusy(false); }
   }
 
@@ -98,7 +101,7 @@ export default function ExpenseEditModal({
     <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl my-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-          <div className="text-sm font-bold text-slate-800">แก้ไขรายจ่าย</div>
+          <div className="text-sm font-bold text-slate-800">{isCreate ? "เพิ่มรายจ่าย" : "แก้ไขรายจ่าย"}</div>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
         </div>
         <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5">
@@ -182,7 +185,7 @@ export default function ExpenseEditModal({
           </button>
           <button type="button" onClick={save} disabled={busy}
             className="rounded-md bg-brand text-white px-5 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
-            {busy ? "กำลังบันทึก…" : "บันทึก"}
+            {busy ? "กำลังบันทึก…" : isCreate ? "เพิ่ม" : "บันทึก"}
           </button>
         </div>
       </div>
