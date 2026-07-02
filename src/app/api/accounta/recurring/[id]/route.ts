@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { updateRecurring, setRecurringActive, deleteRecurring, getRecurring } from "@/lib/accounta-db";
-import { RecurringBody, toRecurringInput } from "../route";
+import { RecurringBody, toRecurringInput } from "@/lib/accounta-validate";
 
 function parseId(raw: string): number | null {
   const id = Number(raw);

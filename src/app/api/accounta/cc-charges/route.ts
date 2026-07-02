@@ -1,31 +1,10 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
-import { listCCCharges, createCCCharge, creditCardReserve, type CCChargeInput } from "@/lib/accounta-db";
+import { listCCCharges, createCCCharge, creditCardReserve } from "@/lib/accounta-db";
+import { CCBody, toCCInput } from "@/lib/accounta-validate";
 
 function bkkMonth(): string {
   return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 7);
-}
-
-export const CCBody = z.object({
-  branch_id: z.number().int().positive().nullable().optional(),
-  card_id: z.number().int().positive().nullable().optional(),
-  card_name: z.string().trim().max(120).nullable().optional(),
-  merchant: z.string().trim().max(200).nullable().optional(),
-  description: z.string().trim().max(500).nullable().optional(),
-  purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  total_amount: z.number().min(0).max(1e9),
-  installments: z.number().int().min(1).max(60),
-  first_due_month: z.string().regex(/^\d{4}-\d{2}$/),
-  note: z.string().trim().max(500).nullable().optional()
-});
-
-export function toCCInput(d: z.infer<typeof CCBody>): CCChargeInput {
-  return {
-    branch_id: d.branch_id ?? null, card_id: d.card_id ?? null, card_name: d.card_name ?? null,
-    merchant: d.merchant ?? null, description: d.description ?? null, purchase_date: d.purchase_date,
-    total_amount: d.total_amount, installments: d.installments, first_due_month: d.first_due_month, note: d.note ?? null
-  };
 }
 
 export async function GET(req: Request) {

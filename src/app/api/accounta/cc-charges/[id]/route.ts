@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { updateCCCharge, deleteCCCharge, getCCCharge } from "@/lib/accounta-db";
-import { CCBody, toCCInput } from "../route";
+import { CCBody, toCCInput } from "@/lib/accounta-validate";
 
 function parseId(raw: string): number | null {
   const id = Number(raw);
