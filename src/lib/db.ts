@@ -1500,6 +1500,166 @@ function runMigrations(db: Database.Database): void {
     if (!has("address")) db.exec("ALTER TABLE revshare_partners ADD COLUMN address TEXT");
     if (!has("branch_code")) db.exec("ALTER TABLE revshare_partners ADD COLUMN branch_code TEXT");
   }
+
+  // ─── DELIVERA — self-delivery module (owner 2026-07-02) ─────────────────
+  // Ported from a Supabase/RLS spec onto this repo's stack: SQLite + session
+  // auth (branch isolation is enforced in the app layer via requirePermission
+  // + WHERE branch_id = ?, NOT Postgres RLS), INTEGER PKs, TEXT-CHECK enums,
+  // REAL money. Realtime → polling; Supabase Storage → local private files.
+  // ASSUMPTION: menu lives in its own delivera_menu_items table (INVENTA's
+  // inventa_items is stock/purchasing, not a customer menu with retail prices).
+  // Rollback documented in src/lib/delivera/ROLLBACK.sql.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS delivera_branch_settings (
+      branch_id            INTEGER PRIMARY KEY REFERENCES branches(id) ON DELETE CASCADE,
+      promptpay_id         TEXT,                         -- phone or national/tax id for PromptPay QR
+      default_prep_minutes INTEGER NOT NULL DEFAULT 20,
+      created_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS delivera_menu_items (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id       INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      name_th         TEXT NOT NULL,
+      category        TEXT,
+      price           REAL NOT NULL DEFAULT 0,
+      is_available    INTEGER NOT NULL DEFAULT 1,
+      sort_order      INTEGER NOT NULL DEFAULT 0,
+      image_url       TEXT,
+      -- Optional link to an INVENTA stock item so a sale can deduct stock
+      -- (commit 7). NULL = no stock coupling (informational menu only).
+      inventa_item_id INTEGER REFERENCES inventa_items(id),
+      created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_delivera_menu_branch ON delivera_menu_items (branch_id, is_available);
+
+    CREATE TABLE IF NOT EXISTS delivery_zones (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id        INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      name             TEXT NOT NULL,
+      max_distance_km  REAL NOT NULL,
+      base_fee         REAL NOT NULL,
+      per_km_fee       REAL NOT NULL DEFAULT 0,
+      min_order_amount REAL NOT NULL DEFAULT 0,
+      is_active        INTEGER NOT NULL DEFAULT 1,
+      created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS riders (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id    INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      line_user_id TEXT UNIQUE NOT NULL,
+      display_name TEXT NOT NULL,
+      phone        TEXT,
+      vehicle_type TEXT,
+      plate        TEXT,
+      status       TEXT NOT NULL DEFAULT 'offline' CHECK (status IN ('offline','available','busy')),
+      is_active    INTEGER NOT NULL DEFAULT 1,
+      created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS delivery_orders (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id             INTEGER NOT NULL REFERENCES branches(id),
+      order_no              TEXT UNIQUE NOT NULL,
+      customer_hash         TEXT NOT NULL,               -- hashLineUserId(), never the raw LINE id
+      customer_display_name TEXT,
+      phone_enc             TEXT,                         -- encrypted; never plaintext in logs
+      fulfillment           TEXT NOT NULL DEFAULT 'delivery' CHECK (fulfillment IN ('delivery','pickup')),
+      dest_address          TEXT,
+      dest_lat              REAL,
+      dest_lng              REAL,
+      distance_km           REAL,
+      zone_id               INTEGER REFERENCES delivery_zones(id),
+      subtotal              REAL NOT NULL DEFAULT 0,
+      delivery_fee          REAL NOT NULL DEFAULT 0,
+      total                 REAL NOT NULL DEFAULT 0,
+      status                TEXT NOT NULL DEFAULT 'pending_payment'
+                              CHECK (status IN ('pending_payment','paid','confirmed','preparing','ready',
+                                                'assigned','picked_up','delivered','completed','cancelled')),
+      pay_method            TEXT CHECK (pay_method IN ('promptpay','cod')),
+      pay_status            TEXT NOT NULL DEFAULT 'unpaid'
+                              CHECK (pay_status IN ('unpaid','pending_verify','verified','failed','refunded')),
+      time_slot             TEXT,
+      note                  TEXT,
+      created_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_delivery_orders_branch_status ON delivery_orders (branch_id, status);
+
+    CREATE TABLE IF NOT EXISTS delivery_order_items (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id     INTEGER NOT NULL REFERENCES delivery_orders(id) ON DELETE CASCADE,
+      menu_item_id INTEGER NOT NULL,
+      name_th      TEXT NOT NULL,
+      qty          INTEGER NOT NULL CHECK (qty > 0),
+      unit_price   REAL NOT NULL,
+      options_json TEXT NOT NULL DEFAULT '{}',
+      line_total   REAL NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_delivery_order_items_order ON delivery_order_items (order_id);
+
+    CREATE TABLE IF NOT EXISTS deliveries (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id        INTEGER NOT NULL UNIQUE REFERENCES delivery_orders(id),
+      rider_id        INTEGER REFERENCES riders(id),
+      assigned_at     TEXT,
+      accepted_at     TEXT,
+      picked_up_at    TEXT,
+      delivered_at    TEXT,
+      cod_amount      REAL NOT NULL DEFAULT 0,
+      cod_settled     INTEGER NOT NULL DEFAULT 0,
+      proof_photo_url TEXT,
+      created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS delivery_payments (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id         INTEGER NOT NULL REFERENCES delivery_orders(id),
+      method           TEXT NOT NULL CHECK (method IN ('promptpay','cod')),
+      amount           REAL NOT NULL,
+      promptpay_ref    TEXT,
+      slipok_trans_ref TEXT UNIQUE,                       -- de-dupes verified slips
+      slip_image_url   TEXT,
+      verified_at      TEXT,
+      status           TEXT NOT NULL DEFAULT 'pending_verify'
+                         CHECK (status IN ('unpaid','pending_verify','verified','failed','refunded')),
+      created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_delivery_payments_order ON delivery_payments (order_id);
+  `);
+  // Per-branch feature flag — DELIVERA ships dark; owner flips this per branch
+  // once the LINE channels / SlipOK / Maps keys are provisioned. No branch is
+  // enabled by default.
+  {
+    const bcols = db.prepare("PRAGMA table_info(branches)").all() as Array<{ name: string }>;
+    if (!bcols.some((c) => c.name === "delivera_enabled")) {
+      db.exec("ALTER TABLE branches ADD COLUMN delivera_enabled INTEGER NOT NULL DEFAULT 0");
+    }
+  }
+  // Seed 2 default zones for any DELIVERA-enabled branch that has none yet
+  // (idempotent; runs on boot). Deferred for disabled branches so prod stays
+  // clean until the owner turns the module on.
+  {
+    const enabled = db.prepare("SELECT id FROM branches WHERE delivera_enabled = 1").all() as Array<{ id: number }>;
+    const zoneCount = db.prepare("SELECT COUNT(*) AS n FROM delivery_zones WHERE branch_id = ?");
+    const insZone = db.prepare(`
+      INSERT INTO delivery_zones (branch_id, name, max_distance_km, base_fee, per_km_fee, min_order_amount)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    for (const b of enabled) {
+      if ((zoneCount.get(b.id) as { n: number }).n === 0) {
+        insZone.run(b.id, "โซนใกล้ (≤3 กม.)", 3, 20, 0, 100);
+        insZone.run(b.id, "โซนไกล (≤7 กม.)", 7, 30, 8, 150);
+      }
+    }
+  }
+
   {
     // revshare_rounds.updated_by — who last edited a daily sales row (owner
     // 2026-06-23: PIN-gated import/edit records the operator).
