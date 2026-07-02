@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { findPayrollUserByUsername } from "@/lib/payroll-db";
-import { createSession, syncUserFromPayroll } from "@/lib/auth";
+import { syncUserFromPayroll } from "@/lib/auth";
 import { getDb, type UserRole } from "@/lib/db";
 import { consumeEmergencyCred } from "@/lib/emergency-creds";
+import { accountStateError, finalizeLogin } from "@/lib/login-helpers";
 
 const Body = z.object({
   username: z.string().min(1),
@@ -56,10 +56,15 @@ export async function POST(req: Request) {
   // of falling through to a generic 401 that doesn't tell the staff
   // why their working credentials no longer work.
   if (!authedUserId) {
+    // Accept a 13-digit national ID as an alternate identifier (owner
+    // 2026-07-02) — staff who can't recall their username log in with the
+    // ID number bound to their record. length(@id)=13 keeps an ordinary
+    // username from ever colliding into a national_id match.
     const local = db.prepare(`
       SELECT id, password_hash, role FROM users
-      WHERE username = ?
-    `).get(username) as {
+      WHERE username = @id OR (national_id = @id AND length(@id) = 13)
+      LIMIT 1
+    `).get({ id: username }) as {
       id: number; password_hash: string; role: UserRole;
     } | undefined;
     if (local && bcrypt.compareSync(password, local.password_hash)) {
@@ -88,36 +93,11 @@ export async function POST(req: Request) {
     );
   }
 
-  // Account-state gate (2026-05-28). Even if credentials matched,
-  // the row may be flagged as resigned (auto-closed by the nightly
-  // sweep after the staff's last working day) or disabled (admin
-  // manually closed it). Show a specific message so the staff knows
-  // who to contact instead of staring at a generic 401.
-  const accountState = db.prepare(
-    "SELECT status, resigned_at FROM users WHERE id = ?"
-  ).get(authedUserId) as { status: string; resigned_at: string | null } | undefined;
-  if (accountState?.status === "resigned") {
-    return NextResponse.json({
-      error: "บัญชีของคุณถูกปิดเนื่องจากครบกำหนดวันลาออกแล้ว",
-      error_code: "account_resigned",
-      message: "หากต้องการกลับเข้าทำงานหรือสอบถามข้อมูล กรุณาติดต่อแอดมินผ่าน LINE OA ของบริษัท",
-      resigned_at: accountState.resigned_at
-    }, { status: 403 });
-  }
-  if (accountState?.status === "disabled") {
-    return NextResponse.json({
-      error: "บัญชีของคุณถูกปิดใช้งาน",
-      error_code: "account_disabled",
-      message: "กรุณาติดต่อแอดมินเพื่อขอเปิดบัญชีอีกครั้ง"
-    }, { status: 403 });
-  }
-  if (accountState?.status === "pending_invite") {
-    return NextResponse.json({
-      error: "บัญชียังไม่ได้ตั้งค่าครั้งแรก",
-      error_code: "account_pending_invite",
-      message: "กรุณากดลิงก์เชิญที่แอดมินส่งให้ผ่าน LINE เพื่อตั้งรหัสผ่านก่อน"
-    }, { status: 403 });
-  }
+  // Account-state gate (2026-05-28) — shared with the LINE-login callback
+  // so both entry points reject resigned/disabled/pending accounts the
+  // same way. See login-helpers.accountStateError.
+  const gate = accountStateError(authedUserId);
+  if (gate) return NextResponse.json(gate, { status: 403 });
 
   // Login is unified (owner 2026-06-03) — no STAFF / ADMIN tab to match
   // against. Any valid credential signs in; the session role alone
@@ -126,30 +106,7 @@ export async function POST(req: Request) {
   const tabRole: "admin" | "staff" =
     authedRole === "super_admin" || authedRole === "admin" ? "admin" : "staff";
 
-  // Stamp last_login_at — useful for the admin "inactive users" audit.
-  db.prepare("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?")
-    .run(authedUserId);
-
-  createSession(authedUserId, null);
-
-  // Reset the view-mode intent on every login (owner 2026-06-21). Each
-  // login starts at the role's HOME mode — super_admin in admin view,
-  // everyone else in staff view — so crossing into the NON-default mode
-  // always requires the PIN again. Without this, the os_view cookie
-  // (1-year) would silently keep an admin in admin view across logins,
-  // skipping the PIN gate. Non-httpOnly so AdminModeToggle's JS can keep
-  // reading/writing it within the session.
-  cookies().set("os_view", authedRole === "super_admin" ? "admin" : "staff", {
-    httpOnly: false,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 31_536_000
-  });
-
-  const branchCount = (db.prepare(
-    "SELECT COUNT(*) AS n FROM user_branches WHERE user_id = ?"
-  ).get(authedUserId) as { n: number }).n;
+  const { branchCount } = finalizeLogin(authedUserId, authedRole);
 
   // `is_super_admin` lets the client route super_admin straight to the
   // /admin console (its dedicated entry, unchanged) while every other

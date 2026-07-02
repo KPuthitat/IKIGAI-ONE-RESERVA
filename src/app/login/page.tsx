@@ -3,10 +3,24 @@ import LoginForm from "./LoginForm";
 import LangToggle from "../LangToggle";
 import Footer from "../Footer";
 import OwlMascot from "../components/OwlMascot";
+import { lineLoginConfigured } from "@/lib/line-login";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "เข้าระบบ" };
+
+// Map the ?error= codes the LINE-login routes bounce back with into a
+// friendly Thai line. Password-login errors arrive via the API response
+// instead, so anything not listed here is passed through untouched.
+const ERROR_MESSAGES: Record<string, string> = {
+  line_not_linked: "LINE นี้ยังไม่ได้ผูกกับบัญชีพนักงาน กรุณาเข้าด้วยรหัสผ่าน หรือติดต่อแอดมินให้ผูก LINE ให้ก่อน",
+  line_unavailable: "ยังเปิดใช้เข้าระบบด้วย LINE ไม่ได้ กรุณาเข้าด้วยรหัสผ่าน",
+  line_state: "หมดเวลาการเข้าระบบด้วย LINE กรุณาลองใหม่อีกครั้ง",
+  line_exchange: "เชื่อมต่อ LINE ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+  account_resigned: "บัญชีนี้ถูกปิดเนื่องจากครบกำหนดวันลาออกแล้ว กรุณาติดต่อแอดมิน",
+  account_disabled: "บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อแอดมิน",
+  account_pending_invite: "บัญชียังไม่ได้ตั้งค่าครั้งแรก กรุณากดลิงก์เชิญที่แอดมินส่งให้ก่อน"
+};
 
 // Login page (2026-05-31 v3 — minimal owl + brand only).
 //
@@ -44,7 +58,11 @@ export default function LoginPage({
               footprint single instead of stacking "title card" +
               "form card" which read as two separate ideas. */}
           <div className="pt-3 text-left">
-            <LoginForm next={searchParams.next} error={searchParams.error} />
+            <LoginForm
+              next={searchParams.next}
+              error={searchParams.error ? (ERROR_MESSAGES[searchParams.error] ?? searchParams.error) : undefined}
+              lineLoginEnabled={lineLoginConfigured()}
+            />
           </div>
         </div>
 
