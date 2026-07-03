@@ -8,9 +8,9 @@ const Body = z.object({
   branch_id: z.number().int().positive().nullable().optional(),
   company_id: z.number().int().positive().nullable().optional(),
   income_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  channel: z.string().trim().max(60).nullable().optional(),
+  channel: z.string().trim().max(200).nullable().optional(),  // channel-master bank-account names can be long
   amount: z.number().min(0).max(1e9),
-  note: z.string().trim().max(300).nullable().optional(),
+  note: z.string().trim().max(500).nullable().optional(),
   is_vat: z.boolean().optional(),
   is_revenue: z.boolean().optional()
 });
