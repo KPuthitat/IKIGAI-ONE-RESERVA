@@ -838,7 +838,7 @@ function DayDetail({
 export default function LedgerDashboardClient({
   dash, expenses, period, anchor, monthly, trendYear, payables, cashAccounts, cashTotal,
   branchId, companyId, branchName, incomeChannels, expenseCategories, draftExpenses, expenseVendors,
-  paymentMethods, payCycleWeekday
+  paymentMethods, materialQuota, payCycleWeekday
 }: {
   dash: Dash; expenses: LedgerExpenseRow[]; period: LedgerPeriod; anchor: string;
   monthly: MonthlyRow[]; trendYear: number; payables: Payables;
@@ -849,6 +849,12 @@ export default function LedgerDashboardClient({
   draftExpenses: DraftLite[];
   expenseVendors: VendorOpt[];
   paymentMethods: Array<{ id: number; name: string }>;
+  // Material-purchase quota for today — mirrors the shift-close card. null when
+  // the branch has the feature off.
+  materialQuota: {
+    weekdayLabel: string; monthBudget: number; spentThisMonth: number;
+    remainingBudget: number; otherDaysLeft: number; todayIsPurchaseDay: boolean; quotaToday: number;
+  } | null;
   payCycleWeekday: number;
 }) {
   const { confirm, ConfirmDialog } = useConfirm();
@@ -1027,6 +1033,42 @@ export default function LedgerDashboardClient({
           <button type="button" onClick={() => openAdd("expense")} className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ เพิ่มรายจ่าย</button>
         </div>
       </div>
+
+      {/* Material-purchase quota — the same figures shown in the shift-close
+          report, read-only here so admins see the day's ordering budget without
+          opening a shift (owner 2026-07-03). Hidden when the branch has the
+          feature off. */}
+      {materialQuota && (
+        <div className="card">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h2 className="font-bold text-slate-800">โควตาสั่งซื้อวัตถุดิบวันนี้</h2>
+            <span className="text-[11px] text-slate-400">ตัวเลขเดียวกับที่แสดงในรายงานปิดกะ</span>
+          </div>
+          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+            <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2">
+              <div className="text-[11px] text-slate-500">โควตาวันนี้{materialQuota.todayIsPurchaseDay ? ` · วัน${materialQuota.weekdayLabel}` : ""}</div>
+              <div className="text-xl font-bold text-emerald-700">฿{fmtMoney(materialQuota.quotaToday)}</div>
+            </div>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">งบเดือนนี้</div>
+              <div className="text-lg font-bold text-slate-700">฿{fmtMoney(materialQuota.monthBudget)}</div>
+            </div>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">ซื้อวัตถุดิบไปแล้ว</div>
+              <div className="text-lg font-bold text-rose-600">฿{fmtMoney(materialQuota.spentThisMonth)}</div>
+            </div>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">เหลือทั้งเดือน</div>
+              <div className="text-lg font-bold text-slate-800">฿{fmtMoney(materialQuota.remainingBudget)}</div>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1">
+            {materialQuota.todayIsPurchaseDay
+              ? "วันสั่งหลัก = งบเดือน ÷ 30"
+              : `วันปกติ = เฉลี่ยงบที่เหลือจากอีก ${materialQuota.otherDaysLeft} วัน`}
+          </p>
+        </div>
+      )}
 
       {/* Range nav — month shows a big number + small month/year (owner 2026-06-23) */}
       <div className="flex items-center justify-center gap-5">

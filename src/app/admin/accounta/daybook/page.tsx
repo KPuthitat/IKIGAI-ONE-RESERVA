@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, listVendors, listPaymentMethods, type LedgerPeriod } from "@/lib/accounta-db";
+import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, listVendors, listPaymentMethods, materialPurchaseQuota, type LedgerPeriod } from "@/lib/accounta-db";
 import LedgerDashboardClient, { type LedgerExpenseRow } from "./LedgerDashboardClient";
 
 export const dynamic = "force-dynamic";
@@ -71,6 +71,11 @@ export default function DaybookPage({
     payment_method: e.payment_method, paid_date: e.paid_date, branch_id: e.branch_id, company_id: e.company_id
   }));
   const paymentMethods = listPaymentMethods();
+  // Material-purchase quota for TODAY (owner 2026-07-03) — the same number that
+  // shows in the shift-close report, surfaced here so admins see the day's
+  // ordering budget without opening a shift. null when the branch has the
+  // quota feature off.
+  const materialQuota = materialPurchaseQuota(branchId, todayBkk());
 
   return (
     <div className="space-y-4">
@@ -93,6 +98,7 @@ export default function DaybookPage({
         incomeChannels={incomeChannels} expenseCategories={expenseCategories}
         draftExpenses={draftExpenses} expenseVendors={expenseVendors}
         paymentMethods={paymentMethods}
+        materialQuota={materialQuota}
         payCycleWeekday={payCycleWeekday} />
     </div>
   );
