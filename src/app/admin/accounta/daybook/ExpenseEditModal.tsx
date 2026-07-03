@@ -4,7 +4,7 @@ import { useState } from "react";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney, grpMoney, parseMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
-import { splitVat, round2, CAPEX_CATEGORY_CODE } from "@/lib/accounta";
+import { splitVat, round2, CAPEX_CATEGORY_CODE, DOC_TYPES, docTypeLabel } from "@/lib/accounta";
 import { STARTUP_CATEGORIES, STARTUP_CATEGORY_LABEL } from "@/lib/feasibility";
 import Select from "@/app/components/Select";
 
@@ -48,9 +48,15 @@ export default function ExpenseEditModal({
     expense.capex_bucket && (STARTUP_CATEGORIES as readonly string[]).includes(expense.capex_bucket) ? expense.capex_bucket : ""
   );
   const [description, setDescription] = useState(expense.description ?? "");
+  // Only keep a doc_type the dropdown can represent (legacy/imported rows may
+  // carry a non-standard value that z.enum would reject) — mirrors the รายจ่าย page.
+  const [docType, setDocType] = useState(
+    expense.doc_type && (DOC_TYPES as readonly string[]).includes(expense.doc_type) ? expense.doc_type : ""
+  );
   const [billDate, setBillDate] = useState(expense.bill_date);
   const [amount, setAmount] = useState(isCreate ? "" : grpMoney(String(expense.amount_total)));
   const [hasVat, setHasVat] = useState(expense.has_tax_invoice);
+  const [vatOverride, setVatOverride] = useState("");
   const [status, setStatus] = useState<"paid" | "unpaid">(expense.payment_status);
   const [method, setMethod] = useState(expense.payment_method ?? (paymentMethods[0]?.name ?? ""));
   const [paidDate, setPaidDate] = useState(expense.paid_date ?? expense.bill_date);
@@ -61,7 +67,9 @@ export default function ExpenseEditModal({
 
   const isCapex = categories.find((c) => c.name === category)?.code === CAPEX_CATEGORY_CODE;
   const total = parseMoney(amount) || 0;
-  const vat = hasVat ? splitVat(round2(total), true).vat : 0;
+  const vat = vatOverride.trim() !== ""
+    ? round2(Number(vatOverride) || 0)
+    : (hasVat ? splitVat(round2(total), true).vat : 0);
 
   async function save() {
     if (!Number.isFinite(total) || total <= 0) { setErr("กรอกยอดเงินให้ถูกต้อง"); return; }
@@ -72,7 +80,7 @@ export default function ExpenseEditModal({
       const body = {
         branch_id: expense.branch_id, company_id: expense.company_id,
         bill_date: billDate, vendor_name: vendor.trim() || null,
-        doc_type: expense.doc_type, category: category || null,
+        doc_type: docType || null, category: category || null,
         capex_bucket: isCapex ? (capexBucket || null) : null,
         description: description.trim() || null, amount_total: round2(total),
         has_tax_invoice: hasVat, vat_amount: vat,
@@ -115,6 +123,12 @@ export default function ExpenseEditModal({
               options={categories.map((c) => ({ value: c.name, label: c.code ? `${c.code} · ${c.name}` : c.name }))} />
           </div>
 
+          <div className="sm:col-span-2">
+            <label className="label !text-xs">ประเภทเอกสาร</label>
+            <Select value={docType} onChange={setDocType} placeholder="— ไม่ระบุ —"
+              options={DOC_TYPES.map((dt) => ({ value: dt, label: docTypeLabel(dt) ?? dt }))} />
+          </div>
+
           {isCapex && (
             <div className="sm:col-span-2">
               <label className="label !text-xs">หมวดลงทุน (สำหรับ FEASIBILITY)</label>
@@ -142,7 +156,14 @@ export default function ExpenseEditModal({
             <input type="checkbox" checked={hasVat} onChange={(e) => setHasVat(e.target.checked)} />
             มีใบกำกับภาษีเต็มรูป (แยก VAT 7%)
           </label>
-          {hasVat && <div className="sm:col-span-2 text-[11px] text-slate-400 -mt-2">ฐานภาษี ฿{fmtMoney(round2(total - vat))} · ภาษีซื้อ ฿{fmtMoney(vat)}</div>}
+          {hasVat && (
+            <div className="sm:col-span-2 text-[11px] text-slate-400 -mt-2 flex items-center gap-2 flex-wrap">
+              <span>ฐานภาษี ฿{fmtMoney(round2(total - vat))} · ภาษีซื้อ <span className="text-brand font-semibold">฿{fmtMoney(vat)}</span></span>
+              <input type="number" inputMode="decimal" className="input !inline-block !w-24 !py-1"
+                value={vatOverride} onChange={(e) => setVatOverride(e.target.value)}
+                placeholder="แก้ VAT" title="กรอกถ้าต้องการกำหนด VAT เอง (เว้นว่าง = คำนวณ 7%)" />
+            </div>
+          )}
 
           <div>
             <label className="label !text-xs">สถานะ</label>
