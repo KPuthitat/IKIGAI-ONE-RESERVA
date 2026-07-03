@@ -123,6 +123,7 @@ function blankForm(defaultMethod = ""): FormState {
 
 export default function ExpensesClient(props: {
   month: string;
+  activeBranchId: number | null;
   branches: Array<Ref & { company_id: number | null }>;
   companies: Ref[];
   vendors: Vendor[];
@@ -139,9 +140,16 @@ export default function ExpensesClient(props: {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
+  // Branch-locked to the active branch (owner 2026-07-03) — the in-page branch
+  // filter is gone; switch branch via the top pill like the daybook.
+  const activeBranch = props.branches.find((b) => b.id === props.activeBranchId) ?? null;
+  const activeCompanyId = activeBranch?.company_id ?? null;
+  const activeCompanyName = activeCompanyId != null
+    ? (props.companies.find((c) => c.id === activeCompanyId)?.name ?? null) : null;
+
   const [month, setMonth] = useState(props.month);
-  const [branchId, setBranchId] = useState<string>("");
-  const [companyId, setCompanyId] = useState<string>("");
+  const [branchId] = useState<string>(props.activeBranchId != null ? String(props.activeBranchId) : "");
+  const [companyId] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<"" | PaymentStatus>("");
   const [expenses, setExpenses] = useState<Expense[]>(props.initialExpenses);
   const [summary, setSummary] = useState<Summary>(props.initialSummary);
@@ -245,7 +253,13 @@ export default function ExpensesClient(props: {
   }
 
   function openAdd() {
-    setForm(blankForm(methods[0]?.name ?? ""));
+    const f = blankForm(methods[0]?.name ?? "");
+    // Lock new rows to the active branch (branch-locked page).
+    if (props.activeBranchId != null) {
+      f.branch_id = String(props.activeBranchId);
+      if (activeCompanyId != null) f.company_id = String(activeCompanyId);
+    }
+    setForm(f);
     setStagedFile(null);
     setScanMsg(null); setMixedSplit(null);
     setNewCat(null); setNewMethod(null);
@@ -261,8 +275,12 @@ export default function ExpensesClient(props: {
     setEditingHasDoc(!!e.has_doc);
     setForm({
       id: e.id,
-      branch_id: e.branch_id != null ? String(e.branch_id) : "",
-      company_id: e.company_id != null ? String(e.company_id) : "",
+      // Branch-locked: keep the row on the active branch (also assigns a
+      // still-unassigned LINE draft to the current branch on confirm).
+      branch_id: props.activeBranchId != null ? String(props.activeBranchId)
+        : (e.branch_id != null ? String(e.branch_id) : ""),
+      company_id: props.activeBranchId != null && activeCompanyId != null ? String(activeCompanyId)
+        : (e.company_id != null ? String(e.company_id) : ""),
       bill_date: e.bill_date,
       vendor_name: e.vendor_name ?? "",
       // Only keep a doc_type the dropdown can actually represent — legacy/imported
@@ -606,16 +624,11 @@ export default function ExpensesClient(props: {
         </button>
         <input type="month" className="input !w-auto" value={month}
           onChange={(e) => { setMonth(e.target.value); reload({ month: e.target.value }); }} />
-        <select className="input !w-auto" value={companyId}
-          onChange={(e) => { setCompanyId(e.target.value); reload({ company: e.target.value }); }}>
-          <option value="">ทุกบริษัท</option>
-          {props.companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select className="input !w-auto" value={branchId}
-          onChange={(e) => { setBranchId(e.target.value); reload({ branch: e.target.value }); }}>
-          <option value="">ทุกสาขา</option>
-          {props.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-        </select>
+        {activeBranch && (
+          <span className="text-sm text-slate-500 px-2 py-1.5 rounded-md bg-slate-50 border border-slate-200">
+            สาขา: <b className="text-slate-700">{activeBranch.name}</b>
+          </span>
+        )}
         <select className="input !w-auto" value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as "" | PaymentStatus)}>
           <option value="">ทุกสถานะ</option>
@@ -1007,37 +1020,14 @@ export default function ExpensesClient(props: {
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Company first, then branch filtered to that company (owner
-                  2026-06-18). Picking a branch also auto-fills its company. */}
-              <div>
-                <label className="label !text-xs">บริษัท (สำหรับภาษี)</label>
-                <select className="input" value={form.company_id}
-                  onChange={(e) => {
-                    const cid = e.target.value;
-                    set("company_id", cid);
-                    if (cid && form.branch_id) {
-                      const b = props.branches.find((x) => String(x.id) === form.branch_id);
-                      if (b && String(b.company_id ?? "") !== cid) set("branch_id", "");
-                    }
-                  }}>
-                  <option value="">— ไม่ระบุ —</option>
-                  {props.companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="label !text-xs">สาขา</label>
-                <select className="input" value={form.branch_id}
-                  onChange={(e) => {
-                    const bid = e.target.value;
-                    set("branch_id", bid);
-                    const b = props.branches.find((x) => String(x.id) === bid);
-                    if (b && b.company_id != null) set("company_id", String(b.company_id));
-                  }}>
-                  <option value="">— ไม่ระบุ —</option>
-                  {props.branches
-                    .filter((b) => !form.company_id || String(b.company_id ?? "") === form.company_id)
-                    .map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
+              {/* Branch-locked to the active branch (owner 2026-07-03) — no
+                  cross-branch picker; switch branch via the top pill. */}
+              <div className="sm:col-span-2">
+                <label className="label !text-xs">บริษัท · สาขา</label>
+                <div className="input !bg-slate-50 !text-slate-600 flex items-center gap-2">
+                  <span>{activeCompanyName ? `${activeCompanyName} · ` : ""}{activeBranch?.name ?? "— เลือกสาขาที่มุมบนซ้าย —"}</span>
+                  <span className="text-[11px] text-slate-400">(ตามสาขาที่เปิดอยู่)</span>
+                </div>
               </div>
               <div>
                 <label className="label !text-xs">วันที่เอกสาร</label>

@@ -233,16 +233,13 @@ export default function IncomeClient(props: {
         <button type="button" onClick={openAdd} disabled={busy} className="btn-secondary disabled:opacity-50">+ เพิ่มด่วนที่นี่</button>
         <input type="month" className="input !w-auto" value={month}
           onChange={(e) => { setMonth(e.target.value); reload({ month: e.target.value }); }} />
-        <select className="input !w-auto" value={companyId}
-          onChange={(e) => { setCompanyId(e.target.value); reload({ company: e.target.value }); }}>
-          <option value="">ทุกบริษัท</option>
-          {props.companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select className="input !w-auto" value={branchId}
-          onChange={(e) => { setBranchId(e.target.value); reload({ branch: e.target.value }); }}>
-          <option value="">ทุกสาขา</option>
-          {props.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-        </select>
+        {/* Branch-locked to the active branch (owner 2026-07-03) — switch via
+            the top pill, like the daybook. */}
+        {props.activeBranchId != null && (
+          <span className="text-sm text-slate-500 px-2 py-1.5 rounded-md bg-slate-50 border border-slate-200">
+            สาขา: <b className="text-slate-700">{props.branches.find((b) => b.id === props.activeBranchId)?.name ?? "—"}</b>
+          </span>
+        )}
         <span className="ml-auto flex items-center gap-2">
           <button type="button" onClick={downloadTemplate} className="text-xs text-slate-500 hover:text-brand underline">
             เทมเพลต CSV
@@ -447,16 +444,10 @@ export default function IncomeClient(props: {
               </div>
               <div>
                 <label className="label !text-xs">สาขา</label>
-                {form.id == null ? (
-                  <div className="input bg-slate-50 text-slate-600 flex items-center">
-                    {props.branches.find((b) => String(b.id) === form.branch_id)?.name ?? "สาขาที่เปิดอยู่"}
-                  </div>
-                ) : (
-                  <select className="input" value={form.branch_id} onChange={(e) => set("branch_id", e.target.value)}>
-                    <option value="">— ไม่ระบุ —</option>
-                    {props.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
-                )}
+                <div className="input bg-slate-50 text-slate-600 flex items-center gap-2">
+                  <span>{props.branches.find((b) => String(b.id) === form.branch_id)?.name ?? "สาขาที่เปิดอยู่"}</span>
+                  <span className="text-[11px] text-slate-400">(ตามสาขาที่เปิดอยู่)</span>
+                </div>
               </div>
               <div>
                 <label className="label !text-xs">บริษัท</label>

@@ -57,16 +57,20 @@ export default function AccountaExpensesPage({ searchParams }: { searchParams: {
       </div>
       <ExpensesClient
         month={month}
+        activeBranchId={user.activeBranchId}
         branches={listBranches()}
         companies={listCompanies()}
         vendors={listVendors(user.activeBranchId ?? null)}
         categories={listCategories()}
         paymentMethods={listPaymentMethods()}
         expenseChannels={expenseChannels}
-        initialExpenses={listExpenses({ month })}
-        initialSummary={summarise(month)}
+        // Branch-locked to the active branch (owner 2026-07-03) — like the
+        // daybook. Switch branch via the top pill. Drafts stay global (review
+        // inbox, assigned to a branch on confirm).
+        initialExpenses={listExpenses({ month, branchId: user.activeBranchId })}
+        initialSummary={summarise(month, user.activeBranchId)}
         initialDrafts={listExpenses({ reviewStatus: "draft" })}
-        initialBudget={categoryBudget(month)}
+        initialBudget={categoryBudget(month, user.activeBranchId)}
         ocrAvailable={ocrAvailable}
         ocrUsage={ocrUsageStats(month)}
       />
