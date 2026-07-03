@@ -45,7 +45,7 @@ const TOOLS = [
   },
   {
     name: "expense_summary",
-    description: "สรุปรายจ่าย (ตามบิล/กระแสเงินสด/ภาษีซื้อ/ค้างชำระ) ของเดือนหนึ่ง แยกตามหมวดหรือผู้ค้าได้",
+    description: "สรุปรายจ่าย (ตามบิล/กระแสเงินสด/ภาษีซื้อ/ค้างชำระ) ของเดือนหนึ่ง แยกตามหมวดหรือผู้จำหน่ายได้",
     input_schema: {
       type: "object",
       properties: {
@@ -53,7 +53,7 @@ const TOOLS = [
         branch_name: { type: "string", description: "ชื่อสาขา (เว้นว่าง = ทุกสาขา)" },
         company_name: { type: "string", description: "ชื่อบริษัท (เว้นว่าง = ทุกบริษัท)" },
         by_category: { type: "boolean", description: "แยกยอดตามหมวด" },
-        by_vendor: { type: "boolean", description: "10 ผู้ค้าที่จ่ายมากสุด" }
+        by_vendor: { type: "boolean", description: "10 ผู้จำหน่ายที่จ่ายมากสุด" }
       },
       additionalProperties: false
     }

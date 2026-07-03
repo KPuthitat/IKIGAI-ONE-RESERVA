@@ -855,7 +855,7 @@ export default function ExpensesClient(props: {
             <thead>
               <tr className="text-left text-[11px] text-slate-400 border-b border-slate-100">
                 <th className="px-3 py-2">สาขา</th>
-                <th className="px-3 py-2">ผู้ค้า / รายการ</th>
+                <th className="px-3 py-2">ผู้จำหน่าย / รายการ</th>
                 <th className="px-3 py-2">หมวด</th>
                 <th className="px-3 py-2 text-right">ยอดรวม</th>
                 <th className="px-3 py-2 text-right">ภาษีซื้อ</th>
@@ -997,7 +997,7 @@ export default function ExpensesClient(props: {
                   มี VAT ฿{fmtMoney(mixedSplit.vatable)} (ภาษีซื้อ ฿{fmtMoney(mixedSplit.vat)}) · ไม่มี VAT ฿{fmtMoney(mixedSplit.nonvat)}
                 </div>
                 <p className="text-[11px] text-amber-800/80">
-                  แยกเป็น 2 รายการให้คิดภาษีซื้อเฉพาะส่วนที่มี VAT — ใช้สาขา/บริษัท/ผู้ค้า/หมวด ตามที่กรอกด้านล่าง (แก้หมวดของแต่ละแถวได้ภายหลัง)
+                  แยกเป็น 2 รายการให้คิดภาษีซื้อเฉพาะส่วนที่มี VAT — ใช้สาขา/บริษัท/ผู้จำหน่าย/หมวด ตามที่กรอกด้านล่าง (แก้หมวดของแต่ละแถวได้ภายหลัง)
                 </p>
                 <button type="button" onClick={splitSave} disabled={busy}
                   className="btn-primary !py-1.5 text-xs disabled:opacity-50">
@@ -1087,7 +1087,7 @@ export default function ExpensesClient(props: {
                 </div>
               )}
               <div className="sm:col-span-2">
-                <label className="label !text-xs">ผู้ค้า / ผู้รับเงิน</label>
+                <label className="label !text-xs">ผู้จำหน่าย / ผู้รับเงิน</label>
                 <Combobox value={form.vendor_name} onChange={(v) => set("vendor_name", v)}
                   options={vendors.map((v) => v.name)} placeholder="พิมพ์ชื่อ หรือเลือกจากรายการ" />
               </div>
@@ -1217,7 +1217,7 @@ export default function ExpensesClient(props: {
               <div className="flex items-center gap-3 text-xs text-slate-500">
                 <label className="flex items-center gap-1">
                   <input type="checkbox" checked={form.rememberVendor} onChange={(e) => set("rememberVendor", e.target.checked)} />
-                  จำผู้ค้านี้
+                  จำผู้จำหน่ายนี้
                 </label>
                 <button type="button" onClick={() => fileRef.current?.click()} className="hover:text-brand">
                   {stagedFile ? `แนบเอกสาร: ${stagedFile.name.slice(0, 20)}` : "แนบรูปเอกสาร"}

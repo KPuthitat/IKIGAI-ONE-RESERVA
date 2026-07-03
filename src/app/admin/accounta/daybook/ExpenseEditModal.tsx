@@ -125,7 +125,7 @@ export default function ExpenseEditModal({
 
           <div className="sm:col-span-2">
             <label className="label !text-xs">ผู้จำหน่าย / ผู้รับเงิน</label>
-            <input className="input" list="exp-edit-vendors" value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="ชื่อผู้ค้า" />
+            <input className="input" list="exp-edit-vendors" value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="ชื่อผู้จำหน่าย" />
             <datalist id="exp-edit-vendors">{vendors.map((v) => <option key={v.name} value={v.name} />)}</datalist>
           </div>
 

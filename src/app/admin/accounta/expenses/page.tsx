@@ -47,7 +47,7 @@ export default function AccountaExpensesPage({ searchParams }: { searchParams: {
       <div>
         <h1 className="text-2xl font-bold text-slate-800">รายจ่าย · ตรวจ/แก้ไข</h1>
         <p className="text-sm text-slate-500 mt-1">
-          ดู/แก้ไขเอกสารผู้ค้าที่ลงไว้ แยกตามเดือน → วัน · ภาษีซื้อเรียลไทม์ · เพิ่มรายการใหม่สะดวกกว่าที่{" "}
+          ดู/แก้ไขเอกสารผู้จำหน่ายที่ลงไว้ แยกตามเดือน → วัน · ภาษีซื้อเรียลไทม์ · เพิ่มรายการใหม่สะดวกกว่าที่{" "}
           <Link href="/admin/accounta/daybook" className="text-brand hover:underline">บัญชีรายวัน</Link>
         </p>
         <p className="text-[11px] text-slate-400 mt-1 bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 inline-block">
