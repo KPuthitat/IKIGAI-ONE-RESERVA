@@ -382,6 +382,10 @@ function DayDetail({
   const [expDueDate, setExpDueDate] = useState("");
   const [expAdding, setExpAdding] = useState(false);
   const [expErr, setExpErr] = useState<string | null>(null);
+  // Add-rows are hidden until the user taps "+ เพิ่ม" (owner 2026-07-03) — press
+  // add first, then fill; don't show a pre-filled form to edit later.
+  const [showIncAdd, setShowIncAdd] = useState(false);
+  const [showExpAdd, setShowExpAdd] = useState(false);
   const [pinRow, setPinRow] = useState<IncomeDayRow | null>(null); // auto row pending PIN-delete
   const [draftPickerOpen, setDraftPickerOpen] = useState(false);
   const [fromDraft, setFromDraft] = useState<DraftLite | null>(null); // pulling a scanned draft
@@ -623,24 +627,35 @@ function DayDetail({
                   </tr>
                 );
               })}
-              {/* add a manual channel row */}
-              <tr className="bg-slate-50/60">
-                <td className="py-1 px-2">
-                  <Select value={usedChannels.has(addChannel) ? "" : addChannel} onChange={setAddChannel}
-                    buttonClassName="!py-1" placeholder="— เลือกช่องทาง —"
-                    options={availableChannels.map((c) => ({ value: c.name, label: c.name }))} />
-                </td>
-                <td className="py-1 px-2 text-right">
-                  <input type="text" inputMode="decimal" value={addAmt} placeholder="0.00"
-                    onChange={(e) => setAddAmt(grpMoney(e.target.value))}
-                    onKeyDown={(e) => { if (e.key === "Enter") add(); }}
-                    className="input !w-28 !py-1 text-right font-mono" />
-                </td>
-                <td className="py-1 px-2 text-right">
-                  <button type="button" onClick={add} disabled={adding || !addAmt}
-                    className="text-[11px] text-brand hover:underline disabled:opacity-40">+ เพิ่ม</button>
-                </td>
-              </tr>
+              {/* add a manual channel row — hidden until "+ เพิ่มรายรับ" tapped */}
+              {!showIncAdd ? (
+                <tr className="bg-slate-50/60">
+                  <td colSpan={3} className="py-1.5 px-2">
+                    <button type="button" onClick={() => setShowIncAdd(true)}
+                      className="text-[11px] text-emerald-700 hover:underline">+ เพิ่มรายรับ</button>
+                  </td>
+                </tr>
+              ) : (
+                <tr className="bg-slate-50/60">
+                  <td className="py-1 px-2">
+                    <Select value={usedChannels.has(addChannel) ? "" : addChannel} onChange={setAddChannel}
+                      buttonClassName="!py-1" placeholder="— เลือกช่องทาง —"
+                      options={availableChannels.map((c) => ({ value: c.name, label: c.name }))} />
+                  </td>
+                  <td className="py-1 px-2 text-right">
+                    <input type="text" inputMode="decimal" value={addAmt} placeholder="0.00"
+                      onChange={(e) => setAddAmt(grpMoney(e.target.value))}
+                      onKeyDown={(e) => { if (e.key === "Enter") add(); }}
+                      className="input !w-28 !py-1 text-right font-mono" />
+                  </td>
+                  <td className="py-1 px-2 text-right whitespace-nowrap">
+                    <button type="button" onClick={() => setShowIncAdd(false)}
+                      className="text-[11px] text-slate-400 hover:text-slate-600 mr-2">ยกเลิก</button>
+                    <button type="button" onClick={add} disabled={adding || !addAmt}
+                      className="text-[11px] text-brand hover:underline disabled:opacity-40">+ เพิ่ม</button>
+                  </td>
+                </tr>
+              )}
             </tbody>
             <tfoot><tr className="border-t border-slate-200 font-bold bg-slate-50">
               <td className="py-1 px-2 text-slate-700">รวมรายรับ</td>
@@ -713,7 +728,15 @@ function DayDetail({
                   })}
                 </Fragment>
               ))}
-              {/* quick-add an expense for this day */}
+              {/* quick-add an expense for this day — hidden until "+ เพิ่มรายจ่าย" tapped */}
+              {!showExpAdd ? (
+                <tr className="bg-slate-50/60 border-t border-slate-100">
+                  <td colSpan={3} className="px-2 py-2">
+                    <button type="button" onClick={() => setShowExpAdd(true)}
+                      className="text-[11px] text-rose-700 hover:underline">+ เพิ่มรายจ่าย</button>
+                  </td>
+                </tr>
+              ) : (
               <tr className="bg-slate-50/60 border-t border-slate-100">
                 <td colSpan={3} className="px-2 py-2">
                   {expErr && <p className="text-[11px] text-rose-600 mb-1">{expErr}</p>}
@@ -802,8 +825,13 @@ function DayDetail({
                       )}
                     </div>
                   )}
+                  <div className="mt-2 text-right">
+                    <button type="button" onClick={() => setShowExpAdd(false)}
+                      className="text-[11px] text-slate-400 hover:text-slate-600">ยกเลิก</button>
+                  </div>
                 </td>
               </tr>
+              )}
             </tbody>
             <tfoot><tr className="border-t border-slate-200 font-bold bg-slate-50">
               <td className="py-1 px-2 text-slate-700">รวมรายจ่าย</td>
