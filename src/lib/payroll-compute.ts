@@ -17,7 +17,8 @@
 //  FT-weekly:  pay = monthly_salary / number_of_pay_periods_in_month
 //  Break: auto-deduct based on shift length thresholds
 //  OT:    everything beyond 480 min (8 hr) per shift after break deduction
-//  SSO:   min(gross × rate, cap_for_period)  — cap pro-rated for weekly
+//  SSO:   min(base_salary × rate, cap_for_period)  — base only, excl OT/other;
+//         cap pro-rated for weekly (owner 2026-07-04)
 //  Tax:   Thai PIT progressive — annualized
 //
 // All amounts in THB. Time in minutes. Dates in Bangkok local.
@@ -449,15 +450,19 @@ export function computeOtPay(
 /**
  * SSO is a monthly concept (cap 875/month per current Thai SSO ceiling).
  * For weekly periods we pro-rate the cap by period length.
+ *
+ * IMPORTANT: the base is the WAGE / ฐานเงินเดือน only — NOT gross. OT, service
+ * charge and other compensation are excluded by Thai SSO rule (owner 2026-07-04).
+ * So callers pass base_pay, not gross_pay.
  */
 export function computeSso(
-  periodGross: number,
+  ssoBase: number,
   cycle: "weekly" | "monthly",
   settings: PayrollSettings
 ): number {
-  if (periodGross <= 0) return 0;
+  if (ssoBase <= 0) return 0;
   const cap = cycle === "weekly" ? settings.sso_cap / 4 : settings.sso_cap;
-  const raw = periodGross * settings.sso_rate;
+  const raw = ssoBase * settings.sso_rate;
   return Math.min(raw, cap);
 }
 
@@ -714,7 +719,7 @@ export function computeLineForEmployee(args: {
     if (taxMode === "wht") {
       taxAmount = computeWht(grossPay, settings);
     } else {
-      ssoAmount = computeSso(grossPay, cycle, settings);
+      ssoAmount = computeSso(basePay, cycle, settings); // SSO on base salary only
     }
   }
 
@@ -846,7 +851,7 @@ export function computeLineFromMinutes(args: {
     if (taxMode === "wht") {
       taxAmount = computeWht(grossPay, settings);
     } else {
-      ssoAmount = computeSso(grossPay, cycle, settings);
+      ssoAmount = computeSso(basePay, cycle, settings); // SSO on base salary only
     }
   }
 
@@ -1416,7 +1421,7 @@ export function recomputeLine(
   let tax = 0;
   if (gross > 0) {
     if (taxMode === "wht") tax = computeWht(gross, settings);
-    else sso = computeSso(gross, period.cycle, settings);
+    else sso = computeSso(computed.base_pay, period.cycle, settings); // SSO on base salary only
   }
   const net = gross - sso - tax - ded;
 
