@@ -1024,9 +1024,8 @@ export default function ExpensesClient(props: {
                   cross-branch picker; switch branch via the top pill. */}
               <div className="sm:col-span-2">
                 <label className="label !text-xs">บริษัท · สาขา</label>
-                <div className="input !bg-slate-50 !text-slate-600 flex items-center gap-2">
+                <div className="input !bg-slate-50 !text-slate-600 flex items-center">
                   <span>{activeCompanyName ? `${activeCompanyName} · ` : ""}{activeBranch?.name ?? "— เลือกสาขาที่มุมบนซ้าย —"}</span>
-                  <span className="text-[11px] text-slate-400">(ตามสาขาที่เปิดอยู่)</span>
                 </div>
               </div>
               <div>
@@ -1106,7 +1105,7 @@ export default function ExpensesClient(props: {
                 {form.has_tax_invoice && (
                   <input type="number" inputMode="decimal" className="input !inline-block !w-28 !py-1 ml-2 align-middle"
                     value={form.vat_override} onChange={(e) => set("vat_override", e.target.value)}
-                    placeholder="แก้ VAT" title="กรอกถ้าต้องการกำหนด VAT เอง (เว้นว่าง = คำนวณ 7%)" />
+                    placeholder="แก้ไขจำนวนภาษีมูลค่าเพิ่ม" title="กรอกถ้าต้องการกำหนด VAT เอง (เว้นว่าง = คำนวณ 7%)" />
                 )}
               </div>
             )}
@@ -1207,7 +1206,7 @@ export default function ExpensesClient(props: {
               <div className="flex items-center gap-3 text-xs text-slate-500">
                 <label className="flex items-center gap-1">
                   <input type="checkbox" checked={form.rememberVendor} onChange={(e) => set("rememberVendor", e.target.checked)} />
-                  จำผู้จำหน่ายนี้
+                  บันทึกผู้จำหน่ายนี้
                 </label>
                 <button type="button" onClick={() => fileRef.current?.click()} className="hover:text-brand">
                   {stagedFile ? `แนบเอกสาร: ${stagedFile.name.slice(0, 20)}` : "แนบรูปเอกสาร"}

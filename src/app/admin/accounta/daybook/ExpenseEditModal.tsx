@@ -161,7 +161,7 @@ export default function ExpenseEditModal({
               <span>ฐานภาษี ฿{fmtMoney(round2(total - vat))} · ภาษีซื้อ <span className="text-brand font-semibold">฿{fmtMoney(vat)}</span></span>
               <input type="number" inputMode="decimal" className="input !inline-block !w-40 !py-1"
                 value={vatOverride} onChange={(e) => setVatOverride(e.target.value)}
-                placeholder="ระบุยอดภาษีมูลค่าเพิ่มเอง" title="กรอกถ้าต้องการกำหนด VAT เอง (เว้นว่าง = คำนวณ 7%)" />
+                placeholder="แก้ไขจำนวนภาษีมูลค่าเพิ่ม" title="กรอกถ้าต้องการกำหนด VAT เอง (เว้นว่าง = คำนวณ 7%)" />
             </div>
           )}
 
@@ -171,7 +171,7 @@ export default function ExpenseEditModal({
               options={[{ value: "paid", label: "ชำระแล้ว" }, { value: "unpaid", label: "ค้างชำระ (เครดิตเทอม)" }]} />
           </div>
           {status === "paid" ? (
-            <div>
+            <div className="sm:col-span-2">
               <label className="label !text-xs">จ่ายโดย</label>
               <Select value={method} onChange={setMethod} placeholder="— เลือก —"
                 options={[

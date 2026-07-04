@@ -444,9 +444,8 @@ export default function IncomeClient(props: {
               </div>
               <div>
                 <label className="label !text-xs">สาขา</label>
-                <div className="input bg-slate-50 text-slate-600 flex items-center gap-2">
+                <div className="input bg-slate-50 text-slate-600 flex items-center">
                   <span>{props.branches.find((b) => String(b.id) === form.branch_id)?.name ?? "สาขาที่เปิดอยู่"}</span>
-                  <span className="text-[11px] text-slate-400">(ตามสาขาที่เปิดอยู่)</span>
                 </div>
               </div>
               <div>

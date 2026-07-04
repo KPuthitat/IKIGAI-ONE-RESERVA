@@ -340,7 +340,8 @@ function Donut({ items }: { items: Array<{ label: string; amount: number }> }) {
 // daily close report and stays read-only here (edit it at ยอดขายรายวัน).
 function DayDetail({
   date, rows, loading, err, expenses, channels, categories, branchId, companyId, billCount,
-  draftExpenses, expenseVendors, payCycleWeekday, onChanged, removeExpense, onEditExpense, onEditIncome, busyExpenseId
+  draftExpenses, expenseVendors, payCycleWeekday, onChanged, removeExpense, onEditExpense, onEditIncome,
+  onAddExpense, onAddIncome, busyExpenseId
 }: {
   date: string;
   rows: IncomeDayRow[] | undefined;
@@ -359,6 +360,8 @@ function DayDetail({
   removeExpense: (e: LedgerExpenseRow) => void;
   onEditExpense: (e: LedgerExpenseRow) => void;
   onEditIncome: (r: IncomeDayRow) => void;
+  onAddExpense: () => void;
+  onAddIncome: () => void;
   busyExpenseId: number | null;
 }) {
   const { confirm, ConfirmDialog } = useConfirm();
@@ -627,35 +630,15 @@ function DayDetail({
                   </tr>
                 );
               })}
-              {/* add a manual channel row — hidden until "+ เพิ่มรายรับ" tapped */}
-              {!showIncAdd ? (
-                <tr className="bg-slate-50/60">
-                  <td colSpan={3} className="py-1.5 px-2">
-                    <button type="button" onClick={() => setShowIncAdd(true)}
-                      className="text-[11px] text-emerald-700 hover:underline">+ เพิ่มรายรับ</button>
-                  </td>
-                </tr>
-              ) : (
-                <tr className="bg-slate-50/60">
-                  <td className="py-1 px-2">
-                    <Select value={usedChannels.has(addChannel) ? "" : addChannel} onChange={setAddChannel}
-                      buttonClassName="!py-1" placeholder="— เลือกช่องทาง —"
-                      options={availableChannels.map((c) => ({ value: c.name, label: c.name }))} />
-                  </td>
-                  <td className="py-1 px-2 text-right">
-                    <input type="text" inputMode="decimal" value={addAmt} placeholder="0.00"
-                      onChange={(e) => setAddAmt(grpMoney(e.target.value))}
-                      onKeyDown={(e) => { if (e.key === "Enter") add(); }}
-                      className="input !w-28 !py-1 text-right font-mono" />
-                  </td>
-                  <td className="py-1 px-2 text-right whitespace-nowrap">
-                    <button type="button" onClick={() => setShowIncAdd(false)}
-                      className="text-[11px] text-slate-400 hover:text-slate-600 mr-2">ยกเลิก</button>
-                    <button type="button" onClick={add} disabled={adding || !addAmt}
-                      className="text-[11px] text-brand hover:underline disabled:opacity-40">+ เพิ่ม</button>
-                  </td>
-                </tr>
-              )}
+              {/* add รายรับ — opens the full popup form for this day */}
+              <tr className="bg-slate-50/60">
+                <td colSpan={3} className="py-2 px-2">
+                  <button type="button" onClick={onAddIncome}
+                    className="w-full sm:w-auto text-center rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700">
+                    + เพิ่มรายรับ
+                  </button>
+                </td>
+              </tr>
             </tbody>
             <tfoot><tr className="border-t border-slate-200 font-bold bg-slate-50">
               <td className="py-1 px-2 text-slate-700">รวมรายรับ</td>
@@ -732,8 +715,16 @@ function DayDetail({
               {!showExpAdd ? (
                 <tr className="bg-slate-50/60 border-t border-slate-100">
                   <td colSpan={3} className="px-2 py-2">
-                    <button type="button" onClick={() => setShowExpAdd(true)}
-                      className="text-[11px] text-rose-700 hover:underline">+ เพิ่มรายจ่าย</button>
+                    <button type="button" onClick={onAddExpense}
+                      className="w-full sm:w-auto text-center rounded-md bg-rose-600 text-white px-4 py-2 text-sm font-medium hover:bg-rose-700">
+                      + เพิ่มรายจ่าย
+                    </button>
+                    {draftExpenses.length > 0 && (
+                      <button type="button" onClick={() => setShowExpAdd(true)}
+                        className="block sm:inline-block mt-2 sm:mt-0 sm:ml-3 text-[11px] text-brand hover:underline">
+                        ดึงจากเอกสารรอลงบัญชี ({draftExpenses.length})
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -944,8 +935,8 @@ export default function LedgerDashboardClient({
   const [addExpense, setAddExpense] = useState<EditableExpense | null>(null);
   const [addIncome, setAddIncome] = useState<EditableIncome | null>(null);
 
-  function openAdd(mode: "income" | "expense") {
-    const d = selectedDate ?? bkkToday;
+  function openAdd(mode: "income" | "expense", date?: string) {
+    const d = date ?? selectedDate ?? bkkToday;
     if (mode === "income") {
       setAddIncome({
         id: 0, branch_id: branchId, company_id: companyId, income_date: d,
@@ -1419,6 +1410,8 @@ export default function LedgerDashboardClient({
                             removeExpense={remove}
                             onEditExpense={setEditExpense}
                             onEditIncome={setEditIncome}
+                            onAddExpense={() => openAdd("expense", r.date)}
+                            onAddIncome={() => openAdd("income", r.date)}
                             busyExpenseId={busyId}
                           />
                         </td>
