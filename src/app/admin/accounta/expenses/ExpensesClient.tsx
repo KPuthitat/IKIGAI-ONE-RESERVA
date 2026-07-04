@@ -1105,7 +1105,7 @@ export default function ExpensesClient(props: {
                 {form.has_tax_invoice && (
                   <input type="number" inputMode="decimal" className="input !inline-block !w-28 !py-1 ml-2 align-middle"
                     value={form.vat_override} onChange={(e) => set("vat_override", e.target.value)}
-                    placeholder="แก้ไขจำนวนภาษีมูลค่าเพิ่ม" title="กรอกถ้าต้องการกำหนด VAT เอง (เว้นว่าง = คำนวณ 7%)" />
+                    placeholder="แก้ไขจำนวน" title="กรอกถ้าต้องการกำหนดภาษีมูลค่าเพิ่มเอง (เว้นว่าง = คำนวณ 7%)" />
                 )}
               </div>
             )}

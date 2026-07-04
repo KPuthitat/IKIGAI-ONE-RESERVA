@@ -161,7 +161,7 @@ export default function ExpenseEditModal({
               <span>ฐานภาษี ฿{fmtMoney(round2(total - vat))} · ภาษีซื้อ <span className="text-brand font-semibold">฿{fmtMoney(vat)}</span></span>
               <input type="number" inputMode="decimal" className="input !inline-block !w-40 !py-1"
                 value={vatOverride} onChange={(e) => setVatOverride(e.target.value)}
-                placeholder="แก้ไขจำนวนภาษีมูลค่าเพิ่ม" title="กรอกถ้าต้องการกำหนด VAT เอง (เว้นว่าง = คำนวณ 7%)" />
+                placeholder="แก้ไขจำนวน" title="กรอกถ้าต้องการกำหนดภาษีมูลค่าเพิ่มเอง (เว้นว่าง = คำนวณ 7%)" />
             </div>
           )}
 
