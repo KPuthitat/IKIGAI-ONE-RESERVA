@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
-import { listRecurring, createRecurring } from "@/lib/accounta-db";
+import { listRecurring, createRecurring, postDueRecurringExpenses } from "@/lib/accounta-db";
 import { RecurringBody, toRecurringInput } from "@/lib/accounta-validate";
 
 export async function GET(req: Request) {
@@ -17,5 +17,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
   }
   const id = createRecurring(user.id, toRecurringInput(parsed.data));
-  return NextResponse.json({ ok: true, id });
+  // Post immediately if it's already due this month, so it shows in the ledger
+  // without waiting for the cron (owner 2026-07-04). Idempotent — the
+  // last_posted_month guard stops the cron double-posting later.
+  const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  const posted = postDueRecurringExpenses(today);
+  return NextResponse.json({ ok: true, id, posted });
 }
