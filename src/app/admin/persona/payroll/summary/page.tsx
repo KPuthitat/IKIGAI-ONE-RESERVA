@@ -185,6 +185,18 @@ export default function PayrollMonthlySummaryPage({
         </Link>
       </div>
 
+      {/* Export for downstream documents (ภ.ง.ด.1 / SSO / bank) — owner 2026-07-04 */}
+      {empRows.length > 0 && (
+        <div className="flex justify-end">
+          <a
+            href={`/api/admin/persona/payroll/summary/csv?m=${month}`}
+            className="text-sm px-4 py-2 rounded-lg border border-brand text-brand font-medium hover:bg-amber-50"
+          >
+            ⬇ ดาวน์โหลด CSV (ต่อพนักงาน)
+          </a>
+        </div>
+      )}
+
       {periods.length === 0 ? (
         <div className="card text-sm text-slate-500 py-8 text-center">
           {t(lang, "admin.persona.payroll.summary.empty")}
