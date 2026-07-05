@@ -2738,6 +2738,25 @@ function runMigrations(db: Database.Database): void {
       ON payroll_line_days(period_id, user_id);
   `);
 
+  // Itemised other-deductions on a payroll line (owner 2026-07-04) — e.g.
+  // กยศ., เงินกู้, ค่าปรับ. Each has a label + amount; their SUM is written back
+  // to payroll_lines.other_deductions so net stays consistent, and the
+  // breakdown is shown on the payslip/report. Keyed by (period_id, user_id) so
+  // they survive line recomputes.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payroll_line_deductions (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_id  INTEGER NOT NULL REFERENCES payroll_periods(id) ON DELETE CASCADE,
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      label      TEXT NOT NULL,
+      amount     REAL NOT NULL DEFAULT 0,
+      created_by INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_payroll_line_deductions_pu
+      ON payroll_line_deductions(period_id, user_id);
+  `);
+
   // 2026-06-03: per-day FIELD overrides on payroll_line_days. The admin
   // edits any wrong value in the daily breakdown directly (PIN + log) and
   // the typed value wins over the computed one. All nullable — null = use
