@@ -1492,14 +1492,14 @@ export type CashAccount = {
   sort_order: number; active: number; note: string | null;
   bank_name: string | null; account_type: string | null; account_name: string | null;
   account_no: string | null; account_branch: string | null; account_branch_no: string | null;
-  description: string | null; card_last4: string | null;
+  description: string | null; card_last4: string | null; settle_day: number | null;
   use_income: number; use_expense: number;
 };
 
 const CASH_ACCOUNT_COLS =
   `id, branch_id, name, type, bank_label, balance, balance_as_of, sort_order, active, note,
    bank_name, account_type, account_name, account_no, account_branch, account_branch_no,
-   description, card_last4, use_income, use_expense`;
+   description, card_last4, settle_day, use_income, use_expense`;
 
 /** Accounts visible to a branch = its own + company-wide (branch_id NULL). */
 export function listCashAccounts(branchId: number, includeInactive = false): CashAccount[] {
@@ -1555,7 +1555,7 @@ export type CashAccountFields = {
   balance?: number; balanceAsOf?: string | null; note?: string | null;
   bankName?: string | null; accountType?: string | null; accountName?: string | null;
   accountNo?: string | null; accountBranch?: string | null; accountBranchNo?: string | null;
-  description?: string | null; cardLast4?: string | null;
+  description?: string | null; cardLast4?: string | null; settleDay?: number | null;
   useIncome?: boolean; useExpense?: boolean;
 };
 
@@ -1568,14 +1568,15 @@ export function createCashAccount(d: CashAccountFields & { branchId: number | nu
     `INSERT INTO accounta_cash_accounts
        (branch_id, name, type, bank_label, balance, balance_as_of, sort_order, note, created_by,
         bank_name, account_type, account_name, account_no, account_branch, account_branch_no,
-        description, card_last4, use_income, use_expense)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        description, card_last4, settle_day, use_income, use_expense)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     d.branchId, d.name.trim(), normCashType(d.type), d.bankLabel ?? null,
     round2(d.balance ?? 0), d.balanceAsOf ?? null, max + 10, d.note ?? null, d.createdBy,
     d.bankName ?? null, d.accountType ?? null, d.accountName ?? null, d.accountNo ?? null,
     d.accountBranch ?? null, d.accountBranchNo ?? null, d.description ?? null,
     normCashType(d.type) === "credit_card" ? last4(d.cardLast4) : null,
+    normCashType(d.type) === "credit_card" ? (d.settleDay ?? null) : null,
     d.useIncome === false ? 0 : 1, d.useExpense === false ? 0 : 1
   ).lastInsertRowid);
 }
@@ -1604,6 +1605,7 @@ export function updateCashAccount(id: number, branchId: number, d: CashAccountFi
   if (d.accountBranchNo !== undefined) { sets.push("account_branch_no = ?"); vals.push(d.accountBranchNo); }
   if (d.description !== undefined) { sets.push("description = ?"); vals.push(d.description); }
   if (d.cardLast4 !== undefined) { sets.push("card_last4 = ?"); vals.push(last4(d.cardLast4)); }
+  if (d.settleDay !== undefined) { sets.push("settle_day = ?"); vals.push(d.settleDay ?? null); }
   if (d.useIncome !== undefined) { sets.push("use_income = ?"); vals.push(d.useIncome ? 1 : 0); }
   if (d.useExpense !== undefined) { sets.push("use_expense = ?"); vals.push(d.useExpense ? 1 : 0); }
   if (sets.length === 0) return false;

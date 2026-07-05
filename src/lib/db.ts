@@ -5676,6 +5676,7 @@ function runMigrations(db: Database.Database): void {
   addCashCol("account_branch_no", "account_branch_no TEXT"); // เลขที่สาขาธนาคาร
   addCashCol("description", "description TEXT");              // คำอธิบายช่องทาง
   addCashCol("card_last4", "card_last4 TEXT");               // บัตรเครดิตกรรมการ: 4 ตัวท้ายเท่านั้น
+  addCashCol("settle_day", "settle_day INTEGER");            // วันเตรียมโอน/ตัดรอบ (1-31) — full-pay paid_date defaults to this
   addCashCol("use_income", "use_income INTEGER NOT NULL DEFAULT 1");   // ใช้รับเงิน
   addCashCol("use_expense", "use_expense INTEGER NOT NULL DEFAULT 1"); // ใช้จ่ายเงิน
 

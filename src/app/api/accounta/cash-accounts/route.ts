@@ -26,6 +26,7 @@ const detail = {
   account_branch_no: z.string().trim().max(20).nullable().optional(),
   description: z.string().trim().max(300).nullable().optional(),
   card_last4: z.string().trim().regex(/^\d{0,4}$/).nullable().optional(),
+  settle_day: z.number().int().min(1).max(31).nullable().optional(),
   use_income: z.boolean().optional(),
   use_expense: z.boolean().optional()
 };
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
     note: d.note ?? null, createdBy: user.id,
     bankName: d.bank_name ?? null, accountType: d.account_type ?? null, accountName: d.account_name ?? null,
     accountNo: d.account_no ?? null, accountBranch: d.account_branch ?? null, accountBranchNo: d.account_branch_no ?? null,
-    description: d.description ?? null, cardLast4: d.card_last4 ?? null,
+    description: d.description ?? null, cardLast4: d.card_last4 ?? null, settleDay: d.settle_day ?? null,
     useIncome: d.use_income, useExpense: d.use_expense
   });
   return NextResponse.json({ ok: true, accounts: listCashAccounts(branchId, true) });
@@ -99,7 +100,7 @@ export async function PATCH(req: Request) {
     balance: rest.balance, balanceAsOf: rest.balance_as_of, active: rest.active, note: rest.note,
     bankName: rest.bank_name, accountType: rest.account_type, accountName: rest.account_name,
     accountNo: rest.account_no, accountBranch: rest.account_branch, accountBranchNo: rest.account_branch_no,
-    description: rest.description, cardLast4: rest.card_last4,
+    description: rest.description, cardLast4: rest.card_last4, settleDay: rest.settle_day,
     useIncome: rest.use_income, useExpense: rest.use_expense
   });
   if (!ok) return NextResponse.json({ error: "update_failed" }, { status: 400 });

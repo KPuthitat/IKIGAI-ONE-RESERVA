@@ -14,7 +14,7 @@ type Account = {
   sort_order: number; active: number; note: string | null;
   bank_name: string | null; account_type: string | null; account_name: string | null;
   account_no: string | null; account_branch: string | null; account_branch_no: string | null;
-  description: string | null; card_last4: string | null;
+  description: string | null; card_last4: string | null; settle_day: number | null;
   use_income: number; use_expense: number;
 };
 
@@ -36,14 +36,14 @@ type Draft = {
   name: string; type: AccType; bank_label: string; balance: string; balance_as_of: string;
   company_wide: boolean; note: string;
   bank_name: string; account_type: string; account_name: string; account_no: string;
-  account_branch: string; account_branch_no: string; description: string; card_last4: string;
+  account_branch: string; account_branch_no: string; description: string; card_last4: string; settle_day: string;
   use_income: boolean; use_expense: boolean;
 };
 const emptyDraft = (): Draft => ({
   name: "", type: "cash", bank_label: "", balance: "", balance_as_of: todayBkk(),
   company_wide: false, note: "",
   bank_name: "", account_type: "", account_name: "", account_no: "",
-  account_branch: "", account_branch_no: "", description: "", card_last4: "",
+  account_branch: "", account_branch_no: "", description: "", card_last4: "", settle_day: "",
   use_income: true, use_expense: true
 });
 
@@ -94,6 +94,7 @@ export default function CashAccountsClient({
       account_branch_no: isBank ? (d.account_branch_no.trim() || null) : null,
       description: d.description.trim() || null,
       card_last4: isCard ? (d.card_last4.replace(/\D/g, "").slice(-4) || null) : null,
+      settle_day: isCard && d.settle_day.trim() !== "" ? Number(d.settle_day) : null,
       use_income: d.use_income, use_expense: d.use_expense
     };
   }
@@ -112,7 +113,7 @@ export default function CashAccountsClient({
       company_wide: a.branch_id == null, note: a.note ?? "",
       bank_name: a.bank_name ?? "", account_type: a.account_type ?? "", account_name: a.account_name ?? "",
       account_no: a.account_no ?? "", account_branch: a.account_branch ?? "", account_branch_no: a.account_branch_no ?? "",
-      description: a.description ?? "", card_last4: a.card_last4 ?? "",
+      description: a.description ?? "", card_last4: a.card_last4 ?? "", settle_day: a.settle_day != null ? String(a.settle_day) : "",
       use_income: a.use_income === 1, use_expense: a.use_expense === 1
     });
   }
@@ -187,6 +188,12 @@ export default function CashAccountsClient({
             <input className="input font-mono" value={d.card_last4} inputMode="numeric" maxLength={4} placeholder="1234"
               onChange={(e) => set({ ...d, card_last4: e.target.value.replace(/\D/g, "").slice(0, 4) })} />
             <p className="text-[10px] text-slate-400 mt-0.5">เพื่อความปลอดภัย ระบบเก็บเฉพาะ 4 ตัวท้าย — ไม่เก็บเลขบัตรเต็มหรือ CVV</p>
+          </div>
+          <div>
+            <label className="label">วันเตรียมโอน / ตัดรอบ (วันที่ในเดือน)</label>
+            <input className="input" type="number" inputMode="numeric" min={1} max={31} value={d.settle_day} placeholder="เช่น 25"
+              onChange={(e) => set({ ...d, settle_day: e.target.value.replace(/\D/g, "").slice(0, 2) })} />
+            <p className="text-[10px] text-slate-400 mt-0.5">ลงรายจ่ายชำระเต็มด้วยบัตรนี้ → “วันที่เงินออกจริง” จะตั้งเป็นวันนี้ของรอบถัดไปให้อัตโนมัติ</p>
           </div>
         </>)}
 
