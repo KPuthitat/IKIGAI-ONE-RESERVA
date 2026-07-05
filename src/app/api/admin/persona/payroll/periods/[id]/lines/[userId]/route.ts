@@ -240,7 +240,8 @@ export async function PATCH(
       if (taxMode === "wht") {
         taxAmount = computeWht(gross, settings);
       } else {
-        ssoAmount = computeSso(gross, period.cycle, settings);
+        // SSO on base salary only (excl OT/service/other) — owner 2026-07-04.
+        ssoAmount = computeSso(basePay, period.cycle, settings);
       }
     }
     const net = gross - ssoAmount - taxAmount - otherDed;
