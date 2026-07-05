@@ -66,7 +66,7 @@ type DraftLite = {
 };
 
 // Vendor picker option — name is shown/saved; tax_id is searchable + shown muted.
-type VendorOpt = { name: string; tax_id: string | null };
+type VendorOpt = { name: string; tax_id: string | null; last_description?: string | null };
 
 const WEEKDAY_TH = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
 

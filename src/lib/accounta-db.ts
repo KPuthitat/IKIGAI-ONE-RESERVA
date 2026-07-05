@@ -591,6 +591,22 @@ export function listVendors(branchId: number | null): VendorRow[] {
   ).all(branchId) as VendorRow[];
 }
 
+/** Most-recent non-empty รายละเอียด per vendor for a branch — so the expense
+ *  form can prefill the description the vendor was last recorded with (owner
+ *  2026-07-05). Rows are newest-first; the first hit per vendor wins. */
+export function vendorLastDescriptions(branchId: number | null): Record<string, string> {
+  if (branchId == null) return {};
+  const rows = getDb().prepare(
+    `SELECT vendor_name, description FROM accounta_expenses
+     WHERE branch_id = ? AND vendor_name IS NOT NULL
+       AND description IS NOT NULL AND TRIM(description) != ''
+     ORDER BY bill_date DESC, id DESC`
+  ).all(branchId) as Array<{ vendor_name: string; description: string }>;
+  const map: Record<string, string> = {};
+  for (const r of rows) if (!(r.vendor_name in map)) map[r.vendor_name] = r.description;
+  return map;
+}
+
 export function createVendor(
   branchId: number,
   userId: number,

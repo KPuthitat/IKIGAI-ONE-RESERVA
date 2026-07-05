@@ -35,7 +35,7 @@ export default function ExpenseEditModal({
 }: {
   expense: EditableExpense;
   categories: Array<{ code: string | null; name: string }>;
-  vendors: Array<{ name: string; tax_id: string | null }>;
+  vendors: Array<{ name: string; tax_id: string | null; last_description?: string | null }>;
   paymentMethods: Array<{ id: number; name: string }>;
   mode?: "edit" | "create";
   onClose: () => void;
@@ -139,7 +139,18 @@ export default function ExpenseEditModal({
 
           <div className="sm:col-span-2">
             <label className="label !text-xs">ผู้จำหน่าย / ผู้รับเงิน</label>
-            <input className="input" list="exp-edit-vendors" value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="ชื่อผู้จำหน่าย" />
+            <input className="input" list="exp-edit-vendors" value={vendor}
+              onChange={(e) => {
+                const v = e.target.value;
+                setVendor(v);
+                // Prefill the last-used รายละเอียด for this vendor when the field
+                // is still empty (owner 2026-07-05) — user can edit/clear it.
+                if (!description.trim()) {
+                  const m = vendors.find((x) => x.name === v);
+                  if (m?.last_description) setDescription(m.last_description);
+                }
+              }}
+              placeholder="ชื่อผู้จำหน่าย" />
             <datalist id="exp-edit-vendors">{vendors.map((v) => <option key={v.name} value={v.name} />)}</datalist>
           </div>
 

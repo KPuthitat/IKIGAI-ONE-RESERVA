@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, listVendors, listPaymentMethods, materialPurchaseQuota, postDueRecurringExpenses, type LedgerPeriod } from "@/lib/accounta-db";
+import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, listVendors, listPaymentMethods, materialPurchaseQuota, postDueRecurringExpenses, vendorLastDescriptions, type LedgerPeriod } from "@/lib/accounta-db";
 import LedgerDashboardClient, { type LedgerExpenseRow } from "./LedgerDashboardClient";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +58,10 @@ export default function DaybookPage({
   const expenseCategories = listCategories().map((c) => ({ code: c.code, name: c.name }));
   // Vendor picker options carry the tax id so the field can be searched by
   // 13-digit เลขผู้เสียภาษี too, while still showing/saving the name (owner 2026-06-27).
-  const expenseVendors = listVendors(branchId).map((v) => ({ name: v.name, tax_id: v.tax_id }));
+  const vendorDesc = vendorLastDescriptions(branchId);
+  const expenseVendors = listVendors(branchId).map((v) => ({
+    name: v.name, tax_id: v.tax_id, last_description: vendorDesc[v.name] ?? null
+  }));
   // Pending scanned-bill drafts the day's รายจ่าย panel can pull in (owner
   // 2026-06-25). This branch's drafts + any not-yet-assigned ones.
   const draftExpenses = listExpenses({ reviewStatus: "draft" })
