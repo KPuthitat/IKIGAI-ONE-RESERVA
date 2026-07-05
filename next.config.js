@@ -3,6 +3,18 @@ const path = require('path');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // The 1 GB prod droplet OOM-kills `next build` during its type-check/lint
+  // phase (2026-07-05: "…checking validity of types ..Killed"). Skip both ON
+  // THE SERVER — they're redundant there:
+  //   • CI runs `npm run check:types` (tsc --noEmit) on every push, green before
+  //     deploy (owner standard).
+  //   • Route-export validity is caught by a full local `npm run build` before
+  //     pushing route changes.
+  // Keeps the server build light enough to fit in RAM. Gated on LIGHT_BUILD so
+  // ONLY the deploy (scripts/deploy.sh sets LIGHT_BUILD=1) skips them — a local
+  // `npm run build` still runs the full type-check + route-export validation.
+  typescript: { ignoreBuildErrors: process.env.LIGHT_BUILD === '1' },
+  eslint: { ignoreDuringBuilds: process.env.LIGHT_BUILD === '1' },
   // basePath ไม่ใช้แล้ว — host ที่ root /
   experimental: {
     // pdfkit is server-only (INVENTA PO PDF). Marking it external keeps

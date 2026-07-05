@@ -148,6 +148,11 @@ rm -rf .next node_modules/.cache
 # Honour any externally-set NODE_OPTIONS by appending; otherwise
 # set our minimum.
 export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=2048"
+# 2026-07-05: even with swap the type-check/lint phase OOM-kills ("…validity of
+# types ..Killed") as the codebase grew. Skip them ON THE SERVER — CI already
+# runs `npm run check:types` (green before deploy) and route-export validity is
+# caught by a full local `npm run build`. next.config.js reads LIGHT_BUILD.
+export LIGHT_BUILD=1
 npm run build
 
 # Snapshot the PID PM2 thinks reserva is — anything else on the port
