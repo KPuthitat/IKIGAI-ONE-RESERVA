@@ -35,6 +35,8 @@ export type ExpenseRow = {
   has_tax_invoice: number;
   vat_amount: number;
   base_amount: number;
+  wht_rate: number;               // หัก ณ ที่จ่าย rate (0/.01/.03/.05)
+  wht_amount: number;             // = base_amount × wht_rate (ยอดนำส่ง ภ.ง.ด.3)
   payment_status: PaymentStatus;
   payment_method: string | null;
   paid_date: string | null;
@@ -876,11 +878,16 @@ function normalise(d: ExpenseInput): ExpenseInput {
     vat = s.vat; base = s.base;
   }
   if (!d.has_tax_invoice) { vat = 0; base = total; }
+  // WHT is computed on the ex-VAT base × rate — never trust a client amount.
+  const whtRate = Number(d.wht_rate) || 0;
+  const whtAmount = round2(base * whtRate);
   return {
     ...d,
     amount_total: total,
     vat_amount: vat,
     base_amount: base,
+    wht_rate: whtRate,
+    wht_amount: whtAmount,
     paid_date: d.payment_status === "paid" ? (d.paid_date || d.bill_date) : null,
     // due date is only meaningful for unpaid (credit-term) bills.
     due_date: d.payment_status === "unpaid" ? (d.due_date || null) : null,
@@ -902,14 +909,14 @@ export function createExpense(
   const info = getDb().prepare(`
     INSERT INTO accounta_expenses (
       branch_id, company_id, bill_date, vendor_id, vendor_name, doc_type, category, capex_bucket, ocr_tax_id, description,
-      amount_total, has_tax_invoice, vat_amount, base_amount,
+      amount_total, has_tax_invoice, vat_amount, base_amount, wht_rate, wht_amount,
       payment_status, payment_method, paid_date, due_date,
       ocr_source, ocr_cost_baht, review_status, line_message_id, note, created_by
-    ) VALUES (?,?,?,?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?)
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
     d.doc_type, d.category, d.capex_bucket ?? null, d.ocr_tax_id ?? null, d.description?.trim() || null,
-    d.amount_total, d.has_tax_invoice ? 1 : 0, d.vat_amount, d.base_amount,
+    d.amount_total, d.has_tax_invoice ? 1 : 0, d.vat_amount, d.base_amount, d.wht_rate ?? 0, d.wht_amount ?? 0,
     d.payment_status, d.payment_method, d.paid_date, d.due_date,
     ocr?.source ?? null, ocr?.costBaht ?? null,
     extra?.reviewStatus ?? "confirmed", extra?.lineMessageId ?? null,
@@ -924,13 +931,13 @@ export function updateExpense(id: number, input: ExpenseInput): boolean {
     UPDATE accounta_expenses SET
       branch_id = ?, company_id = ?, bill_date = ?, vendor_id = ?, vendor_name = ?,
       doc_type = ?, category = ?, capex_bucket = ?, description = ?, amount_total = ?, has_tax_invoice = ?,
-      vat_amount = ?, base_amount = ?, payment_status = ?, payment_method = ?,
+      vat_amount = ?, base_amount = ?, wht_rate = ?, wht_amount = ?, payment_status = ?, payment_method = ?,
       paid_date = ?, due_date = ?, note = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
     d.doc_type, d.category, d.capex_bucket ?? null, d.description?.trim() || null, d.amount_total, d.has_tax_invoice ? 1 : 0,
-    d.vat_amount, d.base_amount, d.payment_status, d.payment_method,
+    d.vat_amount, d.base_amount, d.wht_rate ?? 0, d.wht_amount ?? 0, d.payment_status, d.payment_method,
     d.paid_date, d.due_date, d.note?.trim() || null, id
   );
   return info.changes > 0;

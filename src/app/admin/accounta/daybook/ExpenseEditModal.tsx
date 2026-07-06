@@ -19,6 +19,7 @@ export type EditableExpense = {
   description: string | null;
   amount_total: number;
   has_tax_invoice: boolean;
+  wht_rate?: number;
   payment_status: "paid" | "unpaid";
   payment_method: string | null;
   paid_date: string | null;
@@ -57,6 +58,7 @@ export default function ExpenseEditModal({
   const [amount, setAmount] = useState(isCreate ? "" : grpMoney(String(expense.amount_total)));
   const [hasVat, setHasVat] = useState(expense.has_tax_invoice);
   const [vatOverride, setVatOverride] = useState("");
+  const [whtRate, setWhtRate] = useState(String(expense.wht_rate ?? 0));
   const [status, setStatus] = useState<"paid" | "unpaid">(expense.payment_status);
   const [method, setMethod] = useState(expense.payment_method ?? (paymentMethods[0]?.name ?? ""));
   const [paidDate, setPaidDate] = useState(expense.paid_date ?? expense.bill_date);
@@ -70,6 +72,12 @@ export default function ExpenseEditModal({
   const vat = vatOverride.trim() !== ""
     ? round2(Number(vatOverride) || 0)
     : (hasVat ? splitVat(round2(total), true).vat : 0);
+  // Withholding tax (หัก ณ ที่จ่าย): computed on the ex-VAT base × rate.
+  // Cash actually paid to the vendor = total − wht; the withheld amount is remitted (ภ.ง.ด.3).
+  const whtRateNum = Number(whtRate) || 0;
+  const whtBase = round2(total - vat);
+  const whtAmount = round2(whtBase * whtRateNum);
+  const netPay = round2(total - whtAmount);
 
   async function save() {
     if (!Number.isFinite(total) || total <= 0) { setErr("กรอกยอดเงินให้ถูกต้อง"); return; }
@@ -84,6 +92,7 @@ export default function ExpenseEditModal({
         capex_bucket: isCapex ? (capexBucket || null) : null,
         description: description.trim() || null, amount_total: round2(total),
         has_tax_invoice: hasVat, vat_amount: vat,
+        wht_rate: whtRateNum,
         payment_status: status,
         payment_method: status === "paid" ? (method || null) : null,
         paid_date: status === "paid" ? paidDate : null,
@@ -173,6 +182,24 @@ export default function ExpenseEditModal({
               <input type="number" inputMode="decimal" className="input !inline-block !w-40 !py-1"
                 value={vatOverride} onChange={(e) => setVatOverride(e.target.value)}
                 placeholder="แก้ไขจำนวน" title="กรอกถ้าต้องการกำหนดภาษีมูลค่าเพิ่มเอง (เว้นว่าง = คำนวณ 7%)" />
+            </div>
+          )}
+
+          <div>
+            <label className="label !text-xs">หัก ณ ที่จ่าย</label>
+            <Select value={whtRate} onChange={setWhtRate}
+              options={[
+                { value: "0", label: "ไม่หัก" },
+                { value: "0.01", label: "1% (ค่าขนส่ง)" },
+                { value: "0.03", label: "3% (ค่าบริการ/รับจ้าง)" },
+                { value: "0.05", label: "5% (ค่าเช่า)" }
+              ]} />
+          </div>
+          {whtRateNum > 0 && (
+            <div className="text-[11px] text-slate-500 self-end pb-2 leading-relaxed">
+              หัก ณ ที่จ่าย <span className="text-rose-600 font-semibold">฿{fmtMoney(whtAmount)}</span>
+              <span className="text-slate-400"> (ฐาน ฿{fmtMoney(whtBase)})</span><br />
+              จ่ายจริงให้ผู้ขาย <span className="text-slate-800 font-semibold">฿{fmtMoney(netPay)}</span>
             </div>
           )}
 

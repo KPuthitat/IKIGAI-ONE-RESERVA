@@ -139,6 +139,10 @@ export type ExpenseInput = {
   // 13-digit เลขผู้เสียภาษี OCR read off a LINE bill (kept for the sender form +
   // admin review even when no vendor matched). Optional/null.
   ocr_tax_id?: string | null;
+  // Withholding tax (owner 2026-07-05): wht_rate ∈ {0,.01,.03,.05}. wht_amount is
+  // derived server-side = base (ex-VAT) × rate; cash paid to vendor = total − wht.
+  wht_rate?: number;
+  wht_amount?: number;
 };
 
 // The investment category — bills tagged this (code "CP") may carry a

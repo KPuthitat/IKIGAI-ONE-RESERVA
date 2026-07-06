@@ -83,6 +83,8 @@ export const ExpenseBody = z.object({
   amount_total: z.number().min(0).max(1e9),
   has_tax_invoice: z.boolean().optional(),
   vat_amount: z.number().min(0).max(1e9).nullable().optional(),
+  // Withholding tax rate ∈ {0,.01,.03,.05}; amount derived server-side (owner 2026-07-05)
+  wht_rate: z.number().min(0).max(0.05).nullable().optional(),
   // FEASIBILITY investment bucket for a CapEx bill — coerce an unknown value to
   // null (don't reject the save). accounta-db drops it when category ≠ CapEx.
   capex_bucket: z.preprocess(
@@ -120,6 +122,7 @@ export function toExpenseInput(d: ExpenseBodyT): ExpenseInput {
     has_tax_invoice: hasTax,
     vat_amount: vat,
     base_amount: base,
+    wht_rate: d.wht_rate ?? 0,
     payment_status: d.payment_status ?? "paid",
     payment_method: d.payment_method ?? null,
     paid_date: d.paid_date ?? null,
