@@ -11,7 +11,8 @@ import { listVendorsManage, createVendor, updateVendor, deleteVendor } from "@/l
 const Body = z.object({
   name: z.string().trim().min(1).max(200),
   tax_id: z.string().trim().max(30).nullable().optional(),
-  category: z.string().trim().max(100).nullable().optional()
+  category: z.string().trim().max(100).nullable().optional(),
+  pay_cycle: z.string().trim().max(60).nullable().optional()
 });
 const PatchBody = Body.extend({ id: z.number().int().positive() });
 

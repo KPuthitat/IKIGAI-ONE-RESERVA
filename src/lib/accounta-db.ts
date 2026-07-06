@@ -612,29 +612,30 @@ export function vendorLastDescriptions(branchId: number | null): Record<string, 
 export function createVendor(
   branchId: number,
   userId: number,
-  d: { name: string; tax_id?: string | null; category?: string | null; needsReview?: boolean }
+  d: { name: string; tax_id?: string | null; category?: string | null; pay_cycle?: string | null; needsReview?: boolean }
 ): number {
   const name = d.name.trim();
   const cat = d.category?.trim() || null;
   const tax = d.tax_id?.trim() || null;
+  const cycle = d.pay_cycle?.trim() || null;
   // De-dup on (branch, name) case-insensitive so the picker doesn't accrue twins.
   const existing = getDb().prepare(
     "SELECT id FROM inventa_suppliers WHERE active = 1 AND branch_id = ? AND name = ? COLLATE NOCASE"
   ).get(branchId, name) as { id: number } | undefined;
   if (existing) {
-    // "Learn from edits": remember a corrected category/tax_id for next time.
-    // Only overwrite with a real value — never blank a good one (owner 2026-06-18).
-    if (cat || tax) {
+    // "Learn from edits": remember a corrected category/tax_id/รอบจ่าย for next
+    // time. Only overwrite with a real value — never blank a good one (owner 2026-06-18).
+    if (cat || tax || cycle) {
       getDb().prepare(
-        "UPDATE inventa_suppliers SET category = COALESCE(?, category), tax_id = COALESCE(?, tax_id) WHERE id = ?"
-      ).run(cat, tax, existing.id);
+        "UPDATE inventa_suppliers SET category = COALESCE(?, category), tax_id = COALESCE(?, tax_id), pay_cycle = COALESCE(?, pay_cycle) WHERE id = ?"
+      ).run(cat, tax, cycle, existing.id);
     }
     return existing.id;
   }
   const info = getDb().prepare(`
-    INSERT INTO inventa_suppliers (branch_id, name, tax_id, category, created_by, display_order, active, needs_review)
-    VALUES (?, ?, ?, ?, ?, 100, 1, ?)
-  `).run(branchId, name, tax, cat, userId, d.needsReview ? 1 : 0);
+    INSERT INTO inventa_suppliers (branch_id, name, tax_id, category, pay_cycle, created_by, display_order, active, needs_review)
+    VALUES (?, ?, ?, ?, ?, ?, 100, 1, ?)
+  `).run(branchId, name, tax, cat, cycle, userId, d.needsReview ? 1 : 0);
   return Number(info.lastInsertRowid);
 }
 
@@ -654,12 +655,13 @@ export function listVendorsManage(branchId: number | null): VendorManageRow[] {
  *  needs_review flag — an admin has now looked at it. */
 export function updateVendor(
   id: number, branchId: number,
-  d: { name?: string; tax_id?: string | null; category?: string | null }
+  d: { name?: string; tax_id?: string | null; category?: string | null; pay_cycle?: string | null }
 ): boolean {
   const sets: string[] = ["needs_review = 0"]; const vals: Array<string | number | null> = [];
   if (d.name !== undefined) { sets.push("name = ?"); vals.push(d.name.trim()); }
   if (d.tax_id !== undefined) { sets.push("tax_id = ?"); vals.push(d.tax_id?.trim() || null); }
   if (d.category !== undefined) { sets.push("category = ?"); vals.push(d.category?.trim() || null); }
+  if (d.pay_cycle !== undefined) { sets.push("pay_cycle = ?"); vals.push(d.pay_cycle?.trim() || null); }
   vals.push(id, branchId);
   return getDb().prepare(
     `UPDATE inventa_suppliers SET ${sets.join(", ")} WHERE id = ? AND branch_id = ?`

@@ -4283,6 +4283,11 @@ function runMigrations(db: Database.Database): void {
   if (!supplierCols.some((c) => c.name === "needs_review")) {
     db.exec("ALTER TABLE inventa_suppliers ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0");
   }
+  // รอบจ่าย — free-text payment cycle/credit terms for this ผู้จำหน่าย, captured on
+  // the new-vendor prompt (owner 2026-07-06). e.g. "ทุกวันที่ 5" / "เครดิต 30 วัน".
+  if (!supplierCols.some((c) => c.name === "pay_cycle")) {
+    db.exec("ALTER TABLE inventa_suppliers ADD COLUMN pay_cycle TEXT");
+  }
   // One-time seed: bring existing ACCOUNTA vendors into the per-branch master,
   // scoped to the branches that actually used them (distinct branch on their
   // bills). Additive + idempotent — only inserts a (branch, name) that's

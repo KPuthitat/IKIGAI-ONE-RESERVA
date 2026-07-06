@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney, grpMoney, parseMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
@@ -67,6 +67,42 @@ export default function ExpenseEditModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // New-vendor prompt (owner 2026-07-06): when the typed ผู้จำหน่าย isn't in the
+  // branch master, ask for เลขผู้เสียภาษี + รอบจ่าย and add it to the master.
+  const knownVendor = (name: string) => {
+    const n = name.trim().toLowerCase();
+    return !n || vendors.some((v) => v.name.trim().toLowerCase() === n);
+  };
+  const handledVendors = useRef<Set<string>>(new Set());
+  const [nvName, setNvName] = useState<string | null>(null);  // pending prompt (null = closed)
+  const [nvTaxId, setNvTaxId] = useState("");
+  const [nvCycle, setNvCycle] = useState("");
+  const [nvBusy, setNvBusy] = useState(false);
+  const [nvErr, setNvErr] = useState<string | null>(null);
+
+  function maybePromptVendor(name: string) {
+    const n = name.trim();
+    if (!n || knownVendor(n) || handledVendors.current.has(n.toLowerCase())) return;
+    setNvName(n); setNvTaxId(""); setNvCycle(""); setNvErr(null);
+  }
+
+  async function saveNewVendor(skip: boolean) {
+    const name = (nvName ?? "").trim();
+    handledVendors.current.add(name.toLowerCase());   // don't re-prompt this name
+    if (skip || !name) { setNvName(null); return; }
+    setNvBusy(true); setNvErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/accounta/vendors"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, tax_id: nvTaxId.trim() || null, pay_cycle: nvCycle.trim() || null })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setNvErr(humanizeApiError(j, "บันทึกผู้จำหน่ายไม่สำเร็จ")); return; }
+      setNvName(null);
+    } catch { setNvErr("เชื่อมต่อไม่ได้ — ลองอีกครั้ง"); }
+    finally { setNvBusy(false); }
+  }
+
   const isCapex = categories.find((c) => c.name === category)?.code === CAPEX_CATEGORY_CODE;
   const total = parseMoney(amount) || 0;
   const vat = vatOverride.trim() !== ""
@@ -81,6 +117,11 @@ export default function ExpenseEditModal({
 
   async function save() {
     if (!Number.isFinite(total) || total <= 0) { setErr("กรอกยอดเงินให้ถูกต้อง"); return; }
+    // If the ผู้จำหน่าย is new (not in the master, not yet handled), capture its
+    // เลขผู้เสียภาษี + รอบจ่าย first — then the admin taps บันทึก again.
+    if (vendor.trim() && !knownVendor(vendor) && !handledVendors.current.has(vendor.trim().toLowerCase())) {
+      maybePromptVendor(vendor); return;
+    }
     setBusy(true); setErr(null);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 25000);
@@ -159,6 +200,7 @@ export default function ExpenseEditModal({
                   if (m?.last_description) setDescription(m.last_description);
                 }
               }}
+              onBlur={(e) => maybePromptVendor(e.target.value)}
               placeholder="ชื่อผู้จำหน่าย" />
             <datalist id="exp-edit-vendors">{vendors.map((v) => <option key={v.name} value={v.name} />)}</datalist>
           </div>
@@ -248,6 +290,40 @@ export default function ExpenseEditModal({
           </button>
         </div>
       </div>
+
+      {nvName !== null && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
+            <div className="px-4 py-3 border-b border-slate-100">
+              <div className="text-sm font-bold text-slate-800">ผู้จำหน่ายรายใหม่</div>
+              <div className="text-xs text-slate-500 mt-0.5 truncate">“{nvName}” ยังไม่มีในระบบ — บันทึกข้อมูลไว้ใช้ครั้งต่อไป</div>
+            </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="label !text-xs">เลขผู้เสียภาษี (ถ้ามี)</label>
+                <input className="input font-mono" inputMode="numeric" value={nvTaxId}
+                  onChange={(e) => setNvTaxId(e.target.value)} placeholder="13 หลัก" />
+              </div>
+              <div>
+                <label className="label !text-xs">รอบจ่าย (ถ้ามี)</label>
+                <input className="input" value={nvCycle} onChange={(e) => setNvCycle(e.target.value)}
+                  placeholder="เช่น ทุกวันที่ 5 / สิ้นเดือน / เครดิต 30 วัน" />
+              </div>
+              {nvErr && <div className="text-xs text-rose-600">{nvErr}</div>}
+            </div>
+            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-slate-100">
+              <button type="button" onClick={() => saveNewVendor(true)} disabled={nvBusy}
+                className="rounded-md border border-slate-300 bg-white text-slate-600 px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50">
+                ข้าม
+              </button>
+              <button type="button" onClick={() => saveNewVendor(false)} disabled={nvBusy}
+                className="rounded-md bg-brand text-white px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                {nvBusy ? "กำลังบันทึก…" : "บันทึกผู้จำหน่าย"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
