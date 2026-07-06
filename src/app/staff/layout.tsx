@@ -124,6 +124,12 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/persona/leave", label: t(lang, "staff.nav.leave") },
         { href: "/staff/persona/shift-request", label: "คำขอเปลี่ยนเวลางาน" },
         { href: "/staff/persona/shift-swap", label: "สลับกะ" },
+        { href: "/staff/persona/time-certification", label: t(lang, "staff.persona.nav.timeCert") },
+        {
+          href: "/staff/persona/shift/edit-requests",
+          label: t(lang, "staff.nav.editRequests"),
+          badge: myPendingEditCount > 0 ? myPendingEditCount : undefined
+        },
         { href: "/staff/persona/resignation", label: t(lang, "staff.nav.resignation") }
       ]
     },
@@ -144,21 +150,6 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       pathPrefix: "/staff/persona",
       items: [
         { href: "/staff/persona/shift/close", label: t(lang, "staff.nav.postShiftChecklist") }
-      ]
-    },
-    {
-      label: t(lang, "staff.nav.section.requests"),
-      pathPrefix: "/staff/persona",
-      items: [
-        {
-          href: "/staff/persona/shift/edit-requests",
-          label: t(lang, "staff.nav.editRequests"),
-          badge: myPendingEditCount > 0 ? myPendingEditCount : undefined
-        },
-        {
-          href: "/staff/persona/time-certification",
-          label: t(lang, "staff.persona.nav.timeCert")
-        }
       ]
     },
     {

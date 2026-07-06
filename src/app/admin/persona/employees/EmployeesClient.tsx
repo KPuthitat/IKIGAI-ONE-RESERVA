@@ -639,6 +639,17 @@ function EditModal({
   }
 
   async function save() {
+    // Guided PT→ประจำ conversion (owner 2026-07-06): moving someone into
+    // full-time (from PT / unset) puts them on the monthly-salary payroll
+    // table — require the เงินเดือน/เดือน first so they never land there with a
+    // blank/zero salary and get computed wrong.
+    if (employmentType === "ft" && employee.employment_type !== "ft") {
+      const sal = Number(monthlySalary);
+      if (monthlySalary.trim() === "" || !Number.isFinite(sal) || sal <= 0) {
+        setErr("กรุณากรอกเงินเดือน (บาท/เดือน) ก่อนย้ายเป็นพนักงานประจำ");
+        return;
+      }
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -1004,6 +1015,13 @@ function EditModal({
                   <p className="text-xs text-slate-500 mt-1">
                     {t("admin.persona.employees.hourlyRateHint")}
                   </p>
+                </div>
+              )}
+              {employmentType === "ft" && employee.employment_type !== "ft" && (
+                <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  กำลังย้าย <span className="font-semibold">{employee.display_name}</span> เป็นพนักงานประจำ —
+                  กรอกเงินเดือน (บาท/เดือน) ให้เรียบร้อยก่อนบันทึก
+                  งวดเงินเดือนถัดไปจะไปอยู่ในตารางเงินเดือนพนักงานประจำ
                 </div>
               )}
               {employmentType === "ft" && (
