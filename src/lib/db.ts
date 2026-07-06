@@ -1279,6 +1279,18 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN brand_color TEXT");
   }
 
+  // RECRUITA per-branch interview venue (owner 2026-07-06): a HYPO applicant
+  // interviews at HYPO, a NAMA applicant at NAMA. interview_address is the
+  // human-readable venue shown to the candidate; interview_map_url is the
+  // "นำทางมาสถานที่นัดสัมภาษณ์" nav link on the LINE card. Both per-branch,
+  // superseding the single global system_settings.recruita_interview_map_url.
+  if (!bnames2.has("interview_address")) {
+    db.exec("ALTER TABLE branches ADD COLUMN interview_address TEXT");
+  }
+  if (!bnames2.has("interview_map_url")) {
+    db.exec("ALTER TABLE branches ADD COLUMN interview_map_url TEXT");
+  }
+
   // PERSONA Time Clock anti-cheat: GPS geofence + QR code verification.
   // Both are independently toggleable so admin can phase them in
   // without breaking clock-in for staff before the staff UI ships
@@ -6466,6 +6478,8 @@ export type Branch = {
   readiness_morning_time: string;      // HH:MM — used in รอบเช้า card title (e.g. "11:30")
   readiness_afternoon_time: string;    // HH:MM — used in รอบบ่าย card title (e.g. "16:00")
   brand_color: string | null;          // Hex e.g. '#e94560'. NULL = default IKIGAI ink colour.
+  interview_address: string | null;    // RECRUITA per-branch สัมภาษณ์ venue text shown to the candidate
+  interview_map_url: string | null;    // RECRUITA per-branch นำทาง map link on the LINE card
   // 2026-05-30 — shift_close default-field highlight toggles.
   // 1 = render in the red headline box at the top of the
   // post-shift summary card; 0 = fall through to the normal

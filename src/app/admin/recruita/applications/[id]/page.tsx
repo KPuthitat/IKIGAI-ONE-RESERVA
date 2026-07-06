@@ -102,6 +102,7 @@ type PositionRow = {
   id: number; title: string; code: string | null;
   branch_id: number | null;
   branch_name: string | null; department: string | null;
+  branch_interview_address: string | null;
   custom_questions: string;
 };
 
@@ -129,7 +130,8 @@ export default function ApplicationDetailPage(
   if (!candidate) notFound();
   const position = db.prepare(`
     SELECT p.id, p.title, p.code, p.department, p.branch_id, p.custom_questions,
-           b.name AS branch_name
+           b.name AS branch_name,
+           b.interview_address AS branch_interview_address
     FROM recruita_positions p
     LEFT JOIN branches b ON b.id = p.branch_id
     WHERE p.id = ?

@@ -58,6 +58,8 @@ export default function BranchSettingsForm({
   attendanceSummaryTime,
   shiftNotifyTime,
   pendingDigestTime,
+  interviewAddress,
+  interviewMapUrl,
   hrGroupName,
   branchName
 }: {
@@ -82,6 +84,8 @@ export default function BranchSettingsForm({
   attendanceSummaryTime: string | null;
   shiftNotifyTime: string | null;
   pendingDigestTime: string | null;
+  interviewAddress: string | null;
+  interviewMapUrl: string | null;
   hrGroupName: string | null;  // label from system_settings.recruita_exec_group_name
   branchName: string;
 }) {
@@ -93,6 +97,9 @@ export default function BranchSettingsForm({
   // Brand colour stored as nullable hex. Empty string in the input
   // means "use default" — we normalise to null on submit.
   const [color, setColor] = useState<string>(brandColor || "");
+  // RECRUITA per-branch interview venue (owner 2026-07-06).
+  const [ivAddress, setIvAddress] = useState<string>(interviewAddress || "");
+  const [ivMapUrl, setIvMapUrl] = useState<string>(interviewMapUrl || "");
 
   // ── Time Clock anti-cheat fields ─────────────────────────────────
   // GPS coords as strings so the input can be empty (NULL on save).
@@ -221,7 +228,9 @@ export default function BranchSettingsForm({
             summaryTimes.split(",").map((t) => t.trim()).filter((t) => /^\d{2}:\d{2}$/.test(t))
           ) : null,
           shift_notify_time: shiftNotify.trim() || null,
-          pending_digest_time: pendingDigest.trim() || null
+          pending_digest_time: pendingDigest.trim() || null,
+          interview_address: ivAddress.trim() || null,
+          interview_map_url: ivMapUrl.trim() || null
         })
       });
       const j = await res.json().catch(() => ({}));
@@ -405,6 +414,32 @@ export default function BranchSettingsForm({
         >
           <span className="opacity-70">IKIGAI OS · PREVIEW</span>
           <div className="font-bold mt-1">{branchName}</div>
+        </div>
+      </div>
+
+      {/* ── RECRUITA per-branch interview venue ──
+          A candidate who applied to this branch interviews HERE, so the
+          address + map link the LINE card shows are set per branch (owner
+          2026-07-06). Supersedes the single global venue link. */}
+      <div className="card space-y-3">
+        <div>
+          <h2 className="font-bold text-slate-800 text-sm">สถานที่นัดสัมภาษณ์ (RECRUITA)</h2>
+          <p className="text-xs text-slate-500 mt-1">
+            ผู้สมัครที่สมัครสาขา {branchName} จะเห็นที่อยู่ + ปุ่มนำทางนี้บนการ์ดนัดสัมภาษณ์ทาง LINE
+          </p>
+        </div>
+        <div>
+          <label className="label !text-xs">ที่อยู่/สถานที่</label>
+          <input type="text" className="input text-sm" value={ivAddress}
+            onChange={(e) => setIvAddress(e.target.value)} maxLength={500}
+            placeholder={`เช่น ${branchName} ชั้น 2 / ห้องสัมภาษณ์`} />
+        </div>
+        <div>
+          <label className="label !text-xs">ลิงก์แผนที่ (Google Maps)</label>
+          <input type="url" inputMode="url" className="input text-sm" value={ivMapUrl}
+            onChange={(e) => setIvMapUrl(e.target.value)} maxLength={1000}
+            placeholder="https://maps.app.goo.gl/…" />
+          <p className="text-[11px] text-slate-400 mt-1">เว้นว่าง = ไม่แสดงปุ่มนำทาง</p>
         </div>
       </div>
 

@@ -180,6 +180,9 @@ export function stageChangeFlex(args: {
   /** Offered compensation shown on the 'offered' card. */
   offerSalary?: number | null;
   offerSalaryType?: "monthly" | "hourly" | null;
+  /** Per-branch interview nav link — used on the 'interview' invite card
+   *  (owner 2026-07-06). Falls back to the global setting when null. */
+  interviewMapUrl?: string | null;
 }): LineMessage {
   const meta = STAGE_META[args.stage];
   const copy = stageCopy(args.stage, args.positionTitle);
@@ -231,7 +234,9 @@ export function stageChangeFlex(args: {
       type: "button", style: "primary", color: COLOR_BRAND, height: "sm",
       action: { type: "uri", label: "เลือกเวลาเข้าสัมภาษณ์", uri: statusUrl }
     });
-    const mapUrl = (getSystemSettings().recruita_interview_map_url ?? "").trim();
+    // Prefer this branch's nav link (owner 2026-07-06); fall back to the global one.
+    const mapUrl = ((args.interviewMapUrl ?? "").trim())
+      || (getSystemSettings().recruita_interview_map_url ?? "").trim();
     if (/^https?:\/\//i.test(mapUrl)) {
       footerContents.push({
         type: "button", style: "secondary", height: "sm",
@@ -583,7 +588,8 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
            c.line_user_id,
            c.title_prefix, c.first_name_th, c.last_name_th,
            p.title AS position_title,
-           b.name  AS branch_name
+           b.name  AS branch_name,
+           b.interview_map_url AS branch_interview_map_url
     FROM recruita_applications a
     JOIN recruita_candidates c ON c.id = a.candidate_id
     JOIN recruita_positions p  ON p.id = a.position_id
@@ -600,6 +606,7 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
     first_name_th: string | null; last_name_th: string | null;
     position_title: string;
     branch_name: string | null;
+    branch_interview_map_url: string | null;
   } | undefined;
   if (!row) {
     console.info(`[recruita] candidate notify skipped: application #${applicationId} not found`);
@@ -624,7 +631,8 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
     offerStartDate: row.offer_start_date,
     offerConditions: row.offer_conditions,
     offerSalary: row.offer_salary,
-    offerSalaryType: row.offer_salary_type
+    offerSalaryType: row.offer_salary_type,
+    interviewMapUrl: row.branch_interview_map_url
   });
   const res = await pushToCandidate(row.line_user_id, [message]);
   if (res.ok) {
@@ -781,6 +789,7 @@ function interviewScheduledFlex(args: {
   interviewAt: string;
   location: string | null;
   note: string | null;
+  mapUrl: string | null;
   applicationNo: string;
 }): LineMessage {
   const rows: Array<Record<string, unknown>> = [
@@ -793,19 +802,32 @@ function interviewScheduledFlex(args: {
   if (args.location) rows.push(infoRow("สถานที่", args.location));
   if (args.note) rows.push(infoRow("หมายเหตุ", args.note));
   rows.push(infoRow("เลขที่ใบสมัคร", args.applicationNo));
+
+  const bubble: Record<string, unknown> = {
+    type: "bubble",
+    size: "giga",
+    header: brandHeader("นัดหมายสัมภาษณ์", args.positionTitle),
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+      backgroundColor: "#ffffff",
+      contents: rows
+    }
+  };
+  // Per-branch นำทาง button (owner 2026-07-06) — only when a valid map link is set.
+  const mapUrl = (args.mapUrl ?? "").trim();
+  if (/^https?:\/\//i.test(mapUrl)) {
+    bubble.footer = {
+      type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
+      contents: [{
+        type: "button", style: "secondary", height: "sm",
+        action: { type: "uri", label: "นำทางมาสถานที่นัดสัมภาษณ์", uri: mapUrl }
+      }]
+    };
+  }
   return {
     type: "flex",
     altText: `นัดสัมภาษณ์ ${fmtInterviewWhen(args.interviewAt)} · ${args.positionTitle}`,
-    contents: {
-      type: "bubble",
-      size: "giga",
-      header: brandHeader("นัดหมายสัมภาษณ์", args.positionTitle),
-      body: {
-        type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
-        backgroundColor: "#ffffff",
-        contents: rows
-      }
-    }
+    contents: bubble
   };
 }
 
@@ -821,7 +843,9 @@ export async function notifyInterviewScheduled(applicationId: number): Promise<v
                AND za.id <= a.id) AS day_seq,
            c.line_user_id,
            p.title AS position_title,
-           b.name  AS branch_name
+           b.name  AS branch_name,
+           b.interview_address AS branch_interview_address,
+           b.interview_map_url AS branch_interview_map_url
     FROM recruita_applications a
     JOIN recruita_candidates c ON c.id = a.candidate_id
     JOIN recruita_positions p  ON p.id = a.position_id
@@ -835,6 +859,8 @@ export async function notifyInterviewScheduled(applicationId: number): Promise<v
     line_user_id: string | null;
     position_title: string;
     branch_name: string | null;
+    branch_interview_address: string | null;
+    branch_interview_map_url: string | null;
   } | undefined;
   if (!row || !row.line_user_id || !row.interview_at) return;
 
@@ -842,8 +868,12 @@ export async function notifyInterviewScheduled(applicationId: number): Promise<v
     positionTitle: row.position_title,
     branchName: row.branch_name,
     interviewAt: row.interview_at,
-    location: row.interview_location,
+    // Prefer the explicit interview_location; else fall back to this branch's venue.
+    location: row.interview_location || row.branch_interview_address,
     note: row.interview_note,
+    // Per-branch nav link → global settings fallback for branches with none set.
+    mapUrl: row.branch_interview_map_url
+      || (getSystemSettings().recruita_interview_map_url ?? null),
     applicationNo: formatApplicationNo(row.submitted_at, row.day_seq)
   });
   const res = await pushToCandidate(row.line_user_id, [message]);

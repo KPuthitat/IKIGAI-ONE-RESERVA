@@ -42,6 +42,11 @@ const Body = z.object({
   // (the LINE Flex card then falls back to the IKIGAI default ink).
   brand_color: z.string().regex(HEX_COLOR_RE, "invalid_color").nullable().optional(),
 
+  // RECRUITA per-branch interview venue (owner 2026-07-06). address = free-text
+  // venue shown to the candidate; map_url = nav link (must be http(s) when set).
+  interview_address: z.string().max(500).nullable().optional(),
+  interview_map_url: z.string().max(1000).nullable().optional(),
+
   // PERSONA Time Clock anti-cheat config — all optional; client only
   // sends fields the admin actually touched in the form. Validation:
   //   • lat/lng: standard WGS84 ranges
@@ -157,6 +162,21 @@ export async function POST(req: Request) {
   if (parsed.data.clock_qr_enabled !== undefined) {
     sets.push("clock_qr_enabled = ?");
     vals.push(parsed.data.clock_qr_enabled ? 1 : 0);
+  }
+  if (Object.prototype.hasOwnProperty.call(parsed.data, "interview_address")) {
+    sets.push("interview_address = ?");
+    vals.push(parsed.data.interview_address?.trim() || null);
+  }
+  if (Object.prototype.hasOwnProperty.call(parsed.data, "interview_map_url")) {
+    const raw = (parsed.data.interview_map_url ?? "").trim();
+    if (raw && !/^https?:\/\//i.test(raw)) {
+      return NextResponse.json(
+        { error: "bad_url", message: "ลิงก์แผนที่ต้องขึ้นต้นด้วย http:// หรือ https://" },
+        { status: 400 }
+      );
+    }
+    sets.push("interview_map_url = ?");
+    vals.push(raw || null);
   }
   if (parsed.data.require_service_charge !== undefined) {
     sets.push("require_service_charge = ?");

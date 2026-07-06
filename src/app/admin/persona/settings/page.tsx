@@ -79,6 +79,8 @@ export default function PersonaSettingsPage() {
         attendanceSummaryTime={branch.attendance_summary_time}
         shiftNotifyTime={branch.shift_notify_time}
         pendingDigestTime={branch.pending_digest_time}
+        interviewAddress={branch.interview_address}
+        interviewMapUrl={branch.interview_map_url}
         hrGroupName={hrGroupName}
         branchName={branch.name}
       />

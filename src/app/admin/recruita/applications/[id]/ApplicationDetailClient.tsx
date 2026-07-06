@@ -88,6 +88,7 @@ type PositionShape = {
   id: number; title: string; code: string | null;
   branch_id: number | null;
   branch_name: string | null; department: string | null;
+  branch_interview_address?: string | null;   // per-branch สัมภาษณ์ venue (owner 2026-07-06)
 };
 
 type Branch = { id: number; name: string };
@@ -287,6 +288,7 @@ export default function ApplicationDetailClient({
         initialAt={application.interview_at}
         initialLocation={application.interview_location}
         initialNote={application.interview_note}
+        branchAddress={position.branch_interview_address ?? null}
       />
 
       {/* Post-interview health check (owner 2026-06-04) — admin records
@@ -969,16 +971,19 @@ function HealthCheckSection({
 }
 
 function InterviewSection({
-  applicationId, initialAt, initialLocation, initialNote
+  applicationId, initialAt, initialLocation, initialNote, branchAddress
 }: {
   applicationId: number;
   initialAt: string | null;
   initialLocation: string | null;
   initialNote: string | null;
+  branchAddress: string | null;
 }) {
   const router = useRouter();
   const [at, setAt] = useState(initialAt ?? "");
-  const [location, setLocation] = useState(initialLocation ?? "");
+  // Prefill with this branch's venue so a HYPO applicant is booked at HYPO by
+  // default (owner 2026-07-06); admin can still override per candidate.
+  const [location, setLocation] = useState(initialLocation ?? branchAddress ?? "");
   const [note, setNote] = useState(initialNote ?? "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);

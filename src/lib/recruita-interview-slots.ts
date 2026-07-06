@@ -295,6 +295,20 @@ export function bookInterviewSlot(args: {
   if (!slot) return { ok: false, error: "not_found" };
   if (slot.status !== "open") return { ok: false, error: "slot_taken" };
 
+  // Location shown to the candidate is their OWN branch's venue (owner 2026-07-06)
+  // — a HYPO applicant interviews at HYPO even on a shared slot. Fall back to the
+  // slot's generic location when the branch has no interview_address set.
+  const branchLoc = db.prepare(`
+    SELECT b.interview_address AS addr
+      FROM recruita_applications a
+      JOIN recruita_positions p ON p.id = a.position_id
+      LEFT JOIN branches b ON b.id = p.branch_id
+     WHERE a.id = ?
+  `).get(args.applicationId) as { addr: string | null } | undefined;
+  const effectiveLocation = (branchLoc?.addr && branchLoc.addr.trim())
+    ? branchLoc.addr.trim()
+    : slot.location;
+
   const interviewAt = `${slot.slot_date}T${slot.start_time}`;
   let won = false;
   const tx = db.transaction(() => {
@@ -316,11 +330,11 @@ export function bookInterviewSlot(args: {
       UPDATE recruita_applications
          SET interview_at = ?, interview_location = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?
-    `).run(interviewAt, slot.location, args.applicationId);
+    `).run(interviewAt, effectiveLocation, args.applicationId);
   });
   tx();
   if (!won) return { ok: false, error: "slot_taken" };
-  return { ok: true, interviewAt, location: slot.location };
+  return { ok: true, interviewAt, location: effectiveLocation };
 }
 
 /** Cancel an application's interview booking (owner 2026-06-11): free any
