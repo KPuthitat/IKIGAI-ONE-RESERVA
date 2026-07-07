@@ -44,6 +44,7 @@ export const RecurringBody = z.object({
   amount_total: z.number().min(0).max(1e9),
   has_tax_invoice: z.boolean().optional(),
   vat_amount: z.number().min(0).max(1e9).nullable().optional(),
+  wht_rate: z.number().min(0).max(0.05).nullable().optional(),
   payment_status: z.enum(["paid", "unpaid"]),
   payment_method: z.string().trim().max(200).nullable().optional(),
   note: z.string().trim().max(500).nullable().optional(),
@@ -59,6 +60,7 @@ export function toRecurringInput(d: z.infer<typeof RecurringBody>): RecurringInp
     vendor_name: d.vendor_name ?? null, category: d.category ?? null, capex_bucket: d.capex_bucket ?? null,
     doc_type: d.doc_type ?? null, description: d.description ?? null,
     amount_total: d.amount_total, has_tax_invoice: !!d.has_tax_invoice, vat_amount: d.vat_amount ?? 0,
+    wht_rate: d.wht_rate ?? 0,
     payment_status: d.payment_status, payment_method: d.payment_method ?? null, note: d.note ?? null,
     day_of_month: d.day_of_month, start_month: d.start_month, end_month: d.end_month ?? null,
     active: d.active ?? true

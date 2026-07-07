@@ -200,7 +200,6 @@ export default function ExpenseEditModal({
                   if (m?.last_description) setDescription(m.last_description);
                 }
               }}
-              onBlur={(e) => maybePromptVendor(e.target.value)}
               placeholder="ชื่อผู้จำหน่าย" />
             <datalist id="exp-edit-vendors">{vendors.map((v) => <option key={v.name} value={v.name} />)}</datalist>
           </div>

@@ -5921,6 +5921,7 @@ function runMigrations(db: Database.Database): void {
       amount_total   REAL NOT NULL DEFAULT 0,
       has_tax_invoice INTEGER NOT NULL DEFAULT 0,
       vat_amount     REAL NOT NULL DEFAULT 0,
+      wht_rate       REAL NOT NULL DEFAULT 0,           -- หัก ณ ที่จ่าย on each posted row
       payment_status TEXT NOT NULL DEFAULT 'unpaid',   -- generated rows' status
       payment_method TEXT,
       note           TEXT,
@@ -5936,6 +5937,14 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_accounta_recurring_branch
       ON accounta_recurring_expenses(branch_id, active);
   `);
+  // WHT on a recurring template (owner 2026-07-06): every posted row carries the
+  // same หัก ณ ที่จ่าย rate; amount is derived at post time (base × rate).
+  {
+    const recCols = db.prepare("PRAGMA table_info(accounta_recurring_expenses)").all() as Array<{ name: string }>;
+    if (!recCols.some((c) => c.name === "wht_rate")) {
+      db.exec("ALTER TABLE accounta_recurring_expenses ADD COLUMN wht_rate REAL NOT NULL DEFAULT 0");
+    }
+  }
   // Director credit-card charges (owner 2026-07-02): each รูดบัตร (full or ผ่อน N
   // งวด) so the app can show how much to set aside per month to pay the bank on
   // schedule. Links to a cash_accounts credit_card row. Monthly due =

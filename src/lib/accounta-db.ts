@@ -1721,7 +1721,7 @@ export type RecurringRow = {
   company_id: number | null; company_name: string | null;
   vendor_name: string | null; category: string | null; capex_bucket: string | null;
   doc_type: string | null; description: string | null;
-  amount_total: number; has_tax_invoice: number; vat_amount: number;
+  amount_total: number; has_tax_invoice: number; vat_amount: number; wht_rate: number;
   payment_status: PaymentStatus; payment_method: string | null; note: string | null;
   day_of_month: number; start_month: string; end_month: string | null;
   active: number; last_posted_month: string | null; created_by: number | null;
@@ -1732,7 +1732,7 @@ export type RecurringInput = {
   branch_id: number | null; company_id: number | null;
   vendor_name: string | null; category: string | null; capex_bucket: string | null;
   doc_type: string | null; description: string | null;
-  amount_total: number; has_tax_invoice: boolean; vat_amount: number;
+  amount_total: number; has_tax_invoice: boolean; vat_amount: number; wht_rate?: number;
   payment_status: PaymentStatus; payment_method: string | null; note: string | null;
   day_of_month: number; start_month: string; end_month: string | null; active: boolean;
 };
@@ -1761,36 +1761,37 @@ function normRecurring(d: RecurringInput) {
   const vat = d.has_tax_invoice ? round2(Number(d.vat_amount) || 0) : 0;
   const dom = Math.min(31, Math.max(1, Math.round(Number(d.day_of_month)) || 1));
   const capex = d.category === CAPEX_CATEGORY_NAME ? (d.capex_bucket || null) : null;
-  return { total, vat, dom, capex };
+  const wht = Math.max(0, Math.min(0.05, Number(d.wht_rate) || 0));
+  return { total, vat, dom, capex, wht };
 }
 
 export function createRecurring(userId: number, d: RecurringInput): number {
-  const { total, vat, dom, capex } = normRecurring(d);
+  const { total, vat, dom, capex, wht } = normRecurring(d);
   const info = getDb().prepare(`
     INSERT INTO accounta_recurring_expenses
       (branch_id, company_id, vendor_name, category, capex_bucket, doc_type, description,
-       amount_total, has_tax_invoice, vat_amount, payment_status, payment_method, note,
+       amount_total, has_tax_invoice, vat_amount, wht_rate, payment_status, payment_method, note,
        day_of_month, start_month, end_month, active, created_by)
-    VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?)
   `).run(
     d.branch_id, d.company_id, d.vendor_name?.trim() || null, d.category, capex, d.doc_type, d.description?.trim() || null,
-    total, d.has_tax_invoice ? 1 : 0, vat, d.payment_status, d.payment_method?.trim() || null, d.note?.trim() || null,
+    total, d.has_tax_invoice ? 1 : 0, vat, wht, d.payment_status, d.payment_method?.trim() || null, d.note?.trim() || null,
     dom, d.start_month, d.end_month || null, d.active ? 1 : 0, userId
   );
   return Number(info.lastInsertRowid);
 }
 
 export function updateRecurring(id: number, d: RecurringInput): boolean {
-  const { total, vat, dom, capex } = normRecurring(d);
+  const { total, vat, dom, capex, wht } = normRecurring(d);
   return getDb().prepare(`
     UPDATE accounta_recurring_expenses SET
       branch_id = ?, company_id = ?, vendor_name = ?, category = ?, capex_bucket = ?, doc_type = ?, description = ?,
-      amount_total = ?, has_tax_invoice = ?, vat_amount = ?, payment_status = ?, payment_method = ?, note = ?,
+      amount_total = ?, has_tax_invoice = ?, vat_amount = ?, wht_rate = ?, payment_status = ?, payment_method = ?, note = ?,
       day_of_month = ?, start_month = ?, end_month = ?, active = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     d.branch_id, d.company_id, d.vendor_name?.trim() || null, d.category, capex, d.doc_type, d.description?.trim() || null,
-    total, d.has_tax_invoice ? 1 : 0, vat, d.payment_status, d.payment_method?.trim() || null, d.note?.trim() || null,
+    total, d.has_tax_invoice ? 1 : 0, vat, wht, d.payment_status, d.payment_method?.trim() || null, d.note?.trim() || null,
     dom, d.start_month, d.end_month || null, d.active ? 1 : 0, id
   ).changes > 0;
 }
@@ -1832,6 +1833,7 @@ export function postDueRecurringExpenses(today: string): number {
         capex_bucket: r.capex_bucket, description: r.description, amount_total: r.amount_total,
         has_tax_invoice: r.has_tax_invoice !== 0, vat_amount: r.vat_amount,
         base_amount: round2(r.amount_total - r.vat_amount),
+        wht_rate: r.wht_rate,
         payment_status: r.payment_status,
         payment_method: r.payment_status === "paid" ? r.payment_method : null,
         paid_date: r.payment_status === "paid" ? billDate : null,

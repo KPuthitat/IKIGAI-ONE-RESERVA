@@ -13,7 +13,7 @@ import { useConfirm } from "@/app/components/useConfirm";
 type Row = {
   id: number; vendor_name: string | null; category: string | null; capex_bucket: string | null;
   doc_type: string | null; description: string | null; amount_total: number; has_tax_invoice: number;
-  vat_amount: number; payment_status: "paid" | "unpaid"; payment_method: string | null; note: string | null;
+  vat_amount: number; wht_rate: number; payment_status: "paid" | "unpaid"; payment_method: string | null; note: string | null;
   day_of_month: number; start_month: string; end_month: string | null; active: number; last_posted_month: string | null;
 };
 type Cat = { code: string | null; name: string };
@@ -30,13 +30,13 @@ function monthLabel(ym: string | null): string {
 
 type Form = {
   id: number | null; vendor_name: string; category: string; capex_bucket: string; description: string;
-  amount: string; has_tax_invoice: boolean; payment_status: "paid" | "unpaid"; payment_method: string;
+  amount: string; has_tax_invoice: boolean; wht_rate: string; payment_status: "paid" | "unpaid"; payment_method: string;
   day_of_month: string; start_month: string; end_month: string; note: string; active: boolean;
 };
 function blank(defaultMethod: string): Form {
   return {
     id: null, vendor_name: "", category: "", capex_bucket: "", description: "",
-    amount: "", has_tax_invoice: false, payment_status: "unpaid", payment_method: defaultMethod,
+    amount: "", has_tax_invoice: false, wht_rate: "0", payment_status: "unpaid", payment_method: defaultMethod,
     day_of_month: "1", start_month: thisMonth(), end_month: "", note: "", active: true
   };
 }
@@ -59,6 +59,9 @@ export default function RecurringClient({
   const isCapex = categories.find((c) => c.name === form.category)?.code === CAPEX_CATEGORY_CODE;
   const total = parseMoney(form.amount) || 0;
   const vat = form.has_tax_invoice ? splitVat(round2(total), true).vat : 0;
+  // WHT computed on the ex-VAT base × rate (same rule as the daybook form).
+  const whtRateNum = Number(form.wht_rate) || 0;
+  const whtAmount = round2(round2(total - vat) * whtRateNum);
 
   async function reload() {
     const r = await fetch(apiUrl(`/api/accounta/recurring?branch=${branchId}`));
@@ -72,7 +75,7 @@ export default function RecurringClient({
       id: r.id, vendor_name: r.vendor_name ?? "", category: r.category ?? "",
       capex_bucket: r.capex_bucket && STARTUP_CATEGORIES.includes(r.capex_bucket as never) ? r.capex_bucket : "",
       description: r.description ?? "", amount: grpMoney(String(r.amount_total)),
-      has_tax_invoice: !!r.has_tax_invoice, payment_status: r.payment_status,
+      has_tax_invoice: !!r.has_tax_invoice, wht_rate: String(r.wht_rate ?? 0), payment_status: r.payment_status,
       payment_method: r.payment_method ?? (paymentMethods[0]?.name ?? ""),
       day_of_month: String(r.day_of_month), start_month: r.start_month, end_month: r.end_month ?? "",
       note: r.note ?? "", active: !!r.active
@@ -92,6 +95,7 @@ export default function RecurringClient({
         capex_bucket: isCapex ? (form.capex_bucket || null) : null,
         doc_type: null, description: form.description.trim() || null,
         amount_total: round2(total), has_tax_invoice: form.has_tax_invoice, vat_amount: vat,
+        wht_rate: Number(form.wht_rate) || 0,
         payment_status: form.payment_status, payment_method: form.payment_status === "paid" ? (form.payment_method || null) : null,
         note: form.note.trim() || null,
         day_of_month: Math.min(31, Math.max(1, Number(form.day_of_month) || 1)),
@@ -217,6 +221,23 @@ export default function RecurringClient({
                 มีใบกำกับภาษีเต็มรูป (แยก VAT 7%)
               </label>
               {form.has_tax_invoice && <div className="sm:col-span-2 text-[11px] text-slate-400 -mt-2">ฐานภาษี ฿{fmtMoney(round2(total - vat))} · ภาษีซื้อ ฿{fmtMoney(vat)}</div>}
+
+              <div>
+                <label className="label !text-xs">หัก ณ ที่จ่าย</label>
+                <Select value={form.wht_rate} onChange={(v) => set("wht_rate", v)}
+                  options={[
+                    { value: "0", label: "ไม่หัก" },
+                    { value: "0.01", label: "1% (ค่าขนส่ง)" },
+                    { value: "0.03", label: "3% (ค่าบริการ/รับจ้าง)" },
+                    { value: "0.05", label: "5% (ค่าเช่า)" }
+                  ]} />
+              </div>
+              {whtRateNum > 0 && (
+                <div className="text-[11px] text-slate-500 self-end pb-2">
+                  หัก ณ ที่จ่าย <span className="text-rose-600 font-semibold">฿{fmtMoney(whtAmount)}</span> ต่อเดือน ·
+                  จ่ายจริง <span className="text-slate-800 font-semibold">฿{fmtMoney(round2(total - whtAmount))}</span>
+                </div>
+              )}
 
               <div>
                 <label className="label !text-xs">สถานะ (ของรายการที่สร้าง)</label>

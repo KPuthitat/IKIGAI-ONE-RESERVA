@@ -380,6 +380,7 @@ function DayDetail({
   const [expCategory, setExpCategory] = useState("");
   const [expAmt, setExpAmt] = useState("");
   const [expVat, setExpVat] = useState(false);
+  const [expWht, setExpWht] = useState("0");   // หัก ณ ที่จ่าย rate on the quick-add
   const [expUnpaid, setExpUnpaid] = useState(false);
   // Credit-bill due date: "cycle" = บริษัทจ่ายตามรอบ (วันจ่ายถัดไป) | "date" = ระบุวันเอง
   const [expDueMode, setExpDueMode] = useState<"cycle" | "date">("cycle");
@@ -430,7 +431,7 @@ function DayDetail({
   }
   function clearDraft() {
     setFromDraft(null);
-    setExpVendor(""); setExpCategory(""); setExpAmt(""); setExpVat(false); setExpUnpaid(false);
+    setExpVendor(""); setExpCategory(""); setExpAmt(""); setExpVat(false); setExpWht("0"); setExpUnpaid(false);
     setExpDueMode("cycle"); setExpDueDate("");
   }
 
@@ -537,6 +538,7 @@ function DayDetail({
       branch_id: branchId, company_id: companyId, bill_date: date,
       vendor_name: expVendor.trim() || null, category: expCategory || null,
       amount_total: amt, has_tax_invoice: expVat,
+      wht_rate: Number(expWht) || 0,
       payment_status: expUnpaid ? "unpaid" : "paid",
       paid_date: expUnpaid ? null : date,
       due_date: dueDate
@@ -561,7 +563,7 @@ function DayDetail({
         if (!res.ok || !j.ok) { setExpErr(j.message || "เพิ่มไม่สำเร็จ"); return; }
       }
       setFromDraft(null);
-      setExpVendor(""); setExpAmt(""); setExpVat(false); setExpUnpaid(false); setExpCategory("");
+      setExpVendor(""); setExpAmt(""); setExpVat(false); setExpWht("0"); setExpUnpaid(false); setExpCategory("");
       setExpDueMode("cycle"); setExpDueDate(""); onChanged();
     } finally { setExpAdding(false); }
   }
@@ -796,6 +798,14 @@ function DayDetail({
                       onKeyDown={(e) => { if (e.key === "Enter") addExpense(); }}
                       className="input !w-28 !py-1 text-right font-mono" />
                     <label className="flex items-center gap-1 text-[11px] text-slate-500"><input type="checkbox" checked={expVat} onChange={(e) => setExpVat(e.target.checked)} />VAT</label>
+                    <label className="flex items-center gap-1 text-[11px] text-slate-500" title="หัก ณ ที่จ่าย">หัก
+                      <select value={expWht} onChange={(e) => setExpWht(e.target.value)} className="input !w-auto !py-0.5 !text-[11px]">
+                        <option value="0">ไม่หัก</option>
+                        <option value="0.01">1%</option>
+                        <option value="0.03">3%</option>
+                        <option value="0.05">5%</option>
+                      </select>
+                    </label>
                     <label className="flex items-center gap-1 text-[11px] text-slate-500"><input type="checkbox" checked={expUnpaid} onChange={(e) => setExpUnpaid(e.target.checked)} />ค้างชำระ</label>
                     <button type="button" onClick={addExpense} disabled={expAdding || !expAmt}
                       className="text-[11px] text-brand hover:underline disabled:opacity-40">{fromDraft != null ? "+ ยืนยันลงบัญชี" : "+ เพิ่ม"}</button>

@@ -66,7 +66,7 @@ type Expense = {
   company_id: number | null; company_name: string | null;
   bill_date: string; vendor_id: number | null; vendor_name: string | null;
   doc_type: string | null; category: string | null; capex_bucket: string | null; description: string | null;
-  amount_total: number; has_tax_invoice: number; vat_amount: number; base_amount: number;
+  amount_total: number; has_tax_invoice: number; vat_amount: number; base_amount: number; wht_rate: number;
   payment_status: PaymentStatus; payment_method: string | null; paid_date: string | null; due_date: string | null;
   has_doc: boolean; ocr_source: string | null; ocr_cost_baht: number | null; note: string | null;
   review_status?: string;   // 'draft' (จากไลน์ รอตรวจ) | 'confirmed'
@@ -83,7 +83,7 @@ type FormState = {
   id: number | null;
   branch_id: string; company_id: string;
   bill_date: string; vendor_name: string; doc_type: string; category: string; capex_bucket: string; description: string;
-  amount_total: string; has_tax_invoice: boolean; vat_override: string;
+  amount_total: string; has_tax_invoice: boolean; vat_override: string; wht_rate: string;
   payment_status: PaymentStatus; payment_method: string; paid_date: string; due_date: string;
   note: string;
   rememberVendor: boolean;
@@ -115,7 +115,7 @@ function blankForm(defaultMethod = ""): FormState {
   return {
     id: null, branch_id: "", company_id: "",
     bill_date: todayISO(), vendor_name: "", doc_type: "", category: "", capex_bucket: "", description: "",
-    amount_total: "", has_tax_invoice: false, vat_override: "",
+    amount_total: "", has_tax_invoice: false, vat_override: "", wht_rate: "0",
     payment_status: "paid", payment_method: defaultMethod, paid_date: todayISO(), due_date: "",
     note: "", rememberVendor: true
   };
@@ -294,6 +294,7 @@ export default function ExpensesClient(props: {
       amount_total: String(e.amount_total),
       has_tax_invoice: !!e.has_tax_invoice,
       vat_override: "",
+      wht_rate: String(e.wht_rate ?? 0),
       payment_status: e.payment_status,
       payment_method: e.payment_method || (methods[0]?.name ?? ""),
       paid_date: e.paid_date ?? e.bill_date,
@@ -396,6 +397,8 @@ export default function ExpensesClient(props: {
         category: form.category || null,
         capex_bucket: form.capex_bucket || null,   // server drops it if category ≠ CapEx
         description: form.description.trim() || null,
+        // WHT applies to each part's ex-VAT base; splitting keeps the total the same.
+        wht_rate: Number(form.wht_rate) || 0,
         payment_status: form.payment_status,
         payment_method: form.payment_status === "paid" ? form.payment_method : null,
         paid_date: form.payment_status === "paid" ? form.paid_date : null,
@@ -457,6 +460,7 @@ export default function ExpensesClient(props: {
         has_tax_invoice: form.has_tax_invoice,
         vat_amount: form.vat_override.trim() !== "" ? round2(Number(form.vat_override) || 0)
           : (form.has_tax_invoice ? splitVat(total, true).vat : 0),
+        wht_rate: Number(form.wht_rate) || 0,
         payment_status: form.payment_status,
         payment_method: form.payment_status === "paid" ? form.payment_method : null,
         paid_date: form.payment_status === "paid" ? form.paid_date : null,
@@ -1109,6 +1113,25 @@ export default function ExpensesClient(props: {
                 )}
               </div>
             )}
+
+            {/* Withholding tax (หัก ณ ที่จ่าย) — computed on the ex-VAT base */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+              <div>
+                <label className="label !text-xs">หัก ณ ที่จ่าย</label>
+                <select className="input" value={form.wht_rate} onChange={(e) => set("wht_rate", e.target.value)}>
+                  <option value="0">ไม่หัก</option>
+                  <option value="0.01">1% (ค่าขนส่ง)</option>
+                  <option value="0.03">3% (ค่าบริการ/รับจ้าง)</option>
+                  <option value="0.05">5% (ค่าเช่า)</option>
+                </select>
+              </div>
+              {Number(form.wht_rate) > 0 && Number(form.amount_total) > 0 && (
+                <div className="text-xs text-slate-500 pb-2">
+                  หัก ณ ที่จ่าย <span className="text-rose-600 font-semibold">฿{fmtMoney(round2(vatPreview.base * (Number(form.wht_rate) || 0)))}</span> ·
+                  จ่ายจริง <span className="text-slate-800 font-semibold">฿{fmtMoney(round2((Number(form.amount_total) || 0) - round2(vatPreview.base * (Number(form.wht_rate) || 0))))}</span>
+                </div>
+              )}
+            </div>
 
             {/* Payment */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
