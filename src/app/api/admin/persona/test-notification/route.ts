@@ -85,7 +85,9 @@ export async function POST(req: Request) {
   const friendlyDate = (() => {
     const [yStr, mStr, dStr] = todayBkk.split("-");
     const y = Number(yStr), m = Number(mStr), d = Number(dStr);
-    const wd = new Date(`${todayBkk}T00:00:00+07:00`).getDay();
+    // UTC-midnight + getUTCDay so the weekday name matches the day number on a
+    // UTC server (the +07:00/getDay combo rolled back a day — owner 2026-07-06).
+    const wd = new Date(`${todayBkk}T00:00:00Z`).getUTCDay();
     const WD = ["วันอาทิตย์","วันจันทร์","วันอังคาร","วันพุธ","วันพฤหัสบดี","วันศุกร์","วันเสาร์"];
     const MO = ["", "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
                 "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];

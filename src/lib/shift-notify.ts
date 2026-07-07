@@ -213,7 +213,11 @@ function thaiFriendlyDate(dateBkk: string): string {
   const y = Number(yStr);
   const m = Number(mStr);
   const d = Number(dStr);
-  const wd = new Date(`${dateBkk}T00:00:00+07:00`).getDay();
+  // Read the weekday off the SAME calendar date. Parsing at Bangkok midnight
+  // (+07:00) and calling getDay() on a UTC server rolls back to the previous
+  // day → "วันจันทร์ที่ 7" (Mon name + Tue's number). Parse as UTC midnight and
+  // read the UTC weekday so name + number always agree (owner 2026-07-06).
+  const wd = new Date(`${dateBkk}T00:00:00Z`).getUTCDay();
   const WD = ["วันอาทิตย์","วันจันทร์","วันอังคาร","วันพุธ","วันพฤหัสบดี","วันศุกร์","วันเสาร์"];
   const MO = ["", "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
               "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
