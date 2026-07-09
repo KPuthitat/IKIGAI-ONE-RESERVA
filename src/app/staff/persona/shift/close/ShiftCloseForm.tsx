@@ -58,7 +58,7 @@ type DefaultFieldConfig = {
 type MaterialQuotaView = {
   weekdayLabel: string; xUsed: number; budgetPct: number;
   monthBudget: number; spentThisMonth: number; remainingBudget: number;
-  daysLeft: number; purchaseDayCount: number; todayIsPurchaseDay: boolean; quotaToday: number;
+  daysLeft: number; daysInMonth: number; todayIsPurchaseDay: boolean; quotaToday: number;
 };
 
 export default function ShiftCloseForm({
@@ -677,7 +677,7 @@ export default function ShiftCloseForm({
               <div className="text-[11px] text-slate-500">
                 โควตาที่สั่งได้วันนี้
                 {materialQuota.todayIsPurchaseDay
-                  ? ` · วัน${materialQuota.weekdayLabel} (วันสั่งหลัก = งบเดือน ÷ ${materialQuota.purchaseDayCount} วัน${materialQuota.weekdayLabel})`
+                  ? ` · วัน${materialQuota.weekdayLabel} (วันสั่งหลัก = งบเดือน ÷ ${materialQuota.daysInMonth} วัน)`
                   : " · วันปกติ (งบที่เหลือ ÷ วันที่เหลือ)"}
               </div>
               <div className="text-2xl font-bold text-emerald-700">฿{fmtThb(quota)}</div>

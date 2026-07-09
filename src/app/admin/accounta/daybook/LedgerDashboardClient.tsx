@@ -889,7 +889,7 @@ export default function LedgerDashboardClient({
     targetSales: number; forecastSales: number | null; xUsed: number; isFirstDay: boolean;
     budgetPct: number; weekday: number; weekdayLabel: string;
     monthBudget: number; spentThisMonth: number; remainingBudget: number;
-    daysInMonth: number; todayDate: number; daysLeft: number; purchaseDayCount: number;
+    daysInMonth: number; todayDate: number; daysLeft: number;
     todayIsPurchaseDay: boolean; quotaToday: number;
   } | null;
   payCycleWeekday: number;
@@ -1076,7 +1076,7 @@ export default function LedgerDashboardClient({
             </div>
             <div className="text-[11px] text-slate-500 pb-1 leading-relaxed">
               {materialQuota.todayIsPurchaseDay
-                ? <>= งบทั้งเดือน ฿{fmtMoney(materialQuota.monthBudget)} ÷ {materialQuota.purchaseDayCount} วัน{materialQuota.weekdayLabel} ในเดือนนี้</>
+                ? <>= งบทั้งเดือน ฿{fmtMoney(materialQuota.monthBudget)} ÷ {materialQuota.daysInMonth} วัน (วัน{materialQuota.weekdayLabel} = อัตราต่อวันคงที่)</>
                 : <>= (งบทั้งเดือน ฿{fmtMoney(materialQuota.monthBudget)} − ใช้ไปแล้ว ฿{fmtMoney(materialQuota.spentThisMonth)}) ÷ {materialQuota.daysLeft} วันที่เหลือ</>}
             </div>
           </div>

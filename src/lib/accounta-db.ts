@@ -1647,7 +1647,7 @@ export type MaterialQuota = {
   monthBudget: number;        // xUsed × Y%  = โควตาสั่งซื้อทั้งเดือน
   spentThisMonth: number;     // confirmed GD spend so far this month
   remainingBudget: number;    // monthBudget − spent
-  daysInMonth: number; todayDate: number; daysLeft: number; purchaseDayCount: number;
+  daysInMonth: number; todayDate: number; daysLeft: number;
   todayIsPurchaseDay: boolean; quotaToday: number;
 };
 
@@ -1688,23 +1688,21 @@ export function materialPurchaseQuota(
   const monthBudget = round2(xUsed * (b.y / 100));
   const remainingBudget = round2(monthBudget - spent);
 
-  // Count the purchase-weekday days in the month (e.g. Mondays).
-  let purchaseDayCount = 0;
-  for (let day = 1; day <= daysInMonth; day++) {
-    if (new Date(Date.UTC(yy, mm - 1, day)).getUTCDay() === b.wd) purchaseDayCount += 1;
-  }
   const todayIsPurchaseDay = new Date(Date.UTC(yy, mm - 1, dd)).getUTCDay() === b.wd;
   const daysLeft = daysInMonth - dd;   // owner's example: (30 − 10) = 20
 
+  // Purchase weekday (Monday): a FLAT daily rate = โควตาทั้งเดือน ÷ จำนวนวันในเดือน
+  // (owner 2026-07-10 — divide by days-in-month, NOT #Mondays; ยึดแบบหารจำนวนวัน).
+  // Any other day: spread the remaining budget over the days left in the month.
   const quotaToday = todayIsPurchaseDay
-    ? (purchaseDayCount > 0 ? round2(monthBudget / purchaseDayCount) : 0)
+    ? round2(monthBudget / daysInMonth)
     : (daysLeft > 0 ? Math.max(0, round2(remainingBudget / daysLeft)) : Math.max(0, remainingBudget));
 
   return {
     targetSales: round2(b.x), forecastSales: fc > 0 ? round2(fc) : null, xUsed, isFirstDay,
     budgetPct: b.y, weekday: b.wd, weekdayLabel: TH_WEEKDAYS[b.wd] ?? "",
     monthBudget, spentThisMonth: spent, remainingBudget,
-    daysInMonth, todayDate: dd, daysLeft, purchaseDayCount, todayIsPurchaseDay, quotaToday
+    daysInMonth, todayDate: dd, daysLeft, todayIsPurchaseDay, quotaToday
   };
 }
 
