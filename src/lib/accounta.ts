@@ -143,6 +143,9 @@ export type ExpenseInput = {
   // derived server-side = base (ex-VAT) × rate; cash paid to vendor = total − wht.
   wht_rate?: number;
   wht_amount?: number;
+  // จ่ายแล้วลงบัญชีก่อนแต่ยังไม่ได้รับใบเสร็จ/ใบกำกับภาษี (owner 2026-07-06).
+  // true = รอเอกสาร; the ledger flags it so it isn't forgotten.
+  awaiting_doc?: boolean;
 };
 
 // The investment category — bills tagged this (code "CP") may carry a

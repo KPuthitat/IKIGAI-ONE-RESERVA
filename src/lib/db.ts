@@ -5898,6 +5898,11 @@ function runMigrations(db: Database.Database): void {
   if (!expCols.some((c) => c.name === "wht_amount")) {
     db.exec("ALTER TABLE accounta_expenses ADD COLUMN wht_amount REAL NOT NULL DEFAULT 0");
   }
+  // awaiting_doc (owner 2026-07-06): จ่ายแล้วลงบัญชีก่อนแต่ยังไม่ได้รับเอกสาร
+  // (ใบเสร็จ/ใบกำกับภาษี). 1 = รอเอกสาร — the ledger flags it so it isn't forgotten.
+  if (!expCols.some((c) => c.name === "awaiting_doc")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN awaiting_doc INTEGER NOT NULL DEFAULT 0");
+  }
   // feasibility_projects.branch_id (owner 2026-06-29): which branch's CapEx bills
   // feed this project's "เงินลงทุนตั้งต้น" live. NULL = no accounting link.
   const feasCols = db.prepare("PRAGMA table_info(feasibility_projects)").all() as Array<{ name: string }>;

@@ -20,6 +20,7 @@ export type EditableExpense = {
   amount_total: number;
   has_tax_invoice: boolean;
   wht_rate?: number;
+  awaiting_doc?: boolean;
   payment_status: "paid" | "unpaid";
   payment_method: string | null;
   paid_date: string | null;
@@ -59,6 +60,7 @@ export default function ExpenseEditModal({
   const [hasVat, setHasVat] = useState(expense.has_tax_invoice);
   const [vatOverride, setVatOverride] = useState("");
   const [whtRate, setWhtRate] = useState(String(expense.wht_rate ?? 0));
+  const [awaitingDoc, setAwaitingDoc] = useState(!!expense.awaiting_doc);
   const [status, setStatus] = useState<"paid" | "unpaid">(expense.payment_status);
   const [method, setMethod] = useState(expense.payment_method ?? (paymentMethods[0]?.name ?? ""));
   const [paidDate, setPaidDate] = useState(expense.paid_date ?? expense.bill_date);
@@ -134,6 +136,7 @@ export default function ExpenseEditModal({
         description: description.trim() || null, amount_total: round2(total),
         has_tax_invoice: hasVat, vat_amount: vat,
         wht_rate: whtRateNum,
+        awaiting_doc: awaitingDoc,
         payment_status: status,
         payment_method: status === "paid" ? (method || null) : null,
         paid_date: status === "paid" ? paidDate : null,
@@ -270,6 +273,11 @@ export default function ExpenseEditModal({
               <input type="date" className="input" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} />
             </div>
           )}
+
+          <label className="sm:col-span-2 flex items-center gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <input type="checkbox" checked={awaitingDoc} onChange={(e) => setAwaitingDoc(e.target.checked)} />
+            ยังไม่ได้รับเอกสาร (จ่าย/ลงบัญชีก่อน — ค่อยตามใบเสร็จ/ใบกำกับภาษีทีหลัง)
+          </label>
 
           <div className="sm:col-span-2">
             <label className="label !text-xs">หมายเหตุ (เพิ่มเติม)</label>

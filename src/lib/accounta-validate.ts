@@ -93,6 +93,7 @@ export const ExpenseBody = z.object({
     (v) => (typeof v === "string" && (STARTUP_CATEGORIES as readonly string[]).includes(v) ? v : null),
     z.string().nullable()
   ).optional(),
+  awaiting_doc: z.boolean().optional(),   // จ่ายแล้วแต่ยังไม่ได้รับเอกสาร (owner 2026-07-06)
   payment_status: z.enum(["paid", "unpaid"]).optional(),
   payment_method: z.string().trim().max(200).nullable().optional(),  // channel master bank-account names can be long
   paid_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
@@ -125,6 +126,7 @@ export function toExpenseInput(d: ExpenseBodyT): ExpenseInput {
     vat_amount: vat,
     base_amount: base,
     wht_rate: d.wht_rate ?? 0,
+    awaiting_doc: !!d.awaiting_doc,
     payment_status: d.payment_status ?? "paid",
     payment_method: d.payment_method ?? null,
     paid_date: d.paid_date ?? null,

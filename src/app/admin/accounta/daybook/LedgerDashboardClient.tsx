@@ -47,7 +47,7 @@ export type LedgerExpenseRow = {
   payment_status: "paid" | "unpaid"; has_doc: boolean; due_date: string | null;
   // extra fields so the in-page edit modal has the full row (owner 2026-06-29)
   capex_bucket: string | null; description: string | null; has_tax_invoice: boolean;
-  wht_rate: number;
+  wht_rate: number; awaiting_doc: boolean;
   payment_method: string | null; paid_date: string | null;
   branch_id: number | null; company_id: number | null;
 };
@@ -381,6 +381,7 @@ function DayDetail({
   const [expAmt, setExpAmt] = useState("");
   const [expVat, setExpVat] = useState(false);
   const [expWht, setExpWht] = useState("0");   // หัก ณ ที่จ่าย rate on the quick-add
+  const [expAwaitDoc, setExpAwaitDoc] = useState(false);  // ยังไม่ได้รับเอกสาร
   const [expUnpaid, setExpUnpaid] = useState(false);
   // Credit-bill due date: "cycle" = บริษัทจ่ายตามรอบ (วันจ่ายถัดไป) | "date" = ระบุวันเอง
   const [expDueMode, setExpDueMode] = useState<"cycle" | "date">("cycle");
@@ -431,7 +432,7 @@ function DayDetail({
   }
   function clearDraft() {
     setFromDraft(null);
-    setExpVendor(""); setExpCategory(""); setExpAmt(""); setExpVat(false); setExpWht("0"); setExpUnpaid(false);
+    setExpVendor(""); setExpCategory(""); setExpAmt(""); setExpVat(false); setExpWht("0"); setExpAwaitDoc(false); setExpUnpaid(false);
     setExpDueMode("cycle"); setExpDueDate("");
   }
 
@@ -539,6 +540,7 @@ function DayDetail({
       vendor_name: expVendor.trim() || null, category: expCategory || null,
       amount_total: amt, has_tax_invoice: expVat,
       wht_rate: Number(expWht) || 0,
+      awaiting_doc: expAwaitDoc,
       payment_status: expUnpaid ? "unpaid" : "paid",
       paid_date: expUnpaid ? null : date,
       due_date: dueDate
@@ -563,7 +565,7 @@ function DayDetail({
         if (!res.ok || !j.ok) { setExpErr(j.message || "เพิ่มไม่สำเร็จ"); return; }
       }
       setFromDraft(null);
-      setExpVendor(""); setExpAmt(""); setExpVat(false); setExpWht("0"); setExpUnpaid(false); setExpCategory("");
+      setExpVendor(""); setExpAmt(""); setExpVat(false); setExpWht("0"); setExpAwaitDoc(false); setExpUnpaid(false); setExpCategory("");
       setExpDueMode("cycle"); setExpDueDate(""); onChanged();
     } finally { setExpAdding(false); }
   }
@@ -688,6 +690,7 @@ function DayDetail({
                             {e.capex_bucket && <span className="text-[9px] font-normal bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-1.5 py-px" title="ผูกกับ FEASIBILITY (เงินลงทุนตั้งต้น)">FEASIBILITY · {STARTUP_CATEGORY_LABEL[e.capex_bucket as keyof typeof STARTUP_CATEGORY_LABEL] ?? "ลงทุน"}</span>}
                             {overdue && <span className="text-[9px] font-normal bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-1.5 py-px">เลยกำหนด</span>}
                             {dueToday && <span className="text-[9px] font-normal bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-px">ครบกำหนดวันนี้</span>}
+                            {e.awaiting_doc && <span className="text-[9px] font-normal bg-amber-100 text-amber-800 border border-amber-300 rounded-full px-1.5 py-px" title="ยังไม่ได้รับใบเสร็จ/ใบกำกับภาษี">⏳ รอเอกสาร</span>}
                           </div>
                           {tag && <div className="text-[10px] text-slate-400">{tag}{unpaid && e.due_date && !overdue && !dueToday ? ` · ครบกำหนด ${e.due_date}` : ""}</div>}
                           {payId === e.id && (
@@ -807,6 +810,7 @@ function DayDetail({
                       </select>
                     </label>
                     <label className="flex items-center gap-1 text-[11px] text-slate-500"><input type="checkbox" checked={expUnpaid} onChange={(e) => setExpUnpaid(e.target.checked)} />ค้างชำระ</label>
+                    <label className="flex items-center gap-1 text-[11px] text-amber-700" title="จ่าย/ลงบัญชีก่อน ยังไม่ได้รับใบเสร็จ/ใบกำกับภาษี"><input type="checkbox" checked={expAwaitDoc} onChange={(e) => setExpAwaitDoc(e.target.checked)} />รอเอกสาร</label>
                     <button type="button" onClick={addExpense} disabled={expAdding || !expAmt}
                       className="text-[11px] text-brand hover:underline disabled:opacity-40">{fromDraft != null ? "+ ยืนยันลงบัญชี" : "+ เพิ่ม"}</button>
                   </div>
@@ -882,7 +886,7 @@ export default function LedgerDashboardClient({
   // Material-purchase quota for today — mirrors the shift-close card. null when
   // the branch has the feature off.
   materialQuota: {
-    weekdayLabel: string; monthBudget: number; spentThisMonth: number;
+    targetSales: number; budgetPct: number; weekdayLabel: string; monthBudget: number; spentThisMonth: number;
     remainingBudget: number; otherDaysLeft: number; todayIsPurchaseDay: boolean; quotaToday: number;
   } | null;
   payCycleWeekday: number;
@@ -957,7 +961,7 @@ export default function LedgerDashboardClient({
       setAddExpense({
         id: 0, bill_date: d, vendor_name: null, doc_type: null, category: null,
         capex_bucket: null, description: null, amount_total: 0, has_tax_invoice: false,
-        wht_rate: 0,
+        wht_rate: 0, awaiting_doc: false,
         payment_status: "paid", payment_method: null, paid_date: d, due_date: null,
         branch_id: branchId, company_id: companyId
       });
@@ -1048,6 +1052,58 @@ export default function LedgerDashboardClient({
           onSaved={(d) => afterAdd(d ?? bkkToday)}
         />
       )}
+      {/* Material-purchase quota — pinned to the TOP so it's the first thing an
+          admin sees (owner 2026-07-06). Shows the full taught logic: monthly
+          budget = เป้ายอดขาย × %, then today's allowance. Hidden when the branch
+          has the feature off. */}
+      {materialQuota && (
+        <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50/60 p-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h2 className="font-bold text-emerald-900 text-base">โควตาสั่งซื้อวัตถุดิบวันนี้</h2>
+            <span className="text-[11px] text-emerald-700/70">
+              {materialQuota.todayIsPurchaseDay ? `วันสั่งหลัก · วัน${materialQuota.weekdayLabel}` : "วันปกติ"}
+            </span>
+          </div>
+
+          {/* Headline: today's allowance + how it was derived */}
+          <div className="mt-2 flex items-end gap-3 flex-wrap">
+            <div>
+              <div className="text-[11px] text-slate-500">สั่งซื้อได้วันนี้ไม่เกิน</div>
+              <div className="text-3xl font-extrabold text-emerald-700 leading-tight">฿{fmtMoney(materialQuota.quotaToday)}</div>
+            </div>
+            <div className="text-[11px] text-slate-500 pb-1 leading-relaxed">
+              {materialQuota.todayIsPurchaseDay
+                ? <>= งบทั้งเดือน ฿{fmtMoney(materialQuota.monthBudget)} ÷ 30</>
+                : <>= งบที่เหลือ ฿{fmtMoney(materialQuota.remainingBudget)} ÷ {materialQuota.otherDaysLeft} วันที่เหลือ</>}
+            </div>
+          </div>
+
+          {/* Derivation of the monthly budget + spend */}
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">เป้ายอดขาย/เดือน</div>
+              <div className="text-base font-bold text-slate-700">฿{fmtMoney(materialQuota.targetSales)}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">งบวัตถุดิบ ({materialQuota.budgetPct}%)</div>
+              <div className="text-base font-bold text-slate-700">฿{fmtMoney(materialQuota.monthBudget)}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">ซื้อไปแล้วเดือนนี้</div>
+              <div className="text-base font-bold text-rose-600">฿{fmtMoney(materialQuota.spentThisMonth)}</div>
+            </div>
+            <div className="rounded-lg bg-white border border-slate-200 p-2">
+              <div className="text-[11px] text-slate-500">เหลือทั้งเดือน</div>
+              <div className="text-base font-bold text-emerald-800">฿{fmtMoney(materialQuota.remainingBudget)}</div>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1.5">
+            งบวัตถุดิบ = เป้ายอดขาย ฿{fmtMoney(materialQuota.targetSales)} × {materialQuota.budgetPct}% ·
+            นับเฉพาะหมวด “ต้นทุนสินค้า/วัตถุดิบ” (GD) ที่ยืนยันแล้ว
+          </p>
+        </div>
+      )}
+
       {/* Period selector + add buttons */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1">
@@ -1064,42 +1120,6 @@ export default function LedgerDashboardClient({
           <button type="button" onClick={() => openAdd("expense")} className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ เพิ่มรายจ่าย</button>
         </div>
       </div>
-
-      {/* Material-purchase quota — the same figures shown in the shift-close
-          report, read-only here so admins see the day's ordering budget without
-          opening a shift (owner 2026-07-03). Hidden when the branch has the
-          feature off. */}
-      {materialQuota && (
-        <div className="card">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <h2 className="font-bold text-slate-800">โควตาสั่งซื้อวัตถุดิบวันนี้</h2>
-            <span className="text-[11px] text-slate-400">ตัวเลขเดียวกับที่แสดงในรายงานปิดกะ</span>
-          </div>
-          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-            <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2">
-              <div className="text-[11px] text-slate-500">โควตาวันนี้{materialQuota.todayIsPurchaseDay ? ` · วัน${materialQuota.weekdayLabel}` : ""}</div>
-              <div className="text-xl font-bold text-emerald-700">฿{fmtMoney(materialQuota.quotaToday)}</div>
-            </div>
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">งบเดือนนี้</div>
-              <div className="text-lg font-bold text-slate-700">฿{fmtMoney(materialQuota.monthBudget)}</div>
-            </div>
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">ซื้อวัตถุดิบไปแล้ว</div>
-              <div className="text-lg font-bold text-rose-600">฿{fmtMoney(materialQuota.spentThisMonth)}</div>
-            </div>
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">เหลือทั้งเดือน</div>
-              <div className="text-lg font-bold text-slate-800">฿{fmtMoney(materialQuota.remainingBudget)}</div>
-            </div>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">
-            {materialQuota.todayIsPurchaseDay
-              ? "วันสั่งหลัก = งบเดือน ÷ 30"
-              : `วันปกติ = เฉลี่ยงบที่เหลือจากอีก ${materialQuota.otherDaysLeft} วัน`}
-          </p>
-        </div>
-      )}
 
       {/* Range nav — month shows a big number + small month/year (owner 2026-06-23) */}
       <div className="flex items-center justify-center gap-5">
@@ -1597,6 +1617,7 @@ export default function LedgerDashboardClient({
                     <div className="text-[11px] text-slate-400 truncate">
                       {fmtDayLabel(e.bill_date)}{e.category ? ` · ${e.category}` : ""}{e.payment_status === "unpaid" ? " · ค้างชำระ" : ""}{e.capex_bucket ? " · " : ""}
                       {e.capex_bucket ? <span className="text-violet-600">FEASIBILITY</span> : null}
+                      {e.awaiting_doc ? <span className="text-amber-700"> · ⏳ รอเอกสาร</span> : null}
                     </div>
                     <div className="mt-0.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
                       <div className="h-full bg-rose-300" style={{ width: `${Math.min(100, pct)}%` }} />
