@@ -84,7 +84,14 @@ export default function DaybookPage({
   // shows in the shift-close report, surfaced here so admins see the day's
   // ordering budget without opening a shift. null when the branch has the
   // quota feature off.
-  const materialQuota = materialPurchaseQuota(branchId, todayBkk());
+  // Quota's X on day 2+ = the run-rate ประมาณการยอดขายทั้งเดือน for the CURRENT
+  // month. Reuse `dash` when the page is already showing this month; otherwise
+  // compute the month forecast once (independent of the viewed week/year range).
+  const quotaToday_ = todayBkk();
+  const monthForecast = (period === "month" && anchor.slice(0, 7) === quotaToday_.slice(0, 7))
+    ? dash.forecast
+    : ledgerDashboard(branchId, "month", quotaToday_).forecast;
+  const materialQuota = materialPurchaseQuota(branchId, quotaToday_, monthForecast);
 
   return (
     <div className="space-y-4">

@@ -886,8 +886,11 @@ export default function LedgerDashboardClient({
   // Material-purchase quota for today — mirrors the shift-close card. null when
   // the branch has the feature off.
   materialQuota: {
-    targetSales: number; budgetPct: number; weekdayLabel: string; monthBudget: number; spentThisMonth: number;
-    remainingBudget: number; otherDaysLeft: number; todayIsPurchaseDay: boolean; quotaToday: number;
+    targetSales: number; forecastSales: number | null; xUsed: number; isFirstDay: boolean;
+    budgetPct: number; weekday: number; weekdayLabel: string;
+    monthBudget: number; spentThisMonth: number; remainingBudget: number;
+    daysInMonth: number; todayDate: number; daysLeft: number; purchaseDayCount: number;
+    todayIsPurchaseDay: boolean; quotaToday: number;
   } | null;
   payCycleWeekday: number;
 }) {
@@ -1065,7 +1068,7 @@ export default function LedgerDashboardClient({
             </span>
           </div>
 
-          {/* Headline: today's allowance + how it was derived */}
+          {/* Headline: today's allowance + the exact formula used */}
           <div className="mt-2 flex items-end gap-3 flex-wrap">
             <div>
               <div className="text-[11px] text-slate-500">สั่งซื้อได้วันนี้ไม่เกิน</div>
@@ -1073,16 +1076,17 @@ export default function LedgerDashboardClient({
             </div>
             <div className="text-[11px] text-slate-500 pb-1 leading-relaxed">
               {materialQuota.todayIsPurchaseDay
-                ? <>= งบทั้งเดือน ฿{fmtMoney(materialQuota.monthBudget)} ÷ 30</>
-                : <>= งบที่เหลือ ฿{fmtMoney(materialQuota.remainingBudget)} ÷ {materialQuota.otherDaysLeft} วันที่เหลือ</>}
+                ? <>= งบทั้งเดือน ฿{fmtMoney(materialQuota.monthBudget)} ÷ {materialQuota.purchaseDayCount} วัน{materialQuota.weekdayLabel} ในเดือนนี้</>
+                : <>= (งบทั้งเดือน ฿{fmtMoney(materialQuota.monthBudget)} − ใช้ไปแล้ว ฿{fmtMoney(materialQuota.spentThisMonth)}) ÷ {materialQuota.daysLeft} วันที่เหลือ</>}
             </div>
           </div>
 
-          {/* Derivation of the monthly budget + spend */}
+          {/* Derivation: which X, the budget, spend + remaining */}
           <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
             <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">เป้ายอดขาย/เดือน</div>
-              <div className="text-base font-bold text-slate-700">฿{fmtMoney(materialQuota.targetSales)}</div>
+              <div className="text-[11px] text-slate-500">ยอดขายคาดการณ์ (X)</div>
+              <div className="text-base font-bold text-slate-700">฿{fmtMoney(materialQuota.xUsed)}</div>
+              <div className="text-[10px] text-slate-400">{materialQuota.isFirstDay ? "เป้าเดือนนี้ (วันแรก)" : "ประมาณการจากยอดจริง"}</div>
             </div>
             <div className="rounded-lg bg-white border border-slate-200 p-2">
               <div className="text-[11px] text-slate-500">งบวัตถุดิบ ({materialQuota.budgetPct}%)</div>
@@ -1098,8 +1102,8 @@ export default function LedgerDashboardClient({
             </div>
           </div>
           <p className="text-[11px] text-slate-400 mt-1.5">
-            งบวัตถุดิบ = เป้ายอดขาย ฿{fmtMoney(materialQuota.targetSales)} × {materialQuota.budgetPct}% ·
-            นับเฉพาะหมวด “ต้นทุนสินค้า/วัตถุดิบ” (GD) ที่ยืนยันแล้ว
+            งบวัตถุดิบทั้งเดือน = ยอดขายคาดการณ์ ฿{fmtMoney(materialQuota.xUsed)} × {materialQuota.budgetPct}% ·
+            วันจันทร์ฟิกเป็นวันสั่งหลัก (เสาร์-อาทิตย์ขายเยอะ) · นับเฉพาะหมวด “ต้นทุนสินค้า/วัตถุดิบ” (GD) ที่ยืนยันแล้ว
           </p>
         </div>
       )}

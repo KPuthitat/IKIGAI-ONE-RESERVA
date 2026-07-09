@@ -1638,14 +1638,33 @@ export function deleteCashAccount(id: number, branchId: number): boolean {
 // still left in the month. GD = the "ต้นทุนสินค้า/วัตถุดิบ" category (code GD).
 
 export type MaterialQuota = {
-  targetSales: number; budgetPct: number; weekday: number; weekdayLabel: string;
-  monthBudget: number; spentThisMonth: number; remainingBudget: number;
-  otherDaysLeft: number; todayIsPurchaseDay: boolean; quotaToday: number;
+  targetSales: number;        // configured เป้ายอดขาย X — used on day 1 of the month
+  forecastSales: number | null; // run-rate ประมาณการยอดขายทั้งเดือน — X on day 2+
+  xUsed: number;              // the X actually applied today (target on day 1, else forecast)
+  isFirstDay: boolean;
+  budgetPct: number;          // Y (% COG)
+  weekday: number; weekdayLabel: string;  // the fixed purchase weekday (NAMA = Monday)
+  monthBudget: number;        // xUsed × Y%  = โควตาสั่งซื้อทั้งเดือน
+  spentThisMonth: number;     // confirmed GD spend so far this month
+  remainingBudget: number;    // monthBudget − spent
+  daysInMonth: number; todayDate: number; daysLeft: number; purchaseDayCount: number;
+  todayIsPurchaseDay: boolean; quotaToday: number;
 };
 
 const TH_WEEKDAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
 
-export function materialPurchaseQuota(branchId: number, date: string): MaterialQuota | null {
+/** Material-purchase quota for `date` (owner 2026-07-10, taught logic):
+ *   • X = เป้ายอดขาย on day 1 of the month (configured material_target_sales),
+ *     otherwise the run-rate ประมาณการยอดขายทั้งเดือน passed in `forecastSales`
+ *     (falls back to the target when no sales yet).
+ *   • โควตาทั้งเดือน = X × Y% (Y = material_budget_pct).
+ *   • On the fixed purchase weekday (NAMA = Monday): quota = โควตาทั้งเดือน ÷
+ *     (จำนวนวันจันทร์ในเดือนนั้น) — because Sat/Sun sell a lot, restock on Monday.
+ *   • Any other day: quota = (โควตาทั้งเดือน − ที่ใช้ไปแล้ว) ÷ (วันคงเหลือในเดือน),
+ *     where วันคงเหลือ = daysInMonth − todayDate (per the owner's example). */
+export function materialPurchaseQuota(
+  branchId: number, date: string, forecastSales?: number | null
+): MaterialQuota | null {
   const db = getDb();
   const b = db.prepare(
     "SELECT material_quota_enabled AS en, material_target_sales AS x, material_budget_pct AS y, material_purchase_weekday AS wd FROM branches WHERE id = ?"
@@ -1655,32 +1674,37 @@ export function materialPurchaseQuota(branchId: number, date: string): MaterialQ
   const gd = db.prepare("SELECT name FROM accounta_categories WHERE code = 'GD'")
     .get() as { name: string } | undefined;
   const gdName = gd?.name ?? "ต้นทุนสินค้า/วัตถุดิบ";
-  const spentRow = db.prepare(
+  const spent = round2((db.prepare(
     "SELECT COALESCE(SUM(amount_total),0) AS s FROM accounta_expenses WHERE review_status = 'confirmed' AND branch_id = ? AND substr(bill_date,1,7) = ? AND category = ?"
-  ).get(branchId, month, gdName) as { s: number };
-  const monthBudget = round2(b.x * (b.y / 100));
-  const spent = round2(spentRow.s);
-  const remainingBudget = round2(monthBudget - spent);
-  // Quota rule (owner 2026-06-21, revised): buying is allowed EVERY day.
-  //   • On the chosen weekday (the planned order day) → a flat daily rate =
-  //     monthly budget ÷ 30 (e.g. 240,000/30 = 8,000 every Monday).
-  //   • On any other day → leftover budget (X×Y% − spent) spread over the
-  //     remaining NON-weekday days of the month.
+  ).get(branchId, month, gdName) as { s: number }).s);
+
   const [yy, mm, dd] = date.split("-").map(Number);
-  const lastDay = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
-  const todayIsPurchaseDay = new Date(Date.UTC(yy, mm - 1, dd)).getUTCDay() === b.wd;
-  let otherDaysLeft = 0;
-  for (let day = dd; day <= lastDay; day++) {
-    if (new Date(Date.UTC(yy, mm - 1, day)).getUTCDay() !== b.wd) otherDaysLeft += 1;
+  const daysInMonth = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+  const isFirstDay = dd === 1;
+  // X: day 1 uses the configured target; day 2+ uses the run-rate forecast
+  // (fall back to the target until there's a forecast to go on).
+  const fc = Number(forecastSales) || 0;
+  const xUsed = round2(isFirstDay || fc <= 0 ? b.x : fc);
+  const monthBudget = round2(xUsed * (b.y / 100));
+  const remainingBudget = round2(monthBudget - spent);
+
+  // Count the purchase-weekday days in the month (e.g. Mondays).
+  let purchaseDayCount = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    if (new Date(Date.UTC(yy, mm - 1, day)).getUTCDay() === b.wd) purchaseDayCount += 1;
   }
+  const todayIsPurchaseDay = new Date(Date.UTC(yy, mm - 1, dd)).getUTCDay() === b.wd;
+  const daysLeft = daysInMonth - dd;   // owner's example: (30 − 10) = 20
+
   const quotaToday = todayIsPurchaseDay
-    ? round2(monthBudget / 30)
-    : (otherDaysLeft > 0 ? Math.max(0, round2(remainingBudget / otherDaysLeft)) : 0);
+    ? (purchaseDayCount > 0 ? round2(monthBudget / purchaseDayCount) : 0)
+    : (daysLeft > 0 ? Math.max(0, round2(remainingBudget / daysLeft)) : Math.max(0, remainingBudget));
+
   return {
-    targetSales: round2(b.x), budgetPct: b.y, weekday: b.wd,
-    weekdayLabel: TH_WEEKDAYS[b.wd] ?? "",
+    targetSales: round2(b.x), forecastSales: fc > 0 ? round2(fc) : null, xUsed, isFirstDay,
+    budgetPct: b.y, weekday: b.wd, weekdayLabel: TH_WEEKDAYS[b.wd] ?? "",
     monthBudget, spentThisMonth: spent, remainingBudget,
-    otherDaysLeft, todayIsPurchaseDay, quotaToday
+    daysInMonth, todayDate: dd, daysLeft, purchaseDayCount, todayIsPurchaseDay, quotaToday
   };
 }
 

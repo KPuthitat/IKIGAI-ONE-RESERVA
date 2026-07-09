@@ -56,9 +56,9 @@ type DefaultFieldConfig = {
 // Mirror of MaterialQuota (server lib/accounta-db) — duplicated here so the
 // client component doesn't import the server-only DB module.
 type MaterialQuotaView = {
-  weekdayLabel: string;
+  weekdayLabel: string; xUsed: number; budgetPct: number;
   monthBudget: number; spentThisMonth: number; remainingBudget: number;
-  otherDaysLeft: number; todayIsPurchaseDay: boolean; quotaToday: number;
+  daysLeft: number; purchaseDayCount: number; todayIsPurchaseDay: boolean; quotaToday: number;
 };
 
 export default function ShiftCloseForm({
@@ -677,15 +677,15 @@ export default function ShiftCloseForm({
               <div className="text-[11px] text-slate-500">
                 โควตาที่สั่งได้วันนี้
                 {materialQuota.todayIsPurchaseDay
-                  ? ` · วัน${materialQuota.weekdayLabel} (วันสั่งหลัก = งบเดือน ÷ 30)`
-                  : " · วันปกติ (เฉลี่ยงบที่เหลือ)"}
+                  ? ` · วัน${materialQuota.weekdayLabel} (วันสั่งหลัก = งบเดือน ÷ ${materialQuota.purchaseDayCount} วัน${materialQuota.weekdayLabel})`
+                  : " · วันปกติ (งบที่เหลือ ÷ วันที่เหลือ)"}
               </div>
               <div className="text-2xl font-bold text-emerald-700">฿{fmtThb(quota)}</div>
               <div className="text-[11px] text-slate-500 mt-1">
-                งบเดือนนี้ ฿{fmtThb(materialQuota.monthBudget)} · ซื้อไปแล้ว ฿{fmtThb(materialQuota.spentThisMonth)}
+                งบเดือนนี้ ฿{fmtThb(materialQuota.monthBudget)} (ยอดคาดการณ์ ฿{fmtThb(materialQuota.xUsed)} × {materialQuota.budgetPct}%) · ซื้อไปแล้ว ฿{fmtThb(materialQuota.spentThisMonth)}
                 {materialQuota.todayIsPurchaseDay
                   ? ""
-                  : ` · เฉลี่ยจากวันที่เหลืออีก ${materialQuota.otherDaysLeft} วัน`}
+                  : ` · เฉลี่ยจากงบที่เหลืออีก ${materialQuota.daysLeft} วัน`}
               </div>
             </div>
             <div>

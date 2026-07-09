@@ -3,7 +3,7 @@ import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { isRevshareBranch } from "@/lib/revshare-db";
-import { materialPurchaseQuota } from "@/lib/accounta-db";
+import { materialPurchaseQuota, ledgerDashboard } from "@/lib/accounta-db";
 import { fmtMoney } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,9 @@ export default function AccountaHome() {
   // Material-purchase quota for today — shown here too so it's easy to find
   // (owner 2026-07-05 "หาไม่เจอ"). Null when the branch has the feature off.
   const bkkToday = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-  const materialQuota = user.activeBranchId != null ? materialPurchaseQuota(user.activeBranchId, bkkToday) : null;
+  const materialQuota = user.activeBranchId != null
+    ? materialPurchaseQuota(user.activeBranchId, bkkToday, ledgerDashboard(user.activeBranchId, "month", bkkToday).forecast)
+    : null;
 
   const cards = [
     {
