@@ -45,6 +45,28 @@ export const SlipBody = z.object({
   slip_image_url: z.string().url().max(1000).nullable().optional()
 }).refine((d) => !!(d.slip_data || d.slip_image_url), { message: "slip_required" });
 
+// ─── Rider (commit 6) ────────────────────────────────────────────────────────
+
+export const RiderRegisterBody = z.object({
+  access_token: z.string().min(1),
+  branch_id: z.number().int().positive(),
+  phone: z.string().trim().max(20).nullable().optional(),
+  vehicle_type: z.string().trim().max(40).nullable().optional(),
+  plate: z.string().trim().max(20).nullable().optional()
+});
+
+export const RiderHeartbeatBody = z.object({
+  access_token: z.string().min(1),
+  lat: latSchema,
+  lng: lngSchema
+});
+
+export const RiderJobActionBody = z.object({
+  access_token: z.string().min(1),
+  action: z.enum(["accept", "pickup", "deliver"]),
+  proof_photo_url: z.string().url().max(1000).nullable().optional()
+});
+
 /** Map a validated body + a server-verified LINE userId into a CreateOrderInput. */
 export function toCreateOrderInput(
   d: z.infer<typeof CreateOrderBody>,

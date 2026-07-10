@@ -1642,6 +1642,14 @@ function runMigrations(db: Database.Database): void {
       db.exec("ALTER TABLE branches ADD COLUMN delivera_enabled INTEGER NOT NULL DEFAULT 0");
     }
   }
+  // Rider live-location tracking (owner 2026-07-10) — the rider LIFF heartbeats
+  // its GPS so dispatch can see who's nearby + track a job in progress.
+  {
+    const rcols = db.prepare("PRAGMA table_info(riders)").all() as Array<{ name: string }>;
+    if (!rcols.some((c) => c.name === "last_lat")) db.exec("ALTER TABLE riders ADD COLUMN last_lat REAL");
+    if (!rcols.some((c) => c.name === "last_lng")) db.exec("ALTER TABLE riders ADD COLUMN last_lng REAL");
+    if (!rcols.some((c) => c.name === "last_location_at")) db.exec("ALTER TABLE riders ADD COLUMN last_location_at TEXT");
+  }
   // Seed 2 default zones for any DELIVERA-enabled branch that has none yet
   // (idempotent; runs on boot). Deferred for disabled branches so prod stays
   // clean until the owner turns the module on.

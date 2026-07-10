@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { isDeliveraBranch } from "@/lib/delivera/db";
-import { advanceKitchenOrder, cancelKitchenOrder, confirmOrderSlip } from "@/lib/delivera/kitchen";
+import { advanceKitchenOrder, cancelKitchenOrder, confirmOrderSlip, dispatchRider } from "@/lib/delivera/kitchen";
 import { OrderError } from "@/lib/delivera/orders";
 
 // Admin (session): kitchen action on one order — advance status, confirm a
@@ -11,8 +11,9 @@ import { OrderError } from "@/lib/delivera/orders";
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
-  action: z.enum(["advance", "cancel", "confirm_slip"]),
-  to: z.enum(["paid", "confirmed", "preparing", "ready"]).optional()
+  action: z.enum(["advance", "cancel", "confirm_slip", "assign"]),
+  to: z.enum(["paid", "confirmed", "preparing", "ready"]).optional(),
+  rider_id: z.number().int().positive().optional()
 });
 
 export async function POST(req: Request, { params }: { params: { orderId: string } }) {
@@ -33,6 +34,11 @@ export async function POST(req: Request, { params }: { params: { orderId: string
     }
     if (parsed.data.action === "cancel") {
       return NextResponse.json({ ok: true, status: cancelKitchenOrder(orderId, user.activeBranchId) });
+    }
+    if (parsed.data.action === "assign") {
+      if (!parsed.data.rider_id) return NextResponse.json({ error: "rider_required" }, { status: 400 });
+      dispatchRider(orderId, user.activeBranchId, parsed.data.rider_id);
+      return NextResponse.json({ ok: true, status: "assigned" });
     }
     confirmOrderSlip(orderId, user.activeBranchId);
     return NextResponse.json({ ok: true });
