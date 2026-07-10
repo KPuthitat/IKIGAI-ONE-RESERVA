@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { apiUrl } from "@/lib/url";
 
-type MenuItem = { id: number; name_th: string; category: string | null; price: number; is_available: boolean; image_url: string | null };
+type MenuItem = { id: number; name_th: string; category: string | null; description: string | null; price: number; is_available: boolean; image_url: string | null };
 type Zone = { id: number; name: string; max_distance_km: number; base_fee: number; per_km_fee: number; min_order_amount: number };
 type Hooks = { deduct_stock: boolean; post_income: boolean; record_insigna: boolean };
 
@@ -134,16 +134,18 @@ export default function SettingsClient(props: {
 }
 
 function MenuManager({ menu, setMenu }: { menu: MenuItem[]; setMenu: (m: MenuItem[]) => void }) {
-  const [name, setName] = useState(""); const [cat, setCat] = useState(""); const [price, setPrice] = useState("");
+  const [name, setName] = useState(""); const [cat, setCat] = useState(""); const [price, setPrice] = useState(""); const [desc, setDesc] = useState("");
   async function add() {
     if (!name.trim() || !(Number(price) >= 0)) return;
-    const res = await fetch(apiUrl("/api/admin/delivera/menu"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name_th: name.trim(), category: cat.trim() || null, price: Number(price) }) });
+    const body = { name_th: name.trim(), category: cat.trim() || null, description: desc.trim() || null, price: Number(price) };
+    const res = await fetch(apiUrl("/api/admin/delivera/menu"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const j = await res.json().catch(() => ({}));
-    if (res.ok && j.ok) { setMenu([...menu, { id: j.id, name_th: name.trim(), category: cat.trim() || null, price: Number(price), is_available: true, image_url: null }]); setName(""); setCat(""); setPrice(""); }
+    if (res.ok && j.ok) { setMenu([...menu, { id: j.id, ...body, is_available: true, image_url: null }]); setName(""); setCat(""); setPrice(""); setDesc(""); }
   }
   function setImage(it: MenuItem, url: string | null) { setMenu(menu.map((m) => m.id === it.id ? { ...m, image_url: url } : m)); }
   async function toggle(it: MenuItem) { if (await post(`/api/admin/delivera/menu/${it.id}`, { is_available: !it.is_available }, "PATCH")) setMenu(menu.map((m) => m.id === it.id ? { ...m, is_available: !m.is_available } : m)); }
   async function setPriceItem(it: MenuItem, p: number) { if (await post(`/api/admin/delivera/menu/${it.id}`, { price: p }, "PATCH")) setMenu(menu.map((m) => m.id === it.id ? { ...m, price: p } : m)); }
+  async function setDescItem(it: MenuItem, d: string) { const v = d.trim() || null; if (await post(`/api/admin/delivera/menu/${it.id}`, { description: v }, "PATCH")) setMenu(menu.map((m) => m.id === it.id ? { ...m, description: v } : m)); }
   async function del(it: MenuItem) { if (await post(`/api/admin/delivera/menu/${it.id}`, {}, "DELETE")) setMenu(menu.filter((m) => m.id !== it.id)); }
   return (
     <div className="card space-y-2">
@@ -154,6 +156,8 @@ function MenuManager({ menu, setMenu }: { menu: MenuItem[]; setMenu: (m: MenuIte
             <ImagePick url={it.image_url} endpoint={`/api/admin/delivera/menu/${it.id}/image`} onChange={(u) => setImage(it, u)} size={44} label="รูป" />
             <div className="flex-1 min-w-0">
               <div className="text-sm text-slate-700 truncate">{it.name_th}{it.category ? <span className="text-slate-400"> · {it.category}</span> : null}</div>
+              <input className="input !py-0.5 !text-[11px] mt-0.5 w-full" defaultValue={it.description ?? ""} placeholder="คำอธิบาย (ถ้ามี)"
+                onBlur={(e) => { if ((e.target.value.trim() || null) !== (it.description ?? null)) setDescItem(it, e.target.value); }} />
             </div>
             <input type="number" min={0} className="input !w-24 !py-1 text-right font-mono" defaultValue={it.price}
               onBlur={(e) => { const p = Number(e.target.value); if (p !== it.price && p >= 0) setPriceItem(it, p); }} />
@@ -169,6 +173,7 @@ function MenuManager({ menu, setMenu }: { menu: MenuItem[]; setMenu: (m: MenuIte
         <div className="w-24"><label className="label !text-xs">ราคา</label><input type="number" min={0} className="input text-right font-mono" value={price} onChange={(e) => setPrice(e.target.value)} /></div>
         <button type="button" onClick={add} disabled={!name.trim()} className="rounded-md bg-brand text-white px-3 py-2 text-sm font-medium disabled:opacity-50">เพิ่ม</button>
       </div>
+      <input className="input !text-xs" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="คำอธิบายเมนู (ถ้ามี) — ลูกค้าเห็นตอนสั่ง" />
     </div>
   );
 }

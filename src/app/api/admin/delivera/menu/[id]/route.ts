@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 const Body = z.object({
   name_th: z.string().trim().min(1).max(120).optional(),
   category: z.string().trim().max(60).nullable().optional(),
+  description: z.string().trim().max(300).nullable().optional(),
   price: z.number().min(0).max(1e6).optional(),
   is_available: z.boolean().optional(),
   sort_order: z.number().int().optional()

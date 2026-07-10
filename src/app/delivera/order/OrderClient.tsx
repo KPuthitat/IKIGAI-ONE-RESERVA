@@ -11,7 +11,8 @@ import { fmtMoney } from "@/lib/format";
 // + delivera_enabled are set). window.liff is typed globally in lib/liff-types.
 
 type Branch = { id: number; name: string };
-type MenuItem = { id: number; name_th: string; category: string | null; price: number; image_url: string | null };
+type MenuItem = { id: number; name_th: string; category: string | null; description: string | null; price: number; image_url: string | null };
+type MyOrder = { order_no: string; status: string; total: number; created_at: string };
 type Quote = { deliveryFee: number; distanceKm: number; minOrder: number; meetsMin: boolean; zoneName: string };
 
 type Phase = "loading" | "branch" | "menu" | "checkout" | "done" | "error";
@@ -27,6 +28,8 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [cart, setCart] = useState<Record<number, number>>({});
   const [zoomImg, setZoomImg] = useState<{ url: string; name: string } | null>(null);
+  const [showMine, setShowMine] = useState(false);
+  const [myOrders, setMyOrders] = useState<MyOrder[] | null>(null);
 
   const [fulfillment, setFulfillment] = useState<"delivery" | "pickup">("delivery");
   const [address, setAddress] = useState("");
@@ -69,6 +72,15 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
     boot();
     return () => { cancelled = true; };
   }, [liffId, lockedBranchId]);
+
+  async function openMyOrders() {
+    setShowMine(true); setMyOrders(null);
+    try {
+      const res = await fetch(apiUrl(`/api/delivera/my-orders?token=${encodeURIComponent(accessToken)}`), { cache: "no-store" });
+      const j = await res.json().catch(() => ({}));
+      setMyOrders(res.ok && j.ok ? j.orders : []);
+    } catch { setMyOrders([]); }
+  }
 
   async function loadMenu(id: number) {
     setBranchId(id);
@@ -173,7 +185,10 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
   if (phase === "menu") return (
     <Shell>
       {!lockedBranchId && <button onClick={() => setPhase("branch")} className="text-xs text-slate-500 mb-2">← เปลี่ยนสาขา</button>}
-      <h1 className="text-lg font-bold text-slate-800 mb-3">เมนู</h1>
+      <div className="flex items-center justify-between mb-3">
+        <h1 className="text-lg font-bold text-slate-800">เมนู</h1>
+        <button type="button" onClick={openMyOrders} className="text-xs font-medium text-brand border border-brand rounded-full px-3 py-1">ออเดอร์ของฉัน</button>
+      </div>
       <div className="space-y-2 pb-24">
         {menu.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีเมนู</p>}
         {menu.map((m) => (
@@ -187,6 +202,7 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
             )}
             <div className="flex-1 min-w-0">
               <div className="font-medium text-slate-800 truncate">{m.name_th}</div>
+              {m.description && <div className="text-[11px] text-slate-400 line-clamp-2">{m.description}</div>}
               <div className="text-xs text-slate-500">฿{fmtMoney(m.price)}{m.category ? ` · ${m.category}` : ""}</div>
             </div>
             <div className="flex items-center gap-2">
@@ -212,6 +228,33 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
           <img src={zoomImg.url} alt={zoomImg.name} className="max-w-full max-h-[80vh] rounded-xl object-contain" />
           <p className="mt-3 text-white text-sm font-medium">{zoomImg.name}</p>
           <p className="mt-1 text-white/60 text-xs">แตะที่ใดก็ได้เพื่อปิด</p>
+        </div>
+      )}
+      {showMine && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" onClick={() => setShowMine(false)}>
+          <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-bold text-slate-800">ออเดอร์ของฉัน</h2>
+              <button type="button" onClick={() => setShowMine(false)} className="text-slate-400 text-sm">ปิด</button>
+            </div>
+            {myOrders === null && <p className="text-sm text-slate-400">กำลังโหลด…</p>}
+            {myOrders?.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีออเดอร์</p>}
+            <div className="space-y-2">
+              {myOrders?.map((o) => (
+                <a key={o.order_no} href={`/delivera/track/${o.order_no}`}
+                  className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5 hover:border-brand">
+                  <div className="min-w-0">
+                    <div className="font-mono text-sm font-bold text-slate-700">{o.order_no}</div>
+                    <div className="text-[11px] text-slate-400">{orderStatusText(o.status)}</div>
+                  </div>
+                  <div className="text-right flex-none">
+                    <div className="text-sm font-bold text-slate-800">฿{fmtMoney(o.total)}</div>
+                    <div className="text-[11px] text-brand">ติดตาม →</div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </Shell>
@@ -289,6 +332,14 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 function Row({ label, value }: { label: string; value: string }) {
   return <div className="flex justify-between text-slate-600"><span>{label}</span><span>{value}</span></div>;
+}
+function orderStatusText(s: string): string {
+  const m: Record<string, string> = {
+    pending_payment: "รอชำระเงิน", paid: "ชำระแล้ว", confirmed: "รับออเดอร์แล้ว",
+    preparing: "กำลังทำอาหาร", ready: "พร้อมส่ง", assigned: "กำลังจัดส่ง",
+    picked_up: "กำลังจัดส่ง", delivered: "ส่งถึงแล้ว", completed: "เสร็จสิ้น", cancelled: "ยกเลิก"
+  };
+  return m[s] ?? s;
 }
 function orderErrText(code: string): string {
   const m: Record<string, string> = {

@@ -15,6 +15,7 @@ export type OrderStatus =
 
 export type MenuItem = {
   id: number; branch_id: number; name_th: string; category: string | null;
+  description: string | null;
   price: number; is_available: number; sort_order: number; image_url: string | null;
   inventa_item_id: number | null;
 };
@@ -32,29 +33,30 @@ export function getMenuItem(id: number, branchId: number): MenuItem | null {
 }
 
 export function createMenuItem(branchId: number, m: {
-  name_th: string; category?: string | null; price: number;
+  name_th: string; category?: string | null; description?: string | null; price: number;
   is_available?: boolean; sort_order?: number; image_url?: string | null; inventa_item_id?: number | null;
 }): number {
   const info = getDb()
-    .prepare(`INSERT INTO delivera_menu_items (branch_id, name_th, category, price, is_available, sort_order, image_url, inventa_item_id)
-              VALUES (?,?,?,?,?,?,?,?)`)
-    .run(branchId, m.name_th, m.category ?? null, m.price, m.is_available === false ? 0 : 1,
+    .prepare(`INSERT INTO delivera_menu_items (branch_id, name_th, category, description, price, is_available, sort_order, image_url, inventa_item_id)
+              VALUES (?,?,?,?,?,?,?,?,?)`)
+    .run(branchId, m.name_th, m.category ?? null, m.description ?? null, m.price, m.is_available === false ? 0 : 1,
          m.sort_order ?? 0, m.image_url ?? null, m.inventa_item_id ?? null);
   return Number(info.lastInsertRowid);
 }
 
 export function updateMenuItem(id: number, branchId: number, patch: Partial<{
-  name_th: string; category: string | null; price: number; is_available: boolean;
+  name_th: string; category: string | null; description: string | null; price: number; is_available: boolean;
   sort_order: number; image_url: string | null; inventa_item_id: number | null;
 }>): boolean {
   const cur = getDb().prepare("SELECT * FROM delivera_menu_items WHERE id = ? AND branch_id = ?").get(id, branchId) as MenuItem | undefined;
   if (!cur) return false;
   const r = getDb().prepare(
-    `UPDATE delivera_menu_items SET name_th=?, category=?, price=?, is_available=?, sort_order=?, image_url=?, inventa_item_id=?, updated_at=CURRENT_TIMESTAMP
+    `UPDATE delivera_menu_items SET name_th=?, category=?, description=?, price=?, is_available=?, sort_order=?, image_url=?, inventa_item_id=?, updated_at=CURRENT_TIMESTAMP
      WHERE id=? AND branch_id=?`
   ).run(
     patch.name_th ?? cur.name_th,
     patch.category !== undefined ? patch.category : cur.category,
+    patch.description !== undefined ? patch.description : cur.description,
     patch.price ?? cur.price,
     patch.is_available !== undefined ? (patch.is_available ? 1 : 0) : cur.is_available,
     patch.sort_order ?? cur.sort_order,
@@ -207,6 +209,18 @@ export function getOrderForCustomer(orderNo: string, lineUserId: string): {
     pay_status: o.pay_status, time_slot: o.time_slot, created_at: o.created_at,
     cod_enabled: cod ? cod.cod_enabled === 1 : true
   };
+}
+
+/** A customer's own recent orders (by LIFF identity → customer_hash), newest
+ *  first. Public-safe fields only — powers the "ออเดอร์ของฉัน" list in the LIFF. */
+export function listCustomerOrders(lineUserId: string, limit = 20): Array<{
+  order_no: string; status: OrderStatus; fulfillment: string; total: number; pay_status: string; created_at: string;
+}> {
+  const rows = getDb().prepare(
+    `SELECT order_no, status, fulfillment, total, pay_status, created_at
+       FROM delivery_orders WHERE customer_hash = ? ORDER BY created_at DESC LIMIT ?`
+  ).all(hashLineUserId(lineUserId), limit) as Array<{ order_no: string; status: OrderStatus; fulfillment: string; total: number; pay_status: string; created_at: string }>;
+  return rows;
 }
 
 export function listOrders(branchId: number, statuses?: OrderStatus[]): OrderRow[] {

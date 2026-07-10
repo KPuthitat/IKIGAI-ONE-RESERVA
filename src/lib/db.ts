@@ -1674,6 +1674,11 @@ function runMigrations(db: Database.Database): void {
     // Accept cash-on-delivery. Owner can turn COD off (PromptPay-only) per branch.
     if (!scols.some((c) => c.name === "cod_enabled")) db.exec("ALTER TABLE delivera_branch_settings ADD COLUMN cod_enabled INTEGER NOT NULL DEFAULT 1");
   }
+  // Menu item description (customer-facing blurb, owner 2026-07-10).
+  {
+    const mcols = db.prepare("PRAGMA table_info(delivera_menu_items)").all() as Array<{ name: string }>;
+    if (!mcols.some((c) => c.name === "description")) db.exec("ALTER TABLE delivera_menu_items ADD COLUMN description TEXT");
+  }
   // Seed 2 default zones for any DELIVERA-enabled branch that has none yet
   // (idempotent; runs on boot). Deferred for disabled branches so prod stays
   // clean until the owner turns the module on.
