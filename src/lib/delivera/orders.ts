@@ -61,6 +61,10 @@ export function updateMenuItem(id: number, branchId: number, patch: Partial<{
   return r.changes > 0;
 }
 
+export function deleteMenuItem(id: number, branchId: number): boolean {
+  return getDb().prepare("DELETE FROM delivera_menu_items WHERE id = ? AND branch_id = ?").run(id, branchId).changes > 0;
+}
+
 // ─── Orders ────────────────────────────────────────────────────────────────
 
 export type OrderRow = {

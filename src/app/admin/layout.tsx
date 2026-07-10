@@ -178,6 +178,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       pathPrefix: "/admin/delivera",
       items: [
         { href: "/admin/delivera/kitchen", label: "กระดานครัว" },
+        { href: "/admin/delivera/settings", label: "ตั้งค่า / เมนู" },
         { href: "/admin/delivera/report", label: "ยอดขายเดลิเวอรี่" }
       ]
     }] : []),
