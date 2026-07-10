@@ -19,7 +19,8 @@ export type RbacPermissionKey =
   | "recruita.access"
   | "insigna.view"
   | "ascenda.view"
-  | "accounta.manage";
+  | "accounta.manage"
+  | "delivera.manage";
 
 export type RbacPermissionDef = {
   key: RbacPermissionKey;
@@ -66,6 +67,12 @@ export const RBAC_PERMISSIONS: RbacPermissionDef[] = [
     module: "ACCOUNTA",
     labelTh: "ACCOUNTA — บัญชี/ความเป็นไปได้",
     descTh: "ลงบัญชีรายรับ-รายจ่าย ภาษี และประเมินความเป็นไปได้ของโปรเจคลงทุน (FEASIBILITY)"
+  },
+  {
+    key: "delivera.manage",
+    module: "DELIVERA",
+    labelTh: "DELIVERA — เดลิเวอรี่ส่งเอง",
+    descTh: "กระดานครัวรับออเดอร์เดลิเวอรี่ ยืนยันสลิป จัดการเมนู/โซนส่ง และไรเดอร์"
   }
 ];
 

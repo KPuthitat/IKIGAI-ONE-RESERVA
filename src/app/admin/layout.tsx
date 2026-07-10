@@ -108,6 +108,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // only admins granted accounta.manage (and super_admin / roleless
         // full-admins) see it. FEASIBILITY lives inside it.
         ...(canModule(user, "accounta.manage") ? [{ href: gate("/admin/accounta"), label: "ACCOUNTA" }] : []),
+        // DELIVERA — self-run delivery (owner 2026-07). RBAC-gated; ships dark per
+        // branch (delivera_enabled) so the link is harmless until a branch opts in.
+        ...(canModule(user, "delivera.manage") ? [{ href: gate("/admin/delivera/kitchen"), label: "DELIVERA" }] : []),
         // System-wide entries — only super_admin can manage these,
         // so hide them from regular admins to keep the sidebar clean.
         // The pages still enforce requireSuperAdmin() server-side as
@@ -166,6 +169,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/accounta/cash-accounts", label: "ช่องทางการเงิน / บัญชี" },
         { href: "/admin/accounta/credit-cards", label: "บัตรเครดิตกรรมการ" },
         ...(isSuperAdmin ? [{ href: "/admin/accounta/access", label: "สิทธิ์เข้าถึงตามสาขา" }] : [])
+      ]
+    }] : []),
+    // DELIVERA — contextual section (owner 2026-07). Grows with the module
+    // (riders, menu, zones, settings) as later commits land.
+    ...(canModule(user, "delivera.manage") ? [{
+      label: "DELIVERA",
+      pathPrefix: "/admin/delivera",
+      items: [
+        { href: "/admin/delivera/kitchen", label: "กระดานครัว" }
       ]
     }] : []),
     // สุขภาพพนักงาน — รวม "ผลตรวจสุขภาพ" (ย้ายมาจาก PERSONA) + โครงการ Mounjaro.
