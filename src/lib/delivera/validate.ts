@@ -52,7 +52,8 @@ export const RiderRegisterBody = z.object({
   branch_id: z.number().int().positive(),
   phone: z.string().trim().max(20).nullable().optional(),
   vehicle_type: z.string().trim().max(40).nullable().optional(),
-  plate: z.string().trim().max(20).nullable().optional()
+  plate: z.string().trim().max(20).nullable().optional(),
+  plate_province: z.string().trim().max(40).nullable().optional()
 });
 
 export const RiderHeartbeatBody = z.object({

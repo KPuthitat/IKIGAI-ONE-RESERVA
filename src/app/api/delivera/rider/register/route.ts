@@ -26,7 +26,8 @@ export async function POST(req: Request) {
   if (parsed.data.phone && parsed.data.phone.trim()) {
     rider = completeRiderRegistration(rider.id, {
       displayName: prof.displayName || null, phone: parsed.data.phone.trim(),
-      vehicleType: parsed.data.vehicle_type ?? null, plate: parsed.data.plate ?? null
+      vehicleType: parsed.data.vehicle_type ?? null, plate: parsed.data.plate ?? null,
+      plateProvince: parsed.data.plate_province ?? null
     });
   }
   return NextResponse.json({
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
     rider: {
       id: rider.id, display_name: rider.display_name, status: rider.status,
       is_registered: rider.is_registered === 1,
-      phone: rider.phone, vehicle_type: rider.vehicle_type, plate: rider.plate
+      phone: rider.phone, vehicle_type: rider.vehicle_type, plate: rider.plate, plate_province: rider.plate_province
     }
   });
 }

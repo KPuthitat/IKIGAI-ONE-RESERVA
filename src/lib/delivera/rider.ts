@@ -11,7 +11,7 @@ export type RiderStatus = "offline" | "available" | "busy";
 
 export type RiderRow = {
   id: number; branch_id: number; line_user_id: string; display_name: string;
-  phone: string | null; vehicle_type: string | null; plate: string | null;
+  phone: string | null; vehicle_type: string | null; plate: string | null; plate_province: string | null;
   status: RiderStatus; is_active: number; is_registered: number;
   last_lat: number | null; last_lng: number | null; last_location_at: string | null;
 };
@@ -51,14 +51,14 @@ export function setRiderStatus(riderId: number, status: RiderStatus): void {
 /** Complete a rider's registration (name + phone + vehicle required). Flips
  *  is_registered → 1 so the rider can go online and be dispatched. */
 export function completeRiderRegistration(riderId: number, input: {
-  displayName?: string | null; phone: string; vehicleType?: string | null; plate?: string | null;
+  displayName?: string | null; phone: string; vehicleType?: string | null; plate?: string | null; plateProvince?: string | null;
 }): RiderRow {
   const cur = getRider(riderId);
   if (!cur) throw new OrderError("rider_not_found", riderId);
   getDb().prepare(
-    "UPDATE riders SET display_name=?, phone=?, vehicle_type=?, plate=?, is_registered=1, is_active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?"
+    "UPDATE riders SET display_name=?, phone=?, vehicle_type=?, plate=?, plate_province=?, is_registered=1, is_active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?"
   ).run(input.displayName?.trim() || cur.display_name, input.phone.trim(),
-        input.vehicleType ?? cur.vehicle_type, input.plate ?? cur.plate, riderId);
+        input.vehicleType ?? cur.vehicle_type, input.plate ?? cur.plate, input.plateProvince ?? cur.plate_province, riderId);
   return getRider(riderId)!;
 }
 

@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { branchFromLiffUrl } from "@/lib/delivera/liff-branch";
+import { THAI_PROVINCES } from "@/lib/th-provinces";
+
+const VEHICLE_TYPES = ["มอเตอร์ไซค์", "รถยนต์", "จักรยาน", "อื่นๆ"];
 
 // IKIGAI RIDER app. Registers via the rider LINE channel, heartbeats GPS while
 // online (feeds "who's nearby" dispatch), lists this rider's jobs, and drives
@@ -25,7 +28,7 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
   const [jobs, setJobs] = useState<Job[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [needsReg, setNeedsReg] = useState(false);
-  const [reg, setReg] = useState({ name: "", phone: "", vehicle: "", plate: "" });
+  const [reg, setReg] = useState({ name: "", phone: "", vehicle: "", plate: "", province: "" });
   const [regBusy, setRegBusy] = useState(false);
   const watchRef = useRef<number | null>(null);
   const tokenRef = useRef("");
@@ -53,7 +56,7 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
       if (!res.ok || !j.ok) { setErr(j.error === "rider_channel_not_configured" ? "ยังไม่ได้เปิดระบบทีมงานส่งสุข" : "ลงทะเบียนไม่สำเร็จ"); return; }
       if (j.rider?.is_registered) { setReady(true); return; }
       // Not registered yet → show the form (prefill from LINE profile / any saved values).
-      setReg({ name: j.rider?.display_name ?? "", phone: j.rider?.phone ?? "", vehicle: j.rider?.vehicle_type ?? "", plate: j.rider?.plate ?? "" });
+      setReg({ name: j.rider?.display_name ?? "", phone: j.rider?.phone ?? "", vehicle: j.rider?.vehicle_type ?? "", plate: j.rider?.plate ?? "", province: j.rider?.plate_province ?? "" });
       setNeedsReg(true);
     }
     boot();
@@ -66,7 +69,7 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
     try {
       const res = await fetch(apiUrl("/api/delivera/rider/register"), {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: tokenRef.current, branch_id: branchRef.current, phone: reg.phone.trim(), vehicle_type: reg.vehicle.trim() || null, plate: reg.plate.trim() || null })
+        body: JSON.stringify({ access_token: tokenRef.current, branch_id: branchRef.current, phone: reg.phone.trim(), vehicle_type: reg.vehicle || null, plate: reg.plate.trim() || null, plate_province: reg.province || null })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok || !j.rider?.is_registered) { setErr("ลงทะเบียนไม่สำเร็จ ลองใหม่"); return; }
@@ -151,9 +154,22 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
             <label className="label !text-xs">เบอร์โทร *</label>
             <input className="input" inputMode="tel" value={reg.phone} onChange={(e) => setReg({ ...reg, phone: e.target.value })} placeholder="08x-xxx-xxxx" />
           </div>
+          <div>
+            <label className="label !text-xs">ประเภทรถ</label>
+            <select className="input" value={reg.vehicle} onChange={(e) => setReg({ ...reg, vehicle: e.target.value })}>
+              <option value="">— เลือกประเภทรถ —</option>
+              {VEHICLE_TYPES.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
           <div className="grid grid-cols-2 gap-2">
-            <div><label className="label !text-xs">ประเภทรถ</label><input className="input" value={reg.vehicle} onChange={(e) => setReg({ ...reg, vehicle: e.target.value })} placeholder="มอเตอร์ไซค์" /></div>
             <div><label className="label !text-xs">ทะเบียนรถ</label><input className="input" value={reg.plate} onChange={(e) => setReg({ ...reg, plate: e.target.value })} placeholder="1กก-1234" /></div>
+            <div>
+              <label className="label !text-xs">จังหวัด</label>
+              <select className="input" value={reg.province} onChange={(e) => setReg({ ...reg, province: e.target.value })}>
+                <option value="">— เลือกจังหวัด —</option>
+                {THAI_PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
           </div>
           <button type="button" onClick={submitReg} disabled={regBusy || !reg.phone.trim()}
             className="w-full rounded-lg bg-brand text-white py-2.5 text-sm font-medium disabled:opacity-50">
