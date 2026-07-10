@@ -148,6 +148,29 @@ export function riderDeliver(orderId: number, riderId: number, proofPhotoUrl?: s
   return "delivered";
 }
 
+/** Finish a job in one tap ("จบงาน"): marks picked-up (if not already) AND
+ *  delivered, frees the rider, and realizes the sale. Collapses the old
+ *  pickup→deliver two-step so the rider app has just รับงาน / จบงาน. */
+export function riderComplete(orderId: number, riderId: number, proofPhotoUrl?: string | null): OrderStatus {
+  const { order, delivery } = ownedDelivery(orderId, riderId);
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare(
+      `UPDATE deliveries
+          SET picked_up_at = COALESCE(picked_up_at, CURRENT_TIMESTAMP),
+              delivered_at = CURRENT_TIMESTAMP,
+              proof_photo_url = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE order_id = ?`
+    ).run(proofPhotoUrl ?? delivery.proof_photo_url, orderId);
+    if (order.status === "assigned") setOrderStatus(orderId, "picked_up");
+    setOrderStatus(orderId, "delivered", { force: true });   // robust regardless of prior leg
+    if (delivery.rider_id) setRiderStatus(delivery.rider_id, "available");   // free the rider
+  });
+  tx();
+  runOrderHooks(orderId, "completed");
+  return "delivered";
+}
+
 export type RiderJob = { order: OrderRow; delivery: DeliveryRow };
 
 /** A rider's active jobs (not completed/cancelled), oldest first. */

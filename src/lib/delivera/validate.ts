@@ -63,7 +63,7 @@ export const RiderHeartbeatBody = z.object({
 
 export const RiderJobActionBody = z.object({
   access_token: z.string().min(1),
-  action: z.enum(["accept", "pickup", "deliver"]),
+  action: z.enum(["accept", "pickup", "deliver", "complete"]),
   proof_photo_url: z.string().url().max(1000).nullable().optional()
 });
 

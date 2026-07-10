@@ -16,7 +16,7 @@ type Quote = { deliveryFee: number; distanceKm: number; minOrder: number; meetsM
 
 type Phase = "loading" | "branch" | "menu" | "checkout" | "done" | "error";
 
-export default function OrderClient({ liffId }: { liffId: string }) {
+export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: string; lockedBranchId?: number }) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [err, setErr] = useState<string | null>(null);
   const [accessToken, setAccessToken] = useState<string>("");
@@ -54,6 +54,8 @@ export default function OrderClient({ liffId }: { liffId: string }) {
         if (cancelled) return;
         setAccessToken(token ?? "");
         setDisplayName(prof?.displayName ?? "");
+        // Branch-scoped link (?branch=<id>) → jump straight to that shop's menu.
+        if (lockedBranchId) { await loadMenu(lockedBranchId); return; }
         const res = await fetch(apiUrl("/api/delivera/branches"));
         const j = await res.json();
         setBranches(j.branches ?? []);
@@ -65,9 +67,9 @@ export default function OrderClient({ liffId }: { liffId: string }) {
     }
     boot();
     return () => { cancelled = true; };
-  }, [liffId]);
+  }, [liffId, lockedBranchId]);
 
-  async function pickBranch(id: number) {
+  async function loadMenu(id: number) {
     setBranchId(id);
     setBusy(true);
     try {
@@ -158,7 +160,7 @@ export default function OrderClient({ liffId }: { liffId: string }) {
       {branches.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีสาขาที่เปิดบริการเดลิเวอรี</p>}
       <div className="space-y-2">
         {branches.map((b) => (
-          <button key={b.id} onClick={() => pickBranch(b.id)} disabled={busy}
+          <button key={b.id} onClick={() => loadMenu(b.id)} disabled={busy}
             className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 hover:border-brand hover:bg-amber-50 font-medium text-slate-700">
             {b.name}
           </button>
@@ -169,7 +171,7 @@ export default function OrderClient({ liffId }: { liffId: string }) {
 
   if (phase === "menu") return (
     <Shell>
-      <button onClick={() => setPhase("branch")} className="text-xs text-slate-500 mb-2">← เปลี่ยนสาขา</button>
+      {!lockedBranchId && <button onClick={() => setPhase("branch")} className="text-xs text-slate-500 mb-2">← เปลี่ยนสาขา</button>}
       <h1 className="text-lg font-bold text-slate-800 mb-3">เมนู</h1>
       <div className="space-y-2 pb-24">
         {menu.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีเมนู</p>}

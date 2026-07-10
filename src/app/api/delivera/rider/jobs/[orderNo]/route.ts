@@ -3,10 +3,11 @@ import { RiderJobActionBody } from "@/lib/delivera/validate";
 import { riderLineReady } from "@/lib/delivera/env";
 import { verifyAccessToken } from "@/lib/delivera/line";
 import { getOrderByNo, OrderError } from "@/lib/delivera/orders";
-import { getRiderByLine, riderAccept, riderPickup, riderDeliver } from "@/lib/delivera/rider";
+import { getRiderByLine, riderAccept, riderPickup, riderDeliver, riderComplete } from "@/lib/delivera/rider";
 
-// Rider LIFF: progress a job — accept, mark picked up, or delivered. Guarded to
-// the job's own rider (rider.ts rejects a job that isn't theirs).
+// Rider LIFF: progress a job — accept ("รับงาน") or complete ("จบงาน", one-tap
+// pickup+deliver). pickup/deliver kept for compatibility. Guarded to the job's
+// own rider (rider.ts rejects a job that isn't theirs).
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request, { params }: { params: { orderNo: string } }) {
@@ -24,6 +25,7 @@ export async function POST(req: Request, { params }: { params: { orderNo: string
   try {
     if (parsed.data.action === "accept") { riderAccept(order.id, rider.id); return NextResponse.json({ ok: true }); }
     if (parsed.data.action === "pickup") { return NextResponse.json({ ok: true, status: riderPickup(order.id, rider.id) }); }
+    if (parsed.data.action === "complete") { return NextResponse.json({ ok: true, status: riderComplete(order.id, rider.id, parsed.data.proof_photo_url ?? null) }); }
     return NextResponse.json({ ok: true, status: riderDeliver(order.id, rider.id, parsed.data.proof_photo_url ?? null) });
   } catch (e) {
     if (e instanceof OrderError) return NextResponse.json({ error: e.code, detail: e.detail }, { status: 400 });

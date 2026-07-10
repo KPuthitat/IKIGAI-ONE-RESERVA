@@ -85,7 +85,7 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
     setOnline(true);
   }
 
-  async function jobAction(orderNo: string, action: "accept" | "pickup" | "deliver") {
+  async function jobAction(orderNo: string, action: "accept" | "complete") {
     setBusy(orderNo + action);
     try {
       const res = await fetch(apiUrl(`/api/delivera/rider/jobs/${orderNo}`), {
@@ -134,17 +134,12 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
               {job.note && <p className="text-[12px] text-amber-700 mt-1">หมายเหตุ: {job.note}</p>}
 
               <div className="mt-2">
-                {!job.accepted && (
+                {!job.accepted ? (
                   <button type="button" disabled={busy === job.order_no + "accept"} onClick={() => jobAction(job.order_no, "accept")}
                     className="w-full rounded-lg bg-brand text-white py-2.5 text-sm font-medium disabled:opacity-50">รับงาน</button>
-                )}
-                {job.accepted && !job.picked_up && (
-                  <button type="button" disabled={busy === job.order_no + "pickup"} onClick={() => jobAction(job.order_no, "pickup")}
-                    className="w-full rounded-lg bg-brand text-white py-2.5 text-sm font-medium disabled:opacity-50">รับของแล้ว</button>
-                )}
-                {job.picked_up && (
-                  <button type="button" disabled={busy === job.order_no + "deliver"} onClick={() => jobAction(job.order_no, "deliver")}
-                    className="w-full rounded-lg bg-emerald-600 text-white py-2.5 text-sm font-medium disabled:opacity-50">ส่งถึงแล้ว</button>
+                ) : (
+                  <button type="button" disabled={busy === job.order_no + "complete"} onClick={() => jobAction(job.order_no, "complete")}
+                    className="w-full rounded-lg bg-emerald-600 text-white py-2.5 text-sm font-medium disabled:opacity-50">จบงาน</button>
                 )}
               </div>
             </div>
