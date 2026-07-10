@@ -17,7 +17,7 @@ import { encryptSecret, decryptSecret } from "./secret-vault";
 
 export type MessagingChannel = {
   id: number;
-  scope: "platform" | "reserva" | "recruita";
+  scope: "platform" | "reserva" | "recruita" | "delivera";
   code: string;
   label: string;
   branch_id: number | null;
@@ -65,6 +65,13 @@ export function getRecruitaChannel(): MessagingChannel | null {
     "SELECT * FROM messaging_channels WHERE code = ? LIMIT 1"
   ).get(RECRUITA_CODE) as MessagingChannel | undefined;
   return decryptRow(row) ?? null;
+}
+
+/** DELIVERA channels (scope='delivera'): customer ordering + ทีมงานส่งสุข. Each
+ *  is a singleton keyed by code, configured in-app at /admin/delivera/connection.
+ *  Returns the row even with empty creds so the admin UI can render it. */
+export function getDeliveraChannel(kind: "customer" | "rider"): MessagingChannel | null {
+  return getChannelByCode(kind === "customer" ? "delivera-customer" : "delivera-rider");
 }
 
 /** Look up any channel by its webhook code/slug. Used by the webhook router. */

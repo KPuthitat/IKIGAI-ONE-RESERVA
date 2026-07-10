@@ -37,7 +37,7 @@ type LineEvent = {
 };
 
 type ResolvedChannel = {
-  scope: "platform" | "reserva" | "legacy-branch" | "recruita";
+  scope: "platform" | "reserva" | "legacy-branch" | "recruita" | "delivera";
   label: string;
   channel_secret: string;
   channel_token: string;

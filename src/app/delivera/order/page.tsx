@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { customerCreds } from "@/lib/delivera/channels";
 import OrderClient from "./OrderClient";
 
 // Customer LIFF entry — loads the LINE LIFF SDK, then the ordering client picks
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "DELIVERA · สั่งอาหาร" };
 
 export default function DeliveraOrderPage({ searchParams }: { searchParams: { branch?: string } }) {
-  const liffId = process.env.NEXT_PUBLIC_LINE_CUSTOMER_LIFF_ID ?? "";
+  const liffId = customerCreds().liffId ?? "";
   const lockedBranchId = Number(searchParams.branch) || 0;
   return (
     <>

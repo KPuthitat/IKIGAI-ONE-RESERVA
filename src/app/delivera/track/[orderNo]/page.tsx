@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
+import { customerCreds } from "@/lib/delivera/channels";
 import TrackClient from "./TrackClient";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "DELIVERA · ติดตามออเดอร์" };
 
 export default function DeliveraTrackPage({ params }: { params: { orderNo: string } }) {
-  const liffId = process.env.NEXT_PUBLIC_LINE_CUSTOMER_LIFF_ID ?? "";
+  const liffId = customerCreds().liffId ?? "";
   return (
     <>
       {/* eslint-disable-next-line @next/next/no-sync-scripts */}

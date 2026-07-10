@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { customerCreds, riderCreds } from "./channels";
 
 // DELIVERA environment (owner 2026-07-02).
 //
@@ -46,11 +47,14 @@ export function deliveraConfigured(): boolean {
 }
 
 // Per-subsystem readiness — lets one part work while another is still dark.
+// Credentials resolve DB-first (in-app connection page) then .env fallback.
 export function customerLineReady(): boolean {
-  return Boolean(process.env.LINE_CUSTOMER_CHANNEL_ACCESS_TOKEN && process.env.LINE_CUSTOMER_CHANNEL_SECRET);
+  const c = customerCreds();
+  return Boolean(c.token && c.secret);
 }
 export function riderLineReady(): boolean {
-  return Boolean(process.env.LINE_RIDER_CHANNEL_ACCESS_TOKEN && process.env.LINE_RIDER_CHANNEL_SECRET);
+  const c = riderCreds();
+  return Boolean(c.token && c.secret);
 }
 export function slipOkReady(): boolean {
   return Boolean(process.env.SLIPOK_API_KEY && process.env.SLIPOK_BRANCH_ID);

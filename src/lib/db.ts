@@ -2772,6 +2772,53 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE messaging_channels ADD COLUMN oa_link TEXT");
   }
 
+  // 2026-07-10 — DELIVERA in-app LINE connection. Add scope='delivera' so the
+  // customer + ทีมงานส่งสุข channels can be configured in-app (token/secret/LIFF)
+  // like RESERVA/RECRUITA, instead of only via .env. Same probe-then-rebuild
+  // pattern; the rebuild copies ALL current columns (incl. liff_id_status +
+  // oa_link, which exist by now) so nothing is dropped.
+  let deliveraScopeOk = false;
+  try {
+    db.exec("SAVEPOINT dv_scope");
+    db.prepare("INSERT INTO messaging_channels (scope, code, label) VALUES ('delivera', '__dvprobe__', '__dvprobe__')").run();
+    db.exec("ROLLBACK TO SAVEPOINT dv_scope");
+    db.exec("RELEASE SAVEPOINT dv_scope");
+    deliveraScopeOk = true;
+  } catch {
+    try { db.exec("ROLLBACK TO SAVEPOINT dv_scope"); db.exec("RELEASE SAVEPOINT dv_scope"); }
+    catch { /* probe already rolled back */ }
+  }
+  if (!deliveraScopeOk) {
+    db.exec("PRAGMA foreign_keys = OFF");
+    db.exec(`
+      CREATE TABLE messaging_channels_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scope TEXT NOT NULL CHECK (scope IN ('platform','reserva','recruita','delivera')),
+        code TEXT UNIQUE NOT NULL,
+        label TEXT NOT NULL,
+        branch_id INTEGER REFERENCES branches(id),
+        channel_secret TEXT,
+        channel_token TEXT,
+        liff_id TEXT,
+        liff_id_status TEXT,
+        oa_link TEXT,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_by INTEGER REFERENCES users(id)
+      );
+      INSERT INTO messaging_channels_new
+        (id, scope, code, label, branch_id, channel_secret, channel_token, liff_id, liff_id_status, oa_link, updated_at, updated_by)
+      SELECT id, scope, code, label, branch_id, channel_secret, channel_token, liff_id, liff_id_status, oa_link, updated_at, updated_by
+      FROM messaging_channels;
+      DROP TABLE messaging_channels;
+      ALTER TABLE messaging_channels_new RENAME TO messaging_channels;
+    `);
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+  db.exec(`
+    INSERT OR IGNORE INTO messaging_channels (scope, code, label) VALUES ('delivera', 'delivera-customer', 'DELIVERA · ลูกค้า');
+    INSERT OR IGNORE INTO messaging_channels (scope, code, label) VALUES ('delivera', 'delivera-rider', 'DELIVERA · ทีมงานส่งสุข');
+  `);
+
   // Auto-seed one row per branch (code = branch.slug, scope='reserva') so
   // the admin UI always has something to render. Idempotent — INSERT OR
   // IGNORE on the unique 'code' column.

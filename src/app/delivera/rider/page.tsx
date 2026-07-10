@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { riderCreds } from "@/lib/delivera/channels";
 import RiderClient from "./RiderClient";
 
 // IKIGAI RIDER LIFF entry — separate LINE channel from customer + staff. The
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ทีมงานส่งสุข" };
 
 export default function DeliveraRiderPage({ searchParams }: { searchParams: { branch?: string } }) {
-  const liffId = process.env.NEXT_PUBLIC_LINE_RIDER_LIFF_ID ?? "";
+  const liffId = riderCreds().liffId ?? "";
   const branchId = Number(searchParams.branch) || 0;
   return (
     <>

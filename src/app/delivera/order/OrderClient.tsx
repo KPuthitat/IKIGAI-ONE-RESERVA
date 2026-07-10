@@ -41,7 +41,7 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
   useEffect(() => {
     let cancelled = false;
     async function boot() {
-      if (!liffId) { setErr("ยังไม่ได้ตั้งค่า LIFF (NEXT_PUBLIC_LINE_CUSTOMER_LIFF_ID)"); setPhase("error"); return; }
+      if (!liffId) { setErr("ยังไม่ได้ตั้งค่า LIFF ลูกค้า (แอดมิน → DELIVERA → เชื่อมต่อ LINE)"); setPhase("error"); return; }
       // wait for the CDN SDK
       for (let i = 0; i < 100 && !window.liff; i++) await new Promise((r) => setTimeout(r, 50));
       const liff = window.liff;

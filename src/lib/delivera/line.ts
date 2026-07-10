@@ -1,4 +1,5 @@
 import { sendLinePush, type LineMessage } from "@/lib/line";
+import { customerCreds, riderCreds } from "./channels";
 
 // DELIVERA uses TWO LINE channels, kept strictly separate from the staff OA:
 //   • customer channel — LIFF ordering + order-status pushes
@@ -28,13 +29,13 @@ export async function verifyAccessToken(accessToken: string): Promise<{ userId: 
 type PushResult = { ok: boolean; status: number; error?: string };
 
 export async function pushCustomer(userId: string, messages: LineMessage[]): Promise<PushResult> {
-  const token = process.env.LINE_CUSTOMER_CHANNEL_ACCESS_TOKEN;
+  const token = customerCreds().token;
   if (!token) return { ok: false, status: 0, error: "customer_channel_unconfigured" };
   return sendLinePush(token, { to: userId, messages });
 }
 
 export async function pushRider(userId: string, messages: LineMessage[]): Promise<PushResult> {
-  const token = process.env.LINE_RIDER_CHANNEL_ACCESS_TOKEN;
+  const token = riderCreds().token;
   if (!token) return { ok: false, status: 0, error: "rider_channel_unconfigured" };
   return sendLinePush(token, { to: userId, messages });
 }
