@@ -177,7 +177,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       label: "DELIVERA",
       pathPrefix: "/admin/delivera",
       items: [
-        { href: "/admin/delivera/kitchen", label: "กระดานครัว" }
+        { href: "/admin/delivera/kitchen", label: "กระดานครัว" },
+        { href: "/admin/delivera/report", label: "ยอดขายเดลิเวอรี่" }
       ]
     }] : []),
     // สุขภาพพนักงาน — รวม "ผลตรวจสุขภาพ" (ย้ายมาจาก PERSONA) + โครงการ Mounjaro.

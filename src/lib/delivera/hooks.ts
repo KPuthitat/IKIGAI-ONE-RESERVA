@@ -15,6 +15,18 @@ function todayBkk(): string {
   return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 }
 
+// Cross-module hooks are OPT-IN per branch (owner 2026-07-10). Off by default —
+// delivery revenue is already in the shift-close total, and stock isn't coupled.
+// DELIVERA's own sales tally (delivera-report.ts) is always kept, regardless.
+type HookFlags = { stock: boolean; income: boolean; insigna: boolean };
+function hookFlags(branchId: number | null): HookFlags {
+  if (branchId == null) return { stock: false, income: false, insigna: false };
+  const r = getDb().prepare(
+    "SELECT hook_deduct_stock AS s, hook_post_income AS i, hook_record_insigna AS n FROM delivera_branch_settings WHERE branch_id = ?"
+  ).get(branchId) as { s: number; i: number; n: number } | undefined;
+  return { stock: r?.s === 1, income: r?.i === 1, insigna: r?.n === 1 };
+}
+
 /** INVENTA: on cook-start, decrement current_qty for each order line whose menu
  *  item is coupled to a stock item (delivera_menu_items.inventa_item_id). One
  *  menu unit = one stock unit (retail-item coupling; prepared food has no BOM,
@@ -23,6 +35,7 @@ export function applyStockDeduction(orderId: number): void {
   const db = getDb();
   const order = getOrder(orderId);
   if (!order || order.stock_deducted) return;
+  if (!hookFlags(order.branch_id).stock) return;   // opt-in per branch (default off)
   try {
     const rows = db.prepare(
       `SELECT oi.qty AS qty, m.inventa_item_id AS item_id
@@ -45,6 +58,7 @@ export function applyStockDeduction(orderId: number): void {
 export function applyAccountaIncome(order: OrderRow): void {
   const db = getDb();
   if (order.income_posted || order.branch_id == null) return;
+  if (!hookFlags(order.branch_id).income) return;   // opt-in (default off — avoids double-count w/ shift-close)
   try {
     const company = db.prepare("SELECT company_id FROM branches WHERE id = ?").get(order.branch_id) as { company_id: number | null } | undefined;
     createIncome(1, {
@@ -63,6 +77,7 @@ export function applyAccountaIncome(order: OrderRow): void {
 export function applyInsignaSignal(order: OrderRow): void {
   const db = getDb();
   if (order.insigna_recorded) return;
+  if (!hookFlags(order.branch_id).insigna) return;   // opt-in per branch (default off)
   try {
     const { visit_token } = startVisit({
       customer_hash: order.customer_hash, party_size: 1, party_type: "UNKNOWN", visit_trigger_src: "DELIVERA"

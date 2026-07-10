@@ -1659,6 +1659,16 @@ function runMigrations(db: Database.Database): void {
     if (!ocols.some((c) => c.name === "income_posted")) db.exec("ALTER TABLE delivery_orders ADD COLUMN income_posted INTEGER NOT NULL DEFAULT 0");
     if (!ocols.some((c) => c.name === "insigna_recorded")) db.exec("ALTER TABLE delivery_orders ADD COLUMN insigna_recorded INTEGER NOT NULL DEFAULT 0");
   }
+  // Cross-module hooks are OPT-IN per branch (owner 2026-07-10). Default OFF:
+  // delivery sales are already in the shift-close total (posting to ACCOUNTA
+  // would double-count) and stock isn't coupled yet. DELIVERA keeps its OWN sales
+  // tally regardless; flip these on later to wire the integrations.
+  {
+    const scols = db.prepare("PRAGMA table_info(delivera_branch_settings)").all() as Array<{ name: string }>;
+    if (!scols.some((c) => c.name === "hook_deduct_stock")) db.exec("ALTER TABLE delivera_branch_settings ADD COLUMN hook_deduct_stock INTEGER NOT NULL DEFAULT 0");
+    if (!scols.some((c) => c.name === "hook_post_income")) db.exec("ALTER TABLE delivera_branch_settings ADD COLUMN hook_post_income INTEGER NOT NULL DEFAULT 0");
+    if (!scols.some((c) => c.name === "hook_record_insigna")) db.exec("ALTER TABLE delivera_branch_settings ADD COLUMN hook_record_insigna INTEGER NOT NULL DEFAULT 0");
+  }
   // Seed 2 default zones for any DELIVERA-enabled branch that has none yet
   // (idempotent; runs on boot). Deferred for disabled branches so prod stays
   // clean until the owner turns the module on.
