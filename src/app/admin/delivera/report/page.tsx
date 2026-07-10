@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { fmtMoney } from "@/lib/format";
 import { isDeliveraBranch } from "@/lib/delivera/db";
 import { deliveraSalesReport } from "@/lib/delivera/report";
+import CodClient from "./CodClient";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ยอดขายเดลิเวอรี่ · DELIVERA" };
@@ -42,6 +43,11 @@ export default function DeliveraReportPage({ searchParams }: { searchParams: { m
         <Stat label={`เดือนนี้ (${monthLabel(r.month)})`} bills={r.monthTotal.bills} total={r.monthTotal.total} />
         <Stat label="เก็บปลายทาง (COD)" bills={r.byMethod.cod.bills} total={r.byMethod.cod.total} />
         <Stat label="โอน/PromptPay" bills={r.byMethod.promptpay.bills} total={r.byMethod.promptpay.total} />
+      </div>
+
+      <div className="card">
+        <h2 className="font-bold text-slate-800 mb-2">เงินปลายทาง (COD) ค้างรับจากไรเดอร์</h2>
+        <CodClient />
       </div>
 
       <div className="card">

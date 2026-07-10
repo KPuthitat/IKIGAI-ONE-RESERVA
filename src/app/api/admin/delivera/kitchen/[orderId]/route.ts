@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { isDeliveraBranch } from "@/lib/delivera/db";
 import { advanceKitchenOrder, cancelKitchenOrder, confirmOrderSlip, dispatchRider, completePickupOrder } from "@/lib/delivera/kitchen";
 import { OrderError } from "@/lib/delivera/orders";
+import { notifyRiderNewJob } from "@/lib/delivera/notify";
 
 // Admin (session): kitchen action on one order — advance status, confirm a
 // queued slip, or cancel. Branch-scoped: the lib rejects an order the caller's
@@ -38,6 +39,7 @@ export async function POST(req: Request, { params }: { params: { orderId: string
     if (parsed.data.action === "assign") {
       if (!parsed.data.rider_id) return NextResponse.json({ error: "rider_required" }, { status: 400 });
       dispatchRider(orderId, user.activeBranchId, parsed.data.rider_id);
+      await notifyRiderNewJob(parsed.data.rider_id, orderId);   // best-effort LINE push
       return NextResponse.json({ ok: true, status: "assigned" });
     }
     if (parsed.data.action === "complete") {
