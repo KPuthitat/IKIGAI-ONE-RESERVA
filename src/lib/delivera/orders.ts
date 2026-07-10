@@ -72,6 +72,7 @@ export type OrderRow = {
   status: OrderStatus; pay_method: "promptpay" | "cod" | null;
   pay_status: "unpaid" | "pending_verify" | "verified" | "failed" | "refunded";
   time_slot: string | null; note: string | null; created_at: string; updated_at: string;
+  stock_deducted?: number; income_posted?: number; insigna_recorded?: number;
 };
 
 export type OrderItemRow = {
@@ -215,7 +216,8 @@ const FLOW: Record<OrderStatus, OrderStatus[]> = {
   paid: ["confirmed", "preparing", "cancelled"],
   confirmed: ["preparing", "cancelled"],
   preparing: ["ready", "cancelled"],
-  ready: ["assigned", "picked_up", "cancelled"],
+  // ready → completed is the pickup hand-off (no rider leg); delivery goes via assigned/picked_up.
+  ready: ["assigned", "picked_up", "completed", "cancelled"],
   assigned: ["picked_up", "cancelled"],
   picked_up: ["delivered", "cancelled"],
   delivered: ["completed"],

@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 import { getOrder, getOrderItems, setOrderStatus, OrderError, type OrderRow, type OrderItemRow, type OrderStatus } from "./orders";
 import { confirmSlipManually } from "./payment";
 import { getDeliveryForOrder, getRider, assignRider, type DeliveryRow } from "./rider";
+import { runOrderHooks } from "./hooks";
 
 // DELIVERA kitchen board (commit 5/8, dispatch added 6/8). Staff-facing,
 // session-authed + branch-scoped by the caller (requirePermission +
@@ -20,7 +21,7 @@ export type KitchenOrder = {
  *  cancelled, oldest first (FIFO cooking queue) + rider progress. */
 export function listKitchenOrders(branchId: number): KitchenOrder[] {
   const rows = getDb()
-    .prepare("SELECT * FROM delivery_orders WHERE branch_id = ? AND status NOT IN ('completed','cancelled') ORDER BY created_at")
+    .prepare("SELECT * FROM delivery_orders WHERE branch_id = ? AND status NOT IN ('completed','cancelled','delivered') ORDER BY created_at")
     .all(branchId) as OrderRow[];
   return rows.map((order) => {
     const d = getDeliveryForOrder(order.id);
@@ -45,10 +46,23 @@ function ownedOrder(orderId: number, branchId: number): OrderRow {
   return o;
 }
 
-/** Advance an order to the next kitchen state (legal transitions only). */
+/** Advance an order to the next kitchen state (legal transitions only). Starting
+ *  to cook ('preparing') deducts INVENTA stock; a pickup order reaching
+ *  'completed' posts income + the INSIGNA signal. */
 export function advanceKitchenOrder(orderId: number, branchId: number, to: OrderStatus): OrderStatus {
   ownedOrder(orderId, branchId);
-  return setOrderStatus(orderId, to);
+  const status = setOrderStatus(orderId, to);
+  if (to === "preparing") runOrderHooks(orderId, "cooking");
+  if (to === "completed") runOrderHooks(orderId, "completed");
+  return status;
+}
+
+/** Pickup order handed to the customer → completed (posts income + INSIGNA). */
+export function completePickupOrder(orderId: number, branchId: number): OrderStatus {
+  ownedOrder(orderId, branchId);
+  const status = setOrderStatus(orderId, "completed");
+  runOrderHooks(orderId, "completed");
+  return status;
 }
 
 /** Cancel an order (allowed from any non-terminal state). */

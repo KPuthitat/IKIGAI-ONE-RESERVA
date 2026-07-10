@@ -1650,6 +1650,15 @@ function runMigrations(db: Database.Database): void {
     if (!rcols.some((c) => c.name === "last_lng")) db.exec("ALTER TABLE riders ADD COLUMN last_lng REAL");
     if (!rcols.some((c) => c.name === "last_location_at")) db.exec("ALTER TABLE riders ADD COLUMN last_location_at TEXT");
   }
+  // Integration-hook idempotency flags (commit 7) — each cross-module side effect
+  // (INVENTA stock deduct on cook, ACCOUNTA income + INSIGNA visit on completion)
+  // fires at most once per order.
+  {
+    const ocols = db.prepare("PRAGMA table_info(delivery_orders)").all() as Array<{ name: string }>;
+    if (!ocols.some((c) => c.name === "stock_deducted")) db.exec("ALTER TABLE delivery_orders ADD COLUMN stock_deducted INTEGER NOT NULL DEFAULT 0");
+    if (!ocols.some((c) => c.name === "income_posted")) db.exec("ALTER TABLE delivery_orders ADD COLUMN income_posted INTEGER NOT NULL DEFAULT 0");
+    if (!ocols.some((c) => c.name === "insigna_recorded")) db.exec("ALTER TABLE delivery_orders ADD COLUMN insigna_recorded INTEGER NOT NULL DEFAULT 0");
+  }
   // Seed 2 default zones for any DELIVERA-enabled branch that has none yet
   // (idempotent; runs on boot). Deferred for disabled branches so prod stays
   // clean until the owner turns the module on.

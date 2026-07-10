@@ -203,7 +203,7 @@ function PrimaryAction({ order, busy, act, onOpenDispatch }: {
     case "confirmed": return btn("เริ่มทำ", { action: "advance", to: "preparing" });
     case "preparing": return btn("ทำเสร็จ", { action: "advance", to: "ready" });
     case "ready":
-      if (order.fulfillment === "pickup") return <span className="text-[11px] text-slate-400">รอลูกค้ารับ</span>;
+      if (order.fulfillment === "pickup") return btn("ลูกค้ารับแล้ว", { action: "complete" });
       return (
         <button type="button" disabled={busy} onClick={onOpenDispatch}
           className="text-[11px] rounded-md bg-brand text-white px-2.5 py-1 font-medium disabled:opacity-50">จัดไรเดอร์</button>

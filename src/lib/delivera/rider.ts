@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/db";
 import { haversineKm } from "./distance";
 import { getOrder, setOrderStatus, OrderError, type OrderRow, type OrderStatus } from "./orders";
+import { runOrderHooks } from "./hooks";
 
 // DELIVERA riders (commit 6/8): registration via the IKIGAI RIDER LINE OA,
 // live-location heartbeat, distance-based "who's nearby" dispatch, and the
@@ -142,6 +143,8 @@ export function riderDeliver(orderId: number, riderId: number, proofPhotoUrl?: s
     if (delivery.rider_id) setRiderStatus(delivery.rider_id, "available");   // free the rider
   });
   tx();
+  // Sale realized on delivery → post ACCOUNTA income + INSIGNA signal (idempotent).
+  runOrderHooks(orderId, "completed");
   return "delivered";
 }
 
