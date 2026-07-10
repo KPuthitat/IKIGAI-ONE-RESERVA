@@ -88,10 +88,10 @@ export default function DaybookPage({
   // month. Reuse `dash` when the page is already showing this month; otherwise
   // compute the month forecast once (independent of the viewed week/year range).
   const quotaToday_ = todayBkk();
-  const monthForecast = (period === "month" && anchor.slice(0, 7) === quotaToday_.slice(0, 7))
-    ? dash.forecast
-    : ledgerDashboard(branchId, "month", quotaToday_).forecast;
-  const materialQuota = materialPurchaseQuota(branchId, quotaToday_, monthForecast);
+  const monthDash = (period === "month" && anchor.slice(0, 7) === quotaToday_.slice(0, 7))
+    ? dash
+    : ledgerDashboard(branchId, "month", quotaToday_);
+  const materialQuota = materialPurchaseQuota(branchId, quotaToday_, monthDash.forecast, monthDash.salesRevenue);
 
   return (
     <div className="space-y-4">

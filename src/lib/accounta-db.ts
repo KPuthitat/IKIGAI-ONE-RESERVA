@@ -1642,13 +1642,23 @@ export type MaterialQuota = {
   forecastSales: number | null; // run-rate ประมาณการยอดขายทั้งเดือน — X on day 2+
   xUsed: number;              // the X actually applied today (target on day 1, else forecast)
   isFirstDay: boolean;
-  budgetPct: number;          // Y (% COG)
+  budgetPct: number;          // Y — %COG ceiling (max)
+  goalPct: number | null;     // Y2 — %COG goal (tighter); null = no range
   weekday: number; weekdayLabel: string;  // the fixed purchase weekday (NAMA = Monday)
-  monthBudget: number;        // xUsed × Y%  = โควตาสั่งซื้อทั้งเดือน
+  monthBudget: number;        // xUsed × ceiling% = โควตาสั่งซื้อทั้งเดือน (ceiling)
   spentThisMonth: number;     // confirmed GD spend so far this month
-  remainingBudget: number;    // monthBudget − spent
+  remainingBudget: number;    // monthBudget − spent (ceiling)
   daysInMonth: number; todayDate: number; daysLeft: number;
-  todayIsPurchaseDay: boolean; quotaToday: number;
+  todayIsPurchaseDay: boolean;
+  quotaToday: number;         // ceiling allowance today (backward-compatible field = quotaHigh)
+  quotaHigh: number;          // allowance at the ceiling %COG
+  quotaLow: number;           // allowance at the goal %COG (= quotaHigh when no goal set)
+  // "From today, how much must we SELL per day to hold %COG within [goal, ceiling]?"
+  // Based on the ACTUAL material run-rate (owner 2026-07-10).
+  salesToDate: number;        // month-to-date sales
+  projectedMaterial: number;  // run-rate projection of this month's total material spend
+  reqSalesCeil: number;       // sales/day (from today) to keep %COG ≤ ceiling
+  reqSalesGoal: number;       // sales/day (from today) to reach the tighter goal %COG
 };
 
 const TH_WEEKDAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
@@ -1663,12 +1673,12 @@ const TH_WEEKDAYS = ["อาทิตย์", "จันทร์", "อัง�
  *   • Any other day: quota = (โควตาทั้งเดือน − ที่ใช้ไปแล้ว) ÷ (วันคงเหลือในเดือน),
  *     where วันคงเหลือ = daysInMonth − todayDate (per the owner's example). */
 export function materialPurchaseQuota(
-  branchId: number, date: string, forecastSales?: number | null
+  branchId: number, date: string, forecastSales?: number | null, salesToDate?: number | null
 ): MaterialQuota | null {
   const db = getDb();
   const b = db.prepare(
-    "SELECT material_quota_enabled AS en, material_target_sales AS x, material_budget_pct AS y, material_purchase_weekday AS wd FROM branches WHERE id = ?"
-  ).get(branchId) as { en: number; x: number; y: number; wd: number } | undefined;
+    "SELECT material_quota_enabled AS en, material_target_sales AS x, material_budget_pct AS y, material_budget_pct2 AS y2, material_purchase_weekday AS wd FROM branches WHERE id = ?"
+  ).get(branchId) as { en: number; x: number; y: number; y2: number | null; wd: number } | undefined;
   if (!b || !b.en) return null;
   const month = date.slice(0, 7);
   const gd = db.prepare("SELECT name FROM accounta_categories WHERE code = 'GD'")
@@ -1681,29 +1691,46 @@ export function materialPurchaseQuota(
   const [yy, mm, dd] = date.split("-").map(Number);
   const daysInMonth = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
   const isFirstDay = dd === 1;
-  // X: day 1 uses the configured target; day 2+ uses the run-rate forecast
-  // (fall back to the target until there's a forecast to go on).
   const fc = Number(forecastSales) || 0;
   const xUsed = round2(isFirstDay || fc <= 0 ? b.x : fc);
-  const monthBudget = round2(xUsed * (b.y / 100));
-  const remainingBudget = round2(monthBudget - spent);
 
   const todayIsPurchaseDay = new Date(Date.UTC(yy, mm - 1, dd)).getUTCDay() === b.wd;
   const daysLeft = daysInMonth - dd;   // owner's example: (30 − 10) = 20
 
-  // Spread the remaining budget over the days left in the month.
-  const spreadRate = daysLeft > 0 ? Math.max(0, round2(remainingBudget / daysLeft)) : Math.max(0, remainingBudget);
-  // Purchase weekday (Monday): base rate = โควตาทั้งเดือน ÷ จำนวนวันในเดือน, but take
-  // the LARGER of that and the remaining-days spread — the flat rate is a floor,
-  // the catch-up rate wins when there's leftover budget (owner 2026-07-10).
-  const flatRate = round2(monthBudget / daysInMonth);
-  const quotaToday = todayIsPurchaseDay ? Math.max(flatRate, spreadRate) : spreadRate;
+  // Today's allowance at a given %COG: purchase weekday takes MAX(flat rate =
+  // budget ÷ days-in-month, remaining ÷ days-left); other days use remaining ÷ days-left.
+  const dayQuota = (budget: number): number => {
+    const remaining = round2(budget - spent);
+    const spread = daysLeft > 0 ? Math.max(0, round2(remaining / daysLeft)) : Math.max(0, remaining);
+    if (!todayIsPurchaseDay) return spread;
+    return Math.max(round2(budget / daysInMonth), spread);
+  };
+
+  const ceilPct = b.y;
+  const goalPct = (b.y2 != null && b.y2 > 0 && b.y2 < b.y) ? b.y2 : null;   // goal must be tighter
+  const monthBudget = round2(xUsed * (ceilPct / 100));          // ceiling budget
+  const quotaHigh = dayQuota(monthBudget);
+  const quotaLow = goalPct != null ? dayQuota(round2(xUsed * (goalPct / 100))) : quotaHigh;
+
+  // Sales/day needed from today to hold %COG within target, using the ACTUAL
+  // material-spend run-rate as the projected month material cost.
+  const sold = Number(salesToDate) || 0;
+  const projectedMaterial = dd > 0 ? round2((spent / dd) * daysInMonth) : spent;
+  const daysLeftIncl = Math.max(1, daysInMonth - dd + 1);       // from today to month-end, inclusive
+  const reqSales = (cog: number): number => {
+    const needMonthSales = cog > 0 ? projectedMaterial / (cog / 100) : 0;
+    return Math.max(0, round2((needMonthSales - sold) / daysLeftIncl));
+  };
 
   return {
     targetSales: round2(b.x), forecastSales: fc > 0 ? round2(fc) : null, xUsed, isFirstDay,
-    budgetPct: b.y, weekday: b.wd, weekdayLabel: TH_WEEKDAYS[b.wd] ?? "",
-    monthBudget, spentThisMonth: spent, remainingBudget,
-    daysInMonth, todayDate: dd, daysLeft, todayIsPurchaseDay, quotaToday
+    budgetPct: ceilPct, goalPct,
+    weekday: b.wd, weekdayLabel: TH_WEEKDAYS[b.wd] ?? "",
+    monthBudget, spentThisMonth: spent, remainingBudget: round2(monthBudget - spent),
+    daysInMonth, todayDate: dd, daysLeft, todayIsPurchaseDay,
+    quotaToday: quotaHigh, quotaHigh, quotaLow,
+    salesToDate: round2(sold), projectedMaterial,
+    reqSalesCeil: reqSales(ceilPct), reqSalesGoal: goalPct != null ? reqSales(goalPct) : reqSales(ceilPct)
   };
 }
 

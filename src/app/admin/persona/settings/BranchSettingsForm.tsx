@@ -54,6 +54,7 @@ export default function BranchSettingsForm({
   materialQuotaEnabled,
   materialTargetSales,
   materialBudgetPct,
+  materialBudgetPct2,
   materialPurchaseWeekday,
   attendanceSummaryTime,
   shiftNotifyTime,
@@ -80,6 +81,7 @@ export default function BranchSettingsForm({
   materialQuotaEnabled: boolean;
   materialTargetSales: number;
   materialBudgetPct: number;
+  materialBudgetPct2: number | null;
   materialPurchaseWeekday: number;
   attendanceSummaryTime: string | null;
   shiftNotifyTime: string | null;
@@ -132,6 +134,7 @@ export default function BranchSettingsForm({
   const [matQuotaOn, setMatQuotaOn] = useState<boolean>(materialQuotaEnabled);
   const [matTarget, setMatTarget] = useState<string>(String(materialTargetSales || ""));
   const [matPct, setMatPct] = useState<string>(String(materialBudgetPct || ""));
+  const [matPct2, setMatPct2] = useState<string>(materialBudgetPct2 == null ? "" : String(materialBudgetPct2));
   const [matWeekday, setMatWeekday] = useState<number>(materialPurchaseWeekday);
   // Daily attendance summary times — comma-separated HH:MM values,
   // e.g. "08:30,17:00". Routes to the HR group. Legacy single-time
@@ -184,6 +187,7 @@ export default function BranchSettingsForm({
     matQuotaOn === materialQuotaEnabled &&
     matTarget === String(materialTargetSales || "") &&
     matPct === String(materialBudgetPct || "") &&
+    matPct2 === (materialBudgetPct2 == null ? "" : String(materialBudgetPct2)) &&
     matWeekday === materialPurchaseWeekday &&
     (summaryTimes || null) === (attendanceSummaryTime || null) &&
     (shiftNotify || null) === (shiftNotifyTime || null) &&
@@ -223,6 +227,7 @@ export default function BranchSettingsForm({
           material_quota_enabled: matQuotaOn,
           material_target_sales: Number(matTarget.replace(/,/g, "")) || 0,
           material_budget_pct: Number(matPct) || 0,
+          material_budget_pct2: matPct2.trim() === "" ? null : (Number(matPct2) || null),
           material_purchase_weekday: matWeekday,
           attendance_summary_times_json: summaryTimes.trim() ? JSON.stringify(
             summaryTimes.split(",").map((t) => t.trim()).filter((t) => /^\d{2}:\d{2}$/.test(t))
@@ -662,11 +667,18 @@ export default function BranchSettingsForm({
                       onChange={(e) => setMatTarget(e.target.value)} />
                   </div>
                   <div>
-                    <label className="label !text-xs">ต้นทุนวัตถุดิบไม่เกิน (Y %)</label>
+                    <label className="label !text-xs">%COG เพดาน (Y)</label>
                     <input type="number" inputMode="decimal" min={0} max={100} className="input"
                       value={matPct} placeholder="เช่น 40"
                       onChange={(e) => setMatPct(e.target.value)} />
                   </div>
+                </div>
+                <div>
+                  <label className="label !text-xs">%COG เป้าหมาย (แคบกว่า · ทางเลือก)</label>
+                  <input type="number" inputMode="decimal" min={0} max={100} className="input sm:!w-1/2"
+                    value={matPct2} placeholder="เช่น 35 (เว้นว่าง = ไม่ทำช่วง)"
+                    onChange={(e) => setMatPct2(e.target.value)} />
+                  <p className="text-[11px] text-slate-400 mt-1">ใส่ค่าที่แคบกว่าเพดาน แล้วโควตาจะแสดงเป็นช่วง + บอกยอดขายที่ต้องได้/วัน</p>
                 </div>
                 <div>
                   <label className="label !text-xs">วันที่สั่งซื้อได้ (สัปดาห์ละครั้ง)</label>

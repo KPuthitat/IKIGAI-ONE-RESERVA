@@ -1386,6 +1386,13 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("material_purchase_weekday")) {
     db.exec("ALTER TABLE branches ADD COLUMN material_purchase_weekday INTEGER NOT NULL DEFAULT 1");
   }
+  // Second (tighter/goal) %COG target for the quota range (owner 2026-07-10):
+  // material_budget_pct is the ceiling (e.g. 40%), this is the goal (e.g. 35%).
+  // NULL = no range, single-figure quota. The quota card then shows a ฿low–฿high
+  // band + the sales/day needed from today to hold COG within [goal, ceiling].
+  if (!bnames2.has("material_budget_pct2")) {
+    db.exec("ALTER TABLE branches ADD COLUMN material_budget_pct2 REAL");
+  }
 
   // Revenue-Share GP (owner 2026-06-22) — opt-in per branch, OFF everywhere by
   // default. The whole feature (menu, routes, data) is gated on this flag so it
@@ -6529,7 +6536,8 @@ export type Branch = {
   require_daily_revenue: number;       // 0/1 — shift_close "ยอดขายวันนี้"
   material_quota_enabled: number;      // 0/1 — material-purchase quota on shift_close
   material_target_sales: number;       // X — monthly sales target (baht)
-  material_budget_pct: number;         // Y — max material cost as % of target sales
+  material_budget_pct: number;         // Y — max material cost as % of target sales (ceiling)
+  material_budget_pct2: number | null; // Y2 — tighter/goal %COG for the quota range (nullable)
   material_purchase_weekday: number;   // 0=Sun … 6=Sat — the weekly buying day
   // Daily attendance summary (TC-6) — see migration block above.
   attendance_summary_time: string | null;           // HH:MM Bangkok, NULL = disabled

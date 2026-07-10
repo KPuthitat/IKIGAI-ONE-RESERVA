@@ -75,6 +75,7 @@ export default function PersonaSettingsPage() {
         materialQuotaEnabled={branch.material_quota_enabled === 1}
         materialTargetSales={branch.material_target_sales}
         materialBudgetPct={branch.material_budget_pct}
+        materialBudgetPct2={branch.material_budget_pct2}
         materialPurchaseWeekday={branch.material_purchase_weekday}
         attendanceSummaryTime={branch.attendance_summary_time}
         shiftNotifyTime={branch.shift_notify_time}

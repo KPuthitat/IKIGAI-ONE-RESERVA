@@ -135,7 +135,7 @@ export default function ShiftClosePage({
         // Material-purchase quota for today (owner 2026-06-21). null when the
         // branch hasn't enabled it. The form shows today's quota + records how
         // much was ordered, flagging over-quota on the report.
-        materialQuota={materialPurchaseQuota(branch.id, selectedDate, ledgerDashboard(branch.id, "month", selectedDate).forecast)}
+        materialQuota={(() => { const md = ledgerDashboard(branch.id, "month", selectedDate); return materialPurchaseQuota(branch.id, selectedDate, md.forecast, md.salesRevenue); })()}
         previousData={previousData}
         // Per-branch headline label + order + in-red-box knobs.
         // The form forwards these into the live FlexPreview so the

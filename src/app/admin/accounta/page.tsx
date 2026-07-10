@@ -22,8 +22,9 @@ export default function AccountaHome() {
   // Material-purchase quota for today — shown here too so it's easy to find
   // (owner 2026-07-05 "หาไม่เจอ"). Null when the branch has the feature off.
   const bkkToday = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  const _mq = user.activeBranchId != null ? ledgerDashboard(user.activeBranchId, "month", bkkToday) : null;
   const materialQuota = user.activeBranchId != null
-    ? materialPurchaseQuota(user.activeBranchId, bkkToday, ledgerDashboard(user.activeBranchId, "month", bkkToday).forecast)
+    ? materialPurchaseQuota(user.activeBranchId, bkkToday, _mq!.forecast, _mq!.salesRevenue)
     : null;
 
   const cards = [

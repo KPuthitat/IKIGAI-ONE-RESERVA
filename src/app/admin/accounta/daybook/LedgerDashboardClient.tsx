@@ -887,10 +887,11 @@ export default function LedgerDashboardClient({
   // the branch has the feature off.
   materialQuota: {
     targetSales: number; forecastSales: number | null; xUsed: number; isFirstDay: boolean;
-    budgetPct: number; weekday: number; weekdayLabel: string;
+    budgetPct: number; goalPct: number | null; weekday: number; weekdayLabel: string;
     monthBudget: number; spentThisMonth: number; remainingBudget: number;
     daysInMonth: number; todayDate: number; daysLeft: number;
-    todayIsPurchaseDay: boolean; quotaToday: number;
+    todayIsPurchaseDay: boolean; quotaToday: number; quotaHigh: number; quotaLow: number;
+    salesToDate: number; projectedMaterial: number; reqSalesCeil: number; reqSalesGoal: number;
   } | null;
   payCycleWeekday: number;
 }) {
@@ -1104,10 +1105,16 @@ export default function LedgerDashboardClient({
                 </span>
               </div>
 
-              {/* Hero — today's allowance */}
-              <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-4xl font-extrabold tracking-tight text-emerald-700">฿{fmtMoney(q.quotaToday)}</span>
-                <span className="text-xs text-slate-500">สั่งซื้อได้วันนี้</span>
+              {/* Hero — today's allowance (a range when a goal %COG is set) */}
+              <div className="mt-3 flex items-baseline gap-2 flex-wrap">
+                {q.goalPct != null ? (
+                  <span className="text-3xl sm:text-4xl font-extrabold tracking-tight text-emerald-700">฿{fmtMoney(q.quotaLow)}<span className="text-slate-400 font-bold"> – </span>฿{fmtMoney(q.quotaHigh)}</span>
+                ) : (
+                  <span className="text-4xl font-extrabold tracking-tight text-emerald-700">฿{fmtMoney(q.quotaToday)}</span>
+                )}
+                <span className="text-xs text-slate-500">
+                  สั่งซื้อได้วันนี้{q.goalPct != null ? ` · COG ${q.goalPct}%–${q.budgetPct}%` : ""}
+                </span>
               </div>
 
               {/* Progress — spend vs monthly budget (the artwork that carries the numbers) */}
@@ -1124,13 +1131,21 @@ export default function LedgerDashboardClient({
                 </div>
               </div>
 
-              {/* Short formula */}
-              <p className="mt-3 border-t border-emerald-100 pt-2 text-[11px] leading-relaxed text-slate-400">
-                <span className="text-slate-500">วิธีคิด:</span> ยอดขายคาดการณ์ ฿{fmtMoney(q.xUsed)} × {q.budgetPct}% = งบเดือน{" "}
-                {q.todayIsPurchaseDay
-                  ? <> · วันสั่งหลัก = งบ ÷ {q.daysInMonth} วัน (หรือ คงเหลือ ÷ {q.daysLeft} วัน — เลือกค่าที่มากกว่า)</>
-                  : <> · = คงเหลือ ÷ {q.daysLeft} วันที่เหลือ</>}
-              </p>
+              {/* Sales target — how much to sell/day from today to hold %COG on track */}
+              <div className="mt-3 flex items-center gap-2 rounded-lg bg-white/70 border border-emerald-100 px-3 py-2">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 shrink-0 text-emerald-600" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 17l6-6 4 4 8-8" /><path d="M17 7h4v4" />
+                </svg>
+                <div className="text-[11px] leading-relaxed text-slate-600">
+                  ตั้งแต่วันนี้ต้องขายให้ได้{" "}
+                  {q.goalPct != null ? (
+                    <><span className="font-semibold text-emerald-800">฿{fmtMoney(q.reqSalesCeil)}–฿{fmtMoney(q.reqSalesGoal)}</span>/วัน เพื่อคุม COG {q.budgetPct}%→{q.goalPct}%</>
+                  ) : (
+                    <><span className="font-semibold text-emerald-800">฿{fmtMoney(q.reqSalesCeil)}</span>/วัน เพื่อคุม COG ≤{q.budgetPct}%</>
+                  )}
+                  <span className="text-slate-400"> · อิงอัตราซื้อวัตถุดิบจริง</span>
+                </div>
+              </div>
             </div>
           </div>
         );

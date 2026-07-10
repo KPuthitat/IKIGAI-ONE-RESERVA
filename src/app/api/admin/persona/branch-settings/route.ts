@@ -78,6 +78,7 @@ const Body = z.object({
   material_quota_enabled: z.boolean().optional(),
   material_target_sales: z.number().min(0).max(1_000_000_000).optional(),
   material_budget_pct: z.number().min(0).max(100).optional(),
+  material_budget_pct2: z.number().min(0).max(100).nullable().optional(),
   material_purchase_weekday: z.number().int().min(0).max(6).optional(),
 
   // Daily attendance summary — legacy single time (kept for backwards compat).
@@ -209,6 +210,10 @@ export async function POST(req: Request) {
   if (parsed.data.material_budget_pct !== undefined) {
     sets.push("material_budget_pct = ?");
     vals.push(parsed.data.material_budget_pct);
+  }
+  if (Object.prototype.hasOwnProperty.call(parsed.data, "material_budget_pct2")) {
+    sets.push("material_budget_pct2 = ?");
+    vals.push(parsed.data.material_budget_pct2 ?? null);
   }
   if (parsed.data.material_purchase_weekday !== undefined) {
     sets.push("material_purchase_weekday = ?");
