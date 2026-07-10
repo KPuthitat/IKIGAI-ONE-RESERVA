@@ -68,6 +68,12 @@ export function getPromptPayId(branchId: number): string | null {
   return r?.promptpay_id?.trim() || null;
 }
 
+/** A store's uploaded static PromptPay QR image url (optional). */
+export function getPromptPayQrUrl(branchId: number): string | null {
+  const r = getDb().prepare("SELECT promptpay_qr_url FROM delivera_branch_settings WHERE branch_id = ?").get(branchId) as { promptpay_qr_url: string | null } | undefined;
+  return r?.promptpay_qr_url?.trim() || null;
+}
+
 // ─── Payment flow ─────────────────────────────────────────────────────────────
 
 export class PaymentError extends Error {
@@ -76,7 +82,7 @@ export class PaymentError extends Error {
 
 export type StartPaymentResult =
   | { method: "cod"; status: "confirmed"; total: number }
-  | { method: "promptpay"; status: "pending_payment"; total: number; promptpayId: string; qrPayload: string };
+  | { method: "promptpay"; status: "pending_payment"; total: number; promptpayId: string | null; qrPayload: string | null; qrImageUrl: string | null };
 
 /** Choose how to pay an order (customer-scoped by the caller). COD confirms the
  *  order straight to the kitchen; PromptPay returns the QR payload to display. */
@@ -97,11 +103,14 @@ export function startPayment(order: OrderRow, method: "promptpay" | "cod"): Star
   }
 
   const promptpayId = getPromptPayId(order.branch_id);
-  if (!promptpayId) throw new PaymentError("promptpay_not_configured");
-  const qrPayload = buildPromptPayPayload(promptpayId, order.total);
+  const qrImageUrl = getPromptPayQrUrl(order.branch_id);
+  if (!promptpayId && !qrImageUrl) throw new PaymentError("promptpay_not_configured");
+  // A store's own uploaded QR (static) takes precedence; otherwise generate the
+  // dynamic amount-bearing QR from the PromptPay number.
+  const qrPayload = !qrImageUrl && promptpayId ? buildPromptPayPayload(promptpayId, order.total) : null;
   db.prepare("UPDATE delivery_orders SET pay_method = 'promptpay', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(order.id);
   ensurePaymentRow(order.id, "promptpay", order.total, "unpaid");
-  return { method: "promptpay", status: "pending_payment", total: order.total, promptpayId, qrPayload };
+  return { method: "promptpay", status: "pending_payment", total: order.total, promptpayId, qrPayload, qrImageUrl };
 }
 
 /** Idempotent: one open payment row per (order, method). */

@@ -30,10 +30,12 @@ export async function POST(req: Request, { params }: { params: { orderNo: string
     if (r.method === "cod") {
       return NextResponse.json({ ok: true, method: "cod", status: r.status, total: r.total });
     }
-    const qrImage = await QRCode.toDataURL(r.qrPayload, { margin: 1, width: 320 });
+    // Generated dynamic QR (data URL) when we have a number; else the store's
+    // uploaded static QR image url. TrackClient renders whichever is present.
+    const qrImage = r.qrPayload ? await QRCode.toDataURL(r.qrPayload, { margin: 1, width: 320 }) : null;
     return NextResponse.json({
       ok: true, method: "promptpay", status: r.status, total: r.total,
-      qr_payload: r.qrPayload, qr_image: qrImage
+      qr_payload: r.qrPayload, qr_image: qrImage, qr_image_url: r.qrImageUrl
     });
   } catch (e) {
     if (e instanceof PaymentError) return NextResponse.json({ error: e.code, detail: e.detail }, { status: 400 });

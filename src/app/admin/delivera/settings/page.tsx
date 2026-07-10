@@ -28,6 +28,7 @@ export default function DeliveraSettingsPage() {
       <SettingsClient
         enabled={isDeliveraBranch(branchId)}
         promptpayId={settings.promptpay_id}
+        promptpayQrUrl={settings.promptpay_qr_url}
         prepMinutes={settings.default_prep_minutes}
         hooks={{
           deduct_stock: settings.hook_deduct_stock === 1,
@@ -35,7 +36,7 @@ export default function DeliveraSettingsPage() {
           record_insigna: settings.hook_record_insigna === 1
         }}
         hasCoords={branch?.latitude != null && branch?.longitude != null}
-        menu={listMenu(branchId).map((m) => ({ id: m.id, name_th: m.name_th, category: m.category, price: m.price, is_available: m.is_available === 1 }))}
+        menu={listMenu(branchId).map((m) => ({ id: m.id, name_th: m.name_th, category: m.category, price: m.price, is_available: m.is_available === 1, image_url: m.image_url }))}
         zones={listZones(branchId).map((z) => ({ id: z.id, name: z.name, max_distance_km: z.max_distance_km, base_fee: z.base_fee, per_km_fee: z.per_km_fee, min_order_amount: z.min_order_amount }))}
       />
     </div>

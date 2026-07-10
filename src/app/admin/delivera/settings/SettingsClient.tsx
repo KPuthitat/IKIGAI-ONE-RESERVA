@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { apiUrl } from "@/lib/url";
 
-type MenuItem = { id: number; name_th: string; category: string | null; price: number; is_available: boolean };
+type MenuItem = { id: number; name_th: string; category: string | null; price: number; is_available: boolean; image_url: string | null };
 type Zone = { id: number; name: string; max_distance_km: number; base_fee: number; per_km_fee: number; min_order_amount: number };
 type Hooks = { deduct_stock: boolean; post_income: boolean; record_insigna: boolean };
 
@@ -12,12 +12,49 @@ async function post(url: string, body: unknown, method: "POST" | "PATCH" | "DELE
   return res.ok;
 }
 
+/** Small square image picker: shows the current image (or a + placeholder),
+ *  uploads a picked file via multipart to `endpoint`, and clears via DELETE.
+ *  Returns the new public url (or null on remove) through onChange. */
+function ImagePick({ url, endpoint, onChange, size = 56, label = "รูป" }: {
+  url: string | null; endpoint: string; onChange: (u: string | null) => void; size?: number; label?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  async function upload(file: File) {
+    setBusy(true);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const res = await fetch(apiUrl(endpoint), { method: "POST", body: fd });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.ok) onChange(j.image_url ?? j.promptpay_qr_url ?? null);
+      else alert(j.message || "อัปโหลดไม่สำเร็จ");
+    } finally { setBusy(false); }
+  }
+  async function remove() { setBusy(true); try { if (await post(endpoint, {}, "DELETE")) onChange(null); } finally { setBusy(false); } }
+  return (
+    <div className="flex items-center gap-1.5">
+      <button type="button" onClick={() => inputRef.current?.click()} disabled={busy}
+        className="relative rounded-lg border border-dashed border-slate-300 bg-slate-50 overflow-hidden flex items-center justify-center text-slate-400 disabled:opacity-50"
+        style={{ width: size, height: size }} title={`อัปโหลด${label}`}>
+        {url
+          /* eslint-disable-next-line @next/next/no-img-element */
+          ? <img src={url} alt={label} className="w-full h-full object-cover" />
+          : <span className="text-lg leading-none">＋</span>}
+      </button>
+      {url && <button type="button" onClick={remove} disabled={busy} className="text-[11px] text-rose-500 hover:underline">ลบ{label}</button>}
+      <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
+    </div>
+  );
+}
+
 export default function SettingsClient(props: {
-  enabled: boolean; promptpayId: string | null; prepMinutes: number; hooks: Hooks; hasCoords: boolean;
+  enabled: boolean; promptpayId: string | null; promptpayQrUrl: string | null; prepMinutes: number; hooks: Hooks; hasCoords: boolean;
   menu: MenuItem[]; zones: Zone[];
 }) {
   const [enabled, setEnabled] = useState(props.enabled);
   const [promptpay, setPromptpay] = useState(props.promptpayId ?? "");
+  const [qrUrl, setQrUrl] = useState(props.promptpayQrUrl);
   const [prep, setPrep] = useState(String(props.prepMinutes));
   const [hooks, setHooks] = useState(props.hooks);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
@@ -52,6 +89,13 @@ export default function SettingsClient(props: {
             <input type="number" min={1} className="input" value={prep} onChange={(e) => setPrep(e.target.value)} onBlur={() => saveSettings({ default_prep_minutes: Number(prep) || 20 })} />
           </div>
         </div>
+        <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5 flex items-center gap-3">
+          <ImagePick url={qrUrl} endpoint="/api/admin/delivera/settings/qr" onChange={setQrUrl} size={72} label="QR" />
+          <div className="text-[11px] text-slate-500">
+            <div className="font-medium text-slate-700">ภาพ QR PromptPay ของร้าน (ถ้ามี)</div>
+            {qrUrl ? "ลูกค้าจะเห็นภาพ QR นี้ตอนชำระเงิน (ใช้แทน QR อัตโนมัติ)" : "อัปโหลดภาพ QR ของร้าน หรือปล่อยว่างเพื่อสร้าง QR อัตโนมัติจากเลข PromptPay ด้านบน"}
+          </div>
+        </div>
         {!props.hasCoords && (
           <p className="text-[11px] text-amber-700">⚠ ยังไม่ได้ตั้งพิกัดร้าน — ไปตั้งที่ PERSONA → ตั้งค่าสาขา (ใช้คำนวณระยะทีมงานส่งสุข)</p>
         )}
@@ -84,8 +128,9 @@ function MenuManager({ menu, setMenu }: { menu: MenuItem[]; setMenu: (m: MenuIte
     if (!name.trim() || !(Number(price) >= 0)) return;
     const res = await fetch(apiUrl("/api/admin/delivera/menu"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name_th: name.trim(), category: cat.trim() || null, price: Number(price) }) });
     const j = await res.json().catch(() => ({}));
-    if (res.ok && j.ok) { setMenu([...menu, { id: j.id, name_th: name.trim(), category: cat.trim() || null, price: Number(price), is_available: true }]); setName(""); setCat(""); setPrice(""); }
+    if (res.ok && j.ok) { setMenu([...menu, { id: j.id, name_th: name.trim(), category: cat.trim() || null, price: Number(price), is_available: true, image_url: null }]); setName(""); setCat(""); setPrice(""); }
   }
+  function setImage(it: MenuItem, url: string | null) { setMenu(menu.map((m) => m.id === it.id ? { ...m, image_url: url } : m)); }
   async function toggle(it: MenuItem) { if (await post(`/api/admin/delivera/menu/${it.id}`, { is_available: !it.is_available }, "PATCH")) setMenu(menu.map((m) => m.id === it.id ? { ...m, is_available: !m.is_available } : m)); }
   async function setPriceItem(it: MenuItem, p: number) { if (await post(`/api/admin/delivera/menu/${it.id}`, { price: p }, "PATCH")) setMenu(menu.map((m) => m.id === it.id ? { ...m, price: p } : m)); }
   async function del(it: MenuItem) { if (await post(`/api/admin/delivera/menu/${it.id}`, {}, "DELETE")) setMenu(menu.filter((m) => m.id !== it.id)); }
@@ -95,6 +140,7 @@ function MenuManager({ menu, setMenu }: { menu: MenuItem[]; setMenu: (m: MenuIte
       <div className="space-y-1.5">
         {menu.map((it) => (
           <div key={it.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5">
+            <ImagePick url={it.image_url} endpoint={`/api/admin/delivera/menu/${it.id}/image`} onChange={(u) => setImage(it, u)} size={44} label="รูป" />
             <div className="flex-1 min-w-0">
               <div className="text-sm text-slate-700 truncate">{it.name_th}{it.category ? <span className="text-slate-400"> · {it.category}</span> : null}</div>
             </div>

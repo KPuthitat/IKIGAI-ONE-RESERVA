@@ -38,7 +38,7 @@ export default function TrackClient({ liffId, orderNo }: { liffId: string; order
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setPayMsg(j.error === "promptpay_not_configured" ? "ร้านยังไม่ได้ตั้งค่า PromptPay" : "ทำรายการไม่สำเร็จ"); return; }
       setPayMethod(method);
-      if (method === "promptpay") setQr(j.qr_image ?? null);
+      if (method === "promptpay") setQr(j.qr_image ?? j.qr_image_url ?? null);
       else setPayMsg("ยืนยันออเดอร์แล้ว · ชำระปลายทางกับทีมงานส่งสุข");
     } catch { setPayMsg("เชื่อมต่อไม่ได้ ลองใหม่"); }
     finally { setPayBusy(false); }

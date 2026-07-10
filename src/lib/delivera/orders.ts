@@ -27,6 +27,10 @@ export function listMenu(branchId: number, opts?: { availableOnly?: boolean }): 
     .all(branchId) as MenuItem[];
 }
 
+export function getMenuItem(id: number, branchId: number): MenuItem | null {
+  return (getDb().prepare("SELECT * FROM delivera_menu_items WHERE id = ? AND branch_id = ?").get(id, branchId) as MenuItem | undefined) ?? null;
+}
+
 export function createMenuItem(branchId: number, m: {
   name_th: string; category?: string | null; price: number;
   is_available?: boolean; sort_order?: number; image_url?: string | null; inventa_item_id?: number | null;

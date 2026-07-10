@@ -1668,6 +1668,9 @@ function runMigrations(db: Database.Database): void {
     if (!scols.some((c) => c.name === "hook_deduct_stock")) db.exec("ALTER TABLE delivera_branch_settings ADD COLUMN hook_deduct_stock INTEGER NOT NULL DEFAULT 0");
     if (!scols.some((c) => c.name === "hook_post_income")) db.exec("ALTER TABLE delivera_branch_settings ADD COLUMN hook_post_income INTEGER NOT NULL DEFAULT 0");
     if (!scols.some((c) => c.name === "hook_record_insigna")) db.exec("ALTER TABLE delivera_branch_settings ADD COLUMN hook_record_insigna INTEGER NOT NULL DEFAULT 0");
+    // Optional uploaded PromptPay QR image (a store's own static QR). When set it
+    // takes precedence over the generated dynamic QR at checkout.
+    if (!scols.some((c) => c.name === "promptpay_qr_url")) db.exec("ALTER TABLE delivera_branch_settings ADD COLUMN promptpay_qr_url TEXT");
   }
   // Seed 2 default zones for any DELIVERA-enabled branch that has none yet
   // (idempotent; runs on boot). Deferred for disabled branches so prod stays
