@@ -677,7 +677,7 @@ export default function ShiftCloseForm({
               <div className="text-[11px] text-slate-500">
                 โควตาที่สั่งได้วันนี้
                 {materialQuota.todayIsPurchaseDay
-                  ? ` · วัน${materialQuota.weekdayLabel} (วันสั่งหลัก = งบเดือน ÷ ${materialQuota.daysInMonth} วัน)`
+                  ? ` · วัน${materialQuota.weekdayLabel} (วันสั่งหลัก = ค่าที่มากกว่า ระหว่าง งบเดือน ÷ ${materialQuota.daysInMonth} วัน กับ งบที่เหลือ ÷ วันที่เหลือ)`
                   : " · วันปกติ (งบที่เหลือ ÷ วันที่เหลือ)"}
               </div>
               <div className="text-2xl font-bold text-emerald-700">฿{fmtThb(quota)}</div>

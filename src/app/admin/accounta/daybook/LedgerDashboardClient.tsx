@@ -1076,7 +1076,7 @@ export default function LedgerDashboardClient({
             </div>
             <div className="text-[11px] text-slate-500 pb-1 leading-relaxed">
               {materialQuota.todayIsPurchaseDay
-                ? <>= งบทั้งเดือน ฿{fmtMoney(materialQuota.monthBudget)} ÷ {materialQuota.daysInMonth} วัน (วัน{materialQuota.weekdayLabel} = อัตราต่อวันคงที่)</>
+                ? <>วัน{materialQuota.weekdayLabel} = ค่าที่มากกว่า ระหว่าง [งบทั้งเดือน ฿{fmtMoney(materialQuota.monthBudget)} ÷ {materialQuota.daysInMonth} วัน] และ [คงเหลือ ฿{fmtMoney(materialQuota.remainingBudget)} ÷ {materialQuota.daysLeft} วันที่เหลือ]</>
                 : <>= (งบทั้งเดือน ฿{fmtMoney(materialQuota.monthBudget)} − ใช้ไปแล้ว ฿{fmtMoney(materialQuota.spentThisMonth)}) ÷ {materialQuota.daysLeft} วันที่เหลือ</>}
             </div>
           </div>

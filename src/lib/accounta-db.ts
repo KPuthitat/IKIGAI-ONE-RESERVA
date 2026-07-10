@@ -1691,12 +1691,13 @@ export function materialPurchaseQuota(
   const todayIsPurchaseDay = new Date(Date.UTC(yy, mm - 1, dd)).getUTCDay() === b.wd;
   const daysLeft = daysInMonth - dd;   // owner's example: (30 − 10) = 20
 
-  // Purchase weekday (Monday): a FLAT daily rate = โควตาทั้งเดือน ÷ จำนวนวันในเดือน
-  // (owner 2026-07-10 — divide by days-in-month, NOT #Mondays; ยึดแบบหารจำนวนวัน).
-  // Any other day: spread the remaining budget over the days left in the month.
-  const quotaToday = todayIsPurchaseDay
-    ? round2(monthBudget / daysInMonth)
-    : (daysLeft > 0 ? Math.max(0, round2(remainingBudget / daysLeft)) : Math.max(0, remainingBudget));
+  // Spread the remaining budget over the days left in the month.
+  const spreadRate = daysLeft > 0 ? Math.max(0, round2(remainingBudget / daysLeft)) : Math.max(0, remainingBudget);
+  // Purchase weekday (Monday): base rate = โควตาทั้งเดือน ÷ จำนวนวันในเดือน, but take
+  // the LARGER of that and the remaining-days spread — the flat rate is a floor,
+  // the catch-up rate wins when there's leftover budget (owner 2026-07-10).
+  const flatRate = round2(monthBudget / daysInMonth);
+  const quotaToday = todayIsPurchaseDay ? Math.max(flatRate, spreadRate) : spreadRate;
 
   return {
     targetSales: round2(b.x), forecastSales: fc > 0 ? round2(fc) : null, xUsed, isFirstDay,
