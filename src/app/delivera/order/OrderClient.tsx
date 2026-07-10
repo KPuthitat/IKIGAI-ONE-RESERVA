@@ -26,6 +26,7 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
   const [branchId, setBranchId] = useState<number | null>(null);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [cart, setCart] = useState<Record<number, number>>({});
+  const [zoomImg, setZoomImg] = useState<{ url: string; name: string } | null>(null);
 
   const [fulfillment, setFulfillment] = useState<"delivery" | "pickup">("delivery");
   const [address, setAddress] = useState("");
@@ -178,8 +179,11 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
         {menu.map((m) => (
           <div key={m.id} className="flex items-center gap-3 px-3 py-2 rounded-xl border border-slate-100">
             {m.image_url && (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={m.image_url} alt={m.name_th} className="w-14 h-14 rounded-lg object-cover flex-none" />
+              <button type="button" onClick={() => setZoomImg({ url: m.image_url!, name: m.name_th })}
+                className="flex-none rounded-lg overflow-hidden" aria-label={`ดูรูป ${m.name_th}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={m.image_url} alt={m.name_th} className="w-14 h-14 rounded-lg object-cover" />
+              </button>
             )}
             <div className="flex-1 min-w-0">
               <div className="font-medium text-slate-800 truncate">{m.name_th}</div>
@@ -199,6 +203,15 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
             className="w-full py-3 rounded-xl bg-brand text-white font-bold">
             ดำเนินการต่อ · {cartCount} รายการ · ฿{fmtMoney(subtotal)}
           </button>
+        </div>
+      )}
+      {zoomImg && (
+        <div onClick={() => setZoomImg(null)}
+          className="fixed inset-0 z-50 bg-black/85 flex flex-col items-center justify-center p-4" role="dialog" aria-modal="true">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={zoomImg.url} alt={zoomImg.name} className="max-w-full max-h-[80vh] rounded-xl object-contain" />
+          <p className="mt-3 text-white text-sm font-medium">{zoomImg.name}</p>
+          <p className="mt-1 text-white/60 text-xs">แตะที่ใดก็ได้เพื่อปิด</p>
         </div>
       )}
     </Shell>
