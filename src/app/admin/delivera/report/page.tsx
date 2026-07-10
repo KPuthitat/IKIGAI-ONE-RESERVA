@@ -46,7 +46,7 @@ export default function DeliveraReportPage({ searchParams }: { searchParams: { m
       </div>
 
       <div className="card">
-        <h2 className="font-bold text-slate-800 mb-2">เงินปลายทาง (COD) ค้างรับจากไรเดอร์</h2>
+        <h2 className="font-bold text-slate-800 mb-2">เงินปลายทาง (COD) ค้างรับจากทีมงานส่งสุข</h2>
         <CodClient />
       </div>
 

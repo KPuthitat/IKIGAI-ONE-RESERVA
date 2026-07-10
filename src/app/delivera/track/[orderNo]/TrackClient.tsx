@@ -11,7 +11,7 @@ const STEPS: Array<{ key: string; label: string }> = [
   { key: "paid", label: "รับชำระ/ยืนยัน" },
   { key: "preparing", label: "กำลังทำอาหาร" },
   { key: "ready", label: "พร้อมส่ง" },
-  { key: "picked_up", label: "ไรเดอร์รับของ" },
+  { key: "picked_up", label: "ทีมงานส่งสุขรับของ" },
   { key: "delivered", label: "ถึงแล้ว" },
   { key: "completed", label: "เสร็จสิ้น" }
 ];
@@ -39,7 +39,7 @@ export default function TrackClient({ liffId, orderNo }: { liffId: string; order
       if (!res.ok || !j.ok) { setPayMsg(j.error === "promptpay_not_configured" ? "ร้านยังไม่ได้ตั้งค่า PromptPay" : "ทำรายการไม่สำเร็จ"); return; }
       setPayMethod(method);
       if (method === "promptpay") setQr(j.qr_image ?? null);
-      else setPayMsg("ยืนยันออเดอร์แล้ว · ชำระปลายทางกับไรเดอร์");
+      else setPayMsg("ยืนยันออเดอร์แล้ว · ชำระปลายทางกับทีมงานส่งสุข");
     } catch { setPayMsg("เชื่อมต่อไม่ได้ ลองใหม่"); }
     finally { setPayBusy(false); }
   }

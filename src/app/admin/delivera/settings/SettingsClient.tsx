@@ -53,7 +53,7 @@ export default function SettingsClient(props: {
           </div>
         </div>
         {!props.hasCoords && (
-          <p className="text-[11px] text-amber-700">⚠ ยังไม่ได้ตั้งพิกัดร้าน — ไปตั้งที่ PERSONA → ตั้งค่าสาขา (ใช้คำนวณระยะไรเดอร์)</p>
+          <p className="text-[11px] text-amber-700">⚠ ยังไม่ได้ตั้งพิกัดร้าน — ไปตั้งที่ PERSONA → ตั้งค่าสาขา (ใช้คำนวณระยะทีมงานส่งสุข)</p>
         )}
         <details className="text-xs text-slate-500">
           <summary className="cursor-pointer">ตัวเลือกขั้นสูง: เชื่อมระบบอัตโนมัติ (ปิดไว้เป็นค่าเริ่มต้น)</summary>

@@ -25,7 +25,7 @@ export async function notifyRiderNewJob(riderId: number, orderId: number): Promi
     const text =
       `งานใหม่ ${order.order_no}\n${lines}${items.length > 5 ? "\n…" : ""}` +
       `\nยอด ฿${order.total.toLocaleString("th-TH")}${cod}${dest}` +
-      `\n\nเปิดแอป IKIGAI RIDER เพื่อรับงาน`;
+      `\n\nเปิดแอปทีมงานส่งสุข เพื่อรับงาน`;
     await pushRider(rider.line_user_id, [{ type: "text", text }]);
   } catch {
     /* best-effort — a failed push must never break dispatch */

@@ -34,8 +34,8 @@ function riderStep(d: Delivery | null): string {
   if (!d) return "";
   if (d.delivered_at) return "ส่งถึงแล้ว";
   if (d.picked_up_at) return "รับของแล้ว · กำลังไปส่ง";
-  if (d.accepted_at) return "ไรเดอร์รับงาน";
-  if (d.assigned_at) return "รอไรเดอร์รับงาน";
+  if (d.accepted_at) return "ทีมงานส่งสุขรับงาน";
+  if (d.assigned_at) return "รอทีมงานส่งสุขรับงาน";
   return "";
 }
 
@@ -148,18 +148,18 @@ function Card({ o, busy, act, dispatchOpen, riders, onOpenDispatch, onCloseDispa
 
       {rider && (
         <div className="mt-1.5 rounded-md bg-blue-50 border border-blue-100 px-2 py-1 text-[11px] text-blue-800">
-          ไรเดอร์: <span className="font-medium">{rider.name}</span>{rider.phone ? ` · ${rider.phone}` : ""} — {riderStep(delivery)}
+          ทีมงานส่งสุข: <span className="font-medium">{rider.name}</span>{rider.phone ? ` · ${rider.phone}` : ""} — {riderStep(delivery)}
         </div>
       )}
 
       {dispatchOpen && (
         <div className="mt-1.5 rounded-md border border-slate-200 bg-slate-50 p-2">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-slate-600">ไรเดอร์ที่ว่าง (ใกล้ร้านสุดก่อน)</span>
+            <span className="text-[11px] font-medium text-slate-600">ทีมงานส่งสุขที่ว่าง (ใกล้ร้านสุดก่อน)</span>
             <button type="button" onClick={onCloseDispatch} className="text-[11px] text-slate-400 hover:text-slate-600">ปิด</button>
           </div>
           {riders === null && <p className="text-[11px] text-slate-400 mt-1">กำลังค้นหา…</p>}
-          {riders?.length === 0 && <p className="text-[11px] text-slate-400 mt-1">ไม่มีไรเดอร์ว่างขณะนี้</p>}
+          {riders?.length === 0 && <p className="text-[11px] text-slate-400 mt-1">ไม่มีทีมงานส่งสุขว่างขณะนี้</p>}
           <div className="mt-1 space-y-1">
             {riders?.map((r) => (
               <button key={r.id} type="button" disabled={busy} onClick={() => act(order.id, { action: "assign", rider_id: r.id })}
@@ -206,7 +206,7 @@ function PrimaryAction({ order, busy, act, onOpenDispatch }: {
       if (order.fulfillment === "pickup") return btn("ลูกค้ารับแล้ว", { action: "complete" });
       return (
         <button type="button" disabled={busy} onClick={onOpenDispatch}
-          className="text-[11px] rounded-md bg-brand text-white px-2.5 py-1 font-medium disabled:opacity-50">จัดไรเดอร์</button>
+          className="text-[11px] rounded-md bg-brand text-white px-2.5 py-1 font-medium disabled:opacity-50">จัดทีมงานส่งสุข</button>
       );
     default: return <span className="text-[11px] text-slate-400">กำลังส่ง</span>;
   }

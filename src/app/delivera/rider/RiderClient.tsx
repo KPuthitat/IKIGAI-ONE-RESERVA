@@ -28,7 +28,7 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
 
   useEffect(() => {
     async function boot() {
-      if (!liffId) { setErr("ยังไม่ได้ตั้งค่า LIFF ไรเดอร์"); return; }
+      if (!liffId) { setErr("ยังไม่ได้ตั้งค่า LIFF ทีมงานส่งสุข"); return; }
       if (!branchId) { setErr("ลิงก์ไม่ถูกต้อง (ไม่มีรหัสสาขา)"); return; }
       for (let i = 0; i < 100 && !window.liff; i++) await new Promise((r) => setTimeout(r, 50));
       const liff = window.liff;
@@ -42,7 +42,7 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
         body: JSON.stringify({ access_token: t, branch_id: branchId })
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setErr(j.error === "rider_channel_not_configured" ? "ยังไม่ได้เปิดระบบไรเดอร์" : "ลงทะเบียนไม่สำเร็จ"); return; }
+      if (!res.ok || !j.ok) { setErr(j.error === "rider_channel_not_configured" ? "ยังไม่ได้เปิดระบบทีมงานส่งสุข" : "ลงทะเบียนไม่สำเร็จ"); return; }
       setReady(true);
     }
     boot();
@@ -101,7 +101,7 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
   return (
     <div className="max-w-md mx-auto min-h-screen bg-white px-4 py-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold text-slate-800">IKIGAI RIDER</h1>
+        <h1 className="text-lg font-bold text-slate-800">ทีมงานส่งสุข</h1>
         {ready && (
           <button type="button" onClick={toggleOnline}
             className={`rounded-full px-4 py-1.5 text-sm font-medium ${online ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"}`}>

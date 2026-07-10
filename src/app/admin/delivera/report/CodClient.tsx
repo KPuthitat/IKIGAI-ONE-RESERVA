@@ -43,7 +43,7 @@ export default function CodClient() {
   return (
     <div>
       <div className="mb-2 text-sm text-slate-600">
-        ค้างรับจากไรเดอร์ <span className="font-bold text-rose-600">฿{fmtMoney(summary.amount)}</span> · {summary.count} บิล
+        ค้างรับจากทีมงานส่งสุข <span className="font-bold text-rose-600">฿{fmtMoney(summary.amount)}</span> · {summary.count} บิล
       </div>
       <div className="space-y-1.5">
         {items.map((it) => (

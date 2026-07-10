@@ -72,7 +72,7 @@ export const RBAC_PERMISSIONS: RbacPermissionDef[] = [
     key: "delivera.manage",
     module: "DELIVERA",
     labelTh: "DELIVERA — เดลิเวอรี่ส่งเอง",
-    descTh: "กระดานครัวรับออเดอร์เดลิเวอรี่ ยืนยันสลิป จัดการเมนู/โซนส่ง และไรเดอร์"
+    descTh: "กระดานครัวรับออเดอร์เดลิเวอรี่ ยืนยันสลิป จัดการเมนู/โซนส่ง และทีมงานส่งสุข"
   }
 ];
 
