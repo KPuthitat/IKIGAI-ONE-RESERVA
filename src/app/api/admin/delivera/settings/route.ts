@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 const Body = z.object({
   enabled: z.boolean().optional(),
   promptpay_id: z.string().trim().max(30).nullable().optional(),
+  cod_enabled: z.boolean().optional(),
   default_prep_minutes: z.number().int().min(1).max(240).optional(),
   hook_deduct_stock: z.boolean().optional(),
   hook_post_income: z.boolean().optional(),
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
 
   if (d.enabled !== undefined) setDeliveraEnabled(user.activeBranchId, d.enabled);
   setBranchSettings(user.activeBranchId, {
-    promptpay_id: d.promptpay_id, default_prep_minutes: d.default_prep_minutes,
+    promptpay_id: d.promptpay_id, cod_enabled: d.cod_enabled, default_prep_minutes: d.default_prep_minutes,
     hook_deduct_stock: d.hook_deduct_stock, hook_post_income: d.hook_post_income, hook_record_insigna: d.hook_record_insigna
   });
   return NextResponse.json({ ok: true });

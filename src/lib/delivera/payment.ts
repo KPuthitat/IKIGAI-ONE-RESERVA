@@ -92,6 +92,8 @@ export function startPayment(order: OrderRow, method: "promptpay" | "cod"): Star
   if (order.status !== "pending_payment") throw new PaymentError("not_payable", order.status);
 
   if (method === "cod") {
+    const cod = db.prepare("SELECT cod_enabled FROM delivera_branch_settings WHERE branch_id = ?").get(order.branch_id) as { cod_enabled: number } | undefined;
+    if (cod && cod.cod_enabled === 0) throw new PaymentError("cod_disabled");
     const tx = db.transaction(() => {
       db.prepare("UPDATE delivery_orders SET pay_method = 'cod', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(order.id);
       // COD: money is collected on delivery — the order proceeds to the kitchen now.

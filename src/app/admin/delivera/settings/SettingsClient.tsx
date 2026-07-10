@@ -49,12 +49,13 @@ function ImagePick({ url, endpoint, onChange, size = 56, label = "รูป" }: 
 }
 
 export default function SettingsClient(props: {
-  enabled: boolean; promptpayId: string | null; promptpayQrUrl: string | null; prepMinutes: number; hooks: Hooks; hasCoords: boolean;
+  enabled: boolean; promptpayId: string | null; promptpayQrUrl: string | null; codEnabled: boolean; prepMinutes: number; hooks: Hooks; hasCoords: boolean;
   menu: MenuItem[]; zones: Zone[];
 }) {
   const [enabled, setEnabled] = useState(props.enabled);
   const [promptpay, setPromptpay] = useState(props.promptpayId ?? "");
   const [qrUrl, setQrUrl] = useState(props.promptpayQrUrl);
+  const [cod, setCod] = useState(props.codEnabled);
   const [prep, setPrep] = useState(String(props.prepMinutes));
   const [hooks, setHooks] = useState(props.hooks);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
@@ -88,6 +89,16 @@ export default function SettingsClient(props: {
             <label className="label !text-xs">เวลาทำอาหารโดยประมาณ (นาที)</label>
             <input type="number" min={1} className="input" value={prep} onChange={(e) => setPrep(e.target.value)} onBlur={() => saveSettings({ default_prep_minutes: Number(prep) || 20 })} />
           </div>
+        </div>
+        <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+          <div>
+            <div className="text-sm font-medium text-slate-700">รับเงินปลายทาง (COD)</div>
+            <p className="text-[11px] text-slate-400">{cod ? "ลูกค้าเลือกจ่ายปลายทางได้" : "ปิดอยู่ — ลูกค้าต้องจ่ายผ่าน PromptPay เท่านั้น"}</p>
+          </div>
+          <button type="button" onClick={() => { const v = !cod; setCod(v); saveSettings({ cod_enabled: v }); }}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium ${cod ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"}`}>
+            {cod ? "เปิด" : "ปิด"}
+          </button>
         </div>
         <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5 flex items-center gap-3">
           <ImagePick url={qrUrl} endpoint="/api/admin/delivera/settings/qr" onChange={setQrUrl} size={72} label="QR" />

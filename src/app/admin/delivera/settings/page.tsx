@@ -29,6 +29,7 @@ export default function DeliveraSettingsPage() {
         enabled={isDeliveraBranch(branchId)}
         promptpayId={settings.promptpay_id}
         promptpayQrUrl={settings.promptpay_qr_url}
+        codEnabled={settings.cod_enabled === 1}
         prepMinutes={settings.default_prep_minutes}
         hooks={{
           deduct_stock: settings.hook_deduct_stock === 1,

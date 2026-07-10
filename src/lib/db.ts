@@ -1671,6 +1671,8 @@ function runMigrations(db: Database.Database): void {
     // Optional uploaded PromptPay QR image (a store's own static QR). When set it
     // takes precedence over the generated dynamic QR at checkout.
     if (!scols.some((c) => c.name === "promptpay_qr_url")) db.exec("ALTER TABLE delivera_branch_settings ADD COLUMN promptpay_qr_url TEXT");
+    // Accept cash-on-delivery. Owner can turn COD off (PromptPay-only) per branch.
+    if (!scols.some((c) => c.name === "cod_enabled")) db.exec("ALTER TABLE delivera_branch_settings ADD COLUMN cod_enabled INTEGER NOT NULL DEFAULT 1");
   }
   // Seed 2 default zones for any DELIVERA-enabled branch that has none yet
   // (idempotent; runs on boot). Deferred for disabled branches so prod stays

@@ -18,6 +18,7 @@ export type DeliveraBranchSettings = {
   branch_id: number;
   promptpay_id: string | null;
   promptpay_qr_url: string | null;
+  cod_enabled: number;
   default_prep_minutes: number;
   hook_deduct_stock: number;
   hook_post_income: number;
@@ -29,11 +30,11 @@ export type DeliveraBranchSettings = {
 export function getBranchSettings(branchId: number): DeliveraBranchSettings {
   const db = getDb();
   let row = db
-    .prepare("SELECT branch_id, promptpay_id, promptpay_qr_url, default_prep_minutes, hook_deduct_stock, hook_post_income, hook_record_insigna FROM delivera_branch_settings WHERE branch_id = ?")
+    .prepare("SELECT branch_id, promptpay_id, promptpay_qr_url, cod_enabled, default_prep_minutes, hook_deduct_stock, hook_post_income, hook_record_insigna FROM delivera_branch_settings WHERE branch_id = ?")
     .get(branchId) as DeliveraBranchSettings | undefined;
   if (!row) {
     db.prepare("INSERT INTO delivera_branch_settings (branch_id) VALUES (?)").run(branchId);
-    row = { branch_id: branchId, promptpay_id: null, promptpay_qr_url: null, default_prep_minutes: 20, hook_deduct_stock: 0, hook_post_income: 0, hook_record_insigna: 0 };
+    row = { branch_id: branchId, promptpay_id: null, promptpay_qr_url: null, cod_enabled: 1, default_prep_minutes: 20, hook_deduct_stock: 0, hook_post_income: 0, hook_record_insigna: 0 };
   }
   return row;
 }
@@ -41,7 +42,7 @@ export function getBranchSettings(branchId: number): DeliveraBranchSettings {
 export function setBranchSettings(
   branchId: number,
   patch: {
-    promptpay_id?: string | null; promptpay_qr_url?: string | null; default_prep_minutes?: number;
+    promptpay_id?: string | null; promptpay_qr_url?: string | null; cod_enabled?: boolean; default_prep_minutes?: number;
     hook_deduct_stock?: boolean; hook_post_income?: boolean; hook_record_insigna?: boolean;
   }
 ): void {
@@ -50,13 +51,14 @@ export function setBranchSettings(
   const bit = (v: boolean | undefined, curVal: number) => (v === undefined ? curVal : v ? 1 : 0);
   db.prepare(
     `UPDATE delivera_branch_settings
-       SET promptpay_id = ?, promptpay_qr_url = ?, default_prep_minutes = ?,
+       SET promptpay_id = ?, promptpay_qr_url = ?, cod_enabled = ?, default_prep_minutes = ?,
            hook_deduct_stock = ?, hook_post_income = ?, hook_record_insigna = ?,
            updated_at = CURRENT_TIMESTAMP
      WHERE branch_id = ?`
   ).run(
     patch.promptpay_id !== undefined ? patch.promptpay_id : cur.promptpay_id,
     patch.promptpay_qr_url !== undefined ? patch.promptpay_qr_url : cur.promptpay_qr_url,
+    bit(patch.cod_enabled, cur.cod_enabled),
     patch.default_prep_minutes !== undefined ? patch.default_prep_minutes : cur.default_prep_minutes,
     bit(patch.hook_deduct_stock, cur.hook_deduct_stock),
     bit(patch.hook_post_income, cur.hook_post_income),

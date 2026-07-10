@@ -17,7 +17,7 @@ const STEPS: Array<{ key: string; label: string }> = [
 ];
 const ORDER = ["pending_payment", "paid", "confirmed", "preparing", "ready", "assigned", "picked_up", "delivered", "completed"];
 
-type OrderView = { order_no: string; status: string; fulfillment: string; total: number; pay_status: string; time_slot: string | null };
+type OrderView = { order_no: string; status: string; fulfillment: string; total: number; pay_status: string; time_slot: string | null; cod_enabled?: boolean };
 
 export default function TrackClient({ liffId, orderNo }: { liffId: string; orderNo: string }) {
   const [token, setToken] = useState("");
@@ -36,7 +36,7 @@ export default function TrackClient({ liffId, orderNo }: { liffId: string; order
         body: JSON.stringify({ access_token: token, method })
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setPayMsg(j.error === "promptpay_not_configured" ? "ร้านยังไม่ได้ตั้งค่า PromptPay" : "ทำรายการไม่สำเร็จ"); return; }
+      if (!res.ok || !j.ok) { setPayMsg(j.error === "promptpay_not_configured" ? "ร้านยังไม่ได้ตั้งค่า PromptPay" : j.error === "cod_disabled" ? "ร้านปิดรับเงินปลายทาง" : "ทำรายการไม่สำเร็จ"); return; }
       setPayMethod(method);
       if (method === "promptpay") setQr(j.qr_image ?? j.qr_image_url ?? null);
       else setPayMsg("ยืนยันออเดอร์แล้ว · ชำระปลายทางกับทีมงานส่งสุข");
@@ -101,11 +101,13 @@ export default function TrackClient({ liffId, orderNo }: { liffId: string; order
         <div className="my-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
           <div className="text-sm font-bold text-amber-900">ชำระเงิน ฿{fmtMoney(order.total)}</div>
           {!payMethod && (
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className={`mt-3 grid gap-2 ${order.cod_enabled === false ? "grid-cols-1" : "grid-cols-2"}`}>
               <button type="button" disabled={payBusy || !token} onClick={() => choosePay("promptpay")}
                 className="rounded-lg bg-brand text-white py-2.5 text-sm font-medium disabled:opacity-50">PromptPay QR</button>
-              <button type="button" disabled={payBusy || !token} onClick={() => choosePay("cod")}
-                className="rounded-lg border border-slate-300 bg-white text-slate-700 py-2.5 text-sm font-medium disabled:opacity-50">เก็บเงินปลายทาง</button>
+              {order.cod_enabled !== false && (
+                <button type="button" disabled={payBusy || !token} onClick={() => choosePay("cod")}
+                  className="rounded-lg border border-slate-300 bg-white text-slate-700 py-2.5 text-sm font-medium disabled:opacity-50">เก็บเงินปลายทาง</button>
+              )}
             </div>
           )}
           {payMethod === "promptpay" && qr && (

@@ -196,14 +196,16 @@ export function getOrderItems(orderId: number): OrderItemRow[] {
  *  given LIFF identity (customer_hash match), and only public-safe fields. */
 export function getOrderForCustomer(orderNo: string, lineUserId: string): {
   order_no: string; status: OrderStatus; fulfillment: string; total: number;
-  pay_status: string; time_slot: string | null; created_at: string;
+  pay_status: string; time_slot: string | null; created_at: string; cod_enabled: boolean;
 } | null {
   const o = getOrderByNo(orderNo);
   if (!o) return null;
   if (o.customer_hash !== hashLineUserId(lineUserId)) return null;
+  const cod = getDb().prepare("SELECT cod_enabled FROM delivera_branch_settings WHERE branch_id = ?").get(o.branch_id) as { cod_enabled: number } | undefined;
   return {
     order_no: o.order_no, status: o.status, fulfillment: o.fulfillment, total: o.total,
-    pay_status: o.pay_status, time_slot: o.time_slot, created_at: o.created_at
+    pay_status: o.pay_status, time_slot: o.time_slot, created_at: o.created_at,
+    cod_enabled: cod ? cod.cod_enabled === 1 : true
   };
 }
 
