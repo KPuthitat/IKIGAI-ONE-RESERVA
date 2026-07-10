@@ -12,7 +12,7 @@ export type RiderStatus = "offline" | "available" | "busy";
 export type RiderRow = {
   id: number; branch_id: number; line_user_id: string; display_name: string;
   phone: string | null; vehicle_type: string | null; plate: string | null;
-  status: RiderStatus; is_active: number;
+  status: RiderStatus; is_active: number; is_registered: number;
   last_lat: number | null; last_lng: number | null; last_location_at: string | null;
 };
 
@@ -48,6 +48,20 @@ export function setRiderStatus(riderId: number, status: RiderStatus): void {
   getDb().prepare("UPDATE riders SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(status, riderId);
 }
 
+/** Complete a rider's registration (name + phone + vehicle required). Flips
+ *  is_registered → 1 so the rider can go online and be dispatched. */
+export function completeRiderRegistration(riderId: number, input: {
+  displayName?: string | null; phone: string; vehicleType?: string | null; plate?: string | null;
+}): RiderRow {
+  const cur = getRider(riderId);
+  if (!cur) throw new OrderError("rider_not_found", riderId);
+  getDb().prepare(
+    "UPDATE riders SET display_name=?, phone=?, vehicle_type=?, plate=?, is_registered=1, is_active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?"
+  ).run(input.displayName?.trim() || cur.display_name, input.phone.trim(),
+        input.vehicleType ?? cur.vehicle_type, input.plate ?? cur.plate, riderId);
+  return getRider(riderId)!;
+}
+
 /** GPS heartbeat from the rider LIFF. Going online while heartbeating flips a
  *  fresh rider to 'available' (unless they're mid-job = busy). */
 export function updateRiderLocation(riderId: number, lat: number, lng: number, goOnline = true): void {
@@ -55,7 +69,8 @@ export function updateRiderLocation(riderId: number, lat: number, lng: number, g
   db.prepare("UPDATE riders SET last_lat=?, last_lng=?, last_location_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(lat, lng, riderId);
   if (goOnline) {
     const r = getRider(riderId);
-    if (r && r.status === "offline") setRiderStatus(riderId, "available");
+    // Only a registered rider can flip to available (and thus be dispatched).
+    if (r && r.is_registered === 1 && r.status === "offline") setRiderStatus(riderId, "available");
   }
 }
 
@@ -69,7 +84,7 @@ export function listAvailableRidersNear(branchId: number): RiderNear[] {
   const b = db.prepare("SELECT latitude AS lat, longitude AS lng FROM branches WHERE id = ?").get(branchId) as { lat: number | null; lng: number | null } | undefined;
   const rows = db.prepare(
     `SELECT * FROM riders
-      WHERE branch_id = ? AND is_active = 1 AND status = 'available'
+      WHERE branch_id = ? AND is_active = 1 AND is_registered = 1 AND status = 'available'
         AND last_location_at IS NOT NULL
         AND last_location_at >= datetime('now', ?)`
   ).all(branchId, `-${FRESH_LOCATION_MINUTES} minutes`) as RiderRow[];
@@ -125,6 +140,8 @@ function ownedDelivery(orderId: number, riderId: number): { order: OrderRow; del
 
 export function riderAccept(orderId: number, riderId: number): void {
   ownedDelivery(orderId, riderId);
+  const r = getRider(riderId);
+  if (!r || r.is_registered !== 1) throw new OrderError("rider_not_registered", riderId);
   getDb().prepare("UPDATE deliveries SET accepted_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE order_id=?").run(orderId);
 }
 

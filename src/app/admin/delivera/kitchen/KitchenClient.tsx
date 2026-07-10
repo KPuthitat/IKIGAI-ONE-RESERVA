@@ -14,7 +14,7 @@ type OrderRow = {
 };
 type ItemRow = { id: number; name_th: string; qty: number; line_total: number };
 type Delivery = { assigned_at: string | null; accepted_at: string | null; picked_up_at: string | null; delivered_at: string | null };
-type KOrder = { order: OrderRow; items: ItemRow[]; rider: { id: number; name: string; phone: string | null } | null; delivery: Delivery | null };
+type KOrder = { order: OrderRow; items: ItemRow[]; rider: { id: number; name: string; phone: string | null } | null; delivery: Delivery | null; slip_image_url: string | null };
 type NearRider = { id: number; name: string; vehicle: string | null; plate: string | null; distance_km: number | null; last_seen: string | null };
 
 const PAY_LABEL: Record<string, string> = {
@@ -113,7 +113,7 @@ function Card({ o, busy, act, dispatchOpen, riders, onOpenDispatch, onCloseDispa
   o: KOrder; busy: boolean; act: (id: number, body: Record<string, unknown>) => void;
   dispatchOpen: boolean; riders: NearRider[] | null; onOpenDispatch: () => void; onCloseDispatch: () => void;
 }) {
-  const { order, items, rider, delivery } = o;
+  const { order, items, rider, delivery, slip_image_url } = o;
   const paidBadge = order.pay_status === "verified"
     ? "bg-emerald-50 text-emerald-700 border-emerald-200"
     : order.pay_status === "pending_verify"
@@ -175,6 +175,10 @@ function Card({ o, busy, act, dispatchOpen, riders, onOpenDispatch, onCloseDispa
       <div className="mt-1.5 flex items-center justify-between">
         <span className="text-xs font-bold text-slate-800">฿{fmtMoney(order.total)}</span>
         <div className="flex items-center gap-1.5">
+          {slip_image_url && (
+            <a href={slip_image_url} target="_blank" rel="noreferrer"
+              className="text-[11px] rounded-md border border-slate-300 text-slate-600 px-2 py-1 font-medium">ดูสลิป</a>
+          )}
           {order.pay_status === "pending_verify" && (
             <button type="button" disabled={busy} onClick={() => act(order.id, { action: "confirm_slip" })}
               className="text-[11px] rounded-md bg-amber-600 text-white px-2 py-1 font-medium disabled:opacity-50">ยืนยันสลิป</button>

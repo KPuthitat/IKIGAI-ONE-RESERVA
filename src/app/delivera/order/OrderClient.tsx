@@ -73,14 +73,21 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
     return () => { cancelled = true; };
   }, [liffId, lockedBranchId]);
 
-  async function openMyOrders() {
-    setShowMine(true); setMyOrders(null);
+  async function fetchMine() {
     try {
       const res = await fetch(apiUrl(`/api/delivera/my-orders?token=${encodeURIComponent(accessToken)}`), { cache: "no-store" });
       const j = await res.json().catch(() => ({}));
       setMyOrders(res.ok && j.ok ? j.orders : []);
-    } catch { setMyOrders([]); }
+    } catch { setMyOrders((prev) => prev ?? []); }
   }
+  function openMyOrders() { setShowMine(true); setMyOrders(null); fetchMine(); }
+  // Auto-refresh the list while it's open so status changes show without reopening.
+  useEffect(() => {
+    if (!showMine) return;
+    const t = setInterval(fetchMine, 8000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showMine, accessToken]);
 
   async function loadMenu(id: number) {
     setBranchId(id);

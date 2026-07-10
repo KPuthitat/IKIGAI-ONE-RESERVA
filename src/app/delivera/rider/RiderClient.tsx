@@ -23,6 +23,9 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
   const [online, setOnline] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [needsReg, setNeedsReg] = useState(false);
+  const [reg, setReg] = useState({ name: "", phone: "", vehicle: "", plate: "" });
+  const [regBusy, setRegBusy] = useState(false);
   const watchRef = useRef<number | null>(null);
   const tokenRef = useRef("");
 
@@ -43,11 +46,28 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(j.error === "rider_channel_not_configured" ? "ยังไม่ได้เปิดระบบทีมงานส่งสุข" : "ลงทะเบียนไม่สำเร็จ"); return; }
-      setReady(true);
+      if (j.rider?.is_registered) { setReady(true); return; }
+      // Not registered yet → show the form (prefill from LINE profile / any saved values).
+      setReg({ name: j.rider?.display_name ?? "", phone: j.rider?.phone ?? "", vehicle: j.rider?.vehicle_type ?? "", plate: j.rider?.plate ?? "" });
+      setNeedsReg(true);
     }
     boot();
     return () => { if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current); };
   }, [liffId, branchId]);
+
+  async function submitReg() {
+    if (!reg.phone.trim()) { setErr("กรุณากรอกเบอร์โทร"); return; }
+    setRegBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/delivera/rider/register"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ access_token: tokenRef.current, branch_id: branchId, phone: reg.phone.trim(), vehicle_type: reg.vehicle.trim() || null, plate: reg.plate.trim() || null })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok || !j.rider?.is_registered) { setErr("ลงทะเบียนไม่สำเร็จ ลองใหม่"); return; }
+      setNeedsReg(false); setReady(true);
+    } finally { setRegBusy(false); }
+  }
 
   const loadJobs = useCallback(async () => {
     if (!tokenRef.current) return;
@@ -110,7 +130,32 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
         )}
       </div>
       {err && <p className="text-sm text-rose-600 mt-3">{err}</p>}
-      {!ready && !err && <p className="text-sm text-slate-400 mt-4">กำลังเข้าสู่ระบบ…</p>}
+      {!ready && !needsReg && !err && <p className="text-sm text-slate-400 mt-4">กำลังเข้าสู่ระบบ…</p>}
+
+      {needsReg && (
+        <div className="mt-4 space-y-3">
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-3">
+            <p className="text-sm font-medium text-amber-900">ลงทะเบียนก่อนรับงาน</p>
+            <p className="text-[11px] text-amber-700">กรอกข้อมูลให้ครบเพื่อเริ่มรับงานส่งอาหาร</p>
+          </div>
+          <div>
+            <label className="label !text-xs">ชื่อ</label>
+            <input className="input" value={reg.name} onChange={(e) => setReg({ ...reg, name: e.target.value })} placeholder="ชื่อ-นามสกุล" />
+          </div>
+          <div>
+            <label className="label !text-xs">เบอร์โทร *</label>
+            <input className="input" inputMode="tel" value={reg.phone} onChange={(e) => setReg({ ...reg, phone: e.target.value })} placeholder="08x-xxx-xxxx" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><label className="label !text-xs">ประเภทรถ</label><input className="input" value={reg.vehicle} onChange={(e) => setReg({ ...reg, vehicle: e.target.value })} placeholder="มอเตอร์ไซค์" /></div>
+            <div><label className="label !text-xs">ทะเบียนรถ</label><input className="input" value={reg.plate} onChange={(e) => setReg({ ...reg, plate: e.target.value })} placeholder="1กก-1234" /></div>
+          </div>
+          <button type="button" onClick={submitReg} disabled={regBusy || !reg.phone.trim()}
+            className="w-full rounded-lg bg-brand text-white py-2.5 text-sm font-medium disabled:opacity-50">
+            {regBusy ? "กำลังลงทะเบียน…" : "ลงทะเบียน"}
+          </button>
+        </div>
+      )}
 
       {ready && (
         <div className="mt-4 space-y-3">

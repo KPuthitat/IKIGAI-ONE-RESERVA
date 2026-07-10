@@ -15,6 +15,9 @@ export type KitchenOrder = {
   // on it + how far along. null before dispatch.
   rider: { id: number; name: string; phone: string | null } | null;
   delivery: Pick<DeliveryRow, "assigned_at" | "accepted_at" | "picked_up_at" | "delivered_at"> | null;
+  // Customer-attached transfer slip (PromptPay), so staff can eyeball it before
+  // confirming a pending_verify payment. null when none uploaded.
+  slip_image_url: string | null;
 };
 
 /** Live orders for a branch's kitchen board — everything not yet completed or
@@ -23,13 +26,16 @@ export function listKitchenOrders(branchId: number): KitchenOrder[] {
   const rows = getDb()
     .prepare("SELECT * FROM delivery_orders WHERE branch_id = ? AND status NOT IN ('completed','cancelled','delivered') ORDER BY created_at")
     .all(branchId) as OrderRow[];
+  const db = getDb();
   return rows.map((order) => {
     const d = getDeliveryForOrder(order.id);
     const r = d?.rider_id ? getRider(d.rider_id) : null;
+    const slip = db.prepare("SELECT slip_image_url FROM delivery_payments WHERE order_id = ? AND method = 'promptpay' AND slip_image_url IS NOT NULL ORDER BY id DESC LIMIT 1").get(order.id) as { slip_image_url: string | null } | undefined;
     return {
       order, items: getOrderItems(order.id),
       rider: r ? { id: r.id, name: r.display_name, phone: r.phone } : null,
-      delivery: d ? { assigned_at: d.assigned_at, accepted_at: d.accepted_at, picked_up_at: d.picked_up_at, delivered_at: d.delivered_at } : null
+      delivery: d ? { assigned_at: d.assigned_at, accepted_at: d.accepted_at, picked_up_at: d.picked_up_at, delivered_at: d.delivered_at } : null,
+      slip_image_url: slip?.slip_image_url ?? null
     };
   });
 }

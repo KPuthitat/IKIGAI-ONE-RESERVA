@@ -1649,6 +1649,10 @@ function runMigrations(db: Database.Database): void {
     if (!rcols.some((c) => c.name === "last_lat")) db.exec("ALTER TABLE riders ADD COLUMN last_lat REAL");
     if (!rcols.some((c) => c.name === "last_lng")) db.exec("ALTER TABLE riders ADD COLUMN last_lng REAL");
     if (!rcols.some((c) => c.name === "last_location_at")) db.exec("ALTER TABLE riders ADD COLUMN last_location_at TEXT");
+    // Rider must complete registration (name + phone + vehicle) before they can
+    // go online / accept jobs (owner 2026-07-10). Opening the LIFF only creates
+    // the identity row; is_registered flips to 1 when they submit the form.
+    if (!rcols.some((c) => c.name === "is_registered")) db.exec("ALTER TABLE riders ADD COLUMN is_registered INTEGER NOT NULL DEFAULT 0");
   }
   // Integration-hook idempotency flags (commit 7) — each cross-module side effect
   // (INVENTA stock deduct on cook, ACCOUNTA income + INSIGNA visit on completion)

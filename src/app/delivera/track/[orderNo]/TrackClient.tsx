@@ -47,6 +47,18 @@ export default function TrackClient({ liffId, orderNo }: { liffId: string; order
   // Dark-launch flow: before SlipOK is provisioned, "ฉันโอนแล้ว" queues the order
   // for manual confirmation on the kitchen board. Real slip verification lands
   // with SlipOK + slip upload.
+  async function uploadSlip(file: File) {
+    setPayBusy(true); setPayMsg(null);
+    try {
+      const fd = new FormData(); fd.append("access_token", token); fd.append("file", file);
+      const res = await fetch(apiUrl(`/api/delivera/orders/${orderNo}/slip-image`), { method: "POST", body: fd });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setPayMsg(j.message || "แนบสลิปไม่สำเร็จ ลองใหม่"); return; }
+      setPayMsg(j.pay_status === "verified" ? "ยืนยันการชำระแล้ว" : "แนบสลิปแล้ว · รอร้านตรวจสอบ");
+    } catch { setPayMsg("เชื่อมต่อไม่ได้ ลองใหม่"); }
+    finally { setPayBusy(false); }
+  }
+
   async function iPaid() {
     setPayBusy(true); setPayMsg(null);
     try {
@@ -114,9 +126,14 @@ export default function TrackClient({ liffId, orderNo }: { liffId: string; order
             <div className="mt-3 text-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={qr} alt="PromptPay QR" className="mx-auto w-48 h-48" />
-              <p className="mt-1 text-[11px] text-slate-500">สแกนจ่ายผ่านแอปธนาคาร แล้วกดปุ่มด้านล่าง</p>
-              <button type="button" disabled={payBusy} onClick={iPaid}
-                className="mt-2 rounded-lg bg-emerald-600 text-white px-5 py-2 text-sm font-medium disabled:opacity-50">ฉันโอนแล้ว</button>
+              <p className="mt-1 text-[11px] text-slate-500">สแกนจ่ายผ่านแอปธนาคาร แล้วแนบสลิปโอนเงิน</p>
+              <label className="mt-2 inline-block rounded-lg bg-emerald-600 text-white px-5 py-2 text-sm font-medium cursor-pointer">
+                {payBusy ? "กำลังส่ง…" : "แนบสลิปโอนเงิน"}
+                <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" disabled={payBusy}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadSlip(f); e.target.value = ""; }} />
+              </label>
+              <div><button type="button" disabled={payBusy} onClick={iPaid}
+                className="mt-2 text-[11px] text-slate-400 underline disabled:opacity-50">ไม่มีสลิป? แจ้งว่าโอนแล้ว</button></div>
             </div>
           )}
           {payMsg && <p className="mt-2 text-xs text-emerald-700">{payMsg}</p>}
