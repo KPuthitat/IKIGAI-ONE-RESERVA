@@ -23,6 +23,43 @@ export default function TrackClient({ liffId, orderNo }: { liffId: string; order
   const [token, setToken] = useState("");
   const [order, setOrder] = useState<OrderView | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [payMethod, setPayMethod] = useState<"promptpay" | "cod" | null>(null);
+  const [qr, setQr] = useState<string | null>(null);
+  const [payBusy, setPayBusy] = useState(false);
+  const [payMsg, setPayMsg] = useState<string | null>(null);
+
+  async function choosePay(method: "promptpay" | "cod") {
+    setPayBusy(true); setPayMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/delivera/orders/${orderNo}/pay`), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ access_token: token, method })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setPayMsg(j.error === "promptpay_not_configured" ? "ร้านยังไม่ได้ตั้งค่า PromptPay" : "ทำรายการไม่สำเร็จ"); return; }
+      setPayMethod(method);
+      if (method === "promptpay") setQr(j.qr_image ?? null);
+      else setPayMsg("ยืนยันออเดอร์แล้ว · ชำระปลายทางกับไรเดอร์");
+    } catch { setPayMsg("เชื่อมต่อไม่ได้ ลองใหม่"); }
+    finally { setPayBusy(false); }
+  }
+
+  // Dark-launch flow: before SlipOK is provisioned, "ฉันโอนแล้ว" queues the order
+  // for manual confirmation on the kitchen board. Real slip verification lands
+  // with SlipOK + slip upload.
+  async function iPaid() {
+    setPayBusy(true); setPayMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/delivera/orders/${orderNo}/slip`), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ access_token: token, slip_data: "MANUAL_NOTIFY" })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setPayMsg("แจ้งชำระไม่สำเร็จ ลองใหม่"); return; }
+      setPayMsg(j.pay_status === "verified" ? "ยืนยันการชำระแล้ว" : "แจ้งชำระแล้ว · รอร้านตรวจสอบสลิป");
+    } catch { setPayMsg("เชื่อมต่อไม่ได้ ลองใหม่"); }
+    finally { setPayBusy(false); }
+  }
 
   useEffect(() => {
     let stop = false;
@@ -59,6 +96,30 @@ export default function TrackClient({ liffId, orderNo }: { liffId: string; order
       <p className="text-sm text-slate-500">เลขที่ {orderNo}</p>
       {err && <p className="text-sm text-rose-600 mt-3">{err}</p>}
       {order?.status === "cancelled" && <p className="text-sm text-rose-600 mt-3">ออเดอร์ถูกยกเลิก</p>}
+
+      {order && order.status === "pending_payment" && order.pay_status !== "verified" && (
+        <div className="my-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="text-sm font-bold text-amber-900">ชำระเงิน ฿{fmtMoney(order.total)}</div>
+          {!payMethod && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button type="button" disabled={payBusy || !token} onClick={() => choosePay("promptpay")}
+                className="rounded-lg bg-brand text-white py-2.5 text-sm font-medium disabled:opacity-50">PromptPay QR</button>
+              <button type="button" disabled={payBusy || !token} onClick={() => choosePay("cod")}
+                className="rounded-lg border border-slate-300 bg-white text-slate-700 py-2.5 text-sm font-medium disabled:opacity-50">เก็บเงินปลายทาง</button>
+            </div>
+          )}
+          {payMethod === "promptpay" && qr && (
+            <div className="mt-3 text-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={qr} alt="PromptPay QR" className="mx-auto w-48 h-48" />
+              <p className="mt-1 text-[11px] text-slate-500">สแกนจ่ายผ่านแอปธนาคาร แล้วกดปุ่มด้านล่าง</p>
+              <button type="button" disabled={payBusy} onClick={iPaid}
+                className="mt-2 rounded-lg bg-emerald-600 text-white px-5 py-2 text-sm font-medium disabled:opacity-50">ฉันโอนแล้ว</button>
+            </div>
+          )}
+          {payMsg && <p className="mt-2 text-xs text-emerald-700">{payMsg}</p>}
+        </div>
+      )}
 
       {order && order.status !== "cancelled" && (
         <>

@@ -34,6 +34,17 @@ export const CreateOrderBody = z.object({
   items: z.array(OrderItemBody).min(1).max(50)
 });
 
+export const PayBody = z.object({
+  access_token: z.string().min(1),                 // LIFF access token → verified server-side
+  method: z.enum(["promptpay", "cod"])
+});
+
+export const SlipBody = z.object({
+  access_token: z.string().min(1),
+  slip_data: z.string().max(2000).nullable().optional(),   // QR string decoded from the slip
+  slip_image_url: z.string().url().max(1000).nullable().optional()
+}).refine((d) => !!(d.slip_data || d.slip_image_url), { message: "slip_required" });
+
 /** Map a validated body + a server-verified LINE userId into a CreateOrderInput. */
 export function toCreateOrderInput(
   d: z.infer<typeof CreateOrderBody>,
