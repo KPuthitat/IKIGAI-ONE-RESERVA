@@ -1059,54 +1059,66 @@ export default function LedgerDashboardClient({
           admin sees (owner 2026-07-06). Shows the full taught logic: monthly
           budget = เป้ายอดขาย × %, then today's allowance. Hidden when the branch
           has the feature off. */}
-      {materialQuota && (
-        <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50/60 p-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <h2 className="font-bold text-emerald-900 text-base">โควตาสั่งซื้อวัตถุดิบวันนี้</h2>
-            <span className="text-[11px] text-emerald-700/70">
-              {materialQuota.todayIsPurchaseDay ? `วันสั่งหลัก · วัน${materialQuota.weekdayLabel}` : "วันปกติ"}
-            </span>
-          </div>
+      {materialQuota && (() => {
+        const q = materialQuota;
+        const usedPct = q.monthBudget > 0 ? Math.min(100, Math.max(0, (q.spentThisMonth / q.monthBudget) * 100)) : 0;
+        const over = q.spentThisMonth > q.monthBudget;
+        return (
+          <div className="relative overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 sm:p-5 shadow-sm">
+            {/* decorative artwork — a soft oversized cart in the corner */}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
+              className="pointer-events-none absolute -right-5 -top-5 h-28 w-28 text-emerald-100">
+              <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" />
+              <path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
 
-          {/* Headline: today's allowance + the exact formula used */}
-          <div className="mt-2 flex items-end gap-3 flex-wrap">
-            <div>
-              <div className="text-[11px] text-slate-500">สั่งซื้อได้วันนี้ไม่เกิน</div>
-              <div className="text-3xl font-extrabold text-emerald-700 leading-tight">฿{fmtMoney(materialQuota.quotaToday)}</div>
-            </div>
-            <div className="text-[11px] text-slate-500 pb-1 leading-relaxed">
-              {materialQuota.todayIsPurchaseDay
-                ? <>วัน{materialQuota.weekdayLabel} = ค่าที่มากกว่า ระหว่าง [งบทั้งเดือน ฿{fmtMoney(materialQuota.monthBudget)} ÷ {materialQuota.daysInMonth} วัน] และ [คงเหลือ ฿{fmtMoney(materialQuota.remainingBudget)} ÷ {materialQuota.daysLeft} วันที่เหลือ]</>
-                : <>= (งบทั้งเดือน ฿{fmtMoney(materialQuota.monthBudget)} − ใช้ไปแล้ว ฿{fmtMoney(materialQuota.spentThisMonth)}) ÷ {materialQuota.daysLeft} วันที่เหลือ</>}
-            </div>
-          </div>
+            <div className="relative">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-600/10 text-emerald-700">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" />
+                      <path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6" />
+                    </svg>
+                  </span>
+                  <h2 className="font-bold text-emerald-900">โควตาสั่งซื้อวัตถุดิบวันนี้</h2>
+                </div>
+                <span className="shrink-0 rounded-full border border-emerald-200 bg-white/70 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">
+                  {q.todayIsPurchaseDay ? `วัน${q.weekdayLabel} · วันสั่งหลัก` : "วันปกติ"}
+                </span>
+              </div>
 
-          {/* Derivation: which X, the budget, spend + remaining */}
-          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">ยอดขายคาดการณ์ (X)</div>
-              <div className="text-base font-bold text-slate-700">฿{fmtMoney(materialQuota.xUsed)}</div>
-              <div className="text-[10px] text-slate-400">{materialQuota.isFirstDay ? "เป้าเดือนนี้ (วันแรก)" : "ประมาณการจากยอดจริง"}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">งบวัตถุดิบ ({materialQuota.budgetPct}%)</div>
-              <div className="text-base font-bold text-slate-700">฿{fmtMoney(materialQuota.monthBudget)}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">ซื้อไปแล้วเดือนนี้</div>
-              <div className="text-base font-bold text-rose-600">฿{fmtMoney(materialQuota.spentThisMonth)}</div>
-            </div>
-            <div className="rounded-lg bg-white border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">เหลือทั้งเดือน</div>
-              <div className="text-base font-bold text-emerald-800">฿{fmtMoney(materialQuota.remainingBudget)}</div>
+              {/* Hero — today's allowance */}
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-4xl font-extrabold tracking-tight text-emerald-700">฿{fmtMoney(q.quotaToday)}</span>
+                <span className="text-xs text-slate-500">สั่งซื้อได้วันนี้</span>
+              </div>
+
+              {/* Progress — spend vs monthly budget (the artwork that carries the numbers) */}
+              <div className="mt-3">
+                <div className="mb-1 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">ใช้ไปแล้ว <span className={over ? "font-semibold text-rose-600" : "font-semibold text-slate-700"}>฿{fmtMoney(q.spentThisMonth)}</span></span>
+                  <span className="text-slate-500">งบเดือนนี้ ฿{fmtMoney(q.monthBudget)}</span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full bg-emerald-100">
+                  <div className={`h-full rounded-full ${over ? "bg-rose-400" : "bg-emerald-500"}`} style={{ width: `${usedPct}%` }} />
+                </div>
+                <div className="mt-1 text-right text-[11px] font-medium text-emerald-800">
+                  เหลือทั้งเดือน ฿{fmtMoney(q.remainingBudget)}
+                </div>
+              </div>
+
+              {/* Short formula */}
+              <p className="mt-3 border-t border-emerald-100 pt-2 text-[11px] leading-relaxed text-slate-400">
+                <span className="text-slate-500">วิธีคิด:</span> ยอดขายคาดการณ์ ฿{fmtMoney(q.xUsed)} × {q.budgetPct}% = งบเดือน{" "}
+                {q.todayIsPurchaseDay
+                  ? <> · วันสั่งหลัก = งบ ÷ {q.daysInMonth} วัน (หรือ คงเหลือ ÷ {q.daysLeft} วัน — เลือกค่าที่มากกว่า)</>
+                  : <> · = คงเหลือ ÷ {q.daysLeft} วันที่เหลือ</>}
+              </p>
             </div>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1.5">
-            งบวัตถุดิบทั้งเดือน = ยอดขายคาดการณ์ ฿{fmtMoney(materialQuota.xUsed)} × {materialQuota.budgetPct}% ·
-            วันจันทร์ฟิกเป็นวันสั่งหลัก (เสาร์-อาทิตย์ขายเยอะ) · นับเฉพาะหมวด “ต้นทุนสินค้า/วัตถุดิบ” (GD) ที่ยืนยันแล้ว
-          </p>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Period selector + add buttons */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
