@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
+import { branchFromLiffUrl } from "@/lib/delivera/liff-branch";
 
 // Minimal, functional customer ordering flow inside LIFF. Steps:
 //   branch → menu + cart → checkout (address/geolocation + quote) → done.
@@ -25,6 +26,7 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
 
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState<number | null>(null);
+  const [lockedBranch, setLockedBranch] = useState(lockedBranchId);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [cart, setCart] = useState<Record<number, number>>({});
   const [zoomImg, setZoomImg] = useState<{ url: string; name: string } | null>(null);
@@ -58,8 +60,10 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
         if (cancelled) return;
         setAccessToken(token ?? "");
         setDisplayName(prof?.displayName ?? "");
-        // Branch-scoped link (?branch=<id>) → jump straight to that shop's menu.
-        if (lockedBranchId) { await loadMenu(lockedBranchId); return; }
+        // Branch-scoped link (?branch=<id>, possibly hidden in liff.state) → jump
+        // straight to that shop's menu.
+        const bId = branchFromLiffUrl(lockedBranchId);
+        if (bId) { setLockedBranch(bId); await loadMenu(bId); return; }
         const res = await fetch(apiUrl("/api/delivera/branches"));
         const j = await res.json();
         setBranches(j.branches ?? []);
@@ -191,7 +195,7 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
 
   if (phase === "menu") return (
     <Shell>
-      {!lockedBranchId && <button onClick={() => setPhase("branch")} className="text-xs text-slate-500 mb-2">← เปลี่ยนสาขา</button>}
+      {!lockedBranch && <button onClick={() => setPhase("branch")} className="text-xs text-slate-500 mb-2">← เปลี่ยนสาขา</button>}
       <div className="flex items-center justify-between mb-3">
         <h1 className="text-lg font-bold text-slate-800">เมนู</h1>
         <button type="button" onClick={openMyOrders} className="text-xs font-medium text-brand border border-brand rounded-full px-3 py-1">ออเดอร์ของฉัน</button>

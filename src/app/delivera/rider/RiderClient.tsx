@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
+import { branchFromLiffUrl } from "@/lib/delivera/liff-branch";
 
 // IKIGAI RIDER app. Registers via the rider LINE channel, heartbeats GPS while
 // online (feeds "who's nearby" dispatch), lists this rider's jobs, and drives
@@ -28,21 +29,25 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
   const [regBusy, setRegBusy] = useState(false);
   const watchRef = useRef<number | null>(null);
   const tokenRef = useRef("");
+  const branchRef = useRef(branchId);
 
   useEffect(() => {
     async function boot() {
       if (!liffId) { setErr("ยังไม่ได้ตั้งค่า LIFF ทีมงานส่งสุข"); return; }
-      if (!branchId) { setErr("ลิงก์ไม่ถูกต้อง (ไม่มีรหัสสาขา)"); return; }
       for (let i = 0; i < 100 && !window.liff; i++) await new Promise((r) => setTimeout(r, 50));
       const liff = window.liff;
       if (!liff) { setErr("โหลด LINE SDK ไม่สำเร็จ"); return; }
       await liff.init({ liffId });
       if (!liff.isLoggedIn()) { liff.login(); return; }
+      // Resolve branch from the LIFF URL (LINE may hide ?branch in liff.state).
+      const bId = branchFromLiffUrl(branchId);
+      if (!bId) { setErr("ลิงก์ไม่ถูกต้อง (ไม่มีรหัสสาขา)"); return; }
+      branchRef.current = bId;
       const t = liff.getAccessToken() ?? "";
       setToken(t); tokenRef.current = t;
       const res = await fetch(apiUrl("/api/delivera/rider/register"), {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: t, branch_id: branchId })
+        body: JSON.stringify({ access_token: t, branch_id: bId })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(j.error === "rider_channel_not_configured" ? "ยังไม่ได้เปิดระบบทีมงานส่งสุข" : "ลงทะเบียนไม่สำเร็จ"); return; }
@@ -61,7 +66,7 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
     try {
       const res = await fetch(apiUrl("/api/delivera/rider/register"), {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: tokenRef.current, branch_id: branchId, phone: reg.phone.trim(), vehicle_type: reg.vehicle.trim() || null, plate: reg.plate.trim() || null })
+        body: JSON.stringify({ access_token: tokenRef.current, branch_id: branchRef.current, phone: reg.phone.trim(), vehicle_type: reg.vehicle.trim() || null, plate: reg.plate.trim() || null })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok || !j.rider?.is_registered) { setErr("ลงทะเบียนไม่สำเร็จ ลองใหม่"); return; }
