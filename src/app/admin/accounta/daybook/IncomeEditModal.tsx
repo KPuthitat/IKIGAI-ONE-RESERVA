@@ -87,8 +87,8 @@ export default function IncomeEditModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-xl my-4" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-4 overflow-y-auto overscroll-contain" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-xl my-4 max-h-[85dvh] overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
           <div className="text-sm font-bold text-slate-800">{isCreate ? "เพิ่มรายรับ" : "แก้ไขรายรับ"}</div>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
