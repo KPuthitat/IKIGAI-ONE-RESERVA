@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { scanBill, OcrError } from "@/lib/accounta-ocr";
-import { logOcrUsage, ocrUsageStats, listCategories } from "@/lib/accounta-db";
+import { logOcrUsage, ocrUsageStats, listCategories, findVendorByTaxId, findVendorByName } from "@/lib/accounta-db";
 import { ocrCostBaht } from "@/lib/accounta";
 
 // POST /api/accounta/ocr — multipart image → structured bill prefill.
@@ -44,7 +44,15 @@ export async function POST(req: Request) {
     });
     const costBaht = ocrCostBaht(model, usage.input_tokens, usage.output_tokens);
     const stats = ocrUsageStats(new Date().toISOString().slice(0, 7));
-    return NextResponse.json({ ok: true, result, model, costBaht, usage: stats });
+    // Auto-match the vendor master: tax id is the most reliable key (prints
+    // cleanly even when the name is garbled), then fall back to an exact name.
+    const branchId = user.activeBranchId ?? null;
+    let matched = result.tax_id ? findVendorByTaxId(result.tax_id, branchId) : null;
+    if (!matched && result.vendor_name) matched = findVendorByName(result.vendor_name, branchId);
+    const matchedVendor = matched
+      ? { id: matched.id, name: matched.name, tax_id: matched.tax_id, category: matched.category, by: result.tax_id && matched.tax_id ? "tax_id" : "name" }
+      : null;
+    return NextResponse.json({ ok: true, result, matched_vendor: matchedVendor, model, costBaht, usage: stats });
   } catch (e) {
     if (e instanceof OcrError) {
       return NextResponse.json({ error: e.code, message: e.message }, { status: 400 });

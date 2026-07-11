@@ -327,30 +327,35 @@ export default function ExpensesClient(props: {
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setScanMsg(null); setErr(humanizeApiError(j, "อ่านเอกสารไม่สำเร็จ")); return; }
       const r = j.result as OcrBillResult;
+      // Vendor auto-match against the master (server): tax id first, then exact
+      // name. When matched, use the master's canonical name + remembered category.
+      const matched = (j.matched_vendor ?? null) as { id: number; name: string; category: string | null; by: string } | null;
       // Vendor memory: if OCR read a known vendor, fall back to its remembered
       // category when the bill itself didn't yield one (owner 2026-06-18).
       const known = r.vendor_name
         ? vendors.find((v) => v.name.toLowerCase() === r.vendor_name!.toLowerCase())
         : undefined;
       const ocrCat = r.category && categories.some((c) => c.name === r.category) ? r.category : null;
+      const matchedCat = matched?.category && categories.some((c) => c.name === matched.category) ? matched.category : null;
       const learnedCat = known?.category && categories.some((c) => c.name === known.category)
         ? known.category : null;
       setForm((f) => ({
         ...f,
-        vendor_name: r.vendor_name ?? f.vendor_name,
+        vendor_name: matched?.name ?? r.vendor_name ?? f.vendor_name,
         bill_date: r.bill_date ?? f.bill_date,
         amount_total: r.amount_total != null ? String(r.amount_total) : f.amount_total,
         has_tax_invoice: r.has_tax_invoice ?? f.has_tax_invoice,
         vat_override: r.vat_amount != null ? String(r.vat_amount) : f.vat_override,
         doc_type: (r.doc_type && DOC_TYPES.includes(r.doc_type as never)) ? r.doc_type : f.doc_type,
-        category: ocrCat ?? learnedCat ?? f.category,
+        category: ocrCat ?? matchedCat ?? learnedCat ?? f.category,
         description: r.description ?? f.description,
         paid_date: r.bill_date ?? f.paid_date
       }));
       setStagedFile(file); // keep the scan as the receipt
       setMixedSplit(splitMixedBill(r)); // mixed bill → offer the 2-row split
       if (j.usage) setUsage(j.usage);
-      setScanMsg(`อ่านแล้ว (สแกนนี้ ~฿${fmtMoney(j.costBaht ?? 0)}) — ตรวจทานก่อนบันทึก`);
+      const matchNote = matched ? ` · จับคู่ร้าน “${matched.name}”${matched.by === "tax_id" ? " (จากเลขผู้เสียภาษี)" : ""}` : "";
+      setScanMsg(`อ่านแล้ว (สแกนนี้ ~฿${fmtMoney(j.costBaht ?? 0)})${matchNote} — ตรวจทานก่อนบันทึก`);
     } finally { setScanning(false); }
   }
 
