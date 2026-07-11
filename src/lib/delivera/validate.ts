@@ -53,7 +53,8 @@ export const RiderRegisterBody = z.object({
   phone: z.string().trim().max(20).nullable().optional(),
   vehicle_type: z.string().trim().max(40).nullable().optional(),
   plate: z.string().trim().max(20).nullable().optional(),
-  plate_province: z.string().trim().max(40).nullable().optional()
+  plate_province: z.string().trim().max(40).nullable().optional(),
+  engine_type: z.enum(["ice", "ev"]).nullable().optional()
 });
 
 export const RiderHeartbeatBody = z.object({

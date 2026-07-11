@@ -11,7 +11,7 @@ export type RiderStatus = "offline" | "available" | "busy";
 
 export type RiderRow = {
   id: number; branch_id: number; line_user_id: string; display_name: string;
-  phone: string | null; vehicle_type: string | null; plate: string | null; plate_province: string | null;
+  phone: string | null; vehicle_type: string | null; plate: string | null; plate_province: string | null; engine_type: string | null;
   status: RiderStatus; is_active: number; is_registered: number;
   last_lat: number | null; last_lng: number | null; last_location_at: string | null;
 };
@@ -51,15 +51,28 @@ export function setRiderStatus(riderId: number, status: RiderStatus): void {
 /** Complete a rider's registration (name + phone + vehicle required). Flips
  *  is_registered → 1 so the rider can go online and be dispatched. */
 export function completeRiderRegistration(riderId: number, input: {
-  displayName?: string | null; phone: string; vehicleType?: string | null; plate?: string | null; plateProvince?: string | null;
+  displayName?: string | null; phone: string; vehicleType?: string | null; plate?: string | null; plateProvince?: string | null; engineType?: string | null;
 }): RiderRow {
   const cur = getRider(riderId);
   if (!cur) throw new OrderError("rider_not_found", riderId);
   getDb().prepare(
-    "UPDATE riders SET display_name=?, phone=?, vehicle_type=?, plate=?, plate_province=?, is_registered=1, is_active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?"
+    "UPDATE riders SET display_name=?, phone=?, vehicle_type=?, plate=?, plate_province=?, engine_type=?, is_registered=1, is_active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?"
   ).run(input.displayName?.trim() || cur.display_name, input.phone.trim(),
-        input.vehicleType ?? cur.vehicle_type, input.plate ?? cur.plate, input.plateProvince ?? cur.plate_province, riderId);
+        input.vehicleType ?? cur.vehicle_type, input.plate ?? cur.plate, input.plateProvince ?? cur.plate_province,
+        input.engineType ?? cur.engine_type, riderId);
   return getRider(riderId)!;
+}
+
+/** A rider's own delivery performance by Bangkok month — # delivered + baht
+ *  value handled through the system (order totals of their delivered orders). */
+export function riderMonthlyStats(riderId: number, months = 6): Array<{ month: string; deliveries: number; total: number }> {
+  return getDb().prepare(
+    `SELECT strftime('%Y-%m', datetime(d.delivered_at, '+7 hours')) AS month,
+            COUNT(*) AS deliveries, COALESCE(SUM(o.total), 0) AS total
+       FROM deliveries d JOIN delivery_orders o ON o.id = d.order_id
+      WHERE d.rider_id = ? AND d.delivered_at IS NOT NULL
+      GROUP BY month ORDER BY month DESC LIMIT ?`
+  ).all(riderId, months) as Array<{ month: string; deliveries: number; total: number }>;
 }
 
 /** GPS heartbeat from the rider LIFF. Going online while heartbeating flips a

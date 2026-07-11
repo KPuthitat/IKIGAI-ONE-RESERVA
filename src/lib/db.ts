@@ -1655,6 +1655,8 @@ function runMigrations(db: Database.Database): void {
     if (!rcols.some((c) => c.name === "is_registered")) db.exec("ALTER TABLE riders ADD COLUMN is_registered INTEGER NOT NULL DEFAULT 0");
     // Plate province (77-province dropdown in the registration form).
     if (!rcols.some((c) => c.name === "plate_province")) db.exec("ALTER TABLE riders ADD COLUMN plate_province TEXT");
+    // Engine type — combustion ('ice') vs electric ('ev').
+    if (!rcols.some((c) => c.name === "engine_type")) db.exec("ALTER TABLE riders ADD COLUMN engine_type TEXT");
   }
   // Integration-hook idempotency flags (commit 7) — each cross-module side effect
   // (INVENTA stock deduct on cook, ACCOUNTA income + INSIGNA visit on completion)

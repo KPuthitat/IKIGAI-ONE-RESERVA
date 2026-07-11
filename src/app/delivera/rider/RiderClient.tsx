@@ -28,8 +28,10 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
   const [jobs, setJobs] = useState<Job[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [needsReg, setNeedsReg] = useState(false);
-  const [reg, setReg] = useState({ name: "", phone: "", vehicle: "", plate: "", province: "" });
+  const [reg, setReg] = useState({ name: "", phone: "", vehicle: "", plate: "", province: "", engine: "" });
   const [regBusy, setRegBusy] = useState(false);
+  const [profile, setProfile] = useState<null | { info: Record<string, string | null>; months: Array<{ month: string; deliveries: number; total: number }> }>(null);
+  const [showProfile, setShowProfile] = useState(false);
   const watchRef = useRef<number | null>(null);
   const tokenRef = useRef("");
   const branchRef = useRef(branchId);
@@ -56,7 +58,7 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
       if (!res.ok || !j.ok) { setErr(j.error === "rider_channel_not_configured" ? "ยังไม่ได้เปิดระบบทีมงานส่งสุข" : "ลงทะเบียนไม่สำเร็จ"); return; }
       if (j.rider?.is_registered) { setReady(true); return; }
       // Not registered yet → show the form (prefill from LINE profile / any saved values).
-      setReg({ name: j.rider?.display_name ?? "", phone: j.rider?.phone ?? "", vehicle: j.rider?.vehicle_type ?? "", plate: j.rider?.plate ?? "", province: j.rider?.plate_province ?? "" });
+      setReg({ name: j.rider?.display_name ?? "", phone: j.rider?.phone ?? "", vehicle: j.rider?.vehicle_type ?? "", plate: j.rider?.plate ?? "", province: j.rider?.plate_province ?? "", engine: j.rider?.engine_type ?? "" });
       setNeedsReg(true);
     }
     boot();
@@ -69,12 +71,22 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
     try {
       const res = await fetch(apiUrl("/api/delivera/rider/register"), {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: tokenRef.current, branch_id: branchRef.current, phone: reg.phone.trim(), vehicle_type: reg.vehicle || null, plate: reg.plate.trim() || null, plate_province: reg.province || null })
+        body: JSON.stringify({ access_token: tokenRef.current, branch_id: branchRef.current, phone: reg.phone.trim(), vehicle_type: reg.vehicle || null, plate: reg.plate.trim() || null, plate_province: reg.province || null, engine_type: reg.engine || null })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok || !j.rider?.is_registered) { setErr("ลงทะเบียนไม่สำเร็จ ลองใหม่"); return; }
       setNeedsReg(false); setReady(true);
     } finally { setRegBusy(false); }
+  }
+
+  async function openProfile() {
+    setShowProfile(true); setProfile(null);
+    try {
+      const res = await fetch(apiUrl(`/api/delivera/rider/profile?token=${encodeURIComponent(tokenRef.current)}`), { cache: "no-store" });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.ok) setProfile({ info: j.profile, months: j.months });
+      else setProfile({ info: {}, months: [] });
+    } catch { setProfile({ info: {}, months: [] }); }
   }
 
   const loadJobs = useCallback(async () => {
@@ -131,10 +143,13 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold text-slate-800">ทีมงานส่งสุข</h1>
         {ready && (
-          <button type="button" onClick={toggleOnline}
-            className={`rounded-full px-4 py-1.5 text-sm font-medium ${online ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"}`}>
-            {online ? "ออนไลน์ · แชร์ตำแหน่ง" : "ออฟไลน์"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={openProfile} className="text-xs font-medium text-brand border border-brand rounded-full px-3 py-1.5">โปรไฟล์</button>
+            <button type="button" onClick={toggleOnline}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium ${online ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"}`}>
+              {online ? "ออนไลน์ · แชร์ตำแหน่ง" : "ออฟไลน์"}
+            </button>
+          </div>
         )}
       </div>
       {err && <p className="text-sm text-rose-600 mt-3">{err}</p>}
@@ -169,6 +184,17 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
                 <option value="">— เลือกจังหวัด —</option>
                 {THAI_PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
+            </div>
+          </div>
+          <div>
+            <label className="label !text-xs">เครื่องยนต์</label>
+            <div className="grid grid-cols-2 gap-2">
+              {([["ice", "สันดาป"], ["ev", "ไฟฟ้า"]] as const).map(([v, label]) => (
+                <button type="button" key={v} onClick={() => setReg({ ...reg, engine: v })}
+                  className={`py-2 rounded-lg border text-sm font-medium ${reg.engine === v ? "bg-brand text-white border-brand" : "border-slate-300 text-slate-600"}`}>
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
           <button type="button" onClick={submitReg} disabled={regBusy || !reg.phone.trim()}
@@ -210,6 +236,41 @@ export default function RiderClient({ liffId, branchId }: { liffId: string; bran
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {showProfile && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" onClick={() => setShowProfile(false)}>
+          <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-bold text-slate-800">โปรไฟล์ทีมงานส่งสุข</h2>
+              <button type="button" onClick={() => setShowProfile(false)} className="text-slate-400 text-sm">ปิด</button>
+            </div>
+            {profile === null && <p className="text-sm text-slate-400">กำลังโหลด…</p>}
+            {profile && (
+              <>
+                <div className="rounded-xl border border-slate-200 p-3 text-sm space-y-1 mb-3">
+                  <div className="font-bold text-slate-800">{profile.info.display_name || "-"}</div>
+                  {profile.info.phone && <div className="text-slate-500">โทร {profile.info.phone}</div>}
+                  <div className="text-slate-500">
+                    {[profile.info.vehicle_type, profile.info.engine_type === "ev" ? "ไฟฟ้า" : profile.info.engine_type === "ice" ? "สันดาป" : null].filter(Boolean).join(" · ") || "-"}
+                  </div>
+                  {profile.info.plate && <div className="text-slate-500">ทะเบียน {profile.info.plate}{profile.info.plate_province ? ` ${profile.info.plate_province}` : ""}</div>}
+                </div>
+                <h3 className="text-sm font-bold text-slate-700 mb-1">ยอดที่ทำได้จากระบบ (รายเดือน)</h3>
+                {profile.months.length === 0 && <p className="text-sm text-slate-400">ยังไม่มียอดส่ง</p>}
+                <div className="space-y-1">
+                  {profile.months.map((m) => (
+                    <div key={m.month} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
+                      <span className="text-sm text-slate-600">{m.month}</span>
+                      <span className="text-[11px] text-slate-400">{m.deliveries} งาน</span>
+                      <span className="text-sm font-bold text-slate-800">฿{fmtMoney(m.total)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
