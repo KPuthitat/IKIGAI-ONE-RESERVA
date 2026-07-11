@@ -65,6 +65,7 @@ const Body = z.object({
   // ACCOUNTA bill-OCR master toggle + chosen vision model id.
   accounta_ocr_enabled: z.union([z.boolean(), z.literal("true"), z.literal("false")]).optional(),
   accounta_ocr_model: z.string().max(100).optional(),
+  accounta_ocr_instructions: z.string().max(4000).nullable().optional(),
   // Smart น้องฮูก (admin AI Q&A) master toggle + chosen model id.
   owl_ai_enabled: z.union([z.boolean(), z.literal("true"), z.literal("false")]).optional(),
   owl_ai_model: z.string().max(100).optional(),
@@ -169,6 +170,9 @@ export async function POST(req: Request) {
   }
   if (parsed.data.accounta_ocr_model !== undefined) {
     dbPatch.accounta_ocr_model = parsed.data.accounta_ocr_model.trim();
+  }
+  if (parsed.data.accounta_ocr_instructions !== undefined) {
+    dbPatch.accounta_ocr_instructions = parsed.data.accounta_ocr_instructions?.trim() || null;
   }
   if (parsed.data.owl_ai_enabled !== undefined) {
     const v = parsed.data.owl_ai_enabled;

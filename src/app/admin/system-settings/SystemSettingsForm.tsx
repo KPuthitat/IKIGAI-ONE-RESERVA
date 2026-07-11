@@ -36,6 +36,7 @@ export default function SystemSettingsForm({
   portalOaLink,
   accountaOcrEnabled,
   accountaOcrModel,
+  accountaOcrInstructions,
   ocrModels,
   owlAiEnabled,
   owlAiModel,
@@ -57,6 +58,7 @@ export default function SystemSettingsForm({
   portalOaLink: string;
   accountaOcrEnabled: boolean;
   accountaOcrModel: string;
+  accountaOcrInstructions: string;
   ocrModels: Array<{ id: string; label: string }>;
   owlAiEnabled: boolean;
   owlAiModel: string;
@@ -108,6 +110,7 @@ export default function SystemSettingsForm({
   // OFF by default; needs ANTHROPIC_API_KEY on the server to actually run.
   const [ocrOn, setOcrOn] = useState<boolean>(accountaOcrEnabled);
   const [ocrModelSel, setOcrModelSel] = useState<string>(accountaOcrModel || (ocrModels[0]?.id ?? ""));
+  const [ocrRules, setOcrRules] = useState<string>(accountaOcrInstructions);
   // Smart น้องฮูก (2026-06-18) — admin-only AI Q&A over การเงิน + งานบุคคล.
   const [owlOn, setOwlOn] = useState<boolean>(owlAiEnabled);
   const [owlModelSel, setOwlModelSel] = useState<string>(owlAiModel || (owlModels[0]?.id ?? ""));
@@ -154,6 +157,7 @@ export default function SystemSettingsForm({
       body.portal_oa_link = portalOaInput.trim();
       body.accounta_ocr_enabled = ocrOn ? "true" : "false";
       body.accounta_ocr_model = ocrModelSel;
+      body.accounta_ocr_instructions = ocrRules.trim();   // "" → cleared server-side
       body.owl_ai_enabled = owlOn ? "true" : "false";
       body.owl_ai_model = owlModelSel;
       body.owl_help_enabled = owlHelpOn ? "true" : "false";
@@ -408,6 +412,14 @@ export default function SystemSettingsForm({
           </select>
           <p className="text-[10px] text-slate-400 mt-1">
             Haiku = ประหยัดสุด พอสำหรับบิลพิมพ์ทั่วไป · Sonnet = แม่นกว่าแต่แพงกว่า สำหรับบิลอ่านยาก
+          </p>
+        </div>
+        <div>
+          <label className="label">กติกาการอ่านบิล (สอน OCR ให้อ่านเก่งขึ้น)</label>
+          <textarea className="input font-mono !text-xs" rows={5} value={ocrRules} onChange={(e) => setOcrRules(e.target.value)}
+            placeholder={"เขียนเป็นข้อๆ เช่น\n- ยอดสุทธิให้ใช้ช่อง \"รวมทั้งสิ้น\" เท่านั้น อย่าเอายอดก่อน VAT\n- บิลร้าน ABC ชื่อผู้ขายคือ \"บริษัท ABC จำกัด\" เสมอ\n- เลขที่บิลใบส่งของให้ใช้ช่อง \"เลขที่ DO\""} />
+          <p className="text-[10px] text-slate-400 mt-1">
+            ข้อความนี้จะถูกแนบต่อท้ายคำสั่งที่ส่งให้ AI ทุกครั้ง — เขียนกฎ/สังเกตของบิลร้านคุณเองเพื่อให้อ่านแม่นขึ้น ปรับได้ตลอด เห็นผลทันที (ไม่ต้อง deploy)
           </p>
         </div>
       </div>

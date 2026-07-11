@@ -2306,6 +2306,11 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "accounta_ocr_model")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN accounta_ocr_model TEXT");
   }
+  // Owner-editable OCR reading rules (owner 2026-07-11) — free text appended to
+  // the bill-scan prompt so the owner can teach it how to read their bills.
+  if (!ssCols.some((c) => c.name === "accounta_ocr_instructions")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN accounta_ocr_instructions TEXT");
+  }
   // Smart น้องฮูก — admin-only AI Q&A over ACCOUNTA + PERSONA (owner
   // 2026-06-18). OFF by default; reuses ANTHROPIC_API_KEY. model = which
   // Claude model answers (Opus 4.8 default — best at orchestrating the safe
@@ -6578,6 +6583,7 @@ export function updateSystemSettings(
     // ACCOUNTA bill-OCR toggle (0/1) + chosen vision model.
     accounta_ocr_enabled?: 0 | 1 | boolean;
     accounta_ocr_model?: string | null;
+    accounta_ocr_instructions?: string | null;   // owner-editable reading rules
     // Smart น้องฮูก toggle (0/1) + chosen Claude model.
     owl_ai_enabled?: 0 | 1 | boolean;
     owl_help_enabled?: 0 | 1 | boolean;
@@ -6689,6 +6695,10 @@ export function updateSystemSettings(
   if (Object.prototype.hasOwnProperty.call(patch, "accounta_ocr_model")) {
     sets.push("accounta_ocr_model = ?");
     vals.push(norm(patch.accounta_ocr_model));
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "accounta_ocr_instructions")) {
+    sets.push("accounta_ocr_instructions = ?");
+    vals.push(norm(patch.accounta_ocr_instructions));
   }
   if (Object.prototype.hasOwnProperty.call(patch, "owl_ai_enabled")) {
     sets.push("owl_ai_enabled = ?");
@@ -6907,6 +6917,8 @@ export type SystemSettings = {
   /** Which Claude vision model the OCR scan uses. NULL = the default
    *  (Haiku 4.5) resolved in lib/accounta-ocr.ts. */
   accounta_ocr_model?: string | null;
+  /** Owner-editable reading rules appended to the OCR prompt. NULL = none. */
+  accounta_ocr_instructions?: string | null;
   /** Smart น้องฮูก (admin AI Q&A) master toggle. 0/1, default 0. */
   owl_ai_enabled?: number | null;
   /** น้องฮูก usage-help (all users, Claude over the FAQ) toggle. 0/1, default 0. */

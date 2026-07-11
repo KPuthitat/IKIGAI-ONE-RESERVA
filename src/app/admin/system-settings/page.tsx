@@ -64,6 +64,7 @@ export default function SystemSettingsPage() {
         portalOaLink={settings.portal_oa_link ?? ""}
         accountaOcrEnabled={settings.accounta_ocr_enabled === 1}
         accountaOcrModel={settings.accounta_ocr_model ?? DEFAULT_OCR_MODEL}
+        accountaOcrInstructions={settings.accounta_ocr_instructions ?? ""}
         ocrModels={OCR_MODELS.map((m) => ({ id: m.id, label: m.label }))}
         owlAiEnabled={settings.owl_ai_enabled === 1}
         owlAiModel={settings.owl_ai_model ?? DEFAULT_OWL_AI_MODEL}

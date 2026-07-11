@@ -23,7 +23,7 @@ export class OcrError extends Error {
  *  pick `category` from that exact list (or null) so the result maps onto the
  *  owner's ผังหมวด in accounta_categories — no free-text drift (owner
  *  2026-06-18, จัดหมวดอัตโนมัติ). Without a list it falls back to a free guess. */
-function buildPrompt(categories?: string[]): string {
+function buildPrompt(categories?: string[], extraRules?: string | null): string {
   const cats = (categories ?? []).filter((c) => c.trim());
   const categoryRule = cats.length
     ? `เลือกชื่อหมวดที่ตรงที่สุด "จากรายการนี้เท่านั้น" และตอบเป็นชื่อให้ตรงเป๊ะทุกตัวอักษร — ` +
@@ -58,7 +58,11 @@ function buildPrompt(categories?: string[]): string {
 - vat_amount: ถ้าบิลมีทั้งสินค้าที่มี VAT และไม่มี VAT ให้ใช้ยอด VAT ตามที่บิลระบุเท่านั้น อย่าคำนวณ 7% จากยอดรวมทั้งหมดเอง
 - บิลผสม (มีทั้งรายการมี VAT และไม่มี VAT): ให้แยกยอดเป็น vatable_amount (ยอดรวมส่วนที่มี VAT รวม VAT แล้ว) กับ nonvat_amount (ยอดรวมส่วนที่ไม่มี VAT) โดยให้ vatable_amount + nonvat_amount = amount_total ถ้าบิลทั้งใบเป็นแบบเดียว (มี VAT ล้วน หรือไม่มี VAT ล้วน) ให้ทั้งสองช่องนี้เป็น null
 - หมวดค่าใช้จ่าย (category): ${categoryRule}
-ถ้าอ่านค่าไหนไม่ได้ให้ใส่ null อย่าเดามั่ว ความถูกต้องสำคัญกว่าความครบ`;
+ถ้าอ่านค่าไหนไม่ได้ให้ใส่ null อย่าเดามั่ว ความถูกต้องสำคัญกว่าความครบ${
+    extraRules && extraRules.trim()
+      ? `\n\nกติกาเพิ่มเติมจากผู้ดูแลระบบ (สำคัญมาก — ให้ทำตามนี้ก่อนกติกาทั่วไปถ้าขัดกัน):\n${extraRules.trim()}`
+      : ""
+  }`;
 }
 
 type AnthropicUsage = { input_tokens: number; output_tokens: number };
@@ -116,7 +120,7 @@ export async function scanBill(args: {
           role: "user",
           content: [
             fileBlock,
-            { type: "text", text: buildPrompt(args.categories) }
+            { type: "text", text: buildPrompt(args.categories, s.accounta_ocr_instructions) }
           ]
         }]
       })
