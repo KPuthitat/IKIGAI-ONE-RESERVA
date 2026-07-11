@@ -73,6 +73,7 @@ export const ExpenseBody = z.object({
   bill_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   vendor_id: z.number().int().positive().nullable().optional(),
   vendor_name: z.string().trim().max(200).nullable().optional(),
+  invoice_no: z.string().trim().max(60).nullable().optional(),  // เลขที่ใบกำกับ/บิล (duplicate key)
   // Coerce an unknown/legacy doc_type (e.g. a Thai label on an imported row) to
   // null instead of 400-rejecting the whole save — a bad doc_type must never make
   // an otherwise-valid bill uneditable (owner 2026-06-28).
@@ -117,6 +118,7 @@ export function toExpenseInput(d: ExpenseBodyT): ExpenseInput {
     bill_date: d.bill_date,
     vendor_id: d.vendor_id ?? null,
     vendor_name: d.vendor_name ?? null,
+    invoice_no: d.invoice_no ?? null,
     doc_type: d.doc_type ?? null,
     category: d.category ?? null,
     capex_bucket: d.capex_bucket ?? null,

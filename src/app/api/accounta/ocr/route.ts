@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { scanBill, OcrError } from "@/lib/accounta-ocr";
-import { logOcrUsage, ocrUsageStats, listCategories, findVendorByTaxId, findVendorByName } from "@/lib/accounta-db";
+import { logOcrUsage, ocrUsageStats, listCategories, findVendorByTaxId, findVendorByName, findDuplicateBill } from "@/lib/accounta-db";
 import { ocrCostBaht } from "@/lib/accounta";
 
 // POST /api/accounta/ocr — multipart image → structured bill prefill.
@@ -52,7 +52,11 @@ export async function POST(req: Request) {
     const matchedVendor = matched
       ? { id: matched.id, name: matched.name, tax_id: matched.tax_id, category: matched.category, by: result.tax_id && matched.tax_id ? "tax_id" : "name" }
       : null;
-    return NextResponse.json({ ok: true, result, matched_vendor: matchedVendor, model, costBaht, usage: stats });
+    // Duplicate check by invoice number (same เลขที่บิล + same issuer in the branch).
+    const dup = result.invoice_no
+      ? findDuplicateBill({ branchId, invoiceNo: result.invoice_no, taxId: result.tax_id, vendorName: matched?.name ?? result.vendor_name })
+      : null;
+    return NextResponse.json({ ok: true, result, matched_vendor: matchedVendor, duplicate: dup, model, costBaht, usage: stats });
   } catch (e) {
     if (e instanceof OcrError) {
       return NextResponse.json({ error: e.code, message: e.message }, { status: 400 });

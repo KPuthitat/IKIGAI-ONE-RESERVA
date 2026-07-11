@@ -139,6 +139,8 @@ export type ExpenseInput = {
   // 13-digit เลขผู้เสียภาษี OCR read off a LINE bill (kept for the sender form +
   // admin review even when no vendor matched). Optional/null.
   ocr_tax_id?: string | null;
+  // เลขที่ใบกำกับภาษี/เลขที่บิล (owner 2026-07-11) — for duplicate detection.
+  invoice_no?: string | null;
   // Withholding tax (owner 2026-07-05): wht_rate ∈ {0,.01,.03,.05}. wht_amount is
   // derived server-side = base (ex-VAT) × rate; cash paid to vendor = total − wht.
   wht_rate?: number;
@@ -158,6 +160,7 @@ export const CAPEX_CATEGORY_NAME = "รายจ่ายลงทุน/คร�
 export type OcrBillResult = {
   vendor_name: string | null;
   tax_id: string | null;
+  invoice_no: string | null;    // เลขที่ใบกำกับภาษี/เลขที่บิล — used for duplicate detection
   bill_date: string | null;     // YYYY-MM-DD if parseable
   amount_total: number | null;
   has_tax_invoice: boolean | null;

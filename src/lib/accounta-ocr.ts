@@ -36,6 +36,7 @@ function buildPrompt(categories?: string[]): string {
 {
   "vendor_name": string|null,        // ชื่อผู้ขาย/ร้านค้า — เฉพาะที่พิมพ์อยู่บนบิลจริงเท่านั้น
   "tax_id": string|null,             // เลขประจำตัวผู้เสียภาษี 13 หลัก ถ้ามี
+  "invoice_no": string|null,         // เลขที่ใบกำกับภาษี/เลขที่บิล/เลขที่เอกสาร (ช่อง "เลขที่/No./Invoice No.") ถ้ามี — คัดมาตามที่พิมพ์เป๊ะ
   "bill_date": string|null,          // วันที่บนบิล รูปแบบ YYYY-MM-DD (ค.ศ.) ถ้าเป็น พ.ศ. ให้ลบ 543
   "amount_total": number|null,       // ยอดรวมสุทธิที่ต้องจ่าย (ตัวเลขล้วน ไม่มีคอมมา)
   "has_tax_invoice": boolean|null,   // true ถ้าเป็นใบกำกับภาษีเต็มรูป (มีคำว่า "ใบกำกับภาษี" + เลขผู้เสียภาษี)
@@ -151,7 +152,7 @@ export async function scanBill(args: {
  *  the ledger. */
 function parseResult(text: string, categories?: string[]): OcrBillResult {
   const blank: OcrBillResult = {
-    vendor_name: null, tax_id: null, bill_date: null, amount_total: null,
+    vendor_name: null, tax_id: null, invoice_no: null, bill_date: null, amount_total: null,
     has_tax_invoice: null, vat_amount: null, doc_type: null, category: null,
     description: null, vatable_amount: null, nonvat_amount: null
   };
@@ -200,6 +201,7 @@ function parseResult(text: string, categories?: string[]): OcrBillResult {
   return {
     vendor_name: str(o.vendor_name),
     tax_id: str(o.tax_id),
+    invoice_no: str(o.invoice_no),
     bill_date: billDate,
     amount_total: num(o.amount_total),
     has_tax_invoice: bool(o.has_tax_invoice),

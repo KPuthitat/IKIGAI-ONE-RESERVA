@@ -64,7 +64,7 @@ type Vendor = { id: number; name: string; tax_id: string | null; category: strin
 type Expense = {
   id: number; branch_id: number | null; branch_name: string | null;
   company_id: number | null; company_name: string | null;
-  bill_date: string; vendor_id: number | null; vendor_name: string | null;
+  bill_date: string; vendor_id: number | null; vendor_name: string | null; invoice_no: string | null;
   doc_type: string | null; category: string | null; capex_bucket: string | null; description: string | null;
   amount_total: number; has_tax_invoice: number; vat_amount: number; base_amount: number; wht_rate: number;
   awaiting_doc: number;
@@ -83,7 +83,7 @@ type Usage = { monthCount: number; monthBaht: number; totalCount: number; totalB
 type FormState = {
   id: number | null;
   branch_id: string; company_id: string;
-  bill_date: string; vendor_name: string; doc_type: string; category: string; capex_bucket: string; description: string;
+  bill_date: string; vendor_name: string; invoice_no: string; doc_type: string; category: string; capex_bucket: string; description: string;
   amount_total: string; has_tax_invoice: boolean; vat_override: string; wht_rate: string;
   awaiting_doc: boolean;
   payment_status: PaymentStatus; payment_method: string; paid_date: string; due_date: string;
@@ -116,7 +116,7 @@ function groupExpenses<T extends { bill_date: string; amount_total: number }>(ro
 function blankForm(defaultMethod = ""): FormState {
   return {
     id: null, branch_id: "", company_id: "",
-    bill_date: todayISO(), vendor_name: "", doc_type: "", category: "", capex_bucket: "", description: "",
+    bill_date: todayISO(), vendor_name: "", invoice_no: "", doc_type: "", category: "", capex_bucket: "", description: "",
     amount_total: "", has_tax_invoice: false, vat_override: "", wht_rate: "0",
     awaiting_doc: false,
     payment_status: "paid", payment_method: defaultMethod, paid_date: todayISO(), due_date: "",
@@ -286,6 +286,7 @@ export default function ExpensesClient(props: {
         : (e.company_id != null ? String(e.company_id) : ""),
       bill_date: e.bill_date,
       vendor_name: e.vendor_name ?? "",
+      invoice_no: e.invoice_no ?? "",
       // Only keep a doc_type the dropdown can actually represent — legacy/imported
       // rows may carry a non-standard value (e.g. a Thai label) that the <select>
       // can't show but would still be re-sent and rejected by z.enum on save,
@@ -342,6 +343,7 @@ export default function ExpensesClient(props: {
       setForm((f) => ({
         ...f,
         vendor_name: matched?.name ?? r.vendor_name ?? f.vendor_name,
+        invoice_no: r.invoice_no ?? f.invoice_no,
         bill_date: r.bill_date ?? f.bill_date,
         amount_total: r.amount_total != null ? String(r.amount_total) : f.amount_total,
         has_tax_invoice: r.has_tax_invoice ?? f.has_tax_invoice,
@@ -355,6 +357,9 @@ export default function ExpensesClient(props: {
       setMixedSplit(splitMixedBill(r)); // mixed bill → offer the 2-row split
       if (j.usage) setUsage(j.usage);
       const matchNote = matched ? ` · จับคู่ร้าน “${matched.name}”${matched.by === "tax_id" ? " (จากเลขผู้เสียภาษี)" : ""}` : "";
+      const dup = (j.duplicate ?? null) as { vendor_name: string | null; bill_date: string; amount_total: number } | null;
+      if (dup) setErr(`⚠️ บิลนี้อาจซ้ำ — เลขที่ ${r.invoice_no ?? "-"}${dup.vendor_name ? ` · ${dup.vendor_name}` : ""} ฿${fmtMoney(dup.amount_total)} บันทึกไว้แล้วเมื่อ ${dup.bill_date} (ตรวจสอบก่อนบันทึกซ้ำ)`);
+      else setErr(null);
       setScanMsg(`อ่านแล้ว (สแกนนี้ ~฿${fmtMoney(j.costBaht ?? 0)})${matchNote} — ตรวจทานก่อนบันทึก`);
     } finally { setScanning(false); }
   }
@@ -402,6 +407,7 @@ export default function ExpensesClient(props: {
         bill_date: form.bill_date,
         vendor_id: matchVendor?.id ?? null,
         vendor_name: form.vendor_name.trim() || null,
+        invoice_no: form.invoice_no.trim() || null,
         doc_type: form.doc_type || null,
         category: form.category || null,
         capex_bucket: form.capex_bucket || null,   // server drops it if category ≠ CapEx
@@ -462,6 +468,7 @@ export default function ExpensesClient(props: {
         bill_date: form.bill_date,
         vendor_id: matchVendor?.id ?? null,
         vendor_name: form.vendor_name.trim() || null,
+        invoice_no: form.invoice_no.trim() || null,
         doc_type: form.doc_type || null,
         category: form.category || null,
         capex_bucket: form.capex_bucket || null,   // server drops it if category ≠ CapEx
@@ -1096,7 +1103,11 @@ export default function ExpensesClient(props: {
                 <Combobox value={form.vendor_name} onChange={(v) => set("vendor_name", v)}
                   options={vendors.map((v) => v.name)} placeholder="พิมพ์ชื่อ หรือเลือกจากรายการ" />
               </div>
-              <div className="sm:col-span-2">
+              <div>
+                <label className="label !text-xs">เลขที่ใบกำกับ/บิล</label>
+                <input className="input font-mono" value={form.invoice_no} onChange={(e) => set("invoice_no", e.target.value)} placeholder="เลขที่บนบิล (ใช้เช็คบิลซ้ำ)" />
+              </div>
+              <div>
                 <label className="label !text-xs">รายละเอียด</label>
                 <input className="input" value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="เช่น ค่าวัสดุสำนักงานประจำเดือน" />
               </div>

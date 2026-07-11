@@ -13,6 +13,7 @@ export type EditableExpense = {
   id: number;
   bill_date: string;
   vendor_name: string | null;
+  invoice_no: string | null;
   doc_type: string | null;
   category: string | null;
   capex_bucket: string | null;
@@ -45,6 +46,7 @@ export default function ExpenseEditModal({
 }) {
   const isCreate = mode === "create";
   const [vendor, setVendor] = useState(expense.vendor_name ?? "");
+  const [invoiceNo, setInvoiceNo] = useState(expense.invoice_no ?? "");
   const [category, setCategory] = useState(expense.category ?? "");
   const [capexBucket, setCapexBucket] = useState(
     expense.capex_bucket && (STARTUP_CATEGORIES as readonly string[]).includes(expense.capex_bucket) ? expense.capex_bucket : ""
@@ -130,7 +132,7 @@ export default function ExpenseEditModal({
     try {
       const body = {
         branch_id: expense.branch_id, company_id: expense.company_id,
-        bill_date: billDate, vendor_name: vendor.trim() || null,
+        bill_date: billDate, vendor_name: vendor.trim() || null, invoice_no: invoiceNo.trim() || null,
         doc_type: docType || null, category: category || null,
         capex_bucket: isCapex ? (capexBucket || null) : null,
         description: description.trim() || null, amount_total: round2(total),
@@ -205,6 +207,11 @@ export default function ExpenseEditModal({
               }}
               placeholder="ชื่อผู้จำหน่าย" />
             <datalist id="exp-edit-vendors">{vendors.map((v) => <option key={v.name} value={v.name} />)}</datalist>
+          </div>
+
+          <div>
+            <label className="label !text-xs">เลขที่ใบกำกับ/บิล</label>
+            <input className="input font-mono" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} placeholder="เลขที่บนบิล (เช็คบิลซ้ำ)" />
           </div>
 
           <div className="sm:col-span-2">

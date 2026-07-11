@@ -30,6 +30,7 @@ export type ExpenseRow = {
   category: string | null;
   capex_bucket: string | null;    // FEASIBILITY investment bucket when category is CapEx
   ocr_tax_id: string | null;      // 13-digit เลขผู้เสียภาษี OCR read off a LINE bill
+  invoice_no: string | null;      // เลขที่ใบกำกับภาษี/บิล (duplicate-detection key)
   description: string | null;
   amount_total: number;
   has_tax_invoice: number;
@@ -698,6 +699,39 @@ export function findVendorByName(name: string, branchId: number | null): VendorR
   ).get(branchId, v) as VendorRow | undefined ?? null;
 }
 
+export type DuplicateBill = { id: number; vendor_name: string | null; bill_date: string; amount_total: number; review_status: string };
+
+/** Flag a duplicate bill by its invoice number within a branch. Same invoice_no
+ *  only counts as a dup when it's the SAME issuer — matched by tax id when both
+ *  sides have one, else by exact vendor name; when neither side identifies the
+ *  issuer we still flag an invoice-number collision in the branch (soft dup).
+ *  owner 2026-07-11. */
+export function findDuplicateBill(a: {
+  branchId: number | null; invoiceNo: string; taxId?: string | null; vendorName?: string | null; excludeId?: number | null;
+}): DuplicateBill | null {
+  const inv = (a.invoiceNo || "").trim().toLowerCase();
+  if (!inv) return null;
+  const rows = getDb().prepare(
+    `SELECT id, vendor_name, ocr_tax_id, bill_date, amount_total, review_status
+       FROM accounta_expenses
+      WHERE branch_id IS ? AND TRIM(LOWER(COALESCE(invoice_no, ''))) = ?
+      ORDER BY id DESC`
+  ).all(a.branchId, inv) as Array<{ id: number; vendor_name: string | null; ocr_tax_id: string | null; bill_date: string; amount_total: number; review_status: string }>;
+  const wantTax = (a.taxId || "").replace(/\D/g, "");
+  const wantName = (a.vendorName || "").trim().toLowerCase();
+  for (const r of rows) {
+    if (a.excludeId && r.id === a.excludeId) continue;
+    const rowTax = (r.ocr_tax_id || "").replace(/\D/g, "");
+    if (wantTax && rowTax) { if (wantTax === rowTax) return pickDup(r); continue; }
+    if (wantName && r.vendor_name) { if (wantName === r.vendor_name.trim().toLowerCase()) return pickDup(r); continue; }
+    return pickDup(r); // invoice-number collision within the branch, issuer unknown
+  }
+  return null;
+}
+function pickDup(r: { id: number; vendor_name: string | null; bill_date: string; amount_total: number; review_status: string }): DuplicateBill {
+  return { id: r.id, vendor_name: r.vendor_name, bill_date: r.bill_date, amount_total: r.amount_total, review_status: r.review_status };
+}
+
 // ── Expense CRUD ───────────────────────────────────────────────────
 
 const SELECT_EXPENSE = `
@@ -912,14 +946,14 @@ export function createExpense(
   const d = normalise(input);
   const info = getDb().prepare(`
     INSERT INTO accounta_expenses (
-      branch_id, company_id, bill_date, vendor_id, vendor_name, doc_type, category, capex_bucket, ocr_tax_id, description,
+      branch_id, company_id, bill_date, vendor_id, vendor_name, doc_type, category, capex_bucket, ocr_tax_id, invoice_no, description,
       amount_total, has_tax_invoice, vat_amount, base_amount, wht_rate, wht_amount, awaiting_doc,
       payment_status, payment_method, paid_date, due_date,
       ocr_source, ocr_cost_baht, review_status, line_message_id, note, created_by
-    ) VALUES (?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?)
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
-    d.doc_type, d.category, d.capex_bucket ?? null, d.ocr_tax_id ?? null, d.description?.trim() || null,
+    d.doc_type, d.category, d.capex_bucket ?? null, d.ocr_tax_id ?? null, d.invoice_no?.trim() || null, d.description?.trim() || null,
     d.amount_total, d.has_tax_invoice ? 1 : 0, d.vat_amount, d.base_amount, d.wht_rate ?? 0, d.wht_amount ?? 0, d.awaiting_doc ? 1 : 0,
     d.payment_status, d.payment_method, d.paid_date, d.due_date,
     ocr?.source ?? null, ocr?.costBaht ?? null,
@@ -934,13 +968,13 @@ export function updateExpense(id: number, input: ExpenseInput): boolean {
   const info = getDb().prepare(`
     UPDATE accounta_expenses SET
       branch_id = ?, company_id = ?, bill_date = ?, vendor_id = ?, vendor_name = ?,
-      doc_type = ?, category = ?, capex_bucket = ?, description = ?, amount_total = ?, has_tax_invoice = ?,
+      doc_type = ?, category = ?, capex_bucket = ?, invoice_no = ?, description = ?, amount_total = ?, has_tax_invoice = ?,
       vat_amount = ?, base_amount = ?, wht_rate = ?, wht_amount = ?, awaiting_doc = ?, payment_status = ?, payment_method = ?,
       paid_date = ?, due_date = ?, note = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
-    d.doc_type, d.category, d.capex_bucket ?? null, d.description?.trim() || null, d.amount_total, d.has_tax_invoice ? 1 : 0,
+    d.doc_type, d.category, d.capex_bucket ?? null, d.invoice_no?.trim() || null, d.description?.trim() || null, d.amount_total, d.has_tax_invoice ? 1 : 0,
     d.vat_amount, d.base_amount, d.wht_rate ?? 0, d.wht_amount ?? 0, d.awaiting_doc ? 1 : 0, d.payment_status, d.payment_method,
     d.paid_date, d.due_date, d.note?.trim() || null, id
   );

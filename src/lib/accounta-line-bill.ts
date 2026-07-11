@@ -18,7 +18,7 @@ import type { LineMessage } from "./line";
 import { scanBill, ocrEnabled } from "./accounta-ocr";
 import {
   listCategories, createExpense, setExpenseDoc, logOcrUsage,
-  expenseExistsForLineMessage, findVendorByTaxId, markDraftSenderVerify
+  expenseExistsForLineMessage, findVendorByTaxId, findDuplicateBill, markDraftSenderVerify
 } from "./accounta-db";
 import { saveReceiptImage, RECEIPT_ALLOWED_MIME } from "./accounta-receipts";
 import { ocrCostBaht, round2, type ExpenseInput, type OcrBillResult } from "./accounta";
@@ -144,6 +144,19 @@ export async function ingestLineBill(args: {
   const vendorName = known?.name ?? null;
   const baseNote = `ส่งโดย ${senderName} ทางไลน์`;
 
+  // Duplicate check by เลขที่บิล (owner 2026-07-11): same invoice no + same issuer
+  // in this branch → warn the sender + DON'T create a second draft. Different
+  // number → treated as a brand-new bill below.
+  const invoiceNo = parsed?.invoice_no?.trim() || null;
+  if (invoiceNo) {
+    const dup = findDuplicateBill({ branchId, invoiceNo, taxId: taxId.length >= 10 ? taxId : null, vendorName });
+    if (dup) {
+      await say([{ type: "text", text:
+        `⚠️ บิลนี้อาจซ้ำ (ยังไม่บันทึกให้)\nเลขที่ ${invoiceNo}${dup.vendor_name ? ` · ${dup.vendor_name}` : ""} · ฿${dup.amount_total.toLocaleString("th-TH")}\nบันทึกไว้แล้วเมื่อ ${dup.bill_date}\nถ้าเป็นคนละบิลจริง แจ้งแอดมินให้บันทึกด้วยมือได้ครับ` }]);
+      return;
+    }
+  }
+
   const ocrMeta = model && usage
     ? { source: model, costBaht: ocrCostBaht(model, usage.input_tokens, usage.output_tokens) }
     : undefined;
@@ -179,6 +192,7 @@ export async function ingestLineBill(args: {
     doc_type: null,
     category: null,
     ocr_tax_id: taxId.length >= 10 ? taxId : null,
+    invoice_no: invoiceNo,
     description: null,
     amount_total: total,
     has_tax_invoice: hasTax,

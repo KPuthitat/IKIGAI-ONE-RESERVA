@@ -42,7 +42,7 @@ type MonthlyRow = { month: number; revenue: number; expense: number; profit: num
 type Payables = { whtUnpaid: number; ssoUnpaid: number; branchUnpaidTotal: number; branchUnpaidCount: number };
 type CashAccount = { id: number; name: string; type: string; bank_label: string | null; balance: number; balance_as_of: string | null; company_wide: boolean };
 export type LedgerExpenseRow = {
-  id: number; bill_date: string; vendor_name: string | null; doc_type: string | null;
+  id: number; bill_date: string; vendor_name: string | null; invoice_no: string | null; doc_type: string | null;
   category: string | null; amount_total: number; vat_amount: number;
   payment_status: "paid" | "unpaid"; has_doc: boolean; due_date: string | null;
   // extra fields so the in-page edit modal has the full row (owner 2026-06-29)
@@ -963,7 +963,7 @@ export default function LedgerDashboardClient({
       });
     } else {
       setAddExpense({
-        id: 0, bill_date: d, vendor_name: null, doc_type: null, category: null,
+        id: 0, bill_date: d, vendor_name: null, invoice_no: null, doc_type: null, category: null,
         capex_bucket: null, description: null, amount_total: 0, has_tax_invoice: false,
         wht_rate: 0, awaiting_doc: false,
         payment_status: "paid", payment_method: null, paid_date: d, due_date: null,

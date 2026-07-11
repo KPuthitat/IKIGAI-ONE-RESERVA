@@ -6115,6 +6115,12 @@ function runMigrations(db: Database.Database): void {
   if (!expCols.some((c) => c.name === "line_message_id")) {
     db.exec("ALTER TABLE accounta_expenses ADD COLUMN line_message_id TEXT");
   }
+  // เลขที่ใบกำกับภาษี/บิล (owner 2026-07-11) — OCR reads it; used to flag a
+  // duplicate bill (same invoice no + same issuer within a branch).
+  if (!expCols.some((c) => c.name === "invoice_no")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN invoice_no TEXT");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_accounta_exp_invoice ON accounta_expenses(branch_id, invoice_no) WHERE invoice_no IS NOT NULL");
+  }
   // ประเภทเอกสาร (owner 2026-06-20): receipt / tax_invoice / cash_bill /
   // transfer_slip / invoice / … (see DOC_TYPES in accounta.ts). Descriptive;
   // nullable.
