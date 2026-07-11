@@ -3,7 +3,7 @@ import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, listVendors, listPaymentMethods, materialPurchaseQuota, postDueRecurringExpenses, vendorLastDescriptions, type LedgerPeriod } from "@/lib/accounta-db";
-import { dailySalesTarget } from "@/lib/sales-target";
+import { salesTargetProgress, type SalesTargetProgress } from "@/lib/sales-target";
 import { fmtMoney } from "@/lib/format";
 import LedgerDashboardClient, { type LedgerExpenseRow } from "./LedgerDashboardClient";
 
@@ -12,6 +12,87 @@ export const metadata: Metadata = { title: "ACCOUNTA · บัญชีราย
 
 function todayBkk(): string {
   return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+}
+
+const TH_MON_FULL = [
+  "", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+];
+
+// ยอดขายเทียบเป้าเดือนนี้ — a rich progress card mirroring the โควตาสั่งซื้อ
+// card's look (gradient, corner artwork, badge, hero number, bar, footer).
+// สีเหลืองทองแบรนด์ระหว่างทาง → เขียวเมื่อถึงเป้า. เลข % โชว์ค่าจริง (เกิน 100 ได้).
+function SalesTargetCard({ st }: { st: SalesTargetProgress }) {
+  const reached = st.monthPct >= 100;
+  const fill = Math.min(100, Math.max(0, st.monthPct));
+  const remaining = Math.max(0, st.monthlyTarget - st.monthToDateSales);
+  const over = Math.max(0, st.monthToDateSales - st.monthlyTarget);
+  const [yy, mm] = st.date.split("-").map(Number);
+
+  // Full class-name literals so Tailwind's scanner picks them up.
+  const c = reached
+    ? {
+        border: "border-emerald-200", grad: "from-emerald-50 to-white",
+        badge: "bg-emerald-600/10 text-emerald-700", title: "text-emerald-900",
+        hero: "text-emerald-700", strong: "text-emerald-700",
+        track: "bg-emerald-100", fill: "bg-emerald-500", foot: "text-emerald-800",
+        artwork: "text-emerald-100"
+      }
+    : {
+        border: "border-amber-200", grad: "from-amber-50 to-white",
+        badge: "bg-amber-600/10 text-amber-700", title: "text-amber-900",
+        hero: "text-amber-700", strong: "text-amber-700",
+        track: "bg-amber-100", fill: "bg-amber-500", foot: "text-amber-800",
+        artwork: "text-amber-100"
+      };
+
+  return (
+    <div className={`relative overflow-hidden rounded-2xl border ${c.border} bg-gradient-to-br ${c.grad} p-4 sm:p-5 shadow-sm`}>
+      {/* decorative artwork — a soft oversized target in the corner */}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
+        className={`pointer-events-none absolute -right-5 -top-5 h-28 w-28 ${c.artwork}`}>
+        <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" />
+      </svg>
+
+      <div className="relative">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${c.badge}`}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" />
+              </svg>
+            </span>
+            <h2 className={`font-bold ${c.title}`}>ยอดขายเทียบเป้าเดือนนี้</h2>
+          </div>
+          <span className={`shrink-0 rounded-full border ${c.border} bg-white/70 px-2.5 py-0.5 text-[11px] font-medium ${c.foot}`}>
+            {reached ? "ถึงเป้าแล้ว 🎉" : `${TH_MON_FULL[mm]} ${yy + 543}`}
+          </span>
+        </div>
+
+        {/* Hero — the headline % */}
+        <div className="mt-3 flex items-baseline gap-2 flex-wrap">
+          <span className={`text-4xl font-extrabold tracking-tight tabular-nums ${c.hero}`}>
+            {st.monthPct.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%
+          </span>
+          <span className="text-xs text-slate-500">ของเป้าเดือนนี้</span>
+        </div>
+
+        {/* Progress — month-to-date sales vs monthly target */}
+        <div className="mt-3">
+          <div className="mb-1 flex items-center justify-between text-[11px]">
+            <span className="text-slate-500">ทำได้ <span className={`font-semibold ${c.strong}`}>฿{fmtMoney(st.monthToDateSales)}</span></span>
+            <span className="text-slate-500">เป้าเดือนนี้ ฿{fmtMoney(st.monthlyTarget)}</span>
+          </div>
+          <div className={`h-2.5 overflow-hidden rounded-full ${c.track}`}>
+            <div className={`h-full rounded-full ${c.fill}`} style={{ width: `${fill}%` }} />
+          </div>
+          <div className={`mt-1 text-right text-[11px] font-medium ${c.foot}`}>
+            {reached ? `เกินเป้า ฿${fmtMoney(over)}` : `เหลืออีก ฿${fmtMoney(remaining)} ถึงเป้า`}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // บัญชีรายรับรายจ่าย — single-branch financial dashboard (owner 2026-06-20):
@@ -95,14 +176,11 @@ export default function DaybookPage({
     : ledgerDashboard(branchId, "month", quotaToday_);
   const materialQuota = materialPurchaseQuota(branchId, quotaToday_, monthDash.forecast, monthDash.salesRevenue);
 
-  // ยอดขายวันนี้เทียบเป้ารายวัน (owner 2026-07-11). เป้ารายวัน = เป้ายอดขาย
-  // รายเดือนของสาขา ÷ จำนวนวันในเดือน. แสดงเฉพาะเมื่อสาขาตั้งเป้ารายเดือนไว้แล้ว.
-  const salesTarget = dailySalesTarget(branchId, todayBkk());
-  // สีแถบ: ถึงเป้าแล้ว = เขียว, ยังไม่ถึง = สีแบรนด์. เติมแถบตันที่ 100%
-  // แต่ป้ายตัวเลข % ยังโชว์ค่าจริง (เกิน 100 ได้).
-  const stReached = salesTarget.pct >= 100;
-  const stColor = stReached ? "#16a34a" : "#a06820";
-  const stFill = Math.min(100, Math.max(0, salesTarget.pct));
+  // ยอดขายเทียบเป้าเดือนนี้ (owner 2026-07-11) — ยอดขายสะสมทั้งเดือนเทียบเป้า
+  // ยอดขายรายเดือนของสาขา. ใช้ยอดขายจาก ledger (monthDash.salesRevenue) ตัวเดียว
+  // กับการ์ด "รายรับ (ยอดขาย)" + โควตา ในหน้านี้ เพื่อให้เลขตรงกันทั้งหน้า.
+  // แสดงเฉพาะเมื่อสาขาตั้งเป้ารายเดือนไว้แล้ว.
+  const salesTarget = salesTargetProgress(branchId, todayBkk(), monthDash.salesRevenue);
 
   return (
     <div className="space-y-4">
@@ -118,30 +196,7 @@ export default function DaybookPage({
           การลงบันทึกนี้ใช้ติดตามภายในเท่านั้น ไม่ได้อ้างอิงหลักการบัญชี/ไม่ใช้แทนเอกสารทางภาษีอย่างเป็นทางการ
         </p>
       </div>
-      {salesTarget.hasTarget && (
-        <div className="card">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-bold text-slate-800">ยอดขายวันนี้เทียบเป้า</div>
-            <div className="text-lg font-bold tabular-nums" style={{ color: stColor }}>
-              {salesTarget.pct.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%
-            </div>
-          </div>
-          <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-slate-100">
-            <div
-              className="h-full rounded-full transition-all"
-              style={{ width: `${stFill}%`, backgroundColor: stColor }}
-            />
-          </div>
-          <div className="mt-1.5 flex items-center justify-between text-xs tabular-nums text-slate-500">
-            <span>ทำได้ {fmtMoney(salesTarget.todaySales)} ฿</span>
-            <span>เป้าวันนี้ {fmtMoney(salesTarget.dailyTarget)} ฿</span>
-          </div>
-          <p className="mt-1 text-[11px] text-slate-400">
-            เป้ารายวัน = เป้ายอดขายรายเดือน {fmtMoney(salesTarget.monthlyTarget)} ฿ ÷ {salesTarget.daysInMonth} วัน
-            {stReached && " · ถึงเป้าแล้ว 🎉"}
-          </p>
-        </div>
-      )}
+      {salesTarget.hasTarget && <SalesTargetCard st={salesTarget} />}
       <LedgerDashboardClient dash={dash} expenses={expenses} period={period} anchor={anchor}
         monthly={monthly} trendYear={trendYear} payables={payables}
         cashAccounts={cashAccounts} cashTotal={cashTotal}

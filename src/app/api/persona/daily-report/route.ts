@@ -8,8 +8,8 @@ import {
 import { todayBkk } from "@/lib/time";
 import { upsertDailyServiceCharge } from "@/lib/service-charge";
 import { upsertBranchDailyRevenue } from "@/lib/ascenda";
-import { dailySalesTarget } from "@/lib/sales-target";
-import { replaceShiftCloseIncome } from "@/lib/accounta-db";
+import { salesTargetProgress } from "@/lib/sales-target";
+import { replaceShiftCloseIncome, ledgerDashboard } from "@/lib/accounta-db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { nameWithPrefix } from "@/lib/name";
 
@@ -448,13 +448,15 @@ export async function POST(req: Request) {
       channels: (d.channel_amounts ?? [])
         .filter((c) => c.amount > 0)
         .map((c) => ({ name: c.channel, amount: c.amount, isCredit: !!c.is_credit })),
-      // ยอดขายวันนี้เทียบเป้ารายวัน (owner 2026-07-11). branch_daily_revenue
-      // was just upserted above, so this reads the fresh figure. null when
-      // the branch has no monthly sales target set → card skips the bar.
+      // ยอดขายเทียบเป้าเดือนนี้ (owner 2026-07-11). Base the bar on the ledger's
+      // month salesRevenue (same source as the ACCOUNTA page + โควตา card) — the
+      // shift-close income was mirrored into the ledger above, so it's fresh.
+      // null when the branch has no monthly sales target set → card skips the bar.
       salesTarget: (() => {
-        const st = dailySalesTarget(branch.id, report_date);
+        const monthSales = ledgerDashboard(branch.id, "month", report_date).salesRevenue;
+        const st = salesTargetProgress(branch.id, report_date, monthSales);
         return st.hasTarget
-          ? { dailyTarget: st.dailyTarget, todaySales: st.todaySales, pct: st.pct }
+          ? { target: st.monthlyTarget, sales: st.monthToDateSales, pct: st.monthPct }
           : null;
       })(),
       checklist: normalizeChecklist(d.checklist),

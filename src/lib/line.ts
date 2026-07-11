@@ -1981,14 +1981,14 @@ export type ShiftCloseCardArgs = {
    *  section under the red-box total: each channel + amount (credit ones
    *  tagged), then a เงินเข้าจริง / ค้างชำระ split. Omit/empty = no block. */
   channels?: Array<{ name: string; amount: number; isCredit?: boolean }>;
-  /** Progress toward the day's sales target (owner 2026-07-11) — a small
-   *  bar under the headline showing ยอดขายวันนี้ as a % of the daily target
-   *  (monthly target ÷ days in month). Omit/null when the branch has no
-   *  monthly target set, so the block is skipped. */
+  /** Progress toward the monthly sales target (owner 2026-07-11) — a small
+   *  bar under the headline showing ยอดขายสะสมเดือนนี้ as a % of the monthly
+   *  target. Omit/null when the branch has no monthly target set, so the
+   *  block is skipped. */
   salesTarget?: {
-    dailyTarget: number;   // baht
-    todaySales: number;    // baht
-    pct: number;           // todaySales/dailyTarget × 100, one decimal, can exceed 100
+    target: number;   // baht (monthly target)
+    sales: number;    // baht (month-to-date sales)
+    pct: number;      // sales/target × 100, one decimal, can exceed 100
   } | null;
   // Same shape as ShiftOpenCardArgs.checklist — see that doc block.
   // Optional is_child + description fields propagate from admin rows
@@ -2209,33 +2209,30 @@ function channelBreakdownBlock(
   };
 }
 
-/** Sales-target progress bar (owner 2026-07-11) — a compact bar under the
- *  headline showing ยอดขายวันนี้ as a % of the day's target (monthly target
- *  ÷ days in month). Built from two flex-ratio segments inside a horizontal
- *  grey track (a coloured fill = round(pct) and a transparent remainder =
- *  100 − fill), which renders reliably across LINE clients where a
- *  percentage-width box in a vertical layout does not. Each segment carries
- *  a `filler` so the box is non-empty. The label shows the true %, which
- *  can read over 100 when the day beats target. */
+/** Monthly sales-target progress bar (owner 2026-07-11) — a compact bar under
+ *  the headline showing ยอดขายสะสมเดือนนี้ as a % of the monthly target. Built
+ *  from two flex-ratio segments inside a horizontal grey track (a coloured
+ *  fill = round(pct) and a transparent remainder = 100 − fill), which renders
+ *  reliably across LINE clients where a percentage-width box in a vertical
+ *  layout does not. Each segment carries a `filler` so the box is non-empty.
+ *  The label shows the true %, which can read over 100 when sales beat target. */
 function salesTargetBarBlock(
-  st?: { dailyTarget: number; todaySales: number; pct: number } | null
+  st?: { target: number; sales: number; pct: number } | null
 ): Record<string, unknown> | null {
-  if (!st || !(st.dailyTarget > 0)) return null;
+  if (!st || !(st.target > 0)) return null;
   const fmt = (n: number) =>
     n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const reached = st.pct >= 100;
   const barColor = reached ? "#16a34a" : COLOR_BRAND;
   const fill = Math.min(100, Math.max(0, Math.round(st.pct)));
-  const pctText = `${st.pct.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`;
-
   const segment = (flexN: number, color: string | null) => ({
     type: "box", layout: "vertical", flex: flexN, height: "10px",
     ...(color ? { backgroundColor: color, cornerRadius: "5px" } : {}),
     contents: [{ type: "filler" }]
   });
-  const trackContents: Array<Record<string, unknown>> = [];
-  if (fill > 0) trackContents.push(segment(fill, barColor));
-  if (fill < 100) trackContents.push(segment(100 - fill, null));
+  const track: Array<Record<string, unknown>> = [];
+  if (fill > 0) track.push(segment(fill, barColor));
+  if (fill < 100) track.push(segment(100 - fill, null));
 
   return {
     type: "box", layout: "vertical", spacing: "xs", margin: "md",
@@ -2243,18 +2240,22 @@ function salesTargetBarBlock(
       {
         type: "box", layout: "horizontal",
         contents: [
-          { type: "text", text: "ยอดขายวันนี้เทียบเป้า", size: "xs", color: COLOR_TEXT_MUTED, flex: 0 },
-          { type: "text", text: pctText, size: "sm", weight: "bold", color: barColor, align: "end", flex: 1 }
+          { type: "text", text: "ยอดขายเทียบเป้าเดือนนี้", size: "xs", weight: "bold", color: COLOR_TEXT_MUTED, flex: 0 },
+          {
+            type: "text",
+            text: `${st.pct.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%${reached ? " 🎉" : ""}`,
+            size: "sm", weight: "bold", color: barColor, align: "end", flex: 1
+          }
         ]
       },
       {
         type: "box", layout: "horizontal", height: "10px",
         backgroundColor: "#e2e8f0", cornerRadius: "5px", margin: "xs",
-        contents: trackContents
+        contents: track
       },
       {
         type: "text",
-        text: `ทำได้ ${fmt(st.todaySales)} / เป้าวันนี้ ${fmt(st.dailyTarget)} บาท${reached ? " · ถึงเป้าแล้ว 🎉" : ""}`,
+        text: `ทำได้ ${fmt(st.sales)} / เป้า ${fmt(st.target)} บาท`,
         size: "xxs", color: COLOR_TEXT_MUTED, wrap: true, margin: "xs"
       }
     ]
