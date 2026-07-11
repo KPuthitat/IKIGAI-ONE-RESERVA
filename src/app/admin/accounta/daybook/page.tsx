@@ -3,6 +3,8 @@ import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, listVendors, listPaymentMethods, materialPurchaseQuota, postDueRecurringExpenses, vendorLastDescriptions, type LedgerPeriod } from "@/lib/accounta-db";
+import { dailySalesTarget } from "@/lib/sales-target";
+import { fmtMoney } from "@/lib/format";
 import LedgerDashboardClient, { type LedgerExpenseRow } from "./LedgerDashboardClient";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +95,15 @@ export default function DaybookPage({
     : ledgerDashboard(branchId, "month", quotaToday_);
   const materialQuota = materialPurchaseQuota(branchId, quotaToday_, monthDash.forecast, monthDash.salesRevenue);
 
+  // ยอดขายวันนี้เทียบเป้ารายวัน (owner 2026-07-11). เป้ารายวัน = เป้ายอดขาย
+  // รายเดือนของสาขา ÷ จำนวนวันในเดือน. แสดงเฉพาะเมื่อสาขาตั้งเป้ารายเดือนไว้แล้ว.
+  const salesTarget = dailySalesTarget(branchId, todayBkk());
+  // สีแถบ: ถึงเป้าแล้ว = เขียว, ยังไม่ถึง = สีแบรนด์. เติมแถบตันที่ 100%
+  // แต่ป้ายตัวเลข % ยังโชว์ค่าจริง (เกิน 100 ได้).
+  const stReached = salesTarget.pct >= 100;
+  const stColor = stReached ? "#16a34a" : "#a06820";
+  const stFill = Math.min(100, Math.max(0, salesTarget.pct));
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -107,6 +118,30 @@ export default function DaybookPage({
           การลงบันทึกนี้ใช้ติดตามภายในเท่านั้น ไม่ได้อ้างอิงหลักการบัญชี/ไม่ใช้แทนเอกสารทางภาษีอย่างเป็นทางการ
         </p>
       </div>
+      {salesTarget.hasTarget && (
+        <div className="card">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-bold text-slate-800">ยอดขายวันนี้เทียบเป้า</div>
+            <div className="text-lg font-bold tabular-nums" style={{ color: stColor }}>
+              {salesTarget.pct.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%
+            </div>
+          </div>
+          <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{ width: `${stFill}%`, backgroundColor: stColor }}
+            />
+          </div>
+          <div className="mt-1.5 flex items-center justify-between text-xs tabular-nums text-slate-500">
+            <span>ทำได้ {fmtMoney(salesTarget.todaySales)} ฿</span>
+            <span>เป้าวันนี้ {fmtMoney(salesTarget.dailyTarget)} ฿</span>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400">
+            เป้ารายวัน = เป้ายอดขายรายเดือน {fmtMoney(salesTarget.monthlyTarget)} ฿ ÷ {salesTarget.daysInMonth} วัน
+            {stReached && " · ถึงเป้าแล้ว 🎉"}
+          </p>
+        </div>
+      )}
       <LedgerDashboardClient dash={dash} expenses={expenses} period={period} anchor={anchor}
         monthly={monthly} trendYear={trendYear} payables={payables}
         cashAccounts={cashAccounts} cashTotal={cashTotal}
