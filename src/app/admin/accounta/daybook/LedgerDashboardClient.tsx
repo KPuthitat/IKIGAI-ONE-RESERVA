@@ -1063,6 +1063,14 @@ export default function LedgerDashboardClient({
         const q = materialQuota;
         const usedPct = q.monthBudget > 0 ? Math.min(100, Math.max(0, (q.spentThisMonth / q.monthBudget) * 100)) : 0;
         const over = q.spentThisMonth > q.monthBudget;
+        // %COG ปัจจุบัน = ต้นทุนวัตถุดิบสะสมเดือนนี้ ÷ ยอดขายสะสมเดือนนี้. สีบอกสถานะ:
+        // เขียว = อยู่ในเป้า (≤ goal), เหลือง = เกินเป้าแต่ยังไม่เกินเพดาน, แดง = เกินเพดาน.
+        const cogNow = q.salesToDate > 0 ? (q.spentThisMonth / q.salesToDate) * 100 : null;
+        const cogGoal = q.goalPct ?? q.budgetPct;
+        const cogColor = cogNow == null ? "text-slate-400"
+          : cogNow > q.budgetPct ? "text-rose-600"
+          : cogNow > cogGoal ? "text-amber-600"
+          : "text-emerald-700";
         return (
           <div className="relative overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 sm:p-5 shadow-sm">
             {/* decorative artwork — a soft oversized cart in the corner */}
@@ -1096,7 +1104,11 @@ export default function LedgerDashboardClient({
                   <span className="text-4xl font-extrabold tracking-tight text-emerald-700">฿{fmtMoney(q.quotaToday)}</span>
                 )}
                 <span className="text-xs text-slate-500">
-                  สั่งซื้อได้วันนี้{q.goalPct != null ? ` · COG ${q.goalPct}%–${q.budgetPct}%` : ""}
+                  สั่งซื้อได้วันนี้ ·{" "}
+                  <span className={`text-sm font-bold ${cogColor}`}>
+                    COG ตอนนี้ {cogNow != null ? `${cogNow.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%` : "—"}
+                  </span>{" "}
+                  (เป้า {q.goalPct != null ? `${q.goalPct}%–${q.budgetPct}%` : `≤${q.budgetPct}%`})
                 </span>
               </div>
 
