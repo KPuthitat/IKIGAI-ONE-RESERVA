@@ -3,8 +3,6 @@ import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { isRevshareBranch } from "@/lib/revshare-db";
-import { materialPurchaseQuota, ledgerDashboard } from "@/lib/accounta-db";
-import { fmtMoney } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ACCOUNTA · IKIGAI OS" };
@@ -19,13 +17,6 @@ export default function AccountaHome() {
   // Revenue-Share (GP) appears only for branches that run a revenue-share
   // partner (revshare_enabled — currently HYPOPLARAEMIA).
   const showRevshare = user.activeBranchId != null && isRevshareBranch(user.activeBranchId);
-  // Material-purchase quota for today — shown here too so it's easy to find
-  // (owner 2026-07-05 "หาไม่เจอ"). Null when the branch has the feature off.
-  const bkkToday = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-  const _mq = user.activeBranchId != null ? ledgerDashboard(user.activeBranchId, "month", bkkToday) : null;
-  const materialQuota = user.activeBranchId != null
-    ? materialPurchaseQuota(user.activeBranchId, bkkToday, _mq!.forecast, _mq!.salesRevenue)
-    : null;
 
   const cards = [
     {
@@ -87,33 +78,6 @@ export default function AccountaHome() {
             : "ระบบบัญชี — รายรับ-รายจ่าย ภาษีซื้อ-ขาย และประเมินความเป็นไปได้ของการลงทุนแต่ละสาขา"}
         </p>
       </div>
-
-      {materialQuota && (
-        <Link href="/admin/accounta/daybook" className="card block hover:shadow-lg transition">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <h2 className="font-bold text-slate-800">โควตาสั่งซื้อวัตถุดิบวันนี้</h2>
-            <span className="text-[11px] text-brand font-medium">เปิดบัญชีรายรับรายจ่าย →</span>
-          </div>
-          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-            <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2">
-              <div className="text-[11px] text-slate-500">โควตาวันนี้{materialQuota.todayIsPurchaseDay ? ` · วัน${materialQuota.weekdayLabel}` : ""}</div>
-              <div className="text-xl font-bold text-emerald-700">฿{fmtMoney(materialQuota.quotaToday)}</div>
-            </div>
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">งบเดือนนี้</div>
-              <div className="text-lg font-bold text-slate-700">฿{fmtMoney(materialQuota.monthBudget)}</div>
-            </div>
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">ซื้อวัตถุดิบไปแล้ว</div>
-              <div className="text-lg font-bold text-rose-600">฿{fmtMoney(materialQuota.spentThisMonth)}</div>
-            </div>
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
-              <div className="text-[11px] text-slate-500">เหลือทั้งเดือน</div>
-              <div className="text-lg font-bold text-slate-800">฿{fmtMoney(materialQuota.remainingBudget)}</div>
-            </div>
-          </div>
-        </Link>
-      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {cards.map((c) => (
