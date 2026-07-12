@@ -668,6 +668,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.users.changePasswordFailed": "เปลี่ยนรหัสผ่านไม่สำเร็จ",
     "admin.users.changePasswordOk": "เปลี่ยนรหัสผ่านเรียบร้อย",
     "admin.users.updateBranchesFailed": "อัปเดตสาขาไม่สำเร็จ",
+    "admin.users.confirmRoleTitle": "เปลี่ยนบทบาท",
+    "admin.users.confirmRole": "ยืนยันเปลี่ยนบทบาทของ {name} เป็น {role}?",
+    "admin.users.changeRoleFailed": "เปลี่ยนบทบาทไม่สำเร็จ",
     "admin.users.createFailed": "สร้างไม่สำเร็จ",
 
     // Admin Settings
@@ -3187,6 +3190,9 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.users.changePasswordFailed": "Failed to change password",
     "admin.users.changePasswordOk": "Password changed",
     "admin.users.updateBranchesFailed": "Failed to update branches",
+    "admin.users.confirmRoleTitle": "Change role",
+    "admin.users.confirmRole": "Change {name}'s role to {role}?",
+    "admin.users.changeRoleFailed": "Failed to change role",
     "admin.users.createFailed": "Failed to create",
 
     // Admin Settings

@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 type UserWithBranches = User & { branch_ids: number[] };
 
 export default function StaffPage() {
-  requireAdmin();
+  const me = requireAdmin();
   const lang = getLang();
   const db = getDb();
   const branches = db.prepare(`
@@ -32,7 +32,7 @@ export default function StaffPage() {
         <h1 className="text-2xl font-bold">{t(lang, "admin.users.title")}</h1>
         <p className="text-sm text-slate-500">{t(lang, "admin.users.subtitle")}</p>
       </div>
-      <StaffClient users={data} branches={branches} />
+      <StaffClient users={data} branches={branches} isSuperAdmin={me.role === "super_admin"} />
     </div>
   );
 }

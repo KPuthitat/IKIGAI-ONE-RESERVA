@@ -10,8 +10,8 @@ import { nameWithPrefix } from "@/lib/name";
 type UserWithBranches = User & { branch_ids: number[] };
 
 export default function StaffClient({
-  users, branches
-}: { users: UserWithBranches[]; branches: Branch[] }) {
+  users, branches, isSuperAdmin
+}: { users: UserWithBranches[]; branches: Branch[]; isSuperAdmin: boolean }) {
   const router = useRouter();
   const { t } = useLang();
   const [creating, setCreating] = useState(false);
@@ -86,6 +86,29 @@ export default function StaffClient({
       return;
     }
     alert({ title: t("common.saved"), body: <p>{t("admin.users.changePasswordOk")}</p>, variant: "info", okLabel: t("common.confirm") });
+  }
+
+  async function updateRole(
+    id: number, role: "admin" | "staff", name: string, revert: () => void
+  ) {
+    const ok = await confirm({
+      title: t("admin.users.confirmRoleTitle"),
+      body: <p>{t("admin.users.confirmRole", { name, role })}</p>,
+      confirmLabel: t("common.save"),
+      cancelLabel: t("common.cancel")
+    });
+    if (ok === null) { revert(); return; }
+    const res = await fetch(apiUrl(`/api/admin/staff/${id}`), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role })
+    });
+    if (!res.ok) {
+      revert();
+      alert({ title: t("common.error"), body: <p>{t("admin.users.changeRoleFailed")}</p>, variant: "danger", okLabel: t("common.confirm") });
+      return;
+    }
+    router.refresh();
   }
 
   async function updateBranches(id: number, branchIds: number[]) {
@@ -188,9 +211,28 @@ export default function StaffClient({
                 <td className="py-2 font-medium">{nameWithPrefix(u.title_prefix, u.display_name)}</td>
                 <td>{u.username}</td>
                 <td>
-                  <span className={u.role === "admin" ? "text-brand font-medium" : "text-slate-600"}>
-                    {u.role}
-                  </span>
+                  {isSuperAdmin && u.role !== "super_admin" ? (
+                    <select
+                      className="input py-1 text-xs"
+                      defaultValue={u.role}
+                      onChange={(e) => {
+                        const sel = e.currentTarget;
+                        updateRole(
+                          u.id,
+                          sel.value as "admin" | "staff",
+                          nameWithPrefix(u.title_prefix, u.display_name),
+                          () => { sel.value = u.role; }
+                        );
+                      }}
+                    >
+                      <option value="staff">{t("admin.users.role.staffDesc")}</option>
+                      <option value="admin">{t("admin.users.role.adminDesc")}</option>
+                    </select>
+                  ) : (
+                    <span className={u.role === "admin" ? "text-brand font-medium" : "text-slate-600"}>
+                      {u.role}
+                    </span>
+                  )}
                 </td>
                 <td>
                   <div className="flex flex-wrap gap-2">
