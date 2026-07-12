@@ -1056,26 +1056,9 @@ export default function LedgerDashboardClient({
           onSaved={(d) => afterAdd(d ?? bkkToday)}
         />
       )}
-      {/* Period selector + add buttons */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-1">
-          {(["week", "month", "year"] as LedgerPeriod[]).map((p) => (
-            <button key={p} type="button" onClick={() => go(p, anchor)}
-              className={`text-sm px-3 py-1.5 rounded-md border ${period === p
-                ? "bg-brand text-white border-brand" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
-              {PERIOD_LABEL[p]}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={() => openAdd("income")} className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700">+ เพิ่มรายรับ</button>
-          <button type="button" onClick={() => openAdd("expense")} className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ เพิ่มรายจ่าย</button>
-        </div>
-      </div>
-
-      {/* Material-purchase quota — shown right under the period controls (owner
-          2026-07-10: doesn't need to be the very first element). Hidden when the
-          branch has the feature off. */}
+      {/* Material-purchase quota — moved up (owner 2026-07-12) to sit directly
+          under the ยอดขายเทียบเป้าเดือนนี้ card (rendered in page.tsx), above the
+          period controls. Hidden when the branch has the feature off. */}
       {materialQuota && (() => {
         const q = materialQuota;
         const usedPct = q.monthBudget > 0 ? Math.min(100, Math.max(0, (q.spentThisMonth / q.monthBudget) * 100)) : 0;
@@ -1150,6 +1133,23 @@ export default function LedgerDashboardClient({
           </div>
         );
       })()}
+
+      {/* Period selector + add buttons */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1">
+          {(["week", "month", "year"] as LedgerPeriod[]).map((p) => (
+            <button key={p} type="button" onClick={() => go(p, anchor)}
+              className={`text-sm px-3 py-1.5 rounded-md border ${period === p
+                ? "bg-brand text-white border-brand" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+              {PERIOD_LABEL[p]}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => openAdd("income")} className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700">+ เพิ่มรายรับ</button>
+          <button type="button" onClick={() => openAdd("expense")} className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ เพิ่มรายจ่าย</button>
+        </div>
+      </div>
 
       {/* Range nav — month shows a big number + small month/year (owner 2026-06-23) */}
       <div className="flex items-center justify-center gap-5">
