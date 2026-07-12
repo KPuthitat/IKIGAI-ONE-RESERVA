@@ -49,6 +49,9 @@ export type EmployeePayrollSnapshot = {
   monthly_salary: number | null;
   pay_cycle: "weekly" | "monthly" | null;
   salary_tax_mode: "sso" | "wht" | null;
+  /** 0 = salaried exec/admin who doesn't clock in → flat salary, no OT, no SVC
+   *  (owner 2026-07-12). 1 = normal, attendance-tracked. */
+  track_attendance: number;
 };
 
 // PT premium multiplier on public holidays (per company rule)
@@ -608,11 +611,12 @@ export function computeLineForEmployee(args: {
     // An admin per-day ot_until override wins over the approved request.
     let otUntilTs: string | null = null;
     if (sched) {
-      if (e.employment_type === "ft") {
+      if (e.employment_type === "ft" && e.track_attendance !== 0) {
         // FT: auto-OT — extend the worked window to the ACTUAL clock-out so
-        // over-8h is OT without an approval (owner 2026-06-18).
+        // over-8h is OT without an approval (owner 2026-06-18). Salaried execs
+        // (track_attendance=0) get no OT (owner 2026-07-12) — window not extended.
         otUntilTs = s.endTs;
-      } else {
+      } else if (e.employment_type !== "ft") {
         const reqUntil = ov?.ot_until ?? approvedOtByDate?.get(shiftDate);
         if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
           otUntilTs = new Date(`${shiftDate}T${reqUntil}:00+07:00`).toISOString();
@@ -667,11 +671,12 @@ export function computeLineForEmployee(args: {
       ptBasePay += (dayRegular / 60) * ptRate * mult;
       // ค่าล่วงเวลา override (typed baht) wins over the computed OT pay.
       ptOtPay += ov?.ot_pay != null ? ov.ot_pay : computeOtPay(dayOt, ptRate, settings, mult);
-    } else if (e.employment_type === "ft") {
+    } else if (e.employment_type === "ft" && e.track_attendance !== 0) {
       // FT: OT only (base is salary), now approval-gated like PT — the
       // roster sched above caps worked at the scheduled end, so OT is the
       // approved-extension excess only (no auto over-8h). A typed ค่าล่วงเวลา
       // override still wins. No holiday premium per company rule.
+      // Salaried execs (track_attendance=0) get no OT (owner 2026-07-12).
       ftOtPay += ov?.ot_pay != null ? ov.ot_pay : computeOtPay(dayOt, ftHourlyEquivalent, settings, 1);
     }
   }
@@ -838,7 +843,8 @@ export function computeLineFromMinutes(args: {
   if (e.employment_type === "pt") {
     otPay = computeOtPay(otNormalMin, ptRate, settings, 1)
           + computeOtPay(otHolidayMin, ptRate, settings, PT_HOLIDAY_MULTIPLIER);
-  } else if (e.employment_type === "ft") {
+  } else if (e.employment_type === "ft" && e.track_attendance !== 0) {
+    // Salaried execs (track_attendance=0) get no OT (owner 2026-07-12).
     otPay = computeOtPay(otMinutes, ftHourlyEquivalent, settings, 1);
   }
 
@@ -1005,11 +1011,12 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     : "";
   const staffSql = `
     SELECT id AS user_id, display_name, employment_type, employee_code,
-           hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
+           hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance
     FROM users
     WHERE role IN ('staff', 'admin') AND employment_type IS NOT NULL
       AND is_test_account = 0
       AND ${staffWhere}
+      AND NOT (employment_type = 'ft' AND COALESCE(monthly_salary, 0) = 0)
       ${branchClause}
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
@@ -1287,12 +1294,12 @@ export function recomputeLine(
   }
 
   const fresh = db.prepare(`
-    SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
+    SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance
     FROM users WHERE id = ?
   `).get(userId) as {
     employment_type: "pt" | "ft" | null; hourly_rate: number | null;
     monthly_salary: number | null; pay_cycle: "weekly" | "monthly" | null;
-    salary_tax_mode: "sso" | "wht" | null;
+    salary_tax_mode: "sso" | "wht" | null; track_attendance: number | null;
   } | undefined;
 
   const settings = db.prepare(`
@@ -1401,7 +1408,8 @@ export function recomputeLine(
     hourly_rate: fresh?.hourly_rate ?? existing.hourly_rate_snapshot,
     monthly_salary: fresh?.monthly_salary ?? existing.monthly_salary_snapshot,
     pay_cycle: fresh?.pay_cycle ?? existing.pay_cycle_snapshot,
-    salary_tax_mode: fresh?.salary_tax_mode ?? existing.salary_tax_mode_snapshot
+    salary_tax_mode: fresh?.salary_tax_mode ?? existing.salary_tax_mode_snapshot,
+    track_attendance: fresh?.track_attendance ?? 1
   };
 
   const computed = computeLineForEmployee({

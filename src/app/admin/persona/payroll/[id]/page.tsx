@@ -50,6 +50,9 @@ export default function PeriodDetailPage({
     FROM payroll_lines pl
     LEFT JOIN users u ON u.id = pl.user_id
     WHERE pl.period_id = ?
+      -- Hide FT rows with no salary set (owner 2026-07-12: e.g. accounts that
+      -- haven't been configured shouldn't clutter the payroll table).
+      AND NOT (pl.employment_type = 'ft' AND COALESCE(pl.monthly_salary_snapshot, 0) = 0)
     ORDER BY CASE WHEN pl.employment_type = 'ft' THEN 0 WHEN pl.employment_type = 'pt' THEN 1 ELSE 2 END,
              pl.display_name
   `).all(id) as PayrollLineRow[];

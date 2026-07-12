@@ -46,7 +46,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // Target must be a staff user (employment_type can be null — e.g. contractor)
   const target = db.prepare(`
     SELECT id, display_name, employment_type, employee_code,
-           hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
+           hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance
     FROM users WHERE id = ? AND role = 'staff'
   `).get(targetUserId) as {
     id: number;
@@ -57,6 +57,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     monthly_salary: number | null;
     pay_cycle: "weekly" | "monthly" | null;
     salary_tax_mode: "sso" | "wht" | null;
+    track_attendance: number | null;
   } | undefined;
   if (!target) return NextResponse.json({ error: "user_not_found" }, { status: 404 });
 
@@ -84,7 +85,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     hourly_rate: target.hourly_rate,
     monthly_salary: target.monthly_salary,
     pay_cycle: target.pay_cycle,
-    salary_tax_mode: target.salary_tax_mode
+    salary_tax_mode: target.salary_tax_mode,
+    track_attendance: target.track_attendance ?? 1
   };
 
   // Zero-row — admin will fill in hours/days afterward

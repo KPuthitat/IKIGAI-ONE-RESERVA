@@ -144,7 +144,7 @@ export async function PATCH(
     `).get() as PayrollSettings;
 
     const fresh = db.prepare(`
-      SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
+      SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance
       FROM users WHERE id = ?
     `).get(userId) as {
       employment_type: "pt" | "ft" | null;
@@ -152,6 +152,7 @@ export async function PATCH(
       monthly_salary: number | null;
       pay_cycle: "weekly" | "monthly" | null;
       salary_tax_mode: "sso" | "wht" | null;
+      track_attendance: number | null;
     } | undefined;
 
     const employee: EmployeePayrollSnapshot = {
@@ -162,7 +163,8 @@ export async function PATCH(
       hourly_rate: fresh?.hourly_rate ?? line.hourly_rate_snapshot,
       monthly_salary: fresh?.monthly_salary ?? line.monthly_salary_snapshot,
       pay_cycle: fresh?.pay_cycle ?? line.pay_cycle_snapshot,
-      salary_tax_mode: fresh?.salary_tax_mode ?? line.salary_tax_mode_snapshot
+      salary_tax_mode: fresh?.salary_tax_mode ?? line.salary_tax_mode_snapshot,
+      track_attendance: fresh?.track_attendance ?? 1
     };
 
     const computed = computeLineFromMinutes({

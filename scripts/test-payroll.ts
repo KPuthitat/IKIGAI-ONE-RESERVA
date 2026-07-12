@@ -15,11 +15,13 @@ const SETTINGS: PayrollSettings = {
 
 const ftMonthly = (salary: number): EmployeePayrollSnapshot => ({
   user_id: 1, display_name: "FT Example", employment_type: "ft", employee_code: "FT01",
-  hourly_rate: null, monthly_salary: salary, pay_cycle: "monthly", salary_tax_mode: "sso"
+  hourly_rate: null, monthly_salary: salary, pay_cycle: "monthly", salary_tax_mode: "sso",
+  track_attendance: 1
 });
 const ptHourly = (rate: number): EmployeePayrollSnapshot => ({
   user_id: 2, display_name: "PT Example", employment_type: "pt", employee_code: "PT01",
-  hourly_rate: rate, monthly_salary: null, pay_cycle: "monthly", salary_tax_mode: "sso"
+  hourly_rate: rate, monthly_salary: null, pay_cycle: "monthly", salary_tax_mode: "sso",
+  track_attendance: 1
 });
 
 let pass = 0, fail = 0;
@@ -72,6 +74,24 @@ console.log("ลาไม่รับค่าจ้าง deduction:");
   const l = line(ftMonthly(30000), 100); // 100*1000 = 100000 > 30000
   eq("FT clamp → deduction = base 30000", l.unpaid_leave_deduction, 30000);
   eq("FT clamp → base 0", l.base_pay, 0);
+}
+
+// 6. ผู้บริหาร (track_attendance=0) — เงินเดือน fix เต็ม, ไม่มี OT แม้กรอกนาที OT
+//    (owner 2026-07-12). เทียบกับ FT ลงเวลา (track_attendance=1) ที่ได้ OT ปกติ.
+console.log("\nผู้บริหาร (track_attendance=0) ไม่มี OT:");
+{
+  const otSettings: PayrollSettings = { ...SETTINGS, ot_mode: "flat", ot_flat_per_15min: 25 };
+  const call = (track: number) => computeLineFromMinutes({
+    employee: { ...ftMonthly(30000), track_attendance: track },
+    regularMinutes: 480, otMinutes: 120, holidayMinutes: 0,
+    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 1, unpaired: 0,
+    cycle: "monthly", periodEnd: "2026-06-30", settings: otSettings
+  });
+  const exec = call(0);
+  const tracked = call(1);
+  eq("exec FT → base 30000 (fix เต็ม)", exec.base_pay, 30000);
+  eq("exec FT → ot_pay 0", exec.ot_pay, 0);
+  eq("tracked FT → ot_pay 200 (120min×25/15)", tracked.ot_pay, 200);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

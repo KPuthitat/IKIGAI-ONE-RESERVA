@@ -37,6 +37,8 @@ export type EmployeeRow = {
   monthly_salary: number | null;
   pay_cycle: "weekly" | "monthly" | null;
   salary_tax_mode: "sso" | "wht" | null;
+  // 0 = ผู้บริหาร/ไม่ลงเวลา → เงินเดือน fix ไม่มี OT/SVC (owner 2026-07-12).
+  track_attendance?: number;
   line_user_id: string | null;
   shift_start_time: string | null;
   has_pin: number;
@@ -481,6 +483,8 @@ function EditModal({
   const [nicknameTh, setNicknameTh] = useState<string>(employee.nickname_th ?? "");
   const [gender, setGender] = useState<"male" | "female" | "">(employee.gender ?? "");
   const [employmentType, setEmploymentType] = useState<"pt" | "ft" | "">(employee.employment_type ?? "");
+  // ผู้บริหาร/หัวหน้าที่ไม่ลงเวลา (owner 2026-07-12) — เงินเดือน fix ไม่มี OT/SVC.
+  const [noClock, setNoClock] = useState<boolean>((employee.track_attendance ?? 1) === 0);
   const [hireDate, setHireDate] = useState<string>(employee.hire_date ?? "");
   // Phase 1D — Payroll fields
   const [employeeCode, setEmployeeCode] = useState<string>(employee.employee_code ?? "");
@@ -653,7 +657,7 @@ function EditModal({
     setBusy(true);
     setErr(null);
     try {
-      const body: Record<string, string | number | number[] | null> = {
+      const body: Record<string, string | number | boolean | number[] | null> = {
         title_prefix: titlePrefix || null,
         nickname_th: nicknameTh.trim() || null,
         gender: gender || null,
@@ -670,6 +674,9 @@ function EditModal({
         // FT is monthly-only (owner 2026-06-09); PT has no pay cycle.
         pay_cycle: employmentType === "ft" ? "monthly" : null,
         salary_tax_mode: taxMode,
+        // ผู้บริหาร/ไม่ลงเวลา (FT เท่านั้น); PT/ยังไม่กำหนดประเภท = ลงเวลาปกติ.
+        // API รับเป็น boolean: true = ลงเวลาปกติ, false = ไม่ลงเวลา (exec).
+        track_attendance: employmentType === "ft" ? !noClock : true,
         line_user_id: lineUserId.trim() || null,
         // shift_start_time + escalation_hours UI removed 2026-05;
         // the API still accepts them so older clients keep working,
@@ -1047,6 +1054,16 @@ function EditModal({
                       พนักงานประจำจ่ายค่าตอบแทนรายเดือนเท่านั้น (ตามหลักบัญชี)
                     </p>
                   </div>
+                  <label className="col-span-2 flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:bg-slate-50">
+                    <input type="checkbox" className="mt-0.5" checked={noClock}
+                      onChange={(e) => setNoClock(e.target.checked)} />
+                    <span className="text-sm text-slate-700">
+                      ผู้บริหาร/หัวหน้า — ไม่ต้องลงเวลา
+                      <span className="block text-xs text-slate-500">
+                        คิดเงินเดือนแบบ fix เต็มจำนวน ไม่มีค่าล่วงเวลา (OT) และไม่รับส่วนแบ่งเซอร์วิสชาร์จ
+                      </span>
+                    </span>
+                  </label>
                 </div>
               )}
               {employmentType === "" && (
