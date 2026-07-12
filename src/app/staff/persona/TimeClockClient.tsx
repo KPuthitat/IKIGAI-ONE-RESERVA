@@ -9,7 +9,10 @@ import { bkkHHMM, bkkDateIso } from "@/lib/time";
 
 type TimeEntry = { id: number; type: "in" | "out"; ts: string };
 
-type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask" | "owl" | "swap";
+type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask" | "owl" | "swap" | "coupon";
+
+// Meal-coupon pop-up payload from the clock route (owner 2026-07-12).
+type CouponInfo = { food: boolean; drink: boolean; redeemBefore: string };
 
 type OwlPrompt = { kind: "missing_in" | "missing_out"; work_date: string };
 
@@ -340,6 +343,8 @@ function ClockAction({
   const [chosenIntent, setChosenIntent] = useState<"in" | "out">(action);
   const [replaceState, setReplaceState] = useState<ReplaceState | null>(null);
   const [owlPrompt, setOwlPrompt] = useState<OwlPrompt | null>(null);
+  // Meal-coupon pop-up shown after an eligible lunch clock-in (owner 2026-07-12).
+  const [couponInfo, setCouponInfo] = useState<CouponInfo | null>(null);
   // Shift-swap / late-early prompt (owner 2026-06-08).
   const [swapPrompt, setSwapPrompt] = useState<SwapPrompt | null>(null);
   const [swapStep, setSwapStep] = useState<"ask" | "pickFriend">("ask");
@@ -680,6 +685,13 @@ function ClockAction({
           return;
         }
       }
+      // Meal coupon issued for an eligible lunch clock-in → show the coupon
+      // pop-up instead of the plain success flash (owner 2026-07-12).
+      if (data.action === "in" && data.coupon) {
+        setCouponInfo(data.coupon as CouponInfo);
+        setPhase("coupon");
+        return;
+      }
       setPhase("success");
       setTimeout(onSuccess, 1500);
     } catch {
@@ -896,6 +908,37 @@ function ClockAction({
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  // ── Meal coupon pop-up (owner 2026-07-12) ────
+  // Shown right after an eligible lunch-shift clock-in. Announces the
+  // lunch + drink coupons and routes the staff to the redeem screen.
+  if (phase === "coupon" && couponInfo) {
+    return (
+      <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 space-y-3 text-left">
+        <div className="text-3xl text-center">🎉🍱🥤</div>
+        <div className="text-base font-bold text-amber-900 text-center">
+          คุณได้รับคูปองอาหารกลางวัน + เครื่องดื่ม
+        </div>
+        <div className="text-sm text-slate-700 leading-relaxed text-center">
+          เบิกได้ที่หน้า “คูปองของฉัน” · ใช้ก่อน <b>{couponInfo.redeemBefore} น.</b> ของวันนี้ ไม่งั้นคูปองหมดอายุนะครับ
+        </div>
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <button
+            onClick={onSuccess}
+            className="py-3 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 active:scale-95 transition"
+          >
+            ไว้ทีหลัง
+          </button>
+          <button
+            onClick={() => router.push("/staff/persona/coupons")}
+            className="py-3 rounded-xl bg-amber-500 text-white text-sm font-bold active:scale-95 transition"
+          >
+            ไปเบิกเลย
+          </button>
+        </div>
       </div>
     );
   }

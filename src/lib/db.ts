@@ -1394,6 +1394,64 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN material_budget_pct2 REAL");
   }
 
+  // Meal coupons (owner 2026-07-12) — staff who clock in to the 11:00/12:00
+  // lunch shift get a lunch + a drink coupon (pop-up on clock-in), redeemable
+  // from the branch's Delivera menu before a cutoff (default 15:00). All
+  // per-branch configurable; OFF by default.
+  //   meal_coupon_enabled          0/1 — feature on for this branch
+  //   meal_coupon_eligible_starts  CSV of shift start "HH:MM" that qualify
+  //   meal_coupon_redeem_cutoff    "HH:MM" — coupon expires at this time same day
+  //   meal_coupon_late_grace_min   how many minutes late a clock-in still counts
+  if (!bnames2.has("meal_coupon_enabled")) {
+    db.exec("ALTER TABLE branches ADD COLUMN meal_coupon_enabled INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!bnames2.has("meal_coupon_eligible_starts")) {
+    db.exec("ALTER TABLE branches ADD COLUMN meal_coupon_eligible_starts TEXT NOT NULL DEFAULT '11:00,12:00'");
+  }
+  if (!bnames2.has("meal_coupon_redeem_cutoff")) {
+    db.exec("ALTER TABLE branches ADD COLUMN meal_coupon_redeem_cutoff TEXT NOT NULL DEFAULT '15:00'");
+  }
+  if (!bnames2.has("meal_coupon_late_grace_min")) {
+    db.exec("ALTER TABLE branches ADD COLUMN meal_coupon_late_grace_min INTEGER NOT NULL DEFAULT 15");
+  }
+
+  // Which Delivera menu items are coupon-eligible, per branch, tagged food/drink.
+  // Delivera menus are per-branch, so a coupon redeemed at a branch draws from
+  // that branch's list — the coupon entitlement itself is branch-agnostic.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS meal_coupon_menu (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id     INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      menu_item_id  INTEGER NOT NULL REFERENCES delivera_menu_items(id) ON DELETE CASCADE,
+      type          TEXT NOT NULL CHECK (type IN ('food','drink')),
+      active        INTEGER NOT NULL DEFAULT 1,
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(branch_id, menu_item_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_meal_coupon_menu_branch ON meal_coupon_menu(branch_id, type, active);
+  `);
+
+  // One row per issued coupon (a clock-in issues two: food + drink). Expiry is
+  // lazy — a still-'issued' row past redeem_before is treated as expired at read
+  // time, so no cron is needed. redeemed_menu_name snapshots the item name.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS meal_coupons (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id               INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      coupon_date           TEXT NOT NULL,
+      type                  TEXT NOT NULL CHECK (type IN ('food','drink')),
+      status                TEXT NOT NULL DEFAULT 'issued' CHECK (status IN ('issued','redeemed','expired')),
+      issued_branch_id      INTEGER REFERENCES branches(id),
+      redeem_before         TEXT NOT NULL,
+      redeemed_at           TEXT,
+      redeemed_branch_id    INTEGER REFERENCES branches(id),
+      redeemed_menu_item_id INTEGER REFERENCES delivera_menu_items(id),
+      redeemed_menu_name    TEXT,
+      created_at            TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_meal_coupons_user_date ON meal_coupons(user_id, coupon_date);
+  `);
+
   // Revenue-Share GP (owner 2026-06-22) — opt-in per branch, OFF everywhere by
   // default. The whole feature (menu, routes, data) is gated on this flag so it
   // only appears for the branch(es) that run a revenue-share partner. Seeded ON

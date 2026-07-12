@@ -3936,6 +3936,49 @@ export async function notifyDailyReport(
  *  next push.
  *
  *  Fire-and-forget — same contract as notifyDailyReport / notifyStaff. */
+export type MealCouponRedeemedArgs = {
+  branchName: string;
+  staffName: string;
+  type: "food" | "drink";
+  menuName: string;
+  timeStr: string;           // "HH:MM"
+  headerColor?: string | null;
+};
+
+/** Flex card pushed to the staff/kitchen group when a staff member redeems a
+ *  meal coupon — tells the kitchen who wants which menu (owner 2026-07-12). */
+export function mealCouponRedeemedFlex(args: MealCouponRedeemedArgs): LineFlexMessage {
+  const typeLabel = args.type === "food" ? "อาหารกลางวัน" : "เครื่องดื่ม";
+  const emoji = args.type === "food" ? "🍱" : "🥤";
+  const headerColor = args.headerColor || COLOR_INK_700;
+  const bubble = {
+    type: "bubble", size: "kilo",
+    header: {
+      type: "box", layout: "vertical", backgroundColor: headerColor, paddingAll: "16px",
+      contents: [
+        { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold" },
+        { type: "text", text: `${emoji} เบิก${typeLabel}`, color: "#ffffff", size: "lg", weight: "bold", margin: "sm", wrap: true }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
+      contents: [
+        { type: "text", text: args.menuName, weight: "bold", size: "xl", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        kvRow("พนักงาน", args.staffName),
+        kvRow("สาขา", args.branchName),
+        kvRow("เวลา", `${args.timeStr} น.`)
+      ]
+    },
+    styles: { header: { backgroundColor: headerColor }, body: { backgroundColor: "#ffffff" } }
+  };
+  return {
+    type: "flex",
+    altText: `เบิก${typeLabel}: ${args.menuName} · ${args.staffName} · ${args.branchName}`,
+    contents: bubble
+  };
+}
+
 export async function notifyToStaffGroup(
   branch: Branch,
   flex: LineFlexMessage,

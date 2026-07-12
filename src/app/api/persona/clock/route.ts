@@ -13,7 +13,9 @@ import {
   detectPunchAnomaly, detectScheduleDeviation, uncertifiedPriorMissingOut,
   type OwlPrompt, type DeviationPrompt
 } from "@/lib/attendance-flags";
-import { userHasWorkShiftOn } from "@/lib/roster";
+import { userHasWorkShiftOn, effectiveShiftStartForUserDate } from "@/lib/roster";
+import { nowBkkMinutes } from "@/lib/time";
+import { mealCouponConfig, isEligibleClockIn, issueDailyCoupons } from "@/lib/meal-coupons";
 
 const Body = z.object({
   pin: z.string().regex(/^\d{4}$/),
@@ -362,6 +364,25 @@ export async function POST(req: Request) {
     }
   }
 
+  // ── Meal coupon (owner 2026-07-12) ─────────────────────────────────
+  // A fresh clock-IN to the eligible lunch shift (11:00/12:00, not too
+  // late) issues a lunch + drink coupon, shown as a pop-up. Idempotent
+  // per (user, date). Wrapped so a bug here can NEVER break the clock-in.
+  let coupon: { food: boolean; drink: boolean; redeemBefore: string } | null = null;
+  if (action === "in" && user.activeBranchId) {
+    try {
+      const cfg = mealCouponConfig(user.activeBranchId);
+      if (cfg.enabled) {
+        const shiftStart = effectiveShiftStartForUserDate(user.id, user.activeBranchId, todayBkk);
+        if (isEligibleClockIn(cfg, shiftStart, nowBkkMinutes().minutes)) {
+          coupon = issueDailyCoupons(user.id, user.activeBranchId, todayBkk);
+        }
+      }
+    } catch (e) {
+      console.warn("[clock] meal coupon issue failed:", e);
+    }
+  }
+
   // ── Fire-and-forget: ส่ง LINE flex confirmation message on clock-in ──
   // Channel: IKIGAI OS (platform-level OA, shared across all branches).
   // Branch context: ใช้แค่ดึงเวลาพักกลางวัน + ชื่อสาขามาแสดงในข้อความ.
@@ -403,6 +424,7 @@ export async function POST(req: Request) {
     ok: true,
     action,
     ...(owl ? { owl } : {}),
-    ...(swap ? { swap } : {})
+    ...(swap ? { swap } : {}),
+    ...(coupon ? { coupon } : {})
   });
 }

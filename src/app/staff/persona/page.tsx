@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { nameWithPrefix } from "@/lib/name";
 import { bkkDateIso } from "@/lib/time";
 import { userHasWorkShiftOn } from "@/lib/roster";
+import { listUserCouponsForDate } from "@/lib/meal-coupons";
 import TimeClockClient from "./TimeClockClient";
 
 export const dynamic = "force-dynamic";
@@ -79,8 +81,22 @@ export default function StaffPersonaPage() {
     scheduledEnd = sc?.end_time ?? null;
   }
 
+  // Meal coupons for today — surface an entry link to the redeem screen so the
+  // staff can find their coupons even after dismissing the clock-in pop-up.
+  const coupons = listUserCouponsForDate(user.id, todayBkk);
+  const redeemableCoupons = coupons.filter((c) => c.effectiveStatus === "issued").length;
+
   return (
-    <TimeClockClient
+    <div className="space-y-3">
+      {coupons.length > 0 && (
+        <Link
+          href="/staff/persona/coupons"
+          className="block rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 hover:bg-amber-100 transition"
+        >
+          🎫 คูปองของฉัน{redeemableCoupons > 0 ? ` · ${redeemableCoupons} ใบพร้อมใช้` : " · ใช้แล้ว/หมดอายุ"} →
+        </Link>
+      )}
+      <TimeClockClient
       userName={nameWithPrefix(user.title_prefix, user.display_name)}
       hasPin={hasPin}
       firstInTs={firstInTs}
@@ -98,5 +114,6 @@ export default function StaffPersonaPage() {
       hasShiftToday={hasShiftToday}
       nickname={nickname}
     />
+    </div>
   );
 }
