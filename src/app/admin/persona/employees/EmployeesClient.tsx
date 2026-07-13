@@ -66,6 +66,17 @@ export type EmployeeRow = {
 };
 
 export type BranchLite = { id: number; name: string };
+
+/** Turn an API error (esp. zod invalid_body) into a message that names the
+ *  offending field(s), so a failed save is diagnosable instead of opaque. */
+function apiErrText(j: unknown, fallback: string): string {
+  const o = (j ?? {}) as { error?: string; detail?: { fieldErrors?: Record<string, unknown> } };
+  if (o.error === "invalid_body" && o.detail?.fieldErrors) {
+    const fields = Object.keys(o.detail.fieldErrors);
+    if (fields.length) return `ข้อมูลไม่ถูกต้อง: ${fields.join(", ")}`;
+  }
+  return o.error ?? fallback;
+}
 export type RoleLite = { id: number; name: string; permissions: string[] };
 
 export default function EmployeesClient({
@@ -460,12 +471,14 @@ function EditModal({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ branch_ids: [...branchSel] })
+          // Guard against a stray null/NaN slipping in from grants data — the
+          // server rejects a non-positive-int and the whole save fails.
+          body: JSON.stringify({ branch_ids: [...branchSel].filter((n) => Number.isInteger(n) && n > 0) })
         }
       );
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) {
-        setBranchMsg(j.error ?? t("common.error"));
+        setBranchMsg(apiErrText(j, t("common.error")));
         return;
       }
       setBranchMsg("saved");
@@ -725,7 +738,7 @@ function EditModal({
       if (j?.ok) {
         onSaved();
       } else {
-        setErr(j?.error ?? t("common.error"));
+        setErr(apiErrText(j, t("common.error")));
       }
     } catch {
       setErr(t("common.error"));

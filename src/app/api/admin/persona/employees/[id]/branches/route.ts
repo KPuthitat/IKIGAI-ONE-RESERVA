@@ -33,7 +33,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+    return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
   }
   const db = getDb();
   const target = db.prepare("SELECT id FROM users WHERE id = ?").get(id);
