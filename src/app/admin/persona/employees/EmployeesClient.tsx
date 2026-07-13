@@ -1028,7 +1028,10 @@ function EditModal({
                 <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   กำลังย้าย <span className="font-semibold">{employee.display_name}</span> เป็นพนักงานประจำ —
                   กรอกเงินเดือน (บาท/เดือน) ให้เรียบร้อยก่อนบันทึก
-                  งวดเงินเดือนถัดไปจะไปอยู่ในตารางเงินเดือนพนักงานประจำ
+                  <span className="block mt-1">
+                    เดือนแรกจ่าย<b>รายสัปดาห์</b> (เงินเดือน ÷ จำนวนวันจันทร์ในเดือน) หักภาษี ณ ที่จ่าย 3% ·
+                    เดือนถัดไปเป็นรายเดือนอัตโนมัติ
+                  </span>
                 </div>
               )}
               {employmentType === "ft" && (
@@ -1051,7 +1054,7 @@ function EditModal({
                       {t("admin.persona.employees.cycleMonthly")}
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
-                      พนักงานประจำจ่ายค่าตอบแทนรายเดือนเท่านั้น (ตามหลักบัญชี)
+                      รายเดือน — ยกเว้นเดือนแรกที่เพิ่งเปลี่ยนจากพาร์ทไทม์ จ่ายรายสัปดาห์ก่อน (ระบบสลับให้อัตโนมัติ)
                     </p>
                   </div>
                   <label className="col-span-2 flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:bg-slate-50">

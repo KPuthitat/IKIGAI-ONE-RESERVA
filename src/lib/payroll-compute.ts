@@ -717,7 +717,10 @@ export function computeLineForEmployee(args: {
   // 'sso' = ในระบบ → SSO 5% (cap) only — PIT is not withheld monthly
   //                  (handled annually between employee & Revenue Dept)
   // 'wht' = นอกระบบ → WHT 3% flat on gross, no SSO
-  const taxMode = e.salary_tax_mode ?? "sso";
+  // FT in the weekly transition month is always WHT 3% (owner 2026-07-12);
+  // otherwise use the employee's configured mode.
+  const taxMode = (e.employment_type === "ft" && e.pay_cycle === "weekly")
+    ? "wht" : (e.salary_tax_mode ?? "sso");
   let ssoAmount = 0;
   let taxAmount = 0;
   if (grossPay > 0) {
@@ -850,7 +853,10 @@ export function computeLineFromMinutes(args: {
 
   const grossPay = basePay + otPay + serviceCharge + otherAdditions;
 
-  const taxMode = e.salary_tax_mode ?? "sso";
+  // FT in the weekly transition month is always WHT 3% (owner 2026-07-12);
+  // otherwise use the employee's configured mode.
+  const taxMode = (e.employment_type === "ft" && e.pay_cycle === "weekly")
+    ? "wht" : (e.salary_tax_mode ?? "sso");
   let ssoAmount = 0;
   let taxAmount = 0;
   if (grossPay > 0) {
@@ -993,13 +999,13 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     byDate.set(r.work_date, [sh]);
   }
 
-  // Eligible staff by cycle (owner 2026-06-09: FT-weekly cancelled — not
-  // accounting-correct). Weekly is PT-only; FT is always monthly.
-  //   weekly  → PT only (target ignored)
+  // Eligible staff by cycle.
+  //   weekly  → PT + FT-in-transition (owner 2026-07-12: a just-converted FT is
+  //             paid weekly at fix-rate for their first month — pay_cycle='weekly')
   //   monthly → FT-monthly only
   let staffWhere: string;
   if (period.cycle === "weekly") {
-    staffWhere = "employment_type = 'pt'";
+    staffWhere = "(employment_type = 'pt' OR (employment_type = 'ft' AND pay_cycle = 'weekly'))";
   } else {
     staffWhere = "employment_type = 'ft' AND pay_cycle = 'monthly'";
   }

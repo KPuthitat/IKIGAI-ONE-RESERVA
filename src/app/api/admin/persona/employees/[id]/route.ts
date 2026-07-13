@@ -153,8 +153,25 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   const db = getDb();
-  const target = db.prepare("SELECT id FROM users WHERE id = ?").get(id);
+  const target = db.prepare("SELECT id, employment_type FROM users WHERE id = ?")
+    .get(id) as { id: number; employment_type: "pt" | "ft" | null } | undefined;
   if (!target) return NextResponse.json({ error: "user_not_found" }, { status: 404 });
+
+  // PT→FT transition (owner 2026-07-12). pay_cycle for FT is system-managed:
+  //  • converting to FT → first month weekly (fix-rate + WHT), stamp ft_started_at
+  //  • already FT → don't let the form's hardcoded 'monthly' cut short an
+  //    in-progress weekly transition; the boot migration flips to monthly on time
+  let convertToFt = false;
+  if (userCanViewPayroll(user)) {
+    const wasFt = target.employment_type === "ft";
+    const nowFt = parsed.data.employment_type === "ft";
+    if (!wasFt && nowFt) {
+      convertToFt = true;
+      parsed.data.pay_cycle = "weekly";
+    } else if (wasFt && nowFt) {
+      delete parsed.data.pay_cycle;
+    }
+  }
 
   // Build dynamic UPDATE — only provided fields
   const fields: string[] = [];
@@ -202,6 +219,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("monthly_salary");
   addField("pay_cycle");
   addField("salary_tax_mode");
+  // Stamp the PT→FT conversion date so the pay engine keeps them weekly for
+  // this calendar month, then the boot migration flips them to monthly.
+  if (convertToFt) {
+    fields.push("ft_started_at = ?");
+    vals.push(new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10));
+  }
   addField("line_user_id");
   // shift_start_time: empty string from form = clear to NULL
   if ("shift_start_time" in data) {

@@ -23,6 +23,10 @@ const ptHourly = (rate: number): EmployeePayrollSnapshot => ({
   hourly_rate: rate, monthly_salary: null, pay_cycle: "monthly", salary_tax_mode: "sso",
   track_attendance: 1
 });
+// PT→FT transition month — FT on the weekly cycle (owner 2026-07-12).
+const ftWeekly = (salary: number): EmployeePayrollSnapshot => ({
+  ...ftMonthly(salary), pay_cycle: "weekly"
+});
 
 let pass = 0, fail = 0;
 function eq(name: string, got: number, want: number) {
@@ -92,6 +96,21 @@ console.log("\nผู้บริหาร (track_attendance=0) ไม่มี 
   eq("exec FT → base 30000 (fix เต็ม)", exec.base_pay, 30000);
   eq("exec FT → ot_pay 0", exec.ot_pay, 0);
   eq("tracked FT → ot_pay 200 (120min×25/15)", tracked.ot_pay, 200);
+}
+
+// 7. PT→FT เดือนแรก — จ่ายรายสัปดาห์ fix-rate (เงินเดือน ÷ #จันทร์) + WHT 3%
+//    แม้ salary_tax_mode='sso' (transition บังคับ WHT). มิ.ย. 2026 มี 5 จันทร์.
+console.log("\nPT→FT เดือนแรก (รายสัปดาห์ fix-rate + WHT 3%):");
+{
+  const l = computeLineFromMinutes({
+    employee: ftWeekly(16000), regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 0, unpaired: 0,
+    cycle: "weekly", periodEnd: "2026-06-30", settings: SETTINGS
+  });
+  eq("FT-weekly base 16000/5 = 3200", l.base_pay, 3200);
+  eq("FT-weekly WHT 3% = 96", l.tax_amount, 96);
+  eq("FT-weekly SSO = 0", l.sso_amount, 0);
+  eq("FT-weekly net = 3104", l.net_pay, 3104);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

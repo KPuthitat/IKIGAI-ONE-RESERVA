@@ -2071,14 +2071,10 @@ function runMigrations(db: Database.Database): void {
       ON shift_swap_overrides(user_id, work_date);
   `);
 
-  // FT weekly payroll cancelled (owner 2026-06-09): full-time staff are paid
-  // monthly only (not accounting-correct otherwise). Migrate any legacy
-  // FT pay_cycle='weekly' → 'monthly' so they keep appearing in monthly
-  // periods — the pay engine keys base pay on pay_cycle, so a stale 'weekly'
-  // would otherwise zero their salary. Idempotent (no-op after first run).
-  db.prepare(
-    "UPDATE users SET pay_cycle = 'monthly' WHERE employment_type = 'ft' AND pay_cycle = 'weekly'"
-  ).run();
+  // FT weekly→monthly flip moved below (owner 2026-07-12) — it now references
+  // ft_started_at (added in the Phase 1D block) so a newly-converted FT can stay
+  // weekly for their FIRST month, then auto-flip to monthly. See the month-aware
+  // UPDATE right after the ft_started_at column is added.
 
   // SVC — daily service-charge pot logged per branch per day.
   //
@@ -2662,6 +2658,23 @@ function runMigrations(db: Database.Database): void {
   if (!unames3.has("hourly_rate"))    db.exec("ALTER TABLE users ADD COLUMN hourly_rate REAL");
   if (!unames3.has("monthly_salary")) db.exec("ALTER TABLE users ADD COLUMN monthly_salary REAL");
   if (!unames3.has("pay_cycle"))      db.exec("ALTER TABLE users ADD COLUMN pay_cycle TEXT");
+  // PT→FT transition (owner 2026-07-12): the date a staff was converted to
+  // full-time. During the CALENDAR MONTH of this date they're paid weekly at a
+  // fix-rate (monthly_salary ÷ #Mondays) with WHT 3%; from the next month they
+  // become a normal monthly FT. NULL = not in / past transition.
+  if (!unames3.has("ft_started_at")) db.exec("ALTER TABLE users ADD COLUMN ft_started_at TEXT");
+  // Month-aware flip (replaces the old blanket flip above): move FT-weekly →
+  // monthly once their transition month has passed. FT converted THIS month stay
+  // weekly; legacy FT-weekly with no ft_started_at flip immediately (old rule).
+  // Runs every boot — idempotent, self-correcting when the month rolls over.
+  {
+    const bkkMonthNow = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 7);
+    db.prepare(
+      `UPDATE users SET pay_cycle = 'monthly'
+         WHERE employment_type = 'ft' AND pay_cycle = 'weekly'
+           AND (ft_started_at IS NULL OR substr(ft_started_at, 1, 7) < ?)`
+    ).run(bkkMonthNow);
+  }
   // Phase 1D v2 — salary_tax_mode
   // 'sso' = ในระบบ (หักประกันสังคม 5% เพดาน sso_cap)
   // 'wht' = นอกระบบ (หักภาษี ณ ที่จ่าย 3% ไม่หักประกันสังคม)
