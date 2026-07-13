@@ -9,6 +9,7 @@ import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
+import { computeMonthlySvcSummary } from "@/lib/service-charge";
 import PayslipPrintButton from "./PayslipPrintButton";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ type Period = {
   period_end: string;
   pay_date: string;
   status: "draft" | "finalized" | "paid" | "cancelled";
+  branch_id: number | null;
 };
 
 type Line = {
@@ -99,7 +101,7 @@ export default function PayslipPage({
   if (!Number.isInteger(periodId) || !Number.isInteger(userId)) notFound();
 
   const period = db.prepare(`
-    SELECT id, cycle, target, period_start, period_end, pay_date, status
+    SELECT id, cycle, target, period_start, period_end, pay_date, status, branch_id
     FROM payroll_periods WHERE id = ?
   `).get(periodId) as Period | undefined;
   if (!period) notFound();
@@ -120,6 +122,28 @@ export default function PayslipPage({
   const profile = db.prepare(`
     SELECT bank_name, bank_account, national_id, employee_code, title_prefix FROM users WHERE id = ?
   `).get(userId) as EmployeeProfile | undefined;
+
+  // Service-charge breakdown (display only) — owner 2026-07-13: "โชว์วิธี
+  // คำนวณ service charge รายคน". When this line carries an SVC payout we
+  // recompute the monthly SVC summary for the employee's branch and pull
+  // their row so the payslip can explain *how* the figure was reached
+  // (hours worked → share of the 60% staff pool → forfeiture). This never
+  // alters pay amounts — line.service_charge remains the source of truth.
+  // Branch resolution: prefer the period's branch; fall back to the
+  // employee's branch (legacy periods carry branch_id = NULL).
+  const svcMonth = period.period_start.slice(0, 7);
+  let svcBranchId = period.branch_id;
+  if (svcBranchId == null) {
+    const ub = db.prepare(
+      "SELECT branch_id FROM user_branches WHERE user_id = ? ORDER BY branch_id LIMIT 1"
+    ).get(userId) as { branch_id: number } | undefined;
+    svcBranchId = ub?.branch_id ?? null;
+  }
+  const svcSummary =
+    line.service_charge > 0 && svcBranchId != null
+      ? computeMonthlySvcSummary(svcBranchId, svcMonth)
+      : null;
+  const svcRow = svcSummary?.rows.find((r) => r.userId === userId) ?? null;
 
   const employmentLabel =
     line.employment_type === "pt" ? t(lang, "admin.persona.employees.employment.pt") :
@@ -204,6 +228,50 @@ export default function PayslipPage({
           )}
           {line.service_charge > 0 && (
             <Money label={t(lang, "admin.persona.payroll.col.svc")} value={line.service_charge} />
+          )}
+          {svcRow && (
+            <div className="mt-1 mb-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 print:bg-transparent">
+              <div className="font-medium text-slate-700 mb-1">
+                วิธีคำนวณเซอร์วิสชาร์จ ({formatLongDate(`${svcMonth}-01`, lang).replace(/^\d+\s/, "")})
+              </div>
+              <div className="flex justify-between py-0.5">
+                <span>ชั่วโมงทำงานเดือนนี้</span>
+                <span className="tabular-nums">{fmtMin(svcRow.totalMinutesWorked, lang)} · {svcRow.daysWorked} วัน</span>
+              </div>
+              {svcSummary && (
+                <div className="flex justify-between py-0.5">
+                  <span>กองกลางพนักงาน (60% ของยอดที่เก็บได้)</span>
+                  <span className="tabular-nums">฿{fmtMoney(svcSummary.staffPoolTotal)}</span>
+                </div>
+              )}
+              <div className="flex justify-between py-0.5">
+                <span>ส่วนแบ่งตามชั่วโมง (ก่อนหักริบ)</span>
+                <span className="tabular-nums">฿{fmtMoney(svcRow.grossAllocation)}</span>
+              </div>
+              <div className="flex justify-between py-0.5">
+                <span>อัตราเข้างานสาย</span>
+                <span className="tabular-nums">
+                  {(svcRow.lateRatio * 100).toFixed(1)}%
+                  {svcRow.forfeited ? "" : " (ไม่ถูกริบ)"}
+                </span>
+              </div>
+              {svcRow.forfeited ? (
+                <div className="flex justify-between py-0.5 text-rose-600">
+                  <span>ริบเซอร์วิสชาร์จ</span>
+                  <span>
+                    {svcRow.forfeitReason === "late_20pct"
+                      ? "สายเกิน 20%"
+                      : svcRow.forfeitReason === "resignation"
+                        ? "ลาออก"
+                        : "—"}
+                  </span>
+                </div>
+              ) : null}
+              <div className="flex justify-between py-0.5 border-t border-slate-200 mt-1 pt-1 font-medium text-slate-700">
+                <span>ยอดสุทธิที่ได้รับ</span>
+                <span className="tabular-nums">฿{fmtMoney(svcRow.netAllocation)}</span>
+              </div>
+            </div>
           )}
           {line.other_additions > 0 && (
             <Money label={t(lang, "admin.persona.payroll.col.otherAdd")} value={line.other_additions} />
