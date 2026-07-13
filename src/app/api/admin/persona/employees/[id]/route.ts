@@ -6,8 +6,14 @@ import { getDb, logPersonaAction, setUserRoles, type UserRole } from "@/lib/db";
 import { revokeOpenInvites } from "@/lib/invites";
 
 // PATCH /api/admin/persona/employees/[id] — admin update profile + payroll fields
-// Note: ไม่อนุญาตเปลี่ยน role/username/password_hash/display_name (sync จาก Payroll)
+// Note: ไม่อนุญาตเปลี่ยน username/password_hash/display_name (sync จาก Payroll).
+// role (staff↔admin) IS editable here — super_admin only — so account admin is
+// one-stop at the พนักงาน menu instead of bouncing to /admin/reserva/staff
+// (owner 2026-07-13). Gated + guarded below (super_admin target / self are
+// stripped so nobody can self-demote or touch a super_admin).
 const Body = z.object({
+  // Role — super_admin only (stripped for everyone else below).
+  role: z.enum(["admin", "staff"]).optional(),
   // Profile
   gender: z.enum(["male", "female"]).nullable().optional(),
   employment_type: z.enum(["pt", "ft"]).nullable().optional(),
@@ -143,6 +149,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     delete parsed.data.is_hr_analytics;
     // RBAC role assignment is super_admin-only as well.
     delete parsed.data.role_ids;
+    // Account role (staff↔admin) is a privilege-granting change — super_admin only.
+    delete parsed.data.role;
   }
   // A doctor must carry a license number (their clinical unlock key).
   if ("clinical_role" in parsed.data && parsed.data.clinical_role === "doctor"
@@ -155,9 +163,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   const db = getDb();
-  const target = db.prepare("SELECT id, employment_type FROM users WHERE id = ?")
-    .get(id) as { id: number; employment_type: "pt" | "ft" | null } | undefined;
+  const target = db.prepare("SELECT id, employment_type, role FROM users WHERE id = ?")
+    .get(id) as { id: number; employment_type: "pt" | "ft" | null; role: UserRole } | undefined;
   if (!target) return NextResponse.json({ error: "user_not_found" }, { status: 404 });
+
+  // Role-change safety net (owner 2026-07-13): even a super_admin may not
+  // change a super_admin's role or their own — that could demote the only
+  // super_admin and lock everyone out. The UI hides the dropdown for these
+  // cases; this strips it server-side too. A no-op change (role already the
+  // requested value) is harmless.
+  if ("role" in parsed.data && (target.role === "super_admin" || id === user.id)) {
+    delete parsed.data.role;
+  }
 
   // PT→FT transition (owner 2026-07-12). pay_cycle for FT is system-managed:
   //  • converting to FT → first month weekly (fix-rate + WHT), stamp ft_started_at
@@ -189,6 +206,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   }
 
+  // Account role (staff↔admin) — already gated/guarded to super_admin above.
+  addField("role");
   // Profile
   addField("gender");
   addField("employment_type");
@@ -323,6 +342,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
   if (hasRoleIds) {
     setUserRoles(id, data.role_ids ?? [], user.id);
+  }
+  // Audit the account-role change (staff↔admin) — a privilege grant/revoke.
+  if ("role" in data && data.role != null && data.role !== target.role) {
+    logPersonaAction(user.id, "user.role_change", id);
   }
   return NextResponse.json({ ok: true });
 }

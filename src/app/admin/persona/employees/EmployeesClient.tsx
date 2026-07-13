@@ -540,6 +540,12 @@ function EditModal({
   const [canViewPayrollFlag, setCanViewPayrollFlag] = useState<boolean>(
     (employee as EmployeeRow & { can_view_payroll?: number }).can_view_payroll === 1
   );
+  // Account role (staff↔admin) — super_admin only. Lets account admin
+  // happen here at the พนักงาน menu instead of /admin/reserva/staff
+  // (owner 2026-07-13). super_admin targets never editable (see render guard).
+  const [roleVal, setRoleVal] = useState<"admin" | "staff">(
+    employee.role === "admin" ? "admin" : "staff"
+  );
   // Employee-health-data access (super_admin only) — a consulting doctor
   // (license-gated) + an HR aggregate-dashboard viewer. Nurse role was
   // dropped (owner 2026-06-05); a stored 'nurse' shows as none.
@@ -712,6 +718,13 @@ function EditModal({
       // PT→FT effective date — only relevant when converting into FT.
       if (isConvertingToFt) {
         body.ft_effective_date = ftEffectiveDate;
+      }
+      // Account role (staff↔admin) — super_admin only, and never for a
+      // super_admin target (the render guard hides the dropdown; the
+      // server re-gates + strips). Sending the unchanged value is a
+      // harmless no-op UPDATE.
+      if (currentUserRole === "super_admin" && (employee.role as string) !== "super_admin") {
+        body.role = roleVal;
       }
       // PDPA — only super_admin can grant payroll access. Server
       // ignores this field for non-super_admin operators (the PATCH
@@ -1187,6 +1200,30 @@ function EditModal({
               </div>
             )}
           </>
+        )}
+
+        {/* Account role (staff↔admin) — super_admin only. One-stop
+            account admin here so there's no need to bounce to
+            /admin/reserva/staff (owner 2026-07-13). Hidden for
+            super_admin targets so nobody can demote the top account. */}
+        {currentUserRole === "super_admin" && (employee.role as string) !== "super_admin" && (
+          <div className="border-t border-slate-200 pt-4 space-y-2">
+            <h4 className="text-sm font-semibold text-slate-700">
+              สิทธิ์บัญชีผู้ใช้
+            </h4>
+            <div className="max-w-[280px]">
+              <label className="label">ระดับสิทธิ์</label>
+              <select className="input" value={roleVal}
+                onChange={(e) => setRoleVal(e.target.value as "admin" | "staff")}>
+                <option value="staff">พนักงาน (staff) — ใช้งานฝั่งพนักงาน</option>
+                <option value="admin">ผู้ดูแลระบบ (admin) — เข้าหลังบ้านได้</option>
+              </select>
+              <p className="text-[11px] text-slate-500 mt-1">
+                เปลี่ยนเป็น <b>ผู้ดูแลระบบ</b> = เข้าเมนูหลังบ้านได้ · สิทธิ์ดูเงินเดือน/โมดูล
+                กำหนดเพิ่มด้านล่าง · จะมีผลหลังกดบันทึกและผู้ใช้ล็อกอินใหม่
+              </p>
+            </div>
+          </div>
         )}
 
         {/* RBAC — module-access roles (super_admin only). Assign which
