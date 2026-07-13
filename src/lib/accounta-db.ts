@@ -454,10 +454,12 @@ export function settleReceivable(id: number, branchId: number, settledDate: stri
 
 // ── Payroll → ACCOUNTA auto-posting (owner 2026-06-22) ──────────────
 // When a payroll run is finalized, post one รายจ่าย per employee (เงินเดือน =
-// net pay, จ่ายแล้ว) plus two payables for the period: ภาษีหัก ณ ที่จ่าย and
-// ประกันสังคม (รอจ่าย — admin picks the remit date when paid). Salary(net) +
-// WHT + SSO = gross, so nothing double-counts. Tagged with payroll_period_id
-// so a re-finalize replaces them and an unfinalize removes them.
+// net pay, จ่ายแล้ว) plus payables for the period: ภาษีหัก ณ ที่จ่าย (one row
+// PER EMPLOYEE in their own name — owner 2026-07-13, so ภ.ง.ด.1 ties out per
+// person) and ประกันสังคม (one aggregate row). Both payables are รอจ่าย —
+// admin picks the remit date when paid. Salary(net) + WHT + SSO = gross, so
+// nothing double-counts. Tagged with payroll_period_id so a re-finalize
+// replaces them and an unfinalize removes them.
 
 function ensureExpenseCategory(name: string, code: string | null): void {
   getDb().prepare(
@@ -508,21 +510,28 @@ export function postPayrollToAccounta(periodId: number, userId: number): { salar
     let salaries = 0, totalTax = 0, totalSso = 0;
     for (const l of lines) {
       const net = round2(l.net_pay || 0);
-      totalTax += l.tax_amount || 0;
+      const tax = round2(l.tax_amount || 0);
+      totalTax += tax;
       totalSso += l.sso_amount || 0;
-      if (net <= 0) continue;
       const typeLabel = l.employment_type === "pt" ? "พนักงานพาร์ทไทม์ " : l.employment_type === "ft" ? "พนักงานประจำ " : "";
-      ins.run(branchId, companyId, payDate, `${typeLabel}${l.display_name}`,
-        "เงินเดือน/ค่าจ้าง", net, net, "paid", "transfer", payDate,
-        `เงินเดือน/ค่าจ้าง รอบ ${periodLabel}`, userId, periodId);
-      salaries += 1;
+      if (net > 0) {
+        ins.run(branchId, companyId, payDate, `${typeLabel}${l.display_name}`,
+          "เงินเดือน/ค่าจ้าง", net, net, "paid", "transfer", payDate,
+          `เงินเดือน/ค่าจ้าง รอบ ${periodLabel}`, userId, periodId);
+        salaries += 1;
+      }
+      // Per-employee WHT (owner 2026-07-13): แยกภาษีหัก ณ ที่จ่ายรายคน "ในชื่อ
+      // พนักงาน" — one payable per person tagged with their name (was one
+      // aggregate row) so the ภ.ง.ด.1 remit ties out per employee. Posted
+      // regardless of net (net can be 0 in a transition month yet WHT still
+      // applies). Payable/รอจ่าย — admin picks the remit date.
+      if (tax > 0) {
+        ins.run(branchId, companyId, payDate, `กรมสรรพากร · ภาษีหัก ณ ที่จ่าย (${l.display_name})`,
+          "ภาษีหัก ณ ที่จ่าย", tax, tax, "unpaid", null, null,
+          `ภาษีหัก ณ ที่จ่าย 3% (${l.display_name}) รอนำส่ง · รอบ ${periodLabel}`, userId, periodId);
+      }
     }
     totalTax = round2(totalTax); totalSso = round2(totalSso);
-    if (totalTax > 0) {
-      ins.run(branchId, companyId, payDate, "กรมสรรพากร (ภาษีหัก ณ ที่จ่าย)",
-        "ภาษีหัก ณ ที่จ่าย", totalTax, totalTax, "unpaid", null, null,
-        `ภาษีหัก ณ ที่จ่าย รอนำส่ง · รอบ ${periodLabel} (${lines.length} คน)`, userId, periodId);
-    }
     if (totalSso > 0) {
       ins.run(branchId, companyId, payDate, "สำนักงานประกันสังคม",
         "ประกันสังคม", totalSso, totalSso, "unpaid", null, null,
