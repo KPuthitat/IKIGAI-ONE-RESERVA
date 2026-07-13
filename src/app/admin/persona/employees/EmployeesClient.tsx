@@ -498,6 +498,10 @@ function EditModal({
   const [employmentType, setEmploymentType] = useState<"pt" | "ft" | "">(employee.employment_type ?? "");
   // ผู้บริหาร/หัวหน้าที่ไม่ลงเวลา (owner 2026-07-12) — เงินเดือน fix ไม่มี OT/SVC.
   const [noClock, setNoClock] = useState<boolean>((employee.track_attendance ?? 1) === 0);
+  // วันที่มีผลของการเปลี่ยน PT→FT (owner 2026-07-13) — ถามทุกครั้งก่อนบันทึก.
+  const [ftEffectiveDate, setFtEffectiveDate] = useState<string>(
+    new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)
+  );
   const [hireDate, setHireDate] = useState<string>(employee.hire_date ?? "");
   // Phase 1D — Payroll fields
   const [employeeCode, setEmployeeCode] = useState<string>(employee.employee_code ?? "");
@@ -660,10 +664,15 @@ function EditModal({
     // full-time (from PT / unset) puts them on the monthly-salary payroll
     // table — require the เงินเดือน/เดือน first so they never land there with a
     // blank/zero salary and get computed wrong.
-    if (employmentType === "ft" && employee.employment_type !== "ft") {
+    const isConvertingToFt = employmentType === "ft" && employee.employment_type !== "ft";
+    if (isConvertingToFt) {
       const sal = Number(monthlySalary);
       if (monthlySalary.trim() === "" || !Number.isFinite(sal) || sal <= 0) {
         setErr("กรุณากรอกเงินเดือน (บาท/เดือน) ก่อนย้ายเป็นพนักงานประจำ");
+        return;
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ftEffectiveDate)) {
+        setErr("กรุณาระบุวันที่มีผล (เริ่มเป็นประจำ) ก่อนบันทึก");
         return;
       }
     }
@@ -700,6 +709,10 @@ function EditModal({
         escalation_hours: null,
         is_test_account: isTestAccount ? 1 : 0
       };
+      // PT→FT effective date — only relevant when converting into FT.
+      if (isConvertingToFt) {
+        body.ft_effective_date = ftEffectiveDate;
+      }
       // PDPA — only super_admin can grant payroll access. Server
       // ignores this field for non-super_admin operators (the PATCH
       // route gates it), but conditioning the include here keeps the
@@ -1038,13 +1051,26 @@ function EditModal({
                 </div>
               )}
               {employmentType === "ft" && employee.employment_type !== "ft" && (
-                <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  กำลังย้าย <span className="font-semibold">{employee.display_name}</span> เป็นพนักงานประจำ —
-                  กรอกเงินเดือน (บาท/เดือน) ให้เรียบร้อยก่อนบันทึก
-                  <span className="block mt-1">
-                    เดือนแรกจ่าย<b>รายสัปดาห์</b> (เงินเดือน ÷ จำนวนวันจันทร์ในเดือน) หักภาษี ณ ที่จ่าย 3% ·
-                    เดือนถัดไปเป็นรายเดือนอัตโนมัติ
-                  </span>
+                <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 space-y-2">
+                  <div>
+                    กำลังย้าย <span className="font-semibold">{employee.display_name}</span> เป็นพนักงานประจำ —
+                    กรอกเงินเดือน (บาท/เดือน) ให้เรียบร้อยก่อนบันทึก
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">วันที่มีผล (เริ่มเป็นประจำ) *</label>
+                    <input
+                      type="date"
+                      className="input"
+                      value={ftEffectiveDate}
+                      max={new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)}
+                      onChange={(e) => setFtEffectiveDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="leading-relaxed">
+                    เดือนแรก (เดือนของวันที่มีผล) จ่าย<b>รายสัปดาห์</b> = เงินเดือน ÷ จำนวนรอบจ่ายในเดือน
+                    หักภาษี ณ ที่จ่าย 3% รวมกับรอบพาร์ทไทม์ · <b>เดือนถัดไป</b>ย้ายเป็นพนักงานประจำ
+                    (รายเดือน จ่ายวันที่ 5 ของเดือนถัดไป)
+                  </div>
                 </div>
               )}
               {employmentType === "ft" && (

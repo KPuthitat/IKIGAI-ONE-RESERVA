@@ -25,6 +25,8 @@ const Body = z.object({
   monthly_salary: z.number().min(0).nullable().optional(),
   pay_cycle: z.enum(["weekly", "monthly"]).nullable().optional(),
   salary_tax_mode: z.enum(["sso", "wht"]).optional(),
+  // วันที่มีผลของการเปลี่ยน PT→FT (owner 2026-07-13) — ใช้เป็น ft_started_at
+  ft_effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   // LINE userId (33-char string starting with 'U'). Empty / null = unbind.
   line_user_id: z.string().max(64).nullable().optional(),
   // Expected shift start "HH:MM" — used by late-detection. Empty / null = unset
@@ -219,11 +221,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("monthly_salary");
   addField("pay_cycle");
   addField("salary_tax_mode");
-  // Stamp the PT→FT conversion date so the pay engine keeps them weekly for
-  // this calendar month, then the boot migration flips them to monthly.
+  // Stamp the PT→FT effective date (owner-entered) so the pay engine keeps them
+  // weekly for that calendar month, then the boot migration flips them to
+  // monthly. Falls back to today if the client didn't send one.
   if (convertToFt) {
+    const eff = parsed.data.ft_effective_date
+      ?? new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
     fields.push("ft_started_at = ?");
-    vals.push(new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10));
+    vals.push(eff);
   }
   addField("line_user_id");
   // shift_start_time: empty string from form = clear to NULL
