@@ -3,19 +3,31 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
-import type { MealCouponConfig, CouponMenuAdminRow } from "@/lib/meal-coupons";
+import type { MealCouponConfig, CouponMenuAdminRow, MealCouponMonthlyReport } from "@/lib/meal-coupons";
 
 type DeliveraItem = { id: number; name_th: string; category: string | null; is_available: number };
 
 const TYPE_LABEL: Record<"food" | "drink", string> = { food: "อาหารกลางวัน", drink: "เครื่องดื่ม" };
 
+const TH_MON = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+function monthLabel(m: string): string {
+  const [y, mo] = m.split("-").map(Number);
+  return `${TH_MON[mo]} ${y + 543}`;
+}
+function shiftMonth(m: string, delta: number): string {
+  const [y, mo] = m.split("-").map(Number);
+  return new Date(Date.UTC(y, mo - 1 + delta, 1)).toISOString().slice(0, 7);
+}
+
 export default function MealCouponsClient({
-  config, couponMenu, deliveraMenu, shiftStarts
+  config, couponMenu, deliveraMenu, shiftStarts, report, month
 }: {
   config: MealCouponConfig;
   couponMenu: CouponMenuAdminRow[];
   deliveraMenu: DeliveraItem[];
   shiftStarts: string[];
+  report: MealCouponMonthlyReport;
+  month: string;
 }) {
   const router = useRouter();
   const [enabled, setEnabled] = useState(config.enabled);
@@ -170,6 +182,88 @@ export default function MealCouponsClient({
         </div>
         {addable.length === 0 && deliveraMenu.length === 0 && (
           <div className="text-xs text-slate-400">สาขานี้ยังไม่มีเมนูใน Delivera — เพิ่มเมนูที่ DELIVERA · ตั้งค่า/เมนู ก่อน</div>
+        )}
+      </div>
+
+      {/* Monthly report */}
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="font-bold text-slate-800">รายงานคูปองรายเดือน</div>
+          <div className="flex items-center gap-1">
+            <button onClick={() => router.push(`?month=${shiftMonth(month, -1)}`)}
+              className="w-7 h-7 rounded-full border border-slate-300 text-slate-500 hover:bg-slate-50">←</button>
+            <span className="text-sm font-medium text-slate-700 min-w-[6rem] text-center tabular-nums">{monthLabel(month)}</span>
+            <button onClick={() => router.push(`?month=${shiftMonth(month, 1)}`)}
+              className="w-7 h-7 rounded-full border border-slate-300 text-slate-500 hover:bg-slate-50">→</button>
+          </div>
+        </div>
+
+        {report.totals.issued === 0 ? (
+          <div className="text-sm text-slate-400">ยังไม่มีการเบิกในเดือนนี้</div>
+        ) : (
+          <>
+            {/* Totals */}
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+                <div className="text-[11px] text-slate-500">ออกคูปอง</div>
+                <div className="text-lg font-bold text-slate-700 tabular-nums">{report.totals.issued}</div>
+              </div>
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2">
+                <div className="text-[11px] text-slate-500">เบิกแล้ว</div>
+                <div className="text-lg font-bold text-emerald-700 tabular-nums">{report.totals.redeemed}</div>
+              </div>
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+                <div className="text-[11px] text-slate-500">ไม่ใช้</div>
+                <div className="text-lg font-bold text-slate-500 tabular-nums">{report.totals.unused}</div>
+              </div>
+            </div>
+
+            {/* Own vs cross-branch */}
+            <div>
+              <div className="text-sm font-medium text-slate-600 mb-1">เบิกที่สาขาตัวเอง vs ข้ามสาขา</div>
+              {(() => {
+                const { own, cross } = report.ownVsCross;
+                const tot = own + cross;
+                const pct = (n: number) => tot > 0 ? Math.round((n / tot) * 100) : 0;
+                return (
+                  <div className="space-y-1">
+                    <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full bg-brand" style={{ width: `${pct(own)}%` }} />
+                      <div className="h-full bg-amber-400" style={{ width: `${pct(cross)}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between text-xs tabular-nums">
+                      <span className="text-slate-600"><span className="inline-block w-2 h-2 rounded-full bg-brand align-middle mr-1"></span>สาขาตัวเอง {own} ({pct(own)}%)</span>
+                      <span className="text-slate-600"><span className="inline-block w-2 h-2 rounded-full bg-amber-400 align-middle mr-1"></span>ข้ามสาขา {cross} ({pct(cross)}%)</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Top menus */}
+            <div>
+              <div className="text-sm font-medium text-slate-600 mb-1">เมนูที่เบิกเยอะสุด</div>
+              {report.topMenus.length === 0 ? (
+                <div className="text-xs text-slate-400">ยังไม่มีเมนูที่เบิก</div>
+              ) : (
+                <div className="space-y-1.5">
+                  {report.topMenus.map((m, i) => {
+                    const max = report.topMenus[0].count || 1;
+                    return (
+                      <div key={m.menu} className="flex items-center gap-2 text-sm">
+                        <span className="w-4 text-right text-xs text-slate-400 tabular-nums">{i + 1}</span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block truncate text-slate-700">{m.menu}</span>
+                          <span className="mt-0.5 block h-1.5 rounded-full bg-brand" style={{ width: `${Math.round((m.count / max) * 100)}%` }} />
+                        </span>
+                        <span className="tabular-nums font-semibold text-slate-700">{m.count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>

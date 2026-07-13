@@ -288,3 +288,50 @@ export function buildMealCouponDaySummary(dateBkk: string): MealCouponDaySummary
     totals: { people: people.size, redeemed: redeemedCount, unused: unusedCount }
   };
 }
+
+// ── Monthly report (owner 2026-07-12) ─────────────────────────────────────
+// Per-branch analytics for a month: which menus were redeemed most, and how
+// many coupons were redeemed at the issuing branch (own) vs a different branch
+// (cross). Perspective = coupons ISSUED at `branchId` (= this branch's staff).
+
+export type MealCouponMonthlyReport = {
+  month: string; // YYYY-MM
+  topMenus: Array<{ menu: string; count: number }>;
+  ownVsCross: { own: number; cross: number };
+  totals: { issued: number; redeemed: number; unused: number };
+};
+
+export function mealCouponMonthlyReport(branchId: number, month: string): MealCouponMonthlyReport {
+  const db = getDb();
+  const where = "substr(coupon_date, 1, 7) = ? AND issued_branch_id = ?";
+
+  const totalsRow = db.prepare(
+    `SELECT COUNT(*) AS issued,
+            SUM(CASE WHEN status = 'redeemed' THEN 1 ELSE 0 END) AS redeemed
+       FROM meal_coupons WHERE ${where}`
+  ).get(month, branchId) as { issued: number; redeemed: number | null };
+  const issued = totalsRow.issued ?? 0;
+  const redeemed = totalsRow.redeemed ?? 0;
+
+  const topMenus = db.prepare(
+    `SELECT redeemed_menu_name AS menu, COUNT(*) AS count
+       FROM meal_coupons
+      WHERE ${where} AND status = 'redeemed' AND redeemed_menu_name IS NOT NULL
+      GROUP BY redeemed_menu_name
+      ORDER BY count DESC, redeemed_menu_name COLLATE NOCASE
+      LIMIT 10`
+  ).all(month, branchId) as Array<{ menu: string; count: number }>;
+
+  const oc = db.prepare(
+    `SELECT SUM(CASE WHEN redeemed_branch_id = ? THEN 1 ELSE 0 END) AS own_ct,
+            SUM(CASE WHEN redeemed_branch_id IS NOT NULL AND redeemed_branch_id != ? THEN 1 ELSE 0 END) AS cross_ct
+       FROM meal_coupons WHERE ${where} AND status = 'redeemed'`
+  ).get(branchId, branchId, month, branchId) as { own_ct: number | null; cross_ct: number | null };
+
+  return {
+    month,
+    topMenus,
+    ownVsCross: { own: oc.own_ct ?? 0, cross: oc.cross_ct ?? 0 },
+    totals: { issued, redeemed, unused: Math.max(0, issued - redeemed) }
+  };
+}

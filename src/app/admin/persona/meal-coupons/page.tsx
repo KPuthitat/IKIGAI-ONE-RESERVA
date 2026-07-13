@@ -3,13 +3,19 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { listMenu } from "@/lib/delivera/orders";
-import { mealCouponConfig, listCouponMenuAdmin } from "@/lib/meal-coupons";
+import { mealCouponConfig, listCouponMenuAdmin, mealCouponMonthlyReport } from "@/lib/meal-coupons";
 import MealCouponsClient from "./MealCouponsClient";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "PERSONA · คูปองอาหาร" };
 
-export default function MealCouponsAdminPage() {
+function bkkMonth(): string {
+  return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 7); // YYYY-MM
+}
+
+export default function MealCouponsAdminPage({
+  searchParams
+}: { searchParams: { month?: string } }) {
   const user = requireAdmin();
   const branchId = user.activeBranchId ?? null;
 
@@ -35,6 +41,9 @@ export default function MealCouponsAdminPage() {
     "SELECT DISTINCT start_time FROM shift_codes WHERE branch_id = ? AND active = 1 AND kind = 'work' ORDER BY start_time"
   ).all(branchId) as Array<{ start_time: string }>).map((r) => r.start_time);
 
+  const month = /^\d{4}-\d{2}$/.test(searchParams.month ?? "") ? searchParams.month! : bkkMonth();
+  const report = mealCouponMonthlyReport(branchId, month);
+
   return (
     <div className="space-y-4">
       <div>
@@ -51,6 +60,8 @@ export default function MealCouponsAdminPage() {
         couponMenu={couponMenu}
         deliveraMenu={deliveraMenu}
         shiftStarts={shiftStarts}
+        report={report}
+        month={month}
       />
     </div>
   );
