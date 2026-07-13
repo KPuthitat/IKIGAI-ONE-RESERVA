@@ -591,10 +591,9 @@ export function computeLineForEmployee(args: {
 
     // Scheduled window — admin per-day override wins over the roster. Used by
     // BOTH PT and FT: the scheduled break + start-grace make the worked hours
-    // match the shift (same break for the same กะ). The only difference is the
-    // OT window (otUntilTs below): PT extends only for approved OT; FT extends
-    // to the ACTUAL clock-out so any time past the scheduled end (over 8h/day)
-    // is OT automatically (owner 2026-06-18 — FT OT = same as PT, auto over-8h).
+    // match the shift (same break for the same กะ). The OT window (otUntilTs
+    // below) extends past the scheduled end only for an approved OT request —
+    // same rule for PT and FT (owner 2026-07-14).
     let sched = scheduledByDate
       ? pickScheduled(scheduledByDate.get(shiftDate) ?? [], s)
       : null;
@@ -605,23 +604,18 @@ export function computeLineForEmployee(args: {
       sched = { startTs: sStart, endTs: sEnd, breakStartTs: sched?.breakStartTs ?? null, breakEndTs: sched?.breakEndTs ?? null };
     }
 
-    // Approved OT extends the worked window past the scheduled end up to
-    // the requested "until" time. The 8h split below then credits any
-    // excess as OT rate (≤8h total stays regular rate, even past the end).
-    // An admin per-day ot_until override wins over the approved request.
+    // OT is approval-gated for EVERYONE (owner 2026-07-14): time worked past
+    // the scheduled end counts as OT only up to an approved OT request's
+    // "until" time (or an admin per-day ot_until override). Unapproved
+    // over-time is capped at the scheduled end below and never becomes OT, no
+    // matter how many minutes. This reverts the 2026-06-18 FT auto-over-8h
+    // rule. Salaried execs (track_attendance=0) never get OT.
+    const isExec = e.employment_type === "ft" && e.track_attendance === 0;
+    const reqUntil = isExec ? null : (ov?.ot_until ?? approvedOtByDate?.get(shiftDate) ?? null);
+    const otApproved = !!(reqUntil && /^\d{2}:\d{2}$/.test(reqUntil));
     let otUntilTs: string | null = null;
-    if (sched) {
-      if (e.employment_type === "ft" && e.track_attendance !== 0) {
-        // FT: auto-OT — extend the worked window to the ACTUAL clock-out so
-        // over-8h is OT without an approval (owner 2026-06-18). Salaried execs
-        // (track_attendance=0) get no OT (owner 2026-07-12) — window not extended.
-        otUntilTs = s.endTs;
-      } else if (e.employment_type !== "ft") {
-        const reqUntil = ov?.ot_until ?? approvedOtByDate?.get(shiftDate);
-        if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
-          otUntilTs = new Date(`${shiftDate}T${reqUntil}:00+07:00`).toISOString();
-        }
-      }
+    if (sched && otApproved) {
+      otUntilTs = new Date(`${shiftDate}T${reqUntil}:00+07:00`).toISOString();
     }
 
     if (sched) {
@@ -646,10 +640,12 @@ export function computeLineForEmployee(args: {
     shiftMin += grossMin;
     breakDeducted += deducted;
     const split = splitRegularOt(workedMinutes);
-    // Auto OT = any time worked past 8h/day, for EVERYONE (owner 2026-06-18:
-    // FT OT now works the same as PT — over-8h is OT automatically, no
-    // approval needed). Per-day overrides below still win.
-    const autoOt = split.ot;
+    // OT only counts when approved (owner 2026-07-14). With a scheduled shift
+    // and no approval the worked window is already capped at the scheduled end
+    // (otUntilTs null → applyPtGrace clamps) so split.ot is 0; on an
+    // unscheduled day (no cap) we zero it here and the reclassification below
+    // rolls the over-8h into regular. Per-day overrides still win.
+    const autoOt = otApproved ? split.ot : 0;
     // Per-day overrides of the final regular / OT minutes win over the
     // computed split.
     const dayRegular = ov?.worked_min != null ? ov.worked_min : split.regular + (split.ot - autoOt);

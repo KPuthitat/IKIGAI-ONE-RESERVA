@@ -4,7 +4,7 @@
 // Guarantees: salary/30 per unpaid day, FT only, default 0 = no change,
 // and the deduction never drives base pay negative.
 
-import { computeLineFromMinutes, type PayrollSettings, type EmployeePayrollSnapshot } from "../src/lib/payroll-compute";
+import { computeLineFromMinutes, computeLineForEmployee, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift } from "../src/lib/payroll-compute";
 
 const SETTINGS: PayrollSettings = {
   ot_mode: "flat", ot_flat_per_15min: 0,
@@ -111,6 +111,44 @@ console.log("\nPT→FT เดือนแรก (รายสัปดาห์ 
   eq("FT-weekly WHT 3% = 96", l.tax_amount, 96);
   eq("FT-weekly SSO = 0", l.sso_amount, 0);
   eq("FT-weekly net = 3104", l.net_pay, 3104);
+}
+
+// 8. OT ต้องได้รับอนุมัติก่อนถึงจะนับ (owner 2026-07-14) — คลิกเอาต์เกินเวลาเลิก
+//    กะโดยไม่ขออนุมัติ ไม่ว่ากี่นาที ต้องไม่ขึ้นเป็น OT. ขออนุมัติแล้วถึงจะนับ.
+console.log("\nOT ต้องได้รับอนุมัติก่อน (owner 2026-07-14):");
+{
+  const D = "2026-06-15";
+  const iso = (hhmm: string) => new Date(`${D}T${hhmm}:00+07:00`).toISOString();
+  // กะ 11:00–20:00 พัก 12:00–13:00 (= ทำงาน 8 ชม.). คลิกจริง 11:00–21:00 (เกิน 1 ชม.)
+  const sched: ScheduledShift = {
+    startTs: iso("11:00"), endTs: iso("20:00"),
+    breakStartTs: iso("12:00"), breakEndTs: iso("13:00")
+  };
+  const scheduledByDate = new Map<string, ScheduledShift[]>([[D, [sched]]]);
+  const shift = { startTs: iso("11:00"), endTs: iso("21:00"), durationMinutes: 600 };
+  const base = {
+    shifts: [shift], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+    cycle: "monthly" as const, periodEnd: "2026-06-30", settings: SETTINGS,
+    holidaySet: new Set<string>(), scheduledByDate
+  };
+  // FT ลงเวลา คลิกเกินกะ แต่ไม่ได้ขออนุมัติ OT → ต้อง cap ที่ 20:00 → OT = 0
+  const noReq = computeLineForEmployee({ ...base, employee: { ...ftMonthly(30000), track_attendance: 1 } });
+  eq("FT เกินกะ ไม่ขอ OT → ot_minutes 0", noReq.ot_minutes, 0);
+  // ขออนุมัติถึง 21:00 → ต่อหน้าต่างถึง 21:00 → เกิน 8 ชม. = 60 นาที OT
+  const withReq = computeLineForEmployee({
+    ...base, employee: { ...ftMonthly(30000), track_attendance: 1 },
+    approvedOtByDate: new Map<string, string>([[D, "21:00"]])
+  });
+  eq("FT ขอ OT ถึง 21:00 → ot_minutes 60", withReq.ot_minutes, 60);
+  // PT ก็กติกาเดียวกัน — ไม่ขอ = 0
+  const ptNoReq = computeLineForEmployee({ ...base, employee: ptHourly(50) });
+  eq("PT เกินกะ ไม่ขอ OT → ot_minutes 0", ptNoReq.ot_minutes, 0);
+  // ผู้บริหาร (track_attendance=0) แม้มีอนุมัติ OT ก็ไม่ได้ OT
+  const exec = computeLineForEmployee({
+    ...base, employee: { ...ftMonthly(30000), track_attendance: 0 },
+    approvedOtByDate: new Map<string, string>([[D, "21:00"]])
+  });
+  eq("ผู้บริหารมีอนุมัติ OT → ot_minutes 0", exec.ot_minutes, 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

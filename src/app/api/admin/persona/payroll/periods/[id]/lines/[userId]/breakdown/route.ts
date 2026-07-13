@@ -118,9 +118,11 @@ export async function GET(
   // raw clocked minutes. Load type + rate so the per-day money columns
   // match what the pay engine stored.
   const emp = db.prepare(`
-    SELECT employment_type, hourly_rate FROM users WHERE id = ?
-  `).get(userId) as { employment_type: "pt" | "ft" | null; hourly_rate: number | null } | undefined;
+    SELECT employment_type, hourly_rate, track_attendance FROM users WHERE id = ?
+  `).get(userId) as { employment_type: "pt" | "ft" | null; hourly_rate: number | null; track_attendance: number | null } | undefined;
   const isPt = emp?.employment_type === "pt";
+  // Salaried execs (track_attendance=0) never get OT — same as the pay engine.
+  const isExec = emp?.employment_type === "ft" && emp?.track_attendance === 0;
 
   const settings = db.prepare(`
     SELECT ot_mode, ot_flat_per_15min,
@@ -239,19 +241,14 @@ export async function GET(
       sched = { startTs: sStart, endTs: sEnd, breakStartTs: sched?.breakStartTs ?? null, breakEndTs: sched?.breakEndTs ?? null };
     }
 
-    // OT window: PT extends only for approved OT; FT extends to the ACTUAL
-    // clock-out so over-8h is OT automatically (owner 2026-06-18). An admin
-    // per-day ot_until override wins for PT.
+    // OT window is approval-gated for everyone (owner 2026-07-14): extends past
+    // the scheduled end only up to an approved OT request's "until" (or an admin
+    // per-day ot_until override). No auto over-8h. Execs never get OT.
+    const reqUntil = isExec ? null : (ov?.ot_until ?? approvedOtByDate.get(date) ?? null);
+    const otApproved = !!(reqUntil && /^\d{2}:\d{2}$/.test(reqUntil));
     let otUntilTs: string | null = null;
-    if (sched && outTs) {
-      if (!isPt) {
-        otUntilTs = outTs;
-      } else {
-        const reqUntil = ov?.ot_until ?? approvedOtByDate.get(date);
-        if (reqUntil && /^\d{2}:\d{2}$/.test(reqUntil)) {
-          otUntilTs = new Date(`${date}T${reqUntil}:00+07:00`).toISOString();
-        }
-      }
+    if (sched && outTs && otApproved) {
+      otUntilTs = new Date(`${date}T${reqUntil}:00+07:00`).toISOString();
     }
 
     let breakMinutes = 0;
@@ -279,9 +276,13 @@ export async function GET(
     }
 
     const split = splitRegularOt(workedMin);
-    // Per-day field overrides win over the computed split.
-    const regMin = ov?.worked_min != null ? ov.worked_min : split.regular;
-    const otMin = ov?.ot_min != null ? ov.ot_min : split.ot;
+    // Per-day field overrides win over the computed split. Otherwise OT counts
+    // only when approved (matches the pay engine); unapproved over-8h on an
+    // unscheduled day rolls into regular so the day still ties out to worked
+    // minutes. On a scheduled day the window is already capped so split.ot = 0.
+    const autoOt = otApproved ? split.ot : 0;
+    const regMin = ov?.worked_min != null ? ov.worked_min : split.regular + (split.ot - autoOt);
+    const otMin = ov?.ot_min != null ? ov.ot_min : autoOt;
 
     const mult = holiday ? 1.5 : 1;
     const regularPay = isPt ? (regMin / 60) * ptRate * mult : 0;
