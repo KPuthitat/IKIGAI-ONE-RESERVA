@@ -8,7 +8,9 @@ const Body = z.object({
   password: z.string().min(6),
   display_name: z.string().min(1),
   role: z.enum(["admin", "staff"]),
-  branch_ids: z.array(z.number().int())
+  // At least one branch — a branchless staff row is invisible everywhere and
+  // unpayable. Also stops a stray empty/all-branches payload (owner 2026-07-13).
+  branch_ids: z.array(z.number().int()).min(1)
 });
 
 export async function POST(req: Request) {

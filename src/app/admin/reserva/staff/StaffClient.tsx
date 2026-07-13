@@ -18,7 +18,11 @@ export default function StaffClient({
   const [form, setForm] = useState({
     username: "", password: "", display_name: "",
     role: "staff" as "admin" | "staff",
-    branch_ids: branches.map((b) => b.id)
+    // Start with NO branch pre-selected. Defaulting to every branch used to
+    // silently drop a single-branch hire (e.g. a NAMA staffer) into ALL
+    // branches, which leaked them into other branches' payroll every cycle
+    // (owner 2026-07-13). Admin must now pick the branch(es) deliberately.
+    branch_ids: [] as number[]
   });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -27,6 +31,12 @@ export default function StaffClient({
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    // Guard: a staff row with no branch is invisible everywhere and can't be
+    // paid — require at least one branch (matches the server .min(1) gate).
+    if (form.branch_ids.length === 0) {
+      setErr("เลือกสาขาอย่างน้อย 1 สาขา");
+      return;
+    }
     setBusy(true);
     const res = await fetch(apiUrl("/api/admin/staff"), {
       method: "POST",
@@ -39,7 +49,9 @@ export default function StaffClient({
       setErr(j.error || t("admin.users.createFailed"));
       return;
     }
-    setForm({ ...form, username: "", password: "", display_name: "" });
+    // Reset branch_ids too so the previous hire's branches don't carry over
+    // to the next new account.
+    setForm({ ...form, username: "", password: "", display_name: "", branch_ids: [] });
     setCreating(false);
     router.refresh();
   }
