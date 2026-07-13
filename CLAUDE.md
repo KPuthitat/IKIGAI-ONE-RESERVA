@@ -112,3 +112,17 @@ share the same `system_settings.maintenance_message`.
 7. Owner SSHs in, runs /var/www/reserva/scripts/deploy.sh
 8. Owner reports back; if anything broke, debug from pm2 logs
 ```
+
+## When work is deploy-ready — hand it over WITHOUT being asked
+
+Owner standard 2026-07-13 ("อย่าให้ต้องบอกทุกครั้ง"): every time a change is
+finished and pushed (CI green), proactively send BOTH of these — don't wait
+for the owner to ask:
+
+1. **A ready-to-copy handoff** — the deploy command (`ikigaios-deploy`), a
+   one-line summary of what's in this batch, the commit hash, and whether it
+   carries a migration (touches `src/lib/db.ts`). Format it so the owner can
+   copy-paste and go.
+2. **A post-deploy test checklist** — checkbox items grouped by feature/phase:
+   which page to open, what to click, and what the correct result looks like.
+   Cover every user-facing change in the batch.
