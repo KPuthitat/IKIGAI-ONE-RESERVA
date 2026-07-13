@@ -113,11 +113,19 @@ export default function ResignationAdminClient({
   // resignation. true = staff loses this month's SVC accrual to the
   // company. Defaults to false so the safe path is "keep paying".
   const [forfeitSvc, setForfeitSvc] = useState(false);
+  // PIN state — required for approve + reject (same gate as the leave
+  // flow). Without wiring these through, DecisionModal's PIN box was
+  // inert and its approve button stayed disabled — the "กด PIN อนุมัติ
+  // ไม่ได้" bug (owner 2026-07-13).
+  const [decidePin, setDecidePin] = useState("");
+  const [decidePinErr, setDecidePinErr] = useState<string | null>(null);
 
   function decide(id: number, decision: DecideTarget["decision"]) {
     setDecideTarget({ id, decision });
     setDecideNote("");
     setForfeitSvc(false);
+    setDecidePin("");
+    setDecidePinErr(null);
   }
 
   async function confirmDecide() {
@@ -132,6 +140,14 @@ export default function ResignationAdminClient({
       });
       return;
     }
+    // PIN required for approve + reject — validate locally before the round-trip.
+    if (decision === "approved" || decision === "rejected") {
+      if (!/^\d{4}$/.test(decidePin)) {
+        setDecidePinErr("PIN ต้องเป็นตัวเลข 4 หลัก");
+        return;
+      }
+    }
+    setDecidePinErr(null);
     setBusyId(id);
     try {
       const res = await fetch(apiUrl(`/api/admin/persona/resignation/${id}/decide`), {
@@ -143,7 +159,9 @@ export default function ResignationAdminClient({
           // forfeit_svc is meaningful only when approving — the API
           // ignores it for reject/revision, but sending it here keeps
           // the contract symmetric.
-          forfeit_svc: decision === "approved" ? forfeitSvc : false
+          forfeit_svc: decision === "approved" ? forfeitSvc : false,
+          // PIN only carried for the terminal decisions the API gates.
+          ...(decision === "approved" || decision === "rejected" ? { pin: decidePin } : {})
         })
       });
       const j = await res.json().catch(() => ({}));
@@ -151,12 +169,22 @@ export default function ResignationAdminClient({
         setDecideTarget(null);
         startTransition(() => router.refresh());
       } else {
-        alert({
-          title: t("common.error"),
-          body: <p>{j?.error ?? t("common.error")}</p>,
-          variant: "danger",
-          okLabel: t("common.confirm")
-        });
+        // Surface PIN errors inline in the modal instead of an alert dialog.
+        const pinErr = j?.error === "wrong_pin" || j?.error === "pin_invalid"
+          ? "PIN ไม่ถูกต้อง"
+          : j?.error === "no_pin" || j?.error === "user_pin_not_set"
+            ? "ยังไม่ได้ตั้ง PIN — ไปตั้งที่หน้าลงเวลา"
+            : null;
+        if (pinErr) {
+          setDecidePinErr(pinErr);
+        } else {
+          alert({
+            title: t("common.error"),
+            body: <p>{j?.message ?? j?.error ?? t("common.error")}</p>,
+            variant: "danger",
+            okLabel: t("common.confirm")
+          });
+        }
       }
     } catch {
       alert({
@@ -387,6 +415,9 @@ export default function ResignationAdminClient({
           decision={decideTarget.decision}
           note={decideNote}
           onChange={setDecideNote}
+          pin={decidePin}
+          onPinChange={setDecidePin}
+          pinErr={decidePinErr}
           onConfirm={confirmDecide}
           onCancel={() => setDecideTarget(null)}
           busy={busyId === decideTarget.id}

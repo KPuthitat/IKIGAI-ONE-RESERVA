@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { canActOnRequestTiered, type TierLevel } from "@/lib/approval-tiers";
+import { verifyAdminPin } from "@/lib/admin-pin";
 
 const Body = z.object({
   decision: z.enum(["approved", "rejected", "revision_requested"]),
@@ -12,7 +13,10 @@ const Body = z.object({
   // resigning staff's whole-month SVC accrual to the company.
   // Default false (staff keeps their SVC). Only honoured when
   // decision === "approved" — set it on a reject and we ignore.
-  forfeit_svc: z.boolean().optional()
+  forfeit_svc: z.boolean().optional(),
+  /** PIN required for approved + rejected decisions (high-trust ops) —
+   *  same gate as the leave decide route. */
+  pin: z.string().optional()
 });
 
 // POST /api/admin/persona/resignation/[id]/decide
@@ -75,6 +79,26 @@ export async function POST(req: Request, { params }: { params: { id: string } })
           tier
         },
         { status: 403 }
+      );
+    }
+  }
+
+  // PIN gate — required for approve + reject (terminal/irreversible decisions),
+  // including a tier-1 approve that advances the request. Mirrors the leave
+  // decide route. revision_requested is reversible so no PIN needed.
+  if (parsed.data.decision === "approved" || parsed.data.decision === "rejected") {
+    const pinStr = (parsed.data.pin ?? "").trim();
+    if (!pinStr) {
+      return NextResponse.json(
+        { error: "pin_required", message: "ต้องใส่ PIN ก่อนอนุมัติหรือปฏิเสธ" },
+        { status: 400 }
+      );
+    }
+    const pinCheck = verifyAdminPin(user.id, pinStr);
+    if (!pinCheck.ok) {
+      return NextResponse.json(
+        { error: pinCheck.reason, message: pinCheck.reason === "no_pin" ? "ยังไม่ได้ตั้ง PIN" : "PIN ไม่ถูกต้อง" },
+        { status: 401 }
       );
     }
   }
