@@ -19,8 +19,10 @@ import {
   notifyInventaGroup,
   dailyAttendanceSummaryFlex,
   personaResignationTakenFlex,
+  mealCouponSummaryFlex,
   sendLinePush
 } from "@/lib/line";
+import { buildMealCouponDaySummary } from "@/lib/meal-coupons";
 import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
 import {
   sweepResignationsToTake,
@@ -29,7 +31,7 @@ import {
 import { sweepTerminationsToTake } from "@/lib/termination";
 import { purgeOldBookings } from "@/lib/retention";
 import { purgeOldRecruitaApplications } from "@/lib/recruita-retention";
-import { bookingStartMs } from "@/lib/time";
+import { bookingStartMs, formatLongDate } from "@/lib/time";
 import { autoExpireStaleBookings } from "@/lib/stale-bookings";
 import {
   buildDailyAttendanceRoster,
@@ -192,6 +194,39 @@ async function runCron(): Promise<NextResponse> {
         branchSlug: branch.slug, branchId: branch.id, date: todayBkk
       });
     }
+  }
+
+  // ── Meal-coupon daily summary → exec group (owner 2026-07-12) ─────
+  // Once a day, at/after the latest branch coupon cutoff (~15:00), push ONE
+  // combined rollup to the exec/HR group: who redeemed what vs who was issued
+  // a coupon but didn't use it. Dedupe via system_settings.meal_coupon_
+  // summary_sent_date so repeated cron pings don't re-send.
+  let mealCouponSummarySent = 0;
+  try {
+    const cutoffRow = db.prepare(
+      "SELECT MAX(meal_coupon_redeem_cutoff) AS c FROM branches WHERE meal_coupon_enabled = 1"
+    ).get() as { c: string | null };
+    const maxCutoff = cutoffRow?.c ?? null;
+    const sentRow = db.prepare(
+      "SELECT meal_coupon_summary_sent_date AS d FROM system_settings WHERE id = 1"
+    ).get() as { d: string | null } | undefined;
+    if (maxCutoff && nowHhmmBkk >= maxCutoff && sentRow?.d !== todayBkk) {
+      const summary = buildMealCouponDaySummary(todayBkk);
+      if (summary.hasAny) {
+        const flex = mealCouponSummaryFlex({
+          dateStr: formatLongDate(todayBkk, "th"),
+          branches: summary.branches,
+          totals: summary.totals
+        });
+        await notifyToHrGroup(flex);
+        mealCouponSummarySent = 1;
+      }
+      // Stamp even when there were no coupons today, so we check once per day.
+      db.prepare("UPDATE system_settings SET meal_coupon_summary_sent_date = ? WHERE id = 1").run(todayBkk);
+    }
+  } catch (e) {
+    console.error("meal coupon summary error", e);
+    reportError(e, "cron meal-coupon-summary", { date: todayBkk });
   }
 
   // ── Per-shift personal LINE reminder ─────────────────────────────
@@ -509,6 +544,7 @@ async function runCron(): Promise<NextResponse> {
     reminders_sent: remindersSent,
     recurring_expenses_posted: recurringExpensesPosted,
     attendance_summaries_sent: attendanceSummariesSent,
+    meal_coupon_summary_sent: mealCouponSummarySent,
     shift_notifications_sent: shiftNotificationsSent,
     pending_digests_sent: pendingDigestsSent,
     auto_no_show: autoNoShow,

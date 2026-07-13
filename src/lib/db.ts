@@ -2458,6 +2458,11 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "recruita_exec_group_id")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN recruita_exec_group_id TEXT");
   }
+  // Dedupe key for the once-a-day meal-coupon summary pushed to the exec group
+  // at the cutoff (owner 2026-07-12). Stores the last YYYY-MM-DD it was sent.
+  if (!ssCols.some((c) => c.name === "meal_coupon_summary_sent_date")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN meal_coupon_summary_sent_date TEXT");
+  }
   // HR group name label (owner 2026-06-06) — shown next to every
   // notification setting so admin can see "this goes to XXXX group"
   // without having to remember which group ID maps to which chat.

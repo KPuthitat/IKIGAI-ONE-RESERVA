@@ -9,7 +9,6 @@ const TYPE_LABEL: Record<"food" | "drink", string> = {
   food: "อาหารกลางวัน",
   drink: "เครื่องดื่ม"
 };
-const TYPE_EMOJI: Record<"food" | "drink", string> = { food: "🍱", drink: "🥤" };
 
 export default function CouponsClient({
   coupons, foodMenu, drinkMenu, hasBranch
@@ -69,11 +68,10 @@ export default function CouponsClient({
       {err && <div className="text-sm text-rose-600">{err}</div>}
       {coupons.map((c) => {
         const label = TYPE_LABEL[c.type];
-        const emoji = TYPE_EMOJI[c.type];
         return (
           <div key={c.id} className="card space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="font-bold text-slate-800">{emoji} {label}</div>
+              <div className="font-bold text-slate-800">{label}</div>
               {c.effectiveStatus === "redeemed" && (
                 <span className="text-xs font-medium rounded-full bg-emerald-100 text-emerald-700 px-2.5 py-0.5">เบิกแล้ว</span>
               )}

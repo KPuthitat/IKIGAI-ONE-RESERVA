@@ -918,7 +918,6 @@ function ClockAction({
   if (phase === "coupon" && couponInfo) {
     return (
       <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 space-y-3 text-left">
-        <div className="text-3xl text-center">🎉🍱🥤</div>
         <div className="text-base font-bold text-amber-900 text-center">
           คุณได้รับคูปองอาหารกลางวัน + เครื่องดื่ม
         </div>

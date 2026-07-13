@@ -3936,45 +3936,67 @@ export async function notifyDailyReport(
  *  next push.
  *
  *  Fire-and-forget — same contract as notifyDailyReport / notifyStaff. */
-export type MealCouponRedeemedArgs = {
-  branchName: string;
-  staffName: string;
-  type: "food" | "drink";
-  menuName: string;
-  timeStr: string;           // "HH:MM"
-  headerColor?: string | null;
+export type MealCouponSummaryArgs = {
+  dateStr: string;   // Thai date for display
+  branches: Array<{
+    name: string;
+    redeemed: Array<{ name: string; typeLabel: string; menu: string }>;
+    unused: Array<{ name: string; typeLabel: string }>;
+  }>;
+  totals: { people: number; redeemed: number; unused: number };
 };
 
-/** Flex card pushed to the staff/kitchen group when a staff member redeems a
- *  meal coupon — tells the kitchen who wants which menu (owner 2026-07-12). */
-export function mealCouponRedeemedFlex(args: MealCouponRedeemedArgs): LineFlexMessage {
-  const typeLabel = args.type === "food" ? "อาหารกลางวัน" : "เครื่องดื่ม";
-  const emoji = args.type === "food" ? "🍱" : "🥤";
-  const headerColor = args.headerColor || COLOR_INK_700;
+/** Daily summary Flex pushed to the executive/HR group at the coupon cutoff
+ *  (~15:00) — one combined card across branches listing who redeemed what and
+ *  who was issued a coupon but didn't use it (owner 2026-07-12). No emoji. */
+export function mealCouponSummaryFlex(args: MealCouponSummaryArgs): LineFlexMessage {
+  const body: Record<string, unknown>[] = [
+    { type: "text", text: args.dateStr, size: "xs", color: COLOR_TEXT_MUTED },
+    {
+      type: "text",
+      text: `ได้คูปอง ${args.totals.people} คน · ใช้ ${args.totals.redeemed} · ไม่ใช้ ${args.totals.unused}`,
+      size: "sm", weight: "bold", color: COLOR_TEXT_DARK, margin: "xs", wrap: true
+    }
+  ];
+
+  for (const b of args.branches) {
+    body.push({ type: "separator", margin: "lg", color: COLOR_DIVIDER });
+    body.push({ type: "text", text: b.name, weight: "bold", size: "md", color: COLOR_TEXT_DARK, margin: "md", wrap: true });
+
+    body.push({ type: "text", text: `เบิกแล้ว (${b.redeemed.length})`, size: "xs", weight: "bold", color: "#16a34a", margin: "sm" });
+    if (b.redeemed.length > 0) {
+      for (const r of b.redeemed) {
+        body.push({ type: "text", text: `${r.name} · ${r.typeLabel} · ${r.menu}`, size: "sm", color: COLOR_TEXT_DARK, wrap: true, margin: "xs" });
+      }
+    } else {
+      body.push({ type: "text", text: "—", size: "sm", color: COLOR_TEXT_MUTED, margin: "xs" });
+    }
+
+    body.push({ type: "text", text: `ไม่ได้ใช้ (${b.unused.length})`, size: "xs", weight: "bold", color: "#dc2626", margin: "md" });
+    if (b.unused.length > 0) {
+      for (const u of b.unused) {
+        body.push({ type: "text", text: `${u.name} · ${u.typeLabel}`, size: "sm", color: COLOR_TEXT_MUTED, wrap: true, margin: "xs" });
+      }
+    } else {
+      body.push({ type: "text", text: "—", size: "sm", color: COLOR_TEXT_MUTED, margin: "xs" });
+    }
+  }
+
   const bubble = {
-    type: "bubble", size: "kilo",
+    type: "bubble", size: "giga",
     header: {
-      type: "box", layout: "vertical", backgroundColor: headerColor, paddingAll: "16px",
+      type: "box", layout: "vertical", backgroundColor: COLOR_INK_700, paddingAll: "16px",
       contents: [
         { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold" },
-        { type: "text", text: `${emoji} เบิก${typeLabel}`, color: "#ffffff", size: "lg", weight: "bold", margin: "sm", wrap: true }
+        { type: "text", text: "สรุปคูปองอาหารวันนี้", color: "#ffffff", size: "lg", weight: "bold", margin: "sm", wrap: true }
       ]
     },
-    body: {
-      type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
-      contents: [
-        { type: "text", text: args.menuName, weight: "bold", size: "xl", color: COLOR_TEXT_DARK, wrap: true },
-        { type: "separator", margin: "md", color: COLOR_DIVIDER },
-        kvRow("พนักงาน", args.staffName),
-        kvRow("สาขา", args.branchName),
-        kvRow("เวลา", `${args.timeStr} น.`)
-      ]
-    },
-    styles: { header: { backgroundColor: headerColor }, body: { backgroundColor: "#ffffff" } }
+    body: { type: "box", layout: "vertical", spacing: "none", paddingAll: "16px", contents: body },
+    styles: { header: { backgroundColor: COLOR_INK_700 }, body: { backgroundColor: "#ffffff" } }
   };
   return {
     type: "flex",
-    altText: `เบิก${typeLabel}: ${args.menuName} · ${args.staffName} · ${args.branchName}`,
+    altText: `สรุปคูปองอาหาร ${args.dateStr} · ใช้ ${args.totals.redeemed} ไม่ใช้ ${args.totals.unused}`,
     contents: bubble
   };
 }

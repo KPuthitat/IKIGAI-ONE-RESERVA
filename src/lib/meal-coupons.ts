@@ -214,3 +214,77 @@ export function setCouponMenuActive(id: number, branchId: number, active: boolea
 export function removeCouponMenu(id: number, branchId: number): void {
   getDb().prepare("DELETE FROM meal_coupon_menu WHERE id = ? AND branch_id = ?").run(id, branchId);
 }
+
+// ── Daily summary (owner 2026-07-12) ──────────────────────────────────────
+// One combined rollup for the executive group at the cutoff (~15:00): who
+// redeemed what vs who was issued a coupon but didn't use it. Grouped by the
+// branch where the coupon was issued (clocked in). A coupon is "used" when
+// status='redeemed'; anything still 'issued' at summary time is treated as
+// not-used (the summary runs after the cutoff, so those have expired).
+
+export type MealCouponDaySummary = {
+  hasAny: boolean;
+  branches: Array<{
+    name: string;
+    redeemed: Array<{ name: string; typeLabel: string; menu: string }>;
+    unused: Array<{ name: string; typeLabel: string }>;
+  }>;
+  totals: { people: number; redeemed: number; unused: number };
+};
+
+const typeLabelTh = (t: MealCouponType) => (t === "food" ? "อาหารกลางวัน" : "เครื่องดื่ม");
+
+export function buildMealCouponDaySummary(dateBkk: string): MealCouponDaySummary {
+  const db = getDb();
+  const rows = db.prepare(
+    `SELECT c.issued_branch_id AS bid, c.type, c.status, c.redeemed_menu_name AS menu,
+            c.user_id AS uid, COALESCE(u.nickname_th, u.display_name) AS name
+       FROM meal_coupons c
+       JOIN users u ON u.id = c.user_id
+      WHERE c.coupon_date = ?
+      ORDER BY name COLLATE NOCASE`
+  ).all(dateBkk) as Array<{
+    bid: number | null; type: MealCouponType; status: MealCouponStatus;
+    menu: string | null; uid: number; name: string;
+  }>;
+
+  const people = new Set<number>();
+  let redeemedCount = 0, unusedCount = 0;
+  const byBranch = new Map<number, {
+    redeemed: Array<{ name: string; typeLabel: string; menu: string }>;
+    unused: Array<{ name: string; typeLabel: string }>;
+  }>();
+  for (const r of rows) {
+    people.add(r.uid);
+    const key = r.bid ?? -1;
+    const grp = byBranch.get(key) ?? { redeemed: [], unused: [] };
+    if (r.status === "redeemed") {
+      grp.redeemed.push({ name: r.name, typeLabel: typeLabelTh(r.type), menu: r.menu ?? "-" });
+      redeemedCount += 1;
+    } else {
+      grp.unused.push({ name: r.name, typeLabel: typeLabelTh(r.type) });
+      unusedCount += 1;
+    }
+    byBranch.set(key, grp);
+  }
+
+  // Resolve branch names (grouped by where the coupon was issued).
+  const nameById = new Map<number, string>();
+  const bids = [...byBranch.keys()].filter((k) => k >= 0);
+  if (bids.length > 0) {
+    const ph = bids.map(() => "?").join(",");
+    for (const b of db.prepare(`SELECT id, name FROM branches WHERE id IN (${ph})`).all(...bids) as Array<{ id: number; name: string }>) {
+      nameById.set(b.id, b.name);
+    }
+  }
+  const branches = [...byBranch.entries()].map(([key, grp]) => ({
+    name: key >= 0 ? (nameById.get(key) ?? `สาขา #${key}`) : "ไม่ระบุสาขา",
+    ...grp
+  }));
+
+  return {
+    hasAny: rows.length > 0,
+    branches,
+    totals: { people: people.size, redeemed: redeemedCount, unused: unusedCount }
+  };
+}

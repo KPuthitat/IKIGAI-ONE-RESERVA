@@ -93,7 +93,7 @@ export default function StaffPersonaPage() {
           href="/staff/persona/coupons"
           className="block rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 hover:bg-amber-100 transition"
         >
-          🎫 คูปองของฉัน{redeemableCoupons > 0 ? ` · ${redeemableCoupons} ใบพร้อมใช้` : " · ใช้แล้ว/หมดอายุ"} →
+          คูปองของฉัน{redeemableCoupons > 0 ? ` · ${redeemableCoupons} ใบพร้อมใช้` : " · ใช้แล้ว/หมดอายุ"} →
         </Link>
       )}
       <TimeClockClient
