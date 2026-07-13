@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
-import { encryptSecret } from "./secret-vault";
+import { encryptSecret, decryptSecret, isEncrypted } from "./secret-vault";
 
 const DB_PATH = process.env.DATABASE_PATH || "./data/reserva.db";
 
@@ -3503,6 +3503,28 @@ function runMigrations(db: Database.Database): void {
   // Face-scan opt-in photo URL (path under /uploads/face/<uuid>.jpg
   // when present). Optional — not all branches use face scan.
   userCol("face_photo_url",     "TEXT");
+
+  // One-time PII repair (owner 2026-07-13): the RECRUITA hire path stored the
+  // candidate's national_id as an enc:v1: blob into users.national_id — but that
+  // column is PLAINTEXT by design (national-ID login compares length=13; the
+  // admin edit form validates max(20)). So RECRUITA hires couldn't be saved
+  // ("invalid_body national_id"). Decrypt any encrypted value left in these
+  // plaintext PII columns. Idempotent: once decrypted the LIKE no longer matches.
+  {
+    const uc = new Set((db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>).map((c) => c.name));
+    for (const col of ["national_id", "tax_id", "sso_id"] as const) {
+      if (!uc.has(col)) continue;
+      const rows = db.prepare(`SELECT id, ${col} AS v FROM users WHERE ${col} LIKE 'enc:v1:%'`).all() as Array<{ id: number; v: string }>;
+      const upd = db.prepare(`UPDATE users SET ${col} = ? WHERE id = ?`);
+      for (const r of rows) {
+        if (!isEncrypted(r.v)) continue;
+        const plain = decryptSecret(r.v);
+        // Only rewrite when we got a real plaintext back — never null out the
+        // column on a decrypt miss (wrong key), which would lose the value.
+        if (plain != null && !isEncrypted(plain)) upd.run(plain, r.id);
+      }
+    }
+  }
 
   // Disciplinary warnings (TC-P §8).
   //   Severity ladder: verbal → written_1 → written_2 → final.

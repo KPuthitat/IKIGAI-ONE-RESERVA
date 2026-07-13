@@ -126,15 +126,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "candidate_missing_name" }, { status: 400 });
   }
 
-  // Resolve national_id back to plaintext for the PERSONA users.national_id
-  // column. PERSONA stores it the same encrypted format (#41) so we
-  // re-wrap it via secret-vault — but the upload-time helper here
-  // just keeps the encrypted blob as-is since it's already in our
-  // secret-vault format.
-  const nationalIdEncrypted = (candidate.national_id_encrypted as string | null) ?? null;
-  // We don't actually need plaintext — PERSONA's national_id column
-  // accepts the same enc:v1: format. Keep the blob.
-  void decryptSecret;
+  // PERSONA's users.national_id is PLAINTEXT (national-ID login compares
+  // `national_id = @id AND length = 13`, and the admin edit form validates
+  // max(20)). RECRUITA keeps it encrypted at rest, so decrypt on hire — storing
+  // the enc:v1: blob here breaks both login-by-ID and the admin save (owner
+  // 2026-07-13: "invalid_body national_id" on RECRUITA hires).
+  const nationalIdPlain = decryptSecret((candidate.national_id_encrypted as string | null) ?? null);
 
   // Build display_name = NAME ONLY ("<first> <last>"). The title prefix
   // lives in its own column (title_prefix below) and the UI prepends it via
@@ -196,7 +193,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         (candidate.religion      as string | null) ?? null,
         (candidate.marital_status   as string | null) ?? null,
         (candidate.military_status  as string | null) ?? null,
-        nationalIdEncrypted,
+        nationalIdPlain,
         (candidate.personal_email as string | null) ?? null,
         (candidate.mobile_phone   as string | null) ?? null,
         (candidate.line_id        as string | null) ?? null,
