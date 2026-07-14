@@ -52,6 +52,12 @@ export type EmployeePayrollSnapshot = {
   /** 0 = salaried exec/admin who doesn't clock in → flat salary, no OT, no SVC
    *  (owner 2026-07-12). 1 = normal, attendance-tracked. */
   track_attendance: number;
+  /** 1 when THIS period's branch is the employee's home/primary branch (owner
+   *  2026-07-14). FT monthly salary is paid only at the primary branch so a
+   *  cross-branch rotator isn't paid their salary twice; OT + SVC still follow
+   *  the branch worked. Defaults to 1 (single-branch = own branch is primary).
+   *  Non-branch/legacy callers pass 1 so behaviour is unchanged. */
+  is_primary_branch: number;
 };
 
 // PT premium multiplier on public holidays (per company rule)
@@ -682,8 +688,11 @@ export function computeLineForEmployee(args: {
   if (e.employment_type === "pt") {
     basePay = ptBasePay;
   } else if (e.employment_type === "ft") {
-    // FT: salary regardless of clock — but only included in matching cycle
-    if (e.pay_cycle === cycle && e.monthly_salary) {
+    // FT: salary regardless of clock — but only included in matching cycle AND
+    // only at the employee's home/primary branch, so a cross-branch rotator
+    // isn't paid their full salary in every branch's period (owner 2026-07-14).
+    // Their OT + service charge at the non-primary branch still pay there.
+    if (e.pay_cycle === cycle && e.monthly_salary && e.is_primary_branch !== 0) {
       if (cycle === "monthly") {
         basePay = e.monthly_salary;
       } else {
@@ -693,7 +702,7 @@ export function computeLineForEmployee(args: {
         basePay = e.monthly_salary / mondays;
       }
     }
-    // Else: this employee has a different pay_cycle than this period — exclude
+    // Else: different pay_cycle than this period, or not the primary branch — exclude
   }
 
   // ลาไม่รับค่าจ้าง — reduce FT base by salary/30 per unpaid day. Default 0.
@@ -823,7 +832,9 @@ export function computeLineFromMinutes(args: {
   if (e.employment_type === "pt") {
     basePay = (regNormalMin / 60) * ptRate
            + (regHolidayMin / 60) * ptRate * PT_HOLIDAY_MULTIPLIER;
-  } else if (e.employment_type === "ft" && e.monthly_salary) {
+  } else if (e.employment_type === "ft" && e.monthly_salary && e.is_primary_branch !== 0) {
+    // FT salary only at the home/primary branch (owner 2026-07-14) — see the
+    // shift-based path above. Non-primary branch gets no base here either.
     if (cycle === "monthly" && e.pay_cycle === "monthly") {
       basePay = e.monthly_salary;
     } else if (cycle === "weekly" && e.pay_cycle === "weekly") {
@@ -1011,9 +1022,21 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   const branchClause = period.branch_id != null
     ? "AND EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = users.id AND ub.branch_id = @bid)"
     : "";
+  // is_primary_branch — 1 when THIS period's branch is the employee's home
+  // branch, so FT salary pays here only (owner 2026-07-14). Home = the
+  // is_primary=1 membership, falling back to the lowest branch_id if none is
+  // flagged (fail-safe: never drops an FT's salary). Legacy all-branches
+  // periods (branch_id NULL) treat everyone as primary → unchanged behaviour.
+  const primaryExpr = period.branch_id != null
+    ? `CASE WHEN @bid = COALESCE(
+           (SELECT ub.branch_id FROM user_branches ub WHERE ub.user_id = users.id AND ub.is_primary = 1 LIMIT 1),
+           (SELECT MIN(ub.branch_id) FROM user_branches ub WHERE ub.user_id = users.id)
+         ) THEN 1 ELSE 0 END AS is_primary_branch`
+    : "1 AS is_primary_branch";
   const staffSql = `
     SELECT id AS user_id, display_name, employment_type, employee_code,
-           hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance
+           hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
+           ${primaryExpr}
     FROM users
     WHERE role IN ('staff', 'admin') AND employment_type IS NOT NULL
       AND is_test_account = 0
@@ -1402,6 +1425,18 @@ export function recomputeLine(
   const approvedOtByDate = new Map<string, string>();
   for (const r of otRows) approvedOtByDate.set(r.work_date, r.requested_until);
 
+  // Home-branch check for FT salary (owner 2026-07-14) — same rule as the full
+  // compute: pay salary only when this period's branch is the employee's
+  // primary (is_primary=1, else lowest branch_id). Legacy NULL-branch periods
+  // treat everyone as primary.
+  const primaryRow = db.prepare(`
+    SELECT COALESCE(
+      (SELECT branch_id FROM user_branches WHERE user_id = ? AND is_primary = 1 LIMIT 1),
+      (SELECT MIN(branch_id) FROM user_branches WHERE user_id = ?)
+    ) AS b
+  `).get(userId, userId) as { b: number | null };
+  const isPrimaryBranch = (period.branch_id == null || period.branch_id === primaryRow.b) ? 1 : 0;
+
   const employee: EmployeePayrollSnapshot = {
     user_id: userId,
     display_name: existing.display_name,
@@ -1411,7 +1446,8 @@ export function recomputeLine(
     monthly_salary: fresh?.monthly_salary ?? existing.monthly_salary_snapshot,
     pay_cycle: fresh?.pay_cycle ?? existing.pay_cycle_snapshot,
     salary_tax_mode: fresh?.salary_tax_mode ?? existing.salary_tax_mode_snapshot,
-    track_attendance: fresh?.track_attendance ?? 1
+    track_attendance: fresh?.track_attendance ?? 1,
+    is_primary_branch: isPrimaryBranch
   };
 
   const computed = computeLineForEmployee({

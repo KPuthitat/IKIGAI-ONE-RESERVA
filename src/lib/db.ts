@@ -3441,6 +3441,27 @@ function runMigrations(db: Database.Database): void {
     )
   `);
 
+  // user_branches.is_primary — the employee's HOME branch (owner 2026-07-14).
+  // A multi-branch staffer (rotates between NAMA/HYPO) has one primary branch;
+  // FT monthly salary is paid ONLY at the primary branch (no double-pay across
+  // branches), while OT + service charge still follow the branch worked each
+  // day. Idempotent column add (PRAGMA-guarded), then backfill exactly one
+  // primary per user (lowest branch_id) for anyone who has memberships but no
+  // primary yet — so every existing employee gets a deterministic home branch.
+  if (!ubCols.some((c) => c.name === "is_primary")) {
+    db.exec("ALTER TABLE user_branches ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0");
+  }
+  db.exec(`
+    UPDATE user_branches SET is_primary = 1
+    WHERE branch_id IN (
+      SELECT MIN(ub.branch_id) FROM user_branches ub
+      WHERE ub.user_id = user_branches.user_id
+    )
+    AND user_id NOT IN (
+      SELECT user_id FROM user_branches WHERE is_primary = 1
+    )
+  `);
+
   // users — Phase A profile columns. All nullable (existing rows
   // keep working). Idempotent per-column ALTER.
   const phaseAUserCols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;

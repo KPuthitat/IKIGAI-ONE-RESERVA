@@ -18,7 +18,11 @@ import { getDb, logPersonaAction } from "@/lib/db";
 // elsewhere.
 
 const Body = z.object({
-  branch_ids: z.array(z.number().int().positive()).max(100)
+  branch_ids: z.array(z.number().int().positive()).max(100),
+  // Home/primary branch (super_admin only) — FT monthly salary is paid at this
+  // branch only (owner 2026-07-14). Must be one of the resulting memberships;
+  // ignored for non-super_admin. Omit to leave the current primary as-is.
+  primary_branch_id: z.number().int().positive().nullable().optional()
 });
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -66,7 +70,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     // want && has → leave the row (is_admin preserved)
   }
 
-  if (toAdd.length === 0 && toRemove.length === 0) {
+  // Home/primary branch is a super_admin-only designation (FT salary lands
+  // there). A non-super_admin's primary_branch_id is ignored.
+  const wantsPrimary = me.role === "super_admin" && parsed.data.primary_branch_id != null
+    ? parsed.data.primary_branch_id
+    : null;
+
+  if (toAdd.length === 0 && toRemove.length === 0 && wantsPrimary == null) {
     return NextResponse.json({ ok: true, added: 0, removed: 0 });
   }
 
@@ -79,6 +89,25 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       "DELETE FROM user_branches WHERE user_id = ? AND branch_id = ?"
     );
     for (const b of toRemove) del.run(id, b);
+
+    // Normalise the home branch: keep exactly one is_primary=1 among the user's
+    // remaining memberships. Prefer the super_admin's explicit pick (when it's
+    // still a member), else keep the current primary, else the lowest branch —
+    // so an FT never ends up with zero or two home branches.
+    const finalRows = db.prepare(
+      "SELECT branch_id, is_primary FROM user_branches WHERE user_id = ? ORDER BY branch_id"
+    ).all(id) as Array<{ branch_id: number; is_primary: number }>;
+    if (finalRows.length > 0) {
+      const finalSet = new Set(finalRows.map((r) => r.branch_id));
+      const currentPrimary = finalRows.find((r) => r.is_primary === 1)?.branch_id ?? null;
+      const primary =
+        wantsPrimary != null && finalSet.has(wantsPrimary) ? wantsPrimary
+        : currentPrimary != null ? currentPrimary
+        : finalRows[0].branch_id;
+      db.prepare(
+        "UPDATE user_branches SET is_primary = CASE WHEN branch_id = ? THEN 1 ELSE 0 END WHERE user_id = ?"
+      ).run(primary, id);
+    }
   });
   txn();
 

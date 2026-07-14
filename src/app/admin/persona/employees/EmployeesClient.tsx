@@ -86,7 +86,7 @@ export default function EmployeesClient({
 }: {
   employees: EmployeeRow[];
   allBranches: BranchLite[];
-  grants: Array<{ user_id: number; branch_id: number }>;
+  grants: Array<{ user_id: number; branch_id: number; is_primary?: number }>;
   editableBranchIds: number[];
   currentUserRole: "super_admin" | "admin" | "staff";
   /** PDPA (2026-05-30) — when false, hide salary inputs in the edit
@@ -168,10 +168,13 @@ export default function EmployeesClient({
 
   // userId → branchIds the employee currently belongs to.
   const branchIdsByUser = new Map<number, number[]>();
+  // userId → the branch flagged as their home/primary (FT salary lands there).
+  const primaryByUser = new Map<number, number>();
   for (const g of grants) {
     const arr = branchIdsByUser.get(g.user_id) ?? [];
     arr.push(g.branch_id);
     branchIdsByUser.set(g.user_id, arr);
+    if (g.is_primary === 1) primaryByUser.set(g.user_id, g.branch_id);
   }
   const editableSet = new Set(editableBranchIds);
 
@@ -399,6 +402,7 @@ export default function EmployeesClient({
           allEmployees={employees}
           allBranches={allBranches}
           currentBranchIds={branchIdsByUser.get(editTarget.id) ?? []}
+          currentPrimary={primaryByUser.get(editTarget.id) ?? null}
           editableSet={editableSet}
           onClose={() => setEditTarget(null)}
           onSaved={() => {
@@ -417,7 +421,7 @@ export default function EmployeesClient({
 }
 
 function EditModal({
-  employee, allEmployees, allBranches, currentBranchIds, editableSet,
+  employee, allEmployees, allBranches, currentBranchIds, currentPrimary, editableSet,
   onClose, onSaved, onRefresh, canViewPayroll, currentUserRole,
   allRoles, assignedRoleIds
 }: {
@@ -428,6 +432,9 @@ function EditModal({
   allEmployees: EmployeeRow[];
   allBranches: BranchLite[];
   currentBranchIds: number[];
+  /** The employee's current home/primary branch (FT salary lands there), or
+   *  null if unset. Only editable by super_admin. */
+  currentPrimary: number | null;
   editableSet: Set<number>;
   onClose: () => void;
   onSaved: () => void;
@@ -452,6 +459,8 @@ function EditModal({
   const [branchSel, setBranchSel] = useState<Set<number>>(
     new Set(currentBranchIds)
   );
+  // Home/primary branch (super_admin only) — FT salary is paid here.
+  const [primaryBranch, setPrimaryBranch] = useState<number | null>(currentPrimary);
   const [branchBusy, setBranchBusy] = useState(false);
   const [branchMsg, setBranchMsg] = useState<string | null>(null);
   function toggleBranch(bid: number) {
@@ -473,7 +482,15 @@ function EditModal({
           headers: { "Content-Type": "application/json" },
           // Guard against a stray null/NaN slipping in from grants data — the
           // server rejects a non-positive-int and the whole save fails.
-          body: JSON.stringify({ branch_ids: [...branchSel].filter((n) => Number.isInteger(n) && n > 0) })
+          body: JSON.stringify({
+            branch_ids: [...branchSel].filter((n) => Number.isInteger(n) && n > 0),
+            // Home branch — only meaningful/allowed for super_admin (server
+            // re-gates). Only send when it's still a selected branch.
+            primary_branch_id:
+              currentUserRole === "super_admin" && primaryBranch != null && branchSel.has(primaryBranch)
+                ? primaryBranch
+                : undefined
+          })
         }
       );
       const j = await res.json().catch(() => ({}));
@@ -1419,6 +1436,38 @@ function EditModal({
               );
             })}
           </div>
+          {/* Home/primary branch picker — only when super_admin AND the
+              employee is in 2+ branches (rotating). FT monthly salary is paid
+              at the home branch only; the other branch(es) still pay OT + SVC
+              for days worked there (owner 2026-07-14). */}
+          {currentUserRole === "super_admin" && branchSel.size >= 2 && (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+              <div className="text-sm font-medium text-slate-700 mb-1">สาขาหลัก (บ้าน)</div>
+              <p className="text-[11px] text-slate-500 mb-2">
+                พนักงานประจำ (เงินเดือน) จะรับเงินเดือนที่สาขาหลักเท่านั้น · สาขาอื่นที่ไป
+                เข้าเวรยังได้ค่าล่วงเวลา + เซอร์วิสชาร์จตามวันที่ทำ
+              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                {allBranches.filter((b) => branchSel.has(b.id)).map((b) => (
+                  <label key={b.id} className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="radio"
+                      name="primaryBranch"
+                      checked={primaryBranch === b.id}
+                      disabled={branchBusy}
+                      onChange={() => setPrimaryBranch(b.id)}
+                    />
+                    {b.name}
+                  </label>
+                ))}
+              </div>
+              {primaryBranch == null && (
+                <p className="text-[11px] text-amber-700 mt-1.5">
+                  ยังไม่ได้เลือกสาขาหลัก — ระบบจะใช้สาขาแรกเป็นค่าเริ่มต้น
+                </p>
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-3 mt-3">
             <button type="button" onClick={saveBranches}
               disabled={branchBusy}

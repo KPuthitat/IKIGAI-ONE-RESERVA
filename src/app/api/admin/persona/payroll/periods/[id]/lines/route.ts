@@ -35,9 +35,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const db = getDb();
   const period = db.prepare(`
-    SELECT id, cycle, period_end, status FROM payroll_periods WHERE id = ?
+    SELECT id, cycle, period_end, status, branch_id FROM payroll_periods WHERE id = ?
   `).get(periodId) as
-    { id: number; cycle: "weekly" | "monthly"; period_end: string; status: string } | undefined;
+    { id: number; cycle: "weekly" | "monthly"; period_end: string; status: string; branch_id: number | null } | undefined;
   if (!period) return NextResponse.json({ error: "period_not_found" }, { status: 404 });
   if (period.status !== "draft") {
     return NextResponse.json({ error: "must_be_draft" }, { status: 400 });
@@ -77,6 +77,17 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     FROM payroll_settings WHERE id = 1
   `).get() as PayrollSettings;
 
+  // Home-branch flag for FT salary (owner 2026-07-14) — pay salary only when
+  // this period's branch is the employee's primary (is_primary=1, else lowest
+  // branch_id). NULL-branch periods treat everyone as primary.
+  const primaryRow = db.prepare(`
+    SELECT COALESCE(
+      (SELECT branch_id FROM user_branches WHERE user_id = ? AND is_primary = 1 LIMIT 1),
+      (SELECT MIN(branch_id) FROM user_branches WHERE user_id = ?)
+    ) AS b
+  `).get(target.id, target.id) as { b: number | null };
+  const isPrimaryBranch = (period.branch_id == null || period.branch_id === primaryRow.b) ? 1 : 0;
+
   const employee: EmployeePayrollSnapshot = {
     user_id: target.id,
     display_name: target.display_name,
@@ -86,7 +97,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     monthly_salary: target.monthly_salary,
     pay_cycle: target.pay_cycle,
     salary_tax_mode: target.salary_tax_mode,
-    track_attendance: target.track_attendance ?? 1
+    track_attendance: target.track_attendance ?? 1,
+    is_primary_branch: isPrimaryBranch
   };
 
   // Zero-row — admin will fill in hours/days afterward

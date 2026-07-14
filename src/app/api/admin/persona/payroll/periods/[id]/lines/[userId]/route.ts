@@ -74,9 +74,9 @@ export async function PATCH(
 
   const db = getDb();
   const period = db.prepare(`
-    SELECT status, cycle, period_end FROM payroll_periods WHERE id = ?
+    SELECT status, cycle, period_end, branch_id FROM payroll_periods WHERE id = ?
   `).get(periodId) as
-    { status: string; cycle: "weekly" | "monthly"; period_end: string } | undefined;
+    { status: string; cycle: "weekly" | "monthly"; period_end: string; branch_id: number | null } | undefined;
   if (!period) return NextResponse.json({ error: "period_not_found" }, { status: 404 });
   if (period.status !== "draft") {
     return NextResponse.json({ error: "must_be_draft" }, { status: 400 });
@@ -155,6 +155,17 @@ export async function PATCH(
       track_attendance: number | null;
     } | undefined;
 
+    // Home-branch flag for FT salary (owner 2026-07-14) — pay salary only at
+    // the employee's primary branch (is_primary=1, else lowest branch_id).
+    // NULL-branch periods treat everyone as primary.
+    const primaryRow = db.prepare(`
+      SELECT COALESCE(
+        (SELECT branch_id FROM user_branches WHERE user_id = ? AND is_primary = 1 LIMIT 1),
+        (SELECT MIN(branch_id) FROM user_branches WHERE user_id = ?)
+      ) AS b
+    `).get(userId, userId) as { b: number | null };
+    const isPrimaryBranch = (period.branch_id == null || period.branch_id === primaryRow.b) ? 1 : 0;
+
     const employee: EmployeePayrollSnapshot = {
       user_id: line.user_id,
       display_name: line.display_name,
@@ -164,7 +175,8 @@ export async function PATCH(
       monthly_salary: fresh?.monthly_salary ?? line.monthly_salary_snapshot,
       pay_cycle: fresh?.pay_cycle ?? line.pay_cycle_snapshot,
       salary_tax_mode: fresh?.salary_tax_mode ?? line.salary_tax_mode_snapshot,
-      track_attendance: fresh?.track_attendance ?? 1
+      track_attendance: fresh?.track_attendance ?? 1,
+      is_primary_branch: isPrimaryBranch
     };
 
     const computed = computeLineFromMinutes({

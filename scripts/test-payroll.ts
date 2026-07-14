@@ -16,12 +16,12 @@ const SETTINGS: PayrollSettings = {
 const ftMonthly = (salary: number): EmployeePayrollSnapshot => ({
   user_id: 1, display_name: "FT Example", employment_type: "ft", employee_code: "FT01",
   hourly_rate: null, monthly_salary: salary, pay_cycle: "monthly", salary_tax_mode: "sso",
-  track_attendance: 1
+  track_attendance: 1, is_primary_branch: 1
 });
 const ptHourly = (rate: number): EmployeePayrollSnapshot => ({
   user_id: 2, display_name: "PT Example", employment_type: "pt", employee_code: "PT01",
   hourly_rate: rate, monthly_salary: null, pay_cycle: "monthly", salary_tax_mode: "sso",
-  track_attendance: 1
+  track_attendance: 1, is_primary_branch: 1
 });
 // PT→FT transition month — FT on the weekly cycle (owner 2026-07-12).
 const ftWeekly = (salary: number): EmployeePayrollSnapshot => ({
@@ -149,6 +149,33 @@ console.log("\nOT ต้องได้รับอนุมัติก่อ�
     approvedOtByDate: new Map<string, string>([[D, "21:00"]])
   });
   eq("ผู้บริหารมีอนุมัติ OT → ot_minutes 0", exec.ot_minutes, 0);
+}
+
+// 9. FT เงินเดือนจ่ายเฉพาะสาขาหลัก (owner 2026-07-14) — พนักงานประจำที่สลับสาขา
+//    ต้องได้เงินเดือนเต็มที่สาขาหลักเท่านั้น สาขาที่ไม่ใช่หลัก base = 0 (กัน
+//    double-pay). PT ไม่กระทบ.
+console.log("\nFT เงินเดือนเฉพาะสาขาหลัก (owner 2026-07-14):");
+{
+  const l = (emp: EmployeePayrollSnapshot) => computeLineFromMinutes({
+    employee: emp, regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 0, unpaired: 0,
+    cycle: "monthly", periodEnd: "2026-06-30", settings: SETTINGS
+  });
+  // สาขาหลัก → เงินเดือนเต็ม
+  const primary = l({ ...ftMonthly(30000), is_primary_branch: 1 });
+  eq("FT สาขาหลัก → base 30000", primary.base_pay, 30000);
+  // สาขาไม่ใช่หลัก → base 0 (ไม่จ่ายเงินเดือนซ้ำ)
+  const nonPrimary = l({ ...ftMonthly(30000), is_primary_branch: 0 });
+  eq("FT สาขาไม่ใช่หลัก → base 0", nonPrimary.base_pay, 0);
+  eq("FT สาขาไม่ใช่หลัก → gross 0", nonPrimary.gross_pay, 0);
+  // PT ไม่สนใจ is_primary_branch — จ่ายตามชั่วโมงที่ทำสาขานั้นเสมอ
+  const ptNon = computeLineFromMinutes({
+    employee: { ...ptHourly(50), is_primary_branch: 0 },
+    regularMinutes: 480, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 1, unpaired: 0,
+    cycle: "monthly", periodEnd: "2026-06-30", settings: SETTINGS
+  });
+  eq("PT สาขาไม่ใช่หลัก → base 400 (8ชม.×50)", ptNon.base_pay, 400);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

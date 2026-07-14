@@ -101,9 +101,9 @@ export default function AdminEmployeesPage({
   const grants =
     empIds.length > 0
       ? (db.prepare(
-          `SELECT user_id, branch_id FROM user_branches
+          `SELECT user_id, branch_id, is_primary FROM user_branches
            WHERE user_id IN (${empIds.map(() => "?").join(",")})`
-        ).all(...empIds) as Array<{ user_id: number; branch_id: number }>)
+        ).all(...empIds) as Array<{ user_id: number; branch_id: number; is_primary: number }>)
       : [];
 
   const editableBranchIds =
