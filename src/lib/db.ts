@@ -1321,6 +1321,14 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("clock_qr_enabled")) {
     db.exec("ALTER TABLE branches ADD COLUMN clock_qr_enabled INTEGER NOT NULL DEFAULT 0");
   }
+  //   - clock_totp_secret:         per-branch HMAC secret for the ROTATING QR
+  //     (owner 2026-07-14). When set, the door display shows a code that
+  //     changes every 30s and the clock route validates it via HMAC instead of
+  //     the static clock_qr_token — a photographed poster expires in ≤60s so it
+  //     can't be shared. NULL = rotating QR off (static/legacy behaviour).
+  if (!bnames2.has("clock_totp_secret")) {
+    db.exec("ALTER TABLE branches ADD COLUMN clock_totp_secret TEXT");
+  }
 
   // Service-charge required-on-close-shift flag (added 2026-05-23).
   // When ON, the shift_close form shows a mandatory "ยอดเซอร์วิสชาร์จ
@@ -6912,6 +6920,7 @@ export type Branch = {
   geofence_enabled: number;            // 0/1
   clock_qr_token: string | null;
   clock_qr_enabled: number;            // 0/1
+  clock_totp_secret: string | null;    // set = rotating-QR mode (owner 2026-07-14)
   // When 1, the shift_close staff form shows + requires a service
   // charge amount field at the top (feeds the staff-share
   // calculator). When 0 (default), the field is hidden and admin

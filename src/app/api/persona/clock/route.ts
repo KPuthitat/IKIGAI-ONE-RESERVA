@@ -14,6 +14,7 @@ import {
   type OwlPrompt, type DeviationPrompt
 } from "@/lib/attendance-flags";
 import { userHasWorkShiftOn, effectiveShiftStartForUserDate, workShiftBranchesForUserOn } from "@/lib/roster";
+import { verifyClockCode } from "@/lib/clock-code";
 import { nowBkkMinutes } from "@/lib/time";
 import { mealCouponConfig, isEligibleClockIn, issueDailyCoupons } from "@/lib/meal-coupons";
 
@@ -126,7 +127,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "branch_not_found" }, { status: 404 });
   }
 
-  if (branchRow.geofence_enabled === 1) {
+  // Rotating-QR mode (branches.clock_totp_secret set) forces GPS on too, so a
+  // scanned code alone can't be used from home (owner 2026-07-14) — GPS is the
+  // real location proof, the rotating code is the anti-share + scan layer.
+  const rotatingQr = branchRow.clock_totp_secret != null;
+  const geofenceRequired = branchRow.geofence_enabled === 1 || rotatingQr;
+
+  if (geofenceRequired) {
     if (parsed.data.lat == null || parsed.data.lng == null) {
       return NextResponse.json({ error: "gps_required" }, { status: 400 });
     }
@@ -165,7 +172,18 @@ export async function POST(req: Request) {
     }
   }
 
-  if (branchRow.clock_qr_enabled === 1) {
+  if (rotatingQr) {
+    // Rotating QR — the scanned value is a time-based HMAC code (carried in the
+    // existing qrToken field). Valid only for the current 30s window ±1, so a
+    // photographed poster is useless within a minute.
+    if (!parsed.data.qrToken) {
+      return NextResponse.json({ error: "qr_required" }, { status: 400 });
+    }
+    if (!verifyClockCode(branchRow.clock_totp_secret!, parsed.data.qrToken, Date.now())) {
+      return NextResponse.json({ error: "qr_expired" }, { status: 403 });
+    }
+  } else if (branchRow.clock_qr_enabled === 1) {
+    // Legacy static QR — an admin-set constant token printed as a poster.
     if (!parsed.data.qrToken) {
       return NextResponse.json({ error: "qr_required" }, { status: 400 });
     }

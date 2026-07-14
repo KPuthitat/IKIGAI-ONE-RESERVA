@@ -103,11 +103,11 @@ export default function StaffPersonaPage() {
       firstOutTs={firstOutTs}
       entries={entries}
       branchName={branch?.name ?? null}
-      geofenceEnabled={branch?.geofence_enabled === 1}
+      geofenceEnabled={branch?.geofence_enabled === 1 || branch?.clock_totp_secret != null}
       geofenceLat={branch?.latitude ?? null}
       geofenceLng={branch?.longitude ?? null}
       geofenceRadiusMeters={branch?.geofence_radius_meters ?? 100}
-      qrEnabled={branch?.clock_qr_enabled === 1}
+      qrEnabled={branch?.clock_qr_enabled === 1 || branch?.clock_totp_secret != null}
       isPartTime={userRow?.employment_type === "pt"}
       scheduledEnd={scheduledEnd}
       todayBkk={todayBkk}

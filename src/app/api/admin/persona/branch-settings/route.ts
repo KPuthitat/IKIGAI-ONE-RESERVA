@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
+import { generateBranchSecret } from "@/lib/clock-code";
 
 // POST /api/admin/persona/branch-settings
 //
@@ -60,6 +61,10 @@ const Body = z.object({
   geofence_enabled: z.boolean().optional(),
   clock_qr_token: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, "invalid_qr_token").nullable().optional(),
   clock_qr_enabled: z.boolean().optional(),
+  // Rotating QR (owner 2026-07-14). true = generate a per-branch secret (if
+  // none yet) so the door display shows a 30s-rotating code; false = clear the
+  // secret (back to static/off). The raw secret is never sent to the client.
+  rotating_qr_enabled: z.boolean().optional(),
   // Whether the shift_close staff form must collect a service-charge
   // amount at the top (feeds the staff-share calculator). Added
   // 2026-05-23. Default off — existing branches stay unchanged.
@@ -163,6 +168,21 @@ export async function POST(req: Request) {
   if (parsed.data.clock_qr_enabled !== undefined) {
     sets.push("clock_qr_enabled = ?");
     vals.push(parsed.data.clock_qr_enabled ? 1 : 0);
+  }
+  if (parsed.data.rotating_qr_enabled !== undefined) {
+    if (parsed.data.rotating_qr_enabled) {
+      // Keep an existing secret (so already-displayed QRs stay valid); only
+      // mint one when turning the feature on for the first time.
+      const cur = db.prepare("SELECT clock_totp_secret FROM branches WHERE id = ?")
+        .get(user.activeBranchId) as { clock_totp_secret: string | null } | undefined;
+      if (!cur?.clock_totp_secret) {
+        sets.push("clock_totp_secret = ?");
+        vals.push(generateBranchSecret());
+      }
+    } else {
+      sets.push("clock_totp_secret = ?");
+      vals.push(null);
+    }
   }
   if (Object.prototype.hasOwnProperty.call(parsed.data, "interview_address")) {
     sets.push("interview_address = ?");

@@ -14,6 +14,7 @@
     "test:mounjaro": "node --import tsx scripts/test-mounjaro.ts",
     "test:rbac": "node --import tsx scripts/test-rbac.ts",
     "test:payroll": "node --import tsx scripts/test-payroll.ts",
+    "test:clock": "node --import tsx scripts/test-clock-code.ts",
     "test:revshare": "node --import tsx scripts/test-revshare.ts",
     "test:revshare-pos": "node --import tsx scripts/test-revshare-pos.ts",
     "test:delivera": "node --import tsx scripts/test-delivera-quote.ts && node --import tsx scripts/test-delivera-payment.ts",

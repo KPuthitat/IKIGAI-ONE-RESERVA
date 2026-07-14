@@ -46,6 +46,7 @@ export default function BranchSettingsForm({
   geofenceEnabled,
   clockQrToken,
   clockQrEnabled,
+  rotatingQrEnabled,
   requireServiceCharge,
   requireYesterdayClosing,
   requireMorningOpening,
@@ -73,6 +74,7 @@ export default function BranchSettingsForm({
   geofenceEnabled: boolean;
   clockQrToken: string | null;
   clockQrEnabled: boolean;
+  rotatingQrEnabled: boolean;
   requireServiceCharge: boolean;
   requireYesterdayClosing: boolean;
   requireMorningOpening: boolean;
@@ -112,6 +114,8 @@ export default function BranchSettingsForm({
   const [geoOn, setGeoOn] = useState<boolean>(geofenceEnabled);
   const [qrToken, setQrToken] = useState<string>(clockQrToken || "");
   const [qrOn, setQrOn] = useState<boolean>(clockQrEnabled);
+  // Rotating QR (owner 2026-07-14) — door display shows a 30s code; forces GPS.
+  const [rotOn, setRotOn] = useState<boolean>(rotatingQrEnabled);
   // require_service_charge toggle (added 2026-05-23). When ON, the
   // shift_close staff form shows a mandatory "ยอดเซอร์วิสชาร์จ"
   // field that feeds the staff-share calculator. When OFF, the
@@ -179,6 +183,7 @@ export default function BranchSettingsForm({
     geoOn === geofenceEnabled &&
     (qrToken || null) === (clockQrToken || null) &&
     qrOn === clockQrEnabled &&
+    rotOn === rotatingQrEnabled &&
     svcRequired === requireServiceCharge &&
     yClosingReq === requireYesterdayClosing &&
     mOpeningReq === requireMorningOpening &&
@@ -219,6 +224,7 @@ export default function BranchSettingsForm({
           geofence_enabled: geoOn,
           clock_qr_token: qrToken.trim() || null,
           clock_qr_enabled: qrOn,
+          rotating_qr_enabled: rotOn,
           require_service_charge: svcRequired,
           require_yesterday_closing: yClosingReq,
           require_morning_opening: mOpeningReq,
@@ -578,6 +584,36 @@ export default function BranchSettingsForm({
               {t("admin.persona.settings.timeClock.qr.tokenHint")}
             </p>
           </div>
+        </div>
+
+        {/* ── QR หมุนรหัส (rotating, owner 2026-07-14) ── */}
+        <div className="space-y-2.5 border-l-2 border-amber-300 pl-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Switch checked={rotOn} onChange={setRotOn} accent="emerald" />
+            <span className="text-sm font-bold text-slate-800">
+              QR หมุนรหัส (กันแชร์ / กันย้อนเวลา)
+            </span>
+          </label>
+          <p className="text-[11px] text-slate-500">
+            เปิดจอโชว์ QR ที่หน้าร้าน รหัสเปลี่ยนทุก 30 วินาที พนักงานสแกนตอนมาถึงเพื่อ
+            ลงเวลา · เวลา = ตอนสแกน (ย้อนหลังไม่ได้) และ<b>บังคับเปิด GPS</b>ด้วย
+          </p>
+          {rotOn && (
+            <a
+              href="/staff/persona/clock-qr"
+              target="_blank"
+              rel="noopener"
+              className="inline-block text-xs text-brand hover:underline font-medium"
+            >
+              🖥️ เปิดจอ QR สำหรับตั้งที่ประตู (เปิดบนแท็บเล็ต/มือถือเก่า ค้างไว้)
+            </a>
+          )}
+          {rotOn && !geoOn && (
+            <p className="text-[11px] text-amber-700">
+              ⚠️ ยังไม่ได้เปิด GPS geofence ด้านบน — ควรเปิด + ตั้งพิกัดร้าน เพื่อกันลงเวลา
+              จากนอกร้าน
+            </p>
+          )}
         </div>
       </div>
 

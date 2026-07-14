@@ -67,6 +67,7 @@ export default function PersonaSettingsPage() {
         geofenceEnabled={branch.geofence_enabled === 1}
         clockQrToken={branch.clock_qr_token}
         clockQrEnabled={branch.clock_qr_enabled === 1}
+        rotatingQrEnabled={branch.clock_totp_secret != null}
         requireServiceCharge={branch.require_service_charge === 1}
         requireYesterdayClosing={branch.require_yesterday_closing === 1}
         requireMorningOpening={branch.require_morning_opening === 1}
