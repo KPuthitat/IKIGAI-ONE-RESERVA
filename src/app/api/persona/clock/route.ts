@@ -13,7 +13,7 @@ import {
   detectPunchAnomaly, detectScheduleDeviation, uncertifiedPriorMissingOut,
   type OwlPrompt, type DeviationPrompt
 } from "@/lib/attendance-flags";
-import { userHasWorkShiftOn, effectiveShiftStartForUserDate } from "@/lib/roster";
+import { userHasWorkShiftOn, effectiveShiftStartForUserDate, workShiftBranchesForUserOn } from "@/lib/roster";
 import { nowBkkMinutes } from "@/lib/time";
 import { mealCouponConfig, isEligibleClockIn, issueDailyCoupons } from "@/lib/meal-coupons";
 
@@ -97,6 +97,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "wrong_pin" }, { status: 401 });
   }
 
+  // ── Effective clock branch (owner 2026-07-14) ──────────────────
+  // A cross-branch rotator shouldn't have to manually switch their active
+  // branch before clocking in at the other site. Resolve the branch this
+  // punch attributes to from TODAY's roster: if the active branch has a work
+  // shift today keep it; else if exactly one OTHER branch is rostered today,
+  // auto-pick that; else fall back to the active branch (the no-shift guard
+  // below then produces the right "no shift" error). Everything downstream
+  // (geofence, per-branch clock state, no-shift guard, the punch's branch_id,
+  // meal-coupon + deviation) uses this resolved branch so the whole flow is
+  // consistent — including geofence validating against the site they're at.
+  const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const rosterBranchesToday = workShiftBranchesForUserOn(user.id, todayBkk);
+  const clockBranchId =
+    rosterBranchesToday.includes(user.activeBranchId) ? user.activeBranchId
+    : rosterBranchesToday.length === 1 ? rosterBranchesToday[0]
+    : user.activeBranchId;
+
   // ── Anti-cheat (TC-2): GPS geofence + QR code ──────────────────
   // Fetch the branch row once here — same row drives both checks
   // and is then handed off to the LINE notify path further down.
@@ -104,7 +121,7 @@ export async function POST(req: Request) {
   // clock_qr_enabled); when off, we skip the corresponding check
   // entirely so existing deployments keep working.
   const branchRow = db.prepare("SELECT * FROM branches WHERE id = ?")
-    .get(user.activeBranchId) as Branch | undefined;
+    .get(clockBranchId) as Branch | undefined;
   if (!branchRow) {
     return NextResponse.json({ error: "branch_not_found" }, { status: 404 });
   }
@@ -165,19 +182,18 @@ export async function POST(req: Request) {
     }
   }
 
-  // คำนวณช่วงวันนี้ (Bangkok local)
-  const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  // คำนวณช่วงวันนี้ (Bangkok local) — todayBkk computed above for branch resolve.
   const startIso = new Date(`${todayBkk}T00:00:00+07:00`).toISOString();
   const endIso = new Date(`${todayBkk}T23:59:59+07:00`).toISOString();
 
   // Per-branch clock state (owner 2026-06-09): only count punches at the
-  // active branch, so a two-branch staff clocks in/out independently at each
-  // (clocking out pairs with THIS branch's in, not the other branch's).
+  // resolved clock branch, so a two-branch staff clocks in/out independently at
+  // each (clocking out pairs with THIS branch's in, not the other branch's).
   const todays = db.prepare(`
     SELECT id, type, ts FROM time_entries
     WHERE user_id = ? AND branch_id = ? AND ts >= ? AND ts <= ?
     ORDER BY ts ASC
-  `).all(user.id, user.activeBranchId, startIso, endIso) as Array<{ id: number; type: "in" | "out"; ts: string }>;
+  `).all(user.id, clockBranchId, startIso, endIso) as Array<{ id: number; type: "in" | "out"; ts: string }>;
 
   const firstIn = todays.find((e) => e.type === "in") ?? null;
   const firstOut = todays.find((e) => e.type === "out") ?? null;
@@ -242,7 +258,7 @@ export async function POST(req: Request) {
   // Only gates a brand-new clock-in — clock-out and the 5-min self-correction
   // (existing != null) pass through so someone already at work can finish.
   if (action === "in" && !existing) {
-    if (!userHasWorkShiftOn(user.id, user.activeBranchId, todayBkk)) {
+    if (!userHasWorkShiftOn(user.id, clockBranchId, todayBkk)) {
       const sup = db.prepare(`
         SELECT m.display_name AS name
         FROM users u JOIN users m ON m.id = u.reports_to_user_id
@@ -263,7 +279,7 @@ export async function POST(req: Request) {
     // (owner: "ปลดบล็อกก่อน"). Scoped to a fresh clock-in so nobody mid-shift
     // gets stranded. Supersedes the earlier pending-cert block.
     const danglingDay = uncertifiedPriorMissingOut(
-      user.id, user.activeBranchId, todayBkk
+      user.id, clockBranchId, todayBkk
     );
     if (danglingDay) {
       return NextResponse.json(
@@ -313,10 +329,11 @@ export async function POST(req: Request) {
   }
 
   // ไม่มี existing → INSERT ใหม่ตามปกติ
-  // branch_id captured from session activeBranchId so payroll/timesheets
-  // can attribute hours to the correct branch (Phase 2, 2026-05).
+  // branch_id = the resolved clock branch (roster-aware) so payroll/timesheets
+  // attribute hours to the branch actually worked today, even for a rotator
+  // who didn't switch their active branch (owner 2026-07-14).
   db.prepare("INSERT INTO time_entries (user_id, type, ts, branch_id) VALUES (?, ?, ?, ?)")
-    .run(user.id, action, nowIso, user.activeBranchId);
+    .run(user.id, action, nowIso, clockBranchId);
 
   // ── น้องฮูก: forgot-to-punch detection (owner 2026-06-08) ──────────
   // STRICTLY ADVISORY — the punch above already committed. This only
@@ -327,7 +344,7 @@ export async function POST(req: Request) {
   try {
     owl = detectPunchAnomaly({
       userId: user.id,
-      branchId: user.activeBranchId,
+      branchId: clockBranchId,
       action,
       todayBkk
     });
@@ -355,7 +372,7 @@ export async function POST(req: Request) {
     try {
       swap = detectScheduleDeviation({
         userId: user.id,
-        branchId: user.activeBranchId,
+        branchId: clockBranchId,
         todayBkk,
         actualIso: nowIso
       });
@@ -369,13 +386,13 @@ export async function POST(req: Request) {
   // late) issues a lunch + drink coupon, shown as a pop-up. Idempotent
   // per (user, date). Wrapped so a bug here can NEVER break the clock-in.
   let coupon: { food: boolean; drink: boolean; redeemBefore: string } | null = null;
-  if (action === "in" && user.activeBranchId) {
+  if (action === "in" && clockBranchId) {
     try {
-      const cfg = mealCouponConfig(user.activeBranchId);
+      const cfg = mealCouponConfig(clockBranchId);
       if (cfg.enabled) {
-        const shiftStart = effectiveShiftStartForUserDate(user.id, user.activeBranchId, todayBkk);
+        const shiftStart = effectiveShiftStartForUserDate(user.id, clockBranchId, todayBkk);
         if (isEligibleClockIn(cfg, shiftStart, nowBkkMinutes().minutes)) {
-          coupon = issueDailyCoupons(user.id, user.activeBranchId, todayBkk);
+          coupon = issueDailyCoupons(user.id, clockBranchId, todayBkk);
         }
       }
     } catch (e) {
@@ -388,7 +405,7 @@ export async function POST(req: Request) {
   // Branch context: ใช้แค่ดึงเวลาพักกลางวัน + ชื่อสาขามาแสดงในข้อความ.
   // ถ้าระบบยังไม่ได้ตั้ง platform OA หรือพนักงานยังไม่ได้ bind LINE userId
   // → เงียบ ไม่ error ไม่ block response ของ clock-in.
-  if (action === "in" && user.activeBranchId) {
+  if (action === "in" && clockBranchId) {
     const platform = getPlatformChannel();
     if (isChannelReady(platform)) {
       // Re-use the branchRow already fetched at the anti-cheat

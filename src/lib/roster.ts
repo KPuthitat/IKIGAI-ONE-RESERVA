@@ -239,6 +239,26 @@ export function userHasWorkShiftOn(
   return row != null;
 }
 
+/** Branches where the user has a WORK shift rostered on the given date
+ *  (across ALL their branches). Drives clock-in branch auto-selection for
+ *  cross-branch rotation (owner 2026-07-14): if a NAMA-home staffer is
+ *  rostered at HYPO today, their punch should attribute to HYPO without them
+ *  manually switching branch. Returns distinct branch_ids (usually 0 or 1). */
+export function workShiftBranchesForUserOn(
+  userId: number,
+  dateBkk: string
+): number[] {
+  const rows = getDb().prepare(`
+    SELECT DISTINCT a.branch_id AS branch_id
+    FROM roster_assignments a
+    JOIN shift_codes s ON s.id = a.shift_code_id
+    WHERE a.user_id = ?
+      AND a.assignment_date = ?
+      AND s.kind = 'work'
+  `).all(userId, dateBkk) as Array<{ branch_id: number }>;
+  return rows.map((r) => r.branch_id);
+}
+
 /** Bulk variant: returns Map<userId, "HH:MM"|null> for every user in
  *  the given list. Used by monthly aggregators (SVC, daily summary)
  *  so we don't hit the DB once per user per day. dateBkk is a single
