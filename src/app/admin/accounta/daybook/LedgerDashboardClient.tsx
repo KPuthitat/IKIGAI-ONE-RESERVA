@@ -1320,7 +1320,7 @@ export default function LedgerDashboardClient({
                         <span className="block font-mono text-slate-400">{pct}%</span>
                         {pctSales != null && (
                           <span className="block font-mono text-[9px] text-slate-300">
-                            ยอดคาด {pctSales < 10 ? pctSales.toFixed(1) : Math.round(pctSales)}%
+                            คาดการณ์ {pctSales < 10 ? pctSales.toFixed(1) : Math.round(pctSales)}%
                           </span>
                         )}
                       </span>
