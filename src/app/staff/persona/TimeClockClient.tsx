@@ -43,6 +43,38 @@ function bkkTime(ts: string): string {
   return bkkHHMM(ts);
 }
 
+// Downscale a captured selfie to a small JPEG data-URL so the clock POST stays
+// light on the small VPS (owner 2026-07-14). Mirrors the recruita apply
+// downscaler; falls back to the raw file (as a data-URL) if canvas fails.
+async function selfieToDataUrl(file: File, maxDim = 640, quality = 0.7): Promise<string> {
+  const readAsDataUrl = (f: Blob) =>
+    new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(f);
+    });
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return readAsDataUrl(file);
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", quality)
+    );
+    return blob ? readAsDataUrl(blob) : readAsDataUrl(file);
+  } catch {
+    return readAsDataUrl(file);
+  }
+}
+
 export default function TimeClockClient({
   userName,
   hasPin,
@@ -55,6 +87,7 @@ export default function TimeClockClient({
   geofenceLng,
   geofenceRadiusMeters,
   qrEnabled,
+  selfieEnabled,
   isPartTime,
   scheduledEnd,
   todayBkk,
@@ -89,6 +122,7 @@ export default function TimeClockClient({
    *  the client shows a camera scanner that must produce a token
    *  matching the branch's clock_qr_token before submission. */
   qrEnabled: boolean;
+  selfieEnabled: boolean;
   isPartTime: boolean;
   scheduledEnd: string | null;
   todayBkk: string;
@@ -219,6 +253,7 @@ export default function TimeClockClient({
               geofenceLng={geofenceLng}
               geofenceRadiusMeters={geofenceRadiusMeters}
               qrEnabled={qrEnabled}
+              selfieEnabled={selfieEnabled}
               isPartTime={isPartTime}
               scheduledEnd={scheduledEnd}
               todayBkk={todayBkk}
@@ -307,6 +342,7 @@ function ClockAction({
   geofenceLng,
   geofenceRadiusMeters,
   qrEnabled,
+  selfieEnabled,
   isPartTime,
   scheduledEnd,
   todayBkk,
@@ -326,6 +362,7 @@ function ClockAction({
   geofenceLng: number | null;
   geofenceRadiusMeters: number;
   qrEnabled: boolean;
+  selfieEnabled: boolean;
   isPartTime: boolean;
   scheduledEnd: string | null;
   todayBkk: string;
@@ -432,6 +469,11 @@ function ClockAction({
   const [qrToken, setQrToken] = useState<string | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
 
+  // Selfie captured from the front camera (when selfieEnabled). Stored as a
+  // downscaled JPEG data-URL that we attach to the clock POST.
+  const [selfie, setSelfie] = useState<string | null>(null);
+  const [selfieBusy, setSelfieBusy] = useState(false);
+
   // Sub-phase tracking inside the "pin" stage — we surface a single
   // ClockAction component that walks the user through GPS → QR →
   // PIN in order, depending on which gates are enabled.
@@ -444,6 +486,7 @@ function ClockAction({
   // KNOW the user will be rejected.
   const gpsReady = !geofenceEnabled || gpsCoords != null;
   const qrReady = !qrEnabled || qrToken != null;
+  const selfieReady = !selfieEnabled || selfie != null;
 
   // ── Client-side geofence check (haversine) ────────────────────────
   // Run on every captured fix so the chip shows in/out of zone
@@ -498,7 +541,7 @@ function ClockAction({
   // server will accept saves the user from tapping their PIN just
   // to be told they're in the wrong place.
   const geofenceSatisfied = !geofenceEnabled || inZone === true;
-  const gatesReady = geofenceSatisfied && qrReady;
+  const gatesReady = geofenceSatisfied && qrReady && selfieReady;
 
   // Kick off GPS capture as soon as the user opens the clock-in flow.
   // Phones can take 5-10s to acquire a fresh fix outdoors / indoors;
@@ -568,6 +611,12 @@ function ClockAction({
       setPin("");
       return;
     }
+    if (selfieEnabled && !selfie) {
+      setErrorMsg("กรุณาถ่ายเซลฟี่ก่อนลงเวลา");
+      setPhase("pin");
+      setPin("");
+      return;
+    }
 
     setPhase("saving");
     setErrorMsg(null);
@@ -580,6 +629,7 @@ function ClockAction({
         body.gpsAccuracy = gpsCoords.accuracy;
       }
       if (qrToken) body.qrToken = qrToken;
+      if (selfie) body.selfie = selfie;
       const res = await fetch(apiUrl("/api/persona/clock"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1085,7 +1135,7 @@ function ClockAction({
           That collapses what used to be "chip + duplicate errorMsg line"
           into one source of truth so the user never sees contradictory
           green/red messages at the same time. */}
-      {(geofenceEnabled || qrEnabled) && (
+      {(geofenceEnabled || qrEnabled || selfieEnabled) && (
         <div className="flex flex-col items-center gap-1.5">
           {geofenceEnabled && (
             <GateChip
@@ -1127,6 +1177,40 @@ function ClockAction({
                 setShowQrScanner(true);
               }}
             />
+          )}
+          {selfieEnabled && (
+            <>
+              <GateChip
+                tone={selfie ? "ready" : "pending"}
+                label={
+                  selfieBusy ? "กำลังเตรียมรูป…"
+                    : selfie ? "ถ่ายเซลฟี่แล้ว"
+                    : "ถ่ายเซลฟี่เพื่อยืนยันตัวตน"
+                }
+                actionLabel={selfieBusy ? null : selfie ? "ถ่ายใหม่" : "ถ่ายเซลฟี่"}
+                onAction={() => document.getElementById("clock-selfie-input")?.click()}
+              />
+              <input
+                id="clock-selfie-input"
+                type="file"
+                accept="image/*"
+                capture="user"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = ""; // allow re-selecting the same file
+                  if (!file) return;
+                  setSelfieBusy(true);
+                  try {
+                    setSelfie(await selfieToDataUrl(file));
+                  } catch {
+                    setErrorMsg("ถ่ายเซลฟี่ไม่สำเร็จ ลองใหม่");
+                  } finally {
+                    setSelfieBusy(false);
+                  }
+                }}
+              />
+            </>
           )}
         </div>
       )}

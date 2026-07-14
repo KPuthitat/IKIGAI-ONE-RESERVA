@@ -108,6 +108,7 @@ export default function StaffPersonaPage() {
       geofenceLng={branch?.longitude ?? null}
       geofenceRadiusMeters={branch?.geofence_radius_meters ?? 100}
       qrEnabled={branch?.clock_qr_enabled === 1 || branch?.clock_totp_secret != null}
+      selfieEnabled={branch?.clock_selfie_enabled === 1}
       isPartTime={userRow?.employment_type === "pt"}
       scheduledEnd={scheduledEnd}
       todayBkk={todayBkk}

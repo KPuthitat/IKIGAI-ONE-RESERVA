@@ -15,6 +15,7 @@ import {
 } from "@/lib/attendance-flags";
 import { userHasWorkShiftOn, effectiveShiftStartForUserDate, workShiftBranchesForUserOn } from "@/lib/roster";
 import { verifyClockCode } from "@/lib/clock-code";
+import { saveClockSelfie } from "@/lib/clock-selfie";
 import { nowBkkMinutes } from "@/lib/time";
 import { mealCouponConfig, isEligibleClockIn, issueDailyCoupons } from "@/lib/meal-coupons";
 
@@ -38,6 +39,10 @@ const Body = z.object({
   // clearly inside.
   gpsAccuracy: z.number().min(0).max(10000).optional(),
   qrToken: z.string().max(64).optional(),
+  // Selfie captured at clock-in as a base64 data-URL (owner 2026-07-14) — only
+  // required when the branch has clock_selfie_enabled. Cap the string generously;
+  // saveClockSelfie enforces the real decoded-byte limit + jpeg/webp type.
+  selfie: z.string().max(2_000_000).optional(),
   // Explicit clock direction from the split เข้า/ออก buttons (owner
   // 2026-06-09). When omitted, the server auto-decides (back-compat).
   intent: z.enum(["in", "out"]).optional()
@@ -131,7 +136,10 @@ export async function POST(req: Request) {
   // scanned code alone can't be used from home (owner 2026-07-14) — GPS is the
   // real location proof, the rotating code is the anti-share + scan layer.
   const rotatingQr = branchRow.clock_totp_secret != null;
-  const geofenceRequired = branchRow.geofence_enabled === 1 || rotatingQr;
+  const selfieRequired = branchRow.clock_selfie_enabled === 1;
+  // Selfie proves WHO, GPS proves WHERE — require both together so a selfie
+  // taken from home (with a faked location) still can't punch.
+  const geofenceRequired = branchRow.geofence_enabled === 1 || rotatingQr || selfieRequired;
 
   if (geofenceRequired) {
     if (parsed.data.lat == null || parsed.data.lng == null) {
@@ -346,12 +354,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, action, replaced: false });
   }
 
+  // Selfie (owner 2026-07-14) — required when the branch enables it. Saved here
+  // (just before the INSERT) so a request that failed an earlier guard
+  // (no_shift_today / prior_day_missing_out) never leaves an orphan file. Only
+  // fresh punches carry a selfie; the 5-min self-correction path above keeps the
+  // original row + its selfie.
+  let selfiePath: string | null = null;
+  if (selfieRequired) {
+    if (!parsed.data.selfie) {
+      return NextResponse.json({ error: "selfie_required" }, { status: 400 });
+    }
+    const saved = saveClockSelfie(user.id, parsed.data.selfie);
+    if (!saved.ok) {
+      return NextResponse.json({ error: saved.error }, { status: 400 });
+    }
+    selfiePath = saved.filename;
+  }
+
   // ไม่มี existing → INSERT ใหม่ตามปกติ
   // branch_id = the resolved clock branch (roster-aware) so payroll/timesheets
   // attribute hours to the branch actually worked today, even for a rotator
   // who didn't switch their active branch (owner 2026-07-14).
-  db.prepare("INSERT INTO time_entries (user_id, type, ts, branch_id) VALUES (?, ?, ?, ?)")
-    .run(user.id, action, nowIso, clockBranchId);
+  db.prepare("INSERT INTO time_entries (user_id, type, ts, branch_id, selfie_path) VALUES (?, ?, ?, ?, ?)")
+    .run(user.id, action, nowIso, clockBranchId, selfiePath);
 
   // ── น้องฮูก: forgot-to-punch detection (owner 2026-06-08) ──────────
   // STRICTLY ADVISORY — the punch above already committed. This only

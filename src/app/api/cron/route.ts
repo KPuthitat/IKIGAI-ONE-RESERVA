@@ -31,6 +31,7 @@ import {
 import { sweepTerminationsToTake } from "@/lib/termination";
 import { purgeOldBookings } from "@/lib/retention";
 import { purgeOldRecruitaApplications } from "@/lib/recruita-retention";
+import { purgeOldClockSelfies } from "@/lib/clock-selfie";
 import { bookingStartMs, formatLongDate } from "@/lib/time";
 import { autoExpireStaleBookings } from "@/lib/stale-bookings";
 import {
@@ -482,6 +483,17 @@ async function runCron(): Promise<NextResponse> {
     reportError(e, "cron recruita-purge", {});
   }
 
+  // Clock-selfie PDPA retention — unlink selfie files older than the window
+  // (default 60 days). One selfie per punch accumulates fast on the small VPS
+  // and face images shouldn't be kept longer than needed for dispute review.
+  let selfiesPurged = 0;
+  try {
+    selfiesPurged = purgeOldClockSelfies(Date.now());
+  } catch (e) {
+    console.error("clock selfie purge error", e);
+    reportError(e, "cron selfie-purge", {});
+  }
+
   // ── INSIGNA nightly jobs ────────────────────────────────────
   // Daily rollup + bulk churn recompute. Both are idempotent (the
   // rollup uses UPSERT on date+channel; churn rewrites churn_risk_score).
@@ -558,6 +570,7 @@ async function runCron(): Promise<NextResponse> {
     terminations_closed: terminationsClosed,
     purged_old_bookings: purged,
     recruita_pdpa_purged: recruitaPurged,
+    clock_selfies_purged: selfiesPurged,
     insigna_rollup: insignaRollup,
     insigna_churn: insignaChurn,
     inventa_expiry_alerts_sent: inventaExpiryAlertsSent

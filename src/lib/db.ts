@@ -477,6 +477,17 @@ function runMigrations(db: Database.Database): void {
   ensureBranchIdColumn("time_entries");
   ensureBranchIdColumn("leave_requests");
 
+  // time_entries.selfie_path — filename of the selfie captured at clock-in
+  // (owner 2026-07-14, "own-device" anti-cheat). NULL for legacy rows and for
+  // the 5-min self-correction / certification paths that don't create a new
+  // punch. Bytes live on disk under data/uploads/selfie (see lib/clock-selfie).
+  {
+    const teCols = db.prepare("PRAGMA table_info(time_entries)").all() as Array<{ name: string }>;
+    if (!teCols.some((c) => c.name === "selfie_path")) {
+      db.exec("ALTER TABLE time_entries ADD COLUMN selfie_path TEXT");
+    }
+  }
+
   // Index for the most common admin query: "show all entries at this
   // branch in this date range" → composite (branch_id, ts/date_from).
   db.exec(`
@@ -1328,6 +1339,12 @@ function runMigrations(db: Database.Database): void {
   //     can't be shared. NULL = rotating QR off (static/legacy behaviour).
   if (!bnames2.has("clock_totp_secret")) {
     db.exec("ALTER TABLE branches ADD COLUMN clock_totp_secret TEXT");
+  }
+  //   - clock_selfie_enabled:      0/1 (owner 2026-07-14). When 1, clock-in
+  //     requires a selfie from the staff's own phone (deters buddy-punching +
+  //     gives dispute evidence). Forces GPS too. No central device needed.
+  if (!bnames2.has("clock_selfie_enabled")) {
+    db.exec("ALTER TABLE branches ADD COLUMN clock_selfie_enabled INTEGER NOT NULL DEFAULT 0");
   }
 
   // Service-charge required-on-close-shift flag (added 2026-05-23).
@@ -6921,6 +6938,7 @@ export type Branch = {
   clock_qr_token: string | null;
   clock_qr_enabled: number;            // 0/1
   clock_totp_secret: string | null;    // set = rotating-QR mode (owner 2026-07-14)
+  clock_selfie_enabled: number;        // 0/1 — require a selfie at clock-in (owner 2026-07-14)
   // When 1, the shift_close staff form shows + requires a service
   // charge amount field at the top (feeds the staff-share
   // calculator). When 0 (default), the field is hidden and admin

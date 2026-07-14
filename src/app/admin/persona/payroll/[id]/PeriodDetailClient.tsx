@@ -933,6 +933,9 @@ function SummaryCard({ label, value, sub, accent }: {
   );
 }
 
+// Selfie captured at a clock punch (owner 2026-07-14) — for the review strip.
+type SelfiePunch = { entryId: number; date: string; time: string; type: "in" | "out" };
+
 type BreakdownDay = {
   date: string;
   pairs: Array<{
@@ -1027,6 +1030,7 @@ function LineEditModal({
   // Daily time-entry breakdown — owner spec 2026-06-01 promoted this
   // from a collapsible footer to the primary view of the modal.
   const [breakdownDays, setBreakdownDays] = useState<BreakdownDay[] | null>(null);
+  const [breakdownSelfies, setBreakdownSelfies] = useState<SelfiePunch[] | null>(null);
   const [breakdownLoading, setBreakdownLoading] = useState(true);
   const [breakdownErr, setBreakdownErr] = useState<string | null>(null);
   // Bumped after a successful per-day save so the parent knows to
@@ -1049,6 +1053,7 @@ function LineEditModal({
         return;
       }
       setBreakdownDays(j.days as BreakdownDay[]);
+      setBreakdownSelfies((j.selfies ?? []) as SelfiePunch[]);
       if (j.period_start) setPeriodStart(j.period_start as string);
       if (j.period_end) setPeriodEnd(j.period_end as string);
       setBreakdownErr(null);
@@ -1364,6 +1369,38 @@ function LineEditModal({
               )}
             </div>
           </div>
+          {/* Selfie review strip (owner 2026-07-14) — thumbnails of the
+              clock-in/out selfies, so admin can spot-check who actually
+              punched. Only shows when the branch captures selfies. */}
+          {breakdownSelfies && breakdownSelfies.length > 0 && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2">
+              <div className="text-[11px] font-medium text-slate-600 mb-1.5">
+                รูปตอนลงเวลา ({breakdownSelfies.length}) — กดเพื่อดูใหญ่
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {breakdownSelfies.map((s) => (
+                  <a
+                    key={s.entryId}
+                    href={apiUrl(`/api/admin/persona/clock-selfie/${s.entryId}`)}
+                    target="_blank"
+                    rel="noopener"
+                    className="shrink-0 text-center"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={apiUrl(`/api/admin/persona/clock-selfie/${s.entryId}`)}
+                      alt={`selfie ${s.time}`}
+                      className="w-14 h-14 rounded object-cover border border-slate-300"
+                      loading="lazy"
+                    />
+                    <div className={`text-[9px] mt-0.5 ${s.type === "in" ? "text-emerald-600" : "text-rose-500"}`}>
+                      {s.type === "in" ? "เข้า" : "ออก"} {s.date.slice(5)} {s.time}
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
           {breakdownLoading && (
             <p className="text-xs text-slate-500">กำลังโหลด…</p>
           )}

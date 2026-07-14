@@ -65,6 +65,8 @@ const Body = z.object({
   // none yet) so the door display shows a 30s-rotating code; false = clear the
   // secret (back to static/off). The raw secret is never sent to the client.
   rotating_qr_enabled: z.boolean().optional(),
+  // Selfie-at-clock-in (owner 2026-07-14) — own-device anti-cheat, forces GPS.
+  clock_selfie_enabled: z.boolean().optional(),
   // Whether the shift_close staff form must collect a service-charge
   // amount at the top (feeds the staff-share calculator). Added
   // 2026-05-23. Default off — existing branches stay unchanged.
@@ -168,6 +170,10 @@ export async function POST(req: Request) {
   if (parsed.data.clock_qr_enabled !== undefined) {
     sets.push("clock_qr_enabled = ?");
     vals.push(parsed.data.clock_qr_enabled ? 1 : 0);
+  }
+  if (parsed.data.clock_selfie_enabled !== undefined) {
+    sets.push("clock_selfie_enabled = ?");
+    vals.push(parsed.data.clock_selfie_enabled ? 1 : 0);
   }
   if (parsed.data.rotating_qr_enabled !== undefined) {
     if (parsed.data.rotating_qr_enabled) {

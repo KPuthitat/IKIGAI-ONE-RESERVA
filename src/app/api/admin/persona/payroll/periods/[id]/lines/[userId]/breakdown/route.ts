@@ -33,7 +33,7 @@ import {
 // branch_id NULL and the modal already represents that staff's full
 // pay period across branches.
 
-type EntryRow = { id: number; ts: string; type: "in" | "out" };
+type EntryRow = { id: number; ts: string; type: "in" | "out"; selfie_path: string | null };
 
 type DayPair = {
   date: string;          // YYYY-MM-DD (BKK local)
@@ -366,7 +366,7 @@ export async function GET(
   const fromIso = `${period.period_start}T00:00:00`;
   const toIso = `${period.period_end}T23:59:59`;
   const entries = db.prepare(`
-    SELECT id, ts, type FROM time_entries
+    SELECT id, ts, type, selfie_path FROM time_entries
     WHERE user_id = ? AND ts >= ? AND ts <= ?
     ORDER BY ts ASC
   `).all(userId, fromIso, toIso) as EntryRow[];
@@ -500,11 +500,20 @@ export async function GET(
   }
 
   const sortedDays = [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
+
+  // Selfies captured at clock-in/out (owner 2026-07-14) — flat list keyed by
+  // entry id so the admin can spot-check "who actually punched" per day. Only
+  // punches that carry a selfie are returned.
+  const selfies = entries
+    .filter((e) => e.selfie_path)
+    .map((e) => ({ entryId: e.id, date: bkkDate(e.ts), time: bkkHHMM(e.ts), type: e.type }));
+
   return NextResponse.json({
     ok: true,
     is_pt: isPt,
     period_start: period.period_start,
     period_end: period.period_end,
-    days: sortedDays
+    days: sortedDays,
+    selfies
   });
 }

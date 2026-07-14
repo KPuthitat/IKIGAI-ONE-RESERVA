@@ -47,6 +47,7 @@ export default function BranchSettingsForm({
   clockQrToken,
   clockQrEnabled,
   rotatingQrEnabled,
+  selfieEnabled,
   requireServiceCharge,
   requireYesterdayClosing,
   requireMorningOpening,
@@ -75,6 +76,7 @@ export default function BranchSettingsForm({
   clockQrToken: string | null;
   clockQrEnabled: boolean;
   rotatingQrEnabled: boolean;
+  selfieEnabled: boolean;
   requireServiceCharge: boolean;
   requireYesterdayClosing: boolean;
   requireMorningOpening: boolean;
@@ -116,6 +118,8 @@ export default function BranchSettingsForm({
   const [qrOn, setQrOn] = useState<boolean>(clockQrEnabled);
   // Rotating QR (owner 2026-07-14) — door display shows a 30s code; forces GPS.
   const [rotOn, setRotOn] = useState<boolean>(rotatingQrEnabled);
+  // Selfie at clock-in (owner 2026-07-14) — own-device anti-cheat; forces GPS.
+  const [selfieOn, setSelfieOn] = useState<boolean>(selfieEnabled);
   // require_service_charge toggle (added 2026-05-23). When ON, the
   // shift_close staff form shows a mandatory "ยอดเซอร์วิสชาร์จ"
   // field that feeds the staff-share calculator. When OFF, the
@@ -184,6 +188,7 @@ export default function BranchSettingsForm({
     (qrToken || null) === (clockQrToken || null) &&
     qrOn === clockQrEnabled &&
     rotOn === rotatingQrEnabled &&
+    selfieOn === selfieEnabled &&
     svcRequired === requireServiceCharge &&
     yClosingReq === requireYesterdayClosing &&
     mOpeningReq === requireMorningOpening &&
@@ -225,6 +230,7 @@ export default function BranchSettingsForm({
           clock_qr_token: qrToken.trim() || null,
           clock_qr_enabled: qrOn,
           rotating_qr_enabled: rotOn,
+          clock_selfie_enabled: selfieOn,
           require_service_charge: svcRequired,
           require_yesterday_closing: yClosingReq,
           require_morning_opening: mOpeningReq,
@@ -612,6 +618,29 @@ export default function BranchSettingsForm({
             <p className="text-[11px] text-amber-700">
               ⚠️ ยังไม่ได้เปิด GPS geofence ด้านบน — ควรเปิด + ตั้งพิกัดร้าน เพื่อกันลงเวลา
               จากนอกร้าน
+            </p>
+          )}
+        </div>
+
+        {/* ── เซลฟี่ตอนลงเวลา (owner 2026-07-14) — own-device, ไม่ต้องมีอุปกรณ์กลาง ── */}
+        <div className="space-y-2.5 border-l-2 border-emerald-300 pl-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Switch checked={selfieOn} onChange={setSelfieOn} accent="emerald" />
+            <span className="text-sm font-bold text-slate-800">
+              ถ่ายเซลฟี่ตอนลงเวลา (กันกดแทนกัน)
+            </span>
+          </label>
+          <p className="text-[11px] text-slate-500">
+            พนักงานถ่ายเซลฟี่ด้วยมือถือตัวเองตอนลงเวลา (<b>ไม่ต้องมีอุปกรณ์กลาง</b>) เก็บเป็น
+            หลักฐานว่าใครลงเวลาจริง · พิสูจน์ครบ ใคร/ที่ไหน/เมื่อไร และ<b>บังคับเปิด GPS</b>ด้วย
+          </p>
+          <p className="text-[11px] text-slate-400">
+            เป็นข้อมูลภาพใบหน้า (PDPA) · ระบบลบรูปอัตโนมัติหลัง 60 วัน · แจ้งพนักงานก่อนเปิดใช้
+          </p>
+          {selfieOn && !geoOn && (
+            <p className="text-[11px] text-amber-700">
+              ⚠️ ยังไม่ได้เปิด GPS geofence ด้านบน — ควรเปิด + ตั้งพิกัดร้าน (เซลฟี่กันกดแทน
+              แต่ GPS กันลงจากนอกร้าน)
             </p>
           )}
         </div>
