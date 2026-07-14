@@ -872,7 +872,7 @@ function DayDetail({
 export default function LedgerDashboardClient({
   dash, expenses, period, anchor, monthly, trendYear, payables, cashAccounts, cashTotal,
   branchId, companyId, branchName, incomeChannels, expenseCategories, draftExpenses, expenseVendors,
-  paymentMethods, materialQuota, payCycleWeekday
+  paymentMethods, materialQuota, projectedMonthlySales, payCycleWeekday
 }: {
   dash: Dash; expenses: LedgerExpenseRow[]; period: LedgerPeriod; anchor: string;
   monthly: MonthlyRow[]; trendYear: number; payables: Payables;
@@ -893,6 +893,9 @@ export default function LedgerDashboardClient({
     todayIsPurchaseDay: boolean; quotaToday: number; quotaHigh: number; quotaLow: number;
     salesToDate: number; projectedMaterial: number; reqSalesCeil: number; reqSalesGoal: number;
   } | null;
+  // ยอดขายคาดการณ์ทั้งเดือน (= branches.material_target_sales). 0 = สาขายังไม่ตั้งเป้า
+  // → ซ่อน % เทียบยอดคาดในการ์ดรายจ่ายแยกหมวด (owner 2026-07-14).
+  projectedMonthlySales: number;
   payCycleWeekday: number;
 }) {
   const { confirm, ConfirmDialog } = useConfirm();
@@ -1301,12 +1304,26 @@ export default function LedgerDashboardClient({
               <div className="flex-1 space-y-1 min-w-0">
                 {expenseTop.map((c, i) => {
                   const pct = dash.expense > 0 ? Math.round((c.amount / dash.expense) * 100) : 0;
+                  // Secondary, muted %: this category vs the whole-month projected
+                  // sales target (owner 2026-07-14). Shown faintly under the main %
+                  // so it doesn't compete with the share-of-expenses figure. 1dp
+                  // under 10% so small categories don't round to 0.
+                  const pctSales = projectedMonthlySales > 0
+                    ? (c.amount / projectedMonthlySales) * 100
+                    : null;
                   return (
                     <div key={c.label} className="flex items-center gap-2 text-xs">
                       <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
                       <span className="text-slate-600 truncate flex-1">{c.label}</span>
                       <span className="font-mono text-slate-800 shrink-0">฿{fmtMoney(c.amount)}</span>
-                      <span className="font-mono text-slate-400 w-9 text-right shrink-0">{pct}%</span>
+                      <span className="w-12 text-right shrink-0 leading-tight">
+                        <span className="block font-mono text-slate-400">{pct}%</span>
+                        {pctSales != null && (
+                          <span className="block font-mono text-[9px] text-slate-300">
+                            ยอดคาด {pctSales < 10 ? pctSales.toFixed(1) : Math.round(pctSales)}%
+                          </span>
+                        )}
+                      </span>
                     </div>
                   );
                 })}

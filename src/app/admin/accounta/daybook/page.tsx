@@ -205,6 +205,7 @@ export default function DaybookPage({
         draftExpenses={draftExpenses} expenseVendors={expenseVendors}
         paymentMethods={paymentMethods}
         materialQuota={materialQuota}
+        projectedMonthlySales={salesTarget.monthlyTarget}
         payCycleWeekday={payCycleWeekday} />
     </div>
   );
