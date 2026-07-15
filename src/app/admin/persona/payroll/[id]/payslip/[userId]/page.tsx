@@ -233,8 +233,8 @@ export default function PayslipPage({
             line.monthly_salary_snapshot > 0 && line.base_pay > 0 &&
             line.base_pay < line.monthly_salary_snapshot && (
             <div className="-mt-1 mb-1.5 text-[11px] text-slate-500">
-              เฉลี่ยจากอยู่จริง {Math.round((line.base_pay * 30) / line.monthly_salary_snapshot)} วัน
-              (เงินเดือน ฿{fmtMoney(line.monthly_salary_snapshot)} ÷ 30 × จำนวนวัน)
+              เฉลี่ยจากวันที่มาทำงาน {Math.round((line.base_pay * 30) / line.monthly_salary_snapshot)} วัน
+              (เงินเดือน ฿{fmtMoney(line.monthly_salary_snapshot)} ÷ 30 × วันทำงาน)
             </div>
           )}
           {line.ot_pay > 0 && (

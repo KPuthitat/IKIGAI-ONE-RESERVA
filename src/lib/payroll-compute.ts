@@ -557,35 +557,23 @@ export function computePeriodTax(
 
 // ── Main compute function ───────────────────────────────────────────
 
-/** Inclusive calendar-day count between two YYYY-MM-DD dates (lo..hi). */
-function daysInclusive(lo: string, hi: string): number {
-  const a = Date.parse(lo + "T00:00:00Z");
-  const b = Date.parse(hi + "T00:00:00Z");
-  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return 0;
-  return Math.round((b - a) / 86_400_000) + 1;
-}
-
-/** FT hire-month / resignation-month proration (owner 2026-07-15).
- *  A new FT who joins mid-month, or one who leaves mid-month, is paid
- *  monthly_salary / 30 × (calendar days employed in the period) instead of the
- *  full salary. Only a mid-period boundary counts as partial:
- *    - hire_date STRICTLY AFTER period_start (joined after the period began)
- *    - last_working_day STRICTLY BEFORE period_end (left before the period ended)
- *  so a full-period employee is never docked — critical for short months (Feb)
- *  where salary/30 × 28 would otherwise underpay. Returns days employed in-period
- *  for the caller to apply `min(salary, salary/30 × days)`. */
-export function ftProration(
+/** True when this period is the employee's FT hire month or resignation month —
+ *  a partial-employment month whose FT salary is paid per ACTUAL DAYS WORKED
+ *  (attended), at monthly_salary / 30 per day, instead of the full salary
+ *  (owner 2026-07-15). Inclusive of the period boundaries: an FT who becomes
+ *  permanent from day 1 of the month is still paid per days worked in that first
+ *  month ("เข้ามาเป็น FT ตั้งแต่วันแรก เดือนแรก ถ้าทำงานไม่เต็มวัน จะให้รายวันที่
+ *  เข้าทำงาน"). A fully-employed month (hired before the period, no resignation in
+ *  it) returns false → full salary, so normal months are never attendance-docked. */
+export function isFtPartialMonth(
   hireDate: string | null,
   lastDay: string | null,
   periodStart: string,
   periodEnd: string
-): { isPartial: boolean; days: number } {
-  const hireMid = !!hireDate && hireDate > periodStart && hireDate <= periodEnd;
-  const resignMid = !!lastDay && lastDay >= periodStart && lastDay < periodEnd;
-  if (!hireMid && !resignMid) return { isPartial: false, days: 0 };
-  const lo = hireDate && hireDate > periodStart ? hireDate : periodStart;
-  const hi = lastDay && lastDay < periodEnd ? lastDay : periodEnd;
-  return { isPartial: true, days: daysInclusive(lo, hi) };
+): boolean {
+  const hiredThisPeriod = !!hireDate && hireDate >= periodStart && hireDate <= periodEnd;
+  const leftThisPeriod = !!lastDay && lastDay >= periodStart && lastDay <= periodEnd;
+  return hiredThisPeriod || leftThisPeriod;
 }
 
 /** Earliest non-null of two YYYY-MM-DD dates (or null). */
@@ -754,12 +742,11 @@ export function computeLineForEmployee(args: {
     if (e.pay_cycle === cycle && e.monthly_salary && e.is_primary_branch !== 0) {
       if (cycle === "monthly") {
         basePay = e.monthly_salary;
-        // Prorate the hire month / resignation month: salary/30 × days employed
-        // in-period, capped at full salary (owner 2026-07-15). Full months are
-        // untouched (ftProration returns isPartial=false).
-        const pr = ftProration(e.hire_date, e.last_working_day, periodStart, periodEnd);
-        if (pr.isPartial) {
-          basePay = Math.min(e.monthly_salary, round2((e.monthly_salary / 30) * pr.days));
+        // Hire month / resignation month → pay per ACTUAL DAYS WORKED (attended):
+        // salary/30 × days_worked, capped at full salary (owner 2026-07-15,
+        // "รายวันที่เข้าทำงาน"). Normal full months keep the full salary.
+        if (isFtPartialMonth(e.hire_date, e.last_working_day, periodStart, periodEnd)) {
+          basePay = Math.min(e.monthly_salary, round2((e.monthly_salary / 30) * daysSet.size));
         }
       } else {
         // weekly: divide salary by # of Mondays in the calendar month
@@ -904,10 +891,9 @@ export function computeLineFromMinutes(args: {
     // shift-based path above. Non-primary branch gets no base here either.
     if (cycle === "monthly" && e.pay_cycle === "monthly") {
       basePay = e.monthly_salary;
-      // Prorate hire/resignation month by days employed in-period (owner 2026-07-15).
-      const pr = ftProration(e.hire_date, e.last_working_day, periodStart, periodEnd);
-      if (pr.isPartial) {
-        basePay = Math.min(e.monthly_salary, round2((e.monthly_salary / 30) * pr.days));
+      // Hire/resignation month → salary/30 × days worked (attended) (owner 2026-07-15).
+      if (isFtPartialMonth(e.hire_date, e.last_working_day, periodStart, periodEnd)) {
+        basePay = Math.min(e.monthly_salary, round2((e.monthly_salary / 30) * daysWorked));
       }
     } else if (cycle === "weekly" && e.pay_cycle === "weekly") {
       const mondays = countMondaysInMonth(periodEnd) || 4;

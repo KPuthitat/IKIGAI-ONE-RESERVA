@@ -178,43 +178,45 @@ console.log("\nFT เงินเดือนเฉพาะสาขาหล�
   eq("PT สาขาไม่ใช่หลัก → base 400 (8ชม.×50)", ptNon.base_pay, 400);
 }
 
-// 10. เฉลี่ยเงินเดือน FT เดือนแรก/เดือนลาออก = เงินเดือน/30 × วันที่อยู่จริง (owner 2026-07-15).
-//     ใช้เฉพาะเดือนที่เข้า/ออกกลางงวด — เดือนอยู่ครบไม่โดนหาร.
-console.log("\nเฉลี่ยเงินเดือน FT เดือนแรก/เดือนลาออก (owner 2026-07-15):");
+// 10. เฉลี่ยเงินเดือน FT เดือนแรก/เดือนลาออก = เงินเดือน/30 × วันที่มาทำงานจริง (owner 2026-07-15).
+//     ใช้เฉพาะเดือนที่ "เข้า" (เดือนแรก รวมเข้าวันที่ 1) และเดือนที่ "ลาออก" —
+//     เดือนที่อยู่ครบทั้งเดือนไม่โดนหักตามวัน.
+console.log("\nเฉลี่ยเงินเดือน FT เดือนแรก/เดือนลาออก = /30 × วันที่มาทำงาน (owner 2026-07-15):");
 {
-  // งวด ก.ค. 2026 (1-31, 31 วัน). manual path ใช้สาขาหลัก monthly.
-  const jul = (emp: EmployeePayrollSnapshot) => computeLineFromMinutes({
+  // งวด ก.ค. 2026. manual path: daysWorked = จำนวนวันที่มาลงเวลาจริง.
+  const jul = (emp: EmployeePayrollSnapshot, daysWorked: number) => computeLineFromMinutes({
     employee: emp, regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
-    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 0, unpaired: 0,
+    leaveDays: 0, unpaidLeaveDays: 0, daysWorked, unpaired: 0,
     cycle: "monthly", periodStart: "2026-07-01", periodEnd: "2026-07-31", settings: SETTINGS
   });
-  // เข้ากลางเดือน: เริ่ม 25 ก.ค. → อยู่ 25..31 = 7 วัน → 30000/30×7 = 7000
-  const hired = jul({ ...ftMonthly(30000), hire_date: "2026-07-25" });
-  eq("FT เข้า 25 ก.ค. → base 7000", hired.base_pay, 7000);
-  // ลาออกกลางเดือน: วันสุดท้าย 20 ก.ค. → อยู่ 1..20 = 20 วัน → 30000/30×20 = 20000
-  const resigned = jul({ ...ftMonthly(30000), last_working_day: "2026-07-20" });
-  eq("FT ลาออก 20 ก.ค. → base 20000", resigned.base_pay, 20000);
-  // อยู่ครบเดือน (เข้าก่อนงวด ไม่มีลาออก) → เต็ม (regression)
-  const full = jul({ ...ftMonthly(30000), hire_date: "2026-05-01" });
-  eq("FT อยู่ครบเดือน → base 30000", full.base_pay, 30000);
-  // เข้าวันแรกของงวด → เต็ม (ไม่ prorate เพราะ hire_date = period_start)
-  const day1 = jul({ ...ftMonthly(30000), hire_date: "2026-07-01" });
-  eq("FT เข้า 1 ก.ค. → base 30000 (เต็ม)", day1.base_pay, 30000);
-  // ก.พ. 28 วัน คนอยู่ครบเดือน → เต็ม ไม่ใช่ 30000/30×28 (ทดสอบ gate short month)
-  const feb = computeLineFromMinutes({
-    employee: { ...ftMonthly(30000), hire_date: "2026-01-10" },
-    regularMinutes: 0, otMinutes: 0, holidayMinutes: 0, leaveDays: 0, unpaidLeaveDays: 0,
-    daysWorked: 0, unpaired: 0, cycle: "monthly",
-    periodStart: "2026-02-01", periodEnd: "2026-02-28", settings: SETTINGS
+  // เข้ากลางเดือน 25 ก.ค. มาทำงาน 5 วัน → 30000/30×5 = 5000
+  eq("FT เข้า 25 ก.ค. ทำงาน 5 วัน → base 5000",
+    jul({ ...ftMonthly(30000), hire_date: "2026-07-25" }, 5).base_pay, 5000);
+  // เข้าเป็น FT ตั้งแต่วันที่ 1 (เดือนแรก) แต่มาทำงาน 20 วัน → 30000/30×20 = 20000
+  eq("FT เข้า 1 ก.ค. ทำงาน 20 วัน → base 20000",
+    jul({ ...ftMonthly(30000), hire_date: "2026-07-01" }, 20).base_pay, 20000);
+  // ลาออก 20 ก.ค. มาทำงาน 18 วัน → 30000/30×18 = 18000
+  eq("FT ลาออก 20 ก.ค. ทำงาน 18 วัน → base 18000",
+    jul({ ...ftMonthly(30000), last_working_day: "2026-07-20" }, 18).base_pay, 18000);
+  // อยู่ครบเดือน (เข้าก่อนงวด ไม่มีลาออก) → เต็ม แม้ daysWorked ต่ำ (ไม่ใช่เดือนเข้า/ออก)
+  eq("FT อยู่ครบเดือน → base 30000 (ไม่หักตามวัน)",
+    jul({ ...ftMonthly(30000), hire_date: "2026-05-01" }, 0).base_pay, 30000);
+  // cap: เดือนเข้า ทำงาน 31 วัน → min(30000, 30000/30×31) = 30000
+  eq("FT เดือนเข้า ทำงาน 31 วัน → base 30000 (cap)",
+    jul({ ...ftMonthly(30000), hire_date: "2026-07-01" }, 31).base_pay, 30000);
+  // auto path — นับวันจากกะจริง (25..31 ก.ค. = 7 วัน) → 30000/30×7 = 7000
+  const iso = (d: string, hhmm: string) => new Date(`2026-07-${d}T${hhmm}:00+07:00`).toISOString();
+  const shifts = Array.from({ length: 7 }, (_, i) => {
+    const day = String(25 + i).padStart(2, "0");
+    return { startTs: iso(day, "09:00"), endTs: iso(day, "17:00"), durationMinutes: 480 };
   });
-  eq("FT ก.พ. อยู่ครบ → base 30000 (ไม่หาร 28)", feb.base_pay, 30000);
-  // auto path (computeLineForEmployee) ต้อง prorate เหมือนกัน — เข้า 25 ก.ค. ไม่มีกะ
   const auto = computeLineForEmployee({
     employee: { ...ftMonthly(30000), hire_date: "2026-07-25" },
-    shifts: [], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+    shifts, unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
     cycle: "monthly", periodStart: "2026-07-01", periodEnd: "2026-07-31",
     settings: SETTINGS, holidaySet: new Set<string>()
   });
+  eq("auto: FT เข้า 25 ก.ค. มีกะ 7 วัน → days_worked 7", auto.days_worked, 7);
   eq("auto: FT เข้า 25 ก.ค. → base 7000", auto.base_pay, 7000);
 }
 
