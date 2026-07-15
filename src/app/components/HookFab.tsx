@@ -147,6 +147,7 @@ export default function HookFab({
     monthCount: number; monthBaht: number; totalCount: number; totalBaht: number;
     ocr: { monthCount: number; monthBaht: number };
     owl: { monthCount: number; monthBaht: number };
+    fin?: { monthCount: number; monthBaht: number };
   };
   const [aiUsage, setAiUsage] = useState<AiUsage | null>(null);
 
@@ -492,7 +493,8 @@ export default function HookFab({
                 <span className="font-bold text-slate-600">ค่าใช้ Claude API เดือนนี้:</span>{" "}
                 {aiUsage.monthCount} ครั้ง ~฿{aiUsage.monthBaht.toFixed(2)}
                 <span className="text-slate-400">
-                  {" "}(สแกนบิล {aiUsage.ocr.monthCount} · ถามน้องฮูก {aiUsage.owl.monthCount}) ·
+                  {" "}(สแกนบิล {aiUsage.ocr.monthCount} · ถามน้องฮูก {aiUsage.owl.monthCount}
+                  {aiUsage.fin ? ` · วิเคราะห์การเงิน ${aiUsage.fin.monthCount}` : ""}) ·
                   รวมทั้งหมด ~฿{aiUsage.totalBaht.toFixed(2)}
                 </span>
               </div>

@@ -125,7 +125,7 @@ export async function POST(req: Request) {
     // proxy_read_timeout — a non-streaming Opus call would time out (504 →
     // maintenance HTML → client can't parse it). FinAnalysisError is thrown
     // BEFORE the stream starts, so config/API errors still return clean JSON.
-    const stream = await streamFinancialAnalysis(snapshot);
+    const stream = await streamFinancialAnalysis(snapshot, user.id, branchId);
     return new Response(stream, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",

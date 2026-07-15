@@ -6012,6 +6012,22 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_owl_ai_usage_created
       ON owl_ai_usage(created_at);
 
+    -- Financial-analysis (กูรูการเงิน) usage log: one row per analysis call, so
+    -- the AI spend counter can include it (same pattern as OCR / น้องฮูก). Uses
+    -- Opus 4.8 so cost is priced via owlAiCostBaht, not the OCR table.
+    CREATE TABLE IF NOT EXISTS fin_analysis_usage (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      model         TEXT NOT NULL,
+      input_tokens  INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cost_baht     REAL NOT NULL DEFAULT 0,
+      branch_id     INTEGER REFERENCES branches(id) ON DELETE SET NULL,
+      created_by    INTEGER REFERENCES users(id),
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_fin_analysis_usage_created
+      ON fin_analysis_usage(created_at);
+
     -- Owner-extensible picklists (owner 2026-06-17): expense categories
     -- (seeded from the owner's Excel chart — UT/RT/GD/…) and payment
     -- channels (so future "director credit card · bank X" can be added

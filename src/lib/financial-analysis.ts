@@ -11,6 +11,8 @@
 // to enable น้องฮูก just to see this button (owner 2026-07-15 "ให้ขึ้นใต้การ์ด
 // โควต้าสั่งซื้อได้เลย"). No new system setting / migration.
 
+import { logFinAnalysisUsage } from "./accounta-db";
+
 const API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 // Best model for the quality of analysis the owner asked for ("กูรูระดับโลก").
@@ -171,7 +173,9 @@ function buildUserContent(s: FinancialSnapshot): string {
  *  Any config/API problem is thrown as FinAnalysisError BEFORE the stream starts
  *  so the route can return a JSON error instead of an empty stream. */
 export async function streamFinancialAnalysis(
-  snapshot: FinancialSnapshot
+  snapshot: FinancialSnapshot,
+  userId: number,
+  branchId: number
 ): Promise<ReadableStream<Uint8Array>> {
   if (!financialAnalysisEnabled()) {
     throw new FinAnalysisError("disabled", "ฟีเจอร์ผู้ช่วย AI ปิดอยู่ — เปิดได้ที่ตั้งค่าระบบ");
@@ -223,12 +227,26 @@ export async function streamFinancialAnalysis(
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buf = "";
+  // Token usage arrives in message_start (input) + message_delta (cumulative
+  // output); log it once when the stream ends so the AI spend counter includes
+  // this call. A DB error here must never break the user-facing stream.
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let logged = false;
+  const flushUsage = () => {
+    if (logged) return;
+    logged = true;
+    try {
+      logFinAnalysisUsage({ model: FIN_ANALYSIS_MODEL, inputTokens, outputTokens, branchId, userId });
+    } catch { /* never break the stream over a usage-log write */ }
+  };
 
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
         const { done, value } = await upstream.read();
         if (done) {
+          flushUsage();
           controller.close();
           return;
         }
@@ -240,18 +258,30 @@ export async function streamFinancialAnalysis(
           if (!trimmed.startsWith("data:")) continue;
           const payload = trimmed.slice(5).trim();
           if (!payload || payload === "[DONE]") continue;
-          let evt: { type?: string; delta?: { type?: string; text?: string } };
+          let evt: {
+            type?: string;
+            delta?: { type?: string; text?: string };
+            message?: { usage?: { input_tokens?: number; output_tokens?: number } };
+            usage?: { output_tokens?: number };
+          };
           try { evt = JSON.parse(payload); } catch { continue; }
           if (evt.type === "content_block_delta" && evt.delta?.type === "text_delta" && evt.delta.text) {
             controller.enqueue(encoder.encode(evt.delta.text));
+          } else if (evt.type === "message_start") {
+            inputTokens = evt.message?.usage?.input_tokens ?? inputTokens;
+            outputTokens = evt.message?.usage?.output_tokens ?? outputTokens;
+          } else if (evt.type === "message_delta" && typeof evt.usage?.output_tokens === "number") {
+            outputTokens = evt.usage.output_tokens; // cumulative — keep latest
           }
         }
       } catch {
-        // Upstream hiccup mid-stream — end gracefully with whatever we sent.
+        // Upstream hiccup mid-stream — bill what we saw, then end gracefully.
+        flushUsage();
         controller.close();
       }
     },
     cancel() {
+      flushUsage();
       upstream.cancel().catch(() => { /* ignore */ });
     }
   });

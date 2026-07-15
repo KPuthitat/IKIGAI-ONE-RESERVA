@@ -9,6 +9,7 @@ import {
   splitVat, round2, ocrCostBaht, CAPEX_CATEGORY_NAME,
   type ExpenseInput, type PaymentStatus
 } from "./accounta";
+import { owlAiCostBaht } from "./owl-ai-models";
 
 export type VendorRow = {
   id: number;
@@ -2081,6 +2082,43 @@ export function ocrUsageStats(month: string): {
   `).get(month) as { c: number; b: number };
   const t = db.prepare(
     "SELECT COUNT(*) AS c, COALESCE(SUM(cost_baht),0) AS b FROM accounta_ocr_usage"
+  ).get() as { c: number; b: number };
+  return {
+    monthCount: m.c, monthBaht: round2(m.b),
+    totalCount: t.c, totalBaht: round2(t.b)
+  };
+}
+
+// ── Financial-analysis (กูรูการเงิน) usage log ─────────────────────
+// Opus 4.8 → price via owlAiCostBaht (the OCR table has no Opus row and would
+// misprice it as Haiku).
+
+export function logFinAnalysisUsage(d: {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  branchId?: number | null;
+  userId: number;
+}): number {
+  const cost = owlAiCostBaht(d.model, d.inputTokens, d.outputTokens);
+  const info = getDb().prepare(`
+    INSERT INTO fin_analysis_usage (model, input_tokens, output_tokens, cost_baht, branch_id, created_by)
+    VALUES (?,?,?,?,?,?)
+  `).run(d.model, d.inputTokens, d.outputTokens, cost, d.branchId ?? null, d.userId);
+  return Number(info.lastInsertRowid);
+}
+
+/** Financial-analysis spend this calendar month + all-time, for the AI counter. */
+export function finAnalysisUsageStats(month: string): {
+  monthCount: number; monthBaht: number; totalCount: number; totalBaht: number;
+} {
+  const db = getDb();
+  const m = db.prepare(`
+    SELECT COUNT(*) AS c, COALESCE(SUM(cost_baht),0) AS b
+      FROM fin_analysis_usage WHERE substr(created_at,1,7) = ?
+  `).get(month) as { c: number; b: number };
+  const t = db.prepare(
+    "SELECT COUNT(*) AS c, COALESCE(SUM(cost_baht),0) AS b FROM fin_analysis_usage"
   ).get() as { c: number; b: number };
   return {
     monthCount: m.c, monthBaht: round2(m.b),
