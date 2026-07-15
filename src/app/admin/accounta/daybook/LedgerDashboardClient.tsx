@@ -882,18 +882,36 @@ function FinancialAnalysisCard({
   async function run() {
     setLoading(true);
     setError(null);
+    setAnalysis("");
     try {
       const res = await fetch(apiUrl("/api/admin/accounta/financial-analysis"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ period, anchor })
       });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) {
+      // Errors come back as JSON (before the stream starts); success is a plain
+      // text stream we append as it arrives so the analysis "types out".
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => null);
         setError(data?.message ?? "วิเคราะห์ไม่สำเร็จ ลองใหม่อีกครั้ง");
         return;
       }
-      setAnalysis(String(data.analysis ?? ""));
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let acc = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        acc += decoder.decode(value, { stream: true });
+        setAnalysis(acc);
+      }
+      acc += decoder.decode();
+      if (!acc.trim()) {
+        setAnalysis(null);
+        setError("AI ไม่ได้ตอบกลับ ลองใหม่อีกครั้ง");
+      } else {
+        setAnalysis(acc);
+      }
     } catch {
       setError("เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง");
     } finally {

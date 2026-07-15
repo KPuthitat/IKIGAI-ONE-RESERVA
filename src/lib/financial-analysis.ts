@@ -31,8 +31,6 @@ export function financialAnalysisEnabled(): boolean {
   return !!process.env.ANTHROPIC_API_KEY;
 }
 
-type AnthropicUsage = { input_tokens: number; output_tokens: number };
-
 // The financial picture the route hands us — all real figures from the ledger.
 export type FinancialSnapshot = {
   branchName: string;
@@ -161,11 +159,20 @@ function buildUserContent(s: FinancialSnapshot): string {
   return lines.join("\n");
 }
 
-/** Call Claude with the assembled snapshot. Throws FinAnalysisError with a Thai
- *  message on any config/API problem so the route can surface it verbatim. */
-export async function generateFinancialAnalysis(
+/** Call Claude with the assembled snapshot and STREAM the answer back as a
+ *  ReadableStream of UTF-8 text (only `text_delta` content is forwarded).
+ *
+ *  Streaming is required, not a nicety: prod Nginx has `proxy_read_timeout 60s`
+ *  and serves the maintenance page on 504. A non-streaming Opus call on the 1 GB
+ *  droplet sends nothing until the whole answer is ready and blows past 60s;
+ *  streaming keeps bytes flowing so each delta resets the read timer
+ *  (Nginx already runs `proxy_buffering off`).
+ *
+ *  Any config/API problem is thrown as FinAnalysisError BEFORE the stream starts
+ *  so the route can return a JSON error instead of an empty stream. */
+export async function streamFinancialAnalysis(
   snapshot: FinancialSnapshot
-): Promise<{ text: string; usage: AnthropicUsage; model: string }> {
+): Promise<ReadableStream<Uint8Array>> {
   if (!financialAnalysisEnabled()) {
     throw new FinAnalysisError("disabled", "ฟีเจอร์ผู้ช่วย AI ปิดอยู่ — เปิดได้ที่ตั้งค่าระบบ");
   }
@@ -185,8 +192,13 @@ export async function generateFinancialAnalysis(
       },
       body: JSON.stringify({
         model: FIN_ANALYSIS_MODEL,
-        max_tokens: 16000,
-        thinking: { type: "adaptive" },
+        max_tokens: 8000,
+        // No extended thinking on purpose: a thinking phase emits no *visible*
+        // text, so with our text-only re-stream nothing would reach Nginx during
+        // it — and a >60s think would still trip proxy_read_timeout. Plain output
+        // starts within a few seconds so bytes flow continuously and reset the
+        // read timer. Opus 4.8 without thinking is still strong for this task.
+        stream: true,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: buildUserContent(snapshot) }]
       })
@@ -195,7 +207,7 @@ export async function generateFinancialAnalysis(
     throw new FinAnalysisError("network", "เชื่อมต่อบริการ AI ไม่ได้ ลองใหม่อีกครั้ง");
   }
 
-  if (!res.ok) {
+  if (!res.ok || !res.body) {
     const status = res.status;
     let detail = "";
     try { detail = (await res.json())?.error?.message ?? ""; } catch { /* ignore */ }
@@ -204,20 +216,43 @@ export async function generateFinancialAnalysis(
     throw new FinAnalysisError("api_error", `บริการ AI ขัดข้อง (${status})${detail ? ": " + detail : ""}`);
   }
 
-  const json = await res.json().catch(() => null) as {
-    content?: Array<{ type: string; text?: string }>;
-    usage?: AnthropicUsage;
-  } | null;
-  // Adaptive thinking adds `thinking` blocks — keep only the visible text.
-  const text = (json?.content ?? [])
-    .filter((c) => c.type === "text" && typeof c.text === "string")
-    .map((c) => c.text)
-    .join("")
-    .trim();
-  const usage = json?.usage ?? { input_tokens: 0, output_tokens: 0 };
+  // Re-stream: parse Anthropic SSE and emit only text_delta text. The upstream
+  // body arrives as `event:`/`data: {json}` line pairs; a `data:` line can be
+  // split across chunks, so we buffer the trailing partial line.
+  const upstream = res.body.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buf = "";
 
-  if (!text) {
-    throw new FinAnalysisError("empty", "AI ไม่ได้ตอบกลับ ลองใหม่อีกครั้ง");
-  }
-  return { text, usage, model: FIN_ANALYSIS_MODEL };
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await upstream.read();
+        if (done) {
+          controller.close();
+          return;
+        }
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? ""; // keep the last, possibly-incomplete line
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const payload = trimmed.slice(5).trim();
+          if (!payload || payload === "[DONE]") continue;
+          let evt: { type?: string; delta?: { type?: string; text?: string } };
+          try { evt = JSON.parse(payload); } catch { continue; }
+          if (evt.type === "content_block_delta" && evt.delta?.type === "text_delta" && evt.delta.text) {
+            controller.enqueue(encoder.encode(evt.delta.text));
+          }
+        }
+      } catch {
+        // Upstream hiccup mid-stream — end gracefully with whatever we sent.
+        controller.close();
+      }
+    },
+    cancel() {
+      upstream.cancel().catch(() => { /* ignore */ });
+    }
+  });
 }

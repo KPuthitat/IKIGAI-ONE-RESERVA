@@ -10,7 +10,7 @@ import {
 } from "@/lib/accounta-db";
 import { salesTargetProgress } from "@/lib/sales-target";
 import {
-  generateFinancialAnalysis, financialAnalysisEnabled, FinAnalysisError,
+  streamFinancialAnalysis, financialAnalysisEnabled, FinAnalysisError,
   type FinancialSnapshot
 } from "@/lib/financial-analysis";
 
@@ -52,77 +52,87 @@ export async function POST(req: Request) {
     );
   }
 
-  // Assemble the same figures the daybook page renders, server-side.
-  const dash = ledgerDashboard(branchId, period, anchor);
-  const quotaToday = todayBkk();
-  const monthDash = (period === "month" && anchor.slice(0, 7) === quotaToday.slice(0, 7))
-    ? dash
-    : ledgerDashboard(branchId, "month", quotaToday);
-  const materialQuota = materialPurchaseQuota(branchId, quotaToday, monthDash.forecast, monthDash.salesRevenue);
-  const salesTarget = salesTargetProgress(branchId, quotaToday, monthDash.salesRevenue);
-  const payables = accountaPayables(branchId);
-  const cashTotal = cashAccountsTotal(branchId);
-  const trend = monthlyTrend(branchId, Number(anchor.slice(0, 4)));
-  const branch = getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined;
-
-  const cogNowPct = materialQuota && materialQuota.salesToDate > 0
-    ? (materialQuota.spentThisMonth / materialQuota.salesToDate) * 100
-    : null;
-
-  const snapshot: FinancialSnapshot = {
-    branchName: branch?.name ?? `#${branchId}`,
-    periodLabel: dash.label,
-    periodKind: period,
-    salesRevenue: dash.salesRevenue,
-    financing: dash.financing,
-    expense: dash.expense,
-    net: dash.net,
-    netMarginPct: dash.salesRevenue > 0 ? (dash.net / dash.salesRevenue) * 100 : null,
-    inputVat: dash.inputVat,
-    outputVat: dash.outputVat,
-    vatPayable: dash.vatPayable,
-    vatRegistered: dash.vatRegistered,
-    forecast: dash.forecast,
-    avgPerDay: dash.avgPerDay,
-    daysWithRevenue: dash.daysWithRevenue,
-    categories: dash.categories.map((c) => ({
-      name: c.name, spent: c.spent, pct: c.pct,
-      targetMin: c.targetMin, targetMax: c.targetMax, status: c.status
-    })),
-    uncategorized: dash.uncategorized,
-    outstandingTotal: dash.outstandingTotal,
-    topVendors: dash.byVendor.slice(0, 8).map((v) => ({ vendor: v.vendor, amount: v.amount })),
-    salesTarget: {
-      hasTarget: salesTarget.hasTarget,
-      monthlyTarget: salesTarget.monthlyTarget,
-      monthToDateSales: salesTarget.monthToDateSales,
-      monthPct: salesTarget.monthPct
-    },
-    materialQuota: materialQuota ? {
-      budgetPct: materialQuota.budgetPct,
-      goalPct: materialQuota.goalPct,
-      spentThisMonth: materialQuota.spentThisMonth,
-      monthBudget: materialQuota.monthBudget,
-      remainingBudget: materialQuota.remainingBudget,
-      salesToDate: materialQuota.salesToDate,
-      projectedMaterial: materialQuota.projectedMaterial,
-      cogNowPct,
-      reqSalesCeil: materialQuota.reqSalesCeil,
-      reqSalesGoal: materialQuota.reqSalesGoal
-    } : null,
-    payables: {
-      whtUnpaid: payables.whtUnpaid,
-      ssoUnpaid: payables.ssoUnpaid,
-      branchUnpaidTotal: payables.branchUnpaidTotal,
-      branchUnpaidCount: payables.branchUnpaidCount
-    },
-    cashTotal,
-    monthlyTrend: trend.map((m) => ({ month: m.month, revenue: m.revenue, expense: m.expense, profit: m.profit }))
-  };
-
   try {
-    const { text } = await generateFinancialAnalysis(snapshot);
-    return NextResponse.json({ ok: true, analysis: text });
+    // Assemble the same figures the daybook page renders, server-side.
+    const dash = ledgerDashboard(branchId, period, anchor);
+    const quotaToday = todayBkk();
+    const monthDash = (period === "month" && anchor.slice(0, 7) === quotaToday.slice(0, 7))
+      ? dash
+      : ledgerDashboard(branchId, "month", quotaToday);
+    const materialQuota = materialPurchaseQuota(branchId, quotaToday, monthDash.forecast, monthDash.salesRevenue);
+    const salesTarget = salesTargetProgress(branchId, quotaToday, monthDash.salesRevenue);
+    const payables = accountaPayables(branchId);
+    const cashTotal = cashAccountsTotal(branchId);
+    const trend = monthlyTrend(branchId, Number(anchor.slice(0, 4)));
+    const branch = getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined;
+
+    const cogNowPct = materialQuota && materialQuota.salesToDate > 0
+      ? (materialQuota.spentThisMonth / materialQuota.salesToDate) * 100
+      : null;
+
+    const snapshot: FinancialSnapshot = {
+      branchName: branch?.name ?? `#${branchId}`,
+      periodLabel: dash.label,
+      periodKind: period,
+      salesRevenue: dash.salesRevenue,
+      financing: dash.financing,
+      expense: dash.expense,
+      net: dash.net,
+      netMarginPct: dash.salesRevenue > 0 ? (dash.net / dash.salesRevenue) * 100 : null,
+      inputVat: dash.inputVat,
+      outputVat: dash.outputVat,
+      vatPayable: dash.vatPayable,
+      vatRegistered: dash.vatRegistered,
+      forecast: dash.forecast,
+      avgPerDay: dash.avgPerDay,
+      daysWithRevenue: dash.daysWithRevenue,
+      categories: dash.categories.map((c) => ({
+        name: c.name, spent: c.spent, pct: c.pct,
+        targetMin: c.targetMin, targetMax: c.targetMax, status: c.status
+      })),
+      uncategorized: dash.uncategorized,
+      outstandingTotal: dash.outstandingTotal,
+      topVendors: dash.byVendor.slice(0, 8).map((v) => ({ vendor: v.vendor, amount: v.amount })),
+      salesTarget: {
+        hasTarget: salesTarget.hasTarget,
+        monthlyTarget: salesTarget.monthlyTarget,
+        monthToDateSales: salesTarget.monthToDateSales,
+        monthPct: salesTarget.monthPct
+      },
+      materialQuota: materialQuota ? {
+        budgetPct: materialQuota.budgetPct,
+        goalPct: materialQuota.goalPct,
+        spentThisMonth: materialQuota.spentThisMonth,
+        monthBudget: materialQuota.monthBudget,
+        remainingBudget: materialQuota.remainingBudget,
+        salesToDate: materialQuota.salesToDate,
+        projectedMaterial: materialQuota.projectedMaterial,
+        cogNowPct,
+        reqSalesCeil: materialQuota.reqSalesCeil,
+        reqSalesGoal: materialQuota.reqSalesGoal
+      } : null,
+      payables: {
+        whtUnpaid: payables.whtUnpaid,
+        ssoUnpaid: payables.ssoUnpaid,
+        branchUnpaidTotal: payables.branchUnpaidTotal,
+        branchUnpaidCount: payables.branchUnpaidCount
+      },
+      cashTotal,
+      monthlyTrend: trend.map((m) => ({ month: m.month, revenue: m.revenue, expense: m.expense, profit: m.profit }))
+    };
+
+    // Stream the answer so it starts flowing well before Nginx's 60s
+    // proxy_read_timeout — a non-streaming Opus call would time out (504 →
+    // maintenance HTML → client can't parse it). FinAnalysisError is thrown
+    // BEFORE the stream starts, so config/API errors still return clean JSON.
+    const stream = await streamFinancialAnalysis(snapshot);
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+        "X-Accel-Buffering": "no"
+      }
+    });
   } catch (e) {
     if (e instanceof FinAnalysisError) {
       return NextResponse.json({ error: e.code, message: e.message }, { status: 400 });
