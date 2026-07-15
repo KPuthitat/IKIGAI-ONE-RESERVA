@@ -223,6 +223,20 @@ export default function PayslipPage({
         {/* Earnings */}
         <Section title={t(lang, "admin.persona.payroll.payslip.earningsSection")}>
           <Money label={t(lang, "admin.persona.payroll.col.basePay")} value={line.base_pay} />
+          {/* FT hire/resignation-month proration note (owner 2026-07-15). Shown
+              only for a monthly-cycle FT whose base is below full salary WITHOUT
+              unpaid leave. Gated to pay_cycle="monthly" + base>0 so it never
+              fires on a weekly-transition line (base = salary/#Mondays) or a
+              non-primary-branch line (base 0 by the home-branch rule). */}
+          {line.employment_type === "ft" && line.pay_cycle_snapshot === "monthly" &&
+            line.unpaid_leave_days === 0 && line.monthly_salary_snapshot != null &&
+            line.monthly_salary_snapshot > 0 && line.base_pay > 0 &&
+            line.base_pay < line.monthly_salary_snapshot && (
+            <div className="-mt-1 mb-1.5 text-[11px] text-slate-500">
+              เฉลี่ยจากอยู่จริง {Math.round((line.base_pay * 30) / line.monthly_salary_snapshot)} วัน
+              (เงินเดือน ฿{fmtMoney(line.monthly_salary_snapshot)} ÷ 30 × จำนวนวัน)
+            </div>
+          )}
           {line.ot_pay > 0 && (
             <Money label={t(lang, "admin.persona.payroll.col.otPay")} value={line.ot_pay} />
           )}

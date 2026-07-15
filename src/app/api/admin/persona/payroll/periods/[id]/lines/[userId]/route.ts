@@ -4,7 +4,7 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import {
-  computeLineFromMinutes, computeSso, computeWht,
+  computeLineFromMinutes, computeSso, computeWht, earliestDate,
   type EmployeePayrollSnapshot, type PayrollSettings
 } from "@/lib/payroll-compute";
 
@@ -74,9 +74,9 @@ export async function PATCH(
 
   const db = getDb();
   const period = db.prepare(`
-    SELECT status, cycle, period_end, branch_id FROM payroll_periods WHERE id = ?
+    SELECT status, cycle, period_start, period_end, branch_id FROM payroll_periods WHERE id = ?
   `).get(periodId) as
-    { status: string; cycle: "weekly" | "monthly"; period_end: string; branch_id: number | null } | undefined;
+    { status: string; cycle: "weekly" | "monthly"; period_start: string; period_end: string; branch_id: number | null } | undefined;
   if (!period) return NextResponse.json({ error: "period_not_found" }, { status: 404 });
   if (period.status !== "draft") {
     return NextResponse.json({ error: "must_be_draft" }, { status: 400 });
@@ -144,7 +144,12 @@ export async function PATCH(
     `).get() as PayrollSettings;
 
     const fresh = db.prepare(`
-      SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance
+      SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
+             hire_date,
+             (SELECT MAX(proposed_last_day) FROM resignation_requests
+                WHERE user_id = users.id AND status = 'approved') AS resign_last_day,
+             (SELECT MAX(effective_date) FROM termination_records
+                WHERE user_id = users.id AND status IN ('scheduled','executed')) AS term_last_day
       FROM users WHERE id = ?
     `).get(userId) as {
       employment_type: "pt" | "ft" | null;
@@ -153,6 +158,9 @@ export async function PATCH(
       pay_cycle: "weekly" | "monthly" | null;
       salary_tax_mode: "sso" | "wht" | null;
       track_attendance: number | null;
+      hire_date: string | null;
+      resign_last_day: string | null;
+      term_last_day: string | null;
     } | undefined;
 
     // Home-branch flag for FT salary (owner 2026-07-14) — pay salary only at
@@ -176,7 +184,9 @@ export async function PATCH(
       pay_cycle: fresh?.pay_cycle ?? line.pay_cycle_snapshot,
       salary_tax_mode: fresh?.salary_tax_mode ?? line.salary_tax_mode_snapshot,
       track_attendance: fresh?.track_attendance ?? 1,
-      is_primary_branch: isPrimaryBranch
+      is_primary_branch: isPrimaryBranch,
+      hire_date: fresh?.hire_date ?? null,
+      last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null
     };
 
     const computed = computeLineFromMinutes({
@@ -189,6 +199,7 @@ export async function PATCH(
       daysWorked: d.days_worked ?? line.days_worked,
       unpaired: line.unpaired_clockins,
       cycle: period.cycle,
+      periodStart: period.period_start,
       periodEnd: period.period_end,
       settings,
       serviceCharge: d.service_charge ?? line.service_charge,

@@ -58,6 +58,26 @@ export type EmployeePayrollSnapshot = {
    *  the branch worked. Defaults to 1 (single-branch = own branch is primary).
    *  Non-branch/legacy callers pass 1 so behaviour is unchanged. */
   is_primary_branch: number;
+  /** วันเริ่มงาน (YYYY-MM-DD) — used to prorate the FT hire month. null = unknown
+   *  → no proration (full salary, legacy behaviour). */
+  hire_date: string | null;
+  /** วันทำงานวันสุดท้าย (YYYY-MM-DD) — approved resignation `proposed_last_day` or
+   *  termination `effective_date` — used to prorate the FT resignation month.
+   *  null = still employed → no proration. */
+  last_working_day: string | null;
+};
+
+// SQL fragment (correlated subqueries on `users.id`) that yields the two
+// possible last-working-day sources; callers combine them with earliestDate().
+const LAST_WORKING_DAY_SELECT = `
+  (SELECT MAX(proposed_last_day) FROM resignation_requests
+     WHERE user_id = users.id AND status = 'approved') AS resign_last_day,
+  (SELECT MAX(effective_date) FROM termination_records
+     WHERE user_id = users.id AND status IN ('scheduled','executed')) AS term_last_day`;
+
+type StaffRawRow = Omit<EmployeePayrollSnapshot, "last_working_day"> & {
+  resign_last_day: string | null;
+  term_last_day: string | null;
 };
 
 // PT premium multiplier on public holidays (per company rule)
@@ -537,6 +557,44 @@ export function computePeriodTax(
 
 // ── Main compute function ───────────────────────────────────────────
 
+/** Inclusive calendar-day count between two YYYY-MM-DD dates (lo..hi). */
+function daysInclusive(lo: string, hi: string): number {
+  const a = Date.parse(lo + "T00:00:00Z");
+  const b = Date.parse(hi + "T00:00:00Z");
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return 0;
+  return Math.round((b - a) / 86_400_000) + 1;
+}
+
+/** FT hire-month / resignation-month proration (owner 2026-07-15).
+ *  A new FT who joins mid-month, or one who leaves mid-month, is paid
+ *  monthly_salary / 30 × (calendar days employed in the period) instead of the
+ *  full salary. Only a mid-period boundary counts as partial:
+ *    - hire_date STRICTLY AFTER period_start (joined after the period began)
+ *    - last_working_day STRICTLY BEFORE period_end (left before the period ended)
+ *  so a full-period employee is never docked — critical for short months (Feb)
+ *  where salary/30 × 28 would otherwise underpay. Returns days employed in-period
+ *  for the caller to apply `min(salary, salary/30 × days)`. */
+export function ftProration(
+  hireDate: string | null,
+  lastDay: string | null,
+  periodStart: string,
+  periodEnd: string
+): { isPartial: boolean; days: number } {
+  const hireMid = !!hireDate && hireDate > periodStart && hireDate <= periodEnd;
+  const resignMid = !!lastDay && lastDay >= periodStart && lastDay < periodEnd;
+  if (!hireMid && !resignMid) return { isPartial: false, days: 0 };
+  const lo = hireDate && hireDate > periodStart ? hireDate : periodStart;
+  const hi = lastDay && lastDay < periodEnd ? lastDay : periodEnd;
+  return { isPartial: true, days: daysInclusive(lo, hi) };
+}
+
+/** Earliest non-null of two YYYY-MM-DD dates (or null). */
+export function earliestDate(a: string | null | undefined, b: string | null | undefined): string | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return a < b ? a : b;
+}
+
 export function computeLineForEmployee(args: {
   employee: EmployeePayrollSnapshot;
   shifts: Shift[];
@@ -544,6 +602,7 @@ export function computeLineForEmployee(args: {
   leaveDays: number;
   unpaidLeaveDays?: number;
   cycle: "weekly" | "monthly";
+  periodStart: string;        // YYYY-MM-DD (used for FT hire/resignation proration)
   periodEnd: string;          // YYYY-MM-DD (used for FT-weekly division)
   settings: PayrollSettings;
   holidaySet: Set<string>;    // YYYY-MM-DD dates that count as PT premium days
@@ -562,7 +621,7 @@ export function computeLineForEmployee(args: {
   // present field wins over the computed one.
   fieldOverridesByDate?: Map<string, DayFieldOverride>;
 }): ComputedLine {
-  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodEnd, settings, holidaySet, scheduledByDate, approvedOtByDate, fieldOverridesByDate } = args;
+  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, scheduledByDate, approvedOtByDate, fieldOverridesByDate } = args;
 
   // Determine effective hourly rate (used for legal OT mode + display)
   const ptRate = e.hourly_rate ?? settings.pt_default_hourly_rate;
@@ -695,6 +754,13 @@ export function computeLineForEmployee(args: {
     if (e.pay_cycle === cycle && e.monthly_salary && e.is_primary_branch !== 0) {
       if (cycle === "monthly") {
         basePay = e.monthly_salary;
+        // Prorate the hire month / resignation month: salary/30 × days employed
+        // in-period, capped at full salary (owner 2026-07-15). Full months are
+        // untouched (ftProration returns isPartial=false).
+        const pr = ftProration(e.hire_date, e.last_working_day, periodStart, periodEnd);
+        if (pr.isPartial) {
+          basePay = Math.min(e.monthly_salary, round2((e.monthly_salary / 30) * pr.days));
+        }
       } else {
         // weekly: divide salary by # of Mondays in the calendar month
         // containing periodEnd (= number of weekly pay-dates in that month)
@@ -800,6 +866,7 @@ export function computeLineFromMinutes(args: {
   daysWorked: number;
   unpaired: number;
   cycle: "weekly" | "monthly";
+  periodStart: string;
   periodEnd: string;
   settings: PayrollSettings;
   serviceCharge?: number;
@@ -808,7 +875,7 @@ export function computeLineFromMinutes(args: {
 }): ComputedLine {
   const {
     employee: e, regularMinutes, otMinutes, holidayMinutes, leaveDays,
-    unpaidLeaveDays = 0, daysWorked, unpaired, cycle, periodEnd, settings,
+    unpaidLeaveDays = 0, daysWorked, unpaired, cycle, periodStart, periodEnd, settings,
     serviceCharge = 0, otherAdditions = 0, otherDeductions = 0
   } = args;
 
@@ -837,6 +904,11 @@ export function computeLineFromMinutes(args: {
     // shift-based path above. Non-primary branch gets no base here either.
     if (cycle === "monthly" && e.pay_cycle === "monthly") {
       basePay = e.monthly_salary;
+      // Prorate hire/resignation month by days employed in-period (owner 2026-07-15).
+      const pr = ftProration(e.hire_date, e.last_working_day, periodStart, periodEnd);
+      if (pr.isPartial) {
+        basePay = Math.min(e.monthly_salary, round2((e.monthly_salary / 30) * pr.days));
+      }
     } else if (cycle === "weekly" && e.pay_cycle === "weekly") {
       const mondays = countMondaysInMonth(periodEnd) || 4;
       basePay = e.monthly_salary / mondays;
@@ -1036,6 +1108,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   const staffSql = `
     SELECT id AS user_id, display_name, employment_type, employee_code,
            hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
+           hire_date,
+           ${LAST_WORKING_DAY_SELECT},
            ${primaryExpr}
     FROM users
     WHERE role IN ('staff', 'admin') AND employment_type IS NOT NULL
@@ -1046,9 +1120,13 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
   `;
-  const staff = (period.branch_id != null
+  const staffRaw = (period.branch_id != null
     ? db.prepare(staffSql).all({ bid: period.branch_id })
-    : db.prepare(staffSql).all()) as EmployeePayrollSnapshot[];
+    : db.prepare(staffSql).all()) as Array<StaffRawRow>;
+  const staff: EmployeePayrollSnapshot[] = staffRaw.map((r) => ({
+    ...r,
+    last_working_day: earliestDate(r.resign_last_day, r.term_last_day)
+  }));
 
   // Time entries in range — scoped to the period's branch when set, so a
   // multi-branch employee's hours/punches only count for the right branch.
@@ -1199,6 +1277,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         unpaired,
         leaveDays,
         cycle: period.cycle,
+        periodStart: period.period_start,
         periodEnd: period.period_end,
         settings,
         holidaySet,
@@ -1319,12 +1398,15 @@ export function recomputeLine(
   }
 
   const fresh = db.prepare(`
-    SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance
+    SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
+           hire_date,
+           ${LAST_WORKING_DAY_SELECT}
     FROM users WHERE id = ?
   `).get(userId) as {
     employment_type: "pt" | "ft" | null; hourly_rate: number | null;
     monthly_salary: number | null; pay_cycle: "weekly" | "monthly" | null;
     salary_tax_mode: "sso" | "wht" | null; track_attendance: number | null;
+    hire_date: string | null; resign_last_day: string | null; term_last_day: string | null;
   } | undefined;
 
   const settings = db.prepare(`
@@ -1447,13 +1529,15 @@ export function recomputeLine(
     pay_cycle: fresh?.pay_cycle ?? existing.pay_cycle_snapshot,
     salary_tax_mode: fresh?.salary_tax_mode ?? existing.salary_tax_mode_snapshot,
     track_attendance: fresh?.track_attendance ?? 1,
-    is_primary_branch: isPrimaryBranch
+    is_primary_branch: isPrimaryBranch,
+    hire_date: fresh?.hire_date ?? null,
+    last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null
   };
 
   const computed = computeLineForEmployee({
     employee, shifts, unpaired: auto.unpaired,
     leaveDays: existing.leave_days,
-    cycle: period.cycle, periodEnd: period.period_end,
+    cycle: period.cycle, periodStart: period.period_start, periodEnd: period.period_end,
     settings, holidaySet, scheduledByDate, approvedOtByDate, fieldOverridesByDate
   });
 

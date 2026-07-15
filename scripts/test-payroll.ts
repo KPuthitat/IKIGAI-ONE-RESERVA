@@ -16,12 +16,12 @@ const SETTINGS: PayrollSettings = {
 const ftMonthly = (salary: number): EmployeePayrollSnapshot => ({
   user_id: 1, display_name: "FT Example", employment_type: "ft", employee_code: "FT01",
   hourly_rate: null, monthly_salary: salary, pay_cycle: "monthly", salary_tax_mode: "sso",
-  track_attendance: 1, is_primary_branch: 1
+  track_attendance: 1, is_primary_branch: 1, hire_date: null, last_working_day: null
 });
 const ptHourly = (rate: number): EmployeePayrollSnapshot => ({
   user_id: 2, display_name: "PT Example", employment_type: "pt", employee_code: "PT01",
   hourly_rate: rate, monthly_salary: null, pay_cycle: "monthly", salary_tax_mode: "sso",
-  track_attendance: 1, is_primary_branch: 1
+  track_attendance: 1, is_primary_branch: 1, hire_date: null, last_working_day: null
 });
 // PT→FT transition month — FT on the weekly cycle (owner 2026-07-12).
 const ftWeekly = (salary: number): EmployeePayrollSnapshot => ({
@@ -39,7 +39,7 @@ function line(emp: EmployeePayrollSnapshot, unpaidLeaveDays: number) {
   return computeLineFromMinutes({
     employee: emp, regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
     leaveDays: 0, unpaidLeaveDays, daysWorked: 0, unpaired: 0,
-    cycle: "monthly", periodEnd: "2026-06-30", settings: SETTINGS
+    cycle: "monthly", periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS
   });
 }
 
@@ -89,7 +89,7 @@ console.log("\nผู้บริหาร (track_attendance=0) ไม่มี 
     employee: { ...ftMonthly(30000), track_attendance: track },
     regularMinutes: 480, otMinutes: 120, holidayMinutes: 0,
     leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 1, unpaired: 0,
-    cycle: "monthly", periodEnd: "2026-06-30", settings: otSettings
+    cycle: "monthly", periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: otSettings
   });
   const exec = call(0);
   const tracked = call(1);
@@ -105,7 +105,7 @@ console.log("\nPT→FT เดือนแรก (รายสัปดาห์ 
   const l = computeLineFromMinutes({
     employee: ftWeekly(16000), regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
     leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 0, unpaired: 0,
-    cycle: "weekly", periodEnd: "2026-06-30", settings: SETTINGS
+    cycle: "weekly", periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS
   });
   eq("FT-weekly base 16000/5 = 3200", l.base_pay, 3200);
   eq("FT-weekly WHT 3% = 96", l.tax_amount, 96);
@@ -128,7 +128,7 @@ console.log("\nOT ต้องได้รับอนุมัติก่อ�
   const shift = { startTs: iso("11:00"), endTs: iso("21:00"), durationMinutes: 600 };
   const base = {
     shifts: [shift], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
-    cycle: "monthly" as const, periodEnd: "2026-06-30", settings: SETTINGS,
+    cycle: "monthly" as const, periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS,
     holidaySet: new Set<string>(), scheduledByDate
   };
   // FT ลงเวลา คลิกเกินกะ แต่ไม่ได้ขออนุมัติ OT → ต้อง cap ที่ 20:00 → OT = 0
@@ -159,7 +159,7 @@ console.log("\nFT เงินเดือนเฉพาะสาขาหล�
   const l = (emp: EmployeePayrollSnapshot) => computeLineFromMinutes({
     employee: emp, regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
     leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 0, unpaired: 0,
-    cycle: "monthly", periodEnd: "2026-06-30", settings: SETTINGS
+    cycle: "monthly", periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS
   });
   // สาขาหลัก → เงินเดือนเต็ม
   const primary = l({ ...ftMonthly(30000), is_primary_branch: 1 });
@@ -173,9 +173,49 @@ console.log("\nFT เงินเดือนเฉพาะสาขาหล�
     employee: { ...ptHourly(50), is_primary_branch: 0 },
     regularMinutes: 480, otMinutes: 0, holidayMinutes: 0,
     leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 1, unpaired: 0,
-    cycle: "monthly", periodEnd: "2026-06-30", settings: SETTINGS
+    cycle: "monthly", periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS
   });
   eq("PT สาขาไม่ใช่หลัก → base 400 (8ชม.×50)", ptNon.base_pay, 400);
+}
+
+// 10. เฉลี่ยเงินเดือน FT เดือนแรก/เดือนลาออก = เงินเดือน/30 × วันที่อยู่จริง (owner 2026-07-15).
+//     ใช้เฉพาะเดือนที่เข้า/ออกกลางงวด — เดือนอยู่ครบไม่โดนหาร.
+console.log("\nเฉลี่ยเงินเดือน FT เดือนแรก/เดือนลาออก (owner 2026-07-15):");
+{
+  // งวด ก.ค. 2026 (1-31, 31 วัน). manual path ใช้สาขาหลัก monthly.
+  const jul = (emp: EmployeePayrollSnapshot) => computeLineFromMinutes({
+    employee: emp, regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 0, unpaired: 0,
+    cycle: "monthly", periodStart: "2026-07-01", periodEnd: "2026-07-31", settings: SETTINGS
+  });
+  // เข้ากลางเดือน: เริ่ม 25 ก.ค. → อยู่ 25..31 = 7 วัน → 30000/30×7 = 7000
+  const hired = jul({ ...ftMonthly(30000), hire_date: "2026-07-25" });
+  eq("FT เข้า 25 ก.ค. → base 7000", hired.base_pay, 7000);
+  // ลาออกกลางเดือน: วันสุดท้าย 20 ก.ค. → อยู่ 1..20 = 20 วัน → 30000/30×20 = 20000
+  const resigned = jul({ ...ftMonthly(30000), last_working_day: "2026-07-20" });
+  eq("FT ลาออก 20 ก.ค. → base 20000", resigned.base_pay, 20000);
+  // อยู่ครบเดือน (เข้าก่อนงวด ไม่มีลาออก) → เต็ม (regression)
+  const full = jul({ ...ftMonthly(30000), hire_date: "2026-05-01" });
+  eq("FT อยู่ครบเดือน → base 30000", full.base_pay, 30000);
+  // เข้าวันแรกของงวด → เต็ม (ไม่ prorate เพราะ hire_date = period_start)
+  const day1 = jul({ ...ftMonthly(30000), hire_date: "2026-07-01" });
+  eq("FT เข้า 1 ก.ค. → base 30000 (เต็ม)", day1.base_pay, 30000);
+  // ก.พ. 28 วัน คนอยู่ครบเดือน → เต็ม ไม่ใช่ 30000/30×28 (ทดสอบ gate short month)
+  const feb = computeLineFromMinutes({
+    employee: { ...ftMonthly(30000), hire_date: "2026-01-10" },
+    regularMinutes: 0, otMinutes: 0, holidayMinutes: 0, leaveDays: 0, unpaidLeaveDays: 0,
+    daysWorked: 0, unpaired: 0, cycle: "monthly",
+    periodStart: "2026-02-01", periodEnd: "2026-02-28", settings: SETTINGS
+  });
+  eq("FT ก.พ. อยู่ครบ → base 30000 (ไม่หาร 28)", feb.base_pay, 30000);
+  // auto path (computeLineForEmployee) ต้อง prorate เหมือนกัน — เข้า 25 ก.ค. ไม่มีกะ
+  const auto = computeLineForEmployee({
+    employee: { ...ftMonthly(30000), hire_date: "2026-07-25" },
+    shifts: [], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+    cycle: "monthly", periodStart: "2026-07-01", periodEnd: "2026-07-31",
+    settings: SETTINGS, holidaySet: new Set<string>()
+  });
+  eq("auto: FT เข้า 25 ก.ค. → base 7000", auto.base_pay, 7000);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

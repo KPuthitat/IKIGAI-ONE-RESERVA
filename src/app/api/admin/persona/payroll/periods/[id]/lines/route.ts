@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
-  computeLineFromMinutes, type EmployeePayrollSnapshot, type PayrollSettings
+  computeLineFromMinutes, earliestDate, type EmployeePayrollSnapshot, type PayrollSettings
 } from "@/lib/payroll-compute";
 
 // POST /api/admin/persona/payroll/periods/[id]/lines
@@ -35,9 +35,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const db = getDb();
   const period = db.prepare(`
-    SELECT id, cycle, period_end, status, branch_id FROM payroll_periods WHERE id = ?
+    SELECT id, cycle, period_start, period_end, status, branch_id FROM payroll_periods WHERE id = ?
   `).get(periodId) as
-    { id: number; cycle: "weekly" | "monthly"; period_end: string; status: string; branch_id: number | null } | undefined;
+    { id: number; cycle: "weekly" | "monthly"; period_start: string; period_end: string; status: string; branch_id: number | null } | undefined;
   if (!period) return NextResponse.json({ error: "period_not_found" }, { status: 404 });
   if (period.status !== "draft") {
     return NextResponse.json({ error: "must_be_draft" }, { status: 400 });
@@ -46,7 +46,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // Target must be a staff user (employment_type can be null — e.g. contractor)
   const target = db.prepare(`
     SELECT id, display_name, employment_type, employee_code,
-           hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance
+           hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
+           hire_date,
+           (SELECT MAX(proposed_last_day) FROM resignation_requests
+              WHERE user_id = users.id AND status = 'approved') AS resign_last_day,
+           (SELECT MAX(effective_date) FROM termination_records
+              WHERE user_id = users.id AND status IN ('scheduled','executed')) AS term_last_day
     FROM users WHERE id = ? AND role = 'staff'
   `).get(targetUserId) as {
     id: number;
@@ -58,6 +63,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     pay_cycle: "weekly" | "monthly" | null;
     salary_tax_mode: "sso" | "wht" | null;
     track_attendance: number | null;
+    hire_date: string | null;
+    resign_last_day: string | null;
+    term_last_day: string | null;
   } | undefined;
   if (!target) return NextResponse.json({ error: "user_not_found" }, { status: 404 });
 
@@ -98,7 +106,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     pay_cycle: target.pay_cycle,
     salary_tax_mode: target.salary_tax_mode,
     track_attendance: target.track_attendance ?? 1,
-    is_primary_branch: isPrimaryBranch
+    is_primary_branch: isPrimaryBranch,
+    hire_date: target.hire_date ?? null,
+    last_working_day: earliestDate(target.resign_last_day, target.term_last_day)
   };
 
   // Zero-row — admin will fill in hours/days afterward
@@ -111,6 +121,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     daysWorked: 0,
     unpaired: 0,
     cycle: period.cycle,
+    periodStart: period.period_start,
     periodEnd: period.period_end,
     settings
   });
