@@ -892,6 +892,31 @@ export function addVisit(actor: MjActor, patientId: number, data: Record<string,
   return Number(info.lastInsertRowid);
 }
 
+/** Edit an existing visit row — only on the doctor's own patient + audited.
+ *  patient_id / entered_by / created_at stay immutable (owner 2026-07-15). */
+export function updateVisit(actor: MjActor, visitId: number, data: Record<string, unknown>): void {
+  requireDoctor(actor);
+  const owns = getDb().prepare(`
+    SELECT v.id FROM mounjaro_visits v
+    JOIN mounjaro_patients p ON p.id = v.patient_id
+    WHERE v.id = ? AND p.attending_doctor_id = ? AND p.deleted_at IS NULL
+  `).get(visitId, actor.id);
+  if (!owns) throw new MounjaroForbidden("not_your_patient");
+  getDb().prepare(`
+    UPDATE mounjaro_visits SET
+      date = ?, dose = ?, weight = ?, bp = ?, hr = ?, hba1c = ?, fbs = ?, waist = ?,
+      side_effects_json = ?, hypo_count = ?, adherence = ?, decision = ?, next_visit = ?, notes = ?
+    WHERE id = ?
+  `).run(
+    data.date ?? null, data.dose ?? null, data.weight ?? null,
+    data.bp ?? null, data.hr ?? null, data.hba1c ?? null, data.fbs ?? null, data.waist ?? null,
+    JSON.stringify(data.side_effects ?? {}), data.hypo_count ?? null,
+    data.adherence ?? null, data.decision ?? null, data.next_visit ?? null,
+    data.notes ?? null, visitId
+  );
+  audit(actor.id, "update_visit", "visit", visitId);
+}
+
 /** Doctor's patient list enriched for the dashboard — one audited call.
  *  Computes alert level, latest weight, % loss, week #, next visit. */
 export function listMyPatientsEnriched(actor: MjActor): Array<{

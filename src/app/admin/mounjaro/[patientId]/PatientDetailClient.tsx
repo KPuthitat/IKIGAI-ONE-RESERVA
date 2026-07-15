@@ -112,6 +112,7 @@ export default function PatientDetailClient(props: {
   const { confirm, ConfirmDialog } = useConfirm();
   const [tab, setTab] = useState<"titration" | "visits" | "chart" | "baseline" | "exercise">("titration");
   const [showVisit, setShowVisit] = useState(false);
+  const [editVisit, setEditVisit] = useState<Visit | null>(null);
   const [showEdit, setShowEdit] = useState(false);
   const [decidingPending, setDecidingPending] = useState(false);
 
@@ -338,7 +339,7 @@ export default function PatientDetailClient(props: {
                         return f ? `${f[1].split(" ")[0]} (${lab})` : "";
                       }).filter(Boolean).join(", ");
                     return (
-                      <FragmentRow key={v.id} v={v} se={se} patientId={patientId} onChange={() => router.refresh()} />
+                      <FragmentRow key={v.id} v={v} se={se} patientId={patientId} onEdit={() => setEditVisit(v)} onChange={() => router.refresh()} />
                     );
                   })}
                 </tbody>
@@ -459,6 +460,7 @@ export default function PatientDetailClient(props: {
       </div>
 
       {showVisit && <VisitModal patientId={patientId} defaultDose={currentDose} onClose={() => setShowVisit(false)} onSaved={() => { setShowVisit(false); router.refresh(); }} />}
+      {editVisit && <VisitModal key={editVisit.id} patientId={patientId} defaultDose={currentDose} existing={editVisit} onClose={() => setEditVisit(null)} onSaved={() => { setEditVisit(null); router.refresh(); }} />}
       {showEdit && <PatientEditModal patientId={patientId} hn={hn} startDate={startDate} baseline={baseline}
         comorbidities={comorbidities} contraindications={contraindications} medications={medications} notes={notes}
         employeeDob={employeeDob} employeePhone={employeePhone}
@@ -548,7 +550,7 @@ function FlagList({ title, labels, danger, empty }: { title: string; labels: str
 }
 
 // Visit row + inline delete (separate component to hold local busy state).
-function FragmentRow({ v, se, patientId, onChange }: { v: Visit; se: string; patientId: number; onChange: () => void }) {
+function FragmentRow({ v, se, patientId, onEdit, onChange }: { v: Visit; se: string; patientId: number; onEdit: () => void; onChange: () => void }) {
   const { confirm, ConfirmDialog } = useConfirm();
   const [busy, setBusy] = useState(false);
   async function del() {
@@ -580,8 +582,10 @@ function FragmentRow({ v, se, patientId, onChange }: { v: Visit; se: string; pat
             {DECISION_LABEL[v.decision ?? "maintain"] ?? "—"}
           </span>
         </td>
-        <td className="py-3 px-4 text-right">
+        <td className="py-3 px-4 text-right whitespace-nowrap">
           {ConfirmDialog}
+          <button onClick={onEdit} disabled={busy} className="text-[12px] text-[#a06820] hover:underline disabled:opacity-50">แก้ไข</button>
+          <span className="text-slate-300 mx-1.5">·</span>
           <button onClick={del} disabled={busy} className="text-[12px] text-[#B91C1C] hover:underline disabled:opacity-50">ลบ</button>
         </td>
       </tr>
@@ -721,19 +725,24 @@ function SelfLogRow({ log, onReplied }: { log: SelfLog; onReplied: () => void })
 }
 
 // ── Visit modal ─────────────────────────────────────────────────────
-function VisitModal({ patientId, defaultDose, onClose, onSaved }: {
-  patientId: number; defaultDose: number; onClose: () => void; onSaved: () => void;
+// `existing` present → edit mode (PATCH); absent → create mode (POST).
+function VisitModal({ patientId, defaultDose, existing, onClose, onSaved }: {
+  patientId: number; defaultDose: number; existing?: Visit; onClose: () => void; onSaved: () => void;
 }) {
   const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-  const [date, setDate] = useState(today);
-  const [dose, setDose] = useState(String(defaultDose));
-  const [f, setF] = useState<Record<string, string>>({});
-  const [se, setSe] = useState<Record<string, number>>({});
-  const [hypo, setHypo] = useState("0");
-  const [adh, setAdh] = useState("full");
-  const [decision, setDecision] = useState("maintain");
-  const [next, setNext] = useState(addDays(today, 28));
-  const [notes, setNotes] = useState("");
+  const numStr = (n: number | null | undefined) => (n == null ? "" : String(n));
+  const [date, setDate] = useState(existing?.date ?? today);
+  const [dose, setDose] = useState(String(existing?.dose ?? defaultDose));
+  const [f, setF] = useState<Record<string, string>>(existing ? {
+    weight: numStr(existing.weight), waist: numStr(existing.waist), bp: existing.bp ?? "",
+    hr: numStr(existing.hr), hba1c: numStr(existing.hba1c), fbs: numStr(existing.fbs)
+  } : {});
+  const [se, setSe] = useState<Record<string, number>>(existing?.side_effects ?? {});
+  const [hypo, setHypo] = useState(String(existing?.hypo_count ?? 0));
+  const [adh, setAdh] = useState(existing?.adherence ?? "full");
+  const [decision, setDecision] = useState(existing?.decision ?? "maintain");
+  const [next, setNext] = useState(existing?.next_visit ?? addDays(today, 28));
+  const [notes, setNotes] = useState(existing?.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -742,16 +751,22 @@ function VisitModal({ patientId, defaultDose, onClose, onSaved }: {
     if (!date || !f.weight || !f.hr) { setErr("กรุณากรอกวันที่ น้ำหนัก และ HR"); return; }
     setBusy(true); setErr(null);
     try {
-      const res = await fetch(apiUrl("/api/admin/mounjaro/visit"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          patient_id: patientId, date, dose: Number(dose),
-          weight: numOf(f.weight ?? ""), waist: numOf(f.waist ?? ""), bp: f.bp || undefined,
-          hr: numOf(f.hr ?? ""), hba1c: numOf(f.hba1c ?? ""), fbs: numOf(f.fbs ?? ""),
-          side_effects: se, hypo_count: numOf(hypo) ?? 0, adherence: adh,
-          decision, next_visit: next || null, notes: notes.trim() || undefined
-        })
-      });
+      const payload = {
+        date, dose: Number(dose),
+        weight: numOf(f.weight ?? ""), waist: numOf(f.waist ?? ""), bp: f.bp || undefined,
+        hr: numOf(f.hr ?? ""), hba1c: numOf(f.hba1c ?? ""), fbs: numOf(f.fbs ?? ""),
+        side_effects: se, hypo_count: numOf(hypo) ?? 0, adherence: adh,
+        decision, next_visit: next || null, notes: notes.trim() || undefined
+      };
+      const res = existing
+        ? await fetch(apiUrl(`/api/admin/mounjaro/visit/${existing.id}`), {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          })
+        : await fetch(apiUrl("/api/admin/mounjaro/visit"), {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ patient_id: patientId, ...payload })
+          });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr("บันทึกไม่สำเร็จ"); return; }
       onSaved();
@@ -765,10 +780,10 @@ function VisitModal({ patientId, defaultDose, onClose, onSaved }: {
   );
 
   return (
-    <ModalShell title="บันทึกการนัดติดตาม" sub="Follow-up Visit Entry" onClose={onClose}
+    <ModalShell title={existing ? "แก้ไขการนัดติดตาม" : "บันทึกการนัดติดตาม"} sub="Follow-up Visit Entry" onClose={onClose}
       footer={<>
         <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#3a2716] hover:bg-white">ยกเลิก</button>
-        <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#a06820] hover:bg-[#7a4f16] text-white rounded-xl disabled:opacity-50">{busy ? "กำลังบันทึก…" : "บันทึกการนัด"}</button>
+        <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#a06820] hover:bg-[#7a4f16] text-white rounded-xl disabled:opacity-50">{busy ? "กำลังบันทึก…" : existing ? "บันทึกการแก้ไข" : "บันทึกการนัด"}</button>
       </>}>
       <Section title="ข้อมูลการนัด">
         <div className="grid sm:grid-cols-2 gap-4">
