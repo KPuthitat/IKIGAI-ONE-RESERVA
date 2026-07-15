@@ -6,10 +6,10 @@
 // comes from the snapshot (real DB figures) — the model is told never to invent
 // numbers (owner rule: ตัวเลขจริงต้องเป๊ะ). On-demand button, admin-only at the route.
 //
-// Gated by the same toggle as น้องฮูก (owl_ai_enabled + ANTHROPIC_API_KEY) so the
-// owner keeps one on/off switch and we need no new system setting / migration.
-
-import { owlAiEnabled } from "./owl-ai";
+// Shows/works whenever the server has ANTHROPIC_API_KEY set (the same key OCR /
+// น้องฮูก use) — NOT tied to the น้องฮูก on/off toggle, so the owner doesn't have
+// to enable น้องฮูก just to see this button (owner 2026-07-15 "ให้ขึ้นใต้การ์ด
+// โควต้าสั่งซื้อได้เลย"). No new system setting / migration.
 
 const API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -25,9 +25,10 @@ export class FinAnalysisError extends Error {
   }
 }
 
-/** Reuse the น้องฮูก toggle — no separate setting/migration. */
+/** Enabled whenever the server is configured with an Anthropic API key —
+ *  independent of the น้องฮูก toggle. */
 export function financialAnalysisEnabled(): boolean {
-  return owlAiEnabled();
+  return !!process.env.ANTHROPIC_API_KEY;
 }
 
 type AnthropicUsage = { input_tokens: number; output_tokens: number };
