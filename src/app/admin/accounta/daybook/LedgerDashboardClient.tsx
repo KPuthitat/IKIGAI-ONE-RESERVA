@@ -869,10 +869,98 @@ function DayDetail({
   );
 }
 
+// ── ปุ่มเจนบทวิเคราะห์สภาพการเงิน (กูรูการเงินระดับโลก) ──────────────
+// นั่งใต้การ์ดโควตาสั่งซื้อ. กดแล้วยิงไป /api/admin/accounta/financial-analysis
+// ซึ่งประกอบตัวเลขจริงฝั่งเซิร์ฟเวอร์แล้วให้ Claude เขียนบทวิเคราะห์เป็นภาษาไทย.
+function FinancialAnalysisCard({
+  period, anchor
+}: { period: LedgerPeriod; anchor: string }) {
+  const [loading, setLoading] = useState(false);
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(apiUrl("/api/admin/accounta/financial-analysis"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ period, anchor })
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setError(data?.message ?? "วิเคราะห์ไม่สำเร็จ ลองใหม่อีกครั้ง");
+        return;
+      }
+      setAnalysis(String(data.analysis ?? ""));
+    } catch {
+      setError("เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 sm:p-5 shadow-sm">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-brand/10 text-brand">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 3v18h18" /><path d="M7 15l4-4 3 3 5-6" />
+            </svg>
+          </span>
+          <div>
+            <h2 className="font-bold text-slate-800">บทวิเคราะห์สภาพการเงิน</h2>
+            <p className="text-[11px] text-slate-500">ให้ “กูรูการเงินระดับโลก” อ่านตัวเลขรอบนี้แล้วสรุปให้</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={run}
+          disabled={loading}
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+        >
+          {loading ? (
+            <>
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+              กำลังวิเคราะห์…
+            </>
+          ) : (
+            <>✨ {analysis ? "วิเคราะห์อีกครั้ง" : "วิเคราะห์เลย"}</>
+          )}
+        </button>
+      </div>
+
+      {error && (
+        <p className="mt-3 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">{error}</p>
+      )}
+
+      {analysis && (
+        <div className="mt-3 rounded-lg bg-white/70 border border-amber-100 p-3 sm:p-4">
+          <div className="text-[13px] text-slate-700 whitespace-pre-wrap leading-relaxed">{analysis}</div>
+          <p className="mt-3 text-[10px] text-slate-400">
+            บทวิเคราะห์นี้สร้างโดย AI จากตัวเลขในระบบ ใช้ประกอบการตัดสินใจเท่านั้น โปรดตรวจสอบก่อนนำไปใช้
+          </p>
+        </div>
+      )}
+
+      {!analysis && !error && !loading && (
+        <p className="mt-3 text-[11px] text-slate-400">
+          วิเคราะห์จากตัวเลขรอบที่กำลังดูอยู่ — สุขภาพการเงิน จุดแข็ง สัญญาณเตือน ต้นทุน %COG และคำแนะนำลงมือทำ
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function LedgerDashboardClient({
   dash, expenses, period, anchor, monthly, trendYear, payables, cashAccounts, cashTotal,
   branchId, companyId, branchName, incomeChannels, expenseCategories, draftExpenses, expenseVendors,
-  paymentMethods, materialQuota, projectedMonthlySales, payCycleWeekday
+  paymentMethods, materialQuota, projectedMonthlySales, aiEnabled, payCycleWeekday
 }: {
   dash: Dash; expenses: LedgerExpenseRow[]; period: LedgerPeriod; anchor: string;
   monthly: MonthlyRow[]; trendYear: number; payables: Payables;
@@ -896,6 +984,8 @@ export default function LedgerDashboardClient({
   // ยอดขายคาดการณ์ทั้งเดือน (= branches.material_target_sales). 0 = สาขายังไม่ตั้งเป้า
   // → ซ่อน % เทียบยอดคาดในการ์ดรายจ่ายแยกหมวด (owner 2026-07-14).
   projectedMonthlySales: number;
+  // เปิดปุ่ม "วิเคราะห์สภาพการเงิน" เมื่อผู้ช่วย AI (owl_ai_enabled + ANTHROPIC_API_KEY) เปิดอยู่.
+  aiEnabled: boolean;
   payCycleWeekday: number;
 }) {
   const { confirm, ConfirmDialog } = useConfirm();
@@ -1148,6 +1238,9 @@ export default function LedgerDashboardClient({
           </div>
         );
       })()}
+
+      {/* บทวิเคราะห์สภาพการเงิน — ปุ่มใต้การ์ดโควตาสั่งซื้อ (owner 2026-07-15) */}
+      {aiEnabled && <FinancialAnalysisCard period={period} anchor={anchor} />}
 
       {/* Period selector + add buttons */}
       <div className="flex items-center justify-between gap-2 flex-wrap">

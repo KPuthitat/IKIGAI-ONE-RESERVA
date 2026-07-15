@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, listVendors, listPaymentMethods, materialPurchaseQuota, postDueRecurringExpenses, vendorLastDescriptions, type LedgerPeriod } from "@/lib/accounta-db";
 import { salesTargetProgress, type SalesTargetProgress } from "@/lib/sales-target";
+import { financialAnalysisEnabled } from "@/lib/financial-analysis";
 import { fmtMoney } from "@/lib/format";
 import LedgerDashboardClient, { type LedgerExpenseRow } from "./LedgerDashboardClient";
 
@@ -206,6 +207,7 @@ export default function DaybookPage({
         paymentMethods={paymentMethods}
         materialQuota={materialQuota}
         projectedMonthlySales={salesTarget.monthlyTarget}
+        aiEnabled={financialAnalysisEnabled()}
         payCycleWeekday={payCycleWeekday} />
     </div>
   );
