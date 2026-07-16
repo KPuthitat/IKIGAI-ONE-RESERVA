@@ -16,12 +16,14 @@ const SETTINGS: PayrollSettings = {
 const ftMonthly = (salary: number): EmployeePayrollSnapshot => ({
   user_id: 1, display_name: "FT Example", employment_type: "ft", employee_code: "FT01",
   hourly_rate: null, monthly_salary: salary, pay_cycle: "monthly", salary_tax_mode: "sso",
-  track_attendance: 1, is_primary_branch: 1, hire_date: null, last_working_day: null
+  track_attendance: 1, is_primary_branch: 1, hire_date: null, last_working_day: null,
+  ft_started_at: null
 });
 const ptHourly = (rate: number): EmployeePayrollSnapshot => ({
   user_id: 2, display_name: "PT Example", employment_type: "pt", employee_code: "PT01",
   hourly_rate: rate, monthly_salary: null, pay_cycle: "monthly", salary_tax_mode: "sso",
-  track_attendance: 1, is_primary_branch: 1, hire_date: null, last_working_day: null
+  track_attendance: 1, is_primary_branch: 1, hire_date: null, last_working_day: null,
+  ft_started_at: null
 });
 // PT→FT transition month — FT on the weekly cycle (owner 2026-07-12).
 const ftWeekly = (salary: number): EmployeePayrollSnapshot => ({
@@ -218,6 +220,33 @@ console.log("\nเฉลี่ยเงินเดือน FT เดือน�
   });
   eq("auto: FT เข้า 25 ก.ค. มีกะ 7 วัน → days_worked 7", auto.days_worked, 7);
   eq("auto: FT เข้า 25 ก.ค. → base 7000", auto.base_pay, 7000);
+}
+
+// 11. PT→ประจำ เดือนเปลี่ยนผ่าน คิดตาม ft_started_at เทียบเดือนของรอบ (owner 2026-07-16)
+//     — ต้องถูกไม่ว่าจะคิดสดหรือกรอกย้อนหลัง. ธนะรัตน์เปลี่ยน 10 มิ.ย.
+console.log("\nPT→ประจำ เดือนเปลี่ยนผ่าน คิดตามรอบ ไม่ใช่เดือนปัจจุบัน (owner 2026-07-16):");
+{
+  const conv = (salary: number): EmployeePayrollSnapshot =>
+    ({ ...ftMonthly(salary), ft_started_at: "2026-06-10" });
+  const run = (emp: EmployeePayrollSnapshot, cycle: "weekly" | "monthly", pStart: string, pEnd: string) =>
+    computeLineFromMinutes({
+      employee: emp, regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
+      leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 0, unpaired: 0,
+      cycle, periodStart: pStart, periodEnd: pEnd, settings: SETTINGS
+    });
+  // รอบ WEEKLY มิ.ย. (เดือนเปลี่ยนผ่าน) → รายสัปดาห์ = เงินเดือน/#จันทร์ (มิ.ย.2026 มี 5 จันทร์)
+  const wkJun = run(conv(30000), "weekly", "2026-06-01", "2026-06-30");
+  eq("เปลี่ยนผ่าน มิ.ย. รอบ weekly → base 30000/5 = 6000", wkJun.base_pay, 6000);
+  eq("เปลี่ยนผ่าน มิ.ย. รอบ weekly → WHT 3% (บังคับ)", wkJun.tax_amount, 180); // 6000*0.03
+  // รอบ MONTHLY มิ.ย. → ยังไม่ใช่เดือน monthly ของเขา → base 0 (ไม่ตกตารางประจำ มิ.ย.)
+  const moJun = run(conv(30000), "monthly", "2026-06-01", "2026-06-30");
+  eq("เปลี่ยนผ่าน มิ.ย. รอบ monthly → base 0 (ไม่อยู่ตารางประจำ)", moJun.base_pay, 0);
+  // รอบ MONTHLY ก.ค. (เลยเดือนเปลี่ยนผ่าน) → เต็มเดือน แม้คิดย้อนหลัง/สลับเดือน
+  const moJul = run(conv(30000), "monthly", "2026-07-01", "2026-07-31");
+  eq("เดือนถัดจากเปลี่ยนผ่าน (ก.ค.) รอบ monthly → base 30000 เต็ม", moJul.base_pay, 30000);
+  // legacy FT (ft_started_at=null) รอบ monthly → เต็ม (regression)
+  const legacy = run(ftMonthly(30000), "monthly", "2026-06-01", "2026-06-30");
+  eq("legacy FT (ไม่มี ft_started_at) รอบ monthly → base 30000", legacy.base_pay, 30000);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

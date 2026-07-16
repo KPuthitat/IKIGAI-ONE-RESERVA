@@ -65,7 +65,29 @@ export type EmployeePayrollSnapshot = {
    *  termination `effective_date` — used to prorate the FT resignation month.
    *  null = still employed → no proration. */
   last_working_day: string | null;
+  /** วันเริ่มเป็นพนักงานประจำ (YYYY-MM-DD) — the PT→FT transition date. Drives the
+   *  transition month = weekly, later months = monthly decision PER PERIOD (see
+   *  ftEffectiveCycle), so it computes correctly whether the period is paid in
+   *  real time or backfilled. null = legacy FT (always monthly). */
+  ft_started_at: string | null;
 };
+
+/** Which cycle an FT employee is paid on FOR A GIVEN PERIOD (owner 2026-07-16).
+ *  The transition month (period month === ft_started_at month) is paid weekly
+ *  (fix-rate); every later month is monthly. Derived from ft_started_at + the
+ *  period's month — NOT the wall-clock-flipped `users.pay_cycle` flag — so a
+ *  backfilled past month lands in the same table it would have in real time.
+ *  Legacy FT (no ft_started_at) fall back to their stored pay_cycle (monthly). */
+export function ftEffectiveCycle(
+  ftStartedAt: string | null,
+  storedPayCycle: "weekly" | "monthly" | null,
+  periodMonth: string // "YYYY-MM"
+): "weekly" | "monthly" {
+  if (!ftStartedAt) return storedPayCycle === "weekly" ? "weekly" : "monthly";
+  const startMonth = ftStartedAt.slice(0, 7);
+  if (startMonth < periodMonth) return "monthly";  // past the transition month
+  return "weekly";                                 // transition month (===) or not-yet-FT (>)
+}
 
 // SQL fragment (correlated subqueries on `users.id`) that yields the two
 // possible last-working-day sources; callers combine them with earliestDate().
@@ -611,6 +633,10 @@ export function computeLineForEmployee(args: {
 }): ComputedLine {
   const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, scheduledByDate, approvedOtByDate, fieldOverridesByDate } = args;
 
+  // Cycle this period pays an FT on — period-relative (transition month = weekly),
+  // drives both the base and the forced-WHT tax mode (owner 2026-07-16).
+  const ftCycle = ftEffectiveCycle(e.ft_started_at, e.pay_cycle, periodStart.slice(0, 7));
+
   // Determine effective hourly rate (used for legal OT mode + display)
   const ptRate = e.hourly_rate ?? settings.pt_default_hourly_rate;
   const ftHourlyEquivalent = e.monthly_salary ? e.monthly_salary / 30 / 8 : 0;
@@ -739,7 +765,7 @@ export function computeLineForEmployee(args: {
     // only at the employee's home/primary branch, so a cross-branch rotator
     // isn't paid their full salary in every branch's period (owner 2026-07-14).
     // Their OT + service charge at the non-primary branch still pay there.
-    if (e.pay_cycle === cycle && e.monthly_salary && e.is_primary_branch !== 0) {
+    if (ftCycle === cycle && e.monthly_salary && e.is_primary_branch !== 0) {
       if (cycle === "monthly") {
         basePay = e.monthly_salary;
         // Hire month / resignation month → pay per ACTUAL DAYS WORKED (attended):
@@ -777,7 +803,7 @@ export function computeLineForEmployee(args: {
   // 'wht' = นอกระบบ → WHT 3% flat on gross, no SSO
   // FT in the weekly transition month is always WHT 3% (owner 2026-07-12);
   // otherwise use the employee's configured mode.
-  const taxMode = (e.employment_type === "ft" && e.pay_cycle === "weekly")
+  const taxMode = (e.employment_type === "ft" && ftCycle === "weekly")
     ? "wht" : (e.salary_tax_mode ?? "sso");
   let ssoAmount = 0;
   let taxAmount = 0;
@@ -866,6 +892,9 @@ export function computeLineFromMinutes(args: {
     serviceCharge = 0, otherAdditions = 0, otherDeductions = 0
   } = args;
 
+  // Period-relative FT cycle (transition month = weekly) — owner 2026-07-16.
+  const ftCycle = ftEffectiveCycle(e.ft_started_at, e.pay_cycle, periodStart.slice(0, 7));
+
   const ptRate = e.hourly_rate ?? settings.pt_default_hourly_rate;
   const ftHourlyEquivalent = e.monthly_salary ? e.monthly_salary / 30 / 8 : 0;
   const effectiveHourlyRate =
@@ -889,13 +918,13 @@ export function computeLineFromMinutes(args: {
   } else if (e.employment_type === "ft" && e.monthly_salary && e.is_primary_branch !== 0) {
     // FT salary only at the home/primary branch (owner 2026-07-14) — see the
     // shift-based path above. Non-primary branch gets no base here either.
-    if (cycle === "monthly" && e.pay_cycle === "monthly") {
+    if (cycle === "monthly" && ftCycle === "monthly") {
       basePay = e.monthly_salary;
       // Hire/resignation month → salary/30 × days worked (attended) (owner 2026-07-15).
       if (isFtPartialMonth(e.hire_date, e.last_working_day, periodStart, periodEnd)) {
         basePay = Math.min(e.monthly_salary, round2((e.monthly_salary / 30) * daysWorked));
       }
-    } else if (cycle === "weekly" && e.pay_cycle === "weekly") {
+    } else if (cycle === "weekly" && ftCycle === "weekly") {
       const mondays = countMondaysInMonth(periodEnd) || 4;
       basePay = e.monthly_salary / mondays;
     }
@@ -920,7 +949,7 @@ export function computeLineFromMinutes(args: {
 
   // FT in the weekly transition month is always WHT 3% (owner 2026-07-12);
   // otherwise use the employee's configured mode.
-  const taxMode = (e.employment_type === "ft" && e.pay_cycle === "weekly")
+  const taxMode = (e.employment_type === "ft" && ftCycle === "weekly")
     ? "wht" : (e.salary_tax_mode ?? "sso");
   let ssoAmount = 0;
   let taxAmount = 0;
@@ -1068,11 +1097,18 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   //   weekly  → PT + FT-in-transition (owner 2026-07-12: a just-converted FT is
   //             paid weekly at fix-rate for their first month — pay_cycle='weekly')
   //   monthly → FT-monthly only
+  // FT weekly-vs-monthly is PERIOD-RELATIVE via ft_started_at, not the live
+  // pay_cycle flag (owner 2026-07-16): an FT's transition month (ft_started_at
+  // month == this period's month) is weekly; later months monthly. So the same
+  // employee lands in the same table whether the period is computed in real time
+  // or backfilled. @pmonth = the period's "YYYY-MM". Legacy FT (ft_started_at
+  // NULL) are always monthly.
+  const periodMonth = period.period_start.slice(0, 7);
   let staffWhere: string;
   if (period.cycle === "weekly") {
-    staffWhere = "(employment_type = 'pt' OR (employment_type = 'ft' AND pay_cycle = 'weekly'))";
+    staffWhere = "(employment_type = 'pt' OR (employment_type = 'ft' AND ft_started_at IS NOT NULL AND substr(ft_started_at,1,7) = @pmonth))";
   } else {
-    staffWhere = "employment_type = 'ft' AND pay_cycle = 'monthly'";
+    staffWhere = "employment_type = 'ft' AND (ft_started_at IS NULL OR substr(ft_started_at,1,7) < @pmonth)";
   }
   // Branch scoping (owner 2026-06-10): a branch-stamped period only
   // includes employees assigned to that branch (user_branches). Legacy
@@ -1094,7 +1130,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   const staffSql = `
     SELECT id AS user_id, display_name, employment_type, employee_code,
            hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
-           hire_date,
+           hire_date, ft_started_at,
            ${LAST_WORKING_DAY_SELECT},
            ${primaryExpr}
     FROM users
@@ -1106,9 +1142,9 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
   `;
-  const staffRaw = (period.branch_id != null
-    ? db.prepare(staffSql).all({ bid: period.branch_id })
-    : db.prepare(staffSql).all()) as Array<StaffRawRow>;
+  const staffParams: Record<string, unknown> = { pmonth: periodMonth };
+  if (period.branch_id != null) staffParams.bid = period.branch_id;
+  const staffRaw = db.prepare(staffSql).all(staffParams) as Array<StaffRawRow>;
   const staff: EmployeePayrollSnapshot[] = staffRaw.map((r) => ({
     ...r,
     last_working_day: earliestDate(r.resign_last_day, r.term_last_day)
@@ -1385,14 +1421,15 @@ export function recomputeLine(
 
   const fresh = db.prepare(`
     SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
-           hire_date,
+           hire_date, ft_started_at,
            ${LAST_WORKING_DAY_SELECT}
     FROM users WHERE id = ?
   `).get(userId) as {
     employment_type: "pt" | "ft" | null; hourly_rate: number | null;
     monthly_salary: number | null; pay_cycle: "weekly" | "monthly" | null;
     salary_tax_mode: "sso" | "wht" | null; track_attendance: number | null;
-    hire_date: string | null; resign_last_day: string | null; term_last_day: string | null;
+    hire_date: string | null; ft_started_at: string | null;
+    resign_last_day: string | null; term_last_day: string | null;
   } | undefined;
 
   const settings = db.prepare(`
@@ -1517,7 +1554,8 @@ export function recomputeLine(
     track_attendance: fresh?.track_attendance ?? 1,
     is_primary_branch: isPrimaryBranch,
     hire_date: fresh?.hire_date ?? null,
-    last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null
+    last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null,
+    ft_started_at: fresh?.ft_started_at ?? null
   };
 
   const computed = computeLineForEmployee({

@@ -47,7 +47,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const target = db.prepare(`
     SELECT id, display_name, employment_type, employee_code,
            hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
-           hire_date,
+           hire_date, ft_started_at,
            (SELECT MAX(proposed_last_day) FROM resignation_requests
               WHERE user_id = users.id AND status = 'approved') AS resign_last_day,
            (SELECT MAX(effective_date) FROM termination_records
@@ -64,6 +64,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     salary_tax_mode: "sso" | "wht" | null;
     track_attendance: number | null;
     hire_date: string | null;
+    ft_started_at: string | null;
     resign_last_day: string | null;
     term_last_day: string | null;
   } | undefined;
@@ -108,7 +109,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     track_attendance: target.track_attendance ?? 1,
     is_primary_branch: isPrimaryBranch,
     hire_date: target.hire_date ?? null,
-    last_working_day: earliestDate(target.resign_last_day, target.term_last_day)
+    last_working_day: earliestDate(target.resign_last_day, target.term_last_day),
+    ft_started_at: target.ft_started_at ?? null
   };
 
   // Zero-row — admin will fill in hours/days afterward
