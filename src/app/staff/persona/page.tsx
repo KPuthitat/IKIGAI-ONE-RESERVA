@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { nameWithPrefix } from "@/lib/name";
 import { bkkDateIso } from "@/lib/time";
-import { userHasWorkShiftOn } from "@/lib/roster";
+import { userHasWorkShiftOn, resolveClockBranchId } from "@/lib/roster";
 import { listUserCouponsForDate } from "@/lib/meal-coupons";
 import TimeClockClient from "./TimeClockClient";
 
@@ -18,32 +18,39 @@ export default function StaffPersonaPage() {
   const user = requireUser();
   const db = getDb();
 
-  // Pull the active branch row so the client knows which anti-cheat
-  // gates are enabled (geofence / QR). Without it the clock-in
-  // button would naively submit and only learn about the failure
-  // from the API error — bad UX. We also pre-feed the branch name
-  // so the UI can mention "you must be at NAMA PASTA SRIRACHA" etc.
-  const branch = user.activeBranchId
+  // เลือก entries ของวันนี้ตาม Bangkok local. bkkDateIso is suffix-safe so a
+  // ts stored without a "Z" isn't double-shifted into the wrong day
+  // (owner 2026-06-13 — fixes entries showing under the wrong date).
+  const todayBkk = bkkDateIso(new Date().toISOString());
+
+  // Effective clock branch — follow TODAY's roster, exactly like the clock API
+  // (owner 2026-07-16). A cross-branch rotator / just-moved staffer rostered at
+  // another site today gets that site's geofence, roster gate, per-branch clock
+  // state, and buttons WITHOUT having to switch their active branch first.
+  // Single-branch staff are unaffected (resolves to their own branch). Staff
+  // with no active branch stay null → buttons disabled, matching the API which
+  // rejects clock-in with no_active_branch.
+  const clockBranchId = user.activeBranchId == null
+    ? null
+    : resolveClockBranchId(user.id, user.activeBranchId, todayBkk);
+
+  // Pull the resolved branch row so the client knows which anti-cheat gates are
+  // enabled (geofence / QR) and can say "you must be at HYPO" etc.
+  const branch = clockBranchId
     ? (db.prepare("SELECT * FROM branches WHERE id = ?")
-        .get(user.activeBranchId) as Branch | undefined)
+        .get(clockBranchId) as Branch | undefined)
     : undefined;
 
   // Clock state is PER-BRANCH (owner 2026-06-09): a staff who works at two
-  // branches must clock in/out at each independently. Scoping by the active
-  // branch fixes the cross-branch bug where an 'in' at branch A made branch
-  // B show "clock out" (and clocking out at B mis-paired the shift). −1 when
-  // no active branch → no rows → shows clock-in (tap then fails cleanly).
-  const branchId = user.activeBranchId ?? -1;
+  // branches must clock in/out at each independently. Scope by the resolved
+  // clock branch so the in/out state matches the branch they'll actually punch
+  // at today. −1 when no branch → no rows → shows clock-in (tap then fails cleanly).
+  const branchId = clockBranchId ?? -1;
   const entries = db.prepare(`
     SELECT id, type, ts FROM time_entries
     WHERE user_id = ? AND branch_id = ? AND ts >= datetime('now', '-7 days')
     ORDER BY ts DESC LIMIT 100
   `).all(user.id, branchId) as TimeEntry[];
-
-  // เลือก entries ของวันนี้ตาม Bangkok local. bkkDateIso is suffix-safe so a
-  // ts stored without a "Z" isn't double-shifted into the wrong day
-  // (owner 2026-06-13 — fixes entries showing under the wrong date).
-  const todayBkk = bkkDateIso(new Date().toISOString());
   const todayEntries = entries.filter((e) => bkkDateIso(e.ts) === todayBkk);
 
   // ส่งเฉพาะ ts ของ in/out แรก ไปให้ client คำนวณ nextAction + 5-min window เอง
@@ -65,19 +72,19 @@ export default function StaffPersonaPage() {
   // มีกะงานวันนี้ไหม (owner 2026-06-13) — ใช้ disable ปุ่มเข้า/ออกงาน +
   // ขึ้นข้อความ 2 บรรทัดเมื่อไม่มีกะ. วันหยุดก็นับว่าไม่มีกะ.
   const hasShiftToday =
-    user.activeBranchId != null &&
-    userHasWorkShiftOn(user.id, user.activeBranchId, todayBkk);
+    clockBranchId != null &&
+    userHasWorkShiftOn(user.id, clockBranchId, todayBkk);
 
   // Today's scheduled shift end (work kind) — drives the OT prompt when
   // a PT staff clocks out after their shift ends (owner 2026-06-03).
   let scheduledEnd: string | null = null;
-  if (user.activeBranchId) {
+  if (clockBranchId) {
     const sc = db.prepare(`
       SELECT sc.end_time FROM roster_assignments ra
       JOIN shift_codes sc ON sc.id = ra.shift_code_id
       WHERE ra.user_id = ? AND ra.assignment_date = ? AND ra.branch_id = ? AND sc.kind = 'work'
       ORDER BY sc.end_time DESC LIMIT 1
-    `).get(user.id, todayBkk, user.activeBranchId) as { end_time: string } | undefined;
+    `).get(user.id, todayBkk, clockBranchId) as { end_time: string } | undefined;
     scheduledEnd = sc?.end_time ?? null;
   }
 

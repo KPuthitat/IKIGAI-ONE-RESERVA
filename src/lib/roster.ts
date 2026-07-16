@@ -259,6 +259,24 @@ export function workShiftBranchesForUserOn(
   return rows.map((r) => r.branch_id);
 }
 
+/** The branch a clock-in/out on `dateBkk` should attribute to. Keep the active
+ *  branch if it has a work shift today; else if exactly one OTHER branch is
+ *  rostered today, auto-pick that; else fall back to the active branch. Shared
+ *  by the clock API and the clock PAGE so both agree — a cross-branch rotator
+ *  (or a just-moved staffer) sees + clocks at the branch they're actually
+ *  rostered at today, without switching branch manually (owner 2026-07-14/16).
+ *  Returns null only when there is no active branch and no single rostered one. */
+export function resolveClockBranchId(
+  userId: number,
+  activeBranchId: number | null,
+  dateBkk: string
+): number | null {
+  const rostered = workShiftBranchesForUserOn(userId, dateBkk);
+  if (activeBranchId != null && rostered.includes(activeBranchId)) return activeBranchId;
+  if (rostered.length === 1) return rostered[0];
+  return activeBranchId;
+}
+
 /** Bulk variant: returns Map<userId, "HH:MM"|null> for every user in
  *  the given list. Used by monthly aggregators (SVC, daily summary)
  *  so we don't hit the DB once per user per day. dateBkk is a single

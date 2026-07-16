@@ -13,7 +13,7 @@ import {
   detectPunchAnomaly, detectScheduleDeviation, uncertifiedPriorMissingOut,
   type OwlPrompt, type DeviationPrompt
 } from "@/lib/attendance-flags";
-import { userHasWorkShiftOn, effectiveShiftStartForUserDate, workShiftBranchesForUserOn } from "@/lib/roster";
+import { userHasWorkShiftOn, effectiveShiftStartForUserDate, resolveClockBranchId } from "@/lib/roster";
 import { verifyClockCode } from "@/lib/clock-code";
 import { saveClockSelfie } from "@/lib/clock-selfie";
 import { nowBkkMinutes } from "@/lib/time";
@@ -114,11 +114,9 @@ export async function POST(req: Request) {
   // meal-coupon + deviation) uses this resolved branch so the whole flow is
   // consistent — including geofence validating against the site they're at.
   const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const rosterBranchesToday = workShiftBranchesForUserOn(user.id, todayBkk);
-  const clockBranchId =
-    rosterBranchesToday.includes(user.activeBranchId) ? user.activeBranchId
-    : rosterBranchesToday.length === 1 ? rosterBranchesToday[0]
-    : user.activeBranchId;
+  // activeBranchId is guaranteed non-null by the guard above, so the fallback
+  // keeps this a number for the downstream per-branch queries.
+  const clockBranchId = resolveClockBranchId(user.id, user.activeBranchId, todayBkk) ?? user.activeBranchId;
 
   // ── Anti-cheat (TC-2): GPS geofence + QR code ──────────────────
   // Fetch the branch row once here — same row drives both checks
