@@ -248,6 +248,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       ?? new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
     fields.push("ft_started_at = ?");
     vals.push(eff);
+  } else if (
+    userCanViewPayroll(user) &&
+    parsed.data.ft_effective_date &&
+    (parsed.data.employment_type ?? target.employment_type) === "ft"
+  ) {
+    // Correct/backfill an ALREADY-FT employee's transition date (owner
+    // 2026-07-19: ธนะรัตน์ converted before ft_started_at existed → NULL → the
+    // pay engine treated him as a full-month FT instead of a transition-month
+    // weekly). Client only sends this when the admin actually changed the date.
+    fields.push("ft_started_at = ?");
+    vals.push(parsed.data.ft_effective_date);
   }
   addField("line_user_id");
   // shift_start_time: empty string from form = clear to NULL

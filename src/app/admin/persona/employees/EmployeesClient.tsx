@@ -37,6 +37,9 @@ export type EmployeeRow = {
   monthly_salary: number | null;
   pay_cycle: "weekly" | "monthly" | null;
   salary_tax_mode: "sso" | "wht" | null;
+  // วันที่เริ่มเป็นประจำ (PT→FT transition date). Drives which payroll table the
+  // transition month lands in. NULL on legacy FT converted before this existed.
+  ft_started_at: string | null;
   // 0 = ผู้บริหาร/ไม่ลงเวลา → เงินเดือน fix ไม่มี OT/SVC (owner 2026-07-12).
   track_attendance?: number;
   line_user_id: string | null;
@@ -516,8 +519,10 @@ function EditModal({
   // ผู้บริหาร/หัวหน้าที่ไม่ลงเวลา (owner 2026-07-12) — เงินเดือน fix ไม่มี OT/SVC.
   const [noClock, setNoClock] = useState<boolean>((employee.track_attendance ?? 1) === 0);
   // วันที่มีผลของการเปลี่ยน PT→FT (owner 2026-07-13) — ถามทุกครั้งก่อนบันทึก.
+  // สำหรับคนที่เป็น FT อยู่แล้ว prefill ด้วย ft_started_at ปัจจุบัน (แก้ย้อนหลังได้ —
+  // owner 2026-07-19: ธนะรัตน์ ย้ายก่อนระบบมีฟิลด์นี้ ค่าเลยเป็น NULL คิดเงินผิดตาราง).
   const [ftEffectiveDate, setFtEffectiveDate] = useState<string>(
-    new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)
+    employee.ft_started_at ?? new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)
   );
   const [hireDate, setHireDate] = useState<string>(employee.hire_date ?? "");
   // Phase 1D — Payroll fields
@@ -732,8 +737,17 @@ function EditModal({
         escalation_hours: null,
         is_test_account: isTestAccount ? 1 : 0
       };
-      // PT→FT effective date — only relevant when converting into FT.
+      // PT→FT effective date. On a fresh conversion always send it. For someone
+      // ALREADY FT, only send when admin actually changed it (owner 2026-07-19)
+      // — so merely opening + saving a form never clobbers a correct value.
+      const isAlreadyFt = employmentType === "ft" && employee.employment_type === "ft";
       if (isConvertingToFt) {
+        body.ft_effective_date = ftEffectiveDate;
+      } else if (
+        isAlreadyFt &&
+        /^\d{4}-\d{2}-\d{2}$/.test(ftEffectiveDate) &&
+        ftEffectiveDate !== (employee.ft_started_at ?? "")
+      ) {
         body.ft_effective_date = ftEffectiveDate;
       }
       // Account role (staff↔admin) — super_admin only, and never for a
@@ -1101,6 +1115,26 @@ function EditModal({
                     หักภาษี ณ ที่จ่าย 3% รวมกับรอบพาร์ทไทม์ · <b>เดือนถัดไป</b>ย้ายเป็นพนักงานประจำ
                     (รายเดือน จ่ายวันที่ 5 ของเดือนถัดไป)
                   </div>
+                </div>
+              )}
+              {/* แก้ไข/เติมวันที่เริ่มเป็นประจำ ให้คนที่เป็น FT อยู่แล้ว (owner 2026-07-19).
+                  จำเป็นสำหรับคนที่ย้าย PT→ประจำ ก่อนระบบมีฟิลด์นี้ (ft_started_at = NULL)
+                  จึงถูกคิดเป็นประจำเต็มเดือน แทนที่จะเป็นเดือนเปลี่ยนผ่าน (รายสัปดาห์). */}
+              {employmentType === "ft" && employee.employment_type === "ft" && (
+                <div className="mb-3">
+                  <label className="label">วันที่เริ่มเป็นพนักงานประจำ</label>
+                  <input
+                    type="date"
+                    className="input"
+                    value={ftEffectiveDate}
+                    max={new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)}
+                    onChange={(e) => setFtEffectiveDate(e.target.value)}
+                  />
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    {employee.ft_started_at
+                      ? "เดือนของวันที่นี้ = เดือนเปลี่ยนผ่าน (จ่ายรายสัปดาห์รวมกับพาร์ทไทม์ + WHT 3%), เดือนถัดไปจ่ายเต็มเดือน. แก้เฉพาะเมื่อวันเริ่มจริงคลาดเคลื่อน แล้วสั่งคำนวณรอบที่เกี่ยวข้องใหม่."
+                      : "⚠️ ยังไม่ได้ตั้งวันเริ่มเป็นประจำ — ระบบจะคิดเป็นประจำเต็มเดือนทุกเดือน. ถ้าเพิ่งย้ายจากพาร์ทไทม์ กรุณาระบุวันเริ่มจริง แล้วสั่งคำนวณรอบเดือนนั้นใหม่."}
+                  </p>
                 </div>
               )}
               {employmentType === "ft" && (
