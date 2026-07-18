@@ -1127,6 +1127,14 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
            (SELECT MIN(ub.branch_id) FROM user_branches ub WHERE ub.user_id = users.id)
          ) THEN 1 ELSE 0 END AS is_primary_branch`
     : "1 AS is_primary_branch";
+  // A monthly period must NOT include an FT in their PT→FT transition month —
+  // that first month is paid WEEKLY at fix-rate, so pulling them into the same
+  // month's monthly round double-pays (owner 2026-07-18: นาย ธนะรัตน์). The boot
+  // migration later flips pay_cycle→monthly, which would otherwise sweep them in
+  // when this June round is recomputed in July. Keyed on ft_started_at's month.
+  const ftTransitionExclude = period.cycle === "monthly"
+    ? "AND NOT (employment_type = 'ft' AND ft_started_at IS NOT NULL AND substr(ft_started_at, 1, 7) = @pmonth)"
+    : "";
   const staffSql = `
     SELECT id AS user_id, display_name, employment_type, employee_code,
            hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
@@ -1136,13 +1144,20 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     FROM users
     WHERE role IN ('staff', 'admin') AND employment_type IS NOT NULL
       AND is_test_account = 0
+      -- Only currently-employed staff — never pay a disabled/resigned/terminated
+      -- account (owner 2026-07-18: เลิกจ้างแล้วยังโผล่ในรอบ).
+      AND status NOT IN ('disabled', 'resigned', 'terminated')
+      -- Hired on/before the period ended — a future hire doesn't belong in a
+      -- past round (owner 2026-07-18: เข้างาน 1 ก.ค. หลุดเข้ารอบ มิ.ย.).
+      AND (hire_date IS NULL OR hire_date <= @pend)
       AND ${staffWhere}
       AND NOT (employment_type = 'ft' AND COALESCE(monthly_salary, 0) = 0)
+      ${ftTransitionExclude}
       ${branchClause}
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
   `;
-  const staffParams: Record<string, unknown> = { pmonth: periodMonth };
+  const staffParams: Record<string, unknown> = { pend: period.period_end, pmonth: periodMonth };
   if (period.branch_id != null) staffParams.bid = period.branch_id;
   const staffRaw = db.prepare(staffSql).all(staffParams) as Array<StaffRawRow>;
   const staff: EmployeePayrollSnapshot[] = staffRaw.map((r) => ({
@@ -1394,6 +1409,7 @@ export function recomputeLine(
       FROM users
       WHERE id = ? AND role IN ('staff', 'admin') AND employment_type IS NOT NULL
         AND is_test_account = 0
+        AND status NOT IN ('disabled', 'resigned', 'terminated')
     `).get(userId) as {
       display_name: string; employee_code: string | null;
       employment_type: "pt" | "ft" | null; hourly_rate: number | null;
