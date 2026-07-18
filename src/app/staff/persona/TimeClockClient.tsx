@@ -835,7 +835,7 @@ function ClockAction({
             <p className="text-xs text-amber-700 leading-relaxed">
               หากลืมกดเข้า กรุณารับรองเวลาเข้าก่อน จึงจะลงเวลาออกได้ครับ
             </p>
-            <a href="/staff/persona/time-certification"
+            <a href={`/staff/persona/time-certification?missing=1&type=in&date=${todayBkk}`}
               className="inline-block text-sm font-bold bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg">
               ไปรับรองเวลาเข้า
             </a>

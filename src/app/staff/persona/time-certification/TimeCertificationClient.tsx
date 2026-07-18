@@ -97,6 +97,9 @@ export default function TimeCertificationClient({
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // Set when a forgot-clock-IN was self-certified with immediate effect, so we
+  // can nudge the staff straight back to the clock to punch out.
+  const [immediateOk, setImmediateOk] = useState(false);
   // Forgot-to-punch flow: file a request to ADD a clock-in/out that was
   // never recorded (owner 2026-06-08). Distinct from `form` (correct an
   // existing punch).
@@ -115,8 +118,10 @@ export default function TimeCertificationClient({
   // entries — so the missing-punch form can LOCK to the side that's actually
   // missing instead of letting them pick the wrong one (owner 2026-06-15:
   // "ถ้าลืมลงเข้า มีแค่รับรองเข้า / ถ้าลืมลงออก มีแค่รับรองออก").
+  // Zero-punch day → treat as a missing IN: forgot to clock in entirely, so
+  // certify the IN first (it takes effect immediately, then they clock out).
   function missingInfoForDate(date: string): {
-    missing: "in" | "out" | null; reason: "ok" | "complete" | "no_punch";
+    missing: "in" | "out" | null; reason: "ok" | "complete";
   } {
     const day = entries.filter((e) => bkkDateOf(e.ts) === date);
     const hasIn = day.some((e) => e.type === "in");
@@ -124,7 +129,7 @@ export default function TimeCertificationClient({
     if (hasIn && !hasOut) return { missing: "out", reason: "ok" };
     if (hasOut && !hasIn) return { missing: "in", reason: "ok" };
     if (hasIn && hasOut) return { missing: null, reason: "complete" };
-    return { missing: null, reason: "no_punch" };
+    return { missing: "in", reason: "ok" };
   }
 
   function openForm(entry: EntryRow) {
@@ -181,12 +186,12 @@ export default function TimeCertificationClient({
       return;
     }
     // Type is DERIVED from the day's punches, never picked freely — you can
-    // only certify the side that's actually missing (owner 2026-06-15).
+    // only certify the side that's actually missing (owner 2026-06-15). A
+    // zero-punch day resolves to a missing IN (owner 2026-07-18).
     const info = missingInfoForDate(missingForm.date);
     if (!info.missing) {
-      setMsg({ kind: "err", text: info.reason === "complete"
-        ? "วันนี้ลงเวลาครบทั้งเข้า-ออกแล้ว — ถ้าเวลาผิดให้ใช้ \"แก้ไขเวลา\" รายการด้านล่าง"
-        : "วันนี้ยังไม่มีการลงเวลา — เพิ่มได้เฉพาะวันที่ลงเวลาอีกด้านไว้แล้ว" });
+      setMsg({ kind: "err",
+        text: "วันนี้ลงเวลาครบทั้งเข้า-ออกแล้ว — ถ้าเวลาผิดให้ใช้ \"แก้ไขเวลา\" รายการด้านล่าง" });
       return;
     }
     if (missingForm.reason.trim().length < 3) {
@@ -221,7 +226,13 @@ export default function TimeCertificationClient({
         setMsg({ kind: "err", text: m });
         return;
       }
-      setMsg({ kind: "ok", text: t("staff.persona.timeCert.submitted") });
+      if (j.immediate) {
+        // Forgot clock-IN → recorded live. Send them back to clock OUT.
+        setImmediateOk(true);
+        setMsg({ kind: "ok", text: "บันทึกเวลาเข้าแล้ว กลับไปกดออกงานได้เลย" });
+      } else {
+        setMsg({ kind: "ok", text: t("staff.persona.timeCert.submitted") });
+      }
       setMissingForm(null);
       router.refresh();
     } catch {
@@ -293,6 +304,15 @@ export default function TimeCertificationClient({
         </div>
       )}
 
+      {immediateOk && (
+        <div className="text-center">
+          <a href="/staff/persona"
+            className="inline-block text-sm font-bold bg-brand hover:bg-amber-700 text-white px-5 py-2.5 rounded-lg">
+            กลับไปหน้าลงเวลา → กดออกงาน
+          </a>
+        </div>
+      )}
+
       {/* ── Forgot to clock in/out — file a NEW punch (owner 2026-06-08) ── */}
       <div className="card space-y-3">
         <div className="flex items-center justify-between gap-2">
@@ -317,18 +337,23 @@ export default function TimeCertificationClient({
             <div>
               <label className="label">ประเภท (ระบบตรวจจากวันที่ให้อัตโนมัติ)</label>
               {dayInfo.missing ? (
-                <div className={`py-2 px-3 rounded-lg text-sm font-bold border ${
-                  dayInfo.missing === "in"
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                    : "bg-rose-50 text-rose-700 border-rose-200"
-                }`}>
-                  {dayInfo.missing === "in" ? "ลืมลงเวลาเข้า" : "ลืมลงเวลาออก"}
-                </div>
+                <>
+                  <div className={`py-2 px-3 rounded-lg text-sm font-bold border ${
+                    dayInfo.missing === "in"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : "bg-rose-50 text-rose-700 border-rose-200"
+                  }`}>
+                    {dayInfo.missing === "in" ? "ลืมลงเวลาเข้า" : "ลืมลงเวลาออก"}
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed mt-1.5">
+                    {dayInfo.missing === "in"
+                      ? "รับรองเวลาเข้าแล้วมีผลทันที กลับไปกดออกงานได้เลย — ระบบบันทึกไว้เป็นประวัติการลงเวลาที่ไม่เหมาะสม"
+                      : "เมื่อแอดมินอนุมัติ ระบบจะบันทึกเวลาและคำนวณเงินเดือนให้อัตโนมัติ"}
+                  </p>
+                </>
               ) : (
                 <div className="py-2 px-3 rounded-lg text-xs bg-amber-50 text-amber-800 border border-amber-200 leading-relaxed">
-                  {dayInfo.reason === "complete"
-                    ? "วันนี้ลงเวลาครบทั้งเข้า-ออกแล้ว — ถ้าเวลาผิด ให้ใช้ “แก้ไขเวลา” ที่รายการด้านล่าง"
-                    : "วันนี้ยังไม่มีการลงเวลา — เพิ่มได้เฉพาะวันที่ลงเวลาอีกด้านไว้แล้ว (เช่น ลงเข้าแล้วแต่ลืมลงออก)"}
+                  วันนี้ลงเวลาครบทั้งเข้า-ออกแล้ว — ถ้าเวลาผิด ให้ใช้ “แก้ไขเวลา” ที่รายการด้านล่าง
                 </div>
               )}
             </div>
@@ -388,8 +413,8 @@ export default function TimeCertificationClient({
           );
         })() : (
           <p className="text-[11px] text-slate-400 leading-relaxed">
-            เพิ่มได้เฉพาะวันที่ลงเวลาอีกด้านไว้แล้ว (เช่น ลงเข้าแล้วแต่ลืมลงออก) — เมื่อแอดมินอนุมัติ
-            ระบบจะบันทึกเวลาและคำนวณเงินเดือนให้อัตโนมัติ
+            ลืมกดเข้า? รับรองเวลาเข้าได้เลย ระบบบันทึกทันทีแล้วกลับไปกดออกงานต่อได้ —
+            ส่วนการลืมกดออก ระบบจะบันทึกเมื่อแอดมินอนุมัติ ทุกครั้งจะถูกบันทึกเป็นประวัติการลงเวลาที่ไม่เหมาะสม
           </p>
         )}
       </div>
