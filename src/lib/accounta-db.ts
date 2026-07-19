@@ -1499,6 +1499,156 @@ export function monthlyTrend(branchId: number, year: number): MonthlyTrendRow[] 
   return out;
 }
 
+// ── Break-even (จุดคุ้มทุน) ──────────────────────────────────────────
+// owner 2026-07-19 · "ขายเท่าไหร่จึงจะเริ่มกำไร" per branch, real-time.
+//   จุดคุ้มทุน (บาท) = ต้นทุนคงที่ ÷ (1 − อัตราต้นทุนผันแปร)
+//   อัตราต้นทุนผันแปร   = ต้นทุนผันแปร ÷ ยอดขาย
+// ระบบไม่ได้ tag ว่าหมวดไหนคงที่/ผันแปร จึงใช้ค่าเริ่มต้นอัตโนมัติจาก *code*
+// หมวดใน accounta_categories (เจ้าของเลือก 2026-07-19):
+//   • ผันแปร  = GD (ต้นทุนสินค้า/วัตถุดิบ) + FC (ค่าธรรมเนียม/แพลตฟอร์ม GP: GRAB/บัตร)
+//   • ตัดออก   = CP (CapEx ลงทุนครั้งเดียว) + LN (ชำระเงินกู้ = คืนเงินต้น) + แถวที่ capex_bucket ไม่ว่าง
+//   • คงที่   = ที่เหลือทั้งหมด (RT/UT/LB/ER/AO/MK/RM/MI + ไม่ระบุหมวด)
+// เดือนปัจจุบันคำนวณ real-time จาก actuals; แต่ "เป้าที่ต้องทำเดือนนี้" อิงค่าเฉลี่ย
+// ตั้งแต่ต้นปี (YTD) — ต้นทุนคงที่มักลงไม่ครบตอนต้นเดือน (ค่าเช่า/เงินเดือนลงปลายเดือน)
+// จึงใช้ค่าเฉลี่ยต้นทุนคงที่/เดือน + อัตราผันแปรจากทั้งปีเป็นฐานของเป้าแทน.
+const BE_VARIABLE_CODES = new Set(["GD", "FC"]);
+const BE_EXCLUDED_CODES = new Set(["CP", "LN"]);
+
+export type BreakEvenAnalysis = {
+  /** พอมีข้อมูลคำนวณเป้าจุดคุ้มทุนได้ (ytdVarRatio<1, avgMonthlyFixed>0). */
+  hasData: boolean;
+  /** YYYY-MM-DD (Bangkok) ที่ใช้เป็น anchor ของเดือนปัจจุบัน. */
+  date: string;
+  // ── เดือนปัจจุบัน (real-time จาก actuals) ──
+  monthSales: number;
+  monthFixed: number;
+  monthVariable: number;
+  monthVarRatio: number | null;    // สัดส่วน (0..1) = ผันแปร ÷ ยอดขายเดือนนี้
+  monthBreakEven: number | null;   // ต้นทุนคงที่เดือนนี้ ÷ (1 − ผันแปร)
+  // ── ฐานค่าเฉลี่ยตั้งแต่ต้นปี (YTD) ──
+  monthsWithData: number;          // จำนวนเดือนที่มียอดขาย > 0 (ต้นปี → เดือนนี้)
+  ytdSales: number;
+  ytdFixed: number;
+  ytdVariable: number;
+  avgMonthlyFixed: number;         // ต้นทุนคงที่เฉลี่ย/เดือน (YTD)
+  ytdVarRatio: number | null;      // สัดส่วน (0..1) = ผันแปร ÷ ยอดขาย (YTD)
+  // ── เป้าจุดคุ้มทุนที่ต้องทำให้ได้เดือนนี้ (จากค่าเฉลี่ย YTD) ──
+  requiredBreakEven: number | null;
+  pct: number;                     // monthSales ÷ requiredBreakEven × 100 (1 ทศนิยม)
+  reached: boolean;                // ยอดขายเดือนนี้ถึงจุดคุ้มทุนแล้ว → เริ่มกำไร
+  remaining: number;               // ยังต้องขายอีกกี่บาทถึงคุ้มทุน
+  over: number;                    // ขายเกินจุดคุ้มทุนไปเท่าไร (โซนกำไร)
+  remainingDays: number;           // วันที่เหลือของเดือน (รวมวันนี้)
+  perDayNeeded: number;            // remaining ÷ remainingDays
+  forecast: number | null;         // ประมาณการยอดขายทั้งเดือน (ส่งมาจากหน้า)
+  forecastReachesBreakEven: boolean;
+};
+
+/** จุดคุ้มทุนรายสาขา. `anchor` = YYYY-MM-DD (Bangkok). ส่ง `monthSalesOverride`
+ *  (เช่น ledger salesRevenue ของเดือนนี้) เพื่อให้ "ยอดขายเดือนนี้" ตรงกับที่เหลือในหน้า
+ *  ACCOUNTA; ส่ง `forecast` (ประมาณการยอดขายทั้งเดือน) เพื่อบอกว่าเดือนนี้จะถึงจุดคุ้มทุนไหม. */
+export function breakEvenAnalysis(
+  branchId: number,
+  anchor: string,
+  monthSalesOverride?: number | null,
+  forecast?: number | null
+): BreakEvenAnalysis {
+  const db = getDb();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(anchor) ? anchor : bkkToday();
+  const { start: mStart, end: mEnd } = ledgerRange("month", date);
+  const yStart = `${date.slice(0, 4)}-01-01`;
+
+  // ชื่อหมวด → code เพื่อจำแนก (accounta_expenses.category เก็บเป็น *ชื่อ* ไม่ใช่ code).
+  const nameToCode = new Map<string, string | null>(listCategories().map((c) => [c.name, c.code]));
+  const classify = (catName: string): "variable" | "fixed" | "excluded" => {
+    const code = nameToCode.get(catName) ?? null;
+    if (code && BE_EXCLUDED_CODES.has(code)) return "excluded";
+    if (code && BE_VARIABLE_CODES.has(code)) return "variable";
+    return "fixed";
+  };
+  // รวมต้นทุน (confirmed, ไม่นับบิลที่ tag เป็น CapEx) แล้วแยกคงที่/ผันแปร.
+  const costsInRange = (start: string, end: string) => {
+    const rows = db.prepare(
+      `SELECT COALESCE(category,'') AS cat, COALESCE(SUM(amount_total),0) AS amt
+         FROM accounta_expenses
+        WHERE review_status = 'confirmed' AND branch_id = ?
+          AND capex_bucket IS NULL AND bill_date BETWEEN ? AND ?
+        GROUP BY COALESCE(category,'')`
+    ).all(branchId, start, end) as Array<{ cat: string; amt: number }>;
+    let fixed = 0, variable = 0;
+    for (const r of rows) {
+      const kind = classify(r.cat);
+      if (kind === "variable") variable += r.amt;
+      else if (kind === "fixed") fixed += r.amt;
+    }
+    return { fixed: round2(fixed), variable: round2(variable) };
+  };
+  const ratio = (variable: number, sales: number): number | null =>
+    sales > 0 ? Math.round((variable / sales) * 10000) / 10000 : null;
+
+  // ── เดือนปัจจุบัน (real-time) ──
+  const mCost = costsInRange(mStart, mEnd);
+  const monthFixed = mCost.fixed;
+  const monthVariable = mCost.variable;
+  let monthSales: number;
+  if (monthSalesOverride != null) {
+    monthSales = round2(Math.max(0, Number(monthSalesOverride) || 0));
+  } else {
+    const s = db.prepare(
+      "SELECT COALESCE(SUM(revenue),0) AS s FROM branch_daily_revenue WHERE branch_id = ? AND date BETWEEN ? AND ?"
+    ).get(branchId, mStart, mEnd) as { s: number };
+    monthSales = round2(Math.max(0, Number(s?.s) || 0));
+  }
+  const monthVarRatio = ratio(monthVariable, monthSales);
+  const monthBreakEven = monthVarRatio != null && monthVarRatio < 1
+    ? round2(monthFixed / (1 - monthVarRatio)) : null;
+
+  // ── ฐานค่าเฉลี่ยตั้งแต่ต้นปี ──
+  // ใช้เฉพาะ "เดือนที่จบแล้ว" (ต้นปี → สิ้นเดือนก่อนหน้า) เป็นฐานเฉลี่ย — ไม่รวม
+  // เดือนปัจจุบันที่ต้นทุนคงที่ยังลงไม่ครบ (ค่าเช่า/เงินเดือนลงปลายเดือน) ซึ่งจะดึง
+  // ค่าเฉลี่ยต่ำเกินจริงตอนต้นเดือน แล้วทำให้เป้าจุดคุ้มทุนเพี้ยน. ถ้ายังไม่มีเดือนที่จบ
+  // ในปีนี้ (เช่น ม.ค. หรือเพิ่งเปิดเดือนแรก) ค่อย fallback รวมเดือนปัจจุบันให้ยังพอคำนวณได้.
+  const [mY, mM] = mStart.split("-").map(Number);
+  const prevMonthEnd = new Date(Date.UTC(mY, mM - 1, 0)).toISOString().slice(0, 10);
+  const avgEnd = prevMonthEnd >= yStart ? prevMonthEnd : mEnd;
+  const yCost = costsInRange(yStart, avgEnd);
+  const ytdFixed = yCost.fixed;
+  const ytdVariable = yCost.variable;
+  const ytdSales = round2(Math.max(0, Number((db.prepare(
+    "SELECT COALESCE(SUM(revenue),0) AS s FROM branch_daily_revenue WHERE branch_id = ? AND date BETWEEN ? AND ?"
+  ).get(branchId, yStart, avgEnd) as { s: number }).s) || 0));
+  const monthsWithData = Number((db.prepare(
+    "SELECT COUNT(DISTINCT substr(date,1,7)) AS c FROM branch_daily_revenue WHERE branch_id = ? AND date BETWEEN ? AND ? AND revenue > 0"
+  ).get(branchId, yStart, avgEnd) as { c: number }).c) || 0;
+  const avgMonthlyFixed = monthsWithData > 0 ? round2(ytdFixed / monthsWithData) : 0;
+  const ytdVarRatio = ratio(ytdVariable, ytdSales);
+
+  // ── เป้าจุดคุ้มทุนเดือนนี้ (จากค่าเฉลี่ย YTD) ──
+  const requiredBreakEven = ytdVarRatio != null && ytdVarRatio < 1 && avgMonthlyFixed > 0
+    ? round2(avgMonthlyFixed / (1 - ytdVarRatio)) : null;
+
+  const daysInMonth = Number(mEnd.slice(8, 10));
+  const todayDay = date >= mStart && date <= mEnd ? Number(date.slice(8, 10)) : daysInMonth;
+  const remainingDays = Math.max(1, daysInMonth - todayDay + 1);
+  const reached = requiredBreakEven != null && monthSales >= requiredBreakEven;
+  const remaining = requiredBreakEven != null ? Math.max(0, round2(requiredBreakEven - monthSales)) : 0;
+  const over = requiredBreakEven != null ? Math.max(0, round2(monthSales - requiredBreakEven)) : 0;
+  const perDayNeeded = round2(remaining / remainingDays);
+  const pct = requiredBreakEven != null && requiredBreakEven > 0
+    ? Math.round((monthSales / requiredBreakEven) * 1000) / 10 : 0;
+  const fc = forecast != null && Number.isFinite(forecast) ? round2(forecast) : null;
+  const forecastReachesBreakEven = requiredBreakEven != null && fc != null && fc >= requiredBreakEven;
+
+  return {
+    hasData: requiredBreakEven != null,
+    date,
+    monthSales, monthFixed, monthVariable, monthVarRatio, monthBreakEven,
+    monthsWithData, ytdSales, ytdFixed, ytdVariable, avgMonthlyFixed, ytdVarRatio,
+    requiredBreakEven, pct, reached, remaining, over, remainingDays, perDayNeeded,
+    forecast: fc, forecastReachesBreakEven
+  };
+}
+
 export type AccountaPayables = {
   whtUnpaid: number;          // ภาษีหัก ณ ที่จ่าย รอนำส่ง (org-wide — payroll posts at branch NULL)
   ssoUnpaid: number;          // ประกันสังคม รอนำส่ง (org-wide)

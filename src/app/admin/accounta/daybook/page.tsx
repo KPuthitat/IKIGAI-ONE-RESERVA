@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, listVendors, listPaymentMethods, materialPurchaseQuota, postDueRecurringExpenses, vendorLastDescriptions, type LedgerPeriod } from "@/lib/accounta-db";
+import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, listVendors, listPaymentMethods, materialPurchaseQuota, postDueRecurringExpenses, vendorLastDescriptions, breakEvenAnalysis, type LedgerPeriod, type BreakEvenAnalysis } from "@/lib/accounta-db";
 import { salesTargetProgress, type SalesTargetProgress } from "@/lib/sales-target";
 import { financialAnalysisEnabled } from "@/lib/financial-analysis";
 import { fmtMoney } from "@/lib/format";
@@ -96,6 +96,98 @@ function SalesTargetCard({ st }: { st: SalesTargetProgress }) {
   );
 }
 
+// จุดคุ้มทุน (break-even) เดือนนี้ (owner 2026-07-19) — "ขายเท่าไหร่จึงเริ่มกำไร".
+// เป้า = ต้นทุนคงที่เฉลี่ย/เดือน ÷ (1 − อัตราต้นทุนผันแปร) จากค่าเฉลี่ยตั้งแต่ต้นปี.
+// แดง/อำพัน = ยังไม่คุ้มทุน → เขียว = คุ้มทุนแล้ว เริ่มกำไร. Full class-name literals
+// ให้ Tailwind scan เจอ (เหมือน SalesTargetCard).
+function BreakEvenCard({ be }: { be: BreakEvenAnalysis }) {
+  const reached = be.reached;
+  const target = be.requiredBreakEven ?? 0;
+  const fill = Math.min(100, Math.max(0, be.pct));
+  const [yy, mm] = be.date.split("-").map(Number);
+  const varPct = (be.ytdVarRatio ?? 0) * 100;
+
+  const c = reached
+    ? {
+        border: "border-emerald-200", grad: "from-emerald-50 to-white",
+        badge: "bg-emerald-600/10 text-emerald-700", title: "text-emerald-900",
+        hero: "text-emerald-700", strong: "text-emerald-700",
+        track: "bg-emerald-100", fill: "bg-emerald-500", foot: "text-emerald-800",
+        artwork: "text-emerald-100"
+      }
+    : {
+        border: "border-rose-200", grad: "from-rose-50 to-white",
+        badge: "bg-rose-600/10 text-rose-700", title: "text-rose-900",
+        hero: "text-rose-700", strong: "text-rose-700",
+        track: "bg-rose-100", fill: "bg-rose-500", foot: "text-rose-800",
+        artwork: "text-rose-100"
+      };
+
+  return (
+    <div className={`relative overflow-hidden rounded-2xl border ${c.border} bg-gradient-to-br ${c.grad} p-4 sm:p-5 shadow-sm`}>
+      {/* decorative artwork — a soft balance/scale in the corner */}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
+        className={`pointer-events-none absolute -right-5 -top-5 h-28 w-28 ${c.artwork}`}>
+        <path d="M12 3v18M3 21h18M6 7l-3 6h6l-3-6zM18 7l-3 6h6l-3-6zM12 5l6 2M12 5L6 7" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+
+      <div className="relative">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${c.badge}`}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3v18M4 21h16M6 8l-2.5 5h5L6 8zM18 8l-2.5 5h5L18 8zM12 6l6 2M12 6L6 8" />
+              </svg>
+            </span>
+            <h2 className={`font-bold ${c.title}`}>จุดคุ้มทุนเดือนนี้</h2>
+          </div>
+          <span className={`shrink-0 rounded-full border ${c.border} bg-white/70 px-2.5 py-0.5 text-[11px] font-medium ${c.foot}`}>
+            {reached ? "คุ้มทุนแล้ว 🎉" : `${TH_MON_FULL[mm]} ${yy + 543}`}
+          </span>
+        </div>
+
+        {/* Hero — ยอดขายที่ต้องทำให้ถึงเพื่อเริ่มกำไร */}
+        <div className="mt-3 flex items-baseline gap-2 flex-wrap">
+          <span className={`text-4xl font-extrabold tracking-tight tabular-nums ${c.hero}`}>
+            ฿{fmtMoney(target)}
+          </span>
+          <span className="text-xs text-slate-500">ต้องขายให้ถึงเดือนนี้จึงเริ่มกำไร</span>
+        </div>
+
+        {/* Progress — ยอดขายเดือนนี้เทียบจุดคุ้มทุน */}
+        <div className="mt-3">
+          <div className="mb-1 flex items-center justify-between text-[11px]">
+            <span className="text-slate-500">ขายแล้ว <span className={`font-semibold ${c.strong}`}>฿{fmtMoney(be.monthSales)}</span></span>
+            <span className="text-slate-500">คิดเป็น {be.pct.toLocaleString("th-TH", { maximumFractionDigits: 1 })}% ของจุดคุ้มทุน</span>
+          </div>
+          <div className={`h-2.5 overflow-hidden rounded-full ${c.track}`}>
+            <div className={`h-full rounded-full ${c.fill}`} style={{ width: `${fill}%` }} />
+          </div>
+          <div className={`mt-1 text-right text-[11px] font-medium ${c.foot}`}>
+            {reached
+              ? `กำไรแล้ว ฿${fmtMoney(be.over)}`
+              : `เหลืออีก ฿${fmtMoney(be.remaining)} · เฉลี่ยวันละ ฿${fmtMoney(be.perDayNeeded)} (อีก ${be.remainingDays} วัน)`}
+          </div>
+        </div>
+
+        {/* ฐานการคำนวณ + ประมาณการทั้งเดือน */}
+        <div className="mt-3 border-t border-slate-100 pt-2 text-[11px] text-slate-500 space-y-0.5">
+          <div>
+            ฐาน: ต้นทุนคงที่เฉลี่ย <span className="font-medium text-slate-600">฿{fmtMoney(be.avgMonthlyFixed)}/เดือน</span>
+            {" · "}ต้นทุนผันแปร <span className="font-medium text-slate-600">{varPct.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%</span> ของยอดขาย
+            {" "}(เฉลี่ยตั้งแต่ต้นปี {be.monthsWithData} เดือน)
+          </div>
+          {be.forecast != null && !reached && (
+            <div className={be.forecastReachesBreakEven ? "text-emerald-600" : "text-rose-600"}>
+              ประมาณการทั้งเดือน ฿{fmtMoney(be.forecast)} — {be.forecastReachesBreakEven ? "คาดว่าจะคุ้มทุน ✓" : "ตามจังหวะนี้ยังไม่ถึงจุดคุ้มทุน"}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // บัญชีรายรับรายจ่าย — single-branch financial dashboard (owner 2026-06-20):
 // revenue/expense/net, ภาษีซื้อ-ขาย-ภพ.30, per-category %, daily averages,
 // month forecast. Branch = the session's active branch. Period week/month/year.
@@ -183,6 +275,11 @@ export default function DaybookPage({
   // แสดงเฉพาะเมื่อสาขาตั้งเป้ารายเดือนไว้แล้ว.
   const salesTarget = salesTargetProgress(branchId, todayBkk(), monthDash.salesRevenue);
 
+  // จุดคุ้มทุนเดือนนี้ (owner 2026-07-19) — ใช้ยอดขายเดือนนี้ตัวเดียวกับหน้า
+  // (monthDash.salesRevenue) + ประมาณการทั้งเดือน (monthDash.forecast). แสดง
+  // เฉพาะเมื่อมีข้อมูลพอคำนวณเป้าได้ (be.hasData).
+  const breakEven = breakEvenAnalysis(branchId, todayBkk(), monthDash.salesRevenue, monthDash.forecast);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -198,6 +295,7 @@ export default function DaybookPage({
         </p>
       </div>
       {salesTarget.hasTarget && <SalesTargetCard st={salesTarget} />}
+      {breakEven.hasData && <BreakEvenCard be={breakEven} />}
       <LedgerDashboardClient dash={dash} expenses={expenses} period={period} anchor={anchor}
         monthly={monthly} trendYear={trendYear} payables={payables}
         cashAccounts={cashAccounts} cashTotal={cashTotal}
