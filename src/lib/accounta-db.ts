@@ -10,6 +10,7 @@ import {
   type ExpenseInput, type PaymentStatus
 } from "./accounta";
 import { owlAiCostBaht } from "./owl-ai-models";
+import { smeIncomeTax, type SmeIncomeTax } from "./income-tax";
 
 export type VendorRow = {
   id: number;
@@ -1646,6 +1647,122 @@ export function breakEvenAnalysis(
     monthsWithData, ytdSales, ytdFixed, ytdVariable, avgMonthlyFixed, ytdVarRatio,
     requiredBreakEven, pct, reached, remaining, over, remainingDays, perDayNeeded,
     forecast: fc, forecastReachesBreakEven
+  };
+}
+
+// ── Company-wide financial year (รวมทุกสาขาของบริษัท) ────────────────
+// owner 2026-07-19 · NAMA + HYPO เป็นสองสาขาของบริษัทเดียว → รวม ภพ.30 (VAT
+// ยื่นรวม), ยอดขายรวม, และประมาณการภาษีเงินได้นิติบุคคลสิ้นปี. Scope ด้วย
+// JOIN branches ON b.company_id (branch_id ถูกเซ็ตเสมอ ต่างจากคอลัมน์
+// denormalized company_id ที่ manual income อาจว่าง).
+//   • ยอดขายรวม/เดือน   = SUM(branch_daily_revenue.revenue) ข้ามสาขา
+//   • ภาษีขาย/เดือน     = ฐาน(SUM accounta_income WHERE is_vat=1) × 7/107  (เฉพาะจด VAT)
+//   • ภาษีซื้อ/เดือน    = SUM(accounta_expenses.vat_amount) confirmed ข้ามสาขา
+//   • ภพ.30/เดือน       = ภาษีขาย − ภาษีซื้อ
+//   • กำไรสุทธิ(ฐานภาษี) = ยอดขายรวมทั้งปี − รายจ่ายดำเนินงาน (ตัด CapEx code CP +
+//     เงินกู้ code LN + บิลที่ capex_bucket ไม่ว่าง — reuse BE_EXCLUDED_CODES)
+
+export type CompanyMonthRow = {
+  month: number;         // 1..12
+  sales: number;         // ยอดขายรวม (branch_daily_revenue)
+  taxableSales: number;  // ฐานภาษีขาย (income is_vat=1)
+  outputVat: number;     // ภาษีขาย
+  inputVat: number;      // ภาษีซื้อ
+  vatPayable: number;    // ภพ.30 ที่ต้องยื่น (ติดลบ = ขอคืน/ยกไป)
+};
+
+export type CompanyFinancialYear = {
+  companyId: number;
+  companyName: string;
+  year: number;
+  vatRegistered: boolean;
+  branchNames: string[];
+  months: CompanyMonthRow[];   // 12 แถวเสมอ
+  annual: {
+    sales: number; taxableSales: number;
+    outputVat: number; inputVat: number; vatPayable: number;
+    opExpense: number;   // รายจ่ายดำเนินงานทั้งปี (ตัด CapEx/เงินกู้)
+    netProfit: number;   // sales − opExpense
+  };
+  incomeTax: SmeIncomeTax;
+};
+
+/** ภาพรวมการเงินระดับบริษัท ต่อ 1 ปีปฏิทิน (รวมทุกสาขาของ companyId). */
+export function companyFinancialYear(companyId: number, year: number): CompanyFinancialYear {
+  const db = getDb();
+  const y = String(year);
+
+  const co = db.prepare(
+    "SELECT name_th AS name, vat_registered AS vat FROM companies WHERE id = ?"
+  ).get(companyId) as { name: string; vat: number | null } | undefined;
+  const companyName = co?.name ?? `บริษัท #${companyId}`;
+  const vatRegistered = !!co?.vat;
+  // ทุกสาขาของบริษัท (ทุกสถานะ) ให้ตรงกับ scope ของ aggregation — สาขาที่ปิดไป
+  // ก็ยังมีข้อมูลย้อนหลังรวมอยู่ในยอด จึงต้องขึ้นชื่อในหัวข้อด้วย.
+  const branchNames = (db.prepare(
+    "SELECT name FROM branches WHERE company_id = ? ORDER BY display_order, name"
+  ).all(companyId) as Array<{ name: string }>).map((b) => b.name);
+
+  // ยอดขายรวม/เดือน (canonical shift-close feed)
+  const salesRows = db.prepare(
+    `SELECT CAST(substr(r.date,6,2) AS INTEGER) AS m, COALESCE(SUM(r.revenue),0) AS amt
+       FROM branch_daily_revenue r JOIN branches b ON b.id = r.branch_id
+      WHERE b.company_id = ? AND substr(r.date,1,4) = ? GROUP BY m`
+  ).all(companyId, y) as Array<{ m: number; amt: number }>;
+  // ฐานภาษีขาย/เดือน (รายรับที่ is_vat=1)
+  const taxRows = db.prepare(
+    `SELECT CAST(substr(i.income_date,6,2) AS INTEGER) AS m, COALESCE(SUM(i.amount),0) AS amt
+       FROM accounta_income i JOIN branches b ON b.id = i.branch_id
+      WHERE b.company_id = ? AND substr(i.income_date,1,4) = ? AND COALESCE(i.is_vat,1) = 1 GROUP BY m`
+  ).all(companyId, y) as Array<{ m: number; amt: number }>;
+  // ภาษีซื้อ/เดือน (confirmed)
+  const inVatRows = db.prepare(
+    `SELECT CAST(substr(e.bill_date,6,2) AS INTEGER) AS m, COALESCE(SUM(e.vat_amount),0) AS amt
+       FROM accounta_expenses e JOIN branches b ON b.id = e.branch_id
+      WHERE b.company_id = ? AND e.review_status = 'confirmed' AND substr(e.bill_date,1,4) = ? GROUP BY m`
+  ).all(companyId, y) as Array<{ m: number; amt: number }>;
+
+  const salesByM = new Map(salesRows.map((r) => [r.m, round2(r.amt)]));
+  const taxByM = new Map(taxRows.map((r) => [r.m, round2(r.amt)]));
+  const inVatByM = new Map(inVatRows.map((r) => [r.m, round2(r.amt)]));
+
+  const months: CompanyMonthRow[] = [];
+  let aSales = 0, aTaxable = 0, aOut = 0, aIn = 0, aPay = 0;
+  for (let m = 1; m <= 12; m++) {
+    const sales = salesByM.get(m) ?? 0;
+    const taxableSales = taxByM.get(m) ?? 0;
+    const inputVat = vatRegistered ? (inVatByM.get(m) ?? 0) : 0;
+    const outputVat = vatRegistered ? round2((taxableSales * 7) / 107) : 0;
+    const vatPayable = vatRegistered ? round2(outputVat - inputVat) : 0;
+    months.push({ month: m, sales, taxableSales, outputVat, inputVat, vatPayable });
+    aSales += sales; aTaxable += taxableSales; aOut += outputVat; aIn += inputVat; aPay += vatPayable;
+  }
+
+  // รายจ่ายดำเนินงานทั้งปี (ตัด CapEx/เงินกู้) — classify ตาม code หมวด (reuse BE_EXCLUDED_CODES).
+  const nameToCode = new Map<string, string | null>(listCategories().map((c) => [c.name, c.code]));
+  const expRows = db.prepare(
+    `SELECT COALESCE(e.category,'') AS cat, COALESCE(SUM(e.amount_total),0) AS amt
+       FROM accounta_expenses e JOIN branches b ON b.id = e.branch_id
+      WHERE b.company_id = ? AND e.review_status = 'confirmed' AND e.capex_bucket IS NULL
+        AND substr(e.bill_date,1,4) = ? GROUP BY COALESCE(e.category,'')`
+  ).all(companyId, y) as Array<{ cat: string; amt: number }>;
+  let opExpense = 0;
+  for (const r of expRows) {
+    const code = nameToCode.get(r.cat) ?? null;
+    if (code && BE_EXCLUDED_CODES.has(code)) continue; // ตัด CP (CapEx) + LN (เงินกู้)
+    opExpense += r.amt;
+  }
+  opExpense = round2(opExpense);
+  const netProfit = round2(aSales - opExpense);
+
+  return {
+    companyId, companyName, year, vatRegistered, branchNames, months,
+    annual: {
+      sales: round2(aSales), taxableSales: round2(aTaxable),
+      outputVat: round2(aOut), inputVat: round2(aIn), vatPayable: round2(aPay),
+      opExpense, netProfit
+    },
+    incomeTax: smeIncomeTax(netProfit)
   };
 }
 
