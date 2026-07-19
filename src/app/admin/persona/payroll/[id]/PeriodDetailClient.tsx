@@ -1027,6 +1027,23 @@ function LineEditModal({
   const [ulPinOpen, setUlPinOpen] = useState(false);
   const [ulMsg, setUlMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
+  // ปรับยอดเอง (money override) — owner 2026-07-19. Re-expose the route's
+  // money-override mode (b) in the UI for cases the per-day editor can't cover
+  // (e.g. FT ที่จ่าย base รายสัปดาห์ → ตั้ง base 0 แต่คง OT ในรอบรายเดือน). PIN-gated +
+  // audited by the same route. Prefilled from the line's current amounts.
+  const [ovBase, setOvBase] = useState(String(line.base_pay ?? 0));
+  const [ovOt, setOvOt] = useState(String(line.ot_pay ?? 0));
+  const [ovAdd, setOvAdd] = useState(String(line.other_additions ?? 0));
+  const [ovDed, setOvDed] = useState(String(line.other_deductions ?? 0));
+  const [ovPinOpen, setOvPinOpen] = useState(false);
+  const [ovMsg, setOvMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const ovPreview =
+    (Number(ovBase) || 0) + (Number(ovOt) || 0) + line.service_charge
+    + (Number(ovAdd) || 0) - (Number(ovDed) || 0);
+  const ovChanged =
+    (Number(ovBase) || 0) !== line.base_pay || (Number(ovOt) || 0) !== line.ot_pay
+    || (Number(ovAdd) || 0) !== line.other_additions || (Number(ovDed) || 0) !== line.other_deductions;
+
   // Daily time-entry breakdown — owner spec 2026-06-01 promoted this
   // from a collapsible footer to the primary view of the modal.
   const [breakdownDays, setBreakdownDays] = useState<BreakdownDay[] | null>(null);
@@ -1344,6 +1361,78 @@ function LineEditModal({
               if (!res.ok || !j.ok) return { ok: false, message: j.message ?? j.error ?? "บันทึกไม่สำเร็จ" };
               setUlPinOpen(false); setDirty(true);
               setUlMsg({ kind: "ok", text: "บันทึกแล้ว — ยอดสุทธิจะอัปเดตเมื่อปิดหน้าต่าง" });
+              return { ok: true };
+            }}
+          />
+        )}
+
+        {/* ปรับยอดเอง (money override) — owner 2026-07-19. ใส่ยอดเงินตรง ๆ สำหรับ
+            กรณีที่แก้รายวันไม่ได้ (เช่น ตั้งเงินเดือน 0 แต่คงโอที). ระบบคิด SSO/ภาษี
+            ใหม่จากยอดที่ใส่. PIN-gated + บันทึก audit เหมือนการแก้ยอดอื่น. */}
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+          <div>
+            <div className="text-sm font-semibold text-amber-900">ปรับยอดเอง (กรณีพิเศษ)</div>
+            <div className="text-[11px] text-amber-700">
+              ใส่ยอดเงินตรง ๆ — ระบบคิดประกันสังคม/ภาษีใหม่จากยอดนี้ ใช้เมื่อแก้รายวันไม่ได้ (เช่น ตั้งเงินเดือน 0 แต่คงโอที)
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-[11px] text-slate-600">เงินเดือน (base)
+              <input type="number" min="0" step="0.01" className="input w-full text-right"
+                value={ovBase} onChange={(e) => setOvBase(e.target.value)} />
+            </label>
+            <label className="text-[11px] text-slate-600">ค่าล่วงเวลา (OT)
+              <input type="number" min="0" step="0.01" className="input w-full text-right"
+                value={ovOt} onChange={(e) => setOvOt(e.target.value)} />
+            </label>
+            <label className="text-[11px] text-slate-600">เพิ่มอื่น ๆ
+              <input type="number" min="0" step="0.01" className="input w-full text-right"
+                value={ovAdd} onChange={(e) => setOvAdd(e.target.value)} />
+            </label>
+            <label className="text-[11px] text-slate-600">หักอื่น ๆ
+              <input type="number" min="0" step="0.01" className="input w-full text-right"
+                value={ovDed} onChange={(e) => setOvDed(e.target.value)} />
+            </label>
+          </div>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-[11px] text-slate-600">
+              ยอดก่อนหัก SSO/ภาษี ≈ <span className="font-semibold">฿{fmtMoney(ovPreview)}</span>
+            </div>
+            <button type="button" className="btn-secondary !py-1.5 disabled:opacity-50"
+              disabled={!ovChanged} onClick={() => setOvPinOpen(true)}>บันทึกยอด</button>
+          </div>
+          <p className="text-[11px] text-rose-600">
+            ⚠️ ถ้ากด “คำนวณใหม่” ภายหลัง เงินเดือนจะถูกคิดใหม่จากอัตราจริง — ปรับยอดนี้เป็นขั้นตอนสุดท้ายก่อนปิดรอบ
+          </p>
+          {ovMsg && (
+            <p className={`text-[11px] ${ovMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>{ovMsg.text}</p>
+          )}
+        </div>
+        {ovPinOpen && (
+          <PinPromptModal
+            title="ยืนยันปรับยอดเอง"
+            description={<p className="text-xs text-slate-600">ตั้งเงินเดือน ฿{fmtMoney(Number(ovBase) || 0)} · OT ฿{fmtMoney(Number(ovOt) || 0)} — ใส่ PIN เพื่อยืนยัน</p>}
+            submitLabel="บันทึก"
+            onClose={() => setOvPinOpen(false)}
+            onSubmit={async (pin) => {
+              const res = await fetch(
+                apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}`),
+                {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    base_pay: Number(ovBase) || 0,
+                    ot_pay: Number(ovOt) || 0,
+                    other_additions: Number(ovAdd) || 0,
+                    other_deductions: Number(ovDed) || 0,
+                    admin_pin: pin
+                  })
+                }
+              );
+              const j = await res.json().catch(() => ({}));
+              if (!res.ok || !j.ok) return { ok: false, message: j.message ?? j.error ?? "บันทึกไม่สำเร็จ" };
+              setOvPinOpen(false); setDirty(true);
+              setOvMsg({ kind: "ok", text: "บันทึกยอดแล้ว — ยอดสุทธิจะอัปเดตเมื่อปิดหน้าต่าง" });
               return { ok: true };
             }}
           />
