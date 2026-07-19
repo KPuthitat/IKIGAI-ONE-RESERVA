@@ -36,6 +36,7 @@ type Assignment = {
   shift_code: string;
   shift_color: string | null;
   shift_start_time: string;
+  shift_kind: string;   // 'work' | 'day_off'
 };
 
 const DOW_TH = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
@@ -133,36 +134,49 @@ export default function RosterClient({
     return m;
   }, [assignments]);
 
-  // Right-column totals: count assignments per position.
+  // นับเฉพาะ "กะทำงานจริง" (owner 2026-07-19): ไม่ใช่ OFF (shift_codes.kind
+  // = 'day_off') และไม่ติดลาที่อนุมัติแล้ว (leaveMap). ใช้กับทุกตัวนับสรุปให้ตรงกัน
+  // — คนลา/วัน OFF จะไม่ถูกนับเป็นคนทำงานหรือเป็นกะ.
+  const isWorkingShift = (a: Assignment) =>
+    a.shift_kind !== "day_off" && !leaveMap[`${a.user_id}:${a.date}`];
+
+  // Right-column totals: count real working shifts per position.
   const positionTotals = useMemo(() => {
     const m = new Map<number, number>();
-    for (const a of assignments) m.set(a.position_id, (m.get(a.position_id) ?? 0) + 1);
+    for (const a of assignments) {
+      if (!isWorkingShift(a)) continue;
+      m.set(a.position_id, (m.get(a.position_id) ?? 0) + 1);
+    }
     return m;
-  }, [assignments]);
+  }, [assignments, leaveMap]);
 
-  // Bottom-row totals: unique staff working each day.
+  // Bottom-row totals: unique staff actually working each day (OFF + on-leave excluded).
   const dailyTotals = useMemo(() => {
     const m = new Map<string, Set<number>>();
     for (const a of assignments) {
+      if (!isWorkingShift(a)) continue;
       if (!m.has(a.date)) m.set(a.date, new Set());
       m.get(a.date)!.add(a.user_id);
     }
     const out = new Map<string, number>();
     for (const [date, set] of m) out.set(date, set.size);
     return out;
-  }, [assignments]);
+  }, [assignments, leaveMap]);
 
-  // Per-staff totals (legend at the bottom): how many shifts each
-  // staff member is on this month. Mirrors the spreadsheet's
-  // right-edge column. Sorted by total desc, then by name.
+  // Per-staff totals (legend at the bottom): how many real working shifts each
+  // staff member is on this month (OFF + on-leave excluded). Mirrors the
+  // spreadsheet's right-edge column. Sorted by total desc, then by name.
   const staffTotals = useMemo(() => {
     const counts = new Map<number, number>();
-    for (const a of assignments) counts.set(a.user_id, (counts.get(a.user_id) ?? 0) + 1);
+    for (const a of assignments) {
+      if (!isWorkingShift(a)) continue;
+      counts.set(a.user_id, (counts.get(a.user_id) ?? 0) + 1);
+    }
     const rows = staff.map((s) => ({
       id: s.id, name: s.display_name, count: counts.get(s.id) ?? 0
     }));
     return rows.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  }, [assignments, staff]);
+  }, [assignments, staff, leaveMap]);
 
   function refresh() {
     startTransition(() => router.refresh());
