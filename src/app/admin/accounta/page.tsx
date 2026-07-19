@@ -41,6 +41,13 @@ export default function AccountaHome() {
         : "จัดการรายชื่อคู่ค้าของสาขา — ชื่อ เลขผู้เสียภาษี หมวดเริ่มต้น (ใช้ร่วมกับ INVENTA)"
     },
     {
+      href: "/admin/accounta/company",
+      title: en ? "Company overview (all branches)" : "ภาพรวมบริษัท (รวมสาขา)",
+      sub: en
+        ? "Combined view across the company's branches — monthly VAT (ภพ.30) filed together, total sales, and a year-end corporate income-tax estimate"
+        : "มุมมองรวมทุกสาขาของบริษัท — VAT (ภพ.30) รายเดือนยื่นรวม ยอดขายรวม และประมาณการภาษีเงินได้นิติบุคคลสิ้นปี"
+    },
+    {
       href: "/admin/accounta/feasibility",
       title: en ? "Financial Feasibility Study" : "แฟ้มวิเคราะห์โครงการลงทุน",
       sub: en

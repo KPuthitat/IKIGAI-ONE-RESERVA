@@ -35,6 +35,7 @@ export type AssignmentWithJoins = RosterAssignment & {
   shift_end_time: string;     // HH:MM
   shift_break_start: string | null;
   shift_break_end: string | null;
+  shift_kind: string;         // 'work' | 'day_off'
 };
 
 /** Staff-calendar variant — same fields as AssignmentWithJoins plus the
@@ -94,7 +95,8 @@ export function listAssignmentsForMonth(
            s.start_time AS shift_start_time,
            s.end_time AS shift_end_time,
            s.break_start AS shift_break_start,
-           s.break_end AS shift_break_end
+           s.break_end AS shift_break_end,
+           s.kind AS shift_kind
     FROM roster_assignments a
     JOIN roster_positions p ON p.id = a.position_id
     JOIN users u           ON u.id = a.user_id

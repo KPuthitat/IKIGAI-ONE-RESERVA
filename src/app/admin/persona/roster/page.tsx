@@ -279,7 +279,8 @@ export default function AdminRosterPage({
               shift_code_id: a.shift_code_id,
               shift_code: a.shift_code,
               shift_color: a.shift_color,
-              shift_start_time: a.shift_start_time
+              shift_start_time: a.shift_start_time,
+              shift_kind: a.shift_kind
             }))}
             leaveMap={leaveMap}
           />

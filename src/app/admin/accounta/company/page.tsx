@@ -1,0 +1,202 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { requirePermission } from "@/lib/auth";
+import { getDb } from "@/lib/db";
+import { companyFinancialYear, type CompanyFinancialYear } from "@/lib/accounta-db";
+import { fmtMoney } from "@/lib/format";
+
+export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "ACCOUNTA · ภาพรวมบริษัท (รวมสาขา)" };
+
+function todayBkk(): string {
+  return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+}
+
+const TH_MON_ABBR = [
+  "", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."
+];
+
+// ภาพรวมบริษัท (รวมทุกสาขา) — owner 2026-07-19: VAT (ภพ.30) รายเดือนยื่นรวม +
+// ยอดขายรวมสองสาขา + ประมาณการภาษีเงินได้นิติบุคคลสิ้นปี. บริษัท = บริษัทของสาขา
+// ที่เลือกอยู่ (activeBranchId → branches.company_id). ปีเลือกได้ผ่าน ?year=.
+export default function CompanyOverviewPage({
+  searchParams
+}: { searchParams: { year?: string } }) {
+  const user = requirePermission("accounta.manage");
+  const branchId = user.activeBranchId ?? null;
+
+  if (branchId == null) {
+    return (
+      <div className="space-y-4">
+        <Link href="/admin/accounta" className="text-sm text-slate-500 hover:text-brand">← กลับ ACCOUNTA</Link>
+        <div className="card text-sm text-slate-500">กรุณาเลือกสาขาที่มุมบนซ้ายก่อน แล้วเปิดหน้านี้อีกครั้ง</div>
+      </div>
+    );
+  }
+
+  const db = getDb();
+  const branch = db.prepare("SELECT company_id FROM branches WHERE id = ?").get(branchId) as { company_id: number | null } | undefined;
+  const companyId = branch?.company_id ?? null;
+
+  if (companyId == null) {
+    return (
+      <div className="space-y-4">
+        <Link href="/admin/accounta" className="text-sm text-slate-500 hover:text-brand">← กลับ ACCOUNTA</Link>
+        <div className="card text-sm text-slate-500">สาขานี้ยังไม่ได้ผูกกับบริษัท — ตั้งค่าบริษัทให้สาขาก่อนที่หน้า “บริษัท”</div>
+      </div>
+    );
+  }
+
+  const nowYear = Number(todayBkk().slice(0, 4));
+  const year = /^\d{4}$/.test(searchParams.year ?? "") ? Number(searchParams.year) : nowYear;
+  const data: CompanyFinancialYear = companyFinancialYear(companyId, year);
+  const yearOptions = [nowYear, nowYear - 1, nowYear - 2];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <Link href="/admin/accounta" className="text-sm text-slate-500 hover:text-brand">← กลับ ACCOUNTA</Link>
+        <div className="flex items-center gap-1">
+          {yearOptions.map((y) => (
+            <Link key={y} href={`/admin/accounta/company?year=${y}`}
+              className={`rounded-lg px-2.5 py-1 text-sm font-medium ${y === year ? "bg-brand text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+              {y + 543}
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h1 className="text-2xl font-bold text-slate-800">ภาพรวมบริษัท (รวมสาขา)</h1>
+        <p className="text-sm text-slate-500 mt-1">
+          <b>{data.companyName}</b> · รวม {data.branchNames.length} สาขา
+          {data.branchNames.length > 0 ? ` (${data.branchNames.join(" + ")})` : ""} · ปี {year + 543}
+        </p>
+        <p className="text-[11px] text-slate-400 mt-1">
+          ตัวเลขรวมทุกสาขาของบริษัทนี้ · ใช้ติดตามภายใน ไม่ใช่เอกสารยื่นภาษีอย่างเป็นทางการ
+        </p>
+      </div>
+
+      {/* ── VAT (ภพ.30) รายเดือน ยื่นรวม + ยอดขายรวม ── */}
+      <div className="card">
+        <h2 className="font-bold text-slate-800 mb-1">ภาษีมูลค่าเพิ่ม (ภพ.30) รายเดือน + ยอดขายรวม</h2>
+        {!data.vatRegistered && (
+          <p className="text-[11px] text-amber-600 mb-2">บริษัทนี้ยังไม่ได้จดทะเบียนภาษีมูลค่าเพิ่ม — แสดงเฉพาะยอดขายรวม</p>
+        )}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm tabular-nums">
+            <thead>
+              <tr className="text-slate-500 text-[11px] uppercase tracking-wide border-b border-slate-100">
+                <th className="text-left font-medium py-1.5 pr-2">เดือน</th>
+                <th className="text-right font-medium py-1.5 px-2">ยอดขายรวม</th>
+                {data.vatRegistered && <th className="text-right font-medium py-1.5 px-2">ภาษีขาย</th>}
+                {data.vatRegistered && <th className="text-right font-medium py-1.5 px-2">ภาษีซื้อ</th>}
+                {data.vatRegistered && <th className="text-right font-medium py-1.5 pl-2">ภพ.30 ที่ต้องยื่น</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {data.months.map((m) => {
+                const empty = m.sales === 0 && m.outputVat === 0 && m.inputVat === 0;
+                return (
+                  <tr key={m.month} className={`border-b border-slate-50 ${empty ? "text-slate-300" : "text-slate-700"}`}>
+                    <td className="text-left py-1.5 pr-2">{TH_MON_ABBR[m.month]}</td>
+                    <td className="text-right py-1.5 px-2">{fmtMoney(m.sales)}</td>
+                    {data.vatRegistered && <td className="text-right py-1.5 px-2">{fmtMoney(m.outputVat)}</td>}
+                    {data.vatRegistered && <td className="text-right py-1.5 px-2">{fmtMoney(m.inputVat)}</td>}
+                    {data.vatRegistered && (
+                      <td className={`text-right py-1.5 pl-2 font-semibold ${m.vatPayable > 0 ? "text-rose-600" : m.vatPayable < 0 ? "text-emerald-600" : ""}`}>
+                        {fmtMoney(m.vatPayable)}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 font-bold text-slate-800">
+                <td className="text-left py-2 pr-2">รวมทั้งปี</td>
+                <td className="text-right py-2 px-2">{fmtMoney(data.annual.sales)}</td>
+                {data.vatRegistered && <td className="text-right py-2 px-2">{fmtMoney(data.annual.outputVat)}</td>}
+                {data.vatRegistered && <td className="text-right py-2 px-2">{fmtMoney(data.annual.inputVat)}</td>}
+                {data.vatRegistered && <td className="text-right py-2 pl-2">{fmtMoney(data.annual.vatPayable)}</td>}
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        {data.vatRegistered && (
+          <p className="text-[11px] text-slate-400 mt-2">
+            ภพ.30 ที่ต้องยื่น = ภาษีขาย − ภาษีซื้อ (ค่าติดลบ = ภาษีซื้อมากกว่า ขอคืน/ยกไปเดือนถัดไป) · ภาษีขาย = ฐานที่มี VAT × 7/107
+          </p>
+        )}
+      </div>
+
+      {/* ── สรุปสิ้นปี — ภาษีเงินได้นิติบุคคล (ประมาณการ) ── */}
+      <div className="card">
+        <h2 className="font-bold text-slate-800 mb-2">สรุปสิ้นปี — ประมาณการภาษีเงินได้นิติบุคคล</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+          <div className="rounded-xl bg-slate-50 p-3">
+            <div className="text-[11px] text-slate-500">ยอดขายรวมทั้งปี</div>
+            <div className="text-lg font-bold text-slate-800 tabular-nums">฿{fmtMoney(data.annual.sales)}</div>
+          </div>
+          <div className="rounded-xl bg-slate-50 p-3">
+            <div className="text-[11px] text-slate-500">รายจ่ายดำเนินงาน</div>
+            <div className="text-lg font-bold text-slate-800 tabular-nums">฿{fmtMoney(data.annual.opExpense)}</div>
+          </div>
+          <div className="rounded-xl bg-slate-50 p-3">
+            <div className="text-[11px] text-slate-500">กำไรสุทธิ (ประมาณ)</div>
+            <div className={`text-lg font-bold tabular-nums ${data.annual.netProfit >= 0 ? "text-slate-800" : "text-rose-600"}`}>฿{fmtMoney(data.annual.netProfit)}</div>
+          </div>
+          <div className="rounded-xl bg-brand/5 p-3">
+            <div className="text-[11px] text-brand">ภาษีเงินได้ (ประมาณ)</div>
+            <div className="text-lg font-bold text-brand tabular-nums">฿{fmtMoney(data.incomeTax.tax)}</div>
+          </div>
+        </div>
+
+        {data.incomeTax.brackets.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm tabular-nums">
+              <thead>
+                <tr className="text-slate-500 text-[11px] uppercase tracking-wide border-b border-slate-100">
+                  <th className="text-left font-medium py-1.5 pr-2">ช่วงกำไรสุทธิ</th>
+                  <th className="text-right font-medium py-1.5 px-2">อัตรา</th>
+                  <th className="text-right font-medium py-1.5 px-2">ฐานในช่วง</th>
+                  <th className="text-right font-medium py-1.5 pl-2">ภาษี</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.incomeTax.brackets.map((b, i) => (
+                  <tr key={i} className="border-b border-slate-50 text-slate-700">
+                    <td className="text-left py-1.5 pr-2">
+                      {fmtMoney(b.from)}{b.to != null ? `–${fmtMoney(b.to)}` : " ขึ้นไป"}
+                    </td>
+                    <td className="text-right py-1.5 px-2">{Math.round(b.rate * 100)}%</td>
+                    <td className="text-right py-1.5 px-2">{fmtMoney(b.taxable)}</td>
+                    <td className="text-right py-1.5 pl-2 font-semibold">{fmtMoney(b.tax)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-200 font-bold text-slate-800">
+                  <td className="text-left py-2 pr-2" colSpan={3}>
+                    ภาษีประมาณการรวม (อัตราเฉลี่ย {(data.incomeTax.effectiveRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 2 })}%)
+                  </td>
+                  <td className="text-right py-2 pl-2">฿{fmtMoney(data.incomeTax.tax)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">กำไรสุทธิไม่เกิน ฿300,000 (หรือขาดทุน) → ประมาณการภาษี ฿0</p>
+        )}
+
+        <p className="text-[11px] text-slate-400 mt-3 leading-relaxed">
+          ⚠️ ประมาณการเบื้องต้นตามอัตรา SME (กำไร ≤300,000 = 0% · 300,001–3,000,000 = 15% · เกิน 3,000,000 = 20%)
+          จากยอดขาย − รายจ่ายดำเนินงาน (ตัด CapEx และการชำระเงินกู้ออกแล้ว). <b>ยังไม่ใช่ยอดยื่นจริง</b> —
+          ยังไม่รวมการปรับปรุงทางภาษี (ค่าเสื่อมราคา รายการบวกกลับ ผลขาดทุนยกมา ฯลฯ). ใช้เป็นแนวทางวางแผนเท่านั้น
+          ยอดจริงให้ยืนยันกับสำนักงานบัญชี
+        </p>
+      </div>
+    </div>
+  );
+}
