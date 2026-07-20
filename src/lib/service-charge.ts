@@ -28,7 +28,8 @@ import { pairShifts } from "./payroll-compute";
 import { LATE_GRACE_MINUTES, SC_INELIGIBILITY_THRESHOLD } from "./late-detection";
 import {
   shiftStartByDateForUserMonth,
-  scheduledMinutesByUserForMonth
+  scheduledMinutesByUserForMonth,
+  workShiftDatesForUserMonth
 } from "./roster";
 
 export const SVC_STAFF_SHARE_RATIO = 0.6;  // 3 of 5 parts
@@ -210,6 +211,7 @@ type StaffMeta = {
   employmentType: string | null;
   shiftStartTime: string | null;
   weeklyOffDays: string | null;
+  trackAttendance: number;   // 0 = ผู้บริหารไม่ลงเวลา → นับ SVC จากตารางเวรแทน
 };
 
 /** Build the full monthly SVC summary for a branch.
@@ -254,14 +256,17 @@ export function computeMonthlySvcSummary(
   const totalCollected = dailyRows.reduce((s, r) => s + r.amount_baht, 0);
 
   // 2. Branch roster + their settings
+  // role='staff' OR track_attendance=0 → ดึงผู้บริหารที่ไม่ลงเวลา (role staff/admin)
+  // เข้ามาด้วย โดยไม่ดึง admin ที่ลงเวลาปกติเข้ามา (owner 2026-07-20).
   const staff = db.prepare(`
     SELECT u.id AS userId, u.display_name AS displayName,
            u.employment_type AS employmentType,
            u.shift_start_time AS shiftStartTime,
-           u.weekly_off_days AS weeklyOffDays
+           u.weekly_off_days AS weeklyOffDays,
+           COALESCE(u.track_attendance, 1) AS trackAttendance
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
-    WHERE ub.branch_id = ? AND u.role = 'staff'
+    WHERE ub.branch_id = ? AND (u.role = 'staff' OR u.track_attendance = 0)
     ORDER BY u.display_name COLLATE NOCASE ASC
   `).all(branchId) as StaffMeta[];
   if (staff.length === 0) {
@@ -277,6 +282,19 @@ export function computeMonthlySvcSummary(
 
   // 4. Worked minutes per (date, user)
   const workedByDay = computeWorkedMinutesByDay(entries);
+
+  // 4b. Executives with track_attendance=0 don't clock in — accrue SVC from the
+  //     roster instead: each kind='work' day they're scheduled counts as a full
+  //     shift (assumedShift, default 8h) worked, so they join that day's
+  //     proportional split like any other worker (owner 2026-07-20).
+  for (const s of staff) {
+    if (s.trackAttendance !== 0) continue;
+    for (const d of workShiftDatesForUserMonth(branchId, s.userId, yearMonth)) {
+      let dayMap = workedByDay.get(d);
+      if (!dayMap) { dayMap = new Map<number, number>(); workedByDay.set(d, dayMap); }
+      dayMap.set(s.userId, assumedShift);
+    }
+  }
 
   // 5. Build per-staff accumulator
   const acc = new Map<number, {
