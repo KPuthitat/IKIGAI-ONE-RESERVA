@@ -337,12 +337,20 @@ export function computeMonthlySvcSummary(
   for (const [date, amount] of amountByDate) {
     const userMins = workedByDay.get(date);
     if (!userMins || userMins.size === 0) continue;
-    const totalMins = Array.from(userMins.values()).reduce((a, b) => a + b, 0);
+    // Only eligible staff on THIS branch's SVC roster share the pool — and only
+    // their minutes form the divisor. A clock-in from someone not on the roster
+    // (another branch's staff, an excluded/resigned account, an admin who clocks
+    // in) must not dilute everyone else's share (owner 2026-07-21: คนไม่ได้อยู่
+    // สาขานี้กลายเป็นตัวหาร).
+    let totalMins = 0;
+    for (const [userId, mins] of userMins) {
+      if (acc.has(userId)) totalMins += mins;
+    }
     if (totalMins <= 0) continue;
     const staffPool = amount * SVC_STAFF_SHARE_RATIO;
     for (const [userId, mins] of userMins) {
       const a = acc.get(userId);
-      if (!a) continue;  // user worked at this branch but isn't on its roster — rare; skip
+      if (!a) continue;  // clocked in at this branch but isn't on its SVC roster — excluded above
       const share = staffPool * (mins / totalMins);
       a.minutesWorked += mins;
       a.daysWorked += 1;
@@ -416,15 +424,19 @@ export function computeMonthlySvcSummary(
     const lateForfeit = anyComputable && lateRatio > SC_INELIGIBILITY_THRESHOLD;
     const resignForfeit = forfeitedFromResign.has(s.userId);
     const forfeited = lateForfeit || resignForfeit;
-    // Prefer structured name fields (คำนำหน้า + ชื่อ + นามสกุล) so the prefix
-    // shows; fall back to display_name. Built from structured fields rather than
-    // prepending to display_name to avoid a double prefix — some display_name
-    // rows already embed the คำนำหน้า (owner 2026-07-20).
-    const structuredName = [s.titlePrefix, s.firstNameTh, s.lastNameTh]
-      .filter(Boolean).join(" ");
+    // Build the display name from structured fields (คำนำหน้า + ชื่อ + นามสกุล)
+    // ONLY when an actual name part exists — otherwise a record with just a
+    // title_prefix and no first/last name would render as a lone "นางสาว"/"นาย"
+    // and hide the real display_name (owner 2026-07-21). Using structured fields
+    // (rather than prepending the prefix to display_name) avoids a double prefix
+    // for rows whose display_name already embeds the คำนำหน้า.
+    const hasStructuredName = Boolean(s.firstNameTh || s.lastNameTh);
+    const displayName = hasStructuredName
+      ? [s.titlePrefix, s.firstNameTh, s.lastNameTh].filter(Boolean).join(" ")
+      : s.displayName;
     return {
       userId: s.userId,
-      displayName: structuredName || s.displayName,
+      displayName,
       employmentType: s.employmentType,
       shiftStartTime: s.shiftStartTime,
       totalMinutesWorked: a.minutesWorked,
