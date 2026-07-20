@@ -17,6 +17,7 @@
 
 import Link from "next/link";
 import type { Metadata } from "next";
+import SvcCalcModal from "./SvcCalcModal";
 import { requireAdmin } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
@@ -191,6 +192,7 @@ export default function AdminServiceChargePage({
                   <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.svc.col.gross")}</th>
                   <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.svc.col.net")}</th>
                   <th className="py-2 pr-2">{t(lang, "admin.persona.svc.col.status")}</th>
+                  <th className="py-2 pr-2"></th>
                 </tr>
               </thead>
               <tbody>
@@ -231,6 +233,16 @@ export default function AdminServiceChargePage({
                             ✗ {t(lang, "admin.persona.svc.status.resignation")}
                           </span>
                         )}
+                      </td>
+                      <td className="py-2 pr-2 text-right">
+                        <SvcCalcModal
+                          displayName={r.displayName}
+                          grossAllocation={r.grossAllocation}
+                          netAllocation={r.netAllocation}
+                          forfeited={r.forfeited}
+                          forfeitReason={r.forfeitReason}
+                          dailyBreakdown={r.dailyBreakdown}
+                        />
                       </td>
                     </tr>
                   );

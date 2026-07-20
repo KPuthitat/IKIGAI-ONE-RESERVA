@@ -79,6 +79,12 @@ export type MonthlySvcRow = {
   forfeited: boolean;
   forfeitReason: "late_20pct" | "resignation" | null;
   netAllocation: number;     // 0 if forfeited; else grossAllocation
+  // แจกแจงรายวันว่าส่วนแบ่งมาจากไหน (owner 2026-07-20 — ปุ่ม "วิธีคำนวณ").
+  // share = dayAmount × 60% × (userMinutes ÷ totalMinutes). ผลรวม share = grossAllocation.
+  dailyBreakdown: Array<{
+    date: string; dayAmount: number; staffPool: number;
+    userMinutes: number; totalMinutes: number; share: number;
+  }>;
 };
 
 export type MonthlySvcSummary = {
@@ -308,6 +314,7 @@ export function computeMonthlySvcSummary(
 
   // 6. Per-day split: for each day that has BOTH an SVC amount and
   //    workers, distribute the staff pool proportionally.
+  const breakdownByUser = new Map<number, MonthlySvcRow["dailyBreakdown"]>();
   for (const [date, amount] of amountByDate) {
     const userMins = workedByDay.get(date);
     if (!userMins || userMins.size === 0) continue;
@@ -317,9 +324,13 @@ export function computeMonthlySvcSummary(
     for (const [userId, mins] of userMins) {
       const a = acc.get(userId);
       if (!a) continue;  // user worked at this branch but isn't on its roster — rare; skip
+      const share = staffPool * (mins / totalMins);
       a.minutesWorked += mins;
       a.daysWorked += 1;
-      a.grossAllocation += staffPool * (mins / totalMins);
+      a.grossAllocation += share;
+      let bd = breakdownByUser.get(userId);
+      if (!bd) { bd = []; breakdownByUser.set(userId, bd); }
+      bd.push({ date, dayAmount: amount, staffPool, userMinutes: mins, totalMinutes: totalMins, share });
     }
   }
 
@@ -401,7 +412,8 @@ export function computeMonthlySvcSummary(
       forfeitReason: forfeited
         ? (resignForfeit ? "resignation" : "late_20pct")
         : null,
-      netAllocation: forfeited ? 0 : a.grossAllocation
+      netAllocation: forfeited ? 0 : a.grossAllocation,
+      dailyBreakdown: breakdownByUser.get(s.userId) ?? []
     };
   });
 
