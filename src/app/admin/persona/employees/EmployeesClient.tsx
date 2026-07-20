@@ -40,8 +40,10 @@ export type EmployeeRow = {
   // วันที่เริ่มเป็นประจำ (PT→FT transition date). Drives which payroll table the
   // transition month lands in. NULL on legacy FT converted before this existed.
   ft_started_at: string | null;
-  // 0 = ผู้บริหาร/ไม่ลงเวลา → เงินเดือน fix ไม่มี OT/SVC (owner 2026-07-12).
+  // 0 = ผู้บริหาร/ไม่ลงเวลา → เงินเดือน fix ไม่มี OT (owner 2026-07-12).
   track_attendance?: number;
+  // 0 = ไม่รับส่วนแบ่งเซอร์วิสชาร์จ (แยกจาก track_attendance, owner 2026-07-21).
+  receives_service_charge?: number;
   line_user_id: string | null;
   shift_start_time: string | null;
   has_pin: number;
@@ -516,8 +518,10 @@ function EditModal({
   const [nicknameTh, setNicknameTh] = useState<string>(employee.nickname_th ?? "");
   const [gender, setGender] = useState<"male" | "female" | "">(employee.gender ?? "");
   const [employmentType, setEmploymentType] = useState<"pt" | "ft" | "">(employee.employment_type ?? "");
-  // ผู้บริหาร/หัวหน้าที่ไม่ลงเวลา (owner 2026-07-12) — เงินเดือน fix ไม่มี OT/SVC.
+  // ผู้บริหาร/หัวหน้าที่ไม่ลงเวลา (owner 2026-07-12) — เงินเดือน fix ไม่มี OT.
   const [noClock, setNoClock] = useState<boolean>((employee.track_attendance ?? 1) === 0);
+  // ไม่รับส่วนแบ่งเซอร์วิสชาร์จ (owner 2026-07-21) — แยกจาก noClock. ค่าเริ่มต้นรับ (=1).
+  const [noSvc, setNoSvc] = useState<boolean>((employee.receives_service_charge ?? 1) === 0);
   // วันที่มีผลของการเปลี่ยน PT→FT (owner 2026-07-13) — ถามทุกครั้งก่อนบันทึก.
   // สำหรับคนที่เป็น FT อยู่แล้ว prefill ด้วย ft_started_at ปัจจุบัน (แก้ย้อนหลังได้ —
   // owner 2026-07-19: ธนะรัตน์ ย้ายก่อนระบบมีฟิลด์นี้ ค่าเลยเป็น NULL คิดเงินผิดตาราง).
@@ -735,7 +739,9 @@ function EditModal({
         shift_start_time: null,
         reports_to_user_id: reportsToUserId === "" ? null : Number(reportsToUserId),
         escalation_hours: null,
-        is_test_account: isTestAccount ? 1 : 0
+        is_test_account: isTestAccount ? 1 : 0,
+        // ไม่รับส่วนแบ่งเซอร์วิสชาร์จ (แยกจาก track_attendance) — 1 = รับ (ดีฟอลต์), 0 = ตัดออก.
+        receives_service_charge: noSvc ? 0 : 1
       };
       // PT→FT effective date. On a fresh conversion always send it. For someone
       // ALREADY FT, only send when admin actually changed it (owner 2026-07-19)
@@ -1166,12 +1172,24 @@ function EditModal({
                     <span className="text-sm text-slate-700">
                       ผู้บริหาร/หัวหน้า — ไม่ต้องลงเวลา
                       <span className="block text-xs text-slate-500">
-                        คิดเงินเดือนแบบ fix เต็มจำนวน ไม่มีค่าล่วงเวลา (OT) และไม่รับส่วนแบ่งเซอร์วิสชาร์จ
+                        คิดเงินเดือนแบบ fix เต็มจำนวน ไม่มีค่าล่วงเวลา (OT)
                       </span>
                     </span>
                   </label>
                 </div>
               )}
+              {/* ไม่รับส่วนแบ่งเซอร์วิสชาร์จ — แยกจาก "ไม่ต้องลงเวลา" (owner 2026-07-21).
+                  ค่าเริ่มต้นทุกคนในสาขารับ SVC; ติ๊กเพื่อตัดออกจากกองกลาง. แสดงทุกประเภทงาน. */}
+              <label className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:bg-slate-50">
+                <input type="checkbox" className="mt-0.5" checked={noSvc}
+                  onChange={(e) => setNoSvc(e.target.checked)} />
+                <span className="text-sm text-slate-700">
+                  ไม่รับส่วนแบ่งเซอร์วิสชาร์จ
+                  <span className="block text-xs text-slate-500">
+                    ไม่นับรวมในการแบ่งกองกลาง SVC ของสาขา (ค่าเริ่มต้น = รับส่วนแบ่ง)
+                  </span>
+                </span>
+              </label>
               {employmentType === "" && (
                 <p className="text-xs text-amber-700">
                   {t("admin.persona.employees.payRateNeedsType")}

@@ -266,8 +266,11 @@ export function computeMonthlySvcSummary(
   const totalCollected = dailyRows.reduce((s, r) => s + r.amount_baht, 0);
 
   // 2. Branch roster + their settings
-  // role='staff' OR track_attendance=0 → ดึงผู้บริหารที่ไม่ลงเวลา (role staff/admin)
-  // เข้ามาด้วย โดยไม่ดึง admin ที่ลงเวลาปกติเข้ามา (owner 2026-07-20).
+  // SVC eligibility is governed by the per-employee receives_service_charge flag,
+  // decoupled from track_attendance (owner 2026-07-21). Default = everyone on the
+  // branch (staff + admins/execs, whether or not they clock in) receives SVC;
+  // only those explicitly ticked "ไม่รับ SVC" (receives_service_charge = 0) are
+  // dropped. track_attendance now only decides clock-in/OT, not SVC.
   //
   // Eligibility filters mirror the payroll loader (payroll-compute.ts) so the
   // SVC roster matches who actually gets paid (owner 2026-07-20: คนลาออก/เลิกจ้าง/
@@ -288,7 +291,8 @@ export function computeMonthlySvcSummary(
            u.last_name_th AS lastNameTh
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
-    WHERE ub.branch_id = ? AND (u.role = 'staff' OR u.track_attendance = 0)
+    WHERE ub.branch_id = ? AND u.role IN ('staff', 'admin')
+      AND u.receives_service_charge = 1
       AND u.is_test_account = 0
       AND u.status NOT IN ('disabled', 'resigned', 'terminated')
       AND (u.hire_date IS NULL OR u.hire_date <= ?)

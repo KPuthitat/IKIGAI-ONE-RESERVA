@@ -44,6 +44,9 @@ const Body = z.object({
   escalation_hours:   z.number().int().min(1).max(720).nullable().optional(),
   // 2026-05-27 — test-account flag. 1 = hide from operational lists.
   is_test_account:    z.number().int().min(0).max(1).optional(),
+  // 2026-07-21 — service-charge eligibility, decoupled from track_attendance.
+  // 1 = receives SVC (default), 0 = excluded from the branch pool.
+  receives_service_charge: z.number().int().min(0).max(1).optional(),
   // 2026-05-30 — PDPA payroll-access grant. Only super_admin may set
   // this; the server gate strips it for everyone else (below).
   can_view_payroll:   z.number().int().min(0).max(1).optional(),
@@ -272,6 +275,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("escalation_hours");
   // Test-account flag — 0/1 boolean. Hide from operational lists when 1.
   addField("is_test_account");
+  // Service-charge eligibility — 0/1 boolean. 0 = excluded from the branch pool.
+  addField("receives_service_charge");
   // PDPA payroll-access grant — only present in parsed.data when
   // operator is super_admin (stripped above for everyone else).
   addField("can_view_payroll");
