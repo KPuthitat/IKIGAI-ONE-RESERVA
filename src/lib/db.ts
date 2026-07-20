@@ -3538,6 +3538,9 @@ function runMigrations(db: Database.Database): void {
   userCol("contract_end_date",  "TEXT");  // YYYY-MM-DD
   userCol("employment_status",  "TEXT");  // probation / permanent
   userCol("track_attendance",   "INTEGER NOT NULL DEFAULT 1");  // 0 = admin/exec doesn't clock in
+  // Service-charge eligibility, decoupled from track_attendance (owner 2026-07-21):
+  // 1 = ได้รับส่วนแบ่ง SVC (ค่าเริ่มต้น ทุกคนในสาขา รวมแอดมินที่ลงเวลา), 0 = ตัดออกจากกองกลาง SVC
+  userCol("receives_service_charge", "INTEGER NOT NULL DEFAULT 1");
   userCol("hire_mode",          "TEXT");  // monthly / daily / hourly
   userCol("payment_method",     "TEXT");  // bank / cash
   userCol("driver_license_no",  "TEXT");
@@ -7318,6 +7321,7 @@ export type EmployeeProfile = {
   employment_status: "probation" | "permanent" | null;
   employment_type: "pt" | "ft" | null;
   track_attendance: number;
+  receives_service_charge: number;
   hire_mode: "monthly" | "daily" | "hourly" | null;
   payment_method: "bank" | "cash" | null;
   driver_license_no: string | null;
