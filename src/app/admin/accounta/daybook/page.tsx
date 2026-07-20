@@ -66,7 +66,7 @@ function SalesTargetCard({ st }: { st: SalesTargetProgress }) {
             <h2 className={`font-bold ${c.title}`}>ยอดขายเทียบเป้าเดือนนี้</h2>
           </div>
           <span className={`shrink-0 rounded-full border ${c.border} bg-white/70 px-2.5 py-0.5 text-[11px] font-medium ${c.foot}`}>
-            {reached ? "ถึงเป้าแล้ว 🎉" : `${TH_MON_FULL[mm]} ${yy + 543}`}
+            {reached ? "ถึงเป้าแล้ว" : `${TH_MON_FULL[mm]} ${yy + 543}`}
           </span>
         </div>
 
@@ -142,7 +142,7 @@ function BreakEvenCard({ be }: { be: BreakEvenAnalysis }) {
             <h2 className={`font-bold ${c.title}`}>จุดคุ้มทุนเดือนนี้</h2>
           </div>
           <span className={`shrink-0 rounded-full border ${c.border} bg-white/70 px-2.5 py-0.5 text-[11px] font-medium ${c.foot}`}>
-            {reached ? "คุ้มทุนแล้ว 🎉" : `${TH_MON_FULL[mm]} ${yy + 543}`}
+            {reached ? "คุ้มทุนแล้ว" : `${TH_MON_FULL[mm]} ${yy + 543}`}
           </span>
         </div>
 
@@ -179,7 +179,24 @@ function BreakEvenCard({ be }: { be: BreakEvenAnalysis }) {
           </div>
           {be.forecast != null && !reached && (
             <div className={be.forecastReachesBreakEven ? "text-emerald-600" : "text-rose-600"}>
-              ประมาณการทั้งเดือน ฿{fmtMoney(be.forecast)} — {be.forecastReachesBreakEven ? "คาดว่าจะคุ้มทุน ✓" : "ตามจังหวะนี้ยังไม่ถึงจุดคุ้มทุน"}
+              ประมาณการทั้งเดือน ฿{fmtMoney(be.forecast)} — {be.forecastReachesBreakEven ? "คาดว่าจะคุ้มทุน" : "ตามจังหวะนี้ยังไม่ถึงจุดคุ้มทุน"}
+            </div>
+          )}
+
+          {/* breakdown: หมวดที่ถูกนับเป็นคงที่/ผันแปร (ฐานเฉลี่ย) — ให้เห็นว่าอะไรถูกนับ */}
+          {(be.fixedByCat.length > 0 || be.variableByCat.length > 0) && (
+            <div className="pt-1 space-y-0.5 border-t border-slate-100 mt-1">
+              {be.fixedByCat.length > 0 && (
+                <div>คงที่: {be.fixedByCat.map((c) => `${c.name} ฿${fmtMoney(c.amount)}`).join(" · ")}</div>
+              )}
+              {be.variableByCat.length > 0 && (
+                <div>ผันแปร: {be.variableByCat.map((c) => `${c.name} ฿${fmtMoney(c.amount)}`).join(" · ")}</div>
+              )}
+            </div>
+          )}
+          {!be.hasLaborCost && (
+            <div className="text-rose-600 font-medium">
+              ยังไม่มีเงินเดือนในบัญชี (ต้องปิดรอบ payroll ก่อน) — จุดคุ้มทุนจะต่ำกว่าจริง
             </div>
           )}
         </div>

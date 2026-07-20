@@ -28,7 +28,8 @@ import { pairShifts } from "./payroll-compute";
 import { LATE_GRACE_MINUTES, SC_INELIGIBILITY_THRESHOLD } from "./late-detection";
 import {
   shiftStartByDateForUserMonth,
-  scheduledMinutesByUserForMonth
+  scheduledMinutesByUserForMonth,
+  workShiftDatesForUserMonth
 } from "./roster";
 
 export const SVC_STAFF_SHARE_RATIO = 0.6;  // 3 of 5 parts
@@ -78,6 +79,12 @@ export type MonthlySvcRow = {
   forfeited: boolean;
   forfeitReason: "late_20pct" | "resignation" | null;
   netAllocation: number;     // 0 if forfeited; else grossAllocation
+  // แจกแจงรายวันว่าส่วนแบ่งมาจากไหน (owner 2026-07-20 — ปุ่ม "วิธีคำนวณ").
+  // share = dayAmount × 60% × (userMinutes ÷ totalMinutes). ผลรวม share = grossAllocation.
+  dailyBreakdown: Array<{
+    date: string; dayAmount: number; staffPool: number;
+    userMinutes: number; totalMinutes: number; share: number;
+  }>;
 };
 
 export type MonthlySvcSummary = {
@@ -210,6 +217,11 @@ type StaffMeta = {
   employmentType: string | null;
   shiftStartTime: string | null;
   weeklyOffDays: string | null;
+  trackAttendance: number;   // 0 = ผู้บริหารไม่ลงเวลา → นับ SVC จากตารางเวรแทน
+  titlePrefix: string | null;
+  employeeCode: string | null;
+  firstNameTh: string | null;
+  lastNameTh: string | null;
 };
 
 /** Build the full monthly SVC summary for a branch.
@@ -254,16 +266,34 @@ export function computeMonthlySvcSummary(
   const totalCollected = dailyRows.reduce((s, r) => s + r.amount_baht, 0);
 
   // 2. Branch roster + their settings
+  // role='staff' OR track_attendance=0 → ดึงผู้บริหารที่ไม่ลงเวลา (role staff/admin)
+  // เข้ามาด้วย โดยไม่ดึง admin ที่ลงเวลาปกติเข้ามา (owner 2026-07-20).
+  //
+  // Eligibility filters mirror the payroll loader (payroll-compute.ts) so the
+  // SVC roster matches who actually gets paid (owner 2026-07-20: คนลาออก/เลิกจ้าง/
+  // เพิ่งเข้างานเดือนถัดไป/พนักงานทดสอบ ไม่ควรโผล่):
+  //   - is_test_account = 0            → drop test accounts
+  //   - status NOT IN (...)            → drop disabled/resigned/terminated (also
+  //                                       de-dups people who have an old closed record)
+  //   - hire_date IS NULL OR <= end    → a future hire doesn't belong in a past month
   const staff = db.prepare(`
     SELECT u.id AS userId, u.display_name AS displayName,
            u.employment_type AS employmentType,
            u.shift_start_time AS shiftStartTime,
-           u.weekly_off_days AS weeklyOffDays
+           u.weekly_off_days AS weeklyOffDays,
+           COALESCE(u.track_attendance, 1) AS trackAttendance,
+           u.title_prefix AS titlePrefix,
+           u.employee_code AS employeeCode,
+           u.first_name_th AS firstNameTh,
+           u.last_name_th AS lastNameTh
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
-    WHERE ub.branch_id = ? AND u.role = 'staff'
-    ORDER BY u.display_name COLLATE NOCASE ASC
-  `).all(branchId) as StaffMeta[];
+    WHERE ub.branch_id = ? AND (u.role = 'staff' OR u.track_attendance = 0)
+      AND u.is_test_account = 0
+      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
+      AND (u.hire_date IS NULL OR u.hire_date <= ?)
+    ORDER BY (u.employee_code IS NULL), u.employee_code COLLATE NOCASE ASC
+  `).all(branchId, end) as StaffMeta[];
   if (staff.length === 0) {
     return emptySummary(branchId, yearMonth, totalCollected, daysInMonth, dailyRows.length);
   }
@@ -278,6 +308,19 @@ export function computeMonthlySvcSummary(
   // 4. Worked minutes per (date, user)
   const workedByDay = computeWorkedMinutesByDay(entries);
 
+  // 4b. Executives with track_attendance=0 don't clock in — accrue SVC from the
+  //     roster instead: each kind='work' day they're scheduled counts as a full
+  //     shift (assumedShift, default 8h) worked, so they join that day's
+  //     proportional split like any other worker (owner 2026-07-20).
+  for (const s of staff) {
+    if (s.trackAttendance !== 0) continue;
+    for (const d of workShiftDatesForUserMonth(branchId, s.userId, yearMonth)) {
+      let dayMap = workedByDay.get(d);
+      if (!dayMap) { dayMap = new Map<number, number>(); workedByDay.set(d, dayMap); }
+      dayMap.set(s.userId, assumedShift);
+    }
+  }
+
   // 5. Build per-staff accumulator
   const acc = new Map<number, {
     minutesWorked: number;
@@ -290,6 +333,7 @@ export function computeMonthlySvcSummary(
 
   // 6. Per-day split: for each day that has BOTH an SVC amount and
   //    workers, distribute the staff pool proportionally.
+  const breakdownByUser = new Map<number, MonthlySvcRow["dailyBreakdown"]>();
   for (const [date, amount] of amountByDate) {
     const userMins = workedByDay.get(date);
     if (!userMins || userMins.size === 0) continue;
@@ -299,9 +343,13 @@ export function computeMonthlySvcSummary(
     for (const [userId, mins] of userMins) {
       const a = acc.get(userId);
       if (!a) continue;  // user worked at this branch but isn't on its roster — rare; skip
+      const share = staffPool * (mins / totalMins);
       a.minutesWorked += mins;
       a.daysWorked += 1;
-      a.grossAllocation += staffPool * (mins / totalMins);
+      a.grossAllocation += share;
+      let bd = breakdownByUser.get(userId);
+      if (!bd) { bd = []; breakdownByUser.set(userId, bd); }
+      bd.push({ date, dayAmount: amount, staffPool, userMinutes: mins, totalMinutes: totalMins, share });
     }
   }
 
@@ -368,9 +416,15 @@ export function computeMonthlySvcSummary(
     const lateForfeit = anyComputable && lateRatio > SC_INELIGIBILITY_THRESHOLD;
     const resignForfeit = forfeitedFromResign.has(s.userId);
     const forfeited = lateForfeit || resignForfeit;
+    // Prefer structured name fields (คำนำหน้า + ชื่อ + นามสกุล) so the prefix
+    // shows; fall back to display_name. Built from structured fields rather than
+    // prepending to display_name to avoid a double prefix — some display_name
+    // rows already embed the คำนำหน้า (owner 2026-07-20).
+    const structuredName = [s.titlePrefix, s.firstNameTh, s.lastNameTh]
+      .filter(Boolean).join(" ");
     return {
       userId: s.userId,
-      displayName: s.displayName,
+      displayName: structuredName || s.displayName,
       employmentType: s.employmentType,
       shiftStartTime: s.shiftStartTime,
       totalMinutesWorked: a.minutesWorked,
@@ -383,7 +437,8 @@ export function computeMonthlySvcSummary(
       forfeitReason: forfeited
         ? (resignForfeit ? "resignation" : "late_20pct")
         : null,
-      netAllocation: forfeited ? 0 : a.grossAllocation
+      netAllocation: forfeited ? 0 : a.grossAllocation,
+      dailyBreakdown: breakdownByUser.get(s.userId) ?? []
     };
   });
 

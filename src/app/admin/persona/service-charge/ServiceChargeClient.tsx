@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { fmtMoney } from "@/lib/format";
 import { useLang } from "@/lib/LangProvider";
 import { formatBkkDateTime } from "@/lib/time";
 
@@ -117,7 +118,7 @@ export default function ServiceChargeClient({
                         onChange={(e) => setDraftAmount(e.target.value)}
                       />
                     ) : row ? (
-                      row.amount.toFixed(2)
+                      fmtMoney(row.amount)
                     ) : (
                       <span className="text-slate-400 italic">—</span>
                     )}

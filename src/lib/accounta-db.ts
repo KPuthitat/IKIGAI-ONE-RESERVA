@@ -1543,6 +1543,11 @@ export type BreakEvenAnalysis = {
   perDayNeeded: number;            // remaining ÷ remainingDays
   forecast: number | null;         // ประมาณการยอดขายทั้งเดือน (ส่งมาจากหน้า)
   forecastReachesBreakEven: boolean;
+  // ── breakdown ต้นทุน (ฐานเฉลี่ย YTD) — ให้เห็นว่าหมวดไหนถูกนับ (owner 2026-07-20).
+  //    ช่วยให้เจ้าของสังเกตได้ว่าต้นทุนคงที่หายไป (เช่น เงินเดือน) → จุดคุ้มทุนต่ำผิดปกติ. ──
+  fixedByCat: Array<{ name: string; amount: number }>;     // ต้นทุนคงที่ต่อหมวด (มาก→น้อย)
+  variableByCat: Array<{ name: string; amount: number }>;  // ต้นทุนผันแปรต่อหมวด
+  hasLaborCost: boolean;   // มีหมวดค่าแรง/เงินเดือน (code LB) ในต้นทุนคงที่หรือไม่
 };
 
 /** จุดคุ้มทุนรายสาขา. `anchor` = YYYY-MM-DD (Bangkok). ส่ง `monthSalesOverride`
@@ -1577,12 +1582,15 @@ export function breakEvenAnalysis(
         GROUP BY COALESCE(category,'')`
     ).all(branchId, start, end) as Array<{ cat: string; amt: number }>;
     let fixed = 0, variable = 0;
+    const byCat: Array<{ name: string; amount: number; code: string | null; kind: "fixed" | "variable" }> = [];
     for (const r of rows) {
       const kind = classify(r.cat);
+      if (kind === "excluded") continue;
       if (kind === "variable") variable += r.amt;
-      else if (kind === "fixed") fixed += r.amt;
+      else fixed += r.amt;
+      byCat.push({ name: r.cat || "(ไม่ระบุหมวด)", amount: round2(r.amt), code: nameToCode.get(r.cat) ?? null, kind });
     }
-    return { fixed: round2(fixed), variable: round2(variable) };
+    return { fixed: round2(fixed), variable: round2(variable), byCat };
   };
   const ratio = (variable: number, sales: number): number | null =>
     sales > 0 ? Math.round((variable / sales) * 10000) / 10000 : null;
@@ -1624,6 +1632,14 @@ export function breakEvenAnalysis(
   const avgMonthlyFixed = monthsWithData > 0 ? round2(ytdFixed / monthsWithData) : 0;
   const ytdVarRatio = ratio(ytdVariable, ytdSales);
 
+  // breakdown ต่อหมวด (ฐานเฉลี่ย YTD) เรียงมาก→น้อย + เช็กว่ามีเงินเดือน (LB) ไหม.
+  const fixedByCat = yCost.byCat.filter((c) => c.kind === "fixed" && c.amount > 0)
+    .sort((a, b) => b.amount - a.amount).map((c) => ({ name: c.name, amount: c.amount }));
+  const variableByCat = yCost.byCat.filter((c) => c.kind === "variable" && c.amount > 0)
+    .sort((a, b) => b.amount - a.amount).map((c) => ({ name: c.name, amount: c.amount }));
+  const hasLaborCost = yCost.byCat.some((c) =>
+    c.amount > 0 && (c.code === "LB" || /เงินเดือน|ค่าแรง|ค่าจ้าง/.test(c.name)));
+
   // ── เป้าจุดคุ้มทุนเดือนนี้ (จากค่าเฉลี่ย YTD) ──
   const requiredBreakEven = ytdVarRatio != null && ytdVarRatio < 1 && avgMonthlyFixed > 0
     ? round2(avgMonthlyFixed / (1 - ytdVarRatio)) : null;
@@ -1646,7 +1662,8 @@ export function breakEvenAnalysis(
     monthSales, monthFixed, monthVariable, monthVarRatio, monthBreakEven,
     monthsWithData, ytdSales, ytdFixed, ytdVariable, avgMonthlyFixed, ytdVarRatio,
     requiredBreakEven, pct, reached, remaining, over, remainingDays, perDayNeeded,
-    forecast: fc, forecastReachesBreakEven
+    forecast: fc, forecastReachesBreakEven,
+    fixedByCat, variableByCat, hasLaborCost
   };
 }
 

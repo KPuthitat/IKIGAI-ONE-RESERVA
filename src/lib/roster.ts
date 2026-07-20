@@ -241,6 +241,29 @@ export function userHasWorkShiftOn(
   return row != null;
 }
 
+/** Distinct WORK-shift dates (kind='work') rostered for a user at a branch
+ *  within a Bangkok-month (YYYY-MM). Used by service-charge to accrue days for
+ *  attendance-not-tracked executives (owner 2026-07-20) — they get SVC for each
+ *  day their name is on the roster, without a clock-in. */
+export function workShiftDatesForUserMonth(
+  branchId: number,
+  userId: number,
+  yearMonth: string
+): string[] {
+  const start = `${yearMonth}-01`;
+  const end = `${yearMonth}-31`;
+  return (getDb().prepare(`
+    SELECT DISTINCT a.assignment_date AS d
+    FROM roster_assignments a
+    JOIN shift_codes s ON s.id = a.shift_code_id
+    WHERE a.user_id = ?
+      AND a.branch_id = ?
+      AND a.assignment_date >= ? AND a.assignment_date <= ?
+      AND s.kind = 'work'
+    ORDER BY a.assignment_date
+  `).all(userId, branchId, start, end) as Array<{ d: string }>).map((r) => r.d);
+}
+
 /** Branches where the user has a WORK shift rostered on the given date
  *  (across ALL their branches). Drives clock-in branch auto-selection for
  *  cross-branch rotation (owner 2026-07-14): if a NAMA-home staffer is
