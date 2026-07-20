@@ -707,7 +707,7 @@ function DayDetail({
                         <td className="py-1 px-2 text-right font-mono text-rose-700">{fmtMoney(e.amount_total)}</td>
                         <td className="py-1 px-2 text-right whitespace-nowrap">
                           {unpaid && payId !== e.id && (
-                            <button type="button" onClick={() => openPay(e)} className="text-[10px] text-emerald-600 hover:underline mr-2">จ่ายแล้ว</button>
+                            <button type="button" onClick={() => openPay(e)} className="text-[11px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded px-2 py-0.5 mr-2">จ่ายแล้ว</button>
                           )}
                           <button type="button" onClick={() => onEditExpense(e)} className="text-[10px] text-brand hover:underline mr-2">แก้ไข</button>
                           <button type="button" onClick={() => removeExpense(e)} disabled={busyExpenseId === e.id} className="text-[10px] text-rose-500 hover:underline disabled:opacity-50">ลบออก</button>

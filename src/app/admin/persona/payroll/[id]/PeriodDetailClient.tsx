@@ -1378,9 +1378,9 @@ function LineEditModal({
           <div className="flex items-center justify-between gap-2">
             <div className="text-xs font-semibold text-amber-900">ปรับยอดเอง (กรณีพิเศษ)</div>
             {ovUnlocked
-              ? <span className="text-[10px] font-medium text-emerald-700">🔓 ปลดล็อกแล้ว</span>
+              ? <span className="text-[10px] font-medium text-emerald-700">ปลดล็อกแล้ว</span>
               : <button type="button" className="btn-secondary !py-1 !px-2 !text-[11px]"
-                  onClick={() => setOvPinOpen(true)}>🔒 ปลดล็อกด้วย PIN</button>}
+                  onClick={() => setOvPinOpen(true)}>ปลดล็อกด้วย PIN</button>}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
             <label className="text-[10px] text-slate-500">เงินเดือน
@@ -1437,7 +1437,7 @@ function LineEditModal({
                 }
               }}>บันทึกยอด</button>
           </div>
-          <p className="text-[10px] text-rose-500">⚠️ กด “คำนวณใหม่” ภายหลังยอดเงินเดือนจะถูกคิดใหม่ — ปรับยอดเป็นสเต็ปสุดท้ายก่อนปิดรอบ</p>
+          <p className="text-[10px] text-rose-500">หมายเหตุ: กด “คำนวณใหม่” ภายหลังยอดเงินเดือนจะถูกคิดใหม่ — ปรับยอดเป็นสเต็ปสุดท้ายก่อนปิดรอบ</p>
           {ovMsg && (
             <p className={`text-[10px] ${ovMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>{ovMsg.text}</p>
           )}
