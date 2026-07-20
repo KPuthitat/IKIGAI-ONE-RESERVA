@@ -2138,6 +2138,30 @@ function runMigrations(db: Database.Database): void {
     ON daily_service_charge(branch_id, date);
   `);
 
+  // Monthly SVC payout batch (owner 2026-07-21): one row per (branch, month)
+  // that tracks the "ทำจ่ายแล้ว" state. Finalizing posts each staff's net SVC
+  // to ACCOUNTA (mirroring payroll) tagged with this batch id, so a re-post
+  // replaces the rows (delete-then-insert) and un-posting removes them. The
+  // per-staff amounts are recomputed live from computeMonthlySvcSummary — no
+  // line snapshot table, since the inputs (daily_service_charge + time_entries
+  // + roster) are historical once the month closes.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS svc_payout_batches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      year_month TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      total_net REAL NOT NULL DEFAULT 0,
+      total_wht REAL NOT NULL DEFAULT 0,
+      posted_by_user_id INTEGER REFERENCES users(id),
+      posted_at TEXT,
+      paid_by_user_id INTEGER REFERENCES users(id),
+      paid_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(branch_id, year_month)
+    );
+  `);
+
   // ── Roster (TC-R, 2026-05) ─────────────────────────────────────
   //
   // Three tables that together support "supervisor assigns monthly
@@ -4717,13 +4741,14 @@ function runMigrations(db: Database.Database): void {
   // missing, carrying tax_id/category from the matching accounta_vendor. No
   // deletes, no FK remap (expense display reads the denormalised vendor_name).
   try {
-    // EXCLUDE payroll-posted bills (payroll_period_id IS NOT NULL) — their
-    // vendor_name is the EMPLOYEE being paid ("พนักงานพาร์ทไทม์ X"), not a
-    // supplier (owner 2026-06-27: "พนักงานไม่ใช่ผู้จำหน่าย").
+    // EXCLUDE payroll- AND svc-posted bills — their vendor_name is the EMPLOYEE
+    // being paid ("พนักงานพาร์ทไทม์ X" / a staff name for SVC), not a supplier
+    // (owner 2026-06-27: "พนักงานไม่ใช่ผู้จำหน่าย"; SVC payout added 2026-07-21).
     const usage = db.prepare(`
       SELECT DISTINCT e.branch_id AS branch_id, TRIM(e.vendor_name) AS name
         FROM accounta_expenses e
        WHERE e.branch_id IS NOT NULL AND e.payroll_period_id IS NULL
+         AND e.svc_payout_batch_id IS NULL
          AND TRIM(COALESCE(e.vendor_name,'')) <> ''
     `).all() as Array<{ branch_id: number; name: string }>;
     const findSup = db.prepare(
@@ -4752,11 +4777,13 @@ function runMigrations(db: Database.Database): void {
         SELECT s.id FROM inventa_suppliers s
         WHERE s.name COLLATE NOCASE IN (
           SELECT DISTINCT TRIM(vendor_name) FROM accounta_expenses
-           WHERE payroll_period_id IS NOT NULL AND TRIM(COALESCE(vendor_name,'')) <> ''
+           WHERE (payroll_period_id IS NOT NULL OR svc_payout_batch_id IS NOT NULL)
+             AND TRIM(COALESCE(vendor_name,'')) <> ''
         )
         AND s.name COLLATE NOCASE NOT IN (
           SELECT DISTINCT TRIM(vendor_name) FROM accounta_expenses
-           WHERE payroll_period_id IS NULL AND TRIM(COALESCE(vendor_name,'')) <> ''
+           WHERE payroll_period_id IS NULL AND svc_payout_batch_id IS NULL
+             AND TRIM(COALESCE(vendor_name,'')) <> ''
         )
         AND NOT EXISTS (SELECT 1 FROM inventa_items i WHERE i.supplier_id = s.id)
       )
@@ -6302,6 +6329,14 @@ function runMigrations(db: Database.Database): void {
   if (!expCols.some((c) => c.name === "payroll_period_id")) {
     db.exec("ALTER TABLE accounta_expenses ADD COLUMN payroll_period_id INTEGER REFERENCES payroll_periods(id) ON DELETE SET NULL");
     db.exec("CREATE INDEX IF NOT EXISTS idx_accounta_exp_payroll ON accounta_expenses(payroll_period_id)");
+  }
+  // svc_payout_batch_id (owner 2026-07-21): tags the ค่าแรง SVC + ภาษีหัก ณ ที่จ่าย
+  // expenses auto-posted when a monthly service-charge batch is finalized, so a
+  // re-post replaces them (delete-then-insert) and un-posting removes them —
+  // exactly like payroll_period_id. NULL for ordinary expenses.
+  if (!expCols.some((c) => c.name === "svc_payout_batch_id")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN svc_payout_batch_id INTEGER REFERENCES svc_payout_batches(id) ON DELETE SET NULL");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_accounta_exp_svc ON accounta_expenses(svc_payout_batch_id)");
   }
   // due_date (owner 2026-06-24): for credit-term unpaid bills — when payment is
   // due. Drives the "บิลค้างชำระ" reminder so overdue bills surface. NULL for

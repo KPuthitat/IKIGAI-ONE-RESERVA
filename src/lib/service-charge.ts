@@ -24,12 +24,12 @@
 // not "240/480".
 
 import { getDb } from "./db";
-import { pairShifts } from "./payroll-compute";
+import { pairShifts, applyPtGrace, pickScheduled, type ScheduledShift } from "./payroll-compute";
+import { nameWithPrefix } from "./name";
 import { LATE_GRACE_MINUTES, SC_INELIGIBILITY_THRESHOLD } from "./late-detection";
 import {
   shiftStartByDateForUserMonth,
-  scheduledMinutesByUserForMonth,
-  workShiftDatesForUserMonth
+  scheduledMinutesByUserForMonth
 } from "./roster";
 
 export const SVC_STAFF_SHARE_RATIO = 0.6;  // 3 of 5 parts
@@ -78,7 +78,12 @@ export type MonthlySvcRow = {
   grossAllocation: number;   // pre-forfeit accrual from daily splits
   forfeited: boolean;
   forfeitReason: "late_20pct" | "resignation" | null;
-  netAllocation: number;     // 0 if forfeited; else grossAllocation
+  netAllocation: number;     // 0 if forfeited; else grossAllocation (pre-WHT)
+  // Withholding tax on the SVC payout, mirroring payroll (owner 2026-07-21):
+  // 'wht' staff have 3% withheld, 'sso' staff receive the full net.
+  taxMode: "sso" | "wht";
+  whtAmount: number;         // netAllocation × wht_rate when taxMode==='wht', else 0
+  netPayout: number;         // netAllocation − whtAmount (the amount actually paid)
   // แจกแจงรายวันว่าส่วนแบ่งมาจากไหน (owner 2026-07-20 — ปุ่ม "วิธีคำนวณ").
   // share = dayAmount × 60% × (userMinutes ÷ totalMinutes). ผลรวม share = grossAllocation.
   dailyBreakdown: Array<{
@@ -95,6 +100,8 @@ export type MonthlySvcSummary = {
   companyPoolFromSplit: number; // 40% (always)
   companyPoolFromForfeit: number; // additional from forfeitures
   companyPoolTotal: number;  // sum of above two
+  totalWht: number;          // sum of per-staff WHT withheld from SVC
+  totalNetPayout: number;    // sum of per-staff netPayout (after forfeit + WHT)
   rows: MonthlySvcRow[];
   daysWithEntries: number;   // for UX: how many days admin has filled
   daysInMonth: number;
@@ -209,6 +216,98 @@ export function computeWorkedMinutesByDay(
   return out;
 }
 
+// YYYY-MM-DD + 1 calendar day (UTC-safe). Local copy of the payroll helper
+// so the scheduled-window anchoring below matches payroll exactly.
+function addDayYmd(ymd: string): string {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Build the per-(user, date) scheduled shift windows for a branch/month from
+ *  the roster, mirroring the payroll engine (payroll-compute.ts ~1047). SVC
+ *  minutes are then clamped to these windows so they match paid minutes. */
+function buildScheduledByUser(
+  branchId: number, start: string, end: string
+): Map<number, Map<string, ScheduledShift[]>> {
+  const rows = getDb().prepare(`
+    SELECT ra.user_id, ra.assignment_date,
+           sc.start_time, sc.end_time, sc.break_start, sc.break_end
+    FROM roster_assignments ra
+    JOIN shift_codes sc ON sc.id = ra.shift_code_id
+    WHERE ra.branch_id = ? AND ra.assignment_date >= ? AND ra.assignment_date <= ?
+      AND sc.kind = 'work'
+  `).all(branchId, start, end) as Array<{
+    user_id: number; assignment_date: string;
+    start_time: string; end_time: string;
+    break_start: string | null; break_end: string | null;
+  }>;
+  const byUser = new Map<number, Map<string, ScheduledShift[]>>();
+  for (const r of rows) {
+    if (!r.start_time || !r.end_time || r.start_time === r.end_time) continue;
+    const startTs = new Date(`${r.assignment_date}T${r.start_time}:00+07:00`).toISOString();
+    const endDate = r.end_time < r.start_time ? addDayYmd(r.assignment_date) : r.assignment_date;
+    const endTs = new Date(`${endDate}T${r.end_time}:00+07:00`).toISOString();
+    let breakStartTs: string | null = null;
+    let breakEndTs: string | null = null;
+    if (r.break_start && r.break_end && r.break_start !== r.break_end) {
+      breakStartTs = new Date(`${r.assignment_date}T${r.break_start}:00+07:00`).toISOString();
+      const bEndDate = r.break_end < r.break_start ? addDayYmd(r.assignment_date) : r.assignment_date;
+      breakEndTs = new Date(`${bEndDate}T${r.break_end}:00+07:00`).toISOString();
+    }
+    let byDate = byUser.get(r.user_id);
+    if (!byDate) { byDate = new Map(); byUser.set(r.user_id, byDate); }
+    const list = byDate.get(r.assignment_date) ?? [];
+    list.push({ startTs, endTs, breakStartTs, breakEndTs });
+    byDate.set(r.assignment_date, list);
+  }
+  return byUser;
+}
+
+/** Net working minutes of a single scheduled shift window (gross − break) —
+ *  used to credit execs (track_attendance=0, no clock) their full rostered
+ *  shift length, e.g. NPF (11:00–21:00 − 14:00–16:00 break) = 480 min = 8h. */
+function netScheduledMinutes(w: ScheduledShift): number {
+  const gross = (new Date(w.endTs).getTime() - new Date(w.startTs).getTime()) / 60000;
+  let brk = 0;
+  if (w.breakStartTs && w.breakEndTs) {
+    brk = (new Date(w.breakEndTs).getTime() - new Date(w.breakStartTs).getTime()) / 60000;
+  }
+  return Math.max(0, gross - brk);
+}
+
+/** SVC worked-minutes per (date, user), CLAMPED to the rostered shift like
+ *  payroll (owner 2026-07-21: นับเฉพาะเวลาตามกะ — มาก่อนเวลาเริ่มนับที่เวลากะ,
+ *  หักเบรก, ไม่รวม OT). Reuses applyPtGrace/pickScheduled so SVC time matches
+ *  the paid time in ค่าตอบแทน. Falls back to raw paired time on unrostered days. */
+function computeSvcClampedMinutesByDay(
+  entries: Array<{ user_id: number; ts: string; type: "in" | "out" }>,
+  scheduledByUser: Map<number, Map<string, ScheduledShift[]>>
+): Map<string, Map<number, number>> {
+  const out = new Map<string, Map<number, number>>();
+  const byDay = bucketEntriesByDay(entries);
+  for (const [date, dayEntries] of byDay) {
+    const byUser = new Map<number, Array<typeof entries[number]>>();
+    for (const e of dayEntries) {
+      if (!byUser.has(e.user_id)) byUser.set(e.user_id, []);
+      byUser.get(e.user_id)!.push(e);
+    }
+    const userMin = new Map<number, number>();
+    for (const [userId, list] of byUser) {
+      const { shifts } = pairShifts(list);
+      const candidates = scheduledByUser.get(userId)?.get(date) ?? [];
+      let total = 0;
+      for (const sh of shifts) {
+        const sched = candidates.length ? pickScheduled(candidates, sh) : null;
+        total += applyPtGrace({ startTs: sh.startTs, endTs: sh.endTs }, sched, null).workedMinutes;
+      }
+      if (total > 0) userMin.set(userId, Math.round(total));
+    }
+    out.set(date, userMin);
+  }
+  return out;
+}
+
 // ── Public: monthly summary ──────────────────────────────────────
 
 type StaffMeta = {
@@ -218,10 +317,9 @@ type StaffMeta = {
   shiftStartTime: string | null;
   weeklyOffDays: string | null;
   trackAttendance: number;   // 0 = ผู้บริหารไม่ลงเวลา → นับ SVC จากตารางเวรแทน
+  taxMode: string | null;    // 'sso' (รับเต็ม) | 'wht' (หัก ณ ที่จ่าย 3%)
   titlePrefix: string | null;
   employeeCode: string | null;
-  firstNameTh: string | null;
-  lastNameTh: string | null;
 };
 
 /** Build the full monthly SVC summary for a branch.
@@ -285,10 +383,9 @@ export function computeMonthlySvcSummary(
            u.shift_start_time AS shiftStartTime,
            u.weekly_off_days AS weeklyOffDays,
            COALESCE(u.track_attendance, 1) AS trackAttendance,
+           u.salary_tax_mode AS taxMode,
            u.title_prefix AS titlePrefix,
-           u.employee_code AS employeeCode,
-           u.first_name_th AS firstNameTh,
-           u.last_name_th AS lastNameTh
+           u.employee_code AS employeeCode
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
     WHERE ub.branch_id = ? AND u.role IN ('staff', 'admin')
@@ -309,19 +406,30 @@ export function computeMonthlySvcSummary(
   `).all(branchId, monthStartIso, monthEndIso) as
     Array<{ user_id: number; ts: string; type: "in" | "out" }>;
 
-  // 4. Worked minutes per (date, user)
-  const workedByDay = computeWorkedMinutesByDay(entries);
+  // 3b. Scheduled shift windows (roster → shift_codes) for the branch/month.
+  const scheduledByUser = buildScheduledByUser(branchId, start, end);
+
+  // 4. Worked minutes per (date, user) — CLAMPED to the rostered shift like
+  //    payroll: an early clock-in is counted from the shift start, break is
+  //    deducted, OT past shift-end is not counted (owner 2026-07-21: นับเฉพาะ
+  //    เวลาตามกะ). Matches the paid minutes in ค่าตอบแทน.
+  const workedByDay = computeSvcClampedMinutesByDay(entries, scheduledByUser);
 
   // 4b. Executives with track_attendance=0 don't clock in — accrue SVC from the
-  //     roster instead: each kind='work' day they're scheduled counts as a full
-  //     shift (assumedShift, default 8h) worked, so they join that day's
-  //     proportional split like any other worker (owner 2026-07-20).
+  //     roster instead: each kind='work' day they're scheduled counts as the
+  //     ACTUAL rostered shift length (net of break — e.g. NPF = 8h), not a flat
+  //     8h, so they join that day's proportional split like any other worker
+  //     (owner 2026-07-21: นับตามกะที่ลงในตารางเวร).
   for (const s of staff) {
     if (s.trackAttendance !== 0) continue;
-    for (const d of workShiftDatesForUserMonth(branchId, s.userId, yearMonth)) {
+    const byDate = scheduledByUser.get(s.userId);
+    if (!byDate) continue;
+    for (const [d, windows] of byDate) {
+      const net = windows.reduce((sum, w) => sum + netScheduledMinutes(w), 0);
+      if (net <= 0) continue;
       let dayMap = workedByDay.get(d);
       if (!dayMap) { dayMap = new Map<number, number>(); workedByDay.set(d, dayMap); }
-      dayMap.set(s.userId, assumedShift);
+      dayMap.set(s.userId, Math.round(net));
     }
   }
 
@@ -400,6 +508,12 @@ export function computeMonthlySvcSummary(
   const userIds = staff.map((s) => s.userId);
   const rosterScheduledByUser = scheduledMinutesByUserForMonth(branchId, yearMonth, userIds);
 
+  // WHT rate for the payout — same 3% payroll uses (payroll_settings.wht_rate),
+  // falling back to 0.03 if settings are missing (owner 2026-07-21).
+  const whtRate = (db.prepare("SELECT wht_rate FROM payroll_settings LIMIT 1")
+    .get() as { wht_rate: number } | undefined)?.wht_rate ?? 0.03;
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
   const rows: MonthlySvcRow[] = staff.map((s) => {
     const a = acc.get(s.userId) ?? { minutesWorked: 0, daysWorked: 0, grossAllocation: 0 };
     const rosterShiftByDate = shiftStartByDateForUserMonth(branchId, s.userId, yearMonth);
@@ -428,16 +542,17 @@ export function computeMonthlySvcSummary(
     const lateForfeit = anyComputable && lateRatio > SC_INELIGIBILITY_THRESHOLD;
     const resignForfeit = forfeitedFromResign.has(s.userId);
     const forfeited = lateForfeit || resignForfeit;
-    // Build the display name from structured fields (คำนำหน้า + ชื่อ + นามสกุล)
-    // ONLY when an actual name part exists — otherwise a record with just a
-    // title_prefix and no first/last name would render as a lone "นางสาว"/"นาย"
-    // and hide the real display_name (owner 2026-07-21). Using structured fields
-    // (rather than prepending the prefix to display_name) avoids a double prefix
-    // for rows whose display_name already embeds the คำนำหน้า.
-    const hasStructuredName = Boolean(s.firstNameTh || s.lastNameTh);
-    const displayName = hasStructuredName
-      ? [s.titlePrefix, s.firstNameTh, s.lastNameTh].filter(Boolean).join(" ")
-      : s.displayName;
+    // Name: mirror payroll — carry display_name + title_prefix and compose with
+    // nameWithPrefix (owner 2026-07-21: ใช้วิธีเดียวกับหน้าค่าตอบแทน). Staff with a
+    // title_prefix show it; staff with none show display_name as-is (owner fills
+    // the คำนำหน้า in the employee editor — the system does not guess).
+    const displayName = nameWithPrefix(s.titlePrefix, s.displayName);
+    // WHT: 'wht' staff have 3% withheld from their SVC payout; 'sso' staff get
+    // the full net (owner 2026-07-21). Applied after forfeiture (forfeited = 0).
+    const netAllocation = forfeited ? 0 : a.grossAllocation;
+    const taxMode: "sso" | "wht" = s.taxMode === "wht" ? "wht" : "sso";
+    const whtAmount = taxMode === "wht" ? round2(netAllocation * whtRate) : 0;
+    const netPayout = round2(netAllocation - whtAmount);
     return {
       userId: s.userId,
       displayName,
@@ -453,7 +568,10 @@ export function computeMonthlySvcSummary(
       forfeitReason: forfeited
         ? (resignForfeit ? "resignation" : "late_20pct")
         : null,
-      netAllocation: forfeited ? 0 : a.grossAllocation,
+      netAllocation,
+      taxMode,
+      whtAmount,
+      netPayout,
       dailyBreakdown: breakdownByUser.get(s.userId) ?? []
     };
   });
@@ -464,6 +582,8 @@ export function computeMonthlySvcSummary(
   const companyFromForfeit = rows.reduce(
     (s, r) => s + (r.forfeited ? r.grossAllocation : 0), 0
   );
+  const totalWht = rows.reduce((s, r) => s + r.whtAmount, 0);
+  const totalNetPayout = rows.reduce((s, r) => s + r.netPayout, 0);
 
   return {
     branchId,
@@ -473,6 +593,8 @@ export function computeMonthlySvcSummary(
     companyPoolFromSplit: companyFromSplit,
     companyPoolFromForfeit: companyFromForfeit,
     companyPoolTotal: companyFromSplit + companyFromForfeit,
+    totalWht,
+    totalNetPayout,
     rows,
     daysWithEntries: dailyRows.length,
     daysInMonth,
@@ -492,6 +614,8 @@ function emptySummary(
     companyPoolFromSplit: totalCollected * SVC_COMPANY_SHARE_RATIO,
     companyPoolFromForfeit: 0,
     companyPoolTotal: totalCollected * SVC_COMPANY_SHARE_RATIO,
+    totalWht: 0,
+    totalNetPayout: 0,
     rows: [],
     daysWithEntries,
     daysInMonth,
