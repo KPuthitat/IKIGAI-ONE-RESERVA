@@ -20,6 +20,7 @@ import type { Metadata } from "next";
 import SvcCalcModal from "./SvcCalcModal";
 import { requireAdmin } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
+import { fmtMoney } from "@/lib/format";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import {
@@ -143,7 +144,7 @@ export default function AdminServiceChargePage({
         {summary.companyPoolFromForfeit > 0 && (
           <p className="mt-3 text-xs text-amber-700">
             {t(lang, "admin.persona.svc.forfeitNote", {
-              amount: summary.companyPoolFromForfeit.toFixed(2)
+              amount: fmtMoney(summary.companyPoolFromForfeit)
             })}
           </p>
         )}
@@ -212,12 +213,12 @@ export default function AdminServiceChargePage({
                         {r.shiftStartTime ? `${latePct}%` : "—"}
                       </td>
                       <td className="py-2 pr-2 text-right font-mono">
-                        {r.grossAllocation.toFixed(2)}
+                        {fmtMoney(r.grossAllocation)}
                       </td>
                       <td className={`py-2 pr-2 text-right font-mono font-bold ${
                         r.forfeited ? "text-rose-500 line-through" : "text-emerald-700"
                       }`}>
-                        {r.netAllocation.toFixed(2)}
+                        {fmtMoney(r.netAllocation)}
                       </td>
                       <td className="py-2 pr-2">
                         {!r.forfeited ? (

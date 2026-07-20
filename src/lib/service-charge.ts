@@ -218,6 +218,10 @@ type StaffMeta = {
   shiftStartTime: string | null;
   weeklyOffDays: string | null;
   trackAttendance: number;   // 0 = ผู้บริหารไม่ลงเวลา → นับ SVC จากตารางเวรแทน
+  titlePrefix: string | null;
+  employeeCode: string | null;
+  firstNameTh: string | null;
+  lastNameTh: string | null;
 };
 
 /** Build the full monthly SVC summary for a branch.
@@ -264,17 +268,32 @@ export function computeMonthlySvcSummary(
   // 2. Branch roster + their settings
   // role='staff' OR track_attendance=0 → ดึงผู้บริหารที่ไม่ลงเวลา (role staff/admin)
   // เข้ามาด้วย โดยไม่ดึง admin ที่ลงเวลาปกติเข้ามา (owner 2026-07-20).
+  //
+  // Eligibility filters mirror the payroll loader (payroll-compute.ts) so the
+  // SVC roster matches who actually gets paid (owner 2026-07-20: คนลาออก/เลิกจ้าง/
+  // เพิ่งเข้างานเดือนถัดไป/พนักงานทดสอบ ไม่ควรโผล่):
+  //   - is_test_account = 0            → drop test accounts
+  //   - status NOT IN (...)            → drop disabled/resigned/terminated (also
+  //                                       de-dups people who have an old closed record)
+  //   - hire_date IS NULL OR <= end    → a future hire doesn't belong in a past month
   const staff = db.prepare(`
     SELECT u.id AS userId, u.display_name AS displayName,
            u.employment_type AS employmentType,
            u.shift_start_time AS shiftStartTime,
            u.weekly_off_days AS weeklyOffDays,
-           COALESCE(u.track_attendance, 1) AS trackAttendance
+           COALESCE(u.track_attendance, 1) AS trackAttendance,
+           u.title_prefix AS titlePrefix,
+           u.employee_code AS employeeCode,
+           u.first_name_th AS firstNameTh,
+           u.last_name_th AS lastNameTh
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
     WHERE ub.branch_id = ? AND (u.role = 'staff' OR u.track_attendance = 0)
-    ORDER BY u.display_name COLLATE NOCASE ASC
-  `).all(branchId) as StaffMeta[];
+      AND u.is_test_account = 0
+      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
+      AND (u.hire_date IS NULL OR u.hire_date <= ?)
+    ORDER BY (u.employee_code IS NULL), u.employee_code COLLATE NOCASE ASC
+  `).all(branchId, end) as StaffMeta[];
   if (staff.length === 0) {
     return emptySummary(branchId, yearMonth, totalCollected, daysInMonth, dailyRows.length);
   }
@@ -397,9 +416,15 @@ export function computeMonthlySvcSummary(
     const lateForfeit = anyComputable && lateRatio > SC_INELIGIBILITY_THRESHOLD;
     const resignForfeit = forfeitedFromResign.has(s.userId);
     const forfeited = lateForfeit || resignForfeit;
+    // Prefer structured name fields (คำนำหน้า + ชื่อ + นามสกุล) so the prefix
+    // shows; fall back to display_name. Built from structured fields rather than
+    // prepending to display_name to avoid a double prefix — some display_name
+    // rows already embed the คำนำหน้า (owner 2026-07-20).
+    const structuredName = [s.titlePrefix, s.firstNameTh, s.lastNameTh]
+      .filter(Boolean).join(" ");
     return {
       userId: s.userId,
-      displayName: s.displayName,
+      displayName: structuredName || s.displayName,
       employmentType: s.employmentType,
       shiftStartTime: s.shiftStartTime,
       totalMinutesWorked: a.minutesWorked,
