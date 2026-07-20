@@ -1037,6 +1037,11 @@ function LineEditModal({
   const [ovDed, setOvDed] = useState(String(line.other_deductions ?? 0));
   const [ovPinOpen, setOvPinOpen] = useState(false);
   const [ovMsg, setOvMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // PIN gate: ช่องแก้ยอดล็อกไว้จนกว่าจะปลดล็อกด้วย PIN (กันแก้พลาด, owner 2026-07-20).
+  // ovPin เก็บ PIN ที่ผ่านแล้วเพื่อส่งตอนบันทึกโดยไม่ถามซ้ำ (mirror ตัวแก้รายวัน).
+  const [ovUnlocked, setOvUnlocked] = useState(false);
+  const [ovPin, setOvPin] = useState("");
+  const [ovSaving, setOvSaving] = useState(false);
   const ovPreview =
     (Number(ovBase) || 0) + (Number(ovOt) || 0) + line.service_charge
     + (Number(ovAdd) || 0) - (Number(ovDed) || 0);
@@ -1366,73 +1371,95 @@ function LineEditModal({
           />
         )}
 
-        {/* ปรับยอดเอง (money override) — owner 2026-07-19. ใส่ยอดเงินตรง ๆ สำหรับ
-            กรณีที่แก้รายวันไม่ได้ (เช่น ตั้งเงินเดือน 0 แต่คงโอที). ระบบคิด SSO/ภาษี
-            ใหม่จากยอดที่ใส่. PIN-gated + บันทึก audit เหมือนการแก้ยอดอื่น. */}
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
-          <div>
-            <div className="text-sm font-semibold text-amber-900">ปรับยอดเอง (กรณีพิเศษ)</div>
-            <div className="text-[11px] text-amber-700">
-              ใส่ยอดเงินตรง ๆ — ระบบคิดประกันสังคม/ภาษีใหม่จากยอดนี้ ใช้เมื่อแก้รายวันไม่ได้ (เช่น ตั้งเงินเดือน 0 แต่คงโอที)
-            </div>
+        {/* ปรับยอดเอง (money override) — owner 2026-07-19/20. ใส่ยอดเงินตรง ๆ เมื่อ
+            แก้รายวันไม่ได้ (เช่น ตั้งเงินเดือน 0 แต่คงโอที). ต้องปลดล็อกด้วย PIN ก่อน
+            (กันแก้พลาด); ระบบคิด SSO/ภาษีใหม่ + บันทึก audit. กะทัดรัด เหนือตารางเวลา. */}
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs font-semibold text-amber-900">ปรับยอดเอง (กรณีพิเศษ)</div>
+            {ovUnlocked
+              ? <span className="text-[10px] font-medium text-emerald-700">🔓 ปลดล็อกแล้ว</span>
+              : <button type="button" className="btn-secondary !py-1 !px-2 !text-[11px]"
+                  onClick={() => setOvPinOpen(true)}>🔒 ปลดล็อกด้วย PIN</button>}
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="text-[11px] text-slate-600">เงินเดือน (base)
-              <input type="number" min="0" step="0.01" className="input w-full text-right"
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+            <label className="text-[10px] text-slate-500">เงินเดือน
+              <input type="number" min="0" step="0.01" disabled={!ovUnlocked}
+                className="input !py-1 w-full text-right text-xs disabled:bg-slate-100 disabled:text-slate-400"
                 value={ovBase} onChange={(e) => setOvBase(e.target.value)} />
             </label>
-            <label className="text-[11px] text-slate-600">ค่าล่วงเวลา (OT)
-              <input type="number" min="0" step="0.01" className="input w-full text-right"
+            <label className="text-[10px] text-slate-500">OT
+              <input type="number" min="0" step="0.01" disabled={!ovUnlocked}
+                className="input !py-1 w-full text-right text-xs disabled:bg-slate-100 disabled:text-slate-400"
                 value={ovOt} onChange={(e) => setOvOt(e.target.value)} />
             </label>
-            <label className="text-[11px] text-slate-600">เพิ่มอื่น ๆ
-              <input type="number" min="0" step="0.01" className="input w-full text-right"
+            <label className="text-[10px] text-slate-500">เพิ่มอื่น ๆ
+              <input type="number" min="0" step="0.01" disabled={!ovUnlocked}
+                className="input !py-1 w-full text-right text-xs disabled:bg-slate-100 disabled:text-slate-400"
                 value={ovAdd} onChange={(e) => setOvAdd(e.target.value)} />
             </label>
-            <label className="text-[11px] text-slate-600">หักอื่น ๆ
-              <input type="number" min="0" step="0.01" className="input w-full text-right"
+            <label className="text-[10px] text-slate-500">หักอื่น ๆ
+              <input type="number" min="0" step="0.01" disabled={!ovUnlocked}
+                className="input !py-1 w-full text-right text-xs disabled:bg-slate-100 disabled:text-slate-400"
                 value={ovDed} onChange={(e) => setOvDed(e.target.value)} />
             </label>
           </div>
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="text-[11px] text-slate-600">
-              ยอดก่อนหัก SSO/ภาษี ≈ <span className="font-semibold">฿{fmtMoney(ovPreview)}</span>
-            </div>
-            <button type="button" className="btn-secondary !py-1.5 disabled:opacity-50"
-              disabled={!ovChanged} onClick={() => setOvPinOpen(true)}>บันทึกยอด</button>
+            <span className="text-[10px] text-slate-500">ก่อนหัก SSO/ภาษี ≈ <span className="font-semibold text-slate-700">฿{fmtMoney(ovPreview)}</span></span>
+            <button type="button" className="btn-secondary !py-1 !px-2.5 !text-[11px] disabled:opacity-50"
+              disabled={!ovUnlocked || !ovChanged || ovSaving}
+              onClick={async () => {
+                setOvSaving(true);
+                try {
+                  const res = await fetch(
+                    apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}`),
+                    {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        base_pay: Number(ovBase) || 0,
+                        ot_pay: Number(ovOt) || 0,
+                        other_additions: Number(ovAdd) || 0,
+                        other_deductions: Number(ovDed) || 0,
+                        admin_pin: ovPin
+                      })
+                    }
+                  );
+                  const j = await res.json().catch(() => ({}));
+                  if (!res.ok || !j.ok) {
+                    setOvMsg({ kind: "err", text: j.message ?? j.error ?? "บันทึกไม่สำเร็จ" });
+                    return;
+                  }
+                  setDirty(true);
+                  setOvMsg({ kind: "ok", text: "บันทึกยอดแล้ว — ยอดสุทธิจะอัปเดตเมื่อปิดหน้าต่าง" });
+                } finally {
+                  setOvSaving(false);
+                }
+              }}>บันทึกยอด</button>
           </div>
-          <p className="text-[11px] text-rose-600">
-            ⚠️ ถ้ากด “คำนวณใหม่” ภายหลัง เงินเดือนจะถูกคิดใหม่จากอัตราจริง — ปรับยอดนี้เป็นขั้นตอนสุดท้ายก่อนปิดรอบ
-          </p>
+          <p className="text-[10px] text-rose-500">⚠️ กด “คำนวณใหม่” ภายหลังยอดเงินเดือนจะถูกคิดใหม่ — ปรับยอดเป็นสเต็ปสุดท้ายก่อนปิดรอบ</p>
           {ovMsg && (
-            <p className={`text-[11px] ${ovMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>{ovMsg.text}</p>
+            <p className={`text-[10px] ${ovMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>{ovMsg.text}</p>
           )}
         </div>
         {ovPinOpen && (
           <PinPromptModal
-            title="ยืนยันปรับยอดเอง"
-            description={<p className="text-xs text-slate-600">ตั้งเงินเดือน ฿{fmtMoney(Number(ovBase) || 0)} · OT ฿{fmtMoney(Number(ovOt) || 0)} — ใส่ PIN เพื่อยืนยัน</p>}
-            submitLabel="บันทึก"
+            title="ปลดล็อกปรับยอดเอง"
+            description={<p className="text-xs text-slate-600">ใส่ PIN เพื่อปลดล็อกการแก้ยอดเงิน (กันแก้พลาด)</p>}
+            submitLabel="ปลดล็อก"
             onClose={() => setOvPinOpen(false)}
             onSubmit={async (pin) => {
-              const res = await fetch(
-                apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}`),
-                {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    base_pay: Number(ovBase) || 0,
-                    ot_pay: Number(ovOt) || 0,
-                    other_additions: Number(ovAdd) || 0,
-                    other_deductions: Number(ovDed) || 0,
-                    admin_pin: pin
-                  })
-                }
-              );
+              const res = await fetch(apiUrl(`/api/admin/persona/verify-pin`), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ pin })
+              });
               const j = await res.json().catch(() => ({}));
-              if (!res.ok || !j.ok) return { ok: false, message: j.message ?? j.error ?? "บันทึกไม่สำเร็จ" };
-              setOvPinOpen(false); setDirty(true);
-              setOvMsg({ kind: "ok", text: "บันทึกยอดแล้ว — ยอดสุทธิจะอัปเดตเมื่อปิดหน้าต่าง" });
+              if (!res.ok || !j?.ok) {
+                const map: Record<string, string> = { wrong_pin: "PIN ไม่ถูกต้อง", no_pin: "คุณยังไม่ได้ตั้ง PIN" };
+                return { ok: false, message: map[j?.error] ?? "ปลดล็อกไม่สำเร็จ" };
+              }
+              setOvPin(pin); setOvUnlocked(true); setOvPinOpen(false);
               return { ok: true };
             }}
           />
