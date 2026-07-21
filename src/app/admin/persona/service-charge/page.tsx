@@ -15,6 +15,7 @@
 // to mutate. Forfeitures are computed live; no separate "finalize"
 // step today (the bank CSV in /payroll handles actual disbursement).
 
+import { Fragment } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
 import SvcCalcModal from "./SvcCalcModal";
@@ -86,6 +87,22 @@ export default function AdminServiceChargePage({
     const d = new Date(Date.UTC(nowBkk.getUTCFullYear(), nowBkk.getUTCMonth() - i, 1));
     monthOptions.push(d.toISOString().slice(0, 7));
   }
+
+  // Group the distribution table (owner 2026-07-21): พนักงานประจำ (FT) first,
+  // then พนักงานพาร์ทไทม์ (PT); within each, ประกันสังคม (sso) before หักภาษี ณ
+  // ที่จ่าย (wht). Stable sort preserves the underlying employee_code order.
+  const typeRank = (t: string | null) => (t === "ft" ? 0 : t === "pt" ? 1 : 2);
+  const taxRank = (m: string) => (m === "wht" ? 1 : 0);
+  const distGroups = (["ft", "pt", "other"] as const)
+    .map((key) => ({
+      key,
+      label: key === "ft" ? "พนักงานประจำ" : key === "pt" ? "พนักงานพาร์ทไทม์" : "อื่นๆ",
+      rows: summary.rows
+        .filter((r) => (key === "other" ? typeRank(r.employmentType) === 2 : r.employmentType === key))
+        .slice()
+        .sort((a, b) => taxRank(a.taxMode) - taxRank(b.taxMode))
+    }))
+    .filter((g) => g.rows.length > 0);
 
   return (
     <div className="space-y-4">
@@ -222,78 +239,77 @@ export default function AdminServiceChargePage({
                 </tr>
               </thead>
               <tbody>
-                {summary.rows.map((r) => {
-                  const hours = (r.totalMinutesWorked / 60).toFixed(1);
-                  const latePct = (r.lateRatio * 100).toFixed(1);
-                  return (
-                    <tr key={r.userId} className="border-b border-slate-100 last:border-b-0">
-                      <td className="py-2 pr-3">
-                        <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
-                          <span>{r.displayName}</span>
-                          {r.employmentType === "pt" && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
-                              {t(lang, "admin.persona.employees.employment.pt")}
-                            </span>
-                          )}
-                          {r.employmentType === "ft" && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
-                              {t(lang, "admin.persona.employees.employment.ft")}
-                            </span>
-                          )}
-                          {r.taxMode === "wht" && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
-                              {t(lang, "admin.persona.employees.taxMode.whtTag")}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-2 pr-3 text-right text-slate-600">{r.daysWorked}</td>
-                      <td className="py-2 pr-3 text-right text-slate-600">{hours}</td>
-                      <td className="py-2 pr-3 text-right text-slate-500">
-                        {r.shiftStartTime ? `${latePct}%` : "—"}
-                      </td>
-                      <td className="py-2 pr-3 text-right">
-                        {fmtMoney(r.grossAllocation)}
-                      </td>
-                      <td className={`py-2 pr-3 text-right font-bold ${
-                        r.forfeited ? "text-rose-500 line-through" : "text-emerald-700"
-                      }`}>
-                        {fmtMoney(r.netPayout)}
-                        {!r.forfeited && r.taxMode === "wht" && (
-                          <span className="block text-[9px] font-normal text-rose-500">หัก ณ ที่จ่าย 3%</span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-3">
-                        {!r.forfeited ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">
-                            ✓ {t(lang, "admin.persona.svc.status.eligible")}
-                          </span>
-                        ) : r.forfeitReason === "late_20pct" ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">
-                            ✗ {t(lang, "admin.persona.svc.status.late20")}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">
-                            ✗ {t(lang, "admin.persona.svc.status.resignation")}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-3 text-right">
-                        <SvcCalcModal
-                          displayName={r.displayName}
-                          grossAllocation={r.grossAllocation}
-                          netAllocation={r.netAllocation}
-                          forfeited={r.forfeited}
-                          forfeitReason={r.forfeitReason}
-                          dailyBreakdown={r.dailyBreakdown}
-                          taxMode={r.taxMode}
-                          whtAmount={r.whtAmount}
-                          netPayout={r.netPayout}
-                        />
+                {distGroups.map((g) => (
+                  <Fragment key={g.key}>
+                    <tr className="bg-slate-50">
+                      <td colSpan={8} className="py-1.5 px-2 text-xs font-bold text-slate-600">
+                        {g.label} ({g.rows.length} คน)
                       </td>
                     </tr>
-                  );
-                })}
+                    {g.rows.map((r) => {
+                      const hours = (r.totalMinutesWorked / 60).toFixed(1);
+                      const latePct = (r.lateRatio * 100).toFixed(1);
+                      return (
+                        <tr key={r.userId} className="border-b border-slate-100">
+                          <td className="py-2 pr-3">
+                            <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
+                              <span>{r.displayName}</span>
+                              {r.taxMode === "wht" && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                                  {t(lang, "admin.persona.employees.taxMode.whtTag")}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2 pr-3 text-right text-slate-600">{r.daysWorked}</td>
+                          <td className="py-2 pr-3 text-right text-slate-600">{hours}</td>
+                          <td className="py-2 pr-3 text-right text-slate-500">
+                            {r.shiftStartTime ? `${latePct}%` : "—"}
+                          </td>
+                          <td className="py-2 pr-3 text-right">
+                            {fmtMoney(r.grossAllocation)}
+                          </td>
+                          <td className={`py-2 pr-3 text-right font-bold ${
+                            r.forfeited ? "text-rose-500 line-through" : "text-emerald-700"
+                          }`}>
+                            {fmtMoney(r.netPayout)}
+                            {!r.forfeited && r.taxMode === "wht" && (
+                              <span className="block text-[9px] font-normal text-rose-500">หัก ณ ที่จ่าย 3%</span>
+                            )}
+                          </td>
+                          <td className="py-2 pr-3">
+                            {!r.forfeited ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">
+                                ✓ {t(lang, "admin.persona.svc.status.eligible")}
+                              </span>
+                            ) : r.forfeitReason === "late_20pct" ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">
+                                ✗ {t(lang, "admin.persona.svc.status.late20")}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">
+                                ✗ {t(lang, "admin.persona.svc.status.resignation")}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 pr-3 text-right">
+                            <SvcCalcModal
+                              displayName={r.displayName}
+                              grossAllocation={r.grossAllocation}
+                              netAllocation={r.netAllocation}
+                              forfeited={r.forfeited}
+                              forfeitReason={r.forfeitReason}
+                              dailyBreakdown={r.dailyBreakdown}
+                              taxMode={r.taxMode}
+                              whtAmount={r.whtAmount}
+                              netPayout={r.netPayout}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
+                ))}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-slate-300 font-medium">
