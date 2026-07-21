@@ -90,6 +90,9 @@ export type MonthlySvcRow = {
     date: string; dayAmount: number; staffPool: number;
     userMinutes: number; totalMinutes: number; share: number;
   }>;
+  // วันที่ถูกตัดสิทธิ์เพราะเวลางานผิดปกติ/ไม่รับรองเวลา (owner 2026-07-21) —
+  // แสดงในตารางวิธีคำนวณเพื่อความโปร่งใส. ว่างเสมอสำหรับเดือนก่อนกฎมีผล (มิ.ย.).
+  excludedDays: Array<{ date: string; reason: string }>;
 };
 
 export type MonthlySvcSummary = {
@@ -299,7 +302,13 @@ function computeSvcClampedMinutesByDay(
   entries: Array<{ user_id: number; ts: string; type: "in" | "out" }>,
   scheduledByUser: Map<number, Map<string, ScheduledShift[]>>,
   otByUser: Map<number, Map<string, string>>,
-  brk: BreakSettings
+  brk: BreakSettings,
+  // owner 2026-07-21: exclude whole days with an irregular / uncertified punch
+  // (forgot to clock in or out → system can't compute). Only ON for the months
+  // this rule takes effect (ก.ค. เป็นต้นไป). When ON, such a day is dropped from
+  // SVC entirely and recorded in excludedByUser with a reason for the breakdown.
+  excludeAbnormal: boolean,
+  excludedByUser: Map<number, Array<{ date: string; reason: string }>>
 ): Map<string, Map<number, number>> {
   const out = new Map<string, Map<number, number>>();
   const byDay = bucketEntriesByDay(entries);
@@ -311,7 +320,17 @@ function computeSvcClampedMinutesByDay(
     }
     const userMin = new Map<number, number>();
     for (const [userId, list] of byUser) {
-      const { shifts } = pairShifts(list);
+      const { shifts, unpaired } = pairShifts(list);
+      // Irregular punch: a clock-in with no matching clock-out (unpaired>0), or
+      // clock activity that pairs into nothing (a lone clock-out). SVC forfeits
+      // the whole day (owner 2026-07-21: ไม่รับรองเวลา = ไม่รักษาสิทธิ์). Payroll
+      // still pays it — that path is salary/roster-based, not clock-proportional.
+      if (excludeAbnormal && list.length > 0 && (unpaired > 0 || shifts.length === 0)) {
+        let arr = excludedByUser.get(userId);
+        if (!arr) { arr = []; excludedByUser.set(userId, arr); }
+        arr.push({ date, reason: unpaired > 0 ? "ลืมลงเวลาออก — เวลาไม่ครบ" : "ลืมลงเวลาเข้า — เวลาไม่ครบ" });
+        continue;
+      }
       const candidates = scheduledByUser.get(userId)?.get(date) ?? [];
       const reqUntil = otByUser.get(userId)?.get(date);
       let total = 0;
@@ -461,7 +480,13 @@ export function computeMonthlySvcSummary(
   //    payroll: an early clock-in is counted from the shift start, break is
   //    deducted, OT past shift-end is not counted (owner 2026-07-21: นับเฉพาะ
   //    เวลาตามกะ). Matches the paid minutes in ค่าตอบแทน.
-  const workedByDay = computeSvcClampedMinutesByDay(entries, scheduledByUser, otByUser, brk);
+  // The "ตัดวันเวลาผิดปกติ" rule takes effect from July 2026 onward — June and
+  // earlier stay exactly as previously computed (owner 2026-07-21: ไม่นับย้อนหลัง).
+  const excludeAbnormal = yearMonth >= "2026-07";
+  const excludedByUser = new Map<number, Array<{ date: string; reason: string }>>();
+  const workedByDay = computeSvcClampedMinutesByDay(
+    entries, scheduledByUser, otByUser, brk, excludeAbnormal, excludedByUser
+  );
 
   // 4b. Executives with track_attendance=0 don't clock in — accrue SVC from the
   //     roster instead: each kind='work' day they're scheduled counts as the
@@ -620,7 +645,8 @@ export function computeMonthlySvcSummary(
       taxMode,
       whtAmount,
       netPayout,
-      dailyBreakdown: breakdownByUser.get(s.userId) ?? []
+      dailyBreakdown: breakdownByUser.get(s.userId) ?? [],
+      excludedDays: (excludedByUser.get(s.userId) ?? []).slice().sort((a, b) => a.date.localeCompare(b.date))
     };
   });
 

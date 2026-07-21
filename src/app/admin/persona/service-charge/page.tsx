@@ -303,6 +303,7 @@ export default function AdminServiceChargePage({
                               taxMode={r.taxMode}
                               whtAmount={r.whtAmount}
                               netPayout={r.netPayout}
+                              excludedDays={r.excludedDays}
                             />
                           </td>
                         </tr>
