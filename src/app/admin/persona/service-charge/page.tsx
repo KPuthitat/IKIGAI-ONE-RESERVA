@@ -414,6 +414,8 @@ export default function AdminServiceChargePage({
           <div>{t(lang, "admin.persona.svc.rule.late20")}</div>
           <div>{t(lang, "admin.persona.svc.rule.resignation")}</div>
           <div>{t(lang, "admin.persona.svc.rule.payout")}</div>
+          <div>· วันเวลาผิดปกติ (ลืมลงเวลาเข้า/ออก) ไม่นับ SVC — มีผลตั้งแต่ มิ.ย. 2026</div>
+          <div>· สูงสุด 8 ชม. (480 นาที) ต่อวัน · เกินได้เฉพาะมีโอทีอนุมัติ · ลงเวลาวันที่ไม่มีกะไม่นับ — มีผลตั้งแต่ ก.ค. 2026</div>
         </div>
       ) : (
         <div className="card text-xs text-slate-500 space-y-1">

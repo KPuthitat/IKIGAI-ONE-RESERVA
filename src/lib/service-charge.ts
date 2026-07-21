@@ -35,6 +35,12 @@ import {
 export const SVC_STAFF_SHARE_RATIO = 0.6;  // 3 of 5 parts
 export const SVC_COMPANY_SHARE_RATIO = 0.4; // 2 of 5 parts
 
+// Maximum worked minutes a normal day can contribute to the SVC share
+// (owner 2026-07-21): 8 hours = 480 min. A day can only exceed this with an
+// approved OT record (ot_requests) — otherwise the day is capped at 480 even if
+// the clocked/rostered window was longer. Effective July 2026 onward.
+export const SVC_MAX_NORMAL_MINUTES = 8 * 60;
+
 // The month this system started recording SVC from live clock/roster data
 // (owner 2026-07-21). Months BEFORE this are pre-system: no time entries to
 // distribute a pool over, so the per-staff SVC is entered by hand
@@ -372,6 +378,10 @@ function computeSvcClampedMinutesByDay(
   // this rule takes effect (ก.ค. เป็นต้นไป). When ON, such a day is dropped from
   // SVC entirely and recorded in excludedByUser with a reason for the breakdown.
   excludeAbnormal: boolean,
+  // owner 2026-07-21 (July+): a clock-in on a day the user has NO scheduled shift
+  // (สลับกะกันเอง / ลงเวลาในวันที่ไม่มีกะ) is abnormal — the day earns no SVC.
+  // Separate gate from excludeAbnormal because it starts a month later.
+  excludeNoSchedule: boolean,
   excludedByUser: Map<number, Array<{ date: string; reason: string }>>
 ): Map<string, Map<number, number>> {
   const out = new Map<string, Map<number, number>>();
@@ -396,6 +406,13 @@ function computeSvcClampedMinutesByDay(
         continue;
       }
       const candidates = scheduledByUser.get(userId)?.get(date) ?? [];
+      // Clocked but not rostered that day → abnormal, no SVC (owner 2026-07-21).
+      if (excludeNoSchedule && shifts.length > 0 && candidates.length === 0) {
+        let arr = excludedByUser.get(userId);
+        if (!arr) { arr = []; excludedByUser.set(userId, arr); }
+        arr.push({ date, reason: "ลงเวลาวันที่ไม่มีกะในตาราง — ไม่นับ SVC" });
+        continue;
+      }
       const reqUntil = otByUser.get(userId)?.get(date);
       let total = 0;
       for (const sh of shifts) {
@@ -555,9 +572,15 @@ export function computeMonthlySvcSummary(
   // month — pre-June is entered by hand (manual path above) — so in practice this
   // applies to every computed month.
   const excludeAbnormal = yearMonth >= SVC_SYSTEM_START_MONTH;
+  // Two rules that start a month later than the abnormal exclusion (owner
+  // 2026-07-21: ให้มีผลกรกฎาเป็นต้นไป):
+  //   • excludeNoSchedule — a clock-in on a no-shift day earns no SVC
+  //   • capNormalMinutes  — a normal day contributes at most 480 min (OT excepted)
+  const excludeNoSchedule = yearMonth >= "2026-07";
+  const capNormalMinutes = yearMonth >= "2026-07";
   const excludedByUser = new Map<number, Array<{ date: string; reason: string }>>();
   const workedByDay = computeSvcClampedMinutesByDay(
-    entries, scheduledByUser, otByUser, brk, excludeAbnormal, excludedByUser
+    entries, scheduledByUser, otByUser, brk, excludeAbnormal, excludeNoSchedule, excludedByUser
   );
 
   // 4b. Executives with track_attendance=0 don't clock in — accrue SVC from the
@@ -575,6 +598,20 @@ export function computeMonthlySvcSummary(
       let dayMap = workedByDay.get(d);
       if (!dayMap) { dayMap = new Map<number, number>(); workedByDay.set(d, dayMap); }
       dayMap.set(s.userId, Math.round(net));
+    }
+  }
+
+  // 4c. Cap a normal day at 480 min (owner 2026-07-21, July+). A day only exceeds
+  //     the cap when it has an approved OT record — those are already bounded to
+  //     the approved end-time by applyPtGrace, so they're left uncapped here.
+  //     Applies to both clocked and roster-credited (exec) minutes.
+  if (capNormalMinutes) {
+    for (const [d, dayMap] of workedByDay) {
+      for (const [userId, mins] of dayMap) {
+        if (mins > SVC_MAX_NORMAL_MINUTES && !otByUser.get(userId)?.has(d)) {
+          dayMap.set(userId, SVC_MAX_NORMAL_MINUTES);
+        }
+      }
     }
   }
 

@@ -4,6 +4,7 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postSvcToAccounta, removeSvcFromAccounta } from "@/lib/accounta-db";
+import { isManualSvcMonth } from "@/lib/service-charge";
 
 // PATCH /api/admin/persona/service-charge/payout — 3-step flow mirroring payroll
 // (owner 2026-07-21): draft → finalize → paid → posted.
@@ -62,6 +63,23 @@ export async function PATCH(req: Request) {
     const batch = getBatch(branchId, d.yearMonth);
     if (batch && batch.status !== "draft") {
       return NextResponse.json({ error: "already_finalized" }, { status: 400 });
+    }
+    // Don't allow finalize until the month's data is complete (owner 2026-07-21:
+    // ไม่อนุญาตให้ finalize จนกว่าจะมีข้อมูลครบทั้งเดือน). For computed months that
+    // means every calendar day must have a daily_service_charge entry (enter 0 for
+    // closed days). Manual (pre-system) months have no daily ledger — skipped.
+    if (!isManualSvcMonth(d.yearMonth)) {
+      const [yyyy, mm] = d.yearMonth.split("-").map(Number);
+      const daysInMonth = new Date(Date.UTC(yyyy, mm, 0)).getUTCDate();
+      const filled = (db.prepare(
+        "SELECT COUNT(DISTINCT date) AS c FROM daily_service_charge WHERE branch_id = ? AND date >= ? AND date <= ?"
+      ).get(branchId, `${d.yearMonth}-01`, `${d.yearMonth}-31`) as { c: number }).c;
+      if (filled < daysInMonth) {
+        return NextResponse.json({
+          error: "month_incomplete",
+          message: `ยังลงข้อมูลเซอร์วิสชาร์จไม่ครบทั้งเดือน (ลงแล้ว ${filled}/${daysInMonth} วัน) — ต้องครบก่อนปิดยอด (วันหยุด/ปิดร้าน ให้ลง 0)`
+        }, { status: 400 });
+      }
     }
     const pinErr = requirePin(user.id, d.pin);
     if (pinErr) return pinErr;
