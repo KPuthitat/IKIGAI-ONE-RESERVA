@@ -18,7 +18,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import SvcCalcModal from "./SvcCalcModal";
-import { requireAdmin } from "@/lib/auth";
+import SvcPayoutActions from "./SvcPayoutActions";
+import { requireAdmin, userCanViewPayroll } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { fmtMoney } from "@/lib/format";
 import { getLang } from "@/lib/lang-server";
@@ -66,6 +67,14 @@ export default function AdminServiceChargePage({
 
   const dailyRows = listDailyForMonth(branch.id, month);
   const summary = computeMonthlySvcSummary(branch.id, month);
+
+  // Payout batch state for the "ทำจ่ายแล้ว" action (owner 2026-07-21).
+  const payoutBatch = db.prepare(
+    "SELECT status, total_net, total_wht, posted_at FROM svc_payout_batches WHERE branch_id = ? AND year_month = ?"
+  ).get(branch.id, month) as
+    { status: string; total_net: number; total_wht: number; posted_at: string | null } | undefined;
+  const canManagePayout = userCanViewPayroll(user);
+  const payoutStatus: "draft" | "posted" = payoutBatch?.status === "posted" ? "posted" : "draft";
 
   // Build the 6-month picker (current + 5 previous) the same way the
   // monthly timesheet view does, so admin can scrub closed periods.
@@ -150,6 +159,18 @@ export default function AdminServiceChargePage({
         )}
       </div>
 
+      {/* Payout / ACCOUNTA posting (owner 2026-07-21) */}
+      {canManagePayout && summary.rows.length > 0 && (
+        <SvcPayoutActions
+          yearMonth={month}
+          status={payoutStatus}
+          totalNet={payoutBatch?.total_net ?? 0}
+          totalWht={payoutBatch?.total_wht ?? 0}
+          postedAt={payoutBatch?.posted_at ?? null}
+          netPayoutPreview={summary.totalNetPayout}
+        />
+      )}
+
       {/* Daily ledger + admin edit. Pulls the client component so admin
           can edit any row inline. Server passes both raw daily rows +
           a list of "missing" dates so the UI can show "ยังไม่ลงข้อมูล"
@@ -218,7 +239,10 @@ export default function AdminServiceChargePage({
                       <td className={`py-2 pr-2 text-right font-mono font-bold ${
                         r.forfeited ? "text-rose-500 line-through" : "text-emerald-700"
                       }`}>
-                        {fmtMoney(r.netAllocation)}
+                        {fmtMoney(r.netPayout)}
+                        {!r.forfeited && r.taxMode === "wht" && (
+                          <span className="block text-[9px] font-normal text-rose-500">หัก ณ ที่จ่าย 3%</span>
+                        )}
                       </td>
                       <td className="py-2 pr-2">
                         {!r.forfeited ? (
@@ -243,12 +267,41 @@ export default function AdminServiceChargePage({
                           forfeited={r.forfeited}
                           forfeitReason={r.forfeitReason}
                           dailyBreakdown={r.dailyBreakdown}
+                          taxMode={r.taxMode}
+                          whtAmount={r.whtAmount}
+                          netPayout={r.netPayout}
                         />
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-300 font-bold text-slate-800">
+                  <td className="py-2 pr-2">รวมทั้งหมด ({summary.rows.length} คน)</td>
+                  <td className="py-2 pr-2"></td>
+                  <td className="py-2 pr-2 text-right font-mono">
+                    {summary.rows.reduce((s, r) => s + r.daysWorked, 0)}
+                  </td>
+                  <td className="py-2 pr-2 text-right font-mono">
+                    {(summary.rows.reduce((s, r) => s + r.totalMinutesWorked, 0) / 60).toFixed(1)}
+                  </td>
+                  <td className="py-2 pr-2"></td>
+                  <td className="py-2 pr-2 text-right font-mono">
+                    {fmtMoney(summary.rows.reduce((s, r) => s + r.grossAllocation, 0))}
+                  </td>
+                  <td className="py-2 pr-2 text-right font-mono text-emerald-700">
+                    {fmtMoney(summary.totalNetPayout)}
+                    {summary.totalWht > 0 && (
+                      <span className="block text-[9px] font-normal text-rose-500">
+                        หัก ณ ที่จ่ายรวม {fmtMoney(summary.totalWht)}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-2"></td>
+                  <td className="py-2 pr-2"></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}

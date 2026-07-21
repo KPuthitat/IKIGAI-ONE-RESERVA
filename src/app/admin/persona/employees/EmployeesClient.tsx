@@ -528,6 +528,11 @@ function EditModal({
   const [ftEffectiveDate, setFtEffectiveDate] = useState<string>(
     employee.ft_started_at ?? new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)
   );
+  // "วันเริ่มเป็นประจำ" is only meaningful for staff converted FROM part-time
+  // (owner 2026-07-21). Born-FT staff (ft_started_at NULL) don't set it — the
+  // field stays hidden unless the admin ticks this reveal toggle to backfill a
+  // legacy convert that predates the field.
+  const [wasPtReveal, setWasPtReveal] = useState<boolean>(false);
   const [hireDate, setHireDate] = useState<string>(employee.hire_date ?? "");
   // Phase 1D — Payroll fields
   const [employeeCode, setEmployeeCode] = useState<string>(employee.employee_code ?? "");
@@ -744,13 +749,19 @@ function EditModal({
         receives_service_charge: noSvc ? 0 : 1
       };
       // PT→FT effective date. On a fresh conversion always send it. For someone
-      // ALREADY FT, only send when admin actually changed it (owner 2026-07-19)
-      // — so merely opening + saving a form never clobbers a correct value.
+      // ALREADY FT, only send when the date field is actually SHOWN (a known
+      // convert with ft_started_at, or the reveal toggle for a legacy backfill)
+      // AND the admin actually changed it. This prevents the born-FT footgun
+      // (owner 2026-07-21): the input prefills to today, so without the
+      // field-shown guard, merely opening + saving a born-FT staffer would stamp
+      // ft_started_at = today and wrongly bill them a weekly transition month.
       const isAlreadyFt = employmentType === "ft" && employee.employment_type === "ft";
+      const ftDateFieldShown = Boolean(employee.ft_started_at) || wasPtReveal;
       if (isConvertingToFt) {
         body.ft_effective_date = ftEffectiveDate;
       } else if (
         isAlreadyFt &&
+        ftDateFieldShown &&
         /^\d{4}-\d{2}-\d{2}$/.test(ftEffectiveDate) &&
         ftEffectiveDate !== (employee.ft_started_at ?? "")
       ) {
@@ -1126,21 +1137,34 @@ function EditModal({
               {/* แก้ไข/เติมวันที่เริ่มเป็นประจำ ให้คนที่เป็น FT อยู่แล้ว (owner 2026-07-19).
                   จำเป็นสำหรับคนที่ย้าย PT→ประจำ ก่อนระบบมีฟิลด์นี้ (ft_started_at = NULL)
                   จึงถูกคิดเป็นประจำเต็มเดือน แทนที่จะเป็นเดือนเปลี่ยนผ่าน (รายสัปดาห์). */}
+              {/* วันเริ่มเป็นประจำ — โชว์เฉพาะคนที่เคยเป็นพาร์ทไทม์ (มี ft_started_at)
+                  หรือกดเผยเพื่อ backfill เคส legacy. คนที่เป็นประจำมาแต่แรกไม่ต้องตั้ง
+                  (owner 2026-07-21 — ให้การคำนวณถูกต้อง ไม่วุ่นวาย). */}
               {employmentType === "ft" && employee.employment_type === "ft" && (
                 <div className="mb-3">
-                  <label className="label">วันที่เริ่มเป็นพนักงานประจำ</label>
-                  <input
-                    type="date"
-                    className="input"
-                    value={ftEffectiveDate}
-                    max={new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)}
-                    onChange={(e) => setFtEffectiveDate(e.target.value)}
-                  />
-                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    {employee.ft_started_at
-                      ? "เดือนของวันที่นี้ = เดือนเปลี่ยนผ่าน (จ่ายรายสัปดาห์รวมกับพาร์ทไทม์ + WHT 3%), เดือนถัดไปจ่ายเต็มเดือน. แก้เฉพาะเมื่อวันเริ่มจริงคลาดเคลื่อน แล้วสั่งคำนวณรอบที่เกี่ยวข้องใหม่."
-                      : "⚠️ ยังไม่ได้ตั้งวันเริ่มเป็นประจำ — ระบบจะคิดเป็นประจำเต็มเดือนทุกเดือน. ถ้าเพิ่งย้ายจากพาร์ทไทม์ กรุณาระบุวันเริ่มจริง แล้วสั่งคำนวณรอบเดือนนั้นใหม่."}
-                  </p>
+                  {employee.ft_started_at || wasPtReveal ? (
+                    <>
+                      <label className="label">วันที่เริ่มเป็นพนักงานประจำ</label>
+                      <input
+                        type="date"
+                        className="input"
+                        value={ftEffectiveDate}
+                        max={new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)}
+                        onChange={(e) => setFtEffectiveDate(e.target.value)}
+                      />
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        {employee.ft_started_at
+                          ? "เดือนของวันที่นี้ = เดือนเปลี่ยนผ่าน (จ่ายรายสัปดาห์รวมกับพาร์ทไทม์ + WHT 3%), เดือนถัดไปจ่ายเต็มเดือน. แก้เฉพาะเมื่อวันเริ่มจริงคลาดเคลื่อน แล้วสั่งคำนวณรอบที่เกี่ยวข้องใหม่."
+                          : "ระบุวันที่ย้ายจากพาร์ทไทม์มาเป็นประจำจริง แล้วสั่งคำนวณรอบเดือนนั้นใหม่. (เฉพาะคนที่เคยเป็นพาร์ทไทม์เท่านั้น)"}
+                      </p>
+                    </>
+                  ) : (
+                    <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+                      <input type="checkbox" checked={wasPtReveal}
+                        onChange={(e) => setWasPtReveal(e.target.checked)} />
+                      เคยเป็นพาร์ทไทม์มาก่อน — ตั้งวันเริ่มเป็นประจำ (ไม่ต้องติ๊กถ้าเป็นประจำมาแต่แรก)
+                    </label>
+                  )}
                 </div>
               )}
               {employmentType === "ft" && (

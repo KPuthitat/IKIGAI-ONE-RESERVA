@@ -11,6 +11,7 @@ import {
 } from "./accounta";
 import { owlAiCostBaht } from "./owl-ai-models";
 import { smeIncomeTax, type SmeIncomeTax } from "./income-tax";
+import { computeMonthlySvcSummary, computePayoutDate } from "./service-charge";
 
 export type VendorRow = {
   id: number;
@@ -540,6 +541,67 @@ export function postPayrollToAccounta(periodId: number, userId: number): { salar
         `ประกันสังคมรอนำส่ง · รอบ ${periodLabel}`, userId, periodId);
     }
     return { salaries, tax: totalTax, sso: totalSso };
+  });
+  return run();
+}
+
+// ── Service charge → ACCOUNTA (owner 2026-07-21) ──────────────────────
+// The monthly SVC payout posts to the daybook with the SAME logic as payroll:
+// each staff's net SVC is a ค่าแรง (LB) expense paid to them, and for 'wht'
+// staff the 3% withheld is a separate ภาษีหัก ณ ที่จ่าย payable (รอจ่าย) in
+// their name — net + WHT = gross, nothing double-counts. No ประกันสังคม (SVC
+// is not salary). Tagged with svc_payout_batch_id so a re-post replaces them
+// (delete-then-insert) and un-posting removes them. Amounts are recomputed
+// live from computeMonthlySvcSummary — the month's inputs are historical.
+
+export function removeSvcFromAccounta(batchId: number): void {
+  getDb().prepare("DELETE FROM accounta_expenses WHERE svc_payout_batch_id = ?").run(batchId);
+}
+
+export function postSvcToAccounta(batchId: number, userId: number): { staff: number; net: number; wht: number } {
+  const db = getDb();
+  const batch = db.prepare(
+    "SELECT id, branch_id, year_month FROM svc_payout_batches WHERE id = ?"
+  ).get(batchId) as { id: number; branch_id: number; year_month: string } | undefined;
+  if (!batch) return { staff: 0, net: 0, wht: 0 };
+  const companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
+    .get(batch.branch_id) as { company_id: number | null } | undefined)?.company_id ?? null;
+
+  const summary = computeMonthlySvcSummary(batch.branch_id, batch.year_month);
+  ensureExpenseCategory("เซอร์วิสชาร์จพนักงาน", "LB");
+  ensureExpenseCategory("ภาษีหัก ณ ที่จ่าย", "WHT");
+
+  const payDate = computePayoutDate(batch.year_month);
+  const monthLabel = batch.year_month;
+  const ins = db.prepare(`
+    INSERT INTO accounta_expenses
+      (branch_id, company_id, bill_date, vendor_name, category, amount_total, has_tax_invoice,
+       vat_amount, base_amount, payment_status, payment_method, paid_date, note, review_status, created_by, svc_payout_batch_id)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, 'confirmed', ?, ?)`);
+
+  const run = db.transaction(() => {
+    db.prepare("DELETE FROM accounta_expenses WHERE svc_payout_batch_id = ?").run(batchId);
+    let staff = 0, totalNet = 0, totalWht = 0;
+    for (const r of summary.rows) {
+      const net = round2(r.netPayout || 0);
+      const wht = round2(r.whtAmount || 0);
+      if (net > 0) {
+        ins.run(batch.branch_id, companyId, payDate, r.displayName,
+          "เซอร์วิสชาร์จพนักงาน", net, net, "paid", "transfer", payDate,
+          `เซอร์วิสชาร์จพนักงาน เดือน ${monthLabel}`, userId, batchId);
+        staff += 1; totalNet += net;
+      }
+      // Per-staff WHT payable in their name (mirrors payroll), so ภ.ง.ด.1 ties
+      // out per person. รอจ่าย — admin picks the remit date.
+      if (wht > 0) {
+        ins.run(batch.branch_id, companyId, payDate,
+          `กรมสรรพากร · ภาษีหัก ณ ที่จ่าย (${r.displayName})`,
+          "ภาษีหัก ณ ที่จ่าย", wht, wht, "unpaid", null, null,
+          `ภาษีหัก ณ ที่จ่าย 3% เซอร์วิสชาร์จ (${r.displayName}) รอนำส่ง · เดือน ${monthLabel}`, userId, batchId);
+        totalWht += wht;
+      }
+    }
+    return { staff, net: round2(totalNet), wht: round2(totalWht) };
   });
   return run();
 }

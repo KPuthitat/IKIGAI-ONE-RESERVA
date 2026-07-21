@@ -4,7 +4,8 @@ import { useState } from "react";
 import { fmtMoney } from "@/lib/format";
 
 // ปุ่ม "วิธีคำนวณ" + modal แจกแจงว่าส่วนแบ่งเซอร์วิสชาร์จของคนนั้นมาจากไหน
-// (owner 2026-07-20). แต่ละวัน: ยอด SVC วันนั้น × 60% × (นาทีของคุณ ÷ นาทีรวมทั้งวัน).
+// (owner 2026-07-20). ส่วนแบ่งประจำวัน = เซอร์วิสชาร์จส่วนของพนักงาน × (นาที
+// ทำงานของคนนั้น ÷ นาทีทำงานรวมของทุกคน). นาทีนับตามกะ (มาก่อนเวลาเริ่มนับที่เวลากะ).
 type BreakdownItem = {
   date: string; dayAmount: number; staffPool: number;
   userMinutes: number; totalMinutes: number; share: number;
@@ -13,7 +14,8 @@ type BreakdownItem = {
 const fmtHr = (min: number) => `${(min / 60).toFixed(1)} ชม.`;
 
 export default function SvcCalcModal({
-  displayName, grossAllocation, netAllocation, forfeited, forfeitReason, dailyBreakdown
+  displayName, grossAllocation, netAllocation, forfeited, forfeitReason,
+  dailyBreakdown, taxMode, whtAmount, netPayout
 }: {
   displayName: string;
   grossAllocation: number;
@@ -21,6 +23,9 @@ export default function SvcCalcModal({
   forfeited: boolean;
   forfeitReason: "late_20pct" | "resignation" | null;
   dailyBreakdown: BreakdownItem[];
+  taxMode: "sso" | "wht";
+  whtAmount: number;
+  netPayout: number;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -38,7 +43,11 @@ export default function SvcCalcModal({
                 className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
             </div>
             <p className="text-[11px] text-slate-500 mb-3">
-              แต่ละวัน: ยอด SVC วันนั้น × 60% (ส่วนพนักงาน) × (นาทีของคุณ ÷ นาทีรวมทั้งวัน)
+              ส่วนแบ่งเซอร์วิสชาร์จประจำวัน = เซอร์วิสชาร์จส่วนของพนักงาน (60%) ×
+              (นาทีทำงานรวมของพนักงานคนนั้น ÷ นาทีทำงานรวมของพนักงานทุกคน)
+              <span className="block mt-0.5 text-slate-400">
+                นับเฉพาะเวลาทำงานตามกะ — มาก่อนเวลาเริ่มนับที่เวลากะ, หักเวลาพัก
+              </span>
             </p>
             {dailyBreakdown.length === 0 ? (
               <p className="text-sm text-slate-500 py-4 text-center">ไม่มีวันที่ได้ส่วนแบ่งในเดือนนี้</p>
@@ -74,11 +83,26 @@ export default function SvcCalcModal({
                 </table>
               </div>
             )}
-            <div className={`mt-3 text-xs font-medium ${forfeited ? "text-rose-600" : "text-emerald-700"}`}>
-              {forfeited
-                ? `ยอดสุทธิ = 0 (ถูกตัดสิทธิ์: ${forfeitReason === "late_20pct" ? "สายเกิน 20%" : "ลาออก"})`
-                : `ยอดสุทธิที่ได้รับ = ฿${fmtMoney(netAllocation)}`}
-            </div>
+            {forfeited ? (
+              <div className="mt-3 text-xs font-medium text-rose-600">
+                ยอดสุทธิ = 0 (ถูกตัดสิทธิ์: {forfeitReason === "late_20pct" ? "สายเกิน 20%" : "ลาออก"})
+              </div>
+            ) : (
+              <div className="mt-3 text-xs space-y-0.5">
+                <div className="flex justify-between text-slate-600">
+                  <span>รวมส่วนแบ่ง (ก่อนหักภาษี)</span><span>฿{fmtMoney(netAllocation)}</span>
+                </div>
+                {taxMode === "wht" && (
+                  <div className="flex justify-between text-rose-600">
+                    <span>หัก ณ ที่จ่าย 3%</span><span>−฿{fmtMoney(whtAmount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-emerald-700 pt-0.5 border-t border-slate-100">
+                  <span>ยอดจ่ายจริง{taxMode === "sso" ? " (ประกันสังคม — รับเต็ม)" : ""}</span>
+                  <span>฿{fmtMoney(netPayout)}</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
