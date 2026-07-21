@@ -281,18 +281,24 @@ type BreakSettings = Pick<PayrollSettings,
 
 /** SVC worked-minutes per (date, user), CLAMPED to the rostered shift like
  *  payroll (owner 2026-07-21: นับเฉพาะเวลาตามกะ — มาก่อนเวลาเริ่มนับที่เวลากะ,
- *  หักเบรก, ไม่รวม OT). Reuses applyPtGrace/pickScheduled so SVC time matches
- *  the paid time in ค่าตอบแทน.
+ *  หักเบรก). Reuses applyPtGrace/pickScheduled so SVC time matches the paid time
+ *  in ค่าตอบแทน.
  *
  *  Break handling (owner 2026-07-21): when the shift has a scheduled break
  *  window, applyPtGrace already deducts it. When it does NOT — an unrostered
  *  clock-in, or a shift_code with no break defined — apply the same
  *  threshold-based break as payroll's deductBreak, so a long shift never counts
  *  the break as worked (a staffer who clocks in at the break start no longer
- *  collects the whole break as share). */
+ *  collects the whole break as share).
+ *
+ *  Approved OT (owner 2026-07-21): when a day has an approved ot_requests row,
+ *  the worked window may extend past the scheduled end up to the approved
+ *  "requested_until" time — those extra minutes count toward SVC too, mirroring
+ *  payroll's applyPtGrace(shift, sched, otUntilTs). */
 function computeSvcClampedMinutesByDay(
   entries: Array<{ user_id: number; ts: string; type: "in" | "out" }>,
   scheduledByUser: Map<number, Map<string, ScheduledShift[]>>,
+  otByUser: Map<number, Map<string, string>>,
   brk: BreakSettings
 ): Map<string, Map<number, number>> {
   const out = new Map<string, Map<number, number>>();
@@ -307,10 +313,15 @@ function computeSvcClampedMinutesByDay(
     for (const [userId, list] of byUser) {
       const { shifts } = pairShifts(list);
       const candidates = scheduledByUser.get(userId)?.get(date) ?? [];
+      const reqUntil = otByUser.get(userId)?.get(date);
       let total = 0;
       for (const sh of shifts) {
         const sched = candidates.length ? pickScheduled(candidates, sh) : null;
-        const g = applyPtGrace({ startTs: sh.startTs, endTs: sh.endTs }, sched, null);
+        // OT extends the cap past the scheduled end only when rostered + approved.
+        const otUntilTs = (sched && reqUntil && /^\d{2}:\d{2}$/.test(reqUntil))
+          ? new Date(`${date}T${reqUntil}:00+07:00`).toISOString()
+          : null;
+        const g = applyPtGrace({ startTs: sh.startTs, endTs: sh.endTs }, sched, otUntilTs);
         total += g.breakMinutes > 0
           ? g.workedMinutes
           : deductBreak(g.workedMinutes, brk as PayrollSettings).workedMinutes;
@@ -423,6 +434,18 @@ export function computeMonthlySvcSummary(
   // 3b. Scheduled shift windows (roster → shift_codes) for the branch/month.
   const scheduledByUser = buildScheduledByUser(branchId, start, end);
 
+  // 3b2. Approved OT (owner 2026-07-21) — same source payroll uses. Extends the
+  //      worked window past the shift end up to requested_until on approved days.
+  const otByUser = new Map<number, Map<string, string>>();
+  for (const r of db.prepare(`
+    SELECT user_id, work_date, requested_until FROM ot_requests
+    WHERE status = 'approved' AND work_date >= ? AND work_date <= ?
+  `).all(start, end) as Array<{ user_id: number; work_date: string; requested_until: string }>) {
+    let m = otByUser.get(r.user_id);
+    if (!m) { m = new Map(); otByUser.set(r.user_id, m); }
+    m.set(r.work_date, r.requested_until);
+  }
+
   // 3c. Break-deduction settings (same table payroll uses) — for the fallback
   //     break when a shift has no scheduled break window (owner 2026-07-21).
   const brk = (db.prepare(`
@@ -438,7 +461,7 @@ export function computeMonthlySvcSummary(
   //    payroll: an early clock-in is counted from the shift start, break is
   //    deducted, OT past shift-end is not counted (owner 2026-07-21: นับเฉพาะ
   //    เวลาตามกะ). Matches the paid minutes in ค่าตอบแทน.
-  const workedByDay = computeSvcClampedMinutesByDay(entries, scheduledByUser, brk);
+  const workedByDay = computeSvcClampedMinutesByDay(entries, scheduledByUser, otByUser, brk);
 
   // 4b. Executives with track_attendance=0 don't clock in — accrue SVC from the
   //     roster instead: each kind='work' day they're scheduled counts as the
