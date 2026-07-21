@@ -20,6 +20,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import SvcCalcModal from "./SvcCalcModal";
 import SvcPayoutActions from "./SvcPayoutActions";
+import SvcManualEntry from "./SvcManualEntry";
 import { requireAdmin, userCanViewPayroll } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { fmtMoney } from "@/lib/format";
@@ -28,6 +29,7 @@ import { t } from "@/lib/i18n";
 import {
   computeMonthlySvcSummary,
   listDailyForMonth,
+  isManualSvcMonth,
   SVC_STAFF_SHARE_RATIO,
   SVC_COMPANY_SHARE_RATIO
 } from "@/lib/service-charge";
@@ -80,10 +82,20 @@ export default function AdminServiceChargePage({
       ? payoutBatch!.status
       : "draft") as "draft" | "finalized" | "paid" | "posted";
 
-  // Build the 6-month picker (current + 5 previous) the same way the
-  // monthly timesheet view does, so admin can scrub closed periods.
+  // Manual-entry month (owner 2026-07-21): pre-system months are typed by hand.
+  // The entry table is editable only while the batch is still draft.
+  const manual = summary.manualEntry;
+  const canEditManual = canManagePayout && payoutStatus === "draft";
+  const whtRate = manual
+    ? ((db.prepare("SELECT wht_rate FROM payroll_settings LIMIT 1")
+        .get() as { wht_rate: number } | undefined)?.wht_rate ?? 0.03)
+    : 0.03;
+
+  // Build the 12-month picker (current + 11 previous) so admin can scrub closed
+  // periods — and reach pre-system months (< 2026-06) to hand-enter their SVC
+  // (owner 2026-07-21).
   const monthOptions: string[] = [];
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 12; i++) {
     const d = new Date(Date.UTC(nowBkk.getUTCFullYear(), nowBkk.getUTCMonth() - i, 1));
     monthOptions.push(d.toISOString().slice(0, 7));
   }
@@ -125,60 +137,89 @@ export default function AdminServiceChargePage({
           <Link
             key={m}
             href={`/admin/persona/service-charge?month=${m}`}
+            title={isManualSvcMonth(m) ? "เดือนก่อนเริ่มใช้ระบบ — กรอกเอง" : undefined}
             className={`text-xs px-2.5 py-1 rounded border ${
               m === month
                 ? "bg-brand text-white border-brand"
+                : isManualSvcMonth(m)
+                ? "border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100"
                 : "border-slate-300 text-slate-600 hover:bg-slate-50"
             }`}
           >
-            {m}
+            {m}{isManualSvcMonth(m) ? " ✎" : ""}
           </Link>
         ))}
       </div>
 
-      {/* Summary cards (owner 2026-07-21 — same shape as ค่าตอบแทน) */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <SummaryCard
-          label={t(lang, "admin.persona.svc.tile.collected")}
-          value={fmtMoney(summary.totalCollected)}
-          sub={t(lang, "admin.persona.svc.tile.collectedHint", {
-            days: String(summary.daysWithEntries),
-            total: String(summary.daysInMonth)
-          })}
-        />
-        <SummaryCard
-          label={t(lang, "admin.persona.svc.tile.staffPool")}
-          value={fmtMoney(summary.staffPoolTotal)}
-          sub={t(lang, "admin.persona.svc.tile.staffPoolHint", {
-            pct: String(Math.round(SVC_STAFF_SHARE_RATIO * 100))
-          })}
-        />
-        <SummaryCard
-          label={t(lang, "admin.persona.svc.tile.companyPool")}
-          value={fmtMoney(summary.companyPoolTotal)}
-          sub={t(lang, "admin.persona.svc.tile.companyPoolHint", {
-            splitPct: String(Math.round(SVC_COMPANY_SHARE_RATIO * 100))
-          })}
-        />
-        <SummaryCard
-          label="ยอดจ่ายจริง (สุทธิ)"
-          value={fmtMoney(summary.totalNetPayout)}
-          accent="emerald"
-          sub={summary.totalWht > 0 ? `หัก ณ ที่จ่ายรวม ${fmtMoney(summary.totalWht)}` : undefined}
-        />
-        <SummaryCard
-          label={t(lang, "admin.persona.svc.tile.payoutDate")}
-          value={summary.payoutDate}
-          sub={t(lang, "admin.persona.svc.tile.payoutDateHint")}
-          accent="brand"
-        />
-      </div>
-      {summary.companyPoolFromForfeit > 0 && (
-        <p className="text-xs text-amber-700">
-          {t(lang, "admin.persona.svc.forfeitNote", {
-            amount: fmtMoney(summary.companyPoolFromForfeit)
-          })}
-        </p>
+      {/* Summary cards (owner 2026-07-21 — same shape as ค่าตอบแทน). Manual
+          (pre-system) months don't have a POS total / 60-40 split, so they show
+          only the hand-entered staff total, net payout and payout date. */}
+      {manual ? (
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+          <SummaryCard
+            label="ยอด SVC พนักงานรวม (กรอกเอง)"
+            value={fmtMoney(summary.staffPoolTotal)}
+            sub="เดือนก่อนเริ่มใช้ระบบ · ยอดก่อนหักภาษี"
+          />
+          <SummaryCard
+            label="ยอดจ่ายจริง (สุทธิ)"
+            value={fmtMoney(summary.totalNetPayout)}
+            accent="emerald"
+            sub={summary.totalWht > 0 ? `หัก ณ ที่จ่ายรวม ${fmtMoney(summary.totalWht)}` : undefined}
+          />
+          <SummaryCard
+            label={t(lang, "admin.persona.svc.tile.payoutDate")}
+            value={summary.payoutDate}
+            sub={t(lang, "admin.persona.svc.tile.payoutDateHint")}
+            accent="brand"
+          />
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <SummaryCard
+              label={t(lang, "admin.persona.svc.tile.collected")}
+              value={fmtMoney(summary.totalCollected)}
+              sub={t(lang, "admin.persona.svc.tile.collectedHint", {
+                days: String(summary.daysWithEntries),
+                total: String(summary.daysInMonth)
+              })}
+            />
+            <SummaryCard
+              label={t(lang, "admin.persona.svc.tile.staffPool")}
+              value={fmtMoney(summary.staffPoolTotal)}
+              sub={t(lang, "admin.persona.svc.tile.staffPoolHint", {
+                pct: String(Math.round(SVC_STAFF_SHARE_RATIO * 100))
+              })}
+            />
+            <SummaryCard
+              label={t(lang, "admin.persona.svc.tile.companyPool")}
+              value={fmtMoney(summary.companyPoolTotal)}
+              sub={t(lang, "admin.persona.svc.tile.companyPoolHint", {
+                splitPct: String(Math.round(SVC_COMPANY_SHARE_RATIO * 100))
+              })}
+            />
+            <SummaryCard
+              label="ยอดจ่ายจริง (สุทธิ)"
+              value={fmtMoney(summary.totalNetPayout)}
+              accent="emerald"
+              sub={summary.totalWht > 0 ? `หัก ณ ที่จ่ายรวม ${fmtMoney(summary.totalWht)}` : undefined}
+            />
+            <SummaryCard
+              label={t(lang, "admin.persona.svc.tile.payoutDate")}
+              value={summary.payoutDate}
+              sub={t(lang, "admin.persona.svc.tile.payoutDateHint")}
+              accent="brand"
+            />
+          </div>
+          {summary.companyPoolFromForfeit > 0 && (
+            <p className="text-xs text-amber-700">
+              {t(lang, "admin.persona.svc.forfeitNote", {
+                amount: fmtMoney(summary.companyPoolFromForfeit)
+              })}
+            </p>
+          )}
+        </>
       )}
 
       {/* Payout / ACCOUNTA posting (owner 2026-07-21) */}
@@ -193,25 +234,43 @@ export default function AdminServiceChargePage({
         />
       )}
 
-      {/* Daily ledger + admin edit. Pulls the client component so admin
-          can edit any row inline. Server passes both raw daily rows +
-          a list of "missing" dates so the UI can show "ยังไม่ลงข้อมูล"
-          rows for transparency. */}
-      <ServiceChargeClient
-        month={month}
-        dailyRows={dailyRows.map((r) => ({
-          id: r.id,
-          date: r.date,
-          amount: r.amount_baht,
-          enteredByName: r.entered_by_name,
-          enteredAt: r.entered_at,
-          updatedByName: r.updated_by_name,
-          updatedAt: r.updated_at
-        }))}
-        daysInMonth={summary.daysInMonth}
-      />
+      {/* Daily ledger + admin edit — only for live (system) months. Pre-system
+          months have no POS daily data; they're entered per-staff by hand below. */}
+      {!manual && (
+        <ServiceChargeClient
+          month={month}
+          dailyRows={dailyRows.map((r) => ({
+            id: r.id,
+            date: r.date,
+            amount: r.amount_baht,
+            enteredByName: r.entered_by_name,
+            enteredAt: r.entered_at,
+            updatedByName: r.updated_by_name,
+            updatedAt: r.updated_at
+          }))}
+          daysInMonth={summary.daysInMonth}
+        />
+      )}
 
-      {/* Per-staff distribution */}
+      {/* Manual per-staff entry (pre-system month) */}
+      {manual && (
+        <SvcManualEntry
+          yearMonth={month}
+          whtRate={whtRate}
+          canEdit={canEditManual}
+          rows={summary.rows.map((r) => ({
+            userId: r.userId,
+            displayName: r.displayName,
+            employmentType: r.employmentType,
+            taxMode: r.taxMode,
+            gross: r.grossAllocation
+          }))}
+        />
+      )}
+
+      {/* Per-staff distribution — computed months only (manual months show the
+          editable entry table above instead). */}
+      {!manual && (
       <div className="card">
         <h2 className="font-bold text-slate-800 text-sm mb-3">
           {t(lang, "admin.persona.svc.distTitle")}
@@ -341,18 +400,32 @@ export default function AdminServiceChargePage({
           </div>
         )}
       </div>
+      )}
 
-      {/* Rule key */}
-      <div className="card text-xs text-slate-500 space-y-1">
-        <div className="font-bold text-slate-700 uppercase tracking-[0.5px] text-[10px] mb-1">
-          {t(lang, "admin.persona.svc.rulesTitle")}
+      {/* Rule key — computed months only. Manual months follow a different,
+          simpler rule (hand-entered gross, WHT withheld). */}
+      {!manual ? (
+        <div className="card text-xs text-slate-500 space-y-1">
+          <div className="font-bold text-slate-700 uppercase tracking-[0.5px] text-[10px] mb-1">
+            {t(lang, "admin.persona.svc.rulesTitle")}
+          </div>
+          <div>{t(lang, "admin.persona.svc.rule.split")}</div>
+          <div>{t(lang, "admin.persona.svc.rule.byHours")}</div>
+          <div>{t(lang, "admin.persona.svc.rule.late20")}</div>
+          <div>{t(lang, "admin.persona.svc.rule.resignation")}</div>
+          <div>{t(lang, "admin.persona.svc.rule.payout")}</div>
         </div>
-        <div>{t(lang, "admin.persona.svc.rule.split")}</div>
-        <div>{t(lang, "admin.persona.svc.rule.byHours")}</div>
-        <div>{t(lang, "admin.persona.svc.rule.late20")}</div>
-        <div>{t(lang, "admin.persona.svc.rule.resignation")}</div>
-        <div>{t(lang, "admin.persona.svc.rule.payout")}</div>
-      </div>
+      ) : (
+        <div className="card text-xs text-slate-500 space-y-1">
+          <div className="font-bold text-slate-700 uppercase tracking-[0.5px] text-[10px] mb-1">
+            เดือนก่อนเริ่มใช้ระบบ (กรอกเอง)
+          </div>
+          <div>· กรอกยอดเซอร์วิสชาร์จก่อนหักภาษีของแต่ละคนด้วยมือ (ไม่ดึงจากเวลาทำงาน)</div>
+          <div>· ระบบหัก ณ ที่จ่าย 3% ให้พนักงานกลุ่มหักภาษีอัตโนมัติ</div>
+          <div>· ปิดยอด → ทำจ่าย → ลงบัญชี ACCOUNTA เหมือนเดือนปกติ</div>
+          <div>· {t(lang, "admin.persona.svc.rule.payout")}</div>
+        </div>
+      )}
     </div>
   );
 }
