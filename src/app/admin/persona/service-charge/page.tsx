@@ -74,7 +74,10 @@ export default function AdminServiceChargePage({
   ).get(branch.id, month) as
     { status: string; total_net: number; total_wht: number; posted_at: string | null } | undefined;
   const canManagePayout = userCanViewPayroll(user);
-  const payoutStatus: "draft" | "posted" = payoutBatch?.status === "posted" ? "posted" : "draft";
+  const payoutStatus =
+    (["draft", "finalized", "paid", "posted"].includes(payoutBatch?.status ?? "")
+      ? payoutBatch!.status
+      : "draft") as "draft" | "finalized" | "paid" | "posted";
 
   // Build the 6-month picker (current + 5 previous) the same way the
   // monthly timesheet view does, so admin can scrub closed periods.
@@ -116,48 +119,50 @@ export default function AdminServiceChargePage({
         ))}
       </div>
 
-      {/* Summary tiles */}
-      <div className="card">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
-          <Tile
-            label={t(lang, "admin.persona.svc.tile.collected")}
-            value={summary.totalCollected}
-            hint={t(lang, "admin.persona.svc.tile.collectedHint", {
-              days: String(summary.daysWithEntries),
-              total: String(summary.daysInMonth)
-            })}
-          />
-          <Tile
-            label={t(lang, "admin.persona.svc.tile.staffPool")}
-            value={summary.staffPoolTotal}
-            hint={t(lang, "admin.persona.svc.tile.staffPoolHint", {
-              pct: String(Math.round(SVC_STAFF_SHARE_RATIO * 100))
-            })}
-            accent="emerald"
-          />
-          <Tile
-            label={t(lang, "admin.persona.svc.tile.companyPool")}
-            value={summary.companyPoolTotal}
-            hint={t(lang, "admin.persona.svc.tile.companyPoolHint", {
-              splitPct: String(Math.round(SVC_COMPANY_SHARE_RATIO * 100))
-            })}
-            accent="slate"
-          />
-          <Tile
-            label={t(lang, "admin.persona.svc.tile.payoutDate")}
-            valueText={summary.payoutDate}
-            hint={t(lang, "admin.persona.svc.tile.payoutDateHint")}
-            accent="brand"
-          />
-        </div>
-        {summary.companyPoolFromForfeit > 0 && (
-          <p className="mt-3 text-xs text-amber-700">
-            {t(lang, "admin.persona.svc.forfeitNote", {
-              amount: fmtMoney(summary.companyPoolFromForfeit)
-            })}
-          </p>
-        )}
+      {/* Summary cards (owner 2026-07-21 — same shape as ค่าตอบแทน) */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <SummaryCard
+          label={t(lang, "admin.persona.svc.tile.collected")}
+          value={fmtMoney(summary.totalCollected)}
+          sub={t(lang, "admin.persona.svc.tile.collectedHint", {
+            days: String(summary.daysWithEntries),
+            total: String(summary.daysInMonth)
+          })}
+        />
+        <SummaryCard
+          label={t(lang, "admin.persona.svc.tile.staffPool")}
+          value={fmtMoney(summary.staffPoolTotal)}
+          sub={t(lang, "admin.persona.svc.tile.staffPoolHint", {
+            pct: String(Math.round(SVC_STAFF_SHARE_RATIO * 100))
+          })}
+        />
+        <SummaryCard
+          label={t(lang, "admin.persona.svc.tile.companyPool")}
+          value={fmtMoney(summary.companyPoolTotal)}
+          sub={t(lang, "admin.persona.svc.tile.companyPoolHint", {
+            splitPct: String(Math.round(SVC_COMPANY_SHARE_RATIO * 100))
+          })}
+        />
+        <SummaryCard
+          label="ยอดจ่ายจริง (สุทธิ)"
+          value={fmtMoney(summary.totalNetPayout)}
+          accent="emerald"
+          sub={summary.totalWht > 0 ? `หัก ณ ที่จ่ายรวม ${fmtMoney(summary.totalWht)}` : undefined}
+        />
+        <SummaryCard
+          label={t(lang, "admin.persona.svc.tile.payoutDate")}
+          value={summary.payoutDate}
+          sub={t(lang, "admin.persona.svc.tile.payoutDateHint")}
+          accent="brand"
+        />
       </div>
+      {summary.companyPoolFromForfeit > 0 && (
+        <p className="text-xs text-amber-700">
+          {t(lang, "admin.persona.svc.forfeitNote", {
+            amount: fmtMoney(summary.companyPoolFromForfeit)
+          })}
+        </p>
+      )}
 
       {/* Payout / ACCOUNTA posting (owner 2026-07-21) */}
       {canManagePayout && summary.rows.length > 0 && (
@@ -205,16 +210,15 @@ export default function AdminServiceChargePage({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-[0.5px] text-slate-500 border-b border-slate-200">
-                  <th className="py-2 pr-2">{t(lang, "admin.persona.svc.col.name")}</th>
-                  <th className="py-2 pr-2">{t(lang, "admin.persona.svc.col.type")}</th>
-                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.svc.col.daysWorked")}</th>
-                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.svc.col.hoursWorked")}</th>
-                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.svc.col.lateRatio")}</th>
-                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.svc.col.gross")}</th>
-                  <th className="py-2 pr-2 text-right">{t(lang, "admin.persona.svc.col.net")}</th>
-                  <th className="py-2 pr-2">{t(lang, "admin.persona.svc.col.status")}</th>
-                  <th className="py-2 pr-2"></th>
+                <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
+                  <th className="py-2 pr-3">{t(lang, "admin.persona.svc.col.name")}</th>
+                  <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.svc.col.daysWorked")}</th>
+                  <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.svc.col.hoursWorked")}</th>
+                  <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.svc.col.lateRatio")}</th>
+                  <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.svc.col.gross")}</th>
+                  <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.svc.col.net")}</th>
+                  <th className="py-2 pr-3">{t(lang, "admin.persona.svc.col.status")}</th>
+                  <th className="py-2 pr-3"></th>
                 </tr>
               </thead>
               <tbody>
@@ -223,20 +227,35 @@ export default function AdminServiceChargePage({
                   const latePct = (r.lateRatio * 100).toFixed(1);
                   return (
                     <tr key={r.userId} className="border-b border-slate-100 last:border-b-0">
-                      <td className="py-2 pr-2 font-bold text-slate-800">{r.displayName}</td>
-                      <td className="py-2 pr-2 text-xs text-slate-500">
-                        {r.employmentType === "ft" ? "FT" :
-                         r.employmentType === "pt" ? "PT" : "—"}
+                      <td className="py-2 pr-3">
+                        <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
+                          <span>{r.displayName}</span>
+                          {r.employmentType === "pt" && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
+                              {t(lang, "admin.persona.employees.employment.pt")}
+                            </span>
+                          )}
+                          {r.employmentType === "ft" && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                              {t(lang, "admin.persona.employees.employment.ft")}
+                            </span>
+                          )}
+                          {r.taxMode === "wht" && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                              {t(lang, "admin.persona.employees.taxMode.whtTag")}
+                            </span>
+                          )}
+                        </div>
                       </td>
-                      <td className="py-2 pr-2 text-right font-mono">{r.daysWorked}</td>
-                      <td className="py-2 pr-2 text-right font-mono">{hours}</td>
-                      <td className="py-2 pr-2 text-right font-mono">
+                      <td className="py-2 pr-3 text-right text-slate-600">{r.daysWorked}</td>
+                      <td className="py-2 pr-3 text-right text-slate-600">{hours}</td>
+                      <td className="py-2 pr-3 text-right text-slate-500">
                         {r.shiftStartTime ? `${latePct}%` : "—"}
                       </td>
-                      <td className="py-2 pr-2 text-right font-mono">
+                      <td className="py-2 pr-3 text-right">
                         {fmtMoney(r.grossAllocation)}
                       </td>
-                      <td className={`py-2 pr-2 text-right font-mono font-bold ${
+                      <td className={`py-2 pr-3 text-right font-bold ${
                         r.forfeited ? "text-rose-500 line-through" : "text-emerald-700"
                       }`}>
                         {fmtMoney(r.netPayout)}
@@ -244,7 +263,7 @@ export default function AdminServiceChargePage({
                           <span className="block text-[9px] font-normal text-rose-500">หัก ณ ที่จ่าย 3%</span>
                         )}
                       </td>
-                      <td className="py-2 pr-2">
+                      <td className="py-2 pr-3">
                         {!r.forfeited ? (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">
                             ✓ {t(lang, "admin.persona.svc.status.eligible")}
@@ -259,7 +278,7 @@ export default function AdminServiceChargePage({
                           </span>
                         )}
                       </td>
-                      <td className="py-2 pr-2 text-right">
+                      <td className="py-2 pr-3 text-right">
                         <SvcCalcModal
                           displayName={r.displayName}
                           grossAllocation={r.grossAllocation}
@@ -277,20 +296,19 @@ export default function AdminServiceChargePage({
                 })}
               </tbody>
               <tfoot>
-                <tr className="border-t-2 border-slate-300 font-bold text-slate-800">
-                  <td className="py-2 pr-2">รวมทั้งหมด ({summary.rows.length} คน)</td>
-                  <td className="py-2 pr-2"></td>
-                  <td className="py-2 pr-2 text-right font-mono">
+                <tr className="border-t-2 border-slate-300 font-medium">
+                  <td className="py-2 pr-3">รวมทั้งหมด ({summary.rows.length} คน)</td>
+                  <td className="py-2 pr-3 text-right">
                     {summary.rows.reduce((s, r) => s + r.daysWorked, 0)}
                   </td>
-                  <td className="py-2 pr-2 text-right font-mono">
+                  <td className="py-2 pr-3 text-right">
                     {(summary.rows.reduce((s, r) => s + r.totalMinutesWorked, 0) / 60).toFixed(1)}
                   </td>
-                  <td className="py-2 pr-2"></td>
-                  <td className="py-2 pr-2 text-right font-mono">
+                  <td className="py-2 pr-3"></td>
+                  <td className="py-2 pr-3 text-right">
                     {fmtMoney(summary.rows.reduce((s, r) => s + r.grossAllocation, 0))}
                   </td>
-                  <td className="py-2 pr-2 text-right font-mono text-emerald-700">
+                  <td className="py-2 pr-3 text-right text-emerald-700">
                     {fmtMoney(summary.totalNetPayout)}
                     {summary.totalWht > 0 && (
                       <span className="block text-[9px] font-normal text-rose-500">
@@ -298,8 +316,8 @@ export default function AdminServiceChargePage({
                       </span>
                     )}
                   </td>
-                  <td className="py-2 pr-2"></td>
-                  <td className="py-2 pr-2"></td>
+                  <td className="py-2 pr-3"></td>
+                  <td className="py-2 pr-3"></td>
                 </tr>
               </tfoot>
             </table>
@@ -322,30 +340,27 @@ export default function AdminServiceChargePage({
   );
 }
 
-// Lightweight stat tile reused for the 4-tile summary at the top.
-function Tile({
-  label, value, valueText, hint, accent
+// Summary stat card — same shape as the payroll (ค่าตอบแทน) page's SummaryCard
+// (owner 2026-07-21): own .card, big bold number, muted label + sub.
+function SummaryCard({
+  label, value, sub, accent
 }: {
   label: string;
-  value?: number;
-  valueText?: string;
-  hint: string;
-  accent?: "emerald" | "slate" | "brand";
+  value: string;
+  sub?: string;
+  accent?: "emerald" | "amber" | "rose" | "brand";
 }) {
-  const accentCls =
+  const valueCls =
     accent === "emerald" ? "text-emerald-700" :
-    accent === "slate"   ? "text-slate-700" :
+    accent === "amber"   ? "text-amber-600" :
+    accent === "rose"    ? "text-rose-600" :
     accent === "brand"   ? "text-brand" :
     "text-slate-800";
   return (
-    <div className="space-y-1">
-      <div className="text-[10px] uppercase tracking-[0.5px] text-slate-500 font-bold">
-        {label}
-      </div>
-      <div className={`text-xl font-bold font-mono ${accentCls}`}>
-        {valueText ?? (value ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-      </div>
-      <div className="text-[10px] text-slate-500">{hint}</div>
+    <div className="card">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className={`text-2xl font-bold mt-1 ${valueCls}`}>{value}</div>
+      {sub && <div className="text-xs text-slate-400 mt-1">{sub}</div>}
     </div>
   );
 }

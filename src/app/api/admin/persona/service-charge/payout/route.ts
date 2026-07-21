@@ -5,40 +5,33 @@ import { getDb } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postSvcToAccounta, removeSvcFromAccounta } from "@/lib/accounta-db";
 
-// PATCH /api/admin/persona/service-charge/payout
-//   action: post   — mark the month's SVC "ทำจ่ายแล้ว" + post the payout to
-//                     ACCOUNTA (ค่าแรง SVC จ่ายแล้ว + ภาษีหัก ณ ที่จ่าย รอจ่าย). PIN.
-//   action: unpost — reverse: remove the ACCOUNTA rows + back to draft. PIN.
-//   action: repost — re-run the (idempotent) post to reflect a correction.
+// PATCH /api/admin/persona/service-charge/payout — 3-step flow mirroring payroll
+// (owner 2026-07-21): draft → finalize → paid → posted.
+//   finalize     — ปิดยอด (lock the month). PIN.
+//   unfinalize   — back to draft.
+//   mark_paid    — ทำจ่าย (record the payout was made).
+//   unpay        — back to finalized.
+//   post         — ลงบัญชี ACCOUNTA (ค่าแรง SVC จ่ายแล้ว + ภาษีหัก ณ ที่จ่าย รอจ่าย). PIN.
+//   unpost       — ยกเลิกลงบัญชี (remove the รายจ่าย, back to paid). PIN.
 //
-// Posting mirrors payroll finalize; guarded by userCanViewPayroll since it
-// writes salary-like expenses to the books. The branch is the caller's active
-// branch — never trusted from the client, so an admin can't post another
-// branch's payout.
+// Guarded by userCanViewPayroll since posting writes salary-like expenses. The
+// branch is the caller's active branch — never trusted from the client.
 
 const Body = z.object({
-  action: z.enum(["post", "unpost", "repost"]),
+  action: z.enum(["finalize", "unfinalize", "mark_paid", "unpay", "post", "unpost"]),
   yearMonth: z.string().regex(/^\d{4}-\d{2}$/),
   pin: z.string().optional()
 });
 
-function getOrCreateBatch(branchId: number, yearMonth: string): { id: number; status: string } {
-  const db = getDb();
-  const existing = db.prepare(
-    "SELECT id, status FROM svc_payout_batches WHERE branch_id = ? AND year_month = ?"
-  ).get(branchId, yearMonth) as { id: number; status: string } | undefined;
-  if (existing) return existing;
-  const info = db.prepare(
-    "INSERT INTO svc_payout_batches (branch_id, year_month, status) VALUES (?, ?, 'draft')"
-  ).run(branchId, yearMonth);
-  return { id: Number(info.lastInsertRowid), status: "draft" };
+function getBatch(branchId: number, yearMonth: string) {
+  return getDb().prepare(
+    "SELECT id, status, posted_at FROM svc_payout_batches WHERE branch_id = ? AND year_month = ?"
+  ).get(branchId, yearMonth) as { id: number; status: string; posted_at: string | null } | undefined;
 }
 
 function requirePin(userId: number, pin: string | undefined): NextResponse | null {
   const pinStr = (pin ?? "").trim();
-  if (!pinStr) {
-    return NextResponse.json({ error: "pin_required", message: "ต้องใส่ PIN ก่อนทำจ่าย" }, { status: 400 });
-  }
+  if (!pinStr) return NextResponse.json({ error: "pin_required", message: "ต้องใส่ PIN ก่อน" }, { status: 400 });
   const check = verifyAdminPin(userId, pinStr);
   if (!check.ok) {
     return NextResponse.json(
@@ -62,22 +55,54 @@ export async function PATCH(req: Request) {
   }
   const d = parsed.data;
   const db = getDb();
-  const nowIso = new Date().toISOString();
+  const now = new Date().toISOString();
 
-  if (d.action === "post" || d.action === "repost") {
-    const batch = getOrCreateBatch(branchId, d.yearMonth);
-    if (d.action === "post" && batch.status === "posted") {
-      return NextResponse.json({ error: "already_posted" }, { status: 400 });
+  // ── Step 1: finalize / unfinalize ──────────────────────────────────────
+  if (d.action === "finalize") {
+    const batch = getBatch(branchId, d.yearMonth);
+    if (batch && batch.status !== "draft") {
+      return NextResponse.json({ error: "already_finalized" }, { status: 400 });
     }
-    if (d.action === "repost" && batch.status !== "posted") {
-      return NextResponse.json({ error: "must_be_posted" }, { status: 400 });
+    const pinErr = requirePin(user.id, d.pin);
+    if (pinErr) return pinErr;
+    if (batch) {
+      db.prepare(`UPDATE svc_payout_batches SET status = 'finalized', finalized_by_user_id = ?, finalized_at = ? WHERE id = ?`)
+        .run(user.id, now, batch.id);
+    } else {
+      db.prepare(`INSERT INTO svc_payout_batches (branch_id, year_month, status, finalized_by_user_id, finalized_at) VALUES (?, ?, 'finalized', ?, ?)`)
+        .run(branchId, d.yearMonth, user.id, now);
     }
-    // PIN on the first post (repost is an idempotent re-run of an already-posted
-    // batch, like payroll repost_accounta — no PIN).
-    if (d.action === "post") {
-      const pinErr = requirePin(user.id, d.pin);
-      if (pinErr) return pinErr;
-    }
+    return NextResponse.json({ ok: true });
+  }
+
+  const batch = getBatch(branchId, d.yearMonth);
+  if (!batch) return NextResponse.json({ error: "batch_not_found" }, { status: 404 });
+
+  if (d.action === "unfinalize") {
+    if (batch.status !== "finalized") return NextResponse.json({ error: "must_be_finalized" }, { status: 400 });
+    db.prepare(`UPDATE svc_payout_batches SET status = 'draft', finalized_by_user_id = NULL, finalized_at = NULL WHERE id = ?`).run(batch.id);
+    return NextResponse.json({ ok: true });
+  }
+
+  // ── Step 2: mark_paid / unpay ──────────────────────────────────────────
+  if (d.action === "mark_paid") {
+    if (batch.status !== "finalized") return NextResponse.json({ error: "must_be_finalized_to_pay" }, { status: 400 });
+    db.prepare(`UPDATE svc_payout_batches SET status = 'paid', paid_by_user_id = ?, paid_at = ? WHERE id = ?`).run(user.id, now, batch.id);
+    return NextResponse.json({ ok: true });
+  }
+
+  if (d.action === "unpay") {
+    if (batch.status !== "paid") return NextResponse.json({ error: "must_be_paid" }, { status: 400 });
+    if (batch.posted_at) return NextResponse.json({ error: "must_unpost_first", message: "ต้องยกเลิกลงบัญชีก่อน" }, { status: 400 });
+    db.prepare(`UPDATE svc_payout_batches SET status = 'finalized', paid_by_user_id = NULL, paid_at = NULL WHERE id = ?`).run(batch.id);
+    return NextResponse.json({ ok: true });
+  }
+
+  // ── Step 3: post / unpost to ACCOUNTA ──────────────────────────────────
+  if (d.action === "post") {
+    if (batch.status !== "paid") return NextResponse.json({ error: "must_be_paid_to_post" }, { status: 400 });
+    const pinErr = requirePin(user.id, d.pin);
+    if (pinErr) return pinErr;
     let posted: { staff: number; net: number; wht: number };
     try {
       posted = postSvcToAccounta(batch.id, user.id);
@@ -87,20 +112,14 @@ export async function PATCH(req: Request) {
     db.prepare(`
       UPDATE svc_payout_batches
       SET status = 'posted', total_net = ?, total_wht = ?,
-          posted_by_user_id = ?, posted_at = COALESCE(posted_at, ?),
-          paid_by_user_id = ?, paid_at = COALESCE(paid_at, ?)
+          posted_by_user_id = ?, posted_at = COALESCE(posted_at, ?)
       WHERE id = ?
-    `).run(posted.net, posted.wht, user.id, nowIso, user.id, nowIso, batch.id);
+    `).run(posted.net, posted.wht, user.id, now, batch.id);
     return NextResponse.json({ ok: true, accounta: posted });
   }
 
   if (d.action === "unpost") {
-    const batch = db.prepare(
-      "SELECT id, status FROM svc_payout_batches WHERE branch_id = ? AND year_month = ?"
-    ).get(branchId, d.yearMonth) as { id: number; status: string } | undefined;
-    if (!batch || batch.status !== "posted") {
-      return NextResponse.json({ error: "must_be_posted" }, { status: 400 });
-    }
+    if (batch.status !== "posted") return NextResponse.json({ error: "must_be_posted" }, { status: 400 });
     const pinErr = requirePin(user.id, d.pin);
     if (pinErr) return pinErr;
     try {
@@ -110,9 +129,7 @@ export async function PATCH(req: Request) {
     }
     db.prepare(`
       UPDATE svc_payout_batches
-      SET status = 'draft', total_net = 0, total_wht = 0,
-          posted_by_user_id = NULL, posted_at = NULL,
-          paid_by_user_id = NULL, paid_at = NULL
+      SET status = 'paid', total_net = 0, total_wht = 0, posted_by_user_id = NULL, posted_at = NULL
       WHERE id = ?
     `).run(batch.id);
     return NextResponse.json({ ok: true });

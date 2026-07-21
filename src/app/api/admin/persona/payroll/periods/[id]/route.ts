@@ -10,7 +10,7 @@ import { postPayrollToAccounta, removePayrollFromAccounta } from "@/lib/accounta
 // DELETE /api/admin/persona/payroll/periods/[id] — delete (only if draft)
 
 const PatchBody = z.object({
-  action: z.enum(["recompute", "finalize", "unfinalize", "mark_paid", "unpay", "update_notes", "repost_accounta"]),
+  action: z.enum(["recompute", "finalize", "unfinalize", "mark_paid", "unpay", "update_notes", "repost_accounta", "post_accounta", "unpost_accounta"]),
   notes: z.string().max(500).optional(),
   pay_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   paid_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),  // backdated paid date
@@ -35,8 +35,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const d = parsed.data;
 
   const db = getDb();
-  const period = db.prepare(`SELECT id, status FROM payroll_periods WHERE id = ?`).get(id) as
-    { id: number; status: string } | undefined;
+  const period = db.prepare(`SELECT id, status, posted_at FROM payroll_periods WHERE id = ?`).get(id) as
+    { id: number; status: string; posted_at: string | null } | undefined;
   if (!period) return NextResponse.json({ error: "period_not_found" }, { status: 404 });
 
   if (d.action === "recompute") {
@@ -73,15 +73,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       SET status = 'finalized', finalized_by = ?, finalized_at = ?
       WHERE id = ?
     `).run(user.id, new Date().toISOString(), id);
-    // Auto-post to ACCOUNTA รายจ่าย: เงินเดือนต่อคน (จ่ายแล้ว) + ภาษีหัก ณ
-    // ที่จ่าย และ ประกันสังคม (รอจ่าย). Idempotent by payroll_period_id.
-    let posted: { salaries: number; tax: number; sso: number } | null = null;
-    try {
-      posted = postPayrollToAccounta(id, user.id);
-    } catch (e) {
-      console.error("[payroll] postPayrollToAccounta failed", e);
-    }
-    return NextResponse.json({ ok: true, accounta: posted });
+    // Posting to ACCOUNTA is now a SEPARATE 3rd step (post_accounta) after ทำจ่าย —
+    // no longer automatic here (owner 2026-07-21).
+    return NextResponse.json({ ok: true });
   }
 
   if (d.action === "unfinalize") {
@@ -129,6 +123,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (period.status !== "paid") {
       return NextResponse.json({ error: "must_be_paid_to_unpay" }, { status: 400 });
     }
+    // A posted period must be un-posted (ยกเลิกลงบัญชี) first — otherwise the
+    // ACCOUNTA รายจ่าย would be orphaned from a no-longer-paid period.
+    if (period.posted_at) {
+      return NextResponse.json({ error: "must_unpost_first", message: "ต้องยกเลิกลงบัญชีก่อน" }, { status: 400 });
+    }
     const pin = (d.pin ?? "").trim();
     const reason = (d.reason ?? "").trim();
     if (!pin) return NextResponse.json({ error: "pin_required" }, { status: 400 });
@@ -165,14 +164,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ ok: true });
   }
 
-  if (d.action === "repost_accounta") {
-    // Manually (re)post this period's รายจ่าย to ACCOUNTA. For periods that
-    // were finalized BEFORE auto-post existed, or to refresh after a manual
-    // line edit. Idempotent (delete-then-insert by payroll_period_id), so
-    // safe to click repeatedly. Only finalized/paid periods carry committed
-    // numbers worth posting.
-    if (period.status !== "finalized" && period.status !== "paid") {
-      return NextResponse.json({ error: "must_be_finalized_or_paid" }, { status: 400 });
+  // ── ลงบัญชี (step 3) — post/unpost to ACCOUNTA ──────────────────────────
+  // Posting is now its own step AFTER ทำจ่าย (owner 2026-07-21). `post_accounta`
+  // and the legacy `repost_accounta` both (re)post — idempotent delete-then-
+  // insert by payroll_period_id — and stamp posted_at/by. Only a paid period may
+  // be posted.
+  if (d.action === "post_accounta" || d.action === "repost_accounta") {
+    if (period.status !== "paid") {
+      return NextResponse.json({ error: "must_be_paid_to_post" }, { status: 400 });
     }
     let posted: { salaries: number; tax: number; sso: number } | null = null;
     try {
@@ -180,7 +179,25 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     } catch (e) {
       return NextResponse.json({ error: "accounta_post_failed", detail: (e as Error).message }, { status: 500 });
     }
+    db.prepare(`
+      UPDATE payroll_periods SET posted_by = ?, posted_at = COALESCE(posted_at, ?) WHERE id = ?
+    `).run(user.id, new Date().toISOString(), id);
     return NextResponse.json({ ok: true, accounta: posted });
+  }
+
+  if (d.action === "unpost_accounta") {
+    // ยกเลิกลงบัญชี — remove the posted รายจ่าย + clear posted_at/by. Leaves the
+    // period 'paid' so it can be re-posted.
+    if (period.status !== "paid" || !period.posted_at) {
+      return NextResponse.json({ error: "must_be_posted" }, { status: 400 });
+    }
+    try {
+      removePayrollFromAccounta(id);
+    } catch (e) {
+      return NextResponse.json({ error: "accounta_unpost_failed", detail: (e as Error).message }, { status: 500 });
+    }
+    db.prepare(`UPDATE payroll_periods SET posted_by = NULL, posted_at = NULL WHERE id = ?`).run(id);
+    return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ error: "unknown_action" }, { status: 400 });

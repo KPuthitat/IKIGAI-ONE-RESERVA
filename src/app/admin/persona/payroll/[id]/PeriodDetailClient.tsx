@@ -29,6 +29,8 @@ export type PeriodDetail = {
   finalized_at: string | null;
   paid_by: number | null;
   paid_at: string | null;
+  posted_by: number | null;
+  posted_at: string | null;
   notes: string | null;
   created_at: string;
   computed_by_name: string | null;
@@ -136,9 +138,10 @@ export default function PeriodDetailClient({
   const isDraft = period.status === "draft";
   const isFinalized = period.status === "finalized";
   const isPaid = period.status === "paid";
+  const isPosted = period.posted_at != null; // ลงบัญชีแล้ว (step 3) — only when paid
 
   async function performAction(
-    action: "recompute" | "finalize" | "unfinalize" | "mark_paid" | "repost_accounta",
+    action: "recompute" | "finalize" | "unfinalize" | "mark_paid" | "repost_accounta" | "post_accounta" | "unpost_accounta",
     pin?: string
   ): Promise<void> {
     setBusy(action);
@@ -154,7 +157,7 @@ export default function PeriodDetailClient({
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) {
-        if (action === "repost_accounta") {
+        if (action === "repost_accounta" || action === "post_accounta") {
           // Show the concrete counts so the admin sees what landed in รายจ่าย.
           const a = j.accounta as { salaries: number; tax: number; sso: number } | null;
           setMsg({
@@ -175,6 +178,7 @@ export default function PeriodDetailClient({
           action === "mark_paid" ? "admin.persona.payroll.action.markPaidDone" :
           action === "recompute" ? "admin.persona.payroll.action.recomputeDone" :
           action === "finalize" ? "admin.persona.payroll.action.finalizeDone" :
+          action === "unpost_accounta" ? "admin.persona.payroll.action.unpostAccounta" :
           "admin.persona.payroll.action.unfinalizeDone";
         setMsg({ kind: "ok", text: t(lang, doneKey as any) });
         startTransition(() => router.refresh());
@@ -361,13 +365,32 @@ export default function PeriodDetailClient({
               {t(lang, "admin.persona.payroll.action.downloadBankCsv")}
             </a>
           )}
-          {(isFinalized || isPaid) && (
-            <button type="button" onClick={() => performAction("repost_accounta")}
+          {/* Step 3 — ลงบัญชี: post to ACCOUNTA only AFTER ทำจ่าย (owner 2026-07-21) */}
+          {isPaid && !isPosted && (
+            <button type="button" onClick={() => performAction("post_accounta")}
               disabled={busy !== null}
               title={t(lang, "admin.persona.payroll.action.repostAccountaHint")}
-              className="text-sm px-3 py-1.5 rounded-md bg-white border border-slate-300 text-slate-700 hover:bg-slate-50">
-              {busy === "repost_accounta" ? "..." : t(lang, "admin.persona.payroll.action.repostAccounta")}
+              className="text-sm px-4 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-medium">
+              {busy === "post_accounta" ? "..." : t(lang, "admin.persona.payroll.action.repostAccounta")}
             </button>
+          )}
+          {isPaid && isPosted && (
+            <>
+              <span className="text-sm text-emerald-700 font-medium px-3 py-1.5 rounded-md bg-emerald-50 border border-emerald-200">
+                ✓ {t(lang, "admin.persona.payroll.action.postedBadge")}
+              </span>
+              <button type="button" onClick={() => performAction("post_accounta")}
+                disabled={busy !== null}
+                title={t(lang, "admin.persona.payroll.action.repostAccountaHint")}
+                className="text-sm px-3 py-1.5 rounded-md bg-white border border-slate-300 text-slate-700 hover:bg-slate-50">
+                {busy === "post_accounta" ? "..." : t(lang, "admin.persona.payroll.action.repostAccounta")}
+              </button>
+              <button type="button" onClick={() => performAction("unpost_accounta")}
+                disabled={busy !== null}
+                className="text-sm px-3 py-1.5 rounded-md text-rose-700 hover:bg-rose-50">
+                {busy === "unpost_accounta" ? "..." : t(lang, "admin.persona.payroll.action.unpostAccounta")}
+              </button>
+            </>
           )}
           {isPaid && (
             <>
@@ -377,8 +400,8 @@ export default function PeriodDetailClient({
               <button
                 type="button"
                 onClick={() => setUnpayOpen(true)}
-                disabled={busy !== null || !userPinSet}
-                title={!userPinSet ? t(lang, "admin.persona.payroll.err.userPinNotSet") : undefined}
+                disabled={busy !== null || !userPinSet || isPosted}
+                title={isPosted ? t(lang, "admin.persona.payroll.action.unpostAccounta") : (!userPinSet ? t(lang, "admin.persona.payroll.err.userPinNotSet") : undefined)}
                 className="text-sm px-3 py-1.5 rounded-md text-rose-700 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {t(lang, "admin.persona.payroll.action.unpay")}

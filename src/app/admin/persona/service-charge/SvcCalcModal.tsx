@@ -31,7 +31,7 @@ export default function SvcCalcModal({
   return (
     <>
       <button type="button" onClick={() => setOpen(true)}
-        className="text-[11px] font-medium text-brand hover:underline whitespace-nowrap">วิธีคำนวณ</button>
+        className="inline-block text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium whitespace-nowrap">วิธีคำนวณ ↗</button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onClick={() => setOpen(false)}>
