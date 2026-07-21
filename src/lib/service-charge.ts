@@ -24,7 +24,7 @@
 // not "240/480".
 
 import { getDb } from "./db";
-import { pairShifts, applyPtGrace, pickScheduled, type ScheduledShift } from "./payroll-compute";
+import { pairShifts, applyPtGrace, pickScheduled, deductBreak, type ScheduledShift, type PayrollSettings } from "./payroll-compute";
 import { nameWithPrefix } from "./name";
 import { LATE_GRACE_MINUTES, SC_INELIGIBILITY_THRESHOLD } from "./late-detection";
 import {
@@ -276,13 +276,24 @@ function netScheduledMinutes(w: ScheduledShift): number {
   return Math.max(0, gross - brk);
 }
 
+type BreakSettings = Pick<PayrollSettings,
+  "break_threshold_minutes" | "break_deduction_minutes" | "long_shift_threshold_minutes" | "long_shift_break_minutes">;
+
 /** SVC worked-minutes per (date, user), CLAMPED to the rostered shift like
  *  payroll (owner 2026-07-21: นับเฉพาะเวลาตามกะ — มาก่อนเวลาเริ่มนับที่เวลากะ,
  *  หักเบรก, ไม่รวม OT). Reuses applyPtGrace/pickScheduled so SVC time matches
- *  the paid time in ค่าตอบแทน. Falls back to raw paired time on unrostered days. */
+ *  the paid time in ค่าตอบแทน.
+ *
+ *  Break handling (owner 2026-07-21): when the shift has a scheduled break
+ *  window, applyPtGrace already deducts it. When it does NOT — an unrostered
+ *  clock-in, or a shift_code with no break defined — apply the same
+ *  threshold-based break as payroll's deductBreak, so a long shift never counts
+ *  the break as worked (a staffer who clocks in at the break start no longer
+ *  collects the whole break as share). */
 function computeSvcClampedMinutesByDay(
   entries: Array<{ user_id: number; ts: string; type: "in" | "out" }>,
-  scheduledByUser: Map<number, Map<string, ScheduledShift[]>>
+  scheduledByUser: Map<number, Map<string, ScheduledShift[]>>,
+  brk: BreakSettings
 ): Map<string, Map<number, number>> {
   const out = new Map<string, Map<number, number>>();
   const byDay = bucketEntriesByDay(entries);
@@ -299,7 +310,10 @@ function computeSvcClampedMinutesByDay(
       let total = 0;
       for (const sh of shifts) {
         const sched = candidates.length ? pickScheduled(candidates, sh) : null;
-        total += applyPtGrace({ startTs: sh.startTs, endTs: sh.endTs }, sched, null).workedMinutes;
+        const g = applyPtGrace({ startTs: sh.startTs, endTs: sh.endTs }, sched, null);
+        total += g.breakMinutes > 0
+          ? g.workedMinutes
+          : deductBreak(g.workedMinutes, brk as PayrollSettings).workedMinutes;
       }
       if (total > 0) userMin.set(userId, Math.round(total));
     }
@@ -409,11 +423,22 @@ export function computeMonthlySvcSummary(
   // 3b. Scheduled shift windows (roster → shift_codes) for the branch/month.
   const scheduledByUser = buildScheduledByUser(branchId, start, end);
 
+  // 3c. Break-deduction settings (same table payroll uses) — for the fallback
+  //     break when a shift has no scheduled break window (owner 2026-07-21).
+  const brk = (db.prepare(`
+    SELECT break_threshold_minutes, break_deduction_minutes,
+           long_shift_threshold_minutes, long_shift_break_minutes
+    FROM payroll_settings LIMIT 1
+  `).get() as BreakSettings | undefined) ?? {
+    break_threshold_minutes: 300, break_deduction_minutes: 30,
+    long_shift_threshold_minutes: 480, long_shift_break_minutes: 60
+  };
+
   // 4. Worked minutes per (date, user) — CLAMPED to the rostered shift like
   //    payroll: an early clock-in is counted from the shift start, break is
   //    deducted, OT past shift-end is not counted (owner 2026-07-21: นับเฉพาะ
   //    เวลาตามกะ). Matches the paid minutes in ค่าตอบแทน.
-  const workedByDay = computeSvcClampedMinutesByDay(entries, scheduledByUser);
+  const workedByDay = computeSvcClampedMinutesByDay(entries, scheduledByUser, brk);
 
   // 4b. Executives with track_attendance=0 don't clock in — accrue SVC from the
   //     roster instead: each kind='work' day they're scheduled counts as the

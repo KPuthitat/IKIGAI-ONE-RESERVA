@@ -11,7 +11,7 @@ type BreakdownItem = {
   userMinutes: number; totalMinutes: number; share: number;
 };
 
-const fmtHr = (min: number) => `${(min / 60).toFixed(1)} ชม.`;
+const fmtMin = (min: number) => Math.round(min).toLocaleString();
 
 export default function SvcCalcModal({
   displayName, grossAllocation, netAllocation, forfeited, forfeitReason,
@@ -35,48 +35,60 @@ export default function SvcCalcModal({
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onClick={() => setOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-4 sm:p-5"
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-4 sm:p-5"
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-2 mb-1">
               <h3 className="font-bold text-slate-800">วิธีคำนวณเซอร์วิสชาร์จ — {displayName}</h3>
               <button type="button" onClick={() => setOpen(false)}
                 className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
             </div>
-            <p className="text-[11px] text-slate-500 mb-3">
-              ส่วนแบ่งเซอร์วิสชาร์จประจำวัน = เซอร์วิสชาร์จส่วนของพนักงาน (60%) ×
-              (นาทีทำงานรวมของพนักงานคนนั้น ÷ นาทีทำงานรวมของพนักงานทุกคน)
-              <span className="block mt-0.5 text-slate-400">
-                นับเฉพาะเวลาทำงานตามกะ — มาก่อนเวลาเริ่มนับที่เวลากะ, หักเวลาพัก
-              </span>
-            </p>
+            {/* สูตรแบบกล่อง อ่านง่าย (owner 2026-07-21) */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 mb-3">
+              <div className="flex items-center justify-center gap-2 text-slate-800 font-semibold flex-wrap text-center">
+                <span>ส่วนแบ่ง</span>
+                <span className="text-slate-400">=</span>
+                <span className="text-brand">ส่วนแบ่งพนักงาน (60%)</span>
+                <span className="text-slate-400">×</span>
+                <span className="inline-flex flex-col items-center leading-tight text-[12px]">
+                  <span className="px-2 pb-0.5">จำนวนนาทีที่ทำงาน</span>
+                  <span className="w-full border-t border-slate-400"></span>
+                  <span className="px-2 pt-0.5">นาทีทำงานรวมทั้งทีม</span>
+                </span>
+              </div>
+              <div className="text-center text-[11px] text-slate-400 mt-2">
+                นับเฉพาะเวลาทำงานตามกะ · หักเวลาพัก · มาก่อนเวลาเริ่มนับที่เวลากะ
+              </div>
+            </div>
             {dailyBreakdown.length === 0 ? (
               <p className="text-sm text-slate-500 py-4 text-center">ไม่มีวันที่ได้ส่วนแบ่งในเดือนนี้</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px] tabular-nums">
                   <thead>
-                    <tr className="text-slate-500 border-b border-slate-100 text-left">
-                      <th className="py-1 pr-2 font-medium">วันที่</th>
-                      <th className="py-1 px-2 text-right font-medium">ยอดวันนั้น</th>
-                      <th className="py-1 px-2 text-right font-medium">×60%</th>
-                      <th className="py-1 px-2 text-right font-medium">ชม.คุณ/รวม</th>
-                      <th className="py-1 pl-2 text-right font-medium">ส่วนแบ่ง</th>
+                    <tr className="text-slate-500 border-b border-slate-200 text-left">
+                      <th className="py-1.5 pr-2 font-medium">วันที่</th>
+                      <th className="py-1.5 px-2 text-right font-medium">เซอร์วิสชาร์จวันนี้</th>
+                      <th className="py-1.5 px-2 text-right font-medium">ส่วนแบ่งพนักงาน</th>
+                      <th className="py-1.5 px-2 text-right font-medium">จำนวนนาทีที่ทำงาน</th>
+                      <th className="py-1.5 px-2 text-right font-medium">นาทีทำงานรวมทั้งทีม</th>
+                      <th className="py-1.5 pl-2 text-right font-medium">ส่วนแบ่ง</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dailyBreakdown.map((d) => (
                       <tr key={d.date} className="border-b border-slate-50 text-slate-700">
-                        <td className="py-1 pr-2">{d.date}</td>
-                        <td className="py-1 px-2 text-right">{fmtMoney(d.dayAmount)}</td>
-                        <td className="py-1 px-2 text-right">{fmtMoney(d.staffPool)}</td>
-                        <td className="py-1 px-2 text-right">{fmtHr(d.userMinutes)}/{fmtHr(d.totalMinutes)}</td>
-                        <td className="py-1 pl-2 text-right font-semibold text-emerald-700">{fmtMoney(d.share)}</td>
+                        <td className="py-1.5 pr-2">{d.date}</td>
+                        <td className="py-1.5 px-2 text-right">{fmtMoney(d.dayAmount)}</td>
+                        <td className="py-1.5 px-2 text-right">{fmtMoney(d.staffPool)}</td>
+                        <td className="py-1.5 px-2 text-right">{fmtMin(d.userMinutes)}</td>
+                        <td className="py-1.5 px-2 text-right text-slate-500">{fmtMin(d.totalMinutes)}</td>
+                        <td className="py-1.5 pl-2 text-right font-semibold text-emerald-700">{fmtMoney(d.share)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-slate-200 font-bold text-slate-800">
-                      <td className="py-1.5 pr-2" colSpan={4}>รวมส่วนแบ่ง (ก่อนหักสาย/ลาออก)</td>
+                      <td className="py-1.5 pr-2" colSpan={5}>รวมส่วนแบ่ง (ก่อนหักสาย/ลาออก)</td>
                       <td className="py-1.5 pl-2 text-right">฿{fmtMoney(grossAllocation)}</td>
                     </tr>
                   </tfoot>
