@@ -1159,18 +1159,22 @@ export default function ExpensesClient(props: {
               )}
             </div>
 
-            {/* Awaiting-document flag (จ่าย/ลงบัญชีก่อน ยังไม่ได้รับเอกสาร) */}
-            <label className="flex items-center gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              <input type="checkbox" checked={form.awaiting_doc} onChange={(e) => set("awaiting_doc", e.target.checked)} />
-              ยังไม่ได้รับเอกสาร (จ่าย/ลงบัญชีก่อน — ค่อยตามใบเสร็จ/ใบกำกับภาษีทีหลัง)
-            </label>
-
-            {/* Fixed-cost flag for break-even (owner 2026-07-21). ค่าเริ่มต้น = แปรผัน;
-                ติ๊กเมื่อเป็นค่าใช้จ่ายคงที่ (ค่าเช่า ประกัน ค่าบริการรายเดือน ฯลฯ). */}
-            <label className="flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-              <input type="checkbox" checked={form.is_fixed} onChange={(e) => set("is_fixed", e.target.checked)} />
-              เป็น<strong>รายจ่ายคงที่</strong> (นับเข้าจุดคุ้มทุนแบบต้นทุนคงที่) — ถ้าไม่ติ๊ก = รายจ่ายแปรผัน
-            </label>
+            {/* Compact toggle buttons (owner 2026-07-21: ปุ่มสวยๆ ชัดๆ) —
+                จ่าย/ลงบัญชีก่อนยังไม่ได้เอกสาร + คงที่/แปรผัน (จุดคุ้มทุน). */}
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => set("awaiting_doc", !form.awaiting_doc)}
+                title="จ่าย/ลงบัญชีก่อน — ค่อยตามใบเสร็จ/ใบกำกับภาษีทีหลัง"
+                className={`px-3.5 py-2 rounded-full text-sm font-medium border transition ${
+                  form.awaiting_doc ? "bg-amber-100 border-amber-400 text-amber-800" : "bg-white border-slate-300 text-slate-500 hover:bg-slate-50"}`}>
+                {form.awaiting_doc ? "✓ " : ""}ยังไม่ได้รับเอกสาร
+              </button>
+              <button type="button" onClick={() => set("is_fixed", !form.is_fixed)}
+                title="นับเข้าจุดคุ้มทุนแบบต้นทุนคงที่ (ไม่เลือก = รายจ่ายแปรผัน)"
+                className={`px-3.5 py-2 rounded-full text-sm font-medium border transition ${
+                  form.is_fixed ? "bg-indigo-100 border-indigo-400 text-indigo-800" : "bg-white border-slate-300 text-slate-500 hover:bg-slate-50"}`}>
+                {form.is_fixed ? "✓ " : ""}ต้นทุนคงที่/รายจ่ายประจำ
+              </button>
+            </div>
 
             {/* Payment */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
