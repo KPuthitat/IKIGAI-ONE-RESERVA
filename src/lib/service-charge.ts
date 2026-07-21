@@ -35,6 +35,65 @@ import {
 export const SVC_STAFF_SHARE_RATIO = 0.6;  // 3 of 5 parts
 export const SVC_COMPANY_SHARE_RATIO = 0.4; // 2 of 5 parts
 
+// The month this system started recording SVC from live clock/roster data
+// (owner 2026-07-21). Months BEFORE this are pre-system: no time entries to
+// distribute a pool over, so the per-staff SVC is entered by hand
+// (svc_manual_allocations) instead of computed. This month and later use the
+// normal time-entry engine.
+export const SVC_SYSTEM_START_MONTH = "2026-06";
+
+/** A YYYY-MM month is "manual entry" (typed by hand) when it predates the
+ *  system going live. String compare is safe on zero-padded YYYY-MM. */
+export function isManualSvcMonth(yearMonth: string): boolean {
+  return yearMonth < SVC_SYSTEM_START_MONTH;
+}
+
+/** Read the hand-entered GROSS SVC amount per user for a manual month.
+ *  Keyed by user_id; absent users default to 0 at the call site. */
+export function listManualAllocations(
+  branchId: number,
+  yearMonth: string
+): Map<number, number> {
+  const rows = getDb().prepare(
+    "SELECT user_id, gross_amount FROM svc_manual_allocations WHERE branch_id = ? AND year_month = ?"
+  ).all(branchId, yearMonth) as Array<{ user_id: number; gross_amount: number }>;
+  const m = new Map<number, number>();
+  for (const r of rows) m.set(r.user_id, r.gross_amount);
+  return m;
+}
+
+/** Upsert the hand-entered GROSS SVC amounts for a manual month, one row per
+ *  user (owner 2026-07-21). Audit columns capture the first entry vs edits.
+ *  Runs in a single transaction so a bad row rolls the whole save back. */
+export function saveManualAllocations(args: {
+  branchId: number;
+  yearMonth: string;
+  allocations: Array<{ userId: number; gross: number }>;
+  userId: number;
+}): number {
+  const db = getDb();
+  const nowIso = new Date().toISOString();
+  const up = db.prepare(`
+    INSERT INTO svc_manual_allocations
+      (branch_id, year_month, user_id, gross_amount, entered_by_user_id, entered_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(branch_id, year_month, user_id) DO UPDATE SET
+      gross_amount = excluded.gross_amount,
+      updated_by_user_id = ?,
+      updated_at = ?
+  `);
+  const run = db.transaction(() => {
+    let n = 0;
+    for (const a of args.allocations) {
+      up.run(args.branchId, args.yearMonth, a.userId, a.gross,
+        args.userId, nowIso, args.userId, nowIso);
+      n++;
+    }
+    return n;
+  });
+  return run();
+}
+
 export type DailySvcRow = {
   id: number;
   branch_id: number;
@@ -109,6 +168,11 @@ export type MonthlySvcSummary = {
   daysWithEntries: number;   // for UX: how many days admin has filled
   daysInMonth: number;
   payoutDate: string;        // YYYY-MM-20 of the following month
+  // Manual-entry month (owner 2026-07-21): months before the system went live
+  // (< SVC_SYSTEM_START_MONTH) have no clock/roster data, so the per-staff gross
+  // is TYPED by hand (svc_manual_allocations) instead of computed. When true the
+  // page shows the editable entry table and hides the daily-ledger / hours cols.
+  manualEntry: boolean;
 };
 
 // ── DB helpers ───────────────────────────────────────────────────
@@ -389,6 +453,12 @@ export function computeMonthlySvcSummary(
   yearMonth: string,
   opts?: { assumedShiftMinutes?: number }
 ): MonthlySvcSummary {
+  // Pre-system months are entered by hand — take the manual path entirely
+  // (owner 2026-07-21). No time entries / roster to compute over.
+  if (isManualSvcMonth(yearMonth)) {
+    return computeManualSvcSummary(branchId, yearMonth);
+  }
+
   const db = getDb();
   const start = `${yearMonth}-01`;
   const end = `${yearMonth}-31`;
@@ -672,7 +742,8 @@ export function computeMonthlySvcSummary(
     rows,
     daysWithEntries: dailyRows.length,
     daysInMonth,
-    payoutDate: computePayoutDate(yearMonth)
+    payoutDate: computePayoutDate(yearMonth),
+    manualEntry: false
   };
 }
 
@@ -693,7 +764,101 @@ function emptySummary(
     rows: [],
     daysWithEntries,
     daysInMonth,
-    payoutDate: computePayoutDate(yearMonth)
+    payoutDate: computePayoutDate(yearMonth),
+    manualEntry: false
+  };
+}
+
+/** Manual (pre-system) monthly summary — the per-staff GROSS is TYPED by hand
+ *  (svc_manual_allocations), not computed from clock/roster data (owner
+ *  2026-07-21). WHT is still withheld for 'wht' staff and the rows post to
+ *  ACCOUNTA exactly like a normal month (postSvcToAccounta reads this).
+ *
+ *  Roster: the current active SVC-eligible staff at the branch, PLUS anyone who
+ *  already has a manual amount for the month (so a person who has since resigned
+ *  still shows and still pays out on a historical month). No forfeiture, no late
+ *  ratio, no daily breakdown — none of that data exists pre-system. */
+function computeManualSvcSummary(branchId: number, yearMonth: string): MonthlySvcSummary {
+  const db = getDb();
+  const end = `${yearMonth}-31`;
+  const [yyyy, mm] = yearMonth.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(yyyy, mm, 0)).getUTCDate();
+
+  const staff = db.prepare(`
+    SELECT u.id AS userId, u.display_name AS displayName,
+           u.employment_type AS employmentType,
+           u.shift_start_time AS shiftStartTime,
+           u.weekly_off_days AS weeklyOffDays,
+           COALESCE(u.track_attendance, 1) AS trackAttendance,
+           u.salary_tax_mode AS taxMode,
+           u.title_prefix AS titlePrefix,
+           u.employee_code AS employeeCode
+    FROM users u
+    JOIN user_branches ub ON ub.user_id = u.id
+    WHERE ub.branch_id = ? AND u.role IN ('staff', 'admin')
+      AND u.is_test_account = 0
+      AND (
+        (u.receives_service_charge = 1
+          AND u.status NOT IN ('disabled', 'resigned', 'terminated')
+          AND (u.hire_date IS NULL OR u.hire_date <= ?))
+        OR u.id IN (SELECT user_id FROM svc_manual_allocations WHERE branch_id = ? AND year_month = ?)
+      )
+    ORDER BY (u.employee_code IS NULL), u.employee_code COLLATE NOCASE ASC
+  `).all(branchId, end, branchId, yearMonth) as StaffMeta[];
+
+  const gross = listManualAllocations(branchId, yearMonth);
+  const whtRate = (db.prepare("SELECT wht_rate FROM payroll_settings LIMIT 1")
+    .get() as { wht_rate: number } | undefined)?.wht_rate ?? 0.03;
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  const rows: MonthlySvcRow[] = staff.map((s) => {
+    const g = round2(gross.get(s.userId) ?? 0);
+    const taxMode: "sso" | "wht" = s.taxMode === "wht" ? "wht" : "sso";
+    const whtAmount = taxMode === "wht" ? round2(g * whtRate) : 0;
+    const netPayout = round2(g - whtAmount);
+    return {
+      userId: s.userId,
+      displayName: nameWithPrefix(s.titlePrefix, s.displayName),
+      employmentType: s.employmentType,
+      shiftStartTime: s.shiftStartTime,
+      totalMinutesWorked: 0,
+      daysWorked: 0,
+      scheduledMinutes: 0,
+      lateMinutes: 0,
+      lateRatio: 0,
+      grossAllocation: g,
+      forfeited: false,
+      forfeitReason: null,
+      netAllocation: g,
+      taxMode,
+      whtAmount,
+      netPayout,
+      dailyBreakdown: [],
+      excludedDays: []
+    };
+  });
+
+  const staffPoolTotal = round2(rows.reduce((s, r) => s + r.grossAllocation, 0));
+  const totalWht = round2(rows.reduce((s, r) => s + r.whtAmount, 0));
+  const totalNetPayout = round2(rows.reduce((s, r) => s + r.netPayout, 0));
+
+  return {
+    branchId,
+    yearMonth,
+    // No POS total recorded pre-system — the entered amounts ARE the staff share.
+    // Company pool / 60-40 split don't apply; the page renders manual-specific cards.
+    totalCollected: staffPoolTotal,
+    staffPoolTotal,
+    companyPoolFromSplit: 0,
+    companyPoolFromForfeit: 0,
+    companyPoolTotal: 0,
+    totalWht,
+    totalNetPayout,
+    rows,
+    daysWithEntries: 0,
+    daysInMonth,
+    payoutDate: computePayoutDate(yearMonth),
+    manualEntry: true
   };
 }
 

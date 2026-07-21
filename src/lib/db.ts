@@ -2175,6 +2175,32 @@ function runMigrations(db: Database.Database): void {
     if (!svcCols.has("finalized_by_user_id")) db.exec("ALTER TABLE svc_payout_batches ADD COLUMN finalized_by_user_id INTEGER REFERENCES users(id)");
   }
 
+  // Manual SVC allocations (owner 2026-07-21): for months BEFORE the system went
+  // live (< 2026-06) there is no clock/roster data to distribute a pool over, so
+  // the owner types each staff's SVC amount by hand instead. One row per
+  // (branch, month, user) holding the GROSS amount (before WHT) — the monthly
+  // summary reads these directly for pre-June months (skipping the time-entry
+  // engine) and still withholds 3% for 'wht' staff + posts to ACCOUNTA like a
+  // normal month. Audit columns capture who entered/edited.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS svc_manual_allocations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      year_month TEXT NOT NULL,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      gross_amount REAL NOT NULL DEFAULT 0,
+      entered_by_user_id INTEGER REFERENCES users(id),
+      entered_at TEXT,
+      updated_by_user_id INTEGER REFERENCES users(id),
+      updated_at TEXT,
+      UNIQUE(branch_id, year_month, user_id)
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_svc_manual_branch_month
+    ON svc_manual_allocations(branch_id, year_month);
+  `);
+
   // ── Roster (TC-R, 2026-05) ─────────────────────────────────────
   //
   // Three tables that together support "supervisor assigns monthly
