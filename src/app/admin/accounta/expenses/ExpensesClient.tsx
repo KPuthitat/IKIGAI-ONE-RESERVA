@@ -67,7 +67,7 @@ type Expense = {
   bill_date: string; vendor_id: number | null; vendor_name: string | null; invoice_no: string | null;
   doc_type: string | null; category: string | null; capex_bucket: string | null; description: string | null;
   amount_total: number; has_tax_invoice: number; vat_amount: number; base_amount: number; wht_rate: number;
-  awaiting_doc: number;
+  awaiting_doc: number; is_fixed: number;
   payment_status: PaymentStatus; payment_method: string | null; paid_date: string | null; due_date: string | null;
   has_doc: boolean; ocr_source: string | null; ocr_cost_baht: number | null; note: string | null;
   review_status?: string;   // 'draft' (จากไลน์ รอตรวจ) | 'confirmed'
@@ -85,7 +85,7 @@ type FormState = {
   branch_id: string; company_id: string;
   bill_date: string; vendor_name: string; invoice_no: string; doc_type: string; category: string; capex_bucket: string; description: string;
   amount_total: string; has_tax_invoice: boolean; vat_override: string; wht_rate: string;
-  awaiting_doc: boolean;
+  awaiting_doc: boolean; is_fixed: boolean;
   payment_status: PaymentStatus; payment_method: string; paid_date: string; due_date: string;
   note: string;
   rememberVendor: boolean;
@@ -118,7 +118,7 @@ function blankForm(defaultMethod = ""): FormState {
     id: null, branch_id: "", company_id: "",
     bill_date: todayISO(), vendor_name: "", invoice_no: "", doc_type: "", category: "", capex_bucket: "", description: "",
     amount_total: "", has_tax_invoice: false, vat_override: "", wht_rate: "0",
-    awaiting_doc: false,
+    awaiting_doc: false, is_fixed: false,
     payment_status: "paid", payment_method: defaultMethod, paid_date: todayISO(), due_date: "",
     note: "", rememberVendor: true
   };
@@ -299,7 +299,7 @@ export default function ExpensesClient(props: {
       has_tax_invoice: !!e.has_tax_invoice,
       vat_override: "",
       wht_rate: String(e.wht_rate ?? 0),
-      awaiting_doc: !!e.awaiting_doc,
+      awaiting_doc: !!e.awaiting_doc, is_fixed: !!e.is_fixed,
       payment_status: e.payment_status,
       payment_method: e.payment_method || (methods[0]?.name ?? ""),
       paid_date: e.paid_date ?? e.bill_date,
@@ -415,6 +415,7 @@ export default function ExpensesClient(props: {
         // WHT applies to each part's ex-VAT base; splitting keeps the total the same.
         wht_rate: Number(form.wht_rate) || 0,
         awaiting_doc: form.awaiting_doc,
+        is_fixed: form.is_fixed,
         payment_status: form.payment_status,
         payment_method: form.payment_status === "paid" ? form.payment_method : null,
         paid_date: form.payment_status === "paid" ? form.paid_date : null,
@@ -479,6 +480,7 @@ export default function ExpensesClient(props: {
           : (form.has_tax_invoice ? splitVat(total, true).vat : 0),
         wht_rate: Number(form.wht_rate) || 0,
         awaiting_doc: form.awaiting_doc,
+        is_fixed: form.is_fixed,
         payment_status: form.payment_status,
         payment_method: form.payment_status === "paid" ? form.payment_method : null,
         paid_date: form.payment_status === "paid" ? form.paid_date : null,
@@ -931,6 +933,7 @@ export default function ExpensesClient(props: {
                       {e.vendor_name || "—"}
                       {e.capex_bucket && <span className="text-[10px] font-normal bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-1.5 py-px" title="ผูกกับ FEASIBILITY (เงินลงทุนตั้งต้น)">FEASIBILITY · {STARTUP_CATEGORY_LABEL[e.capex_bucket as keyof typeof STARTUP_CATEGORY_LABEL] ?? "ลงทุน"}</span>}
                       {!!e.awaiting_doc && <span className="text-[10px] font-normal bg-amber-100 text-amber-800 border border-amber-300 rounded-full px-1.5 py-px" title="ยังไม่ได้รับใบเสร็จ/ใบกำกับภาษี">⏳ รอเอกสาร</span>}
+                      {!!e.is_fixed && <span className="text-[10px] font-normal bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-1.5 py-px" title="นับเป็นต้นทุนคงที่ในจุดคุ้มทุน">คงที่</span>}
                     </div>
                     {docTypeLabel(e.doc_type) && (
                       <span className="inline-block text-[10px] bg-slate-100 text-slate-500 rounded px-1.5 py-0.5 mt-0.5">{docTypeLabel(e.doc_type)}</span>
@@ -1160,6 +1163,13 @@ export default function ExpensesClient(props: {
             <label className="flex items-center gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
               <input type="checkbox" checked={form.awaiting_doc} onChange={(e) => set("awaiting_doc", e.target.checked)} />
               ยังไม่ได้รับเอกสาร (จ่าย/ลงบัญชีก่อน — ค่อยตามใบเสร็จ/ใบกำกับภาษีทีหลัง)
+            </label>
+
+            {/* Fixed-cost flag for break-even (owner 2026-07-21). ค่าเริ่มต้น = แปรผัน;
+                ติ๊กเมื่อเป็นค่าใช้จ่ายคงที่ (ค่าเช่า ประกัน ค่าบริการรายเดือน ฯลฯ). */}
+            <label className="flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+              <input type="checkbox" checked={form.is_fixed} onChange={(e) => set("is_fixed", e.target.checked)} />
+              เป็น<strong>รายจ่ายคงที่</strong> (นับเข้าจุดคุ้มทุนแบบต้นทุนคงที่) — ถ้าไม่ติ๊ก = รายจ่ายแปรผัน
             </label>
 
             {/* Payment */}

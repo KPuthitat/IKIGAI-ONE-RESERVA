@@ -22,6 +22,7 @@ export type EditableExpense = {
   has_tax_invoice: boolean;
   wht_rate?: number;
   awaiting_doc?: boolean;
+  is_fixed?: boolean;
   payment_status: "paid" | "unpaid";
   payment_method: string | null;
   paid_date: string | null;
@@ -63,6 +64,7 @@ export default function ExpenseEditModal({
   const [vatOverride, setVatOverride] = useState("");
   const [whtRate, setWhtRate] = useState(String(expense.wht_rate ?? 0));
   const [awaitingDoc, setAwaitingDoc] = useState(!!expense.awaiting_doc);
+  const [isFixed, setIsFixed] = useState(!!expense.is_fixed);
   const [status, setStatus] = useState<"paid" | "unpaid">(expense.payment_status);
   const [method, setMethod] = useState(expense.payment_method ?? (paymentMethods[0]?.name ?? ""));
   const [paidDate, setPaidDate] = useState(expense.paid_date ?? expense.bill_date);
@@ -139,6 +141,7 @@ export default function ExpenseEditModal({
         has_tax_invoice: hasVat, vat_amount: vat,
         wht_rate: whtRateNum,
         awaiting_doc: awaitingDoc,
+        is_fixed: isFixed,
         payment_status: status,
         payment_method: status === "paid" ? (method || null) : null,
         paid_date: status === "paid" ? paidDate : null,
@@ -284,6 +287,11 @@ export default function ExpenseEditModal({
           <label className="sm:col-span-2 flex items-center gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             <input type="checkbox" checked={awaitingDoc} onChange={(e) => setAwaitingDoc(e.target.checked)} />
             ยังไม่ได้รับเอกสาร (จ่าย/ลงบัญชีก่อน — ค่อยตามใบเสร็จ/ใบกำกับภาษีทีหลัง)
+          </label>
+
+          <label className="sm:col-span-2 flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+            <input type="checkbox" checked={isFixed} onChange={(e) => setIsFixed(e.target.checked)} />
+            เป็น<strong>รายจ่ายคงที่</strong> (นับเข้าจุดคุ้มทุนแบบต้นทุนคงที่) — ถ้าไม่ติ๊ก = รายจ่ายแปรผัน
           </label>
 
           <div className="sm:col-span-2">

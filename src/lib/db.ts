@@ -6420,6 +6420,24 @@ function runMigrations(db: Database.Database): void {
   if (!expCols.some((c) => c.name === "awaiting_doc")) {
     db.exec("ALTER TABLE accounta_expenses ADD COLUMN awaiting_doc INTEGER NOT NULL DEFAULT 0");
   }
+  // is_fixed (owner 2026-07-21): per-expense fixed/variable flag driving the
+  // break-even card. 1 = ต้นทุนคงที่, 0 = ต้นทุนผันแปร. New manual expenses default
+  // to variable (0); recurring/auto-posted (payroll, SVC) default to fixed (see
+  // their inserts). We SEED existing rows once from the old category-code rule so
+  // the break-even history is unchanged: everything EXCEPT known variable
+  // (GD/FC) / excluded (CP/LN) categories and CapEx was "fixed" before — mark
+  // those 1. (CP/LN/CapEx rows stay 0 but are excluded from break-even anyway.)
+  if (!expCols.some((c) => c.name === "is_fixed")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN is_fixed INTEGER NOT NULL DEFAULT 0");
+    db.exec(`
+      UPDATE accounta_expenses
+         SET is_fixed = 1
+       WHERE capex_bucket IS NULL
+         AND COALESCE(category,'') NOT IN (
+           SELECT name FROM accounta_categories WHERE code IN ('GD','FC','CP','LN')
+         )
+    `);
+  }
   // feasibility_projects.branch_id (owner 2026-06-29): which branch's CapEx bills
   // feed this project's "เงินลงทุนตั้งต้น" live. NULL = no accounting link.
   const feasCols = db.prepare("PRAGMA table_info(feasibility_projects)").all() as Array<{ name: string }>;
@@ -6465,6 +6483,12 @@ function runMigrations(db: Database.Database): void {
     const recCols = db.prepare("PRAGMA table_info(accounta_recurring_expenses)").all() as Array<{ name: string }>;
     if (!recCols.some((c) => c.name === "wht_rate")) {
       db.exec("ALTER TABLE accounta_recurring_expenses ADD COLUMN wht_rate REAL NOT NULL DEFAULT 0");
+    }
+    // is_fixed (owner 2026-07-21): recurring/auto-posted expenses are ต้นทุนคงที่
+    // by default — they're the "จ่ายอัตโนมัติทุกเดือน" the owner wants defaulted to
+    // fixed. Each generated accounta_expenses row inherits this flag.
+    if (!recCols.some((c) => c.name === "is_fixed")) {
+      db.exec("ALTER TABLE accounta_recurring_expenses ADD COLUMN is_fixed INTEGER NOT NULL DEFAULT 1");
     }
   }
   // Director credit-card charges (owner 2026-07-02): each รูดบัตร (full or ผ่อน N

@@ -148,6 +148,10 @@ export type ExpenseInput = {
   // จ่ายแล้วลงบัญชีก่อนแต่ยังไม่ได้รับใบเสร็จ/ใบกำกับภาษี (owner 2026-07-06).
   // true = รอเอกสาร; the ledger flags it so it isn't forgotten.
   awaiting_doc?: boolean;
+  // Fixed vs variable cost for the break-even card (owner 2026-07-21). true =
+  // ต้นทุนคงที่, false/undefined = ต้นทุนผันแปร. Manual entries default variable;
+  // recurring/auto-posted (payroll, SVC) default fixed.
+  is_fixed?: boolean;
 };
 
 // The investment category — bills tagged this (code "CP") may carry a
