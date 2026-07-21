@@ -15,7 +15,7 @@ const fmtMin = (min: number) => Math.round(min).toLocaleString();
 
 export default function SvcCalcModal({
   displayName, grossAllocation, netAllocation, forfeited, forfeitReason,
-  dailyBreakdown, taxMode, whtAmount, netPayout
+  dailyBreakdown, taxMode, whtAmount, netPayout, excludedDays
 }: {
   displayName: string;
   grossAllocation: number;
@@ -26,6 +26,7 @@ export default function SvcCalcModal({
   taxMode: "sso" | "wht";
   whtAmount: number;
   netPayout: number;
+  excludedDays: Array<{ date: string; reason: string }>;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -93,6 +94,20 @@ export default function SvcCalcModal({
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+            )}
+            {excludedDays.length > 0 && (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <div className="text-[11px] font-bold text-amber-800 mb-1">
+                  วันที่ถูกตัดสิทธิ์ (เวลางานผิดปกติ — ไม่นับ SVC)
+                </div>
+                <ul className="text-[11px] text-amber-700 space-y-0.5">
+                  {excludedDays.map((d) => (
+                    <li key={d.date} className="flex justify-between gap-2">
+                      <span>{d.date}</span><span>{d.reason}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
             {forfeited ? (
