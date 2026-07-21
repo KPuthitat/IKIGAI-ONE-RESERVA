@@ -550,9 +550,11 @@ export function computeMonthlySvcSummary(
   //    payroll: an early clock-in is counted from the shift start, break is
   //    deducted, OT past shift-end is not counted (owner 2026-07-21: นับเฉพาะ
   //    เวลาตามกะ). Matches the paid minutes in ค่าตอบแทน.
-  // The "ตัดวันเวลาผิดปกติ" rule takes effect from July 2026 onward — June and
-  // earlier stay exactly as previously computed (owner 2026-07-21: ไม่นับย้อนหลัง).
-  const excludeAbnormal = yearMonth >= "2026-07";
+  // The "ตัดวันเวลาผิดปกติ" rule takes effect from June 2026 onward (owner
+  // 2026-07-21 correction: มีผลมิถุนายนเป็นต้นไปเลย). June is the first system
+  // month — pre-June is entered by hand (manual path above) — so in practice this
+  // applies to every computed month.
+  const excludeAbnormal = yearMonth >= SVC_SYSTEM_START_MONTH;
   const excludedByUser = new Map<number, Array<{ date: string; reason: string }>>();
   const workedByDay = computeSvcClampedMinutesByDay(
     entries, scheduledByUser, otByUser, brk, excludeAbnormal, excludedByUser
