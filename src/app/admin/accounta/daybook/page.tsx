@@ -182,18 +182,8 @@ function BreakEvenCard({ be }: { be: BreakEvenAnalysis }) {
               ประมาณการทั้งเดือน ฿{fmtMoney(be.forecast)} — {be.forecastReachesBreakEven ? "คาดว่าจะคุ้มทุน" : "ตามจังหวะนี้ยังไม่ถึงจุดคุ้มทุน"}
             </div>
           )}
-
-          {/* breakdown: หมวดที่ถูกนับเป็นคงที่/ผันแปร (ฐานเฉลี่ย) — ให้เห็นว่าอะไรถูกนับ */}
-          {(be.fixedByCat.length > 0 || be.variableByCat.length > 0) && (
-            <div className="pt-1 space-y-0.5 border-t border-slate-100 mt-1">
-              {be.fixedByCat.length > 0 && (
-                <div>คงที่: {be.fixedByCat.map((c) => `${c.name} ฿${fmtMoney(c.amount)}`).join(" · ")}</div>
-              )}
-              {be.variableByCat.length > 0 && (
-                <div>ผันแปร: {be.variableByCat.map((c) => `${c.name} ฿${fmtMoney(c.amount)}`).join(" · ")}</div>
-              )}
-            </div>
-          )}
+          {/* รายละเอียดหมวดคงที่/ผันแปรถูกย่อออก (owner 2026-07-21) — คงที่/ผันแปรตั้งได้ราย
+              รายการที่หน้ารายจ่ายแล้ว. เหลือเตือนกรณีเงินเดือนยังไม่เข้าบัญชี. */}
           {!be.hasLaborCost && (
             <div className="text-rose-600 font-medium">
               ยังไม่มีเงินเดือนในบัญชี (ต้องปิดรอบ payroll ก่อน) — จุดคุ้มทุนจะต่ำกว่าจริง
@@ -269,7 +259,7 @@ export default function DaybookPage({
     category: e.category, amount_total: e.amount_total, vat_amount: e.vat_amount,
     payment_status: e.payment_status, has_doc: e.has_doc, due_date: e.due_date,
     capex_bucket: e.capex_bucket, description: e.description, has_tax_invoice: !!e.has_tax_invoice,
-    wht_rate: e.wht_rate, awaiting_doc: !!e.awaiting_doc,
+    wht_rate: e.wht_rate, awaiting_doc: !!e.awaiting_doc, is_fixed: !!e.is_fixed,
     payment_method: e.payment_method, paid_date: e.paid_date, branch_id: e.branch_id, company_id: e.company_id
   }));
   const paymentMethods = listPaymentMethods();

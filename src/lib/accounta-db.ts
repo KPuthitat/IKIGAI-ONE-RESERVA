@@ -42,6 +42,7 @@ export type ExpenseRow = {
   wht_rate: number;               // หัก ณ ที่จ่าย rate (0/.01/.03/.05)
   wht_amount: number;             // = base_amount × wht_rate (ยอดนำส่ง ภ.ง.ด.3)
   awaiting_doc: number;           // 1 = จ่าย/ลงบัญชีแล้วแต่ยังไม่ได้รับเอกสาร (รอเอกสาร)
+  is_fixed: number;               // 1 = ต้นทุนคงที่ (break-even); 0 = ผันแปร
   payment_status: PaymentStatus;
   payment_method: string | null;
   paid_date: string | null;
@@ -502,11 +503,13 @@ export function postPayrollToAccounta(periodId: number, userId: number): { salar
 
   const payDate = period.pay_date ?? bkkToday();
   const periodLabel = `${period.period_start} – ${period.period_end}`;
+  // Payroll (salary + WHT + SSO) is a fixed labour cost for break-even
+  // (owner 2026-07-21): is_fixed = 1 on every posted row.
   const ins = db.prepare(`
     INSERT INTO accounta_expenses
       (branch_id, company_id, bill_date, vendor_name, category, amount_total, has_tax_invoice,
-       vat_amount, base_amount, payment_status, payment_method, paid_date, note, review_status, created_by, payroll_period_id)
-    VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, 'confirmed', ?, ?)`);
+       vat_amount, base_amount, is_fixed, payment_status, payment_method, paid_date, note, review_status, created_by, payroll_period_id)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, 1, ?, ?, ?, ?, 'confirmed', ?, ?)`);
 
   const run = db.transaction(() => {
     db.prepare("DELETE FROM accounta_expenses WHERE payroll_period_id = ?").run(periodId);
@@ -573,11 +576,13 @@ export function postSvcToAccounta(batchId: number, userId: number): { staff: num
 
   const payDate = computePayoutDate(batch.year_month);
   const monthLabel = batch.year_month;
+  // SVC payout (net + WHT) is a fixed labour cost for break-even
+  // (owner 2026-07-21): is_fixed = 1 on every posted row.
   const ins = db.prepare(`
     INSERT INTO accounta_expenses
       (branch_id, company_id, bill_date, vendor_name, category, amount_total, has_tax_invoice,
-       vat_amount, base_amount, payment_status, payment_method, paid_date, note, review_status, created_by, svc_payout_batch_id)
-    VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, 'confirmed', ?, ?)`);
+       vat_amount, base_amount, is_fixed, payment_status, payment_method, paid_date, note, review_status, created_by, svc_payout_batch_id)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, 1, ?, ?, ?, ?, 'confirmed', ?, ?)`);
 
   const run = db.transaction(() => {
     db.prepare("DELETE FROM accounta_expenses WHERE svc_payout_batch_id = ?").run(batchId);
@@ -999,6 +1004,7 @@ function normalise(d: ExpenseInput): ExpenseInput {
     wht_rate: whtRate,
     wht_amount: whtAmount,
     awaiting_doc: !!d.awaiting_doc,
+    is_fixed: !!d.is_fixed,
     paid_date: d.payment_status === "paid" ? (d.paid_date || d.bill_date) : null,
     // due date is only meaningful for unpaid (credit-term) bills.
     due_date: d.payment_status === "unpaid" ? (d.due_date || null) : null,
@@ -1020,14 +1026,14 @@ export function createExpense(
   const info = getDb().prepare(`
     INSERT INTO accounta_expenses (
       branch_id, company_id, bill_date, vendor_id, vendor_name, doc_type, category, capex_bucket, ocr_tax_id, invoice_no, description,
-      amount_total, has_tax_invoice, vat_amount, base_amount, wht_rate, wht_amount, awaiting_doc,
+      amount_total, has_tax_invoice, vat_amount, base_amount, wht_rate, wht_amount, awaiting_doc, is_fixed,
       payment_status, payment_method, paid_date, due_date,
       ocr_source, ocr_cost_baht, review_status, line_message_id, note, created_by
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?)
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
     d.doc_type, d.category, d.capex_bucket ?? null, d.ocr_tax_id ?? null, d.invoice_no?.trim() || null, d.description?.trim() || null,
-    d.amount_total, d.has_tax_invoice ? 1 : 0, d.vat_amount, d.base_amount, d.wht_rate ?? 0, d.wht_amount ?? 0, d.awaiting_doc ? 1 : 0,
+    d.amount_total, d.has_tax_invoice ? 1 : 0, d.vat_amount, d.base_amount, d.wht_rate ?? 0, d.wht_amount ?? 0, d.awaiting_doc ? 1 : 0, d.is_fixed ? 1 : 0,
     d.payment_status, d.payment_method, d.paid_date, d.due_date,
     ocr?.source ?? null, ocr?.costBaht ?? null,
     extra?.reviewStatus ?? "confirmed", extra?.lineMessageId ?? null,
@@ -1042,13 +1048,13 @@ export function updateExpense(id: number, input: ExpenseInput): boolean {
     UPDATE accounta_expenses SET
       branch_id = ?, company_id = ?, bill_date = ?, vendor_id = ?, vendor_name = ?,
       doc_type = ?, category = ?, capex_bucket = ?, invoice_no = ?, description = ?, amount_total = ?, has_tax_invoice = ?,
-      vat_amount = ?, base_amount = ?, wht_rate = ?, wht_amount = ?, awaiting_doc = ?, payment_status = ?, payment_method = ?,
+      vat_amount = ?, base_amount = ?, wht_rate = ?, wht_amount = ?, awaiting_doc = ?, is_fixed = ?, payment_status = ?, payment_method = ?,
       paid_date = ?, due_date = ?, note = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
     d.doc_type, d.category, d.capex_bucket ?? null, d.invoice_no?.trim() || null, d.description?.trim() || null, d.amount_total, d.has_tax_invoice ? 1 : 0,
-    d.vat_amount, d.base_amount, d.wht_rate ?? 0, d.wht_amount ?? 0, d.awaiting_doc ? 1 : 0, d.payment_status, d.payment_method,
+    d.vat_amount, d.base_amount, d.wht_rate ?? 0, d.wht_amount ?? 0, d.awaiting_doc ? 1 : 0, d.is_fixed ? 1 : 0, d.payment_status, d.payment_method,
     d.paid_date, d.due_date, d.note?.trim() || null, id
   );
   return info.changes > 0;
@@ -1574,7 +1580,10 @@ export function monthlyTrend(branchId: number, year: number): MonthlyTrendRow[] 
 // เดือนปัจจุบันคำนวณ real-time จาก actuals; แต่ "เป้าที่ต้องทำเดือนนี้" อิงค่าเฉลี่ย
 // ตั้งแต่ต้นปี (YTD) — ต้นทุนคงที่มักลงไม่ครบตอนต้นเดือน (ค่าเช่า/เงินเดือนลงปลายเดือน)
 // จึงใช้ค่าเฉลี่ยต้นทุนคงที่/เดือน + อัตราผันแปรจากทั้งปีเป็นฐานของเป้าแทน.
-const BE_VARIABLE_CODES = new Set(["GD", "FC"]);
+// Break-even now classifies fixed vs variable by the per-expense is_fixed flag
+// (owner 2026-07-21), not by category code. Only the excluded codes remain code-
+// based: CapEx (CP) and loan repayment (LN) are not operating costs, so they're
+// dropped from break-even regardless of their is_fixed flag.
 const BE_EXCLUDED_CODES = new Set(["CP", "LN"]);
 
 export type BreakEvenAnalysis = {
@@ -1626,31 +1635,27 @@ export function breakEvenAnalysis(
   const { start: mStart, end: mEnd } = ledgerRange("month", date);
   const yStart = `${date.slice(0, 4)}-01-01`;
 
-  // ชื่อหมวด → code เพื่อจำแนก (accounta_expenses.category เก็บเป็น *ชื่อ* ไม่ใช่ code).
+  // ชื่อหมวด → code — ใช้เฉพาะตัด CapEx/เงินกู้ (CP/LN) ออก (accounta_expenses.category
+  // เก็บเป็น *ชื่อ* ไม่ใช่ code). คงที่/ผันแปรอ่านจากธง is_fixed ต่อรายการแทน (owner 2026-07-21).
   const nameToCode = new Map<string, string | null>(listCategories().map((c) => [c.name, c.code]));
-  const classify = (catName: string): "variable" | "fixed" | "excluded" => {
-    const code = nameToCode.get(catName) ?? null;
-    if (code && BE_EXCLUDED_CODES.has(code)) return "excluded";
-    if (code && BE_VARIABLE_CODES.has(code)) return "variable";
-    return "fixed";
-  };
-  // รวมต้นทุน (confirmed, ไม่นับบิลที่ tag เป็น CapEx) แล้วแยกคงที่/ผันแปร.
+  // รวมต้นทุน (confirmed, ไม่นับบิลที่ tag เป็น CapEx/เงินกู้) แล้วแยกคงที่/ผันแปรตาม is_fixed.
   const costsInRange = (start: string, end: string) => {
     const rows = db.prepare(
-      `SELECT COALESCE(category,'') AS cat, COALESCE(SUM(amount_total),0) AS amt
+      `SELECT COALESCE(category,'') AS cat, is_fixed AS isFixed, COALESCE(SUM(amount_total),0) AS amt
          FROM accounta_expenses
         WHERE review_status = 'confirmed' AND branch_id = ?
           AND capex_bucket IS NULL AND bill_date BETWEEN ? AND ?
-        GROUP BY COALESCE(category,'')`
-    ).all(branchId, start, end) as Array<{ cat: string; amt: number }>;
+        GROUP BY COALESCE(category,''), is_fixed`
+    ).all(branchId, start, end) as Array<{ cat: string; isFixed: number; amt: number }>;
     let fixed = 0, variable = 0;
     const byCat: Array<{ name: string; amount: number; code: string | null; kind: "fixed" | "variable" }> = [];
     for (const r of rows) {
-      const kind = classify(r.cat);
-      if (kind === "excluded") continue;
+      const code = nameToCode.get(r.cat) ?? null;
+      if (code && BE_EXCLUDED_CODES.has(code)) continue;   // CapEx / เงินกู้ ไม่ใช่ต้นทุนดำเนินงาน
+      const kind: "fixed" | "variable" = r.isFixed ? "fixed" : "variable";
       if (kind === "variable") variable += r.amt;
       else fixed += r.amt;
-      byCat.push({ name: r.cat || "(ไม่ระบุหมวด)", amount: round2(r.amt), code: nameToCode.get(r.cat) ?? null, kind });
+      byCat.push({ name: r.cat || "(ไม่ระบุหมวด)", amount: round2(r.amt), code, kind });
     }
     return { fixed: round2(fixed), variable: round2(variable), byCat };
   };
@@ -2167,6 +2172,7 @@ export type RecurringRow = {
   payment_status: PaymentStatus; payment_method: string | null; note: string | null;
   day_of_month: number; start_month: string; end_month: string | null;
   active: number; last_posted_month: string | null; created_by: number | null;
+  is_fixed: number;
   created_at: string; updated_at: string;
 };
 
@@ -2177,6 +2183,7 @@ export type RecurringInput = {
   amount_total: number; has_tax_invoice: boolean; vat_amount: number; wht_rate?: number;
   payment_status: PaymentStatus; payment_method: string | null; note: string | null;
   day_of_month: number; start_month: string; end_month: string | null; active: boolean;
+  is_fixed?: boolean;   // ต้นทุนคงที่ (default true — รายจ่ายประจำ = คงที่)
 };
 
 const SELECT_RECURRING = `
@@ -2204,37 +2211,38 @@ function normRecurring(d: RecurringInput) {
   const dom = Math.min(31, Math.max(1, Math.round(Number(d.day_of_month)) || 1));
   const capex = d.category === CAPEX_CATEGORY_NAME ? (d.capex_bucket || null) : null;
   const wht = Math.max(0, Math.min(0.05, Number(d.wht_rate) || 0));
-  return { total, vat, dom, capex, wht };
+  const isFixed = d.is_fixed !== false;   // default fixed (รายจ่ายประจำ = คงที่)
+  return { total, vat, dom, capex, wht, isFixed };
 }
 
 export function createRecurring(userId: number, d: RecurringInput): number {
-  const { total, vat, dom, capex, wht } = normRecurring(d);
+  const { total, vat, dom, capex, wht, isFixed } = normRecurring(d);
   const info = getDb().prepare(`
     INSERT INTO accounta_recurring_expenses
       (branch_id, company_id, vendor_name, category, capex_bucket, doc_type, description,
        amount_total, has_tax_invoice, vat_amount, wht_rate, payment_status, payment_method, note,
-       day_of_month, start_month, end_month, active, created_by)
-    VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?)
+       day_of_month, start_month, end_month, active, is_fixed, created_by)
+    VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?)
   `).run(
     d.branch_id, d.company_id, d.vendor_name?.trim() || null, d.category, capex, d.doc_type, d.description?.trim() || null,
     total, d.has_tax_invoice ? 1 : 0, vat, wht, d.payment_status, d.payment_method?.trim() || null, d.note?.trim() || null,
-    dom, d.start_month, d.end_month || null, d.active ? 1 : 0, userId
+    dom, d.start_month, d.end_month || null, d.active ? 1 : 0, isFixed ? 1 : 0, userId
   );
   return Number(info.lastInsertRowid);
 }
 
 export function updateRecurring(id: number, d: RecurringInput): boolean {
-  const { total, vat, dom, capex, wht } = normRecurring(d);
+  const { total, vat, dom, capex, wht, isFixed } = normRecurring(d);
   return getDb().prepare(`
     UPDATE accounta_recurring_expenses SET
       branch_id = ?, company_id = ?, vendor_name = ?, category = ?, capex_bucket = ?, doc_type = ?, description = ?,
       amount_total = ?, has_tax_invoice = ?, vat_amount = ?, wht_rate = ?, payment_status = ?, payment_method = ?, note = ?,
-      day_of_month = ?, start_month = ?, end_month = ?, active = ?, updated_at = CURRENT_TIMESTAMP
+      day_of_month = ?, start_month = ?, end_month = ?, active = ?, is_fixed = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     d.branch_id, d.company_id, d.vendor_name?.trim() || null, d.category, capex, d.doc_type, d.description?.trim() || null,
     total, d.has_tax_invoice ? 1 : 0, vat, wht, d.payment_status, d.payment_method?.trim() || null, d.note?.trim() || null,
-    dom, d.start_month, d.end_month || null, d.active ? 1 : 0, id
+    dom, d.start_month, d.end_month || null, d.active ? 1 : 0, isFixed ? 1 : 0, id
   ).changes > 0;
 }
 
@@ -2276,6 +2284,9 @@ export function postDueRecurringExpenses(today: string): number {
         has_tax_invoice: r.has_tax_invoice !== 0, vat_amount: r.vat_amount,
         base_amount: round2(r.amount_total - r.vat_amount),
         wht_rate: r.wht_rate,
+        // Recurring templates carry an is_fixed flag (default fixed) — the
+        // generated row inherits it for break-even (owner 2026-07-21).
+        is_fixed: r.is_fixed !== 0,
         payment_status: r.payment_status,
         payment_method: r.payment_status === "paid" ? r.payment_method : null,
         paid_date: r.payment_status === "paid" ? billDate : null,

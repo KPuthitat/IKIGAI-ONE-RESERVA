@@ -15,6 +15,7 @@ type Row = {
   doc_type: string | null; description: string | null; amount_total: number; has_tax_invoice: number;
   vat_amount: number; wht_rate: number; payment_status: "paid" | "unpaid"; payment_method: string | null; note: string | null;
   day_of_month: number; start_month: string; end_month: string | null; active: number; last_posted_month: string | null;
+  is_fixed: number;
 };
 type Cat = { code: string | null; name: string };
 type Method = { id: number; name: string };
@@ -31,13 +32,13 @@ function monthLabel(ym: string | null): string {
 type Form = {
   id: number | null; vendor_name: string; category: string; capex_bucket: string; description: string;
   amount: string; has_tax_invoice: boolean; wht_rate: string; payment_status: "paid" | "unpaid"; payment_method: string;
-  day_of_month: string; start_month: string; end_month: string; note: string; active: boolean;
+  day_of_month: string; start_month: string; end_month: string; note: string; active: boolean; is_fixed: boolean;
 };
 function blank(defaultMethod: string): Form {
   return {
     id: null, vendor_name: "", category: "", capex_bucket: "", description: "",
     amount: "", has_tax_invoice: false, wht_rate: "0", payment_status: "unpaid", payment_method: defaultMethod,
-    day_of_month: "1", start_month: thisMonth(), end_month: "", note: "", active: true
+    day_of_month: "1", start_month: thisMonth(), end_month: "", note: "", active: true, is_fixed: true
   };
 }
 
@@ -78,7 +79,7 @@ export default function RecurringClient({
       has_tax_invoice: !!r.has_tax_invoice, wht_rate: String(r.wht_rate ?? 0), payment_status: r.payment_status,
       payment_method: r.payment_method ?? (paymentMethods[0]?.name ?? ""),
       day_of_month: String(r.day_of_month), start_month: r.start_month, end_month: r.end_month ?? "",
-      note: r.note ?? "", active: !!r.active
+      note: r.note ?? "", active: !!r.active, is_fixed: r.is_fixed !== 0
     });
     setErr(null); setOpen(true);
   }
@@ -99,7 +100,7 @@ export default function RecurringClient({
         payment_status: form.payment_status, payment_method: form.payment_status === "paid" ? (form.payment_method || null) : null,
         note: form.note.trim() || null,
         day_of_month: Math.min(31, Math.max(1, Number(form.day_of_month) || 1)),
-        start_month: form.start_month, end_month: form.end_month || null, active: form.active
+        start_month: form.start_month, end_month: form.end_month || null, active: form.active, is_fixed: form.is_fixed
       };
       const res = await fetch(apiUrl(form.id ? `/api/accounta/recurring/${form.id}` : "/api/accounta/recurring"), {
         method: form.id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
@@ -271,6 +272,12 @@ export default function RecurringClient({
               <label className="sm:col-span-2 flex items-center gap-2 text-sm text-slate-600">
                 <input type="checkbox" checked={form.active} onChange={(e) => set("active", e.target.checked)} />
                 เปิดทำงาน (ลงรายการอัตโนมัติ)
+              </label>
+              {/* Fixed-cost flag for break-even (owner 2026-07-21) — recurring
+                  expenses default fixed. Each auto-posted row inherits this. */}
+              <label className="sm:col-span-2 flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                <input type="checkbox" checked={form.is_fixed} onChange={(e) => set("is_fixed", e.target.checked)} />
+                เป็น<strong>รายจ่ายคงที่</strong> (จุดคุ้มทุน) — รายจ่ายประจำมักเป็นคงที่ · เอาออกถ้าเป็นแปรผัน
               </label>
 
               {err && <div className="sm:col-span-2 text-xs text-rose-600">{err}</div>}

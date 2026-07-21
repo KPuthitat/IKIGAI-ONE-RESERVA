@@ -51,7 +51,8 @@ export const RecurringBody = z.object({
   day_of_month: z.number().int().min(1).max(31),
   start_month: z.string().regex(/^\d{4}-\d{2}$/),
   end_month: z.string().regex(/^\d{4}-\d{2}$/).nullable().optional(),
-  active: z.boolean().optional()
+  active: z.boolean().optional(),
+  is_fixed: z.boolean().optional()   // default fixed (owner 2026-07-21) — set in toRecurringInput
 });
 
 export function toRecurringInput(d: z.infer<typeof RecurringBody>): RecurringInput {
@@ -63,7 +64,9 @@ export function toRecurringInput(d: z.infer<typeof RecurringBody>): RecurringInp
     wht_rate: d.wht_rate ?? 0,
     payment_status: d.payment_status, payment_method: d.payment_method ?? null, note: d.note ?? null,
     day_of_month: d.day_of_month, start_month: d.start_month, end_month: d.end_month ?? null,
-    active: d.active ?? true
+    active: d.active ?? true,
+    // Default fixed when the client omits it (recurring = คงที่ by default).
+    is_fixed: d.is_fixed ?? true
   };
 }
 
@@ -95,6 +98,7 @@ export const ExpenseBody = z.object({
     z.string().nullable()
   ).optional(),
   awaiting_doc: z.boolean().optional(),   // จ่ายแล้วแต่ยังไม่ได้รับเอกสาร (owner 2026-07-06)
+  is_fixed: z.boolean().optional(),       // ต้นทุนคงที่ (break-even) — default variable (owner 2026-07-21)
   payment_status: z.enum(["paid", "unpaid"]).optional(),
   payment_method: z.string().trim().max(200).nullable().optional(),  // channel master bank-account names can be long
   paid_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
@@ -129,6 +133,7 @@ export function toExpenseInput(d: ExpenseBodyT): ExpenseInput {
     base_amount: base,
     wht_rate: d.wht_rate ?? 0,
     awaiting_doc: !!d.awaiting_doc,
+    is_fixed: !!d.is_fixed,
     payment_status: d.payment_status ?? "paid",
     payment_method: d.payment_method ?? null,
     paid_date: d.paid_date ?? null,

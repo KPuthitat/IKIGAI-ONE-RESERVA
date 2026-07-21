@@ -47,7 +47,7 @@ export type LedgerExpenseRow = {
   payment_status: "paid" | "unpaid"; has_doc: boolean; due_date: string | null;
   // extra fields so the in-page edit modal has the full row (owner 2026-06-29)
   capex_bucket: string | null; description: string | null; has_tax_invoice: boolean;
-  wht_rate: number; awaiting_doc: boolean;
+  wht_rate: number; awaiting_doc: boolean; is_fixed: boolean;
   payment_method: string | null; paid_date: string | null;
   branch_id: number | null; company_id: number | null;
 };
@@ -1076,7 +1076,7 @@ export default function LedgerDashboardClient({
       setAddExpense({
         id: 0, bill_date: d, vendor_name: null, invoice_no: null, doc_type: null, category: null,
         capex_bucket: null, description: null, amount_total: 0, has_tax_invoice: false,
-        wht_rate: 0, awaiting_doc: false,
+        wht_rate: 0, awaiting_doc: false, is_fixed: false,
         payment_status: "paid", payment_method: null, paid_date: d, due_date: null,
         branch_id: branchId, company_id: companyId
       });
