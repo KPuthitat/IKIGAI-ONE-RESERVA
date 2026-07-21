@@ -25,6 +25,7 @@ export default function PeriodDetailPage({
     SELECT id, cycle, target, data_source, period_start, period_end, pay_date, status,
            ot_mode_snapshot, ot_flat_per_15min_snapshot,
            computed_by, computed_at, finalized_by, finalized_at, paid_by, paid_at,
+           posted_by, posted_at,
            notes, created_at,
            (SELECT display_name FROM users WHERE id = computed_by) AS computed_by_name,
            (SELECT title_prefix FROM users WHERE id = computed_by) AS computed_by_prefix,

@@ -2153,6 +2153,8 @@ function runMigrations(db: Database.Database): void {
       status TEXT NOT NULL DEFAULT 'draft',
       total_net REAL NOT NULL DEFAULT 0,
       total_wht REAL NOT NULL DEFAULT 0,
+      finalized_by_user_id INTEGER REFERENCES users(id),
+      finalized_at TEXT,
       posted_by_user_id INTEGER REFERENCES users(id),
       posted_at TEXT,
       paid_by_user_id INTEGER REFERENCES users(id),
@@ -2161,6 +2163,17 @@ function runMigrations(db: Database.Database): void {
       UNIQUE(branch_id, year_month)
     );
   `);
+  // finalize step (owner 2026-07-21): the batch now flows draft→finalized→paid→
+  // posted (3 explicit steps). Add finalized_* to tables created before this
+  // (PR #6 shipped only draft/posted). status has no CHECK so the new values need
+  // no rebuild.
+  {
+    const svcCols = new Set(
+      (db.prepare("PRAGMA table_info(svc_payout_batches)").all() as Array<{ name: string }>).map((c) => c.name)
+    );
+    if (!svcCols.has("finalized_at")) db.exec("ALTER TABLE svc_payout_batches ADD COLUMN finalized_at TEXT");
+    if (!svcCols.has("finalized_by_user_id")) db.exec("ALTER TABLE svc_payout_batches ADD COLUMN finalized_by_user_id INTEGER REFERENCES users(id)");
+  }
 
   // ── Roster (TC-R, 2026-05) ─────────────────────────────────────
   //
@@ -3208,6 +3221,16 @@ function runMigrations(db: Database.Database): void {
   }
   if (!ppNames.has("paid_by")) {
     db.exec("ALTER TABLE payroll_periods ADD COLUMN paid_by INTEGER REFERENCES users(id)");
+  }
+  // posted_at/posted_by (owner 2026-07-21): posting to ACCOUNTA is now a separate
+  // 3rd step (ลงบัญชี) AFTER ทำจ่าย, not automatic at finalize. "posted" = posted_at
+  // set while status='paid'. Kept as columns (not a new status value) to avoid a
+  // CHECK-widening table rebuild + updating every status-consumer view.
+  if (!ppNames.has("posted_at")) {
+    db.exec("ALTER TABLE payroll_periods ADD COLUMN posted_at TEXT");
+  }
+  if (!ppNames.has("posted_by")) {
+    db.exec("ALTER TABLE payroll_periods ADD COLUMN posted_by INTEGER REFERENCES users(id)");
   }
   // 'auto'   = compute regular/OT minutes from time_entries + leave_requests
   // 'manual' = create empty rows; admin types hours/days manually
