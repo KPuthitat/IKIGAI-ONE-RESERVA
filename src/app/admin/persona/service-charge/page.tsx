@@ -276,6 +276,32 @@ export default function AdminServiceChargePage({
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-300 font-bold text-slate-800">
+                  <td className="py-2 pr-2">รวมทั้งหมด ({summary.rows.length} คน)</td>
+                  <td className="py-2 pr-2"></td>
+                  <td className="py-2 pr-2 text-right font-mono">
+                    {summary.rows.reduce((s, r) => s + r.daysWorked, 0)}
+                  </td>
+                  <td className="py-2 pr-2 text-right font-mono">
+                    {(summary.rows.reduce((s, r) => s + r.totalMinutesWorked, 0) / 60).toFixed(1)}
+                  </td>
+                  <td className="py-2 pr-2"></td>
+                  <td className="py-2 pr-2 text-right font-mono">
+                    {fmtMoney(summary.rows.reduce((s, r) => s + r.grossAllocation, 0))}
+                  </td>
+                  <td className="py-2 pr-2 text-right font-mono text-emerald-700">
+                    {fmtMoney(summary.totalNetPayout)}
+                    {summary.totalWht > 0 && (
+                      <span className="block text-[9px] font-normal text-rose-500">
+                        หัก ณ ที่จ่ายรวม {fmtMoney(summary.totalWht)}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-2"></td>
+                  <td className="py-2 pr-2"></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
