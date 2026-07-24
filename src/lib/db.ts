@@ -980,6 +980,13 @@ function runMigrations(db: Database.Database): void {
   if (!phcols.some((c) => c.name === "pt_special")) {
     db.exec("ALTER TABLE public_holidays ADD COLUMN pt_special INTEGER NOT NULL DEFAULT 0");
   }
+  // double_pay (owner 2026-07-21): a designated วันจ่ายสองเท่า — EVERY employee who
+  // works that day earns 2× on both ค่าตอบแทนฐาน and ค่าล่วงเวลา (FT + PT alike).
+  // Separate from pt_special (1.5× PT-only); when a date is double_pay=1 the 2×
+  // wins for PT. Only the designated dates are affected.
+  if (!phcols.some((c) => c.name === "double_pay")) {
+    db.exec("ALTER TABLE public_holidays ADD COLUMN double_pay INTEGER NOT NULL DEFAULT 0");
+  }
   // Seed Thai public holidays — ON CONFLICT DO NOTHING เพื่อไม่ทับค่าที่แอดมินแก้
   // วันลูนาร์เป็นค่าประมาณ — แอดมินปรับผ่าน /admin/persona/holidays ได้
   const seedHoliday = db.prepare(`

@@ -615,7 +615,10 @@ export function computeLineForEmployee(args: {
   periodStart: string;        // YYYY-MM-DD (used for FT hire/resignation proration)
   periodEnd: string;          // YYYY-MM-DD (used for FT-weekly division)
   settings: PayrollSettings;
-  holidaySet: Set<string>;    // YYYY-MM-DD dates that count as PT premium days
+  holidaySet: Set<string>;    // YYYY-MM-DD dates that count as PT premium days (1.5×)
+  // วันจ่ายสองเท่า (owner 2026-07-21): dates where EVERY employee earns 2× on both
+  // base and OT (FT + PT). 2× wins over the 1.5× holiday premium on the same date.
+  doubleSet?: Set<string>;
   // PT grace: scheduled shift windows for this employee, keyed by the
   // BKK calendar date (YYYY-MM-DD) of the assignment. When provided and
   // the employee is part-time, each clocked shift is clamped to its
@@ -631,7 +634,11 @@ export function computeLineForEmployee(args: {
   // present field wins over the computed one.
   fieldOverridesByDate?: Map<string, DayFieldOverride>;
 }): ComputedLine {
-  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, scheduledByDate, approvedOtByDate, fieldOverridesByDate } = args;
+  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, fieldOverridesByDate } = args;
+  // Extra FT base for double-pay days: FT base is salary (not per-day) so the 2×
+  // is credited as one extra day-equivalent (ftHourlyEquivalent × regular hours)
+  // per double day worked — added to basePay below (owner 2026-07-21).
+  let ftDoubleBonus = 0;
 
   // Cycle this period pays an FT on — period-relative (transition month = weekly),
   // drives both the base and the forced-WHT tax mode (owner 2026-07-16).
@@ -734,6 +741,7 @@ export function computeLineForEmployee(args: {
 
     daysSet.add(shiftDate);
     const isHoliday = holidaySet.has(shiftDate);
+    const isDouble = doubleSet.has(shiftDate);
 
     if (isHoliday) {
       holidayMin += dayRegular + dayOt;
@@ -741,8 +749,9 @@ export function computeLineForEmployee(args: {
 
     // Per-shift pay computation
     if (e.employment_type === "pt") {
-      // PT: holiday premium 1.5x on both base + OT
-      const mult = isHoliday ? PT_HOLIDAY_MULTIPLIER : 1;
+      // PT premium: 2× on a double-pay day, else 1.5× on a วันพิเศษ, else 1× —
+      // applied to both base + OT (owner 2026-07-21: 2× wins over the 1.5×).
+      const mult = isDouble ? 2 : isHoliday ? PT_HOLIDAY_MULTIPLIER : 1;
       ptBasePay += (dayRegular / 60) * ptRate * mult;
       // ค่าล่วงเวลา override (typed baht) wins over the computed OT pay.
       ptOtPay += ov?.ot_pay != null ? ov.ot_pay : computeOtPay(dayOt, ptRate, settings, mult);
@@ -750,9 +759,11 @@ export function computeLineForEmployee(args: {
       // FT: OT only (base is salary), now approval-gated like PT — the
       // roster sched above caps worked at the scheduled end, so OT is the
       // approved-extension excess only (no auto over-8h). A typed ค่าล่วงเวลา
-      // override still wins. No holiday premium per company rule.
+      // override still wins. No 1.5× holiday premium per company rule, BUT a
+      // double-pay day gives 2× OT and one extra day-equivalent of base.
       // Salaried execs (track_attendance=0) get no OT (owner 2026-07-12).
-      ftOtPay += ov?.ot_pay != null ? ov.ot_pay : computeOtPay(dayOt, ftHourlyEquivalent, settings, 1);
+      ftOtPay += ov?.ot_pay != null ? ov.ot_pay : computeOtPay(dayOt, ftHourlyEquivalent, settings, isDouble ? 2 : 1);
+      if (isDouble) ftDoubleBonus += (dayRegular / 60) * ftHourlyEquivalent;
     }
   }
 
@@ -786,7 +797,9 @@ export function computeLineForEmployee(args: {
 
   // ลาไม่รับค่าจ้าง — reduce FT base by salary/30 per unpaid day. Default 0.
   const ulDeduction = unpaidLeaveDeduction(e, unpaidLeaveDays, basePay);
-  basePay = round2(basePay - ulDeduction);
+  // FT double-pay bonus is on top of salary (ftDoubleBonus is 0 for PT — its 2×
+  // is already baked into ptBasePay via the multiplier).
+  basePay = round2(basePay - ulDeduction + ftDoubleBonus);
 
   // Total OT pay
   const otPay = e.employment_type === "pt" ? ptOtPay : ftOtPay;
@@ -1039,6 +1052,11 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     WHERE date >= ? AND date <= ? AND pt_special = 1
   `).all(period.period_start, period.period_end) as Array<{ date: string }>;
   const holidaySet = new Set(holidays.map((h) => h.date));
+  // วันจ่ายสองเท่า in period (owner 2026-07-21) — 2× base + OT for everyone.
+  const doubleSet = new Set(
+    (db.prepare(`SELECT date FROM public_holidays WHERE date >= ? AND date <= ? AND double_pay = 1`)
+      .all(period.period_start, period.period_end) as Array<{ date: string }>).map((h) => h.date)
+  );
 
   // Scheduled shifts (work kind only) for PT grace clamping — keyed by
   // user → BKK assignment date → list of windows. Anchored at +07:00;
@@ -1318,6 +1336,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         periodEnd: period.period_end,
         settings,
         holidaySet,
+        doubleSet,
         // Grace + scheduled-break apply in both modes when a roster
         // exists (the rule is independent of where the time came from).
         scheduledByDate: scheduledByUser.get(emp.user_id),
@@ -1465,6 +1484,11 @@ export function recomputeLine(
     WHERE date >= ? AND date <= ? AND pt_special = 1
   `).all(period.period_start, period.period_end) as Array<{ date: string }>;
   const holidaySet = new Set(holidays.map((h) => h.date));
+  // วันจ่ายสองเท่า in period (owner 2026-07-21) — 2× base + OT for everyone.
+  const doubleSet = new Set(
+    (db.prepare(`SELECT date FROM public_holidays WHERE date >= ? AND date <= ? AND double_pay = 1`)
+      .all(period.period_start, period.period_end) as Array<{ date: string }>).map((h) => h.date)
+  );
 
   // Roster (work shifts) for this user → scheduled windows + break.
   const rosterRows = db.prepare(`
@@ -1578,7 +1602,7 @@ export function recomputeLine(
     employee, shifts, unpaired: auto.unpaired,
     leaveDays: existing.leave_days,
     cycle: period.cycle, periodStart: period.period_start, periodEnd: period.period_end,
-    settings, holidaySet, scheduledByDate, approvedOtByDate, fieldOverridesByDate
+    settings, holidaySet, doubleSet, scheduledByDate, approvedOtByDate, fieldOverridesByDate
   });
 
   // Preserve admin money extras; recompute gross/SSO/tax/net to include them.

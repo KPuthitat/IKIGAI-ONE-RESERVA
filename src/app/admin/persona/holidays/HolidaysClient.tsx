@@ -11,6 +11,7 @@ import Switch from "@/app/components/Switch";
 export type HolidayRow = {
   date: string;
   name_th: string;
+  double_pay: number;
   name_en: string;
   is_workday: number;
   pt_special: number;
@@ -98,6 +99,7 @@ export default function HolidaysClient({
                 <th className="py-2 pr-3">{t("admin.persona.holidays.col.nameEn")}</th>
                 <th className="py-2 pr-3">{t("admin.persona.holidays.col.workday")}</th>
                 <th className="py-2 pr-3">วันพิเศษ PT</th>
+                <th className="py-2 pr-3">จ่าย 2 เท่า</th>
                 <th className="py-2 pr-3 w-32"></th>
               </tr>
             </thead>
@@ -121,6 +123,13 @@ export default function HolidaysClient({
                     {h.pt_special
                       ? <span className="text-xs px-2 py-0.5 rounded font-medium bg-violet-100 text-violet-700">
                           ×1.5
+                        </span>
+                      : <span className="text-xs text-slate-400">—</span>}
+                  </td>
+                  <td className="py-2 pr-3">
+                    {h.double_pay
+                      ? <span className="text-xs px-2 py-0.5 rounded font-medium bg-rose-100 text-rose-700">
+                          ×2 ทุกคน
                         </span>
                       : <span className="text-xs text-slate-400">—</span>}
                   </td>
@@ -177,6 +186,7 @@ function HolidayModal({
   const [nameEn, setNameEn] = useState(existing?.name_en ?? "");
   const [isWorkday, setIsWorkday] = useState(Boolean(existing?.is_workday));
   const [ptSpecial, setPtSpecial] = useState(Boolean(existing?.pt_special));
+  const [doublePay, setDoublePay] = useState(Boolean(existing?.double_pay));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -189,7 +199,7 @@ function HolidayModal({
       const res = await fetch(apiUrl("/api/admin/persona/holidays"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, name_th: nameTh, name_en: nameEn, is_workday: isWorkday, pt_special: ptSpecial })
+        body: JSON.stringify({ date, name_th: nameTh, name_en: nameEn, is_workday: isWorkday, pt_special: ptSpecial, double_pay: doublePay })
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) onSaved();
@@ -246,6 +256,18 @@ function HolidayModal({
             วันพิเศษพนักงานพาร์ทไทม์ (จ่ายค่าตอบแทน 1.5 เท่า)
             <span className="block text-[11px] text-slate-400">
               แยกจากวันหยุดราชการ — บริษัทกำหนด ~13 วัน/ปี · วันหยุดราชการทั่วไปไม่ได้เรทพิเศษ
+            </span>
+          </span>
+        </label>
+
+        <label className="flex items-start gap-2 text-sm cursor-pointer">
+          <span className="mt-0.5">
+            <Switch checked={doublePay} onChange={setDoublePay} />
+          </span>
+          <span className="text-slate-700">
+            วันจ่ายสองเท่า (พนักงานทุกคน จ่าย 2 เท่า)
+            <span className="block text-[11px] text-slate-400">
+              พนักงานทุกคนที่ทำงานวันนี้ได้ทั้งค่าตอบแทนฐานและค่าล่วงเวลา ×2 · มีผลเฉพาะวันที่ตั้งไว้
             </span>
           </span>
         </label>
