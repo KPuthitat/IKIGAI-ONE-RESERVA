@@ -259,7 +259,7 @@ export default function DaybookPage({
     category: e.category, amount_total: e.amount_total, vat_amount: e.vat_amount,
     payment_status: e.payment_status, has_doc: e.has_doc, due_date: e.due_date,
     capex_bucket: e.capex_bucket, description: e.description, has_tax_invoice: !!e.has_tax_invoice,
-    wht_rate: e.wht_rate, awaiting_doc: !!e.awaiting_doc, is_fixed: !!e.is_fixed,
+    wht_rate: e.wht_rate, awaiting_doc: !!e.awaiting_doc, is_fixed: !!e.is_fixed, due_mode: e.due_mode,
     payment_method: e.payment_method, paid_date: e.paid_date, branch_id: e.branch_id, company_id: e.company_id
   }));
   const paymentMethods = listPaymentMethods();

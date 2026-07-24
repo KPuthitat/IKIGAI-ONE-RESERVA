@@ -249,5 +249,40 @@ console.log("\nPT→ประจำ เดือนเปลี่ยนผ่�
   eq("legacy FT (ไม่มี ft_started_at) รอบ monthly → base 30000", legacy.base_pay, 30000);
 }
 
+// N. วันจ่ายสองเท่า (owner 2026-07-21) — พนักงานทุกคนที่ทำงานวันที่ตั้งไว้ ได้ฐาน+OT ×2.
+console.log("\nวันจ่ายสองเท่า (owner 2026-07-21):");
+{
+  const D = "2026-06-15";
+  const iso = (hhmm: string) => new Date(`${D}T${hhmm}:00+07:00`).toISOString();
+  const sched: ScheduledShift = {
+    startTs: iso("11:00"), endTs: iso("20:00"), breakStartTs: iso("12:00"), breakEndTs: iso("13:00")
+  }; // กะ 8 ชม.
+  const scheduledByDate = new Map<string, ScheduledShift[]>([[D, [sched]]]);
+  const shift = { startTs: iso("11:00"), endTs: iso("21:00"), durationMinutes: 600 }; // เกินกะ 1 ชม.
+  const approvedOtByDate = new Map<string, string>([[D, "21:00"]]);   // ขอ OT ถึง 21:00 → 60 นาที
+  const base = {
+    shifts: [shift], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+    cycle: "monthly" as const, periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS,
+    holidaySet: new Set<string>(), scheduledByDate, approvedOtByDate
+  };
+  const dbl = new Set<string>([D]);
+
+  // PT rate 50/ชม.: ฐาน 8ชม.×50 = 400 → วัน 2 เท่า = 800; OT ×2.
+  const ptN = computeLineForEmployee({ ...base, employee: ptHourly(50) });
+  const ptD = computeLineForEmployee({ ...base, employee: ptHourly(50), doubleSet: dbl });
+  eq("PT วัน 2 เท่า → ฐาน ×2 (400→800)", ptD.base_pay, Math.round(ptN.base_pay * 2 * 100) / 100);
+  eq("PT วัน 2 เท่า → OT ×2", ptD.ot_pay, Math.round(ptN.ot_pay * 2 * 100) / 100);
+  eq("PT วัน 2 เท่า → นาทีเท่าเดิม", ptD.ot_minutes, ptN.ot_minutes);
+
+  // FT เงินเดือน 30000: ฐานคงเดิม + 1 วันเทียบเท่า (125/ชม.×8 = 1000) = 31000; OT ×2.
+  const ftN = computeLineForEmployee({ ...base, employee: { ...ftMonthly(30000), track_attendance: 1 } });
+  const ftD = computeLineForEmployee({ ...base, employee: { ...ftMonthly(30000), track_attendance: 1 }, doubleSet: dbl });
+  eq("FT วัน 2 เท่า → ฐาน +1 วันเทียบเท่า (30000→31000)", ftD.base_pay, 31000);
+  eq("FT วัน 2 เท่า → OT ×2", ftD.ot_pay, Math.round(ftN.ot_pay * 2 * 100) / 100);
+
+  // วันปกติ (ไม่อยู่ใน doubleSet) → ไม่เปลี่ยน.
+  eq("วันที่ไม่ได้ตั้ง 2 เท่า → PT ฐานปกติ", ptN.base_pay, 400);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

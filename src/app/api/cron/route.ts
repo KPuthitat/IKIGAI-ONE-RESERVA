@@ -10,7 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { getDb, type Branch, type Booking } from "@/lib/db";
-import { postDueRecurringExpenses } from "@/lib/accounta-db";
+import { postDueRecurringExpenses, listDueUnpaidBills, markBillsReminded } from "@/lib/accounta-db";
 import {
   notifyCustomer,
   notifyStaff,
@@ -20,6 +20,7 @@ import {
   dailyAttendanceSummaryFlex,
   personaResignationTakenFlex,
   mealCouponSummaryFlex,
+  accountaDueBillsFlex,
   sendLinePush
 } from "@/lib/line";
 import { buildMealCouponDaySummary } from "@/lib/meal-coupons";
@@ -126,6 +127,29 @@ async function runCron(): Promise<NextResponse> {
   } catch (e) {
     console.error("cron recurring expenses error", e);
     reportError(e, "cron recurring expenses", {});
+  }
+
+  // ── Credit-term due-bill reminder (owner 2026-07-21) ─────────────
+  // Once a day (morning), push a digest of unpaid บิลค้างชำระ due today/overdue to
+  // the exec group. due_reminded_at stamps each bill so it fires once (cron pings
+  // every few minutes); editing/rescheduling a bill re-arms it (updateExpense
+  // clears the stamp). Gated ≥09:00 BKK so it lands as a morning heads-up.
+  let dueBillsReminded = 0;
+  try {
+    if (nowHhmmBkk >= "09:00") {
+      const due = listDueUnpaidBills(todayBkk);
+      if (due.length > 0) {
+        await notifyToHrGroup(accountaDueBillsFlex(todayBkk, due.map((b) => ({
+          vendorName: b.vendor_name, branchName: b.branch_name, amount: b.amount_total,
+          dueDate: b.due_date, overdue: b.due_date < todayBkk
+        }))));
+        markBillsReminded(due.map((b) => b.id), todayBkk);
+        dueBillsReminded = due.length;
+      }
+    }
+  } catch (e) {
+    console.error("cron due-bill reminder error", e);
+    reportError(e, "cron due-bill reminder", {});
   }
 
   // Multi-time path: check which configured time slots are due for each branch.
@@ -555,6 +579,7 @@ async function runCron(): Promise<NextResponse> {
     ok: true,
     reminders_sent: remindersSent,
     recurring_expenses_posted: recurringExpensesPosted,
+    due_bills_reminded: dueBillsReminded,
     attendance_summaries_sent: attendanceSummariesSent,
     meal_coupon_summary_sent: mealCouponSummarySent,
     shift_notifications_sent: shiftNotificationsSent,

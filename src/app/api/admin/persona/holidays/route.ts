@@ -10,7 +10,9 @@ const Body = z.object({
   name_en: z.string().min(1).max(200),
   is_workday: z.boolean().optional(),
   // วันพิเศษ PT (จ่าย 1.5×) — แยกจากวันหยุดราชการ
-  pt_special: z.boolean().optional()
+  pt_special: z.boolean().optional(),
+  // วันจ่ายสองเท่า (2× ฐาน+OT ทุกคน) — owner 2026-07-21
+  double_pay: z.boolean().optional()
 });
 
 export async function POST(req: Request) {
@@ -23,16 +25,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { date, name_th, name_en, is_workday, pt_special } = parsed.data;
+  const { date, name_th, name_en, is_workday, pt_special, double_pay } = parsed.data;
   getDb().prepare(`
-    INSERT INTO public_holidays (date, name_th, name_en, is_workday, pt_special)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO public_holidays (date, name_th, name_en, is_workday, pt_special, double_pay)
+    VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(date) DO UPDATE SET
       name_th = excluded.name_th,
       name_en = excluded.name_en,
       is_workday = excluded.is_workday,
-      pt_special = excluded.pt_special
-  `).run(date, name_th, name_en, is_workday ? 1 : 0, pt_special ? 1 : 0);
+      pt_special = excluded.pt_special,
+      double_pay = excluded.double_pay
+  `).run(date, name_th, name_en, is_workday ? 1 : 0, pt_special ? 1 : 0, double_pay ? 1 : 0);
 
   return NextResponse.json({ ok: true });
 }
