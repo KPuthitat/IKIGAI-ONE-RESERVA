@@ -47,6 +47,8 @@ export type ExpenseRow = {
   payment_method: string | null;
   paid_date: string | null;
   due_date: string | null;
+  due_mode: string | null;        // 'on_receipt' | 'cycle' | 'date' — credit-term scheduling
+  due_reminded_at: string | null; // YYYY-MM-DD the LINE due reminder last fired
   has_doc: boolean;
   doc_mime: string | null;
   ocr_source: string | null;
@@ -1006,8 +1008,10 @@ function normalise(d: ExpenseInput): ExpenseInput {
     awaiting_doc: !!d.awaiting_doc,
     is_fixed: !!d.is_fixed,
     paid_date: d.payment_status === "paid" ? (d.paid_date || d.bill_date) : null,
-    // due date is only meaningful for unpaid (credit-term) bills.
-    due_date: d.payment_status === "unpaid" ? (d.due_date || null) : null,
+    // due date / mode only apply to unpaid (credit-term) bills. 'on_receipt' has
+    // no fixed date (pay when goods arrive) so its due_date is cleared.
+    due_mode: d.payment_status === "unpaid" ? (d.due_mode ?? null) : null,
+    due_date: d.payment_status === "unpaid" && d.due_mode !== "on_receipt" ? (d.due_date || null) : null,
     // capex_bucket only applies to CapEx bills — drop a stale value if the
     // category was changed away, so it can't keep feeding FEASIBILITY.
     capex_bucket: d.category === CAPEX_CATEGORY_NAME ? (d.capex_bucket || null) : null
@@ -1027,14 +1031,14 @@ export function createExpense(
     INSERT INTO accounta_expenses (
       branch_id, company_id, bill_date, vendor_id, vendor_name, doc_type, category, capex_bucket, ocr_tax_id, invoice_no, description,
       amount_total, has_tax_invoice, vat_amount, base_amount, wht_rate, wht_amount, awaiting_doc, is_fixed,
-      payment_status, payment_method, paid_date, due_date,
+      payment_status, payment_method, paid_date, due_date, due_mode,
       ocr_source, ocr_cost_baht, review_status, line_message_id, note, created_by
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?)
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
     d.doc_type, d.category, d.capex_bucket ?? null, d.ocr_tax_id ?? null, d.invoice_no?.trim() || null, d.description?.trim() || null,
     d.amount_total, d.has_tax_invoice ? 1 : 0, d.vat_amount, d.base_amount, d.wht_rate ?? 0, d.wht_amount ?? 0, d.awaiting_doc ? 1 : 0, d.is_fixed ? 1 : 0,
-    d.payment_status, d.payment_method, d.paid_date, d.due_date,
+    d.payment_status, d.payment_method, d.paid_date, d.due_date, d.due_mode ?? null,
     ocr?.source ?? null, ocr?.costBaht ?? null,
     extra?.reviewStatus ?? "confirmed", extra?.lineMessageId ?? null,
     d.note?.trim() || null, userId
@@ -1049,13 +1053,16 @@ export function updateExpense(id: number, input: ExpenseInput): boolean {
       branch_id = ?, company_id = ?, bill_date = ?, vendor_id = ?, vendor_name = ?,
       doc_type = ?, category = ?, capex_bucket = ?, invoice_no = ?, description = ?, amount_total = ?, has_tax_invoice = ?,
       vat_amount = ?, base_amount = ?, wht_rate = ?, wht_amount = ?, awaiting_doc = ?, is_fixed = ?, payment_status = ?, payment_method = ?,
-      paid_date = ?, due_date = ?, note = ?, updated_at = CURRENT_TIMESTAMP
+      paid_date = ?, due_date = ?, due_mode = ?,
+      -- reschedule/edit clears the reminder stamp so a re-dated bill can alert again
+      due_reminded_at = NULL,
+      note = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     d.branch_id, d.company_id, d.bill_date, d.vendor_id, d.vendor_name?.trim() || null,
     d.doc_type, d.category, d.capex_bucket ?? null, d.invoice_no?.trim() || null, d.description?.trim() || null, d.amount_total, d.has_tax_invoice ? 1 : 0,
     d.vat_amount, d.base_amount, d.wht_rate ?? 0, d.wht_amount ?? 0, d.awaiting_doc ? 1 : 0, d.is_fixed ? 1 : 0, d.payment_status, d.payment_method,
-    d.paid_date, d.due_date, d.note?.trim() || null, id
+    d.paid_date, d.due_date, d.due_mode ?? null, d.note?.trim() || null, id
   );
   return info.changes > 0;
 }
@@ -2151,6 +2158,30 @@ export function listCapexForFeasibility(branchId: number): CapexBucketLine[] {
 }
 
 /** Confirmed expenses in a date range (for the dashboard's editable list). */
+/** Unpaid credit-term bills that are due on/before `today` and haven't had their
+ *  LINE reminder sent yet (owner 2026-07-21). Feeds the daily due-date reminder;
+ *  callers stamp due_reminded_at via markBillsReminded so each fires once. */
+export function listDueUnpaidBills(today: string): Array<{
+  id: number; vendor_name: string | null; amount_total: number; due_date: string; branch_name: string | null;
+}> {
+  return getDb().prepare(`
+    SELECT e.id, e.vendor_name, e.amount_total, e.due_date, b.name AS branch_name
+      FROM accounta_expenses e
+      LEFT JOIN branches b ON b.id = e.branch_id
+     WHERE e.review_status = 'confirmed' AND e.payment_status = 'unpaid'
+       AND e.due_date IS NOT NULL AND e.due_date <= ? AND e.due_reminded_at IS NULL
+     ORDER BY e.due_date ASC, e.amount_total DESC
+  `).all(today) as Array<{ id: number; vendor_name: string | null; amount_total: number; due_date: string; branch_name: string | null }>;
+}
+
+/** Stamp due_reminded_at so the daily reminder fires once per bill. */
+export function markBillsReminded(ids: number[], today: string): void {
+  if (ids.length === 0) return;
+  const db = getDb();
+  const stmt = db.prepare("UPDATE accounta_expenses SET due_reminded_at = ? WHERE id = ?");
+  db.transaction(() => { for (const id of ids) stmt.run(today, id); })();
+}
+
 export function listExpensesInRange(branchId: number, start: string, end: string): ExpenseRow[] {
   const r = getDb().prepare(
     `${SELECT_EXPENSE} WHERE e.review_status = 'confirmed' AND e.branch_id = ? AND e.bill_date BETWEEN ? AND ? ORDER BY e.bill_date DESC, e.id DESC`

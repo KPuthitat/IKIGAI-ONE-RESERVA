@@ -6393,6 +6393,20 @@ function runMigrations(db: Database.Database): void {
   if (!expCols.some((c) => c.name === "due_date")) {
     db.exec("ALTER TABLE accounta_expenses ADD COLUMN due_date TEXT");
   }
+  // Credit-term due handling (owner 2026-07-21): how an unpaid bill's payment is
+  // scheduled. due_mode ∈ {'on_receipt' (ชำระหลังได้รับสินค้า — no fixed date),
+  // 'cycle' (ชำระวันจันทร์/รอบจ่ายถัดไป — due_date computed), 'date' (ชำระตามวัน
+  // ครบกำหนดที่ระบุ)}. NULL for paid bills / legacy rows. due_reminded_at stamps
+  // the day the LINE due-date reminder fired so the cron sends it once, not every
+  // 5-minute tick.
+  if (!expCols.some((c) => c.name === "due_mode")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN due_mode TEXT");
+    // Seed: an existing unpaid bill that already has a due_date is a 'date' bill.
+    db.exec("UPDATE accounta_expenses SET due_mode = 'date' WHERE payment_status = 'unpaid' AND due_date IS NOT NULL");
+  }
+  if (!expCols.some((c) => c.name === "due_reminded_at")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN due_reminded_at TEXT");
+  }
   // capex_bucket (owner 2026-06-29): when a bill is CapEx (category "CP"), which
   // FEASIBILITY investment bucket it belongs to (construction/ffe/…). Lets a
   // tagged bill flow live into the project editor's "เงินลงทุนตั้งต้น". NULL for

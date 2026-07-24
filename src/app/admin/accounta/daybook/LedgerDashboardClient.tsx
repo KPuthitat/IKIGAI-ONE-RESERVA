@@ -47,7 +47,7 @@ export type LedgerExpenseRow = {
   payment_status: "paid" | "unpaid"; has_doc: boolean; due_date: string | null;
   // extra fields so the in-page edit modal has the full row (owner 2026-06-29)
   capex_bucket: string | null; description: string | null; has_tax_invoice: boolean;
-  wht_rate: number; awaiting_doc: boolean; is_fixed: boolean;
+  wht_rate: number; awaiting_doc: boolean; is_fixed: boolean; due_mode: string | null;
   payment_method: string | null; paid_date: string | null;
   branch_id: number | null; company_id: number | null;
 };
@@ -384,7 +384,7 @@ function DayDetail({
   const [expAwaitDoc, setExpAwaitDoc] = useState(false);  // ยังไม่ได้รับเอกสาร
   const [expUnpaid, setExpUnpaid] = useState(false);
   // Credit-bill due date: "cycle" = บริษัทจ่ายตามรอบ (วันจ่ายถัดไป) | "date" = ระบุวันเอง
-  const [expDueMode, setExpDueMode] = useState<"cycle" | "date">("cycle");
+  const [expDueMode, setExpDueMode] = useState<"cycle" | "date" | "on_receipt">("cycle");
   const [expDueDate, setExpDueDate] = useState("");
   const [expAdding, setExpAdding] = useState(false);
   const [expErr, setExpErr] = useState<string | null>(null);
@@ -533,7 +533,7 @@ function DayDetail({
     if (!Number.isFinite(amt) || amt <= 0) { setExpErr("กรอกยอดเงินให้ถูกต้อง"); return; }
     setExpAdding(true); setExpErr(null);
     const dueDate = expUnpaid
-      ? (expDueMode === "date" ? (expDueDate || null) : nextPayDate(date, payCycleWeekday))
+      ? (expDueMode === "on_receipt" ? null : expDueMode === "date" ? (expDueDate || null) : nextPayDate(date, payCycleWeekday))
       : null;
     const body = {
       branch_id: branchId, company_id: companyId, bill_date: date,
@@ -543,7 +543,8 @@ function DayDetail({
       awaiting_doc: expAwaitDoc,
       payment_status: expUnpaid ? "unpaid" : "paid",
       paid_date: expUnpaid ? null : date,
-      due_date: dueDate
+      due_date: dueDate,
+      due_mode: expUnpaid ? expDueMode : null
     };
     try {
       if (fromDraft != null) {
@@ -817,17 +818,20 @@ function DayDetail({
                   {expUnpaid && (
                     <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
                       <span className="text-slate-400">ครบกำหนดชำระ</span>
-                      <Select value={expDueMode} onChange={(v) => setExpDueMode(v as "cycle" | "date")}
+                      <Select value={expDueMode} onChange={(v) => setExpDueMode(v as "cycle" | "date" | "on_receipt")}
                         className="!w-auto !min-w-[12rem]" buttonClassName="!py-1"
                         options={[
+                          { value: "on_receipt", label: "ชำระหลังได้รับสินค้า" },
                           { value: "cycle", label: `ตามรอบบริษัท (ทุกวัน${WEEKDAY_TH[payCycleWeekday]})` },
                           { value: "date", label: "ระบุวันเอง" }
                         ]} />
                       {expDueMode === "date" ? (
                         <input type="date" value={expDueDate} onChange={(e) => setExpDueDate(e.target.value)}
                           className="input !py-1 !w-auto" />
-                      ) : (
+                      ) : expDueMode === "cycle" ? (
                         <span className="text-slate-500">→ {fmtDayLabel(nextPayDate(date, payCycleWeekday))}</span>
+                      ) : (
+                        <span className="text-slate-400">— ไม่มีกำหนด (รอรับของ)</span>
                       )}
                     </div>
                   )}
@@ -1076,7 +1080,7 @@ export default function LedgerDashboardClient({
       setAddExpense({
         id: 0, bill_date: d, vendor_name: null, invoice_no: null, doc_type: null, category: null,
         capex_bucket: null, description: null, amount_total: 0, has_tax_invoice: false,
-        wht_rate: 0, awaiting_doc: false, is_fixed: false,
+        wht_rate: 0, awaiting_doc: false, is_fixed: false, due_mode: null,
         payment_status: "paid", payment_method: null, paid_date: d, due_date: null,
         branch_id: branchId, company_id: companyId
       });

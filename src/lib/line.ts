@@ -541,6 +541,68 @@ export function accountaBillVerifyFlex(args: AccountaBillVerifyArgs): LineFlexMe
   };
 }
 
+// Daily "bills due today / overdue" reminder to the exec group (owner 2026-07-21).
+export type DueBillItem = {
+  vendorName: string | null; branchName: string | null; amount: number; dueDate: string; overdue: boolean;
+};
+export function accountaDueBillsFlex(today: string, bills: DueBillItem[]): LineFlexMessage {
+  const baht = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const total = bills.reduce((s, b) => s + (b.amount || 0), 0);
+  const line = (b: DueBillItem) => ({
+    type: "box", layout: "horizontal", spacing: "sm", margin: "sm",
+    contents: [
+      {
+        type: "text", flex: 6, size: "sm", color: COLOR_TEXT_DARK, wrap: true,
+        text: `${b.vendorName ?? "— ไม่ระบุผู้จำหน่าย —"}${b.branchName ? ` · ${b.branchName}` : ""}${b.overdue ? " ⚠️ เกินกำหนด" : ""}`
+      },
+      { type: "text", flex: 4, size: "sm", weight: "bold", align: "end", color: "#DC2626", text: `฿${baht(b.amount)}` }
+    ]
+  });
+  const bubble = {
+    type: "bubble", size: "giga",
+    header: {
+      type: "box", layout: "vertical", backgroundColor: COLOR_INK_700, paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "ACCOUNTA", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+          ]
+        },
+        {
+          type: "box", layout: "baseline", spacing: "sm", margin: "md",
+          contents: [
+            { type: "text", text: "💸", size: "lg", flex: 0 },
+            { type: "text", text: "บิลครบกำหนดชำระวันนี้", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
+          ]
+        }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "sm", paddingAll: "20px",
+      contents: [
+        { type: "text", text: `วันที่ ${today} · ${bills.length} รายการ`, size: "xs", color: COLOR_TEXT_MUTED },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        ...bills.map(line),
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        {
+          type: "box", layout: "horizontal", margin: "md",
+          contents: [
+            { type: "text", text: "รวมที่ต้องชำระ", flex: 6, size: "sm", weight: "bold", color: COLOR_LABEL },
+            { type: "text", text: `฿${baht(total)}`, flex: 4, size: "sm", weight: "bold", align: "end", color: "#DC2626" }
+          ]
+        }
+      ]
+    },
+    styles: {
+      header: { backgroundColor: COLOR_INK_700 },
+      body: { backgroundColor: "#ffffff" }
+    }
+  };
+  return { type: "flex", altText: `บิลครบกำหนดชำระวันนี้ ${bills.length} รายการ · ฿${baht(total)}`, contents: bubble };
+}
+
 // ── RESERVA: booking confirmation / reminder Flex cards ─────────────
 
 export type CustomerBookingCardArgs = {

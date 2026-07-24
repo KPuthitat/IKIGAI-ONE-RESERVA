@@ -131,6 +131,10 @@ export type ExpenseInput = {
   payment_method: string | null; // method NAME (free text, from the picklist)
   paid_date: string | null;     // cash-flow date; required-ish when paid
   due_date: string | null;      // วันที่ครบกำหนดชำระ — for credit-term unpaid bills
+  // How a credit-term (unpaid) bill is scheduled (owner 2026-07-21):
+  // 'on_receipt' (ชำระหลังได้รับสินค้า, no date) | 'cycle' (รอบจ่ายถัดไป) |
+  // 'date' (ตามวันครบกำหนดที่ระบุ). null for paid bills.
+  due_mode?: "on_receipt" | "cycle" | "date" | null;
   note: string | null;
   // When this bill is CapEx (category === CAPEX_CATEGORY_NAME), the FEASIBILITY
   // investment bucket it belongs to (a StartupCategory key) — feeds the project

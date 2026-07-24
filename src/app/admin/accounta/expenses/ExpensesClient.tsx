@@ -68,7 +68,7 @@ type Expense = {
   doc_type: string | null; category: string | null; capex_bucket: string | null; description: string | null;
   amount_total: number; has_tax_invoice: number; vat_amount: number; base_amount: number; wht_rate: number;
   awaiting_doc: number; is_fixed: number;
-  payment_status: PaymentStatus; payment_method: string | null; paid_date: string | null; due_date: string | null;
+  payment_status: PaymentStatus; payment_method: string | null; paid_date: string | null; due_date: string | null; due_mode: string | null;
   has_doc: boolean; ocr_source: string | null; ocr_cost_baht: number | null; note: string | null;
   review_status?: string;   // 'draft' (จากไลน์ รอตรวจ) | 'confirmed'
 };
@@ -87,9 +87,19 @@ type FormState = {
   amount_total: string; has_tax_invoice: boolean; vat_override: string; wht_rate: string;
   awaiting_doc: boolean; is_fixed: boolean;
   payment_status: PaymentStatus; payment_method: string; paid_date: string; due_date: string;
+  due_mode: "" | "on_receipt" | "cycle" | "date";
   note: string;
   rememberVendor: boolean;
 };
+
+// Next Monday strictly after `iso` (owner 2026-07-21: ชำระวันจันทร์ถัดไป). Returns YYYY-MM-DD.
+function nextMonday(iso: string): string {
+  const base = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : new Date().toISOString().slice(0, 10);
+  const d = new Date(`${base}T00:00:00Z`);
+  const add = ((1 - d.getUTCDay() + 6) % 7) + 1;   // 1..7 days ahead → always a future Monday
+  d.setUTCDate(d.getUTCDate() + add);
+  return d.toISOString().slice(0, 10);
+}
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -119,7 +129,7 @@ function blankForm(defaultMethod = ""): FormState {
     bill_date: todayISO(), vendor_name: "", invoice_no: "", doc_type: "", category: "", capex_bucket: "", description: "",
     amount_total: "", has_tax_invoice: false, vat_override: "", wht_rate: "0",
     awaiting_doc: false, is_fixed: false,
-    payment_status: "paid", payment_method: defaultMethod, paid_date: todayISO(), due_date: "",
+    payment_status: "paid", payment_method: defaultMethod, paid_date: todayISO(), due_date: "", due_mode: "",
     note: "", rememberVendor: true
   };
 }
@@ -304,6 +314,7 @@ export default function ExpensesClient(props: {
       payment_method: e.payment_method || (methods[0]?.name ?? ""),
       paid_date: e.paid_date ?? e.bill_date,
       due_date: e.due_date ?? "",
+      due_mode: (e.due_mode as FormState["due_mode"]) ?? (e.due_date ? "date" : ""),
       note: e.note ?? "",
       // Reviewing a LINE draft: remember the vendor by default so a corrected
       // category is learned on confirm. Editing a confirmed row: off (no
@@ -419,7 +430,8 @@ export default function ExpensesClient(props: {
         payment_status: form.payment_status,
         payment_method: form.payment_status === "paid" ? form.payment_method : null,
         paid_date: form.payment_status === "paid" ? form.paid_date : null,
-        due_date: form.payment_status === "unpaid" ? (form.due_date || null) : null
+        due_date: form.payment_status === "unpaid" ? (form.due_date || null) : null,
+        due_mode: form.payment_status === "unpaid" ? (form.due_mode || null) : null
       };
       const rows = [
         { ...common, amount_total: mixedSplit.vatable, has_tax_invoice: true, vat_amount: mixedSplit.vat, note: notePrefix + "ส่วนมี VAT" },
@@ -1221,8 +1233,27 @@ export default function ExpensesClient(props: {
               )}
               {form.payment_status === "unpaid" && (
                 <div className="sm:col-span-2">
-                  <label className="label !text-xs">วันที่ครบกำหนดชำระ (เครดิตเทอม)</label>
-                  <input type="date" className="input sm:w-1/2" value={form.due_date} onChange={(e) => set("due_date", e.target.value)} />
+                  <label className="label !text-xs">กำหนดชำระ (เครดิตเทอม)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      ["on_receipt", "ชำระหลังได้รับสินค้า"],
+                      ["cycle", `ชำระวันจันทร์ถัดไป${form.due_mode === "cycle" ? ` (${nextMonday(form.bill_date)})` : ""}`],
+                      ["date", "ระบุวันครบกำหนด"]
+                    ] as const).map(([mode, label]) => (
+                      <button key={mode} type="button"
+                        onClick={() => {
+                          set("due_mode", mode);
+                          set("due_date", mode === "cycle" ? nextMonday(form.bill_date) : mode === "on_receipt" ? "" : form.due_date);
+                        }}
+                        className={`px-3.5 py-2 rounded-full text-sm font-medium border transition ${
+                          form.due_mode === mode ? "bg-brand text-white border-brand" : "bg-white border-slate-300 text-slate-500 hover:bg-slate-50"}`}>
+                        {form.due_mode === mode ? "✓ " : ""}{label}
+                      </button>
+                    ))}
+                  </div>
+                  {form.due_mode === "date" && (
+                    <input type="date" className="input sm:w-1/2 mt-2" value={form.due_date} onChange={(e) => set("due_date", e.target.value)} />
+                  )}
                 </div>
               )}
             </div>

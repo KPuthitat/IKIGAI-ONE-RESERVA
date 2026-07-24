@@ -27,9 +27,18 @@ export type EditableExpense = {
   payment_method: string | null;
   paid_date: string | null;
   due_date: string | null;
+  due_mode?: string | null;
   branch_id: number | null;
   company_id: number | null;
 };
+
+// Next Monday strictly after `iso` (owner 2026-07-21: ชำระวันจันทร์ถัดไป).
+function nextMonday(iso: string): string {
+  const base = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : new Date().toISOString().slice(0, 10);
+  const d = new Date(`${base}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + (((1 - d.getUTCDay() + 6) % 7) + 1));
+  return d.toISOString().slice(0, 10);
+}
 
 // In-place edit modal for a รายจ่าย row — so the daybook is a self-contained
 // workspace and editing never leaves the page (owner 2026-06-29). Covers the
@@ -69,6 +78,8 @@ export default function ExpenseEditModal({
   const [method, setMethod] = useState(expense.payment_method ?? (paymentMethods[0]?.name ?? ""));
   const [paidDate, setPaidDate] = useState(expense.paid_date ?? expense.bill_date);
   const [dueDate, setDueDate] = useState(expense.due_date ?? "");
+  const [dueMode, setDueMode] = useState<"" | "on_receipt" | "cycle" | "date">(
+    (expense.due_mode as "on_receipt" | "cycle" | "date" | null) ?? (expense.due_date ? "date" : ""));
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -146,6 +157,7 @@ export default function ExpenseEditModal({
         payment_method: status === "paid" ? (method || null) : null,
         paid_date: status === "paid" ? paidDate : null,
         due_date: status === "unpaid" ? (dueDate || null) : null,
+        due_mode: status === "unpaid" ? (dueMode || null) : null,
         note: note.trim() || null
       };
       let res: Response;
@@ -272,9 +284,25 @@ export default function ExpenseEditModal({
                 ]} />
             </div>
           ) : (
-            <div>
-              <label className="label !text-xs">วันครบกำหนดชำระ</label>
-              <input type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            <div className="sm:col-span-2">
+              <label className="label !text-xs">กำหนดชำระ (เครดิตเทอม)</label>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  ["on_receipt", "ชำระหลังได้รับสินค้า"],
+                  ["cycle", `ชำระวันจันทร์ถัดไป${dueMode === "cycle" ? ` (${nextMonday(billDate)})` : ""}`],
+                  ["date", "ระบุวันครบกำหนด"]
+                ] as const).map(([mode, label]) => (
+                  <button key={mode} type="button"
+                    onClick={() => { setDueMode(mode); setDueDate(mode === "cycle" ? nextMonday(billDate) : mode === "on_receipt" ? "" : dueDate); }}
+                    className={`px-3.5 py-2 rounded-full text-sm font-medium border transition ${
+                      dueMode === mode ? "bg-brand text-white border-brand" : "bg-white border-slate-300 text-slate-500 hover:bg-slate-50"}`}>
+                    {dueMode === mode ? "✓ " : ""}{label}
+                  </button>
+                ))}
+              </div>
+              {dueMode === "date" && (
+                <input type="date" className="input sm:w-1/2 mt-2" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              )}
             </div>
           )}
           {status === "paid" && (

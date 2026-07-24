@@ -103,6 +103,7 @@ export const ExpenseBody = z.object({
   payment_method: z.string().trim().max(200).nullable().optional(),  // channel master bank-account names can be long
   paid_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  due_mode: z.enum(["on_receipt", "cycle", "date"]).nullable().optional(),  // credit-term scheduling (owner 2026-07-21)
   note: z.string().trim().max(500).nullable().optional()
 });
 
@@ -138,6 +139,7 @@ export function toExpenseInput(d: ExpenseBodyT): ExpenseInput {
     payment_method: d.payment_method ?? null,
     paid_date: d.paid_date ?? null,
     due_date: d.due_date ?? null,
+    due_mode: d.due_mode ?? null,
     note: d.note ?? null
   };
 }
