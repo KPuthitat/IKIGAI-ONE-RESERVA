@@ -691,6 +691,34 @@ export function vendorLastDescriptions(branchId: number | null): Record<string, 
   return map;
 }
 
+/** Full field snapshot of each vendor's most-recent CONFIRMED bill for a branch
+ *  (owner 2026-07-24): "ส่วนใหญ่เป็นเจ้าเดิม ต่างแค่ยอด" — the expense form prefills
+ *  every field (หมวด/รายละเอียด/ประเภทเอกสาร/การชำระ/หัก ณ ที่จ่าย/คงที่/กำหนดชำระ)
+ *  from this so only the amount needs typing. Keyed by vendor_name, newest wins. */
+export type VendorLastBill = {
+  category: string | null; description: string | null; doc_type: string | null;
+  payment_method: string | null; payment_status: string;
+  has_tax_invoice: number; wht_rate: number; is_fixed: number;
+  due_mode: string | null; capex_bucket: string | null;
+};
+export function vendorLastBills(branchId: number | null): Record<string, VendorLastBill> {
+  if (branchId == null) return {};
+  const rows = getDb().prepare(
+    `SELECT vendor_name, category, description, doc_type, payment_method, payment_status,
+            has_tax_invoice, wht_rate, is_fixed, due_mode, capex_bucket
+       FROM accounta_expenses
+      WHERE branch_id = ? AND vendor_name IS NOT NULL AND review_status = 'confirmed'
+      ORDER BY bill_date DESC, id DESC`
+  ).all(branchId) as Array<VendorLastBill & { vendor_name: string }>;
+  const map: Record<string, VendorLastBill> = {};
+  for (const r of rows) {
+    if (r.vendor_name in map) continue;
+    const { vendor_name, ...rest } = r;
+    map[vendor_name] = rest;
+  }
+  return map;
+}
+
 export function createVendor(
   branchId: number,
   userId: number,

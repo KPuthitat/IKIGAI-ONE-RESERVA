@@ -60,7 +60,13 @@ type Budget = {
   items: BudgetItem[]; uncategorized: number;
 };
 type Method = { id: number; name: string };
-type Vendor = { id: number; name: string; tax_id: string | null; category: string | null };
+type VendorLastBill = {
+  category: string | null; description: string | null; doc_type: string | null;
+  payment_method: string | null; payment_status: string;
+  has_tax_invoice: number; wht_rate: number; is_fixed: number;
+  due_mode: string | null; capex_bucket: string | null;
+};
+type Vendor = { id: number; name: string; tax_id: string | null; category: string | null; last_bill?: VendorLastBill | null };
 type Expense = {
   id: number; branch_id: number | null; branch_name: string | null;
   company_id: number | null; company_name: string | null;
@@ -204,6 +210,35 @@ export default function ExpensesClient(props: {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<FormState>(blankForm(props.paymentMethods[0]?.name ?? ""));
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const prefilledVendorRef = useRef<string | null>(null);
+
+  // Type/pick a คู่ค้า → prefill EVERY field from its most-recent bill (owner
+  // 2026-07-24: "ส่วนใหญ่เป็นเจ้าเดิม ต่างแค่ยอด"). Only the amount is left. Fires
+  // once per distinct match so later manual edits aren't clobbered.
+  function onVendorChange(v: string) {
+    setForm((f) => {
+      const m = vendors.find((x) => x.name.trim().toLowerCase() === v.trim().toLowerCase());
+      if (!m || m.name === prefilledVendorRef.current) return { ...f, vendor_name: v };
+      prefilledVendorRef.current = m.name;
+      const lb = m.last_bill;
+      if (!lb) return { ...f, vendor_name: v };
+      const dm = (lb.payment_status === "unpaid" ? (lb.due_mode ?? "") : "") as FormState["due_mode"];
+      return {
+        ...f, vendor_name: v,
+        category: lb.category ?? f.category,
+        description: lb.description ?? f.description,
+        doc_type: lb.doc_type ?? f.doc_type,
+        capex_bucket: lb.capex_bucket ?? f.capex_bucket,
+        has_tax_invoice: !!lb.has_tax_invoice,
+        wht_rate: String(lb.wht_rate ?? 0),
+        is_fixed: !!lb.is_fixed,
+        payment_status: lb.payment_status === "unpaid" ? "unpaid" : "paid",
+        payment_method: lb.payment_method ?? f.payment_method,
+        due_mode: dm,
+        due_date: dm === "cycle" ? nextMonday(f.bill_date) : dm === "on_receipt" ? "" : f.due_date
+      };
+    });
+  }
   // วันที่เงินออกจริง (paid_date) ตามวันที่เอกสารโดยปริยาย — เปลี่ยนวันที่เอกสาร
   // แล้ว paid_date เลื่อนตามให้ เว้นแต่ผู้ใช้แก้ paid_date ต่างไปเองแล้ว
   // (owner 2026-06-20). f.bill_date คือค่าเดิมก่อนแก้ จึงเทียบได้ว่ายัง "ตาม" อยู่ไหม.
@@ -266,6 +301,7 @@ export default function ExpensesClient(props: {
   }
 
   function openAdd() {
+    prefilledVendorRef.current = null;   // re-arm vendor prefill for the new bill
     const f = blankForm(methods[0]?.name ?? "");
     // Lock new rows to the active branch (branch-locked page).
     if (props.activeBranchId != null) {
@@ -284,6 +320,7 @@ export default function ExpensesClient(props: {
   }
 
   function openEdit(e: Expense) {
+    prefilledVendorRef.current = e.vendor_name ?? null;   // don't auto-prefill the row being edited
     setDraftMode(e.review_status === "draft");
     setEditingHasDoc(!!e.has_doc);
     setForm({
@@ -1115,7 +1152,7 @@ export default function ExpensesClient(props: {
               )}
               <div className="sm:col-span-2">
                 <label className="label !text-xs">ผู้จำหน่าย / ผู้รับเงิน</label>
-                <Combobox value={form.vendor_name} onChange={(v) => set("vendor_name", v)}
+                <Combobox value={form.vendor_name} onChange={onVendorChange}
                   options={vendors.map((v) => v.name)} placeholder="พิมพ์ชื่อ หรือเลือกจากรายการ" />
               </div>
               <div>

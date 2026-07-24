@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { getSystemSettings } from "@/lib/db";
 import {
   listBranches, listCompanies, listVendors, listExpenses, summarise, ocrUsageStats,
-  listCategories, listPaymentMethods, categoryBudget, listPaymentChannels
+  listCategories, listPaymentMethods, categoryBudget, listPaymentChannels, vendorLastBills
 } from "@/lib/accounta-db";
 import ExpensesClient from "./ExpensesClient";
 
@@ -26,6 +26,11 @@ export default function AccountaExpensesPage({ searchParams }: { searchParams: {
   const expenseChannels = user.activeBranchId != null
     ? listPaymentChannels(user.activeBranchId, "expense").map((c) => c.label)
     : [];
+  // Vendor options + each vendor's most-recent bill snapshot for auto-prefill.
+  const vendorLast = vendorLastBills(user.activeBranchId ?? null);
+  const vendorOpts = listVendors(user.activeBranchId ?? null).map((v) => ({
+    ...v, last_bill: vendorLast[v.name] ?? null
+  }));
 
   return (
     <div className="space-y-4">
@@ -60,7 +65,7 @@ export default function AccountaExpensesPage({ searchParams }: { searchParams: {
         activeBranchId={user.activeBranchId}
         branches={listBranches()}
         companies={listCompanies()}
-        vendors={listVendors(user.activeBranchId ?? null)}
+        vendors={vendorOpts}
         categories={listCategories()}
         paymentMethods={listPaymentMethods()}
         expenseChannels={expenseChannels}

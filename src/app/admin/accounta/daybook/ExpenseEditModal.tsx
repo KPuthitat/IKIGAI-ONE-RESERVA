@@ -8,6 +8,15 @@ import { splitVat, round2, CAPEX_CATEGORY_CODE, DOC_TYPES, docTypeLabel } from "
 import { STARTUP_CATEGORIES, STARTUP_CATEGORY_LABEL } from "@/lib/feasibility";
 import Select from "@/app/components/Select";
 
+// Snapshot of a vendor's most-recent bill — prefilled into the form when the
+// vendor is picked (owner 2026-07-24: "ส่วนใหญ่เป็นเจ้าเดิม ต่างแค่ยอด").
+export type VendorLastBill = {
+  category: string | null; description: string | null; doc_type: string | null;
+  payment_method: string | null; payment_status: string;
+  has_tax_invoice: number; wht_rate: number; is_fixed: number;
+  due_mode: string | null; capex_bucket: string | null;
+};
+
 // Full editable shape of an expense row (the daybook passes these fields through).
 export type EditableExpense = {
   id: number;
@@ -48,7 +57,7 @@ export default function ExpenseEditModal({
 }: {
   expense: EditableExpense;
   categories: Array<{ code: string | null; name: string }>;
-  vendors: Array<{ name: string; tax_id: string | null; last_description?: string | null }>;
+  vendors: Array<{ name: string; tax_id: string | null; last_description?: string | null; last_bill?: VendorLastBill | null }>;
   paymentMethods: Array<{ id: number; name: string }>;
   mode?: "edit" | "create";
   onClose: () => void;
@@ -91,6 +100,9 @@ export default function ExpenseEditModal({
     return !n || vendors.some((v) => v.name.trim().toLowerCase() === n);
   };
   const handledVendors = useRef<Set<string>>(new Set());
+  // Last vendor whose bill we auto-prefilled — so re-typing the same name doesn't
+  // clobber edits the user made after the first prefill.
+  const prefilledRef = useRef<string | null>(null);
   const [nvName, setNvName] = useState<string | null>(null);  // pending prompt (null = closed)
   const [nvTaxId, setNvTaxId] = useState("");
   const [nvCycle, setNvCycle] = useState("");
@@ -213,11 +225,31 @@ export default function ExpenseEditModal({
               onChange={(e) => {
                 const v = e.target.value;
                 setVendor(v);
-                // Prefill the last-used รายละเอียด for this vendor when the field
-                // is still empty (owner 2026-07-05) — user can edit/clear it.
-                if (!description.trim()) {
-                  const m = vendors.find((x) => x.name === v);
-                  if (m?.last_description) setDescription(m.last_description);
+                // When the typed/selected vendor exactly matches a known คู่ค้า,
+                // prefill EVERY field from its most-recent bill (owner 2026-07-24)
+                // — only the amount is left to type. Fires once per distinct match.
+                const m = vendors.find((x) => x.name.trim().toLowerCase() === v.trim().toLowerCase());
+                if (m && m.name !== prefilledRef.current) {
+                  prefilledRef.current = m.name;
+                  const lb = m.last_bill;
+                  if (lb) {
+                    if (lb.category != null) setCategory(lb.category);
+                    if (lb.description != null) setDescription(lb.description);
+                    if (lb.doc_type && (DOC_TYPES as readonly string[]).includes(lb.doc_type)) setDocType(lb.doc_type);
+                    if (lb.capex_bucket && (STARTUP_CATEGORIES as readonly string[]).includes(lb.capex_bucket)) setCapexBucket(lb.capex_bucket);
+                    setHasVat(!!lb.has_tax_invoice);
+                    setWhtRate(String(lb.wht_rate ?? 0));
+                    setIsFixed(!!lb.is_fixed);
+                    setStatus(lb.payment_status === "unpaid" ? "unpaid" : "paid");
+                    if (lb.payment_method) setMethod(lb.payment_method);
+                    if (lb.payment_status === "unpaid" && lb.due_mode) {
+                      const dm = lb.due_mode as "on_receipt" | "cycle" | "date";
+                      setDueMode(dm);
+                      if (dm === "cycle") setDueDate(nextMonday(billDate));
+                    }
+                  } else if (m.last_description && !description.trim()) {
+                    setDescription(m.last_description);
+                  }
                 }
               }}
               placeholder="ชื่อผู้จำหน่าย" />
