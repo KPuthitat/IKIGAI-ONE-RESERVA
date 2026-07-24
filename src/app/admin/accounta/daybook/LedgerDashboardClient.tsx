@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, useTransition, useEffect } from "react";
+import { Fragment, useState, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
@@ -67,7 +67,17 @@ type DraftLite = {
 };
 
 // Vendor picker option — name is shown/saved; tax_id is searchable + shown muted.
-type VendorOpt = { name: string; tax_id: string | null; last_description?: string | null };
+// last_bill = the vendor's most-recent bill snapshot, prefilled into the expense
+// form when the vendor is picked (owner 2026-07-24).
+type VendorOpt = {
+  name: string; tax_id: string | null; last_description?: string | null;
+  last_bill?: {
+    category: string | null; description: string | null; doc_type: string | null;
+    payment_method: string | null; payment_status: string;
+    has_tax_invoice: number; wht_rate: number; is_fixed: number;
+    due_mode: string | null; capex_bucket: string | null;
+  } | null;
+};
 
 const WEEKDAY_TH = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
 
@@ -387,6 +397,28 @@ function DayDetail({
   const [expDueMode, setExpDueMode] = useState<"cycle" | "date" | "on_receipt">("cycle");
   const [expDueDate, setExpDueDate] = useState("");
   const [expAdding, setExpAdding] = useState(false);
+  const expPrefilledRef = useRef<string | null>(null);
+
+  // Prefill the quick-add fields from a vendor's most-recent bill when picked
+  // (owner 2026-07-24) — only the amount is left to type. Fires once per match.
+  function onExpVendorChange(v: string) {
+    setExpVendor(v);
+    const m = expenseVendors.find((x) => x.name.trim().toLowerCase() === v.trim().toLowerCase());
+    if (!m || m.name === expPrefilledRef.current) return;
+    expPrefilledRef.current = m.name;
+    const lb = m.last_bill;
+    if (!lb) return;
+    if (lb.category != null) setExpCategory(lb.category);
+    setExpVat(!!lb.has_tax_invoice);
+    setExpWht(String(lb.wht_rate ?? 0));
+    const unpaid = lb.payment_status === "unpaid";
+    setExpUnpaid(unpaid);
+    if (unpaid && lb.due_mode) {
+      const dm = lb.due_mode as "on_receipt" | "cycle" | "date";
+      setExpDueMode(dm);
+      if (dm === "date") setExpDueDate("");
+    }
+  }
   const [expErr, setExpErr] = useState<string | null>(null);
   // Add-rows are hidden until the user taps "+ เพิ่ม" (owner 2026-07-03) — press
   // add first, then fill; don't show a pre-filled form to edit later.
@@ -792,7 +824,7 @@ function DayDetail({
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Combobox value={expVendor} onChange={setExpVendor} options={vendorOptions(expenseVendors)}
+                    <Combobox value={expVendor} onChange={onExpVendorChange} options={vendorOptions(expenseVendors)}
                       placeholder="ผู้จำหน่าย / รายการ (พิมพ์ชื่อหรือเลขภาษี)" className="flex-[3] !min-w-[15rem]" inputClassName="!py-1" />
                     <Select value={expCategory} onChange={setExpCategory} title="หมวดหมู่"
                       className="!w-auto !min-w-[5.5rem]" buttonClassName="!py-1" placeholder="หมวด"
