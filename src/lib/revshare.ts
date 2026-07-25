@@ -27,6 +27,15 @@ export function vatInclusive(amount: number, rate = 0.07): { base: number; vat: 
   return { base, vat: round2(total - base), total };
 }
 
+/** Card-header name for a partner. Real venues map to many POS categories
+ *  (จ้อจี้ - COFFEE, - NON-COFFEE, - MATCHA, …), so the sent report shows the
+ *  single partner name (venue if set) instead of the joined category list —
+ *  the categories still drive which POS rows sum into this partner, they're
+ *  just not printed on the card (owner 2026-07-25). */
+export function partnerShopName(p: { name: string; venue?: string | null }): string {
+  return p.venue?.trim() || p.name;
+}
+
 /** Whether a stored sales_amount already carries VAT. Only 'nett' (POS col 10 —
  *  incl. VAT + service charge) is VAT-inclusive; 'gross' and 'after_discount'
  *  are pre-VAT list amounts (owner 2026-07-25). */

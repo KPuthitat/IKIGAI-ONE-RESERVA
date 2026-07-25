@@ -2,7 +2,7 @@
 // Covers acceptance criteria 1–5 (POS parser = test-revshare-pos via RS3).
 import {
   marginalGP, computeSettlement, computeRoundBreakdown, opMonthFor, floorFor,
-  DEFAULT_TIERS, DEFAULT_FLOORS, roundLabel, salesVat, salesBaseIncludesVat, type Floor
+  DEFAULT_TIERS, DEFAULT_FLOORS, roundLabel, salesVat, salesBaseIncludesVat, partnerShopName, type Floor
 } from "../src/lib/revshare";
 
 let failed = 0;
@@ -117,6 +117,14 @@ const F: Floor[] = [
   ok("vat.base gross is pre-VAT", salesBaseIncludesVat("gross") === false);
   ok("vat.base after_discount is pre-VAT", salesBaseIncludesVat("after_discount") === false);
   ok("vat.base nett is VAT-inclusive", salesBaseIncludesVat("nett") === true);
+}
+
+// partnerShopName — card header shows one name, not the joined POS categories
+// (owner 2026-07-25). venue wins when set, else the partner name.
+{
+  ok("shop.name only", partnerShopName({ name: "จ้อจี้ & friends" }) === "จ้อจี้ & friends");
+  ok("shop.venue wins", partnerShopName({ name: "จ้อจี้ & friends", venue: "สาขาศรีราชา" }) === "สาขาศรีราชา");
+  ok("shop.blank venue falls back", partnerShopName({ name: "จ้อจี้ & friends", venue: "  " }) === "จ้อจี้ & friends");
 }
 
 if (failed > 0) {

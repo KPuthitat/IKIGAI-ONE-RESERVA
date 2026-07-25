@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
 import { fmtMoney } from "@/lib/format";
-import { TH_MONTHS_FULL } from "@/lib/revshare";
+import { TH_MONTHS_FULL, partnerShopName } from "@/lib/revshare";
 
 type Result = {
   totalSales: number; tierGP: number; floorApplied: number; billedGP: number; topup: number;
@@ -30,7 +30,7 @@ export default function SettlementClient({
 
   const r = pv.result;
   const monthLabel = `${TH_MONTHS_FULL[month]} ${year + 543}`;
-  const shop = partner.pos_categories.length ? partner.pos_categories.join(", ") : (partner.venue?.trim() || partner.name);
+  const shop = partnerShopName(partner);
   const status = pv.stored?.status ?? "draft";
   const withVat = partner.vat_enabled && r.vatAmount > 0;
   const grandTotal = r.billedGP + r.vatAmount;   // ยอดบนใบกำกับภาษี

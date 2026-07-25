@@ -5,7 +5,7 @@ import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
 import { isRevshareBranch, getPartner, previewSettlement, listRounds } from "@/lib/revshare-db";
 import { revshareSettlementFlex, revshareWeeklyFlex, revshareDailyFlex, notifyRevsharePartner } from "@/lib/revshare-line";
-import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat } from "@/lib/revshare";
+import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat, partnerShopName } from "@/lib/revshare";
 
 // Push a sales notification to the partner's LINE group. Three kinds (owner
 // 2026-06-23): daily (a day's sales heads-up), weekly (the amount transferred
@@ -60,9 +60,9 @@ export async function POST(req: Request) {
   ).get(branchId) as { name: string; company_name: string | null };
   const seller = sellerRow.name;
   const monthLabel = `${TH_MONTHS_FULL[month]} ${year + 543}`;
-  // Shop name comes from the POS category the partner is mapped to (owner
-  // 2026-06-23), falling back to the venue/legal name.
-  const shop = partner.pos_categories.length ? partner.pos_categories.join(", ") : (partner.venue?.trim() || partner.name);
+  // Single partner name on the card (owner 2026-07-25) — the POS categories can
+  // be many, so they no longer print here (they still map POS rows → partner).
+  const shop = partnerShopName(partner);
   const vatRate = partner.vat_enabled ? partner.vat_rate : 0;
   // Pre-VAT figures (gross/after_discount) get VAT added on top; only 'nett'
   // already carries it (owner 2026-07-25).
