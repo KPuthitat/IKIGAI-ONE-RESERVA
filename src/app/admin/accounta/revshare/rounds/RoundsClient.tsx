@@ -42,6 +42,10 @@ export default function RoundsClient({
   const pinRef = useRef<string | null>(null);
   const [verified, setVerified] = useState(false);
   const [pinRun, setPinRun] = useState<{ run: (pin: string) => Promise<{ ok: boolean; pinError?: boolean }> } | null>(null);
+  // A locked round's amount is read-only until "แก้ไข" unlocks its row (PIN).
+  // Imported (pos_import) and sent rounds are locked; manual rows stay editable.
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const isLocked = (r: Round) => r.source === "pos_import" || r.sent_at != null;
 
   // POS import
   const [preview, setPreview] = useState<PosPreview | null>(null);
@@ -113,22 +117,28 @@ export default function RoundsClient({
     void guarded(async (pin) => { const r = await verifyPin(pin); if (r.ok) setCatsLocked(false); return r; });
   }
 
+  // Unlock a locked row for editing — a fresh PIN is required, then its field
+  // becomes editable (and re-locks on blur). owner 2026-07-25.
+  function unlockEdit(r: Round) {
+    void guarded(async (pin) => {
+      const res = await verifyPin(pin);
+      if (res.ok) setEditingId(r.id);
+      return res;
+    }, { forcePrompt: true });
+  }
   async function saveSales(r: Round, value: string) {
     const v = Number(value);
     if (!Number.isFinite(v) || v === r.sales_amount) return;
-    // A sent figure is locked — editing it forces a fresh PIN (the LINE card +
-    // รายรับ already went out on this number), owner 2026-07-25.
-    if (r.sent_at) {
-      const ok = await confirm({ title: "ยอดนี้ส่งเข้ากลุ่มแล้ว", body: `แก้ไขยอดวันที่ ${roundLabel(r.period_start, r.period_start)} ที่ส่งไปแล้ว? ต้องยืนยัน PIN ใหม่`, confirmLabel: "แก้ไข", cancelLabel: "ยกเลิก", variant: "danger" });
-      if (ok === null) { setRounds((rs) => [...rs]); return; } // revert the input
-    }
-    await guarded((pin) => mutate("PATCH", { id: r.id, partner: partner.id, sales_amount: v, pin }), { forcePrompt: !!r.sent_at });
+    // PIN is already verified via unlockEdit for locked rows; manual rows prompt
+    // through guarded here.
+    await guarded((pin) => mutate("PATCH", { id: r.id, partner: partner.id, sales_amount: v, pin }));
   }
   async function del(r: Round) {
+    const locked = isLocked(r);
     const ok = await confirm({
-      title: r.sent_at ? "ยอดนี้ส่งเข้ากลุ่มแล้ว" : "ยืนยันการลบ",
-      body: r.sent_at
-        ? `ลบยอดวันที่ ${roundLabel(r.period_start, r.period_start)} ที่ส่งไปแล้ว? ต้องยืนยัน PIN ใหม่`
+      title: locked ? "ยอดนี้ถูกล็อก" : "ยืนยันการลบ",
+      body: locked
+        ? `ลบยอดวันที่ ${roundLabel(r.period_start, r.period_start)} ที่ล็อกไว้? ต้องยืนยัน PIN`
         : `ลบยอดวันที่ ${roundLabel(r.period_start, r.period_start)} ?`,
       confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger"
     });
@@ -139,7 +149,7 @@ export default function RoundsClient({
       // immediately (no manual refresh, owner 2026-06-23).
       if (res.ok) setRounds((rs) => rs.filter((x) => x.id !== r.id));
       return res;
-    }, { forcePrompt: !!r.sent_at });
+    }, { forcePrompt: locked });
   }
 
   // Confirm + send the card that's currently previewed in the send modal. The
@@ -223,7 +233,7 @@ export default function RoundsClient({
           <input type="file" accept=".xlsx,.xls" className="hidden" onChange={onFile} disabled={busy} />
         </label>
         <span className="text-[11px] text-slate-400">
-          1 วัน/ไฟล์ · นำเข้าจากไฟล์เท่านั้น (เพิ่มยอดเองไม่ได้) · แก้ไขได้หลังนำเข้า
+          1 วัน/ไฟล์ · นำเข้าจากไฟล์เท่านั้น (เพิ่มยอดเองไม่ได้) · ยอดจากไฟล์ล็อกไว้ 🔒 แก้ต้องใส่ PIN
           {verified && <span className="ml-1 text-emerald-600">· ✓ ยืนยันตัวตนแล้ว ({operatorName})</span>}
         </span>
         <span className="flex-1" />
@@ -309,7 +319,16 @@ export default function RoundsClient({
                           {r.sent_at && <span className="ml-1.5 text-[10px] text-emerald-600" title="ส่งเข้ากลุ่มแล้ว — แก้ไข/ลบต้องยืนยัน PIN">🔒</span>}
                         </td>
                         <td className="py-1 px-2 text-right">
-                          <SalesInput value={r.sales_amount} disabled={busy} onSave={(v) => saveSales(r, v)} />
+                          {isLocked(r) && editingId !== r.id ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="tabular-nums font-sans text-slate-700">฿{fmtMoney(r.sales_amount)}</span>
+                              <button type="button" onClick={() => unlockEdit(r)} disabled={busy}
+                                className="text-[11px] text-slate-400 hover:text-brand" title="ล็อกอยู่ — กดเพื่อแก้ไข (ต้องใส่ PIN)">🔒 แก้ไข</button>
+                            </div>
+                          ) : (
+                            <SalesInput value={r.sales_amount} disabled={busy} autoFocus={editingId === r.id}
+                              onSave={(v) => { saveSales(r, v); setEditingId(null); }} />
+                          )}
                         </td>
                         <td className="py-1 px-2 text-[11px] text-slate-400">
                           {r.source === "pos_import" ? "นำเข้าไฟล์" : "กรอกเอง"}
@@ -357,7 +376,7 @@ export default function RoundsClient({
           </div>
         )}
         <p className="text-[11px] text-slate-400">
-          แก้ยอดได้โดยพิมพ์แล้วคลิกออก (ต้องยืนยัน PIN) · ยอดโอนรายสัปดาห์รวมจันทร์–อาทิตย์ให้อัตโนมัติ
+          ยอดที่นำเข้า/ส่งแล้วล็อกไว้ 🔒 กด “แก้ไข” + ใส่ PIN ก่อนแก้ · ยอดโอนรายสัปดาห์รวมจันทร์–อาทิตย์ให้อัตโนมัติ
           {partner.line_group_id
             ? " · กด “ส่งยอดวันนี้” แจ้งคู่ค้าตอนนำเข้า, “ส่งสรุปสัปดาห์” ตอนจะโอน"
             : " · ตั้ง LINE group ในหน้าตั้งค่าคู่ค้าเพื่อส่งแจ้งเตือนรายวัน/สัปดาห์ได้"}
@@ -390,12 +409,12 @@ export default function RoundsClient({
 // Editable daily-sales input: shows the value grouped with thousand separators
 // at rest (and in the app font, not the browser's number-input font), drops the
 // commas for clean editing on focus, re-formats + saves on blur.
-function SalesInput({ value, onSave, disabled }: { value: number; onSave: (v: string) => void; disabled?: boolean }) {
+function SalesInput({ value, onSave, disabled, autoFocus }: { value: number; onSave: (v: string) => void; disabled?: boolean; autoFocus?: boolean }) {
   const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const [text, setText] = useState(fmt(value));
   return (
     <input
-      type="text" inputMode="decimal" disabled={disabled}
+      type="text" inputMode="decimal" disabled={disabled} autoFocus={autoFocus}
       className="input w-32 text-right text-sm py-1 font-sans"
       value={text}
       onFocus={() => setText(value ? String(value) : "")}
