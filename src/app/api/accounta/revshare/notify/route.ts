@@ -5,7 +5,8 @@ import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
 import { isRevshareBranch, getPartner, previewSettlement, listRounds } from "@/lib/revshare-db";
 import { revshareSettlementFlex, revshareWeeklyFlex, revshareDailyFlex, notifyRevsharePartner } from "@/lib/revshare-line";
-import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat, partnerShopName } from "@/lib/revshare";
+import { postRevshareDailyIncome } from "@/lib/accounta-db";
+import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat, partnerShopName, salesVat } from "@/lib/revshare";
 
 // Push a sales notification to the partner's LINE group. Three kinds (owner
 // 2026-06-23): daily (a day's sales heads-up), weekly (the amount transferred
@@ -69,10 +70,15 @@ export async function POST(req: Request) {
   const salesIncludesVat = salesBaseIncludesVat(partner.sales_base);
 
   let flex;
+  // When kind==='daily', the day's sales are also mirrored into ศาลาชิลล์'s
+  // ACCOUNTA รายรับ after the LINE send succeeds (owner 2026-07-25).
+  let dailyIncomeAmount: number | null = null;
   if (kind === "daily") {
     if (!date) return NextResponse.json({ error: "date_required" }, { status: 400 });
     const round = listRounds(partnerId, branchId, year, month).find((r) => r.period_start === date);
     if (!round) return NextResponse.json({ error: "day_not_found" }, { status: 404 });
+    // รวม VAT figure (base × 1.07 for pre-VAT bases; the stored value for nett).
+    dailyIncomeAmount = salesVat(round.sales_amount, vatRate, salesIncludesVat).total;
     flex = revshareDailyFlex({ shop, sellerName: seller, dateLabel: thaiDate(date), sales: round.sales_amount, vatRate, salesIncludesVat });
   } else if (kind === "weekly") {
     const w = week_start ? preview.breakdown.find((b) => b.start === week_start) : preview.breakdown[preview.breakdown.length - 1];
@@ -96,5 +102,22 @@ export async function POST(req: Request) {
       : "ส่ง LINE ไม่สำเร็จ";
     return NextResponse.json({ error: res.error ?? "send_failed", message: msg }, { status: 502 });
   }
-  return NextResponse.json({ ok: true });
+
+  // LINE sent OK → mirror the day's sales into the seller branch's รายรับ.
+  // Best-effort: the send (the operator's PIN-verified intent) already
+  // succeeded, so a hiccup here must not fail the request — re-sending the day
+  // re-posts idempotently.
+  let incomePosted = false;
+  if (kind === "daily" && date && dailyIncomeAmount != null) {
+    try {
+      postRevshareDailyIncome({
+        branchId, date, channel: shop, amount: dailyIncomeAmount,
+        isVat: partner.vat_enabled, userId: user.id
+      });
+      incomePosted = true;
+    } catch (e) {
+      console.error("revshare daily income post failed", e);
+    }
+  }
+  return NextResponse.json({ ok: true, incomePosted });
 }
