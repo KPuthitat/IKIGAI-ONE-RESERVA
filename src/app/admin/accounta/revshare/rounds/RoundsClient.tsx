@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
 import { fmtMoney } from "@/lib/format";
-import { roundLabel, mondayOf, TH_MONTHS_FULL, type Tier, type SalesBase } from "@/lib/revshare";
+import { roundLabel, mondayOf, TH_MONTHS_FULL, salesBaseIncludesVat, partnerShopName, type Tier, type SalesBase } from "@/lib/revshare";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import { useConfirm } from "@/app/components/useConfirm";
 import { DailyCardPreview, WeeklyCardPreview, SendPreviewModal } from "./CardPreviews";
@@ -33,7 +33,7 @@ export default function RoundsClient({
   // confirm with PIN, then send. `sentKey` flashes a ✓ on the row after success.
   const [sentKey, setSentKey] = useState<string | null>(null);
   const [sendModal, setSendModal] = useState<{ key: string; heading: string; preview: React.ReactNode; body: Record<string, unknown> } | null>(null);
-  const shop = partner.pos_categories.length ? partner.pos_categories.join(", ") : partner.name;
+  const shop = partnerShopName(partner);
   const vatRate = partner.vat_enabled ? partner.vat_rate : 0;
 
   // PIN gate — verify once, reuse for the session; re-prompt if the server
@@ -293,7 +293,7 @@ export default function RoundsClient({
                           {partner.line_group_id && (
                             <button type="button" onClick={() => setSendModal({
                               key: `d:${r.period_start}`, heading: "ส่งสรุปยอดขายประจำวัน",
-                              preview: <DailyCardPreview shop={shop} sellerName={sellerName} dateLabel={roundLabel(r.period_start, r.period_start)} sales={r.sales_amount} vatRate={vatRate} />,
+                              preview: <DailyCardPreview shop={shop} sellerName={sellerName} dateLabel={roundLabel(r.period_start, r.period_start)} sales={r.sales_amount} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} />,
                               body: { kind: "daily", date: r.period_start }
                             })} className="text-[11px] text-emerald-600 hover:underline mr-3">
                               {sentKey === `d:${r.period_start}` ? "✓ ส่งแล้ว" : "ส่งยอดวันนี้"}
@@ -311,7 +311,7 @@ export default function RoundsClient({
                         {partner.line_group_id && (
                           <button type="button" onClick={() => setSendModal({
                             key: `w:${w.rounds[0].period_start}`, heading: "ส่งสรุปยอดขายประจำสัปดาห์",
-                            preview: <WeeklyCardPreview shop={shop} sellerName={sellerName} weekLabel={w.label} transferAmount={w.total} dayCount={w.rounds.length} vatRate={vatRate} />,
+                            preview: <WeeklyCardPreview shop={shop} sellerName={sellerName} weekLabel={w.label} transferAmount={w.total} dayCount={w.rounds.length} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} />,
                             body: { kind: "weekly", week_start: w.rounds[0].period_start }
                           })} className="ml-2 text-[11px] font-bold text-emerald-600 hover:underline">
                             {sentKey === `w:${w.rounds[0].period_start}` ? "✓ ส่งแล้ว" : "ส่งสรุปสัปดาห์"}

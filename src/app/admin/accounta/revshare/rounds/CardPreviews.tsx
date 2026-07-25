@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { fmtMoney } from "@/lib/format";
-import { vatInclusive } from "@/lib/revshare";
+import { salesVat } from "@/lib/revshare";
 
 const baht = (n: number) => `${fmtMoney(n)} บาท`;
 
@@ -31,10 +31,10 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
   );
 }
 
-export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate }: {
-  shop: string; sellerName: string; dateLabel: string; sales: number; vatRate: number;
+export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate, salesIncludesVat = false }: {
+  shop: string; sellerName: string; dateLabel: string; sales: number; vatRate: number; salesIncludesVat?: boolean;
 }) {
-  const v = vatInclusive(sales, vatRate);
+  const v = salesVat(sales, vatRate, salesIncludesVat);
   return (
     <Shell title="สรุปยอดขายประจำวัน" subtitle={dateLabel}>
       <div className="text-[15px] font-bold text-slate-800 leading-tight">{shop}</div>
@@ -49,10 +49,10 @@ export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate }
   );
 }
 
-export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount, dayCount, vatRate }: {
-  shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number;
+export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount, dayCount, vatRate, salesIncludesVat = false }: {
+  shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number; salesIncludesVat?: boolean;
 }) {
-  const v = vatInclusive(transferAmount, vatRate);
+  const v = salesVat(transferAmount, vatRate, salesIncludesVat);
   return (
     <Shell title="สรุปยอดขายประจำสัปดาห์" subtitle={weekLabel}>
       <div className="text-[15px] font-bold text-slate-800 leading-tight">{shop}</div>

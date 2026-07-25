@@ -4,7 +4,7 @@
 
 import { sendLinePush } from "./line";
 import { getPlatformChannel } from "./messaging-channels";
-import { vatInclusive } from "./revshare";
+import { salesVat } from "./revshare";
 
 type FlexMsg = { type: "flex"; altText: string; contents: unknown };
 
@@ -86,9 +86,9 @@ export function revshareSettlementFlex(d: SettlementCard): FlexMsg {
 }
 
 // ── Daily sales heads-up (owner 2026-06-23: ส่งทุกวันที่นำเข้ายอด) ──
-export type DailyCard = { shop: string; sellerName: string; dateLabel: string; sales: number; vatRate: number };
+export type DailyCard = { shop: string; sellerName: string; dateLabel: string; sales: number; vatRate: number; salesIncludesVat?: boolean };
 export function revshareDailyFlex(d: DailyCard): FlexMsg {
-  const v = vatInclusive(d.sales, d.vatRate);
+  const v = salesVat(d.sales, d.vatRate, d.salesIncludesVat ?? false);
   return {
     type: "flex",
     altText: `สรุปยอดขายประจำวัน ${d.dateLabel} · ${d.shop} · ${baht(d.sales)}`,
@@ -114,9 +114,10 @@ export function revshareDailyFlex(d: DailyCard): FlexMsg {
 // ── Weekly sales summary (the amount HYPOPLARAEMIA transfers back to the shop) ──
 export type WeeklyCard = {
   shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number;
+  salesIncludesVat?: boolean;
 };
 export function revshareWeeklyFlex(d: WeeklyCard): FlexMsg {
-  const v = vatInclusive(d.transferAmount, d.vatRate);
+  const v = salesVat(d.transferAmount, d.vatRate, d.salesIncludesVat ?? false);
   return {
     type: "flex",
     altText: `สรุปยอดขายประจำสัปดาห์ ${d.weekLabel} · ${d.shop} · ${baht(d.transferAmount)}`,
