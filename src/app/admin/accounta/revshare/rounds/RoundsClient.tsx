@@ -320,11 +320,9 @@ export default function RoundsClient({
                         </td>
                         <td className="py-1 px-2 text-right">
                           {isLocked(r) && editingId !== r.id ? (
-                            <div className="flex items-center justify-end gap-2">
-                              <span className="tabular-nums font-sans text-slate-700">฿{fmtMoney(r.sales_amount)}</span>
-                              <button type="button" onClick={() => unlockEdit(r)} disabled={busy}
-                                className="text-[11px] text-slate-400 hover:text-brand" title="ล็อกอยู่ — กดเพื่อแก้ไข (ต้องใส่ PIN)">🔒 แก้ไข</button>
-                            </div>
+                            <span className="tabular-nums font-sans text-slate-700 inline-flex items-center gap-1 justify-end" title="ล็อกอยู่ — กด “แก้ไข” เพื่อปลด (ต้องใส่ PIN)">
+                              <span className="text-[10px] text-slate-400">🔒</span>฿{fmtMoney(r.sales_amount)}
+                            </span>
                           ) : (
                             <SalesInput value={r.sales_amount} disabled={busy} autoFocus={editingId === r.id}
                               onSave={(v) => { saveSales(r, v); setEditingId(null); }} />
@@ -335,6 +333,10 @@ export default function RoundsClient({
                           {r.bill_count != null && <span className="text-slate-500"> · {r.bill_count} บิล</span>}
                         </td>
                         <td className="py-1 px-2 text-right whitespace-nowrap">
+                          {isLocked(r) && editingId !== r.id && (
+                            <button type="button" onClick={() => unlockEdit(r)} disabled={busy}
+                              className="text-[11px] text-slate-500 hover:text-brand hover:underline mr-3" title="ปลดล็อกเพื่อแก้ยอด (ต้องใส่ PIN)">🔒 แก้ไข</button>
+                          )}
                           {partner.line_group_id && (
                             <button type="button" onClick={() => setSendModal({
                               key: `d:${r.period_start}`, heading: "ส่งสรุปยอดขายประจำวัน",
