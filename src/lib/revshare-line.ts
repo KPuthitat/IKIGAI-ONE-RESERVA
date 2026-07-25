@@ -86,7 +86,7 @@ export function revshareSettlementFlex(d: SettlementCard): FlexMsg {
 }
 
 // ── Daily sales heads-up (owner 2026-06-23: ส่งทุกวันที่นำเข้ายอด) ──
-export type DailyCard = { shop: string; sellerName: string; dateLabel: string; sales: number; vatRate: number; salesIncludesVat?: boolean };
+export type DailyCard = { shop: string; sellerName: string; dateLabel: string; sales: number; vatRate: number; salesIncludesVat?: boolean; billCount?: number | null };
 export function revshareDailyFlex(d: DailyCard): FlexMsg {
   const v = salesVat(d.sales, d.vatRate, d.salesIncludesVat ?? false);
   return {
@@ -103,7 +103,8 @@ export function revshareDailyFlex(d: DailyCard): FlexMsg {
           sep,
           kv("ยอดขายวันนี้ (รวม VAT)", baht(v.total), { bold: true }),
           kv("ยอดขายก่อนภาษี", baht(v.base), { size: "xs" }),
-          kv("VAT 7%", baht(v.vat), { size: "xs" })
+          kv("VAT 7%", baht(v.vat), { size: "xs" }),
+          ...(d.billCount != null ? [kv("จำนวนบิล", `${d.billCount.toLocaleString("th-TH")} บิล`, { size: "xs" })] : [])
         ]
       },
       footer: footer("ยอดสะสมจะสรุปอีกครั้งในใบประจำสัปดาห์/เดือน")

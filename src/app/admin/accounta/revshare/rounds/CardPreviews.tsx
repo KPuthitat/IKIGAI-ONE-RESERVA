@@ -31,8 +31,8 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
   );
 }
 
-export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate, salesIncludesVat = false }: {
-  shop: string; sellerName: string; dateLabel: string; sales: number; vatRate: number; salesIncludesVat?: boolean;
+export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate, salesIncludesVat = false, billCount }: {
+  shop: string; sellerName: string; dateLabel: string; sales: number; vatRate: number; salesIncludesVat?: boolean; billCount?: number | null;
 }) {
   const v = salesVat(sales, vatRate, salesIncludesVat);
   return (
@@ -43,6 +43,7 @@ export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate, 
       <Row label="ยอดขายวันนี้ (รวม VAT)" value={baht(v.total)} bold />
       <Row label="ยอดขายก่อนภาษี" value={baht(v.base)} />
       <Row label="VAT 7%" value={baht(v.vat)} />
+      {billCount != null && <Row label="จำนวนบิล" value={`${billCount.toLocaleString("th-TH")} บิล`} />}
       <div className="border-t border-slate-100 my-1" />
       <div className="text-[9px] text-slate-400 text-center">ยอดสะสมจะสรุปอีกครั้งในใบประจำสัปดาห์/เดือน</div>
     </Shell>

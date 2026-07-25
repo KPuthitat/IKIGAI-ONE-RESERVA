@@ -23,7 +23,7 @@ export type RsRound = {
   id: number; partner_id: number; period_year: number; period_month: number;
   period_start: string; period_end: string; label: string | null;
   sales_amount: number; source: "manual" | "pos_import"; source_filename: string | null;
-  sent_at: string | null;
+  sent_at: string | null; bill_count: number | null;
 };
 export type RsSettlement = SettlementResult & {
   id: number; partner_id: number; settle_year: number; settle_month: number; op_month: number;
@@ -170,7 +170,7 @@ function shapeRound(r: any): RsRound {
     id: r.id, partner_id: r.partner_id, period_year: r.period_year, period_month: r.period_month,
     period_start: r.period_start, period_end: r.period_end, label: r.label,
     sales_amount: r.sales_amount, source: r.source, source_filename: r.source_filename,
-    sent_at: r.sent_at ?? null
+    sent_at: r.sent_at ?? null, bill_count: r.bill_count ?? null
   };
 }
 
@@ -192,24 +192,26 @@ export function listRounds(partnerId: number, branchId: number, year: number, mo
 export type RoundInput = {
   period_start: string; period_end: string; sales_amount: number;
   source?: "manual" | "pos_import"; source_filename?: string | null; label?: string | null;
+  bill_count?: number | null;
 };
 export function createRound(partnerId: number, branchId: number, d: RoundInput, userId: number): number | null {
   if (!partnerGuard(partnerId, branchId)) return null;
   const [y, m] = d.period_start.split("-").map(Number);
   return Number(getDb().prepare(`
     INSERT INTO revshare_rounds (partner_id, period_year, period_month, period_start, period_end,
-      label, sales_amount, source, source_filename, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      label, sales_amount, source, source_filename, bill_count, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     partnerId, y, m, d.period_start, d.period_end,
     d.label ?? roundLabel(d.period_start, d.period_end), round2(d.sales_amount),
-    d.source ?? "manual", d.source_filename ?? null, userId
+    d.source ?? "manual", d.source_filename ?? null, d.bill_count ?? null, userId
   ).lastInsertRowid);
 }
-export function updateRound(roundId: number, partnerId: number, branchId: number, d: { sales_amount?: number; period_start?: string; period_end?: string }, userId: number): boolean {
+export function updateRound(roundId: number, partnerId: number, branchId: number, d: { sales_amount?: number; period_start?: string; period_end?: string; bill_count?: number | null }, userId: number): boolean {
   if (!partnerGuard(partnerId, branchId)) return false;
-  const sets: string[] = []; const vals: Array<string | number> = [];
+  const sets: string[] = []; const vals: Array<string | number | null> = [];
   if (d.sales_amount !== undefined) { sets.push("sales_amount = ?"); vals.push(round2(d.sales_amount)); }
+  if (d.bill_count !== undefined) { sets.push("bill_count = ?"); vals.push(d.bill_count); }
   if (d.period_start !== undefined && d.period_end !== undefined) {
     const [y, m] = d.period_start.split("-").map(Number);
     sets.push("period_start = ?", "period_end = ?", "period_year = ?", "period_month = ?", "label = ?");

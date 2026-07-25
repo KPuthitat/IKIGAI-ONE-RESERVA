@@ -21,6 +21,7 @@ const PostZ = z.union([
     source: z.enum(["manual", "pos_import"]).optional(),
     source_filename: z.string().max(200).optional(),
     label: z.string().max(60).optional(),
+    bill_count: z.number().int().min(0).optional(),
     pin: z.string()
   })
 ]);
@@ -28,6 +29,7 @@ const PatchZ = z.object({
   id: z.number().int().positive(), partner: z.number().int().positive(),
   sales_amount: z.number().min(0).optional(),
   period_start: z.string().regex(ISO).optional(), period_end: z.string().regex(ISO).optional(),
+  bill_count: z.number().int().min(0).optional(),
   pin: z.string()
 });
 

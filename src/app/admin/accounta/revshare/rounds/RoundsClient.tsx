@@ -15,9 +15,9 @@ type Partner = { id: number; name: string; sales_base: SalesBase; pos_categories
 type Round = {
   id: number; period_start: string; period_end: string; label: string | null;
   sales_amount: number; source: "manual" | "pos_import"; source_filename: string | null;
-  sent_at: string | null;
+  sent_at: string | null; bill_count: number | null;
 };
-type PosCat = { category: string; gross: number; afterDiscount: number; nett: number };
+type PosCat = { category: string; qty: number; gross: number; afterDiscount: number; nett: number };
 type PosPreview = { filename: string; periodStart: string | null; periodEnd: string | null; label: string | null; categories: PosCat[] };
 const BASE_LABEL: Record<SalesBase, string> = { gross: "Gross (ก่อนส่วนลด)", after_discount: "หลังหักส่วนลด", nett: "Nett (รวม VAT)" };
 const PIN_ERRORS = new Set(["wrong_pin", "pin_invalid", "no_pin", "user_not_found"]);
@@ -184,6 +184,8 @@ export default function RoundsClient({
   }
   function baseVal(c: PosCat): number { return base === "gross" ? c.gross : base === "after_discount" ? c.afterDiscount : c.nett; }
   const posTotal = preview ? preview.categories.filter((c) => selCats.has(c.category)).reduce((s, c) => s + baseVal(c), 0) : 0;
+  // "จำนวนบิล" = Qty summed over the selected categories (owner 2026-07-25).
+  const posBills = preview ? preview.categories.filter((c) => selCats.has(c.category)).reduce((s, c) => s + c.qty, 0) : 0;
   const posMultiDay = !!preview && preview.periodStart !== preview.periodEnd;
 
   async function confirmImport() {
@@ -192,7 +194,8 @@ export default function RoundsClient({
     await guarded(async (pin) => {
       const r = await mutate("POST", {
         partner: partner.id, period_start: ps, period_end: pe,
-        sales_amount: posTotal, source: "pos_import", source_filename: preview.filename, label: preview.label ?? undefined, pin
+        sales_amount: posTotal, bill_count: posBills,
+        source: "pos_import", source_filename: preview.filename, label: preview.label ?? undefined, pin
       });
       if (r.ok) setPreview(null);
       return r;
@@ -276,7 +279,7 @@ export default function RoundsClient({
             </table>
           </div>
           <div className="flex items-center justify-between">
-            <div className="text-sm">ยอดที่จะบันทึก: <b className="text-brand">฿{fmtMoney(posTotal)}</b> <span className="text-[11px] text-slate-400">({BASE_LABEL[base]})</span></div>
+            <div className="text-sm">ยอดที่จะบันทึก: <b className="text-brand">฿{fmtMoney(posTotal)}</b> <span className="text-[11px] text-slate-400">({BASE_LABEL[base]})</span> <span className="text-[11px] text-slate-500">· จำนวนบิล <b>{posBills}</b></span></div>
             <button type="button" onClick={confirmImport} disabled={busy || posTotal <= 0} className="btn-primary text-sm disabled:opacity-50">ยืนยันบันทึกยอดวันนี้</button>
           </div>
         </div>
@@ -308,12 +311,15 @@ export default function RoundsClient({
                         <td className="py-1 px-2 text-right">
                           <SalesInput value={r.sales_amount} disabled={busy} onSave={(v) => saveSales(r, v)} />
                         </td>
-                        <td className="py-1 px-2 text-[11px] text-slate-400">{r.source === "pos_import" ? "นำเข้าไฟล์" : "กรอกเอง"}</td>
+                        <td className="py-1 px-2 text-[11px] text-slate-400">
+                          {r.source === "pos_import" ? "นำเข้าไฟล์" : "กรอกเอง"}
+                          {r.bill_count != null && <span className="text-slate-500"> · {r.bill_count} บิล</span>}
+                        </td>
                         <td className="py-1 px-2 text-right whitespace-nowrap">
                           {partner.line_group_id && (
                             <button type="button" onClick={() => setSendModal({
                               key: `d:${r.period_start}`, heading: "ส่งสรุปยอดขายประจำวัน",
-                              preview: <DailyCardPreview shop={shop} sellerName={sellerName} dateLabel={roundLabel(r.period_start, r.period_start)} sales={r.sales_amount} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} />,
+                              preview: <DailyCardPreview shop={shop} sellerName={sellerName} dateLabel={roundLabel(r.period_start, r.period_start)} sales={r.sales_amount} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} billCount={r.bill_count} />,
                               body: { kind: "daily", date: r.period_start }
                             })} className="text-[11px] text-emerald-600 hover:underline mr-3">
                               {sentKey === `d:${r.period_start}` || r.sent_at ? "✓ ส่งแล้ว" : "ส่งยอดวันนี้"}

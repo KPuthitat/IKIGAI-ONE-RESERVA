@@ -1,7 +1,7 @@
 // POS parser test (acceptance 6). Builds a synthetic workbook matching the
 // real POS export shape and asserts the SOFT DRINK subtotal + date parse.
 import * as XLSX from "xlsx";
-import { parsePosBuffer, posSelectedTotal } from "../src/lib/revshare-pos";
+import { parsePosBuffer, posSelectedTotal, posSelectedQty } from "../src/lib/revshare-pos";
 
 let failed = 0;
 function eq(name: string, got: unknown, want: unknown): void {
@@ -45,10 +45,13 @@ else {
   eq("6.SOFT DRINK gross", sd.gross, 3545.0);
   eq("6.SOFT DRINK after_discount", sd.afterDiscount, 3507.48);
   eq("6.SOFT DRINK nett", sd.nett, 3940.65);
+  eq("6.SOFT DRINK qty (bill count)", sd.qty, 20);
 }
 eq("6.only one category (CUSTOMER TYPE + total skipped)", r.categories.length, 1);
 eq("6.selectedTotal gross", posSelectedTotal(r.categories, ["SOFT DRINK"], "gross"), 3545.0);
 eq("6.selectedTotal nett", posSelectedTotal(r.categories, ["soft drink"], "nett"), 3940.65);
+eq("6.selectedQty (bills)", posSelectedQty(r.categories, ["soft drink"]), 20);
+eq("6.selectedQty unselected = 0", posSelectedQty(r.categories, ["NOPE"]), 0);
 
 if (failed > 0) { console.error(`\nPOS TESTS FAILED: ${failed}`); process.exit(1); }
 console.log("\nrevshare-pos: all tests passed");

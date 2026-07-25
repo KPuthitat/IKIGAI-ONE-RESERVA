@@ -14,6 +14,7 @@ import { roundLabel, round2 } from "./revshare";
 
 export type PosCategory = {
   category: string;
+  qty: number;            // col 4 — items sold in this category
   gross: number;          // col 5 — pre-VAT list amount
   afterDiscount: number;  // gross + bill discount + item discount
   nett: number;           // col 10 — incl. VAT + service charge
@@ -83,6 +84,7 @@ export function parsePosBuffer(buf: Buffer | ArrayBuffer): PosParseResult {
       if (gross <= 0) continue;      // skip non-sales categories (e.g. CUSTOMER TYPE)
       categories.push({
         category: cat,
+        qty: Math.round(num(row[4])),
         gross: round2(gross),
         afterDiscount: round2(gross + num(row[6]) + num(row[7])),
         nett: round2(num(row[10]))
@@ -102,4 +104,15 @@ export function posSelectedTotal(categories: PosCategory[], selected: string[], 
     t += base === "gross" ? c.gross : base === "after_discount" ? c.afterDiscount : c.nett;
   }
   return round2(t);
+}
+
+/** Sum Qty over the selected categories — the partner's "จำนวนบิล" (owner
+ *  2026-07-25: the จ้อจี้ categories' item count). Same selection as the total. */
+export function posSelectedQty(categories: PosCategory[], selected: string[]): number {
+  const set = new Set(selected.map((s) => s.trim().toLowerCase()));
+  let n = 0;
+  for (const c of categories) {
+    if (set.has(c.category.trim().toLowerCase())) n += c.qty;
+  }
+  return n;
 }
