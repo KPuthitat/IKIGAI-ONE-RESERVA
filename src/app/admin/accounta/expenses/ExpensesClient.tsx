@@ -1094,6 +1094,15 @@ export default function ExpensesClient(props: {
               </div>
             )}
 
+            {/* Vendor = "start here" — the one field to fill; the rest
+                auto-prefills from its last bill (owner 2026-07-25). */}
+            <div className="rounded-lg border border-brand/40 bg-brand/5 p-3 mb-3">
+              <label className="label !text-[13px] !text-brand !font-bold !mb-1">① ผู้จำหน่าย / ผู้รับเงิน</label>
+              <Combobox value={form.vendor_name} onChange={onVendorChange}
+                options={vendors.map((v) => v.name)} placeholder="พิมพ์ชื่อคู่ค้า แล้วระบบจะเติมช่องอื่นให้"
+                inputClassName="!text-base !py-2.5 !border-brand/50" />
+              <p className="text-[11px] text-brand/80 mt-1.5">กรอกช่องนี้ช่องเดียว — ระบบดึงค่าที่ใช้บ่อยจากบิลล่าสุดมาเติมให้ เหลือแค่ใส่ยอด</p>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {/* Branch-locked to the active branch (owner 2026-07-03) — no
                   cross-branch picker; switch branch via the top pill. */}
@@ -1150,11 +1159,6 @@ export default function ExpensesClient(props: {
                   </p>
                 </div>
               )}
-              <div className="sm:col-span-2">
-                <label className="label !text-xs">ผู้จำหน่าย / ผู้รับเงิน</label>
-                <Combobox value={form.vendor_name} onChange={onVendorChange}
-                  options={vendors.map((v) => v.name)} placeholder="พิมพ์ชื่อ หรือเลือกจากรายการ" />
-              </div>
               <div>
                 <label className="label !text-xs">เลขที่ใบกำกับ/บิล</label>
                 <input className="input font-mono" value={form.invoice_no} onChange={(e) => set("invoice_no", e.target.value)} placeholder="เลขที่บนบิล (ใช้เช็คบิลซ้ำ)" />

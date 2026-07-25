@@ -187,6 +187,36 @@ export default function ExpenseEditModal({
     } finally { clearTimeout(timer); setBusy(false); }
   }
 
+  // Vendor is the "start here" field: on an exact match to a known คู่ค้า,
+  // prefill EVERY field from its most-recent bill (owner 2026-07-24/25) — only
+  // the amount is left to type. Fires once per distinct match.
+  function onVendorName(v: string) {
+    setVendor(v);
+    const m = vendors.find((x) => x.name.trim().toLowerCase() === v.trim().toLowerCase());
+    if (m && m.name !== prefilledRef.current) {
+      prefilledRef.current = m.name;
+      const lb = m.last_bill;
+      if (lb) {
+        if (lb.category != null) setCategory(lb.category);
+        if (lb.description != null) setDescription(lb.description);
+        if (lb.doc_type && (DOC_TYPES as readonly string[]).includes(lb.doc_type)) setDocType(lb.doc_type);
+        if (lb.capex_bucket && (STARTUP_CATEGORIES as readonly string[]).includes(lb.capex_bucket)) setCapexBucket(lb.capex_bucket);
+        setHasVat(!!lb.has_tax_invoice);
+        setWhtRate(String(lb.wht_rate ?? 0));
+        setIsFixed(!!lb.is_fixed);
+        setStatus(lb.payment_status === "unpaid" ? "unpaid" : "paid");
+        if (lb.payment_method) setMethod(lb.payment_method);
+        if (lb.payment_status === "unpaid" && lb.due_mode) {
+          const dm = lb.due_mode as "on_receipt" | "cycle" | "date";
+          setDueMode(dm);
+          if (dm === "cycle") setDueDate(nextMonday(billDate));
+        }
+      } else if (m.last_description && !description.trim()) {
+        setDescription(m.last_description);
+      }
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-4 overflow-y-auto overscroll-contain" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl my-4 max-h-[85dvh] overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]" onClick={(e) => e.stopPropagation()}>
@@ -194,7 +224,18 @@ export default function ExpenseEditModal({
           <div className="text-sm font-bold text-slate-800">{isCreate ? "เพิ่มรายจ่าย" : "แก้ไขรายจ่าย"}</div>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
         </div>
-        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5">
+        {/* Vendor = "start here" — the one field to fill; the rest auto-prefills
+            from its last bill (owner 2026-07-25). Made visually dominant. */}
+        <div className="px-5 pt-5">
+          <div className="rounded-lg border border-brand/40 bg-brand/5 p-3">
+            <label className="label !text-[13px] !text-brand !font-bold !mb-1">① ผู้จำหน่าย / ผู้รับเงิน</label>
+            <input className="input !text-base !py-2.5 !border-brand/50 focus:!border-brand" list="exp-edit-vendors" value={vendor}
+              onChange={(e) => onVendorName(e.target.value)} placeholder="พิมพ์ชื่อคู่ค้า แล้วระบบจะเติมช่องอื่นให้" autoFocus={isCreate} />
+            <datalist id="exp-edit-vendors">{vendors.map((v) => <option key={v.name} value={v.name} />)}</datalist>
+            <p className="text-[11px] text-brand/80 mt-1.5">กรอกช่องนี้ช่องเดียว — ระบบดึงค่าที่ใช้บ่อยจากบิลล่าสุดมาเติมให้ เหลือแค่ใส่ยอด</p>
+          </div>
+        </div>
+        <div className="p-5 pt-3.5 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5">
           <div>
             <label className="label !text-xs">วันที่เอกสาร</label>
             <input type="date" className="input" value={billDate} onChange={(e) => setBillDate(e.target.value)} />
@@ -218,43 +259,6 @@ export default function ExpenseEditModal({
                 options={STARTUP_CATEGORIES.map((b) => ({ value: b, label: STARTUP_CATEGORY_LABEL[b] }))} />
             </div>
           )}
-
-          <div className="sm:col-span-2">
-            <label className="label !text-xs">ผู้จำหน่าย / ผู้รับเงิน</label>
-            <input className="input" list="exp-edit-vendors" value={vendor}
-              onChange={(e) => {
-                const v = e.target.value;
-                setVendor(v);
-                // When the typed/selected vendor exactly matches a known คู่ค้า,
-                // prefill EVERY field from its most-recent bill (owner 2026-07-24)
-                // — only the amount is left to type. Fires once per distinct match.
-                const m = vendors.find((x) => x.name.trim().toLowerCase() === v.trim().toLowerCase());
-                if (m && m.name !== prefilledRef.current) {
-                  prefilledRef.current = m.name;
-                  const lb = m.last_bill;
-                  if (lb) {
-                    if (lb.category != null) setCategory(lb.category);
-                    if (lb.description != null) setDescription(lb.description);
-                    if (lb.doc_type && (DOC_TYPES as readonly string[]).includes(lb.doc_type)) setDocType(lb.doc_type);
-                    if (lb.capex_bucket && (STARTUP_CATEGORIES as readonly string[]).includes(lb.capex_bucket)) setCapexBucket(lb.capex_bucket);
-                    setHasVat(!!lb.has_tax_invoice);
-                    setWhtRate(String(lb.wht_rate ?? 0));
-                    setIsFixed(!!lb.is_fixed);
-                    setStatus(lb.payment_status === "unpaid" ? "unpaid" : "paid");
-                    if (lb.payment_method) setMethod(lb.payment_method);
-                    if (lb.payment_status === "unpaid" && lb.due_mode) {
-                      const dm = lb.due_mode as "on_receipt" | "cycle" | "date";
-                      setDueMode(dm);
-                      if (dm === "cycle") setDueDate(nextMonday(billDate));
-                    }
-                  } else if (m.last_description && !description.trim()) {
-                    setDescription(m.last_description);
-                  }
-                }
-              }}
-              placeholder="ชื่อผู้จำหน่าย" />
-            <datalist id="exp-edit-vendors">{vendors.map((v) => <option key={v.name} value={v.name} />)}</datalist>
-          </div>
 
           <div>
             <label className="label !text-xs">เลขที่ใบกำกับ/บิล</label>
