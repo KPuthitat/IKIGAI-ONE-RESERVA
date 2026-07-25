@@ -2,7 +2,7 @@
 // Covers acceptance criteria 1–5 (POS parser = test-revshare-pos via RS3).
 import {
   marginalGP, computeSettlement, computeRoundBreakdown, opMonthFor, floorFor,
-  DEFAULT_TIERS, DEFAULT_FLOORS, roundLabel, type Floor
+  DEFAULT_TIERS, DEFAULT_FLOORS, roundLabel, salesVat, salesBaseIncludesVat, type Floor
 } from "../src/lib/revshare";
 
 let failed = 0;
@@ -98,6 +98,25 @@ const F: Floor[] = [
 {
   ok("x.defaultFloor flat 20k m1", floorFor(1, DEFAULT_FLOORS) === 20_000);
   ok("x.defaultFloor flat 20k m12", floorFor(12, DEFAULT_FLOORS) === 20_000);
+}
+
+// salesVat — daily/weekly card VAT split honours sales_base (owner 2026-07-25).
+// The 2,630 pre-VAT figure that surfaced the bug: was shown as base 2,457.94
+// (÷1.07); must be base 2,630 + VAT 184.10.
+{
+  const pre = salesVat(2630, 0.07, false); // gross/after_discount → add on top
+  eq("vat.gross base", pre.base, 2630);
+  eq("vat.gross vat", pre.vat, 184.1);
+  eq("vat.gross total", pre.total, 2814.1);
+
+  const inc = salesVat(2630, 0.07, true); // nett → already carries VAT, divide out
+  eq("vat.nett base", inc.base, 2457.94);
+  eq("vat.nett vat", inc.vat, 172.06);
+  eq("vat.nett total", inc.total, 2630);
+
+  ok("vat.base gross is pre-VAT", salesBaseIncludesVat("gross") === false);
+  ok("vat.base after_discount is pre-VAT", salesBaseIncludesVat("after_discount") === false);
+  ok("vat.base nett is VAT-inclusive", salesBaseIncludesVat("nett") === true);
 }
 
 if (failed > 0) {
