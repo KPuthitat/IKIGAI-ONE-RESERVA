@@ -15,6 +15,7 @@ type Partner = { id: number; name: string; sales_base: SalesBase; pos_categories
 type Round = {
   id: number; period_start: string; period_end: string; label: string | null;
   sales_amount: number; source: "manual" | "pos_import"; source_filename: string | null;
+  sent_at: string | null;
 };
 type PosCat = { category: string; gross: number; afterDiscount: number; nett: number };
 type PosPreview = { filename: string; periodStart: string | null; periodEnd: string | null; label: string | null; categories: PosCat[] };
@@ -115,10 +116,22 @@ export default function RoundsClient({
   async function saveSales(r: Round, value: string) {
     const v = Number(value);
     if (!Number.isFinite(v) || v === r.sales_amount) return;
-    await guarded((pin) => mutate("PATCH", { id: r.id, partner: partner.id, sales_amount: v, pin }));
+    // A sent figure is locked — editing it forces a fresh PIN (the LINE card +
+    // รายรับ already went out on this number), owner 2026-07-25.
+    if (r.sent_at) {
+      const ok = await confirm({ title: "ยอดนี้ส่งเข้ากลุ่มแล้ว", body: `แก้ไขยอดวันที่ ${roundLabel(r.period_start, r.period_start)} ที่ส่งไปแล้ว? ต้องยืนยัน PIN ใหม่`, confirmLabel: "แก้ไข", cancelLabel: "ยกเลิก", variant: "danger" });
+      if (ok === null) { setRounds((rs) => [...rs]); return; } // revert the input
+    }
+    await guarded((pin) => mutate("PATCH", { id: r.id, partner: partner.id, sales_amount: v, pin }), { forcePrompt: !!r.sent_at });
   }
   async function del(r: Round) {
-    const ok = await confirm({ title: "ยืนยันการลบ", body: `ลบยอดวันที่ ${roundLabel(r.period_start, r.period_start)} ?`, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    const ok = await confirm({
+      title: r.sent_at ? "ยอดนี้ส่งเข้ากลุ่มแล้ว" : "ยืนยันการลบ",
+      body: r.sent_at
+        ? `ลบยอดวันที่ ${roundLabel(r.period_start, r.period_start)} ที่ส่งไปแล้ว? ต้องยืนยัน PIN ใหม่`
+        : `ลบยอดวันที่ ${roundLabel(r.period_start, r.period_start)} ?`,
+      confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger"
+    });
     if (ok === null) return;
     await guarded(async (pin) => {
       const res = await mutate("DELETE", undefined, `?id=${r.id}&partner=${partner.id}&pin=${encodeURIComponent(pin)}`);
@@ -126,7 +139,7 @@ export default function RoundsClient({
       // immediately (no manual refresh, owner 2026-06-23).
       if (res.ok) setRounds((rs) => rs.filter((x) => x.id !== r.id));
       return res;
-    });
+    }, { forcePrompt: !!r.sent_at });
   }
 
   // Confirm + send the card that's currently previewed in the send modal. The
@@ -141,6 +154,10 @@ export default function RoundsClient({
     if (res.ok && j.ok) {
       const key = sendModal.key;
       setSentKey(key); setTimeout(() => setSentKey((k) => (k === key ? null : k)), 2200);
+      // Daily sends lock the round — reflect sent_at locally so the 🔒 appears
+      // without a refresh (owner 2026-07-25).
+      const sentDate = sendModal.body.kind === "daily" ? (sendModal.body.date as string) : null;
+      if (sentDate) setRounds((rs) => rs.map((x) => x.period_start === sentDate ? { ...x, sent_at: new Date().toISOString() } : x));
       setSendModal(null);
       return { ok: true };
     }
@@ -284,7 +301,10 @@ export default function RoundsClient({
                   <Fragment key={w.wk}>
                     {w.rounds.map((r) => (
                       <tr key={r.id} className="border-b border-slate-50">
-                        <td className="py-1 px-2 text-slate-600 whitespace-nowrap">{roundLabel(r.period_start, r.period_start)}</td>
+                        <td className="py-1 px-2 text-slate-600 whitespace-nowrap">
+                          {roundLabel(r.period_start, r.period_start)}
+                          {r.sent_at && <span className="ml-1.5 text-[10px] text-emerald-600" title="ส่งเข้ากลุ่มแล้ว — แก้ไข/ลบต้องยืนยัน PIN">🔒</span>}
+                        </td>
                         <td className="py-1 px-2 text-right">
                           <SalesInput value={r.sales_amount} disabled={busy} onSave={(v) => saveSales(r, v)} />
                         </td>
@@ -296,7 +316,7 @@ export default function RoundsClient({
                               preview: <DailyCardPreview shop={shop} sellerName={sellerName} dateLabel={roundLabel(r.period_start, r.period_start)} sales={r.sales_amount} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} />,
                               body: { kind: "daily", date: r.period_start }
                             })} className="text-[11px] text-emerald-600 hover:underline mr-3">
-                              {sentKey === `d:${r.period_start}` ? "✓ ส่งแล้ว" : "ส่งยอดวันนี้"}
+                              {sentKey === `d:${r.period_start}` || r.sent_at ? "✓ ส่งแล้ว" : "ส่งยอดวันนี้"}
                             </button>
                           )}
                           <button type="button" onClick={() => del(r)} disabled={busy} className="text-[11px] text-rose-500 hover:underline">ลบ</button>

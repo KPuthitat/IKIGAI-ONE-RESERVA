@@ -23,6 +23,7 @@ export type RsRound = {
   id: number; partner_id: number; period_year: number; period_month: number;
   period_start: string; period_end: string; label: string | null;
   sales_amount: number; source: "manual" | "pos_import"; source_filename: string | null;
+  sent_at: string | null;
 };
 export type RsSettlement = SettlementResult & {
   id: number; partner_id: number; settle_year: number; settle_month: number; op_month: number;
@@ -168,8 +169,18 @@ function shapeRound(r: any): RsRound {
   return {
     id: r.id, partner_id: r.partner_id, period_year: r.period_year, period_month: r.period_month,
     period_start: r.period_start, period_end: r.period_end, label: r.label,
-    sales_amount: r.sales_amount, source: r.source, source_filename: r.source_filename
+    sales_amount: r.sales_amount, source: r.source, source_filename: r.source_filename,
+    sent_at: r.sent_at ?? null
   };
+}
+
+/** Stamp a round as sent (idempotent) when its daily card goes out to the
+ *  partner group — locks it for edit/delete (owner 2026-07-25). */
+export function markRoundSent(roundId: number, partnerId: number, branchId: number, userId: number): boolean {
+  if (!partnerGuard(partnerId, branchId)) return false;
+  return getDb().prepare(
+    "UPDATE revshare_rounds SET sent_at = CURRENT_TIMESTAMP, sent_by = ? WHERE id = ? AND partner_id = ?"
+  ).run(userId, roundId, partnerId).changes > 0;
 }
 export function listRounds(partnerId: number, branchId: number, year: number, month: number): RsRound[] {
   if (!partnerGuard(partnerId, branchId)) return [];

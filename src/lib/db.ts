@@ -1800,6 +1800,12 @@ function runMigrations(db: Database.Database): void {
     // 2026-06-23: PIN-gated import/edit records the operator).
     const rrCols = db.prepare("PRAGMA table_info(revshare_rounds)").all() as Array<{ name: string }>;
     if (!rrCols.some((c) => c.name === "updated_by")) db.exec("ALTER TABLE revshare_rounds ADD COLUMN updated_by INTEGER REFERENCES users(id)");
+    // revshare_rounds.sent_at/sent_by — stamped when the day's card is pushed to
+    // the partner group (owner 2026-07-25). A sent figure is locked: editing or
+    // deleting it forces a fresh PIN (the LINE card + ACCOUNTA รายรับ already
+    // went out on that number).
+    if (!rrCols.some((c) => c.name === "sent_at")) db.exec("ALTER TABLE revshare_rounds ADD COLUMN sent_at TEXT");
+    if (!rrCols.some((c) => c.name === "sent_by")) db.exec("ALTER TABLE revshare_rounds ADD COLUMN sent_by INTEGER REFERENCES users(id)");
   }
 
   // Daily attendance summary (TC-6) — per-branch HH:MM time at which
