@@ -397,6 +397,37 @@ export function syncShiftCloseTotalIfNoChannels(
   replaceShiftCloseIncome(branchId, date, userId, total != null ? [{ channel: null, amount: total }] : []);
 }
 
+/** Mirror a revenue-share partner's daily sales into the seller branch's
+ *  ACCOUNTA รายรับ (owner 2026-07-25) — fired from the PIN-gated "ส่งยอดวันนี้".
+ *  source='revshare' rows are owned by this flow: delete-then-insert keyed by
+ *  (branch, date, channel) so re-sending a day never doubles. `amount` is the
+ *  VAT-inclusive figure (the card's รวม VAT); isVat carries the 7% so ACCOUNTA
+ *  derives the base. The channel (partner name) is registered so it shows in
+ *  the manual รายรับ dropdown. */
+export function postRevshareDailyIncome(d: {
+  branchId: number; date: string; channel: string; amount: number; isVat: boolean; userId: number;
+}): void {
+  const db = getDb();
+  const amt = round2(d.amount);
+  const channel = d.channel.trim() || null;
+  const company = db.prepare("SELECT company_id FROM branches WHERE id = ?")
+    .get(d.branchId) as { company_id: number | null } | undefined;
+  const companyId = company?.company_id ?? null;
+  const txn = db.transaction(() => {
+    if (channel) createIncomeChannel({ name: channel, branchId: d.branchId });
+    db.prepare(
+      "DELETE FROM accounta_income WHERE branch_id = ? AND income_date = ? AND source = 'revshare' AND channel IS ?"
+    ).run(d.branchId, d.date, channel);
+    if (amt <= 0) return;
+    db.prepare(
+      `INSERT INTO accounta_income (branch_id, company_id, income_date, channel, amount, note, created_by, source, is_vat, is_revenue)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'revshare', ?, 1)`
+    ).run(d.branchId, companyId, d.date, channel, amt,
+      `ยอดขายส่วนแบ่งยอดขายรายวัน${channel ? " · " + channel : ""}`, d.userId, d.isVat ? 1 : 0);
+  });
+  txn();
+}
+
 export type IncomeSummary = { total: number; byChannel: Array<{ channel: string; total: number }> };
 
 export function incomeSummary(month: string, branchId?: number | null, companyId?: number | null): IncomeSummary {
