@@ -1806,6 +1806,11 @@ function runMigrations(db: Database.Database): void {
     // went out on that number).
     if (!rrCols.some((c) => c.name === "sent_at")) db.exec("ALTER TABLE revshare_rounds ADD COLUMN sent_at TEXT");
     if (!rrCols.some((c) => c.name === "sent_by")) db.exec("ALTER TABLE revshare_rounds ADD COLUMN sent_by INTEGER REFERENCES users(id)");
+    // revshare_rounds.bill_count — number of the partner's items sold that day
+    // (Qty summed over the partner's POS categories), auto-captured from the
+    // Product-sales import (owner 2026-07-25). NULL for pre-existing / manual
+    // rows that never carried it.
+    if (!rrCols.some((c) => c.name === "bill_count")) db.exec("ALTER TABLE revshare_rounds ADD COLUMN bill_count INTEGER");
   }
 
   // Daily attendance summary (TC-6) — per-branch HH:MM time at which

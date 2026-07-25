@@ -81,7 +81,7 @@ export async function POST(req: Request) {
     dailyRoundId = round.id;
     // รวม VAT figure (base × 1.07 for pre-VAT bases; the stored value for nett).
     dailyIncomeAmount = salesVat(round.sales_amount, vatRate, salesIncludesVat).total;
-    flex = revshareDailyFlex({ shop, sellerName: seller, dateLabel: thaiDate(date), sales: round.sales_amount, vatRate, salesIncludesVat });
+    flex = revshareDailyFlex({ shop, sellerName: seller, dateLabel: thaiDate(date), sales: round.sales_amount, vatRate, salesIncludesVat, billCount: round.bill_count });
   } else if (kind === "weekly") {
     const w = week_start ? preview.breakdown.find((b) => b.start === week_start) : preview.breakdown[preview.breakdown.length - 1];
     if (!w) return NextResponse.json({ error: "week_not_found" }, { status: 404 });
