@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
-import { isRevshareBranch, getPartner, previewSettlement, listRounds } from "@/lib/revshare-db";
+import { isRevshareBranch, getPartner, previewSettlement, listRounds, markRoundSent } from "@/lib/revshare-db";
 import { revshareSettlementFlex, revshareWeeklyFlex, revshareDailyFlex, notifyRevsharePartner } from "@/lib/revshare-line";
 import { postRevshareDailyIncome } from "@/lib/accounta-db";
 import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat, partnerShopName, salesVat } from "@/lib/revshare";
@@ -73,10 +73,12 @@ export async function POST(req: Request) {
   // When kind==='daily', the day's sales are also mirrored into ศาลาชิลล์'s
   // ACCOUNTA รายรับ after the LINE send succeeds (owner 2026-07-25).
   let dailyIncomeAmount: number | null = null;
+  let dailyRoundId: number | null = null;
   if (kind === "daily") {
     if (!date) return NextResponse.json({ error: "date_required" }, { status: 400 });
     const round = listRounds(partnerId, branchId, year, month).find((r) => r.period_start === date);
     if (!round) return NextResponse.json({ error: "day_not_found" }, { status: 404 });
+    dailyRoundId = round.id;
     // รวม VAT figure (base × 1.07 for pre-VAT bases; the stored value for nett).
     dailyIncomeAmount = salesVat(round.sales_amount, vatRate, salesIncludesVat).total;
     flex = revshareDailyFlex({ shop, sellerName: seller, dateLabel: thaiDate(date), sales: round.sales_amount, vatRate, salesIncludesVat });
@@ -117,6 +119,11 @@ export async function POST(req: Request) {
       incomePosted = true;
     } catch (e) {
       console.error("revshare daily income post failed", e);
+    }
+    // Lock the round — a sent figure now needs a fresh PIN to edit/delete.
+    if (dailyRoundId != null) {
+      try { markRoundSent(dailyRoundId, partnerId, branchId, user.id); }
+      catch (e) { console.error("revshare markRoundSent failed", e); }
     }
   }
   return NextResponse.json({ ok: true, incomePosted });
