@@ -71,9 +71,14 @@ const SC_COLS = [
 
 type Row = Record<string, unknown> & { id: number; parent_id: number | null };
 
+// Income channels drive the shift-close "ยอดขายแยกช่องทางการรับเงิน" breakdown,
+// so they must be copied too or HYPO's close form won't match NAMA's.
+const CHANNEL_COLS = ["name", "sort_order", "active", "show_on_close", "is_credit"] as const;
+
 export interface CopySummary {
   perType: Record<ChecklistType, { deleted: number; inserted: number }>;
   headlineCopied: boolean;
+  channels: { deleted: number; inserted: number } | null;
 }
 
 /**
@@ -89,10 +94,11 @@ export function copyBranchChecklists(
   db: BetterSqlite3.Database,
   srcBranchId: number,
   dstBranchId: number,
-  opts: { types?: readonly ChecklistType[]; copyHeadline?: boolean } = {}
+  opts: { types?: readonly ChecklistType[]; copyHeadline?: boolean; copyChannels?: boolean } = {}
 ): CopySummary {
   const types = opts.types ?? CHECKLIST_TYPES;
   const copyHeadline = opts.copyHeadline ?? true;
+  const copyChannels = opts.copyChannels ?? true;
 
   const selRows = db.prepare(
     `SELECT * FROM shift_checklist_items
@@ -142,7 +148,21 @@ export function copyBranchChecklists(
     }
   }
 
-  return { perType, headlineCopied: copyHeadline };
+  let channels: CopySummary["channels"] = null;
+  if (copyChannels) {
+    const del = db.prepare("DELETE FROM accounta_income_channels WHERE branch_id = ?").run(dstBranchId);
+    const src = db.prepare(
+      `SELECT ${CHANNEL_COLS.join(", ")} FROM accounta_income_channels WHERE branch_id = ? ORDER BY sort_order, name`
+    ).all(srcBranchId) as Array<Record<string, unknown>>;
+    const insCh = db.prepare(
+      `INSERT INTO accounta_income_channels (${CHANNEL_COLS.join(", ")}, branch_id)
+       VALUES (${CHANNEL_COLS.map((c) => "@" + c).join(", ")}, @branch_id)`
+    );
+    for (const r of src) insCh.run({ ...r, branch_id: dstBranchId });
+    channels = { deleted: del.changes, inserted: src.length };
+  }
+
+  return { perType, headlineCopied: copyHeadline, channels };
 }
 
 // ── CLI ────────────────────────────────────────────────────────────────
@@ -176,6 +196,7 @@ if (isMain()) {
   const fromName = argVal("--from") ?? "NAMA PASTA SRIRACHA";
   const toName = argVal("--to") ?? "HYPOPLARAEMIA";
   const copyHeadline = !process.argv.includes("--no-headline");
+  const copyChannels = !process.argv.includes("--no-channels");
   const confirm = process.argv.includes("--yes");
 
   const db = getDb();
@@ -191,8 +212,13 @@ if (isMain()) {
   console.log(`  TO:   ${toName} (id ${dstId})`);
   console.log(
     `  Types: ${CHECKLIST_TYPES.join(", ")}` +
-      (copyHeadline ? " + shift_close headline (sc_*) columns" : "")
+      (copyHeadline ? " + shift_close headline (sc_*) columns" : "") +
+      (copyChannels ? " + income channels (ยอดขายแยกช่องทาง)" : "")
   );
+  if (copyChannels) {
+    const chCount = (b: number) => (db.prepare("SELECT COUNT(*) AS c FROM accounta_income_channels WHERE branch_id = ?").get(b) as { c: number }).c;
+    console.log(`  income channels: ${chCount(srcId)} → ${chCount(dstId)} (target replaced)`);
+  }
 
   // Preview: how many rows each type has on both sides.
   const countBy = db.prepare(
@@ -211,7 +237,7 @@ if (isMain()) {
   }
 
   const summary = db.transaction(() =>
-    copyBranchChecklists(db, srcId, dstId, { copyHeadline })
+    copyBranchChecklists(db, srcId, dstId, { copyHeadline, copyChannels })
   )();
 
   console.log("\n✓ Copy complete:");
@@ -221,6 +247,9 @@ if (isMain()) {
   }
   if (summary.headlineCopied) {
     console.log("  shift_close headline (sc_*) columns: copied");
+  }
+  if (summary.channels) {
+    console.log(`  income channels: deleted ${summary.channels.deleted}, inserted ${summary.channels.inserted}`);
   }
   console.log(
     `\n${toName} now mirrors ${fromName} for all four lists. Done.`
