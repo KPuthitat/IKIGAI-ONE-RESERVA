@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, type Booking } from "@/lib/db";
 import { isTableFree } from "@/lib/table-allocator";
+import { setBookingTables } from "@/lib/booking-tables";
 
 // POST /api/admin/bookings/[id]/move
 // Used by the timetable's drag-and-drop: admin drags a booking card to
@@ -63,9 +64,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const now = new Date().toISOString();
   db.prepare(`
     UPDATE bookings
-    SET table_id = ?, booking_time = ?, updated_at = ?
+    SET booking_time = ?, updated_at = ?
     WHERE id = ?
-  `).run(parsed.data.table_id, parsed.data.booking_time, now, id);
+  `).run(parsed.data.booking_time, now, id);
+  // Dragging lands on ONE table — reduce to a single-table booking so a
+  // previously-merged set doesn't leave stale extras (owner 2026-07-26).
+  setBookingTables(id, parsed.data.table_id != null ? [parsed.data.table_id] : []);
 
   return NextResponse.json({ ok: true });
 }

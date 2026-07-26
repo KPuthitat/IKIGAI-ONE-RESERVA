@@ -244,6 +244,18 @@ function runMigrations(db: Database.Database): void {
       arr.forEach((t, i) => upd.run((i + 1) * 10, t.id));
     }
   }
+  // booking_tables — a booking can occupy several merged tables (owner
+  // 2026-07-26). bookings.table_id stays the PRIMARY/anchor table (unchanged for
+  // every single-label display); the extra tables live here. The anchor is also
+  // mirrored as a row so "all tables of a booking" = one query.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS booking_tables (
+      booking_id INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+      table_id   INTEGER NOT NULL REFERENCES tables(id) ON DELETE CASCADE,
+      PRIMARY KEY (booking_id, table_id)
+    );
+  `);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_booking_tables_table ON booking_tables(table_id)");
   // แปลง source string เก่า → JSON array (idempotent)
   db.exec(`
     UPDATE bookings
