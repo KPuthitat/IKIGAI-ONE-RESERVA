@@ -27,7 +27,8 @@ const CreateZ = z.object({
   line_group_id: z.string().trim().max(80).nullable().optional(),
   tax_id: z.string().trim().max(20).nullable().optional(),
   address: z.string().trim().max(300).nullable().optional(),
-  branch_code: z.string().trim().max(20).nullable().optional()
+  branch_code: z.string().trim().max(20).nullable().optional(),
+  income_branch_id: z.number().int().positive().nullable().optional()
 });
 const PatchZ = z.object({
   id: z.number().int().positive(),
@@ -45,6 +46,7 @@ const PatchZ = z.object({
   tax_id: z.string().trim().max(20).nullable().optional(),
   address: z.string().trim().max(300).nullable().optional(),
   branch_code: z.string().trim().max(20).nullable().optional(),
+  income_branch_id: z.number().int().positive().nullable().optional(),
   tiers: z.array(TierZ).optional(),
   floors: z.array(FloorZ).optional()
 });

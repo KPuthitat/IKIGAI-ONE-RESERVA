@@ -5,7 +5,8 @@ import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
 import { isRevshareBranch, getPartner, previewSettlement, listRounds, markRoundSent } from "@/lib/revshare-db";
 import { revshareSettlementFlex, revshareWeeklyFlex, revshareDailyFlex, notifyRevsharePartner } from "@/lib/revshare-line";
-import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat, partnerShopName } from "@/lib/revshare";
+import { postRevshareDailyIncome } from "@/lib/accounta-db";
+import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat, partnerShopName, salesVat } from "@/lib/revshare";
 
 // Push a sales notification to the partner's LINE group. Three kinds (owner
 // 2026-06-23): daily (a day's sales heads-up), weekly (the amount transferred
@@ -70,11 +71,14 @@ export async function POST(req: Request) {
 
   let flex;
   let dailyRoundId: number | null = null;
+  let dailyIncomeAmount: number | null = null;
   if (kind === "daily") {
     if (!date) return NextResponse.json({ error: "date_required" }, { status: 400 });
     const round = listRounds(partnerId, branchId, year, month).find((r) => r.period_start === date);
     if (!round) return NextResponse.json({ error: "day_not_found" }, { status: 404 });
     dailyRoundId = round.id;
+    // รวม VAT figure (base × 1.07 for pre-VAT bases; the stored value for nett).
+    dailyIncomeAmount = salesVat(round.sales_amount, vatRate, salesIncludesVat).total;
     flex = revshareDailyFlex({ shop, sellerName: seller, dateLabel: thaiDate(date), sales: round.sales_amount, vatRate, salesIncludesVat, billCount: round.bill_count });
   } else if (kind === "weekly") {
     const w = week_start ? preview.breakdown.find((b) => b.start === week_start) : preview.breakdown[preview.breakdown.length - 1];
@@ -99,14 +103,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: res.error ?? "send_failed", message: msg }, { status: 502 });
   }
 
-  // Auto-posting the daily sales into ACCOUNTA รายรับ was removed (owner
-  // 2026-07-26): it landed in the active (selling) branch — e.g. HYPOPLARAEMIA —
-  // but the จ้อจี้ figures belong in the partner's own books (ศาลาชิลล์), which
-  // this route can't yet resolve. Re-introduced once a per-partner income branch
-  // is configured. The LINE send + round lock below are unaffected.
+  // Mirror the day's sales into the PARTNER's own books — the branch configured
+  // as income_branch_id (e.g. ศาลาชิลล์), NOT the selling branch (owner
+  // 2026-07-26). NULL = don't auto-post. Best-effort; re-sending re-posts
+  // idempotently (delete-then-insert keyed by branch+date+channel).
+  let incomePosted = false;
   if (kind === "daily" && dailyRoundId != null) {
+    if (partner.income_branch_id != null && dailyIncomeAmount != null && date) {
+      try {
+        postRevshareDailyIncome({
+          branchId: partner.income_branch_id, date, channel: shop,
+          amount: dailyIncomeAmount, isVat: partner.vat_enabled, userId: user.id
+        });
+        incomePosted = true;
+      } catch (e) {
+        console.error("revshare daily income post failed", e);
+      }
+    }
     try { markRoundSent(dailyRoundId, partnerId, branchId, user.id); }
     catch (e) { console.error("revshare markRoundSent failed", e); }
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, incomePosted });
 }
