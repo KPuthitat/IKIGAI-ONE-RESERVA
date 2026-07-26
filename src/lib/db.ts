@@ -225,6 +225,25 @@ function runMigrations(db: Database.Database): void {
   if (!tcols.some((c) => c.name === "zone_id")) {
     db.exec("ALTER TABLE tables ADD COLUMN zone_id INTEGER REFERENCES zones(id) ON DELETE SET NULL");
   }
+  // tables.sort_order — sequence within a zone (owner 2026-07-26). Two tables
+  // are "adjacent" (combinable) only when their sort_order is consecutive in the
+  // same zone, so C1+C2 can merge but C1+C3 (skipping C2) cannot. Seeded from
+  // the current natural label order so the visible C1→C2→C3 becomes the default
+  // sequence; editable later.
+  if (!tcols.some((c) => c.name === "sort_order")) {
+    db.exec("ALTER TABLE tables ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0");
+    const rows = db.prepare("SELECT id, branch_id, zone_id, label FROM tables").all() as Array<{ id: number; branch_id: number; zone_id: number | null; label: string }>;
+    const groups = new Map<string, Array<{ id: number; label: string }>>();
+    for (const r of rows) {
+      const k = `${r.branch_id}::${r.zone_id ?? "none"}`;
+      (groups.get(k) ?? groups.set(k, []).get(k)!).push({ id: r.id, label: r.label });
+    }
+    const upd = db.prepare("UPDATE tables SET sort_order = ? WHERE id = ?");
+    for (const arr of groups.values()) {
+      arr.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" }));
+      arr.forEach((t, i) => upd.run((i + 1) * 10, t.id));
+    }
+  }
   // แปลง source string เก่า → JSON array (idempotent)
   db.exec(`
     UPDATE bookings
@@ -7500,6 +7519,7 @@ export type TableRow = {
   width: number;
   height: number;
   active: number;
+  sort_order: number;
 };
 
 export type Zone = {
