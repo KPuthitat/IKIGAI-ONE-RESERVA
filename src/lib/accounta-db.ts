@@ -152,7 +152,7 @@ export function listShiftCloseChannels(branchId?: number | null): Array<{ id: nu
   ).all(branchId) as Array<{ id: number; name: string; is_credit: number }>;
 }
 
-export function createIncomeChannel(d: { name: string; branchId: number }): number {
+export function createIncomeChannel(d: { name: string; branchId: number; showOnClose?: boolean }): number {
   const db = getDb();
   const name = d.name.trim();
   const existing = db.prepare(
@@ -163,9 +163,12 @@ export function createIncomeChannel(d: { name: string; branchId: number }): numb
     return existing.id;
   }
   const max = (db.prepare("SELECT COALESCE(MAX(sort_order),0) AS m FROM accounta_income_channels WHERE branch_id = ?").get(d.branchId) as { m: number }).m;
+  // show_on_close defaults ON for hand-made channels, but callers like the
+  // revshare income post pass false so a partner channel never pollutes the
+  // shift-close "ยอดขายแยกช่องทาง" list (owner 2026-07-26).
   const info = db.prepare(
-    "INSERT INTO accounta_income_channels (branch_id, name, sort_order) VALUES (?, ?, ?)"
-  ).run(d.branchId, name, max + 10);
+    "INSERT INTO accounta_income_channels (branch_id, name, sort_order, show_on_close) VALUES (?, ?, ?, ?)"
+  ).run(d.branchId, name, max + 10, d.showOnClose === false ? 0 : 1);
   return Number(info.lastInsertRowid);
 }
 
@@ -414,7 +417,7 @@ export function postRevshareDailyIncome(d: {
     .get(d.branchId) as { company_id: number | null } | undefined;
   const companyId = company?.company_id ?? null;
   const txn = db.transaction(() => {
-    if (channel) createIncomeChannel({ name: channel, branchId: d.branchId });
+    if (channel) createIncomeChannel({ name: channel, branchId: d.branchId, showOnClose: false });
     db.prepare(
       "DELETE FROM accounta_income WHERE branch_id = ? AND income_date = ? AND source = 'revshare' AND channel IS ?"
     ).run(d.branchId, d.date, channel);

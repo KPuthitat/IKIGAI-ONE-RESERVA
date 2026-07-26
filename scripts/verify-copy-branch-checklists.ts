@@ -32,6 +32,10 @@ db.exec(`
     income_breakdown INTEGER NOT NULL DEFAULT 0,
     branch_id INTEGER REFERENCES branches(id)
   );
+  CREATE TABLE accounta_income_channels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, branch_id INTEGER, name TEXT,
+    sort_order INTEGER DEFAULT 0, active INTEGER DEFAULT 1, show_on_close INTEGER DEFAULT 1, is_credit INTEGER DEFAULT 0
+  );
 `);
 
 const SRC = (db.prepare("INSERT INTO branches (name, sc_drawer_label, sc_svc_label) VALUES ('NAMA','ลิ้นชัก NAMA','SVC NAMA')").run().lastInsertRowid) as number;
@@ -55,6 +59,14 @@ ins.run("shift_open", "ของเดิม HYPO", 1, "checkbox", 0, null, DST)
 const before = db.prepare("SELECT COUNT(*) c FROM shift_checklist_items WHERE branch_id=?").get(DST) as { c: number };
 assert(before.c === 1, "target starts with its own seeded row");
 
+// Income channels: NAMA has the real payment channels; HYPO wrongly has only a
+// revshare-polluted channel (the bug the owner hit).
+const insCh = db.prepare("INSERT INTO accounta_income_channels (branch_id,name,sort_order,show_on_close,is_credit) VALUES (?,?,?,?,?)");
+insCh.run(SRC, "เงินสด", 10, 1, 0);
+insCh.run(SRC, "QR / พร้อมเพย์", 20, 1, 0);
+insCh.run(SRC, "บัตรเครดิต VISA", 30, 1, 0);
+insCh.run(DST, "จ้อจี้ & friends", 10, 1, 0);   // pollution
+
 // ── First copy ──────────────────────────────────────────────────────────
 db.transaction(() => copyBranchChecklists(db, SRC, DST, {}))();
 
@@ -72,6 +84,13 @@ assert(children.length === 2 && children.every((c) => c.parent_id === parent.id)
 assert(children.every((c) => c.branch_id === DST), "children are scoped to the target branch");
 assert(parent.kind === "section" && children.some((c) => c.is_headline_amount === 1),
   "kind + is_headline_amount carried over");
+
+// Income channels copied → HYPO now mirrors NAMA's payment channels, and the
+// polluting "จ้อจี้ & friends" is gone (the shift-close bug the owner reported).
+const dstCh = db.prepare("SELECT name FROM accounta_income_channels WHERE branch_id=? ORDER BY sort_order").all(DST) as Array<{ name: string }>;
+assert(dstCh.length === 3, "target income channels replaced with the 3 source channels");
+assert(dstCh.map((c) => c.name).join(",") === "เงินสด,QR / พร้อมเพย์,บัตรเครดิต VISA", "channels match NAMA in order");
+assert(!dstCh.some((c) => c.name === "จ้อจี้ & friends"), "the polluting revshare channel is removed from the target");
 
 // sc_* headline columns copied.
 const dstB = db.prepare("SELECT sc_drawer_label, sc_svc_label FROM branches WHERE id=?").get(DST) as Record<string, unknown>;
