@@ -18,6 +18,7 @@ export type RsPartner = {
   vat_enabled: boolean; vat_rate: number; wht_rate: number; active: boolean; note: string | null;
   line_group_id: string | null;
   tax_id: string | null; address: string | null; branch_code: string | null;
+  income_branch_id: number | null;
 };
 export type RsRound = {
   id: number; partner_id: number; period_year: number; period_month: number;
@@ -53,7 +54,8 @@ function shapePartner(r: any): RsPartner {
     pos_categories: safeJsonArr(r.pos_categories),
     vat_enabled: !!r.vat_enabled, vat_rate: r.vat_rate, wht_rate: r.wht_rate,
     active: !!r.active, note: r.note, line_group_id: r.line_group_id ?? null,
-    tax_id: r.tax_id ?? null, address: r.address ?? null, branch_code: r.branch_code ?? null
+    tax_id: r.tax_id ?? null, address: r.address ?? null, branch_code: r.branch_code ?? null,
+    income_branch_id: r.income_branch_id ?? null
   };
 }
 function safeJsonArr(s: string | null): string[] {
@@ -84,6 +86,7 @@ export type PartnerInput = {
   vat_enabled?: boolean; vat_rate?: number; wht_rate?: number; note?: string | null;
   line_group_id?: string | null;
   tax_id?: string | null; address?: string | null; branch_code?: string | null;
+  income_branch_id?: number | null;
 };
 
 /** Create a partner + seed the default Groggy tiers/floors (editable after). */
@@ -93,13 +96,13 @@ export function createPartner(branchId: number, d: PartnerInput): number | null 
   const tx = db.transaction(() => {
     const id = Number(db.prepare(`
       INSERT INTO revshare_partners (branch_id, name, venue, start_date, sales_base, pos_categories,
-        vat_enabled, vat_rate, wht_rate, note, line_group_id, tax_id, address, branch_code)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        vat_enabled, vat_rate, wht_rate, note, line_group_id, tax_id, address, branch_code, income_branch_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       branchId, d.name.trim(), d.venue ?? null, d.start_date,
       d.sales_base ?? "gross", JSON.stringify(d.pos_categories ?? []),
       d.vat_enabled === false ? 0 : 1, d.vat_rate ?? 0.07, d.wht_rate ?? 0.03, d.note ?? null, d.line_group_id ?? null,
-      d.tax_id ?? null, d.address ?? null, d.branch_code ?? null
+      d.tax_id ?? null, d.address ?? null, d.branch_code ?? null, d.income_branch_id ?? null
     ).lastInsertRowid);
     writeTiers(db, id, DEFAULT_TIERS);
     writeFloors(db, id, DEFAULT_FLOORS);
@@ -125,6 +128,7 @@ export function updatePartner(partnerId: number, branchId: number, d: Partial<Pa
   if (d.tax_id !== undefined) put("tax_id", d.tax_id);
   if (d.address !== undefined) put("address", d.address);
   if (d.branch_code !== undefined) put("branch_code", d.branch_code);
+  if (d.income_branch_id !== undefined) put("income_branch_id", d.income_branch_id);
   if (d.active !== undefined) put("active", d.active ? 1 : 0);
   if (!sets.length) return false;
   sets.push("updated_at = CURRENT_TIMESTAMP");

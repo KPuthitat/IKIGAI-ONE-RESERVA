@@ -13,7 +13,9 @@ type Partner = {
   vat_enabled: boolean; vat_rate: number; wht_rate: number; active: boolean; note: string | null;
   line_group_id: string | null;
   tax_id: string | null; address: string | null; branch_code: string | null;
+  income_branch_id: number | null;
 };
+type BranchOpt = { id: number; name: string };
 type TierRow = { lower: string; upper: string; rate: string };
 type FloorRow = { monthFrom: string; monthTo: string; amount: string };
 
@@ -26,8 +28,9 @@ const pctStr = (rate: number) => String(+(rate * 100).toFixed(4));
 const grp = (s: string) => { const n = (s ?? "").replace(/[^\d]/g, ""); return n ? Number(n).toLocaleString("en-US") : ""; };
 const digits = (s: string) => s.replace(/[^\d]/g, "");
 
-export default function PartnerConfigClient({ partner, tiers, floors }: { partner: Partner; tiers: Tier[]; floors: Floor[] }) {
+export default function PartnerConfigClient({ partner, tiers, floors, branches }: { partner: Partner; tiers: Tier[]; floors: Floor[]; branches: BranchOpt[] }) {
   const router = useRouter();
+  const [incomeBranchId, setIncomeBranchId] = useState<string>(partner.income_branch_id != null ? String(partner.income_branch_id) : "");
   const [name, setName] = useState(partner.name);
   const [venue, setVenue] = useState(partner.venue ?? "");
   const [startDate, setStartDate] = useState(partner.start_date);
@@ -72,6 +75,7 @@ export default function PartnerConfigClient({ partner, tiers, floors }: { partne
         pos_categories: posCats.split(",").map((s) => s.trim()).filter(Boolean),
         line_group_id: lineGroup.trim() || null,
         tax_id: taxId.trim() || null, address: addr.trim() || null, branch_code: branchCode.trim() || null,
+        income_branch_id: incomeBranchId ? Number(incomeBranchId) : null,
         vat_enabled: vatEnabled, vat_rate: Number(vatRate) / 100, wht_rate: Number(whtRate) / 100,
         tiers: tiersOut, floors: floorsOut
       };
@@ -104,6 +108,16 @@ export default function PartnerConfigClient({ partner, tiers, floors }: { partne
         <div className="sm:col-span-2">
           <label className="label">หมวด POS ที่นับเป็นยอดขายของคู่ค้า (คั่นด้วยจุลภาค)</label>
           <input className="input" value={posCats} placeholder="เช่น SOFT DRINK" onChange={(e) => setPosCats(e.target.value)} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="label">ลงรายรับที่สาขา (ยอดขายรายวันของคู่ค้าจะเข้าบัญชีสาขานี้)</label>
+          <select className="input" value={incomeBranchId} onChange={(e) => setIncomeBranchId(e.target.value)}>
+            <option value="">— ไม่ลงรายรับอัตโนมัติ —</option>
+            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+          <p className="text-[11px] text-slate-400 mt-1">
+            เลือกสาขาที่เป็นบัญชีของคู่ค้า (เช่น ศาลาชิลล์) — ตอนกด “ส่งยอดวันนี้” ระบบจะลงรายรับ (รวม VAT) ที่สาขานี้ ไม่ใช่สาขาที่ขาย
+          </p>
         </div>
         <div className="sm:col-span-2">
           <label className="label">LINE group ID ของคู่ค้า (สำหรับส่งการ์ดแจ้งเตือน)</label>

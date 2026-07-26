@@ -1589,6 +1589,11 @@ function runMigrations(db: Database.Database): void {
     if (!has("tax_id")) db.exec("ALTER TABLE revshare_partners ADD COLUMN tax_id TEXT");
     if (!has("address")) db.exec("ALTER TABLE revshare_partners ADD COLUMN address TEXT");
     if (!has("branch_code")) db.exec("ALTER TABLE revshare_partners ADD COLUMN branch_code TEXT");
+    // income_branch_id — which branch's ACCOUNTA รายรับ the daily sales post to
+    // (owner 2026-07-26). The partner is registered under the SELLING branch
+    // (e.g. HYPOPLARAEMIA rings the sale) but its sales belong in the partner's
+    // own books (e.g. ศาลาชิลล์). NULL = don't auto-post.
+    if (!has("income_branch_id")) db.exec("ALTER TABLE revshare_partners ADD COLUMN income_branch_id INTEGER REFERENCES branches(id)");
   }
 
   // ─── DELIVERA — self-delivery module (owner 2026-07-02) ─────────────────

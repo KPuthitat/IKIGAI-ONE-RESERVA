@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { isRevshareBranch, getPartner, getTiers, getFloors } from "@/lib/revshare-db";
+import { listBranches } from "@/lib/accounta-db";
 import PartnerConfigClient from "./PartnerConfigClient";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,8 @@ export default function RevshareConfigPage({ searchParams }: { searchParams: { p
         <h1 className="text-2xl font-bold text-slate-800">ตั้งค่าคู่ค้า · {partner.name}</h1>
         <p className="text-sm text-slate-500 mt-1">ขั้นบันได GP, ยอดขั้นต่ำ, VAT/WHT, ฐานยอดขาย และหมวด POS</p>
       </div>
-      <PartnerConfigClient partner={partner} tiers={getTiers(partner.id)} floors={getFloors(partner.id)} />
+      <PartnerConfigClient partner={partner} tiers={getTiers(partner.id)} floors={getFloors(partner.id)}
+        branches={listBranches().map((b) => ({ id: b.id, name: b.name }))} />
     </div>
   );
 }
