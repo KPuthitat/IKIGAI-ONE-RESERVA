@@ -10,6 +10,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getDb, type Branch, type Booking, type TableRow, type Zone } from "@/lib/db";
+import { tableIdsByBooking } from "@/lib/booking-tables";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -55,6 +56,15 @@ export default function TimetablePage({ searchParams }: { searchParams: { date?:
     ORDER BY booking_time ASC
   `).all(branch.id, date) as Booking[];
 
+  // Attach each booking's full table set (anchor + merged) so the grid can show
+  // a combined booking across all its rows (owner 2026-07-26).
+  const extraByBooking = tableIdsByBooking(bookings.map((b) => b.id));
+  const bookingsWithTables = bookings.map((b) => {
+    const extra = extraByBooking.get(b.id) ?? [];
+    const all = b.table_id != null ? [b.table_id, ...extra.filter((id) => id !== b.table_id)] : extra;
+    return { ...b, table_ids: all };
+  });
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-3">
@@ -82,7 +92,7 @@ export default function TimetablePage({ searchParams }: { searchParams: { date?:
         branch={branch}
         zones={zones}
         tables={tables}
-        bookings={bookings}
+        bookings={bookingsWithTables}
         date={date}
       />
 

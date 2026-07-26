@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, OCCASION_KINDS, type Branch, type Booking } from "@/lib/db";
 import { isTableFree } from "@/lib/table-allocator";
+import { bookingTablesLabel } from "@/lib/booking-tables";
 import { notifyStaff, notifyCustomer } from "@/lib/line";
 import { generateBookingRef } from "@/lib/reserva-ref";
 import { assignRedemptionForNewRow, normalisePhone } from "@/lib/redemption";
@@ -155,9 +156,7 @@ export async function POST(req: Request) {
   const id = result.lastInsertRowid as number;
 
   const booking = db.prepare("SELECT * FROM bookings WHERE id = ?").get(id) as Booking;
-  const tableLabel = booking.table_id
-    ? (db.prepare("SELECT label FROM tables WHERE id = ?").get(booking.table_id) as { label: string } | undefined)?.label ?? null
-    : null;
+  const tableLabel = booking.table_id ? (bookingTablesLabel(booking.id) || null) : null;
 
   // ── INSIGNA push (privacy wall enforced inside the bridge) ────
   // The bridge hashes line_user_id or phone into a pseudonymous

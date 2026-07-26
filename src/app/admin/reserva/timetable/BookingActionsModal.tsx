@@ -41,6 +41,9 @@ export default function BookingActionsModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showCancel, setShowCancel] = useState(false);
+  // Suggested table sets (single + adjacent merges) for large parties.
+  type Combo = { table_ids: number[]; labels: string[]; totalCapacity: number; waste: number; crossZone: boolean };
+  const [combos, setCombos] = useState<Combo[] | null>(null);
 
   // Edit-form state — initialized from the booking and only persisted on
   // explicit "save". Admin can change values without committing until
@@ -92,6 +95,30 @@ export default function BookingActionsModal({
     setBusy(false);
     if (!res.ok) {
       setErr(t("admin.bookings.errorGeneric"));
+      return;
+    }
+    router.refresh();
+    onClose();
+  }
+
+  async function loadCombos() {
+    setBusy(true); setErr(null);
+    const res = await fetch(apiUrl(`/api/admin/bookings/${booking.id}/combos`));
+    setBusy(false);
+    const j = await res.json().catch(() => ({}));
+    setCombos(j.combos ?? []);
+  }
+
+  async function assignTables(tableIds: number[]) {
+    setBusy(true); setErr(null);
+    const res = await fetch(apiUrl(`/api/admin/bookings/${booking.id}/table`), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table_ids: tableIds })
+    });
+    setBusy(false);
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      setErr(j.error || t("admin.bookings.errorGeneric"));
       return;
     }
     router.refresh();
@@ -294,6 +321,34 @@ export default function BookingActionsModal({
                     </option>
                   ))}
               </select>
+
+              {/* Merge suggestions — for parties bigger than one table. */}
+              <div className="mt-2">
+                {combos === null ? (
+                  <button type="button" onClick={loadCombos} disabled={busy}
+                    className="text-xs text-brand hover:underline">
+                    🔗 แนะนำรวมโต๊ะ (ลูกค้ากลุ่มใหญ่)
+                  </button>
+                ) : combos.length === 0 ? (
+                  <p className="text-xs text-slate-400">ไม่มีชุดโต๊ะว่างที่พอสำหรับ {booking.party_size} คน</p>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-slate-400">แนะนำรวมโต๊ะ (กดเพื่อจัดให้):</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {combos.map((c) => (
+                        <button key={c.table_ids.join("-")} type="button" disabled={busy}
+                          onClick={() => assignTables(c.table_ids)}
+                          className="text-xs px-2 py-1 rounded border border-brand/40 bg-brand/5 hover:bg-brand/10 text-slate-700 disabled:opacity-50"
+                          title={c.crossZone ? "ข้ามโซน" : c.table_ids.length > 1 ? "โต๊ะติดกันในโซนเดียวกัน" : "โต๊ะเดียว"}>
+                          {c.table_ids.length > 1 ? "🔗 " : ""}{c.labels.join("+")}
+                          <span className="text-slate-400"> · {c.totalCapacity} ที่นั่ง{c.waste > 0 ? ` (เหลือ ${c.waste})` : ""}</span>
+                          {c.crossZone && <span className="text-amber-600"> · ข้ามโซน</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
