@@ -3,8 +3,14 @@ import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, type Booking } from "@/lib/db";
 import { isTableFree } from "@/lib/table-allocator";
+import { setBookingTables } from "@/lib/booking-tables";
 
-const Body = z.object({ table_id: z.number().int().nullable() });
+// Assign a booking to one table OR a merged set of tables (owner 2026-07-26).
+// `table_ids` (the full set) is preferred; `table_id` is kept for back-compat.
+const Body = z.object({
+  table_id: z.number().int().nullable().optional(),
+  table_ids: z.array(z.number().int().positive()).max(20).optional()
+});
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const user = getSessionUser();
@@ -20,19 +26,24 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "ไม่มีสิทธิ์" }, { status: 403 });
   }
 
-  if (parsed.data.table_id) {
+  // Resolve the requested set (dedup). table_ids wins; else the single table_id.
+  const tableIds = parsed.data.table_ids
+    ? [...new Set(parsed.data.table_ids)]
+    : parsed.data.table_id
+      ? [parsed.data.table_id]
+      : [];
+
+  // Every table in the set must be free at this slot (anchor + merged).
+  for (const tid of tableIds) {
     const free = isTableFree({
-      branchId: booking.branch_id,
-      tableId: parsed.data.table_id,
-      date: booking.booking_date,
-      time: booking.booking_time,
-      durationMinutes: booking.duration_minutes,
-      excludeBookingId: booking.id
+      branchId: booking.branch_id, tableId: tid,
+      date: booking.booking_date, time: booking.booking_time,
+      durationMinutes: booking.duration_minutes, excludeBookingId: booking.id
     });
-    if (!free) return NextResponse.json({ error: "โต๊ะนี้ถูกจองอยู่ในเวลาเดียวกัน" }, { status: 409 });
+    if (!free) return NextResponse.json({ error: "มีโต๊ะในชุดนี้ถูกจองอยู่ในเวลาเดียวกัน" }, { status: 409 });
   }
 
-  db.prepare("UPDATE bookings SET table_id = ?, updated_at = ? WHERE id = ?")
-    .run(parsed.data.table_id, new Date().toISOString(), id);
+  setBookingTables(id, tableIds);               // anchor + booking_tables in sync
+  db.prepare("UPDATE bookings SET updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
   return NextResponse.json({ ok: true });
 }

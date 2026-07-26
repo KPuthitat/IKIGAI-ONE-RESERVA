@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, type Booking, type Branch } from "@/lib/db";
 import { isTableFree } from "@/lib/table-allocator";
+import { setBookingTables } from "@/lib/booking-tables";
 import { notifyCustomer } from "@/lib/line";
 import { onBookingStatusChanged as insignaOnBookingStatusChanged } from "@/lib/insigna";
 
@@ -81,9 +82,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       return NextResponse.json({ error: "table_unavailable" }, { status: 409 });
     }
     db.prepare(`
-      UPDATE bookings SET table_id = ?, status = 'confirmed', updated_at = ?
+      UPDATE bookings SET status = 'confirmed', updated_at = ?
       WHERE id = ?
-    `).run(parsed.data.table_id, now, id);
+    `).run(now, id);
+    // Confirming with a single table → keep the table set consistent (clears any
+    // stale merged rows). Combos are assigned via the table-assign flow.
+    setBookingTables(id, parsed.data.table_id != null ? [parsed.data.table_id] : []);
   } else {
     // No table in body but the row already has one — just flip status.
     db.prepare(`

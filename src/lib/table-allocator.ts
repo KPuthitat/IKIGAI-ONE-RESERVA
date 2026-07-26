@@ -6,6 +6,31 @@ export type TableSuggestion = {
   fitScore: number;            // ยิ่งน้อยยิ่งดี (capacity - party_size)
 };
 
+/** All table ids occupied during [time, time+duration) on a date — counting a
+ *  booking's ANCHOR table (bookings.table_id) AND every merged table it holds
+ *  (booking_tables). Without the join, a combined booking's extra tables would
+ *  look free and could be double-booked (owner 2026-07-26). */
+function occupiedTableIds(db: ReturnType<typeof getDb>, opts: {
+  branchId: number; date: string; time: string; durationMinutes: number; excludeBookingId?: number;
+}): Set<number> {
+  const dayBookings = db.prepare(`
+    SELECT id, table_id, booking_time, duration_minutes FROM bookings
+     WHERE branch_id = ? AND booking_date = ? AND status IN ('confirmed','seated')
+       AND (? IS NULL OR id != ?)
+  `).all(opts.branchId, opts.date, opts.excludeBookingId ?? null, opts.excludeBookingId ?? null) as Array<{ id: number; table_id: number | null; booking_time: string; duration_minutes: number }>;
+
+  const newStart = timeToMinutes(opts.time);
+  const hits = dayBookings.filter((b) => overlaps(newStart, opts.durationMinutes, timeToMinutes(b.booking_time), b.duration_minutes));
+  const busy = new Set<number>();
+  for (const b of hits) if (b.table_id != null) busy.add(b.table_id);
+  if (hits.length > 0) {
+    const ph = hits.map(() => "?").join(",");
+    const extra = db.prepare(`SELECT table_id FROM booking_tables WHERE booking_id IN (${ph})`).all(...hits.map((b) => b.id)) as Array<{ table_id: number }>;
+    for (const r of extra) busy.add(r.table_id);
+  }
+  return busy;
+}
+
 /**
  * เลือกโต๊ะที่ "เหมาะสม" สำหรับการจองหนึ่งครั้ง
  * - ต้องเป็นโต๊ะที่ active
@@ -30,29 +55,8 @@ export function suggestTables(opts: {
 
   if (tables.length === 0) return [];
 
-  const dayBookings = db.prepare(`
-    SELECT * FROM bookings
-    WHERE branch_id = ?
-      AND booking_date = ?
-      AND status IN ('confirmed','seated')
-      AND table_id IS NOT NULL
-      AND (? IS NULL OR id != ?)
-  `).all(
-    opts.branchId,
-    opts.date,
-    opts.excludeBookingId ?? null,
-    opts.excludeBookingId ?? null
-  ) as Booking[];
-
-  const newStart = timeToMinutes(opts.time);
-  const newDur = opts.durationMinutes;
-
-  const free = tables.filter((t) => {
-    const conflicts = dayBookings.filter((b) => b.table_id === t.id);
-    return !conflicts.some((b) =>
-      overlaps(newStart, newDur, timeToMinutes(b.booking_time), b.duration_minutes)
-    );
-  });
+  const busy = occupiedTableIds(db, opts);
+  const free = tables.filter((t) => !busy.has(t.id));
 
   const ranked = free.map((t) => ({
     table: t,
@@ -142,18 +146,8 @@ export function suggestCombos(opts: {
   ).all(opts.branchId) as TableRow[];
   if (tables.length === 0) return [];
 
-  const dayBookings = db.prepare(`
-    SELECT * FROM bookings
-     WHERE branch_id = ? AND booking_date = ? AND status IN ('confirmed','seated')
-       AND table_id IS NOT NULL AND (? IS NULL OR id != ?)
-  `).all(opts.branchId, opts.date, opts.excludeBookingId ?? null, opts.excludeBookingId ?? null) as Booking[];
-
-  const newStart = timeToMinutes(opts.time);
-  const ordered = tables.map((t) => ({
-    ...t,
-    free: !dayBookings.some((b) => b.table_id === t.id &&
-      overlaps(newStart, opts.durationMinutes, timeToMinutes(b.booking_time), b.duration_minutes))
-  }));
+  const busy = occupiedTableIds(db, opts);
+  const ordered = tables.map((t) => ({ ...t, free: !busy.has(t.id) }));
   return buildCombos(ordered, opts.partySize).slice(0, opts.limit ?? 5);
 }
 
@@ -169,18 +163,7 @@ export function isTableFree(opts: {
   excludeBookingId?: number;
 }): boolean {
   const db = getDb();
-  const conflicts = db.prepare(`
-    SELECT * FROM bookings
-    WHERE branch_id = ? AND table_id = ? AND booking_date = ?
-      AND status IN ('confirmed','seated')
-      AND (? IS NULL OR id != ?)
-  `).all(
-    opts.branchId, opts.tableId, opts.date,
-    opts.excludeBookingId ?? null, opts.excludeBookingId ?? null
-  ) as Booking[];
-
-  const newStart = timeToMinutes(opts.time);
-  return !conflicts.some((b) =>
-    overlaps(newStart, opts.durationMinutes, timeToMinutes(b.booking_time), b.duration_minutes)
-  );
+  // Free if this table isn't among the tables occupied in the window — anchor
+  // OR any merged table (owner 2026-07-26).
+  return !occupiedTableIds(db, opts).has(opts.tableId);
 }
