@@ -23,6 +23,7 @@ import {
   accountaDueBillsFlex,
   sendLinePush
 } from "@/lib/line";
+import { bookingTablesLabel } from "@/lib/booking-tables";
 import { buildMealCouponDaySummary } from "@/lib/meal-coupons";
 import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
 import {
@@ -328,9 +329,7 @@ async function runCron(): Promise<NextResponse> {
       const minutesUntil = (startMs - Date.now()) / 60_000;
       // ส่งเมื่อใกล้ถึงเวลาในหน้าต่าง [reminderWindow - 10, reminderWindow + 5]
       if (minutesUntil < reminderWindow - 10 || minutesUntil > reminderWindow + 5) continue;
-      const tableLabel = b.table_id
-        ? (db.prepare("SELECT label FROM tables WHERE id = ?").get(b.table_id) as { label: string } | undefined)?.label ?? null
-        : null;
+      const tableLabel = b.table_id ? (bookingTablesLabel(b.id) || null) : null;
       try {
         await notifyCustomer(branch, b, "reminder");
         await notifyStaff(branch, b, tableLabel, "reminder");

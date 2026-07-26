@@ -18,7 +18,13 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { Branch, Booking, TableRow, Zone } from "@/lib/db";
+import type { Branch, Booking as BaseBooking, TableRow, Zone } from "@/lib/db";
+
+// A booking may occupy several merged tables (owner 2026-07-26). table_ids holds
+// the full set (anchor first); falls back to [table_id] for single-table rows.
+type Booking = BaseBooking & { table_ids?: number[] };
+const bookingTables = (b: Booking): number[] =>
+  b.table_ids && b.table_ids.length ? b.table_ids : b.table_id != null ? [b.table_id] : [];
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import BookingForm from "@/app/reserva/[branch]/BookingForm";
@@ -192,9 +198,11 @@ export default function TimetableClient({ branch, zones, tables, bookings, date 
   const bookingsByTable = useMemo(() => {
     const map = new Map<number, Booking[]>();
     for (const b of bookings) {
-      if (b.table_id == null) continue;
-      if (!map.has(b.table_id)) map.set(b.table_id, []);
-      map.get(b.table_id)!.push(b);
+      // A combined booking appears on every table it occupies.
+      for (const tid of bookingTables(b)) {
+        if (!map.has(tid)) map.set(tid, []);
+        map.get(tid)!.push(b);
+      }
     }
     return map;
   }, [bookings]);
@@ -408,7 +416,7 @@ function isOverlapFree(
   const targetEnd = targetStart + (target.duration_minutes || 90);
   for (const b of all) {
     if (b.id === excludeId) continue;
-    if (b.table_id !== tableId) continue;
+    if (!bookingTables(b).includes(tableId)) continue;   // merge-aware
     if (b.status === "cancelled" || b.status === "completed") continue;
     const start = timeToMin(b.booking_time);
     const end = start + (b.duration_minutes || 90);
@@ -534,9 +542,13 @@ function TableRowComponent({
             }}
             title={`${b.customer_name} · ${b.party_size} ที่นั่ง · ${b.booking_time}`}
           >
-            <div className="font-semibold truncate">{b.customer_name}</div>
+            <div className="font-semibold truncate">
+              {bookingTables(b).length > 1 && <span title="รวมโต๊ะ">🔗 </span>}
+              {b.customer_name}
+            </div>
             <div className="opacity-80 truncate">
               {b.party_size} · {b.booking_time}
+              {bookingTables(b).length > 1 && ` · รวม ${bookingTables(b).length} โต๊ะ`}
             </div>
           </button>
         );

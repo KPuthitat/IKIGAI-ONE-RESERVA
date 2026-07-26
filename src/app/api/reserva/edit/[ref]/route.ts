@@ -18,6 +18,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb, type Booking, type Branch } from "@/lib/db";
 import { isTableFree } from "@/lib/table-allocator";
+import { bookingTablesLabel } from "@/lib/booking-tables";
 import { isBookingRef } from "@/lib/reserva-ref";
 import { notifyStaff } from "@/lib/line";
 
@@ -129,9 +130,7 @@ export async function PATCH(req: Request, { params }: { params: { ref: string } 
   // Re-notify staff so they see the updated time on their alerts list
   // (customer change is meaningful enough to ping the team again).
   const updated = db.prepare("SELECT * FROM bookings WHERE id = ?").get(booking.id) as Booking;
-  const tableLabel = updated.table_id
-    ? (db.prepare("SELECT label FROM tables WHERE id = ?").get(updated.table_id) as { label: string } | undefined)?.label ?? null
-    : null;
+  const tableLabel = updated.table_id ? (bookingTablesLabel(updated.id) || null) : null;
   notifyStaff(branch, updated, tableLabel, "created").catch((e) => console.error("notify error", e));
 
   return NextResponse.json({ ok: true, action: "modified" });
