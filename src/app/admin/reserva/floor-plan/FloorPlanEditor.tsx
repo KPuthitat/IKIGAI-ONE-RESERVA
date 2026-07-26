@@ -83,6 +83,7 @@ export default function FloorPlanEditor({
       id, branch_id: branchId, zone_id: zoneId,
       label: `T${nextLabelN}`, capacity: 2,
       shape: "rect", x: 40, y: 40, width: 90, height: 90, active: 1,
+      sort_order: (nextLabelN) * 10,
       _new: true, _dirty: true
     }]);
     setSelectedId(id);
