@@ -133,6 +133,58 @@ export default function PayrollMonthlySummaryPage({
              pl.display_name
   `).all(from, to) as EmpRow[];
 
+  // Per-branch split (owner 2026-07-27: บัญชีต้องแยกสาขา — ศุภาพิชญ์เข้า 2 สาขา
+  // ได้สาขาละ 2,000 ต้องเห็นแยก NAMA/HYPO). Payroll is computed + posted per
+  // branch (each branch's period holds that branch's hours→pay and posts to
+  // its own daybook); this view only MERGES the display into one row/person
+  // with a per-branch breakdown. It does NOT change the split — it surfaces it.
+  const branchCols = db.prepare(`
+    SELECT DISTINCT b.id, b.name
+    FROM payroll_periods pp
+    JOIN branches b ON b.id = pp.branch_id
+    WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
+    ORDER BY b.id
+  `).all(from, to) as Array<{ id: number; name: string }>;
+
+  // user_id → branch_id → { net, gross } for the month.
+  const perBranchRows = db.prepare(`
+    SELECT pl.user_id, pp.branch_id AS branch_id,
+           SUM(pl.net_pay)   AS net,
+           SUM(pl.gross_pay) AS gross
+    FROM payroll_lines pl
+    JOIN payroll_periods pp ON pl.period_id = pp.id
+    WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
+    GROUP BY pl.user_id, pp.branch_id
+  `).all(from, to) as Array<{ user_id: number; branch_id: number; net: number; gross: number }>;
+  const netByUserBranch = new Map<number, Map<number, number>>();
+  for (const r of perBranchRows) {
+    if (!netByUserBranch.has(r.user_id)) netByUserBranch.set(r.user_id, new Map());
+    netByUserBranch.get(r.user_id)!.set(r.branch_id, r.net ?? 0);
+  }
+
+  // สังกัด (home branch) per user — is_primary=1, else lowest branch_id.
+  const homeRows = db.prepare(`
+    SELECT ub.user_id,
+           COALESCE(
+             (SELECT branch_id FROM user_branches WHERE user_id = ub.user_id AND is_primary = 1 LIMIT 1),
+             (SELECT MIN(branch_id) FROM user_branches WHERE user_id = ub.user_id)
+           ) AS home_branch_id,
+           (SELECT name FROM branches WHERE id = (
+             SELECT COALESCE(
+               (SELECT branch_id FROM user_branches WHERE user_id = ub.user_id AND is_primary = 1 LIMIT 1),
+               (SELECT MIN(branch_id) FROM user_branches WHERE user_id = ub.user_id)
+             ))) AS home_branch_name
+    FROM (SELECT DISTINCT user_id FROM user_branches) ub
+  `).all() as Array<{ user_id: number; home_branch_id: number | null; home_branch_name: string | null }>;
+  const homeByUser = new Map<number, string | null>();
+  for (const r of homeRows) homeByUser.set(r.user_id, r.home_branch_name);
+
+  // Split the merged rows into the two tables the owner wants kept separate.
+  const ftRows = empRows.filter((r) => r.employment_type === "ft");
+  const ptRows = empRows.filter((r) => r.employment_type === "pt");
+  const otherRows = empRows.filter((r) => r.employment_type !== "ft" && r.employment_type !== "pt");
+  const multiBranch = branchCols.length > 1;
+
   // Aggregate totals
   const totals = empRows.reduce(
     (acc, r) => ({
@@ -148,6 +200,85 @@ export default function PayrollMonthlySummaryPage({
 
   const prev = shiftMonth(month, -1);
   const next = shiftMonth(month, +1);
+
+  // One merged table per employment type (owner 2026-07-27: แยกตาราง FT/PT +
+  // รวม NAMA+HYPO เป็นแถวเดียว/คน). สังกัด = home branch; the per-branch net
+  // columns are the where-they-worked split (บัญชีลงแยกสาขาตามนี้).
+  const empTable = (title: string, accent: string, rows: EmpRow[]) => {
+    if (rows.length === 0) return null;
+    const sub = rows.reduce(
+      (a, r) => ({
+        gross: a.gross + (r.total_gross ?? 0), sso: a.sso + (r.total_sso ?? 0),
+        tax: a.tax + (r.total_tax ?? 0), net: a.net + (r.total_net ?? 0)
+      }),
+      { gross: 0, sso: 0, tax: 0, net: 0 }
+    );
+    return (
+      <div className="card overflow-x-auto">
+        <h2 className="font-semibold text-slate-700 mb-3">
+          <span className={accent}>{title}</span> · {rows.length} {t(lang, "admin.persona.payroll.col.staff")}
+        </h2>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
+              <th className="py-2 pr-3">{t(lang, "admin.persona.payroll.col.staff")}</th>
+              <th className="py-2 pr-3">สังกัด</th>
+              {multiBranch && branchCols.map((b) => (
+                <th key={b.id} className="py-2 pr-3 text-right whitespace-nowrap">{b.name}</th>
+              ))}
+              <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.gross")}</th>
+              <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.sso")}</th>
+              <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.tax")}</th>
+              <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.net")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const perB = netByUserBranch.get(r.user_id) ?? new Map<number, number>();
+              return (
+                <tr key={r.user_id} className="border-b border-slate-100 last:border-0">
+                  <td className="py-2 pr-3">
+                    <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
+                      <span>{nameWithPrefix(r.title_prefix, r.display_name)}</span>
+                      {r.salary_tax_mode_snapshot === "wht" && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                          {t(lang, "admin.persona.employees.taxMode.whtTag")}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-2 pr-3 text-xs text-slate-500 whitespace-nowrap">{homeByUser.get(r.user_id) ?? "—"}</td>
+                  {multiBranch && branchCols.map((b) => {
+                    const v = perB.get(b.id) ?? 0;
+                    return (
+                      <td key={b.id} className="py-2 pr-3 text-right tabular-nums">
+                        {v ? fmtMoney(v) : <span className="text-slate-300">—</span>}
+                      </td>
+                    );
+                  })}
+                  <td className="py-2 pr-3 text-right">{fmtMoney(r.total_gross ?? 0)}</td>
+                  <td className="py-2 pr-3 text-right text-sky-700">{fmtMoney(r.total_sso ?? 0)}</td>
+                  <td className="py-2 pr-3 text-right text-amber-700">{fmtMoney(r.total_tax ?? 0)}</td>
+                  <td className="py-2 pr-3 text-right font-bold text-emerald-700">{fmtMoney(r.total_net ?? 0)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-slate-300 font-medium">
+              <td className="py-2 pr-3" colSpan={multiBranch ? 2 + branchCols.length : 2}>
+                {t(lang, "admin.persona.payroll.detail.total")}
+              </td>
+              <td className="py-2 pr-3 text-right">{fmtMoney(sub.gross)}</td>
+              <td className="py-2 pr-3 text-right text-sky-700">{fmtMoney(sub.sso)}</td>
+              <td className="py-2 pr-3 text-right text-amber-700">{fmtMoney(sub.tax)}</td>
+              <td className="py-2 pr-3 text-right text-emerald-700">{fmtMoney(sub.net)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -243,65 +374,17 @@ export default function PayrollMonthlySummaryPage({
             </div>
           </div>
 
-          {/* Per-employee breakdown */}
-          <div className="card overflow-x-auto">
-            <h2 className="font-semibold text-slate-700 mb-3">
-              {t(lang, "admin.persona.payroll.summary.perEmployeeTitle")}
-            </h2>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
-                  <th className="py-2 pr-3">{t(lang, "admin.persona.payroll.col.staff")}</th>
-                  <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.summary.periodsLabel")}</th>
-                  <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.gross")}</th>
-                  <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.sso")}</th>
-                  <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.tax")}</th>
-                  <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.net")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {empRows.map((r) => (
-                  <tr key={r.user_id} className="border-b border-slate-100 last:border-0">
-                    <td className="py-2 pr-3">
-                      <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
-                        <span>{nameWithPrefix(r.title_prefix, r.display_name)}</span>
-                        {r.employment_type === "pt" && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
-                            {t(lang, "admin.persona.employees.employment.pt")}
-                          </span>
-                        )}
-                        {r.employment_type === "ft" && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
-                            {t(lang, "admin.persona.employees.employment.ft")}
-                          </span>
-                        )}
-                        {r.salary_tax_mode_snapshot === "wht" && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
-                            {t(lang, "admin.persona.employees.taxMode.whtTag")}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-2 pr-3 text-right text-slate-600">{r.period_count}</td>
-                    <td className="py-2 pr-3 text-right">{fmtMoney(r.total_gross ?? 0)}</td>
-                    <td className="py-2 pr-3 text-right text-sky-700">{fmtMoney(r.total_sso ?? 0)}</td>
-                    <td className="py-2 pr-3 text-right text-amber-700">{fmtMoney(r.total_tax ?? 0)}</td>
-                    <td className="py-2 pr-3 text-right font-bold text-emerald-700">{fmtMoney(r.total_net ?? 0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-slate-300 font-medium">
-                  <td className="py-2 pr-3">{t(lang, "admin.persona.payroll.detail.total")}</td>
-                  <td className="py-2 pr-3 text-right text-slate-500">{periods.length}</td>
-                  <td className="py-2 pr-3 text-right">{fmtMoney(totals.gross)}</td>
-                  <td className="py-2 pr-3 text-right text-sky-700">{fmtMoney(totals.sso)}</td>
-                  <td className="py-2 pr-3 text-right text-amber-700">{fmtMoney(totals.tax)}</td>
-                  <td className="py-2 pr-3 text-right text-emerald-700">{fmtMoney(totals.net)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          {/* Per-employee breakdown — split FT / PT, one row per person,
+              per-branch net columns show the split that lands in each branch's
+              books (owner 2026-07-27). */}
+          {multiBranch && (
+            <p className="text-xs text-slate-400">
+              คอลัมน์รายสาขา = ยอดสุทธิที่ลงบัญชีแยกแต่ละสาขา (คนที่เข้าหลายสาขาเห็นแยกได้)
+            </p>
+          )}
+          {empTable(t(lang, "admin.persona.employees.employment.ft"), "text-emerald-700", ftRows)}
+          {empTable(t(lang, "admin.persona.employees.employment.pt"), "text-violet-700", ptRows)}
+          {empTable("อื่นๆ", "text-slate-600", otherRows)}
 
           {/* Per-period list */}
           <div className="card overflow-x-auto">
