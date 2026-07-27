@@ -83,6 +83,36 @@ export default function PeriodDetailPage({
              display_name
   `).all(...addableParams) as Array<{ id: number; display_name: string; title_prefix: string | null; employment_type: "pt" | "ft" | null }>;
 
+  // "พนักงานที่ตกหล่นจากรอบ" — employees who match THIS period's type + branch
+  // but aren't in the payroll_lines snapshot yet (owner 2026-07-27: พนักงานใหม่
+  // หายไปจากรอบ). A period is computed ONCE at creation, so anyone added later
+  // (a new hire) is invisible until a recompute / manual add. This surfaces
+  // them so the admin can pull them in before finalizing. Mirrors the engine's
+  // eligibility (type by cycle, branch membership, FT-with-salary, live status)
+  // and flags anyone whose hire_date lands after the period end (won't be
+  // auto-added by a full recompute — needs a manual add).
+  const missingStaff = db.prepare(`
+    WITH p AS (SELECT branch_id, cycle, period_end FROM payroll_periods WHERE id = @pid)
+    SELECT u.id, u.display_name, u.title_prefix, u.employment_type, u.hire_date,
+           CASE WHEN u.hire_date IS NOT NULL AND u.hire_date > (SELECT period_end FROM p)
+                THEN 1 ELSE 0 END AS hire_after_period
+    FROM users u
+    WHERE u.role IN ('staff', 'admin')
+      AND u.is_test_account = 0
+      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
+      AND u.employment_type = CASE WHEN (SELECT cycle FROM p) = 'monthly' THEN 'ft' ELSE 'pt' END
+      AND NOT (u.employment_type = 'ft' AND COALESCE(u.monthly_salary, 0) = 0)
+      AND u.id NOT IN (SELECT user_id FROM payroll_lines WHERE period_id = @pid)
+      AND (
+        (SELECT branch_id FROM p) IS NULL
+        OR u.id IN (SELECT user_id FROM user_branches WHERE branch_id = (SELECT branch_id FROM p))
+      )
+    ORDER BY u.display_name
+  `).all({ pid: id }) as Array<{
+    id: number; display_name: string; title_prefix: string | null;
+    employment_type: "pt" | "ft" | null; hire_date: string | null; hire_after_period: number;
+  }>;
+
   // Audit history for this period — both 'unlock' (paid→finalized) and
   // 'force_open' (created early) events. Newest first.
   const unlockHistory = db.prepare(`
@@ -139,6 +169,7 @@ export default function PeriodDetailPage({
         period={period}
         lines={lines}
         addableStaff={addableStaff}
+        missingStaff={missingStaff}
         unlockHistory={unlockHistory}
         userPinSet={pinSet}
         staleSnapshotCount={staleCount}

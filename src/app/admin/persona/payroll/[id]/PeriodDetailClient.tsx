@@ -99,6 +99,18 @@ export type AddableStaff = {
   employment_type: "pt" | "ft" | null;
 };
 
+// Eligible employees not yet in the period's snapshot (owner 2026-07-27:
+// พนักงานใหม่หายไปจากรอบ). hire_after_period = hired after the period end, so a
+// full recompute won't pull them — they need a manual force-add.
+export type MissingStaff = {
+  id: number;
+  display_name: string;
+  title_prefix: string | null;
+  employment_type: "pt" | "ft" | null;
+  hire_date: string | null;
+  hire_after_period: number;
+};
+
 export type UnlockEntry = {
   id: number;
   reason: string;
@@ -109,12 +121,13 @@ export type UnlockEntry = {
 };
 
 export default function PeriodDetailClient({
-  lang, period, lines, addableStaff, unlockHistory, userPinSet, staleSnapshotCount
+  lang, period, lines, addableStaff, missingStaff, unlockHistory, userPinSet, staleSnapshotCount
 }: {
   lang: Lang;
   period: PeriodDetail;
   lines: PayrollLineRow[];
   addableStaff: AddableStaff[];
+  missingStaff: MissingStaff[];
   unlockHistory: UnlockEntry[];
   userPinSet: boolean;
   staleSnapshotCount: number;
@@ -209,6 +222,40 @@ export default function PeriodDetailClient({
       } else {
         setMsg({ kind: "err", text: j?.error ?? t(lang, "common.error") });
       }
+    } catch {
+      setMsg({ kind: "err", text: t(lang, "common.error") });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Force-add EVERY missing employee into the draft period, then pull each
+  // one's actual clocked hours (owner 2026-07-27: พนักงานใหม่หายไป — คืนนี้ต้องใช้).
+  // add-line = a zero row (bypasses the auto-eligibility filter); per-line
+  // recompute then fills real minutes/OT from time_entries. Runs sequentially
+  // so a single failure doesn't abort the rest.
+  async function addAllMissing(): Promise<void> {
+    if (missingStaff.length === 0) return;
+    setBusy("add_all");
+    setMsg(null);
+    let added = 0;
+    try {
+      for (const s of missingStaff) {
+        const addRes = await fetch(apiUrl(`/api/admin/persona/payroll/periods/${period.id}/lines`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: s.id })
+        });
+        const aj = await addRes.json().catch(() => ({}));
+        if (!aj?.ok && aj?.error !== "already_in_period") continue;
+        // Pull their actual hours for the period (no PIN — only re-derives inputs).
+        await fetch(apiUrl(`/api/admin/persona/payroll/periods/${period.id}/lines/${s.id}/recompute`), {
+          method: "POST"
+        }).catch(() => {});
+        added += 1;
+      }
+      setMsg({ kind: "ok", text: `เพิ่มพนักงาน ${added} คนเข้ารอบและคำนวณชั่วโมงแล้ว` });
+      startTransition(() => router.refresh());
     } catch {
       setMsg({ kind: "err", text: t(lang, "common.error") });
     } finally {
@@ -489,6 +536,45 @@ export default function PeriodDetailClient({
             className="btn-secondary text-sm whitespace-nowrap">
             {busy === "recompute" ? "..." : "↻ " + t(lang, "admin.persona.payroll.action.recompute")}
           </button>
+        </div>
+      )}
+
+      {/* Missing-employee banner — new hires that never made it into the
+          snapshot (owner 2026-07-27: พนักงานใหม่หายไปจากรอบ). One click pulls
+          them in with their hours, so nobody is left out before finalizing. */}
+      {isDraft && missingStaff.length > 0 && (
+        <div className="card border-l-4 border-rose-400 bg-rose-50/60">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="font-semibold text-rose-900">
+                ⚠️ พนักงาน {missingStaff.length} คนยังไม่อยู่ในรอบนี้
+              </h3>
+              <p className="text-sm text-rose-800 mt-1">
+                {missingStaff.map((s) => nameWithPrefix(s.title_prefix, s.display_name)).join(", ")}
+              </p>
+              {missingStaff.some((s) => s.hire_after_period === 1) && (
+                <p className="text-xs text-rose-700 mt-1">
+                  * บางคนมีวันเข้างานหลังสิ้นรอบ — การคำนวณใหม่จะไม่ดึงเข้ามาเอง ต้องกด &quot;เพิ่มทั้งหมด&quot;
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {period.data_source === "auto" && missingStaff.some((s) => s.hire_after_period === 0) && (
+                <button type="button"
+                  onClick={() => performAction("recompute")}
+                  disabled={busy !== null}
+                  className="btn-secondary text-sm whitespace-nowrap">
+                  {busy === "recompute" ? "..." : "↻ คำนวณใหม่เพื่อดึงเข้ามา"}
+                </button>
+              )}
+              <button type="button"
+                onClick={addAllMissing}
+                disabled={busy !== null}
+                className="text-sm px-4 py-1.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white font-medium whitespace-nowrap disabled:opacity-50">
+                {busy === "add_all" ? "กำลังเพิ่ม..." : `+ เพิ่มทั้งหมดเข้ารอบ (${missingStaff.length})`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
