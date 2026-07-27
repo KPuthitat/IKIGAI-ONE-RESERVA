@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
 import { fmtMoney } from "@/lib/format";
-import { roundLabel, mondayOf, TH_MONTHS_FULL, salesBaseIncludesVat, partnerShopName, type Tier, type SalesBase } from "@/lib/revshare";
+import { roundLabel, mondayOf, TH_MONTHS_FULL, salesBaseIncludesVat, salesVat, partnerShopName, type Tier, type SalesBase } from "@/lib/revshare";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import { useConfirm } from "@/app/components/useConfirm";
 import { DailyCardPreview, WeeklyCardPreview, SendPreviewModal } from "./CardPreviews";
@@ -377,6 +377,18 @@ export default function RoundsClient({
             </table>
           </div>
         )}
+        {rounds.length > 0 && (() => {
+          // ยอดขายรายวันที่กรอก = ยอดก่อนภาษี (gross) — แยก VAT + ยอดรวมให้เห็น
+          // (owner 2026-07-27). ทำตาม sales_base ของคู่ค้า (nett = ถอด VAT ออก).
+          const v = salesVat(totalSales, vatRate, salesBaseIncludesVat(partner.sales_base));
+          return (
+            <div className="mt-3 ml-auto max-w-xs rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm space-y-1">
+              <div className="flex justify-between"><span className="text-slate-500">ยอดก่อนภาษี</span><span className="font-mono">฿{fmtMoney(v.base)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">ภาษีมูลค่าเพิ่ม {Math.round(vatRate * 100)}%</span><span className="font-mono">฿{fmtMoney(v.vat)}</span></div>
+              <div className="flex justify-between border-t border-slate-200 pt-1 font-bold"><span>ยอดรวม</span><span className="font-mono text-brand">฿{fmtMoney(v.total)}</span></div>
+            </div>
+          );
+        })()}
         <p className="text-[11px] text-slate-400">
           ยอดที่นำเข้า/ส่งแล้วล็อกไว้ 🔒 กด “แก้ไข” + ใส่ PIN ก่อนแก้ · ยอดโอนรายสัปดาห์รวมจันทร์–อาทิตย์ให้อัตโนมัติ
           {partner.line_group_id
