@@ -38,6 +38,9 @@ export default function PeriodDetailPage({
 
   if (!period) notFound();
 
+  const periodBranchId = (db.prepare("SELECT branch_id FROM payroll_periods WHERE id = ?")
+    .get(id) as { branch_id: number | null }).branch_id;
+
   const lines = db.prepare(`
     SELECT pl.id, pl.user_id, pl.employee_code, pl.display_name, pl.employment_type,
            u.title_prefix,
@@ -50,13 +53,25 @@ export default function PeriodDetailPage({
            pl.overridden, pl.notes
     FROM payroll_lines pl
     LEFT JOIN users u ON u.id = pl.user_id
-    WHERE pl.period_id = ?
+    WHERE pl.period_id = @pid
       -- Hide FT rows with no salary set (owner 2026-07-12: e.g. accounts that
       -- haven't been configured shouldn't clutter the payroll table).
       AND NOT (pl.employment_type = 'ft' AND COALESCE(pl.monthly_salary_snapshot, 0) = 0)
+      -- Hide an FT's all-zero line at a branch that ISN'T their home branch
+      -- (owner 2026-07-27: ธนโชติ ผู้บริหารโผล่สองสาขา). FT salary pays only at
+      -- the home branch, so a non-home line with no OT/service charge (gross 0)
+      -- is pure noise. Kept when it carries real money earned at that branch.
+      AND NOT (
+        pl.employment_type = 'ft' AND COALESCE(pl.gross_pay, 0) = 0
+        AND @pbranch IS NOT NULL
+        AND @pbranch != COALESCE(
+          (SELECT branch_id FROM user_branches WHERE user_id = pl.user_id AND is_primary = 1 LIMIT 1),
+          (SELECT MIN(branch_id) FROM user_branches WHERE user_id = pl.user_id)
+        )
+      )
     ORDER BY CASE WHEN pl.employment_type = 'ft' THEN 0 WHEN pl.employment_type = 'pt' THEN 1 ELSE 2 END,
              pl.display_name
-  `).all(id) as PayrollLineRow[];
+  `).all({ pid: id, pbranch: periodBranchId }) as PayrollLineRow[];
 
   // Staff list for "Add employee" picker — scoped to admin's active
   // branch so AT-HOME admin doesn't see NAMA staff in the picker.
