@@ -238,23 +238,30 @@ export default function PeriodDetailClient({
     if (missingStaff.length === 0) return;
     setBusy("add_all");
     setMsg(null);
-    let added = 0;
+    let added = 0, failed = 0;
     try {
       for (const s of missingStaff) {
         const addRes = await fetch(apiUrl(`/api/admin/persona/payroll/periods/${period.id}/lines`), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ user_id: s.id })
-        });
-        const aj = await addRes.json().catch(() => ({}));
-        if (!aj?.ok && aj?.error !== "already_in_period") continue;
+        }).catch(() => null);
+        const aj = addRes ? await addRes.json().catch(() => ({})) : {};
+        // already_in_period counts as success (idempotent re-run).
+        if (!aj?.ok && aj?.error !== "already_in_period") { failed += 1; continue; }
         // Pull their actual hours for the period (no PIN — only re-derives inputs).
         await fetch(apiUrl(`/api/admin/persona/payroll/periods/${period.id}/lines/${s.id}/recompute`), {
           method: "POST"
         }).catch(() => {});
         added += 1;
       }
-      setMsg({ kind: "ok", text: `เพิ่มพนักงาน ${added} คนเข้ารอบและคำนวณชั่วโมงแล้ว` });
+      // Never claim success for a silent failure — a money flow must show
+      // exactly who didn't make it in so the admin can retry (owner 2026-07-27).
+      if (failed > 0) {
+        setMsg({ kind: "err", text: `เพิ่มได้ ${added} คน · ล้มเหลว ${failed} คน — ลองรีเฟรชแล้วกด "เพิ่มทั้งหมด" อีกครั้ง` });
+      } else {
+        setMsg({ kind: "ok", text: `เพิ่มพนักงาน ${added} คนเข้ารอบและคำนวณชั่วโมงแล้ว` });
+      }
       startTransition(() => router.refresh());
     } catch {
       setMsg({ kind: "err", text: t(lang, "common.error") });
