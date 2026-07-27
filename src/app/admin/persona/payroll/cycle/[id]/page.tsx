@@ -7,6 +7,8 @@ import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
+import { resolveCompanyCycle } from "@/lib/payroll-cycle";
+import CompanyCycleActions from "./CompanyCycleActions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,30 +21,6 @@ export const metadata: Metadata = { title: "รอบบริษัท · ค�
 // lands split (NAMA 2,000 / HYPO 2,000). This page just shows the whole cycle in
 // one place; the cascade actions (finalize/pay/post all) are a thin loop over the
 // same per-branch operations.
-
-type RepPeriod = {
-  id: number;
-  cycle: string;
-  target: string;
-  period_start: string;
-  period_end: string;
-  pay_date: string;
-  branch_id: number | null;
-  company_id: number | null;
-};
-
-type Sibling = {
-  id: number;
-  branch_id: number | null;
-  branch_name: string | null;
-  status: string;
-  finalized_at: string | null;
-  paid_at: string | null;
-  posted_at: string | null;
-  total_gross: number | null;
-  total_net: number | null;
-  line_count: number;
-};
 
 type EmpRow = {
   user_id: number;
@@ -73,42 +51,11 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
     return <div className="card text-sm text-slate-600">{t(lang, "common.error")}</div>;
   }
 
-  const rep = db.prepare(`
-    SELECT p.id, p.cycle, p.target, p.period_start, p.period_end, p.pay_date, p.branch_id,
-           b.company_id AS company_id
-    FROM payroll_periods p
-    LEFT JOIN branches b ON b.id = p.branch_id
-    WHERE p.id = ?
-  `).get(repId) as RepPeriod | undefined;
-  if (!rep) {
+  const resolved = resolveCompanyCycle(db, repId);
+  if (!resolved) {
     return <div className="card text-sm text-slate-600">{t(lang, "admin.persona.payroll.detail.notFound")}</div>;
   }
-
-  // The company's branches (fall back to just this period if the rep is a legacy
-  // NULL-branch period with no company).
-  const companyBranchIds = rep.company_id != null
-    ? (db.prepare("SELECT id FROM branches WHERE company_id = ?").all(rep.company_id) as Array<{ id: number }>).map((r) => r.id)
-    : [];
-
-  // Sibling periods = same cycle tuple, within the company (or the rep itself).
-  const inClause = companyBranchIds.length > 0
-    ? `p.branch_id IN (${companyBranchIds.map(() => "?").join(",")}) OR p.id = ?`
-    : `p.id = ?`;
-  const sibArgs = companyBranchIds.length > 0
-    ? [rep.cycle, rep.target, rep.period_start, rep.period_end, rep.pay_date, ...companyBranchIds, rep.id]
-    : [rep.cycle, rep.target, rep.period_start, rep.period_end, rep.pay_date, rep.id];
-  const siblings = db.prepare(`
-    SELECT p.id, p.branch_id, b.name AS branch_name, p.status,
-           p.finalized_at, p.paid_at, p.posted_at,
-           (SELECT SUM(gross_pay) FROM payroll_lines WHERE period_id = p.id) AS total_gross,
-           (SELECT SUM(net_pay)   FROM payroll_lines WHERE period_id = p.id) AS total_net,
-           (SELECT COUNT(*)       FROM payroll_lines WHERE period_id = p.id) AS line_count
-    FROM payroll_periods p
-    LEFT JOIN branches b ON b.id = p.branch_id
-    WHERE p.cycle = ? AND p.target = ? AND p.period_start = ? AND p.period_end = ? AND p.pay_date = ?
-      AND (${inClause})
-    ORDER BY (p.branch_id IS NULL), b.id
-  `).all(...sibArgs) as Sibling[];
+  const { rep, siblings } = resolved;
 
   const sibIds = siblings.map((s) => s.id);
   const idPlaceholders = sibIds.map(() => "?").join(",");
@@ -134,8 +81,9 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
     FROM payroll_lines pl
     LEFT JOIN users u ON u.id = pl.user_id
     WHERE pl.period_id IN (${idPlaceholders})
-      -- Same FT-noise hides as the per-branch table: drop unconfigured FT
-      -- (no salary) and an FT's empty line at a non-home branch.
+      -- Drop unconfigured FT (no salary set), same as the per-branch table. An
+      -- FT's empty non-home line needs no special hide here: GROUP BY user_id
+      -- collapses it into the single merged row (adds +0), so nobody doubles up.
       AND NOT (pl.employment_type = 'ft' AND COALESCE(pl.monthly_salary_snapshot, 0) = 0)
     GROUP BY pl.user_id
     ORDER BY (MAX(pl.employment_type) = 'ft') DESC,
@@ -285,6 +233,18 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
           </div>
         </div>
       </div>
+
+      {/* One-action cascade across all branches */}
+      <CompanyCycleActions
+        lang={lang}
+        repId={rep.id}
+        siblings={siblings.map((s) => ({
+          id: s.id,
+          branch_name: s.branch_name,
+          status: s.status,
+          posted: s.posted_at != null
+        }))}
+      />
 
       {/* Per-branch periods */}
       <div className="card overflow-x-auto">
