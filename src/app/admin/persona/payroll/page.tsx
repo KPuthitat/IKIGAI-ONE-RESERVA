@@ -268,7 +268,11 @@ export default function PayrollHubPage() {
                           {badge.label}
                         </span>
                       </td>
-                      <td className="py-2 pr-3 text-right">
+                      <td className="py-2 pr-3 text-right whitespace-nowrap">
+                        <Link href={`/admin/persona/payroll/cycle/${p.id}`} className="text-xs text-slate-500 hover:text-brand hover:underline">
+                          {t(lang, "admin.persona.payroll.hub.viewAllBranches")}
+                        </Link>
+                        <span className="mx-1 text-slate-300">·</span>
                         <Link href={`/admin/persona/payroll/${p.id}`} className="text-xs text-brand hover:underline">
                           {t(lang, "admin.persona.payroll.hub.openPeriod")} →
                         </Link>
