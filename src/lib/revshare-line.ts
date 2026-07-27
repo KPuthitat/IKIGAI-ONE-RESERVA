@@ -135,8 +135,9 @@ export function revshareWeeklyFlex(d: WeeklyCard): FlexMsg {
           kv("ยอดขายก่อนภาษี", baht(v.base), { size: "xs" }),
           kv("VAT 7%", baht(v.vat), { size: "xs" }),
           { type: "box", layout: "vertical", margin: "md", contents: [
-            { type: "text", text: "ยอดวางบิลประจำสัปดาห์", size: "xs", color: "#888888" },
-            { type: "text", text: baht(d.transferAmount), size: "xxl", weight: "bold", color: "#0f6e56" }
+            // ยอดที่โอนจริงให้คู่ค้า = ยอดรวม VAT (owner 2026-07-27).
+            { type: "text", text: "ยอดวางบิลประจำสัปดาห์ (รวม VAT)", size: "xs", color: "#888888" },
+            { type: "text", text: baht(v.total), size: "xxl", weight: "bold", color: "#0f6e56" }
           ] }
         ]
       },

@@ -63,8 +63,8 @@ export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount,
       <Row label="ยอดขายก่อนภาษี" value={baht(v.base)} />
       <Row label="VAT 7%" value={baht(v.vat)} />
       <div className="rounded-lg bg-emerald-50 px-3 py-2 mt-1">
-        <div className="text-[11px] text-slate-500">ยอดวางบิลประจำสัปดาห์</div>
-        <div className="text-xl font-bold tabular-nums" style={{ color: "#0f6e56" }}>{baht(transferAmount)}</div>
+        <div className="text-[11px] text-slate-500">ยอดวางบิลประจำสัปดาห์ (รวม VAT)</div>
+        <div className="text-xl font-bold tabular-nums" style={{ color: "#0f6e56" }}>{baht(v.total)}</div>
       </div>
       <div className="text-[9px] text-slate-400 text-center pt-1">ส่วนแบ่งยอดขายจะเรียกเก็บอีกครั้งตอนสรุปสิ้นเดือน</div>
     </Shell>
