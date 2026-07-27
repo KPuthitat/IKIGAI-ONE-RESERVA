@@ -14,6 +14,9 @@ const Body = z.object({
   period_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   pay_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   notes: z.string().max(500).optional(),
+  // Create the period for EVERY branch in the admin's company at once
+  // (owner 2026-07-27: สร้างรอบทุกสาขาทีเดียว), not just the active branch.
+  all_branches: z.boolean().default(false),
   // For periods whose pay_date is still in the future, the admin must
   // supply their own 4-digit PIN (verified against users.pin_hash) plus
   // a reason. Both are saved to payroll_period_unlocks for audit.
@@ -72,6 +75,58 @@ export async function POST(req: Request) {
     if (!bcrypt.compareSync(d.force_open_pin, me.pin_hash)) {
       return NextResponse.json({ error: "pin_invalid" }, { status: 401 });
     }
+  }
+
+  // ── สร้างทุกสาขา ── loop the company's branches, creating + computing a
+  // period for each (owner 2026-07-27). Idempotent: a branch that already has
+  // the period is skipped, not duplicated, so this doubles as a "fill the
+  // branches I haven't generated yet" button. Each branch's compute scopes to
+  // its own staff (period.branch_id), so pay lands per branch as always.
+  if (d.all_branches) {
+    const activeCompany = db.prepare(`SELECT company_id FROM branches WHERE id = ?`)
+      .get(user.activeBranchId) as { company_id: number | null } | undefined;
+    const branchRows = activeCompany?.company_id != null
+      ? db.prepare(`SELECT id, name FROM branches WHERE company_id = ? ORDER BY id`).all(activeCompany.company_id) as Array<{ id: number; name: string }>
+      : [{ id: user.activeBranchId, name: "" }];
+
+    const insertStmt = db.prepare(`
+      INSERT INTO payroll_periods
+        (cycle, target, data_source, period_start, period_end, pay_date, notes, created_by, branch_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const results: Array<{ branch_id: number; branch: string; ok: boolean; period_id?: number; skipped?: string; warning?: string; error?: string }> = [];
+    let repId: number | null = null;
+
+    for (const b of branchRows) {
+      const existing = db.prepare(`
+        SELECT id FROM payroll_periods
+        WHERE cycle = ? AND period_start = ? AND period_end = ? AND branch_id IS ?
+      `).get(d.cycle, d.period_start, d.period_end, b.id) as { id: number } | undefined;
+      if (existing) {
+        results.push({ branch_id: b.id, branch: b.name, ok: false, skipped: "duplicate", period_id: existing.id });
+        repId ??= existing.id;
+        continue;
+      }
+      try {
+        const res = insertStmt.run(d.cycle, d.target, d.data_source, d.period_start, d.period_end, payDate, d.notes ?? null, user.id, b.id);
+        const pid = res.lastInsertRowid as number;
+        if (isFuture) {
+          db.prepare(`INSERT INTO payroll_period_unlocks (period_id, unlocked_by, reason, action) VALUES (?, ?, ?, 'force_open')`)
+            .run(pid, user.id, (d.force_open_reason ?? "").trim());
+        }
+        try {
+          computePayrollPeriod(db, pid);
+          db.prepare(`UPDATE payroll_periods SET computed_by = ? WHERE id = ?`).run(user.id, pid);
+          results.push({ branch_id: b.id, branch: b.name, ok: true, period_id: pid });
+        } catch (e) {
+          results.push({ branch_id: b.id, branch: b.name, ok: true, period_id: pid, warning: (e as Error).message });
+        }
+        repId ??= pid;
+      } catch (e) {
+        results.push({ branch_id: b.id, branch: b.name, ok: false, error: (e as Error).message });
+      }
+    }
+    return NextResponse.json({ ok: true, all_branches: true, results, cycle_rep_id: repId });
   }
 
   // Duplicate = same cycle + dates for THIS branch (matches the table's

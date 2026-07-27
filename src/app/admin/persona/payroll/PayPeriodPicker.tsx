@@ -93,6 +93,9 @@ export default function PayPeriodPicker({
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [forceOpen, setForceOpen] = useState<ForceOpenContext | null>(null);
+  // สร้างทุกสาขาทีเดียว (owner 2026-07-27) — when on, create hits every branch
+  // in the company and lands on the combined company-cycle page.
+  const [allBranches, setAllBranches] = useState(false);
 
   // Lookup map: key = "cycle|target|start|end"
   const existingByKey = useMemo(() => {
@@ -125,6 +128,7 @@ export default function PayPeriodPicker({
           period_start: p.start,
           period_end: p.end,
           pay_date: p.pay,
+          all_branches: allBranches,
           ...(forceOpenParams ? {
             force_open_pin: forceOpenParams.pin,
             force_open_reason: forceOpenParams.reason
@@ -132,6 +136,11 @@ export default function PayPeriodPicker({
         })
       });
       const j = await res.json().catch(() => ({}));
+      // All-branches mode → land on the combined company-cycle page.
+      if (j?.ok && allBranches && j.cycle_rep_id) {
+        startTransition(() => router.push(`/admin/persona/payroll/cycle/${j.cycle_rep_id}`));
+        return { ok: true };
+      }
       if (j?.ok && j.period_id) {
         startTransition(() => router.push(`/admin/persona/payroll/${j.period_id}`));
         return { ok: true };
@@ -172,6 +181,18 @@ export default function PayPeriodPicker({
         <MonthPicker value={month} onChange={setMonth} lang={lang} />
       </div>
 
+      {/* All-branches toggle — create the period for every branch at once */}
+      <label className="flex items-center gap-2 text-sm cursor-pointer select-none bg-white/70 border border-slate-200 rounded-lg px-3 py-2 w-fit">
+        <input
+          type="checkbox"
+          checked={allBranches}
+          onChange={(e) => setAllBranches(e.target.checked)}
+          className="w-4 h-4 accent-brand"
+        />
+        <span className="font-medium text-slate-700">{t(lang, "admin.persona.payroll.hub.allBranches")}</span>
+        <span className="text-xs text-slate-400">{t(lang, "admin.persona.payroll.hub.allBranchesHint")}</span>
+      </label>
+
       {errMsg && (
         <div className="text-rose-600 text-sm">✗ {errMsg}</div>
       )}
@@ -206,6 +227,7 @@ export default function PayPeriodPicker({
                 onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
                 today={today}
                 accentClass="hover:border-emerald-500/60"
+                allBranches={allBranches}
               />
             );
           })()}
@@ -247,6 +269,7 @@ export default function PayPeriodPicker({
                   onOpen={(id) => startTransition(() => router.push(`/admin/persona/payroll/${id}`))}
                   accentClass="hover:border-violet-400/60"
                   today={today}
+                  allBranches={allBranches}
                 />
               );
             })}
@@ -411,7 +434,7 @@ function Section({
 
 function PeriodCard({
   lang, start, end, pay, cycleLabel, existing, busyKey, cardKey,
-  onCreate, onOpen, onForceOpen, accentClass, today
+  onCreate, onOpen, onForceOpen, accentClass, today, allBranches
 }: {
   lang: Lang;
   start: string;
@@ -426,6 +449,7 @@ function PeriodCard({
   onForceOpen: () => void;
   accentClass: string;
   today: string;       // YYYY-MM-DD (Bangkok)
+  allBranches: boolean;
 }) {
   const isExisting = !!existing;
   const isPaid = existing?.status === "paid";
@@ -491,13 +515,27 @@ function PeriodCard({
       )}
       <div className="mt-3">
         {isExisting ? (
-          <button
-            type="button"
-            onClick={() => onOpen(existing!.id)}
-            className="w-full py-1.5 rounded-md bg-white border border-slate-200 hover:bg-slate-50 text-xs font-medium text-slate-700"
-          >
-            {t(lang, "admin.persona.payroll.hub.openPeriod")} →
-          </button>
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={() => onOpen(existing!.id)}
+              className="w-full py-1.5 rounded-md bg-white border border-slate-200 hover:bg-slate-50 text-xs font-medium text-slate-700"
+            >
+              {t(lang, "admin.persona.payroll.hub.openPeriod")} →
+            </button>
+            {/* Exists for THIS branch — in all-branches mode, offer to fill the
+                branches that don't have it yet (route skips the ones that do). */}
+            {allBranches && !isFuture && (
+              <button
+                type="button"
+                onClick={() => onCreate("auto")}
+                disabled={busyAuto || busyManual}
+                className="w-full py-1.5 rounded-md bg-brand/90 hover:bg-brand text-white text-xs font-bold disabled:opacity-50"
+              >
+                {busyAuto ? "…" : "🏢 " + t(lang, "admin.persona.payroll.hub.fillOtherBranches")}
+              </button>
+            )}
+          </div>
         ) : isFuture ? (
           <div className="text-center py-2">
             <div className="text-xs text-slate-500 italic mb-1.5">
@@ -513,6 +551,17 @@ function PeriodCard({
               {(busyAuto || busyManual) ? "…" : t(lang, "admin.persona.payroll.hub.forceOpenLink")}
             </button>
           </div>
+        ) : allBranches ? (
+          // All-branches mode → one auto-create button that covers every branch.
+          <button
+            type="button"
+            onClick={() => onCreate("auto")}
+            disabled={busyAuto || busyManual}
+            className="w-full py-1.5 rounded-md bg-brand hover:opacity-90 text-white text-xs font-bold disabled:opacity-50"
+            title={t(lang, "admin.persona.payroll.hub.allBranchesHint")}
+          >
+            {busyAuto ? "…" : "🏢 " + t(lang, "admin.persona.payroll.hub.createAllBranches")}
+          </button>
         ) : (
           <div className="space-y-1">
             <button
