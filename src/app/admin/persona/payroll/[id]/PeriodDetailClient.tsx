@@ -1069,6 +1069,7 @@ type BreakdownDay = {
     lateMin: number;
     earlyMin: number;
     holiday: boolean;
+    double: boolean;
     branch: string | null;
     statusLabel: string | null;
   }>;
@@ -1723,7 +1724,7 @@ function LineEditModal({
                               {/* Tags row — กะ on worked days; status rows
                                   (วันหยุด/ลา/ขาดงาน) show their label in the next
                                   column. Uniform pill size (owner 2026-06-18). */}
-                              {((!p.statusLabel && day.shift) || day.edited || p.holiday || (!p.statusLabel && p.branch)) && (
+                              {((!p.statusLabel && day.shift) || day.edited || p.holiday || p.double || (!p.statusLabel && p.branch)) && (
                                 <div className="flex flex-wrap items-center gap-1">
                                   {!p.statusLabel && day.shift && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded font-sans font-bold min-w-[2.5rem] text-center"
@@ -1742,8 +1743,11 @@ function LineEditModal({
                                   {day.edited && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-sans">แก้ไขแล้ว</span>
                                   )}
-                                  {p.holiday && (
+                                  {p.holiday && !p.double && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-sans">วันพิเศษ ×1.5</span>
+                                  )}
+                                  {p.double && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-sans font-bold">จ่ายสองเท่า ×2</span>
                                   )}
                                 </div>
                               )}

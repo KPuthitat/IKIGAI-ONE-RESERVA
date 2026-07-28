@@ -62,8 +62,10 @@ type DayPair = {
   // clock-in was late beyond grace / clock-out was early beyond grace.
   lateMin: number;
   earlyMin: number;
-  // True when the day is a public holiday (PT pay ×1.5 applies).
+  // True when the day is a วันพิเศษ (pt_special) — PT pay ×1.5.
   holiday: boolean;
+  // True when the day is a วันจ่ายสองเท่า (double_pay) — PT pay ×2 (wins over ×1.5).
+  double: boolean;
   // Branch where this clock-in was recorded (time_entries.branch_id) — so a
   // multi-branch PT's row shows which branch the hours belong to (owner
   // 2026-07-28: แท็กสาขาที่ลงเวลา). null for legacy rows / synthetic status rows.
@@ -326,6 +328,7 @@ export async function GET(
       lateMin,
       earlyMin,
       holiday,
+      double: isDoubleDay,
       branch: branchId != null ? (branchNameById.get(branchId) ?? null) : null,
       statusLabel: null
     };
@@ -470,6 +473,7 @@ export async function GET(
           lateMin: 0,
           earlyMin: 0,
           holiday: false,
+          double: false,
           branch: e.branch_id != null ? (branchNameById.get(e.branch_id) ?? null) : null,
           statusLabel: null
         });
@@ -494,7 +498,7 @@ export async function GET(
         date, workIn: null, workOut: null, durationMinutes: 0,
         schedIn: null, schedOut: null, breakMinutes: 0,
         effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: true,
-        lateMin: 0, earlyMin: 0, holiday: false, branch: null, statusLabel: "ขาดงาน"
+        lateMin: 0, earlyMin: 0, holiday: false, double: false, branch: null, statusLabel: "ขาดงาน"
       });
     }
   }
@@ -512,7 +516,7 @@ export async function GET(
       date: d, workIn: null, workOut: null, durationMinutes: 0,
       schedIn: null, schedOut: null, breakMinutes: 0,
       effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: false,
-      lateMin: 0, earlyMin: 0, holiday: holidaySet.has(d), branch: null, statusLabel: label
+      lateMin: 0, earlyMin: 0, holiday: holidaySet.has(d), double: false, branch: null, statusLabel: label
     });
   }
 
