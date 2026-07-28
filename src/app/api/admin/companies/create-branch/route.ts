@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
+import { seedDefaultTablesIfEmpty } from "@/lib/reserva-tables";
 
 // POST /api/admin/companies/create-branch — super_admin adds a new
 // branch under a company. The branch row only needs slug + name +
@@ -63,6 +64,9 @@ export async function POST(req: Request) {
     d.tax_branch_code ? d.tax_branch_code : null
   );
   const id = Number(r.lastInsertRowid);
+  // Give the new branch a default floor plan so its booking table-picker isn't
+  // empty from day one (owner 2026-07-28). Owner edits it in จัดการโต๊ะ later.
+  seedDefaultTablesIfEmpty(db, id);
   logPersonaAction(user.id, "branch.create", id);
   return NextResponse.json({ ok: true, id });
 }
