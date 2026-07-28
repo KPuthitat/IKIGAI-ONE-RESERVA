@@ -27,7 +27,7 @@ export default function OtApprovalsPage() {
     : []) as OtStaff[];
 
   const rows = db.prepare(`
-    SELECT o.id, o.user_id, o.work_date, o.requested_until, o.status,
+    SELECT o.id, o.user_id, o.work_date, o.requested_until, o.requested_from, o.status,
            o.created_at, o.decided_at,
            u.display_name, u.title_prefix,
            b.name AS branch_name,

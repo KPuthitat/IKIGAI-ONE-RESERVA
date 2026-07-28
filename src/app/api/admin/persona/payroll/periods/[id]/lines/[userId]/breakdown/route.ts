@@ -226,13 +226,17 @@ export async function GET(
 
   // Approved OT for this user → date → requested_until.
   const otApprovedRows = db.prepare(`
-    SELECT work_date, requested_until FROM ot_requests
+    SELECT work_date, requested_until, requested_from FROM ot_requests
     WHERE user_id = ? AND status = 'approved' AND work_date >= ? AND work_date <= ?
   `).all(userId, period.period_start, period.period_end) as Array<{
-    work_date: string; requested_until: string;
+    work_date: string; requested_until: string; requested_from: string | null;
   }>;
   const approvedOtByDate = new Map<string, string>();
-  for (const r of otApprovedRows) approvedOtByDate.set(r.work_date, r.requested_until);
+  const approvedEarlyByDate = new Map<string, string>();
+  for (const r of otApprovedRows) {
+    approvedOtByDate.set(r.work_date, r.requested_until);
+    if (r.requested_from) approvedEarlyByDate.set(r.work_date, r.requested_from);
+  }
 
   // Build a fully-populated pair from a raw in/out couple — replicating
   // the engine: grace clamp → scheduled break → regular/OT split →
@@ -261,10 +265,17 @@ export async function GET(
     // the scheduled end only up to an approved OT request's "until" (or an admin
     // per-day ot_until override). No auto over-8h. Execs never get OT.
     const reqUntil = isExec ? null : (ov?.ot_until ?? approvedOtByDate.get(date) ?? null);
-    const otApproved = !!(reqUntil && /^\d{2}:\d{2}$/.test(reqUntil));
+    const reqFrom = isExec ? null : (approvedEarlyByDate.get(date) ?? null);
+    const lateApproved = !!(reqUntil && /^\d{2}:\d{2}$/.test(reqUntil));
+    const earlyApproved = !!(reqFrom && /^\d{2}:\d{2}$/.test(reqFrom));
+    const otApproved = lateApproved || earlyApproved;  // keeps split.ot below
     let otUntilTs: string | null = null;
-    if (sched && outTs && otApproved) {
+    let otFromTs: string | null = null;
+    if (sched && outTs && lateApproved) {
       otUntilTs = new Date(`${date}T${reqUntil}:00+07:00`).toISOString();
+    }
+    if (sched && outTs && earlyApproved) {
+      otFromTs = new Date(`${date}T${reqFrom}:00+07:00`).toISOString();
     }
 
     let breakMinutes = 0;
@@ -273,7 +284,7 @@ export async function GET(
     let earlyMin = 0;
     if (outTs) {
       if (sched) {
-        const g = applyPtGrace({ startTs: inTs, endTs: outTs }, sched, otUntilTs);
+        const g = applyPtGrace({ startTs: inTs, endTs: outTs }, sched, otUntilTs, otFromTs);
         breakMinutes = Math.round(g.breakMinutes);
         workedMin = Math.round(g.workedMinutes);
         lateMin = Math.round(g.lateMinutes);
