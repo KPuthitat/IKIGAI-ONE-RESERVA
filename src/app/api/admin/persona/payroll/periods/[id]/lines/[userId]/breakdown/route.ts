@@ -137,10 +137,16 @@ export async function GET(
   // Public holidays (all rows) are info-only — they drive the "วันหยุด"
   // status row, NOT pay (owner 2026-06-03).
   const phRows = db.prepare(`
-    SELECT date, pt_special FROM public_holidays WHERE date >= ? AND date <= ?
-  `).all(period.period_start, period.period_end) as Array<{ date: string; pt_special: number }>;
+    SELECT date, pt_special, double_pay FROM public_holidays WHERE date >= ? AND date <= ?
+  `).all(period.period_start, period.period_end) as Array<{ date: string; pt_special: number; double_pay: number }>;
   const holidaySet = new Set(phRows.filter((h) => h.pt_special === 1).map((h) => h.date));
   const publicHolidaySet = new Set(phRows.map((h) => h.date));
+  // วันจ่ายสองเท่า (double_pay=1) → PT 2× on both base + OT, and it WINS over the
+  // 1.5× วันพิเศษ premium. This must mirror the pay engine (payroll-compute.ts
+  // computeShiftBasedPay, `mult = isDouble ? 2 : isHoliday ? 1.5 : 1`) — without
+  // it the modal showed PT days at 1× while the actual line was paid 2× (owner
+  // 2026-07-28: "2x ยังไม่มีผลกับพาร์ทไทม์").
+  const doubleSet = new Set(phRows.filter((h) => h.double_pay === 1).map((h) => h.date));
 
   // Scheduled work shifts in the period, keyed by BKK assignment date.
   // Same anchoring rule as the pay engine (lib/payroll-compute.ts).
@@ -230,6 +236,7 @@ export async function GET(
     const ov = fieldOvByDate.get(date);
     const rawMin = outTs ? Math.max(0, floorMin(outTs) - floorMin(inTs)) : 0;
     const holiday = isPt && holidaySet.has(date);
+    const isDoubleDay = isPt && doubleSet.has(date);
 
     // Scheduled window — per-day override wins over the roster (both PT + FT,
     // matching the pay engine).
@@ -284,7 +291,8 @@ export async function GET(
     const regMin = ov?.worked_min != null ? ov.worked_min : split.regular + (split.ot - autoOt);
     const otMin = ov?.ot_min != null ? ov.ot_min : autoOt;
 
-    const mult = holiday ? 1.5 : 1;
+    // 2× (double_pay) wins over 1.5× (วันพิเศษ) — same precedence as the engine.
+    const mult = isDoubleDay ? 2 : holiday ? 1.5 : 1;
     const regularPay = isPt ? (regMin / 60) * ptRate * mult : 0;
     const otPay = isPt
       ? (ov?.ot_pay != null ? ov.ot_pay : computeOtPay(otMin, ptRate, settings, mult))
