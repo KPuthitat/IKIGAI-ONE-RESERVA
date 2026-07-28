@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { Booking } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
@@ -207,6 +208,20 @@ export default function PendingClient({
                     </option>
                   ))}
               </select>
+              {/* No table fits this party → the dropdown would be empty and the
+                  confirm button stays disabled, hard-blocking the booking. Tell
+                  the admin exactly why + where to fix it (add/enlarge a table)
+                  instead of leaving a silent empty dropdown. */}
+              {tables.filter((tab) => tab.capacity >= b.party_size).length === 0 && (
+                <span className="text-xs text-amber-700 basis-full sm:basis-auto">
+                  {tables.length === 0
+                    ? t("admin.bookings.pending.noTablesAtBranch")
+                    : t("admin.bookings.pending.noFittingTable", { n: b.party_size })}{" "}
+                  <Link href="/admin/reserva/timetable" className="underline font-medium whitespace-nowrap">
+                    {t("admin.bookings.pending.manageTables")} →
+                  </Link>
+                </span>
+              )}
               <button
                 onClick={() => confirmAndNotify(b.id)}
                 disabled={busyId === b.id || !tablePick[b.id]}
