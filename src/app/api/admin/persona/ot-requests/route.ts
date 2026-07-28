@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
+import { recomputeLine } from "@/lib/payroll-compute";
 
 // POST /api/admin/persona/ot-requests
 //
@@ -22,9 +23,12 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const Body = z.object({
   user_id: z.number().int().positive(),
   work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  requested_until: z.string().regex(HHMM),
+  // Admin may grant a late end (requested_until), an early start
+  // (requested_from), or both — at least one is required (owner 2026-07-28).
+  requested_until: z.string().regex(HHMM).optional(),
+  requested_from: z.string().regex(HHMM).optional(),
   pin: z.string().min(1)
-});
+}).refine((d) => !!d.requested_until || !!d.requested_from, { message: "time_required" });
 
 export async function POST(req: Request) {
   const user = getSessionUser();
@@ -41,7 +45,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
   }
-  const { user_id, work_date, requested_until, pin } = parsed.data;
+  const { user_id, work_date, requested_until, requested_from, pin } = parsed.data;
 
   // Adding OT is a pay change → require the admin's PIN.
   const pinRes = verifyAdminPin(user.id, pin);
@@ -65,19 +69,43 @@ export async function POST(req: Request) {
   }
 
   const now = new Date().toISOString();
+  // Merge with any existing row so granting only one side (early OR late)
+  // doesn't wipe the other. requested_until is NOT NULL → default to ''.
+  const existing = db.prepare(
+    "SELECT requested_until, requested_from FROM ot_requests WHERE user_id = ? AND work_date = ?"
+  ).get(user_id, work_date) as { requested_until: string; requested_from: string | null } | undefined;
+  const finalUntil = requested_until ?? existing?.requested_until ?? "";
+  const finalFrom = requested_from ?? existing?.requested_from ?? null;
   db.prepare(`
     INSERT INTO ot_requests
-      (user_id, branch_id, work_date, requested_until, status, decided_by, decided_at, created_at)
-    VALUES (?, ?, ?, ?, 'approved', ?, ?, ?)
+      (user_id, branch_id, work_date, requested_until, requested_from, status, decided_by, decided_at, created_at)
+    VALUES (?, ?, ?, ?, ?, 'approved', ?, ?, ?)
     ON CONFLICT (user_id, work_date) DO UPDATE SET
       requested_until = excluded.requested_until,
+      requested_from = excluded.requested_from,
       branch_id = excluded.branch_id,
       status = 'approved',
       decided_by = excluded.decided_by,
       decided_at = excluded.decided_at
-  `).run(user_id, branchId, work_date, requested_until, user.id, now, now);
+  `).run(user_id, branchId, work_date, finalUntil, finalFrom, user.id, now, now);
 
   logPersonaAction(user.id, "ot.admin_add", user_id);
+
+  // Auto-recompute any DRAFT period covering the day so the OT shows up
+  // immediately (owner 2026-07-28: คำนวณค่าล่วงเวลาให้อัตโนมัติ). Finalized/paid
+  // periods are left untouched — recomputeLine throws and we skip them.
+  try {
+    const periods = db.prepare(
+      "SELECT id FROM payroll_periods WHERE status = 'draft' AND period_start <= ? AND period_end >= ?"
+    ).all(work_date, work_date) as Array<{ id: number }>;
+    for (const p of periods) {
+      try { recomputeLine(db, p.id, user_id); }
+      catch { /* line_not_found / not_draft — skip */ }
+    }
+  } catch (e) {
+    console.warn("[ot.admin_add] recompute after grant failed:", e);
+  }
+
   return NextResponse.json({ ok: true });
 }
 

@@ -105,12 +105,17 @@ function AddOtForm({ staff, onAdded }: { staff: OtStaff[]; onAdded: () => void }
   const [userId, setUserId] = useState<string>("");
   const [date, setDate] = useState(todayBkk);
   const [until, setUntil] = useState("");
+  const [from, setFrom] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [pinOpen, setPinOpen] = useState(false);
 
-  const ready = userId !== "" && /^\d{4}-\d{2}-\d{2}$/.test(date) && /^([01]\d|2[0-3]):[0-5]\d$/.test(until);
+  const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const validUntil = HHMM.test(until);
+  const validFrom = HHMM.test(from);
+  // At least one of early-start / late-end is required (owner 2026-07-28).
+  const ready = userId !== "" && /^\d{4}-\d{2}-\d{2}$/.test(date) && (validUntil || validFrom);
 
   async function submit(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
     setBusy(true);
@@ -120,12 +125,18 @@ function AddOtForm({ staff, onAdded }: { staff: OtStaff[]; onAdded: () => void }
       const res = await fetch(apiUrl("/api/admin/persona/ot-requests"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: Number(userId), work_date: date, requested_until: until, pin })
+        body: JSON.stringify({
+          user_id: Number(userId), work_date: date,
+          ...(validUntil ? { requested_until: until } : {}),
+          ...(validFrom ? { requested_from: from } : {}),
+          pin
+        })
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) {
-        setMsg("เพิ่ม OT เรียบร้อย (อนุมัติแล้ว)");
+        setMsg("เพิ่ม OT เรียบร้อย (อนุมัติแล้ว · คำนวณให้อัตโนมัติ)");
         setUntil("");
+        setFrom("");
         onAdded();
         return { ok: true };
       }
@@ -146,7 +157,7 @@ function AddOtForm({ staff, onAdded }: { staff: OtStaff[]; onAdded: () => void }
       <div>
         <h2 className="font-bold text-slate-800 text-sm">เพิ่ม OT ให้พนักงาน</h2>
         <p className="text-[11px] text-slate-500">
-          สำหรับพนักงานที่ทำ OT แต่ไม่ได้กดขอเอง — กรอกเวลาที่ทำถึง ระบบจะบันทึกเป็น &quot;อนุมัติแล้ว&quot; ทันที (ทั้ง PT/FT)
+          สำหรับพนักงานที่ทำ OT แต่ไม่ได้กดขอเอง — กรอกเวลาที่ทำถึง และ/หรือ เข้าก่อนเวลา ระบบบันทึกเป็น &quot;อนุมัติแล้ว&quot; + คำนวณ OT ให้อัตโนมัติ (ทั้ง PT/FT · เข้าก่อน = เกิน 8 ชม./วันเป็น OT)
         </p>
       </div>
       <div className="flex flex-wrap items-end gap-2">
@@ -168,6 +179,11 @@ function AddOtForm({ staff, onAdded }: { staff: OtStaff[]; onAdded: () => void }
             onChange={(e) => setDate(e.target.value)} />
         </div>
         <div>
+          <label className="text-[11px] text-slate-500 block">เข้าก่อนเวลา</label>
+          <input type="time" className="input !w-auto !py-1 text-sm" value={from}
+            onChange={(e) => setFrom(e.target.value)} />
+        </div>
+        <div>
           <label className="text-[11px] text-slate-500 block">ทำถึงเวลา</label>
           <input type="time" className="input !w-auto !py-1 text-sm" value={until}
             onChange={(e) => setUntil(e.target.value)} />
@@ -182,7 +198,12 @@ function AddOtForm({ staff, onAdded }: { staff: OtStaff[]; onAdded: () => void }
       {pinOpen && (
         <PinPromptModal
           title="ยืนยันเพิ่ม OT"
-          description={<>เพิ่ม OT ถึง <b>{until}</b> น. วันที่ {date} — กระทบเงินเดือน ต้องใส่ PIN</>}
+          description={<>
+            เพิ่ม OT วันที่ {date}
+            {validFrom && <> · เข้าก่อน <b>{from}</b> น.</>}
+            {validUntil && <> · ถึง <b>{until}</b> น.</>}
+            {" "}— กระทบเงินเดือน ต้องใส่ PIN
+          </>}
           submitLabel="เพิ่ม OT"
           onSubmit={submit}
           onClose={() => setPinOpen(false)}
