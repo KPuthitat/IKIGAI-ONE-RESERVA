@@ -33,7 +33,7 @@ import {
 // branch_id NULL and the modal already represents that staff's full
 // pay period across branches.
 
-type EntryRow = { id: number; ts: string; type: "in" | "out"; selfie_path: string | null };
+type EntryRow = { id: number; ts: string; type: "in" | "out"; selfie_path: string | null; branch_id: number | null };
 
 type DayPair = {
   date: string;          // YYYY-MM-DD (BKK local)
@@ -64,6 +64,10 @@ type DayPair = {
   earlyMin: number;
   // True when the day is a public holiday (PT pay ×1.5 applies).
   holiday: boolean;
+  // Branch where this clock-in was recorded (time_entries.branch_id) — so a
+  // multi-branch PT's row shows which branch the hours belong to (owner
+  // 2026-07-28: แท็กสาขาที่ลงเวลา). null for legacy rows / synthetic status rows.
+  branch: string | null;
   // Non-working-day label for a synthetic row (no clock-in): "วันหยุด"
   // or the leave-type label (ลาพักร้อน/ลากิจ/ลาป่วย/…). null on normal rows.
   statusLabel: string | null;
@@ -132,6 +136,9 @@ export async function GET(
     FROM payroll_settings WHERE id = 1
   `).get() as PayrollSettings;
   const ptRate = emp?.hourly_rate ?? settings.pt_default_hourly_rate;
+  const branchNameById = new Map<number, string>(
+    (db.prepare("SELECT id, name FROM branches").all() as Array<{ id: number; name: string }>).map((b) => [b.id, b.name])
+  );
 
   // วันพิเศษ (pt_special=1) → PT premium 1.5× (same as the engine).
   // Public holidays (all rows) are info-only — they drive the "วันหยุด"
@@ -231,7 +238,7 @@ export async function GET(
   // Whole-minute duration (seconds ignored) — matches the pay engine.
   const floorMin = (ts: string) => Math.floor(new Date(ts).getTime() / 60000);
 
-  function buildPair(inTs: string, outTs: string | null, edited = false): DayPair {
+  function buildPair(inTs: string, outTs: string | null, edited = false, branchId: number | null = null): DayPair {
     const date = bkkDate(inTs);
     const ov = fieldOvByDate.get(date);
     const rawMin = outTs ? Math.max(0, floorMin(outTs) - floorMin(inTs)) : 0;
@@ -319,6 +326,7 @@ export async function GET(
       lateMin,
       earlyMin,
       holiday,
+      branch: branchId != null ? (branchNameById.get(branchId) ?? null) : null,
       statusLabel: null
     };
   }
@@ -374,7 +382,7 @@ export async function GET(
   const fromIso = `${period.period_start}T00:00:00`;
   const toIso = `${period.period_end}T23:59:59`;
   const entries = db.prepare(`
-    SELECT id, ts, type, selfie_path FROM time_entries
+    SELECT id, ts, type, selfie_path, branch_id FROM time_entries
     WHERE user_id = ? AND ts >= ? AND ts <= ?
     ORDER BY ts ASC
   `).all(userId, fromIso, toIso) as EntryRow[];
@@ -435,12 +443,12 @@ export async function GET(
     // Dates with an admin override are rebuilt from the override below —
     // skip the time-clock pairs for those days entirely.
     if (e.type === "in") {
-      if (openIn && !overrideByDate.has(bkkDate(openIn.ts))) pushPair(buildPair(openIn.ts, null));
+      if (openIn && !overrideByDate.has(bkkDate(openIn.ts))) pushPair(buildPair(openIn.ts, null, false, openIn.branch_id));
       openIn = e;
     } else {
       // type === "out"
       if (openIn) {
-        if (!overrideByDate.has(bkkDate(openIn.ts))) pushPair(buildPair(openIn.ts, e.ts));
+        if (!overrideByDate.has(bkkDate(openIn.ts))) pushPair(buildPair(openIn.ts, e.ts, false, openIn.branch_id));
         openIn = null;
       } else if (!overrideByDate.has(bkkDate(e.ts))) {
         // Orphan out — clock-out with no clock-in. Surface it under
@@ -462,6 +470,7 @@ export async function GET(
           lateMin: 0,
           earlyMin: 0,
           holiday: false,
+          branch: e.branch_id != null ? (branchNameById.get(e.branch_id) ?? null) : null,
           statusLabel: null
         });
       }
@@ -469,7 +478,7 @@ export async function GET(
   }
   // Trailing unmatched "in" (still on shift at period end / forgot
   // to clock out) — flush as orphan too (unless overridden).
-  if (openIn && !overrideByDate.has(bkkDate(openIn.ts))) pushPair(buildPair(openIn.ts, null));
+  if (openIn && !overrideByDate.has(bkkDate(openIn.ts))) pushPair(buildPair(openIn.ts, null, false, openIn.branch_id));
 
   // Now lay down the admin per-day overrides — each wins over the
   // time-clock for its date.
@@ -485,7 +494,7 @@ export async function GET(
         date, workIn: null, workOut: null, durationMinutes: 0,
         schedIn: null, schedOut: null, breakMinutes: 0,
         effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: true,
-        lateMin: 0, earlyMin: 0, holiday: false, statusLabel: "ขาดงาน"
+        lateMin: 0, earlyMin: 0, holiday: false, branch: null, statusLabel: "ขาดงาน"
       });
     }
   }
@@ -503,7 +512,7 @@ export async function GET(
       date: d, workIn: null, workOut: null, durationMinutes: 0,
       schedIn: null, schedOut: null, breakMinutes: 0,
       effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: false,
-      lateMin: 0, earlyMin: 0, holiday: holidaySet.has(d), statusLabel: label
+      lateMin: 0, earlyMin: 0, holiday: holidaySet.has(d), branch: null, statusLabel: label
     });
   }
 

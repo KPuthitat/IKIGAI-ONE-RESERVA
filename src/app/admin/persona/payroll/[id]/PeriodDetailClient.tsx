@@ -1069,6 +1069,7 @@ type BreakdownDay = {
     lateMin: number;
     earlyMin: number;
     holiday: boolean;
+    branch: string | null;
     statusLabel: string | null;
   }>;
   totalMinutes: number;
@@ -1722,13 +1723,20 @@ function LineEditModal({
                               {/* Tags row — กะ on worked days; status rows
                                   (วันหยุด/ลา/ขาดงาน) show their label in the next
                                   column. Uniform pill size (owner 2026-06-18). */}
-                              {((!p.statusLabel && day.shift) || day.edited || p.holiday) && (
+                              {((!p.statusLabel && day.shift) || day.edited || p.holiday || (!p.statusLabel && p.branch)) && (
                                 <div className="flex flex-wrap items-center gap-1">
                                   {!p.statusLabel && day.shift && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded font-sans font-bold min-w-[2.5rem] text-center"
                                       style={{ backgroundColor: day.shift.color || "#e2e8f0", color: "#1a1a2e" }}
                                       title={day.shift.name ?? day.shift.code}>
                                       {day.shift.code}
+                                    </span>
+                                  )}
+                                  {/* สาขาที่ลงเวลาวันนั้น (owner 2026-07-28) — so a
+                                      multi-branch PT's hours are traceable per day. */}
+                                  {!p.statusLabel && p.branch && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-sans">
+                                      {p.branch}
                                     </span>
                                   )}
                                   {day.edited && (
