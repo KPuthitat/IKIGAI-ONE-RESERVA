@@ -153,6 +153,67 @@ console.log("\nOT ต้องได้รับอนุมัติก่อ�
   eq("ผู้บริหารมีอนุมัติ OT → ot_minutes 0", exec.ot_minutes, 0);
 }
 
+// 8b. เข้างานก่อนเวลาตามมอบหมาย — ต้องได้รับอนุมัติก่อนถึงจะนับเป็น OT
+//     (owner 2026-07-28, สมมาตรกับ OT อยู่เกินเวลา). อนุมัติ → หน้าต่างเริ่มจาก
+//     เวลาที่ตอกเข้าจริง เกิน 8 ชม. = OT. ไม่อนุมัติ → นับเข้างานตามกะ.
+console.log("\nเข้าก่อนเวลา ต้องอนุมัติก่อนถึงนับ OT (owner 2026-07-28):");
+{
+  const D = "2026-06-16";
+  const iso = (hhmm: string) => new Date(`${D}T${hhmm}:00+07:00`).toISOString();
+  // กะ 11:00–20:00 พัก 12:00–13:00 (= ทำงาน 8 ชม.). ตอกเข้าเร็ว 10:00 เลิกตามกะ 20:00
+  const sched: ScheduledShift = {
+    startTs: iso("11:00"), endTs: iso("20:00"),
+    breakStartTs: iso("12:00"), breakEndTs: iso("13:00")
+  };
+  const scheduledByDate = new Map<string, ScheduledShift[]>([[D, [sched]]]);
+  const shift = { startTs: iso("10:00"), endTs: iso("20:00"), durationMinutes: 600 };
+  const base = {
+    shifts: [shift], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+    cycle: "monthly" as const, periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS,
+    holidaySet: new Set<string>(), scheduledByDate
+  };
+  // ไม่อนุมัติ → คลิกเข้าเร็วถูก clamp เป็น 11:00 → ทำงาน 8 ชม. → OT 0
+  const ptNoApprove = computeLineForEmployee({ ...base, employee: ptHourly(50) });
+  eq("PT เข้าเร็ว ไม่อนุมัติ → regular 480", ptNoApprove.regular_minutes, 480);
+  eq("PT เข้าเร็ว ไม่อนุมัติ → OT 0", ptNoApprove.ot_minutes, 0);
+  eq("PT เข้าเร็ว ไม่อนุมัติ → base 400", ptNoApprove.base_pay, 400);
+  // อนุมัติ requested_from=10:00 → หน้าต่างเริ่ม 10:00 → ทำงาน 9 ชม. → OT 60
+  const ptApprove = computeLineForEmployee({
+    ...base, employee: ptHourly(50),
+    approvedEarlyByDate: new Map<string, string>([[D, "10:00"]])
+  });
+  eq("PT เข้าเร็ว อนุมัติ → regular 480", ptApprove.regular_minutes, 480);
+  eq("PT เข้าเร็ว อนุมัติ 10:00 → OT 60", ptApprove.ot_minutes, 60);
+  eq("PT เข้าเร็ว อนุมัติ → base ยัง 400 (OT แยก)", ptApprove.base_pay, 400);
+  // อนุมัติ requested_from เวลาช้ากว่าที่ตอกเข้า → นับจากเวลาที่อนุมัติ (floor)
+  const shiftEarlier = { startTs: iso("09:30"), endTs: iso("20:00"), durationMinutes: 630 };
+  const ptFloor = computeLineForEmployee({
+    ...base, shifts: [shiftEarlier], employee: ptHourly(50),
+    approvedEarlyByDate: new Map<string, string>([[D, "10:00"]])
+  });
+  eq("PT ตอก 09:30 อนุมัติแค่ 10:00 → OT 60 (ไม่ใช่ 90)", ptFloor.ot_minutes, 60);
+  // อนุมัติแต่รวมยังไม่ถึง 8 ชม. → OT 0 (เลิก 16:00: 10:00–16:00 พัก 1 ชม = 5 ชม.)
+  const shortShift = { startTs: iso("10:00"), endTs: iso("16:00"), durationMinutes: 360 };
+  const ptShort = computeLineForEmployee({
+    ...base, shifts: [shortShift], employee: ptHourly(50),
+    approvedEarlyByDate: new Map<string, string>([[D, "10:00"]])
+  });
+  eq("PT เข้าเร็ว อนุมัติ แต่รวม<8ชม → OT 0", ptShort.ot_minutes, 0);
+  // ผู้บริหาร (track_attendance=0) แม้อนุมัติเข้าเร็ว ก็ไม่ได้ OT
+  const exec = computeLineForEmployee({
+    ...base, employee: { ...ftMonthly(30000), track_attendance: 0 },
+    approvedEarlyByDate: new Map<string, string>([[D, "10:00"]])
+  });
+  eq("ผู้บริหาร เข้าเร็วอนุมัติ → OT 0", exec.ot_minutes, 0);
+  // OT pay ไหลถูก: flat 25฿/15นาที × 4 บล็อก = 100
+  const otSettings: PayrollSettings = { ...SETTINGS, ot_mode: "flat", ot_flat_per_15min: 25 };
+  const ptPay = computeLineForEmployee({
+    ...base, settings: otSettings, employee: ptHourly(50),
+    approvedEarlyByDate: new Map<string, string>([[D, "10:00"]])
+  });
+  eq("PT เข้าเร็ว อนุมัติ → ot_pay 100 (4×25)", ptPay.ot_pay, 100);
+}
+
 // 9. FT เงินเดือนจ่ายเฉพาะสาขาหลัก (owner 2026-07-14) — พนักงานประจำที่สลับสาขา
 //    ต้องได้เงินเดือนเต็มที่สาขาหลักเท่านั้น สาขาที่ไม่ใช่หลัก base = 0 (กัน
 //    double-pay). PT ไม่กระทบ.

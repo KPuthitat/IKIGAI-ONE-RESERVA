@@ -12,6 +12,7 @@ export type OtRow = {
   user_id: number;
   work_date: string;
   requested_until: string;
+  requested_from: string | null;  // early-start OT (HH:MM); null = late-OT only
   status: "pending" | "approved" | "rejected";
   created_at: string;
   decided_at: string | null;
@@ -75,7 +76,8 @@ export default function OtApprovalsClient({ rows, staff }: { rows: OtRow[]; staf
                     {rs.map((r) => (
                       <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                         <span className="font-medium text-slate-700">{nameWithPrefix(r.title_prefix, r.display_name)}</span>
-                        <span className="text-xs text-slate-500">ถึง {r.requested_until} น.</span>
+                        {r.requested_from && <span className="text-xs text-emerald-600">เข้าก่อน {r.requested_from} น.</span>}
+                        {r.requested_until && <span className="text-xs text-slate-500">ถึง {r.requested_until} น.</span>}
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_META[r.status].cls}`}>
                           {STATUS_META[r.status].label}
                         </span>
@@ -228,6 +230,11 @@ function PendingRow({ row, onChanged }: { row: OtRow; onChanged: () => void }) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="font-bold text-slate-800 text-sm">{nameWithPrefix(row.title_prefix, row.display_name)}</span>
         <span className="text-xs text-slate-500">{row.branch_name ?? "—"} · วันที่ {row.work_date}</span>
+        {row.requested_from && (
+          <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+            เข้าก่อนเวลา {row.requested_from} น. (ขอ OT)
+          </span>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <label className="text-xs text-slate-500">ขอทำถึง</label>

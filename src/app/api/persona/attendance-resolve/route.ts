@@ -49,8 +49,31 @@ export async function POST(req: Request) {
   };
 
   if (resolution === "early") {
-    // Came in before the rostered start — nothing to record.
-    return NextResponse.json({ ok: true, resolution });
+    // มาก่อนเวลาตามมอบหมาย → create a PENDING early-start OT request from the
+    // actual (earliest) clock-in that day (owner 2026-07-28). No pay effect
+    // until an admin approves it; if rejected/ignored the day still pays from
+    // the scheduled start exactly as before. Mirrors the stay-late OT request.
+    const early = db.prepare(
+      "SELECT MIN(ts) AS ts FROM time_entries WHERE user_id = ? AND type = 'in' AND ts >= ? AND ts <= ?"
+    ).get(user.id, `${work_date}T00:00:00`, `${work_date}T23:59:59`) as { ts: string | null };
+    if (!early?.ts) {
+      return NextResponse.json({ error: "no_clock_in" }, { status: 400 });
+    }
+    const d = new Date(early.ts);
+    d.setUTCHours(d.getUTCHours() + 7); // → Asia/Bangkok
+    const fromHHMM = d.toISOString().slice(11, 16);
+    db.prepare(`
+      INSERT INTO ot_requests (user_id, branch_id, work_date, requested_until, requested_from, status, created_at)
+      VALUES (?, ?, ?, '', ?, 'pending', ?)
+      ON CONFLICT (user_id, work_date) DO UPDATE SET
+        requested_from = excluded.requested_from,
+        branch_id = excluded.branch_id,
+        status = 'pending',
+        decided_by = NULL,
+        decided_at = NULL
+    `).run(user.id, branchId, work_date, fromHHMM, nowIso);
+    logPersonaAction(user.id, "attendance.early_ot_request", null);
+    return NextResponse.json({ ok: true, resolution, requested_from: fromHHMM });
   }
 
   if (resolution === "late") {

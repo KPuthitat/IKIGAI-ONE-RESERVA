@@ -289,7 +289,13 @@ export function applyPtGrace(
   // part of workedMinutes; the caller's regular/OT split (8h threshold)
   // then decides regular vs OT rate. Without it, the window caps at the
   // scheduled end as usual.
-  otUntilTs?: string | null
+  otUntilTs?: string | null,
+  // Approved EARLY start (mirror of otUntilTs): when set, the worked window may
+  // EXTEND before the scheduled start, down to this time (UTC ISO). The extra
+  // pre-shift minutes join workedMinutes; the caller's 8h split then credits the
+  // over-8h portion as OT. Without it, an early clock-in clamps UP to the
+  // scheduled start as usual (early minutes discarded).
+  otFromTs?: string | null
 ): GracedShift {
   // Floor to whole minutes — the clock stores seconds, but pay is
   // reckoned in minutes (matching the HH:MM the editor shows). Without
@@ -313,11 +319,16 @@ export function applyPtGrace(
   const schEnd = new Date(scheduled.endTs).getTime();
   const graceMs = PT_GRACE_MINUTES * 60000;
 
-  // Effective in: clamp to scheduled start unless late beyond grace
+  // Effective in: an early clock-in normally clamps UP to the scheduled start.
+  // An approved early-start lowers that floor to otFromTs (never earlier than
+  // the scheduled start when absent), so the extra pre-shift minutes stay in the
+  // window — the mirror of the otUntilTs out-cap below. Bounded by the actual
+  // clock-in, so approving 10:00 but arriving 10:30 still pays from 10:30.
+  const inFloor = otFromTs ? Math.min(schStart, new Date(otFromTs).getTime()) : schStart;
   let effIn: number;
   let lateMinutes = 0;
   if (inMs <= schStart + graceMs) {
-    effIn = schStart;
+    effIn = Math.max(inMs, inFloor);
   } else {
     effIn = inMs;
     lateMinutes = (inMs - schStart) / 60000;
@@ -630,11 +641,15 @@ export function computeLineForEmployee(args: {
   // OT minutes credited that day = min(actual clock-out, requested_until) −
   // scheduled end. Requires a scheduled shift (sched) for the date.
   approvedOtByDate?: Map<string, string>;
+  // Approved EARLY-start requests → date → "requested_from" HH:MM (mirror of
+  // approvedOtByDate). An approved early start lets pre-shift minutes count so
+  // the day's over-8h becomes OT (owner 2026-07-28). Requires a scheduled shift.
+  approvedEarlyByDate?: Map<string, string>;
   // Per-day FIELD overrides (admin typed a value in the breakdown). Any
   // present field wins over the computed one.
   fieldOverridesByDate?: Map<string, DayFieldOverride>;
 }): ComputedLine {
-  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, fieldOverridesByDate } = args;
+  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate } = args;
   // Extra FT base for double-pay days: FT base is salary (not per-day) so the 2×
   // is credited as one extra day-equivalent (ftHourlyEquivalent × regular hours)
   // per double day worked — added to basePay below (owner 2026-07-21).
@@ -696,16 +711,27 @@ export function computeLineForEmployee(args: {
     // over-time is capped at the scheduled end below and never becomes OT, no
     // matter how many minutes. This reverts the 2026-06-18 FT auto-over-8h
     // rule. Salaried execs (track_attendance=0) never get OT.
+    // Symmetric early-start OT (owner 2026-07-28): an approved early clock-in
+    // lets the window extend BEFORE the scheduled start, so pre-shift minutes
+    // that push the day over 8h become OT. otApproved (late OR early) gates
+    // whether split.ot is kept below.
     const isExec = e.employment_type === "ft" && e.track_attendance === 0;
     const reqUntil = isExec ? null : (ov?.ot_until ?? approvedOtByDate?.get(shiftDate) ?? null);
-    const otApproved = !!(reqUntil && /^\d{2}:\d{2}$/.test(reqUntil));
+    const reqFrom = isExec ? null : (approvedEarlyByDate?.get(shiftDate) ?? null);
+    const lateApproved = !!(reqUntil && /^\d{2}:\d{2}$/.test(reqUntil));
+    const earlyApproved = !!(reqFrom && /^\d{2}:\d{2}$/.test(reqFrom));
+    const otApproved = lateApproved || earlyApproved;
     let otUntilTs: string | null = null;
-    if (sched && otApproved) {
+    let otFromTs: string | null = null;
+    if (sched && lateApproved) {
       otUntilTs = new Date(`${shiftDate}T${reqUntil}:00+07:00`).toISOString();
+    }
+    if (sched && earlyApproved) {
+      otFromTs = new Date(`${shiftDate}T${reqFrom}:00+07:00`).toISOString();
     }
 
     if (sched) {
-      const g = applyPtGrace(s, sched, otUntilTs);
+      const g = applyPtGrace(s, sched, otUntilTs, otFromTs);
       grossMin = g.grossMinutes;
       deducted = g.breakMinutes;
       workedMinutes = g.workedMinutes;
@@ -1276,18 +1302,25 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     leaveDaysByUser.set(lv.user_id, (leaveDaysByUser.get(lv.user_id) || 0) + inPeriodDays);
   }
 
-  // Approved OT requests in the period — keyed user → date → requested_until.
+  // Approved OT requests in the period — keyed user → date → requested_until
+  // (late end) + requested_from (early start; nullable).
   const otRows = db.prepare(`
-    SELECT user_id, work_date, requested_until FROM ot_requests
+    SELECT user_id, work_date, requested_until, requested_from FROM ot_requests
     WHERE status = 'approved' AND work_date >= ? AND work_date <= ?
   `).all(period.period_start, period.period_end) as Array<{
-    user_id: number; work_date: string; requested_until: string;
+    user_id: number; work_date: string; requested_until: string; requested_from: string | null;
   }>;
   const approvedOtByUser = new Map<number, Map<string, string>>();
+  const approvedEarlyByUser = new Map<number, Map<string, string>>();
   for (const r of otRows) {
     let m = approvedOtByUser.get(r.user_id);
     if (!m) { m = new Map(); approvedOtByUser.set(r.user_id, m); }
     m.set(r.work_date, r.requested_until);
+    if (r.requested_from) {
+      let e2 = approvedEarlyByUser.get(r.user_id);
+      if (!e2) { e2 = new Map(); approvedEarlyByUser.set(r.user_id, e2); }
+      e2.set(r.work_date, r.requested_from);
+    }
   }
 
   // Wipe existing lines and recompute
@@ -1341,6 +1374,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         // exists (the rule is independent of where the time came from).
         scheduledByDate: scheduledByUser.get(emp.user_id),
         approvedOtByDate: approvedOtByUser.get(emp.user_id),
+        approvedEarlyByDate: approvedEarlyByUser.get(emp.user_id),
         fieldOverridesByDate: fieldOverridesByUser.get(emp.user_id)
       });
 
@@ -1560,15 +1594,19 @@ export function recomputeLine(
     });
   }
 
-  // Approved OT for this user in the period.
+  // Approved OT for this user in the period (late end + early start).
   const otRows = db.prepare(`
-    SELECT work_date, requested_until FROM ot_requests
+    SELECT work_date, requested_until, requested_from FROM ot_requests
     WHERE user_id = ? AND status = 'approved' AND work_date >= ? AND work_date <= ?
   `).all(userId, period.period_start, period.period_end) as Array<{
-    work_date: string; requested_until: string;
+    work_date: string; requested_until: string; requested_from: string | null;
   }>;
   const approvedOtByDate = new Map<string, string>();
-  for (const r of otRows) approvedOtByDate.set(r.work_date, r.requested_until);
+  const approvedEarlyByDate = new Map<string, string>();
+  for (const r of otRows) {
+    approvedOtByDate.set(r.work_date, r.requested_until);
+    if (r.requested_from) approvedEarlyByDate.set(r.work_date, r.requested_from);
+  }
 
   // Home-branch check for FT salary (owner 2026-07-14) — same rule as the full
   // compute: pay salary only when this period's branch is the employee's
@@ -1602,7 +1640,7 @@ export function recomputeLine(
     employee, shifts, unpaired: auto.unpaired,
     leaveDays: existing.leave_days,
     cycle: period.cycle, periodStart: period.period_start, periodEnd: period.period_end,
-    settings, holidaySet, doubleSet, scheduledByDate, approvedOtByDate, fieldOverridesByDate
+    settings, holidaySet, doubleSet, scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate
   });
 
   // Preserve admin money extras; recompute gross/SSO/tax/net to include them.

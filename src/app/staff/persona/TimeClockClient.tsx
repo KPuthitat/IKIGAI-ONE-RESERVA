@@ -1039,7 +1039,7 @@ function ClockAction({
         <div className="text-sm font-bold text-sky-900">น้องฮูกสอบถาม</div>
         <div className="text-sm text-slate-700 leading-relaxed">
           ตามตารางเวรพี่เข้างาน <b>{swapPrompt.sched_start}</b> น. แต่ลงเวลาจริง <b>{swapPrompt.actual}</b> น.
-          {isLate ? " — พี่มาสาย หรือสลับกะกับเพื่อนครับ?" : " (ก่อนเวลา) — พี่มาก่อนเวลา หรือสลับกะกับเพื่อนครับ?"}
+          {isLate ? " — พี่มาสาย หรือสลับกะกับเพื่อนครับ?" : " (ก่อนเวลา) — พี่ขออนุมัติ OT (มาก่อนเวลา) หรือสลับกะกับเพื่อนครับ?"}
         </div>
         {swapErr && <div className="text-rose-600 text-sm">{swapErr}</div>}
         {swapStep === "ask" ? (
@@ -1049,7 +1049,7 @@ function ClockAction({
               disabled={swapBusy}
               className="py-3 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 active:scale-95 transition disabled:opacity-50"
             >
-              {isLate ? "มาสาย" : "มาก่อนเวลา"}
+              {isLate ? "มาสาย" : "มาก่อนเวลา · ขอ OT"}
             </button>
             <button
               onClick={() => { setSwapStep("pickFriend"); setSwapErr(null); }}
