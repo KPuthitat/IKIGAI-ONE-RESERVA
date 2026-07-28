@@ -141,7 +141,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // granted access. The pages themselves still enforce
         // requirePayrollAccess server-side as a belt-and-braces check.
         ...(userCanViewPayroll(user)
-          ? [{ href: "/admin/persona/payroll", label: t(lang, "admin.persona.nav.payroll") }]
+          ? [
+              { href: "/admin/persona/payroll", label: t(lang, "admin.persona.nav.payroll") },
+              { href: "/admin/persona/payroll/company", label: t(lang, "admin.persona.nav.payrollCompany") }
+            ]
           : []),
         { href: "/admin/persona/service-charge", label: t(lang, "admin.persona.nav.svc") },
         { href: "/admin/persona/meal-coupons", label: "คูปองอาหารพนักงาน" },
