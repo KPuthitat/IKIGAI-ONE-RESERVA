@@ -163,6 +163,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       pathPrefix: "/admin/accounta",
       items: [
         { href: "/admin/accounta", label: "ภาพรวม ACCOUNTA" },
+        { href: "/admin/accounta/company", label: "ภาพรวมบริษัท (รวมสาขา)" },
         { href: "/admin/accounta/daybook", label: "บัญชีรายรับรายจ่าย" },
         { href: "/admin/accounta/inbox", label: "เอกสารรอลงบัญชี" },
         { href: "/admin/accounta/expenses", label: "รายจ่าย" },
