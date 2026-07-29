@@ -4,7 +4,7 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import {
-  computeLineFromMinutes, computeSso, computeWht, earliestDate,
+  computeLineFromMinutes, computeSso, computeWht, earliestDate, resolveHomeCompanyFlag,
   type EmployeePayrollSnapshot, type PayrollSettings
 } from "@/lib/payroll-compute";
 
@@ -186,6 +186,7 @@ export async function PATCH(
       salary_tax_mode: fresh?.salary_tax_mode ?? line.salary_tax_mode_snapshot,
       track_attendance: fresh?.track_attendance ?? 1,
       is_primary_branch: isPrimaryBranch,
+      is_home_company: resolveHomeCompanyFlag(db, userId, period.branch_id),
       hire_date: fresh?.hire_date ?? null,
       last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null,
       ft_started_at: fresh?.ft_started_at ?? null
@@ -261,12 +262,15 @@ export async function PATCH(
     const otherDed = d.other_deductions ?? line.other_deductions;
     const gross = basePay + otPay + svcCharge + otherAdd;
 
+    // Cross-company helper (สังกัดคนละบริษัท) → no ประกันสังคม here; their home
+    // employer withholds it (owner 2026-07-29). WHT is unaffected.
+    const isHomeCompany = resolveHomeCompanyFlag(db, userId, period.branch_id);
     let ssoAmount = 0;
     let taxAmount = 0;
     if (gross > 0) {
       if (taxMode === "wht") {
         taxAmount = computeWht(gross, settings);
-      } else {
+      } else if (isHomeCompany !== 0) {
         // SSO on base salary only (excl OT/service/other) — owner 2026-07-04.
         ssoAmount = computeSso(basePay, period.cycle, settings);
       }

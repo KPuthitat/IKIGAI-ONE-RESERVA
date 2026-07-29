@@ -58,6 +58,16 @@ export type EmployeePayrollSnapshot = {
    *  the branch worked. Defaults to 1 (single-branch = own branch is primary).
    *  Non-branch/legacy callers pass 1 so behaviour is unchanged. */
   is_primary_branch: number;
+  /** 1 when THIS period's branch belongs to the employee's home/สังกัด COMPANY
+   *  — i.e. the company that registered them for ประกันสังคม (owner 2026-07-29).
+   *  ประกันสังคม is withheld by that one employer only, so when a worker helps
+   *  at a DIFFERENT company's branch (e.g. พรนภา สังกัด AT HOME ไปช่วย NAMA/EMIA)
+   *  this is 0 → no SSO deducted there; their home employer already sends it.
+   *  Compared at the COMPANY level (not branch) so same-company multi-branch
+   *  rotation (NAMA+HYPO under one company) still deducts SSO everywhere it did
+   *  before. Defaults to 1 (single-company / branch-in-home-company / legacy
+   *  NULL-branch periods) so behaviour is unchanged for everyone else. */
+  is_home_company: number;
   /** วันเริ่มงาน (YYYY-MM-DD) — used to prorate the FT hire month. null = unknown
    *  → no proration (full salary, legacy behaviour). */
   hire_date: string | null;
@@ -616,6 +626,31 @@ export function earliestDate(a: string | null | undefined, b: string | null | un
   return a < b ? a : b;
 }
 
+/** is_home_company flag (owner 2026-07-29) — 1 unless we KNOW this period's
+ *  branch is in a DIFFERENT company than the employee's home/สังกัด branch.
+ *  ประกันสังคม is withheld only by the home employer, so a cross-company helper
+ *  (พรนภา สังกัด AT HOME → ช่วยงาน NAMA/EMIA) gets 0 → no SSO at the other
+ *  company. Compared at the COMPANY level so same-company multi-branch rotation
+ *  (NAMA+HYPO under one company) is unchanged. Fail-safe: NULL-branch period or
+ *  any unknown company_id → 1. Mirrors the SQL homeCompanyExpr in
+ *  computePayrollPeriod so real-time and manual/recompute paths agree. */
+export function resolveHomeCompanyFlag(
+  db: Database.Database, userId: number, periodBranchId: number | null
+): number {
+  if (periodBranchId == null) return 1;
+  const homeBranch = (db.prepare(`
+    SELECT COALESCE(
+      (SELECT branch_id FROM user_branches WHERE user_id = ? AND is_primary = 1 LIMIT 1),
+      (SELECT MIN(branch_id) FROM user_branches WHERE user_id = ?)
+    ) AS b
+  `).get(userId, userId) as { b: number | null }).b;
+  if (homeBranch == null) return 1;
+  const companyOf = db.prepare("SELECT company_id AS c FROM branches WHERE id = ?");
+  const pc = (companyOf.get(periodBranchId) as { c: number | null } | undefined)?.c ?? null;
+  const hc = (companyOf.get(homeBranch) as { c: number | null } | undefined)?.c ?? null;
+  return (pc != null && hc != null && pc !== hc) ? 0 : 1;
+}
+
 export function computeLineForEmployee(args: {
   employee: EmployeePayrollSnapshot;
   shifts: Shift[];
@@ -849,9 +884,11 @@ export function computeLineForEmployee(args: {
   if (grossPay > 0) {
     if (taxMode === "wht") {
       taxAmount = computeWht(grossPay, settings);
-    } else {
+    } else if (e.is_home_company !== 0) {
       ssoAmount = computeSso(basePay, cycle, settings); // SSO on base salary only
     }
+    // else: cross-company helper — ประกันสังคม is withheld by their home
+    // employer only, so a different company's branch deducts nothing here.
   }
 
   const otherDeductions = 0;
@@ -995,9 +1032,10 @@ export function computeLineFromMinutes(args: {
   if (grossPay > 0) {
     if (taxMode === "wht") {
       taxAmount = computeWht(grossPay, settings);
-    } else {
+    } else if (e.is_home_company !== 0) {
       ssoAmount = computeSso(basePay, cycle, settings); // SSO on base salary only
     }
+    // else: cross-company helper — no SSO at a company that isn't their สังกัด.
   }
 
   const netPay = grossPay - ssoAmount - taxAmount - otherDeductions;
@@ -1171,6 +1209,25 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
            (SELECT MIN(ub.branch_id) FROM user_branches ub WHERE ub.user_id = users.id)
          ) THEN 1 ELSE 0 END AS is_primary_branch`
     : "1 AS is_primary_branch";
+  // is_home_company — 1 unless we KNOW this period's branch is in a DIFFERENT
+  // company than the employee's home/สังกัด (owner 2026-07-29). Only then (both
+  // company_ids known AND differ) is it 0 → no ประกันสังคม withheld here (the
+  // home employer already sends it). Home company = the company of the same
+  // primary branch used above. Fail-safe: any NULL company_id → 1 (unchanged).
+  const periodCompanyId = period.branch_id != null
+    ? ((db.prepare("SELECT company_id AS c FROM branches WHERE id = ?").get(period.branch_id) as { c: number | null } | undefined)?.c ?? null)
+    : null;
+  const homeCompanyExpr = (period.branch_id != null && periodCompanyId != null)
+    ? `CASE WHEN (SELECT b.company_id FROM branches b WHERE b.id = COALESCE(
+             (SELECT ub.branch_id FROM user_branches ub WHERE ub.user_id = users.id AND ub.is_primary = 1 LIMIT 1),
+             (SELECT MIN(ub.branch_id) FROM user_branches ub WHERE ub.user_id = users.id)
+           )) IS @pcompany THEN 1
+         WHEN (SELECT b.company_id FROM branches b WHERE b.id = COALESCE(
+             (SELECT ub.branch_id FROM user_branches ub WHERE ub.user_id = users.id AND ub.is_primary = 1 LIMIT 1),
+             (SELECT MIN(ub.branch_id) FROM user_branches ub WHERE ub.user_id = users.id)
+           )) IS NULL THEN 1
+         ELSE 0 END AS is_home_company`
+    : "1 AS is_home_company";
   // A monthly period must NOT include an FT in their PT→FT transition month —
   // that first month is paid WEEKLY at fix-rate, so pulling them into the same
   // month's monthly round double-pays (owner 2026-07-18: นาย ธนะรัตน์). The boot
@@ -1184,7 +1241,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
            hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
            hire_date, ft_started_at,
            ${LAST_WORKING_DAY_SELECT},
-           ${primaryExpr}
+           ${primaryExpr},
+           ${homeCompanyExpr}
     FROM users
     WHERE role IN ('staff', 'admin') AND employment_type IS NOT NULL
       AND is_test_account = 0
@@ -1203,6 +1261,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   `;
   const staffParams: Record<string, unknown> = { pend: period.period_end, pmonth: periodMonth };
   if (period.branch_id != null) staffParams.bid = period.branch_id;
+  if (period.branch_id != null && periodCompanyId != null) staffParams.pcompany = periodCompanyId;
   const staffRaw = db.prepare(staffSql).all(staffParams) as Array<StaffRawRow>;
   const staff: EmployeePayrollSnapshot[] = staffRaw.map((r) => ({
     ...r,
@@ -1620,6 +1679,10 @@ export function recomputeLine(
   `).get(userId, userId) as { b: number | null };
   const isPrimaryBranch = (period.branch_id == null || period.branch_id === primaryRow.b) ? 1 : 0;
 
+  // Home-company check for ประกันสังคม (owner 2026-07-29) — SSO is withheld only
+  // at the employee's own company (see resolveHomeCompanyFlag).
+  const isHomeCompany = resolveHomeCompanyFlag(db, userId, period.branch_id);
+
   const employee: EmployeePayrollSnapshot = {
     user_id: userId,
     display_name: existing.display_name,
@@ -1631,6 +1694,7 @@ export function recomputeLine(
     salary_tax_mode: fresh?.salary_tax_mode ?? existing.salary_tax_mode_snapshot,
     track_attendance: fresh?.track_attendance ?? 1,
     is_primary_branch: isPrimaryBranch,
+    is_home_company: isHomeCompany,
     hire_date: fresh?.hire_date ?? null,
     last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null,
     ft_started_at: fresh?.ft_started_at ?? null
@@ -1653,7 +1717,8 @@ export function recomputeLine(
   let tax = 0;
   if (gross > 0) {
     if (taxMode === "wht") tax = computeWht(gross, settings);
-    else sso = computeSso(computed.base_pay, period.cycle, settings); // SSO on base salary only
+    // Cross-company helper (is_home_company=0) → no SSO here; home employer sends it.
+    else if (employee.is_home_company !== 0) sso = computeSso(computed.base_pay, period.cycle, settings); // SSO on base salary only
   }
   const net = gross - sso - tax - ded;
 

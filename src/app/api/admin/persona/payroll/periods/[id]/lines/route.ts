@@ -3,7 +3,8 @@ import { z } from "zod";
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
-  computeLineFromMinutes, earliestDate, type EmployeePayrollSnapshot, type PayrollSettings
+  computeLineFromMinutes, earliestDate, resolveHomeCompanyFlag,
+  type EmployeePayrollSnapshot, type PayrollSettings
 } from "@/lib/payroll-compute";
 
 // POST /api/admin/persona/payroll/periods/[id]/lines
@@ -108,6 +109,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     salary_tax_mode: target.salary_tax_mode,
     track_attendance: target.track_attendance ?? 1,
     is_primary_branch: isPrimaryBranch,
+    is_home_company: resolveHomeCompanyFlag(db, target.id, period.branch_id),
     hire_date: target.hire_date ?? null,
     last_working_day: earliestDate(target.resign_last_day, target.term_last_day),
     ft_started_at: target.ft_started_at ?? null

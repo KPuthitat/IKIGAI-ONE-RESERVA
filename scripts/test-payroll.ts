@@ -4,7 +4,7 @@
 // Guarantees: salary/30 per unpaid day, FT only, default 0 = no change,
 // and the deduction never drives base pay negative.
 
-import { computeLineFromMinutes, computeLineForEmployee, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift } from "../src/lib/payroll-compute";
+import { computeLineFromMinutes, computeLineForEmployee, computeSso, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift } from "../src/lib/payroll-compute";
 
 const SETTINGS: PayrollSettings = {
   ot_mode: "flat", ot_flat_per_15min: 0,
@@ -16,13 +16,13 @@ const SETTINGS: PayrollSettings = {
 const ftMonthly = (salary: number): EmployeePayrollSnapshot => ({
   user_id: 1, display_name: "FT Example", employment_type: "ft", employee_code: "FT01",
   hourly_rate: null, monthly_salary: salary, pay_cycle: "monthly", salary_tax_mode: "sso",
-  track_attendance: 1, is_primary_branch: 1, hire_date: null, last_working_day: null,
+  track_attendance: 1, is_primary_branch: 1, is_home_company: 1, hire_date: null, last_working_day: null,
   ft_started_at: null
 });
 const ptHourly = (rate: number): EmployeePayrollSnapshot => ({
   user_id: 2, display_name: "PT Example", employment_type: "pt", employee_code: "PT01",
   hourly_rate: rate, monthly_salary: null, pay_cycle: "monthly", salary_tax_mode: "sso",
-  track_attendance: 1, is_primary_branch: 1, hire_date: null, last_working_day: null,
+  track_attendance: 1, is_primary_branch: 1, is_home_company: 1, hire_date: null, last_working_day: null,
   ft_started_at: null
 });
 // PT→FT transition month — FT on the weekly cycle (owner 2026-07-12).
@@ -343,6 +343,53 @@ console.log("\nวันจ่ายสองเท่า (owner 2026-07-21):");
 
   // วันปกติ (ไม่อยู่ใน doubleSet) → ไม่เปลี่ยน.
   eq("วันที่ไม่ได้ตั้ง 2 เท่า → PT ฐานปกติ", ptN.base_pay, 400);
+}
+
+// 11. ทำงานข้ามบริษัท (owner 2026-07-29) — พรนภา สังกัด AT HOME ไปช่วย NAMA/EMIA
+//     รายชั่วโมง 70 บาท. ประกันสังคมหักที่บริษัทต้นสังกัดเท่านั้น (AT HOME ส่งให้แล้ว)
+//     → สาขาบริษัทอื่น (is_home_company=0) ไม่หัก SSO; บริษัทตัวเอง (=1) หักปกติ.
+//     ค่าจ้าง/ฐาน/gross เท่ากันทุกที่ — ต่างแค่ยอดหัก.
+console.log("\nทำงานข้ามบริษัท — SSO หักเฉพาะบริษัทต้นสังกัด:");
+{
+  const mins = {
+    regularMinutes: 480, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 1, unpaired: 0,
+    cycle: "monthly" as const, periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS
+  };
+  const home = computeLineFromMinutes({ employee: { ...ptHourly(70), is_home_company: 1 }, ...mins });
+  const away = computeLineFromMinutes({ employee: { ...ptHourly(70), is_home_company: 0 }, ...mins });
+  eq("home vs away: ฐานเท่ากัน", away.base_pay, home.base_pay);
+  eq("home vs away: gross เท่ากัน", away.gross_pay, home.gross_pay);
+  eq("home: หัก SSO = 5% ฐาน", home.sso_amount, computeSso(home.base_pay, "monthly", SETTINGS));
+  eq("home: net = gross - SSO", home.net_pay, Math.round((home.gross_pay - home.sso_amount) * 100) / 100);
+  eq("away: ไม่หัก SSO", away.sso_amount, 0);
+  eq("away: net = gross (ไม่มีหักเลย)", away.net_pay, away.gross_pay);
+}
+
+// 12. ข้ามบริษัทกระทบเฉพาะ SSO — โหมด WHT ยังหัก 3% ณ ที่จ่ายตามปกติ
+//     (ผู้จ่ายที่บริษัทปลายทางเป็นผู้หัก) แม้ is_home_company=0.
+{
+  const mins = {
+    regularMinutes: 480, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 1, unpaired: 0,
+    cycle: "monthly" as const, periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS
+  };
+  const whtAway = computeLineFromMinutes({ employee: { ...ptHourly(70), salary_tax_mode: "wht", is_home_company: 0 }, ...mins });
+  eq("away+WHT: SSO 0", whtAway.sso_amount, 0);
+  eq("away+WHT: ยังหัก 3%", whtAway.tax_amount, Math.round(whtAway.gross_pay * 0.03 * 100) / 100);
+}
+
+// 13. บริษัทเดียวหลายสาขา (NAMA+HYPO) ต้องไม่เปลี่ยน — is_home_company=1
+//     ทั้งสาขาหลักและสาขารอง เพราะเทียบระดับ "บริษัท" ไม่ใช่ "สาขา".
+{
+  const mins = {
+    regularMinutes: 480, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 1, unpaired: 0,
+    cycle: "monthly" as const, periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS
+  };
+  // สาขารองในบริษัทเดียวกัน: is_primary_branch=0 แต่ is_home_company=1 → SSO ยังหัก.
+  const otherBranchSameCo = computeLineFromMinutes({ employee: { ...ptHourly(70), is_primary_branch: 0, is_home_company: 1 }, ...mins });
+  eq("บริษัทเดียว สาขารอง: SSO ยังหักปกติ", otherBranchSameCo.sso_amount, computeSso(otherBranchSameCo.base_pay, "monthly", SETTINGS));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
