@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { companyFinancialYear, type CompanyFinancialYear } from "@/lib/accounta-db";
+import { companyFinancialYear, type CompanyFinancialYear, companyOverviewMonth } from "@/lib/accounta-db";
 import { fmtMoney } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +20,33 @@ const TH_MON_ABBR = [
 // ภาพรวมบริษัท (รวมทุกสาขา) — owner 2026-07-19: VAT (ภพ.30) รายเดือนยื่นรวม +
 // ยอดขายรวมสองสาขา + ประมาณการภาษีเงินได้นิติบุคคลสิ้นปี. บริษัท = บริษัทของสาขา
 // ที่เลือกอยู่ (activeBranchId → branches.company_id). ปีเลือกได้ผ่าน ?year=.
+function thMonthLabel(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return `${TH_MON_ABBR[m]} ${y + 543}`;
+}
+function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+// Delta vs previous month → colored pill. `goodUp` decides which direction is
+// "good" (sales up = green; expense up = red).
+function Delta({ now, prev, goodUp = true }: { now: number; prev: number; goodUp?: boolean }) {
+  if (prev === 0) return null;
+  const pct = Math.round(((now - prev) / Math.abs(prev)) * 100);
+  if (pct === 0) return <span className="text-[11px] text-slate-400">เท่าเดือนก่อน</span>;
+  const up = pct > 0;
+  const good = up === goodUp;
+  return (
+    <span className={`text-[11px] font-medium ${good ? "text-emerald-600" : "text-rose-600"}`}>
+      {up ? "▲" : "▼"} {Math.abs(pct)}% <span className="text-slate-400">vs เดือนก่อน</span>
+    </span>
+  );
+}
+
 export default function CompanyOverviewPage({
   searchParams
-}: { searchParams: { year?: string } }) {
+}: { searchParams: { year?: string; month?: string } }) {
   const user = requirePermission("accounta.manage");
   const branchId = user.activeBranchId ?? null;
 
@@ -53,6 +77,13 @@ export default function CompanyOverviewPage({
   const data: CompanyFinancialYear = companyFinancialYear(companyId, year);
   const yearOptions = [nowYear, nowYear - 1, nowYear - 2];
 
+  // Live monthly dashboard (owner 2026-07-29) — company totals + per-branch
+  // comparison + this-month tax.
+  const nowMonth = todayBkk().slice(0, 7);
+  const month = /^\d{4}-\d{2}$/.test(searchParams.month ?? "") ? searchParams.month! : nowMonth;
+  const ov = companyOverviewMonth(companyId, month);
+  const maxBranchSales = Math.max(1, ...ov.branches.map((b) => b.sales));
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -77,6 +108,122 @@ export default function CompanyOverviewPage({
           ตัวเลขรวมทุกสาขาของบริษัทนี้ · ใช้ติดตามภายใน ไม่ใช่เอกสารยื่นภาษีอย่างเป็นทางการ
         </p>
       </div>
+
+      {/* ══ สรุปเดือน (live) — owner 2026-07-29 ══ */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h2 className="text-lg font-bold text-slate-800">สรุปเดือน {thMonthLabel(month)}</h2>
+        <div className="flex items-center gap-1">
+          <Link href={`/admin/accounta/company?month=${shiftMonth(month, -1)}`}
+            className="rounded-lg px-2.5 py-1 text-sm bg-slate-100 text-slate-600 hover:bg-slate-200">← เดือนก่อน</Link>
+          {month !== nowMonth && (
+            <Link href="/admin/accounta/company"
+              className="rounded-lg px-2.5 py-1 text-sm bg-slate-100 text-slate-600 hover:bg-slate-200">เดือนนี้</Link>
+          )}
+          {month < nowMonth && (
+            <Link href={`/admin/accounta/company?month=${shiftMonth(month, 1)}`}
+              className="rounded-lg px-2.5 py-1 text-sm bg-slate-100 text-slate-600 hover:bg-slate-200">เดือนถัดไป →</Link>
+          )}
+        </div>
+      </div>
+
+      {/* Panel 1 — company totals */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="card">
+          <div className="text-xs text-slate-500">ยอดขายรวมทั้งบริษัท</div>
+          <div className="text-2xl font-bold text-slate-800 mt-1 tabular-nums">{fmtMoney(ov.totals.sales)}</div>
+          <div className="mt-1"><Delta now={ov.totals.sales} prev={ov.prev.sales} /></div>
+        </div>
+        <div className="card">
+          <div className="text-xs text-slate-500">รายจ่ายดำเนินงาน</div>
+          <div className="text-2xl font-bold text-slate-800 mt-1 tabular-nums">{fmtMoney(ov.totals.opExpense)}</div>
+          <div className="mt-1"><Delta now={ov.totals.opExpense} prev={ov.prev.opExpense} goodUp={false} /></div>
+        </div>
+        <div className="card border-l-4 border-emerald-400">
+          <div className="text-xs text-slate-500">กำไรสุทธิ (ก่อนภาษี)</div>
+          <div className={`text-2xl font-bold mt-1 tabular-nums ${ov.totals.net >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{fmtMoney(ov.totals.net)}</div>
+          <div className="mt-1"><Delta now={ov.totals.net} prev={ov.prev.net} /></div>
+        </div>
+      </div>
+
+      {/* Panel 2 — per-branch comparison */}
+      <div className="card overflow-x-auto">
+        <h3 className="font-bold text-slate-800 mb-3">เทียบรายสาขา</h3>
+        <table className="w-full text-sm tabular-nums">
+          <thead>
+            <tr className="text-slate-500 text-[11px] uppercase tracking-wide border-b border-slate-100">
+              <th className="text-left font-medium py-1.5 pr-2">สาขา</th>
+              <th className="text-right font-medium py-1.5 px-2">ยอดขาย</th>
+              <th className="text-right font-medium py-1.5 px-2">รายจ่าย</th>
+              <th className="text-right font-medium py-1.5 px-2">กำไรสุทธิ</th>
+              <th className="text-right font-medium py-1.5 pl-2">% ยอดขาย</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ov.branches.map((b) => {
+              const share = ov.totals.sales > 0 ? Math.round((b.sales / ov.totals.sales) * 100) : 0;
+              return (
+                <tr key={b.branchId} className="border-b border-slate-50 text-slate-700">
+                  <td className="text-left py-2 pr-2 font-medium">
+                    {b.name}
+                    <div className="mt-1 h-1.5 rounded-full bg-slate-100 overflow-hidden" style={{ maxWidth: "160px" }}>
+                      <div className="h-full bg-brand/70 rounded-full" style={{ width: `${Math.round((b.sales / maxBranchSales) * 100)}%` }}></div>
+                    </div>
+                  </td>
+                  <td className="text-right py-2 px-2">{fmtMoney(b.sales)}</td>
+                  <td className="text-right py-2 px-2 text-slate-500">{fmtMoney(b.opExpense)}</td>
+                  <td className={`text-right py-2 px-2 font-semibold ${b.net >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{fmtMoney(b.net)}</td>
+                  <td className="text-right py-2 pl-2 text-slate-500">{share}%</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-slate-200 font-bold text-slate-800">
+              <td className="text-left py-2 pr-2">รวมบริษัท</td>
+              <td className="text-right py-2 px-2">{fmtMoney(ov.totals.sales)}</td>
+              <td className="text-right py-2 px-2">{fmtMoney(ov.totals.opExpense)}</td>
+              <td className={`text-right py-2 px-2 ${ov.totals.net >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{fmtMoney(ov.totals.net)}</td>
+              <td className="text-right py-2 pl-2">100%</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {/* Panel 3 — tax this month + company payables */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="card">
+          <h3 className="font-bold text-slate-800 mb-2">ภาษีมูลค่าเพิ่ม (ภพ.30) เดือนนี้</h3>
+          {ov.vatRegistered ? (
+            <div className="space-y-1.5 text-sm">
+              <div className="flex justify-between"><span className="text-slate-500">ภาษีขาย (จากยอด VAT)</span><span className="tabular-nums">{fmtMoney(ov.tax.outputVat)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">ภาษีซื้อ (บิลยืนยันแล้ว)</span><span className="tabular-nums">{fmtMoney(ov.tax.inputVat)}</span></div>
+              <div className="flex justify-between border-t border-slate-100 pt-1.5 font-semibold">
+                <span>ภพ.30 ที่ต้องยื่น</span>
+                <span className={`tabular-nums ${ov.tax.vatPayable > 0 ? "text-rose-600" : "text-emerald-600"}`}>{fmtMoney(ov.tax.vatPayable)}</span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-[12px] text-amber-600">บริษัทนี้ยังไม่ได้จดทะเบียนภาษีมูลค่าเพิ่ม</p>
+          )}
+        </div>
+        <div className="card">
+          <h3 className="font-bold text-slate-800 mb-2">ค้างนำส่ง + ประมาณภาษีนิติบุคคล</h3>
+          <div className="space-y-1.5 text-sm">
+            <div className="flex justify-between"><span className="text-slate-500">ภาษีหัก ณ ที่จ่าย (WHT) ค้าง</span><span className="tabular-nums">{fmtMoney(ov.payables.whtUnpaid)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">ประกันสังคมค้างนำส่ง</span><span className="tabular-nums">{fmtMoney(ov.payables.ssoUnpaid)}</span></div>
+            <div className="flex justify-between border-t border-slate-100 pt-1.5">
+              <span className="text-slate-500">กำไรสะสมปีนี้ ({ov.ytd.monthsElapsed} เดือน)</span>
+              <span className={`tabular-nums ${ov.ytd.net >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{fmtMoney(ov.ytd.net)}</span>
+            </div>
+            <div className="flex justify-between font-semibold">
+              <span>ประมาณภาษีนิติบุคคล (จากกำไรสะสม)</span>
+              <span className="tabular-nums">{fmtMoney(ov.ytd.incomeTaxEst.tax)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-100 pt-1"></div>
 
       {/* ── VAT (ภพ.30) รายเดือน ยื่นรวม + ยอดขายรวม ── */}
       <div className="card">

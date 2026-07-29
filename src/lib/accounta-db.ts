@@ -1919,6 +1919,143 @@ export function companyFinancialYear(companyId: number, year: number): CompanyFi
   };
 }
 
+// ── Live company overview (owner 2026-07-29) — one place across all branches ──
+// Monthly, per-branch breakdown + company totals + this-month VAT + YTD tax
+// estimate. Same cross-branch key as companyFinancialYear: branch → company_id.
+
+export type CompanyBranchMonth = {
+  branchId: number; name: string;
+  sales: number; opExpense: number; net: number;
+};
+export type CompanyOverviewMonth = {
+  companyId: number; companyName: string; month: string; vatRegistered: boolean;
+  totals: { sales: number; opExpense: number; net: number };
+  prev: { month: string; sales: number; opExpense: number; net: number };
+  branches: CompanyBranchMonth[];
+  tax: { taxableSales: number; outputVat: number; inputVat: number; vatPayable: number };
+  payables: { whtUnpaid: number; ssoUnpaid: number };
+  ytd: { sales: number; opExpense: number; net: number; incomeTaxEst: ReturnType<typeof smeIncomeTax>; monthsElapsed: number };
+};
+
+function shiftMonthStr(month: string, delta: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+// opExpense = confirmed, non-CapEx bills, excluding CapEx(CP)/loan(LN) categories.
+function sumOpExpense(rows: Array<{ cat: string; amt: number }>, nameToCode: Map<string, string | null>): number {
+  let s = 0;
+  for (const r of rows) {
+    const code = nameToCode.get(r.cat) ?? null;
+    if (code && BE_EXCLUDED_CODES.has(code)) continue;
+    s += r.amt;
+  }
+  return round2(s);
+}
+
+export function companyOverviewMonth(companyId: number, month: string): CompanyOverviewMonth {
+  const db = getDb();
+  const co = db.prepare("SELECT name_th AS name, vat_registered AS vat FROM companies WHERE id = ?")
+    .get(companyId) as { name: string; vat: number | null } | undefined;
+  const companyName = co?.name ?? `บริษัท #${companyId}`;
+  const vatRegistered = !!co?.vat;
+  const nameToCode = new Map<string, string | null>(listCategories().map((c) => [c.name, c.code]));
+
+  const branchRows = db.prepare(
+    "SELECT id, name FROM branches WHERE company_id = ? ORDER BY display_order, name"
+  ).all(companyId) as Array<{ id: number; name: string }>;
+
+  // Per-branch sales (branch_daily_revenue) for the month.
+  const salesByBranch = new Map<number, number>();
+  for (const r of db.prepare(
+    `SELECT r.branch_id AS bid, COALESCE(SUM(r.revenue),0) AS amt
+       FROM branch_daily_revenue r JOIN branches b ON b.id = r.branch_id
+      WHERE b.company_id = ? AND substr(r.date,1,7) = ? GROUP BY r.branch_id`
+  ).all(companyId, month) as Array<{ bid: number; amt: number }>) {
+    salesByBranch.set(r.bid, round2(r.amt));
+  }
+
+  // Per-branch operating expense for the month (classify by category code).
+  const expRows = db.prepare(
+    `SELECT e.branch_id AS bid, COALESCE(e.category,'') AS cat, COALESCE(SUM(e.amount_total),0) AS amt
+       FROM accounta_expenses e JOIN branches b ON b.id = e.branch_id
+      WHERE b.company_id = ? AND e.review_status = 'confirmed' AND e.capex_bucket IS NULL
+        AND substr(e.bill_date,1,7) = ? GROUP BY e.branch_id, COALESCE(e.category,'')`
+  ).all(companyId, month) as Array<{ bid: number; cat: string; amt: number }>;
+  const opByBranch = new Map<number, Array<{ cat: string; amt: number }>>();
+  for (const r of expRows) {
+    if (!opByBranch.has(r.bid)) opByBranch.set(r.bid, []);
+    opByBranch.get(r.bid)!.push({ cat: r.cat, amt: r.amt });
+  }
+
+  const branches: CompanyBranchMonth[] = branchRows.map((b) => {
+    const sales = salesByBranch.get(b.id) ?? 0;
+    const opExpense = sumOpExpense(opByBranch.get(b.id) ?? [], nameToCode);
+    return { branchId: b.id, name: b.name, sales, opExpense, net: round2(sales - opExpense) };
+  });
+  const totals = branches.reduce(
+    (a, b) => ({ sales: round2(a.sales + b.sales), opExpense: round2(a.opExpense + b.opExpense), net: round2(a.net + b.net) }),
+    { sales: 0, opExpense: 0, net: 0 }
+  );
+
+  // Previous-month company totals (for the delta indicators).
+  const prevMonth = shiftMonthStr(month, -1);
+  const prevSales = round2((db.prepare(
+    `SELECT COALESCE(SUM(r.revenue),0) AS s FROM branch_daily_revenue r JOIN branches b ON b.id = r.branch_id
+      WHERE b.company_id = ? AND substr(r.date,1,7) = ?`
+  ).get(companyId, prevMonth) as { s: number }).s);
+  const prevExp = db.prepare(
+    `SELECT COALESCE(e.category,'') AS cat, COALESCE(SUM(e.amount_total),0) AS amt
+       FROM accounta_expenses e JOIN branches b ON b.id = e.branch_id
+      WHERE b.company_id = ? AND e.review_status = 'confirmed' AND e.capex_bucket IS NULL
+        AND substr(e.bill_date,1,7) = ? GROUP BY COALESCE(e.category,'')`
+  ).all(companyId, prevMonth) as Array<{ cat: string; amt: number }>;
+  const prevOp = sumOpExpense(prevExp, nameToCode);
+  const prev = { month: prevMonth, sales: prevSales, opExpense: prevOp, net: round2(prevSales - prevOp) };
+
+  // This-month VAT (ภพ.30).
+  const taxableSales = round2((db.prepare(
+    `SELECT COALESCE(SUM(i.amount),0) AS s FROM accounta_income i JOIN branches b ON b.id = i.branch_id
+      WHERE b.company_id = ? AND COALESCE(i.is_vat,1) = 1 AND substr(i.income_date,1,7) = ?`
+  ).get(companyId, month) as { s: number }).s);
+  const inputVat = vatRegistered ? round2((db.prepare(
+    `SELECT COALESCE(SUM(e.vat_amount),0) AS s FROM accounta_expenses e JOIN branches b ON b.id = e.branch_id
+      WHERE b.company_id = ? AND e.review_status = 'confirmed' AND substr(e.bill_date,1,7) = ?`
+  ).get(companyId, month) as { s: number }).s) : 0;
+  const outputVat = vatRegistered ? round2((taxableSales * 7) / 107) : 0;
+  const vatPayable = vatRegistered ? round2(outputVat - inputVat) : 0;
+
+  // Company-level WHT/SSO still owed (payroll posts to a branch or legacy NULL).
+  const payableSql = (category: string) => (db.prepare(
+    `SELECT COALESCE(SUM(amount_total),0) AS s FROM accounta_expenses
+      WHERE review_status = 'confirmed' AND payment_status = 'unpaid' AND category = ?
+        AND (branch_id IN (SELECT id FROM branches WHERE company_id = ?) OR branch_id IS NULL)`
+  ).get(category, companyId) as { s: number }).s;
+  const payables = { whtUnpaid: round2(payableSql("ภาษีหัก ณ ที่จ่าย")), ssoUnpaid: round2(payableSql("ประกันสังคม")) };
+
+  // YTD (Jan..this month) net + running SME income-tax estimate.
+  const year = month.slice(0, 4);
+  const ytdSales = round2((db.prepare(
+    `SELECT COALESCE(SUM(r.revenue),0) AS s FROM branch_daily_revenue r JOIN branches b ON b.id = r.branch_id
+      WHERE b.company_id = ? AND substr(r.date,1,7) >= ? AND substr(r.date,1,7) <= ?`
+  ).get(companyId, `${year}-01`, month) as { s: number }).s);
+  const ytdExp = db.prepare(
+    `SELECT COALESCE(e.category,'') AS cat, COALESCE(SUM(e.amount_total),0) AS amt
+       FROM accounta_expenses e JOIN branches b ON b.id = e.branch_id
+      WHERE b.company_id = ? AND e.review_status = 'confirmed' AND e.capex_bucket IS NULL
+        AND substr(e.bill_date,1,7) >= ? AND substr(e.bill_date,1,7) <= ? GROUP BY COALESCE(e.category,'')`
+  ).all(companyId, `${year}-01`, month) as Array<{ cat: string; amt: number }>;
+  const ytdOp = sumOpExpense(ytdExp, nameToCode);
+  const ytdNet = round2(ytdSales - ytdOp);
+  const ytd = {
+    sales: ytdSales, opExpense: ytdOp, net: ytdNet,
+    incomeTaxEst: smeIncomeTax(ytdNet), monthsElapsed: Number(month.slice(5, 7))
+  };
+
+  return { companyId, companyName, month, vatRegistered, totals, prev, branches, tax: { taxableSales, outputVat, inputVat, vatPayable }, payables, ytd };
+}
+
 export type AccountaPayables = {
   whtUnpaid: number;          // ภาษีหัก ณ ที่จ่าย รอนำส่ง (org-wide — payroll posts at branch NULL)
   ssoUnpaid: number;          // ประกันสังคม รอนำส่ง (org-wide)
