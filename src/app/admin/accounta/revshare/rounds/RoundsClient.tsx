@@ -9,7 +9,13 @@ import { fmtMoney } from "@/lib/format";
 import { roundLabel, mondayOf, TH_MONTHS_FULL, salesBaseIncludesVat, salesVat, partnerShopName, type Tier, type SalesBase } from "@/lib/revshare";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import { useConfirm } from "@/app/components/useConfirm";
-import { DailyCardPreview, WeeklyCardPreview, SendPreviewModal } from "./CardPreviews";
+import { DailyCardPreview, WeeklyCardPreview, DrinkWelfareCardPreview, SendPreviewModal } from "./CardPreviews";
+
+type DrinkSummary = { count: number; total: number; byTier: Array<{ amount: number; count: number; subtotal: number }>; cashCount: number; cashTotal: number };
+type DrinkWelfareData = {
+  weeks: Array<{ weekStart: string; start: string; end: string; label: string; summary: DrinkSummary }>;
+  month: DrinkSummary;
+};
 
 type Partner = { id: number; name: string; sales_base: SalesBase; pos_categories: string[]; line_group_id: string | null; vat_enabled: boolean; vat_rate: number };
 type Round = {
@@ -23,8 +29,8 @@ const BASE_LABEL: Record<SalesBase, string> = { gross: "Gross (ก่อนส�
 const PIN_ERRORS = new Set(["wrong_pin", "pin_invalid", "no_pin", "user_not_found"]);
 
 export default function RoundsClient({
-  partner, rounds: initialRounds, year, month, operatorName, sellerName
-}: { partner: Partner; tiers: Tier[]; rounds: Round[]; year: number; month: number; operatorName: string; sellerName: string }) {
+  partner, rounds: initialRounds, year, month, operatorName, sellerName, drinkWelfare
+}: { partner: Partner; tiers: Tier[]; rounds: Round[]; year: number; month: number; operatorName: string; sellerName: string; drinkWelfare: DrinkWelfareData | null }) {
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [rounds, setRounds] = useState<Round[]>(initialRounds);
@@ -396,6 +402,39 @@ export default function RoundsClient({
             : " · ตั้ง LINE group ในหน้าตั้งค่าคู่ค้าเพื่อส่งแจ้งเตือนรายวัน/สัปดาห์ได้"}
         </p>
       </div>
+
+      {drinkWelfare && drinkWelfare.month.count > 0 && (
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="font-bold text-slate-800">สวัสดิการเครื่องดื่มพนักงาน (จ้อจี้)</div>
+            <span className="text-xs text-slate-400">อ่านจากการเบิกสิทธิ์ · ไม่คิด GP · ส่งแยกจากยอดขาย</span>
+          </div>
+          {drinkWelfare.weeks.map((w) => (
+            <div key={w.weekStart} className="flex items-center justify-between gap-2 text-sm border-b border-slate-100 pb-2">
+              <div>
+                <div className="font-medium text-slate-700">{roundLabel(w.start, w.end)}</div>
+                <div className="text-xs text-slate-400">{w.summary.count} แก้ว · ฿{fmtMoney(w.summary.total)}</div>
+              </div>
+              <button type="button" onClick={() => setSendModal({
+                key: `dw-${w.weekStart}`, heading: "ส่งสรุปสวัสดิการเครื่องดื่ม (สัปดาห์)",
+                preview: <DrinkWelfareCardPreview shop={shop} sellerName={sellerName} periodLabel={roundLabel(w.start, w.end)} count={w.summary.count} total={w.summary.total} vatRate={vatRate} byTier={w.summary.byTier} cashCount={w.summary.cashCount} cashTotal={w.summary.cashTotal} />,
+                body: { kind: "drink_welfare", week_start: w.weekStart }
+              })} className="btn-secondary !py-1 !px-2.5 !text-xs shrink-0">ส่งการ์ดสัปดาห์นี้</button>
+            </div>
+          ))}
+          <div className="flex items-center justify-between gap-2 text-sm pt-1">
+            <div>
+              <div className="font-bold text-slate-800">รวมทั้งเดือน ({TH_MONTHS_FULL[month]} {year + 543})</div>
+              <div className="text-xs text-slate-400">{drinkWelfare.month.count} แก้ว · ฿{fmtMoney(drinkWelfare.month.total)}</div>
+            </div>
+            <button type="button" onClick={() => setSendModal({
+              key: "dw-month", heading: "ส่งสรุปสวัสดิการเครื่องดื่ม (สิ้นเดือน)",
+              preview: <DrinkWelfareCardPreview shop={shop} sellerName={sellerName} periodLabel={`${TH_MONTHS_FULL[month]} ${year + 543}`} count={drinkWelfare.month.count} total={drinkWelfare.month.total} vatRate={vatRate} byTier={drinkWelfare.month.byTier} cashCount={drinkWelfare.month.cashCount} cashTotal={drinkWelfare.month.cashTotal} />,
+              body: { kind: "drink_welfare" }
+            })} className="btn-primary !py-1 !px-2.5 !text-xs shrink-0">ส่งการ์ดสิ้นเดือน</button>
+          </div>
+        </div>
+      )}
 
       {pinRun && (
         <PinPromptModal

@@ -9,7 +9,6 @@ import {
   groupDailyIntoWeeks, DEFAULT_TIERS, DEFAULT_FLOORS,
   type Tier, type Floor, type SettlementResult
 } from "./revshare";
-import { sumRedeemedDrinksForPartnerMonth } from "./partner-drink-orders";
 
 export type SalesBase = "gross" | "after_discount" | "nett";
 
@@ -293,12 +292,12 @@ export function previewSettlement(partnerId: number, branchId: number, year: num
   const floors = getFloors(partnerId);
   const opMonth = opMonthFor(partner.start_date, year, month);
   const totalSales = rounds.reduce((s, r) => s + r.sales_amount, 0);
-  // Staff drink-welfare the company owes this partner this month (จ้อจี้) — no GP.
-  const drinkPassthrough = sumRedeemedDrinksForPartnerMonth(getDb(), partnerId, year, month);
+  // Staff drink welfare is NOT part of the monthly GP settlement (owner
+  // 2026-07-30) — it is its own report/card read from the redemptions, on the
+  // weekly-transfer cadence. So this settlement stays GP-only (no drink line).
   const result = computeSettlement({
     totalSales, opMonth, tiers, floors,
-    vatEnabled: partner.vat_enabled, vatRate: partner.vat_rate, whtRate: partner.wht_rate,
-    drinkPassthrough
+    vatEnabled: partner.vat_enabled, vatRate: partner.vat_rate, whtRate: partner.wht_rate
   });
   // Group the month's daily entries into ISO weeks (= the weekly transfer),
   // then split GP per week via cumulative-difference so weeks sum to the

@@ -13,7 +13,8 @@ import { redeemDrinkOrder, DRINK_TIERS } from "@/lib/partner-drink-orders";
 
 const Body = z.object({
   token: z.string().min(8).max(128),
-  amount: z.number().refine((n) => (DRINK_TIERS as readonly number[]).includes(n), "bad_amount")
+  amount: z.number().refine((n) => (DRINK_TIERS as readonly number[]).includes(n), "bad_amount"),
+  payment_method: z.enum(["payroll", "cash"])
 });
 
 export async function POST(req: Request) {
@@ -27,22 +28,23 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
 
   const branchIds = user.branches.map((b) => b.id);
-  const result = redeemDrinkOrder(parsed.data.token, user.id, branchIds, parsed.data.amount);
+  const result = redeemDrinkOrder(parsed.data.token, user.id, branchIds, parsed.data.amount, parsed.data.payment_method);
   if (!result.ok) {
     const status = result.error === "not_found" ? 404
       : result.error === "already" ? 409
       : result.error === "expired" ? 410
-      : result.error === "bad_amount" ? 400
+      : (result.error === "bad_amount" || result.error === "bad_method") ? 400
       : 403; // wrong_partner
     return NextResponse.json({ error: result.error }, { status });
   }
 
-  logPersonaAction(user.id, `drink_redeem.${result.amount}`, null);
+  logPersonaAction(user.id, `drink_redeem.${result.paymentMethod}.${result.amount}`, null);
 
   return NextResponse.json({
     ok: true,
     amount: result.amount,
     staffName: result.staffName,
-    orderDate: result.orderDate
+    orderDate: result.orderDate,
+    paymentMethod: result.paymentMethod
   });
 }

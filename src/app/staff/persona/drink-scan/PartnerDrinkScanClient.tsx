@@ -12,7 +12,9 @@ const ERR_MSG: Record<string, string> = {
   expired: "QR หมดอายุแล้ว",
   wrong_partner: "QR นี้เป็นของสาขาอื่น",
   forbidden: "บัญชีนี้ไม่มีสิทธิ์สแกนรับเครื่องดื่ม",
-  invalid_body: "QR ไม่ถูกต้อง"
+  invalid_body: "QR ไม่ถูกต้อง",
+  bad_amount: "ราคาไม่ถูกต้อง (เลือก ฿50 หรือ ฿80)",
+  bad_method: "วิธีจ่ายไม่ถูกต้อง"
 };
 
 export default function PartnerDrinkScanClient() {
@@ -21,6 +23,7 @@ export default function PartnerDrinkScanClient() {
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [history, setHistory] = useState<Done[]>([]);
   const [tier, setTier] = useState<number | null>(null);
+  const [method, setMethod] = useState<"payroll" | "cash">("payroll");
 
   async function onToken(token: string) {
     setScanning(false);
@@ -31,13 +34,14 @@ export default function PartnerDrinkScanClient() {
       const res = await fetch(apiUrl("/api/staff/persona/drink-redeem"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, amount: tier })
+        body: JSON.stringify({ token, amount: tier, payment_method: method })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
         setResult({ ok: false, msg: ERR_MSG[j.error as string] ?? "สแกนไม่สำเร็จ ลองใหม่อีกครั้ง" });
       } else {
-        setResult({ ok: true, msg: `จ่าย ฿${j.amount} ให้ ${j.staffName} แล้ว` });
+        const how = j.paymentMethod === "cash" ? "จ่ายเอง" : "หักเงินเดือน";
+        setResult({ ok: true, msg: `฿${j.amount} · ${how} · ${j.staffName}` });
         setHistory((h) => [{ staffName: j.staffName, amount: j.amount, at: new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) }, ...h].slice(0, 20));
       }
     } catch {
@@ -82,12 +86,29 @@ export default function PartnerDrinkScanClient() {
         </div>
       </div>
 
+      <div className="space-y-2">
+        <div className="text-sm font-medium text-slate-700">2. วิธีจ่าย</div>
+        <div className="grid grid-cols-2 gap-2">
+          {([["payroll", "หักเงินเดือน"], ["cash", "จ่ายเอง (เงินสด)"]] as const).map(([m, label]) => (
+            <button
+              key={m}
+              onClick={() => setMethod(m)}
+              className={`py-3 rounded-xl text-sm font-bold active:scale-95 transition border-2 ${
+                method === m ? "bg-sky-600 text-white border-sky-600" : "bg-white text-slate-700 border-slate-300"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <button
         onClick={() => { setResult(null); setScanning(true); }}
         disabled={busy || tier == null}
         className="w-full py-4 rounded-2xl bg-emerald-600 text-white text-lg font-bold active:scale-95 transition disabled:opacity-50"
       >
-        {busy ? "กำลังตรวจสอบ…" : tier == null ? "เลือกราคาก่อน" : `2. สแกน QR (฿${tier})`}
+        {busy ? "กำลังตรวจสอบ…" : tier == null ? "เลือกราคาก่อน" : `3. สแกน QR (฿${tier} · ${method === "cash" ? "จ่ายเอง" : "หักเงินเดือน"})`}
       </button>
 
       {history.length > 0 && (

@@ -4,9 +4,10 @@ import { requirePermission } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
 import { isRevshareBranch, getPartner, previewSettlement, listRounds, markRoundSent } from "@/lib/revshare-db";
-import { revshareSettlementFlex, revshareWeeklyFlex, revshareDailyFlex, notifyRevsharePartner } from "@/lib/revshare-line";
+import { revshareSettlementFlex, revshareWeeklyFlex, revshareDailyFlex, revshareDrinkWelfareFlex, notifyRevsharePartner } from "@/lib/revshare-line";
 import { postRevshareDailyIncome } from "@/lib/accounta-db";
-import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat, partnerShopName, salesVat } from "@/lib/revshare";
+import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat, partnerShopName, salesVat, roundLabel } from "@/lib/revshare";
+import { drinkWelfareSummary } from "@/lib/partner-drink-orders";
 
 // Push a sales notification to the partner's LINE group. Three kinds (owner
 // 2026-06-23): daily (a day's sales heads-up), weekly (the amount transferred
@@ -18,7 +19,7 @@ const Body = z.object({
   partner: z.number().int().positive(),
   year: z.number().int(),
   month: z.number().int().min(1).max(12),
-  kind: z.enum(["settlement", "weekly", "daily"]),
+  kind: z.enum(["settlement", "weekly", "daily", "drink_welfare"]),
   week_start: z.string().regex(ISO).optional(),
   date: z.string().regex(ISO).optional(),
   pin: z.string().optional()
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
   // Daily + weekly sends are PIN-gated (owner 2026-06-24: ตรวจสอบยอดแล้วกด PIN
   // ก่อนส่งเข้ากลุ่ม) — proves the operator verified the figure before it goes
   // out to the partner.
-  if (kind === "daily" || kind === "weekly") {
+  if (kind === "daily" || kind === "weekly" || kind === "drink_welfare") {
     const status = verifyAdminPin(user.id, pin ?? "");
     if (!status.ok) {
       return NextResponse.json({ error: status.reason }, { status: status.reason === "no_pin" ? 400 : 403 });
@@ -84,6 +85,18 @@ export async function POST(req: Request) {
     const w = week_start ? preview.breakdown.find((b) => b.start === week_start) : preview.breakdown[preview.breakdown.length - 1];
     if (!w) return NextResponse.json({ error: "week_not_found" }, { status: 404 });
     flex = revshareWeeklyFlex({ shop, sellerName: seller, weekLabel: w.label, transferAmount: w.sales, dayCount: daySpan(w.start, w.end), vatRate, salesIncludesVat });
+  } else if (kind === "drink_welfare") {
+    // Staff drink welfare read from redemptions (owner 2026-07-30). Period = a
+    // week (week_start → +6d) or the whole month (month-end round).
+    const mm = String(month).padStart(2, "0");
+    const start = week_start ?? `${year}-${mm}-01`;
+    const end = week_start
+      ? new Date(Date.parse(`${week_start}T00:00:00Z`) + 6 * 86400000).toISOString().slice(0, 10)
+      : `${year}-${mm}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, "0")}`;
+    const sum = drinkWelfareSummary(getDb(), partnerId, start, end);
+    if (sum.count === 0) return NextResponse.json({ error: "no_drinks", message: "ช่วงนี้ยังไม่มีการเบิกเครื่องดื่ม" }, { status: 400 });
+    const periodLabel = week_start ? roundLabel(start, end) : monthLabel;
+    flex = revshareDrinkWelfareFlex({ shop, sellerName: seller, periodLabel, count: sum.count, total: sum.total, vatRate, byTier: sum.byTier, cashCount: sum.cashCount, cashTotal: sum.cashTotal });
   } else {
     const r = preview.result;
     flex = revshareSettlementFlex({

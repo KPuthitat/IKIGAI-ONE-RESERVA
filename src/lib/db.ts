@@ -1666,13 +1666,26 @@ function runMigrations(db: Database.Database): void {
       expires_at  TEXT NOT NULL,                         -- ISO — QR/token validity
       created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       redeemed_at TEXT,
-      redeemed_by INTEGER REFERENCES users(id)           -- the partner account that scanned
+      redeemed_by INTEGER REFERENCES users(id),          -- the partner account that scanned
+      -- How the staff pays (owner 2026-07-30): 'payroll' = deducted from salary,
+      -- company forwards it to จ้อจี้ (in the welfare card); 'cash' = staff paid
+      -- จ้อจี้ directly, so NO payroll deduction and NOT in the company→จ้อจี้ total.
+      payment_method TEXT NOT NULL DEFAULT 'payroll'
+        CHECK (payment_method IN ('payroll','cash'))
     );
     CREATE INDEX IF NOT EXISTS idx_partner_drink_orders_user
       ON partner_drink_orders(user_id, order_date, status);
     CREATE INDEX IF NOT EXISTS idx_partner_drink_orders_partner
       ON partner_drink_orders(partner_id, order_date, status);
   `);
+  // payment_method backfill for DBs created before the cash/payroll split
+  // (owner 2026-07-30) — existing rows were all payroll deductions.
+  {
+    const pdoCols = db.prepare("PRAGMA table_info(partner_drink_orders)").all() as Array<{ name: string }>;
+    if (!pdoCols.some((c) => c.name === "payment_method")) {
+      db.exec("ALTER TABLE partner_drink_orders ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'payroll'");
+    }
+  }
 
   // ─── DELIVERA — self-delivery module (owner 2026-07-02) ─────────────────
   // Ported from a Supabase/RLS spec onto this repo's stack: SQLite + session
