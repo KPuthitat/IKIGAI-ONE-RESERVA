@@ -1895,6 +1895,16 @@ function runMigrations(db: Database.Database): void {
     // rows that never carried it.
     if (!rrCols.some((c) => c.name === "bill_count")) db.exec("ALTER TABLE revshare_rounds ADD COLUMN bill_count INTEGER");
   }
+  // revshare_settlements.drink_passthrough (owner 2026-07-30): staff drink-welfare
+  // total the company pays this partner for the month (จ้อจี้), VAT-inclusive, NO
+  // GP. It nets against the GP invoice — the final settlement = net_amount −
+  // drink_passthrough. Stored so the snapshot/statement is reproducible.
+  {
+    const rsCols = db.prepare("PRAGMA table_info(revshare_settlements)").all() as Array<{ name: string }>;
+    if (!rsCols.some((c) => c.name === "drink_passthrough")) {
+      db.exec("ALTER TABLE revshare_settlements ADD COLUMN drink_passthrough REAL NOT NULL DEFAULT 0");
+    }
+  }
 
   // Daily attendance summary (TC-6) — per-branch HH:MM time at which
   // the cron job posts a 4-category roll-call to the executive group:

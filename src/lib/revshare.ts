@@ -122,6 +122,11 @@ export type SettlementInput = {
   vatEnabled: boolean;
   vatRate: number;   // e.g. 0.07
   whtRate: number;   // e.g. 0.03
+  // Staff drink-welfare total the company OWES this partner for the month
+  // (จ้อจี้), VAT-inclusive — owner 2026-07-30. NO GP is taken on it; it is a
+  // pure pass-through the company pays the partner, so it reduces what the
+  // partner nets out on the GP invoice. Default 0.
+  drinkPassthrough?: number;
 };
 
 export type SettlementResult = {
@@ -133,11 +138,16 @@ export type SettlementResult = {
   avgGpPct: number;      // tierGP / totalSales (0 when no sales)
   vatAmount: number;     // output VAT on billedGP (0 when disabled)
   whtAmount: number;     // WHT on billedGP (base = GP before VAT)
-  netAmount: number;     // billedGP + VAT − WHT (what the partner nets out)
+  netAmount: number;     // billedGP + VAT − WHT (the GP invoice the partner pays)
+  drinkPassthrough: number; // staff drink welfare the company pays the partner (no GP)
+  drinkInputVat: number;    // VAT embedded in the (VAT-inclusive) drink amount — info only
+  netAfterDrinks: number;   // netAmount − drinkPassthrough — final settlement
+                            //   (> 0 partner pays company, < 0 company pays partner)
 };
 
 /** Monthly settlement. VAT (output) and WHT both sit on the billed GP (WHT base
- *  is GP BEFORE vat — the two don't compound). */
+ *  is GP BEFORE vat — the two don't compound). The staff drink-welfare
+ *  pass-through (no GP) nets against the GP invoice. */
 export function computeSettlement(inp: SettlementInput): SettlementResult {
   const totalSales = round2(Math.max(0, inp.totalSales));
   const tierGP = round2(marginalGP(totalSales, inp.tiers));
@@ -148,9 +158,16 @@ export function computeSettlement(inp: SettlementInput): SettlementResult {
   const vatAmount = inp.vatEnabled ? round2(billedGP * inp.vatRate) : 0;
   const whtAmount = round2(billedGP * inp.whtRate);
   const netAmount = round2(billedGP + vatAmount - whtAmount);
+  const drinkPassthrough = round2(Math.max(0, inp.drinkPassthrough ?? 0));
+  // Input VAT embedded in the VAT-inclusive drink price (info: company claims it).
+  const drinkInputVat = inp.vatRate > 0
+    ? round2(drinkPassthrough * inp.vatRate / (1 + inp.vatRate))
+    : 0;
+  const netAfterDrinks = round2(netAmount - drinkPassthrough);
   return {
     totalSales, tierGP, floorApplied, billedGP: round2(billedGP), topup,
-    avgGpPct, vatAmount, whtAmount, netAmount
+    avgGpPct, vatAmount, whtAmount, netAmount,
+    drinkPassthrough, drinkInputVat, netAfterDrinks
   };
 }
 

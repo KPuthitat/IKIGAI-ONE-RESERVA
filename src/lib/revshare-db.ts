@@ -9,6 +9,7 @@ import {
   groupDailyIntoWeeks, DEFAULT_TIERS, DEFAULT_FLOORS,
   type Tier, type Floor, type SettlementResult
 } from "./revshare";
+import { sumRedeemedDrinksForPartnerMonth } from "./partner-drink-orders";
 
 export type SalesBase = "gross" | "after_discount" | "nett";
 
@@ -292,9 +293,12 @@ export function previewSettlement(partnerId: number, branchId: number, year: num
   const floors = getFloors(partnerId);
   const opMonth = opMonthFor(partner.start_date, year, month);
   const totalSales = rounds.reduce((s, r) => s + r.sales_amount, 0);
+  // Staff drink-welfare the company owes this partner this month (จ้อจี้) — no GP.
+  const drinkPassthrough = sumRedeemedDrinksForPartnerMonth(getDb(), partnerId, year, month);
   const result = computeSettlement({
     totalSales, opMonth, tiers, floors,
-    vatEnabled: partner.vat_enabled, vatRate: partner.vat_rate, whtRate: partner.wht_rate
+    vatEnabled: partner.vat_enabled, vatRate: partner.vat_rate, whtRate: partner.wht_rate,
+    drinkPassthrough
   });
   // Group the month's daily entries into ISO weeks (= the weekly transfer),
   // then split GP per week via cumulative-difference so weeks sum to the
@@ -311,10 +315,16 @@ export function previewSettlement(partnerId: number, branchId: number, year: num
 }
 
 function shapeSettlement(r: any): RsSettlement {
+  const netAmount = r.net_amount;
+  const drinkPassthrough = round2(r.drink_passthrough ?? 0);
   return {
     id: r.id, partner_id: r.partner_id, settle_year: r.settle_year, settle_month: r.settle_month, op_month: r.op_month,
     totalSales: r.total_sales, tierGP: r.tier_gp, floorApplied: r.floor_applied, topup: r.topup,
-    billedGP: r.billed_gp, avgGpPct: r.avg_gp_pct, vatAmount: r.vat_amount, whtAmount: r.wht_amount, netAmount: r.net_amount,
+    billedGP: r.billed_gp, avgGpPct: r.avg_gp_pct, vatAmount: r.vat_amount, whtAmount: r.wht_amount, netAmount,
+    drinkPassthrough,
+    // VAT embedded in the VAT-inclusive drink amount (TH VAT 7%) — info only.
+    drinkInputVat: round2(drinkPassthrough * 7 / 107),
+    netAfterDrinks: round2(netAmount - drinkPassthrough),
     status: r.status, invoice_no: r.invoice_no, issued_at: r.issued_at, paid_at: r.paid_at
   };
 }
@@ -338,17 +348,18 @@ export function saveSettlement(partnerId: number, branchId: number, year: number
   if (existing) {
     db.prepare(`
       UPDATE revshare_settlements SET op_month = ?, total_sales = ?, tier_gp = ?, floor_applied = ?, topup = ?,
-        billed_gp = ?, avg_gp_pct = ?, vat_amount = ?, wht_amount = ?, net_amount = ?, updated_at = CURRENT_TIMESTAMP
+        billed_gp = ?, avg_gp_pct = ?, vat_amount = ?, wht_amount = ?, net_amount = ?, drink_passthrough = ?,
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(preview.opMonth, r.totalSales, r.tierGP, r.floorApplied, r.topup, r.billedGP, r.avgGpPct,
-      r.vatAmount, r.whtAmount, r.netAmount, existing.id);
+      r.vatAmount, r.whtAmount, r.netAmount, r.drinkPassthrough, existing.id);
   } else {
     db.prepare(`
       INSERT INTO revshare_settlements (partner_id, settle_year, settle_month, op_month, total_sales, tier_gp,
-        floor_applied, topup, billed_gp, avg_gp_pct, vat_amount, wht_amount, net_amount)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        floor_applied, topup, billed_gp, avg_gp_pct, vat_amount, wht_amount, net_amount, drink_passthrough)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(partnerId, year, month, preview.opMonth, r.totalSales, r.tierGP, r.floorApplied, r.topup,
-      r.billedGP, r.avgGpPct, r.vatAmount, r.whtAmount, r.netAmount);
+      r.billedGP, r.avgGpPct, r.vatAmount, r.whtAmount, r.netAmount, r.drinkPassthrough);
   }
   return getStoredSettlement(partnerId, branchId, year, month);
 }
