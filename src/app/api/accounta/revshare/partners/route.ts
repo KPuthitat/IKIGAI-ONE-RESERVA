@@ -47,6 +47,7 @@ const PatchZ = z.object({
   address: z.string().trim().max(300).nullable().optional(),
   branch_code: z.string().trim().max(20).nullable().optional(),
   income_branch_id: z.number().int().positive().nullable().optional(),
+  drink_welfare: z.boolean().optional(),
   tiers: z.array(TierZ).optional(),
   floors: z.array(FloorZ).optional()
 });

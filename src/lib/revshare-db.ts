@@ -19,6 +19,8 @@ export type RsPartner = {
   line_group_id: string | null;
   tax_id: string | null; address: string | null; branch_code: string | null;
   income_branch_id: number | null;
+  /** This partner fulfils staff drink-welfare orders (จ้อจี้) — owner 2026-07-30. */
+  drink_welfare: boolean;
 };
 export type RsRound = {
   id: number; partner_id: number; period_year: number; period_month: number;
@@ -55,7 +57,8 @@ function shapePartner(r: any): RsPartner {
     vat_enabled: !!r.vat_enabled, vat_rate: r.vat_rate, wht_rate: r.wht_rate,
     active: !!r.active, note: r.note, line_group_id: r.line_group_id ?? null,
     tax_id: r.tax_id ?? null, address: r.address ?? null, branch_code: r.branch_code ?? null,
-    income_branch_id: r.income_branch_id ?? null
+    income_branch_id: r.income_branch_id ?? null,
+    drink_welfare: !!r.drink_welfare
   };
 }
 function safeJsonArr(s: string | null): string[] {
@@ -87,6 +90,7 @@ export type PartnerInput = {
   line_group_id?: string | null;
   tax_id?: string | null; address?: string | null; branch_code?: string | null;
   income_branch_id?: number | null;
+  drink_welfare?: boolean;
 };
 
 /** Create a partner + seed the default Groggy tiers/floors (editable after). */
@@ -129,6 +133,7 @@ export function updatePartner(partnerId: number, branchId: number, d: Partial<Pa
   if (d.address !== undefined) put("address", d.address);
   if (d.branch_code !== undefined) put("branch_code", d.branch_code);
   if (d.income_branch_id !== undefined) put("income_branch_id", d.income_branch_id);
+  if (d.drink_welfare !== undefined) put("drink_welfare", d.drink_welfare ? 1 : 0);
   if (d.active !== undefined) put("active", d.active ? 1 : 0);
   if (!sets.length) return false;
   sets.push("updated_at = CURRENT_TIMESTAMP");

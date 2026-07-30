@@ -14,6 +14,7 @@ type Partner = {
   line_group_id: string | null;
   tax_id: string | null; address: string | null; branch_code: string | null;
   income_branch_id: number | null;
+  drink_welfare: boolean;
 };
 type BranchOpt = { id: number; name: string };
 type TierRow = { lower: string; upper: string; rate: string };
@@ -41,6 +42,7 @@ export default function PartnerConfigClient({ partner, tiers, floors, branches }
   const [addr, setAddr] = useState(partner.address ?? "");
   const [branchCode, setBranchCode] = useState(partner.branch_code ?? "");
   const [vatEnabled, setVatEnabled] = useState(partner.vat_enabled);
+  const [drinkWelfare, setDrinkWelfare] = useState(partner.drink_welfare);
   const [vatRate, setVatRate] = useState(pctStr(partner.vat_rate));
   const [whtRate, setWhtRate] = useState(pctStr(partner.wht_rate));
   const [tierRows, setTierRows] = useState<TierRow[]>(
@@ -77,6 +79,7 @@ export default function PartnerConfigClient({ partner, tiers, floors, branches }
         tax_id: taxId.trim() || null, address: addr.trim() || null, branch_code: branchCode.trim() || null,
         income_branch_id: incomeBranchId ? Number(incomeBranchId) : null,
         vat_enabled: vatEnabled, vat_rate: Number(vatRate) / 100, wht_rate: Number(whtRate) / 100,
+        drink_welfare: drinkWelfare,
         tiers: tiersOut, floors: floorsOut
       };
       const res = await fetch(apiUrl("/api/accounta/revshare/partners"), {
@@ -149,6 +152,18 @@ export default function PartnerConfigClient({ partner, tiers, floors, branches }
           <div><label className="label">หัก ณ ที่จ่าย %</label><input type="number" step="0.01" className="input" value={whtRate} onChange={(e) => setWhtRate(e.target.value)} /></div>
         </div>
         <p className="text-[11px] text-slate-400">VAT คิดบน GP ที่เรียกเก็บ · WHT หักจากฐาน GP ก่อน VAT (ไม่ทับซ้อนกัน)</p>
+      </div>
+
+      {/* Staff drink welfare (owner 2026-07-30) */}
+      <div className="card space-y-2">
+        <div className="text-sm font-bold text-slate-800">สวัสดิการเครื่องดื่มพนักงาน</div>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={drinkWelfare} onChange={(e) => setDrinkWelfare(e.target.checked)} />
+          พาร์ทเนอร์นี้จ่ายเครื่องดื่มสวัสดิการให้พนักงาน (จ้อจี้)
+        </label>
+        <p className="text-[11px] text-slate-400">
+          เปิดแล้ว: พนักงานสั่งเครื่องดื่ม 50/80 → หักค่าตอบแทน → พาร์ทเนอร์สแกน QR รับ · ยอดคูปองนี้ไม่คิด GP
+        </p>
       </div>
 
       {/* Tiers */}
