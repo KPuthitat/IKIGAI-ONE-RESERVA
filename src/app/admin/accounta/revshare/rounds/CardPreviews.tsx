@@ -71,6 +71,29 @@ export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount,
   );
 }
 
+export function DrinkWelfareCardPreview({ shop, sellerName, periodLabel, count, total, vatRate, byTier }: {
+  shop: string; sellerName: string; periodLabel: string; count: number; total: number; vatRate: number;
+  byTier: Array<{ amount: number; count: number; subtotal: number }>;
+}) {
+  const v = salesVat(total, vatRate, true); // 50/80 already include VAT
+  return (
+    <Shell title="สวัสดิการเครื่องดื่มพนักงาน" subtitle={periodLabel}>
+      <div className="text-[15px] font-bold text-slate-800 leading-tight">{shop}</div>
+      <div className="text-[10px] text-slate-400">สรุปโดย: {sellerName} · {count} แก้ว</div>
+      <div className="border-t border-slate-100 my-1" />
+      {byTier.map((t) => <Row key={t.amount} label={`฿${t.amount} × ${t.count} แก้ว`} value={baht(t.subtotal)} />)}
+      <Row label="รวม (รวม VAT)" value={baht(v.total)} bold />
+      <Row label="ก่อน VAT" value={baht(v.base)} />
+      <Row label="VAT 7%" value={baht(v.vat)} />
+      <div className="rounded-lg bg-emerald-50 px-3 py-2 mt-1">
+        <div className="text-[11px] text-slate-500">ยอดที่บริษัทชำระคู่ค้า (รวม VAT)</div>
+        <div className="text-xl font-bold tabular-nums" style={{ color: "#0f6e56" }}>{baht(v.total)}</div>
+      </div>
+      <div className="text-[9px] text-slate-400 text-center pt-1">อ่านจากการเบิกสิทธิ์ · ไม่คิด GP · คู่ค้าออกใบกำกับให้บริษัท</div>
+    </Shell>
+  );
+}
+
 /** Modal: shows a card preview + a PIN field, then sends on confirm. */
 export function SendPreviewModal({ heading, preview, busy, onConfirm, onClose }: {
   heading: string;

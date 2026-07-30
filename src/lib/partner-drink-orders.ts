@@ -4,6 +4,7 @@ import { getDb } from "./db";
 import { todayBkk } from "./time";
 
 type DbHandle = Database.Database;
+const round2 = (x: number): number => Math.round(x * 100) / 100;
 
 // Staff drink welfare — จ้อจี้ & friends (owner 2026-07-30).
 //
@@ -178,6 +179,78 @@ export function sumRedeemedDrinksForPartnerMonth(
         AND substr(order_date, 1, 7) = ?`
   ).get(partnerId, prefix) as { total: number };
   return r.total;
+}
+
+/** Redeemed drink-welfare summary for a partner over a date range (inclusive,
+ *  YYYY-MM-DD) — read straight from the redemptions (owner 2026-07-30), for the
+ *  separate staff-drink-welfare card the company sends จ้อจี้. Partner-facing:
+ *  totals + per-tier counts only (no staff names). */
+export type DrinkWelfareSummary = {
+  count: number;                       // total drinks redeemed
+  total: number;                       // baht total (VAT-inclusive — what the company pays จ้อจี้)
+  byTier: Array<{ amount: number; count: number; subtotal: number }>;
+};
+export function drinkWelfareSummary(
+  db: DbHandle, partnerId: number, startDate: string, endDate: string
+): DrinkWelfareSummary {
+  const rows = db.prepare(
+    `SELECT amount, COUNT(*) AS n
+       FROM partner_drink_orders
+      WHERE partner_id = ? AND status = 'redeemed'
+        AND order_date >= ? AND order_date <= ?
+      GROUP BY amount
+      ORDER BY amount`
+  ).all(partnerId, startDate, endDate) as Array<{ amount: number; n: number }>;
+  let count = 0, total = 0;
+  const byTier = rows.map((r) => {
+    const subtotal = round2(r.amount * r.n);
+    count += r.n; total += subtotal;
+    return { amount: r.amount, count: r.n, subtotal };
+  });
+  return { count, total: round2(total), byTier };
+}
+
+/** Month's redeemed drink welfare grouped into ISO weeks (Mon start) + a month
+ *  total — for the revshare welfare card (weekly Monday sends + a month-end
+ *  send). Only weeks with redemptions appear. */
+export type DrinkWelfareWeek = { weekStart: string; start: string; end: string; label: string; summary: DrinkWelfareSummary };
+export function drinkWelfareByWeek(
+  db: DbHandle, partnerId: number, year: number, month: number
+): { weeks: DrinkWelfareWeek[]; month: DrinkWelfareSummary } {
+  const mm = String(month).padStart(2, "0");
+  const rows = db.prepare(
+    `SELECT order_date, amount FROM partner_drink_orders
+      WHERE partner_id = ? AND status = 'redeemed' AND substr(order_date, 1, 7) = ?
+      ORDER BY order_date`
+  ).all(partnerId, `${year}-${mm}`) as Array<{ order_date: string; amount: number }>;
+
+  const mondayOf = (iso: string): string => {
+    const d = new Date(`${iso}T00:00:00Z`);
+    const dow = d.getUTCDay();                 // 0=Sun..6=Sat
+    d.setUTCDate(d.getUTCDate() + (dow === 0 ? -6 : 1 - dow));
+    return d.toISOString().slice(0, 10);
+  };
+  const wk = new Map<string, { start: string; end: string; rows: Array<{ amount: number }> }>();
+  for (const r of rows) {
+    const k = mondayOf(r.order_date);
+    const g = wk.get(k);
+    if (!g) wk.set(k, { start: r.order_date, end: r.order_date, rows: [{ amount: r.amount }] });
+    else { g.rows.push({ amount: r.amount }); if (r.order_date < g.start) g.start = r.order_date; if (r.order_date > g.end) g.end = r.order_date; }
+  }
+  const summarize = (items: Array<{ amount: number }>): DrinkWelfareSummary => {
+    const m = new Map<number, number>();
+    for (const it of items) m.set(it.amount, (m.get(it.amount) ?? 0) + 1);
+    let count = 0, total = 0;
+    const byTier = [...m.entries()].sort((a, b) => a[0] - b[0]).map(([amount, n]) => {
+      const subtotal = round2(amount * n); count += n; total += subtotal;
+      return { amount, count: n, subtotal };
+    });
+    return { count, total: round2(total), byTier };
+  };
+  const weeks: DrinkWelfareWeek[] = [...wk.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([weekStart, g]) => ({ weekStart, start: g.start, end: g.end, label: `${g.start} – ${g.end}`, summary: summarize(g.rows) }));
+  return { weeks, month: summarize(rows.map((r) => ({ amount: r.amount }))) };
 }
 
 /** A staff member's drink orders for a date (newest first) — for the staff UI. */

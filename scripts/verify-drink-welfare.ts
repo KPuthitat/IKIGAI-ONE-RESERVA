@@ -7,7 +7,7 @@
 // Also checks the create "replace pending" + redeem "lock" state transitions.
 //   node --import tsx scripts/verify-drink-welfare.ts
 import Database from "better-sqlite3";
-import { sumRedeemedDrinksForUser, sumRedeemedDrinksForPartnerMonth } from "../src/lib/partner-drink-orders";
+import { sumRedeemedDrinksForUser, sumRedeemedDrinksForPartnerMonth, drinkWelfareSummary, drinkWelfareByWeek } from "../src/lib/partner-drink-orders";
 
 function assert(cond: boolean, msg: string) {
   if (!cond) { console.error("✗ " + msg); process.exit(1); }
@@ -57,6 +57,17 @@ assert(sumRedeemedDrinksForPartnerMonth(db, 2, 2026, 7) === 50,
   "partner2(EMIA) ก.ค. → 50");
 assert(sumRedeemedDrinksForPartnerMonth(db, 1, 2026, 8) === 80,
   "partner1 ส.ค. → 80 (เดือนถัดไปแยก)");
+
+// ── welfare card drivers (owner 2026-07-30): summary by tier + by week ──
+const wsum = drinkWelfareSummary(db, 1, "2026-07-01", "2026-07-31");
+assert(wsum.count === 3 && wsum.total === 210, "welfare summary partner1 ก.ค. → 3 แก้ว / ฿210");
+assert(wsum.byTier.length === 2, "welfare byTier มี 2 เรท (50/80)");
+assert(wsum.byTier.find((t) => t.amount === 80)?.count === 2, "welfare ฿80 × 2 แก้ว");
+assert(wsum.byTier.find((t) => t.amount === 50)?.subtotal === 50, "welfare ฿50 × 1 = 50");
+const wbw = drinkWelfareByWeek(db, 1, 2026, 7);
+assert(wbw.month.count === 3 && wbw.month.total === 210, "welfareByWeek month → 3 แก้ว / ฿210");
+assert(wbw.weeks.reduce((s, w) => s + w.summary.total, 0) === 210, "welfareByWeek: ผลรวมทุกสัปดาห์ = ยอดเดือน");
+assert(wbw.weeks.every((w) => w.summary.count > 0), "welfareByWeek: โชว์เฉพาะสัปดาห์ที่มีการเบิก");
 
 // ── redeem 'lock' + create 'replace pending' state transitions ──────
 // New flow (owner 2026-07-30): pending orders carry amount 0; the จ้อจี้ team

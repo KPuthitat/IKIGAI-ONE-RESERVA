@@ -146,6 +146,43 @@ export function revshareWeeklyFlex(d: WeeklyCard): FlexMsg {
   };
 }
 
+// ── Staff drink welfare (owner 2026-07-30) — a SEPARATE card from the GP/sales
+//    cards. Read from the redemptions; the amount the company pays the partner
+//    for staff drinks. NO GP. The 50/80 prices are VAT-inclusive retail. ──
+export type DrinkWelfareCard = {
+  shop: string; sellerName: string; periodLabel: string;
+  count: number; total: number; vatRate: number;
+  byTier: Array<{ amount: number; count: number; subtotal: number }>;
+};
+export function revshareDrinkWelfareFlex(d: DrinkWelfareCard): FlexMsg {
+  const v = salesVat(d.total, d.vatRate, true); // 50/80 already include VAT
+  return {
+    type: "flex",
+    altText: `สวัสดิการเครื่องดื่มพนักงาน ${d.periodLabel} · ${d.shop} · ${baht(d.total)}`,
+    contents: {
+      type: "bubble", size: "giga",
+      header: header("สวัสดิการเครื่องดื่มพนักงาน", d.periodLabel),
+      body: {
+        type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
+        contents: [
+          { type: "text", text: d.shop, weight: "bold", size: "lg", wrap: true },
+          { type: "text", text: `สรุปโดย: ${d.sellerName} · ${d.count} แก้ว`, size: "xxs", color: "#999999", wrap: true },
+          sep,
+          ...d.byTier.map((t) => kv(`฿${t.amount} × ${t.count} แก้ว`, baht(t.subtotal), { size: "xs" })),
+          kv("รวม (รวม VAT)", baht(v.total), { bold: true }),
+          kv("ก่อน VAT", baht(v.base), { size: "xs" }),
+          kv("VAT 7%", baht(v.vat), { size: "xs" }),
+          { type: "box", layout: "vertical", margin: "md", contents: [
+            { type: "text", text: "ยอดที่บริษัทชำระคู่ค้า (รวม VAT)", size: "xs", color: "#888888" },
+            { type: "text", text: baht(v.total), size: "xxl", weight: "bold", color: "#0f6e56" }
+          ] }
+        ]
+      },
+      footer: footer("อ่านจากการเบิกสิทธิ์ของพนักงาน · ไม่คิด GP · คู่ค้าออกใบกำกับภาษีให้บริษัท")
+    }
+  };
+}
+
 /** Push a Flex card to the partner's LINE group via the platform OA. */
 export async function notifyRevsharePartner(lineGroupId: string, flex: FlexMsg): Promise<{ ok: boolean; error?: string }> {
   const token = getPlatformChannel()?.channel_token?.trim() ?? null;

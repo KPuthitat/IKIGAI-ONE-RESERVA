@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isRevshareBranch, getPartner, getTiers, listRounds } from "@/lib/revshare-db";
+import { drinkWelfareByWeek } from "@/lib/partner-drink-orders";
 import RoundsClient from "./RoundsClient";
 
 export const dynamic = "force-dynamic";
@@ -51,6 +52,7 @@ export default function RevshareRoundsPage({ searchParams }: { searchParams: { p
         year={year} month={month}
         operatorName={user.display_name}
         sellerName={sellerName}
+        drinkWelfare={partner.drink_welfare ? drinkWelfareByWeek(getDb(), partner.id, year, month) : null}
       />
     </div>
   );
