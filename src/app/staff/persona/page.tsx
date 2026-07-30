@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireUser } from "@/lib/auth";
+import { requireUser, userCan } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { nameWithPrefix } from "@/lib/name";
 import { bkkDateIso } from "@/lib/time";
@@ -93,8 +93,19 @@ export default function StaffPersonaPage() {
   const coupons = listUserCouponsForDate(user.id, todayBkk);
   const redeemableCoupons = coupons.filter((c) => c.effectiveStatus === "issued").length;
 
+  // จ้อจี้ partner accounts get a shortcut to the drink-redemption scanner.
+  const canRedeemDrinks = userCan(user, "partner.drink.redeem");
+
   return (
     <div className="space-y-3">
+      {canRedeemDrinks && (
+        <Link
+          href="/staff/persona/drink-scan"
+          className="block rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-bold text-violet-900 hover:bg-violet-100 transition"
+        >
+          สแกนรับเครื่องดื่ม (จ้อจี้) →
+        </Link>
+      )}
       {coupons.length > 0 && (
         <Link
           href="/staff/persona/coupons"

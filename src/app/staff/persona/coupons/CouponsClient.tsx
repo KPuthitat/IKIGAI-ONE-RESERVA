@@ -1,22 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { MealCouponRow, EligibleMenuItem } from "@/lib/meal-coupons";
 
 const TYPE_LABEL: Record<"food" | "drink", string> = {
   food: "อาหารกลางวัน",
-  drink: "เครื่องดื่ม"
+  drink: "เครื่องดื่ม (จ้อจี้)"
 };
 
 export default function CouponsClient({
-  coupons, foodMenu, drinkMenu, hasBranch
+  coupons, foodMenu, hasBranch, hasDrinkPartner, drinkTiers
 }: {
   coupons: MealCouponRow[];
   foodMenu: EligibleMenuItem[];
-  drinkMenu: EligibleMenuItem[];
   hasBranch: boolean;
+  hasDrinkPartner: boolean;
+  drinkTiers: number[];
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Record<number, number | "">>({});
@@ -27,12 +28,11 @@ export default function CouponsClient({
     return <div className="card text-sm text-slate-500">กรุณาเลือกสาขาที่มุมบนซ้ายก่อน แล้วเปิดหน้านี้อีกครั้ง</div>;
   }
   if (coupons.length === 0) {
-    return <div className="card text-sm text-slate-500">วันนี้ยังไม่มีคูปอง — คูปองจะออกให้เมื่อกดเข้างานกะ 11:00/12:00</div>;
+    return <div className="card text-sm text-slate-500">วันนี้ยังไม่มีคูปอง — คูปองจะออกให้เมื่อกดเข้างานกะพักเที่ยง</div>;
   }
 
-  const menuFor = (type: "food" | "drink") => (type === "food" ? foodMenu : drinkMenu);
-
-  async function redeem(coupon: MealCouponRow) {
+  // Food redeem (unchanged) — pick a Delivera menu item.
+  async function redeemFood(coupon: MealCouponRow) {
     const menuItemId = selected[coupon.id];
     if (!menuItemId) { setErr("เลือกเมนูก่อนกดเบิก"); return; }
     setErr(null);
@@ -84,15 +84,19 @@ export default function CouponsClient({
             </div>
 
             {c.effectiveStatus === "redeemed" && (
-              <div className="text-sm text-slate-600">เบิกเมนู: <b className="text-slate-800">{c.redeemed_menu_name}</b></div>
+              <div className="text-sm text-slate-600">เบิก: <b className="text-slate-800">{c.redeemed_menu_name}</b></div>
             )}
 
             {c.effectiveStatus === "expired" && (
               <div className="text-sm text-slate-400">คูปองนี้หมดอายุแล้ว (ไม่ได้ใช้ก่อนเวลาที่กำหนด)</div>
             )}
 
-            {c.effectiveStatus === "issued" && (
-              menuFor(c.type).length === 0 ? (
+            {c.effectiveStatus === "issued" && c.type === "drink" && (
+              <DrinkOrder hasPartner={hasDrinkPartner} tiers={drinkTiers} />
+            )}
+
+            {c.effectiveStatus === "issued" && c.type === "food" && (
+              foodMenu.length === 0 ? (
                 <div className="text-sm text-slate-400">ยังไม่มีเมนูให้เบิกที่สาขานี้ — แจ้งแอดมินให้ตั้งค่าเมนู</div>
               ) : (
                 <div className="space-y-2">
@@ -102,12 +106,12 @@ export default function CouponsClient({
                     onChange={(e) => setSelected({ ...selected, [c.id]: e.target.value ? Number(e.target.value) : "" })}
                   >
                     <option value="">— เลือกเมนู —</option>
-                    {menuFor(c.type).map((m) => (
+                    {foodMenu.map((m) => (
                       <option key={m.id} value={m.id}>{m.name_th}</option>
                     ))}
                   </select>
                   <button
-                    onClick={() => redeem(c)}
+                    onClick={() => redeemFood(c)}
                     disabled={busyId === c.id}
                     className="w-full py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold active:scale-95 transition disabled:opacity-50"
                   >
@@ -119,6 +123,106 @@ export default function CouponsClient({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Drink order — pick a tier (50/80) → get a one-time token rendered as a QR for
+// จ้อจี้ to scan. The charge (payroll deduction) locks only when จ้อจี้ scans.
+function DrinkOrder({ hasPartner, tiers }: { hasPartner: boolean; tiers: number[] }) {
+  const router = useRouter();
+  const [order, setOrder] = useState<{ token: string; amount: number; expiresAt: string } | null>(null);
+  const [qr, setQr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    if (!order) { setQr(null); return; }
+    (async () => {
+      const QR = (await import("qrcode")).default;
+      const url = await QR.toDataURL(order.token, { width: 320, margin: 1, errorCorrectionLevel: "M" });
+      if (alive) setQr(url);
+    })();
+    return () => { alive = false; };
+  }, [order]);
+
+  if (!hasPartner) {
+    return <div className="text-sm text-slate-400">สาขานี้ยังไม่ได้ตั้งค่าพาร์ทเนอร์เครื่องดื่ม (จ้อจี้) — แจ้งแอดมิน</div>;
+  }
+
+  async function pick(amount: number) {
+    setErr(null);
+    setBusy(true);
+    try {
+      const res = await fetch(apiUrl("/api/staff/persona/drink-order"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg: Record<string, string> = {
+          no_coupon: "คูปองเครื่องดื่มวันนี้หมดอายุหรือถูกใช้ไปแล้ว",
+          no_partner: "สาขานี้ยังไม่ได้ตั้งค่าพาร์ทเนอร์เครื่องดื่ม",
+          bad_amount: "ราคาไม่ถูกต้อง",
+          no_branch: "กรุณาเลือกสาขาก่อน"
+        };
+        setErr(msg[j.error as string] ?? "ขอ QR ไม่สำเร็จ ลองใหม่อีกครั้ง");
+        setBusy(false);
+        return;
+      }
+      setOrder({ token: j.token, amount: j.amount, expiresAt: j.expiresAt });
+    } catch {
+      setErr("ขอ QR ไม่สำเร็จ ลองใหม่อีกครั้ง");
+    }
+    setBusy(false);
+  }
+
+  if (order) {
+    return (
+      <div className="space-y-3 text-center">
+        <div className="text-sm text-slate-600">
+          ให้พนักงาน<b className="text-slate-800">จ้อจี้สแกน</b> QR นี้ · หัก <b className="text-rose-600">฿{order.amount}</b> จากค่าตอบแทนเมื่อสแกนสำเร็จ
+        </div>
+        {qr
+          ? <img src={qr} alt="QR เครื่องดื่มจ้อจี้" className="mx-auto rounded-lg border border-slate-200" width={220} height={220} />
+          : <div className="h-[220px] flex items-center justify-center text-slate-400 text-sm">กำลังสร้าง QR…</div>}
+        {err && <div className="text-sm text-rose-600">{err}</div>}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => { setOrder(null); setErr(null); }}
+            className="py-2.5 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium active:scale-95 transition"
+          >
+            เปลี่ยนราคา
+          </button>
+          <button
+            onClick={() => router.refresh()}
+            className="py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-bold active:scale-95 transition"
+          >
+            รับแล้ว / รีเฟรช
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-sm text-slate-600">เลือกราคาเครื่องดื่ม (ชำระเองผ่านหักค่าตอบแทน):</div>
+      {err && <div className="text-sm text-rose-600">{err}</div>}
+      <div className="grid grid-cols-2 gap-2">
+        {tiers.map((t) => (
+          <button
+            key={t}
+            onClick={() => pick(t)}
+            disabled={busy}
+            className="py-3 rounded-xl bg-amber-500 text-white text-base font-bold active:scale-95 transition disabled:opacity-50"
+          >
+            ฿{t}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

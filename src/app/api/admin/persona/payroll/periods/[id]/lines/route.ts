@@ -6,6 +6,7 @@ import {
   computeLineFromMinutes, earliestDate, resolveHomeCompanyFlag,
   type EmployeePayrollSnapshot, type PayrollSettings
 } from "@/lib/payroll-compute";
+import { sumRedeemedDrinksForUser } from "@/lib/partner-drink-orders";
 
 // POST /api/admin/persona/payroll/periods/[id]/lines
 // Add a single employee (zero-row) to an existing draft period.
@@ -130,6 +131,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     settings
   });
 
+  // Staff drink-welfare (จ้อจี้) deductions already redeemed by this employee in
+  // this period+branch (owner 2026-07-30) — captured even on a fresh add.
+  const drinkDed = sumRedeemedDrinksForUser(db, target.id, period.period_start, period.period_end, period.branch_id);
+
   db.prepare(`
     INSERT INTO payroll_lines (
       period_id, user_id, employee_code, display_name, employment_type,
@@ -139,8 +144,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       holiday_minutes,
       days_worked, leave_days, unpaid_leave_days, unpaired_clockins,
       base_pay, ot_pay, service_charge, other_additions, gross_pay,
-      sso_amount, tax_amount, other_deductions, net_pay
-    ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?)
+      sso_amount, tax_amount, other_deductions, drink_deductions, net_pay
+    ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?)
   `).run(
     periodId, computed.user_id,
     computed.employee_code, computed.display_name, computed.employment_type,
@@ -152,7 +157,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     computed.days_worked, computed.leave_days, computed.unpaid_leave_days, computed.unpaired_clockins,
     computed.base_pay, computed.ot_pay, computed.service_charge,
     computed.other_additions, computed.gross_pay,
-    computed.sso_amount, computed.tax_amount, computed.other_deductions, computed.net_pay
+    computed.sso_amount, computed.tax_amount, computed.other_deductions, drinkDed,
+    computed.net_pay - drinkDed
   );
 
   return NextResponse.json({ ok: true });

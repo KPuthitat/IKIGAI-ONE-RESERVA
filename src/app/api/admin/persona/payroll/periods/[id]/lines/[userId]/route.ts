@@ -7,6 +7,7 @@ import {
   computeLineFromMinutes, computeSso, computeWht, earliestDate, resolveHomeCompanyFlag,
   type EmployeePayrollSnapshot, type PayrollSettings
 } from "@/lib/payroll-compute";
+import { sumRedeemedDrinksForUser } from "@/lib/partner-drink-orders";
 
 // PATCH /api/admin/persona/payroll/periods/[id]/lines/[userId]
 // Manual override for one employee in one period. Two modes:
@@ -130,6 +131,11 @@ export async function PATCH(
     d.unpaid_leave_days !== undefined ||
     d.days_worked !== undefined;
 
+  // Staff drink-welfare (จ้อจี้) deductions for this period+branch — a separate
+  // column, refreshed from the ledger on every edit (owner 2026-07-30). net_pay
+  // is stored after it in both edit modes below.
+  const drinkDed = sumRedeemedDrinksForUser(db, userId, period.period_start, period.period_end, period.branch_id);
+
   if (timeFieldsProvided) {
     // Mode (a) — recompute pay using minute totals + CURRENT user data
     // (not the original snapshot). This way, if admin updates the employee's
@@ -216,7 +222,8 @@ export async function PATCH(
           days_worked = ?, leave_days = ?, unpaid_leave_days = ?,
           base_pay = ?, ot_pay = ?, service_charge = ?,
           other_additions = ?, other_deductions = ?,
-          gross_pay = ?, sso_amount = ?, tax_amount = ?, net_pay = ?,
+          gross_pay = ?, sso_amount = ?, tax_amount = ?,
+          drink_deductions = ?, net_pay = ?,
           salary_tax_mode_snapshot = ?,
           hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
           pay_cycle_snapshot = ?,
@@ -229,7 +236,8 @@ export async function PATCH(
       computed.days_worked, computed.leave_days, computed.unpaid_leave_days,
       computed.base_pay, computed.ot_pay, computed.service_charge,
       computed.other_additions, computed.other_deductions,
-      computed.gross_pay, computed.sso_amount, computed.tax_amount, computed.net_pay,
+      computed.gross_pay, computed.sso_amount, computed.tax_amount,
+      drinkDed, Math.round((computed.net_pay - drinkDed) * 100) / 100,
       computed.salary_tax_mode_snapshot,
       computed.hourly_rate_snapshot, computed.monthly_salary_snapshot,
       computed.pay_cycle_snapshot,
@@ -275,13 +283,14 @@ export async function PATCH(
         ssoAmount = computeSso(basePay, period.cycle, settings);
       }
     }
-    const net = gross - ssoAmount - taxAmount - otherDed;
+    const net = gross - ssoAmount - taxAmount - otherDed - drinkDed;
 
     db.prepare(`
       UPDATE payroll_lines
       SET base_pay = ?, ot_pay = ?, service_charge = ?,
           other_additions = ?, other_deductions = ?,
-          gross_pay = ?, sso_amount = ?, tax_amount = ?, net_pay = ?,
+          gross_pay = ?, sso_amount = ?, tax_amount = ?,
+          drink_deductions = ?, net_pay = ?,
           salary_tax_mode_snapshot = ?,
           notes = COALESCE(?, notes),
           overridden = 1,
@@ -292,6 +301,7 @@ export async function PATCH(
       Math.round(gross * 100) / 100,
       Math.round(ssoAmount * 100) / 100,
       Math.round(taxAmount * 100) / 100,
+      Math.round(drinkDed * 100) / 100,
       Math.round(net * 100) / 100,
       taxMode,
       d.notes ?? null,

@@ -20,7 +20,8 @@ export type RbacPermissionKey =
   | "insigna.view"
   | "ascenda.view"
   | "accounta.manage"
-  | "delivera.manage";
+  | "delivera.manage"
+  | "partner.drink.redeem";
 
 export type RbacPermissionDef = {
   key: RbacPermissionKey;
@@ -73,6 +74,12 @@ export const RBAC_PERMISSIONS: RbacPermissionDef[] = [
     module: "DELIVERA",
     labelTh: "DELIVERA — เดลิเวอรี่ส่งเอง",
     descTh: "กระดานครัวรับออเดอร์เดลิเวอรี่ ยืนยันสลิป จัดการเมนู/โซนส่ง และทีมงานส่งสุข"
+  },
+  {
+    key: "partner.drink.redeem",
+    module: "PARTNER",
+    labelTh: "จ้อจี้ — สแกนรับเครื่องดื่ม",
+    descTh: "สแกน QR ของพนักงานเพื่อจ่ายเครื่องดื่มสวัสดิการ (สำหรับบัญชีพาร์ทเนอร์ เช่น จ้อจี้)"
   }
 ];
 

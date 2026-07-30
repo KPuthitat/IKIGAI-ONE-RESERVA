@@ -1636,7 +1636,43 @@ function runMigrations(db: Database.Database): void {
     // (e.g. HYPOPLARAEMIA rings the sale) but its sales belong in the partner's
     // own books (e.g. ศาลาชิลล์). NULL = don't auto-post.
     if (!has("income_branch_id")) db.exec("ALTER TABLE revshare_partners ADD COLUMN income_branch_id INTEGER REFERENCES branches(id)");
+    // drink_welfare (owner 2026-07-30): marks THIS partner (e.g. จ้อจี้ & friends)
+    // as the one that fulfils staff drink-welfare orders at its branch. Staff buy
+    // a drink (50/80), pay via payroll deduction, and the amounts feed this
+    // partner's payout round WITHOUT GP (it is not a POS venue sale). 0 = normal.
+    if (!has("drink_welfare")) db.exec("ALTER TABLE revshare_partners ADD COLUMN drink_welfare INTEGER NOT NULL DEFAULT 0");
   }
+
+  // ─── Staff drink welfare — จ้อจี้ & friends (owner 2026-07-30) ──────────────
+  // A clocked-in staff member with an unredeemed daily drink coupon can order a
+  // drink (50/80) from the branch's drink-welfare partner. The order shows a
+  // one-time QR; the partner scans it to fulfil (status→redeemed), which is when
+  // the amount LOCKS as a payroll deduction on the staff's period and joins the
+  // partner's no-GP payout for the month. Aggregated by (user, order_date) for
+  // payroll and (partner, order_date) for settlement — no period/settlement FK,
+  // so it works whether the round is built before or after redemption.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS partner_drink_orders (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL REFERENCES users(id),
+      branch_id   INTEGER NOT NULL REFERENCES branches(id),
+      partner_id  INTEGER NOT NULL REFERENCES revshare_partners(id),
+      coupon_id   INTEGER REFERENCES meal_coupons(id),  -- daily drink entitlement consumed
+      order_date  TEXT NOT NULL,                         -- YYYY-MM-DD (BKK)
+      amount      REAL NOT NULL,                         -- 50 or 80
+      token       TEXT NOT NULL UNIQUE,                  -- one-time QR token
+      status      TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','redeemed','expired','cancelled')),
+      expires_at  TEXT NOT NULL,                         -- ISO — QR/token validity
+      created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      redeemed_at TEXT,
+      redeemed_by INTEGER REFERENCES users(id)           -- the partner account that scanned
+    );
+    CREATE INDEX IF NOT EXISTS idx_partner_drink_orders_user
+      ON partner_drink_orders(user_id, order_date, status);
+    CREATE INDEX IF NOT EXISTS idx_partner_drink_orders_partner
+      ON partner_drink_orders(partner_id, order_date, status);
+  `);
 
   // ─── DELIVERA — self-delivery module (owner 2026-07-02) ─────────────────
   // Ported from a Supabase/RLS spec onto this repo's stack: SQLite + session
@@ -3294,6 +3330,14 @@ function runMigrations(db: Database.Database): void {
   }
   if (!plNames.has("holiday_minutes")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN holiday_minutes INTEGER NOT NULL DEFAULT 0");
+  }
+  // drink_deductions (owner 2026-07-30): staff drink-welfare purchases from จ้อจี้
+  // (paid by the staff, deducted here). A SEPARATE deduction column so it never
+  // collides with the admin-managed other_deductions; recomputed from the
+  // partner_drink_orders ledger at each line build/recompute. net_pay stores the
+  // amount AFTER this deduction.
+  if (!plNames.has("drink_deductions")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN drink_deductions REAL NOT NULL DEFAULT 0");
   }
 
   // Phase 1D v3 — payroll_periods.target ('pt' | 'ft' | 'all')
