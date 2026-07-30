@@ -20,21 +20,23 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER, branch_id INTEGER, partner_id INTEGER, coupon_id INTEGER,
     order_date TEXT, amount REAL, token TEXT UNIQUE, status TEXT DEFAULT 'pending',
+    payment_method TEXT DEFAULT 'payroll',
     expires_at TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, redeemed_at TEXT, redeemed_by INTEGER
   );
 `);
 // Branch 20 = NAMA (partner 1), 30 = EMIA (partner 2). User 10.
 const ins = db.prepare(
-  `INSERT INTO partner_drink_orders (user_id,branch_id,partner_id,order_date,amount,token,status)
-   VALUES (?,?,?,?,?,?,?)`
+  `INSERT INTO partner_drink_orders (user_id,branch_id,partner_id,order_date,amount,token,status,payment_method)
+   VALUES (?,?,?,?,?,?,?,?)`
 );
-ins.run(10, 20, 1, "2026-07-05", 50, "t1", "redeemed");   // NAMA, in range
-ins.run(10, 20, 1, "2026-07-12", 80, "t2", "redeemed");   // NAMA, in range
-ins.run(10, 30, 2, "2026-07-12", 50, "t3", "redeemed");   // EMIA, in range
-ins.run(10, 20, 1, "2026-07-15", 80, "t4", "pending");    // NAMA, NOT redeemed
-ins.run(10, 20, 1, "2026-07-16", 50, "t5", "cancelled");  // NAMA, cancelled
-ins.run(10, 20, 1, "2026-08-02", 80, "t6", "redeemed");   // NAMA, next month
-ins.run(11, 20, 1, "2026-07-12", 80, "t7", "redeemed");   // different staff
+ins.run(10, 20, 1, "2026-07-05", 50, "t1", "redeemed", "payroll");   // NAMA, in range
+ins.run(10, 20, 1, "2026-07-12", 80, "t2", "redeemed", "payroll");   // NAMA, in range
+ins.run(10, 30, 2, "2026-07-12", 50, "t3", "redeemed", "payroll");   // EMIA, in range
+ins.run(10, 20, 1, "2026-07-15", 80, "t4", "pending", "payroll");    // NAMA, NOT redeemed
+ins.run(10, 20, 1, "2026-07-16", 50, "t5", "cancelled", "payroll");  // NAMA, cancelled
+ins.run(10, 20, 1, "2026-08-02", 80, "t6", "redeemed", "payroll");   // NAMA, next month
+ins.run(11, 20, 1, "2026-07-12", 80, "t7", "redeemed", "payroll");   // different staff
+ins.run(10, 20, 1, "2026-07-19", 80, "t8", "redeemed", "cash");      // NAMA, staff-paid-direct (no payroll deduction)
 
 // ── payroll deduction driver (per user, branch + date scoped) ───────
 assert(sumRedeemedDrinksForUser(db, 10, "2026-07-01", "2026-07-31", 20) === 130,
@@ -50,24 +52,34 @@ assert(sumRedeemedDrinksForUser(db, 10, "2026-09-01", "2026-09-30", 20) === 0,
 assert(sumRedeemedDrinksForUser(db, 11, "2026-07-01", "2026-07-31", 20) === 80,
   "user11 NAMA ก.ค. → 80 (แยกตามคน)");
 
-// ── settlement no-GP driver (per partner, month scoped) ─────────────
+// ── settlement no-GP driver (per partner, month scoped, PAYROLL only) ───
+// t8 (฿80 cash) is excluded — the company doesn't forward cash drinks to จ้อจี้.
 assert(sumRedeemedDrinksForPartnerMonth(db, 1, 2026, 7) === 210,
-  "partner1(NAMA) ก.ค. → 210 (50+80+80; ตัด pending/cancelled/เดือนอื่น)");
+  "partner1(NAMA) ก.ค. → 210 (50+80+80 payroll; ตัด cash/pending/cancelled/เดือนอื่น)");
 assert(sumRedeemedDrinksForPartnerMonth(db, 2, 2026, 7) === 50,
   "partner2(EMIA) ก.ค. → 50");
 assert(sumRedeemedDrinksForPartnerMonth(db, 1, 2026, 8) === 80,
   "partner1 ส.ค. → 80 (เดือนถัดไปแยก)");
 
+// ── cash vs payroll split (owner 2026-07-30) ────────────────────────
+// A 'cash' drink is staff-paid-direct → NOT a payroll deduction, NOT the
+// company's payable, but still counted for จ้อจี้'s info.
+assert(sumRedeemedDrinksForUser(db, 10, "2026-07-01", "2026-07-31", 20) === 130,
+  "cash drink ไม่ถูกหักเงินเดือน (user10 NAMA ยังเป็น 130)");
+
 // ── welfare card drivers (owner 2026-07-30): summary by tier + by week ──
 const wsum = drinkWelfareSummary(db, 1, "2026-07-01", "2026-07-31");
-assert(wsum.count === 3 && wsum.total === 210, "welfare summary partner1 ก.ค. → 3 แก้ว / ฿210");
+assert(wsum.count === 3 && wsum.total === 210, "welfare summary partner1 ก.ค. → 3 แก้ว / ฿210 (payroll)");
 assert(wsum.byTier.length === 2, "welfare byTier มี 2 เรท (50/80)");
 assert(wsum.byTier.find((t) => t.amount === 80)?.count === 2, "welfare ฿80 × 2 แก้ว");
 assert(wsum.byTier.find((t) => t.amount === 50)?.subtotal === 50, "welfare ฿50 × 1 = 50");
+assert(wsum.cashCount === 1 && wsum.cashTotal === 80, "welfare cash → 1 แก้ว / ฿80 (แยกจากยอดบริษัทจ่าย)");
 const wbw = drinkWelfareByWeek(db, 1, 2026, 7);
-assert(wbw.month.count === 3 && wbw.month.total === 210, "welfareByWeek month → 3 แก้ว / ฿210");
-assert(wbw.weeks.reduce((s, w) => s + w.summary.total, 0) === 210, "welfareByWeek: ผลรวมทุกสัปดาห์ = ยอดเดือน");
-assert(wbw.weeks.every((w) => w.summary.count > 0), "welfareByWeek: โชว์เฉพาะสัปดาห์ที่มีการเบิก");
+assert(wbw.month.count === 3 && wbw.month.total === 210, "welfareByWeek month → 3 แก้ว / ฿210 (payroll)");
+assert(wbw.month.cashCount === 1 && wbw.month.cashTotal === 80, "welfareByWeek month cash → 1 แก้ว / ฿80");
+assert(wbw.weeks.reduce((s, w) => s + w.summary.total, 0) === 210, "welfareByWeek: ผลรวมทุกสัปดาห์ (payroll) = ยอดเดือน");
+assert(wbw.weeks.reduce((s, w) => s + w.summary.cashTotal, 0) === 80, "welfareByWeek: ผลรวม cash ทุกสัปดาห์ = ฿80");
+assert(wbw.weeks.every((w) => w.summary.count + w.summary.cashCount > 0), "welfareByWeek: โชว์เฉพาะสัปดาห์ที่มีการเบิก (payroll หรือ cash)");
 
 // ── redeem 'lock' + create 'replace pending' state transitions ──────
 // New flow (owner 2026-07-30): pending orders carry amount 0; the จ้อจี้ team

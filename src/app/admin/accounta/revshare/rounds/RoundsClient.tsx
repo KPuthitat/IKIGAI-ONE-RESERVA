@@ -11,7 +11,7 @@ import PinPromptModal from "@/app/components/PinPromptModal";
 import { useConfirm } from "@/app/components/useConfirm";
 import { DailyCardPreview, WeeklyCardPreview, DrinkWelfareCardPreview, SendPreviewModal } from "./CardPreviews";
 
-type DrinkSummary = { count: number; total: number; byTier: Array<{ amount: number; count: number; subtotal: number }> };
+type DrinkSummary = { count: number; total: number; byTier: Array<{ amount: number; count: number; subtotal: number }>; cashCount: number; cashTotal: number };
 type DrinkWelfareData = {
   weeks: Array<{ weekStart: string; start: string; end: string; label: string; summary: DrinkSummary }>;
   month: DrinkSummary;
@@ -417,7 +417,7 @@ export default function RoundsClient({
               </div>
               <button type="button" onClick={() => setSendModal({
                 key: `dw-${w.weekStart}`, heading: "ส่งสรุปสวัสดิการเครื่องดื่ม (สัปดาห์)",
-                preview: <DrinkWelfareCardPreview shop={shop} sellerName={sellerName} periodLabel={roundLabel(w.start, w.end)} count={w.summary.count} total={w.summary.total} vatRate={vatRate} byTier={w.summary.byTier} />,
+                preview: <DrinkWelfareCardPreview shop={shop} sellerName={sellerName} periodLabel={roundLabel(w.start, w.end)} count={w.summary.count} total={w.summary.total} vatRate={vatRate} byTier={w.summary.byTier} cashCount={w.summary.cashCount} cashTotal={w.summary.cashTotal} />,
                 body: { kind: "drink_welfare", week_start: w.weekStart }
               })} className="btn-secondary !py-1 !px-2.5 !text-xs shrink-0">ส่งการ์ดสัปดาห์นี้</button>
             </div>
@@ -429,7 +429,7 @@ export default function RoundsClient({
             </div>
             <button type="button" onClick={() => setSendModal({
               key: "dw-month", heading: "ส่งสรุปสวัสดิการเครื่องดื่ม (สิ้นเดือน)",
-              preview: <DrinkWelfareCardPreview shop={shop} sellerName={sellerName} periodLabel={`${TH_MONTHS_FULL[month]} ${year + 543}`} count={drinkWelfare.month.count} total={drinkWelfare.month.total} vatRate={vatRate} byTier={drinkWelfare.month.byTier} />,
+              preview: <DrinkWelfareCardPreview shop={shop} sellerName={sellerName} periodLabel={`${TH_MONTHS_FULL[month]} ${year + 543}`} count={drinkWelfare.month.count} total={drinkWelfare.month.total} vatRate={vatRate} byTier={drinkWelfare.month.byTier} cashCount={drinkWelfare.month.cashCount} cashTotal={drinkWelfare.month.cashTotal} />,
               body: { kind: "drink_welfare" }
             })} className="btn-primary !py-1 !px-2.5 !text-xs shrink-0">ส่งการ์ดสิ้นเดือน</button>
           </div>

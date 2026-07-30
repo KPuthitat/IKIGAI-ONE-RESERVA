@@ -83,9 +83,15 @@ export function createDrinkOrder(
   return { ok: true, orderId, token, expiresAt: coupon.redeem_before, partnerName: partner.name };
 }
 
+/** How the staff pays for the drink (owner 2026-07-30). */
+export type PaymentMethod = "payroll" | "cash";
+export function isPaymentMethod(s: string): s is PaymentMethod {
+  return s === "payroll" || s === "cash";
+}
+
 export type RedeemOrderResult =
-  | { ok: true; amount: number; staffName: string; orderDate: string }
-  | { ok: false; error: "not_found" | "already" | "expired" | "wrong_partner" | "bad_amount" };
+  | { ok: true; amount: number; staffName: string; orderDate: string; paymentMethod: PaymentMethod }
+  | { ok: false; error: "not_found" | "already" | "expired" | "wrong_partner" | "bad_amount" | "bad_method" };
 
 /** Partner (จ้อจี้) redeems by scanning the QR token. Flips the order to
  *  redeemed and consumes the underlying drink coupon — this is the moment the
@@ -93,11 +99,13 @@ export type RedeemOrderResult =
  *  branch(es) it may fulfil for. Idempotent: re-scan of a redeemed token → 409
  *  ('already'). */
 export function redeemDrinkOrder(
-  token: string, redeemerUserId: number, redeemerBranchIds: number[], amount: number
+  token: string, redeemerUserId: number, redeemerBranchIds: number[], amount: number, paymentMethod: string
 ): RedeemOrderResult {
   const db = getDb();
-  // The จ้อจี้ team picks the price tier (50/80) at scan time (owner 2026-07-30).
+  // The จ้อจี้ team picks the price tier (50/80) + payment method at scan time
+  // (owner 2026-07-30). 'cash' = staff paid จ้อจี้ directly → no payroll deduction.
   if (!isDrinkTier(amount)) return { ok: false, error: "bad_amount" };
+  if (!isPaymentMethod(paymentMethod)) return { ok: false, error: "bad_method" };
   const order = db.prepare(
     `SELECT o.id, o.user_id, o.branch_id, o.amount, o.status, o.expires_at, o.coupon_id, o.order_date,
             COALESCE(u.nickname_th, u.display_name) AS staff_name
@@ -121,14 +129,14 @@ export function redeemDrinkOrder(
   }
 
   const now = new Date().toISOString();
-  const label = `เครื่องดื่มจ้อจี้ ฿${amount}`;
+  const label = `เครื่องดื่มจ้อจี้ ฿${amount}${paymentMethod === "cash" ? " (จ่ายเอง)" : ""}`;
   const changed = db.transaction(() => {
-    // Set the จ้อจี้-chosen amount as the order is redeemed (locks the charge).
+    // Set the จ้อจี้-chosen amount + payment method as the order is redeemed.
     const info = db.prepare(
       `UPDATE partner_drink_orders
-          SET status = 'redeemed', amount = ?, redeemed_at = ?, redeemed_by = ?
+          SET status = 'redeemed', amount = ?, payment_method = ?, redeemed_at = ?, redeemed_by = ?
         WHERE id = ? AND status = 'pending'`
-    ).run(amount, now, redeemerUserId, order.id);
+    ).run(amount, paymentMethod, now, redeemerUserId, order.id);
     if (info.changes === 0) return false; // lost a race — someone redeemed first
     // Consume the daily drink coupon so it can't be re-ordered or menu-redeemed.
     if (order.coupon_id != null) {
@@ -143,7 +151,7 @@ export function redeemDrinkOrder(
   })();
   if (!changed) return { ok: false, error: "already" };
 
-  return { ok: true, amount, staffName: order.staff_name, orderDate: order.order_date };
+  return { ok: true, amount, staffName: order.staff_name, orderDate: order.order_date, paymentMethod };
 }
 
 /** Sum of a staff member's REDEEMED drink orders within a date range (inclusive,
@@ -159,14 +167,15 @@ export function sumRedeemedDrinksForUser(
   const r = db.prepare(
     `SELECT COALESCE(SUM(amount), 0) AS total
        FROM partner_drink_orders
-      WHERE user_id = ? AND status = 'redeemed'
+      WHERE user_id = ? AND status = 'redeemed' AND payment_method = 'payroll'
         AND order_date >= ? AND order_date <= ? ${branchClause}`
   ).get(...params) as { total: number };
   return r.total;
 }
 
-/** Sum of a partner's REDEEMED drink orders in a calendar month — the no-GP
- *  amount added to that partner's payout settlement. */
+/** Sum of a partner's REDEEMED, PAYROLL drink orders in a calendar month — the
+ *  no-GP amount the company forwards to that partner. 'cash' drinks are excluded
+ *  (the staff paid จ้อจี้ directly, so the company owes nothing on them). */
 export function sumRedeemedDrinksForPartnerMonth(
   db: DbHandle, partnerId: number, year: number, month: number
 ): number {
@@ -175,7 +184,7 @@ export function sumRedeemedDrinksForPartnerMonth(
   const r = db.prepare(
     `SELECT COALESCE(SUM(amount), 0) AS total
        FROM partner_drink_orders
-      WHERE partner_id = ? AND status = 'redeemed'
+      WHERE partner_id = ? AND status = 'redeemed' AND payment_method = 'payroll'
         AND substr(order_date, 1, 7) = ?`
   ).get(partnerId, prefix) as { total: number };
   return r.total;
@@ -186,28 +195,37 @@ export function sumRedeemedDrinksForPartnerMonth(
  *  separate staff-drink-welfare card the company sends จ้อจี้. Partner-facing:
  *  totals + per-tier counts only (no staff names). */
 export type DrinkWelfareSummary = {
-  count: number;                       // total drinks redeemed
-  total: number;                       // baht total (VAT-inclusive — what the company pays จ้อจี้)
+  // 'payroll' drinks — what the company forwards to จ้อจี้ (the card's payable).
+  count: number;
+  total: number;                       // VAT-inclusive
   byTier: Array<{ amount: number; count: number; subtotal: number }>;
+  // 'cash' drinks — staff paid จ้อจี้ directly (info only; NOT company's payable).
+  cashCount: number;
+  cashTotal: number;
 };
 export function drinkWelfareSummary(
   db: DbHandle, partnerId: number, startDate: string, endDate: string
 ): DrinkWelfareSummary {
   const rows = db.prepare(
-    `SELECT amount, COUNT(*) AS n
+    `SELECT amount, payment_method AS method, COUNT(*) AS n
        FROM partner_drink_orders
       WHERE partner_id = ? AND status = 'redeemed'
         AND order_date >= ? AND order_date <= ?
-      GROUP BY amount
+      GROUP BY amount, payment_method
       ORDER BY amount`
-  ).all(partnerId, startDate, endDate) as Array<{ amount: number; n: number }>;
+  ).all(partnerId, startDate, endDate) as Array<{ amount: number; method: string; n: number }>;
+  const tierMap = new Map<number, number>();
+  let cashCount = 0, cashTotal = 0;
+  for (const r of rows) {
+    if (r.method === "cash") { cashCount += r.n; cashTotal += r.amount * r.n; }
+    else tierMap.set(r.amount, (tierMap.get(r.amount) ?? 0) + r.n);
+  }
   let count = 0, total = 0;
-  const byTier = rows.map((r) => {
-    const subtotal = round2(r.amount * r.n);
-    count += r.n; total += subtotal;
-    return { amount: r.amount, count: r.n, subtotal };
+  const byTier = [...tierMap.entries()].sort((a, b) => a[0] - b[0]).map(([amount, n]) => {
+    const subtotal = round2(amount * n); count += n; total += subtotal;
+    return { amount, count: n, subtotal };
   });
-  return { count, total: round2(total), byTier };
+  return { count, total: round2(total), byTier, cashCount, cashTotal: round2(cashTotal) };
 }
 
 /** Month's redeemed drink welfare grouped into ISO weeks (Mon start) + a month
@@ -219,10 +237,10 @@ export function drinkWelfareByWeek(
 ): { weeks: DrinkWelfareWeek[]; month: DrinkWelfareSummary } {
   const mm = String(month).padStart(2, "0");
   const rows = db.prepare(
-    `SELECT order_date, amount FROM partner_drink_orders
+    `SELECT order_date, amount, payment_method AS method FROM partner_drink_orders
       WHERE partner_id = ? AND status = 'redeemed' AND substr(order_date, 1, 7) = ?
       ORDER BY order_date`
-  ).all(partnerId, `${year}-${mm}`) as Array<{ order_date: string; amount: number }>;
+  ).all(partnerId, `${year}-${mm}`) as Array<{ order_date: string; amount: number; method: string }>;
 
   const mondayOf = (iso: string): string => {
     const d = new Date(`${iso}T00:00:00Z`);
@@ -230,27 +248,33 @@ export function drinkWelfareByWeek(
     d.setUTCDate(d.getUTCDate() + (dow === 0 ? -6 : 1 - dow));
     return d.toISOString().slice(0, 10);
   };
-  const wk = new Map<string, { start: string; end: string; rows: Array<{ amount: number }> }>();
+  type Item = { amount: number; method: string };
+  const wk = new Map<string, { start: string; end: string; rows: Item[] }>();
   for (const r of rows) {
     const k = mondayOf(r.order_date);
+    const item: Item = { amount: r.amount, method: r.method };
     const g = wk.get(k);
-    if (!g) wk.set(k, { start: r.order_date, end: r.order_date, rows: [{ amount: r.amount }] });
-    else { g.rows.push({ amount: r.amount }); if (r.order_date < g.start) g.start = r.order_date; if (r.order_date > g.end) g.end = r.order_date; }
+    if (!g) wk.set(k, { start: r.order_date, end: r.order_date, rows: [item] });
+    else { g.rows.push(item); if (r.order_date < g.start) g.start = r.order_date; if (r.order_date > g.end) g.end = r.order_date; }
   }
-  const summarize = (items: Array<{ amount: number }>): DrinkWelfareSummary => {
-    const m = new Map<number, number>();
-    for (const it of items) m.set(it.amount, (m.get(it.amount) ?? 0) + 1);
+  const summarize = (items: Item[]): DrinkWelfareSummary => {
+    const tierMap = new Map<number, number>();
+    let cashCount = 0, cashTotal = 0;
+    for (const it of items) {
+      if (it.method === "cash") { cashCount += 1; cashTotal += it.amount; }
+      else tierMap.set(it.amount, (tierMap.get(it.amount) ?? 0) + 1);
+    }
     let count = 0, total = 0;
-    const byTier = [...m.entries()].sort((a, b) => a[0] - b[0]).map(([amount, n]) => {
+    const byTier = [...tierMap.entries()].sort((a, b) => a[0] - b[0]).map(([amount, n]) => {
       const subtotal = round2(amount * n); count += n; total += subtotal;
       return { amount, count: n, subtotal };
     });
-    return { count, total: round2(total), byTier };
+    return { count, total: round2(total), byTier, cashCount, cashTotal: round2(cashTotal) };
   };
   const weeks: DrinkWelfareWeek[] = [...wk.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([weekStart, g]) => ({ weekStart, start: g.start, end: g.end, label: `${g.start} – ${g.end}`, summary: summarize(g.rows) }));
-  return { weeks, month: summarize(rows.map((r) => ({ amount: r.amount }))) };
+  return { weeks, month: summarize(rows.map((r) => ({ amount: r.amount, method: r.method }))) };
 }
 
 /** A staff member's drink orders for a date (newest first) — for the staff UI. */

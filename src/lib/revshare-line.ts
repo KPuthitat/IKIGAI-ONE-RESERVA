@@ -153,6 +153,7 @@ export type DrinkWelfareCard = {
   shop: string; sellerName: string; periodLabel: string;
   count: number; total: number; vatRate: number;
   byTier: Array<{ amount: number; count: number; subtotal: number }>;
+  cashCount: number; cashTotal: number;   // staff-paid-direct (info; not the company's payable)
 };
 export function revshareDrinkWelfareFlex(d: DrinkWelfareCard): FlexMsg {
   const v = salesVat(d.total, d.vatRate, true); // 50/80 already include VAT
@@ -166,7 +167,7 @@ export function revshareDrinkWelfareFlex(d: DrinkWelfareCard): FlexMsg {
         type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
         contents: [
           { type: "text", text: d.shop, weight: "bold", size: "lg", wrap: true },
-          { type: "text", text: `สรุปโดย: ${d.sellerName} · ${d.count} แก้ว`, size: "xxs", color: "#999999", wrap: true },
+          { type: "text", text: `สรุปโดย: ${d.sellerName} · หักเงินเดือน ${d.count} แก้ว`, size: "xxs", color: "#999999", wrap: true },
           sep,
           ...d.byTier.map((t) => kv(`฿${t.amount} × ${t.count} แก้ว`, baht(t.subtotal), { size: "xs" })),
           kv("รวม (รวม VAT)", baht(v.total), { bold: true }),
@@ -175,7 +176,10 @@ export function revshareDrinkWelfareFlex(d: DrinkWelfareCard): FlexMsg {
           { type: "box", layout: "vertical", margin: "md", contents: [
             { type: "text", text: "ยอดที่บริษัทชำระคู่ค้า (รวม VAT)", size: "xs", color: "#888888" },
             { type: "text", text: baht(v.total), size: "xxl", weight: "bold", color: "#0f6e56" }
-          ] }
+          ] },
+          ...(d.cashCount > 0
+            ? [sep, kv(`จ่ายเอง (พนักงานจ่ายตรง · info) · ${d.cashCount} แก้ว`, baht(d.cashTotal), { size: "xxs" })]
+            : [])
         ]
       },
       footer: footer("อ่านจากการเบิกสิทธิ์ของพนักงาน · ไม่คิด GP · คู่ค้าออกใบกำกับภาษีให้บริษัท")

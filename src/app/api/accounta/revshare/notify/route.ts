@@ -96,7 +96,7 @@ export async function POST(req: Request) {
     const sum = drinkWelfareSummary(getDb(), partnerId, start, end);
     if (sum.count === 0) return NextResponse.json({ error: "no_drinks", message: "ช่วงนี้ยังไม่มีการเบิกเครื่องดื่ม" }, { status: 400 });
     const periodLabel = week_start ? roundLabel(start, end) : monthLabel;
-    flex = revshareDrinkWelfareFlex({ shop, sellerName: seller, periodLabel, count: sum.count, total: sum.total, vatRate, byTier: sum.byTier });
+    flex = revshareDrinkWelfareFlex({ shop, sellerName: seller, periodLabel, count: sum.count, total: sum.total, vatRate, byTier: sum.byTier, cashCount: sum.cashCount, cashTotal: sum.cashTotal });
   } else {
     const r = preview.result;
     flex = revshareSettlementFlex({
