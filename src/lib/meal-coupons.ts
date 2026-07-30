@@ -65,11 +65,32 @@ export function isEligibleClockIn(
   return clockInMinutes <= timeToMinutes(shiftStart) + cfg.graceMin;
 }
 
-/** Issue today's food + drink coupons for a user, once per (user, date).
- *  Returns the pop-up payload, or null if already issued today. */
+/** Minimum rostered shift length (minutes) to qualify for the FREE lunch meal
+ *  (owner 2026-07-30): "กะที่ลงไว้เกิน 8 ชั่วโมง" → strictly more than 8h. */
+export const MEAL_FOOD_MIN_SHIFT_MINUTES = 480;
+
+/** สวัสดิการอาหารกลางวัน eligibility (owner 2026-07-30): BOTH the clock-in gate
+ *  (eligible start time + not too late, see isEligibleClockIn) AND a rostered
+ *  shift strictly longer than 8h. The drink coupon keeps the looser clock-in
+ *  gate — this stricter rule is food-only. */
+export function isFoodEligible(
+  cfg: MealCouponConfig, shiftStart: string | null, clockInMinutes: number,
+  scheduledMinutes: number
+): boolean {
+  return isEligibleClockIn(cfg, shiftStart, clockInMinutes)
+    && scheduledMinutes > MEAL_FOOD_MIN_SHIFT_MINUTES;
+}
+
+/** Issue today's coupons for a user, once per (user, date). `opts` selects
+ *  which types to issue — food follows the stricter >8h rule, drink the looser
+ *  clock-in gate (owner 2026-07-30), so the caller decides each independently.
+ *  Returns the pop-up payload, or null if already issued today / nothing to
+ *  issue. */
 export function issueDailyCoupons(
-  userId: number, branchId: number, dateBkk: string
+  userId: number, branchId: number, dateBkk: string,
+  opts: { food: boolean; drink: boolean }
 ): { food: boolean; drink: boolean; redeemBefore: string } | null {
+  if (!opts.food && !opts.drink) return null;
   const db = getDb();
   const existing = db.prepare(
     "SELECT COUNT(*) AS n FROM meal_coupons WHERE user_id = ? AND coupon_date = ?"
@@ -84,11 +105,11 @@ export function issueDailyCoupons(
      VALUES (?, ?, ?, 'issued', ?, ?, ?)`
   );
   const txn = db.transaction(() => {
-    ins.run(userId, dateBkk, "food", branchId, redeemBeforeIso, now);
-    ins.run(userId, dateBkk, "drink", branchId, redeemBeforeIso, now);
+    if (opts.food) ins.run(userId, dateBkk, "food", branchId, redeemBeforeIso, now);
+    if (opts.drink) ins.run(userId, dateBkk, "drink", branchId, redeemBeforeIso, now);
   });
   txn();
-  return { food: true, drink: true, redeemBefore: cfg.redeemCutoff };
+  return { food: opts.food, drink: opts.drink, redeemBefore: cfg.redeemCutoff };
 }
 
 function effectiveStatus(status: MealCouponStatus, redeemBefore: string): MealCouponStatus {
