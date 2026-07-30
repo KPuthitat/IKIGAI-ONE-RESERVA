@@ -33,6 +33,11 @@ const Body = z.object({
   salary_tax_mode: z.enum(["sso", "wht"]).optional(),
   // วันที่มีผลของการเปลี่ยน PT→FT (owner 2026-07-13) — ใช้เป็น ft_started_at
   ft_effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // Correct a born-FT that was wrongly stamped as a PT→FT weekly transition
+  // (owner 2026-07-30): clears ft_started_at + forces pay_cycle monthly so the
+  // person lands in the FT-monthly table and the first partial month prorates by
+  // hire_date. "เป็นประจำมาแต่แรก ไม่เคยเป็น PT" in the edit form.
+  clear_ft_transition: z.boolean().optional(),
   // LINE userId (33-char string starting with 'U'). Empty / null = unbind.
   line_user_id: z.string().max(64).nullable().optional(),
   // Expected shift start "HH:MM" — used by late-detection. Empty / null = unset
@@ -179,21 +184,43 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     delete parsed.data.role;
   }
 
-  // PT→FT transition (owner 2026-07-12). pay_cycle for FT is system-managed:
-  //  • converting to FT → first month weekly (fix-rate + WHT), stamp ft_started_at
+  // FT pay_cycle is system-managed. Two DIFFERENT ways to become FT (owner
+  // 2026-07-30 — เกิดมาเป็น FT ไม่ใช่การแปลงจาก PT):
+  //  • GENUINE PT→FT conversion (was actually 'pt') → first month weekly
+  //    (fix-rate + WHT), stamp ft_started_at. Only 'pt' qualifies — someone who
+  //    "รับค่าตอบแทนแบบพาร์ทไทม์มาก่อน" is what this transition month is for.
+  //  • BORN-FT new hire (was NULL/unclassified → ft) → plain monthly FT: NO
+  //    ft_started_at, pay_cycle stays monthly. Lands in the FT-monthly table and
+  //    the first partial month prorates DAILY by hire_date (isFtPartialMonth) —
+  //    the previous `!wasFt` test wrongly forced these into the weekly PT round.
   //  • already FT → don't let the form's hardcoded 'monthly' cut short an
-  //    in-progress weekly transition; the boot migration flips to monthly on time
+  //    in-progress weekly transition; the boot migration flips to monthly on time.
+  //  • clear_ft_transition → fix a born-FT wrongly stamped: clear ft_started_at +
+  //    force monthly (handled in the ft_started_at section below).
   let convertToFt = false;
-  if (userCanViewPayroll(user)) {
+  const clearFtTransition = parsed.data.clear_ft_transition === true
+    && userCanViewPayroll(user)
+    && (parsed.data.employment_type ?? target.employment_type) === "ft";
+  if (userCanViewPayroll(user) && !clearFtTransition) {
+    const wasPt = target.employment_type === "pt";
     const wasFt = target.employment_type === "ft";
     const nowFt = parsed.data.employment_type === "ft";
-    if (!wasFt && nowFt) {
+    if (wasPt && nowFt) {
       convertToFt = true;
       parsed.data.pay_cycle = "weekly";
     } else if (wasFt && nowFt) {
       delete parsed.data.pay_cycle;
     }
+    // born-FT (NULL/other → ft): leave pay_cycle as the form sent it (monthly),
+    // and do NOT stamp ft_started_at — the monthly partial-month proration path
+    // (keyed on hire_date) handles the first incomplete month.
   }
+  if (clearFtTransition) {
+    // Force monthly; the ft_started_at clear happens in the stamp section below.
+    parsed.data.pay_cycle = "monthly";
+  }
+  // Never persist the control flag as a column.
+  delete (parsed.data as { clear_ft_transition?: boolean }).clear_ft_transition;
 
   // Build dynamic UPDATE — only provided fields
   const fields: string[] = [];
@@ -246,7 +273,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // Stamp the PT→FT effective date (owner-entered) so the pay engine keeps them
   // weekly for that calendar month, then the boot migration flips them to
   // monthly. Falls back to today if the client didn't send one.
-  if (convertToFt) {
+  if (clearFtTransition) {
+    // Born-FT correction — clear the transition stamp so ftEffectiveCycle +
+    // the payroll staffWhere both treat them as a plain monthly FT.
+    fields.push("ft_started_at = ?");
+    vals.push(null);
+  } else if (convertToFt) {
     const eff = parsed.data.ft_effective_date
       ?? new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
     fields.push("ft_started_at = ?");

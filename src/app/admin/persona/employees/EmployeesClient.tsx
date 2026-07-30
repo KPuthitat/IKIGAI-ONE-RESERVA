@@ -533,6 +533,10 @@ function EditModal({
   // field stays hidden unless the admin ticks this reveal toggle to backfill a
   // legacy convert that predates the field.
   const [wasPtReveal, setWasPtReveal] = useState<boolean>(false);
+  // "เป็นประจำมาแต่แรก (ไม่เคยเป็น PT)" — correct a born-FT wrongly stamped with a
+  // PT→FT weekly transition (owner 2026-07-30). Clears ft_started_at + forces
+  // monthly on save so they compute as a plain monthly FT.
+  const [clearFtTransition, setClearFtTransition] = useState<boolean>(false);
   const [hireDate, setHireDate] = useState<string>(employee.hire_date ?? "");
   // Phase 1D — Payroll fields
   const [employeeCode, setEmployeeCode] = useState<string>(employee.employee_code ?? "");
@@ -697,21 +701,27 @@ function EditModal({
   }
 
   async function save() {
-    // Guided PT→ประจำ conversion (owner 2026-07-06): moving someone into
-    // full-time (from PT / unset) puts them on the monthly-salary payroll
-    // table — require the เงินเดือน/เดือน first so they never land there with a
-    // blank/zero salary and get computed wrong.
-    const isConvertingToFt = employmentType === "ft" && employee.employment_type !== "ft";
-    if (isConvertingToFt) {
+    // Two ways to become FT (owner 2026-07-30). A GENUINE PT→FT conversion (was
+    // actually 'pt') runs the first-month weekly transition. A BORN-FT hire (from
+    // NULL/unclassified) is a plain monthly FT whose first partial month prorates
+    // daily by hire_date — no weekly transition, no ft_started_at.
+    const isConvertingToFt = employmentType === "ft" && employee.employment_type === "pt";
+    const isNewFt = employmentType === "ft" && employee.employment_type !== "ft" && employee.employment_type !== "pt";
+    if (isConvertingToFt || isNewFt) {
       const sal = Number(monthlySalary);
       if (monthlySalary.trim() === "" || !Number.isFinite(sal) || sal <= 0) {
         setErr("กรุณากรอกเงินเดือน (บาท/เดือน) ก่อนย้ายเป็นพนักงานประจำ");
         return;
       }
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(ftEffectiveDate)) {
-        setErr("กรุณาระบุวันที่มีผล (เริ่มเป็นประจำ) ก่อนบันทึก");
-        return;
-      }
+    }
+    if (isConvertingToFt && !/^\d{4}-\d{2}-\d{2}$/.test(ftEffectiveDate)) {
+      setErr("กรุณาระบุวันที่มีผล (เริ่มเป็นประจำ) ก่อนบันทึก");
+      return;
+    }
+    // A born-FT hire needs a hire date so the first partial month can prorate.
+    if (isNewFt && !/^\d{4}-\d{2}-\d{2}$/.test(hireDate)) {
+      setErr("กรุณาระบุวันที่เริ่มงาน (เพื่อคำนวณเดือนแรกแบบรายวัน) ก่อนบันทึก");
+      return;
     }
     setBusy(true);
     setErr(null);
@@ -757,7 +767,12 @@ function EditModal({
       // ft_started_at = today and wrongly bill them a weekly transition month.
       const isAlreadyFt = employmentType === "ft" && employee.employment_type === "ft";
       const ftDateFieldShown = Boolean(employee.ft_started_at) || wasPtReveal;
-      if (isConvertingToFt) {
+      if (clearFtTransition && isAlreadyFt) {
+        // Born-FT correction (owner 2026-07-30): clear the wrongly-stamped
+        // transition so they compute as a plain monthly FT. Suppresses any
+        // ft_effective_date send below.
+        body.clear_ft_transition = true;
+      } else if (isConvertingToFt) {
         body.ft_effective_date = ftEffectiveDate;
       } else if (
         isAlreadyFt &&
@@ -1111,10 +1126,11 @@ function EditModal({
                   </p>
                 </div>
               )}
-              {employmentType === "ft" && employee.employment_type !== "ft" && (
+              {/* GENUINE PT→FT conversion (เดิมเป็นพาร์ทไทม์จริง) — เดือนแรกรายสัปดาห์ */}
+              {employmentType === "ft" && employee.employment_type === "pt" && (
                 <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 space-y-2">
                   <div>
-                    กำลังย้าย <span className="font-semibold">{employee.display_name}</span> เป็นพนักงานประจำ —
+                    กำลังย้าย <span className="font-semibold">{employee.display_name}</span> จาก<b>พาร์ทไทม์</b>เป็นพนักงานประจำ —
                     กรอกเงินเดือน (บาท/เดือน) ให้เรียบร้อยก่อนบันทึก
                   </div>
                   <div>
@@ -1134,6 +1150,19 @@ function EditModal({
                   </div>
                 </div>
               )}
+              {/* BORN-FT new hire (ไม่เคยเป็นพาร์ทไทม์) — เดือนแรกคิดรายวัน (owner 2026-07-30) */}
+              {employmentType === "ft" && employee.employment_type !== "ft" && employee.employment_type !== "pt" && (
+                <div className="mb-3 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 space-y-2">
+                  <div>
+                    รับ <span className="font-semibold">{employee.display_name}</span> เข้าเป็น<b>พนักงานประจำรายเดือน</b> —
+                    กรอกเงินเดือน (บาท/เดือน) + <b>วันที่เริ่มงาน</b>ให้เรียบร้อยก่อนบันทึก
+                  </div>
+                  <div className="leading-relaxed">
+                    ถ้าเริ่มงานไม่เต็มเดือน <b>เดือนแรกคิดรายวัน</b> = เงินเดือน ÷ 30 × จำนวนวันที่ทำจริง ·
+                    จ่าย<b>วันที่ 5 ของเดือนถัดไป</b>พร้อมพนักงานประจำคนอื่น (ไม่ใช่รอบพาร์ทไทม์รายสัปดาห์)
+                  </div>
+                </div>
+              )}
               {/* แก้ไข/เติมวันที่เริ่มเป็นประจำ ให้คนที่เป็น FT อยู่แล้ว (owner 2026-07-19).
                   จำเป็นสำหรับคนที่ย้าย PT→ประจำ ก่อนระบบมีฟิลด์นี้ (ft_started_at = NULL)
                   จึงถูกคิดเป็นประจำเต็มเดือน แทนที่จะเป็นเดือนเปลี่ยนผ่าน (รายสัปดาห์). */}
@@ -1142,7 +1171,16 @@ function EditModal({
                   (owner 2026-07-21 — ให้การคำนวณถูกต้อง ไม่วุ่นวาย). */}
               {employmentType === "ft" && employee.employment_type === "ft" && (
                 <div className="mb-3">
-                  {employee.ft_started_at || wasPtReveal ? (
+                  {clearFtTransition ? (
+                    <label className="flex items-start gap-2 text-xs text-emerald-700 cursor-pointer rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2">
+                      <input type="checkbox" checked={clearFtTransition} className="mt-0.5"
+                        onChange={(e) => setClearFtTransition(e.target.checked)} />
+                      <span>
+                        <b>เป็นพนักงานประจำมาแต่แรก (ไม่เคยเป็น PT)</b> — บันทึกแล้วจะล้างวันเริ่มเป็นประจำ
+                        + คิดเป็น<b>รายเดือน</b>ตั้งแต่แรก (เดือนแรกไม่เต็มคิดรายวัน) แล้วสั่งคำนวณรอบที่เกี่ยวข้องใหม่
+                      </span>
+                    </label>
+                  ) : employee.ft_started_at || wasPtReveal ? (
                     <>
                       <label className="label">วันที่เริ่มเป็นพนักงานประจำ</label>
                       <input
@@ -1157,6 +1195,13 @@ function EditModal({
                           ? "เดือนของวันที่นี้ = เดือนเปลี่ยนผ่าน (จ่ายรายสัปดาห์รวมกับพาร์ทไทม์ + WHT 3%), เดือนถัดไปจ่ายเต็มเดือน. แก้เฉพาะเมื่อวันเริ่มจริงคลาดเคลื่อน แล้วสั่งคำนวณรอบที่เกี่ยวข้องใหม่."
                           : "ระบุวันที่ย้ายจากพาร์ทไทม์มาเป็นประจำจริง แล้วสั่งคำนวณรอบเดือนนั้นใหม่. (เฉพาะคนที่เคยเป็นพาร์ทไทม์เท่านั้น)"}
                       </p>
+                      {employee.ft_started_at && (
+                        <label className="mt-2 flex items-start gap-2 text-xs text-slate-500 cursor-pointer">
+                          <input type="checkbox" checked={false} className="mt-0.5"
+                            onChange={(e) => setClearFtTransition(e.target.checked)} />
+                          เป็นพนักงานประจำมาแต่แรก (ไม่เคยเป็น PT) — ล้างเดือนเปลี่ยนผ่านนี้ทิ้ง คิดเป็นรายเดือนตั้งแต่แรก
+                        </label>
+                      )}
                     </>
                   ) : (
                     <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
