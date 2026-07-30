@@ -15,7 +15,8 @@ const fmtMin = (min: number) => Math.round(min).toLocaleString();
 
 export default function SvcCalcModal({
   displayName, grossAllocation, netAllocation, forfeited, forfeitReason,
-  dailyBreakdown, taxMode, whtAmount, netPayout, excludedDays
+  dailyBreakdown, taxMode, whtAmount, netPayout, excludedDays,
+  foodClawback = 0, foodClawbackDays = []
 }: {
   displayName: string;
   grossAllocation: number;
@@ -27,6 +28,8 @@ export default function SvcCalcModal({
   whtAmount: number;
   netPayout: number;
   excludedDays: Array<{ date: string; reason: string }>;
+  foodClawback?: number;
+  foodClawbackDays?: Array<{ date: string; credit: number }>;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -110,6 +113,20 @@ export default function SvcCalcModal({
                 </ul>
               </div>
             )}
+            {foodClawback > 0 && foodClawbackDays.length > 0 && (
+              <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+                <div className="text-[11px] font-bold text-rose-800 mb-1">
+                  หักค่าอาหารกลางวัน (เบิกแล้วกลับก่อนครบกะ · ไม่ได้ขออนุมัติ)
+                </div>
+                <ul className="text-[11px] text-rose-700 space-y-0.5">
+                  {foodClawbackDays.map((d) => (
+                    <li key={d.date} className="flex justify-between gap-2">
+                      <span>{d.date}</span><span>−฿{fmtMoney(d.credit)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {forfeited ? (
               <div className="mt-3 text-xs font-medium text-rose-600">
                 ยอดสุทธิ = 0 (ถูกตัดสิทธิ์: {forfeitReason === "late_20pct" ? "สายเกิน 20%" : "ลาออก"})
@@ -117,7 +134,15 @@ export default function SvcCalcModal({
             ) : (
               <div className="mt-3 text-xs space-y-0.5">
                 <div className="flex justify-between text-slate-600">
-                  <span>รวมส่วนแบ่ง (ก่อนหักภาษี)</span><span>฿{fmtMoney(netAllocation)}</span>
+                  <span>รวมส่วนแบ่ง</span><span>฿{fmtMoney(grossAllocation)}</span>
+                </div>
+                {foodClawback > 0 && (
+                  <div className="flex justify-between text-rose-600">
+                    <span>หักค่าอาหารกลางวัน (กลับก่อนครบกะ)</span><span>−฿{fmtMoney(foodClawback)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-slate-600">
+                  <span>ยอดก่อนหักภาษี</span><span>฿{fmtMoney(netAllocation)}</span>
                 </div>
                 {taxMode === "wht" && (
                   <div className="flex justify-between text-rose-600">

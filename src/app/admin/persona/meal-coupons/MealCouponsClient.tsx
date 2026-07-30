@@ -127,8 +127,27 @@ export default function MealCouponsClient({
               <div className="space-y-1 mb-2">
                 {group(type).map((m) => (
                   <div key={m.id} className="flex items-center justify-between gap-2 text-sm border-b border-slate-50 py-1">
-                    <span className={m.active ? "text-slate-700" : "text-slate-400 line-through"}>
+                    <span className={`min-w-0 ${m.active ? "text-slate-700" : "text-slate-400 line-through"}`}>
                       {m.name_th}{m.is_available ? "" : " (ปิดขายใน Delivera)"}
+                      {type === "food" && (
+                        <span className="ml-2 inline-flex items-center gap-1 align-middle">
+                          {[60, 120].map((c) => (
+                            <button
+                              key={c}
+                              onClick={() => post({ action: "set_credit", id: m.id, credit_value: m.credit_value === c ? null : c })}
+                              className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                                m.credit_value === c
+                                  ? "bg-violet-100 text-violet-700 border-violet-300 font-bold"
+                                  : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                              }`}
+                              title="ค่าเครดิตอาหาร (หัก SVC เท่านี้ถ้าเบิกแล้วกลับก่อน)"
+                            >
+                              ฿{c}
+                            </button>
+                          ))}
+                          {m.credit_value == null && <span className="text-[10px] text-amber-600">ยังไม่ตั้งเครดิต</span>}
+                        </span>
+                      )}
                     </span>
                     <span className="flex items-center gap-3 shrink-0">
                       <button

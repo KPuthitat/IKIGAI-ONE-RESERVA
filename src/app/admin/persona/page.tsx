@@ -70,6 +70,9 @@ export default function AdminPersonaDashboard() {
   const pendingResig = (db.prepare(
     "SELECT COUNT(*) AS n FROM resignation_requests WHERE status = 'pending'"
   ).get() as Counter).n;
+  const pendingEarlyLeave = (db.prepare(
+    "SELECT COUNT(*) AS n FROM early_leave_requests WHERE branch_id = ? AND status = 'pending'"
+  ).get(branch.id) as Counter).n;
 
   // Staff counts — only people assigned to this branch via user_branches.
   // is_test_account = 0 filter (2026-05-27) excludes test/admin accounts
@@ -210,6 +213,12 @@ export default function AdminPersonaDashboard() {
             label={t(lang, "admin.persona.stat.pendingResignation")}
             value={pendingResig}
             accent="rose"
+          />
+          <StatCard
+            href="/admin/persona/early-leave"
+            label="ขออนุมัติออกก่อน"
+            value={pendingEarlyLeave}
+            accent="amber"
           />
         </div>
       </div>

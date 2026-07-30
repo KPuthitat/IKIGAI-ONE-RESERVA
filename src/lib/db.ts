@@ -782,6 +782,30 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // early_leave_requests (owner 2026-07-30) — a staffer who redeemed the free
+  // lunch coupon but needs to leave the ≥8h shift early asks permission FIRST.
+  // A supervisor/admin APPROVES; an approved row for the day exempts them from
+  // the food-credit SVC clawback (an unapproved early departure forfeits the
+  // credit). Mirrors ot_requests: one row per (user, day), re-submitting resets
+  // to pending. No pay-engine effect — this only gates the clawback.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS early_leave_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      branch_id INTEGER REFERENCES branches(id),
+      work_date TEXT NOT NULL,          -- YYYY-MM-DD (BKK)
+      reason TEXT,                      -- staff-entered note
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','approved','rejected')),
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, work_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_early_leave_status ON early_leave_requests(status, work_date);
+    CREATE INDEX IF NOT EXISTS idx_early_leave_user_date ON early_leave_requests(user_id, work_date);
+  `);
+
   // shift_change_requests — staff ask to ADD a working day (PT wanting an
   // extra shift) or SWAP a day off for another (FT taking a day off
   // without spending leave, by working a different day). v1 (owner
@@ -1525,6 +1549,24 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_meal_coupons_user_date ON meal_coupons(user_id, coupon_date);
   `);
+
+  // Food-credit value (owner 2026-07-30): each coupon-eligible FOOD menu item is
+  // priced as a welfare "credit" (เบื้องต้น 60/120). The value is snapshotted
+  // onto the coupon at redeem so a later menu-price edit can't change history.
+  // It also drives the SVC clawback: a staffer who redeems the free lunch but
+  // then leaves the ≥8h shift early (worked < 480−grace) forfeits this credit
+  // from their service-charge share. Drink rows keep it NULL (drinks use the
+  // partner_drink_orders tier flow). Nullable — untagged food = no credit yet.
+  {
+    const cmCols = db.prepare("PRAGMA table_info(meal_coupon_menu)").all() as Array<{ name: string }>;
+    if (!cmCols.some((c) => c.name === "credit_value")) {
+      db.exec("ALTER TABLE meal_coupon_menu ADD COLUMN credit_value INTEGER");
+    }
+    const mcCols = db.prepare("PRAGMA table_info(meal_coupons)").all() as Array<{ name: string }>;
+    if (!mcCols.some((c) => c.name === "credit_value")) {
+      db.exec("ALTER TABLE meal_coupons ADD COLUMN credit_value INTEGER");
+    }
+  }
 
   // Revenue-Share GP (owner 2026-06-22) — opt-in per branch, OFF everywhere by
   // default. The whole feature (menu, routes, data) is gated on this flag so it

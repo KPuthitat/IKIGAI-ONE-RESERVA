@@ -9,7 +9,7 @@ import { bkkHHMM, bkkDateIso } from "@/lib/time";
 
 type TimeEntry = { id: number; type: "in" | "out"; ts: string };
 
-type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask" | "owl" | "swap" | "coupon";
+type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask" | "owl" | "swap" | "coupon" | "food_warn";
 
 // Meal-coupon pop-up payload from the clock route (owner 2026-07-12).
 type CouponInfo = { food: boolean; drink: boolean; redeemBefore: string };
@@ -382,6 +382,11 @@ function ClockAction({
   const [owlPrompt, setOwlPrompt] = useState<OwlPrompt | null>(null);
   // Meal-coupon pop-up shown after an eligible lunch clock-in (owner 2026-07-12).
   const [couponInfo, setCouponInfo] = useState<CouponInfo | null>(null);
+  // Food-credit early-leave warning (owner 2026-07-30) — shown on a clock-out
+  // that leaves the ≥8h shift early after redeeming the free lunch.
+  const [foodWarn, setFoodWarn] = useState<{ credit: number; workedMinutes: number; workDate: string } | null>(null);
+  const [foodWarnBusy, setFoodWarnBusy] = useState(false);
+  const [foodWarnRequested, setFoodWarnRequested] = useState(false);
   // Shift-swap / late-early prompt (owner 2026-06-08).
   const [swapPrompt, setSwapPrompt] = useState<SwapPrompt | null>(null);
   const [swapStep, setSwapStep] = useState<"ask" | "pickFriend">("ask");
@@ -735,6 +740,15 @@ function ClockAction({
           return;
         }
       }
+      // Food-credit early-leave warning (owner 2026-07-30) — clocked out of the
+      // ≥8h shift early after redeeming the free lunch. Warn + offer to request
+      // approval (an approval exempts the SVC clawback).
+      if (data.action === "out" && data.foodWarning) {
+        setFoodWarn(data.foodWarning as { credit: number; workedMinutes: number; workDate: string });
+        setFoodWarnRequested(false);
+        setPhase("food_warn");
+        return;
+      }
       // Meal coupon issued for an eligible lunch clock-in → show the coupon
       // pop-up instead of the plain success flash (owner 2026-07-12).
       if (data.action === "in" && data.coupon) {
@@ -749,6 +763,23 @@ function ClockAction({
       setPhase("error");
       setTimeout(() => setPhase("pin"), 2500);
     }
+  }
+
+  // Staff asks a supervisor to approve leaving early (owner 2026-07-30). An
+  // approved request exempts the day's food-credit SVC clawback. Best-effort —
+  // the punch already committed, this only files the request.
+  async function requestEarlyLeaveApproval() {
+    if (!foodWarn || foodWarnBusy) return;
+    setFoodWarnBusy(true);
+    try {
+      const res = await fetch(apiUrl("/api/persona/early-leave-requests"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ work_date: foodWarn.workDate })
+      });
+      if (res.ok) setFoodWarnRequested(true);
+    } catch { /* swallow — advisory only */ }
+    setFoodWarnBusy(false);
   }
 
   function pressDigit(d: string) {
@@ -956,6 +987,50 @@ function ClockAction({
                 {otBusy ? t("common.submitting") : t("staff.persona.ot.submit")}
               </button>
             </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Food-credit early-leave warning (owner 2026-07-30) ────
+  // Shown on a clock-out that leaves the ≥8h shift early after redeeming the
+  // free lunch. Warns of the SVC clawback + offers to request approval.
+  if (phase === "food_warn" && foodWarn) {
+    const hrs = Math.floor(foodWarn.workedMinutes / 60);
+    const mins = foodWarn.workedMinutes % 60;
+    return (
+      <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-4 space-y-3 text-left">
+        <div className="text-base font-bold text-rose-800 text-center">กลับก่อนครบกะ</div>
+        <div className="text-sm text-slate-700 leading-relaxed">
+          วันนี้เบิกอาหารกลางวันไปแล้ว แต่ทำงานจริง <b>{hrs} ชม. {mins} นาที</b> (ไม่ถึง 8 ชม.) —
+          ค่าอาหาร <b>฿{foodWarn.credit}</b> จะถูกหักคืนจาก Service Charge เว้นแต่ได้รับอนุมัติให้ออกก่อน
+        </div>
+        {foodWarnRequested ? (
+          <>
+            <div className="text-sm text-emerald-700 font-medium text-center">✓ ส่งคำขออนุมัติแล้ว รอหัวหน้าอนุมัติ</div>
+            <button
+              onClick={onSuccess}
+              className="w-full py-3 rounded-xl bg-brand text-white text-sm font-bold active:scale-95 transition"
+            >
+              เสร็จสิ้น
+            </button>
+          </>
+        ) : (
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              onClick={onSuccess}
+              className="py-3 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 active:scale-95 transition"
+            >
+              รับทราบ
+            </button>
+            <button
+              onClick={requestEarlyLeaveApproval}
+              disabled={foodWarnBusy}
+              className="py-3 rounded-xl bg-rose-600 text-white text-sm font-bold active:scale-95 transition disabled:opacity-50"
+            >
+              {foodWarnBusy ? "กำลังส่ง…" : "ขออนุมัติออกก่อน"}
+            </button>
           </div>
         )}
       </div>
