@@ -6,6 +6,7 @@ import { bkkDateIso } from "@/lib/time";
 import {
   listUserCouponsForDate, listEligibleMenu, mealCouponConfig
 } from "@/lib/meal-coupons";
+import { resolveDrinkPartner } from "@/lib/partner-drink-orders";
 import CouponsClient from "./CouponsClient";
 
 export const dynamic = "force-dynamic";
@@ -21,11 +22,12 @@ export default function MealCouponsPage() {
     ? (getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined)
     : undefined;
 
-  // Eligible menu of the branch the staff is currently at — coupons are
-  // branch-agnostic; redemption draws from the active branch's list.
+  // Food coupon still redeems from the branch's Delivera menu. The DRINK coupon
+  // is now fulfilled by the branch's จ้อจี้ partner (paid, via QR) — owner
+  // 2026-07-30 — so it no longer uses the internal drink menu.
   const foodMenu = branchId != null ? listEligibleMenu(branchId, "food") : [];
-  const drinkMenu = branchId != null ? listEligibleMenu(branchId, "drink") : [];
   const cutoff = branchId != null ? mealCouponConfig(branchId).redeemCutoff : "15:00";
+  const hasDrinkPartner = branchId != null && resolveDrinkPartner(branchId) != null;
 
   return (
     <div className="space-y-4">
@@ -39,8 +41,8 @@ export default function MealCouponsPage() {
       <CouponsClient
         coupons={coupons}
         foodMenu={foodMenu}
-        drinkMenu={drinkMenu}
         hasBranch={branchId != null}
+        hasDrinkPartner={hasDrinkPartner}
       />
     </div>
   );

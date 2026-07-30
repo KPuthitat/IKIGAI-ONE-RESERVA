@@ -16,6 +16,7 @@
 // unchanged for branches that haven't filled in a roster yet.
 
 import { getDb } from "./db";
+import { timeToMinutes } from "./time";
 import type {
   ShiftCode,
   RosterPosition,
@@ -216,6 +217,35 @@ export function effectiveShiftStartForUserDate(
       AND a.assignment_date = ?
   `).get(userId, branchId, dateBkk) as { start_time: string | null } | undefined;
   return row?.start_time ?? null;
+}
+
+/** Total scheduled shift MINUTES the user is rostered for on a date at a branch
+ *  (owner 2026-07-30, meal-benefit eligibility). Sum of each assignment's
+ *  (end − start), treating end ≤ start as an overnight shift (+24h). This is the
+ *  GROSS rostered span (breaks not subtracted) — "กะที่ลงไว้" as scheduled.
+ *  Returns 0 when the user has no assignment that day. */
+export function scheduledShiftMinutesForUserDate(
+  userId: number,
+  branchId: number,
+  dateBkk: string
+): number {
+  const rows = getDb().prepare(`
+    SELECT s.start_time AS st, s.end_time AS et
+    FROM roster_assignments a
+    JOIN shift_codes s ON s.id = a.shift_code_id
+    WHERE a.user_id = ?
+      AND a.branch_id = ?
+      AND a.assignment_date = ?
+      AND s.start_time IS NOT NULL AND s.end_time IS NOT NULL
+  `).all(userId, branchId, dateBkk) as Array<{ st: string; et: string }>;
+  let total = 0;
+  for (const r of rows) {
+    const start = timeToMinutes(r.st);
+    const end = timeToMinutes(r.et);
+    if (Number.isNaN(start) || Number.isNaN(end)) continue;
+    total += end > start ? end - start : end + 1440 - start; // overnight → +24h
+  }
+  return total;
 }
 
 /** True when the user has a WORK shift assigned on the given date at the

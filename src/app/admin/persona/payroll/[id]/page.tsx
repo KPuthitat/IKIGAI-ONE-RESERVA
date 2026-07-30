@@ -49,7 +49,7 @@ export default function PeriodDetailPage({
            pl.shift_minutes, pl.break_deducted_minutes, pl.regular_minutes, pl.ot_minutes,
            pl.days_worked, pl.leave_days, pl.unpaid_leave_days, pl.unpaired_clockins,
            pl.base_pay, pl.ot_pay, pl.service_charge, pl.other_additions, pl.gross_pay,
-           pl.sso_amount, pl.tax_amount, pl.other_deductions, pl.net_pay,
+           pl.sso_amount, pl.tax_amount, pl.other_deductions, pl.drink_deductions, pl.net_pay,
            pl.overridden, pl.notes
     FROM payroll_lines pl
     LEFT JOIN users u ON u.id = pl.user_id

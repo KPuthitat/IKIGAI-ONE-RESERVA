@@ -969,7 +969,11 @@ function ClockAction({
     return (
       <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 space-y-3 text-left">
         <div className="text-base font-bold text-amber-900 text-center">
-          คุณได้รับคูปองอาหารกลางวัน + เครื่องดื่ม
+          {couponInfo.food && couponInfo.drink
+            ? "คุณได้รับคูปองอาหารกลางวัน + เครื่องดื่ม"
+            : couponInfo.food
+              ? "คุณได้รับคูปองอาหารกลางวัน"
+              : "คุณได้รับคูปองเครื่องดื่ม"}
         </div>
         <div className="text-sm text-slate-700 leading-relaxed text-center">
           เบิกได้ที่หน้า “คูปองของฉัน” · ใช้ก่อน <b>{couponInfo.redeemBefore} น.</b> ของวันนี้ ไม่งั้นคูปองหมดอายุนะครับ

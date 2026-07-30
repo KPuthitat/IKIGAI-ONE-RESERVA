@@ -11,6 +11,7 @@ import { TH_MONTHS_FULL, partnerShopName } from "@/lib/revshare";
 type Result = {
   totalSales: number; tierGP: number; floorApplied: number; billedGP: number; topup: number;
   avgGpPct: number; vatAmount: number; whtAmount: number; netAmount: number;
+  drinkPassthrough: number; drinkInputVat: number; netAfterDrinks: number;
 };
 type BreakRow = { label: string; start: string; end: string; sales: number; roundGP: number; gpPct: number };
 type Stored = { status: "draft" | "issued" | "paid"; invoice_no: string | null; issued_at: string | null; paid_at: string | null } | null;
@@ -34,6 +35,7 @@ export default function SettlementClient({
   const status = pv.stored?.status ?? "draft";
   const withVat = partner.vat_enabled && r.vatAmount > 0;
   const grandTotal = r.billedGP + r.vatAmount;   // ยอดบนใบกำกับภาษี
+  const hasDrinks = r.drinkPassthrough > 0;      // สวัสดิการเครื่องดื่มพนักงาน (ไม่คิด GP)
 
   function shift(delta: number) {
     const d = new Date(Date.UTC(year, month - 1 + delta, 1));
@@ -104,8 +106,14 @@ export default function SettlementClient({
         {withVat && <Card label="VAT 7%" value={r.vatAmount} />}
         {withVat && <Card label="รวมตามใบกำกับภาษี" value={grandTotal} />}
         <Card label="หัก ณ ที่จ่าย 3%" value={-r.whtAmount} tone="rose" />
-        <Card label="ยอดสุทธิ" value={r.netAmount} tone="emerald" big />
+        <Card label={hasDrinks ? "GP สุทธิ (คู่ค้าจ่ายบริษัท)" : "ยอดสุทธิ"} value={r.netAmount} tone="emerald" big={!hasDrinks} />
       </div>
+      {hasDrinks && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Card label="ค่าเครื่องดื่มพนักงาน (ไม่คิด GP)" value={-r.drinkPassthrough} tone="amber" sub={`บริษัทจ่ายคู่ค้า · VAT ซื้อ ฿${fmtMoney(r.drinkInputVat)}`} />
+          <Card label="ยอดสุทธิหลังหักเครื่องดื่ม" value={r.netAfterDrinks} tone="emerald" big sub={r.netAfterDrinks >= 0 ? "คู่ค้าจ่ายบริษัท" : "บริษัทจ่ายคู่ค้า"} />
+        </div>
+      )}
 
       {/* Money-direction note */}
       <div className="card text-xs text-slate-500 space-y-1">
@@ -201,6 +209,7 @@ function FlexCardPreview({
 }) {
   const baht = (n: number) => `${fmtMoney(n)} บาท`;
   const belowFloor = r.topup > 0;   // tier GP didn't reach the agreed minimum
+  const hasDrinks = r.drinkPassthrough > 0;   // staff drink welfare (no GP)
   const sellerIssuer = sellerCompany ? `${sellerName} · ${sellerCompany}` : sellerName;
   const Row = ({ label, value, bold, color }: { label: string; value: string; bold?: boolean; color?: string }) => (
     <div className="flex items-baseline justify-between gap-4">
@@ -239,9 +248,19 @@ function FlexCardPreview({
         <Row label="หักภาษี ณ ที่จ่าย 3%" value={`−${baht(r.whtAmount)}`} color="#a32d2d" />
         <div className="border-t border-slate-100 my-1" />
         <div className="flex items-baseline justify-between gap-4">
-          <span className="text-[13px] font-bold text-slate-600">ยอดสุทธิ</span>
+          <span className="text-[13px] font-bold text-slate-600">{hasDrinks ? "GP สุทธิ" : "ยอดสุทธิ"}</span>
           <span className="text-[15px] font-bold tabular-nums whitespace-nowrap" style={{ color: "#0f6e56" }}>{baht(r.netAmount)}</span>
         </div>
+        {hasDrinks && (
+          <>
+            <Row label="ค่าเครื่องดื่มพนักงาน (บริษัทจ่าย · ไม่คิด GP)" value={`−${baht(r.drinkPassthrough)}`} color="#854f0b" />
+            <div className="border-t border-slate-100 my-1" />
+            <div className="flex items-baseline justify-between gap-4">
+              <span className="text-[13px] font-bold text-slate-600">ยอดสุทธิหลังหักเครื่องดื่ม</span>
+              <span className="text-[15px] font-bold tabular-nums whitespace-nowrap" style={{ color: "#0f6e56" }}>{baht(r.netAfterDrinks)}</span>
+            </div>
+          </>
+        )}
       </div>
       {/* footer */}
       <div className="px-5 pb-3 pt-1">

@@ -69,6 +69,7 @@ export type PayrollLineRow = {
   sso_amount: number;
   tax_amount: number;
   other_deductions: number;
+  drink_deductions: number;
   net_pay: number;
   overridden: number;
   notes: string | null;
@@ -661,6 +662,9 @@ export default function PeriodDetailClient({
                       )}
                       {l.unpaired_clockins > 0 && (
                         <span className="ml-2 text-amber-700">{l.unpaired_clockins} {t(lang, "admin.persona.payroll.detail.unpairedShort")}</span>
+                      )}
+                      {l.drink_deductions > 0 && (
+                        <span className="ml-2 text-violet-700">หักเครื่องดื่ม ฿{fmtMoney(l.drink_deductions)}</span>
                       )}
                       {l.overridden === 1 && (
                         <span className="ml-2 text-sky-700">{t(lang, "admin.persona.payroll.detail.overridden")}</span>
@@ -1522,6 +1526,9 @@ function LineEditModal({
                 value={ovDed} onChange={(e) => setOvDed(e.target.value)} />
             </label>
           </div>
+          {line.drink_deductions > 0 && (
+            <div className="text-[10px] text-violet-700">หักค่าเครื่องดื่ม (จ้อจี้ · อัตโนมัติ แก้ไม่ได้): −฿{fmtMoney(line.drink_deductions)}</div>
+          )}
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <span className="text-[10px] text-slate-500">ก่อนหัก SSO/ภาษี ≈ <span className="font-semibold text-slate-700">฿{fmtMoney(ovPreview)}</span></span>
             <button type="button" className="btn-secondary !py-1 !px-2.5 !text-[11px] disabled:opacity-50"

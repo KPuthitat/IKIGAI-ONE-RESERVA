@@ -127,6 +127,29 @@ const F: Floor[] = [
   ok("shop.blank venue falls back", partnerShopName({ name: "จ้อจี้ & friends", venue: "  " }) === "จ้อจี้ & friends");
 }
 
+// Staff drink-welfare passthrough (owner 2026-07-30): the coupon total nets
+// against the GP invoice with NO GP taken; drink amount is VAT-inclusive.
+{
+  const T = [{ lower: 0, upper: null, rate: 0.2 }];
+  const F: { monthFrom: number; monthTo: number; amount: number }[] = [];
+  // 400k sales → tierGP 80k; VAT 5600; WHT 2400 → net 83,200 (จ้อจี้ pays บริษัท).
+  const base = computeSettlement({ totalSales: 400_000, opMonth: 1, tiers: T, floors: F, vatEnabled: true, vatRate: 0.07, whtRate: 0.03 });
+  eq("drink.baseNet", base.netAmount, 83_200);
+  eq("drink.base passthrough 0", base.drinkPassthrough, 0);
+  eq("drink.base netAfter = net", base.netAfterDrinks, base.netAmount);
+
+  // + 1,300 drinks (e.g. 10×80 + 10×50) → nets against GP: 83,200 − 1,300.
+  const withDrinks = computeSettlement({ totalSales: 400_000, opMonth: 1, tiers: T, floors: F, vatEnabled: true, vatRate: 0.07, whtRate: 0.03, drinkPassthrough: 1_300 });
+  eq("drink.gpNet unchanged (no GP on drinks)", withDrinks.netAmount, 83_200);
+  eq("drink.passthrough", withDrinks.drinkPassthrough, 1_300);
+  eq("drink.netAfter", withDrinks.netAfterDrinks, 81_900);
+  eq("drink.inputVat 7/107", withDrinks.drinkInputVat, Math.round((1_300 * 7 / 107) * 100) / 100);
+
+  // Drinks exceed GP → company pays partner (negative net).
+  const flip = computeSettlement({ totalSales: 0, opMonth: 1, tiers: T, floors: F, vatEnabled: true, vatRate: 0.07, whtRate: 0.03, drinkPassthrough: 500 });
+  eq("drink.flip netAfter negative", flip.netAfterDrinks, -500);
+}
+
 if (failed > 0) {
   console.error(`\nREVSHARE TESTS FAILED: ${failed}`);
   process.exit(1);

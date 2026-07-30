@@ -4,9 +4,10 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import {
-  computeLineFromMinutes, computeSso, computeWht, earliestDate,
+  computeLineFromMinutes, computeSso, computeWht, earliestDate, resolveHomeCompanyFlag,
   type EmployeePayrollSnapshot, type PayrollSettings
 } from "@/lib/payroll-compute";
+import { sumRedeemedDrinksForUser } from "@/lib/partner-drink-orders";
 
 // PATCH /api/admin/persona/payroll/periods/[id]/lines/[userId]
 // Manual override for one employee in one period. Two modes:
@@ -130,6 +131,11 @@ export async function PATCH(
     d.unpaid_leave_days !== undefined ||
     d.days_worked !== undefined;
 
+  // Staff drink-welfare (จ้อจี้) deductions for this period+branch — a separate
+  // column, refreshed from the ledger on every edit (owner 2026-07-30). net_pay
+  // is stored after it in both edit modes below.
+  const drinkDed = sumRedeemedDrinksForUser(db, userId, period.period_start, period.period_end, period.branch_id);
+
   if (timeFieldsProvided) {
     // Mode (a) — recompute pay using minute totals + CURRENT user data
     // (not the original snapshot). This way, if admin updates the employee's
@@ -186,6 +192,7 @@ export async function PATCH(
       salary_tax_mode: fresh?.salary_tax_mode ?? line.salary_tax_mode_snapshot,
       track_attendance: fresh?.track_attendance ?? 1,
       is_primary_branch: isPrimaryBranch,
+      is_home_company: resolveHomeCompanyFlag(db, userId, period.branch_id),
       hire_date: fresh?.hire_date ?? null,
       last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null,
       ft_started_at: fresh?.ft_started_at ?? null
@@ -215,7 +222,8 @@ export async function PATCH(
           days_worked = ?, leave_days = ?, unpaid_leave_days = ?,
           base_pay = ?, ot_pay = ?, service_charge = ?,
           other_additions = ?, other_deductions = ?,
-          gross_pay = ?, sso_amount = ?, tax_amount = ?, net_pay = ?,
+          gross_pay = ?, sso_amount = ?, tax_amount = ?,
+          drink_deductions = ?, net_pay = ?,
           salary_tax_mode_snapshot = ?,
           hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
           pay_cycle_snapshot = ?,
@@ -228,7 +236,8 @@ export async function PATCH(
       computed.days_worked, computed.leave_days, computed.unpaid_leave_days,
       computed.base_pay, computed.ot_pay, computed.service_charge,
       computed.other_additions, computed.other_deductions,
-      computed.gross_pay, computed.sso_amount, computed.tax_amount, computed.net_pay,
+      computed.gross_pay, computed.sso_amount, computed.tax_amount,
+      drinkDed, Math.round((computed.net_pay - drinkDed) * 100) / 100,
       computed.salary_tax_mode_snapshot,
       computed.hourly_rate_snapshot, computed.monthly_salary_snapshot,
       computed.pay_cycle_snapshot,
@@ -261,23 +270,27 @@ export async function PATCH(
     const otherDed = d.other_deductions ?? line.other_deductions;
     const gross = basePay + otPay + svcCharge + otherAdd;
 
+    // Cross-company helper (สังกัดคนละบริษัท) → no ประกันสังคม here; their home
+    // employer withholds it (owner 2026-07-29). WHT is unaffected.
+    const isHomeCompany = resolveHomeCompanyFlag(db, userId, period.branch_id);
     let ssoAmount = 0;
     let taxAmount = 0;
     if (gross > 0) {
       if (taxMode === "wht") {
         taxAmount = computeWht(gross, settings);
-      } else {
+      } else if (isHomeCompany !== 0) {
         // SSO on base salary only (excl OT/service/other) — owner 2026-07-04.
         ssoAmount = computeSso(basePay, period.cycle, settings);
       }
     }
-    const net = gross - ssoAmount - taxAmount - otherDed;
+    const net = gross - ssoAmount - taxAmount - otherDed - drinkDed;
 
     db.prepare(`
       UPDATE payroll_lines
       SET base_pay = ?, ot_pay = ?, service_charge = ?,
           other_additions = ?, other_deductions = ?,
-          gross_pay = ?, sso_amount = ?, tax_amount = ?, net_pay = ?,
+          gross_pay = ?, sso_amount = ?, tax_amount = ?,
+          drink_deductions = ?, net_pay = ?,
           salary_tax_mode_snapshot = ?,
           notes = COALESCE(?, notes),
           overridden = 1,
@@ -288,6 +301,7 @@ export async function PATCH(
       Math.round(gross * 100) / 100,
       Math.round(ssoAmount * 100) / 100,
       Math.round(taxAmount * 100) / 100,
+      Math.round(drinkDed * 100) / 100,
       Math.round(net * 100) / 100,
       taxMode,
       d.notes ?? null,

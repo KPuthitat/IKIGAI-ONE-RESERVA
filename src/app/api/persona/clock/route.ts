@@ -13,11 +13,11 @@ import {
   detectPunchAnomaly, detectScheduleDeviation, uncertifiedPriorMissingOut,
   type OwlPrompt, type DeviationPrompt
 } from "@/lib/attendance-flags";
-import { userHasWorkShiftOn, effectiveShiftStartForUserDate, resolveClockBranchId } from "@/lib/roster";
+import { userHasWorkShiftOn, effectiveShiftStartForUserDate, scheduledShiftMinutesForUserDate, resolveClockBranchId } from "@/lib/roster";
 import { verifyClockCode } from "@/lib/clock-code";
 import { saveClockSelfie } from "@/lib/clock-selfie";
 import { nowBkkMinutes } from "@/lib/time";
-import { mealCouponConfig, isEligibleClockIn, issueDailyCoupons } from "@/lib/meal-coupons";
+import { mealCouponConfig, isEligibleClockIn, isFoodEligible, issueDailyCoupons } from "@/lib/meal-coupons";
 
 const Body = z.object({
   pin: z.string().regex(/^\d{4}$/),
@@ -422,10 +422,11 @@ export async function POST(req: Request) {
     }
   }
 
-  // ── Meal coupon (owner 2026-07-12) ─────────────────────────────────
-  // A fresh clock-IN to the eligible lunch shift (11:00/12:00, not too
-  // late) issues a lunch + drink coupon, shown as a pop-up. Idempotent
-  // per (user, date). Wrapped so a bug here can NEVER break the clock-in.
+  // ── Meal coupon (owner 2026-07-12, food rule tightened 2026-07-30) ──
+  // A fresh clock-IN to the eligible lunch shift (11:00/12:00, not too late)
+  // issues coupons, shown as a pop-up. The FREE lunch meal (food) additionally
+  // requires a rostered shift > 8h; the drink coupon keeps the looser gate.
+  // Idempotent per (user, date). Wrapped so a bug here can NEVER break clock-in.
   let coupon: { food: boolean; drink: boolean; redeemBefore: string } | null = null;
   if (action === "in" && clockBranchId) {
     try {
@@ -433,7 +434,9 @@ export async function POST(req: Request) {
       if (cfg.enabled) {
         const shiftStart = effectiveShiftStartForUserDate(user.id, clockBranchId, todayBkk);
         if (isEligibleClockIn(cfg, shiftStart, nowBkkMinutes().minutes)) {
-          coupon = issueDailyCoupons(user.id, clockBranchId, todayBkk);
+          const scheduledMin = scheduledShiftMinutesForUserDate(user.id, clockBranchId, todayBkk);
+          const foodOk = isFoodEligible(cfg, shiftStart, nowBkkMinutes().minutes, scheduledMin);
+          coupon = issueDailyCoupons(user.id, clockBranchId, todayBkk, { food: foodOk, drink: true });
         }
       }
     } catch (e) {
