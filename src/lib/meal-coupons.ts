@@ -36,6 +36,7 @@ export type MealCouponRow = {
 
 export type EligibleMenuItem = {
   id: number; name_th: string; price: number; image_url: string | null;
+  credit_value: number | null;   // food welfare credit (60/120); null for drinks / untagged
 };
 
 /** Read the branch's meal-coupon config. */
@@ -131,7 +132,7 @@ export function listUserCouponsForDate(userId: number, dateBkk: string): MealCou
 /** Eligible menu items of a type for a branch (active + available only). */
 export function listEligibleMenu(branchId: number, type: MealCouponType): EligibleMenuItem[] {
   return getDb().prepare(
-    `SELECT m.id, m.name_th, m.price, m.image_url
+    `SELECT m.id, m.name_th, m.price, m.image_url, cm.credit_value
        FROM meal_coupon_menu cm
        JOIN delivera_menu_items m ON m.id = cm.menu_item_id
       WHERE cm.branch_id = ? AND cm.type = ? AND cm.active = 1 AND m.is_available = 1
@@ -163,20 +164,24 @@ export function redeemCoupon(
   // Menu must be an active, available, eligible item of the coupon's type at the
   // branch the user is currently at.
   const item = db.prepare(
-    `SELECT m.name_th AS name
+    `SELECT m.name_th AS name, cm.credit_value
        FROM meal_coupon_menu cm
        JOIN delivera_menu_items m ON m.id = cm.menu_item_id
       WHERE cm.branch_id = ? AND cm.menu_item_id = ? AND cm.type = ?
         AND cm.active = 1 AND m.is_available = 1`
-  ).get(activeBranchId, menuItemId, c.type) as { name: string } | undefined;
+  ).get(activeBranchId, menuItemId, c.type) as { name: string; credit_value: number | null } | undefined;
   if (!item) return { ok: false, error: "menu_invalid" };
 
+  // Snapshot the FOOD welfare credit onto the coupon (drinks carry no credit) —
+  // this is what the SVC clawback reads if the shift is left early (owner
+  // 2026-07-30). Frozen here so a later menu re-pricing can't rewrite history.
+  const creditValue = c.type === "food" ? item.credit_value : null;
   const info = db.prepare(
     `UPDATE meal_coupons
         SET status = 'redeemed', redeemed_at = ?, redeemed_branch_id = ?,
-            redeemed_menu_item_id = ?, redeemed_menu_name = ?
+            redeemed_menu_item_id = ?, redeemed_menu_name = ?, credit_value = ?
       WHERE id = ? AND status = 'issued'`
-  ).run(new Date().toISOString(), activeBranchId, menuItemId, item.name, couponId);
+  ).run(new Date().toISOString(), activeBranchId, menuItemId, item.name, creditValue, couponId);
   if (info.changes === 0) return { ok: false, error: "not_redeemable" };
   return { ok: true, type: c.type, menuName: item.name, branchId: activeBranchId };
 }
@@ -200,17 +205,25 @@ export function updateMealCouponConfig(
 
 export type CouponMenuAdminRow = {
   id: number; menu_item_id: number; name_th: string; type: MealCouponType;
-  active: number; price: number; is_available: number;
+  active: number; price: number; is_available: number; credit_value: number | null;
 };
 
 export function listCouponMenuAdmin(branchId: number): CouponMenuAdminRow[] {
   return getDb().prepare(
-    `SELECT cm.id, cm.menu_item_id, m.name_th, cm.type, cm.active, m.price, m.is_available
+    `SELECT cm.id, cm.menu_item_id, m.name_th, cm.type, cm.active, m.price, m.is_available, cm.credit_value
        FROM meal_coupon_menu cm
        JOIN delivera_menu_items m ON m.id = cm.menu_item_id
       WHERE cm.branch_id = ?
       ORDER BY cm.type, m.sort_order, m.name_th`
   ).all(branchId) as CouponMenuAdminRow[];
+}
+
+/** Set (or clear) a FOOD menu item's welfare credit value (60/120). Passing
+ *  null clears it. Only meaningful for food rows; a value on a drink row is
+ *  ignored by redeem. Guarded to the branch that owns the tag. */
+export function setCouponMenuCredit(id: number, branchId: number, credit: number | null): void {
+  getDb().prepare("UPDATE meal_coupon_menu SET credit_value = ? WHERE id = ? AND branch_id = ? AND type = 'food'")
+    .run(credit, id, branchId);
 }
 
 /** Add (or re-tag) a menu item as coupon-eligible. */

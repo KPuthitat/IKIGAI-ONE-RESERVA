@@ -26,6 +26,7 @@
 import { getDb } from "./db";
 import { pairShifts, applyPtGrace, pickScheduled, deductBreak, type ScheduledShift, type PayrollSettings } from "./payroll-compute";
 import { nameWithPrefix } from "./name";
+import { approvedEarlyLeaveKeys } from "./early-leave";
 import { LATE_GRACE_MINUTES, SC_INELIGIBILITY_THRESHOLD } from "./late-detection";
 import {
   shiftStartByDateForUserMonth,
@@ -40,6 +41,43 @@ export const SVC_COMPANY_SHARE_RATIO = 0.4; // 2 of 5 parts
 // approved OT record (ot_requests) — otherwise the day is capped at 480 even if
 // the clocked/rostered window was longer. Effective July 2026 onward.
 export const SVC_MAX_NORMAL_MINUTES = 8 * 60;
+
+// Food-credit clawback threshold (owner 2026-07-30): a staffer who redeemed the
+// free lunch but whose actual clamped worked minutes fall below 480 − a 30-min
+// grace (= 450) is treated as having left the ≥8h shift early. Without an
+// approved early-leave for that day, the day's food credit is clawed back from
+// their SVC share. The grace absorbs a slightly-short punch on a full shift.
+export const FOOD_CLAWBACK_GRACE_MINUTES = 30;
+export const FOOD_CLAWBACK_MIN_MINUTES = SVC_MAX_NORMAL_MINUTES - FOOD_CLAWBACK_GRACE_MINUTES;
+
+/** Pure clawback decision (owner 2026-07-30) — extracted for testability. Given
+ *  the month's redeemed food coupons (user, date, credit), the per-day clamped
+ *  worked minutes, the set of "userId:date" approved early-leaves, and a roster
+ *  predicate, returns the clawback days per user. A day is clawed back only when
+ *  it is on this branch's SVC roster, HAS a measurable minutes figure below the
+ *  threshold, and is NOT covered by an approved early-leave. Days with no
+ *  measurable minutes (abnormal/uncertified → already SVC-excluded) are skipped
+ *  so we never double-penalise or penalise missing data. */
+export function computeFoodClawbacks(
+  redeemedFood: Array<{ uid: number; d: string; credit: number }>,
+  workedByDay: Map<string, Map<number, number>>,
+  approvedEarlyLeave: Set<string>,
+  isRosterMember: (uid: number) => boolean,
+  minMinutes: number = FOOD_CLAWBACK_MIN_MINUTES
+): Map<number, Array<{ date: string; credit: number }>> {
+  const out = new Map<number, Array<{ date: string; credit: number }>>();
+  for (const c of redeemedFood) {
+    if (!isRosterMember(c.uid)) continue;
+    const worked = workedByDay.get(c.d)?.get(c.uid);
+    if (worked == null) continue;
+    if (worked >= minMinutes) continue;
+    if (approvedEarlyLeave.has(`${c.uid}:${c.d}`)) continue;
+    let arr = out.get(c.uid);
+    if (!arr) { arr = []; out.set(c.uid, arr); }
+    arr.push({ date: c.d, credit: c.credit });
+  }
+  return out;
+}
 
 // The month this system started recording SVC from live clock/roster data
 // (owner 2026-07-21). Months BEFORE this are pre-system: no time entries to
@@ -158,6 +196,13 @@ export type MonthlySvcRow = {
   // วันที่ถูกตัดสิทธิ์เพราะเวลางานผิดปกติ/ไม่รับรองเวลา (owner 2026-07-21) —
   // แสดงในตารางวิธีคำนวณเพื่อความโปร่งใส. ว่างเสมอสำหรับเดือนก่อนกฎมีผล (มิ.ย.).
   excludedDays: Array<{ date: string; reason: string }>;
+  // Food-credit clawback (owner 2026-07-30): ฿ recovered from this person's SVC
+  // because they redeemed the free lunch but left the ≥8h shift early (worked <
+  // 480−30min) without an approved early-leave. Reduces netAllocation; the
+  // recovered amount goes to the company pool. Empty when the feature doesn't
+  // apply (no redemption / stayed full / approved).
+  foodClawback: number;
+  foodClawbackDays: Array<{ date: string; credit: number }>;
 };
 
 export type MonthlySvcSummary = {
@@ -167,7 +212,8 @@ export type MonthlySvcSummary = {
   staffPoolTotal: number;    // 60% of totalCollected
   companyPoolFromSplit: number; // 40% (always)
   companyPoolFromForfeit: number; // additional from forfeitures
-  companyPoolTotal: number;  // sum of above two
+  companyPoolFromClawback: number; // additional from food-credit clawbacks (owner 2026-07-30)
+  companyPoolTotal: number;  // sum of the three above
   totalWht: number;          // sum of per-staff WHT withheld from SVC
   totalNetPayout: number;    // sum of per-staff netPayout (after forfeit + WHT)
   rows: MonthlySvcRow[];
@@ -655,6 +701,28 @@ export function computeMonthlySvcSummary(
     }
   }
 
+  // 6b. Food-credit clawback (owner 2026-07-30). A staffer who redeemed the free
+  //     lunch (a food coupon with a credit_value) but whose CLAMPED worked
+  //     minutes that day fell below FOOD_CLAWBACK_MIN_MINUTES (480−30) — i.e.
+  //     left the ≥8h shift early — forfeits that day's credit from their SVC,
+  //     UNLESS they have an approved early-leave for the day. We only claw back
+  //     on days we can actually measure (present in workedByDay); a day with no
+  //     computable minutes (abnormal/uncertified — already SVC-excluded) is
+  //     skipped so we never double-penalise or penalise missing data. Scoped to
+  //     coupons ISSUED at this branch (the shift they clocked into = this SVC
+  //     branch's day).
+  const earlyLeaveKeys = approvedEarlyLeaveKeys(db, yearMonth);
+  const redeemedFood = db.prepare(`
+    SELECT user_id AS uid, coupon_date AS d, credit_value AS credit
+      FROM meal_coupons
+     WHERE type = 'food' AND status = 'redeemed' AND issued_branch_id = ?
+       AND coupon_date >= ? AND coupon_date <= ?
+       AND credit_value IS NOT NULL AND credit_value > 0
+  `).all(branchId, start, end) as Array<{ uid: number; d: string; credit: number }>;
+  const clawbackByUser = computeFoodClawbacks(
+    redeemedFood, workedByDay, earlyLeaveKeys, (uid) => acc.has(uid)
+  );
+
   // 7. Late stats per user (for forfeiture check)
   const inEntries = entries.filter((e) => e.type === "in");
   const insByUser = new Map<number, Array<{ ts: string }>>();
@@ -729,9 +797,16 @@ export function computeMonthlySvcSummary(
     // title_prefix show it; staff with none show display_name as-is (owner fills
     // the คำนำหน้า in the employee editor — the system does not guess).
     const displayName = nameWithPrefix(s.titlePrefix, s.displayName);
+    // Food-credit clawback (owner 2026-07-30) — applied on top of forfeiture.
+    // A forfeited month already pays 0, so there's nothing to recover then; only
+    // clamp against the actual gross so we never claw back more than they earned.
+    const clawDays = clawbackByUser.get(s.userId) ?? [];
+    const rawClawback = clawDays.reduce((sum, x) => sum + x.credit, 0);
+    const foodClawback = forfeited ? 0 : Math.min(rawClawback, round2(a.grossAllocation));
     // WHT: 'wht' staff have 3% withheld from their SVC payout; 'sso' staff get
-    // the full net (owner 2026-07-21). Applied after forfeiture (forfeited = 0).
-    const netAllocation = forfeited ? 0 : a.grossAllocation;
+    // the full net (owner 2026-07-21). Applied after forfeiture (forfeited = 0)
+    // and after the food clawback.
+    const netAllocation = forfeited ? 0 : round2(a.grossAllocation - foodClawback);
     const taxMode: "sso" | "wht" = s.taxMode === "wht" ? "wht" : "sso";
     const whtAmount = taxMode === "wht" ? round2(netAllocation * whtRate) : 0;
     const netPayout = round2(netAllocation - whtAmount);
@@ -755,7 +830,9 @@ export function computeMonthlySvcSummary(
       whtAmount,
       netPayout,
       dailyBreakdown: breakdownByUser.get(s.userId) ?? [],
-      excludedDays: (excludedByUser.get(s.userId) ?? []).slice().sort((a, b) => a.date.localeCompare(b.date))
+      excludedDays: (excludedByUser.get(s.userId) ?? []).slice().sort((a, b) => a.date.localeCompare(b.date)),
+      foodClawback,
+      foodClawbackDays: foodClawback > 0 ? clawDays.slice().sort((a, b) => a.date.localeCompare(b.date)) : []
     };
   });
 
@@ -765,6 +842,9 @@ export function computeMonthlySvcSummary(
   const companyFromForfeit = rows.reduce(
     (s, r) => s + (r.forfeited ? r.grossAllocation : 0), 0
   );
+  // Food-credit clawbacks recovered from staff shares also flow to the company
+  // pool (owner 2026-07-30).
+  const companyFromClawback = round2(rows.reduce((s, r) => s + r.foodClawback, 0));
   const totalWht = rows.reduce((s, r) => s + r.whtAmount, 0);
   const totalNetPayout = rows.reduce((s, r) => s + r.netPayout, 0);
 
@@ -775,7 +855,8 @@ export function computeMonthlySvcSummary(
     staffPoolTotal,
     companyPoolFromSplit: companyFromSplit,
     companyPoolFromForfeit: companyFromForfeit,
-    companyPoolTotal: companyFromSplit + companyFromForfeit,
+    companyPoolFromClawback: companyFromClawback,
+    companyPoolTotal: companyFromSplit + companyFromForfeit + companyFromClawback,
     totalWht,
     totalNetPayout,
     rows,
@@ -784,6 +865,45 @@ export function computeMonthlySvcSummary(
     payoutDate: computePayoutDate(yearMonth),
     manualEntry: false
   };
+}
+
+/** Clamped worked minutes for ONE user on ONE day at a branch — the exact same
+ *  engine the monthly SVC roll-up uses (pairShifts → roster-clamp → break-deduct
+ *  → approved-OT extend). The clock-out food-credit warning calls this so the
+ *  advisory it shows matches the clawback the monthly compute will apply. Returns
+ *  0 for an abnormal/uncertified or no-shift day (same exclusion rules). */
+export function svcWorkedMinutesForUserDate(
+  branchId: number, userId: number, dateBkk: string
+): number {
+  const db = getDb();
+  const dayStartIso = new Date(`${dateBkk}T00:00:00+07:00`).toISOString();
+  const dayEndIso = new Date(`${dateBkk}T23:59:59+07:00`).toISOString();
+  const entries = db.prepare(
+    `SELECT user_id, ts, type FROM time_entries
+      WHERE branch_id = ? AND user_id = ? AND ts >= ? AND ts <= ?`
+  ).all(branchId, userId, dayStartIso, dayEndIso) as
+    Array<{ user_id: number; ts: string; type: "in" | "out" }>;
+  if (entries.length === 0) return 0;
+
+  const scheduledByUser = buildScheduledByUser(branchId, dateBkk, dateBkk);
+  const otByUser = new Map<number, Map<string, string>>();
+  const ot = db.prepare(
+    "SELECT requested_until FROM ot_requests WHERE status = 'approved' AND user_id = ? AND work_date = ?"
+  ).get(userId, dateBkk) as { requested_until: string } | undefined;
+  if (ot) { const m = new Map<string, string>(); m.set(dateBkk, ot.requested_until); otByUser.set(userId, m); }
+
+  const brk = (db.prepare(`
+    SELECT break_threshold_minutes, break_deduction_minutes,
+           long_shift_threshold_minutes, long_shift_break_minutes
+    FROM payroll_settings LIMIT 1
+  `).get() as BreakSettings | undefined) ?? {
+    break_threshold_minutes: 300, break_deduction_minutes: 30,
+    long_shift_threshold_minutes: 480, long_shift_break_minutes: 60
+  };
+  const workedByDay = computeSvcClampedMinutesByDay(
+    entries, scheduledByUser, otByUser, brk, true, true, new Map()
+  );
+  return workedByDay.get(dateBkk)?.get(userId) ?? 0;
 }
 
 /** Empty summary helper — keeps the type stable when a branch has
@@ -797,6 +917,7 @@ function emptySummary(
     staffPoolTotal: totalCollected * SVC_STAFF_SHARE_RATIO,
     companyPoolFromSplit: totalCollected * SVC_COMPANY_SHARE_RATIO,
     companyPoolFromForfeit: 0,
+    companyPoolFromClawback: 0,
     companyPoolTotal: totalCollected * SVC_COMPANY_SHARE_RATIO,
     totalWht: 0,
     totalNetPayout: 0,
@@ -873,7 +994,9 @@ function computeManualSvcSummary(branchId: number, yearMonth: string): MonthlySv
       whtAmount,
       netPayout,
       dailyBreakdown: [],
-      excludedDays: []
+      excludedDays: [],
+      foodClawback: 0,
+      foodClawbackDays: []
     };
   });
 
@@ -890,6 +1013,7 @@ function computeManualSvcSummary(branchId: number, yearMonth: string): MonthlySv
     staffPoolTotal,
     companyPoolFromSplit: 0,
     companyPoolFromForfeit: 0,
+    companyPoolFromClawback: 0,
     companyPoolTotal: 0,
     totalWht,
     totalNetPayout,

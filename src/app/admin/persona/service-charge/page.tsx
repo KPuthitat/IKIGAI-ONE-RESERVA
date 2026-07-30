@@ -363,6 +363,8 @@ export default function AdminServiceChargePage({
                               whtAmount={r.whtAmount}
                               netPayout={r.netPayout}
                               excludedDays={r.excludedDays}
+                              foodClawback={r.foodClawback}
+                              foodClawbackDays={r.foodClawbackDays}
                             />
                           </td>
                         </tr>

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { logPersonaAction } from "@/lib/db";
 import {
-  updateMealCouponConfig, addCouponMenu, setCouponMenuActive, removeCouponMenu
+  updateMealCouponConfig, addCouponMenu, setCouponMenuActive, removeCouponMenu, setCouponMenuCredit
 } from "@/lib/meal-coupons";
 
 // /api/admin/persona/meal-coupons — admin config for the staff meal-coupon
@@ -38,6 +38,13 @@ const Body = z.discriminatedUnion("action", [
     action: z.literal("remove_menu"),
     branch_id: z.number().int().positive().optional(),
     id: z.number().int().positive()
+  }),
+  z.object({
+    action: z.literal("set_credit"),
+    branch_id: z.number().int().positive().optional(),
+    id: z.number().int().positive(),
+    // null clears; a positive value tags the food item's welfare credit (60/120)
+    credit_value: z.number().int().positive().max(100000).nullable()
   })
 ]);
 
@@ -82,6 +89,9 @@ export async function POST(req: Request) {
       break;
     case "remove_menu":
       removeCouponMenu(data.id, branchId);
+      break;
+    case "set_credit":
+      setCouponMenuCredit(data.id, branchId, data.credit_value);
       break;
   }
   logPersonaAction(user.id, `meal_coupon.admin.${data.action}`, branchId);

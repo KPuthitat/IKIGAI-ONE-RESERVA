@@ -18,6 +18,8 @@ import { verifyClockCode } from "@/lib/clock-code";
 import { saveClockSelfie } from "@/lib/clock-selfie";
 import { nowBkkMinutes } from "@/lib/time";
 import { mealCouponConfig, isEligibleClockIn, isFoodEligible, issueDailyCoupons } from "@/lib/meal-coupons";
+import { svcWorkedMinutesForUserDate, FOOD_CLAWBACK_MIN_MINUTES } from "@/lib/service-charge";
+import { hasApprovedEarlyLeave } from "@/lib/early-leave";
 
 const Body = z.object({
   pin: z.string().regex(/^\d{4}$/),
@@ -444,6 +446,31 @@ export async function POST(req: Request) {
     }
   }
 
+  // ── Food-credit early-leave warning (owner 2026-07-30) ─────────────
+  // On a fresh clock-OUT, if the staffer redeemed today's free lunch (a
+  // credit-tagged food coupon) but their clamped worked minutes fall short of
+  // the ≥8h bar (480 − 30-min grace) and they have no approved early-leave, warn
+  // that the credit will be clawed back from SVC — and let the client offer to
+  // request approval. Advisory only; wrapped so it can NEVER break the punch.
+  let foodWarning: { credit: number; workedMinutes: number; workDate: string } | null = null;
+  if (action === "out" && clockBranchId) {
+    try {
+      const food = db.prepare(
+        `SELECT credit_value FROM meal_coupons
+          WHERE user_id = ? AND coupon_date = ? AND type = 'food' AND status = 'redeemed'
+            AND credit_value IS NOT NULL AND credit_value > 0 LIMIT 1`
+      ).get(user.id, todayBkk) as { credit_value: number } | undefined;
+      if (food && !hasApprovedEarlyLeave(db, user.id, todayBkk)) {
+        const worked = svcWorkedMinutesForUserDate(clockBranchId, user.id, todayBkk);
+        if (worked < FOOD_CLAWBACK_MIN_MINUTES) {
+          foodWarning = { credit: food.credit_value, workedMinutes: worked, workDate: todayBkk };
+        }
+      }
+    } catch (e) {
+      console.warn("[clock] food clawback warning failed:", e);
+    }
+  }
+
   // ── Fire-and-forget: ส่ง LINE flex confirmation message on clock-in ──
   // Channel: IKIGAI OS (platform-level OA, shared across all branches).
   // Branch context: ใช้แค่ดึงเวลาพักกลางวัน + ชื่อสาขามาแสดงในข้อความ.
@@ -486,6 +513,7 @@ export async function POST(req: Request) {
     action,
     ...(owl ? { owl } : {}),
     ...(swap ? { swap } : {}),
-    ...(coupon ? { coupon } : {})
+    ...(coupon ? { coupon } : {}),
+    ...(foodWarning ? { foodWarning } : {})
   });
 }
