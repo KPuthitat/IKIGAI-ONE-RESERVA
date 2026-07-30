@@ -59,18 +59,19 @@ assert(sumRedeemedDrinksForPartnerMonth(db, 1, 2026, 8) === 80,
   "partner1 ส.ค. → 80 (เดือนถัดไปแยก)");
 
 // ── redeem 'lock' + create 'replace pending' state transitions ──────
-// Replace pending: a new pending order for the same coupon cancels the prior one.
+// New flow (owner 2026-07-30): pending orders carry amount 0; the จ้อจี้ team
+// sets the price (50/80) when they redeem. Refresh replaces the pending order.
 db.exec("DELETE FROM partner_drink_orders");
-db.prepare("INSERT INTO partner_drink_orders (user_id,branch_id,partner_id,coupon_id,order_date,amount,token,status) VALUES (10,20,1,99,'2026-07-20',50,'p1','pending')").run();
+db.prepare("INSERT INTO partner_drink_orders (user_id,branch_id,partner_id,coupon_id,order_date,amount,token,status) VALUES (10,20,1,99,'2026-07-20',0,'p1','pending')").run();
 db.prepare("UPDATE partner_drink_orders SET status='cancelled' WHERE coupon_id=99 AND status='pending'").run();
-db.prepare("INSERT INTO partner_drink_orders (user_id,branch_id,partner_id,coupon_id,order_date,amount,token,status) VALUES (10,20,1,99,'2026-07-20',80,'p2','pending')").run();
+db.prepare("INSERT INTO partner_drink_orders (user_id,branch_id,partner_id,coupon_id,order_date,amount,token,status) VALUES (10,20,1,99,'2026-07-20',0,'p2','pending')").run();
 const pend = db.prepare("SELECT COUNT(*) c FROM partner_drink_orders WHERE coupon_id=99 AND status='pending'").get() as { c: number };
-assert(pend.c === 1, "เปลี่ยนราคา → มี pending เดียว (อันเก่า cancelled)");
-// Redeem locks: pending → redeemed, and only once.
-const r1 = db.prepare("UPDATE partner_drink_orders SET status='redeemed' WHERE token='p2' AND status='pending'").run();
-const r2 = db.prepare("UPDATE partner_drink_orders SET status='redeemed' WHERE token='p2' AND status='pending'").run();
-assert(r1.changes === 1 && r2.changes === 0, "redeem ครั้งแรกติด, ครั้งสองไม่ติด (กันสแกนซ้ำ)");
+assert(pend.c === 1, "รีเฟรช QR → มี pending เดียว (อันเก่า cancelled)");
+// Redeem locks: จ้อจี้ picks 80 → set amount + redeemed, and only once (anti re-scan).
+const r1 = db.prepare("UPDATE partner_drink_orders SET status='redeemed', amount=80 WHERE token='p2' AND status='pending'").run();
+const r2 = db.prepare("UPDATE partner_drink_orders SET status='redeemed', amount=50 WHERE token='p2' AND status='pending'").run();
+assert(r1.changes === 1 && r2.changes === 0, "redeem ครั้งแรกติด (ตั้ง 80), ครั้งสองไม่ติด (กันสแกนซ้ำ)");
 assert(sumRedeemedDrinksForUser(db, 10, "2026-07-01", "2026-07-31", 20) === 80,
-  "หลัง redeem → หัก 80 (ราคาที่เลือกล่าสุด, ไม่ใช่ 50 ที่ถูกยกเลิก)");
+  "หลัง redeem → หัก 80 (ราคาที่จ้อจี้เลือกตอนสแกน)");
 
 console.log("\nAll drink-welfare aggregation + state checks passed.");

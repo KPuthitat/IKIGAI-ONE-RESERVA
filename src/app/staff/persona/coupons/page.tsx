@@ -6,7 +6,7 @@ import { bkkDateIso } from "@/lib/time";
 import {
   listUserCouponsForDate, listEligibleMenu, mealCouponConfig
 } from "@/lib/meal-coupons";
-import { resolveDrinkPartner, DRINK_TIERS } from "@/lib/partner-drink-orders";
+import { resolveDrinkPartner } from "@/lib/partner-drink-orders";
 import CouponsClient from "./CouponsClient";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +43,6 @@ export default function MealCouponsPage() {
         foodMenu={foodMenu}
         hasBranch={branchId != null}
         hasDrinkPartner={hasDrinkPartner}
-        drinkTiers={[...DRINK_TIERS]}
       />
     </div>
   );

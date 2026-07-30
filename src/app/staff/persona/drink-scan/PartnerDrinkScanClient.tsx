@@ -20,16 +20,18 @@ export default function PartnerDrinkScanClient() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [history, setHistory] = useState<Done[]>([]);
+  const [tier, setTier] = useState<number | null>(null);
 
   async function onToken(token: string) {
     setScanning(false);
+    if (tier == null) return;
     setBusy(true);
     setResult(null);
     try {
       const res = await fetch(apiUrl("/api/staff/persona/drink-redeem"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token })
+        body: JSON.stringify({ token, amount: tier })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -63,12 +65,29 @@ export default function PartnerDrinkScanClient() {
         </div>
       )}
 
+      <div className="space-y-2">
+        <div className="text-sm font-medium text-slate-700">1. เลือกราคาเครื่องดื่ม</div>
+        <div className="grid grid-cols-2 gap-2">
+          {[50, 80].map((t) => (
+            <button
+              key={t}
+              onClick={() => setTier(t)}
+              className={`py-3 rounded-xl text-base font-bold active:scale-95 transition border-2 ${
+                tier === t ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-700 border-slate-300"
+              }`}
+            >
+              ฿{t}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <button
         onClick={() => { setResult(null); setScanning(true); }}
-        disabled={busy}
-        className="w-full py-4 rounded-2xl bg-amber-500 text-white text-lg font-bold active:scale-95 transition disabled:opacity-50"
+        disabled={busy || tier == null}
+        className="w-full py-4 rounded-2xl bg-emerald-600 text-white text-lg font-bold active:scale-95 transition disabled:opacity-50"
       >
-        {busy ? "กำลังตรวจสอบ…" : "เปิดกล้องสแกน QR"}
+        {busy ? "กำลังตรวจสอบ…" : tier == null ? "เลือกราคาก่อน" : `2. สแกน QR (฿${tier})`}
       </button>
 
       {history.length > 0 && (

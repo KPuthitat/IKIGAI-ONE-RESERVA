@@ -38,19 +38,18 @@ export function resolveDrinkPartner(branchId: number): DrinkPartner | null {
 }
 
 export type CreateOrderResult =
-  | { ok: true; orderId: number; token: string; amount: number; expiresAt: string; partnerName: string }
-  | { ok: false; error: "no_partner" | "no_coupon" | "bad_amount" };
+  | { ok: true; orderId: number; token: string; expiresAt: string; partnerName: string }
+  | { ok: false; error: "no_partner" | "no_coupon" };
 
 /** Create (or replace) today's pending drink order for a staff member. Requires
- *  an unredeemed daily drink coupon at this branch. Idempotent-ish: an existing
- *  pending order for the same coupon is cancelled and replaced with a fresh one
- *  (so re-picking 50↔80 just re-issues the QR). */
+ *  an unredeemed daily drink coupon at this branch. The price tier (50/80) is
+ *  NOT chosen here — the จ้อจี้ team picks it when they scan (owner 2026-07-30) —
+ *  so a pending order carries amount 0 until redeemed. Idempotent-ish: an
+ *  existing pending order for the same coupon is replaced with a fresh token. */
 export function createDrinkOrder(
-  userId: number, branchId: number, amount: number
+  userId: number, branchId: number
 ): CreateOrderResult {
   const db = getDb();
-  if (!isDrinkTier(amount)) return { ok: false, error: "bad_amount" };
-
   const partner = resolveDrinkPartner(branchId);
   if (!partner) return { ok: false, error: "no_partner" };
 
@@ -68,24 +67,24 @@ export function createDrinkOrder(
   const now = new Date().toISOString();
 
   const orderId = db.transaction(() => {
-    // Replace any prior pending order for this coupon (tier change → fresh QR).
+    // Replace any prior pending order for this coupon (refresh → fresh QR).
     db.prepare(
       "UPDATE partner_drink_orders SET status = 'cancelled' WHERE coupon_id = ? AND status = 'pending'"
     ).run(coupon.id);
     const info = db.prepare(
       `INSERT INTO partner_drink_orders
          (user_id, branch_id, partner_id, coupon_id, order_date, amount, token, status, expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
-    ).run(userId, branchId, partner.id, coupon.id, today, amount, token, coupon.redeem_before, now);
+       VALUES (?, ?, ?, ?, ?, 0, ?, 'pending', ?, ?)`
+    ).run(userId, branchId, partner.id, coupon.id, today, token, coupon.redeem_before, now);
     return Number(info.lastInsertRowid);
   })();
 
-  return { ok: true, orderId, token, amount, expiresAt: coupon.redeem_before, partnerName: partner.name };
+  return { ok: true, orderId, token, expiresAt: coupon.redeem_before, partnerName: partner.name };
 }
 
 export type RedeemOrderResult =
   | { ok: true; amount: number; staffName: string; orderDate: string }
-  | { ok: false; error: "not_found" | "already" | "expired" | "wrong_partner" };
+  | { ok: false; error: "not_found" | "already" | "expired" | "wrong_partner" | "bad_amount" };
 
 /** Partner (จ้อจี้) redeems by scanning the QR token. Flips the order to
  *  redeemed and consumes the underlying drink coupon — this is the moment the
@@ -93,9 +92,11 @@ export type RedeemOrderResult =
  *  branch(es) it may fulfil for. Idempotent: re-scan of a redeemed token → 409
  *  ('already'). */
 export function redeemDrinkOrder(
-  token: string, redeemerUserId: number, redeemerBranchIds: number[]
+  token: string, redeemerUserId: number, redeemerBranchIds: number[], amount: number
 ): RedeemOrderResult {
   const db = getDb();
+  // The จ้อจี้ team picks the price tier (50/80) at scan time (owner 2026-07-30).
+  if (!isDrinkTier(amount)) return { ok: false, error: "bad_amount" };
   const order = db.prepare(
     `SELECT o.id, o.user_id, o.branch_id, o.amount, o.status, o.expires_at, o.coupon_id, o.order_date,
             COALESCE(u.nickname_th, u.display_name) AS staff_name
@@ -119,13 +120,14 @@ export function redeemDrinkOrder(
   }
 
   const now = new Date().toISOString();
-  const label = `เครื่องดื่มจ้อจี้ ฿${order.amount}`;
+  const label = `เครื่องดื่มจ้อจี้ ฿${amount}`;
   const changed = db.transaction(() => {
+    // Set the จ้อจี้-chosen amount as the order is redeemed (locks the charge).
     const info = db.prepare(
       `UPDATE partner_drink_orders
-          SET status = 'redeemed', redeemed_at = ?, redeemed_by = ?
+          SET status = 'redeemed', amount = ?, redeemed_at = ?, redeemed_by = ?
         WHERE id = ? AND status = 'pending'`
-    ).run(now, redeemerUserId, order.id);
+    ).run(amount, now, redeemerUserId, order.id);
     if (info.changes === 0) return false; // lost a race — someone redeemed first
     // Consume the daily drink coupon so it can't be re-ordered or menu-redeemed.
     if (order.coupon_id != null) {
@@ -140,7 +142,7 @@ export function redeemDrinkOrder(
   })();
   if (!changed) return { ok: false, error: "already" };
 
-  return { ok: true, amount: order.amount, staffName: order.staff_name, orderDate: order.order_date };
+  return { ok: true, amount, staffName: order.staff_name, orderDate: order.order_date };
 }
 
 /** Sum of a staff member's REDEEMED drink orders within a date range (inclusive,
