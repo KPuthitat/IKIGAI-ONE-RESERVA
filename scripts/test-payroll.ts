@@ -4,7 +4,7 @@
 // Guarantees: salary/30 per unpaid day, FT only, default 0 = no change,
 // and the deduction never drives base pay negative.
 
-import { computeLineFromMinutes, computeLineForEmployee, computeSso, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift } from "../src/lib/payroll-compute";
+import { computeLineFromMinutes, computeLineForEmployee, computeSso, applyPtGrace, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift } from "../src/lib/payroll-compute";
 
 const SETTINGS: PayrollSettings = {
   ot_mode: "flat", ot_flat_per_15min: 0,
@@ -390,6 +390,74 @@ console.log("\nทำงานข้ามบริษัท — SSO หัก�
   // สาขารองในบริษัทเดียวกัน: is_primary_branch=0 แต่ is_home_company=1 → SSO ยังหัก.
   const otherBranchSameCo = computeLineFromMinutes({ employee: { ...ptHourly(70), is_primary_branch: 0, is_home_company: 1 }, ...mins });
   eq("บริษัทเดียว สาขารอง: SSO ยังหักปกติ", otherBranchSameCo.sso_amount, computeSso(otherBranchSameCo.base_pay, "monthly", SETTINGS));
+}
+
+// 14. applyPtGrace — 5-นาที grace ต้องนับเวลาเข้า/ออกตามกะทั้งสองฝั่ง
+//     (owner 2026-07-30 bug: มาสาย 3 นาทีในช่วง grace แต่โดนตัด 3 นาที เพราะฝั่ง
+//     กดเข้าไม่ snap กลับไปเวลากะ ต่างจากฝั่งกดออกที่ snap ถูก).
+console.log("\napplyPtGrace 5-min grace (เข้า/ออกตามกะ):");
+{
+  // Shift 11:00–20:00 (+07), no scheduled break — 9h = 540 นาที.
+  const sched: ScheduledShift = {
+    startTs: "2026-07-26T11:00:00+07:00", endTs: "2026-07-26T20:00:00+07:00",
+    breakStartTs: null, breakEndTs: null
+  };
+  const g = (inHHMM: string, outHHMM: string) =>
+    applyPtGrace(
+      { startTs: `2026-07-26T${inHHMM}:00+07:00`, endTs: `2026-07-26T${outHHMM}:00+07:00` },
+      sched
+    );
+
+  // มาสาย 3 นาที (11:03) — ในช่วง grace → นับตั้งแต่ 11:00 = เต็ม 540, ไม่ late
+  const late3 = g("11:03", "20:00");
+  eq("เข้า 11:03 (สาย 3 นาที) → gross 540 เต็ม", late3.grossMinutes, 540);
+  eq("เข้า 11:03 → lateMinutes 0", late3.lateMinutes, 0);
+
+  // ตรงเวลาเป๊ะ → 540 (regression)
+  eq("เข้า 11:00 ตรงเวลา → gross 540", g("11:00", "20:00").grossMinutes, 540);
+
+  // สายเกิน grace (11:10) → นับจริงจาก 11:10 = 530, late 10
+  const late10 = g("11:10", "20:00");
+  eq("เข้า 11:10 (สายเกิน grace) → gross 530", late10.grossMinutes, 530);
+  eq("เข้า 11:10 → lateMinutes 10", late10.lateMinutes, 10);
+
+  // ออกก่อน 3 นาที (19:57) — ในช่วง grace → นับถึง 20:00 = เต็ม 540 (ฝั่งออกยังถูก)
+  eq("ออก 19:57 (ก่อน 3 นาที) → gross 540 เต็ม", g("11:00", "19:57").grossMinutes, 540);
+
+  // ออกก่อนเกิน grace (19:50) → นับจริงถึง 19:50 = 530, early 10
+  const early10 = g("11:00", "19:50");
+  eq("ออก 19:50 (ก่อนเกิน grace) → gross 530", early10.grossMinutes, 530);
+  eq("ออก 19:50 → earlyMinutes 10", early10.earlyMinutes, 10);
+
+  // มาก่อนเวลา (10:30) ไม่มี OT อนุมัติ → นับจาก 11:00 (ทิ้งเวลาก่อนกะ) = 540
+  eq("เข้า 10:30 (ก่อนเวลา) → gross 540 (ไม่จ่ายก่อนกะ)", g("10:30", "20:00").grossMinutes, 540);
+}
+
+// 15. Born-FT new hire (ไม่เคยเป็น PT) — ft_started_at NULL + pay_cycle monthly.
+//     เดือนแรกที่ไม่เต็มต้องคิดรายวัน (salary/30 × วันทำจริง) จ่ายรอบรายเดือน —
+//     ไม่ใช่หารรายสัปดาห์ และไม่ใช่ WHT รอบเปลี่ยนผ่าน (owner 2026-07-30 · สุริยะ).
+console.log("\nborn-FT รับเข้าใหม่รายเดือน (prorate เดือนแรก):");
+{
+  const mins = {
+    regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, unpaidLeaveDays: 0, unpaired: 0,
+    cycle: "monthly" as const, periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS
+  };
+  // เข้าใหม่กลางเดือน (16 มิ.ย.) ทำงาน 10 วัน → 30000/30×10 = 10000
+  const bornFtPartial: EmployeePayrollSnapshot = {
+    ...ftMonthly(30000), hire_date: "2026-06-16", ft_started_at: null, pay_cycle: "monthly"
+  };
+  const p = computeLineFromMinutes({ employee: bornFtPartial, daysWorked: 10, ...mins });
+  eq("born-FT เดือนแรก 10 วัน → base 10000 (รายวัน ไม่ใช่รายสัปดาห์)", p.base_pay, 10000);
+  eq("born-FT เดือนแรก → SSO ปกติ (ไม่ใช่ WHT รอบเปลี่ยนผ่าน)", p.sso_amount, computeSso(10000, "monthly", SETTINGS));
+  eq("born-FT เดือนแรก → tax_amount 0 (SSO ไม่หัก ณ ที่จ่าย)", p.tax_amount, 0);
+
+  // อยู่มาก่อนเดือนนี้ (จ้าง 1 พ.ค.) → เต็มเดือน 30000
+  const bornFtFull: EmployeePayrollSnapshot = {
+    ...ftMonthly(30000), hire_date: "2026-05-01", ft_started_at: null, pay_cycle: "monthly"
+  };
+  const f = computeLineFromMinutes({ employee: bornFtFull, daysWorked: 22, ...mins });
+  eq("born-FT เดือนเต็ม → base 30000", f.base_pay, 30000);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

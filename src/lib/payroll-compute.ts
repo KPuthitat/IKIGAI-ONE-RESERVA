@@ -339,7 +339,15 @@ export function applyPtGrace(
   let effIn: number;
   let lateMinutes = 0;
   if (inMs <= schStart + graceMs) {
-    effIn = Math.max(inMs, inFloor);
+    // Within grace. Two sub-cases fold into one clamp (owner rule: มาสายไม่เกิน 5
+    // นาที ให้นับเวลาเข้ากะ):
+    //   • clocked in LATE-but-within-grace → snap UP to the scheduled start so
+    //     those minutes aren't docked (mirrors the out-side snapping to outCap);
+    //   • clocked in EARLY → still paid from arrival, but never before inFloor.
+    // min(inMs, schStart) caps the late side at schStart; Math.max(…, inFloor)
+    // keeps the early/approved-OT floor. The previous code omitted the min(),
+    // so an 11:03 punch on an 11:00 shift kept 11:03 and lost 3 paid minutes.
+    effIn = Math.max(Math.min(inMs, schStart), inFloor);
   } else {
     effIn = inMs;
     lateMinutes = (inMs - schStart) / 60000;
