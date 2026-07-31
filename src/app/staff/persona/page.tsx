@@ -4,9 +4,10 @@ import { requireUser, userCan } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { nameWithPrefix } from "@/lib/name";
 import { bkkDateIso } from "@/lib/time";
-import { userHasWorkShiftOn, resolveClockBranchId } from "@/lib/roster";
+import { userHasWorkShiftOn, resolveClockBranchId, scheduledWorkBranchesWithNames } from "@/lib/roster";
 import { listUserCouponsForDate } from "@/lib/meal-coupons";
 import TimeClockClient from "./TimeClockClient";
+import BranchSwitchPrompt from "./BranchSwitchPrompt";
 
 export const dynamic = "force-dynamic";
 
@@ -96,8 +97,20 @@ export default function StaffPersonaPage() {
   // จ้อจี้ partner accounts get a shortcut to the drink-redemption scanner.
   const canRedeemDrinks = userCan(user, "partner.drink.redeem");
 
+  // Cross-branch clock-in helper (owner 2026-07-31): if the ACTIVE branch has no
+  // shift today but the staff IS rostered at another branch, offer a one-tap
+  // switch pop-up so they don't get stuck at "ไม่มีกะ" / wrong-branch gates.
+  const scheduledBranches = user.activeBranchId != null
+    ? scheduledWorkBranchesWithNames(user.id, todayBkk) : [];
+  const activeHasShiftToday = scheduledBranches.some((b) => b.id === user.activeBranchId);
+  const branchSwitchOptions = (!activeHasShiftToday && scheduledBranches.length > 0)
+    ? scheduledBranches : [];
+
   return (
     <div className="space-y-3">
+      {branchSwitchOptions.length > 0 && (
+        <BranchSwitchPrompt nickname={nickname} branches={branchSwitchOptions} />
+      )}
       {canRedeemDrinks && (
         <Link
           href="/staff/persona/drink-scan"
