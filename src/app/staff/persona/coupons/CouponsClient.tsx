@@ -6,13 +6,13 @@ import { apiUrl } from "@/lib/url";
 import type { MealCouponRow, EligibleMenuItem } from "@/lib/meal-coupons";
 
 export default function CouponsClient({
-  coupons, foodMenu, hasBranch, hasDrinkPartner, clockedInToday
+  coupons, foodMenu, hasBranch, hasDrinkPartner, canOrderDrink
 }: {
   coupons: MealCouponRow[];
   foodMenu: EligibleMenuItem[];
   hasBranch: boolean;
   hasDrinkPartner: boolean;
-  clockedInToday: boolean;
+  canOrderDrink: boolean;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Record<number, number | "">>({});
@@ -63,7 +63,7 @@ export default function CouponsClient({
       {err && <div className="text-sm text-rose-600">{err}</div>}
 
       {/* Drinks — standalone, unlimited, self-paid (owner 2026-07-31). */}
-      {hasDrinkPartner && <DrinkOrderCard clockedInToday={clockedInToday} />}
+      {hasDrinkPartner && <DrinkOrderCard canOrderDrink={canOrderDrink} />}
 
       {/* Food coupons for today (coupon-gated as before). */}
       {foodCoupons.length === 0 ? (
@@ -126,7 +126,7 @@ export default function CouponsClient({
 // coupon, unlimited per day, self-paid. Create a one-time token → QR for จ้อจี้ to
 // scan; จ้อจี้ picks the tier (50/80) + payment method. The charge locks only on
 // scan.
-function DrinkOrderCard({ clockedInToday }: { clockedInToday: boolean }) {
+function DrinkOrderCard({ canOrderDrink }: { canOrderDrink: boolean }) {
   const [order, setOrder] = useState<{ token: string; expiresAt: string } | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -193,7 +193,7 @@ function DrinkOrderCard({ clockedInToday }: { clockedInToday: boolean }) {
             รับแล้ว / สั่งแก้วถัดไป
           </button>
         </div>
-      ) : !clockedInToday ? (
+      ) : !canOrderDrink ? (
         <div className="text-sm text-amber-600">กดเข้างานวันนี้ก่อน ถึงจะสั่งเครื่องดื่มได้</div>
       ) : (
         <div className="space-y-2">
