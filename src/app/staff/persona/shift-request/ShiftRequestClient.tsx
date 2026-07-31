@@ -3,8 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
-import type { ShiftRequestRow } from "@/lib/shift-requests";
+import type { ShiftRequestRow, ShiftRequestLabels } from "@/lib/shift-requests";
 import { useConfirm } from "@/app/components/useConfirm";
+
+type PositionOpt = { id: number; title: string };
+type ShiftOpt = { id: number; code: string; name: string | null };
 
 const KIND_TH: Record<string, string> = { extra_shift: "ขอเพิ่มกะ", swap: "ขอสลับวันหยุด" };
 const STATUS_TH: Record<string, { t: string; c: string }> = {
@@ -17,12 +20,20 @@ function todayBkk(): string {
   return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 }
 
-export default function ShiftRequestClient({ requests }: { requests: ShiftRequestRow[] }) {
+export default function ShiftRequestClient({
+  requests, positions, shiftCodes
+}: {
+  requests: Array<ShiftRequestRow & Partial<ShiftRequestLabels>>;
+  positions: PositionOpt[];
+  shiftCodes: ShiftOpt[];
+}) {
   const router = useRouter();
   const { confirm, ConfirmDialog } = useConfirm();
   const [kind, setKind] = useState<"extra_shift" | "swap">("extra_shift");
   const [workDate, setWorkDate] = useState("");
   const [offDate, setOffDate] = useState("");
+  const [positionId, setPositionId] = useState<number | "">("");
+  const [shiftCodeId, setShiftCodeId] = useState<number | "">("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -30,6 +41,9 @@ export default function ShiftRequestClient({ requests }: { requests: ShiftReques
   async function submit() {
     if (!workDate) { setMsg({ kind: "err", text: "เลือกวันที่ต้องการทำงานเพิ่ม" }); return; }
     if (kind === "swap" && !offDate) { setMsg({ kind: "err", text: "เลือกวันที่ต้องการหยุด" }); return; }
+    if (kind === "extra_shift" && (positionId === "" || shiftCodeId === "")) {
+      setMsg({ kind: "err", text: "เลือกตำแหน่งและเวลาที่ต้องการทำงาน" }); return;
+    }
     setBusy(true); setMsg(null);
     try {
       const res = await fetch(apiUrl("/api/persona/shift-request"), {
@@ -37,13 +51,15 @@ export default function ShiftRequestClient({ requests }: { requests: ShiftReques
         body: JSON.stringify({
           kind, work_date: workDate,
           off_date: kind === "swap" ? offDate : null,
+          position_id: kind === "extra_shift" ? positionId : undefined,
+          shift_code_id: kind === "extra_shift" ? shiftCodeId : undefined,
           note: note.trim() || undefined
         })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setMsg({ kind: "err", text: j.message || "ส่งคำขอไม่สำเร็จ ลองใหม่อีกครั้ง" }); return; }
       setMsg({ kind: "ok", text: `ส่งคำขอแล้ว (${j.ref_no}) — รอหัวหน้าอนุมัติ` });
-      setWorkDate(""); setOffDate(""); setNote("");
+      setWorkDate(""); setOffDate(""); setNote(""); setPositionId(""); setShiftCodeId("");
       router.refresh();
     } finally { setBusy(false); }
   }
@@ -88,6 +104,31 @@ export default function ShiftRequestClient({ requests }: { requests: ShiftReques
             </div>
           )}
         </div>
+        {kind === "extra_shift" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">ตำแหน่ง</label>
+              <select className="input" value={positionId}
+                onChange={(e) => setPositionId(e.target.value === "" ? "" : Number(e.target.value))}>
+                <option value="">— เลือกตำแหน่ง —</option>
+                {positions.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">เวลา (กะ)</label>
+              <select className="input" value={shiftCodeId}
+                onChange={(e) => setShiftCodeId(e.target.value === "" ? "" : Number(e.target.value))}>
+                <option value="">— เลือกเวลา —</option>
+                {shiftCodes.map((s) => <option key={s.id} value={s.id}>{s.code}{s.name ? ` · ${s.name}` : ""}</option>)}
+              </select>
+            </div>
+            {(positions.length === 0 || shiftCodes.length === 0) && (
+              <p className="sm:col-span-2 text-xs text-amber-600">
+                สาขานี้ยังไม่มีตำแหน่ง/กะให้เลือก — แจ้งแอดมินตั้งค่าตารางงานก่อน
+              </p>
+            )}
+          </div>
+        )}
         <div>
           <label className="label">เหตุผล / หมายเหตุ</label>
           <textarea className="input text-sm" rows={2} value={note} maxLength={500}
@@ -115,6 +156,9 @@ export default function ShiftRequestClient({ requests }: { requests: ShiftReques
                   {r.kind === "swap"
                     ? `หยุด ${r.off_date} · ทำงานแทน ${r.work_date}`
                     : `ทำงานเพิ่ม ${r.work_date}`}
+                  {r.kind === "extra_shift" && (r.position_title || r.shift_code) && (
+                    <> · {r.position_title ?? "—"}{r.shift_code ? ` · ${r.shift_code}` : ""}</>
+                  )}
                 </div>
                 {r.decision_note && <div className="text-[11px] text-slate-400 mt-0.5">หมายเหตุ: {r.decision_note}</div>}
               </div>

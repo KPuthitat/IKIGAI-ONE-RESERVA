@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { nameWithPrefix } from "@/lib/name";
 import { thMonthLabel, thDayLabel, groupByMonthDay } from "@/lib/th-month";
-import type { ShiftRequestRow } from "@/lib/shift-requests";
+import type { ShiftRequestRow, ShiftRequestLabels } from "@/lib/shift-requests";
 
-type Row = ShiftRequestRow & {
+type Row = ShiftRequestRow & ShiftRequestLabels & {
   employee_name: string; title_prefix: string | null; employment_type: string | null;
 };
 type HistoryRow = Row & { decided_by_name: string | null };
@@ -85,6 +85,11 @@ export default function ShiftRequestsAdminClient({
                   ? `ขอหยุดวันที่ ${r.off_date} · ทำงานชดเชยวันที่ ${r.work_date}`
                   : `ขอทำงานเพิ่มวันที่ ${r.work_date}`}
               </div>
+              {r.kind === "extra_shift" && (r.position_title || r.shift_code) && (
+                <div className="text-xs text-emerald-700 mt-0.5">
+                  ขอตำแหน่ง: <b>{r.position_title ?? "—"}</b>{r.shift_code ? <> · เวลา <b>{r.shift_code}{r.shift_name ? ` (${r.shift_name})` : ""}</b></> : null}
+                </div>
+              )}
               {r.note && <div className="text-xs text-slate-500 mt-0.5">เหตุผล: {r.note}</div>}
             </div>
           </div>
@@ -187,16 +192,22 @@ function AssignModal({
     () => positions.filter((p) => !occupied.has(p.id)),
     [positions, ctx.occupiedWork]
   );
-  // Default to the staff's regular position when it's still free, else
-  // the first empty position (owner 2026-06-06).
-  const defaultPos = (ctx.regularPositionId != null && !occupied.has(ctx.regularPositionId))
-    ? ctx.regularPositionId
-    : (emptyPositions[0]?.id ?? null);
+  // Default to what the STAFF requested when it's still free (owner 2026-07-31 —
+  // the admin should just approve), then fall back to the staff's regular
+  // position, else the first empty position.
+  const defaultPos =
+    (row.position_id != null && !occupied.has(row.position_id))
+      ? row.position_id
+      : (ctx.regularPositionId != null && !occupied.has(ctx.regularPositionId))
+        ? ctx.regularPositionId
+        : (emptyPositions[0]?.id ?? null);
   const workShifts = shiftCodes.filter((s) => s.kind === "work");
+  // Prefill the staff's requested shift when valid.
+  const requestedShiftValid = row.shift_code_id != null && workShifts.some((s) => s.id === row.shift_code_id);
 
   const [positionId, setPositionId] = useState<number | "">(defaultPos ?? "");
   const [shiftCodeId, setShiftCodeId] = useState<number | "">(
-    defaultShiftCodeId ?? workShifts[0]?.id ?? ""
+    (requestedShiftValid ? row.shift_code_id : null) ?? defaultShiftCodeId ?? workShifts[0]?.id ?? ""
   );
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
