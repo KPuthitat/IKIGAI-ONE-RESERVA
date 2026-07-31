@@ -56,13 +56,20 @@ export function createDrinkOrder(
   const today = todayBkk();
   const dayStartIso = new Date(`${today}T00:00:00+07:00`).toISOString();
   const dayEndIso = new Date(`${today}T23:59:59+07:00`).toISOString();
-  // Must have clocked IN today at this branch — no shift/coupon gate otherwise.
-  const clockedIn = db.prepare(
-    `SELECT 1 FROM time_entries
-      WHERE user_id = ? AND branch_id = ? AND type = 'in' AND ts >= ? AND ts <= ?
-      LIMIT 1`
-  ).get(userId, branchId, dayStartIso, dayEndIso);
-  if (!clockedIn) return { ok: false, error: "not_clocked_in" };
+  // Must have clocked IN today at this branch — EXCEPT execs / no-clock staff
+  // (track_attendance = 0) who never punch (owner 2026-07-31). They can order any
+  // day the branch has a จ้อจี้ partner.
+  const isExec = !!db.prepare(
+    "SELECT 1 FROM users WHERE id = ? AND COALESCE(track_attendance, 1) = 0"
+  ).get(userId);
+  if (!isExec) {
+    const clockedIn = db.prepare(
+      `SELECT 1 FROM time_entries
+        WHERE user_id = ? AND branch_id = ? AND type = 'in' AND ts >= ? AND ts <= ?
+        LIMIT 1`
+    ).get(userId, branchId, dayStartIso, dayEndIso);
+    if (!clockedIn) return { ok: false, error: "not_clocked_in" };
+  }
 
   const token = randomBytes(24).toString("hex");
   const now = new Date().toISOString();

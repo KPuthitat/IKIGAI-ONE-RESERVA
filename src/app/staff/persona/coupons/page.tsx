@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { bkkDateIso } from "@/lib/time";
 import {
-  listUserCouponsForDate, listEligibleMenu, mealCouponConfig
+  listUserCouponsForDate, listEligibleMenu, mealCouponConfig, issueDailyCoupons
 } from "@/lib/meal-coupons";
 import { resolveDrinkPartner } from "@/lib/partner-drink-orders";
 import CouponsClient from "./CouponsClient";
@@ -15,12 +15,26 @@ export const metadata: Metadata = { title: "PERSONA · คูปองของ�
 export default function MealCouponsPage() {
   const user = requireUser();
   const todayBkk = bkkDateIso(new Date().toISOString());
-  const coupons = listUserCouponsForDate(user.id, todayBkk);
 
   const branchId = user.activeBranchId ?? null;
   const branch = branchId != null
     ? (getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined)
     : undefined;
+
+  // Execs / no-clock staff (track_attendance = 0) never punch, so the clock-in
+  // that normally mints the food coupon never fires — issue their daily lunch
+  // coupon on-demand here instead (owner 2026-07-31: ผู้บริหารเบิกไม่ได้). 1/day
+  // (idempotent), only when the branch's meal-coupon feature is on. Drinks are
+  // handled separately below.
+  const isExec = branchId != null && ((getDb().prepare(
+    "SELECT COALESCE(track_attendance, 1) AS ta FROM users WHERE id = ?"
+  ).get(user.id) as { ta: number } | undefined)?.ta ?? 1) === 0;
+  if (branchId != null && isExec && mealCouponConfig(branchId).enabled) {
+    try { issueDailyCoupons(user.id, branchId, todayBkk, { food: true, drink: false }); }
+    catch { /* never block the page on issuance */ }
+  }
+
+  const coupons = listUserCouponsForDate(user.id, todayBkk);
 
   // Food still redeems from the branch's Delivera menu (coupon-gated). Drinks are
   // now fulfilled by the branch's จ้อจี้ partner — no coupon, unlimited, self-paid,
@@ -29,12 +43,13 @@ export default function MealCouponsPage() {
   const cutoff = branchId != null ? mealCouponConfig(branchId).redeemCutoff : "15:00";
   const hasDrinkPartner = branchId != null && resolveDrinkPartner(branchId) != null;
 
-  // Drink orders require the staff to have clocked IN today at this branch.
-  let clockedInToday = false;
-  if (branchId != null) {
+  // Drink orders require a clock-in today — except execs / no-clock staff, who
+  // never punch (owner 2026-07-31), so they may order any day.
+  let canOrderDrink = isExec;
+  if (branchId != null && !isExec) {
     const startIso = new Date(`${todayBkk}T00:00:00+07:00`).toISOString();
     const endIso = new Date(`${todayBkk}T23:59:59+07:00`).toISOString();
-    clockedInToday = !!getDb().prepare(
+    canOrderDrink = !!getDb().prepare(
       "SELECT 1 FROM time_entries WHERE user_id = ? AND branch_id = ? AND type = 'in' AND ts >= ? AND ts <= ? LIMIT 1"
     ).get(user.id, branchId, startIso, endIso);
   }
@@ -53,7 +68,7 @@ export default function MealCouponsPage() {
         foodMenu={foodMenu}
         hasBranch={branchId != null}
         hasDrinkPartner={hasDrinkPartner}
-        clockedInToday={clockedInToday}
+        canOrderDrink={canOrderDrink}
       />
     </div>
   );
