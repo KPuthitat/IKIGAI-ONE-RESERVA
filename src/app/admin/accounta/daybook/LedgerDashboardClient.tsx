@@ -1336,11 +1336,16 @@ export default function LedgerDashboardClient({
           className="w-9 h-9 rounded-full border border-slate-300 text-slate-500 flex items-center justify-center hover:bg-brand hover:text-white hover:border-brand transition disabled:opacity-40" disabled={pending} aria-label="ถัดไป">→</button>
       </div>
 
-      {/* Hero metric cards */}
+      {/* Hero metric cards. When the company is VAT-registered, each shows the
+          after-VAT figure in parentheses (owner 2026-07-31): รายรับ − ภาษีขาย,
+          รายจ่าย − ภาษีซื้อ, กำไร − ภพ.30 (ภาษีขาย−ซื้อ). */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="card py-3">
           <div className="text-[11px] text-slate-400">รายรับ (ยอดขาย)</div>
           <div className="text-2xl font-bold text-emerald-600">฿{fmtMoney(dash.salesRevenue)}</div>
+          {dash.vatRegistered && (
+            <div className="text-[11px] text-emerald-700/70">(หลังหัก VAT ฿{fmtMoney(dash.salesRevenue - dash.outputVat)})</div>
+          )}
           {dash.financing > 0
             ? <div className="text-[11px] text-sky-600">+ เงินกู้/เงินเข้าอื่น ฿{fmtMoney(dash.financing)}</div>
             : <div className="text-[11px] text-slate-400">เงินเข้าจริง ฿{fmtMoney(dash.cashReceived)}</div>}
@@ -1348,6 +1353,9 @@ export default function LedgerDashboardClient({
         <div className="card py-3">
           <div className="text-[11px] text-slate-400">รายจ่าย</div>
           <div className="text-2xl font-bold text-rose-600">฿{fmtMoney(dash.expense)}</div>
+          {dash.vatRegistered && (
+            <div className="text-[11px] text-rose-700/70">(หลังหัก VAT ฿{fmtMoney(dash.expense - dash.inputVat)})</div>
+          )}
           <div className="text-[11px] text-slate-400">ภาษีซื้อ ฿{fmtMoney(dash.inputVat)}</div>
         </div>
         <div className="card py-3">
@@ -1355,6 +1363,14 @@ export default function LedgerDashboardClient({
           <div className={`text-2xl font-bold ${dash.net >= 0 ? "text-indigo-600" : "text-rose-600"}`}>
             {dash.net < 0 ? `(฿${fmtMoney(-dash.net)})` : `฿${fmtMoney(dash.net)}`}
           </div>
+          {dash.vatRegistered && (() => {
+            const afterVat = dash.net - dash.vatPayable;
+            return (
+              <div className={`text-[11px] ${afterVat >= 0 ? "text-indigo-700/70" : "text-rose-700/70"}`}>
+                (หลังหัก VAT {afterVat < 0 ? `(฿${fmtMoney(-afterVat)})` : `฿${fmtMoney(afterVat)}`})
+              </div>
+            );
+          })()}
           <div className="text-[11px] text-slate-400">{margin != null ? `อัตรากำไร ${margin}%` : "—"}</div>
         </div>
       </div>
