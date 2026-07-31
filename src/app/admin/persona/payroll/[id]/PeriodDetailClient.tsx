@@ -1075,6 +1075,7 @@ type BreakdownDay = {
     holiday: boolean;
     double: boolean;
     branch: string | null;
+    branch_id: number | null;
     statusLabel: string | null;
   }>;
   totalMinutes: number;
@@ -1129,6 +1130,14 @@ function LineEditModal({
   const [dayWorked, setDayWorked] = useState("");    // hours
   const [dayOtUntil, setDayOtUntil] = useState("");  // HH:MM (approved OT until)
   const [dayOtPay, setDayOtPay] = useState("");      // baht
+  // Per-day BRANCH reattribution (owner 2026-07-31) — book this day's hours to
+  // another branch in the company cycle. Empty = use the punched branch.
+  const [dayBranchId, setDayBranchId] = useState<string>("");
+  const [dayBranchInit, setDayBranchInit] = useState<string>("");
+  // Sibling branches the day can be moved to (from the breakdown response) +
+  // this period's own branch. The picker shows only when there is a choice.
+  const [branchOptions, setBranchOptions] = useState<Array<{ id: number; name: string; status: string }>>([]);
+  const [periodBranchId, setPeriodBranchId] = useState<number | null>(null);
   // Snapshot of the prefilled values (dirty detection) + which fields
   // already carried a saved override (always resent on save).
   const [dayInit, setDayInit] = useState<Record<string, string>>({});
@@ -1200,6 +1209,8 @@ function LineEditModal({
       setBreakdownSelfies((j.selfies ?? []) as SelfiePunch[]);
       if (j.period_start) setPeriodStart(j.period_start as string);
       if (j.period_end) setPeriodEnd(j.period_end as string);
+      setBranchOptions((j.branch_options ?? []) as Array<{ id: number; name: string; status: string }>);
+      setPeriodBranchId((j.period_branch_id ?? null) as number | null);
       setBreakdownErr(null);
     } catch {
       setBreakdownErr(t(lang, "common.error"));
@@ -1250,12 +1261,16 @@ function LineEditModal({
     const vWorked = hrStr(day.effectiveMinutes);
     const vOtUntil = day.otUntil ?? "";
     const vOtPay = day.otPay > 0 ? String(day.otPay) : "";
+    // Effective booked branch for the day = a pair's branch_id, else this period.
+    const dayBr = day.pairs.find((p) => p.branch_id != null)?.branch_id ?? periodBranchId;
+    const vBranch = dayBr != null ? String(dayBr) : "";
     setSelectedDate(day.date);
     setSelDay(day);
     setDayIn(vIn); setDayOut(vOut);
     setDaySchedIn(vSchedIn); setDaySchedOut(vSchedOut);
     setDayBreak(vBreak); setDayWorked(vWorked);
     setDayOtUntil(vOtUntil); setDayOtPay(vOtPay);
+    setDayBranchId(vBranch); setDayBranchInit(vBranch);
     setDayInit({ in: vIn, out: vOut, schedIn: vSchedIn, schedOut: vSchedOut,
       brk: vBreak, worked: vWorked, otUntil: vOtUntil, otPay: vOtPay });
     setDayHad({
@@ -1276,6 +1291,8 @@ function LineEditModal({
     setSelectedDate(date); setSelDay(null);
     setDayIn(""); setDayOut(""); setDaySchedIn(""); setDaySchedOut("");
     setDayBreak(""); setDayWorked(""); setDayOtUntil(""); setDayOtPay("");
+    { const vBranch = periodBranchId != null ? String(periodBranchId) : "";
+      setDayBranchId(vBranch); setDayBranchInit(vBranch); }
     setDayInit({ in: "", out: "", schedIn: "", schedOut: "",
       brk: "", worked: "", otUntil: "", otPay: "" });
     setDayHad({ clock: false, sched: false, brk: false, worked: false, otUntil: false, otPay: false });
@@ -1324,19 +1341,25 @@ function LineEditModal({
     const workedDirty = dayWorked !== dayInit.worked;
     const otUntilDirty = dayOtUntil !== dayInit.otUntil;
     const otPayDirty = dayOtPay !== dayInit.otPay;
-    const anyDirty = clockDirty || schedDirty || breakDirty || workedDirty || otUntilDirty || otPayDirty;
+    const branchDirty = dayBranchId !== dayBranchInit;
+    const anyDirty = clockDirty || schedDirty || breakDirty || workedDirty || otUntilDirty || otPayDirty || branchDirty;
     const hadAny = selDay?.override != null;
+    // A pure branch move sends ONLY the branch (no clock/field keys) so the
+    // server never pins an unnecessary clock override — and the clock/sched
+    // pair validations below don't apply (the day's punches are untouched).
+    const onlyBranch = branchDirty && !clockDirty && !schedDirty && !breakDirty
+      && !workedDirty && !otUntilDirty && !otPayDirty && !hadAny;
 
     if (!anyDirty && !hadAny) {
       setDayMsg("ไม่มีการเปลี่ยนแปลง");
       return;
     }
-    if ((!dayIn) !== (!dayOut)) {
+    if (!onlyBranch && (!dayIn) !== (!dayOut)) {
       setDayMsg("ต้องกรอกทั้งเวลาเข้าและออก (หรือเว้นว่างทั้งคู่)");
       return;
     }
     const sendSched = schedDirty || dayHad.sched;
-    if (sendSched && ((!daySchedIn) !== (!daySchedOut))) {
+    if (!onlyBranch && sendSched && ((!daySchedIn) !== (!daySchedOut))) {
       setDayMsg("ต้องกรอกทั้งเวลาเข้าและเลิกงาน (หรือเว้นว่างทั้งคู่)");
       return;
     }
@@ -1344,12 +1367,12 @@ function LineEditModal({
     setDaySaving(true);
     setDayMsg(null);
     try {
-      const res = await fetch(
-        apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}/day`),
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+      const branchField = branchDirty
+        ? { branch_id: dayBranchId === "" ? null : Number(dayBranchId) }
+        : {};
+      const body = onlyBranch
+        ? { work_date: selectedDate, ...branchField, admin_pin: dayPin }
+        : {
             work_date: selectedDate,
             clock_in: dayIn || null,
             clock_out: dayOut || null,
@@ -1359,8 +1382,17 @@ function LineEditModal({
             worked_min: (workedDirty || dayHad.worked) ? hrToMin(dayWorked) : null,
             ot_until: (otUntilDirty || dayHad.otUntil) ? (dayOtUntil || null) : null,
             ot_pay: (otPayDirty || dayHad.otPay) ? numOrNull(dayOtPay) : null,
+            // Branch reattribution — sent ONLY when the picker changed, so an
+            // untouched save never moves the day. "" → null (punched branch).
+            ...branchField,
             admin_pin: dayPin
-          })
+          };
+      const res = await fetch(
+        apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}/day`),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
         }
       );
       const j = await res.json().catch(() => ({}));
@@ -1371,11 +1403,16 @@ function LineEditModal({
         setDayMsg("บันทึกแล้ว");
         await loadBreakdown();
       } else {
+        const brName = typeof j?.branch === "string" ? j.branch : "สาขาปลายทาง";
         const map: Record<string, string> = {
           wrong_pin: "PIN ไม่ถูกต้อง", no_pin: "คุณยังไม่ได้ตั้ง PIN",
           need_both_times: "ต้องกรอกทั้งเวลาเข้าและออก",
           need_both_sched: "ต้องกรอกทั้งเวลาเข้าและเลิกงาน",
-          must_be_draft: "รอบนี้ไม่ใช่ฉบับร่างแล้ว"
+          must_be_draft: "รอบนี้ไม่ใช่ฉบับร่างแล้ว",
+          target_not_draft: `ย้ายไม่ได้ — รอบจ่ายของ ${brName} ปิดไปแล้ว (ต้องเป็นฉบับร่าง)`,
+          source_not_draft: `ย้ายไม่ได้ — รอบจ่ายของ ${brName} ปิดไปแล้ว (ต้องเป็นฉบับร่าง)`,
+          target_branch_not_generated: `ย้ายไม่ได้ — ยังไม่ได้สร้างรอบจ่ายของสาขาปลายทางสำหรับงวดนี้`,
+          branch_move_unsupported: "ย้ายสาขาไม่ได้ในรอบแบบเก่า (ไม่ผูกสาขา)"
         };
         setDayMsg(map[j?.error] ?? j?.error ?? t(lang, "common.error"));
       }
@@ -1948,6 +1985,29 @@ function LineEditModal({
                     onChange={(e) => setDayOtPay(e.target.value)} />
                 </div>
               </div>
+              {/* Per-day branch reattribution (owner 2026-07-31): book the day's
+                  hours to another branch — เช่น ลงเวลานามะ แต่ถูกเรียกไปช่วยไฮโป
+                  ทั้งวัน → ค่าแรงเป็นของไฮโป. Only when the company cycle has >1 branch. */}
+              {branchOptions.length > 1 && (
+                <div>
+                  <label className="label">สาขาที่ลงค่าใช้จ่าย (วันนี้)</label>
+                  <select className="input" disabled={locked} value={dayBranchId}
+                    onChange={(e) => setDayBranchId(e.target.value)}>
+                    {branchOptions.map((b) => (
+                      <option key={b.id} value={String(b.id)}>
+                        {b.name}{b.id === periodBranchId ? " (สาขานี้)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {dayBranchId !== dayBranchInit && (
+                    <p className="text-[11px] text-amber-600 mt-1">
+                      ค่าแรงวันนี้จะย้ายไปลงรอบจ่ายของ
+                      {" "}<b>{branchOptions.find((b) => String(b.id) === dayBranchId)?.name ?? "สาขาที่เลือก"}</b>
+                      {" "}(รอบปลายทางต้องเป็นฉบับร่างที่ยังไม่ปิด)
+                    </p>
+                  )}
+                </div>
+              )}
               <p className="text-[11px] text-slate-400 leading-relaxed">
                 ทุกช่องแสดงค่าที่ใช้อยู่ปัจจุบัน — แก้เฉพาะช่องที่ผิด ช่องที่ไม่แตะจะคำนวณอัตโนมัติตามเดิม
                 {schedPair?.schedIn && <> · กะตามระบบ {schedPair.schedIn}–{schedPair.schedOut}</>}

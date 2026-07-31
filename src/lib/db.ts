@@ -3376,6 +3376,31 @@ function runMigrations(db: Database.Database): void {
       ON payroll_line_days(period_id, user_id);
   `);
 
+  // payroll_day_branch — per-day BRANCH reattribution (owner 2026-07-31).
+  // เคส: ลงเวลาสาขานามะตอนเช้า แต่ถูกเรียกไปช่วยไฮโปทั้งวัน → ค่าแรงวันนั้นควรเป็น
+  // ค่าใช้จ่ายของไฮโป ไม่ใช่นามะ. On (user, work_date) the day's worked time is
+  // booked to branch_id, OVERRIDING where the punch was physically recorded
+  // (time_entries.branch_id). Period-INDEPENDENT on purpose: payroll is one
+  // period per branch, so a single (user,date) row must be visible to BOTH the
+  // source branch's period (to DROP the day) and the target branch's period (to
+  // ADD it). The pay engine derives each day's "effective branch" = this row's
+  // branch_id when present, else the punch's own branch, then keeps a day in a
+  // period iff its effective branch == that period's branch. One row per
+  // (user, date) → a day is always booked to exactly one branch (no double
+  // count). Deleting the row reverts to the punched branch.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payroll_day_branch (
+      user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      work_date TEXT NOT NULL,          -- YYYY-MM-DD (BKK)
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      edited_by INTEGER REFERENCES users(id),
+      edited_at TEXT,
+      PRIMARY KEY (user_id, work_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_payroll_day_branch_bd
+      ON payroll_day_branch(branch_id, work_date);
+  `);
+
   // Itemised other-deductions on a payroll line (owner 2026-07-04) — e.g.
   // กยศ., เงินกู้, ค่าปรับ. Each has a label + amount; their SUM is written back
   // to payroll_lines.other_deductions so net stays consistent, and the

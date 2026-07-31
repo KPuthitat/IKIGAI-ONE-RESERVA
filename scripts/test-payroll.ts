@@ -4,7 +4,7 @@
 // Guarantees: salary/30 per unpaid day, FT only, default 0 = no change,
 // and the deduction never drives base pay negative.
 
-import { computeLineFromMinutes, computeLineForEmployee, computeSso, applyPtGrace, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift } from "../src/lib/payroll-compute";
+import { computeLineFromMinutes, computeLineForEmployee, computeSso, applyPtGrace, keepEntryForBranch, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift, type EntryWithBranch } from "../src/lib/payroll-compute";
 
 const SETTINGS: PayrollSettings = {
   ot_mode: "flat", ot_flat_per_15min: 0,
@@ -458,6 +458,47 @@ console.log("\nborn-FT รับเข้าใหม่รายเดือน
   };
   const f = computeLineFromMinutes({ employee: bornFtFull, daysWorked: 22, ...mins });
   eq("born-FT เดือนเต็ม → base 30000", f.base_pay, 30000);
+}
+
+// ── Per-day branch reattribution (owner 2026-07-31) ───────────────────
+// keepEntryForBranch decides whether a punch belongs to a given branch's
+// period. The move must be SYMMETRIC: a day reattributed from A→B leaves A's
+// period AND enters B's, so exactly one branch books it (no double count).
+console.log("\nการย้ายสาขารายวัน (per-day branch reattribution):");
+{
+  const ok = (name: string, got: boolean, want: boolean) => {
+    if (got === want) { pass++; console.log(`  ✓ ${name}`); }
+    else { fail++; console.log(`  ✗ ${name}: got ${got}, want ${want}`); }
+  };
+  const BRANCH_A = 1, BRANCH_B = 2;
+  // 2026-06-15 11:00 BKK = 04:00Z → bkkDate 2026-06-15.
+  const punchAtA: EntryWithBranch = { id: 100, user_id: 7, ts: "2026-06-15T04:00:00.000Z", type: "in", branch_id: BRANCH_A };
+  const key = "7|2026-06-15";
+  const noReass = new Map<string, number>();
+  const reassToB = new Map<string, number>([[key, BRANCH_B]]);
+  const noCerts = new Set<number>();
+
+  // No reattribution → belongs to its punched branch only.
+  ok("ไม่ย้าย: punch สาขา A → อยู่ในรอบ A", keepEntryForBranch(punchAtA, BRANCH_A, noReass, noCerts), true);
+  ok("ไม่ย้าย: punch สาขา A → ไม่อยู่ในรอบ B", keepEntryForBranch(punchAtA, BRANCH_B, noReass, noCerts), false);
+
+  // Reattributed A→B → leaves A, enters B (the core move).
+  ok("ย้าย A→B: หลุดจากรอบ A", keepEntryForBranch(punchAtA, BRANCH_A, reassToB, noCerts), false);
+  ok("ย้าย A→B: เข้ารอบ B", keepEntryForBranch(punchAtA, BRANCH_B, reassToB, noCerts), true);
+
+  // Reattribution wins over an approved cert (would otherwise be included).
+  const certForA = new Set<number>([100]);
+  ok("ย้าย A→B ชนะ cert: หลุดจาก A แม้เป็น cert", keepEntryForBranch(punchAtA, BRANCH_A, reassToB, certForA), false);
+  ok("ย้าย A→B ชนะ cert: เข้า B", keepEntryForBranch(punchAtA, BRANCH_B, reassToB, certForA), true);
+
+  // Approved cert with NULL branch, no reattribution → included anywhere.
+  const nullBranchCert: EntryWithBranch = { id: 101, user_id: 7, ts: "2026-06-15T04:00:00.000Z", type: "out", branch_id: null };
+  ok("cert branch NULL: เข้ารอบ A ได้", keepEntryForBranch(nullBranchCert, BRANCH_A, noReass, new Set([101])), true);
+  ok("cert branch NULL: เข้ารอบ B ได้", keepEntryForBranch(nullBranchCert, BRANCH_B, noReass, new Set([101])), true);
+  ok("ไม่ใช่ cert + branch NULL: ไม่เข้ารอบ A", keepEntryForBranch(nullBranchCert, BRANCH_A, noReass, noCerts), false);
+
+  // Legacy all-branches period (branchId null) keeps everything.
+  ok("รอบเก่าไม่ผูกสาขา: เก็บทุก punch", keepEntryForBranch(punchAtA, null, reassToB, noCerts), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

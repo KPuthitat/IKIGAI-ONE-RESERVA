@@ -6,6 +6,7 @@ import {
   overlaySwapShifts,
   type ScheduledShift, type PayrollSettings
 } from "@/lib/payroll-compute";
+import { resolveCompanyCycle } from "@/lib/payroll-cycle";
 
 // GET /api/admin/persona/payroll/periods/[id]/lines/[userId]/breakdown
 //
@@ -66,10 +67,14 @@ type DayPair = {
   holiday: boolean;
   // True when the day is a วันจ่ายสองเท่า (double_pay) — PT pay ×2 (wins over ×1.5).
   double: boolean;
-  // Branch where this clock-in was recorded (time_entries.branch_id) — so a
-  // multi-branch PT's row shows which branch the hours belong to (owner
-  // 2026-07-28: แท็กสาขาที่ลงเวลา). null for legacy rows / synthetic status rows.
+  // Branch where this day's hours are BOOKED — the per-day reattribution
+  // (payroll_day_branch) when set, else where the clock-in was recorded
+  // (owner 2026-07-28: แท็กสาขาที่ลงเวลา; 2026-07-31: ย้ายสาขารายวันได้). null for
+  // legacy rows / synthetic status rows.
   branch: string | null;
+  // Effective branch id for this day (for the editor's branch picker). null
+  // when unknown (no punch + no override) or a synthetic status row.
+  branch_id: number | null;
   // Non-working-day label for a synthetic row (no clock-in): "วันหยุด"
   // or the leave-type label (ลาพักร้อน/ลากิจ/ลาป่วย/…). null on normal rows.
   statusLabel: string | null;
@@ -114,11 +119,19 @@ export async function GET(
 
   const db = getDb();
   const period = db.prepare(`
-    SELECT period_start, period_end FROM payroll_periods WHERE id = ?
-  `).get(periodId) as Period | undefined;
+    SELECT period_start, period_end, branch_id FROM payroll_periods WHERE id = ?
+  `).get(periodId) as (Period & { branch_id: number | null }) | undefined;
   if (!period) {
     return NextResponse.json({ error: "period_not_found" }, { status: 404 });
   }
+
+  // Branches this day can be moved to = the sibling branches in the same
+  // company cycle (owner 2026-07-31). Only offered when the period is
+  // branch-stamped and the company has more than one branch in the cycle.
+  const cycle = period.branch_id != null ? resolveCompanyCycle(db, periodId) : null;
+  const branchOptions = (cycle?.siblings ?? [])
+    .filter((s) => s.branch_id != null && s.branch_name != null)
+    .map((s) => ({ id: s.branch_id as number, name: s.branch_name as string, status: s.status }));
 
   // PT grace + scheduled-break only apply to part-timers — FT days keep
   // raw clocked minutes. Load type + rate so the per-day money columns
@@ -141,6 +154,17 @@ export async function GET(
   const branchNameById = new Map<number, string>(
     (db.prepare("SELECT id, name FROM branches").all() as Array<{ id: number; name: string }>).map((b) => [b.id, b.name])
   );
+  // Per-day branch reattribution (payroll_day_branch) — a moved day is BOOKED
+  // to this branch, overriding where it was punched (owner 2026-07-31).
+  const dayBranchByDate = new Map<string, number>(
+    (db.prepare(
+      "SELECT work_date, branch_id FROM payroll_day_branch WHERE user_id = ? AND work_date >= ? AND work_date <= ?"
+    ).all(userId, period.period_start, period.period_end) as Array<{ work_date: string; branch_id: number }>)
+      .map((r) => [r.work_date, r.branch_id])
+  );
+  // Effective booked branch id for a day = reattribution ?? punched branch.
+  const effBranchId = (date: string, punchBranch: number | null): number | null =>
+    dayBranchByDate.get(date) ?? punchBranch;
 
   // วันพิเศษ (pt_special=1) → PT premium 1.5× (same as the engine).
   // Public holidays (all rows) are info-only — they drive the "วันหยุด"
@@ -340,7 +364,8 @@ export async function GET(
       earlyMin,
       holiday,
       double: isDoubleDay,
-      branch: branchId != null ? (branchNameById.get(branchId) ?? null) : null,
+      branch: effBranchId(date, branchId) != null ? (branchNameById.get(effBranchId(date, branchId)!) ?? null) : null,
+      branch_id: effBranchId(date, branchId),
       statusLabel: null
     };
   }
@@ -485,7 +510,8 @@ export async function GET(
           earlyMin: 0,
           holiday: false,
           double: false,
-          branch: e.branch_id != null ? (branchNameById.get(e.branch_id) ?? null) : null,
+          branch: effBranchId(bkkDate(e.ts), e.branch_id) != null ? (branchNameById.get(effBranchId(bkkDate(e.ts), e.branch_id)!) ?? null) : null,
+          branch_id: effBranchId(bkkDate(e.ts), e.branch_id),
           statusLabel: null
         });
       }
@@ -509,7 +535,7 @@ export async function GET(
         date, workIn: null, workOut: null, durationMinutes: 0,
         schedIn: null, schedOut: null, breakMinutes: 0,
         effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: true,
-        lateMin: 0, earlyMin: 0, holiday: false, double: false, branch: null, statusLabel: "ขาดงาน"
+        lateMin: 0, earlyMin: 0, holiday: false, double: false, branch: null, branch_id: null, statusLabel: "ขาดงาน"
       });
     }
   }
@@ -527,7 +553,7 @@ export async function GET(
       date: d, workIn: null, workOut: null, durationMinutes: 0,
       schedIn: null, schedOut: null, breakMinutes: 0,
       effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: false,
-      lateMin: 0, earlyMin: 0, holiday: holidaySet.has(d), double: false, branch: null, statusLabel: label
+      lateMin: 0, earlyMin: 0, holiday: holidaySet.has(d), double: false, branch: null, branch_id: null, statusLabel: label
     });
   }
 
@@ -545,6 +571,10 @@ export async function GET(
     is_pt: isPt,
     period_start: period.period_start,
     period_end: period.period_end,
+    period_branch_id: period.branch_id,
+    // Sibling branches the day can be reattributed to (incl. this one). Empty /
+    // single-entry → the client hides the branch picker.
+    branch_options: branchOptions,
     days: sortedDays,
     selfies
   });

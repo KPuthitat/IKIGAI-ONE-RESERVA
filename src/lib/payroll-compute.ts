@@ -184,6 +184,49 @@ function addDayYmd(ymd: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+// ── Per-day branch reattribution (payroll_day_branch) ─────────────────
+// A raw time-clock punch, plus the branch it should be BOOKED to. When an
+// admin moves a day to another branch (owner 2026-07-31: ช่วยไฮโปทั้งวัน แต่
+// ลงเวลานามะ), the day's worked time must leave the punched branch's period
+// and land in the chosen branch's period. Payroll is one period per branch,
+// so we decide, per (user, day), the "effective branch" and keep the punch in
+// a period only when that effective branch matches the period's branch.
+export type EntryWithBranch = Entry & { id: number; branch_id: number | null };
+
+// (user_id|work_date) → chosen branch_id. Loaded once per compute.
+function loadDayBranchMap(
+  db: Database.Database, fromDate: string, toDate: string
+): Map<string, number> {
+  const rows = db.prepare(
+    `SELECT user_id, work_date, branch_id FROM payroll_day_branch
+     WHERE work_date >= ? AND work_date <= ?`
+  ).all(fromDate, toDate) as Array<{ user_id: number; work_date: string; branch_id: number }>;
+  const m = new Map<string, number>();
+  for (const r of rows) m.set(`${r.user_id}|${r.work_date}`, r.branch_id);
+  return m;
+}
+
+// Keep an entry in the period of `branchId` when its EFFECTIVE branch matches.
+// Effective branch = the (user,day) reattribution when set, else the punch's
+// own branch. With NO reattribution we preserve the pre-existing rule exactly:
+// a punch belongs to its own branch, and an approved time-certification is
+// always included even if its branch stamp is NULL/foreign. Reattribution keys
+// on the punch's OWN BKK local date — for the ordinary same-day shift this
+// moves the clock-in AND clock-out together. (A cross-midnight shift is out of
+// scope: its two punches fall on different dates, so only same-day moves are
+// supported — the realistic "helped another branch that day" case.)
+// Legacy NULL-branch periods (branchId == null) keep the old all-branches
+// behaviour: nothing is filtered.
+export function keepEntryForBranch(
+  e: EntryWithBranch, branchId: number | null,
+  dayBranch: Map<string, number>, certIds: Set<number>
+): boolean {
+  if (branchId == null) return true;
+  const reass = dayBranch.get(`${e.user_id}|${bkkDate(e.ts)}`);
+  if (reass != null) return reass === branchId;
+  return e.branch_id === branchId || certIds.has(e.id);
+}
+
 /**
  * Pair clock-in / clock-out events into shifts. Discards unpaired ins.
  * Returns shifts + count of unpaired (still-open) clock-ins.
@@ -1204,8 +1247,15 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   // Branch scoping (owner 2026-06-10): a branch-stamped period only
   // includes employees assigned to that branch (user_branches). Legacy
   // periods (branch_id NULL) keep the old all-branches behaviour.
+  // Auto-include (owner 2026-07-31): a staffer whose day was REATTRIBUTED into
+  // this branch (payroll_day_branch) belongs in this period even when they are
+  // not formally assigned here — the "helped ไฮโป that day" case. So the branch
+  // gate is membership OR a reattribution into this branch within the window.
   const branchClause = period.branch_id != null
-    ? "AND EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = users.id AND ub.branch_id = @bid)"
+    ? `AND (EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = users.id AND ub.branch_id = @bid)
+            OR EXISTS (SELECT 1 FROM payroll_day_branch pdb
+                       WHERE pdb.user_id = users.id AND pdb.branch_id = @bid
+                         AND pdb.work_date >= @pstart AND pdb.work_date <= @pend))`
     : "";
   // is_primary_branch — 1 when THIS period's branch is the employee's home
   // branch, so FT salary pays here only (owner 2026-07-14). Home = the
@@ -1269,7 +1319,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
              display_name
   `;
   const staffParams: Record<string, unknown> = { pend: period.period_end, pmonth: periodMonth };
-  if (period.branch_id != null) staffParams.bid = period.branch_id;
+  if (period.branch_id != null) { staffParams.bid = period.branch_id; staffParams.pstart = period.period_start; }
   if (period.branch_id != null && periodCompanyId != null) staffParams.pcompany = periodCompanyId;
   const staffRaw = db.prepare(staffSql).all(staffParams) as Array<StaffRawRow>;
   const staff: EmployeePayrollSnapshot[] = staffRaw.map((r) => ({
@@ -1277,25 +1327,27 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     last_working_day: earliestDate(r.resign_last_day, r.term_last_day)
   }));
 
-  // Time entries in range — scoped to the period's branch when set, so a
-  // multi-branch employee's hours/punches only count for the right branch.
+  // Time entries in range — scoped to the period's branch by EFFECTIVE branch
+  // (owner 2026-07-31). We load every punch in the window and keep the ones
+  // whose effective branch (per-day reattribution ?? punched branch) matches
+  // this period's branch. This both DROPS a day moved out to another branch and
+  // PULLS IN a day moved here from another branch, symmetrically.
   // EXCEPTION (owner 2026-06-15): a punch created by an APPROVED time
-  // certification is always included even if its branch_id is NULL or
-  // differs from the period — the admin already approved that time, so it
-  // must reach payroll regardless of where the branch stamp landed. Without
-  // this a certified clock-out showed in the timesheet but the day stayed
-  // "ขาด" (unpaired) in the pay calc.
-  const entries = (period.branch_id != null
-    ? db.prepare(
-        `SELECT user_id, ts, type FROM time_entries
-         WHERE ts >= ? AND ts <= ?
-           AND (branch_id = ?
-                OR id IN (SELECT entry_id FROM time_certifications
-                          WHERE status = 'approved' AND entry_id IS NOT NULL))`
-      ).all(fromIso, toIso, period.branch_id)
-    : db.prepare(
-        "SELECT user_id, ts, type FROM time_entries WHERE ts >= ? AND ts <= ?"
-      ).all(fromIso, toIso)) as Entry[];
+  // certification is always included even if its branch_id is NULL or differs
+  // from the period — the admin already approved that time, so it must reach
+  // payroll regardless of where the branch stamp landed (see keepEntryForBranch).
+  const dayBranch = loadDayBranchMap(db, period.period_start, period.period_end);
+  const certIds = new Set(
+    (db.prepare(
+      "SELECT entry_id FROM time_certifications WHERE status = 'approved' AND entry_id IS NOT NULL"
+    ).all() as Array<{ entry_id: number }>).map((r) => r.entry_id)
+  );
+  const rawEntries = db.prepare(
+    "SELECT id, user_id, ts, type, branch_id FROM time_entries WHERE ts >= ? AND ts <= ?"
+  ).all(fromIso, toIso) as EntryWithBranch[];
+  const entries: Entry[] = rawEntries
+    .filter((e) => keepEntryForBranch(e, period.branch_id, dayBranch, certIds))
+    .map((e) => ({ user_id: e.user_id, ts: e.ts, type: e.type }));
   const entriesByUser = new Map<number, Entry[]>();
   for (const e of entries) {
     if (!entriesByUser.has(e.user_id)) entriesByUser.set(e.user_id, []);
@@ -1566,12 +1618,18 @@ export function recomputeLine(
     // Not a payroll employee → nothing to create (caller skips on throw).
     if (!u) throw new Error("line_not_found");
     // Respect the period's branch scope so we don't pull in an out-of-branch
-    // employee that the full compute would have excluded.
+    // employee that the full compute would have excluded — EXCEPT one whose day
+    // was reattributed into this branch (owner 2026-07-31: auto-include the
+    // "helped ไฮโป that day" staffer even if not formally assigned here).
     if (period.branch_id != null) {
       const inBranch = db.prepare(
         "SELECT 1 FROM user_branches WHERE user_id = ? AND branch_id = ?"
       ).get(userId, period.branch_id);
-      if (!inBranch) throw new Error("line_not_found");
+      const reattributedIn = db.prepare(
+        `SELECT 1 FROM payroll_day_branch
+         WHERE user_id = ? AND branch_id = ? AND work_date >= ? AND work_date <= ?`
+      ).get(userId, period.branch_id, period.period_start, period.period_end);
+      if (!inBranch && !reattributedIn) throw new Error("line_not_found");
     }
     existing = {
       employee_code: u.employee_code, display_name: u.display_name,
@@ -1649,20 +1707,25 @@ export function recomputeLine(
   // Shift-swap overlay (owner 2026-06-08).
   overlaySwapShifts(db, userId, period.period_start, period.period_end, scheduledByDate);
 
-  const userEntries = period.data_source === "manual"
-    ? []
-    : (period.branch_id != null
-        ? db.prepare(`
-            SELECT user_id, ts, type FROM time_entries
-            WHERE user_id = ? AND ts >= ? AND ts <= ?
-              AND (branch_id = ?
-                   OR id IN (SELECT entry_id FROM time_certifications
-                             WHERE status = 'approved' AND entry_id IS NOT NULL))
-          `).all(userId, fromIso, toIso, period.branch_id)
-        : db.prepare(`
-            SELECT user_id, ts, type FROM time_entries
-            WHERE user_id = ? AND ts >= ? AND ts <= ?
-          `).all(userId, fromIso, toIso)) as Entry[];
+  // Scope to the period's branch by EFFECTIVE branch (owner 2026-07-31): load
+  // all of this user's punches in the window, keep those whose effective branch
+  // (per-day reattribution ?? punched branch) matches this period — so a day
+  // moved out drops here and a day moved in is pulled in (see keepEntryForBranch).
+  let userEntries: Entry[] = [];
+  if (period.data_source !== "manual") {
+    const dayBranch = loadDayBranchMap(db, period.period_start, period.period_end);
+    const certIds = new Set(
+      (db.prepare(
+        "SELECT entry_id FROM time_certifications WHERE status = 'approved' AND entry_id IS NOT NULL"
+      ).all() as Array<{ entry_id: number }>).map((r) => r.entry_id)
+    );
+    const rawUserEntries = db.prepare(
+      "SELECT id, user_id, ts, type, branch_id FROM time_entries WHERE user_id = ? AND ts >= ? AND ts <= ?"
+    ).all(userId, fromIso, toIso) as EntryWithBranch[];
+    userEntries = rawUserEntries
+      .filter((e) => keepEntryForBranch(e, period.branch_id, dayBranch, certIds))
+      .map((e) => ({ user_id: e.user_id, ts: e.ts, type: e.type }));
+  }
   const auto = pairShifts(userEntries);
   const overrideRows = db.prepare(`
     SELECT work_date, clock_in, clock_out,
