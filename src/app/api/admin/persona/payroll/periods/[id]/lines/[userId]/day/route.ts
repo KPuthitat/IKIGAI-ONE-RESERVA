@@ -4,7 +4,7 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { recomputeLine } from "@/lib/payroll-compute";
-import { resolveCompanyCycle } from "@/lib/payroll-cycle";
+import { resolveSiblingPeriods } from "@/lib/payroll-cycle";
 
 // PATCH /api/admin/persona/payroll/periods/[id]/lines/[userId]/day
 //
@@ -133,8 +133,8 @@ export async function PATCH(
     branchToStore = (chosen === null || chosen === naturalBranch) ? "delete" : chosen;
 
     if (oldEff !== newEff) {
-      const cyc = resolveCompanyCycle(db, periodId);
-      const sibOf = (b: number) => cyc?.siblings.find((s) => s.branch_id === b);
+      const siblings = resolveSiblingPeriods(db, periodId);
+      const sibOf = (b: number) => siblings.find((s) => s.branch_id === b);
       // Gaining branch: the day's cost lands here → its period must exist + be draft.
       if (newEff != null) {
         const gain = sibOf(newEff);

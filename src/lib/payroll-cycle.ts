@@ -31,6 +31,43 @@ export type CycleSibling = {
   line_count: number;
 };
 
+// Sibling branch-periods of the SAME pay run — matched by
+// (cycle, target, period_start, period_end, pay_date), independent of
+// company_id (owner 2026-07-31). Used by the per-day branch-move feature so a
+// day can be reattributed to any branch whose period shares this pay run, even
+// when branches aren't grouped under a company. Only branch-stamped periods are
+// returned (legacy NULL-branch periods have no single branch to book to). The
+// rep period itself is included, so a picker can offer "keep here".
+export type SiblingPeriod = {
+  id: number;
+  branch_id: number;
+  branch_name: string | null;
+  status: string;
+};
+
+export function resolveSiblingPeriods(
+  db: Database.Database, repId: number
+): SiblingPeriod[] {
+  const rep = db.prepare(`
+    SELECT cycle, target, period_start, period_end, pay_date, branch_id
+    FROM payroll_periods WHERE id = ?
+  `).get(repId) as {
+    cycle: string; target: string; period_start: string; period_end: string;
+    pay_date: string | null; branch_id: number | null;
+  } | undefined;
+  if (!rep || rep.branch_id == null) return [];
+  return db.prepare(`
+    SELECT p.id, p.branch_id, b.name AS branch_name, p.status
+    FROM payroll_periods p
+    LEFT JOIN branches b ON b.id = p.branch_id
+    WHERE p.cycle = ? AND p.target = ?
+      AND p.period_start = ? AND p.period_end = ?
+      AND COALESCE(p.pay_date, '') = COALESCE(?, '')
+      AND p.branch_id IS NOT NULL
+    ORDER BY b.id
+  `).all(rep.cycle, rep.target, rep.period_start, rep.period_end, rep.pay_date) as SiblingPeriod[];
+}
+
 export function resolveCompanyCycle(
   db: Database.Database,
   repId: number

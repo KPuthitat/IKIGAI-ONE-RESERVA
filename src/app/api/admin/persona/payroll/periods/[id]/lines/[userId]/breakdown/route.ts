@@ -6,7 +6,7 @@ import {
   overlaySwapShifts,
   type ScheduledShift, type PayrollSettings
 } from "@/lib/payroll-compute";
-import { resolveCompanyCycle } from "@/lib/payroll-cycle";
+import { resolveSiblingPeriods } from "@/lib/payroll-cycle";
 
 // GET /api/admin/persona/payroll/periods/[id]/lines/[userId]/breakdown
 //
@@ -125,13 +125,14 @@ export async function GET(
     return NextResponse.json({ error: "period_not_found" }, { status: 404 });
   }
 
-  // Branches this day can be moved to = the sibling branches in the same
-  // company cycle (owner 2026-07-31). Only offered when the period is
-  // branch-stamped and the company has more than one branch in the cycle.
-  const cycle = period.branch_id != null ? resolveCompanyCycle(db, periodId) : null;
-  const branchOptions = (cycle?.siblings ?? [])
-    .filter((s) => s.branch_id != null && s.branch_name != null)
-    .map((s) => ({ id: s.branch_id as number, name: s.branch_name as string, status: s.status }));
+  // Branches this day can be moved to = the sibling branch-periods of THIS pay
+  // run (same cycle/target/dates/pay_date), independent of company_id (owner
+  // 2026-07-31). Only offered when the period is branch-stamped and more than
+  // one branch ran this pay period.
+  const siblings = period.branch_id != null ? resolveSiblingPeriods(db, periodId) : [];
+  const branchOptions = siblings
+    .filter((s) => s.branch_name != null)
+    .map((s) => ({ id: s.branch_id, name: s.branch_name as string, status: s.status }));
 
   // PT grace + scheduled-break only apply to part-timers — FT days keep
   // raw clocked minutes. Load type + rate so the per-day money columns
