@@ -1163,26 +1163,23 @@ function EditModal({
                   </div>
                 </div>
               )}
-              {/* แก้ไข/เติมวันที่เริ่มเป็นประจำ ให้คนที่เป็น FT อยู่แล้ว (owner 2026-07-19).
-                  จำเป็นสำหรับคนที่ย้าย PT→ประจำ ก่อนระบบมีฟิลด์นี้ (ft_started_at = NULL)
-                  จึงถูกคิดเป็นประจำเต็มเดือน แทนที่จะเป็นเดือนเปลี่ยนผ่าน (รายสัปดาห์). */}
-              {/* วันเริ่มเป็นประจำ — โชว์เฉพาะคนที่เคยเป็นพาร์ทไทม์ (มี ft_started_at)
-                  หรือกดเผยเพื่อ backfill เคส legacy. คนที่เป็นประจำมาแต่แรกไม่ต้องตั้ง
-                  (owner 2026-07-21 — ให้การคำนวณถูกต้อง ไม่วุ่นวาย). */}
+              {/* พนักงานประจำ (FT อยู่แล้ว) — จัดการรอบ "เดือนเปลี่ยนผ่าน" เชิงบวก
+                  (owner 2026-07-31): ประจำ = รายเดือนปกติ. เดือนเปลี่ยนผ่าน (รายสัปดาห์
+                  + หัก 3%) เป็นของที่ "ตั้ง" หรือ "ยกเลิก" ได้ตรงๆ ไม่ใช่ผลจากติ๊กผิด. */}
               {employmentType === "ft" && employee.employment_type === "ft" && (
                 <div className="mb-3">
                   {clearFtTransition ? (
-                    <label className="flex items-start gap-2 text-xs text-emerald-700 cursor-pointer rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2">
-                      <input type="checkbox" checked={clearFtTransition} className="mt-0.5"
-                        onChange={(e) => setClearFtTransition(e.target.checked)} />
+                    <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 flex items-start justify-between gap-2">
                       <span>
-                        <b>เป็นพนักงานประจำมาแต่แรก (ไม่เคยเป็น PT)</b> — บันทึกแล้วจะล้างวันเริ่มเป็นประจำ
-                        + คิดเป็น<b>รายเดือน</b>ตั้งแต่แรก (เดือนแรกไม่เต็มคิดรายวัน) แล้วสั่งคำนวณรอบที่เกี่ยวข้องใหม่
+                        จะตั้งเป็น <b>พนักงานประจำรายเดือนปกติ</b> — ยกเลิกเดือนเปลี่ยนผ่าน
+                        (เดือนแรกไม่เต็มคิดรายวัน) · บันทึกแล้วสั่งคำนวณรอบที่เกี่ยวข้องใหม่
                       </span>
-                    </label>
+                      <button type="button" onClick={() => setClearFtTransition(false)}
+                        className="shrink-0 text-slate-500 hover:text-slate-700 underline">ยกเลิก</button>
+                    </div>
                   ) : employee.ft_started_at || wasPtReveal ? (
                     <>
-                      <label className="label">วันที่เริ่มเป็นพนักงานประจำ</label>
+                      <label className="label">เดือนเปลี่ยนผ่าน (พาร์ทไทม์ → ประจำ)</label>
                       <input
                         type="date"
                         className="input"
@@ -1191,24 +1188,22 @@ function EditModal({
                         onChange={(e) => setFtEffectiveDate(e.target.value)}
                       />
                       <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                        {employee.ft_started_at
-                          ? "เดือนของวันที่นี้ = เดือนเปลี่ยนผ่าน (จ่ายรายสัปดาห์รวมกับพาร์ทไทม์ + WHT 3%), เดือนถัดไปจ่ายเต็มเดือน. แก้เฉพาะเมื่อวันเริ่มจริงคลาดเคลื่อน แล้วสั่งคำนวณรอบที่เกี่ยวข้องใหม่."
-                          : "ระบุวันที่ย้ายจากพาร์ทไทม์มาเป็นประจำจริง แล้วสั่งคำนวณรอบเดือนนั้นใหม่. (เฉพาะคนที่เคยเป็นพาร์ทไทม์เท่านั้น)"}
+                        เดือนของวันที่นี้ = เดือนเปลี่ยนผ่าน (จ่าย<b>รายสัปดาห์</b>รวมกับพาร์ทไทม์ + หัก ณ ที่จ่าย 3%),
+                        เดือนถัดไปเป็นรายเดือนปกติ · ตั้งเฉพาะคนที่<b>แปลงจากพาร์ทไทม์จริง</b> แล้วสั่งคำนวณรอบนั้นใหม่
                       </p>
-                      {employee.ft_started_at && (
-                        <label className="mt-2 flex items-start gap-2 text-xs text-slate-500 cursor-pointer">
-                          <input type="checkbox" checked={false} className="mt-0.5"
-                            onChange={(e) => setClearFtTransition(e.target.checked)} />
-                          เป็นพนักงานประจำมาแต่แรก (ไม่เคยเป็น PT) — ล้างเดือนเปลี่ยนผ่านนี้ทิ้ง คิดเป็นรายเดือนตั้งแต่แรก
-                        </label>
-                      )}
+                      <button type="button" onClick={() => setClearFtTransition(true)}
+                        className="mt-2 text-xs text-brand hover:underline">
+                        ↺ ตั้งเป็นพนักงานประจำรายเดือนปกติ (ไม่มีเดือนเปลี่ยนผ่าน)
+                      </button>
                     </>
                   ) : (
-                    <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
-                      <input type="checkbox" checked={wasPtReveal}
-                        onChange={(e) => setWasPtReveal(e.target.checked)} />
-                      เคยเป็นพาร์ทไทม์มาก่อน — ตั้งวันเริ่มเป็นประจำ (ไม่ต้องติ๊กถ้าเป็นประจำมาแต่แรก)
-                    </label>
+                    <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+                      <span>พนักงานประจำ — จ่าย<b>รายเดือน</b> (เดือนแรกไม่เต็มคิดรายวัน)</span>
+                      <button type="button" onClick={() => setWasPtReveal(true)}
+                        className="shrink-0 text-brand hover:underline">
+                        + ตั้งเดือนเปลี่ยนผ่าน (คนที่แปลงจากพาร์ทไทม์)
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
