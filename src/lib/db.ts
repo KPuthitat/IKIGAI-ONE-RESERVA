@@ -833,6 +833,19 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_shiftreq_user_status ON shift_change_requests(user_id, status);
     CREATE INDEX IF NOT EXISTS idx_shiftreq_branch_status ON shift_change_requests(branch_id, status, work_date);
   `);
+  // Staff-chosen slot on an extra-shift request (owner 2026-07-31): the staff
+  // now picks ตำแหน่ง (roster_positions) + เวลา (shift_codes) at request time, so
+  // the admin just approves. Nullable — legacy rows + swaps may leave them NULL;
+  // approve-assign falls back to admin-picked values when absent.
+  {
+    const scrCols = db.prepare("PRAGMA table_info(shift_change_requests)").all() as Array<{ name: string }>;
+    if (!scrCols.some((c) => c.name === "position_id")) {
+      db.exec("ALTER TABLE shift_change_requests ADD COLUMN position_id INTEGER REFERENCES roster_positions(id)");
+    }
+    if (!scrCols.some((c) => c.name === "shift_code_id")) {
+      db.exec("ALTER TABLE shift_change_requests ADD COLUMN shift_code_id INTEGER REFERENCES shift_codes(id)");
+    }
+  }
 
   // Same-day peer shift swap (owner 2026-06-23) — A trades their shift with
   // B on the SAME day; B taps accept and the two roster_assignments rows swap

@@ -30,6 +30,16 @@ export type ShiftRequestRow = {
   decided_at: string | null;
   decision_note: string | null;
   created_at: string;
+  // Staff-chosen slot for an extra shift (owner 2026-07-31) — nullable.
+  position_id: number | null;
+  shift_code_id: number | null;
+};
+
+/** Extra display fields joined for the request lists (position + shift labels). */
+export type ShiftRequestLabels = {
+  position_title: string | null;
+  shift_code: string | null;
+  shift_name: string | null;
 };
 
 const KIND_TH: Record<ShiftRequestKind, string> = {
@@ -60,16 +70,23 @@ function pushToUser(userId: number, text: string): void {
 /** Create a pending shift-change request + notify the staff's manager. */
 export function createShiftRequest(
   actor: { id: number; activeBranchId: number | null },
-  data: { kind: ShiftRequestKind; work_date: string; off_date: string | null; note: string | null }
+  data: {
+    kind: ShiftRequestKind; work_date: string; off_date: string | null; note: string | null;
+    // Staff-chosen slot — only meaningful for extra_shift (owner 2026-07-31).
+    position_id?: number | null; shift_code_id?: number | null;
+  }
 ): { id: number; ref_no: string } {
   const db = getDb();
+  const posId = data.kind === "extra_shift" ? (data.position_id ?? null) : null;
+  const shiftId = data.kind === "extra_shift" ? (data.shift_code_id ?? null) : null;
   const info = db.prepare(`
     INSERT INTO shift_change_requests
-      (user_id, branch_id, kind, work_date, off_date, note, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)
+      (user_id, branch_id, kind, work_date, off_date, note, position_id, shift_code_id, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)
   `).run(
     actor.id, actor.activeBranchId ?? null, data.kind,
-    data.work_date, data.kind === "swap" ? data.off_date : null, data.note
+    data.work_date, data.kind === "swap" ? data.off_date : null, data.note,
+    posId, shiftId
   );
   const id = Number(info.lastInsertRowid);
   const ref_no = `SC${bkkMonth()}-${id}`;
@@ -105,23 +122,30 @@ export function createShiftRequest(
 }
 
 /** A staff member's own requests (newest first). */
-export function listMyShiftRequests(userId: number): ShiftRequestRow[] {
-  return getDb().prepare(
-    "SELECT * FROM shift_change_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 100"
-  ).all(userId) as ShiftRequestRow[];
+export function listMyShiftRequests(userId: number): Array<ShiftRequestRow & ShiftRequestLabels> {
+  return getDb().prepare(`
+    SELECT r.*, p.title AS position_title, sc.code AS shift_code, sc.name AS shift_name
+    FROM shift_change_requests r
+    LEFT JOIN roster_positions p ON p.id = r.position_id
+    LEFT JOIN shift_codes sc ON sc.id = r.shift_code_id
+    WHERE r.user_id = ? ORDER BY r.created_at DESC LIMIT 100
+  `).all(userId) as Array<ShiftRequestRow & ShiftRequestLabels>;
 }
 
 /** Pending requests for a branch — drives the admin review list. */
-export function listPendingShiftRequests(branchId: number): Array<ShiftRequestRow & {
+export function listPendingShiftRequests(branchId: number): Array<ShiftRequestRow & ShiftRequestLabels & {
   employee_name: string; title_prefix: string | null; employment_type: string | null;
 }> {
   return getDb().prepare(`
-    SELECT r.*, u.display_name AS employee_name, u.title_prefix, u.employment_type
+    SELECT r.*, u.display_name AS employee_name, u.title_prefix, u.employment_type,
+           p.title AS position_title, sc.code AS shift_code, sc.name AS shift_name
     FROM shift_change_requests r
     JOIN users u ON u.id = r.user_id
+    LEFT JOIN roster_positions p ON p.id = r.position_id
+    LEFT JOIN shift_codes sc ON sc.id = r.shift_code_id
     WHERE r.branch_id = ? AND r.status = 'pending'
     ORDER BY r.created_at ASC
-  `).all(branchId) as Array<ShiftRequestRow & {
+  `).all(branchId) as Array<ShiftRequestRow & ShiftRequestLabels & {
     employee_name: string; title_prefix: string | null; employment_type: string | null;
   }>;
 }
@@ -129,20 +153,23 @@ export function listPendingShiftRequests(branchId: number): Array<ShiftRequestRo
 /** Decided (approved/rejected/cancelled) requests for a branch — the
  *  history view (owner 2026-06-17). Newest decision first; the client
  *  groups them by month + day. Joined with the decider's name. */
-export function listDecidedShiftRequests(branchId: number, limit = 300): Array<ShiftRequestRow & {
+export function listDecidedShiftRequests(branchId: number, limit = 300): Array<ShiftRequestRow & ShiftRequestLabels & {
   employee_name: string; title_prefix: string | null; employment_type: string | null;
   decided_by_name: string | null;
 }> {
   return getDb().prepare(`
     SELECT r.*, u.display_name AS employee_name, u.title_prefix, u.employment_type,
-           du.display_name AS decided_by_name
+           du.display_name AS decided_by_name,
+           p.title AS position_title, sc.code AS shift_code, sc.name AS shift_name
     FROM shift_change_requests r
     JOIN users u ON u.id = r.user_id
     LEFT JOIN users du ON du.id = r.decided_by
+    LEFT JOIN roster_positions p ON p.id = r.position_id
+    LEFT JOIN shift_codes sc ON sc.id = r.shift_code_id
     WHERE r.branch_id = ? AND r.status != 'pending'
     ORDER BY COALESCE(r.decided_at, r.created_at) DESC
     LIMIT ?
-  `).all(branchId, limit) as Array<ShiftRequestRow & {
+  `).all(branchId, limit) as Array<ShiftRequestRow & ShiftRequestLabels & {
     employee_name: string; title_prefix: string | null; employment_type: string | null;
     decided_by_name: string | null;
   }>;
