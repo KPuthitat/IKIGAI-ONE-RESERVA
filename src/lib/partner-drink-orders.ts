@@ -6,18 +6,16 @@ import { todayBkk } from "./time";
 type DbHandle = Database.Database;
 const round2 = (x: number): number => Math.round(x * 100) / 100;
 
-// Staff drink welfare — จ้อจี้ & friends (owner 2026-07-30).
+// Staff drink welfare — จ้อจี้ & friends (owner 2026-07-30, opened up 2026-07-31).
 //
-// A clocked-in staff member holding today's (still-unredeemed) drink coupon can
-// order a drink at one of two tiers (50/80). The order is a PENDING row + a
-// one-time token rendered as a QR. The partner (จ้อจี้) scans it to fulfil,
-// which flips it to REDEEMED — and ONLY then does the amount count: it becomes a
-// payroll deduction on the staff's period and joins the partner's no-GP payout
-// for the month. Nothing is charged for a pending order the staff never collects.
-//
-// Cap = 1/day is inherited from the daily drink coupon: an order consumes that
-// coupon on redeem, and creating an order requires the coupon to still be
-// 'issued'. Re-picking a tier replaces the prior pending order (fresh QR).
+// A staff member who has CLOCKED IN today can order a drink — no shift gate, no
+// coupon, UNLIMITED per day, because the staff pays for it themselves (owner
+// 2026-07-31: "ไม่กำหนดกะ ได้ตลอด เพราะจ่ายเอง"). Each order is a PENDING row + a
+// one-time token rendered as a QR. The partner (จ้อจี้) scans it, picks the tier
+// (50/80) + payment method, which flips it to REDEEMED — and ONLY then does the
+// amount count: a 'payroll' drink becomes a deduction on the staff's period and
+// joins the partner's no-GP payout; a 'cash' drink was paid to จ้อจี้ directly.
+// Nothing is charged for a pending order the staff never collects.
 
 /** The two allowed drink tiers, in baht (owner 2026-07-30). */
 export const DRINK_TIERS = [50, 80] as const;
@@ -40,13 +38,14 @@ export function resolveDrinkPartner(branchId: number): DrinkPartner | null {
 
 export type CreateOrderResult =
   | { ok: true; orderId: number; token: string; expiresAt: string; partnerName: string }
-  | { ok: false; error: "no_partner" | "no_coupon" };
+  | { ok: false; error: "no_partner" | "not_clocked_in" };
 
-/** Create (or replace) today's pending drink order for a staff member. Requires
- *  an unredeemed daily drink coupon at this branch. The price tier (50/80) is
- *  NOT chosen here — the จ้อจี้ team picks it when they scan (owner 2026-07-30) —
- *  so a pending order carries amount 0 until redeemed. Idempotent-ish: an
- *  existing pending order for the same coupon is replaced with a fresh token. */
+/** Create a fresh pending drink order for a staff member (owner 2026-07-31).
+ *  No coupon, no shift gate, unlimited per day — the only requirement is that the
+ *  staff has CLOCKED IN today at this branch (they're actually at work), and the
+ *  branch has a จ้อจี้ partner. The price tier (50/80) + payment method are chosen
+ *  by จ้อจี้ at scan time, so a pending order carries amount 0 until redeemed. The
+ *  QR expires at end of the Bangkok day. coupon_id stays NULL. */
 export function createDrinkOrder(
   userId: number, branchId: number
 ): CreateOrderResult {
@@ -55,32 +54,25 @@ export function createDrinkOrder(
   if (!partner) return { ok: false, error: "no_partner" };
 
   const today = todayBkk();
-  // The daily drink entitlement — must still be issued (not redeemed/expired).
-  const coupon = db.prepare(
-    `SELECT id, redeem_before FROM meal_coupons
-      WHERE user_id = ? AND coupon_date = ? AND type = 'drink' AND status = 'issued'
+  const dayStartIso = new Date(`${today}T00:00:00+07:00`).toISOString();
+  const dayEndIso = new Date(`${today}T23:59:59+07:00`).toISOString();
+  // Must have clocked IN today at this branch — no shift/coupon gate otherwise.
+  const clockedIn = db.prepare(
+    `SELECT 1 FROM time_entries
+      WHERE user_id = ? AND branch_id = ? AND type = 'in' AND ts >= ? AND ts <= ?
       LIMIT 1`
-  ).get(userId, today) as { id: number; redeem_before: string } | undefined;
-  if (!coupon) return { ok: false, error: "no_coupon" };
-  if (Date.now() > Date.parse(coupon.redeem_before)) return { ok: false, error: "no_coupon" };
+  ).get(userId, branchId, dayStartIso, dayEndIso);
+  if (!clockedIn) return { ok: false, error: "not_clocked_in" };
 
   const token = randomBytes(24).toString("hex");
   const now = new Date().toISOString();
+  const info = db.prepare(
+    `INSERT INTO partner_drink_orders
+       (user_id, branch_id, partner_id, coupon_id, order_date, amount, token, status, expires_at, created_at)
+     VALUES (?, ?, ?, NULL, ?, 0, ?, 'pending', ?, ?)`
+  ).run(userId, branchId, partner.id, today, token, dayEndIso, now);
 
-  const orderId = db.transaction(() => {
-    // Replace any prior pending order for this coupon (refresh → fresh QR).
-    db.prepare(
-      "UPDATE partner_drink_orders SET status = 'cancelled' WHERE coupon_id = ? AND status = 'pending'"
-    ).run(coupon.id);
-    const info = db.prepare(
-      `INSERT INTO partner_drink_orders
-         (user_id, branch_id, partner_id, coupon_id, order_date, amount, token, status, expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?, 0, ?, 'pending', ?, ?)`
-    ).run(userId, branchId, partner.id, coupon.id, today, token, coupon.redeem_before, now);
-    return Number(info.lastInsertRowid);
-  })();
-
-  return { ok: true, orderId, token, expiresAt: coupon.redeem_before, partnerName: partner.name };
+  return { ok: true, orderId: Number(info.lastInsertRowid), token, expiresAt: dayEndIso, partnerName: partner.name };
 }
 
 /** How the staff pays for the drink (owner 2026-07-30). */

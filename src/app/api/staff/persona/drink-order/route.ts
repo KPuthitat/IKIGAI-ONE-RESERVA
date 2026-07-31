@@ -5,10 +5,10 @@ import { createDrinkOrder } from "@/lib/partner-drink-orders";
 
 // POST /api/staff/persona/drink-order
 //
-// A clocked-in staff member generates today's drink QR for the branch's จ้อจี้
-// partner. Requires today's unredeemed drink coupon. The price tier (50/80) is
-// chosen by the จ้อจี้ team at scan time — NOT here. Returns a one-time token the
-// client renders as a QR. Re-posting replaces the prior pending order.
+// A staff member who has clocked in today generates a drink QR for the branch's
+// จ้อจี้ partner (owner 2026-07-31: no coupon, no shift gate, unlimited — self-paid).
+// The price tier (50/80) + payment method are chosen by จ้อจี้ at scan time — NOT
+// here. Returns a one-time token the client renders as a QR.
 
 export async function POST(_req: Request) {
   const user = getSessionUser();
@@ -19,7 +19,7 @@ export async function POST(_req: Request) {
 
   const result = createDrinkOrder(user.id, user.activeBranchId);
   if (!result.ok) {
-    const status = result.error === "no_coupon" ? 409 : 400;
+    const status = result.error === "not_clocked_in" ? 409 : 400;
     return NextResponse.json({ error: result.error }, { status });
   }
 
