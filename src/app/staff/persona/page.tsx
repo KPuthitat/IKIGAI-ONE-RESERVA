@@ -6,6 +6,7 @@ import { nameWithPrefix } from "@/lib/name";
 import { bkkDateIso } from "@/lib/time";
 import { userHasWorkShiftOn, resolveClockBranchId, scheduledWorkBranchesWithNames } from "@/lib/roster";
 import { listUserCouponsForDate } from "@/lib/meal-coupons";
+import { resolveDrinkPartner } from "@/lib/partner-drink-orders";
 import TimeClockClient from "./TimeClockClient";
 import BranchSwitchPrompt from "./BranchSwitchPrompt";
 
@@ -93,6 +94,9 @@ export default function StaffPersonaPage() {
   // staff can find their coupons even after dismissing the clock-in pop-up.
   const coupons = listUserCouponsForDate(user.id, todayBkk);
   const redeemableCoupons = coupons.filter((c) => c.effectiveStatus === "issued").length;
+  // Drinks have no coupon now (owner 2026-07-31) — still surface the เบิก link when
+  // the branch has a จ้อจี้ partner so staff can order a drink.
+  const hasDrinkPartner = user.activeBranchId != null && resolveDrinkPartner(user.activeBranchId) != null;
 
   // จ้อจี้ partner accounts get a shortcut to the drink-redemption scanner.
   const canRedeemDrinks = userCan(user, "partner.drink.redeem");
@@ -119,12 +123,12 @@ export default function StaffPersonaPage() {
           สแกนรับเครื่องดื่ม (จ้อจี้) →
         </Link>
       )}
-      {coupons.length > 0 && (
+      {(coupons.length > 0 || hasDrinkPartner) && (
         <Link
           href="/staff/persona/coupons"
           className="block rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 hover:bg-amber-100 transition"
         >
-          คูปองของฉัน{redeemableCoupons > 0 ? ` · ${redeemableCoupons} ใบพร้อมใช้` : " · ใช้แล้ว/หมดอายุ"} →
+          คูปอง / เบิกเครื่องดื่ม{redeemableCoupons > 0 ? ` · ${redeemableCoupons} ใบพร้อมใช้` : ""} →
         </Link>
       )}
       <TimeClockClient

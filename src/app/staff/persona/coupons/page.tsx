@@ -22,20 +22,30 @@ export default function MealCouponsPage() {
     ? (getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined)
     : undefined;
 
-  // Food coupon still redeems from the branch's Delivera menu. The DRINK coupon
-  // is now fulfilled by the branch's จ้อจี้ partner (paid, via QR) — owner
-  // 2026-07-30 — so it no longer uses the internal drink menu.
+  // Food still redeems from the branch's Delivera menu (coupon-gated). Drinks are
+  // now fulfilled by the branch's จ้อจี้ partner — no coupon, unlimited, self-paid,
+  // available once the staff has clocked in today (owner 2026-07-31).
   const foodMenu = branchId != null ? listEligibleMenu(branchId, "food") : [];
   const cutoff = branchId != null ? mealCouponConfig(branchId).redeemCutoff : "15:00";
   const hasDrinkPartner = branchId != null && resolveDrinkPartner(branchId) != null;
+
+  // Drink orders require the staff to have clocked IN today at this branch.
+  let clockedInToday = false;
+  if (branchId != null) {
+    const startIso = new Date(`${todayBkk}T00:00:00+07:00`).toISOString();
+    const endIso = new Date(`${todayBkk}T23:59:59+07:00`).toISOString();
+    clockedInToday = !!getDb().prepare(
+      "SELECT 1 FROM time_entries WHERE user_id = ? AND branch_id = ? AND type = 'in' AND ts >= ? AND ts <= ? LIMIT 1"
+    ).get(user.id, branchId, startIso, endIso);
+  }
 
   return (
     <div className="space-y-4">
       <div>
         <Link href="/staff/persona" className="text-sm text-slate-500 hover:text-brand">← กลับหน้าลงเวลา</Link>
-        <h1 className="text-2xl font-bold text-slate-800 mt-2">คูปองของฉัน</h1>
+        <h1 className="text-2xl font-bold text-slate-800 mt-2">คูปอง / เบิกของฉัน</h1>
         <p className="text-sm text-slate-500 mt-1">
-          คูปองอาหารกลางวัน + เครื่องดื่มของวันนี้ · ใช้ก่อน {cutoff} น. · สาขา {branch?.name ?? "—"}
+          คูปองอาหารกลางวัน (ใช้ก่อน {cutoff} น.) + เครื่องดื่มจ้อจี้ (สั่งได้ตลอด จ่ายเอง) · สาขา {branch?.name ?? "—"}
         </p>
       </div>
       <CouponsClient
@@ -43,6 +53,7 @@ export default function MealCouponsPage() {
         foodMenu={foodMenu}
         hasBranch={branchId != null}
         hasDrinkPartner={hasDrinkPartner}
+        clockedInToday={clockedInToday}
       />
     </div>
   );

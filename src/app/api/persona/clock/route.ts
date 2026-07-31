@@ -438,7 +438,9 @@ export async function POST(req: Request) {
         if (isEligibleClockIn(cfg, shiftStart, nowBkkMinutes().minutes)) {
           const scheduledMin = scheduledShiftMinutesForUserDate(user.id, clockBranchId, todayBkk);
           const foodOk = isFoodEligible(cfg, shiftStart, nowBkkMinutes().minutes, scheduledMin);
-          coupon = issueDailyCoupons(user.id, clockBranchId, todayBkk, { food: foodOk, drink: true });
+          // Drinks no longer use a coupon (owner 2026-07-31: สั่งได้ตลอด จ่ายเอง) —
+          // only the free lunch is coupon-gated now.
+          coupon = issueDailyCoupons(user.id, clockBranchId, todayBkk, { food: foodOk, drink: false });
         }
       }
     } catch (e) {
