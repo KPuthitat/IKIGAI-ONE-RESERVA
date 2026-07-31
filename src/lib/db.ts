@@ -30,6 +30,20 @@ export function getDb(): Database.Database {
 }
 
 // migrations เผื่อ schema เปลี่ยนทีหลัง — ทำงานทุกครั้งแบบ idempotent
+// Fresh-DB bootstrap guards (owner 2026-07-31): runMigrations interleaves schema
+// creation with data-repair/backfill statements written for an already-prod-shaped
+// DB. On a brand-new DB those repairs reference tables/columns that don't exist
+// yet and abort the whole migration. These helpers let a repair skip itself when
+// its target isn't there yet — a no-op on prod (where it exists), a safe skip on
+// a fresh DB (where there's no legacy data to repair anyway).
+function tableExists(db: Database.Database, name: string): boolean {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+}
+function columnExists(db: Database.Database, table: string, column: string): boolean {
+  if (!tableExists(db, table)) return false;
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === column);
+}
+
 function runMigrations(db: Database.Database): void {
   // bookings columns
   const bcols = db.prepare("PRAGMA table_info(bookings)").all() as Array<{ name: string }>;
@@ -3224,11 +3238,16 @@ function runMigrations(db: Database.Database): void {
   // Tracked via PRAGMA user_version so it runs exactly once per database.
   const userVer = db.pragma("user_version", { simple: true }) as number;
   if (userVer < 1) {
-    db.exec(`
-      DELETE FROM payroll_period_unlocks;
-      DELETE FROM payroll_lines;
-      DELETE FROM payroll_periods;
-    `);
+    // Guard for a FRESH database: these tables are created ~10 lines below, so on
+    // a brand-new DB the DELETEs would throw and abort the whole migration. A
+    // fresh DB has no legacy payroll data to wipe — skip and just mark done.
+    if (tableExists(db, "payroll_periods")) {
+      db.exec(`
+        DELETE FROM payroll_period_unlocks;
+        DELETE FROM payroll_lines;
+        DELETE FROM payroll_periods;
+      `);
+    }
     db.pragma("user_version = 1");
   }
 
@@ -3714,17 +3733,19 @@ function runMigrations(db: Database.Database): void {
   // NOT EXISTS clause stops matching once repaired) and scoped to the
   // broken state, so admins with an intentional per-branch split are left
   // alone. super_admin is global and isn't role='admin' here.
-  db.exec(`
-    UPDATE user_branches SET is_admin = 1
-    WHERE user_id IN (
-      SELECT u.id FROM users u
-      WHERE u.role = 'admin' AND u.status NOT IN ('disabled', 'resigned', 'terminated')
-        AND NOT EXISTS (
-          SELECT 1 FROM user_branches ub2
-          WHERE ub2.user_id = u.id AND ub2.is_admin = 1
-        )
-    )
-  `);
+  if (columnExists(db, "users", "status")) {
+    db.exec(`
+      UPDATE user_branches SET is_admin = 1
+      WHERE user_id IN (
+        SELECT u.id FROM users u
+        WHERE u.role = 'admin' AND u.status NOT IN ('disabled', 'resigned', 'terminated')
+          AND NOT EXISTS (
+            SELECT 1 FROM user_branches ub2
+            WHERE ub2.user_id = u.id AND ub2.is_admin = 1
+          )
+      )
+    `);
+  }
 
   // user_branches.is_primary — the employee's HOME branch (owner 2026-07-14).
   // A multi-branch staffer (rotates between NAMA/HYPO) has one primary branch;
