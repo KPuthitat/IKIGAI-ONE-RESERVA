@@ -314,6 +314,25 @@ export function workShiftBranchesForUserOn(
   return rows.map((r) => r.branch_id);
 }
 
+/** Branches (id + name) where the user has a WORK shift on `dateBkk`, limited to
+ *  branches they can actually switch to (user_branches member). Drives the clock
+ *  page's "you're scheduled at another branch today — switch" prompt (owner
+ *  2026-07-31). Ordered by name; usually 0 or 1 rows. */
+export function scheduledWorkBranchesWithNames(
+  userId: number,
+  dateBkk: string
+): Array<{ id: number; name: string }> {
+  return getDb().prepare(`
+    SELECT DISTINCT b.id AS id, b.name AS name
+    FROM roster_assignments a
+    JOIN shift_codes s ON s.id = a.shift_code_id
+    JOIN branches b ON b.id = a.branch_id
+    JOIN user_branches ub ON ub.user_id = a.user_id AND ub.branch_id = a.branch_id
+    WHERE a.user_id = ? AND a.assignment_date = ? AND s.kind = 'work'
+    ORDER BY b.name COLLATE NOCASE
+  `).all(userId, dateBkk) as Array<{ id: number; name: string }>;
+}
+
 /** The branch a clock-in/out on `dateBkk` should attribute to. Keep the active
  *  branch if it has a work shift today; else if exactly one OTHER branch is
  *  rostered today, auto-pick that; else fall back to the active branch. Shared
