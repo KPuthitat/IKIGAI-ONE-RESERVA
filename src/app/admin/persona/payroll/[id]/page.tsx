@@ -109,14 +109,17 @@ export default function PeriodDetailPage({
   const missingStaff = db.prepare(`
     WITH p AS (SELECT branch_id, cycle, period_end FROM payroll_periods WHERE id = @pid)
     SELECT u.id, u.display_name, u.title_prefix, u.employment_type, u.hire_date,
-           CASE WHEN u.hire_date IS NOT NULL AND u.hire_date > (SELECT period_end FROM p)
-                THEN 1 ELSE 0 END AS hire_after_period
+           0 AS hire_after_period
     FROM users u
     WHERE u.role IN ('staff', 'admin')
       AND u.is_test_account = 0
       AND u.status NOT IN ('disabled', 'resigned', 'terminated')
       AND u.employment_type = CASE WHEN (SELECT cycle FROM p) = 'monthly' THEN 'ft' ELSE 'pt' END
       AND NOT (u.employment_type = 'ft' AND COALESCE(u.monthly_salary, 0) = 0)
+      -- A future hire (starts AFTER this round ended) never belongs in a past
+      -- round (owner 2026-07-31: หิรัญญา เข้า 1/08 ไม่ควรถูก flag ในรอบ ก.ค.).
+      -- Mirrors the engine's own eligibility (hire_date <= period_end).
+      AND (u.hire_date IS NULL OR u.hire_date <= (SELECT period_end FROM p))
       AND u.id NOT IN (SELECT user_id FROM payroll_lines WHERE period_id = @pid)
       AND (
         (SELECT branch_id FROM p) IS NULL

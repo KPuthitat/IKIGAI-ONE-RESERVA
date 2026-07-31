@@ -1178,14 +1178,28 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   // user → BKK assignment date → list of windows. Anchored at +07:00;
   // an end_time ≤ start_time means the shift crosses midnight, so the
   // end anchor rolls to the next calendar day.
+  // Branch-scoped (owner 2026-07-31): a branch-stamped period only uses ITS
+  // OWN branch's roster (plus any day reattributed into this branch). Before,
+  // roster loaded across ALL branches, so a staffer rostered only at NAMA
+  // showed a "footprint" in HYPO's period and leaked in at 0.00 (อนุธิดา).
+  // Legacy NULL-branch periods keep the all-branches behaviour.
+  const rosterBranchClause = period.branch_id != null
+    ? `AND (ra.branch_id = @bid
+            OR EXISTS (SELECT 1 FROM payroll_day_branch pdb
+                       WHERE pdb.user_id = ra.user_id AND pdb.work_date = ra.assignment_date
+                         AND pdb.branch_id = @bid))`
+    : "";
+  const rosterParams: Record<string, unknown> = { rstart: period.period_start, rend: period.period_end };
+  if (period.branch_id != null) rosterParams.bid = period.branch_id;
   const rosterRows = db.prepare(`
     SELECT ra.user_id, ra.assignment_date,
            sc.start_time, sc.end_time, sc.break_start, sc.break_end
     FROM roster_assignments ra
     JOIN shift_codes sc ON sc.id = ra.shift_code_id
-    WHERE ra.assignment_date >= ? AND ra.assignment_date <= ?
+    WHERE ra.assignment_date >= @rstart AND ra.assignment_date <= @rend
       AND sc.kind = 'work'
-  `).all(period.period_start, period.period_end) as Array<{
+      ${rosterBranchClause}
+  `).all(rosterParams) as Array<{
     user_id: number; assignment_date: string;
     start_time: string; end_time: string;
     break_start: string | null; break_end: string | null;
@@ -1677,13 +1691,26 @@ export function recomputeLine(
   );
 
   // Roster (work shifts) for this user → scheduled windows + break.
+  // Branch-scoped to match computePayrollPeriod (owner 2026-07-31): a branch
+  // period uses only its own branch's roster (plus days reattributed in), so a
+  // NAMA-only roster never counts as a HYPO footprint. Legacy NULL-branch
+  // periods stay all-branches.
+  const rlBranchClause = period.branch_id != null
+    ? `AND (ra.branch_id = @bid
+            OR EXISTS (SELECT 1 FROM payroll_day_branch pdb
+                       WHERE pdb.user_id = ra.user_id AND pdb.work_date = ra.assignment_date
+                         AND pdb.branch_id = @bid))`
+    : "";
+  const rlParams: Record<string, unknown> = { uid: userId, rstart: period.period_start, rend: period.period_end };
+  if (period.branch_id != null) rlParams.bid = period.branch_id;
   const rosterRows = db.prepare(`
     SELECT ra.assignment_date, sc.start_time, sc.end_time, sc.break_start, sc.break_end
     FROM roster_assignments ra
     JOIN shift_codes sc ON sc.id = ra.shift_code_id
-    WHERE ra.user_id = ? AND ra.assignment_date >= ? AND ra.assignment_date <= ?
+    WHERE ra.user_id = @uid AND ra.assignment_date >= @rstart AND ra.assignment_date <= @rend
       AND sc.kind = 'work'
-  `).all(userId, period.period_start, period.period_end) as Array<{
+      ${rlBranchClause}
+  `).all(rlParams) as Array<{
     assignment_date: string; start_time: string; end_time: string;
     break_start: string | null; break_end: string | null;
   }>;
