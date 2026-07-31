@@ -1411,6 +1411,26 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     let computed = 0;
     let skipped = 0;
     for (const emp of staff) {
+      // Skip employees with NO footprint in this period (owner 2026-07-31:
+      // อนุธิดา เพิ่งเข้าวันนี้ ไม่มีเวร ไม่มีลงเวลา แต่โผล่ 0.00). Hide a line
+      // only when the person has NEITHER a roster NOR a clock-in in the
+      // window. Guards so nobody who should be paid disappears:
+      //  - monthly_salary > 0 → salaried, paid regardless of any activity
+      //  - approved leave / per-day override (manual entry) / approved OT
+      //    all count as a footprint too
+      // If a skip is ever wrong, the admin "เพิ่มพนักงาน" button re-adds the
+      // line (see the standalone INSERT below).
+      const hasRoster = (scheduledByUser.get(emp.user_id)?.size ?? 0) > 0;
+      const hasEntries = (entriesByUser.get(emp.user_id)?.length ?? 0) > 0;
+      const hasOverride = (overridesByUser.get(emp.user_id)?.length ?? 0) > 0;
+      const hasLeave = (leaveDaysByUser.get(emp.user_id) ?? 0) > 0;
+      const hasOt = (approvedOtByUser.get(emp.user_id)?.size ?? 0) > 0;
+      const isSalaried = (emp.monthly_salary ?? 0) > 0;
+      if (!isSalaried && !hasRoster && !hasEntries && !hasOverride && !hasLeave && !hasOt) {
+        skipped++;
+        continue;
+      }
+
       // In manual mode, do NOT pull time_entries / leaves — the admin
       // enters each day's clock-in/out, which lands as a per-day override.
       const userEntries = period.data_source === "manual"
