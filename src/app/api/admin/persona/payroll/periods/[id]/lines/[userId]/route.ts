@@ -333,3 +333,70 @@ export async function PATCH(
 
   return NextResponse.json({ ok: true });
 }
+
+// DELETE /api/admin/persona/payroll/periods/[id]/lines/[userId]
+//
+// Remove ONE employee's line from a DRAFT period (owner 2026-07-31: ต้องเอาคน
+// ที่โผล่ผิดออกจากรอบได้ เช่น พนักงานสาขาอื่นที่ไม่ได้ทำงานสาขานี้). Before this
+// the only way to drop a wrong line was deleting the whole period. Also clears
+// that user's per-day clock/field overrides and itemised deductions for this
+// period so a later full recompute doesn't re-materialise them. PIN-gated +
+// audited. Draft only.
+export async function DELETE(
+  req: Request,
+  { params }: { params: { id: string; userId: string } }
+) {
+  const user = getSessionUser();
+  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  if (!userCanViewPayroll(user)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+
+  const periodId = Number(params.id);
+  const userId = Number(params.userId);
+  if (!Number.isInteger(periodId) || !Number.isInteger(userId)) {
+    return NextResponse.json({ error: "invalid_id" }, { status: 400 });
+  }
+
+  const body = await req.json().catch(() => ({} as Record<string, unknown>));
+  const adminPin = typeof body?.admin_pin === "string" ? body.admin_pin : "";
+  if (!adminPin) return NextResponse.json({ error: "pin_required" }, { status: 400 });
+  const pinStatus = verifyAdminPin(user.id, adminPin);
+  if (!pinStatus.ok) {
+    const code = pinStatus.reason === "no_pin" ? 400 : 403;
+    return NextResponse.json({ error: pinStatus.reason }, { status: code });
+  }
+
+  const db = getDb();
+  const period = db.prepare(`SELECT status FROM payroll_periods WHERE id = ?`).get(periodId) as
+    { status: string } | undefined;
+  if (!period) return NextResponse.json({ error: "period_not_found" }, { status: 404 });
+  if (period.status !== "draft") {
+    return NextResponse.json({ error: "must_be_draft" }, { status: 400 });
+  }
+
+  const line = db.prepare(`
+    SELECT display_name, gross_pay, net_pay FROM payroll_lines
+    WHERE period_id = ? AND user_id = ?
+  `).get(periodId, userId) as { display_name: string; gross_pay: number; net_pay: number } | undefined;
+  if (!line) return NextResponse.json({ error: "line_not_found" }, { status: 404 });
+
+  db.transaction(() => {
+    db.prepare(`DELETE FROM payroll_lines WHERE period_id = ? AND user_id = ?`).run(periodId, userId);
+    // Clear this user's per-period overrides so a future full recompute doesn't
+    // treat them as a footprint and pull the line back in.
+    db.prepare(`DELETE FROM payroll_line_days WHERE period_id = ? AND user_id = ?`).run(periodId, userId);
+    db.prepare(`DELETE FROM payroll_line_deductions WHERE period_id = ? AND user_id = ?`).run(periodId, userId);
+    db.prepare(`
+      INSERT INTO payroll_line_audit
+        (period_id, target_user_id, admin_id, mode, before_json, after_json, note, created_at)
+      VALUES (?, ?, ?, 'remove', ?, ?, ?, ?)
+    `).run(
+      periodId, userId, user.id,
+      JSON.stringify(line), JSON.stringify({}),
+      `ลบออกจากรอบ ${line.display_name}`,
+      new Date().toISOString()
+    );
+  })();
+  logPersonaAction(user.id, "payroll.line.remove", periodId);
+
+  return NextResponse.json({ ok: true });
+}

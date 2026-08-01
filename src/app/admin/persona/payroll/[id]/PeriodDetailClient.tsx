@@ -1157,6 +1157,9 @@ function LineEditModal({
   const [ulDays, setUlDays] = useState(String(line.unpaid_leave_days ?? 0));
   const [ulPinOpen, setUlPinOpen] = useState(false);
   const [ulMsg, setUlMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // Remove-from-round (line delete) — PIN-gated, draft only.
+  const [removePinOpen, setRemovePinOpen] = useState(false);
+  const [removeMsg, setRemoveMsg] = useState<string | null>(null);
 
   // ปรับยอดเอง (money override) — owner 2026-07-19. Re-expose the route's
   // money-override mode (b) in the UI for cases the per-day editor can't cover
@@ -1465,15 +1468,26 @@ function LineEditModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-4xl w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
-        <div>
-          <h3 className="font-semibold text-slate-800">{t(lang, "admin.persona.payroll.detail.editLine")}</h3>
-          <p className="text-sm text-slate-500">{nameWithPrefix(line.title_prefix, line.display_name)}</p>
-          {line.hourly_rate_snapshot != null && (
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              อัตราค่าตอบแทน: {fmtMoney(line.hourly_rate_snapshot)} บาท/ชม.
-            </p>
-          )}
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="font-semibold text-slate-800">{t(lang, "admin.persona.payroll.detail.editLine")}</h3>
+            <p className="text-sm text-slate-500">{nameWithPrefix(line.title_prefix, line.display_name)}</p>
+            {line.hourly_rate_snapshot != null && (
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                อัตราค่าตอบแทน: {fmtMoney(line.hourly_rate_snapshot)} บาท/ชม.
+              </p>
+            )}
+          </div>
+          {/* Remove this person from the round — for someone who shouldn't be in
+              this branch's period at all (owner 2026-07-31: คนสาขาอื่นโผล่มา).
+              PIN-gated + draft only. */}
+          <button type="button"
+            onClick={() => setRemovePinOpen(true)}
+            className="shrink-0 px-2.5 py-1.5 rounded-lg border border-rose-300 text-rose-600 text-xs font-medium hover:bg-rose-50">
+            ลบออกจากรอบ
+          </button>
         </div>
+        {removeMsg && <p className="text-xs text-rose-600">{removeMsg}</p>}
 
         {/* ลาไม่รับค่าจ้าง — FT only (salary-based). Deducts salary/30 per
             day even for full-time staff (owner 2026-06-17). */}
@@ -1505,6 +1519,40 @@ function LineEditModal({
               <p className={`text-[11px] ${ulMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>{ulMsg.text}</p>
             )}
           </div>
+        )}
+        {removePinOpen && (
+          <PinPromptModal
+            title="ลบพนักงานออกจากรอบนี้"
+            description={<p className="text-xs text-slate-600">
+              เอา <b>{nameWithPrefix(line.title_prefix, line.display_name)}</b> ออกจากรอบจ่ายนี้ทั้งบรรทัด
+              (ใช้กับคนที่ไม่ได้ทำงานสาขานี้จริง). ยอด/การแก้รายวันของคนนี้ในรอบนี้จะถูกลบด้วย — ใส่ PIN เพื่อยืนยัน
+            </p>}
+            submitLabel="ลบออกจากรอบ"
+            onClose={() => setRemovePinOpen(false)}
+            onSubmit={async (pin) => {
+              const res = await fetch(
+                apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}`),
+                {
+                  method: "DELETE",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ admin_pin: pin })
+                }
+              );
+              const j = await res.json().catch(() => ({}));
+              if (!res.ok || !j.ok) {
+                const map: Record<string, string> = {
+                  wrong_pin: "PIN ไม่ถูกต้อง", no_pin: "คุณยังไม่ได้ตั้ง PIN",
+                  must_be_draft: "รอบนี้ไม่ใช่ฉบับร่างแล้ว", line_not_found: "ไม่พบบรรทัดนี้"
+                };
+                return { ok: false, message: map[j?.error] ?? j?.error ?? "ลบไม่สำเร็จ" };
+              }
+              setRemovePinOpen(false);
+              setDirty(true);
+              onSaved();
+              onClose();
+              return { ok: true };
+            }}
+          />
         )}
         {ulPinOpen && (
           <PinPromptModal
