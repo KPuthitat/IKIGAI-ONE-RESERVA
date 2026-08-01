@@ -156,10 +156,13 @@ export default function PayrollMonthlySummaryPage({
     WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
     GROUP BY pl.user_id, pp.branch_id
   `).all(from, to) as Array<{ user_id: number; branch_id: number; net: number; gross: number }>;
-  const netByUserBranch = new Map<number, Map<number, number>>();
+  // Per-branch column shows GROSS (ยอดก่อนหัก ณ ที่จ่าย) — owner 2026-08-01:
+  // the books record the pre-withholding pay per branch, then SSO/WHT are shown
+  // as separate deduction columns. (Was net before.)
+  const grossByUserBranch = new Map<number, Map<number, number>>();
   for (const r of perBranchRows) {
-    if (!netByUserBranch.has(r.user_id)) netByUserBranch.set(r.user_id, new Map());
-    netByUserBranch.get(r.user_id)!.set(r.branch_id, r.net ?? 0);
+    if (!grossByUserBranch.has(r.user_id)) grossByUserBranch.set(r.user_id, new Map());
+    grossByUserBranch.get(r.user_id)!.set(r.branch_id, r.gross ?? 0);
   }
 
   // สังกัด (home branch) per user — is_primary=1, else lowest branch_id.
@@ -285,7 +288,9 @@ export default function PayrollMonthlySummaryPage({
               <th className="py-2 pr-3">{t(lang, "admin.persona.payroll.col.staff")}</th>
               <th className="py-2 pr-3">สังกัด</th>
               {showBranchCols && cols.map((b) => (
-                <th key={b.id} className="py-2 pr-3 text-right whitespace-nowrap">{b.name}</th>
+                <th key={b.id} className="py-2 pr-3 text-right whitespace-nowrap">
+                  {b.name}<span className="block text-[10px] font-normal text-slate-400">ก่อนหัก</span>
+                </th>
               ))}
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.gross")}</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.sso")}</th>
@@ -295,7 +300,7 @@ export default function PayrollMonthlySummaryPage({
           </thead>
           <tbody>
             {rows.map((r) => {
-              const perB = netByUserBranch.get(r.user_id) ?? new Map<number, number>();
+              const perB = grossByUserBranch.get(r.user_id) ?? new Map<number, number>();
               return (
                 <tr key={r.user_id} className="border-b border-slate-100 last:border-0">
                   <td className="py-2 pr-3">
@@ -440,7 +445,7 @@ export default function PayrollMonthlySummaryPage({
               books (owner 2026-07-27). */}
           {multiBranch && (
             <p className="text-xs text-slate-400">
-              แยกตามบริษัท (บัญชีแยกกัน) · คอลัมน์รายสาขา = ยอดสุทธิที่ลงบัญชีแยกแต่ละสาขาในบริษัทนั้น
+              แยกตามบริษัท (บัญชีแยกกัน) · คอลัมน์รายสาขา = ยอดก่อนหัก ณ ที่จ่าย (gross) ที่ลงบัญชีแต่ละสาขา · แล้วหัก ปกส./ภาษี → เหลือสุทธิ
             </p>
           )}
           {/* One section per company — the books are separate, so NAMA+HYPO and
