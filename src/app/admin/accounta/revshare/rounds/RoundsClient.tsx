@@ -43,6 +43,56 @@ export default function RoundsClient({
   const shop = partnerShopName(partner);
   const vatRate = partner.vat_enabled ? partner.vat_rate : 0;
 
+  // ── Flexible transfer round (owner 2026-08-01) ──────────────────────
+  // Settle a custom [start, end] span (from the day after the last transfer up
+  // to a chosen date, may cross a month) instead of the fixed Mon–Sun bucket.
+  type XferPreview = {
+    label: string; start: string; end: string; dayCount: number;
+    rows: Array<{ date: string; sales: number; sent: boolean; billCount: number | null }>;
+    totalSales: number; vatEnabled: boolean; vat: { base: number; vat: number; total: number };
+    alreadySentCount: number; suggestedStart: string | null; suggestedEnd: string | null;
+  };
+  const [xferOpen, setXferOpen] = useState(false);
+  const [xferStart, setXferStart] = useState("");
+  const [xferEnd, setXferEnd] = useState("");
+  const [xferPreview, setXferPreview] = useState<XferPreview | null>(null);
+  const [xferLoading, setXferLoading] = useState(false);
+  const [xferMsg, setXferMsg] = useState<string | null>(null);
+  const [xferPinOpen, setXferPinOpen] = useState(false);
+
+  async function loadXfer(start?: string, end?: string) {
+    setXferLoading(true); setXferMsg(null);
+    try {
+      const q = new URLSearchParams({ partner: String(partner.id) });
+      if (start) q.set("start", start);
+      if (end) q.set("end", end);
+      const res = await fetch(apiUrl(`/api/accounta/revshare/transfer-round?${q.toString()}`));
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.ok) {
+        setXferPreview(j.preview as XferPreview);
+        setXferStart(j.preview.start); setXferEnd(j.preview.end);
+      } else {
+        setXferPreview(null);
+        setXferMsg(humanizeApiError(j, "โหลดสรุปไม่สำเร็จ"));
+      }
+    } finally { setXferLoading(false); }
+  }
+  function openXfer() { setXferOpen(true); setXferPreview(null); setXferMsg(null); void loadXfer(); }
+  async function confirmXfer(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    const res = await fetch(apiUrl("/api/accounta/revshare/transfer-round"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ partner: partner.id, start: xferStart, end: xferEnd, pin })
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.ok) {
+      if (PIN_ERRORS.has(j.error)) return { ok: false, message: "PIN ไม่ถูกต้อง" };
+      return { ok: false, message: humanizeApiError(j, "บันทึกไม่สำเร็จ") };
+    }
+    setXferPinOpen(false); setXferOpen(false);
+    router.refresh();
+    return { ok: true };
+  }
+
   // PIN gate — verify once, reuse for the session; re-prompt if the server
   // rejects it. Records the operator on every import/edit/delete.
   const pinRef = useRef<string | null>(null);
@@ -243,6 +293,10 @@ export default function RoundsClient({
           {verified && <span className="ml-1 text-emerald-600">· ✓ ยืนยันตัวตนแล้ว ({operatorName})</span>}
         </span>
         <span className="flex-1" />
+        <button type="button" onClick={openXfer}
+          className="rounded-md border border-brand text-brand px-4 py-2 text-sm font-bold hover:bg-brand/5">
+          สร้างรอบโอนเอง
+        </button>
         <Link href={`/admin/accounta/revshare/settlement?partner=${partner.id}&year=${year}&month=${month}`}
           className="rounded-md bg-brand text-white px-4 py-2 text-sm font-bold hover:opacity-90">
           สรุปยอด / สร้างใบวางบิล →
@@ -453,6 +507,93 @@ export default function RoundsClient({
           busy={busy}
           onConfirm={confirmSend}
           onClose={() => setSendModal(null)}
+        />
+      )}
+
+      {/* Flexible transfer round — pick a custom span, review the total, confirm. */}
+      {xferOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setXferOpen(false); }}>
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="font-semibold text-slate-800">สร้างรอบโอนเอง</h3>
+                <p className="text-xs text-slate-500">{shop} — เลือกช่วงวันที่จะโอน (รวบหลายสัปดาห์/ข้ามเดือนได้)</p>
+              </div>
+              <button type="button" onClick={() => setXferOpen(false)} className="text-slate-400 hover:text-slate-700 text-sm">✕</button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs text-slate-600">วันเริ่ม
+                <input type="date" className="input mt-1" value={xferStart}
+                  max={xferEnd || undefined}
+                  onChange={(e) => setXferStart(e.target.value)} />
+              </label>
+              <label className="text-xs text-slate-600">วันจบ
+                <input type="date" className="input mt-1" value={xferEnd}
+                  min={xferStart || undefined}
+                  onChange={(e) => setXferEnd(e.target.value)} />
+              </label>
+            </div>
+            <button type="button" onClick={() => loadXfer(xferStart, xferEnd)} disabled={xferLoading || !xferStart || !xferEnd}
+              className="btn-secondary text-xs disabled:opacity-50">↻ ดูสรุปช่วงนี้</button>
+
+            {xferMsg && <p className="text-xs text-rose-600">{xferMsg}</p>}
+            {xferLoading && <p className="text-xs text-slate-400">กำลังโหลด…</p>}
+
+            {xferPreview && !xferLoading && (
+              <div className="rounded-lg border border-slate-200 overflow-hidden">
+                <div className="bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">
+                  รอบโอน {xferPreview.label} · {xferPreview.rows.length} วัน
+                  {xferPreview.alreadySentCount > 0 &&
+                    <span className="ml-1 font-normal text-amber-600">({xferPreview.alreadySentCount} วันเคยโอนแล้ว จะไม่โอนซ้ำ)</span>}
+                </div>
+                <table className="w-full text-xs">
+                  <tbody>
+                    {xferPreview.rows.map((r) => (
+                      <tr key={r.date} className="border-t border-slate-100">
+                        <td className="px-3 py-1 text-slate-600">{r.date}{r.sent && <span className="ml-1 text-[10px] text-amber-500">โอนแล้ว</span>}</td>
+                        <td className="px-3 py-1 text-right tabular-nums">฿{fmtMoney(r.sales)}</td>
+                      </tr>
+                    ))}
+                    {xferPreview.rows.length === 0 && (
+                      <tr><td className="px-3 py-2 text-slate-400" colSpan={2}>ช่วงนี้ไม่มียอดขาย</td></tr>
+                    )}
+                  </tbody>
+                </table>
+                <div className="border-t border-slate-200 px-3 py-2 space-y-0.5 text-xs">
+                  <div className="flex justify-between"><span className="text-slate-500">ยอดก่อนภาษี</span><span className="tabular-nums">฿{fmtMoney(xferPreview.vat.base)}</span></div>
+                  {xferPreview.vatEnabled && (
+                    <div className="flex justify-between"><span className="text-slate-500">ภาษีมูลค่าเพิ่ม 7%</span><span className="tabular-nums">฿{fmtMoney(xferPreview.vat.vat)}</span></div>
+                  )}
+                  <div className="flex justify-between font-bold text-slate-800"><span>ยอดโอนรวม</span><span className="tabular-nums">฿{fmtMoney(xferPreview.vat.total)}</span></div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setXferOpen(false)} className="btn-secondary text-sm">ปิด</button>
+              <button type="button" disabled={!xferPreview || xferPreview.rows.length === 0 || xferLoading}
+                onClick={() => setXferPinOpen(true)}
+                className="rounded-md bg-brand text-white px-4 py-2 text-sm font-bold hover:opacity-90 disabled:opacity-50">
+                ยืนยันโอน + ส่งการ์ด (PIN)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {xferPinOpen && (
+        <PinPromptModal
+          title="ยืนยันรอบโอน"
+          description={<p className="text-xs text-slate-600">
+            โอนยอดช่วง <b>{xferPreview?.label}</b> รวม <b>฿{fmtMoney(xferPreview?.vat.total ?? 0)}</b> — ใส่ PIN เพื่อยืนยัน
+            {partner.line_group_id ? " และส่งการ์ดเข้ากลุ่ม LINE คู่ค้า" : ""}
+          </p>}
+          submitLabel="ยืนยันโอน"
+          onSubmit={confirmXfer}
+          onClose={() => setXferPinOpen(false)}
         />
       )}
     </div>

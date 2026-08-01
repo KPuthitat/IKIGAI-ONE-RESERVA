@@ -6,7 +6,8 @@
 import { getDb } from "./db";
 import {
   computeSettlement, computeRoundBreakdown, opMonthFor, roundLabel, round2,
-  groupDailyIntoWeeks, DEFAULT_TIERS, DEFAULT_FLOORS,
+  groupDailyIntoWeeks, salesVat, salesBaseIncludesVat, partnerShopName,
+  DEFAULT_TIERS, DEFAULT_FLOORS,
   type Tier, type Floor, type SettlementResult
 } from "./revshare";
 
@@ -196,6 +197,93 @@ export function listRounds(partnerId: number, branchId: number, year: number, mo
   return (getDb().prepare(
     "SELECT * FROM revshare_rounds WHERE partner_id = ? AND period_year = ? AND period_month = ? ORDER BY period_start"
   ).all(partnerId, year, month) as any[]).map(shapeRound);
+}
+
+// ── Flexible transfer round (owner 2026-08-01) ──────────────────────────
+// The weekly (Mon–Sun) buckets are auto-grouped, but the owner sometimes
+// settles a custom span: e.g. a 2-day tail (25–26) is merged with the next
+// days and transferred once on the 31st, so the round is 25–31 — possibly
+// crossing a month. This settles by an explicit [start, end] date range over
+// the DAILY rows (period_start), independent of the calendar-month scope, and
+// marks the days transferred so the next round starts from the day after.
+
+/** Latest day already transferred (sent_at stamped) — the cursor for the next
+ *  flexible round. null when nothing has been transferred yet. */
+export function lastTransferEnd(partnerId: number, branchId: number): string | null {
+  if (!partnerGuard(partnerId, branchId)) return null;
+  const r = getDb().prepare(
+    "SELECT MAX(period_end) AS d FROM revshare_rounds WHERE partner_id = ? AND sent_at IS NOT NULL"
+  ).get(partnerId) as { d: string | null } | undefined;
+  return r?.d ?? null;
+}
+
+/** The most recent daily row's date for this partner (transferred or not). */
+export function latestRoundDate(partnerId: number, branchId: number): string | null {
+  if (!partnerGuard(partnerId, branchId)) return null;
+  const r = getDb().prepare(
+    "SELECT MAX(period_end) AS d FROM revshare_rounds WHERE partner_id = ?"
+  ).get(partnerId) as { d: string | null } | undefined;
+  return r?.d ?? null;
+}
+
+/** Daily rows whose day falls in [startIso, endIso] — can cross months. */
+export function listRoundsRange(partnerId: number, branchId: number, startIso: string, endIso: string): RsRound[] {
+  if (!partnerGuard(partnerId, branchId)) return [];
+  return (getDb().prepare(
+    "SELECT * FROM revshare_rounds WHERE partner_id = ? AND period_start >= ? AND period_start <= ? ORDER BY period_start"
+  ).all(partnerId, startIso, endIso) as any[]).map(shapeRound);
+}
+
+export type TransferRoundPreview = {
+  partnerName: string; shop: string; label: string;
+  start: string; end: string; dayCount: number;
+  rows: Array<{ date: string; sales: number; sent: boolean; billCount: number | null }>;
+  totalSales: number;
+  vatEnabled: boolean;
+  vat: { base: number; vat: number; total: number };
+  alreadySentCount: number;
+  /** Suggested next range = day after the last transferred day → latest data. */
+  suggestedStart: string | null;
+  suggestedEnd: string | null;
+};
+
+/** Live summary of a flexible transfer round for [start, end] — sums the daily
+ *  sales and splits the sales-side VAT (honouring the partner's sales_base).
+ *  No writes. */
+export function previewTransferRound(
+  partnerId: number, branchId: number, startIso: string, endIso: string
+): TransferRoundPreview | null {
+  const partner = getPartner(partnerId, branchId);
+  if (!partner) return null;
+  const rows = listRoundsRange(partnerId, branchId, startIso, endIso);
+  const totalSales = round2(rows.reduce((s, r) => s + r.sales_amount, 0));
+  const vatRate = partner.vat_enabled ? partner.vat_rate : 0;
+  const vat = salesVat(totalSales, vatRate, salesBaseIncludesVat(partner.sales_base));
+  const lastSent = lastTransferEnd(partnerId, branchId);
+  const latest = latestRoundDate(partnerId, branchId);
+  return {
+    partnerName: partner.name, shop: partnerShopName(partner),
+    label: roundLabel(startIso, endIso), start: startIso, end: endIso,
+    dayCount: Math.round((Date.parse(`${endIso}T00:00:00Z`) - Date.parse(`${startIso}T00:00:00Z`)) / 86400000) + 1,
+    rows: rows.map((r) => ({ date: r.period_start, sales: r.sales_amount, sent: !!r.sent_at, billCount: r.bill_count })),
+    totalSales, vatEnabled: partner.vat_enabled, vat,
+    alreadySentCount: rows.filter((r) => r.sent_at).length,
+    suggestedStart: lastSent ? addDaysIso(lastSent, 1) : null,
+    suggestedEnd: latest
+  };
+}
+
+/** Mark every daily row in [start, end] as transferred (keeps an earlier
+ *  sent_at when already stamped). Returns how many rows were newly stamped. */
+export function sendTransferRound(
+  partnerId: number, branchId: number, startIso: string, endIso: string, userId: number
+): number {
+  if (!partnerGuard(partnerId, branchId)) return 0;
+  return getDb().prepare(`
+    UPDATE revshare_rounds
+    SET sent_at = COALESCE(sent_at, CURRENT_TIMESTAMP), sent_by = COALESCE(sent_by, ?)
+    WHERE partner_id = ? AND period_start >= ? AND period_start <= ?
+  `).run(userId, partnerId, startIso, endIso).changes;
 }
 
 export type RoundInput = {
