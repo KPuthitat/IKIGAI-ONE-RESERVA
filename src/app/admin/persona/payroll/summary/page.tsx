@@ -179,6 +179,66 @@ export default function PayrollMonthlySummaryPage({
   const homeByUser = new Map<number, string | null>();
   for (const r of homeRows) homeByUser.set(r.user_id, r.home_branch_name);
 
+  // ── Group by COMPANY (owner 2026-08-01) ──────────────────────────────
+  // The books are separate per company (e.g. NAMA+HYPO = one company, AT HOME =
+  // another), so the summary must not mix them. Each branch belongs to a
+  // company; we render a section per company with only that company's branch
+  // columns and its own subtotals, and aggregate each person's pay PER COMPANY
+  // (not one cross-company total) so each company's section ties out to its own
+  // books.
+  const companyBranches = db.prepare(`
+    SELECT b.id AS branch_id, b.name AS branch_name, b.company_id AS company_id,
+           c.name_th AS company_name
+    FROM payroll_periods pp
+    JOIN branches b ON b.id = pp.branch_id
+    LEFT JOIN companies c ON c.id = b.company_id
+    WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
+    GROUP BY b.id
+    ORDER BY (b.company_id IS NULL), b.company_id, b.id
+  `).all(from, to) as Array<{ branch_id: number; branch_name: string; company_id: number | null; company_name: string | null }>;
+
+  type CompanyGroup = { key: number | null; name: string; cols: Array<{ id: number; name: string }> };
+  const companyGroups: CompanyGroup[] = [];
+  const companyByKey = new Map<number | null, CompanyGroup>();
+  for (const cb of companyBranches) {
+    let g = companyByKey.get(cb.company_id);
+    if (!g) {
+      g = { key: cb.company_id, name: cb.company_name ?? "ไม่ระบุบริษัท", cols: [] };
+      companyByKey.set(cb.company_id, g);
+      companyGroups.push(g);
+    }
+    g.cols.push({ id: cb.branch_id, name: cb.branch_name });
+  }
+
+  // Per (user, company) aggregate — company-scoped totals (branch-stamped
+  // periods only; legacy NULL-branch periods are pre-migration and excluded,
+  // same as the per-branch columns above).
+  type EmpCompanyRow = EmpRow & { company_id: number | null };
+  const empCompanyRows = db.prepare(`
+    SELECT pl.user_id, pl.display_name, u.title_prefix, b.company_id AS company_id,
+           MAX(pl.employment_type) AS employment_type,
+           MAX(pl.salary_tax_mode_snapshot) AS salary_tax_mode_snapshot,
+           SUM(pl.gross_pay)  AS total_gross,
+           SUM(pl.sso_amount) AS total_sso,
+           SUM(pl.tax_amount) AS total_tax,
+           SUM(pl.net_pay)    AS total_net,
+           COUNT(*)            AS period_count
+    FROM payroll_lines pl
+    JOIN payroll_periods pp ON pl.period_id = pp.id
+    JOIN branches b ON b.id = pp.branch_id
+    LEFT JOIN users u ON u.id = pl.user_id
+    WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
+    GROUP BY pl.user_id, b.company_id
+    ORDER BY (MAX(pl.employment_type) = 'ft') DESC,
+             (MAX(pl.employment_type) = 'pt') DESC,
+             pl.display_name
+  `).all(from, to) as EmpCompanyRow[];
+  const rowsByCompany = new Map<number | null, EmpCompanyRow[]>();
+  for (const r of empCompanyRows) {
+    if (!rowsByCompany.has(r.company_id)) rowsByCompany.set(r.company_id, []);
+    rowsByCompany.get(r.company_id)!.push(r);
+  }
+
   // Split the merged rows into the two tables the owner wants kept separate.
   const ftRows = empRows.filter((r) => r.employment_type === "ft");
   const ptRows = empRows.filter((r) => r.employment_type === "pt");
@@ -204,8 +264,9 @@ export default function PayrollMonthlySummaryPage({
   // One merged table per employment type (owner 2026-07-27: แยกตาราง FT/PT +
   // รวม NAMA+HYPO เป็นแถวเดียว/คน). สังกัด = home branch; the per-branch net
   // columns are the where-they-worked split (บัญชีลงแยกสาขาตามนี้).
-  const empTable = (title: string, accent: string, rows: EmpRow[]) => {
+  const empTable = (title: string, accent: string, rows: EmpRow[], cols: Array<{ id: number; name: string }>) => {
     if (rows.length === 0) return null;
+    const showBranchCols = cols.length > 1;
     const sub = rows.reduce(
       (a, r) => ({
         gross: a.gross + (r.total_gross ?? 0), sso: a.sso + (r.total_sso ?? 0),
@@ -223,7 +284,7 @@ export default function PayrollMonthlySummaryPage({
             <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
               <th className="py-2 pr-3">{t(lang, "admin.persona.payroll.col.staff")}</th>
               <th className="py-2 pr-3">สังกัด</th>
-              {multiBranch && branchCols.map((b) => (
+              {showBranchCols && cols.map((b) => (
                 <th key={b.id} className="py-2 pr-3 text-right whitespace-nowrap">{b.name}</th>
               ))}
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.gross")}</th>
@@ -248,7 +309,7 @@ export default function PayrollMonthlySummaryPage({
                     </div>
                   </td>
                   <td className="py-2 pr-3 text-xs text-slate-500 whitespace-nowrap">{homeByUser.get(r.user_id) ?? "—"}</td>
-                  {multiBranch && branchCols.map((b) => {
+                  {showBranchCols && cols.map((b) => {
                     const v = perB.get(b.id) ?? 0;
                     return (
                       <td key={b.id} className="py-2 pr-3 text-right tabular-nums">
@@ -266,7 +327,7 @@ export default function PayrollMonthlySummaryPage({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-slate-300 font-medium">
-              <td className="py-2 pr-3" colSpan={multiBranch ? 2 + branchCols.length : 2}>
+              <td className="py-2 pr-3" colSpan={showBranchCols ? 2 + cols.length : 2}>
                 {t(lang, "admin.persona.payroll.detail.total")}
               </td>
               <td className="py-2 pr-3 text-right">{fmtMoney(sub.gross)}</td>
@@ -379,12 +440,34 @@ export default function PayrollMonthlySummaryPage({
               books (owner 2026-07-27). */}
           {multiBranch && (
             <p className="text-xs text-slate-400">
-              คอลัมน์รายสาขา = ยอดสุทธิที่ลงบัญชีแยกแต่ละสาขา (คนที่เข้าหลายสาขาเห็นแยกได้)
+              แยกตามบริษัท (บัญชีแยกกัน) · คอลัมน์รายสาขา = ยอดสุทธิที่ลงบัญชีแยกแต่ละสาขาในบริษัทนั้น
             </p>
           )}
-          {empTable(t(lang, "admin.persona.employees.employment.ft"), "text-emerald-700", ftRows)}
-          {empTable(t(lang, "admin.persona.employees.employment.pt"), "text-violet-700", ptRows)}
-          {empTable("อื่นๆ", "text-slate-600", otherRows)}
+          {/* One section per company — the books are separate, so NAMA+HYPO and
+              AT HOME never share a table (owner 2026-08-01). */}
+          {companyGroups.map((g) => {
+            const crows = rowsByCompany.get(g.key) ?? [];
+            if (crows.length === 0) return null;
+            const cft = crows.filter((r) => r.employment_type === "ft");
+            const cpt = crows.filter((r) => r.employment_type === "pt");
+            const coth = crows.filter((r) => r.employment_type !== "ft" && r.employment_type !== "pt");
+            const cnet = crows.reduce((s, r) => s + (r.total_net ?? 0), 0);
+            const cgross = crows.reduce((s, r) => s + (r.total_gross ?? 0), 0);
+            return (
+              <div key={String(g.key)} className="space-y-3">
+                <div className="flex items-baseline justify-between gap-3 flex-wrap border-l-4 border-brand pl-3 pt-2">
+                  <h2 className="text-lg font-bold text-slate-800">{g.name}</h2>
+                  <div className="text-xs text-slate-500">
+                    รายรับรวม <b className="text-slate-700">{fmtMoney(cgross)}</b>
+                    {" · "}ยอดโอนสุทธิ <b className="text-emerald-700">{fmtMoney(cnet)}</b>
+                  </div>
+                </div>
+                {empTable(t(lang, "admin.persona.employees.employment.ft"), "text-emerald-700", cft, g.cols)}
+                {empTable(t(lang, "admin.persona.employees.employment.pt"), "text-violet-700", cpt, g.cols)}
+                {empTable("อื่นๆ", "text-slate-600", coth, g.cols)}
+              </div>
+            );
+          })}
 
           {/* Per-period list */}
           <div className="card overflow-x-auto">
