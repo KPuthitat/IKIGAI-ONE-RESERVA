@@ -7,6 +7,7 @@ import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
+import { computeMonthlySvcSummary } from "@/lib/service-charge";
 
 export const dynamic = "force-dynamic";
 
@@ -242,6 +243,24 @@ export default function PayrollMonthlySummaryPage({
     rowsByCompany.get(r.company_id)!.push(r);
   }
 
+  // Service charge (owner 2026-08-01: SVC เป็นเงินที่พนักงานได้จริง ต้องอยู่ในสรุป
+  // + สลิปด้วย). SVC is a SEPARATE monthly system (svc_payout_batches) — pull each
+  // person's net SVC payout for the month per branch, attribute to that branch's
+  // company, so the summary shows salary + SVC = รวมรับจริง. Keyed `${user}|${companyKey}`.
+  const svcByUserCompany = new Map<string, number>();
+  for (const cb of companyBranches) {
+    let svc;
+    try { svc = computeMonthlySvcSummary(cb.branch_id, month); }
+    catch { continue; }
+    for (const row of svc.rows) {
+      if (!row.netPayout) continue;
+      const k = `${row.userId}|${String(cb.company_id)}`;
+      svcByUserCompany.set(k, (svcByUserCompany.get(k) ?? 0) + row.netPayout);
+    }
+  }
+  const svcFor = (userId: number, companyKey: number | null): number =>
+    svcByUserCompany.get(`${userId}|${String(companyKey)}`) ?? 0;
+
   // Split the merged rows into the two tables the owner wants kept separate.
   const ftRows = empRows.filter((r) => r.employment_type === "ft");
   const ptRows = empRows.filter((r) => r.employment_type === "pt");
@@ -267,15 +286,19 @@ export default function PayrollMonthlySummaryPage({
   // One merged table per employment type (owner 2026-07-27: แยกตาราง FT/PT +
   // รวม NAMA+HYPO เป็นแถวเดียว/คน). สังกัด = home branch; the per-branch net
   // columns are the where-they-worked split (บัญชีลงแยกสาขาตามนี้).
-  const empTable = (title: string, accent: string, rows: EmpRow[], cols: Array<{ id: number; name: string }>) => {
+  const empTable = (title: string, accent: string, rows: EmpCompanyRow[], cols: Array<{ id: number; name: string }>, companyKey: number | null) => {
     if (rows.length === 0) return null;
     const showBranchCols = cols.length > 1;
     const sub = rows.reduce(
-      (a, r) => ({
-        gross: a.gross + (r.total_gross ?? 0), sso: a.sso + (r.total_sso ?? 0),
-        tax: a.tax + (r.total_tax ?? 0), net: a.net + (r.total_net ?? 0)
-      }),
-      { gross: 0, sso: 0, tax: 0, net: 0 }
+      (a, r) => {
+        const svc = svcFor(r.user_id, companyKey);
+        return {
+          gross: a.gross + (r.total_gross ?? 0), sso: a.sso + (r.total_sso ?? 0),
+          tax: a.tax + (r.total_tax ?? 0), net: a.net + (r.total_net ?? 0),
+          svc: a.svc + svc, take: a.take + (r.total_net ?? 0) + svc
+        };
+      },
+      { gross: 0, sso: 0, tax: 0, net: 0, svc: 0, take: 0 }
     );
     return (
       <div className="card overflow-x-auto">
@@ -294,11 +317,15 @@ export default function PayrollMonthlySummaryPage({
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.sso")}</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.tax")}</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.net")}</th>
+              <th className="py-2 pr-3 text-right whitespace-nowrap">เซอร์วิสชาร์จ</th>
+              <th className="py-2 pr-3 text-right whitespace-nowrap">รวมรับจริง</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => {
               const perB = grossByUserBranch.get(r.user_id) ?? new Map<number, number>();
+              const svc = svcFor(r.user_id, companyKey);
+              const take = (r.total_net ?? 0) + svc;
               return (
                 <tr key={r.user_id} className="border-b border-slate-100 last:border-0">
                   <td className="py-2 pr-3">
@@ -323,7 +350,9 @@ export default function PayrollMonthlySummaryPage({
                   <td className="py-2 pr-3 text-right">{fmtMoney(r.total_gross ?? 0)}</td>
                   <td className="py-2 pr-3 text-right text-sky-700">{fmtMoney(r.total_sso ?? 0)}</td>
                   <td className="py-2 pr-3 text-right text-amber-700">{fmtMoney(r.total_tax ?? 0)}</td>
-                  <td className="py-2 pr-3 text-right font-bold text-emerald-700">{fmtMoney(r.total_net ?? 0)}</td>
+                  <td className="py-2 pr-3 text-right text-emerald-700">{fmtMoney(r.total_net ?? 0)}</td>
+                  <td className="py-2 pr-3 text-right text-violet-700">{svc ? fmtMoney(svc) : <span className="text-slate-300">—</span>}</td>
+                  <td className="py-2 pr-3 text-right font-bold text-slate-800">{fmtMoney(take)}</td>
                 </tr>
               );
             })}
@@ -337,6 +366,8 @@ export default function PayrollMonthlySummaryPage({
               <td className="py-2 pr-3 text-right text-sky-700">{fmtMoney(sub.sso)}</td>
               <td className="py-2 pr-3 text-right text-amber-700">{fmtMoney(sub.tax)}</td>
               <td className="py-2 pr-3 text-right text-emerald-700">{fmtMoney(sub.net)}</td>
+              <td className="py-2 pr-3 text-right text-violet-700">{fmtMoney(sub.svc)}</td>
+              <td className="py-2 pr-3 text-right font-bold text-slate-800">{fmtMoney(sub.take)}</td>
             </tr>
           </tfoot>
         </table>
@@ -456,18 +487,20 @@ export default function PayrollMonthlySummaryPage({
             const coth = crows.filter((r) => r.employment_type !== "ft" && r.employment_type !== "pt");
             const cnet = crows.reduce((s, r) => s + (r.total_net ?? 0), 0);
             const cgross = crows.reduce((s, r) => s + (r.total_gross ?? 0), 0);
+            const csvc = crows.reduce((s, r) => s + svcFor(r.user_id, g.key), 0);
             return (
               <div key={String(g.key)} className="space-y-3">
                 <div className="flex items-baseline justify-between gap-3 flex-wrap border-l-4 border-brand pl-3 pt-2">
                   <h2 className="text-lg font-bold text-slate-800">{g.name}</h2>
                   <div className="text-xs text-slate-500">
-                    รายรับรวม <b className="text-slate-700">{fmtMoney(cgross)}</b>
-                    {" · "}ยอดโอนสุทธิ <b className="text-emerald-700">{fmtMoney(cnet)}</b>
+                    เงินเดือนสุทธิ <b className="text-emerald-700">{fmtMoney(cnet)}</b>
+                    {csvc > 0 && <>{" + "}เซอร์วิสชาร์จ <b className="text-violet-700">{fmtMoney(csvc)}</b></>}
+                    {" = "}รวมรับจริง <b className="text-slate-800">{fmtMoney(cnet + csvc)}</b>
                   </div>
                 </div>
-                {empTable(t(lang, "admin.persona.employees.employment.ft"), "text-emerald-700", cft, g.cols)}
-                {empTable(t(lang, "admin.persona.employees.employment.pt"), "text-violet-700", cpt, g.cols)}
-                {empTable("อื่นๆ", "text-slate-600", coth, g.cols)}
+                {empTable(t(lang, "admin.persona.employees.employment.ft"), "text-emerald-700", cft, g.cols, g.key)}
+                {empTable(t(lang, "admin.persona.employees.employment.pt"), "text-violet-700", cpt, g.cols, g.key)}
+                {empTable("อื่นๆ", "text-slate-600", coth, g.cols, g.key)}
               </div>
             );
           })}

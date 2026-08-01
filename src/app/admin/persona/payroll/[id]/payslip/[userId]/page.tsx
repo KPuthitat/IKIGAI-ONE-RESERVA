@@ -140,11 +140,22 @@ export default function PayslipPage({
     ).get(userId) as { branch_id: number } | undefined;
     svcBranchId = ub?.branch_id ?? null;
   }
+  // Show the month's SVC on the payslip too (owner 2026-08-01: SVC เป็นเงินที่
+  // พนักงานได้จริง ต้องอยู่ในสลิป). SVC is a SEPARATE monthly payout (ไม่อยู่ใน
+  // net_pay ของรอบ) — so we surface it only on a MONTHLY payslip (a weekly PT
+  // slip would show the whole month's SVC on every week = 4× over-report; PT
+  // SVC is a separate monthly payout). The manual line.service_charge case
+  // (already inside net_pay) keeps its explanation box as before.
   const svcSummary =
-    line.service_charge > 0 && svcBranchId != null
+    svcBranchId != null && (line.service_charge > 0 || period.cycle === "monthly")
       ? computeMonthlySvcSummary(svcBranchId, svcMonth)
       : null;
   const svcRow = svcSummary?.rows.find((r) => r.userId === userId) ?? null;
+  // Batch SVC counts as a SEPARATE payout on top of net_pay only when it isn't
+  // already folded into the line (line.service_charge === 0) and this is the
+  // monthly slip. Otherwise 0 (avoid double-count / weekly over-report).
+  const svcSeparatePayout =
+    line.service_charge === 0 && period.cycle === "monthly" ? (svcRow?.netPayout ?? 0) : 0;
 
   const employmentLabel =
     line.employment_type === "pt" ? t(lang, "admin.persona.employees.employment.pt") :
@@ -334,6 +345,26 @@ export default function PayslipPage({
               {fmtMoney(line.net_pay)} <span className="text-sm font-normal">บาท</span>
             </span>
           </div>
+          {/* SVC is paid as a separate monthly payout — show it here so the
+              payslip reflects the employee's full take (owner 2026-08-01). */}
+          {svcSeparatePayout > 0 && (
+            <>
+              <div className="flex items-baseline justify-between mt-2 text-slate-600">
+                <span className="text-sm">
+                  + เซอร์วิสชาร์จ <span className="text-xs text-slate-400">(จ่ายแยก ~วันที่ 20 เดือนถัดไป)</span>
+                </span>
+                <span className="text-lg font-semibold text-violet-700">
+                  {fmtMoney(svcSeparatePayout)} <span className="text-xs font-normal">บาท</span>
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between mt-2 border-t border-slate-300 pt-2">
+                <span className="text-base font-bold">รวมรับจริงทั้งเดือน</span>
+                <span className="text-2xl font-bold text-emerald-700">
+                  {fmtMoney(line.net_pay + svcSeparatePayout)} <span className="text-sm font-normal">บาท</span>
+                </span>
+              </div>
+            </>
+          )}
           {profile?.bank_name && profile.bank_account && (
             <div className="text-xs text-slate-600 mt-2">
               {t(lang, "admin.persona.payroll.payslip.transferTo")}:{" "}
