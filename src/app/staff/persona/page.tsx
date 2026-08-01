@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "PERSONA · ลงเวลา" };
 
-type TimeEntry = { id: number; type: "in" | "out"; ts: string };
+type TimeEntry = { id: number; type: "in" | "out"; ts: string; branch?: string | null };
 
 export default function StaffPersonaPage() {
   const user = requireUser();
@@ -54,6 +54,18 @@ export default function StaffPersonaPage() {
     ORDER BY ts DESC LIMIT 100
   `).all(user.id, branchId) as TimeEntry[];
   const todayEntries = entries.filter((e) => bkkDateIso(e.ts) === todayBkk);
+
+  // The 7-day HISTORY list shows ALL branches (owner 2026-08-01: ลงเวลาข้ามสาขา
+  // ไม่มีประวัติให้เห็น — อนุธิดาไปช่วยไฮโป 31 ก.ค. แต่หน้าประวัติกรองเฉพาะสาขาหลัก
+  // เลยหาย). Clock state above stays per-branch; only the history is cross-branch,
+  // tagging the branch name on each punch so a helped-branch day is obvious.
+  const historyEntries = db.prepare(`
+    SELECT te.id, te.type, te.ts, b.name AS branch
+    FROM time_entries te
+    LEFT JOIN branches b ON b.id = te.branch_id
+    WHERE te.user_id = ? AND te.ts >= datetime('now', '-7 days')
+    ORDER BY te.ts DESC LIMIT 100
+  `).all(user.id) as TimeEntry[];
 
   // ส่งเฉพาะ ts ของ in/out แรก ไปให้ client คำนวณ nextAction + 5-min window เอง
   // (ง่ายต่อการ re-evaluate ทุกวินาทีตามนาฬิกาที่วิ่งอยู่)
@@ -136,7 +148,7 @@ export default function StaffPersonaPage() {
       hasPin={hasPin}
       firstInTs={firstInTs}
       firstOutTs={firstOutTs}
-      entries={entries}
+      entries={historyEntries}
       branchName={branch?.name ?? null}
       geofenceEnabled={branch?.geofence_enabled === 1 || branch?.clock_totp_secret != null}
       geofenceLat={branch?.latitude ?? null}

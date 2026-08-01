@@ -7,7 +7,7 @@ import { humanizeApiError } from "@/lib/error-messages";
 import { useLang } from "@/lib/LangProvider";
 import { bkkHHMM, bkkDateIso } from "@/lib/time";
 
-type TimeEntry = { id: number; type: "in" | "out"; ts: string };
+type TimeEntry = { id: number; type: "in" | "out"; ts: string; branch?: string | null };
 
 type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask" | "owl" | "swap" | "coupon" | "food_warn";
 
@@ -271,10 +271,21 @@ export default function TimeClockClient({
             {days.map((d) => {
               const dayEntries = byDay[d];
               const totalMins = computeTotalMinutes(dayEntries);
+              // Branch this day was worked at — tagged only when it differs from
+              // the home/active branch, so a "ไปช่วยอีกสาขา" day stands out.
+              const dayBranch = dayEntries.find((e) => e.branch)?.branch ?? null;
+              const crossBranch = !!dayBranch && !!branchName && dayBranch !== branchName;
               return (
                 <div key={d} className="border-b border-slate-100 pb-2 last:border-b-0">
                   <div className="flex justify-between items-center text-sm">
-                    <span className="font-medium">{formatDateLong(d)}</span>
+                    <span className="font-medium">
+                      {formatDateLong(d)}
+                      {crossBranch && (
+                        <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 align-middle">
+                          {dayBranch}
+                        </span>
+                      )}
+                    </span>
                     <span className="text-slate-500 text-xs">
                       {totalMins > 0
                         ? t("staff.persona.totalHM", { h: Math.floor(totalMins / 60), m: totalMins % 60 })
