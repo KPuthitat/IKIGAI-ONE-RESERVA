@@ -288,9 +288,7 @@ export default function PayrollMonthlySummaryPage({
               <th className="py-2 pr-3">{t(lang, "admin.persona.payroll.col.staff")}</th>
               <th className="py-2 pr-3">สังกัด</th>
               {showBranchCols && cols.map((b) => (
-                <th key={b.id} className="py-2 pr-3 text-right whitespace-nowrap">
-                  {b.name}<span className="block text-[10px] font-normal text-slate-400">ก่อนหัก</span>
-                </th>
+                <th key={b.id} className="py-2 pr-3 text-right whitespace-nowrap">{b.name}</th>
               ))}
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.gross")}</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.sso")}</th>
