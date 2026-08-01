@@ -107,7 +107,7 @@ export default function PeriodDetailPage({
   // and flags anyone whose hire_date lands after the period end (won't be
   // auto-added by a full recompute — needs a manual add).
   const missingStaff = db.prepare(`
-    WITH p AS (SELECT branch_id, cycle, period_end FROM payroll_periods WHERE id = @pid)
+    WITH p AS (SELECT branch_id, cycle, period_start, period_end FROM payroll_periods WHERE id = @pid)
     SELECT u.id, u.display_name, u.title_prefix, u.employment_type, u.hire_date,
            0 AS hire_after_period
     FROM users u
@@ -124,6 +124,19 @@ export default function PeriodDetailPage({
       AND (
         (SELECT branch_id FROM p) IS NULL
         OR u.id IN (SELECT user_id FROM user_branches WHERE branch_id = (SELECT branch_id FROM p))
+      )
+      -- Only nudge to add someone who was actually ROSTERED at this branch during
+      -- the period (owner 2026-08-01: เช็คตารางเวรก่อน ไม่มีเวร = ไม่ต้องพูดถึง).
+      -- อนุธิดา สังกัดไฮโปแต่ไม่มีเวรที่ไฮโปในรอบนี้ → ไม่ต้อง flag. Legacy
+      -- NULL-branch periods count a work shift at any branch.
+      AND EXISTS (
+        SELECT 1 FROM roster_assignments ra
+        JOIN shift_codes sc ON sc.id = ra.shift_code_id
+        WHERE ra.user_id = u.id
+          AND ra.assignment_date >= (SELECT period_start FROM p)
+          AND ra.assignment_date <= (SELECT period_end FROM p)
+          AND sc.kind = 'work'
+          AND ((SELECT branch_id FROM p) IS NULL OR ra.branch_id = (SELECT branch_id FROM p))
       )
     ORDER BY u.display_name
   `).all({ pid: id }) as Array<{
