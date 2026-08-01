@@ -208,13 +208,16 @@ function loadDayBranchMap(
 
 // Keep an entry in the period of `branchId` when its EFFECTIVE branch matches.
 // Effective branch = the (user,day) reattribution when set, else the punch's
-// own branch. With NO reattribution we preserve the pre-existing rule exactly:
-// a punch belongs to its own branch, and an approved time-certification is
-// always included even if its branch stamp is NULL/foreign. Reattribution keys
-// on the punch's OWN BKK local date — for the ordinary same-day shift this
-// moves the clock-in AND clock-out together. (A cross-midnight shift is out of
-// scope: its two punches fall on different dates, so only same-day moves are
-// supported — the realistic "helped another branch that day" case.)
+// own branch. A punch belongs to its own branch. An approved time-certification
+// whose branch stamp is UNKNOWN (NULL) is still included so certified time is
+// never dropped (owner 2026-06-15) — but a cert stamped with a KNOWN branch
+// stays in THAT branch only. Including a known-HYPO cert in NAMA's period too
+// double-counted a cross-branch worker's day across both branches' books (owner
+// 2026-08-01: ศรุตา — นามะ+ไฮโป รวมกันเกินยอดจริง); move a mis-stamped day with
+// the per-day branch reattribution instead. Reattribution keys on the punch's
+// OWN BKK local date — for the ordinary same-day shift this moves the clock-in
+// AND clock-out together. (A cross-midnight shift is out of scope: its two
+// punches fall on different dates, so only same-day moves are supported.)
 // Legacy NULL-branch periods (branchId == null) keep the old all-branches
 // behaviour: nothing is filtered.
 export function keepEntryForBranch(
@@ -224,7 +227,7 @@ export function keepEntryForBranch(
   if (branchId == null) return true;
   const reass = dayBranch.get(`${e.user_id}|${bkkDate(e.ts)}`);
   if (reass != null) return reass === branchId;
-  return e.branch_id === branchId || certIds.has(e.id);
+  return e.branch_id === branchId || (e.branch_id == null && certIds.has(e.id));
 }
 
 /**

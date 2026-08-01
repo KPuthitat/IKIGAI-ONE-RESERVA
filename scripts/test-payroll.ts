@@ -497,6 +497,13 @@ console.log("\nการย้ายสาขารายวัน (per-day bran
   ok("cert branch NULL: เข้ารอบ B ได้", keepEntryForBranch(nullBranchCert, BRANCH_B, noReass, new Set([101])), true);
   ok("ไม่ใช่ cert + branch NULL: ไม่เข้ารอบ A", keepEntryForBranch(nullBranchCert, BRANCH_A, noReass, noCerts), false);
 
+  // Approved cert stamped at a KNOWN branch (B) must NOT leak into another
+  // branch's period (A) — else a cross-branch worker's day is counted twice
+  // (owner 2026-08-01: ศรุตา นามะ+ไฮโป รวมกันเกินยอดจริง).
+  const certAtB: EntryWithBranch = { id: 102, user_id: 7, ts: "2026-06-15T04:00:00.000Z", type: "in", branch_id: BRANCH_B };
+  ok("cert สาขา B: เข้ารอบ B (สาขาตัวเอง)", keepEntryForBranch(certAtB, BRANCH_B, noReass, new Set([102])), true);
+  ok("cert สาขา B: ไม่รั่วเข้ารอบ A", keepEntryForBranch(certAtB, BRANCH_A, noReass, new Set([102])), false);
+
   // Legacy all-branches period (branchId null) keeps everything.
   ok("รอบเก่าไม่ผูกสาขา: เก็บทุก punch", keepEntryForBranch(punchAtA, null, reassToB, noCerts), true);
 }
