@@ -88,7 +88,7 @@ export default function LeaveAdminClient({
   const { alert, ConfirmDialog } = useConfirm();
 
   // Custom modal state (Phase 1C v8 — แทน browser prompt)
-  type DecideTarget = { id: number; decision: "approved" | "rejected" | "revision_requested" };
+  type DecideTarget = { id: number; decision: "approved" | "rejected" | "revision_requested" | "cancelled" };
   const [decideTarget, setDecideTarget] = useState<DecideTarget | null>(null);
   const [decideNote, setDecideNote] = useState("");
   // PIN state — required for approved + rejected decisions (#139 PIN gate)
@@ -114,8 +114,8 @@ export default function LeaveAdminClient({
       });
       return;
     }
-    // PIN required for approve + reject
-    if (decision === "approved" || decision === "rejected") {
+    // PIN required for approve + reject + cancel (high-trust ops).
+    if (decision === "approved" || decision === "rejected" || decision === "cancelled") {
       if (!/^\d{4}$/.test(decidePin)) {
         setDecidePinErr("PIN ต้องเป็นตัวเลข 4 หลัก");
         return;
@@ -124,18 +124,23 @@ export default function LeaveAdminClient({
     setDecidePinErr(null);
     setBusyId(id);
     try {
-      const body: Record<string, unknown> = {
-        decision,
-        note: decideNote.trim() || undefined
-      };
-      if (decision === "approved" || decision === "rejected") {
+      // Cancel (revoke an approved/pending leave) hits its own endpoint; the
+      // approve/reject/revision flow stays on /decide (owner 2026-08-01).
+      const isCancel = decision === "cancelled";
+      const body: Record<string, unknown> = isCancel
+        ? { pin: decidePin, note: decideNote.trim() || undefined }
+        : { decision, note: decideNote.trim() || undefined };
+      if (!isCancel && (decision === "approved" || decision === "rejected")) {
         body.pin = decidePin;
       }
-      const res = await fetch(apiUrl(`/api/admin/persona/leave/${id}/decide`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
+      const res = await fetch(
+        apiUrl(`/api/admin/persona/leave/${id}/${isCancel ? "cancel" : "decide"}`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }
+      );
       const j = await res.json().catch(() => ({}));
       if (j?.ok) {
         setDecideTarget(null);
@@ -347,6 +352,20 @@ export default function LeaveAdminClient({
                       </button>
                     </div>
                   )}
+                  {/* Revoke an already-approved leave (owner 2026-08-01): พนักงาน
+                      เปลี่ยนใจจะมาทำงาน — ยกเลิกลาแล้วค่อยลงกะได้. */}
+                  {r.status === "approved" && (
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        disabled={pending || busyId === r.id}
+                        onClick={() => decide(r.id, "cancelled")}
+                        className="px-3 py-1.5 rounded text-xs font-medium border border-rose-300 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                      >
+                        ยกเลิกการลา
+                      </button>
+                    </div>
+                  )}
                 </div>
               </li>
         );
@@ -432,7 +451,7 @@ function DecisionModal({
   forfeitSvc, onForfeitSvcChange,
   improperResignationConsequences
 }: {
-  decision: "approved" | "rejected" | "revision_requested";
+  decision: "approved" | "rejected" | "revision_requested" | "cancelled";
   note: string;
   onChange: (v: string) => void;
   /** PIN value — required for approve/reject. Omit for revision_requested. */
@@ -455,18 +474,24 @@ function DecisionModal({
   // finalizing. Empty/null = nothing extra shown.
   improperResignationConsequences?: string | null;
 }) {
-  const needsPin = decision === "approved" || decision === "rejected";
-  const promptKey =
-    decision === "approved" ? `${nsPrompt}.notePromptApprove` :
-    decision === "rejected" ? `${nsPrompt}.notePromptReject` :
-    `${nsPrompt}.notePromptRevision`;
+  const needsPin = decision === "approved" || decision === "rejected" || decision === "cancelled";
+  // 'cancelled' is a leave-only admin revoke (owner 2026-08-01) — inline Thai so
+  // it needs no new i18n keys.
+  const title =
+    decision === "cancelled" ? "ยกเลิกการลานี้ (คืนวันทำงาน)" :
+    translate(
+      decision === "approved" ? `${nsPrompt}.notePromptApprove` :
+      decision === "rejected" ? `${nsPrompt}.notePromptReject` :
+      `${nsPrompt}.notePromptRevision`
+    );
   const buttonClass =
     decision === "approved" ? "bg-emerald-500 hover:bg-emerald-600" :
-    decision === "rejected" ? "bg-rose-500 hover:bg-rose-600" :
+    decision === "rejected" || decision === "cancelled" ? "bg-rose-500 hover:bg-rose-600" :
     "bg-orange-500 hover:bg-orange-600";
   const buttonLabel =
     decision === "approved" ? translate("admin.persona.leave.approve") :
     decision === "rejected" ? translate("admin.persona.leave.reject") :
+    decision === "cancelled" ? "ยกเลิกการลา" :
     translate("admin.persona.leave.requestRevision");
 
   return (
@@ -475,7 +500,7 @@ function DecisionModal({
         className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="font-semibold text-slate-800">{translate(promptKey)}</h3>
+        <h3 className="font-semibold text-slate-800">{title}</h3>
         <textarea
           className="input min-h-[100px]"
           value={note}

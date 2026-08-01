@@ -636,6 +636,11 @@ function AssignModal({
               );
             })}
           </select>
+          {staff.some((s) => leaveForDate[s.id]) && (
+            <p className="text-[11px] text-slate-400 mt-1">
+              คนที่ติดลาวันนี้เลือกไม่ได้ — ถ้าจะให้มาทำงาน ยกเลิกการลาที่หน้า “จัดการลา” ก่อน แล้วค่อยลงกะ
+            </p>
+          )}
         </div>
         <div>
           <label className="label">{t("admin.persona.roster.modal.shift")}</label>
