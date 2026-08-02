@@ -436,16 +436,23 @@ export default function PayslipPage({
             </div>
           </div>
 
-          {/* 3) รายได้สุทธิ */}
-          <div className="border-2 border-slate-800 rounded-lg p-4 bg-slate-50">
+          {/* 3) สรุป: ได้ก่อนหัก → หัก → สุทธิ (owner 2026-08-02) */}
+          <div className="border-2 border-slate-800 rounded-lg p-4 bg-slate-50 space-y-1.5">
             <div className="flex items-baseline justify-between gap-3">
-              <div>
-                <div className="text-base font-bold">{t(lang, "admin.persona.payroll.payslip.netLabel")} (รับจริง)</div>
-                <div className="text-[11px] text-slate-500 mt-0.5">
-                  รวมรายได้ {fmtMoney(incomeTotalRound)} − รายการหัก {fmtMoney(dedTotalRound)}
-                </div>
-              </div>
-              <span className="text-2xl font-bold text-emerald-700 whitespace-nowrap">
+              <span className="text-sm font-semibold text-slate-700">รายได้ก่อนหัก (รวมรายรับทั้งหมด)</span>
+              <span className="text-lg font-bold text-slate-800 whitespace-nowrap tabular-nums">
+                {fmtMoney(incomeTotalRound)} <span className="text-xs font-normal">บาท</span>
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-sm text-slate-600">รวมรายการหัก</span>
+              <span className="text-base font-semibold text-rose-600 whitespace-nowrap tabular-nums">
+                − {fmtMoney(dedTotalRound)} <span className="text-xs font-normal">บาท</span>
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-3 border-t-2 border-slate-300 pt-1.5 mt-1.5">
+              <span className="text-base font-bold">{t(lang, "admin.persona.payroll.payslip.netLabel")} (รับจริง)</span>
+              <span className="text-2xl font-bold text-emerald-700 whitespace-nowrap tabular-nums">
                 {fmtMoney(netTotalRound)} <span className="text-sm font-normal">บาท</span>
               </span>
             </div>
