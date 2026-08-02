@@ -337,6 +337,12 @@ export default function PayrollMonthlySummaryPage({
                         </span>
                       )}
                     </div>
+                    <Link
+                      href={`/admin/persona/payroll/monthly-payslip/${r.user_id}?m=${month}`}
+                      className="text-[11px] text-brand hover:underline"
+                    >
+                      สลิปรายเดือน →
+                    </Link>
                   </td>
                   <td className="py-2 pr-3 text-xs text-slate-500 whitespace-nowrap">{homeByUser.get(r.user_id) ?? "—"}</td>
                   {showBranchCols && cols.map((b) => {

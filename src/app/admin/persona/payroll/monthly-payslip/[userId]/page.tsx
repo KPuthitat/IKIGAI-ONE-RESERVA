@@ -1,0 +1,353 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
+import type { ReactNode } from "react";
+import { requirePayrollAccess } from "@/lib/auth";
+import { getDb } from "@/lib/db";
+import { getLang } from "@/lib/lang-server";
+import { t, type Lang } from "@/lib/i18n";
+import { formatLongDate } from "@/lib/time";
+import { fmtMoney } from "@/lib/format";
+import { nameWithPrefix } from "@/lib/name";
+import { computeMonthlySvcSummary } from "@/lib/service-charge";
+import PayslipPrintButton from "../../[id]/payslip/[userId]/PayslipPrintButton";
+
+export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "สลิปค่าตอบแทนรายเดือน · PERSONA" };
+
+const TH_MONTHS = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+];
+const EN_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
+
+function todayMonth(): string {
+  const now = new Date();
+  const bkk = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  return bkk.toISOString().slice(0, 7);
+}
+
+function monthRange(yearMonth: string): { from: string; to: string } {
+  const [y, m] = yearMonth.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return {
+    from: `${yearMonth}-01`,
+    to: `${yearMonth}-${String(lastDay).padStart(2, "0")}`
+  };
+}
+
+function monthLabel(yearMonth: string, lang: Lang): string {
+  const [y, m] = yearMonth.split("-").map(Number);
+  const months = lang === "th" ? TH_MONTHS : EN_MONTHS;
+  const yearDisplay = lang === "th" ? y + 543 : y;
+  return `${months[m - 1]} ${yearDisplay}`;
+}
+
+// One weekly (or monthly) payroll line the employee had in the calendar month,
+// with its parent period's dates. Ordered by period_start.
+type WeekLine = {
+  period_id: number;
+  cycle: "weekly" | "monthly";
+  period_start: string;
+  period_end: string;
+  pay_date: string;
+  status: "draft" | "finalized" | "paid" | "cancelled";
+  branch_id: number | null;
+  employment_type: "pt" | "ft" | null;
+  salary_tax_mode_snapshot: "sso" | "wht" | null;
+  base_pay: number;
+  ot_pay: number;
+  service_charge: number;
+  other_additions: number;
+  sso_amount: number;
+  tax_amount: number;
+  other_deductions: number;
+  drink_deductions: number;
+  net_pay: number;
+  days_worked: number;
+};
+
+type EmployeeProfile = {
+  display_name: string;
+  bank_name: string | null;
+  bank_account: string | null;
+  employee_code: string | null;
+  title_prefix: string | null;
+};
+
+function maskAccount(acc: string | null): string {
+  if (!acc) return "—";
+  const digits = acc.replace(/\D/g, "");
+  if (digits.length < 8) return acc;
+  return `${digits.slice(0, 3)}-x-xxxxx-${digits.slice(-1)}`;
+}
+
+export default function MonthlyPayslipPage({
+  params,
+  searchParams
+}: {
+  params: { userId: string };
+  searchParams: { m?: string };
+}) {
+  requirePayrollAccess();
+  const lang = getLang();
+  const db = getDb();
+
+  const userId = Number(params.userId);
+  if (!Number.isInteger(userId)) notFound();
+
+  const month = /^\d{4}-\d{2}$/.test(searchParams.m ?? "")
+    ? searchParams.m!
+    : todayMonth();
+  const { from, to } = monthRange(month);
+
+  // Every payroll line this person had in the month — one per weekly (or the
+  // single monthly) period whose pay_date lands in the month. Same month rule
+  // as the summary page (pay_date ∈ [from,to]), so the two always agree.
+  const weeks = db.prepare(`
+    SELECT pp.id AS period_id, pp.cycle, pp.period_start, pp.period_end,
+           pp.pay_date, pp.status, pp.branch_id,
+           pl.employment_type, pl.salary_tax_mode_snapshot,
+           pl.base_pay, pl.ot_pay, pl.service_charge, pl.other_additions,
+           pl.sso_amount, pl.tax_amount, pl.other_deductions, pl.drink_deductions,
+           pl.net_pay, pl.days_worked
+    FROM payroll_lines pl
+    JOIN payroll_periods pp ON pp.id = pl.period_id
+    WHERE pl.user_id = ? AND pp.pay_date >= ? AND pp.pay_date <= ?
+    ORDER BY pp.period_start, pp.id
+  `).all(userId, from, to) as WeekLine[];
+
+  if (weeks.length === 0) notFound();
+
+  const profile = db.prepare(
+    "SELECT display_name, bank_name, bank_account, employee_code, title_prefix FROM users WHERE id = ?"
+  ).get(userId) as EmployeeProfile | undefined;
+  if (!profile) notFound();
+
+  // Service charge for the month — a SEPARATE monthly payout (svc_payout_batches),
+  // not inside any weekly net_pay. Sum the person's net SVC across every branch
+  // they worked in this month (owner 2026-08-01: SVC เป็นเงินที่พนักงานได้จริง).
+  const branchIds = Array.from(
+    new Set(
+      weeks
+        .map((w) => w.branch_id)
+        .filter((b): b is number => b != null)
+    )
+  );
+  if (branchIds.length === 0) {
+    const ub = db.prepare(
+      "SELECT branch_id FROM user_branches WHERE user_id = ? ORDER BY branch_id LIMIT 1"
+    ).get(userId) as { branch_id: number } | undefined;
+    if (ub) branchIds.push(ub.branch_id);
+  }
+  let svcMonthly = 0;
+  for (const b of branchIds) {
+    let summary;
+    try { summary = computeMonthlySvcSummary(b, month); }
+    catch { continue; }
+    const row = summary.rows.find((r) => r.userId === userId);
+    if (row) svcMonthly += row.netPayout;
+  }
+
+  // Totals across the weekly lines.
+  const tot = weeks.reduce(
+    (a, w) => ({
+      comp: a.comp + w.base_pay + w.ot_pay,
+      other: a.other + w.other_additions + w.service_charge,
+      ded: a.ded + w.sso_amount + w.tax_amount + w.other_deductions + w.drink_deductions,
+      net: a.net + w.net_pay
+    }),
+    { comp: 0, other: 0, ded: 0, net: 0 }
+  );
+  const grandTotal = tot.net + svcMonthly;
+
+  const first = weeks[0];
+  const employmentLabel =
+    first.employment_type === "pt" ? t(lang, "admin.persona.employees.employment.pt") :
+    first.employment_type === "ft" ? t(lang, "admin.persona.employees.employment.ft") :
+    "—";
+  const isWeekly = weeks.some((w) => w.cycle === "weekly");
+
+  // Non-zero deduction components for a line → "ปกส. ฿x · ภาษี ฿y · …".
+  const dedParts = (w: WeekLine): string => {
+    const parts: string[] = [];
+    if (w.sso_amount > 0) parts.push(`${t(lang, "admin.persona.payroll.col.sso")} ฿${fmtMoney(w.sso_amount)}`);
+    if (w.tax_amount > 0) parts.push(`${t(lang, "admin.persona.payroll.col.tax")} ฿${fmtMoney(w.tax_amount)}`);
+    if (w.drink_deductions > 0) parts.push(`${t(lang, "admin.persona.payroll.col.drinkDed")} ฿${fmtMoney(w.drink_deductions)}`);
+    if (w.other_deductions > 0) parts.push(`${t(lang, "admin.persona.payroll.col.otherDed")} ฿${fmtMoney(w.other_deductions)}`);
+    return parts.join(" · ");
+  };
+
+  return (
+    <>
+      {/* On-screen toolbar — hidden when printing */}
+      <div className="space-y-3 print:hidden">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Link href={`/admin/persona/payroll/summary?m=${month}`} className="text-sm text-slate-500 hover:text-brand">
+            ← {t(lang, "admin.persona.payroll.backToHub")}
+          </Link>
+          <PayslipPrintButton lang={lang} />
+        </div>
+      </div>
+
+      {/* Payslip — visible both on screen and print */}
+      <div className="payslip mx-auto bg-white text-slate-800 p-8 max-w-2xl rounded-2xl shadow-card mt-3 print:shadow-none print:rounded-none print:p-6 print:max-w-none">
+        {/* Header */}
+        <div className="text-center border-b-2 border-slate-300 pb-3 mb-4">
+          <div className="text-2xl font-bold tracking-wide">IKIGAI MEDIHEALTH</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {t(lang, "admin.persona.payroll.payslip.companyHint")}
+          </div>
+          <h1 className="text-xl font-semibold mt-3">
+            สลิปค่าตอบแทนรายเดือน · {monthLabel(month, lang)}
+          </h1>
+        </div>
+
+        {/* Employee info */}
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm mb-4">
+          <Row label={t(lang, "admin.persona.payroll.payslip.employeeName")} value={nameWithPrefix(profile.title_prefix, profile.display_name)} />
+          <Row label={t(lang, "admin.persona.payroll.payslip.employeeCode")} value={profile.employee_code ?? "—"} />
+          <Row label={t(lang, "admin.persona.payroll.payslip.employmentType")} value={employmentLabel} />
+          <Row label="รอบเดือน" value={monthLabel(month, lang)} />
+        </div>
+
+        {/* Weekly breakdown table */}
+        <div className="my-3">
+          <div className="text-sm font-semibold text-slate-700 border-b border-slate-200 pb-1 mb-2">
+            {isWeekly ? "รายละเอียดรายสัปดาห์" : "รายละเอียดรอบจ่าย"}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-slate-500 border-b border-slate-200">
+                  <th className="py-1.5 pr-2">วันที่</th>
+                  <th className="py-1.5 pr-2 text-right whitespace-nowrap">ค่าตอบแทน</th>
+                  <th className="py-1.5 pr-2 text-right whitespace-nowrap">รายได้อื่นๆ</th>
+                  <th className="py-1.5 pr-2 text-right whitespace-nowrap">รายการหัก</th>
+                  <th className="py-1.5 pl-2 text-right whitespace-nowrap">สุทธิ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weeks.map((w) => {
+                  const comp = w.base_pay + w.ot_pay;
+                  const other = w.other_additions + w.service_charge;
+                  const ded = w.sso_amount + w.tax_amount + w.other_deductions + w.drink_deductions;
+                  const parts = dedParts(w);
+                  return (
+                    <tr key={w.period_id} className="border-b border-slate-100 align-top">
+                      <td className="py-1.5 pr-2 whitespace-nowrap">
+                        <div className="text-slate-700">
+                          {formatLongDate(w.period_start, lang)} – {formatLongDate(w.period_end, lang)}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          จ่าย {formatLongDate(w.pay_date, lang)}
+                          {w.days_worked > 0 ? ` · ${w.days_worked} วัน` : ""}
+                        </div>
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {comp ? fmtMoney(comp) : <span className="text-slate-300">—</span>}
+                        {w.ot_pay > 0 && (
+                          <div className="text-[10px] text-slate-400">รวมโอที ฿{fmtMoney(w.ot_pay)}</div>
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {other ? fmtMoney(other) : <span className="text-slate-300">—</span>}
+                        {w.service_charge > 0 && (
+                          <div className="text-[10px] text-slate-400">เซอร์วิสชาร์จในรอบ ฿{fmtMoney(w.service_charge)}</div>
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums text-rose-600">
+                        {ded ? fmtMoney(ded) : <span className="text-slate-300">—</span>}
+                        {parts && (
+                          <div className="text-[10px] text-slate-400 font-normal">{parts}</div>
+                        )}
+                      </td>
+                      <td className="py-1.5 pl-2 text-right tabular-nums font-semibold text-slate-800">
+                        {fmtMoney(w.net_pay)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-300 font-semibold text-slate-800">
+                  <td className="py-1.5 pr-2">รวมทั้งเดือน</td>
+                  <td className="py-1.5 pr-2 text-right tabular-nums">{fmtMoney(tot.comp)}</td>
+                  <td className="py-1.5 pr-2 text-right tabular-nums">{fmtMoney(tot.other)}</td>
+                  <td className="py-1.5 pr-2 text-right tabular-nums text-rose-600">{fmtMoney(tot.ded)}</td>
+                  <td className="py-1.5 pl-2 text-right tabular-nums text-emerald-700">{fmtMoney(tot.net)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        {/* Grand total — wages + separate monthly SVC payout */}
+        <div className="border-2 border-slate-800 rounded-lg p-4 my-4 bg-slate-50">
+          <div className="flex items-baseline justify-between">
+            <span className="text-base font-semibold">รวมค่าจ้างสุทธิทั้งเดือน</span>
+            <span className="text-xl font-bold">
+              {fmtMoney(tot.net)} <span className="text-sm font-normal">บาท</span>
+            </span>
+          </div>
+          {svcMonthly > 0 && (
+            <>
+              <div className="flex items-baseline justify-between mt-2 text-slate-600">
+                <span className="text-sm">
+                  + เซอร์วิสชาร์จ <span className="text-xs text-slate-400">(จ่ายแยก ~วันที่ 20 เดือนถัดไป)</span>
+                </span>
+                <span className="text-lg font-semibold text-violet-700">
+                  {fmtMoney(svcMonthly)} <span className="text-xs font-normal">บาท</span>
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between mt-2 border-t border-slate-300 pt-2">
+                <span className="text-base font-bold">รวมรับจริงทั้งเดือน</span>
+                <span className="text-2xl font-bold text-emerald-700">
+                  {fmtMoney(grandTotal)} <span className="text-sm font-normal">บาท</span>
+                </span>
+              </div>
+            </>
+          )}
+          {profile.bank_name && profile.bank_account && (
+            <div className="text-xs text-slate-600 mt-2">
+              {t(lang, "admin.persona.payroll.payslip.transferTo")}:{" "}
+              <span className="font-medium">{profile.bank_name}</span>{" "}
+              {maskAccount(profile.bank_account)}
+            </div>
+          )}
+        </div>
+
+        {/* Signature block */}
+        <div className="grid grid-cols-2 gap-8 mt-10 text-sm">
+          <div>
+            <div className="border-b border-slate-400 h-8"></div>
+            <div className="text-center mt-1 text-slate-500 text-xs">
+              {t(lang, "admin.persona.payroll.payslip.employeeSignature")}
+            </div>
+          </div>
+          <div>
+            <div className="border-b border-slate-400 h-8"></div>
+            <div className="text-center mt-1 text-slate-500 text-xs">
+              {t(lang, "admin.persona.payroll.payslip.dateLabel")}
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Helper components ────────────────────────────────────────────────
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex">
+      <span className="text-slate-500 mr-2 whitespace-nowrap">{label}:</span>
+      <span className="font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
