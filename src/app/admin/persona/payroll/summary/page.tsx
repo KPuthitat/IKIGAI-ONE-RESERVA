@@ -244,23 +244,37 @@ export default function PayrollMonthlySummaryPage({
     rowsByCompany.get(r.company_id)!.push(r);
   }
 
-  // Service charge (owner 2026-08-01: SVC เป็นเงินที่พนักงานได้จริง ต้องอยู่ในสรุป
-  // + สลิปด้วย). SVC is a SEPARATE monthly system (svc_payout_batches) — pull each
-  // person's net SVC payout for the month per branch, attribute to that branch's
-  // company, so the summary shows salary + SVC = รวมรับจริง. Keyed `${user}|${companyKey}`.
-  const svcByUserCompany = new Map<string, number>();
+  // Service charge (owner 2026-08-01/08-02). SVC is a SEPARATE monthly system —
+  // and the money landing in THIS month's pocket is the PREVIOUS month's SVC
+  // (paid ~the 20th), exactly like the payslip. So we pull SVC for prevMonth, not
+  // `month` (owner 2026-08-02: เซอร์วิสชาร์จที่ได้เดือน ก.ค. = ของเดือน มิ.ย.). We
+  // keep the GROSS (before its own WHT + group insurance) plus the WHT and
+  // group-insurance parts, so the summary can show SVC as income and its WHT/
+  // ประกันกลุ่ม as deductions — matching the FT/PT statement layout.
+  const svcMonth = shiftMonth(month, -1);
+  type SvcAgg = { gross: number; wht: number; gi: number; net: number };
+  const svcByUserCompany = new Map<string, SvcAgg>();
   for (const cb of companyBranches) {
     let svc;
-    try { svc = computeMonthlySvcSummary(cb.branch_id, month); }
+    try { svc = computeMonthlySvcSummary(cb.branch_id, svcMonth); }
     catch { continue; }
     for (const row of svc.rows) {
-      if (!row.netPayout) continue;
+      if (!row.netAllocation && !row.netPayout) continue;
       const k = `${row.userId}|${String(cb.company_id)}`;
-      svcByUserCompany.set(k, (svcByUserCompany.get(k) ?? 0) + row.netPayout);
+      const cur = svcByUserCompany.get(k) ?? { gross: 0, wht: 0, gi: 0, net: 0 };
+      cur.gross += row.netAllocation;
+      cur.wht += row.whtAmount;
+      cur.gi += row.groupInsurance;
+      cur.net += row.netPayout;
+      svcByUserCompany.set(k, cur);
     }
   }
-  const svcFor = (userId: number, companyKey: number | null): number =>
-    svcByUserCompany.get(`${userId}|${String(companyKey)}`) ?? 0;
+  const svcFor = (userId: number, companyKey: number | null): SvcAgg =>
+    svcByUserCompany.get(`${userId}|${String(companyKey)}`) ?? { gross: 0, wht: 0, gi: 0, net: 0 };
+  const grandSvc = [...svcByUserCompany.values()].reduce(
+    (a, s) => ({ gross: a.gross + s.gross, wht: a.wht + s.wht, gi: a.gi + s.gi, net: a.net + s.net }),
+    { gross: 0, wht: 0, gi: 0, net: 0 }
+  );
 
   // Split the merged rows into the two tables the owner wants kept separate.
   const ftRows = empRows.filter((r) => r.employment_type === "ft");
@@ -290,17 +304,31 @@ export default function PayrollMonthlySummaryPage({
   const empTable = (title: string, accent: string, rows: EmpCompanyRow[], cols: Array<{ id: number; name: string }>, companyKey: number | null) => {
     if (rows.length === 0) return null;
     const showBranchCols = cols.length > 1;
+    // Per-row figures in the owner's statement order (2026-08-02): ค่าตอบแทน →
+    // SVC → รวมรายรับ → หัก (ปกส./ภาษี/ประกันกลุ่ม) → รวมรับจริง. SVC WHT folds into
+    // the tax column; take = income − all deductions (= wage net + SVC net).
+    const figures = (r: EmpCompanyRow) => {
+      const comp = r.total_gross ?? 0;
+      const svc = svcFor(r.user_id, companyKey);
+      const income = comp + svc.gross;
+      const sso = r.total_sso ?? 0;
+      const tax = (r.total_tax ?? 0) + svc.wht;
+      const gi = svc.gi;
+      const ded = sso + tax + gi;
+      return { comp, svcGross: svc.gross, income, sso, tax, gi, ded, take: income - ded };
+    };
     const sub = rows.reduce(
       (a, r) => {
-        const svc = svcFor(r.user_id, companyKey);
+        const f = figures(r);
         return {
-          gross: a.gross + (r.total_gross ?? 0), sso: a.sso + (r.total_sso ?? 0),
-          tax: a.tax + (r.total_tax ?? 0), net: a.net + (r.total_net ?? 0),
-          svc: a.svc + svc, take: a.take + (r.total_net ?? 0) + svc
+          comp: a.comp + f.comp, svcGross: a.svcGross + f.svcGross, income: a.income + f.income,
+          sso: a.sso + f.sso, tax: a.tax + f.tax, gi: a.gi + f.gi, ded: a.ded + f.ded, take: a.take + f.take
         };
       },
-      { gross: 0, sso: 0, tax: 0, net: 0, svc: 0, take: 0 }
+      { comp: 0, svcGross: 0, income: 0, sso: 0, tax: 0, gi: 0, ded: 0, take: 0 }
     );
+    const money = (v: number, cls = "") =>
+      v ? <span className={cls}>{fmtMoney(v)}</span> : <span className="text-slate-300">—</span>;
     return (
       <div className="card overflow-x-auto">
         <h2 className="font-semibold text-slate-700 mb-3">
@@ -314,19 +342,19 @@ export default function PayrollMonthlySummaryPage({
               {showBranchCols && cols.map((b) => (
                 <th key={b.id} className="py-2 pr-3 text-right whitespace-nowrap">{b.name}</th>
               ))}
-              <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.gross")}</th>
+              <th className="py-2 pr-3 text-right whitespace-nowrap">ค่าตอบแทน</th>
+              <th className="py-2 pr-3 text-right whitespace-nowrap">เซอร์วิสชาร์จ</th>
+              <th className="py-2 pr-3 text-right whitespace-nowrap">รวมรายรับ</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.sso")}</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.tax")}</th>
-              <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.net")}</th>
-              <th className="py-2 pr-3 text-right whitespace-nowrap">เซอร์วิสชาร์จ</th>
+              <th className="py-2 pr-3 text-right whitespace-nowrap">ประกันกลุ่ม</th>
               <th className="py-2 pr-3 text-right whitespace-nowrap">รวมรับจริง</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => {
               const perB = grossByUserBranch.get(r.user_id) ?? new Map<number, number>();
-              const svc = svcFor(r.user_id, companyKey);
-              const take = (r.total_net ?? 0) + svc;
+              const f = figures(r);
               return (
                 <tr key={r.user_id} className="border-b border-slate-100 last:border-0">
                   <td className="py-2 pr-3">
@@ -350,16 +378,17 @@ export default function PayrollMonthlySummaryPage({
                     const v = perB.get(b.id) ?? 0;
                     return (
                       <td key={b.id} className="py-2 pr-3 text-right tabular-nums">
-                        {v ? fmtMoney(v) : <span className="text-slate-300">—</span>}
+                        {money(v)}
                       </td>
                     );
                   })}
-                  <td className="py-2 pr-3 text-right">{fmtMoney(r.total_gross ?? 0)}</td>
-                  <td className="py-2 pr-3 text-right text-sky-700">{fmtMoney(r.total_sso ?? 0)}</td>
-                  <td className="py-2 pr-3 text-right text-amber-700">{fmtMoney(r.total_tax ?? 0)}</td>
-                  <td className="py-2 pr-3 text-right text-emerald-700">{fmtMoney(r.total_net ?? 0)}</td>
-                  <td className="py-2 pr-3 text-right text-violet-700">{svc ? fmtMoney(svc) : <span className="text-slate-300">—</span>}</td>
-                  <td className="py-2 pr-3 text-right font-bold text-slate-800">{fmtMoney(take)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{money(f.comp)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums text-violet-700">{money(f.svcGross)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-medium text-slate-800">{money(f.income)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums text-sky-700">{money(f.sso)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums text-amber-700">{money(f.tax)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums text-rose-600">{money(f.gi)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-bold text-emerald-700">{fmtMoney(f.take)}</td>
                 </tr>
               );
             })}
@@ -369,12 +398,13 @@ export default function PayrollMonthlySummaryPage({
               <td className="py-2 pr-3" colSpan={showBranchCols ? 2 + cols.length : 2}>
                 {t(lang, "admin.persona.payroll.detail.total")}
               </td>
-              <td className="py-2 pr-3 text-right">{fmtMoney(sub.gross)}</td>
-              <td className="py-2 pr-3 text-right text-sky-700">{fmtMoney(sub.sso)}</td>
-              <td className="py-2 pr-3 text-right text-amber-700">{fmtMoney(sub.tax)}</td>
-              <td className="py-2 pr-3 text-right text-emerald-700">{fmtMoney(sub.net)}</td>
-              <td className="py-2 pr-3 text-right text-violet-700">{fmtMoney(sub.svc)}</td>
-              <td className="py-2 pr-3 text-right font-bold text-slate-800">{fmtMoney(sub.take)}</td>
+              <td className="py-2 pr-3 text-right tabular-nums">{fmtMoney(sub.comp)}</td>
+              <td className="py-2 pr-3 text-right tabular-nums text-violet-700">{fmtMoney(sub.svcGross)}</td>
+              <td className="py-2 pr-3 text-right tabular-nums text-slate-800">{fmtMoney(sub.income)}</td>
+              <td className="py-2 pr-3 text-right tabular-nums text-sky-700">{fmtMoney(sub.sso)}</td>
+              <td className="py-2 pr-3 text-right tabular-nums text-amber-700">{fmtMoney(sub.tax)}</td>
+              <td className="py-2 pr-3 text-right tabular-nums text-rose-600">{fmtMoney(sub.gi)}</td>
+              <td className="py-2 pr-3 text-right tabular-nums font-bold text-emerald-700">{fmtMoney(sub.take)}</td>
             </tr>
           </tfoot>
         </table>
@@ -441,11 +471,11 @@ export default function PayrollMonthlySummaryPage({
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="card">
               <div className="text-xs text-slate-500">
-                {t(lang, "admin.persona.payroll.summary.totalGross")}
+                รวมรายรับ (ค่าตอบแทน + เซอร์วิสชาร์จ)
               </div>
-              <div className="text-2xl font-bold mt-1 text-slate-800">{fmtMoney(totals.gross)}</div>
+              <div className="text-2xl font-bold mt-1 text-slate-800">{fmtMoney(totals.gross + grandSvc.gross)}</div>
               <div className="text-xs text-slate-500 mt-1">
-                {periods.length} {t(lang, "admin.persona.payroll.summary.periodsLabel")} · {empRows.length} {t(lang, "admin.persona.payroll.col.staff")}
+                ค่าตอบแทน {fmtMoney(totals.gross)}{grandSvc.gross > 0 ? ` + SVC ${fmtMoney(grandSvc.gross)}` : ""}
               </div>
             </div>
             <div className="card">
@@ -461,18 +491,19 @@ export default function PayrollMonthlySummaryPage({
               <div className="text-xs text-slate-500">
                 {t(lang, "admin.persona.payroll.col.tax")}
               </div>
-              <div className="text-2xl font-bold mt-1 text-amber-700">{fmtMoney(totals.tax)}</div>
+              <div className="text-2xl font-bold mt-1 text-amber-700">{fmtMoney(totals.tax + grandSvc.wht)}</div>
               <div className="text-xs text-slate-500 mt-1">
                 {totals.whtEmployees} {t(lang, "admin.persona.payroll.summary.whtEmpLabel")}
+                {grandSvc.gi > 0 ? ` · ประกันกลุ่ม ${fmtMoney(grandSvc.gi)}` : ""}
               </div>
             </div>
             <div className="card border-2 border-emerald-300 bg-emerald-50/40">
               <div className="text-xs text-slate-500">
-                {t(lang, "admin.persona.payroll.summary.totalNet")}
+                รวมรับจริง (โอนเข้าบัญชี)
               </div>
-              <div className="text-2xl font-bold mt-1 text-emerald-700">{fmtMoney(totals.net)}</div>
+              <div className="text-2xl font-bold mt-1 text-emerald-700">{fmtMoney(totals.net + grandSvc.net)}</div>
               <div className="text-xs text-slate-500 mt-1">
-                {t(lang, "admin.persona.payroll.summary.totalNetHint")}
+                เงินเดือนสุทธิ {fmtMoney(totals.net)}{grandSvc.net > 0 ? ` + SVC ${fmtMoney(grandSvc.net)}` : ""}
               </div>
             </div>
           </div>
@@ -482,7 +513,7 @@ export default function PayrollMonthlySummaryPage({
               books (owner 2026-07-27). */}
           {multiBranch && (
             <p className="text-xs text-slate-400">
-              แยกตามบริษัท (บัญชีแยกกัน) · คอลัมน์รายสาขา = ยอดก่อนหัก ณ ที่จ่าย (gross) ที่ลงบัญชีแต่ละสาขา · แล้วหัก ปกส./ภาษี → เหลือสุทธิ
+              แยกตามบริษัท (บัญชีแยกกัน) · คอลัมน์รายสาขา = ค่าตอบแทนก่อนหัก (gross) ที่ลงบัญชีแต่ละสาขา · ค่าตอบแทน + เซอร์วิสชาร์จ = รวมรายรับ → หัก ปกส./ภาษี/ประกันกลุ่ม → รวมรับจริง · เซอร์วิสชาร์จเป็นของเดือน{monthLabel(svcMonth, lang)}
             </p>
           )}
           {/* One section per company — the books are separate, so NAMA+HYPO and
@@ -493,17 +524,23 @@ export default function PayrollMonthlySummaryPage({
             const cft = crows.filter((r) => r.employment_type === "ft");
             const cpt = crows.filter((r) => r.employment_type === "pt");
             const coth = crows.filter((r) => r.employment_type !== "ft" && r.employment_type !== "pt");
-            const cnet = crows.reduce((s, r) => s + (r.total_net ?? 0), 0);
-            const cgross = crows.reduce((s, r) => s + (r.total_gross ?? 0), 0);
-            const csvc = crows.reduce((s, r) => s + svcFor(r.user_id, g.key), 0);
+            // Company subtotal in the statement order: รวมรายรับ (ค่าตอบแทน + SVC) −
+            // รายการหัก (ปกส. + ภาษี + SVC WHT + ประกันกลุ่ม) = รวมรับจริง.
+            const cAgg = crows.reduce((s, r) => {
+              const sv = svcFor(r.user_id, g.key);
+              return {
+                income: s.income + (r.total_gross ?? 0) + sv.gross,
+                ded: s.ded + (r.total_sso ?? 0) + (r.total_tax ?? 0) + sv.wht + sv.gi
+              };
+            }, { income: 0, ded: 0 });
             return (
               <div key={String(g.key)} className="space-y-3">
                 <div className="flex items-baseline justify-between gap-3 flex-wrap border-l-4 border-brand pl-3 pt-2">
                   <h2 className="text-lg font-bold text-slate-800">{g.name}</h2>
                   <div className="text-xs text-slate-500">
-                    เงินเดือนสุทธิ <b className="text-emerald-700">{fmtMoney(cnet)}</b>
-                    {csvc > 0 && <>{" + "}เซอร์วิสชาร์จ <b className="text-violet-700">{fmtMoney(csvc)}</b></>}
-                    {" = "}รวมรับจริง <b className="text-slate-800">{fmtMoney(cnet + csvc)}</b>
+                    รวมรายรับ <b className="text-slate-800">{fmtMoney(cAgg.income)}</b>
+                    {" − "}รายการหัก <b className="text-rose-600">{fmtMoney(cAgg.ded)}</b>
+                    {" = "}รวมรับจริง <b className="text-emerald-700">{fmtMoney(cAgg.income - cAgg.ded)}</b>
                   </div>
                 </div>
                 {empTable(t(lang, "admin.persona.employees.employment.ft"), "text-emerald-700", cft, g.cols, g.key)}
