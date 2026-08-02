@@ -597,18 +597,19 @@ export function removeSvcFromAccounta(batchId: number): void {
   getDb().prepare("DELETE FROM accounta_expenses WHERE svc_payout_batch_id = ?").run(batchId);
 }
 
-export function postSvcToAccounta(batchId: number, userId: number): { staff: number; net: number; wht: number } {
+export function postSvcToAccounta(batchId: number, userId: number): { staff: number; net: number; wht: number; groupInsurance: number } {
   const db = getDb();
   const batch = db.prepare(
     "SELECT id, branch_id, year_month FROM svc_payout_batches WHERE id = ?"
   ).get(batchId) as { id: number; branch_id: number; year_month: string } | undefined;
-  if (!batch) return { staff: 0, net: 0, wht: 0 };
+  if (!batch) return { staff: 0, net: 0, wht: 0, groupInsurance: 0 };
   const companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
     .get(batch.branch_id) as { company_id: number | null } | undefined)?.company_id ?? null;
 
   const summary = computeMonthlySvcSummary(batch.branch_id, batch.year_month);
   ensureExpenseCategory("เซอร์วิสชาร์จพนักงาน", "LB");
   ensureExpenseCategory("ภาษีหัก ณ ที่จ่าย", "WHT");
+  ensureExpenseCategory("ประกันกลุ่มพนักงาน", "GINS");
 
   const payDate = computePayoutDate(batch.year_month);
   const monthLabel = batch.year_month;
@@ -622,10 +623,11 @@ export function postSvcToAccounta(batchId: number, userId: number): { staff: num
 
   const run = db.transaction(() => {
     db.prepare("DELETE FROM accounta_expenses WHERE svc_payout_batch_id = ?").run(batchId);
-    let staff = 0, totalNet = 0, totalWht = 0;
+    let staff = 0, totalNet = 0, totalWht = 0, totalGins = 0;
     for (const r of summary.rows) {
       const net = round2(r.netPayout || 0);
       const wht = round2(r.whtAmount || 0);
+      const gins = round2(r.groupInsurance || 0);
       if (net > 0) {
         ins.run(batch.branch_id, companyId, payDate, r.displayName,
           "เซอร์วิสชาร์จพนักงาน", net, net, "paid", "transfer", payDate,
@@ -641,8 +643,19 @@ export function postSvcToAccounta(batchId: number, userId: number): { staff: num
           `ภาษีหัก ณ ที่จ่าย 3% เซอร์วิสชาร์จ (${r.displayName}) รอนำส่ง · เดือน ${monthLabel}`, userId, batchId);
         totalWht += wht;
       }
+      // Group-insurance premium withheld from SVC (owner 2026-08-02) — a payable
+      // in the person's name, remitted to the insurer. รอจ่าย. Keeps the books
+      // balanced: staff cash (net) + WHT payable + group-insurance payable = the
+      // person's pre-withholding SVC, so total SVC outflow is unchanged.
+      if (gins > 0) {
+        ins.run(batch.branch_id, companyId, payDate,
+          `ประกันกลุ่ม (${r.displayName})`,
+          "ประกันกลุ่มพนักงาน", gins, gins, "unpaid", null, null,
+          `เบี้ยประกันกลุ่มหักจากเซอร์วิสชาร์จ (${r.displayName}) รอนำส่งบริษัทประกัน · เดือน ${monthLabel}`, userId, batchId);
+        totalGins += gins;
+      }
     }
-    return { staff, net: round2(totalNet), wht: round2(totalWht) };
+    return { staff, net: round2(totalNet), wht: round2(totalWht), groupInsurance: round2(totalGins) };
   });
   return run();
 }

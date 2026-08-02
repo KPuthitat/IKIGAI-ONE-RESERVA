@@ -79,6 +79,49 @@ export function computeFoodClawbacks(
   return out;
 }
 
+// ── Group insurance (ประกันกลุ่ม) — owner 2026-08-02 ────────────────
+// A new hire's group-insurance premium of ฿350/month is withheld from their
+// SERVICE CHARGE (not wages) during their first months of employment:
+//   • Full-time (ft): first 3 calendar months
+//   • Part-time (pt): first 12 calendar months
+// Counting is by calendar month from hire_date (the hire month = month 0).
+// Withheld once per month — the SVC payout is itself monthly, so one deduction
+// per person per month falls out naturally. If the window has passed, or
+// hire_date/employment_type is unknown, nothing is withheld. Owner: "เริ่มจาก
+// วันเริ่มงาน ถ้าเลยแล้วไม่ต้องสนใจ · ทุกคนที่ยังอยู่ในช่วง".
+export const GROUP_INSURANCE_MONTHLY = 350;
+export const GROUP_INSURANCE_MONTHS_FT = 3;
+export const GROUP_INSURANCE_MONTHS_PT = 12;
+
+/** Calendar months from hireDate's month to yearMonth (0 = same month, so the
+ *  hire month itself counts as the first month). */
+export function calendarMonthsSinceHire(hireDate: string, yearMonth: string): number {
+  const [hy, hm] = hireDate.slice(0, 7).split("-").map(Number);
+  const [yy, ym] = yearMonth.split("-").map(Number);
+  return (yy * 12 + ym) - (hy * 12 + hm);
+}
+
+/** Pure group-insurance decision — the ฿ to withhold from ONE person's SVC for
+ *  `yearMonth`. Returns 0 when not eligible (no hire date, unknown employment
+ *  type, before hire, or window already passed). `availablePayout` (the SVC left
+ *  after forfeit + WHT) caps the amount so a payout never goes negative. */
+export function groupInsuranceDeduction(args: {
+  employmentType: string | null;
+  hireDate: string | null;
+  yearMonth: string;
+  availablePayout: number;
+}): number {
+  const { employmentType, hireDate, yearMonth, availablePayout } = args;
+  if (!hireDate || availablePayout <= 0) return 0;
+  const window = employmentType === "pt" ? GROUP_INSURANCE_MONTHS_PT
+    : employmentType === "ft" ? GROUP_INSURANCE_MONTHS_FT
+    : 0;
+  if (window === 0) return 0; // unknown employment type → don't guess
+  const elapsed = calendarMonthsSinceHire(hireDate, yearMonth);
+  if (elapsed < 0 || elapsed >= window) return 0; // before hire / window passed
+  return Math.min(GROUP_INSURANCE_MONTHLY, Math.round(availablePayout * 100) / 100);
+}
+
 // The month this system started recording SVC from live clock/roster data
 // (owner 2026-07-21). Months BEFORE this are pre-system: no time entries to
 // distribute a pool over, so the per-staff SVC is entered by hand
@@ -186,7 +229,10 @@ export type MonthlySvcRow = {
   // 'wht' staff have 3% withheld, 'sso' staff receive the full net.
   taxMode: "sso" | "wht";
   whtAmount: number;         // netAllocation × wht_rate when taxMode==='wht', else 0
-  netPayout: number;         // netAllocation − whtAmount (the amount actually paid)
+  // Group-insurance premium withheld from this month's SVC (owner 2026-08-02).
+  // 0 outside the new-hire window (FT 3mo / PT 12mo) or when hire_date unknown.
+  groupInsurance: number;
+  netPayout: number;         // netAllocation − whtAmount − groupInsurance (actually paid)
   // แจกแจงรายวันว่าส่วนแบ่งมาจากไหน (owner 2026-07-20 — ปุ่ม "วิธีคำนวณ").
   // share = dayAmount × 60% × (userMinutes ÷ totalMinutes). ผลรวม share = grossAllocation.
   dailyBreakdown: Array<{
@@ -215,7 +261,10 @@ export type MonthlySvcSummary = {
   companyPoolFromClawback: number; // additional from food-credit clawbacks (owner 2026-07-30)
   companyPoolTotal: number;  // sum of the three above
   totalWht: number;          // sum of per-staff WHT withheld from SVC
-  totalNetPayout: number;    // sum of per-staff netPayout (after forfeit + WHT)
+  // Group-insurance premiums withheld from staff SVC this month (owner
+  // 2026-08-02) — held as a payable to remit to the insurer, NOT company income.
+  totalGroupInsurance: number;
+  totalNetPayout: number;    // sum of per-staff netPayout (after forfeit + WHT + group insurance)
   rows: MonthlySvcRow[];
   daysWithEntries: number;   // for UX: how many days admin has filled
   daysInMonth: number;
@@ -491,6 +540,7 @@ type StaffMeta = {
   taxMode: string | null;    // 'sso' (รับเต็ม) | 'wht' (หัก ณ ที่จ่าย 3%)
   titlePrefix: string | null;
   employeeCode: string | null;
+  hireDate: string | null;   // for group-insurance window (owner 2026-08-02)
 };
 
 /** Build the full monthly SVC summary for a branch.
@@ -562,7 +612,8 @@ export function computeMonthlySvcSummary(
            COALESCE(u.track_attendance, 1) AS trackAttendance,
            u.salary_tax_mode AS taxMode,
            u.title_prefix AS titlePrefix,
-           u.employee_code AS employeeCode
+           u.employee_code AS employeeCode,
+           u.hire_date AS hireDate
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
     WHERE ub.branch_id = ? AND u.role IN ('staff', 'admin')
@@ -809,7 +860,15 @@ export function computeMonthlySvcSummary(
     const netAllocation = forfeited ? 0 : round2(a.grossAllocation - foodClawback);
     const taxMode: "sso" | "wht" = s.taxMode === "wht" ? "wht" : "sso";
     const whtAmount = taxMode === "wht" ? round2(netAllocation * whtRate) : 0;
-    const netPayout = round2(netAllocation - whtAmount);
+    // Group-insurance premium (owner 2026-08-02) — withheld from the SVC left
+    // after forfeit + WHT, during the new-hire window (FT 3mo / PT 12mo).
+    const groupInsurance = groupInsuranceDeduction({
+      employmentType: s.employmentType,
+      hireDate: s.hireDate,
+      yearMonth,
+      availablePayout: round2(netAllocation - whtAmount)
+    });
+    const netPayout = round2(netAllocation - whtAmount - groupInsurance);
     return {
       userId: s.userId,
       displayName,
@@ -828,6 +887,7 @@ export function computeMonthlySvcSummary(
       netAllocation,
       taxMode,
       whtAmount,
+      groupInsurance,
       netPayout,
       dailyBreakdown: breakdownByUser.get(s.userId) ?? [],
       excludedDays: (excludedByUser.get(s.userId) ?? []).slice().sort((a, b) => a.date.localeCompare(b.date)),
@@ -846,6 +906,7 @@ export function computeMonthlySvcSummary(
   // pool (owner 2026-07-30).
   const companyFromClawback = round2(rows.reduce((s, r) => s + r.foodClawback, 0));
   const totalWht = rows.reduce((s, r) => s + r.whtAmount, 0);
+  const totalGroupInsurance = round2(rows.reduce((s, r) => s + r.groupInsurance, 0));
   const totalNetPayout = rows.reduce((s, r) => s + r.netPayout, 0);
 
   return {
@@ -858,6 +919,7 @@ export function computeMonthlySvcSummary(
     companyPoolFromClawback: companyFromClawback,
     companyPoolTotal: companyFromSplit + companyFromForfeit + companyFromClawback,
     totalWht,
+    totalGroupInsurance,
     totalNetPayout,
     rows,
     daysWithEntries: dailyRows.length,
@@ -920,6 +982,7 @@ function emptySummary(
     companyPoolFromClawback: 0,
     companyPoolTotal: totalCollected * SVC_COMPANY_SHARE_RATIO,
     totalWht: 0,
+    totalGroupInsurance: 0,
     totalNetPayout: 0,
     rows: [],
     daysWithEntries,
@@ -952,7 +1015,8 @@ function computeManualSvcSummary(branchId: number, yearMonth: string): MonthlySv
            COALESCE(u.track_attendance, 1) AS trackAttendance,
            u.salary_tax_mode AS taxMode,
            u.title_prefix AS titlePrefix,
-           u.employee_code AS employeeCode
+           u.employee_code AS employeeCode,
+           u.hire_date AS hireDate
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
     WHERE ub.branch_id = ? AND u.role IN ('staff', 'admin')
@@ -992,6 +1056,7 @@ function computeManualSvcSummary(branchId: number, yearMonth: string): MonthlySv
       netAllocation: g,
       taxMode,
       whtAmount,
+      groupInsurance: 0, // pre-system months predate the group-insurance rule
       netPayout,
       dailyBreakdown: [],
       excludedDays: [],
@@ -1016,6 +1081,7 @@ function computeManualSvcSummary(branchId: number, yearMonth: string): MonthlySv
     companyPoolFromClawback: 0,
     companyPoolTotal: 0,
     totalWht,
+    totalGroupInsurance: 0,
     totalNetPayout,
     rows,
     daysWithEntries: 0,

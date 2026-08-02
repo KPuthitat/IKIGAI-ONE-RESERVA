@@ -219,6 +219,13 @@ export default function AdminServiceChargePage({
               })}
             </p>
           )}
+          {summary.totalGroupInsurance > 0 && (
+            <p className="text-xs text-slate-600">
+              หักประกันกลุ่มจากเซอร์วิสชาร์จรวม {fmtMoney(summary.totalGroupInsurance)} บาท
+              (พนักงานใหม่ในช่วง — ประจำ 3 เดือนแรก / พาร์ทไทม์ 12 เดือนแรก · ฿350 ต่อคนต่อเดือน
+              ตั้งเป็นเจ้าหนี้รอนำส่งบริษัทประกันเมื่อยืนยันลงบัญชี)
+            </p>
+          )}
         </>
       )}
 

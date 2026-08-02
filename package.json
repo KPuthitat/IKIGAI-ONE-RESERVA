@@ -19,6 +19,7 @@
     "test:revshare-pos": "node --import tsx scripts/test-revshare-pos.ts",
     "test:delivera": "node --import tsx scripts/test-delivera-quote.ts && node --import tsx scripts/test-delivera-payment.ts",
     "test:income-tax": "node --import tsx scripts/test-income-tax.ts",
+    "test:group-insurance": "node --import tsx scripts/test-group-insurance.ts",
     "db:init": "node --import tsx scripts/init-db.ts",
     "db:seed": "node --import tsx scripts/seed.ts",
     "db:backup": "node scripts/backup-local.mjs",

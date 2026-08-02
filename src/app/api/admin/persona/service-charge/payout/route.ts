@@ -121,7 +121,7 @@ export async function PATCH(req: Request) {
     if (batch.status !== "paid") return NextResponse.json({ error: "must_be_paid_to_post" }, { status: 400 });
     const pinErr = requirePin(user.id, d.pin);
     if (pinErr) return pinErr;
-    let posted: { staff: number; net: number; wht: number };
+    let posted: { staff: number; net: number; wht: number; groupInsurance: number };
     try {
       posted = postSvcToAccounta(batch.id, user.id);
     } catch (e) {

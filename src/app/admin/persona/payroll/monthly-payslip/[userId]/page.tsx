@@ -189,14 +189,21 @@ export default function MonthlyPayslipPage({
   for (const ub of db.prepare("SELECT branch_id FROM user_branches WHERE user_id = ?").all(userId) as Array<{ branch_id: number }>) {
     svcBranchIds.add(ub.branch_id);
   }
-  let svcMonthly = 0;
+  let svcMonthly = 0;          // net SVC actually received (after group insurance)
+  let svcGroupInsurance = 0;   // group-insurance premium withheld from that SVC
   for (const b of svcBranchIds) {
     let summary;
     try { summary = computeMonthlySvcSummary(b, svcMonth); }
     catch { continue; }
     const row = summary.rows.find((r) => r.userId === userId);
-    if (row) svcMonthly += row.netPayout;
+    if (row) {
+      svcMonthly += row.netPayout;
+      svcGroupInsurance += row.groupInsurance;
+    }
   }
+  // SVC before the group-insurance withholding — shown as income; the premium is
+  // then listed as a deduction, so the slip explains where the money went.
+  const svcBeforeGI = svcMonthly + svcGroupInsurance;
 
   // Totals across the displayed lines (empty rows contribute 0, so the sum is
   // unchanged by the filter above).
@@ -238,8 +245,9 @@ export default function MonthlyPayslipPage({
     }),
     { sso: 0, tax: 0, drink: 0, other: 0 }
   );
-  const incomeTotal = tot.comp + tot.other + svcMonthly;
-  const netTotal = incomeTotal - tot.ded; // === grandTotal
+  const incomeTotal = tot.comp + tot.other + svcBeforeGI;
+  const dedTotal = tot.ded + svcGroupInsurance;
+  const netTotal = incomeTotal - dedTotal; // = wages net + SVC net-of-insurance
 
   const first = rows[0];
   const employmentLabel =
@@ -391,13 +399,13 @@ export default function MonthlyPayslipPage({
                   <span className="tabular-nums font-medium text-slate-800">{fmtMoney(v.income)}</span>
                 </div>
               ))}
-              {svcMonthly > 0 && (
+              {svcBeforeGI > 0 && (
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-slate-600">
                     เซอร์วิสชาร์จเดือน{monthNameOnly(svcMonth, lang)}{" "}
                     <span className="text-xs text-slate-400">(จ่าย ~วันที่ 20 {monthNameOnly(month, lang)})</span>
                   </span>
-                  <span className="tabular-nums font-medium text-violet-700">{fmtMoney(svcMonthly)}</span>
+                  <span className="tabular-nums font-medium text-violet-700">{fmtMoney(svcBeforeGI)}</span>
                 </div>
               )}
               <div className="flex items-baseline justify-between gap-3 border-t border-slate-200 pt-1.5 mt-1.5 font-bold text-slate-800">
@@ -421,9 +429,18 @@ export default function MonthlyPayslipPage({
               {dedBreak.other > 0 && (
                 <DedRow label={t(lang, "admin.persona.payroll.col.otherDed")} value={dedBreak.other} />
               )}
+              {svcGroupInsurance > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">
+                    ประกันกลุ่ม{" "}
+                    <span className="text-xs text-slate-400">(หักจากเซอร์วิสชาร์จ)</span>
+                  </span>
+                  <span className="tabular-nums font-medium text-slate-700">{fmtMoney(svcGroupInsurance)}</span>
+                </div>
+              )}
               <div className="flex items-baseline justify-between gap-3 border-t border-slate-200 pt-1.5 mt-1.5 font-bold text-slate-800">
                 <span>รวมรายการหัก</span>
-                <span className="tabular-nums text-rose-600">{fmtMoney(tot.ded)}</span>
+                <span className="tabular-nums text-rose-600">{fmtMoney(dedTotal)}</span>
               </div>
             </div>
           </div>
@@ -434,7 +451,7 @@ export default function MonthlyPayslipPage({
               <div>
                 <div className="text-base font-bold">รายได้สุทธิ (รับจริง)</div>
                 <div className="text-[11px] text-slate-500 mt-0.5">
-                  รวมรายได้ {fmtMoney(incomeTotal)} − รายการหัก {fmtMoney(tot.ded)}
+                  รวมรายได้ {fmtMoney(incomeTotal)} − รายการหัก {fmtMoney(dedTotal)}
                 </div>
               </div>
               <span className="text-2xl font-bold text-emerald-700 whitespace-nowrap">
