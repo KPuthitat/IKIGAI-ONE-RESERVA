@@ -80,45 +80,49 @@ export function computeFoodClawbacks(
 }
 
 // ── Group insurance (ประกันกลุ่ม) — owner 2026-08-02 ────────────────
-// A new hire's group-insurance premium of ฿350/month is withheld from their
-// SERVICE CHARGE (not wages) during their first months of employment:
-//   • Full-time (ft): first 3 calendar months
-//   • Part-time (pt): first 12 calendar months
-// Counting is by calendar month from hire_date (the hire month = month 0).
-// Withheld once per month — the SVC payout is itself monthly, so one deduction
-// per person per month falls out naturally. If the window has passed, or
-// hire_date/employment_type is unknown, nothing is withheld. Owner: "เริ่มจาก
-// วันเริ่มงาน ถ้าเลยแล้วไม่ต้องสนใจ · ทุกคนที่ยังอยู่ในช่วง".
+// The group-insurance premium of ฿350/month is withheld from an employee's
+// SERVICE CHARGE (not wages) for a fixed enrolment window:
+//   • Full-time (ft): 3 calendar months
+//   • Part-time (pt): 12 calendar months
+// The window counts from a MANUALLY CHOSEN start month (group_insurance_start_
+// month, YYYY-MM) — NOT the hire date — because the owner doesn't always enrol a
+// new hire on day one; they wait for a cycle (owner 2026-08-02: "ให้เลือกเองว่า
+// เริ่มจ่ายเดือนไหน หลังจากนั้นออโต้"). The start month = month 0. NULL start month
+// means not enrolled yet → nothing is withheld until the owner sets it. Withheld
+// once per month — the SVC payout is itself monthly, so one deduction per person
+// per month falls out naturally.
 export const GROUP_INSURANCE_MONTHLY = 350;
 export const GROUP_INSURANCE_MONTHS_FT = 3;
 export const GROUP_INSURANCE_MONTHS_PT = 12;
 
-/** Calendar months from hireDate's month to yearMonth (0 = same month, so the
- *  hire month itself counts as the first month). */
-export function calendarMonthsSinceHire(hireDate: string, yearMonth: string): number {
-  const [hy, hm] = hireDate.slice(0, 7).split("-").map(Number);
-  const [yy, ym] = yearMonth.split("-").map(Number);
-  return (yy * 12 + ym) - (hy * 12 + hm);
+/** Calendar months between two YYYY-MM strings (0 = same month, so the start
+ *  month itself counts as month 0). Both are sliced to YYYY-MM so a full date
+ *  works too. */
+export function calendarMonthsBetween(fromMonth: string, toMonth: string): number {
+  const [fy, fm] = fromMonth.slice(0, 7).split("-").map(Number);
+  const [ty, tm] = toMonth.slice(0, 7).split("-").map(Number);
+  return (ty * 12 + tm) - (fy * 12 + fm);
 }
 
 /** Pure group-insurance decision — the ฿ to withhold from ONE person's SVC for
- *  `yearMonth`. Returns 0 when not eligible (no hire date, unknown employment
- *  type, before hire, or window already passed). `availablePayout` (the SVC left
- *  after forfeit + WHT) caps the amount so a payout never goes negative. */
+ *  `yearMonth`. Returns 0 when not enrolled (no start month), employment type
+ *  unknown, before the start month, or the window has passed. `availablePayout`
+ *  (the SVC left after forfeit + WHT) caps the amount so a payout never goes
+ *  negative. */
 export function groupInsuranceDeduction(args: {
   employmentType: string | null;
-  hireDate: string | null;
+  startMonth: string | null;   // YYYY-MM chosen by the owner; null = not enrolled → 0
   yearMonth: string;
   availablePayout: number;
 }): number {
-  const { employmentType, hireDate, yearMonth, availablePayout } = args;
-  if (!hireDate || availablePayout <= 0) return 0;
+  const { employmentType, startMonth, yearMonth, availablePayout } = args;
+  if (!startMonth || availablePayout <= 0) return 0;
   const window = employmentType === "pt" ? GROUP_INSURANCE_MONTHS_PT
     : employmentType === "ft" ? GROUP_INSURANCE_MONTHS_FT
     : 0;
   if (window === 0) return 0; // unknown employment type → don't guess
-  const elapsed = calendarMonthsSinceHire(hireDate, yearMonth);
-  if (elapsed < 0 || elapsed >= window) return 0; // before hire / window passed
+  const elapsed = calendarMonthsBetween(startMonth, yearMonth);
+  if (elapsed < 0 || elapsed >= window) return 0; // before start / window passed
   return Math.min(GROUP_INSURANCE_MONTHLY, Math.round(availablePayout * 100) / 100);
 }
 
@@ -552,7 +556,8 @@ type StaffMeta = {
   taxMode: string | null;    // 'sso' (รับเต็ม) | 'wht' (หัก ณ ที่จ่าย 3%)
   titlePrefix: string | null;
   employeeCode: string | null;
-  hireDate: string | null;   // for group-insurance window (owner 2026-08-02)
+  hireDate: string | null;   // kept for other eligibility rules
+  groupInsuranceStartMonth: string | null; // YYYY-MM the GI window counts from (owner 2026-08-02)
 };
 
 /** Build the full monthly SVC summary for a branch.
@@ -625,7 +630,8 @@ export function computeMonthlySvcSummary(
            u.salary_tax_mode AS taxMode,
            u.title_prefix AS titlePrefix,
            u.employee_code AS employeeCode,
-           u.hire_date AS hireDate
+           u.hire_date AS hireDate,
+           u.group_insurance_start_month AS groupInsuranceStartMonth
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
     WHERE ub.branch_id = ? AND u.role IN ('staff', 'admin')
@@ -653,7 +659,8 @@ export function computeMonthlySvcSummary(
            u.salary_tax_mode AS taxMode,
            u.title_prefix AS titlePrefix,
            u.employee_code AS employeeCode,
-           u.hire_date AS hireDate
+           u.hire_date AS hireDate,
+           u.group_insurance_start_month AS groupInsuranceStartMonth
     FROM users u
     WHERE u.role IN ('staff', 'admin')
       AND u.receives_service_charge = 1
@@ -940,7 +947,7 @@ export function computeMonthlySvcSummary(
     // for visitors so the ฿350/month isn't double-charged (it's taken at home).
     const groupInsurance = isVisitor ? 0 : groupInsuranceDeduction({
       employmentType: s.employmentType,
-      hireDate: s.hireDate,
+      startMonth: s.groupInsuranceStartMonth,
       yearMonth,
       availablePayout: round2(netAllocation - whtAmount)
     });
@@ -1102,7 +1109,8 @@ function computeManualSvcSummary(branchId: number, yearMonth: string): MonthlySv
            u.salary_tax_mode AS taxMode,
            u.title_prefix AS titlePrefix,
            u.employee_code AS employeeCode,
-           u.hire_date AS hireDate
+           u.hire_date AS hireDate,
+           u.group_insurance_start_month AS groupInsuranceStartMonth
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
     WHERE ub.branch_id = ? AND u.role IN ('staff', 'admin')

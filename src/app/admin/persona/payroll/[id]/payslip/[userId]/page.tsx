@@ -151,11 +151,25 @@ export default function PayslipPage({
       ? computeMonthlySvcSummary(svcBranchId, svcMonth)
       : null;
   const svcRow = svcSummary?.rows.find((r) => r.userId === userId) ?? null;
-  // Batch SVC counts as a SEPARATE payout on top of net_pay only when it isn't
-  // already folded into the line (line.service_charge === 0) and this is the
-  // monthly slip. Otherwise 0 (avoid double-count / weekly over-report).
-  const svcSeparatePayout =
-    line.service_charge === 0 && period.cycle === "monthly" ? (svcRow?.netPayout ?? 0) : 0;
+
+  // ── Plain-language summary (owner 2026-08-02): ค่าตอบแทน(สาขา) → SVC(±WHT) →
+  // total income → deductions (SSO/WHT + ประกันกลุ่ม) → net. Same ordering as the
+  // monthly slip. For a MONTHLY-cycle slip the SVC is the separate monthly payout
+  // (svcRow, shown gross with WHT/GI as deductions); for a weekly slip only the
+  // in-round line.service_charge applies (WHT/GI already inside net_pay).
+  const isPt = line.employment_type === "pt";
+  const usesMonthlySvc = period.cycle === "monthly" && svcRow != null;
+  const wageComp = line.base_pay + line.ot_pay + line.other_additions;
+  const svcGrossRound = usesMonthlySvc ? (svcRow?.netAllocation ?? 0) : line.service_charge;
+  const svcWhtRound = usesMonthlySvc ? (svcRow?.whtAmount ?? 0) : 0;
+  const svcGiRound = usesMonthlySvc ? (svcRow?.groupInsurance ?? 0) : 0;
+  const incomeTotalRound = wageComp + svcGrossRound;
+  const whtTotalRound = line.tax_amount + svcWhtRound;
+  const dedTotalRound = line.sso_amount + whtTotalRound + line.drink_deductions + line.other_deductions + svcGiRound;
+  const netTotalRound = incomeTotalRound - dedTotalRound;
+  const payslipBranchName = period.branch_id
+    ? (db.prepare("SELECT name FROM branches WHERE id = ?").get(period.branch_id) as { name: string } | undefined)?.name ?? null
+    : null;
 
   const employmentLabel =
     line.employment_type === "pt" ? t(lang, "admin.persona.employees.employment.pt") :
@@ -335,43 +349,114 @@ export default function PayslipPage({
           />
         </Section>
 
-        {/* Net pay — emphasised */}
-        <div className="border-2 border-slate-800 rounded-lg p-4 my-4 bg-slate-50">
-          <div className="flex items-baseline justify-between">
-            <span className="text-base font-semibold">
-              {t(lang, "admin.persona.payroll.payslip.netLabel")}
-            </span>
-            <span className="text-2xl font-bold">
-              {fmtMoney(line.net_pay)} <span className="text-sm font-normal">บาท</span>
-            </span>
-          </div>
-          {/* SVC is paid as a separate monthly payout — show it here so the
-              payslip reflects the employee's full take (owner 2026-08-01). */}
-          {svcSeparatePayout > 0 && (
-            <>
-              <div className="flex items-baseline justify-between mt-2 text-slate-600">
-                <span className="text-sm">
-                  + เซอร์วิสชาร์จ <span className="text-xs text-slate-400">(จ่ายแยก ~วันที่ 20 เดือนถัดไป)</span>
-                </span>
-                <span className="text-lg font-semibold text-violet-700">
-                  {fmtMoney(svcSeparatePayout)} <span className="text-xs font-normal">บาท</span>
-                </span>
+        {/* Plain-language summary — รายได้ (ค่าตอบแทนแยกสาขา → SVC) → รายการหัก
+            (ปกส./ภาษี + ประกันกลุ่ม) → สุทธิ. Same ordering as the monthly slip
+            (owner 2026-08-02). The detailed sections above stay as the breakdown. */}
+        <div className="space-y-3 my-4">
+          {/* 1) รายได้ */}
+          <div className="rounded-lg border border-slate-200 overflow-hidden">
+            <div className="bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800">รายได้</div>
+            <div className="px-4 py-2.5 space-y-1.5 text-sm">
+              {wageComp > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">
+                    ค่าตอบแทน
+                    <span className="font-medium text-slate-800">
+                      {payslipBranchName ? ` · ${payslipBranchName}` : ""}
+                    </span>
+                    {line.ot_pay > 0 && (
+                      <span className="text-xs text-slate-400"> · รวมโอที ฿{fmtMoney(line.ot_pay)}</span>
+                    )}
+                  </span>
+                  <span className="tabular-nums font-medium text-slate-800">{fmtMoney(wageComp)}</span>
+                </div>
+              )}
+              {svcGrossRound > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">
+                    เซอร์วิสชาร์จ{" "}
+                    <span className="text-xs text-slate-400">
+                      ({isPt ? "ถูกหักภาษี ณ ที่จ่าย" : "ไม่ถูกหักภาษี ณ ที่จ่าย"}{usesMonthlySvc ? " · จ่ายแยก ~วันที่ 20 เดือนถัดไป" : ""})
+                    </span>
+                  </span>
+                  <span className="tabular-nums font-medium text-violet-700">{fmtMoney(svcGrossRound)}</span>
+                </div>
+              )}
+              <div className="flex items-baseline justify-between gap-3 border-t border-slate-200 pt-1.5 mt-1.5 font-bold text-slate-800">
+                <span>รวมรายได้ทั้งหมด</span>
+                <span className="tabular-nums">{fmtMoney(incomeTotalRound)}</span>
               </div>
-              <div className="flex items-baseline justify-between mt-2 border-t border-slate-300 pt-2">
-                <span className="text-base font-bold">รวมรับจริงทั้งเดือน</span>
-                <span className="text-2xl font-bold text-emerald-700">
-                  {fmtMoney(line.net_pay + svcSeparatePayout)} <span className="text-sm font-normal">บาท</span>
-                </span>
-              </div>
-            </>
-          )}
-          {profile?.bank_name && profile.bank_account && (
-            <div className="text-xs text-slate-600 mt-2">
-              {t(lang, "admin.persona.payroll.payslip.transferTo")}:{" "}
-              <span className="font-medium">{profile.bank_name}</span>{" "}
-              {maskAccount(profile.bank_account)}
             </div>
-          )}
+          </div>
+
+          {/* 2) รายการหัก */}
+          <div className="rounded-lg border border-slate-200 overflow-hidden">
+            <div className="bg-rose-50 px-4 py-2 text-sm font-bold text-rose-800">รายการหัก</div>
+            <div className="px-4 py-2.5 space-y-1.5 text-sm">
+              {line.sso_amount > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">{t(lang, "admin.persona.payroll.col.sso")}</span>
+                  <span className="tabular-nums font-medium text-slate-700">{fmtMoney(line.sso_amount)}</span>
+                </div>
+              )}
+              {whtTotalRound > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">
+                    {t(lang, "admin.persona.payroll.col.tax")}{" "}
+                    {svcWhtRound > 0 && <span className="text-xs text-slate-400">(หักจากเซอร์วิสชาร์จ)</span>}
+                  </span>
+                  <span className="tabular-nums font-medium text-slate-700">{fmtMoney(whtTotalRound)}</span>
+                </div>
+              )}
+              {line.drink_deductions > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">{t(lang, "admin.persona.payroll.col.drinkDed")}</span>
+                  <span className="tabular-nums font-medium text-slate-700">{fmtMoney(line.drink_deductions)}</span>
+                </div>
+              )}
+              {line.other_deductions > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">{t(lang, "admin.persona.payroll.col.otherDed")}</span>
+                  <span className="tabular-nums font-medium text-slate-700">{fmtMoney(line.other_deductions)}</span>
+                </div>
+              )}
+              {svcGiRound > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">ประกันกลุ่ม <span className="text-xs text-slate-400">(หักจากเซอร์วิสชาร์จ)</span></span>
+                  <span className="tabular-nums font-medium text-slate-700">{fmtMoney(svcGiRound)}</span>
+                </div>
+              )}
+              {dedTotalRound === 0 && (
+                <div className="text-sm text-slate-400 italic">{t(lang, "admin.persona.payroll.payslip.noDeductions")}</div>
+              )}
+              <div className="flex items-baseline justify-between gap-3 border-t border-slate-200 pt-1.5 mt-1.5 font-bold text-slate-800">
+                <span>รวมรายการหัก</span>
+                <span className="tabular-nums text-rose-600">{fmtMoney(dedTotalRound)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 3) รายได้สุทธิ */}
+          <div className="border-2 border-slate-800 rounded-lg p-4 bg-slate-50">
+            <div className="flex items-baseline justify-between gap-3">
+              <div>
+                <div className="text-base font-bold">{t(lang, "admin.persona.payroll.payslip.netLabel")} (รับจริง)</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  รวมรายได้ {fmtMoney(incomeTotalRound)} − รายการหัก {fmtMoney(dedTotalRound)}
+                </div>
+              </div>
+              <span className="text-2xl font-bold text-emerald-700 whitespace-nowrap">
+                {fmtMoney(netTotalRound)} <span className="text-sm font-normal">บาท</span>
+              </span>
+            </div>
+            {profile?.bank_name && profile.bank_account && (
+              <div className="text-xs text-slate-600 mt-2 border-t border-slate-300 pt-2">
+                {t(lang, "admin.persona.payroll.payslip.transferTo")}:{" "}
+                <span className="font-medium">{profile.bank_name}</span>{" "}
+                {maskAccount(profile.bank_account)}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Signature block */}

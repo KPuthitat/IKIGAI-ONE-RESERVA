@@ -31,6 +31,9 @@ const Body = z.object({
   monthly_salary: z.number().min(0).nullable().optional(),
   pay_cycle: z.enum(["weekly", "monthly"]).nullable().optional(),
   salary_tax_mode: z.enum(["sso", "wht"]).optional(),
+  // Group-insurance enrolment month "YYYY-MM" (owner 2026-08-02). "" / null =
+  // not enrolled → no ฿350/mo SVC deduction until set. Payroll-gated (money).
+  group_insurance_start_month: z.string().regex(/^\d{4}-\d{2}$/).or(z.literal("")).nullable().optional(),
   // วันที่มีผลของการเปลี่ยน PT→FT (owner 2026-07-13) — ใช้เป็น ft_started_at
   ft_effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   // Correct a born-FT that was wrongly stamped as a PT→FT weekly transition
@@ -144,6 +147,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     delete parsed.data.monthly_salary;
     delete parsed.data.pay_cycle;
     delete parsed.data.salary_tax_mode;
+    delete parsed.data.group_insurance_start_month;
   }
   // Only super_admin can grant / revoke payroll-access on another
   // account. A regular admin trying to flip this for themselves or
@@ -270,6 +274,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("monthly_salary");
   addField("pay_cycle");
   addField("salary_tax_mode");
+  // Group-insurance enrolment month — "" from the form clears to NULL.
+  if ("group_insurance_start_month" in data) {
+    fields.push("group_insurance_start_month = ?");
+    const v = data.group_insurance_start_month;
+    vals.push(v === "" || v === undefined ? null : v);
+  }
   // Stamp the PT→FT effective date (owner-entered) so the pay engine keeps them
   // weekly for that calendar month, then the boot migration flips them to
   // monthly. Falls back to today if the client didn't send one.
