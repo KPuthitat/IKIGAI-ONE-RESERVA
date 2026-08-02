@@ -122,6 +122,33 @@ export default function StaffPersonaPage() {
   const branchSwitchOptions = (!activeHasShiftToday && scheduledBranches.length > 0)
     ? scheduledBranches : [];
 
+  // Branch-transfer targets (owner 2026-08-02, "ย้ายสาขาระหว่างวัน"): every OTHER
+  // open branch, with the anti-cheat config the client needs to run the
+  // destination's geofence/QR/selfie gates before the transfer PIN. Not scoped
+  // to company_id — a staffer can be sent to help any branch, mirroring the
+  // payroll per-day cross-branch reattribution (which is also company-agnostic).
+  // The client only surfaces the button while the staff has an open clock-in.
+  const transferTargets = clockBranchId == null ? [] : (db.prepare(`
+    SELECT id, name, geofence_enabled, latitude, longitude, geofence_radius_meters,
+           clock_qr_enabled, clock_totp_secret, clock_selfie_enabled
+    FROM branches
+    WHERE status = 'open' AND id != ?
+    ORDER BY display_order ASC, name COLLATE NOCASE
+  `).all(clockBranchId) as Array<{
+    id: number; name: string; geofence_enabled: number;
+    latitude: number | null; longitude: number | null; geofence_radius_meters: number | null;
+    clock_qr_enabled: number; clock_totp_secret: string | null; clock_selfie_enabled: number;
+  }>).map((b) => ({
+    id: b.id,
+    name: b.name,
+    geofenceEnabled: b.geofence_enabled === 1 || b.clock_totp_secret != null,
+    geofenceLat: b.latitude,
+    geofenceLng: b.longitude,
+    geofenceRadiusMeters: b.geofence_radius_meters ?? 100,
+    qrEnabled: b.clock_qr_enabled === 1 || b.clock_totp_secret != null,
+    selfieEnabled: b.clock_selfie_enabled === 1
+  }));
+
   return (
     <div className="space-y-3">
       {branchSwitchOptions.length > 0 && (
@@ -161,6 +188,7 @@ export default function StaffPersonaPage() {
       todayBkk={todayBkk}
       hasShiftToday={hasShiftToday}
       nickname={nickname}
+      transferTargets={transferTargets}
     />
     </div>
   );

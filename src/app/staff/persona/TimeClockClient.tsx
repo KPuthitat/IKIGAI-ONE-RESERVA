@@ -9,6 +9,35 @@ import { bkkHHMM, bkkDateIso } from "@/lib/time";
 
 type TimeEntry = { id: number; type: "in" | "out"; ts: string; branch?: string | null };
 
+// A branch the staff can transfer to mid-day ("ย้ายสาขาระหว่างวัน", owner
+// 2026-08-02). Carries the anti-cheat config so the confirm screen can run the
+// destination's geofence/QR/selfie gates before the PIN.
+export type TransferTarget = {
+  id: number;
+  name: string;
+  geofenceEnabled: boolean;
+  geofenceLat: number | null;
+  geofenceLng: number | null;
+  geofenceRadiusMeters: number;
+  qrEnabled: boolean;
+  selfieEnabled: boolean;
+};
+
+// Great-circle distance in metres (client-side geofence hint only; the server
+// re-checks on submit). Module-level so both the clock flow and the transfer
+// modal share one implementation.
+function haversineMetersClient(
+  lat1: number, lng1: number, lat2: number, lng2: number
+): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask" | "owl" | "swap" | "coupon" | "food_warn";
 
 // Meal-coupon pop-up payload from the clock route (owner 2026-07-12).
@@ -92,7 +121,8 @@ export default function TimeClockClient({
   scheduledEnd,
   todayBkk,
   hasShiftToday,
-  nickname
+  nickname,
+  transferTargets
 }: {
   userName: string;
   hasPin: boolean;
@@ -128,10 +158,12 @@ export default function TimeClockClient({
   todayBkk: string;
   hasShiftToday: boolean;
   nickname: string;
+  transferTargets: TransferTarget[];
 }) {
   const router = useRouter();
   const { t, formatDateLong } = useLang();
   const [now, setNow] = useState(new Date());
+  const [showTransfer, setShowTransfer] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
@@ -261,6 +293,24 @@ export default function TimeClockClient({
           )}
         </div>
       </div>
+
+      {/* ย้ายสาขาระหว่างวัน (owner 2026-08-02) — only while a shift is open (clocked
+          in, not yet out) and there is another open branch to move to. */}
+      {!!firstInTs && !firstOutTs && transferTargets.length > 0 && (
+        <button
+          onClick={() => setShowTransfer(true)}
+          className="w-full card flex items-center justify-center gap-2 py-4 text-sm font-bold text-sky-700 hover:bg-sky-50 transition active:scale-[.99]"
+        >
+          {t("staff.persona.transfer.button")}
+        </button>
+      )}
+      {showTransfer && (
+        <BranchTransferModal
+          targets={transferTargets}
+          onClose={() => setShowTransfer(false)}
+          onSuccess={() => { setShowTransfer(false); router.refresh(); }}
+        />
+      )}
 
       <div className="card">
         <h2 className="font-semibold mb-3">{t("staff.persona.history7")}</h2>
@@ -1479,6 +1529,268 @@ function QrScannerModal({
         >
           {t("common.cancel")}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── ย้ายสาขาระหว่างวัน (owner 2026-08-02) ───────────────────────────────
+// Full-screen flow: pick destination → read the warning → clear the
+// destination's anti-cheat gates (GPS / QR / selfie) → confirm with PIN.
+// Posts intent="transfer" to the clock route, which closes the current
+// branch's shift and opens one at the destination in the same instant.
+function BranchTransferModal({
+  targets,
+  onClose,
+  onSuccess
+}: {
+  targets: TransferTarget[];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const { t } = useLang();
+  const [target, setTarget] = useState<TransferTarget | null>(null);
+  const [phase, setPhase] = useState<"pick" | "confirm" | "saving" | "success" | "error">("pick");
+  const [pin, setPin] = useState("");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+  const [gpsStatus, setGpsStatus] = useState<string | null>(null);
+  const [qrToken, setQrToken] = useState<string | null>(null);
+  const [qrError, setQrError] = useState<string | null>(null);
+  const [showQrScanner, setShowQrScanner] = useState(false);
+  const [selfie, setSelfie] = useState<string | null>(null);
+  const [selfieBusy, setSelfieBusy] = useState(false);
+
+  const geofenceEnabled = target?.geofenceEnabled ?? false;
+  const qrEnabled = target?.qrEnabled ?? false;
+  const selfieEnabled = target?.selfieEnabled ?? false;
+
+  // Client-side geofence hint (server re-checks on submit). null = unknown.
+  const inZone: boolean | null =
+    !geofenceEnabled ? true
+    : !gpsCoords ? null
+    : target?.geofenceLat == null || target?.geofenceLng == null ? null
+    : haversineMetersClient(gpsCoords.lat, gpsCoords.lng, target.geofenceLat, target.geofenceLng)
+        <= target.geofenceRadiusMeters + gpsCoords.accuracy;
+
+  const geofenceSatisfied = !geofenceEnabled || inZone === true;
+  const qrReady = !qrEnabled || qrToken != null;
+  const selfieReady = !selfieEnabled || selfie != null;
+  const gatesReady = geofenceSatisfied && qrReady && selfieReady;
+
+  function captureGps() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGpsStatus(t("staff.persona.gps.notSupported"));
+      return;
+    }
+    setGpsStatus(t("staff.persona.gps.locating"));
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGpsCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+        setGpsStatus(null);
+        setErrorMsg((prev) => (prev === t("staff.persona.gps.outOfRange") ? null : prev));
+      },
+      (err) => {
+        const map: Record<number, string> = {
+          1: "staff.persona.gps.errPermission",
+          2: "staff.persona.gps.errUnavailable",
+          3: "staff.persona.gps.errTimeout"
+        };
+        setGpsStatus(t(map[err.code] || "staff.persona.gps.errGeneric"));
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 }
+    );
+  }
+
+  function choose(tg: TransferTarget) {
+    setTarget(tg);
+    setPin("");
+    setErrorMsg(null);
+    setGpsCoords(null);
+    setQrToken(null);
+    setSelfie(null);
+    setPhase("confirm");
+    if (tg.geofenceEnabled) captureGps();
+  }
+
+  async function submit(currentPin: string) {
+    if (!target) return;
+    if (geofenceEnabled && !gpsCoords) { setErrorMsg(t("staff.persona.gps.required")); setPin(""); return; }
+    if (qrEnabled && !qrToken) { setErrorMsg(t("staff.persona.qr.required")); setPin(""); return; }
+    if (selfieEnabled && !selfie) { setErrorMsg("กรุณาถ่ายเซลฟี่ก่อนยืนยัน"); setPin(""); return; }
+
+    setPhase("saving");
+    setErrorMsg(null);
+    try {
+      const body: Record<string, unknown> = { pin: currentPin, intent: "transfer", toBranchId: target.id };
+      if (gpsCoords) { body.lat = gpsCoords.lat; body.lng = gpsCoords.lng; body.gpsAccuracy = gpsCoords.accuracy; }
+      if (qrToken) body.qrToken = qrToken;
+      if (selfie) body.selfie = selfie;
+      const res = await fetch(apiUrl("/api/persona/clock"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        if (data.error === "wrong_pin") setErrorMsg(t("staff.persona.pinWrong"));
+        else if (data.error === "rate_limited") setErrorMsg(t("staff.persona.tooManyAttempts", { n: data.retryAfterSec ?? 60 }));
+        else if (data.error === "not_clocked_in") setErrorMsg(t("staff.persona.transfer.notClockedIn"));
+        else if (data.error === "gps_required") setErrorMsg(t("staff.persona.gps.required"));
+        else if (data.error === "out_of_geofence") { setErrorMsg(t("staff.persona.gps.outOfRange")); setGpsCoords(null); }
+        else if (data.error === "qr_required") setErrorMsg(t("staff.persona.qr.required"));
+        else if (data.error === "qr_expired" || data.error === "invalid_qr_token") { setErrorMsg(t("staff.persona.qr.invalid")); setQrToken(null); }
+        else if (data.error === "geofence_misconfigured" || data.error === "qr_misconfigured") setErrorMsg(t("staff.persona.errorMisconfigured"));
+        else setErrorMsg(t("staff.persona.transfer.error"));
+        setPhase("error");
+        setPin("");
+        setTimeout(() => setPhase("confirm"), 2500);
+        return;
+      }
+      setPhase("success");
+      setTimeout(onSuccess, 1500);
+    } catch {
+      setErrorMsg(t("staff.persona.transfer.error"));
+      setPhase("error");
+      setPin("");
+      setTimeout(() => setPhase("confirm"), 2500);
+    }
+  }
+
+  function pressDigit(d: string) {
+    if (phase !== "confirm") return;
+    if (!gatesReady) return;
+    if (pin.length >= 4) return;
+    const next = pin + d;
+    setPin(next);
+    if (next.length === 4) submit(next);
+  }
+  function backspace() {
+    if (phase !== "confirm") return;
+    setPin((p) => p.slice(0, -1));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-3">
+      <div className="bg-white rounded-2xl p-4 w-full max-w-sm space-y-3 max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-slate-800 text-sm">{t("staff.persona.transfer.title")}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
+        </div>
+
+        {phase === "success" ? (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl py-6 text-center">
+            <div className="text-4xl mb-2">✅</div>
+            <div className="text-emerald-800 font-bold">
+              {t("staff.persona.transfer.success", { branch: target?.name ?? "" })}
+            </div>
+          </div>
+        ) : phase === "pick" ? (
+          <>
+            <p className="text-sm text-slate-600">{t("staff.persona.transfer.pickPrompt")}</p>
+            <div className="space-y-2">
+              {targets.map((tg) => (
+                <button
+                  key={tg.id}
+                  onClick={() => choose(tg)}
+                  className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 hover:border-sky-400 hover:bg-sky-50 transition font-medium text-slate-800 active:scale-[.99]"
+                >
+                  {tg.name}
+                </button>
+              ))}
+            </div>
+            <button onClick={onClose} className="w-full py-2 text-sm text-slate-500 hover:text-slate-700">
+              {t("common.cancel")}
+            </button>
+          </>
+        ) : (
+          <>
+            {/* Warning — what changes after the transfer */}
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 leading-relaxed">
+              {t("staff.persona.transfer.warning", { branch: target?.name ?? "" })}
+            </div>
+
+            {/* Anti-cheat gates for the destination */}
+            {(geofenceEnabled || qrEnabled || selfieEnabled) && (
+              <div className="flex flex-col items-center gap-1.5">
+                {geofenceEnabled && (
+                  <GateChip
+                    tone={inZone === false ? "error" : inZone === true ? "ready" : "pending"}
+                    label={
+                      inZone === false ? t("staff.persona.gps.outOfRange")
+                        : inZone === true ? t("staff.persona.gps.ready")
+                        : (gpsStatus ?? t("staff.persona.gps.waitingForLocation"))
+                    }
+                    actionLabel={inZone === true ? null : t("staff.persona.gps.retry")}
+                    onAction={captureGps}
+                  />
+                )}
+                {qrEnabled && (
+                  <GateChip
+                    tone={qrToken ? "ready" : "pending"}
+                    label={qrToken ? t("staff.persona.qr.ready") : (qrError ?? t("staff.persona.qr.scanPrompt"))}
+                    actionLabel={qrToken ? t("staff.persona.qr.rescan") : t("staff.persona.qr.openScanner")}
+                    onAction={() => { setQrError(null); setShowQrScanner(true); }}
+                  />
+                )}
+                {selfieEnabled && (
+                  <>
+                    <GateChip
+                      tone={selfie ? "ready" : "pending"}
+                      label={selfieBusy ? "กำลังเตรียมรูป…" : selfie ? "ถ่ายเซลฟี่แล้ว" : "ถ่ายเซลฟี่เพื่อยืนยันตัวตน"}
+                      actionLabel={selfieBusy ? null : selfie ? "ถ่ายใหม่" : "ถ่ายเซลฟี่"}
+                      onAction={() => document.getElementById("transfer-selfie-input")?.click()}
+                    />
+                    <input
+                      id="transfer-selfie-input"
+                      type="file"
+                      accept="image/*"
+                      capture="user"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!file) return;
+                        setSelfieBusy(true);
+                        try { setSelfie(await selfieToDataUrl(file)); }
+                        catch { setErrorMsg("ถ่ายเซลฟี่ไม่สำเร็จ ลองใหม่"); }
+                        finally { setSelfieBusy(false); }
+                      }}
+                    />
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="text-sm text-slate-600 text-center">{t("staff.persona.transfer.pinPrompt")}</div>
+            <div className="flex justify-center gap-3">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className={`w-3.5 h-3.5 rounded-full border-2 ${i < pin.length ? "bg-brand border-brand" : "border-slate-300"}`} />
+              ))}
+            </div>
+            {errorMsg && <div className="text-red-600 text-sm font-medium text-center">{errorMsg}</div>}
+            <Keypad onDigit={pressDigit} onBackspace={backspace} disabled={phase !== "confirm" || !gatesReady} variant="light" />
+            {!gatesReady && (
+              <p className="text-[11px] text-amber-700 text-center">{t("staff.persona.gatesPending")}</p>
+            )}
+            <button
+              onClick={() => { setTarget(null); setPhase("pick"); setPin(""); setErrorMsg(null); }}
+              disabled={phase === "saving"}
+              className="w-full py-2 text-sm text-slate-500 hover:text-slate-700"
+            >
+              {t("common.back")}
+            </button>
+          </>
+        )}
+
+        {showQrScanner && (
+          <QrScannerModal
+            onScanned={(token) => { setQrToken(token); setShowQrScanner(false); setQrError(null); }}
+            onClose={() => setShowQrScanner(false)}
+            onError={(msg) => setQrError(msg)}
+          />
+        )}
       </div>
     </div>
   );

@@ -477,6 +477,13 @@ function computeSvcClampedMinutesByDay(
   // (สลับกะกันเอง / ลงเวลาในวันที่ไม่มีกะ) is abnormal — the day earns no SVC.
   // Separate gate from excludeAbnormal because it starts a month later.
   excludeNoSchedule: boolean,
+  // owner 2026-08-02 ("ย้ายสาขาระหว่างวัน"): a legit mid-day branch transfer lands
+  // an in/out pair at a branch the staff isn't rostered at. That must NOT be
+  // dropped by the no-schedule rule — but a genuinely unscheduled clock-in still
+  // should. The discriminator: was the user rostered for a WORK shift SOMEWHERE
+  // that day? If yes it's a transfer (count the minutes, clamped raw); if no
+  // it's the abnormal case (excluded). Keys are `${userId}:${date}`.
+  rosteredSomewhere: Set<string>,
   excludedByUser: Map<number, Array<{ date: string; reason: string }>>
 ): Map<string, Map<number, number>> {
   const out = new Map<string, Map<number, number>>();
@@ -501,8 +508,13 @@ function computeSvcClampedMinutesByDay(
         continue;
       }
       const candidates = scheduledByUser.get(userId)?.get(date) ?? [];
-      // Clocked but not rostered that day → abnormal, no SVC (owner 2026-07-21).
-      if (excludeNoSchedule && shifts.length > 0 && candidates.length === 0) {
+      // Clocked but not rostered at THIS branch that day. Abnormal (no SVC) —
+      // UNLESS the user was rostered for a work shift SOMEWHERE that day, which
+      // means this is a legit mid-day branch transfer ("ย้ายสาขาระหว่างวัน", owner
+      // 2026-08-02): count the transferred-in minutes (clamped raw, break
+      // deducted below) so the destination branch's SVC pool includes them.
+      if (excludeNoSchedule && shifts.length > 0 && candidates.length === 0
+          && !rosteredSomewhere.has(`${userId}:${date}`)) {
         let arr = excludedByUser.get(userId);
         if (!arr) { arr = []; excludedByUser.set(userId, arr); }
         arr.push({ date, reason: "ลงเวลาวันที่ไม่มีกะในตาราง — ไม่นับ SVC" });
@@ -623,6 +635,42 @@ export function computeMonthlySvcSummary(
       AND (u.hire_date IS NULL OR u.hire_date <= ?)
     ORDER BY (u.employee_code IS NULL), u.employee_code COLLATE NOCASE ASC
   `).all(branchId, end) as StaffMeta[];
+
+  // Cross-branch visitors (owner 2026-08-02, "ย้ายสาขาระหว่างวัน"): staff who are
+  // NOT members of this branch but clocked in here this month via a mid-day
+  // transfer. They join this branch's SVC pool for the days they actually worked
+  // here, so their share "follows the branch worked". Same eligibility filters as
+  // members. Group insurance is NOT withheld here — that ฿350/month is taken once
+  // at their home branch, so charging it again at a visited branch would double it.
+  const memberIds = new Set(staff.map((s) => s.userId));
+  const visitorIds = new Set<number>();
+  const visitorRows = db.prepare(`
+    SELECT u.id AS userId, u.display_name AS displayName,
+           u.employment_type AS employmentType,
+           u.shift_start_time AS shiftStartTime,
+           u.weekly_off_days AS weeklyOffDays,
+           COALESCE(u.track_attendance, 1) AS trackAttendance,
+           u.salary_tax_mode AS taxMode,
+           u.title_prefix AS titlePrefix,
+           u.employee_code AS employeeCode,
+           u.hire_date AS hireDate
+    FROM users u
+    WHERE u.role IN ('staff', 'admin')
+      AND u.receives_service_charge = 1
+      AND u.is_test_account = 0
+      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
+      AND (u.hire_date IS NULL OR u.hire_date <= ?)
+      AND u.id IN (
+        SELECT DISTINCT user_id FROM time_entries
+        WHERE branch_id = ? AND ts >= ? AND ts <= ?
+      )
+  `).all(end, branchId, monthStartIso, monthEndIso) as StaffMeta[];
+  for (const v of visitorRows) {
+    if (memberIds.has(v.userId)) continue;
+    visitorIds.add(v.userId);
+    staff.push(v);
+  }
+
   if (staff.length === 0) {
     return emptySummary(branchId, yearMonth, totalCollected, daysInMonth, dailyRows.length);
   }
@@ -676,8 +724,29 @@ export function computeMonthlySvcSummary(
   const excludeNoSchedule = yearMonth >= "2026-07";
   const capNormalMinutes = yearMonth >= "2026-07";
   const excludedByUser = new Map<number, Array<{ date: string; reason: string }>>();
+  // Days each user was rostered for a work shift at ANY branch — lets a genuine
+  // branch transfer bypass the no-schedule exclusion at the visited branch, while
+  // a truly unscheduled clock-in stays excluded (owner 2026-08-02). Scoped to the
+  // users we're paying so the set stays small.
+  const rosteredSomewhere = new Set<string>();
+  {
+    const ids = staff.map((s) => s.userId);
+    if (ids.length > 0) {
+      const ph = ids.map(() => "?").join(",");
+      for (const r of db.prepare(`
+        SELECT DISTINCT ra.user_id AS uid, ra.assignment_date AS d
+        FROM roster_assignments ra
+        JOIN shift_codes sc ON sc.id = ra.shift_code_id
+        WHERE sc.kind = 'work' AND ra.assignment_date >= ? AND ra.assignment_date <= ?
+          AND ra.user_id IN (${ph})
+      `).all(start, end, ...ids) as Array<{ uid: number; d: string }>) {
+        rosteredSomewhere.add(`${r.uid}:${r.d}`);
+      }
+    }
+  }
   const workedByDay = computeSvcClampedMinutesByDay(
-    entries, scheduledByUser, otByUser, brk, excludeAbnormal, excludeNoSchedule, excludedByUser
+    entries, scheduledByUser, otByUser, brk, excludeAbnormal, excludeNoSchedule,
+    rosteredSomewhere, excludedByUser
   );
 
   // 4b. Executives with track_attendance=0 don't clock in — accrue SVC from the
@@ -817,6 +886,11 @@ export function computeMonthlySvcSummary(
 
   const rows: MonthlySvcRow[] = staff.map((s) => {
     const a = acc.get(s.userId) ?? { minutesWorked: 0, daysWorked: 0, grossAllocation: 0 };
+    // A cross-branch visitor's lateness / forfeiture / group-insurance are judged
+    // at their HOME branch, not here — a 13:00 transfer-in would otherwise look
+    // hours "late" against their morning shift and wrongly forfeit their share
+    // (owner 2026-08-02). Here they only collect the pool for minutes worked.
+    const isVisitor = visitorIds.has(s.userId);
     const rosterShiftByDate = shiftStartByDateForUserMonth(branchId, s.userId, yearMonth);
     const rosterMin = rosterScheduledByUser.get(s.userId) ?? 0;
     const scheduledMinutes = rosterMin > 0 ? rosterMin : fallbackScheduledMinutes;
@@ -824,10 +898,11 @@ export function computeMonthlySvcSummary(
     // Lateness — per-event: look up effective shift start from roster
     // first, then fall back to the static users.shift_start_time. If
     // neither exists for a given event, that event simply isn't
-    // counted as late (no scheduled shift = no expectation).
+    // counted as late (no scheduled shift = no expectation). Visitors are
+    // skipped entirely (their punches here are transfer-ins, not their shift).
     let lateMinutes = 0;
     let anyComputable = false;
-    for (const ev of (insByUser.get(s.userId) ?? [])) {
+    for (const ev of (isVisitor ? [] : (insByUser.get(s.userId) ?? []))) {
       const bkk = new Date(new Date(ev.ts).getTime() + 7 * 60 * 60 * 1000);
       const dateBkk = bkk.toISOString().slice(0, 10);
       const effStart = rosterShiftByDate.get(dateBkk) ?? s.shiftStartTime;
@@ -861,8 +936,9 @@ export function computeMonthlySvcSummary(
     const taxMode: "sso" | "wht" = s.taxMode === "wht" ? "wht" : "sso";
     const whtAmount = taxMode === "wht" ? round2(netAllocation * whtRate) : 0;
     // Group-insurance premium (owner 2026-08-02) — withheld from the SVC left
-    // after forfeit + WHT, during the new-hire window (FT 3mo / PT 12mo).
-    const groupInsurance = groupInsuranceDeduction({
+    // after forfeit + WHT, during the new-hire window (FT 3mo / PT 12mo). Skipped
+    // for visitors so the ฿350/month isn't double-charged (it's taken at home).
+    const groupInsurance = isVisitor ? 0 : groupInsuranceDeduction({
       employmentType: s.employmentType,
       hireDate: s.hireDate,
       yearMonth,
@@ -962,8 +1038,18 @@ export function svcWorkedMinutesForUserDate(
     break_threshold_minutes: 300, break_deduction_minutes: 30,
     long_shift_threshold_minutes: 480, long_shift_break_minutes: 60
   };
+  // Mirror the monthly engine: a work shift ANYWHERE that day means a clock-in at
+  // this branch with no local roster is a legit transfer, not an excluded
+  // no-schedule day (owner 2026-08-02).
+  const rosteredSomewhere = new Set<string>();
+  const anyShift = db.prepare(`
+    SELECT 1 FROM roster_assignments ra
+    JOIN shift_codes sc ON sc.id = ra.shift_code_id
+    WHERE ra.user_id = ? AND ra.assignment_date = ? AND sc.kind = 'work' LIMIT 1
+  `).get(userId, dateBkk);
+  if (anyShift) rosteredSomewhere.add(`${userId}:${dateBkk}`);
   const workedByDay = computeSvcClampedMinutesByDay(
-    entries, scheduledByUser, otByUser, brk, true, true, new Map()
+    entries, scheduledByUser, otByUser, brk, true, true, rosteredSomewhere, new Map()
   );
   return workedByDay.get(dateBkk)?.get(userId) ?? 0;
 }
