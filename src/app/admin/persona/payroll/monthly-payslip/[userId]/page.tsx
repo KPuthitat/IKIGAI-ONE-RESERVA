@@ -189,21 +189,24 @@ export default function MonthlyPayslipPage({
   for (const ub of db.prepare("SELECT branch_id FROM user_branches WHERE user_id = ?").all(userId) as Array<{ branch_id: number }>) {
     svcBranchIds.add(ub.branch_id);
   }
-  let svcMonthly = 0;          // net SVC actually received (after group insurance)
-  let svcGroupInsurance = 0;   // group-insurance premium withheld from that SVC
+  let svcNetPayout = 0;        // SVC actually received (after WHT + group insurance)
+  let svcGroupInsurance = 0;   // group-insurance premium withheld from SVC
+  let svcWht = 0;              // WHT withheld from SVC (PT / wht-mode staff only)
   for (const b of svcBranchIds) {
     let summary;
     try { summary = computeMonthlySvcSummary(b, svcMonth); }
     catch { continue; }
     const row = summary.rows.find((r) => r.userId === userId);
     if (row) {
-      svcMonthly += row.netPayout;
+      svcNetPayout += row.netPayout;
       svcGroupInsurance += row.groupInsurance;
+      svcWht += row.whtAmount;
     }
   }
-  // SVC before the group-insurance withholding — shown as income; the premium is
-  // then listed as a deduction, so the slip explains where the money went.
-  const svcBeforeGI = svcMonthly + svcGroupInsurance;
+  // SVC is shown as income at GROSS (before WHT + group insurance). The WHT (PT
+  // only) and the group-insurance premium are then listed as deductions, so the
+  // slip shows income → deductions → net cleanly (owner 2026-08-02).
+  const svcGross = svcNetPayout + svcWht + svcGroupInsurance;
 
   // Totals across the displayed lines (empty rows contribute 0, so the sum is
   // unchanged by the filter above).
@@ -221,13 +224,19 @@ export default function MonthlyPayslipPage({
   // just a re-grouping of the same weekly lines — no math changes.
   //   • byBranch: wage income per branch (base + ot + other + in-round SVC)
   //   • dedBreak: each deduction component summed across the month
-  //   • netTotal = income − deductions = tot.net + svcMonthly, by construction
+  //   • netTotal = income − deductions = wages net + SVC net-of-(WHT+insurance)
+  // Per-branch ค่าตอบแทน = wage income only (base + OT + other additions). SVC is
+  // its OWN income line below, so it's excluded here (owner 2026-08-02). Any
+  // legacy in-round SVC (already inside net_pay) is folded into the SVC line via
+  // svcInRound so nothing is lost or double-counted.
   const byBranch = new Map<number | null, { income: number; ot: number }>();
+  let svcInRound = 0;
   for (const w of rows) {
     const cur = byBranch.get(w.branch_id) ?? { income: 0, ot: 0 };
-    cur.income += w.base_pay + w.ot_pay + w.other_additions + w.service_charge;
+    cur.income += w.base_pay + w.ot_pay + w.other_additions;
     cur.ot += w.ot_pay;
     byBranch.set(w.branch_id, cur);
+    svcInRound += w.service_charge;
   }
   const branchIncomeLines = [...byBranch.entries()]
     .filter(([, v]) => v.income !== 0)
@@ -245,11 +254,21 @@ export default function MonthlyPayslipPage({
     }),
     { sso: 0, tax: 0, drink: 0, other: 0 }
   );
-  const incomeTotal = tot.comp + tot.other + svcBeforeGI;
-  const dedTotal = tot.ded + svcGroupInsurance;
-  const netTotal = incomeTotal - dedTotal; // = wages net + SVC net-of-insurance
+  // SVC income line = the monthly pool (gross) + any legacy in-round SVC.
+  const svcIncome = svcGross + svcInRound;
+  // tot.other already contains the in-round SVC, so incomeTotal uses svcGross
+  // (the monthly pool) once and doesn't double-count svcInRound.
+  const incomeTotal = tot.comp + tot.other + svcGross;
+  // Deductions grouped per the owner's spec (2026-08-02): FT → ประกันสังคม +
+  // ประกันกลุ่ม; PT → ภาษี ณ ที่จ่าย + ประกันกลุ่ม. WHT combines any wage WHT with the
+  // SVC WHT; the amounts self-select by employment type (FT has SSO, no WHT; PT
+  // has WHT on SVC, no SSO), so we just show whatever is non-zero.
+  const whtTotal = dedBreak.tax + svcWht;
+  const dedTotal = dedBreak.sso + whtTotal + dedBreak.drink + dedBreak.other + svcGroupInsurance;
+  const netTotal = incomeTotal - dedTotal; // = wages net + SVC net-of-(WHT+insurance)
 
   const first = rows[0];
+  const isPt = first.employment_type === "pt";
   const employmentLabel =
     first.employment_type === "pt" ? t(lang, "admin.persona.employees.employment.pt") :
     first.employment_type === "ft" ? t(lang, "admin.persona.employees.employment.ft") :
@@ -399,13 +418,15 @@ export default function MonthlyPayslipPage({
                   <span className="tabular-nums font-medium text-slate-800">{fmtMoney(v.income)}</span>
                 </div>
               ))}
-              {svcBeforeGI > 0 && (
+              {svcIncome > 0 && (
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-slate-600">
                     เซอร์วิสชาร์จเดือน{monthNameOnly(svcMonth, lang)}{" "}
-                    <span className="text-xs text-slate-400">(จ่าย ~วันที่ 20 {monthNameOnly(month, lang)})</span>
+                    <span className="text-xs text-slate-400">
+                      ({isPt ? "ถูกหักภาษี ณ ที่จ่าย" : "ไม่ถูกหักภาษี ณ ที่จ่าย"} · จ่าย ~วันที่ 20 {monthNameOnly(month, lang)})
+                    </span>
                   </span>
-                  <span className="tabular-nums font-medium text-violet-700">{fmtMoney(svcBeforeGI)}</span>
+                  <span className="tabular-nums font-medium text-violet-700">{fmtMoney(svcIncome)}</span>
                 </div>
               )}
               <div className="flex items-baseline justify-between gap-3 border-t border-slate-200 pt-1.5 mt-1.5 font-bold text-slate-800">
@@ -421,8 +442,22 @@ export default function MonthlyPayslipPage({
               รายการหัก
             </div>
             <div className="px-4 py-2.5 space-y-1.5 text-sm">
-              <DedRow label={t(lang, "admin.persona.payroll.col.sso")} value={dedBreak.sso} />
-              <DedRow label={t(lang, "admin.persona.payroll.col.tax")} value={dedBreak.tax} />
+              {/* FT → ประกันสังคม; PT → ภาษี ณ ที่จ่าย. Zero rows hide, so each
+                  employment type shows only its own deductions (owner 2026-08-02). */}
+              {dedBreak.sso > 0 && (
+                <DedRow label={t(lang, "admin.persona.payroll.col.sso")} value={dedBreak.sso} />
+              )}
+              {whtTotal > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">
+                    {t(lang, "admin.persona.payroll.col.tax")}{" "}
+                    {svcWht > 0 && (
+                      <span className="text-xs text-slate-400">(หักจากเซอร์วิสชาร์จ)</span>
+                    )}
+                  </span>
+                  <span className="tabular-nums font-medium text-slate-700">{fmtMoney(whtTotal)}</span>
+                </div>
+              )}
               {dedBreak.drink > 0 && (
                 <DedRow label={t(lang, "admin.persona.payroll.col.drinkDed")} value={dedBreak.drink} />
               )}
@@ -437,6 +472,9 @@ export default function MonthlyPayslipPage({
                   </span>
                   <span className="tabular-nums font-medium text-slate-700">{fmtMoney(svcGroupInsurance)}</span>
                 </div>
+              )}
+              {dedTotal === 0 && (
+                <div className="text-sm text-slate-400 italic">{t(lang, "admin.persona.payroll.payslip.noDeductions")}</div>
               )}
               <div className="flex items-baseline justify-between gap-3 border-t border-slate-200 pt-1.5 mt-1.5 font-bold text-slate-800">
                 <span>รวมรายการหัก</span>

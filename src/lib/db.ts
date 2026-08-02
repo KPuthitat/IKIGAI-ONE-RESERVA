@@ -3858,6 +3858,11 @@ function runMigrations(db: Database.Database): void {
   // Face-scan opt-in photo URL (path under /uploads/face/<uuid>.jpg
   // when present). Optional — not all branches use face scan.
   userCol("face_photo_url",     "TEXT");
+  // Group-insurance enrolment month (owner 2026-08-02): YYYY-MM the ฿350/month
+  // SVC withholding starts from. Chosen by hand because enrolment isn't always on
+  // the hire date (the owner waits for a cycle). NULL = not enrolled → no
+  // deduction. The FT 3-month / PT 12-month window counts from THIS month.
+  userCol("group_insurance_start_month", "TEXT");
 
   // One-time PII repair (owner 2026-07-13): the RECRUITA hire path stored the
   // candidate's national_id as an enc:v1: blob into users.national_id — but that

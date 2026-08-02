@@ -58,6 +58,21 @@ assert(isExcludedNoSched(1, 0, true), "clocked with 0 roster candidates (July) �
 assert(!isExcludedNoSched(1, 1, true), "clocked WITH a roster shift → not excluded");
 assert(!isExcludedNoSched(1, 0, false), "June (gate off) → not excluded even with no roster");
 
+// ── mid-day branch transfer bypass (owner 2026-08-02) ────────────
+// A transfer lands an in/out pair at a branch with no local roster (candidates=0),
+// but the staff IS rostered for a work shift somewhere that day (rosteredSomewhere).
+// That must NOT be excluded — the destination branch's SVC pool should include it.
+// Mirrors computeSvcClampedMinutesByDay's guarded check.
+const isExcludedNoSchedT = (
+  shiftCount: number, candidateCount: number, on: boolean, rosteredSomewhere: boolean
+) => on && shiftCount > 0 && candidateCount === 0 && !rosteredSomewhere;
+assert(isExcludedNoSchedT(1, 0, true, false),
+  "clocked, no roster anywhere that day → excluded (unscheduled)");
+assert(!isExcludedNoSchedT(1, 0, true, true),
+  "clocked at non-rostered branch BUT rostered elsewhere → NOT excluded (legit transfer)");
+assert(!isExcludedNoSchedT(1, 1, true, false),
+  "clocked WITH a local roster shift → not excluded (regression)");
+
 // ── finalize-completeness arithmetic ────────────────────────────
 const daysInMonth = (ym: string) => {
   const [y, m] = ym.split("-").map(Number);

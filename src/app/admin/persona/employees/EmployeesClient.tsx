@@ -44,6 +44,8 @@ export type EmployeeRow = {
   track_attendance?: number;
   // 0 = ไม่รับส่วนแบ่งเซอร์วิสชาร์จ (แยกจาก track_attendance, owner 2026-07-21).
   receives_service_charge?: number;
+  // YYYY-MM ที่เริ่มหักประกันกลุ่มจาก SVC (owner 2026-08-02). null = ยังไม่หัก.
+  group_insurance_start_month?: string | null;
   line_user_id: string | null;
   shift_start_time: string | null;
   has_pin: number;
@@ -554,6 +556,9 @@ function EditModal({
   // pay_cycle is no longer user-selectable: FT = monthly, PT = none
   // (owner 2026-06-09). Coerced at save by employment type.
   const [taxMode, setTaxMode] = useState<"sso" | "wht">(employee.salary_tax_mode ?? "sso");
+  // Group-insurance enrolment month (owner 2026-08-02). "" = not enrolled → no
+  // ฿350/mo SVC deduction. <input type="month"> value is YYYY-MM.
+  const [giStartMonth, setGiStartMonth] = useState<string>(employee.group_insurance_start_month ?? "");
   const [lineUserId, setLineUserId] = useState<string>(employee.line_user_id ?? "");
   // shift_start_time + escalation_hours per-user fields removed
   // 2026-05 (UI deleted in this commit). API still accepts them,
@@ -743,6 +748,8 @@ function EditModal({
         // FT is monthly-only (owner 2026-06-09); PT has no pay cycle.
         pay_cycle: employmentType === "ft" ? "monthly" : null,
         salary_tax_mode: taxMode,
+        // ประกันกลุ่ม: เดือนเริ่มหัก (YYYY-MM) — "" = ยังไม่หัก (ส่ง "" ให้ API เคลียร์เป็น NULL).
+        group_insurance_start_month: giStartMonth,
         // ผู้บริหาร/ไม่ลงเวลา (FT เท่านั้น); PT/ยังไม่กำหนดประเภท = ลงเวลาปกติ.
         // API รับเป็น boolean: true = ลงเวลาปกติ, false = ไม่ลงเวลา (exec).
         track_attendance: employmentType === "ft" ? !noClock : true,
@@ -1301,6 +1308,26 @@ function EditModal({
                     {t("admin.persona.employees.taxMode.whtDesc")}
                   </p>
                 </label>
+              </div>
+
+              {/* Group-insurance enrolment month (owner 2026-08-02) — the ฿350/mo
+                  SVC deduction runs FT 3 / PT 12 months from this month. Empty =
+                  not enrolled yet → no deduction until set. */}
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  {t("admin.persona.employees.groupInsurance.label")}
+                </label>
+                <input
+                  type="month"
+                  value={giStartMonth}
+                  onChange={(e) => setGiStartMonth(e.target.value)}
+                  className="input max-w-[220px]"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  {giStartMonth
+                    ? t("admin.persona.employees.groupInsurance.hintSet")
+                    : t("admin.persona.employees.groupInsurance.hintUnset")}
+                </p>
               </div>
             </div>
             )}

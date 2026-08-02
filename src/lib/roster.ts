@@ -333,18 +333,52 @@ export function scheduledWorkBranchesWithNames(
   `).all(userId, dateBkk) as Array<{ id: number; name: string }>;
 }
 
-/** The branch a clock-in/out on `dateBkk` should attribute to. Keep the active
- *  branch if it has a work shift today; else if exactly one OTHER branch is
- *  rostered today, auto-pick that; else fall back to the active branch. Shared
- *  by the clock API and the clock PAGE so both agree — a cross-branch rotator
- *  (or a just-moved staffer) sees + clocks at the branch they're actually
- *  rostered at today, without switching branch manually (owner 2026-07-14/16).
- *  Returns null only when there is no active branch and no single rostered one. */
+/** The branch where the user currently has an OPEN clock-in on `dateBkk` — an
+ *  "in" at a branch today that hasn't been paired with an "out" yet (per-branch
+ *  balance > 0). Returns that branch_id, or null if they're not currently
+ *  clocked in anywhere today. Used so that whichever branch you're actually
+ *  punched into wins as your clock branch — you clock OUT where you clocked IN,
+ *  even after a mid-day branch transfer to a site you're not rostered at (owner
+ *  2026-08-02). If two branches are somehow open (shouldn't happen in normal
+ *  flow), the most recently punched one wins. */
+export function openClockInBranchForUserOn(
+  userId: number,
+  dateBkk: string
+): number | null {
+  const startIso = new Date(`${dateBkk}T00:00:00+07:00`).toISOString();
+  const endIso = new Date(`${dateBkk}T23:59:59+07:00`).toISOString();
+  const row = getDb().prepare(`
+    SELECT branch_id
+    FROM time_entries
+    WHERE user_id = ? AND branch_id IS NOT NULL AND ts >= ? AND ts <= ?
+    GROUP BY branch_id
+    HAVING SUM(CASE WHEN type = 'in' THEN 1 ELSE -1 END) > 0
+    ORDER BY MAX(ts) DESC
+    LIMIT 1
+  `).get(userId, startIso, endIso) as { branch_id: number } | undefined;
+  return row?.branch_id ?? null;
+}
+
+/** The branch a clock-in/out on `dateBkk` should attribute to. Priority:
+ *   1. The branch the user is CURRENTLY clocked into today (open in, no out) —
+ *      so a clock-out (or a further punch) always lands where they're punched
+ *      in, including after a mid-day "ย้ายสาขาระหว่างวัน" transfer to a site not
+ *      on their roster (owner 2026-08-02).
+ *   2. Else keep the active branch if it has a work shift today.
+ *   3. Else if exactly one OTHER branch is rostered today, auto-pick that.
+ *   4. Else fall back to the active branch.
+ *  Shared by the clock API and the clock PAGE so both agree — a cross-branch
+ *  rotator (or a just-moved staffer) sees + clocks at the branch they're
+ *  actually rostered at today, without switching branch manually (owner
+ *  2026-07-14/16). Returns null only when there is no active branch and no
+ *  single rostered one. */
 export function resolveClockBranchId(
   userId: number,
   activeBranchId: number | null,
   dateBkk: string
 ): number | null {
+  const open = openClockInBranchForUserOn(userId, dateBkk);
+  if (open != null) return open;
   const rostered = workShiftBranchesForUserOn(userId, dateBkk);
   if (activeBranchId != null && rostered.includes(activeBranchId)) return activeBranchId;
   if (rostered.length === 1) return rostered[0];

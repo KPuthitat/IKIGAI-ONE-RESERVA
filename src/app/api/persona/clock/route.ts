@@ -13,7 +13,7 @@ import {
   detectPunchAnomaly, detectScheduleDeviation, uncertifiedPriorMissingOut,
   type OwlPrompt, type DeviationPrompt
 } from "@/lib/attendance-flags";
-import { userHasWorkShiftOn, effectiveShiftStartForUserDate, scheduledShiftMinutesForUserDate, resolveClockBranchId } from "@/lib/roster";
+import { userHasWorkShiftOn, effectiveShiftStartForUserDate, scheduledShiftMinutesForUserDate, resolveClockBranchId, openClockInBranchForUserOn } from "@/lib/roster";
 import { verifyClockCode } from "@/lib/clock-code";
 import { saveClockSelfie } from "@/lib/clock-selfie";
 import { nowBkkMinutes } from "@/lib/time";
@@ -47,7 +47,12 @@ const Body = z.object({
   selfie: z.string().max(2_000_000).optional(),
   // Explicit clock direction from the split เข้า/ออก buttons (owner
   // 2026-06-09). When omitted, the server auto-decides (back-compat).
-  intent: z.enum(["in", "out"]).optional()
+  // "transfer" = "ย้ายสาขาระหว่างวัน" (owner 2026-08-02): close the open shift at
+  // the current branch and open one at toBranchId in the same instant, so the
+  // rest of the day (pay + SVC share) counts at the branch actually worked.
+  intent: z.enum(["in", "out", "transfer"]).optional(),
+  // Destination branch for an intent="transfer" punch. Required only then.
+  toBranchId: z.number().int().positive().optional()
 });
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
@@ -66,6 +71,61 @@ function haversineMeters(
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+// GPS-geofence + QR anti-cheat gates for a branch, run against a supplied
+// location/QR reading. Returns an error {status, body} to send back, or null
+// when every enabled gate passes. Selfie is NOT saved here (the caller persists
+// it after the other guards); we only fold selfieRequired into whether GPS is
+// forced — matching the original inline logic. Shared by the normal punch path
+// and the branch-transfer path so a transfer enforces the DESTINATION branch's
+// gates too (owner 2026-08-02) — a transfer can't become a way to punch in at a
+// site you're not physically at.
+function antiCheatError(
+  branchRow: Branch,
+  input: { lat?: number; lng?: number; gpsAccuracy?: number; qrToken?: string }
+): { status: number; body: Record<string, unknown> } | null {
+  const rotatingQr = branchRow.clock_totp_secret != null;
+  const selfieRequired = branchRow.clock_selfie_enabled === 1;
+  const geofenceRequired = branchRow.geofence_enabled === 1 || rotatingQr || selfieRequired;
+
+  if (geofenceRequired) {
+    if (input.lat == null || input.lng == null) {
+      return { status: 400, body: { error: "gps_required" } };
+    }
+    if (branchRow.latitude == null || branchRow.longitude == null) {
+      return { status: 500, body: { error: "geofence_misconfigured" } };
+    }
+    const distance = haversineMeters(
+      input.lat, input.lng, branchRow.latitude, branchRow.longitude
+    );
+    const effectiveRadius = branchRow.geofence_radius_meters + (input.gpsAccuracy ?? 0);
+    if (distance > effectiveRadius) {
+      return {
+        status: 403,
+        body: {
+          error: "out_of_geofence",
+          distanceMeters: Math.round(distance),
+          allowedMeters: branchRow.geofence_radius_meters
+        }
+      };
+    }
+  }
+
+  if (rotatingQr) {
+    if (!input.qrToken) return { status: 400, body: { error: "qr_required" } };
+    if (!verifyClockCode(branchRow.clock_totp_secret!, input.qrToken, Date.now())) {
+      return { status: 403, body: { error: "qr_expired" } };
+    }
+  } else if (branchRow.clock_qr_enabled === 1) {
+    if (!input.qrToken) return { status: 400, body: { error: "qr_required" } };
+    if (!branchRow.clock_qr_token) return { status: 500, body: { error: "qr_misconfigured" } };
+    if (input.qrToken !== branchRow.clock_qr_token) {
+      return { status: 403, body: { error: "invalid_qr_token" } };
+    }
+  }
+
+  return null;
 }
 
 export async function POST(req: Request) {
@@ -105,6 +165,67 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "wrong_pin" }, { status: 401 });
   }
 
+  // ── Branch transfer mid-day (owner 2026-08-02, "ย้ายสาขาระหว่างวัน") ─────
+  // Close the open shift at the branch the staff is currently punched into and
+  // open one at the destination in the SAME instant. The rest of the day (pay +
+  // SVC share) then attributes to the branch actually worked, because the two
+  // punch pairs land under different branch_ids. Self-contained: it resolves its
+  // own source (the open-clock-in branch) and validates the DESTINATION's
+  // anti-cheat gates (the staff is physically there now), so it deliberately
+  // sits before the normal roster/branch resolution below.
+  if (parsed.data.intent === "transfer") {
+    const toBranchId = parsed.data.toBranchId;
+    if (toBranchId == null) {
+      return NextResponse.json({ error: "transfer_target_required" }, { status: 400 });
+    }
+    const todayBkkT = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    // Source = where they're currently clocked in (open in, no out today). You
+    // can only transfer OUT of a shift you're actually in.
+    const sourceBranchId = openClockInBranchForUserOn(user.id, todayBkkT);
+    if (sourceBranchId == null) {
+      return NextResponse.json({ error: "not_clocked_in" }, { status: 409 });
+    }
+    if (toBranchId === sourceBranchId) {
+      return NextResponse.json({ error: "same_branch" }, { status: 400 });
+    }
+    const destBranch = db.prepare("SELECT * FROM branches WHERE id = ?")
+      .get(toBranchId) as Branch | undefined;
+    if (!destBranch) {
+      return NextResponse.json({ error: "branch_not_found" }, { status: 404 });
+    }
+    if (destBranch.status !== "open") {
+      return NextResponse.json({ error: "branch_not_available" }, { status: 400 });
+    }
+    // Enforce the DESTINATION branch's geofence/QR gates — the staff must be on
+    // site to transfer in, exactly like a normal clock-in there.
+    const gate = antiCheatError(destBranch, parsed.data);
+    if (gate) return NextResponse.json(gate.body, { status: gate.status });
+    // Selfie (when the destination requires it) — the in@dest carries it.
+    let transferSelfiePath: string | null = null;
+    if (destBranch.clock_selfie_enabled === 1) {
+      if (!parsed.data.selfie) {
+        return NextResponse.json({ error: "selfie_required" }, { status: 400 });
+      }
+      const saved = saveClockSelfie(user.id, parsed.data.selfie);
+      if (!saved.ok) return NextResponse.json({ error: saved.error }, { status: 400 });
+      transferSelfiePath = saved.filename;
+    }
+    // Atomic: out@source + in@dest at the same instant, so no gap/overlap and
+    // the two branch pairs are each complete.
+    const nowIsoT = new Date().toISOString();
+    const tx = db.transaction(() => {
+      db.prepare("INSERT INTO time_entries (user_id, type, ts, branch_id) VALUES (?, 'out', ?, ?)")
+        .run(user.id, nowIsoT, sourceBranchId);
+      db.prepare("INSERT INTO time_entries (user_id, type, ts, branch_id, selfie_path) VALUES (?, 'in', ?, ?, ?)")
+        .run(user.id, nowIsoT, toBranchId, transferSelfiePath);
+    });
+    tx();
+    return NextResponse.json({
+      ok: true, action: "transfer",
+      fromBranchId: sourceBranchId, toBranchId, toBranchName: destBranch.name
+    });
+  }
+
   // ── Effective clock branch (owner 2026-07-14) ──────────────────
   // A cross-branch rotator shouldn't have to manually switch their active
   // branch before clocking in at the other site. Resolve the branch this
@@ -132,81 +253,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "branch_not_found" }, { status: 404 });
   }
 
-  // Rotating-QR mode (branches.clock_totp_secret set) forces GPS on too, so a
-  // scanned code alone can't be used from home (owner 2026-07-14) — GPS is the
-  // real location proof, the rotating code is the anti-share + scan layer.
-  const rotatingQr = branchRow.clock_totp_secret != null;
+  // Selfie proves WHO, GPS proves WHERE (owner 2026-07-14). The GPS + QR gates
+  // (incl. rotating-QR forcing GPS on) live in antiCheatError so the normal
+  // punch and the branch-transfer path enforce identical rules; selfieRequired
+  // is still read here because the selfie FILE is saved further down.
   const selfieRequired = branchRow.clock_selfie_enabled === 1;
-  // Selfie proves WHO, GPS proves WHERE — require both together so a selfie
-  // taken from home (with a faked location) still can't punch.
-  const geofenceRequired = branchRow.geofence_enabled === 1 || rotatingQr || selfieRequired;
-
-  if (geofenceRequired) {
-    if (parsed.data.lat == null || parsed.data.lng == null) {
-      return NextResponse.json({ error: "gps_required" }, { status: 400 });
-    }
-    if (branchRow.latitude == null || branchRow.longitude == null) {
-      // Geofence enabled but admin hasn't set a centre — fail closed
-      // rather than silently accepting any location, so this misconfig
-      // surfaces immediately instead of being mistaken for a working
-      // anti-cheat.
-      return NextResponse.json(
-        { error: "geofence_misconfigured" },
-        { status: 500 }
-      );
-    }
-    const distance = haversineMeters(
-      parsed.data.lat, parsed.data.lng,
-      branchRow.latitude, branchRow.longitude
-    );
-    // Effective radius = configured radius + GPS-reported accuracy.
-    // A phone reporting ±25m on a 100m geofence has up to 125m of
-    // "could be inside" margin — we accept that rather than reject
-    // a genuine on-site reading whose accuracy happens to be poor
-    // (e.g., indoors, near tall buildings). Cheating from home gives
-    // distances in kilometres so the margin doesn't open meaningful
-    // attack surface.
-    const effectiveRadius =
-      branchRow.geofence_radius_meters + (parsed.data.gpsAccuracy ?? 0);
-    if (distance > effectiveRadius) {
-      return NextResponse.json(
-        {
-          error: "out_of_geofence",
-          distanceMeters: Math.round(distance),
-          allowedMeters: branchRow.geofence_radius_meters
-        },
-        { status: 403 }
-      );
-    }
-  }
-
-  if (rotatingQr) {
-    // Rotating QR — the scanned value is a time-based HMAC code (carried in the
-    // existing qrToken field). Valid only for the current 30s window ±1, so a
-    // photographed poster is useless within a minute.
-    if (!parsed.data.qrToken) {
-      return NextResponse.json({ error: "qr_required" }, { status: 400 });
-    }
-    if (!verifyClockCode(branchRow.clock_totp_secret!, parsed.data.qrToken, Date.now())) {
-      return NextResponse.json({ error: "qr_expired" }, { status: 403 });
-    }
-  } else if (branchRow.clock_qr_enabled === 1) {
-    // Legacy static QR — an admin-set constant token printed as a poster.
-    if (!parsed.data.qrToken) {
-      return NextResponse.json({ error: "qr_required" }, { status: 400 });
-    }
-    if (!branchRow.clock_qr_token) {
-      // QR enabled but admin hasn't set a token — same fail-closed
-      // logic as the geofence misconfig case above.
-      return NextResponse.json(
-        { error: "qr_misconfigured" },
-        { status: 500 }
-      );
-    }
-    if (parsed.data.qrToken !== branchRow.clock_qr_token) {
-      return NextResponse.json({ error: "invalid_qr_token" }, { status: 403 });
-    }
-  }
+  const gate = antiCheatError(branchRow, parsed.data);
+  if (gate) return NextResponse.json(gate.body, { status: gate.status });
 
   // คำนวณช่วงวันนี้ (Bangkok local) — todayBkk computed above for branch resolve.
   const startIso = new Date(`${todayBkk}T00:00:00+07:00`).toISOString();
