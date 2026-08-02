@@ -20,6 +20,7 @@ import {
   marketingHeadline
 } from "@/lib/insigna";
 import Sandbox from "./Sandbox";
+import { Icon, type IconName } from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "INSIGNA · IKIGAI OS" };
@@ -102,12 +103,13 @@ export default function InsignaDashboard() {
               · ไม่มี PII อยู่ในตารางใดๆ
             </p>
           </div>
-          <div className={`text-xs px-2.5 py-1 rounded-full font-bold ${
+          <div className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-bold ${
             saltConfigured
               ? "bg-emerald-100 text-emerald-700"
               : "bg-amber-100 text-amber-700"
           }`}>
-            {saltConfigured ? "● Wall active" : "○ INSIGNA_SALT not set"}
+            <Icon name={saltConfigured ? "shield" : "lock"} className="h-3.5 w-3.5" />
+            {saltConfigured ? "Wall active" : "INSIGNA_SALT not set"}
           </div>
         </div>
       </div>
@@ -117,18 +119,23 @@ export default function InsignaDashboard() {
 
       {/* Top counters — 5-wide on desktop, 2 on mobile */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {[
-          { label: "Customers", n: counts.customers, accent: "rose" },
-          { label: "Reservations", n: counts.reservations, accent: "sky" },
-          { label: "Visits", n: counts.visits, accent: "emerald" },
-          { label: "Feedback", n: counts.feedback, accent: "amber" },
-          { label: "Audit events", n: counts.audit, accent: "slate" }
-        ].map((c) => (
-          <div key={c.label} className="card text-center">
-            <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
-              {c.label}
+        {([
+          { label: "Customers", n: counts.customers, icon: "users", tile: "bg-rose-50 text-rose-600" },
+          { label: "Reservations", n: counts.reservations, icon: "calendar", tile: "bg-sky-50 text-sky-600" },
+          { label: "Visits", n: counts.visits, icon: "check", tile: "bg-emerald-50 text-emerald-600" },
+          { label: "Feedback", n: counts.feedback, icon: "inbox", tile: "bg-amber-50 text-amber-600" },
+          { label: "Audit events", n: counts.audit, icon: "list", tile: "bg-slate-100 text-slate-500" }
+        ] as Array<{ label: string; n: number; icon: IconName; tile: string }>).map((c) => (
+          <div key={c.label} className="card">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                {c.label}
+              </div>
+              <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${c.tile}`}>
+                <Icon name={c.icon} className="h-4 w-4" />
+              </span>
             </div>
-            <div className="text-3xl font-bold text-slate-800 mt-1">
+            <div className="text-3xl font-bold text-slate-800 mt-1 tabular-nums">
               {fmtNum(c.n)}
             </div>
           </div>
@@ -161,8 +168,9 @@ export default function InsignaDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Persona distribution */}
         <div className="card">
-          <h2 className="text-sm font-bold text-slate-700 mb-3">
-            🎭 Persona distribution
+          <h2 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-1.5">
+            <Icon name="users" className="h-4 w-4 text-violet-600" />
+            Persona distribution
           </h2>
           {personas.length === 0 ? (
             <div className="text-xs text-slate-400 py-6 text-center">
@@ -198,8 +206,9 @@ export default function InsignaDashboard() {
 
         {/* Churn risk */}
         <div className="card">
-          <h2 className="text-sm font-bold text-slate-700 mb-3">
-            ⚠️ Top churn risk (score ≥ 0.5)
+          <h2 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-1.5">
+            <Icon name="alert" className="h-4 w-4 text-rose-600" />
+            Top churn risk (score ≥ 0.5)
           </h2>
           {churn.length === 0 ? (
             <div className="text-xs text-slate-400 py-6 text-center">
@@ -339,8 +348,9 @@ export default function InsignaDashboard() {
       </div>
 
       {/* Footer info */}
-      <div className="text-[10px] text-slate-400 text-center pt-2">
-        🔐 Privacy wall: hash = HMAC-SHA256(identifier, INSIGNA_SALT) · one-way ·
+      <div className="text-[10px] text-slate-400 text-center pt-2 flex items-center justify-center gap-1 flex-wrap">
+        <Icon name="lock" className="h-3 w-3" />
+        Privacy wall: hash = HMAC-SHA256(identifier, INSIGNA_SALT) · one-way ·
         no PII columns in any insigna_* table
         {" · "}
         <Link href="https://github.com/KPuthitat/IKIGAI-ONE-RESERVA/blob/main/src/lib/insigna/README.md"

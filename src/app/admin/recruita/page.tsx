@@ -7,6 +7,8 @@ import { t } from "@/lib/i18n";
 import { STAGE_META, type ApplicationStage } from "@/lib/recruita";
 import { getRecruitaChannel, isChannelReady } from "@/lib/messaging-channels";
 import { formatApplicationNo, formatBkkDateTime } from "@/lib/time";
+import { HubCard } from "@/components/HubCard";
+import { Icon, type IconName } from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "RECRUITA · IKIGAI OS" };
@@ -97,73 +99,41 @@ export default function RecruitaLanding() {
           </p>
         </div>
         <Link href="/admin/recruita/settings"
-          className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
-          ⚙️ {t(lang, "admin.recruita.nav.settings")}
+          className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
+          <Icon name="settings" className="h-3.5 w-3.5" />
+          {t(lang, "admin.recruita.nav.settings")}
           {isChannelReady(getRecruitaChannel()) ? (
-            <span className="ml-1 text-emerald-600 font-bold">✓</span>
+            <Icon name="check" className="h-3.5 w-3.5 text-emerald-600" strokeWidth={2.5} />
           ) : (
-            <span className="ml-1 text-amber-600 font-bold">○</span>
+            <Icon name="alert" className="h-3.5 w-3.5 text-amber-600" />
           )}
         </Link>
       </div>
 
       {/* Top counters */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <CounterCard label="ตำแหน่งทั้งหมด" value={positionStats.total} />
-        <CounterCard label="เปิดรับ" value={positionStats.open ?? 0}
-          tone="emerald" />
-        <CounterCard label="ใบสมัครทั้งหมด" value={totalApps} />
+        <CounterCard label="ตำแหน่งทั้งหมด" value={positionStats.total} icon="briefcase" />
+        <CounterCard label="เปิดรับ" value={positionStats.open ?? 0} tone="emerald" icon="check" />
+        <CounterCard label="ใบสมัครทั้งหมด" value={totalApps} icon="doc" />
         <CounterCard label="รอคัดกรอง"
           value={(stageMap.get("applied") ?? 0) + (stageMap.get("screening") ?? 0)}
-          tone="amber" />
+          tone="amber" icon="clock" />
       </div>
 
       {/* Quick links */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Link href="/admin/recruita/positions"
-          className="card hover:shadow-md transition group">
-          <div className="text-[11px] tracking-[1px] text-slate-400 mb-1">จัดการ</div>
-          <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand">
-            ตำแหน่งงาน
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            สร้าง / แก้ไข / เปิด-ปิดรับสมัคร + คำถามเฉพาะตำแหน่ง
-          </p>
-          <p className="mt-3 text-brand text-sm font-bold">→ เปิด</p>
-        </Link>
-        <Link href="/admin/recruita/pipeline"
-          className="card hover:shadow-md transition group bg-gradient-to-br from-amber-50 to-emerald-50">
-          <div className="text-[11px] tracking-[1px] text-slate-400 mb-1">มุมมอง</div>
-          <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand">
-            Pipeline
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Kanban · ลากการ์ดระหว่าง stage · ภาพรวม pipeline ทั้งหมด
-          </p>
-          <p className="mt-3 text-brand text-sm font-bold">→ เปิด</p>
-        </Link>
-        <Link href="/admin/recruita/applications"
-          className="card hover:shadow-md transition group">
-          <div className="text-[11px] tracking-[1px] text-slate-400 mb-1">จัดการ</div>
-          <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand">
-            ใบสมัคร
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            List view · ค้นหา · กรองตามตำแหน่ง/สถานะ
-          </p>
-          <p className="mt-3 text-brand text-sm font-bold">→ เปิด</p>
-        </Link>
-        <Link href="/admin/recruita/dashboard"
-          className="card hover:shadow-md transition group bg-gradient-to-br from-sky-50 to-violet-50">
-          <div className="text-[11px] tracking-[1px] text-slate-400 mb-1">วิเคราะห์</div>
-          <h2 className="text-xl font-bold text-slate-800 group-hover:text-brand">
-            Analytics
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Funnel · Source attribution · Time-to-hire · Fill rate
-          </p>
-          <p className="mt-3 text-brand text-sm font-bold">→ เปิด</p>
-        </Link>
+        <HubCard href="/admin/recruita/positions" icon="briefcase" tone="brand"
+          eyebrow="จัดการ" title="ตำแหน่งงาน"
+          sub="สร้าง / แก้ไข / เปิด-ปิดรับสมัคร + คำถามเฉพาะตำแหน่ง" cta="เปิด →" />
+        <HubCard href="/admin/recruita/pipeline" icon="list" tone="emerald"
+          eyebrow="มุมมอง" title="Pipeline"
+          sub="Kanban · ลากการ์ดระหว่าง stage · ภาพรวม pipeline ทั้งหมด" cta="เปิด →" />
+        <HubCard href="/admin/recruita/applications" icon="doc" tone="slate"
+          eyebrow="จัดการ" title="ใบสมัคร"
+          sub="List view · ค้นหา · กรองตามตำแหน่ง/สถานะ" cta="เปิด →" />
+        <HubCard href="/admin/recruita/dashboard" icon="chart" tone="sky"
+          eyebrow="วิเคราะห์" title="Analytics"
+          sub="Funnel · Source attribution · Time-to-hire · Fill rate" cta="เปิด →" />
       </div>
 
       {/* Pipeline breakdown */}
@@ -260,18 +230,28 @@ export default function RecruitaLanding() {
 }
 
 function CounterCard({
-  label, value, tone
+  label, value, tone, icon
 }: {
   label: string; value: number;
   tone?: "emerald" | "amber" | "rose";
+  icon: IconName;
 }) {
   const toneCls = tone === "emerald" ? "text-emerald-700"
     : tone === "amber" ? "text-amber-700"
     : tone === "rose" ? "text-rose-700"
     : "text-slate-800";
+  const tileCls = tone === "emerald" ? "bg-emerald-50 text-emerald-600"
+    : tone === "amber" ? "bg-amber-50 text-amber-600"
+    : tone === "rose" ? "bg-rose-50 text-rose-600"
+    : "bg-slate-100 text-slate-500";
   return (
     <div className="card">
-      <div className="text-[11px] text-slate-500 uppercase tracking-[1px]">{label}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] text-slate-500 uppercase tracking-[1px]">{label}</div>
+        <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${tileCls}`}>
+          <Icon name={icon} className="h-4 w-4" />
+        </span>
+      </div>
       <div className={`text-3xl font-bold mt-1 tabular-nums ${toneCls}`}>{value}</div>
     </div>
   );
