@@ -209,7 +209,37 @@ export default function MonthlyPayslipPage({
     }),
     { comp: 0, other: 0, ded: 0, net: 0 }
   );
-  const grandTotal = tot.net + svcMonthly;
+  // Plain-language breakdown (owner 2026-08-02): the slip must state income by
+  // branch (+OT +SVC) → deductions (WHT/SSO/other) → net. All figures below are
+  // just a re-grouping of the same weekly lines — no math changes.
+  //   • byBranch: wage income per branch (base + ot + other + in-round SVC)
+  //   • dedBreak: each deduction component summed across the month
+  //   • netTotal = income − deductions = tot.net + svcMonthly, by construction
+  const byBranch = new Map<number | null, { income: number; ot: number }>();
+  for (const w of rows) {
+    const cur = byBranch.get(w.branch_id) ?? { income: 0, ot: 0 };
+    cur.income += w.base_pay + w.ot_pay + w.other_additions + w.service_charge;
+    cur.ot += w.ot_pay;
+    byBranch.set(w.branch_id, cur);
+  }
+  const branchIncomeLines = [...byBranch.entries()]
+    .filter(([, v]) => v.income !== 0)
+    .sort((a, b) => b[1].income - a[1].income);
+  const branchNameById = new Map<number, string>();
+  for (const b of db.prepare("SELECT id, name FROM branches").all() as Array<{ id: number; name: string }>) {
+    branchNameById.set(b.id, b.name);
+  }
+  const dedBreak = rows.reduce(
+    (a, w) => ({
+      sso: a.sso + w.sso_amount,
+      tax: a.tax + w.tax_amount,
+      drink: a.drink + w.drink_deductions,
+      other: a.other + w.other_deductions
+    }),
+    { sso: 0, tax: 0, drink: 0, other: 0 }
+  );
+  const incomeTotal = tot.comp + tot.other + svcMonthly;
+  const netTotal = incomeTotal - tot.ded; // === grandTotal
 
   const first = rows[0];
   const employmentLabel =
@@ -339,40 +369,86 @@ export default function MonthlyPayslipPage({
           </div>
         </div>
 
-        {/* Grand total — wages + separate monthly SVC payout */}
-        <div className="border-2 border-slate-800 rounded-lg p-4 my-4 bg-slate-50">
-          <div className="flex items-baseline justify-between">
-            <span className="text-base font-semibold">รวมค่าจ้างสุทธิทั้งเดือน</span>
-            <span className="text-xl font-bold">
-              {fmtMoney(tot.net)} <span className="text-sm font-normal">บาท</span>
-            </span>
-          </div>
-          {svcMonthly > 0 && (
-            <>
-              <div className="flex items-baseline justify-between mt-2 text-slate-600">
-                <span className="text-sm">
-                  + เซอร์วิสชาร์จเดือน{monthNameOnly(svcMonth, lang)}{" "}
-                  <span className="text-xs text-slate-400">(จ่าย ~วันที่ 20 {monthNameOnly(month, lang)})</span>
-                </span>
-                <span className="text-lg font-semibold text-violet-700">
-                  {fmtMoney(svcMonthly)} <span className="text-xs font-normal">บาท</span>
-                </span>
-              </div>
-              <div className="flex items-baseline justify-between mt-2 border-t border-slate-300 pt-2">
-                <span className="text-base font-bold">รวมรับจริงทั้งเดือน</span>
-                <span className="text-2xl font-bold text-emerald-700">
-                  {fmtMoney(grandTotal)} <span className="text-sm font-normal">บาท</span>
-                </span>
-              </div>
-            </>
-          )}
-          {profile.bank_name && profile.bank_account && (
-            <div className="text-xs text-slate-600 mt-2">
-              {t(lang, "admin.persona.payroll.payslip.transferTo")}:{" "}
-              <span className="font-medium">{profile.bank_name}</span>{" "}
-              {maskAccount(profile.bank_account)}
+        {/* Plain-language summary — รายได้ → รายการหัก → สุทธิ */}
+        <div className="space-y-3 my-4">
+          {/* 1) รายได้ทั้งหมด */}
+          <div className="rounded-lg border border-slate-200 overflow-hidden">
+            <div className="bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800">
+              รายได้
             </div>
-          )}
+            <div className="px-4 py-2.5 space-y-1.5 text-sm">
+              {branchIncomeLines.map(([bid, v]) => (
+                <div key={bid ?? "none"} className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">
+                    รับจาก{" "}
+                    <span className="font-medium text-slate-800">
+                      {bid != null ? (branchNameById.get(bid) ?? `สาขา #${bid}`) : "ค่าจ้าง (ไม่ระบุสาขา)"}
+                    </span>
+                    {v.ot > 0 && (
+                      <span className="text-xs text-slate-400"> · รวมโอที ฿{fmtMoney(v.ot)}</span>
+                    )}
+                  </span>
+                  <span className="tabular-nums font-medium text-slate-800">{fmtMoney(v.income)}</span>
+                </div>
+              ))}
+              {svcMonthly > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">
+                    เซอร์วิสชาร์จเดือน{monthNameOnly(svcMonth, lang)}{" "}
+                    <span className="text-xs text-slate-400">(จ่าย ~วันที่ 20 {monthNameOnly(month, lang)})</span>
+                  </span>
+                  <span className="tabular-nums font-medium text-violet-700">{fmtMoney(svcMonthly)}</span>
+                </div>
+              )}
+              <div className="flex items-baseline justify-between gap-3 border-t border-slate-200 pt-1.5 mt-1.5 font-bold text-slate-800">
+                <span>รวมรายได้ทั้งหมด</span>
+                <span className="tabular-nums">{fmtMoney(incomeTotal)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 2) รายการหักทั้งหมด */}
+          <div className="rounded-lg border border-slate-200 overflow-hidden">
+            <div className="bg-rose-50 px-4 py-2 text-sm font-bold text-rose-800">
+              รายการหัก
+            </div>
+            <div className="px-4 py-2.5 space-y-1.5 text-sm">
+              <DedRow label={t(lang, "admin.persona.payroll.col.sso")} value={dedBreak.sso} />
+              <DedRow label={t(lang, "admin.persona.payroll.col.tax")} value={dedBreak.tax} />
+              {dedBreak.drink > 0 && (
+                <DedRow label={t(lang, "admin.persona.payroll.col.drinkDed")} value={dedBreak.drink} />
+              )}
+              {dedBreak.other > 0 && (
+                <DedRow label={t(lang, "admin.persona.payroll.col.otherDed")} value={dedBreak.other} />
+              )}
+              <div className="flex items-baseline justify-between gap-3 border-t border-slate-200 pt-1.5 mt-1.5 font-bold text-slate-800">
+                <span>รวมรายการหัก</span>
+                <span className="tabular-nums text-rose-600">{fmtMoney(tot.ded)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 3) รายได้สุทธิ = รายได้ − รายการหัก */}
+          <div className="border-2 border-slate-800 rounded-lg p-4 bg-slate-50">
+            <div className="flex items-baseline justify-between gap-3">
+              <div>
+                <div className="text-base font-bold">รายได้สุทธิ (รับจริง)</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  รวมรายได้ {fmtMoney(incomeTotal)} − รายการหัก {fmtMoney(tot.ded)}
+                </div>
+              </div>
+              <span className="text-2xl font-bold text-emerald-700 whitespace-nowrap">
+                {fmtMoney(netTotal)} <span className="text-sm font-normal">บาท</span>
+              </span>
+            </div>
+            {profile.bank_name && profile.bank_account && (
+              <div className="text-xs text-slate-600 mt-2 border-t border-slate-300 pt-2">
+                {t(lang, "admin.persona.payroll.payslip.transferTo")}:{" "}
+                <span className="font-medium">{profile.bank_name}</span>{" "}
+                {maskAccount(profile.bank_account)}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Signature block */}
@@ -402,6 +478,18 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex">
       <span className="text-slate-500 mr-2 whitespace-nowrap">{label}:</span>
       <span className="font-medium text-slate-700">{value}</span>
+    </div>
+  );
+}
+
+// One line in the "รายการหัก" section — label left, amount right ("—" when 0).
+function DedRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-slate-600">{label}</span>
+      <span className="tabular-nums font-medium text-slate-700">
+        {value > 0 ? fmtMoney(value) : <span className="text-slate-300">—</span>}
+      </span>
     </div>
   );
 }
