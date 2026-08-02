@@ -5,6 +5,7 @@ import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { nameWithPrefix } from "@/lib/name";
+import { Icon, type IconName } from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
 
@@ -118,17 +119,29 @@ export default function AdminPersonaDashboard() {
 
   // ── Render helpers ─────────────────────────────────────────────────
   function StatCard({
-    href, label, value, accent, sub
-  }: { href: string; label: string; value: number; accent: "amber" | "rose" | "violet" | "slate"; sub?: string }) {
+    href, label, value, accent, sub, icon
+  }: { href: string; label: string; value: number; accent: "amber" | "rose" | "violet" | "slate"; sub?: string; icon: IconName }) {
+    const active = value > 0;
     const colorClass =
-      value === 0 ? "text-slate-300" :
+      !active ? "text-slate-300" :
       accent === "amber" ? "text-amber-600" :
       accent === "rose" ? "text-rose-600" :
       accent === "violet" ? "text-violet-600" :
       "text-slate-800";
+    const tileClass =
+      !active ? "bg-slate-100 text-slate-300" :
+      accent === "amber" ? "bg-amber-50 text-amber-600" :
+      accent === "rose" ? "bg-rose-50 text-rose-600" :
+      accent === "violet" ? "bg-violet-50 text-violet-600" :
+      "bg-slate-100 text-slate-500";
     return (
-      <Link href={href} className="card hover:shadow-md transition block">
-        <div className="text-xs text-slate-500">{label}</div>
+      <Link href={href} className="card hover:shadow-md hover:-translate-y-0.5 transition block">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs text-slate-500">{label}</div>
+          <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${tileClass}`}>
+            <Icon name={icon} className="h-4 w-4" />
+          </span>
+        </div>
         <div className={`text-3xl font-bold mt-1 ${colorClass}`}>{value}</div>
         {sub && <div className="text-xs text-slate-400 mt-1">{sub}</div>}
       </Link>
@@ -160,8 +173,11 @@ export default function AdminPersonaDashboard() {
           gender / contracts expiring). 2026-05-31. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Link href="/admin/persona/dashboard"
-          className="card hover:shadow-md transition flex items-center justify-between gap-3 bg-gradient-to-r from-sky-50 to-emerald-50 border-2 border-sky-200 group">
-          <div>
+          className="card hover:shadow-md hover:-translate-y-0.5 transition flex items-center gap-3 bg-gradient-to-r from-sky-50 to-emerald-50 border-2 border-sky-200 group">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/70 text-sky-600">
+            <Icon name="chart" className="h-6 w-6" />
+          </span>
+          <div className="flex-1">
             <div className="font-bold text-slate-800 group-hover:text-brand transition-colors">
               HR Dashboard
             </div>
@@ -169,11 +185,14 @@ export default function AdminPersonaDashboard() {
               ภาพรวมบุคลากรในองค์กร · ลาออก / เข้าใหม่ / การลา / ครบสัญญา
             </div>
           </div>
-          <div className="text-brand font-bold text-2xl">→</div>
+          <Icon name="arrowRight" className="h-5 w-5 text-brand shrink-0" strokeWidth={2.25} />
         </Link>
         <Link href="/admin/persona/attendance"
-          className="card hover:shadow-md transition flex items-center justify-between gap-3 bg-gradient-to-r from-amber-50 to-violet-50 border-2 border-amber-200 group">
-          <div>
+          className="card hover:shadow-md hover:-translate-y-0.5 transition flex items-center gap-3 bg-gradient-to-r from-amber-50 to-violet-50 border-2 border-amber-200 group">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/70 text-amber-600">
+            <Icon name="clock" className="h-6 w-6" />
+          </span>
+          <div className="flex-1">
             <div className="font-bold text-slate-800 group-hover:text-brand transition-colors">
               ภาพรวม ขาด / ลา / มาสาย
             </div>
@@ -181,7 +200,7 @@ export default function AdminPersonaDashboard() {
               แนวโน้ม 6 เดือน · แยกสาขา · ประเภทการลา · มาสายสูงสุด
             </div>
           </div>
-          <div className="text-brand font-bold text-2xl">→</div>
+          <Icon name="arrowRight" className="h-5 w-5 text-brand shrink-0" strokeWidth={2.25} />
         </Link>
       </div>
 
@@ -195,30 +214,35 @@ export default function AdminPersonaDashboard() {
             label={t(lang, "admin.persona.stat.pendingLeave")}
             value={pendingLeave}
             accent="amber"
+            icon="calendar"
           />
           <StatCard
             href="/admin/persona/leave?status=special"
             label={t(lang, "admin.persona.stat.pendingSpecial")}
             value={specialLeave}
             accent="violet"
+            icon="gift"
           />
           <StatCard
             href="/admin/persona/leave?status=revision_requested"
             label={t(lang, "admin.persona.stat.pendingRevision")}
             value={revisionLeave}
             accent="amber"
+            icon="edit"
           />
           <StatCard
             href="/admin/persona/resignation?status=pending"
             label={t(lang, "admin.persona.stat.pendingResignation")}
             value={pendingResig}
             accent="rose"
+            icon="briefcase"
           />
           <StatCard
             href="/admin/persona/early-leave"
             label="ขออนุมัติออกก่อน"
             value={pendingEarlyLeave}
             accent="amber"
+            icon="clock"
           />
         </div>
       </div>
@@ -234,18 +258,21 @@ export default function AdminPersonaDashboard() {
             label={t(lang, "admin.persona.stat.pt")}
             value={ptCount}
             accent="slate"
+            icon="users"
           />
           <StatCard
             href="/admin/persona/employees"
             label={t(lang, "admin.persona.stat.ft")}
             value={ftCount}
             accent="slate"
+            icon="users"
           />
           <StatCard
             href="/admin/persona/employees"
             label={t(lang, "admin.persona.stat.staffUnset")}
             value={unsetCount}
             accent="amber"
+            icon="alert"
             sub={unsetCount > 0 ? t(lang, "admin.persona.stat.staffUnsetHint") : undefined}
           />
           <StatCard
@@ -253,6 +280,7 @@ export default function AdminPersonaDashboard() {
             label={t(lang, "admin.persona.stat.clockedInToday")}
             value={clockedInToday}
             accent="slate"
+            icon="clock"
           />
         </div>
       </div>
