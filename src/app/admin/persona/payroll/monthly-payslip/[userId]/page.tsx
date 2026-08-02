@@ -47,6 +47,20 @@ function monthLabel(yearMonth: string, lang: Lang): string {
   return `${months[m - 1]} ${yearDisplay}`;
 }
 
+// Month name only (no year) — for the SVC "ของเดือนมิถุนายน" wording.
+function monthNameOnly(yearMonth: string, lang: Lang): string {
+  const [, m] = yearMonth.split("-").map(Number);
+  const months = lang === "th" ? TH_MONTHS : EN_MONTHS;
+  return months[m - 1];
+}
+
+// The calendar month before `yearMonth` ("2026-07" → "2026-06").
+function prevMonth(yearMonth: string): string {
+  const [y, m] = yearMonth.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 2, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 // One weekly (or monthly) payroll line the employee had in the calendar month,
 // with its parent period's dates. Ordered by period_start.
 type WeekLine = {
@@ -128,33 +142,65 @@ export default function MonthlyPayslipPage({
   ).get(userId) as EmployeeProfile | undefined;
   if (!profile) notFound();
 
-  // Service charge for the month — a SEPARATE monthly payout (svc_payout_batches),
-  // not inside any weekly net_pay. Sum the person's net SVC across every branch
-  // they worked in this month (owner 2026-08-01: SVC เป็นเงินที่พนักงานได้จริง).
-  const branchIds = Array.from(
-    new Set(
-      weeks
-        .map((w) => w.branch_id)
-        .filter((b): b is number => b != null)
-    )
+  // Only pay rounds where money actually moved (owner 2026-08-02: "รอบไหนไม่มี
+  // การรับเงิน ไม่ต้องพูดถึง"). Empty duplicate period rows — everything zero —
+  // just add noise to a weekly payslip, so drop them. Fall back to the raw list
+  // if that would leave nothing (shouldn't happen — weeks.length was checked).
+  const displayWeeks = weeks.filter((w) =>
+    w.base_pay || w.ot_pay || w.service_charge || w.other_additions ||
+    w.sso_amount || w.tax_amount || w.other_deductions || w.drink_deductions || w.net_pay
   );
-  if (branchIds.length === 0) {
-    const ub = db.prepare(
+  const rows = displayWeeks.length > 0 ? displayWeeks : weeks;
+
+  // Header identity — the company that pays this person and the branch they're
+  // primarily affiliated with (owner 2026-08-02: หัวกระดาษต้องเป็นที่อยู่บริษัท
+  // และสาขาที่สังกัดหลัก). Main branch = the branch appearing most across this
+  // month's payroll lines; fall back to their first user_branches row.
+  const branchTally = new Map<number, number>();
+  for (const w of rows) if (w.branch_id != null) branchTally.set(w.branch_id, (branchTally.get(w.branch_id) ?? 0) + 1);
+  let mainBranchId: number | null = branchTally.size
+    ? [...branchTally.entries()].sort((a, b) => b[1] - a[1])[0][0]
+    : null;
+  if (mainBranchId == null) {
+    mainBranchId = (db.prepare(
       "SELECT branch_id FROM user_branches WHERE user_id = ? ORDER BY branch_id LIMIT 1"
-    ).get(userId) as { branch_id: number } | undefined;
-    if (ub) branchIds.push(ub.branch_id);
+    ).get(userId) as { branch_id: number } | undefined)?.branch_id ?? null;
+  }
+  const mainBranch = mainBranchId
+    ? (db.prepare("SELECT id, name, company_id, reg_address FROM branches WHERE id = ?")
+        .get(mainBranchId) as { id: number; name: string; company_id: number | null; reg_address: string | null } | undefined)
+    : undefined;
+  const company = mainBranch?.company_id
+    ? (db.prepare("SELECT name_th, tax_id, address, phone FROM companies WHERE id = ?")
+        .get(mainBranch.company_id) as { name_th: string; tax_id: string | null; address: string | null; phone: string | null } | undefined)
+    : undefined;
+  const headerAddress = company?.address ?? mainBranch?.reg_address ?? null;
+
+  // Service charge received THIS month — a SEPARATE monthly payout
+  // (svc_payout_batches), not inside any weekly net_pay. SVC for a month is
+  // paid on ~the 20th of the FOLLOWING month, so the money landing in this
+  // month's pocket is actually the PREVIOUS month's service charge (owner
+  // 2026-08-02: เซอร์วิสชาร์จที่ได้ 20 ก.ค. = ของเดือน มิ.ย. วนแบบนี้ทุกเดือน —
+  // this is the true source of "เงินที่ได้รับจริงในเดือนนั้น"). Sum the person's
+  // net SVC for that previous month across every branch they belong to.
+  const svcMonth = prevMonth(month);
+  const svcBranchIds = new Set<number>();
+  for (const w of weeks) if (w.branch_id != null) svcBranchIds.add(w.branch_id);
+  for (const ub of db.prepare("SELECT branch_id FROM user_branches WHERE user_id = ?").all(userId) as Array<{ branch_id: number }>) {
+    svcBranchIds.add(ub.branch_id);
   }
   let svcMonthly = 0;
-  for (const b of branchIds) {
+  for (const b of svcBranchIds) {
     let summary;
-    try { summary = computeMonthlySvcSummary(b, month); }
+    try { summary = computeMonthlySvcSummary(b, svcMonth); }
     catch { continue; }
     const row = summary.rows.find((r) => r.userId === userId);
     if (row) svcMonthly += row.netPayout;
   }
 
-  // Totals across the weekly lines.
-  const tot = weeks.reduce(
+  // Totals across the displayed lines (empty rows contribute 0, so the sum is
+  // unchanged by the filter above).
+  const tot = rows.reduce(
     (a, w) => ({
       comp: a.comp + w.base_pay + w.ot_pay,
       other: a.other + w.other_additions + w.service_charge,
@@ -165,7 +211,7 @@ export default function MonthlyPayslipPage({
   );
   const grandTotal = tot.net + svcMonthly;
 
-  const first = weeks[0];
+  const first = rows[0];
   const employmentLabel =
     first.employment_type === "pt" ? t(lang, "admin.persona.employees.employment.pt") :
     first.employment_type === "ft" ? t(lang, "admin.persona.employees.employment.ft") :
@@ -196,11 +242,18 @@ export default function MonthlyPayslipPage({
 
       {/* Payslip — visible both on screen and print */}
       <div className="payslip mx-auto bg-white text-slate-800 p-8 max-w-2xl rounded-2xl shadow-card mt-3 print:shadow-none print:rounded-none print:p-6 print:max-w-none">
-        {/* Header */}
+        {/* Header — company identity + the branch this person is affiliated with */}
         <div className="text-center border-b-2 border-slate-300 pb-3 mb-4">
           <div className="text-2xl font-bold tracking-wide">IKIGAI MEDIHEALTH</div>
+          {company?.name_th && (
+            <div className="text-sm font-medium text-slate-600 mt-0.5">{company.name_th}</div>
+          )}
+          {headerAddress && (
+            <div className="text-xs text-slate-500 mt-1 whitespace-pre-line">{headerAddress}</div>
+          )}
           <div className="text-xs text-slate-500 mt-0.5">
-            {t(lang, "admin.persona.payroll.payslip.companyHint")}
+            {company?.tax_id ? `เลขประจำตัวผู้เสียภาษี ${company.tax_id}` : ""}
+            {mainBranch?.name ? `${company?.tax_id ? "  ·  " : ""}สาขา ${mainBranch.name}` : ""}
           </div>
           <h1 className="text-xl font-semibold mt-3">
             สลิปค่าตอบแทนรายเดือน · {monthLabel(month, lang)}
@@ -232,7 +285,7 @@ export default function MonthlyPayslipPage({
                 </tr>
               </thead>
               <tbody>
-                {weeks.map((w) => {
+                {rows.map((w) => {
                   const comp = w.base_pay + w.ot_pay;
                   const other = w.other_additions + w.service_charge;
                   const ded = w.sso_amount + w.tax_amount + w.other_deductions + w.drink_deductions;
@@ -298,7 +351,8 @@ export default function MonthlyPayslipPage({
             <>
               <div className="flex items-baseline justify-between mt-2 text-slate-600">
                 <span className="text-sm">
-                  + เซอร์วิสชาร์จ <span className="text-xs text-slate-400">(จ่ายแยก ~วันที่ 20 เดือนถัดไป)</span>
+                  + เซอร์วิสชาร์จเดือน{monthNameOnly(svcMonth, lang)}{" "}
+                  <span className="text-xs text-slate-400">(จ่าย ~วันที่ 20 {monthNameOnly(month, lang)})</span>
                 </span>
                 <span className="text-lg font-semibold text-violet-700">
                   {fmtMoney(svcMonthly)} <span className="text-xs font-normal">บาท</span>
