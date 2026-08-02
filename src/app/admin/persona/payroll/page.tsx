@@ -7,6 +7,7 @@ import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import PayPeriodPicker, { type ExistingPeriod } from "./PayPeriodPicker";
+import { Icon } from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
 
@@ -129,16 +130,26 @@ export default function PayrollHubPage() {
       {/* Setup status */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="card">
-          <div className="text-xs text-slate-500">
-            {t(lang, "admin.persona.payroll.hub.totalStaff")}
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs text-slate-500">
+              {t(lang, "admin.persona.payroll.hub.totalStaff")}
+            </div>
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+              <Icon name="users" className="h-4 w-4" />
+            </span>
           </div>
-          <div className="text-2xl font-bold mt-1 text-slate-800">{totalStaff}</div>
+          <div className="text-2xl font-bold mt-1 text-slate-800 tabular-nums">{totalStaff}</div>
         </div>
-        <Link href="/admin/persona/employees" className="card hover:shadow-md transition block">
-          <div className="text-xs text-slate-500">
-            {t(lang, "admin.persona.payroll.hub.ptMissing")}
+        <Link href="/admin/persona/employees" className="card hover:shadow-md hover:-translate-y-0.5 transition block">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs text-slate-500">
+              {t(lang, "admin.persona.payroll.hub.ptMissing")}
+            </div>
+            <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${ptMissing > 0 ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"}`}>
+              <Icon name={ptMissing > 0 ? "alert" : "check"} className="h-4 w-4" />
+            </span>
           </div>
-          <div className={`text-2xl font-bold mt-1 ${ptMissing > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+          <div className={`text-2xl font-bold mt-1 tabular-nums ${ptMissing > 0 ? "text-amber-600" : "text-emerald-600"}`}>
             {ptMissing}
           </div>
           {ptMissing > 0 && (
@@ -147,11 +158,16 @@ export default function PayrollHubPage() {
             </div>
           )}
         </Link>
-        <Link href="/admin/persona/employees" className="card hover:shadow-md transition block">
-          <div className="text-xs text-slate-500">
-            {t(lang, "admin.persona.payroll.hub.ftMissing")}
+        <Link href="/admin/persona/employees" className="card hover:shadow-md hover:-translate-y-0.5 transition block">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs text-slate-500">
+              {t(lang, "admin.persona.payroll.hub.ftMissing")}
+            </div>
+            <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${ftMissing > 0 ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"}`}>
+              <Icon name={ftMissing > 0 ? "alert" : "check"} className="h-4 w-4" />
+            </span>
           </div>
-          <div className={`text-2xl font-bold mt-1 ${ftMissing > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+          <div className={`text-2xl font-bold mt-1 tabular-nums ${ftMissing > 0 ? "text-amber-600" : "text-emerald-600"}`}>
             {ftMissing}
           </div>
           {ftMissing > 0 && (
@@ -165,10 +181,13 @@ export default function PayrollHubPage() {
       {/* Monthly summary link */}
       <Link
         href="/admin/persona/payroll/summary"
-        className="card border-l-4 border-emerald-400 bg-emerald-50/40 hover:shadow-md transition block"
+        className="card border-l-4 border-emerald-400 bg-emerald-50/40 hover:shadow-md hover:-translate-y-0.5 transition block"
       >
-        <div className="flex items-center justify-between gap-3">
-          <div>
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+            <Icon name="calendar" className="h-6 w-6" />
+          </span>
+          <div className="flex-1">
             <h2 className="font-bold text-slate-800">
               {t(lang, "admin.persona.payroll.hub.summaryTitle")}
             </h2>
@@ -176,17 +195,20 @@ export default function PayrollHubPage() {
               {t(lang, "admin.persona.payroll.hub.summaryDesc")}
             </p>
           </div>
-          <span className="text-brand text-sm whitespace-nowrap">→</span>
+          <Icon name="arrowRight" className="h-5 w-5 text-brand shrink-0" strokeWidth={2.25} />
         </div>
       </Link>
 
       {/* Settings link (compact) */}
       <Link
         href="/admin/persona/payroll/settings"
-        className="card border-l-4 border-sky-300 bg-sky-50 hover:shadow-md transition block"
+        className="card border-l-4 border-sky-300 bg-sky-50 hover:shadow-md hover:-translate-y-0.5 transition block"
       >
-        <div className="flex items-center justify-between gap-3">
-          <div>
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600">
+            <Icon name="settings" className="h-6 w-6" />
+          </span>
+          <div className="flex-1">
             <h2 className="font-bold text-slate-800">
               {t(lang, "admin.persona.payroll.hub.settingsTitle")}
             </h2>
@@ -200,7 +222,7 @@ export default function PayrollHubPage() {
               )}
             </div>
           </div>
-          <span className="text-brand text-sm">→</span>
+          <Icon name="arrowRight" className="h-5 w-5 text-brand shrink-0" strokeWidth={2.25} />
         </div>
       </Link>
 
@@ -289,18 +311,28 @@ export default function PayrollHubPage() {
       {/* Future phases */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="card opacity-60">
-          <h3 className="font-medium text-slate-700">
-            {t(lang, "admin.persona.payroll.hub.payslipTitle")}
-          </h3>
-          <p className="text-xs text-slate-500 mt-1">
-            🚧 {t(lang, "admin.persona.payroll.hub.phase3Note")}
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+              <Icon name="doc" className="h-5 w-5" />
+            </span>
+            <h3 className="font-medium text-slate-700">
+              {t(lang, "admin.persona.payroll.hub.payslipTitle")}
+            </h3>
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
+            {t(lang, "admin.persona.payroll.hub.phase3Note")}
           </p>
         </div>
-        <Link href="/admin/persona/service-charge" className="card block hover:shadow-lg transition">
-          <h3 className="font-medium text-slate-800">
-            {t(lang, "admin.persona.payroll.hub.svcTitle")}
-          </h3>
-          <p className="text-xs text-slate-500 mt-1">
+        <Link href="/admin/persona/service-charge" className="card block hover:shadow-lg hover:-translate-y-0.5 transition">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
+              <Icon name="money" className="h-5 w-5" />
+            </span>
+            <h3 className="font-medium text-slate-800">
+              {t(lang, "admin.persona.payroll.hub.svcTitle")}
+            </h3>
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
             {t(lang, "admin.persona.svc.subtitle")}
           </p>
         </Link>

@@ -7,6 +7,7 @@ import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
 import { formatLongDate, formatMonthDay } from "@/lib/time";
 import MonthPicker from "@/app/components/MonthPicker";
+import { Icon } from "@/components/Icon";
 
 // One row per (cycle, target, period_start, period_end) that already exists in DB
 export type ExistingPeriod = {
@@ -530,9 +531,9 @@ function PeriodCard({
                 type="button"
                 onClick={() => onCreate("auto")}
                 disabled={busyAuto || busyManual}
-                className="w-full py-1.5 rounded-md bg-brand/90 hover:bg-brand text-white text-xs font-bold disabled:opacity-50"
+                className="w-full py-1.5 rounded-md bg-brand/90 hover:bg-brand text-white text-xs font-bold disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
               >
-                {busyAuto ? "…" : "🏢 " + t(lang, "admin.persona.payroll.hub.fillOtherBranches")}
+                {busyAuto ? "…" : <><Icon name="building" className="h-3.5 w-3.5" />{t(lang, "admin.persona.payroll.hub.fillOtherBranches")}</>}
               </button>
             )}
           </div>
@@ -560,7 +561,9 @@ function PeriodCard({
             className="w-full py-1.5 rounded-md bg-brand hover:opacity-90 text-white text-xs font-bold disabled:opacity-50"
             title={t(lang, "admin.persona.payroll.hub.allBranchesHint")}
           >
-            {busyAuto ? "…" : "🏢 " + t(lang, "admin.persona.payroll.hub.createAllBranches")}
+            <span className="inline-flex items-center justify-center gap-1.5">
+              {busyAuto ? "…" : <><Icon name="building" className="h-3.5 w-3.5" />{t(lang, "admin.persona.payroll.hub.createAllBranches")}</>}
+            </span>
           </button>
         ) : (
           <div className="space-y-1">

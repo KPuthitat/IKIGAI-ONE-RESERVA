@@ -8,6 +8,7 @@ import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
 import { computeMonthlySvcSummary } from "@/lib/service-charge";
+import { Icon } from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
 
@@ -422,9 +423,10 @@ export default function PayrollMonthlySummaryPage({
         <div className="flex justify-end">
           <a
             href={`/api/admin/persona/payroll/summary/csv?m=${month}`}
-            className="text-sm px-4 py-2 rounded-lg border border-brand text-brand font-medium hover:bg-amber-50"
+            className="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-brand text-brand font-medium hover:bg-amber-50"
           >
-            ⬇ ดาวน์โหลด CSV (ต่อพนักงาน)
+            <Icon name="download" className="h-4 w-4" />
+            ดาวน์โหลด CSV (ต่อพนักงาน)
           </a>
         </div>
       )}
