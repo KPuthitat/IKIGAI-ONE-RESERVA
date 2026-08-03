@@ -488,6 +488,10 @@ function computeSvcClampedMinutesByDay(
   // that day? If yes it's a transfer (count the minutes, clamped raw); if no
   // it's the abnormal case (excluded). Keys are `${userId}:${date}`.
   rosteredSomewhere: Set<string>,
+  // owner 2026-08-03: full-time users whose late arrival must NOT dock SVC minutes.
+  // Their late clock-in is credited from the scheduled start (มาสายไม่หัก SVC — เป็น
+  // ประวัติ; the monthly >20% forfeiture rule below is untouched and still applies).
+  ftUserIds: Set<number>,
   excludedByUser: Map<number, Array<{ date: string; reason: string }>>
 ): Map<string, Map<number, number>> {
   const out = new Map<string, Map<number, number>>();
@@ -532,7 +536,10 @@ function computeSvcClampedMinutesByDay(
         const otUntilTs = (sched && reqUntil && /^\d{2}:\d{2}$/.test(reqUntil))
           ? new Date(`${date}T${reqUntil}:00+07:00`).toISOString()
           : null;
-        const g = applyPtGrace({ startTs: sh.startTs, endTs: sh.endTs }, sched, otUntilTs);
+        const g = applyPtGrace(
+          { startTs: sh.startTs, endTs: sh.endTs }, sched, otUntilTs, null,
+          ftUserIds.has(userId)   // FT late → credit from scheduled start (no SVC dock)
+        );
         total += g.breakMinutes > 0
           ? g.workedMinutes
           : deductBreak(g.workedMinutes, brk as PayrollSettings).workedMinutes;
@@ -751,9 +758,13 @@ export function computeMonthlySvcSummary(
       }
     }
   }
+  // FT users — their lateness must not dock SVC minutes (owner 2026-08-03).
+  const ftUserIds = new Set<number>(
+    staff.filter((s) => s.employmentType === "ft").map((s) => s.userId)
+  );
   const workedByDay = computeSvcClampedMinutesByDay(
     entries, scheduledByUser, otByUser, brk, excludeAbnormal, excludeNoSchedule,
-    rosteredSomewhere, excludedByUser
+    rosteredSomewhere, ftUserIds, excludedByUser
   );
 
   // 4b. Executives with track_attendance=0 don't clock in — accrue SVC from the
@@ -1055,8 +1066,12 @@ export function svcWorkedMinutesForUserDate(
     WHERE ra.user_id = ? AND ra.assignment_date = ? AND sc.kind = 'work' LIMIT 1
   `).get(userId, dateBkk);
   if (anyShift) rosteredSomewhere.add(`${userId}:${dateBkk}`);
+  // FT lateness doesn't dock SVC minutes (owner 2026-08-03) — mirror the monthly engine.
+  const empRow = db.prepare("SELECT employment_type FROM users WHERE id = ?").get(userId) as
+    { employment_type: string | null } | undefined;
+  const ftUserIds = empRow?.employment_type === "ft" ? new Set<number>([userId]) : new Set<number>();
   const workedByDay = computeSvcClampedMinutesByDay(
-    entries, scheduledByUser, otByUser, brk, true, true, rosteredSomewhere, new Map()
+    entries, scheduledByUser, otByUser, brk, true, true, rosteredSomewhere, ftUserIds, new Map()
   );
   return workedByDay.get(dateBkk)?.get(userId) ?? 0;
 }
