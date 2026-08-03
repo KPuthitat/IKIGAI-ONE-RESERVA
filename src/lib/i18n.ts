@@ -1271,6 +1271,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "leave.type.sterilization": "ลาทำหมัน",
     "leave.type.military": "ลาเกณฑ์ทหาร",
     "leave.type.unpaid": "ลาไม่รับค่าจ้าง / ลานอกสิทธิ์",
+    "leave.type.holiday": "วันหยุดประเพณี (สะสม)",
 
     // Leave statuses
     "leave.status.pending": "รออนุมัติ",
@@ -3829,6 +3830,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "leave.type.sterilization": "Sterilization leave",
     "leave.type.military": "Military service",
     "leave.type.unpaid": "Unpaid leave",
+    "leave.type.holiday": "Traditional holiday (accrued)",
 
     // Leave statuses
     "leave.status.pending": "Pending",

@@ -989,7 +989,10 @@ function runMigrations(db: Database.Database): void {
     // ลาไม่รับค่าจ้าง (owner 2026-06-17): no quota; the day is deducted at
     // salary/30 even for FT. Label lives in line.ts; payroll deduction in
     // payroll-compute.ts (unpaidLeaveDays). No evidence/pre-approval gate.
-    ["unpaid",        null, "all",    "all", 0, 0, 9]
+    ["unpaid",        null, "all",    "all", 0, 0, 9],
+    // วันหยุดประเพณีสะสม (owner 2026-08-03): 13/ปี แต่โควตาคิดแบบ accrual ตามอายุงาน
+    // ใน leave.ts (getEffectiveQuotaDays) — 13 นี้เป็นค่าอ้างอิง/เพดานต่อปีเท่านั้น.
+    ["holiday",       13,   "all",    "all", 0, 0, 10]
   ];
   for (const t of types) seedLeaveType.run(...t);
 
