@@ -122,7 +122,8 @@ export default function TimeClockClient({
   todayBkk,
   hasShiftToday,
   nickname,
-  transferTargets
+  transferTargets,
+  holidayOtStatus
 }: {
   userName: string;
   hasPin: boolean;
@@ -159,6 +160,10 @@ export default function TimeClockClient({
   hasShiftToday: boolean;
   nickname: string;
   transferTargets: TransferTarget[];
+  /** Holiday/day-off OT request state for today: "none" = can offer to request;
+   *  "pending" = filed, awaiting approval; "approved" = approved. Non-"none"
+   *  lets the staff clock in even without a rostered shift (owner 2026-08-03). */
+  holidayOtStatus: "none" | "pending" | "approved";
 }) {
   const router = useRouter();
   const { t, formatDateLong } = useLang();
@@ -213,7 +218,9 @@ export default function TimeClockClient({
   // clock-in is still expected (or within the 5-min in-correction window);
   // ออกงาน only once a clock-in exists and the day isn't finished. The
   // server enforces the same rule (no clock-out without a clock-in).
-  const canIn = hasShiftToday && nextAction === "in";
+  // Normally เข้างาน needs a rostered work shift; a non-rejected holiday-OT
+  // request (called in on a day off) also unlocks it (owner 2026-08-03).
+  const canIn = (hasShiftToday || holidayOtStatus !== "none") && nextAction === "in";
   const canOut = !!firstInTs && nextAction !== "done";
 
   // Cert prompt for a MISSING clock-in shows ONLY from 30 min before the
@@ -275,6 +282,7 @@ export default function TimeClockClient({
               canOut={canOut}
               hasClockIn={!!firstInTs}
               hasShiftToday={hasShiftToday}
+              holidayOtStatus={holidayOtStatus}
               nickname={nickname}
               showCertPrompt={showCertPrompt}
               correctable={nextAction === "in" ? inCorrectable : outCorrectable}
@@ -408,6 +416,7 @@ function ClockAction({
   scheduledEnd,
   todayBkk,
   hasShiftToday,
+  holidayOtStatus,
   nickname
 }: {
   action: "in" | "out";
@@ -428,6 +437,7 @@ function ClockAction({
   scheduledEnd: string | null;
   todayBkk: string;
   hasShiftToday: boolean;
+  holidayOtStatus: "none" | "pending" | "approved";
   nickname: string;
 }) {
   const { t } = useLang();
@@ -887,13 +897,27 @@ function ClockAction({
             until a clock-in exists — staff who forgot to clock in must
             certify it first instead of clocking out (which used to record
             their leave time as a clock-IN). */}
-        {!hasShiftToday && (
-          <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-center space-y-1">
+        {!hasShiftToday && holidayOtStatus === "none" && (
+          <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-center space-y-2">
             <p className="text-base font-bold text-amber-900">
               วันนี้ไม่มีชื่อพี่{nickname}ในตารางงาน
             </p>
             <p className="text-sm text-amber-800">
               รบกวนพี่{nickname} ติดต่อหัวหน้างานก่อนเข้าทำงานครับ
+            </p>
+            {/* โดนเรียกเข้างานวันหยุด (owner 2026-08-03) — ขออนุมัติ OT แล้วจึงกดเข้างานได้ */}
+            <HolidayOtRequest todayBkk={todayBkk} onDone={() => router.refresh()} />
+          </div>
+        )}
+        {!hasShiftToday && holidayOtStatus !== "none" && (
+          <div className="mb-3 rounded-xl border border-sky-300 bg-sky-50 p-4 text-center space-y-1">
+            <p className="text-base font-bold text-sky-900">
+              {holidayOtStatus === "approved"
+                ? "อนุมัติ OT วันหยุดแล้ว — กดเข้างานได้เลยครับ"
+                : "ส่งคำขอ OT วันหยุดแล้ว — รอหัวหน้าอนุมัติ (กดเข้างานไว้ก่อนได้)"}
+            </p>
+            <p className="text-xs text-sky-700">
+              ค่าตอบแทนของวันนี้จะจ่ายเมื่อหัวหน้าอนุมัติ OT เรียบร้อย
             </p>
           </div>
         )}
@@ -1791,6 +1815,87 @@ function BranchTransferModal({
             onError={(msg) => setQrError(msg)}
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── ขอ OT วันหยุด / โดนเรียกเข้างานวันหยุด (owner 2026-08-03) ──────────────
+// Shown when the staff has no rostered shift today. They file an OT request for
+// today (until-time); once it exists the clock route + UI let them clock in, and
+// pay for the day is released when an admin approves the request.
+function HolidayOtRequest({ todayBkk, onDone }: { todayBkk: string; onDone: () => void }) {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);
+  const [until, setUntil] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(until)) {
+      setErr("กรุณาระบุเวลาที่คาดว่าจะทำถึง");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/persona/ot-requests"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ work_date: todayBkk, requested_until: until })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) onDone();
+      else setErr(humanizeApiError(j, t("common.error")));
+    } catch {
+      setErr(t("common.error"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-block text-sm font-bold bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg active:scale-95 transition"
+      >
+        โดนเรียกเข้างานวันหยุด — ขออนุมัติ OT
+      </button>
+    );
+  }
+  return (
+    <div className="space-y-2 text-left bg-white rounded-lg border border-amber-200 p-3">
+      <p className="text-xs text-slate-600">
+        โดนเรียกมาทำงานวันหยุด — ระบุเวลาที่คาดว่าจะทำถึง แล้วส่งขออนุมัติ จากนั้นกดเข้างานได้เลย
+        (ค่าตอบแทนจ่ายเมื่อหัวหน้าอนุมัติ)
+      </p>
+      <label className="text-xs text-slate-600">ทำงานถึงเวลา (โดยประมาณ)</label>
+      <input
+        type="time"
+        value={until}
+        onChange={(e) => setUntil(e.target.value)}
+        className="input text-center text-lg"
+      />
+      {err && <p className="text-rose-600 text-sm">{err}</p>}
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => { setOpen(false); setErr(null); }}
+          disabled={busy}
+          className="py-2 rounded-lg bg-white border border-slate-300 text-slate-700 text-sm font-medium disabled:opacity-50"
+        >
+          {t("common.cancel")}
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={busy}
+          className="py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold disabled:opacity-50"
+        >
+          {busy ? "กำลังส่ง…" : "ส่งขออนุมัติ"}
+        </button>
       </div>
     </div>
   );

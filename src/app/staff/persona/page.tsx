@@ -89,6 +89,16 @@ export default function StaffPersonaPage() {
     clockBranchId != null &&
     userHasWorkShiftOn(user.id, clockBranchId, todayBkk);
 
+  // Called in on a day off / holiday (owner 2026-08-03): a non-rejected OT
+  // request for today lets the staff clock in even without a rostered shift (the
+  // clock route enforces the same rule). Drives the "ขอ OT วันหยุด" button +
+  // enabling the เข้างาน button once the request exists. Pending shows "รออนุมัติ".
+  const holidayOtRow = db.prepare(
+    "SELECT status FROM ot_requests WHERE user_id = ? AND work_date = ? AND status != 'rejected' LIMIT 1"
+  ).get(user.id, todayBkk) as { status: string } | undefined;
+  const holidayOtStatus: "none" | "pending" | "approved" =
+    !holidayOtRow ? "none" : holidayOtRow.status === "approved" ? "approved" : "pending";
+
   // Today's scheduled shift end (work kind) — drives the OT prompt when
   // a PT staff clocks out after their shift ends (owner 2026-06-03).
   let scheduledEnd: string | null = null;
@@ -189,6 +199,7 @@ export default function StaffPersonaPage() {
       hasShiftToday={hasShiftToday}
       nickname={nickname}
       transferTargets={transferTargets}
+      holidayOtStatus={holidayOtStatus}
     />
     </div>
   );
