@@ -87,7 +87,9 @@ function leaveLabelTh(type: string): string {
     ordination:    "ลาบวช",
     sterilization: "ลาทำหมัน",
     pilgrimage:    "ลาประกอบพิธีฮัจญ์",
-    military:      "ลารับราชการทหาร"
+    military:      "ลารับราชการทหาร",
+    unpaid:        "ลาไม่รับค่าจ้าง",
+    holiday:       "วันหยุดประเพณี (สะสม)"
   };
   return m[type] ?? type;
 }

@@ -66,12 +66,45 @@ export function getLeaveHoursUsedThisYear(userId: number, type: LeaveType): numb
   return Number(row.total_hours) || 0;
 }
 
-/** Quota override ของ user (ถ้ามี) มิฉะนั้นคืน default จาก leave_types */
+// ── วันหยุดประเพณีแบบสะสมรายเดือน (owner 2026-08-03) ───────────────────────
+// กฎหมายให้ 13 วัน/ปี. แทนที่จะให้ก้อนเดียว (คนเข้าครึ่งปีหลังจะได้ไม่เป็นธรรม)
+// เราสะสมตามอายุงานจริง ~13/12 ≈ 1.08 วัน/เดือน จากเดือนที่เข้างาน รีเซ็ตต้นปีปฏิทิน.
+export const TRADITIONAL_HOLIDAY_ANNUAL_DAYS = 13;
+
+/** จำนวนวันหยุดประเพณีที่ "สะสมได้แล้ว" ในปี `year` ณ วันที่ `asOfBkk` (YYYY-MM-DD, เวลาไทย).
+ *  สะสม ANNUAL/12 ต่อเดือน (นับรวมเดือนปัจจุบัน) ตั้งแต่เดือนที่เข้างาน (ถ้าเข้าปีนี้)
+ *  หรือ ม.ค. (ถ้าเข้าก่อนปีนี้). Pure — เทสได้. */
+export function traditionalHolidayAccruedDays(
+  hireDate: string | null, year: number, asOfBkk: string
+): number {
+  const perMonth = TRADITIONAL_HOLIDAY_ANNUAL_DAYS / 12;
+  const asOfYear = Number(asOfBkk.slice(0, 4));
+  if (asOfYear < year) return 0;                 // ปีที่ขอ ยังมาไม่ถึง
+  const endMonth = asOfYear > year ? 12 : Number(asOfBkk.slice(5, 7));
+  let startMonth = 1;
+  if (hireDate) {
+    const hy = Number(hireDate.slice(0, 4));
+    if (hy > year) return 0;                     // ยังไม่ได้เข้างานในปีนี้
+    if (hy === year) startMonth = Number(hireDate.slice(5, 7));
+  }
+  const months = Math.max(0, endMonth - startMonth + 1);
+  const accrued = Math.min(TRADITIONAL_HOLIDAY_ANNUAL_DAYS, months * perMonth);
+  return Math.round(accrued * 100) / 100;
+}
+
+/** Quota override ของ user (ถ้ามี) มิฉะนั้นคืน default จาก leave_types.
+ *  พิเศษ: 'holiday' (วันหยุดประเพณีสะสม) คิดตามอายุงาน ไม่ใช่ก้อนคงที่ (owner 2026-08-03). */
 export function getEffectiveQuotaDays(userId: number, type: LeaveTypeRow): number | null {
   const row = getDb().prepare(
     "SELECT quota_days FROM user_leave_quotas WHERE user_id = ? AND type = ?"
   ).get(userId, type.code) as { quota_days: number } | undefined;
-  if (row) return row.quota_days;
+  if (row) return row.quota_days;               // admin override ชนะเสมอ
+  if (type.code === "holiday") {
+    const u = getDb().prepare("SELECT hire_date FROM users WHERE id = ?")
+      .get(userId) as { hire_date: string | null } | undefined;
+    const nowBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    return traditionalHolidayAccruedDays(u?.hire_date ?? null, Number(nowBkk.slice(0, 4)), nowBkk);
+  }
   return type.default_quota_days;
 }
 

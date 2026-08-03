@@ -2859,6 +2859,8 @@ function leaveTypeLabelTh(type: string | null): string {
     case "ordination": return "ลาบวช";
     case "bereavement": return "ลาช่วยงานศพ";
     case "unpaid": return "ลาไม่รับค่าจ้าง";
+    case "annual": return "ลาพักร้อน";
+    case "holiday": return "วันหยุดประเพณี";
     default: return type;
   }
 }
