@@ -100,16 +100,16 @@ console.log("\nผู้บริหาร (track_attendance=0) ไม่มี 
   eq("tracked FT → ot_pay 200 (120min×25/15)", tracked.ot_pay, 200);
 }
 
-// 7. PT→FT เดือนแรก — จ่ายรายสัปดาห์ fix-rate (เงินเดือน ÷ #จันทร์) + WHT 3%
-//    แม้ salary_tax_mode='sso' (transition บังคับ WHT). มิ.ย. 2026 มี 5 จันทร์.
-console.log("\nPT→FT เดือนแรก (รายสัปดาห์ fix-rate + WHT 3%):");
+// 7. PT→FT เดือนแรก — จ่ายรายวัน salary/30 × วันในสถานะ + WHT 3% (owner 2026-08-03)
+//    แม้ salary_tax_mode='sso' (transition บังคับ WHT). 16000/30 × 6 วัน = 3200.
+console.log("\nPT→FT เดือนแรก (รายวัน salary/30 + WHT 3%):");
 {
   const l = computeLineFromMinutes({
     employee: ftWeekly(16000), regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
-    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 0, unpaired: 0,
+    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 6, unpaired: 0,
     cycle: "weekly", periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS
   });
-  eq("FT-weekly base 16000/5 = 3200", l.base_pay, 3200);
+  eq("FT-weekly base 16000/30×6 = 3200", l.base_pay, 3200);
   eq("FT-weekly WHT 3% = 96", l.tax_amount, 96);
   eq("FT-weekly SSO = 0", l.sso_amount, 0);
   eq("FT-weekly net = 3104", l.net_pay, 3104);
@@ -285,70 +285,83 @@ console.log("\nเฉลี่ยเงินเดือน FT เดือน�
 
 // 11. PT→ประจำ เดือนเปลี่ยนผ่าน คิดตาม ft_started_at เทียบเดือนของรอบ (owner 2026-07-16)
 //     — ต้องถูกไม่ว่าจะคิดสดหรือกรอกย้อนหลัง. ธนะรัตน์เปลี่ยน 10 มิ.ย.
-console.log("\nPT→ประจำ เดือนเปลี่ยนผ่าน คิดตามรอบ ไม่ใช่เดือนปัจจุบัน (owner 2026-07-16):");
+console.log("\nPT→ประจำ เดือนเปลี่ยนผ่าน: ฐานรายวัน salary/30 × วันในสถานะ + WHT (owner 2026-08-03):");
 {
   const conv = (salary: number): EmployeePayrollSnapshot =>
     ({ ...ftMonthly(salary), ft_started_at: "2026-06-10" });
-  const run = (emp: EmployeePayrollSnapshot, cycle: "weekly" | "monthly", pStart: string, pEnd: string) =>
+  const run = (emp: EmployeePayrollSnapshot, cycle: "weekly" | "monthly", pStart: string, pEnd: string, days: number) =>
     computeLineFromMinutes({
       employee: emp, regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
-      leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 0, unpaired: 0,
+      leaveDays: 0, unpaidLeaveDays: 0, daysWorked: days, unpaired: 0,
       cycle, periodStart: pStart, periodEnd: pEnd, settings: SETTINGS
     });
-  // รอบ WEEKLY มิ.ย. (เดือนเปลี่ยนผ่าน) → รายสัปดาห์ = เงินเดือน/#จันทร์ (มิ.ย.2026 มี 5 จันทร์)
-  const wkJun = run(conv(30000), "weekly", "2026-06-01", "2026-06-30");
-  eq("เปลี่ยนผ่าน มิ.ย. รอบ weekly → base 30000/5 = 6000", wkJun.base_pay, 6000);
-  eq("เปลี่ยนผ่าน มิ.ย. รอบ weekly → WHT 3% (บังคับ)", wkJun.tax_amount, 180); // 6000*0.03
-  // รอบ MONTHLY มิ.ย. → ยังไม่ใช่เดือน monthly ของเขา → base 0 (ไม่ตกตารางประจำ มิ.ย.)
-  const moJun = run(conv(30000), "monthly", "2026-06-01", "2026-06-30");
+  // รอบ WEEKLY เปลี่ยนผ่าน → รายวัน 30000/30 × 6 วัน = 6000, บังคับ WHT 3%
+  const wkJun = run(conv(30000), "weekly", "2026-06-01", "2026-06-30", 6);
+  eq("เปลี่ยนผ่าน weekly → รายวัน 30000/30×6 = 6000", wkJun.base_pay, 6000);
+  eq("เปลี่ยนผ่าน weekly → WHT 3% บังคับ (6000×0.03)", wkJun.tax_amount, 180);
+  // รอบ MONTHLY มิ.ย. → ยังไม่ใช่เดือน monthly ของเขา → base 0
+  const moJun = run(conv(30000), "monthly", "2026-06-01", "2026-06-30", 20);
   eq("เปลี่ยนผ่าน มิ.ย. รอบ monthly → base 0 (ไม่อยู่ตารางประจำ)", moJun.base_pay, 0);
-  // รอบ MONTHLY ก.ค. (เลยเดือนเปลี่ยนผ่าน) → เต็มเดือน แม้คิดย้อนหลัง/สลับเดือน
-  const moJul = run(conv(30000), "monthly", "2026-07-01", "2026-07-31");
-  eq("เดือนถัดจากเปลี่ยนผ่าน (ก.ค.) รอบ monthly → base 30000 เต็ม", moJul.base_pay, 30000);
-  // legacy FT (ft_started_at=null) รอบ monthly → เต็ม (regression)
-  const legacy = run(ftMonthly(30000), "monthly", "2026-06-01", "2026-06-30");
-  eq("legacy FT (ไม่มี ft_started_at) รอบ monthly → base 30000", legacy.base_pay, 30000);
+  // รอบ MONTHLY ก.ค. (เลยเปลี่ยนผ่าน, เต็มเดือน) → เต็ม 30000 + ประกันสังคม (ไม่ WHT)
+  const moJul = run(conv(30000), "monthly", "2026-07-01", "2026-07-31", 22);
+  eq("เดือนถัดจากเปลี่ยนผ่าน (ก.ค.) → base 30000 เต็ม", moJul.base_pay, 30000);
+  eq("ประจำเต็มเดือน → ไม่หัก WHT (ใช้ประกันสังคม)", moJul.tax_amount, 0);
+  // legacy FT (ft_started_at=null, ไม่ใช่เดือนเข้า) รอบ monthly → เต็ม (regression)
+  const legacy = run(ftMonthly(30000), "monthly", "2026-06-01", "2026-06-30", 22);
+  eq("legacy FT รอบ monthly → base 30000", legacy.base_pay, 30000);
 }
 
-// 11c. เดือนเปลี่ยนผ่าน: รอบ weekly ที่ "จ่าย" ในเดือนถัดไป ไม่จ่ายฐานเงินเดือนในรอบนั้น
-//      จ่ายแค่ส่วนเกิน (OT / คูณสองส่วนที่เกิน) ฐานไปรวมกับเงินเดือนวันที่ 5 เดือนถัดไป
-//      (owner 2026-08-03 — ฐิติรัตน์ เปลี่ยนเป็นประจำ ก.ค. รอบ 27/07–02/08 จ่าย 03/08).
-console.log("\nเดือนเปลี่ยนผ่าน: รอบจ่ายเดือนถัดไป จ่ายแค่ส่วนเกิน (owner 2026-08-03):");
+// 11c. เดือนเปลี่ยนผ่าน weekly: ทุกสัปดาห์จ่ายฐานรายวัน salary/30 × วันในสถานะ —
+//      รอบคร่อมเดือนก็จ่ายเต็ม (ไม่มีการเลื่อน/ตัดเป็น 0 อีกแล้ว) (owner 2026-08-03).
+console.log("\nเดือนเปลี่ยนผ่าน weekly: ทุกสัปดาห์จ่ายฐานรายวัน (owner 2026-08-03):");
 {
   const conv = (salary: number): EmployeePayrollSnapshot => ({ ...ftMonthly(salary), ft_started_at: "2026-07-10" });
-  // 8-hour clean shift on `d`, marked as a double-pay day.
-  const runDouble = (pStart: string, pEnd: string, payDate: string, doubleDate: string) => {
-    const iso = (hhmm: string) => new Date(`${doubleDate}T${hhmm}:00+07:00`).toISOString();
+  const runRound = (pStart: string, pEnd: string, doubleDate: string | null) => {
+    const dd = doubleDate ?? "2026-07-22";
+    const iso = (hhmm: string) => new Date(`${dd}T${hhmm}:00+07:00`).toISOString();
     const sched: ScheduledShift = { startTs: iso("11:00"), endTs: iso("19:00"), breakStartTs: null, breakEndTs: null };
     const shift = { startTs: iso("11:00"), endTs: iso("19:00"), durationMinutes: 480 };
     return computeLineForEmployee({
-      employee: conv(16000), shifts: [shift], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
-      cycle: "weekly", periodStart: pStart, periodEnd: pEnd, payDate,
-      settings: SETTINGS, holidaySet: new Set<string>(), doubleSet: new Set<string>([doubleDate]),
-      scheduledByDate: new Map<string, ScheduledShift[]>([[doubleDate, [sched]]])
+      employee: conv(16000), shifts: doubleDate ? [shift] : [], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+      cycle: "weekly", periodStart: pStart, periodEnd: pEnd,
+      settings: SETTINGS, holidaySet: new Set<string>(),
+      doubleSet: doubleDate ? new Set<string>([doubleDate]) : new Set<string>(),
+      scheduledByDate: doubleDate ? new Map<string, ScheduledShift[]>([[doubleDate, [sched]]]) : new Map<string, ScheduledShift[]>()
     });
   };
-  // ค่าแรงรายวัน = 16000/30 = 533.33 ; วันคูณสอง = ฐานรายวัน + ส่วนเกินอีก 1 เท่า (533.33)
-  // รอบปกติที่จ่ายในเดือน ก.ค. (จ่าย 27/07) → ฐานรายสัปดาห์ 16000/4จันทร์ = 4000 + ส่วนเกินคูณสอง 533.33
-  const inMonth = runDouble("2026-07-20", "2026-07-26", "2026-07-27", "2026-07-22");
-  eq("รอบ ก.ค. ปกติ (จ่ายในเดือน) → ฐาน 4000 + คูณสองส่วนเกิน = 4533.33", inMonth.base_pay, 4533.33);
-  // รอบ 27/07–02/08 จ่าย 03/08 (เดือนถัดไป) → ฐานไม่จ่าย เหลือแค่คูณสองส่วนเกิน 533.33
-  const spill = runDouble("2026-07-27", "2026-08-02", "2026-08-03", "2026-07-29");
-  eq("รอบจ่ายเดือนถัดไป → ฐานไม่จ่าย เหลือแค่คูณสองส่วนเกิน = 533.33", spill.base_pay, 533.33);
-  // manual-minutes path: ฐานถูกตัดเป็น 0 เมื่อรอบจ่ายเดือนถัดไป (พาธนี้ไม่มี double)
-  const manualSpill = computeLineFromMinutes({
-    employee: conv(16000), regularMinutes: 480, otMinutes: 0, holidayMinutes: 0,
-    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 1, unpaired: 0,
-    cycle: "weekly", periodStart: "2026-07-27", periodEnd: "2026-08-02", payDate: "2026-08-03", settings: SETTINGS
+  const daily = 16000 / 30;
+  const base7 = Math.round(daily * 7 * 100) / 100;   // อยู่ในสถานะ 7 วัน
+  const plain = runRound("2026-07-20", "2026-07-26", null);
+  eq("รอบ weekly 7 วัน → ฐาน 16000/30×7", plain.base_pay, base7);
+  // รอบคร่อมเดือน 27/07–02/08 (7 วัน) → ยังจ่ายฐานรายวันเต็ม ไม่ถูกตัดเป็น 0
+  const spill = runRound("2026-07-27", "2026-08-02", null);
+  eq("รอบคร่อมเดือน → ยังจ่ายฐานรายวัน (ไม่ตัดเป็น 0)", spill.base_pay, base7);
+  // วันคูณสอง: ฐานรายวัน 7 วัน + ส่วนเกินคูณสองอีก 1 วัน (8ชม.)
+  const dbl = runRound("2026-07-20", "2026-07-26", "2026-07-22");
+  eq("รอบมีวันคูณสอง → ฐานรายวัน + คูณสองส่วนเกิน", dbl.base_pay, Math.round((base7 + daily) * 100) / 100);
+  eq("เปลี่ยนผ่าน weekly → หัก WHT ไม่ใช่ SSO", dbl.sso_amount === 0 && dbl.tax_amount > 0 ? 1 : 0, 1);
+}
+
+// 11e. เข้าใหม่เป็นประจำ เดือนแรก: รายวัน salary/30 × วันในสถานะ, จ่ายวันที่ 5, WHT (owner 2026-08-03)
+console.log("\nเข้าใหม่ประจำ เดือนแรก: รายวัน salary/30 × วันในสถานะ + WHT (owner 2026-08-03):");
+{
+  const newFt = (hire: string): EmployeePayrollSnapshot =>
+    ({ ...ftMonthly(30000), ft_started_at: null, hire_date: hire });
+  // AUTO path (นับวันตามปฏิทิน): เข้า 1 ส.ค. ทำเต็มเดือน → 31 วันในสถานะ, cap เต็ม 30000
+  const autoFull = computeLineForEmployee({
+    employee: newFt("2026-08-01"), shifts: [], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+    cycle: "monthly", periodStart: "2026-08-01", periodEnd: "2026-08-31",
+    settings: SETTINGS, holidaySet: new Set<string>(), doubleSet: new Set<string>()
   });
-  eq("manual: รอบจ่ายเดือนถัดไป → ฐาน 0", manualSpill.base_pay, 0);
-  // control: manual รอบ ก.ค. จ่ายในเดือน → ฐาน 4000 (ไม่ถูกตัด)
-  const manualIn = computeLineFromMinutes({
-    employee: conv(16000), regularMinutes: 480, otMinutes: 0, holidayMinutes: 0,
-    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 1, unpaired: 0,
-    cycle: "weekly", periodStart: "2026-07-20", periodEnd: "2026-07-26", payDate: "2026-07-27", settings: SETTINGS
+  eq("เข้า 1 ส.ค. ทำเต็มเดือน → เต็ม 30000 (cap)", autoFull.base_pay, 30000);
+  eq("เข้าใหม่เดือนแรก → หัก WHT ไม่ใช่ SSO", autoFull.sso_amount === 0 && autoFull.tax_amount > 0 ? 1 : 0, 1);
+  // AUTO: เข้า 16 ส.ค. → วันในสถานะ 16..31 = 16 วัน → 30000/30×16 = 16000
+  const autoMid = computeLineForEmployee({
+    employee: newFt("2026-08-16"), shifts: [], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+    cycle: "monthly", periodStart: "2026-08-01", periodEnd: "2026-08-31",
+    settings: SETTINGS, holidaySet: new Set<string>(), doubleSet: new Set<string>()
   });
-  eq("manual: รอบ ก.ค. จ่ายในเดือน → ฐาน 4000", manualIn.base_pay, 4000);
+  eq("เข้า 16 ส.ค. → 30000/30×16วัน = 16000", autoMid.base_pay, 16000);
 }
 
 // 11d. ลงเวลาทำงานวันหยุดแทนพนักงาน (owner 2026-08-03) — admin กรอกวันที่พนักงานไม่ได้
@@ -414,8 +427,9 @@ console.log("\nทำงานข้ามบริษัท — SSO หัก�
     leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 1, unpaired: 0,
     cycle: "monthly" as const, periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS
   };
-  const home = computeLineFromMinutes({ employee: { ...ptHourly(70), is_home_company: 1 }, ...mins });
-  const away = computeLineFromMinutes({ employee: { ...ptHourly(70), is_home_company: 0 }, ...mins });
+  // ใช้ FT ประจำเต็มเดือน (กลุ่ม 4 = ประกันสังคม) เพราะ PT ตอนนี้บังคับ WHT (owner 2026-08-03)
+  const home = computeLineFromMinutes({ employee: { ...ftMonthly(30000), is_home_company: 1 }, ...mins });
+  const away = computeLineFromMinutes({ employee: { ...ftMonthly(30000), is_home_company: 0 }, ...mins });
   eq("home vs away: ฐานเท่ากัน", away.base_pay, home.base_pay);
   eq("home vs away: gross เท่ากัน", away.gross_pay, home.gross_pay);
   eq("home: หัก SSO = 5% ฐาน", home.sso_amount, computeSso(home.base_pay, "monthly", SETTINGS));
@@ -446,7 +460,8 @@ console.log("\nทำงานข้ามบริษัท — SSO หัก�
     cycle: "monthly" as const, periodStart: "2026-06-01", periodEnd: "2026-06-30", settings: SETTINGS
   };
   // สาขารองในบริษัทเดียวกัน: is_primary_branch=0 แต่ is_home_company=1 → SSO ยังหัก.
-  const otherBranchSameCo = computeLineFromMinutes({ employee: { ...ptHourly(70), is_primary_branch: 0, is_home_company: 1 }, ...mins });
+  // ใช้ FT ประจำเต็มเดือน (PT ตอนนี้บังคับ WHT — owner 2026-08-03).
+  const otherBranchSameCo = computeLineFromMinutes({ employee: { ...ftMonthly(30000), is_primary_branch: 0, is_home_company: 1 }, ...mins });
   eq("บริษัทเดียว สาขารอง: SSO ยังหักปกติ", otherBranchSameCo.sso_amount, computeSso(otherBranchSameCo.base_pay, "monthly", SETTINGS));
 }
 
@@ -507,8 +522,9 @@ console.log("\nborn-FT รับเข้าใหม่รายเดือน
   };
   const p = computeLineFromMinutes({ employee: bornFtPartial, daysWorked: 10, ...mins });
   eq("born-FT เดือนแรก 10 วัน → base 10000 (รายวัน ไม่ใช่รายสัปดาห์)", p.base_pay, 10000);
-  eq("born-FT เดือนแรก → SSO ปกติ (ไม่ใช่ WHT รอบเปลี่ยนผ่าน)", p.sso_amount, computeSso(10000, "monthly", SETTINGS));
-  eq("born-FT เดือนแรก → tax_amount 0 (SSO ไม่หัก ณ ที่จ่าย)", p.tax_amount, 0);
+  // owner 2026-08-03: เข้าใหม่ประจำ "เดือนแรก" = หัก ณ ที่จ่าย 3% (ยังไม่เข้าประกันสังคม)
+  eq("born-FT เดือนแรก → หัก WHT 3% ไม่ใช่ SSO", p.tax_amount, 300); // 10000×0.03
+  eq("born-FT เดือนแรก → SSO = 0", p.sso_amount, 0);
 
   // อยู่มาก่อนเดือนนี้ (จ้าง 1 พ.ค.) → เต็มเดือน 30000
   const bornFtFull: EmployeePayrollSnapshot = {
