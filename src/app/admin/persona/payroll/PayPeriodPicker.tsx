@@ -455,9 +455,10 @@ function PeriodCard({
   const isExisting = !!existing;
   const isPaid = existing?.status === "paid";
   const isFinalized = existing?.status === "finalized";
-  // Future pay-date — period hasn't arrived yet. Display in muted style;
-  // disable the create buttons (admin shouldn't create payroll for the future).
-  const isFuture = !isExisting && pay > today;
+  // Future/incomplete period — its last day hasn't passed yet. Keyed on period
+  // END, not pay date (owner 2026-08-03: a finished month can be opened right away,
+  // no waiting for the 5th). Display muted + force-open only while still running.
+  const isFuture = !isExisting && end >= today;
   const busyAuto = busyKey === `${cardKey}|auto`;
   const busyManual = busyKey === `${cardKey}|manual`;
 
