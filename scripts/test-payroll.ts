@@ -4,7 +4,7 @@
 // Guarantees: salary/30 per unpaid day, FT only, default 0 = no change,
 // and the deduction never drives base pay negative.
 
-import { computeLineFromMinutes, computeLineForEmployee, computeSso, applyPtGrace, keepEntryForBranch, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift, type EntryWithBranch } from "../src/lib/payroll-compute";
+import { computeLineFromMinutes, computeLineForEmployee, computeSso, applyPtGrace, keepEntryForBranch, overridesToShiftMap, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift, type EntryWithBranch } from "../src/lib/payroll-compute";
 
 const SETTINGS: PayrollSettings = {
   ot_mode: "flat", ot_flat_per_15min: 0,
@@ -349,6 +349,23 @@ console.log("\nเดือนเปลี่ยนผ่าน: รอบจ่
     cycle: "weekly", periodStart: "2026-07-20", periodEnd: "2026-07-26", payDate: "2026-07-27", settings: SETTINGS
   });
   eq("manual: รอบ ก.ค. จ่ายในเดือน → ฐาน 4000", manualIn.base_pay, 4000);
+}
+
+// 11d. ลงเวลาทำงานวันหยุดแทนพนักงาน (owner 2026-08-03) — admin กรอกวันที่พนักงานไม่ได้
+//      ลงเวลา. มีเวลาจริง → ใช้เวลาจริง; ไม่มีเวลาจริงแต่มีเวลากะ → ใช้เวลากะเป็นกะทำงาน.
+console.log("\nลงเวลาวันหยุดแทนพนักงาน — สังเคราะห์กะจากเวลากะเมื่อไม่มีเวลาจริง (owner 2026-08-03):");
+{
+  const D = "2026-08-10";
+  const clockPair = overridesToShiftMap([
+    { work_date: D, clock_in: "10:00", clock_out: "18:00", sched_in: "11:00", sched_out: "19:00" }
+  ]).get(D);
+  eq("มีเวลาเข้า–ออก → ใช้เวลาจริง (8ชม.)", clockPair?.durationMinutes ?? -1, 480);
+  const schedOnly = overridesToShiftMap([
+    { work_date: D, clock_in: null, clock_out: null, sched_in: "11:00", sched_out: "19:00" }
+  ]).get(D);
+  eq("ไม่มีเวลาจริง แต่มีเวลากะ → สร้างกะจากเวลากะ (8ชม.)", schedOnly?.durationMinutes ?? -1, 480);
+  const nothing = overridesToShiftMap([{ work_date: D, clock_in: null, clock_out: null }]).get(D);
+  eq("ไม่มีทั้งเวลาจริงและเวลากะ → ไม่มีกะ (null)", nothing === null ? 1 : 0, 1);
 }
 
 // N. วันจ่ายสองเท่า (owner 2026-07-21) — พนักงานทุกคนที่ทำงานวันที่ตั้งไว้ ได้ฐาน+OT ×2.
