@@ -480,6 +480,11 @@ export type DayOverrideRow = {
   work_date: string;        // YYYY-MM-DD (BKK)
   clock_in: string | null;  // 'HH:MM' (BKK local) or NULL
   clock_out: string | null; // 'HH:MM' or NULL
+  // Manual holiday / called-in entry (owner 2026-08-03): an admin adds a worked
+  // day with no clock punch but fills the scheduled shift window. When there's no
+  // clock pair, that window is used as the worked shift so the day counts in pay.
+  sched_in?: string | null;
+  sched_out?: string | null;
 };
 
 // Per-day FIELD overrides — when an admin types a value in the daily
@@ -507,13 +512,21 @@ export type DayFieldOverride = {
  */
 export function overridesToShiftMap(rows: DayOverrideRow[]): Map<string, Shift | null> {
   const m = new Map<string, Shift | null>();
+  const mkShift = (date: string, inHHMM: string, outHHMM: string): Shift | null => {
+    const startTs = new Date(`${date}T${inHHMM}:00+07:00`).toISOString();
+    const endDate = outHHMM < inHHMM ? addDayYmd(date) : date;
+    const endTs = new Date(`${endDate}T${outHHMM}:00+07:00`).toISOString();
+    const dur = (new Date(endTs).getTime() - new Date(startTs).getTime()) / 60000;
+    return dur > 0 ? { startTs, endTs, durationMinutes: dur } : null;
+  };
   for (const r of rows) {
     if (r.clock_in && r.clock_out) {
-      const startTs = new Date(`${r.work_date}T${r.clock_in}:00+07:00`).toISOString();
-      const endDate = r.clock_out < r.clock_in ? addDayYmd(r.work_date) : r.work_date;
-      const endTs = new Date(`${endDate}T${r.clock_out}:00+07:00`).toISOString();
-      const dur = (new Date(endTs).getTime() - new Date(startTs).getTime()) / 60000;
-      m.set(r.work_date, dur > 0 ? { startTs, endTs, durationMinutes: dur } : null);
+      m.set(r.work_date, mkShift(r.work_date, r.clock_in, r.clock_out));
+    } else if (r.sched_in && r.sched_out) {
+      // Manual entry with only the scheduled window (no clock punch) → treat the
+      // shift as worked so the day is counted (owner 2026-08-03: ลงเวลาวันหยุด
+      // แทนพนักงาน). A real clock pair always wins over this.
+      m.set(r.work_date, mkShift(r.work_date, r.sched_in, r.sched_out));
     } else {
       m.set(r.work_date, null);
     }
@@ -1427,7 +1440,10 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   const fieldOverridesByUser = new Map<number, Map<string, DayFieldOverride>>();
   for (const r of overrideRows) {
     const list = overridesByUser.get(r.user_id) ?? [];
-    list.push({ work_date: r.work_date, clock_in: r.clock_in, clock_out: r.clock_out });
+    list.push({
+      work_date: r.work_date, clock_in: r.clock_in, clock_out: r.clock_out,
+      sched_in: r.sched_in, sched_out: r.sched_out
+    });
     overridesByUser.set(r.user_id, list);
     let fm = fieldOverridesByUser.get(r.user_id);
     if (!fm) { fm = new Map(); fieldOverridesByUser.set(r.user_id, fm); }
@@ -1811,7 +1827,8 @@ export function recomputeLine(
   const shifts = mergeDayOverrides(
     auto.shifts,
     overridesToShiftMap(overrideRows.map((r) => ({
-      work_date: r.work_date, clock_in: r.clock_in, clock_out: r.clock_out
+      work_date: r.work_date, clock_in: r.clock_in, clock_out: r.clock_out,
+      sched_in: r.sched_in, sched_out: r.sched_out
     })))
   );
   const fieldOverridesByDate = new Map<string, DayFieldOverride>();

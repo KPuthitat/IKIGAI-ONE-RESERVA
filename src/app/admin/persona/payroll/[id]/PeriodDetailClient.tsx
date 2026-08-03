@@ -1366,6 +1366,18 @@ function LineEditModal({
       setDayMsg("ต้องกรอกทั้งเวลาเข้าและเลิกงาน (หรือเว้นว่างทั้งคู่)");
       return;
     }
+    // Manual holiday / called-in day (owner 2026-08-03): a brand-new day with no
+    // existing activity needs a WORK WINDOW to be counted — either clock in–out or
+    // the scheduled shift (that window is used as worked). Hours-only wouldn't
+    // create a shift, so block it with clear guidance instead of saving a no-op.
+    if (!onlyBranch && selDay == null) {
+      const hasClockPair = !!dayIn && !!dayOut;
+      const hasSchedPair = !!daySchedIn && !!daySchedOut;
+      if (!hasClockPair && !hasSchedPair) {
+        setDayMsg("เพิ่มวันทำงานเอง: กรอก “บันทึกเวลาเข้า–ออก” หรือ “เวลาเข้างาน–เลิกงาน (กะ)” อย่างน้อยหนึ่งชุด");
+        return;
+      }
+    }
 
     setDaySaving(true);
     setDayMsg(null);
@@ -1997,6 +2009,9 @@ function LineEditModal({
                   {!selDay?.pairs.some((p) => p.double) && selDay?.pairs.some((p) => p.holiday) && (
                     <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-normal">วันพิเศษ ×1.5</span>
                   )}
+                  {selDay == null && (
+                    <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold">เพิ่มวันทำงานเอง</span>
+                  )}
                   {locked
                     ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 font-normal">อ่านอย่างเดียว</span>
                     : <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-normal">แก้ไขได้</span>}
@@ -2015,6 +2030,15 @@ function LineEditModal({
                   <span className={`text-base font-bold tabular-nums ${selDay.pairs.some((p) => p.double) ? "text-rose-600" : "text-slate-800"}`}>
                     ฿{fmtMoney(selDay.pay)}
                   </span>
+                </div>
+              )}
+              {/* ลงเวลาทำงานวันหยุดแทนพนักงาน (owner 2026-08-03) — วันที่พนักงานไม่ได้
+                  ลงเวลาเอง (โดนเรียกเข้าวันหยุด ฯลฯ) admin กรอกให้ได้ตรงนี้. */}
+              {selDay == null && !locked && (
+                <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] text-amber-800 leading-relaxed">
+                  ลงเวลาทำงานแทนพนักงานสำหรับวันนี้ (เช่น โดนเรียกเข้างานวันหยุด) — กรอก
+                  <b> เวลาเข้า–ออกที่ทำจริง</b> หรือ <b>เวลาเข้างาน–เลิกงาน (กะ)</b> แล้วกดบันทึก.
+                  ถ้าวันนี้ตั้งเป็นวันคูณสองไว้ ระบบจะคิด ×2 ให้อัตโนมัติ.
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3">
