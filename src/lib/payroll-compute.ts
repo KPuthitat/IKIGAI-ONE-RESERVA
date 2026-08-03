@@ -1922,7 +1922,8 @@ export function recomputeLine(
           sso_amount = ?, tax_amount = ?, drink_deductions = ?, net_pay = ?,
           hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
           pay_cycle_snapshot = ?, salary_tax_mode_snapshot = ?,
-          overridden = 1, updated_at = CURRENT_TIMESTAMP
+          overridden = 1, reviewed_at = NULL, reviewed_by = NULL,
+          updated_at = CURRENT_TIMESTAMP
       WHERE period_id = ? AND user_id = ?
     `).run(
       computed.shift_minutes, computed.break_deducted_minutes,

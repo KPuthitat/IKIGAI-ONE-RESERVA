@@ -229,7 +229,7 @@ export async function PATCH(
           hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
           pay_cycle_snapshot = ?,
           notes = COALESCE(?, notes),
-          overridden = 1,
+          overridden = 1, reviewed_at = NULL, reviewed_by = NULL,
           updated_at = CURRENT_TIMESTAMP
       WHERE period_id = ? AND user_id = ?
     `).run(
@@ -294,7 +294,7 @@ export async function PATCH(
           drink_deductions = ?, net_pay = ?,
           salary_tax_mode_snapshot = ?,
           notes = COALESCE(?, notes),
-          overridden = 1,
+          overridden = 1, reviewed_at = NULL, reviewed_by = NULL,
           updated_at = CURRENT_TIMESTAMP
       WHERE period_id = ? AND user_id = ?
     `).run(

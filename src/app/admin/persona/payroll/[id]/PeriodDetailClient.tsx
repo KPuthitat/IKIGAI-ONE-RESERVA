@@ -73,6 +73,8 @@ export type PayrollLineRow = {
   net_pay: number;
   overridden: number;
   notes: string | null;
+  reviewed_at: string | null;
+  reviewed_by_name: string | null;
 };
 
 function formatBkkDate(d: string, lang: Lang): string {
@@ -145,6 +147,7 @@ export default function PeriodDetailClient({
   const [confirmPay, setConfirmPay] = useState(false);
   const [unpayOpen, setUnpayOpen] = useState(false);
   const [addStaffOpen, setAddStaffOpen] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState<number | null>(null);
   // Mark-paid date — defaults to today (BKK), admin can backdate
   const todayBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const [paidAt, setPaidAt] = useState(todayBkk);
@@ -205,6 +208,29 @@ export default function PeriodDetailClient({
       setBusy(null);
     }
   }
+
+  // "ตรวจแล้ว" toggle — review sign-off per line (owner 2026-08-03).
+  async function toggleReview(l: PayrollLineRow): Promise<void> {
+    setReviewBusy(l.user_id);
+    try {
+      const res = await fetch(
+        apiUrl(`/api/admin/persona/payroll/periods/${period.id}/lines/${l.user_id}/review`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reviewed: l.reviewed_at == null })
+        }
+      );
+      if (res.ok) startTransition(() => router.refresh());
+      else setMsg({ kind: "err", text: t(lang, "common.error") });
+    } catch {
+      setMsg({ kind: "err", text: t(lang, "common.error") });
+    } finally {
+      setReviewBusy(null);
+    }
+  }
+
+  const reviewedCount = lines.filter((l) => l.reviewed_at != null).length;
 
   async function addEmployee(targetUserId: number): Promise<void> {
     setBusy("add_emp");
@@ -591,12 +617,17 @@ export default function PeriodDetailClient({
         {/* Add-employee button — always visible when draft (modal handles
             the empty state gracefully if everyone is already added). */}
         {isDraft && (
-          <div className="mb-3 flex justify-end">
+          <div className="mb-3 flex justify-between items-center gap-2 flex-wrap">
+            {lines.length > 0 && (
+              <span className={`text-sm font-medium ${reviewedCount === lines.length ? "text-emerald-600" : "text-slate-500"}`}>
+                {reviewedCount === lines.length ? "✓ " : ""}ตรวจแล้ว {reviewedCount}/{lines.length} คน
+              </span>
+            )}
             <button
               type="button"
               onClick={() => setAddStaffOpen(true)}
               disabled={busy !== null}
-              className="text-sm px-3 py-1.5 rounded-md bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 whitespace-nowrap disabled:opacity-50"
+              className="text-sm px-3 py-1.5 rounded-md bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 whitespace-nowrap disabled:opacity-50 ml-auto"
             >
               + {t(lang, "admin.persona.payroll.action.addEmployee")}
             </button>
@@ -669,6 +700,12 @@ export default function PeriodDetailClient({
                       {l.overridden === 1 && (
                         <span className="ml-2 text-sky-700">{t(lang, "admin.persona.payroll.detail.overridden")}</span>
                       )}
+                      {l.reviewed_at != null && (
+                        <span className="ml-2 text-emerald-600 font-medium"
+                          title={l.reviewed_by_name ? `ตรวจโดย ${l.reviewed_by_name}` : undefined}>
+                          ✓ ตรวจแล้ว
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="py-2 pr-3 text-right text-slate-600">{fmtMin(l.regular_minutes)}</td>
@@ -692,6 +729,17 @@ export default function PeriodDetailClient({
                       <button type="button" onClick={() => setEditLine(l)}
                         className="ml-1 text-xs px-2 py-1 rounded text-brand hover:bg-rose-50">
                         {t(lang, "common.edit")}
+                      </button>
+                    )}
+                    {isDraft && (
+                      <button type="button" onClick={() => toggleReview(l)}
+                        disabled={reviewBusy === l.user_id}
+                        className={`ml-1 text-xs px-2 py-1 rounded font-medium disabled:opacity-50 ${
+                          l.reviewed_at != null
+                            ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                            : "bg-white border border-slate-300 text-slate-600 hover:bg-slate-50"
+                        }`}>
+                        {l.reviewed_at != null ? "✓ ตรวจแล้ว" : "ตรวจแล้ว"}
                       </button>
                     )}
                   </td>

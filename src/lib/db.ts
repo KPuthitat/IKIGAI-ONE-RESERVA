@@ -3316,6 +3316,10 @@ function runMigrations(db: Database.Database): void {
       -- manual override (admin can adjust + add note)
       overridden INTEGER NOT NULL DEFAULT 0,
       notes TEXT,
+      -- "ตรวจแล้ว" review sign-off (owner 2026-08-03): admin marks a line reviewed
+      -- after checking its calc. Auto-cleared whenever the line's numbers change.
+      reviewed_at TEXT,
+      reviewed_by INTEGER REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE (period_id, user_id)
@@ -3463,6 +3467,13 @@ function runMigrations(db: Database.Database): void {
   // amount AFTER this deduction.
   if (!plNames.has("drink_deductions")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN drink_deductions REAL NOT NULL DEFAULT 0");
+  }
+  // "ตรวจแล้ว" review sign-off (owner 2026-08-03) — auto-cleared on any line change.
+  if (!plNames.has("reviewed_at")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN reviewed_at TEXT");
+  }
+  if (!plNames.has("reviewed_by")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN reviewed_by INTEGER REFERENCES users(id)");
   }
 
   // Phase 1D v3 — payroll_periods.target ('pt' | 'ft' | 'all')
