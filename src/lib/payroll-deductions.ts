@@ -32,7 +32,7 @@ export function applyDeductionsToLine(periodId: number, userId: number): number 
   const total = sumLineDeductions(periodId, userId);
   const net = r2(line.gross_pay - line.sso_amount - line.tax_amount - total);
   db.prepare(
-    "UPDATE payroll_lines SET other_deductions = ?, net_pay = ?, updated_at = CURRENT_TIMESTAMP WHERE period_id = ? AND user_id = ?"
+    "UPDATE payroll_lines SET other_deductions = ?, net_pay = ?, reviewed_at = NULL, reviewed_by = NULL, updated_at = CURRENT_TIMESTAMP WHERE period_id = ? AND user_id = ?"
   ).run(total, net, periodId, userId);
   return total;
 }
