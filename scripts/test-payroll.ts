@@ -310,6 +310,47 @@ console.log("\nPT→ประจำ เดือนเปลี่ยนผ่�
   eq("legacy FT (ไม่มี ft_started_at) รอบ monthly → base 30000", legacy.base_pay, 30000);
 }
 
+// 11c. เดือนเปลี่ยนผ่าน: รอบ weekly ที่ "จ่าย" ในเดือนถัดไป ไม่จ่ายฐานเงินเดือนในรอบนั้น
+//      จ่ายแค่ส่วนเกิน (OT / คูณสองส่วนที่เกิน) ฐานไปรวมกับเงินเดือนวันที่ 5 เดือนถัดไป
+//      (owner 2026-08-03 — ฐิติรัตน์ เปลี่ยนเป็นประจำ ก.ค. รอบ 27/07–02/08 จ่าย 03/08).
+console.log("\nเดือนเปลี่ยนผ่าน: รอบจ่ายเดือนถัดไป จ่ายแค่ส่วนเกิน (owner 2026-08-03):");
+{
+  const conv = (salary: number): EmployeePayrollSnapshot => ({ ...ftMonthly(salary), ft_started_at: "2026-07-10" });
+  // 8-hour clean shift on `d`, marked as a double-pay day.
+  const runDouble = (pStart: string, pEnd: string, payDate: string, doubleDate: string) => {
+    const iso = (hhmm: string) => new Date(`${doubleDate}T${hhmm}:00+07:00`).toISOString();
+    const sched: ScheduledShift = { startTs: iso("11:00"), endTs: iso("19:00"), breakStartTs: null, breakEndTs: null };
+    const shift = { startTs: iso("11:00"), endTs: iso("19:00"), durationMinutes: 480 };
+    return computeLineForEmployee({
+      employee: conv(16000), shifts: [shift], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+      cycle: "weekly", periodStart: pStart, periodEnd: pEnd, payDate,
+      settings: SETTINGS, holidaySet: new Set<string>(), doubleSet: new Set<string>([doubleDate]),
+      scheduledByDate: new Map<string, ScheduledShift[]>([[doubleDate, [sched]]])
+    });
+  };
+  // ค่าแรงรายวัน = 16000/30 = 533.33 ; วันคูณสอง = ฐานรายวัน + ส่วนเกินอีก 1 เท่า (533.33)
+  // รอบปกติที่จ่ายในเดือน ก.ค. (จ่าย 27/07) → ฐานรายสัปดาห์ 16000/4จันทร์ = 4000 + ส่วนเกินคูณสอง 533.33
+  const inMonth = runDouble("2026-07-20", "2026-07-26", "2026-07-27", "2026-07-22");
+  eq("รอบ ก.ค. ปกติ (จ่ายในเดือน) → ฐาน 4000 + คูณสองส่วนเกิน = 4533.33", inMonth.base_pay, 4533.33);
+  // รอบ 27/07–02/08 จ่าย 03/08 (เดือนถัดไป) → ฐานไม่จ่าย เหลือแค่คูณสองส่วนเกิน 533.33
+  const spill = runDouble("2026-07-27", "2026-08-02", "2026-08-03", "2026-07-29");
+  eq("รอบจ่ายเดือนถัดไป → ฐานไม่จ่าย เหลือแค่คูณสองส่วนเกิน = 533.33", spill.base_pay, 533.33);
+  // manual-minutes path: ฐานถูกตัดเป็น 0 เมื่อรอบจ่ายเดือนถัดไป (พาธนี้ไม่มี double)
+  const manualSpill = computeLineFromMinutes({
+    employee: conv(16000), regularMinutes: 480, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 1, unpaired: 0,
+    cycle: "weekly", periodStart: "2026-07-27", periodEnd: "2026-08-02", payDate: "2026-08-03", settings: SETTINGS
+  });
+  eq("manual: รอบจ่ายเดือนถัดไป → ฐาน 0", manualSpill.base_pay, 0);
+  // control: manual รอบ ก.ค. จ่ายในเดือน → ฐาน 4000 (ไม่ถูกตัด)
+  const manualIn = computeLineFromMinutes({
+    employee: conv(16000), regularMinutes: 480, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 1, unpaired: 0,
+    cycle: "weekly", periodStart: "2026-07-20", periodEnd: "2026-07-26", payDate: "2026-07-27", settings: SETTINGS
+  });
+  eq("manual: รอบ ก.ค. จ่ายในเดือน → ฐาน 4000", manualIn.base_pay, 4000);
+}
+
 // N. วันจ่ายสองเท่า (owner 2026-07-21) — พนักงานทุกคนที่ทำงานวันที่ตั้งไว้ ได้ฐาน+OT ×2.
 console.log("\nวันจ่ายสองเท่า (owner 2026-07-21):");
 {

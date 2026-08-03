@@ -715,6 +715,12 @@ export function computeLineForEmployee(args: {
   cycle: "weekly" | "monthly";
   periodStart: string;        // YYYY-MM-DD (used for FT hire/resignation proration)
   periodEnd: string;          // YYYY-MM-DD (used for FT-weekly division)
+  // Pay date of the period (YYYY-MM-DD). When a transition-month WEEKLY round pays
+  // in a LATER month than the round's own month, the FT base salary is NOT paid in
+  // that round — only OT + the double-pay excess are "paid ahead"; the base rolls
+  // into the monthly salary paid the 5th of the next month (owner 2026-08-03). Omit
+  // → no suppression (back-compat).
+  payDate?: string;
   settings: PayrollSettings;
   holidaySet: Set<string>;    // YYYY-MM-DD dates that count as PT premium days (1.5×)
   // วันจ่ายสองเท่า (owner 2026-07-21): dates where EVERY employee earns 2× on both
@@ -739,7 +745,13 @@ export function computeLineForEmployee(args: {
   // present field wins over the computed one.
   fieldOverridesByDate?: Map<string, DayFieldOverride>;
 }): ComputedLine {
-  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate } = args;
+  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, payDate, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate } = args;
+  // Transition-month weekly round whose pay_date lands in a later month than the
+  // round itself → suppress the FT base slice (owner 2026-08-03). Only OT + the
+  // double-pay excess are paid this round; the base is paid as the monthly salary
+  // on the 5th of the next month. Keyed on the round's own month (periodStart).
+  const suppressWeeklyBase = cycle === "weekly" && !!payDate
+    && payDate.slice(0, 7) > periodStart.slice(0, 7);
   // Extra FT base for double-pay days: FT base is salary (not per-day) so the 2×
   // is credited as one extra day-equivalent (ftHourlyEquivalent × regular hours)
   // per double day worked — added to basePay below (owner 2026-07-21).
@@ -901,6 +913,11 @@ export function computeLineForEmployee(args: {
         if (isFtPartialMonth(e.hire_date, e.last_working_day, periodStart, periodEnd)) {
           basePay = Math.min(e.monthly_salary, round2((e.monthly_salary / 30) * daysSet.size));
         }
+      } else if (suppressWeeklyBase) {
+        // Round pays in a later month than the transition month → base is deferred
+        // to the monthly salary (5th of next month); pay only OT + double excess
+        // here (owner 2026-08-03). ftDoubleBonus (added below) is the double excess.
+        basePay = 0;
       } else {
         // weekly: divide salary by # of Mondays in the calendar month
         // containing periodEnd (= number of weekly pay-dates in that month)
@@ -1012,6 +1029,9 @@ export function computeLineFromMinutes(args: {
   cycle: "weekly" | "monthly";
   periodStart: string;
   periodEnd: string;
+  // See computeLineForEmployee.payDate — suppress the FT weekly base when the
+  // transition-month round pays in a later month (owner 2026-08-03).
+  payDate?: string;
   settings: PayrollSettings;
   serviceCharge?: number;
   otherAdditions?: number;
@@ -1019,9 +1039,11 @@ export function computeLineFromMinutes(args: {
 }): ComputedLine {
   const {
     employee: e, regularMinutes, otMinutes, holidayMinutes, leaveDays,
-    unpaidLeaveDays = 0, daysWorked, unpaired, cycle, periodStart, periodEnd, settings,
+    unpaidLeaveDays = 0, daysWorked, unpaired, cycle, periodStart, periodEnd, payDate, settings,
     serviceCharge = 0, otherAdditions = 0, otherDeductions = 0
   } = args;
+  const suppressWeeklyBase = cycle === "weekly" && !!payDate
+    && payDate.slice(0, 7) > periodStart.slice(0, 7);
 
   // Period-relative FT cycle (transition month = weekly) — owner 2026-07-16.
   const ftCycle = ftEffectiveCycle(e.ft_started_at, e.pay_cycle, periodStart.slice(0, 7));
@@ -1056,8 +1078,14 @@ export function computeLineFromMinutes(args: {
         basePay = Math.min(e.monthly_salary, round2((e.monthly_salary / 30) * daysWorked));
       }
     } else if (cycle === "weekly" && ftCycle === "weekly") {
-      const mondays = countMondaysInMonth(periodEnd) || 4;
-      basePay = e.monthly_salary / mondays;
+      if (suppressWeeklyBase) {
+        // Pays in a later month → base deferred to the monthly salary; only
+        // OT is paid this round (owner 2026-08-03).
+        basePay = 0;
+      } else {
+        const mondays = countMondaysInMonth(periodEnd) || 4;
+        basePay = e.monthly_salary / mondays;
+      }
     }
   }
 
@@ -1139,13 +1167,13 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   skipped: number;
 } {
   const period = db.prepare(`
-    SELECT id, cycle, target, data_source, period_start, period_end, status, branch_id
+    SELECT id, cycle, target, data_source, period_start, period_end, pay_date, status, branch_id
     FROM payroll_periods WHERE id = ?
   `).get(periodId) as {
     id: number; cycle: "weekly" | "monthly";
     target: "pt" | "ft" | "all";
     data_source: "auto" | "manual";
-    period_start: string; period_end: string; status: string;
+    period_start: string; period_end: string; pay_date: string; status: string;
     branch_id: number | null;
   } | undefined;
   if (!period) throw new Error("period_not_found");
@@ -1524,6 +1552,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         cycle: period.cycle,
         periodStart: period.period_start,
         periodEnd: period.period_end,
+        payDate: period.pay_date,
         settings,
         holidaySet,
         doubleSet,
@@ -1586,12 +1615,12 @@ export function recomputeLine(
   db: Database.Database, periodId: number, userId: number
 ): void {
   const period = db.prepare(`
-    SELECT id, cycle, data_source, period_start, period_end, status, branch_id
+    SELECT id, cycle, data_source, period_start, period_end, pay_date, status, branch_id
     FROM payroll_periods WHERE id = ?
   `).get(periodId) as {
     id: number; cycle: "weekly" | "monthly";
     data_source: "auto" | "manual";
-    period_start: string; period_end: string; status: string;
+    period_start: string; period_end: string; pay_date: string; status: string;
     branch_id: number | null;
   } | undefined;
   if (!period) throw new Error("period_not_found");
@@ -1831,7 +1860,7 @@ export function recomputeLine(
   const computed = computeLineForEmployee({
     employee, shifts, unpaired: auto.unpaired,
     leaveDays: existing.leave_days,
-    cycle: period.cycle, periodStart: period.period_start, periodEnd: period.period_end,
+    cycle: period.cycle, periodStart: period.period_start, periodEnd: period.period_end, payDate: period.pay_date,
     settings, holidaySet, doubleSet, scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate
   });
 
