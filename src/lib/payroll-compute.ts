@@ -352,7 +352,14 @@ export function applyPtGrace(
   // pre-shift minutes join workedMinutes; the caller's 8h split then credits the
   // over-8h portion as OT. Without it, an early clock-in clamps UP to the
   // scheduled start as usual (early minutes discarded).
-  otFromTs?: string | null
+  otFromTs?: string | null,
+  // owner 2026-08-03: full-time lateness must NOT dock SERVICE-CHARGE minutes
+  // (มาสายไม่หัก — เป็นประวัติพิจารณา; the monthly >20% rule stays the only lever).
+  // When true, a late-beyond-grace clock-in is credited from the scheduled start
+  // like a within-grace arrival, so the worked window isn't shortened. lateMinutes
+  // is still reported for history. Only the SVC minute path passes this; payroll
+  // and the breakdown display leave it false.
+  creditLateAsScheduled?: boolean
 ): GracedShift {
   // Floor to whole minutes — the clock stores seconds, but pay is
   // reckoned in minutes (matching the HH:MM the editor shows). Without
@@ -395,8 +402,13 @@ export function applyPtGrace(
     // so an 11:03 punch on an 11:00 shift kept 11:03 and lost 3 paid minutes.
     effIn = Math.max(Math.min(inMs, schStart), inFloor);
   } else {
-    effIn = inMs;
     lateMinutes = (inMs - schStart) / 60000;
+    // Normally a late arrival is paid from the actual punch (docks the window).
+    // For FT SVC, credit from the scheduled start instead so lateness doesn't
+    // reduce the tip share (owner 2026-08-03) — lateMinutes above is kept as history.
+    effIn = creditLateAsScheduled
+      ? Math.max(Math.min(inMs, schStart), inFloor)
+      : inMs;
   }
 
   // Effective out: clamp to the out-cap unless early beyond grace. The

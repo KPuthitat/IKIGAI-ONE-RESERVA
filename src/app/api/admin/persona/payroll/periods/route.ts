@@ -57,9 +57,12 @@ export async function POST(req: Request) {
 
   const db = getDb();
 
-  // Future-period gate: if pay_date is in the future, require the user's
-  // own PIN + a reason. Verify against users.pin_hash and log to audit.
-  const isFuture = payDate > todayBkk();
+  // Future-period gate: block opening a period that isn't COMPLETE yet — keyed on
+  // period_end, not pay_date (owner 2026-08-03: a finished month can be processed
+  // immediately, no need to wait for the 5th). A period whose last day is still
+  // today or later isn't done → requires the user's own PIN + a reason. A month
+  // that has already ended opens freely even though its pay_date (the 5th) is ahead.
+  const isFuture = d.period_end >= todayBkk();
   if (isFuture) {
     if (!d.force_open_pin) {
       return NextResponse.json({ error: "future_pin_required" }, { status: 400 });

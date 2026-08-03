@@ -43,6 +43,21 @@ const g = applyPtGrace({ startTs: shifts[0].startTs, endTs: shifts[0].endTs }, p
 const worked = g.breakMinutes > 0 ? g.workedMinutes : deductBreak(g.workedMinutes, brk).workedMinutes;
 assert(worked === 510, `9h shift − 30 break, out clamped to 21:00 = 510 (got ${worked})`);
 
+// FT lateness must NOT dock SVC minutes (owner 2026-08-03): a late-beyond-grace
+// clock-in is credited from the scheduled start. A PT with the same late-in IS
+// docked. lateMinutes is still recorded either way (history for the >20% rule).
+const lateShift = pairShifts([
+  { user_id: 1, ts: new Date(`${date}T12:40:00+07:00`).toISOString(), type: "in" as const },
+  { user_id: 1, ts: new Date(`${date}T21:33:00+07:00`).toISOString(), type: "out" as const }
+]).shifts[0];
+const ptLate = applyPtGrace({ startTs: lateShift.startTs, endTs: lateShift.endTs }, picked, null, null, false);
+const ptLateW = ptLate.breakMinutes > 0 ? ptLate.workedMinutes : deductBreak(ptLate.workedMinutes, brk).workedMinutes;
+assert(ptLateW === 470, `PT late 40min → docked = 470 (got ${ptLateW})`);
+const ftLate = applyPtGrace({ startTs: lateShift.startTs, endTs: lateShift.endTs }, picked, null, null, true);
+const ftLateW = ftLate.breakMinutes > 0 ? ftLate.workedMinutes : deductBreak(ftLate.workedMinutes, brk).workedMinutes;
+assert(ftLateW === 510, `FT late 40min → NOT docked = 510 (got ${ftLateW})`);
+assert(Math.round(ftLate.lateMinutes) === 40, `FT late still recorded as history = 40 (got ${ftLate.lateMinutes})`);
+
 // ── cap pass (mirrors computeMonthlySvcSummary 4c) ──────────────
 const applyCap = (mins: number, hasOt: boolean) =>
   (mins > SVC_MAX_NORMAL_MINUTES && !hasOt) ? SVC_MAX_NORMAL_MINUTES : mins;
