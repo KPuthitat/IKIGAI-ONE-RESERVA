@@ -75,9 +75,9 @@ export async function PATCH(
 
   const db = getDb();
   const period = db.prepare(`
-    SELECT status, cycle, period_start, period_end, branch_id FROM payroll_periods WHERE id = ?
+    SELECT status, cycle, period_start, period_end, pay_date, branch_id FROM payroll_periods WHERE id = ?
   `).get(periodId) as
-    { status: string; cycle: "weekly" | "monthly"; period_start: string; period_end: string; branch_id: number | null } | undefined;
+    { status: string; cycle: "weekly" | "monthly"; period_start: string; period_end: string; pay_date: string; branch_id: number | null } | undefined;
   if (!period) return NextResponse.json({ error: "period_not_found" }, { status: 404 });
   if (period.status !== "draft") {
     return NextResponse.json({ error: "must_be_draft" }, { status: 400 });
@@ -210,6 +210,7 @@ export async function PATCH(
       cycle: period.cycle,
       periodStart: period.period_start,
       periodEnd: period.period_end,
+      payDate: period.pay_date,
       settings,
       serviceCharge: d.service_charge ?? line.service_charge,
       otherAdditions: d.other_additions ?? line.other_additions,
