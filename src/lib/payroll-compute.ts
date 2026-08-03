@@ -699,6 +699,31 @@ export function isFtPartialMonth(
   return hiredThisPeriod || leftThisPeriod;
 }
 
+/** Calendar days an FT is IN STATUS within [periodStart, periodEnd] inclusive —
+ *  from max(startBound, periodStart) to min(endBound || periodEnd, periodEnd).
+ *  Drives the daily-rate base of a partial month / weekly transition round (owner
+ *  2026-08-03: salary/30 per employed calendar day — weekly offs + paid days count;
+ *  only unpaid absences are deducted separately). 0 if the range is empty. */
+export function employedCalendarDays(
+  startBound: string | null,
+  endBound: string | null,
+  periodStart: string,
+  periodEnd: string
+): number {
+  const lo = startBound && startBound > periodStart ? startBound : periodStart;
+  const hi = endBound && endBound < periodEnd ? endBound : periodEnd;
+  if (lo > hi) return 0;
+  let n = 0;
+  let cur = lo;
+  while (cur <= hi) {
+    n++;
+    const nd = new Date(`${cur}T00:00:00Z`);
+    nd.setUTCDate(nd.getUTCDate() + 1);
+    cur = nd.toISOString().slice(0, 10);
+  }
+  return n;
+}
+
 /** Earliest non-null of two YYYY-MM-DD dates (or null). */
 export function earliestDate(a: string | null | undefined, b: string | null | undefined): string | null {
   if (!a) return b ?? null;
@@ -770,13 +795,7 @@ export function computeLineForEmployee(args: {
   // present field wins over the computed one.
   fieldOverridesByDate?: Map<string, DayFieldOverride>;
 }): ComputedLine {
-  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, payDate, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate } = args;
-  // Transition-month weekly round whose pay_date lands in a later month than the
-  // round itself → suppress the FT base slice (owner 2026-08-03). Only OT + the
-  // double-pay excess are paid this round; the base is paid as the monthly salary
-  // on the 5th of the next month. Keyed on the round's own month (periodStart).
-  const suppressWeeklyBase = cycle === "weekly" && !!payDate
-    && payDate.slice(0, 7) > periodStart.slice(0, 7);
+  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate } = args;
   // Extra FT base for double-pay days: FT base is salary (not per-day) so the 2×
   // is credited as one extra day-equivalent (ftHourlyEquivalent × regular hours)
   // per double day worked — added to basePay below (owner 2026-07-21).
@@ -932,22 +951,22 @@ export function computeLineForEmployee(args: {
     if (ftCycle === cycle && e.monthly_salary && e.is_primary_branch !== 0) {
       if (cycle === "monthly") {
         basePay = e.monthly_salary;
-        // Hire month / resignation month → pay per ACTUAL DAYS WORKED (attended):
-        // salary/30 × days_worked, capped at full salary (owner 2026-07-15,
-        // "รายวันที่เข้าทำงาน"). Normal full months keep the full salary.
+        // Hire / resignation month → daily rate: salary/30 × calendar days IN
+        // STATUS this period (owner 2026-08-03 — เข้าต้นเดือนทำเต็มเดือน = เต็ม;
+        // เข้ากลางเดือน = ตามวันที่อยู่จริง). Weekly offs + paid days count; unpaid
+        // absences are deducted below. Capped at full salary. Full months untouched.
         if (isFtPartialMonth(e.hire_date, e.last_working_day, periodStart, periodEnd)) {
-          basePay = Math.min(e.monthly_salary, round2((e.monthly_salary / 30) * daysSet.size));
+          const empDays = employedCalendarDays(e.hire_date, e.last_working_day, periodStart, periodEnd);
+          basePay = Math.min(e.monthly_salary, round2((e.monthly_salary / 30) * empDays));
         }
-      } else if (suppressWeeklyBase) {
-        // Round pays in a later month than the transition month → base is deferred
-        // to the monthly salary (5th of next month); pay only OT + double excess
-        // here (owner 2026-08-03). ftDoubleBonus (added below) is the double excess.
-        basePay = 0;
       } else {
-        // weekly: divide salary by # of Mondays in the calendar month
-        // containing periodEnd (= number of weekly pay-dates in that month)
-        const mondays = countMondaysInMonth(periodEnd) || 4;
-        basePay = e.monthly_salary / mondays;
+        // Weekly transition month (owner 2026-08-03): daily rate salary/30 × calendar
+        // days in FT status this round (from ft_started_at). Replaces the salary/#Mondays
+        // split + next-month deferral — each Monday pays for its own days, so double/OT
+        // settle cleanly and nothing is deferred.
+        const ftStart = e.ft_started_at ?? e.hire_date;
+        const empDays = employedCalendarDays(ftStart, e.last_working_day, periodStart, periodEnd);
+        basePay = round2((e.monthly_salary / 30) * empDays);
       }
     }
     // Else: different pay_cycle than this period, or not the primary branch — exclude
@@ -972,10 +991,16 @@ export function computeLineForEmployee(args: {
   // 'sso' = ในระบบ → SSO 5% (cap) only — PIT is not withheld monthly
   //                  (handled annually between employee & Revenue Dept)
   // 'wht' = นอกระบบ → WHT 3% flat on gross, no SSO
-  // FT in the weekly transition month is always WHT 3% (owner 2026-07-12);
-  // otherwise use the employee's configured mode.
-  const taxMode = (e.employment_type === "ft" && ftCycle === "weekly")
-    ? "wht" : (e.salary_tax_mode ?? "sso");
+  // Tax mode BY GROUP (owner 2026-08-03): พาร์ทไทม์ + ประจำเดือนเปลี่ยนผ่าน + ประจำ
+  // เดือนแรกที่เข้า → หัก ณ ที่จ่าย 3% (WHT); ประจำเต็มเดือน (รวมเดือนลาออก) → ประกัน
+  // สังคม (SSO). Category-driven — overrides the per-employee salary_tax_mode flag.
+  const ftStartForTax = e.ft_started_at ?? e.hire_date;
+  const isFtFirstMonth = !!ftStartForTax && ftStartForTax >= periodStart && ftStartForTax <= periodEnd;
+  const taxMode =
+    e.employment_type === "pt" ? "wht"
+    : e.employment_type === "ft"
+      ? ((ftCycle === "weekly" || isFtFirstMonth) ? "wht" : "sso")
+      : (e.salary_tax_mode ?? "sso");
   let ssoAmount = 0;
   let taxAmount = 0;
   if (grossPay > 0) {
@@ -1064,11 +1089,9 @@ export function computeLineFromMinutes(args: {
 }): ComputedLine {
   const {
     employee: e, regularMinutes, otMinutes, holidayMinutes, leaveDays,
-    unpaidLeaveDays = 0, daysWorked, unpaired, cycle, periodStart, periodEnd, payDate, settings,
+    unpaidLeaveDays = 0, daysWorked, unpaired, cycle, periodStart, periodEnd, settings,
     serviceCharge = 0, otherAdditions = 0, otherDeductions = 0
   } = args;
-  const suppressWeeklyBase = cycle === "weekly" && !!payDate
-    && payDate.slice(0, 7) > periodStart.slice(0, 7);
 
   // Period-relative FT cycle (transition month = weekly) — owner 2026-07-16.
   const ftCycle = ftEffectiveCycle(e.ft_started_at, e.pay_cycle, periodStart.slice(0, 7));
@@ -1098,19 +1121,15 @@ export function computeLineFromMinutes(args: {
     // shift-based path above. Non-primary branch gets no base here either.
     if (cycle === "monthly" && ftCycle === "monthly") {
       basePay = e.monthly_salary;
-      // Hire/resignation month → salary/30 × days worked (attended) (owner 2026-07-15).
+      // Hire/resignation month → daily rate salary/30 × days entered (owner
+      // 2026-08-03; manual path uses the admin's days count).
       if (isFtPartialMonth(e.hire_date, e.last_working_day, periodStart, periodEnd)) {
         basePay = Math.min(e.monthly_salary, round2((e.monthly_salary / 30) * daysWorked));
       }
     } else if (cycle === "weekly" && ftCycle === "weekly") {
-      if (suppressWeeklyBase) {
-        // Pays in a later month → base deferred to the monthly salary; only
-        // OT is paid this round (owner 2026-08-03).
-        basePay = 0;
-      } else {
-        const mondays = countMondaysInMonth(periodEnd) || 4;
-        basePay = e.monthly_salary / mondays;
-      }
+      // Transition weekly (owner 2026-08-03): daily rate salary/30 × days entered
+      // this round (replaces the salary/#Mondays split + next-month deferral).
+      basePay = round2((e.monthly_salary / 30) * daysWorked);
     }
   }
 
@@ -1131,10 +1150,16 @@ export function computeLineFromMinutes(args: {
 
   const grossPay = basePay + otPay + serviceCharge + otherAdditions;
 
-  // FT in the weekly transition month is always WHT 3% (owner 2026-07-12);
-  // otherwise use the employee's configured mode.
-  const taxMode = (e.employment_type === "ft" && ftCycle === "weekly")
-    ? "wht" : (e.salary_tax_mode ?? "sso");
+  // Tax mode BY GROUP (owner 2026-08-03): พาร์ทไทม์ + ประจำเดือนเปลี่ยนผ่าน + ประจำ
+  // เดือนแรกที่เข้า → หัก ณ ที่จ่าย 3% (WHT); ประจำเต็มเดือน (รวมเดือนลาออก) → ประกัน
+  // สังคม (SSO). Category-driven — overrides the per-employee salary_tax_mode flag.
+  const ftStartForTax = e.ft_started_at ?? e.hire_date;
+  const isFtFirstMonth = !!ftStartForTax && ftStartForTax >= periodStart && ftStartForTax <= periodEnd;
+  const taxMode =
+    e.employment_type === "pt" ? "wht"
+    : e.employment_type === "ft"
+      ? ((ftCycle === "weekly" || isFtFirstMonth) ? "wht" : "sso")
+      : (e.salary_tax_mode ?? "sso");
   let ssoAmount = 0;
   let taxAmount = 0;
   if (grossPay > 0) {
