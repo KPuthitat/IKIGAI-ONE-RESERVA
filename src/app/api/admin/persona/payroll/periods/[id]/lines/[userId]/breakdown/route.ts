@@ -138,8 +138,8 @@ export async function GET(
   // raw clocked minutes. Load type + rate so the per-day money columns
   // match what the pay engine stored.
   const emp = db.prepare(`
-    SELECT employment_type, hourly_rate, track_attendance FROM users WHERE id = ?
-  `).get(userId) as { employment_type: "pt" | "ft" | null; hourly_rate: number | null; track_attendance: number | null } | undefined;
+    SELECT employment_type, hourly_rate, monthly_salary, track_attendance FROM users WHERE id = ?
+  `).get(userId) as { employment_type: "pt" | "ft" | null; hourly_rate: number | null; monthly_salary: number | null; track_attendance: number | null } | undefined;
   const isPt = emp?.employment_type === "pt";
   // Salaried execs (track_attendance=0) never get OT — same as the pay engine.
   const isExec = emp?.employment_type === "ft" && emp?.track_attendance === 0;
@@ -152,6 +152,12 @@ export async function GET(
     FROM payroll_settings WHERE id = 1
   `).get() as PayrollSettings;
   const ptRate = emp?.hourly_rate ?? settings.pt_default_hourly_rate;
+  // FT per-day rate for the REFERENCE per-day amounts shown in the editor (owner
+  // 2026-08-03: อยากเห็นแต่ละวันได้เท่าไหร่ โดยเฉพาะวันคูณสอง). FT base is a monthly
+  // salary paid as a lump; here we surface the daily-equivalent value so a 2× day
+  // is visible per day. rateForPay drives both the displayed base and OT.
+  const ftHourlyEquiv = emp?.monthly_salary ? emp.monthly_salary / 30 / 8 : 0;
+  const rateForPay = isPt ? ptRate : ftHourlyEquiv;
   const branchNameById = new Map<number, string>(
     (db.prepare("SELECT id, name FROM branches").all() as Array<{ id: number; name: string }>).map((b) => [b.id, b.name])
   );
@@ -274,7 +280,9 @@ export async function GET(
     const ov = fieldOvByDate.get(date);
     const rawMin = outTs ? Math.max(0, floorMin(outTs) - floorMin(inTs)) : 0;
     const holiday = isPt && holidaySet.has(date);
-    const isDoubleDay = isPt && doubleSet.has(date);
+    // Double-pay applies to everyone (FT + PT), same as the pay engine — so an FT's
+    // 2× day is flagged per day too (owner 2026-08-03). The 1.5× วันพิเศษ stays PT-only.
+    const isDoubleDay = doubleSet.has(date);
 
     // Scheduled window — per-day override wins over the roster (both PT + FT,
     // matching the pay engine).
@@ -338,10 +346,11 @@ export async function GET(
 
     // 2× (double_pay) wins over 1.5× (วันพิเศษ) — same precedence as the engine.
     const mult = isDoubleDay ? 2 : holiday ? 1.5 : 1;
-    const regularPay = isPt ? (regMin / 60) * ptRate * mult : 0;
-    const otPay = isPt
-      ? (ov?.ot_pay != null ? ov.ot_pay : computeOtPay(otMin, ptRate, settings, mult))
-      : 0;
+    // Per-day amounts for BOTH PT and FT (owner 2026-08-03). FT uses the daily
+    // salary-equivalent so a 2× day shows base×2 per day; exec (no clock) has no OT.
+    const regularPay = (regMin / 60) * rateForPay * mult;
+    const otPay = isExec ? 0
+      : (ov?.ot_pay != null ? ov.ot_pay : computeOtPay(otMin, rateForPay, settings, mult));
 
     const hasFieldOv = !!ov && (
       ov.sched_in != null || ov.break_min != null || ov.worked_min != null ||

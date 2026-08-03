@@ -1740,7 +1740,10 @@ function LineEditModal({
             </p>
           )}
           {breakdownDays && (breakdownDays.length > 0 || showAllDays) && (() => {
-            const showMoney = line.hourly_rate_snapshot != null;
+            // Show per-day money for everyone (owner 2026-08-03: อยากเห็นแต่ละวันได้
+            // เท่าไหร่ โดยเฉพาะวันคูณสอง). For salaried FT the per-day figure is a
+            // reference (daily-equivalent) — the footnote below clarifies this.
+            const showMoney = true;
             const clampedPair = (p: BreakdownDay["pairs"][number]) =>
               p.durationMinutes > 0 &&
               (p.effectiveMinutes + p.otMinutes + p.breakMinutes) !== p.durationMinutes;
@@ -1948,7 +1951,7 @@ function LineEditModal({
           <p className="text-[10px] text-slate-400 leading-relaxed">
             {line.employment_type === "pt"
               ? <>&quot;ชั่วโมงทำงาน&quot; = เวลาหลังปัดเข้ากรอบกะ (เข้าก่อน/สายไม่เกิน 5 นาที = เริ่มตามกะ · ออกหลัง/ก่อนเลิกไม่เกิน 5 นาที = เลิกตามกะ) แล้วหักเวลาพักตามกะ. ส่วนเกิน 8 ชม./วัน นับเป็นทำงานล่วงเวลา</>
-              : <>ค่าตอบแทนของพนักงานประจำคิดจากเงินเดือน ไม่ใช่ชั่วโมง — ตารางนี้แสดงเวลาเพื่ออ้างอิงเท่านั้น</>}
+              : <>พนักงานประจำได้ค่าตอบแทนเป็นเงินเดือน (ก้อนเดียว) — ยอด &quot;ค่าตอบแทน&quot; รายวันในตารางนี้เป็นค่าอ้างอิงต่อวัน (เงินเดือน ÷ 30) เพื่อให้เห็นว่าวันคูณสอง (×2) ได้เพิ่มเท่าไหร่ ไม่ใช่ยอดที่จ่ายเพิ่มตรงๆ</>}
           </p>
         </div>
 
@@ -1988,6 +1991,12 @@ function LineEditModal({
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-sm font-bold text-slate-800">
                   วันที่ {selectedDate}
+                  {selDay?.pairs.some((p) => p.double) && (
+                    <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">จ่ายสองเท่า ×2</span>
+                  )}
+                  {!selDay?.pairs.some((p) => p.double) && selDay?.pairs.some((p) => p.holiday) && (
+                    <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-normal">วันพิเศษ ×1.5</span>
+                  )}
                   {locked
                     ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 font-normal">อ่านอย่างเดียว</span>
                     : <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-normal">แก้ไขได้</span>}
@@ -1995,6 +2004,19 @@ function LineEditModal({
                 <button type="button" onClick={() => { setSelectedDate(null); setSelDay(null); }}
                   className="text-xs text-slate-400 hover:text-slate-600">ปิด</button>
               </div>
+              {/* วันนี้ได้เท่าไหร่ (owner 2026-08-03) — โชว์ยอดรายวัน โดยเฉพาะวันคูณสอง.
+                  สำหรับพนักงานประจำเป็นค่าอ้างอิงต่อวัน (เงินเดือนคิดเป็นก้อน). */}
+              {selDay != null && (selDay.pay > 0 || selDay.otPay > 0) && (
+                <div className="flex items-baseline justify-between gap-3 rounded-md bg-white border border-slate-200 px-3 py-2">
+                  <span className="text-xs text-slate-500">
+                    วันนี้ได้{line.hourly_rate_snapshot == null ? " (อ้างอิงต่อวัน)" : ""}
+                    {selDay.otPay > 0 && <span className="text-slate-400"> · รวมค่าล่วงเวลา ฿{fmtMoney(selDay.otPay)}</span>}
+                  </span>
+                  <span className={`text-base font-bold tabular-nums ${selDay.pairs.some((p) => p.double) ? "text-rose-600" : "text-slate-800"}`}>
+                    ฿{fmtMoney(selDay.pay)}
+                  </span>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">บันทึกเวลาเข้า</label>
