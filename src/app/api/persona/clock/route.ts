@@ -337,7 +337,14 @@ export async function POST(req: Request) {
   // Only gates a brand-new clock-in — clock-out and the 5-min self-correction
   // (existing != null) pass through so someone already at work can finish.
   if (action === "in" && !existing) {
-    if (!userHasWorkShiftOn(user.id, clockBranchId, todayBkk)) {
+    // Called in on a day off / holiday (owner 2026-08-03): if the staff filed an
+    // OT request for today that isn't rejected, let them clock in even without a
+    // rostered work shift. Pay for the day is still gated on the admin APPROVING
+    // that OT request; geofence/QR still apply, so this isn't a backdoor.
+    const holidayOt = db.prepare(
+      `SELECT 1 FROM ot_requests WHERE user_id = ? AND work_date = ? AND status != 'rejected' LIMIT 1`
+    ).get(user.id, todayBkk);
+    if (!holidayOt && !userHasWorkShiftOn(user.id, clockBranchId, todayBkk)) {
       const sup = db.prepare(`
         SELECT m.display_name AS name
         FROM users u JOIN users m ON m.id = u.reports_to_user_id
