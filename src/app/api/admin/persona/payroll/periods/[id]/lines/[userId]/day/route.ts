@@ -43,6 +43,10 @@ const Body = z.object({
   // OMITTED (undefined) leaves the day's branch untouched. Only branches in the
   // same company as this period are accepted.
   branch_id: z.number().int().positive().nullable().optional(),
+  // ทำงานวันหยุดประเพณี เลื่อน/ใช้สิทธิ์ (owner 2026-08-04): 'use' → วันนั้นจ่าย 2 เท่า
+  // เฉพาะคนนี้ + ตัดโควตาวันหยุด −1; 'defer' → ค่าจ้างปกติ ยกวันหยุดไปวันอื่น (ไม่ตัด
+  // โควตา); null → ล้างตัวเลือก. OMITTED = ไม่แตะ.
+  holiday_choice: z.enum(["defer", "use"]).nullable().optional(),
   admin_pin: z.string().optional()
 });
 
@@ -257,6 +261,25 @@ export async function PATCH(
               edited_by = excluded.edited_by,
               edited_at = excluded.edited_at
           `).run(userId, d.work_date, branchToStore, user.id, new Date().toISOString());
+        }
+      }
+
+      // (2b) วันหยุดประเพณี เลื่อน/ใช้สิทธิ์ (owner 2026-08-04). 'use'/'defer' upsert;
+      // null clears. Only touched when the field is present in the request.
+      if (d.holiday_choice !== undefined) {
+        if (d.holiday_choice === null) {
+          db.prepare(
+            "DELETE FROM holiday_work_choices WHERE user_id = ? AND work_date = ?"
+          ).run(userId, d.work_date);
+        } else {
+          db.prepare(`
+            INSERT INTO holiday_work_choices (user_id, work_date, choice, decided_by, decided_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (user_id, work_date) DO UPDATE SET
+              choice = excluded.choice,
+              decided_by = excluded.decided_by,
+              decided_at = excluded.decided_at
+          `).run(userId, d.work_date, d.holiday_choice, user.id, new Date().toISOString());
         }
       }
 

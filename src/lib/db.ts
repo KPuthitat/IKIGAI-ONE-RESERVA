@@ -6982,6 +6982,27 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_meeting_items_assignee ON meeting_action_items(assignee_user_id, status);
   `);
 
+  // ── ทำงานในวันหยุดประเพณี: เลื่อน / ใช้สิทธิ์ (owner 2026-08-04) ──────
+  // เมื่อพนักงานทำงานในวันหยุดประเพณี แอดมินเลือกให้รายคนต่อวัน:
+  //   • 'defer' (เลื่อน)   → ทำงานวันนั้นได้ค่าจ้างปกติ ไม่ได้ 2 เท่า, ยกวันหยุด
+  //                          ไปหยุดวันอื่น (โควตาไม่ลด — จะไปตัดตอนลาจริง)
+  //   • 'use'   (ใช้สิทธิ์) → ถือวันนั้นเป็นวันหยุดแต่มาทำงาน → ได้ค่าจ้าง 2 เท่า
+  //                          และโควตาวันหยุดประเพณี −1
+  // engine รวมวัน 'use' ของแต่ละคนเข้ากับ doubleSet (2 เท่าเฉพาะคนนั้น) แยกจาก
+  // public_holidays.double_pay ที่เป็น 2 เท่าทั้งบริษัท. โควตา −1 คิดใน leave.ts.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS holiday_work_choices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      work_date TEXT NOT NULL,             -- YYYY-MM-DD (BKK), วันหยุดประเพณี
+      choice TEXT NOT NULL CHECK (choice IN ('defer','use')),
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, work_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_holiday_choices_user ON holiday_work_choices(user_id, work_date);
+  `);
+
   // ── INSIGNA PII lint (spec section 6.1, NON-NEGOTIABLE) ─────
   // Walk every column of every `insigna_*` table and refuse to
   // proceed if any column name looks like personal data. This
