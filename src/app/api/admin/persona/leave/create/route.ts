@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { ALL_LEAVE_TYPES, saveLeaveAttachment, generateRefNo, type LeaveType } from "@/lib/leave";
+import { ALL_LEAVE_TYPES, saveLeaveAttachment, generateRefNo, holidayQuotaRemainingForLeave, type LeaveType, type LeaveTypeRow } from "@/lib/leave";
 
 // POST /api/admin/persona/leave/create — admin บันทึกการลาให้พนักงาน
 // (ใช้สำหรับลาก่อนเริ่มใช้ระบบ หรือกรณีพิเศษ — auto-approved)
@@ -62,6 +62,24 @@ export async function POST(req: Request) {
   }
   if (hours != null && (!isFinite(hours) || hours <= 0 || hours > 24)) {
     return NextResponse.json({ error: "invalid_hours" }, { status: 400 });
+  }
+
+  // วันหยุดประเพณี — เพดานตามสิทธิ์สะสม (owner 2026-08-04), เหมือนฝั่งพนักงาน. ถ้า
+  // ต้องให้เกินจริง ๆ แอดมินตั้ง user_leave_quotas override ได้ (getEffectiveQuotaDays
+  // เช็ค override ก่อนเสมอ).
+  if (type === "holiday") {
+    const typeRow = db.prepare("SELECT * FROM leave_types WHERE code = ?").get(type) as LeaveTypeRow | undefined;
+    if (typeRow) {
+      // Year-scoped: a backfilled prior-year holiday draws on that year's quota.
+      const remaining = holidayQuotaRemainingForLeave(target_user_id, typeRow, date_from);
+      if (remaining != null && days > remaining + 1e-6) {
+        return NextResponse.json({
+          error: "holiday_quota_exceeded",
+          message: `ลาวันหยุดประเพณีเกินสิทธิ์สะสม (เหลือ ${remaining} วัน) — วันที่เกินใช้ลาประเภทอื่น หรือปรับโควตารายคนที่หน้าพนักงาน`,
+          remaining
+        }, { status: 400 });
+      }
+    }
   }
 
   // attachment optional for admin (กรณีลาเก่ายังไม่มีหลักฐาน)
