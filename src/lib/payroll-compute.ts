@@ -1288,11 +1288,27 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     WHERE date >= ? AND date <= ? AND pt_special = 1
   `).all(period.period_start, period.period_end) as Array<{ date: string }>;
   const holidaySet = new Set(holidays.map((h) => h.date));
-  // วันจ่ายสองเท่า in period (owner 2026-07-21) — 2× base + OT for everyone.
+  // วันจ่ายสองเท่า in period (owner 2026-07-21) — 2× base + OT for EVERYONE.
   const doubleSet = new Set(
     (db.prepare(`SELECT date FROM public_holidays WHERE date >= ? AND date <= ? AND double_pay = 1`)
       .all(period.period_start, period.period_end) as Array<{ date: string }>).map((h) => h.date)
   );
+  // ทำงานวันหยุดประเพณี "ใช้สิทธิ์" (owner 2026-08-04) — 2× เฉพาะคนที่แอดมินเลือก
+  // 'use' ในวันนั้น (แยกจาก double_pay ที่เป็นทั้งบริษัท). keyed user → set(dates).
+  const useChoicesByUser = new Map<number, Set<string>>();
+  for (const r of db.prepare(
+    `SELECT user_id, work_date FROM holiday_work_choices
+     WHERE choice = 'use' AND work_date >= ? AND work_date <= ?`
+  ).all(period.period_start, period.period_end) as Array<{ user_id: number; work_date: string }>) {
+    let s = useChoicesByUser.get(r.user_id);
+    if (!s) { s = new Set(); useChoicesByUser.set(r.user_id, s); }
+    s.add(r.work_date);
+  }
+  // Effective 2× set for one employee = global วันจ่ายสองเท่า ∪ their 'use' days.
+  const doubleSetFor = (userId: number): Set<string> => {
+    const own = useChoicesByUser.get(userId);
+    return own && own.size ? new Set([...doubleSet, ...own]) : doubleSet;
+  };
 
   // Scheduled shifts (work kind only) for PT grace clamping — keyed by
   // user → BKK assignment date → list of windows. Anchored at +07:00;
@@ -1660,7 +1676,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         payDate: period.pay_date,
         settings,
         holidaySet,
-        doubleSet,
+        doubleSet: doubleSetFor(emp.user_id),
         // Grace + scheduled-break apply in both modes when a roster
         // exists (the rule is independent of where the time came from).
         scheduledByDate: scheduledByUser.get(emp.user_id),
@@ -1822,11 +1838,19 @@ export function recomputeLine(
     WHERE date >= ? AND date <= ? AND pt_special = 1
   `).all(period.period_start, period.period_end) as Array<{ date: string }>;
   const holidaySet = new Set(holidays.map((h) => h.date));
-  // วันจ่ายสองเท่า in period (owner 2026-07-21) — 2× base + OT for everyone.
+  // วันจ่ายสองเท่า in period (owner 2026-07-21) — 2× base + OT for EVERYONE,
+  // plus this user's "ใช้สิทธิ์" holiday-work days (owner 2026-08-04) → 2× for
+  // them only. Matches computePayrollPeriod's doubleSetFor(userId).
   const doubleSet = new Set(
     (db.prepare(`SELECT date FROM public_holidays WHERE date >= ? AND date <= ? AND double_pay = 1`)
       .all(period.period_start, period.period_end) as Array<{ date: string }>).map((h) => h.date)
   );
+  for (const r of db.prepare(
+    `SELECT work_date FROM holiday_work_choices
+     WHERE user_id = ? AND choice = 'use' AND work_date >= ? AND work_date <= ?`
+  ).all(userId, period.period_start, period.period_end) as Array<{ work_date: string }>) {
+    doubleSet.add(r.work_date);
+  }
 
   // Roster (work shifts) for this user → scheduled windows + break.
   // Branch-scoped to match computePayrollPeriod (owner 2026-07-31): a branch

@@ -63,7 +63,17 @@ export function getLeaveHoursUsedThisYear(userId: number, type: LeaveType): numb
       AND status IN ('pending','approved')
       AND substr(date_from, 1, 4) = ?
   `).get(userId, type, year) as { total_hours: number };
-  return Number(row.total_hours) || 0;
+  let hours = Number(row.total_hours) || 0;
+  // วันหยุดประเพณีที่ "ใช้สิทธิ์" ตอนมาทำงาน (owner 2026-08-04) — แต่ละวันตัดโควตา
+  // 1 วัน (8 ชม.) เหมือนได้ลาหยุดไปแล้ว (แต่มาทำงานได้ 2 เท่าแทน). นับรวมเป็น "ใช้ไป".
+  if (type === "holiday") {
+    const c = getDb().prepare(`
+      SELECT COUNT(*) AS n FROM holiday_work_choices
+      WHERE user_id = ? AND choice = 'use' AND substr(work_date, 1, 4) = ?
+    `).get(userId, year) as { n: number };
+    hours += (Number(c.n) || 0) * 8;
+  }
+  return hours;
 }
 
 // ── วันหยุดประเพณีแบบสะสมรายเดือน (owner 2026-08-03) ───────────────────────

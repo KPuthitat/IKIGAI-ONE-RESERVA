@@ -1122,6 +1122,8 @@ type BreakdownDay = {
     earlyMin: number;
     holiday: boolean;
     double: boolean;
+    publicHoliday: boolean;
+    holidayChoice: "defer" | "use" | null;
     branch: string | null;
     branch_id: number | null;
     statusLabel: string | null;
@@ -1182,6 +1184,9 @@ function LineEditModal({
   // another branch in the company cycle. Empty = use the punched branch.
   const [dayBranchId, setDayBranchId] = useState<string>("");
   const [dayBranchInit, setDayBranchInit] = useState<string>("");
+  // วันหยุดประเพณี เลื่อน/ใช้สิทธิ์ (owner 2026-08-04) — "" = ยังไม่เลือก.
+  const [dayHolidayChoice, setDayHolidayChoice] = useState<"" | "defer" | "use">("");
+  const [dayHolidayInit, setDayHolidayInit] = useState<"" | "defer" | "use">("");
   // Sibling branches the day can be moved to (from the breakdown response) +
   // this period's own branch. The picker shows only when there is a choice.
   const [branchOptions, setBranchOptions] = useState<Array<{ id: number; name: string; status: string }>>([]);
@@ -1322,6 +1327,8 @@ function LineEditModal({
     setDayBreak(vBreak); setDayWorked(vWorked);
     setDayOtUntil(vOtUntil); setDayOtPay(vOtPay);
     setDayBranchId(vBranch); setDayBranchInit(vBranch);
+    const vChoice = (day.pairs.find((p) => p.holidayChoice != null)?.holidayChoice ?? "") as "" | "defer" | "use";
+    setDayHolidayChoice(vChoice); setDayHolidayInit(vChoice);
     setDayInit({ in: vIn, out: vOut, schedIn: vSchedIn, schedOut: vSchedOut,
       brk: vBreak, worked: vWorked, otUntil: vOtUntil, otPay: vOtPay });
     setDayHad({
@@ -1344,6 +1351,7 @@ function LineEditModal({
     setDayBreak(""); setDayWorked(""); setDayOtUntil(""); setDayOtPay("");
     { const vBranch = periodBranchId != null ? String(periodBranchId) : "";
       setDayBranchId(vBranch); setDayBranchInit(vBranch); }
+    setDayHolidayChoice(""); setDayHolidayInit("");
     setDayInit({ in: "", out: "", schedIn: "", schedOut: "",
       brk: "", worked: "", otUntil: "", otPay: "" });
     setDayHad({ clock: false, sched: false, brk: false, worked: false, otUntil: false, otPay: false });
@@ -1393,12 +1401,14 @@ function LineEditModal({
     const otUntilDirty = dayOtUntil !== dayInit.otUntil;
     const otPayDirty = dayOtPay !== dayInit.otPay;
     const branchDirty = dayBranchId !== dayBranchInit;
-    const anyDirty = clockDirty || schedDirty || breakDirty || workedDirty || otUntilDirty || otPayDirty || branchDirty;
+    const holidayChoiceDirty = dayHolidayChoice !== dayHolidayInit;
+    const anyDirty = clockDirty || schedDirty || breakDirty || workedDirty || otUntilDirty || otPayDirty || branchDirty || holidayChoiceDirty;
     const hadAny = selDay?.override != null;
     // A pure branch move sends ONLY the branch (no clock/field keys) so the
     // server never pins an unnecessary clock override — and the clock/sched
     // pair validations below don't apply (the day's punches are untouched).
-    const onlyBranch = branchDirty && !clockDirty && !schedDirty && !breakDirty
+    // A choice-only change behaves the same (no clock/field keys sent).
+    const onlyBranch = (branchDirty || holidayChoiceDirty) && !clockDirty && !schedDirty && !breakDirty
       && !workedDirty && !otUntilDirty && !otPayDirty && !hadAny;
 
     if (!anyDirty && !hadAny) {
@@ -1433,8 +1443,12 @@ function LineEditModal({
       const branchField = branchDirty
         ? { branch_id: dayBranchId === "" ? null : Number(dayBranchId) }
         : {};
+      // เลื่อน/ใช้สิทธิ์ — sent ONLY when changed; "" → null (clears the choice).
+      const holidayField = holidayChoiceDirty
+        ? { holiday_choice: dayHolidayChoice === "" ? null : dayHolidayChoice }
+        : {};
       const body = onlyBranch
-        ? { work_date: selectedDate, ...branchField, admin_pin: dayPin }
+        ? { work_date: selectedDate, ...branchField, ...holidayField, admin_pin: dayPin }
         : {
             work_date: selectedDate,
             clock_in: dayIn || null,
@@ -1448,6 +1462,7 @@ function LineEditModal({
             // Branch reattribution — sent ONLY when the picker changed, so an
             // untouched save never moves the day. "" → null (punched branch).
             ...branchField,
+            ...holidayField,
             admin_pin: dayPin
           };
       const res = await fetch(
@@ -1475,7 +1490,8 @@ function LineEditModal({
           target_not_draft: `ย้ายไม่ได้ — รอบจ่ายของ ${brName} ปิดไปแล้ว (ต้องเป็นฉบับร่าง)`,
           source_not_draft: `ย้ายไม่ได้ — รอบจ่ายของ ${brName} ปิดไปแล้ว (ต้องเป็นฉบับร่าง)`,
           target_branch_not_generated: `ย้ายไม่ได้ — ยังไม่ได้สร้างรอบจ่ายของสาขาปลายทางสำหรับงวดนี้`,
-          branch_move_unsupported: "ย้ายสาขาไม่ได้ในรอบแบบเก่า (ไม่ผูกสาขา)"
+          branch_move_unsupported: "ย้ายสาขาไม่ได้ในรอบแบบเก่า (ไม่ผูกสาขา)",
+          holiday_use_needs_work: "เลือก “ใช้สิทธิ์” ได้เฉพาะวันที่มาทำงานจริง — กรอกเวลาทำงานของวันนี้ก่อน แล้วค่อยเลือกใช้สิทธิ์"
         };
         setDayMsg(map[j?.error] ?? j?.error ?? t(lang, "common.error"));
       }
@@ -2078,6 +2094,30 @@ function LineEditModal({
                   <span className={`text-base font-bold tabular-nums ${selDay.pairs.some((p) => p.double) ? "text-rose-600" : "text-slate-800"}`}>
                     ฿{fmtMoney(selDay.pay)}
                   </span>
+                </div>
+              )}
+              {/* วันหยุดประเพณี เลื่อน/ใช้สิทธิ์ (owner 2026-08-04) — โชว์เมื่อวันนี้เป็น
+                  วันหยุดราชการ/ประเพณี. 'use' → 2× วันนี้ + ตัดโควตา; 'defer' → ปกติ. */}
+              {selDay?.pairs.some((p) => p.publicHoliday) && (
+                <div className="rounded-md bg-violet-50 border border-violet-200 px-3 py-2 space-y-1.5">
+                  <div className="text-[11px] font-bold text-violet-800">วันหยุดประเพณี — มาทำงานวันนี้</div>
+                  <p className="text-[11px] text-violet-700 leading-relaxed">
+                    <b>เลื่อน</b> = จ่ายปกติ ยกวันหยุดไปหยุดวันอื่น (โควตาไม่ลด) ·
+                    <b> ใช้สิทธิ์</b> = จ่าย 2 เท่าวันนี้ + ตัดโควตาวันหยุด 1 วัน
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {(([["", "— ไม่ระบุ —"], ["defer", "เลื่อน (จ่ายปกติ)"], ["use", "ใช้สิทธิ์ (×2 + ตัดโควตา)"]]) as Array<["" | "defer" | "use", string]>).map(([val, label]) => (
+                      <button key={val || "none"} type="button" disabled={locked}
+                        onClick={() => setDayHolidayChoice(val)}
+                        className={`text-xs px-3 py-1 rounded border ${
+                          dayHolidayChoice === val
+                            ? "bg-violet-600 text-white border-violet-600"
+                            : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
+                        } disabled:opacity-50`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
               {/* ลงเวลาทำงานวันหยุดแทนพนักงาน (owner 2026-08-03) — วันที่พนักงานไม่ได้

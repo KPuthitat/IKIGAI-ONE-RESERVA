@@ -67,6 +67,11 @@ type DayPair = {
   holiday: boolean;
   // True when the day is a วันจ่ายสองเท่า (double_pay) — PT pay ×2 (wins over ×1.5).
   double: boolean;
+  // True when the date is any public holiday (owner 2026-08-04) — surfaces the
+  // เลื่อน/ใช้สิทธิ์ control in the day editor.
+  publicHoliday: boolean;
+  // This user's เลื่อน/ใช้สิทธิ์ choice for the date, or null if none set.
+  holidayChoice: "defer" | "use" | null;
   // Branch where this day's hours are BOOKED — the per-day reattribution
   // (payroll_day_branch) when set, else where the clock-in was recorded
   // (owner 2026-07-28: แท็กสาขาที่ลงเวลา; 2026-07-31: ย้ายสาขารายวันได้). null for
@@ -187,6 +192,16 @@ export async function GET(
   // it the modal showed PT days at 1× while the actual line was paid 2× (owner
   // 2026-07-28: "2x ยังไม่มีผลกับพาร์ทไทม์").
   const doubleSet = new Set(phRows.filter((h) => h.double_pay === 1).map((h) => h.date));
+  // ทำงานวันหยุดประเพณี "ใช้สิทธิ์" ของ user คนนี้ (owner 2026-08-04) → 2× เฉพาะเขา,
+  // mirror doubleSetFor() ในเครื่องคิดเงิน เพื่อให้ modal per-day ตรงกับยอดจริง.
+  const holidayChoiceByDate = new Map<string, "defer" | "use">();
+  for (const r of db.prepare(
+    `SELECT work_date, choice FROM holiday_work_choices
+     WHERE user_id = ? AND work_date >= ? AND work_date <= ?`
+  ).all(userId, period.period_start, period.period_end) as Array<{ work_date: string; choice: "defer" | "use" }>) {
+    holidayChoiceByDate.set(r.work_date, r.choice);
+    if (r.choice === "use") doubleSet.add(r.work_date);
+  }
 
   // Scheduled work shifts in the period, keyed by BKK assignment date.
   // Same anchoring rule as the pay engine (lib/payroll-compute.ts).
@@ -378,6 +393,8 @@ export async function GET(
       earlyMin,
       holiday,
       double: isDoubleDay,
+      publicHoliday: publicHolidaySet.has(date),
+      holidayChoice: holidayChoiceByDate.get(date) ?? null,
       branch: effBranchId(date, branchId) != null ? (branchNameById.get(effBranchId(date, branchId)!) ?? null) : null,
       branch_id: effBranchId(date, branchId),
       statusLabel: null
@@ -524,6 +541,8 @@ export async function GET(
           earlyMin: 0,
           holiday: false,
           double: false,
+          publicHoliday: publicHolidaySet.has(bkkDate(e.ts)),
+          holidayChoice: holidayChoiceByDate.get(bkkDate(e.ts)) ?? null,
           branch: effBranchId(bkkDate(e.ts), e.branch_id) != null ? (branchNameById.get(effBranchId(bkkDate(e.ts), e.branch_id)!) ?? null) : null,
           branch_id: effBranchId(bkkDate(e.ts), e.branch_id),
           statusLabel: null
@@ -549,7 +568,9 @@ export async function GET(
         date, workIn: null, workOut: null, durationMinutes: 0,
         schedIn: null, schedOut: null, breakMinutes: 0,
         effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: true,
-        lateMin: 0, earlyMin: 0, holiday: false, double: false, branch: null, branch_id: null, statusLabel: "ขาดงาน"
+        lateMin: 0, earlyMin: 0, holiday: false, double: false,
+        publicHoliday: publicHolidaySet.has(date), holidayChoice: holidayChoiceByDate.get(date) ?? null,
+        branch: null, branch_id: null, statusLabel: "ขาดงาน"
       });
     }
   }
@@ -567,7 +588,9 @@ export async function GET(
       date: d, workIn: null, workOut: null, durationMinutes: 0,
       schedIn: null, schedOut: null, breakMinutes: 0,
       effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: false,
-      lateMin: 0, earlyMin: 0, holiday: holidaySet.has(d), double: false, branch: null, branch_id: null, statusLabel: label
+      lateMin: 0, earlyMin: 0, holiday: holidaySet.has(d), double: false,
+      publicHoliday: publicHolidaySet.has(d), holidayChoice: holidayChoiceByDate.get(d) ?? null,
+      branch: null, branch_id: null, statusLabel: label
     });
   }
 
