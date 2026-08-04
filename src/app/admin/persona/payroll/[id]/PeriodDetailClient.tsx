@@ -1240,6 +1240,13 @@ function LineEditModal({
   // from a collapsible footer to the primary view of the modal.
   const [breakdownDays, setBreakdownDays] = useState<BreakdownDay[] | null>(null);
   const [breakdownSelfies, setBreakdownSelfies] = useState<SelfiePunch[] | null>(null);
+  // FT ประจำ (เงินเดือน) — โหมดกระทบยอด: ตารางแสดง pay เป็น "ส่วนเพิ่ม/หัก" จาก
+  // เงินเดือน แล้วบวกกลับ salaryBase เป็นยอดจ่ายจริง (owner 2026-08-04). PT ไม่แตะ.
+  const [ftMonthly, setFtMonthly] = useState(false);
+  const [salaryBase, setSalaryBase] = useState(0);
+  const [doublePremium, setDoublePremium] = useState(0);
+  const [actualOt, setActualOt] = useState(0);
+  const [actualTotal, setActualTotal] = useState(0);
   const [breakdownLoading, setBreakdownLoading] = useState(true);
   const [breakdownErr, setBreakdownErr] = useState<string | null>(null);
   // Bumped after a successful per-day save so the parent knows to
@@ -1267,6 +1274,11 @@ function LineEditModal({
       if (j.period_end) setPeriodEnd(j.period_end as string);
       setBranchOptions((j.branch_options ?? []) as Array<{ id: number; name: string; status: string }>);
       setPeriodBranchId((j.period_branch_id ?? null) as number | null);
+      setFtMonthly(!!j.ftMonthly);
+      setSalaryBase(Number(j.salaryBase) || 0);
+      setDoublePremium(Number(j.doublePremium) || 0);
+      setActualOt(Number(j.actualOt) || 0);
+      setActualTotal(Number(j.actualTotal) || 0);
       setBreakdownErr(null);
     } catch {
       setBreakdownErr(t(lang, "common.error"));
@@ -1987,7 +1999,22 @@ function LineEditModal({
                         )}
                         {showMoney && (
                           <td className="px-2 py-1.5 text-right font-mono">
-                            {p.pay > 0 ? fmtMoney(p.pay) : <span className="text-slate-300">—</span>}
+                            {ftMonthly ? (
+                              p.statusLabel ? (
+                                // วันหยุด/วัน off/ลา — ได้ค่าจ้างอยู่แล้วในเงินเดือน.
+                                <span className="text-[10px] font-sans text-slate-400">ได้ค่าจ้าง (ในเงินเดือน)</span>
+                              ) : p.pay > 0 ? (
+                                <span className="text-emerald-600"
+                                  title={p.double ? "วันจ่าย 2 เท่า: ได้เพิ่ม 1 เท่า" : undefined}>
+                                  +{fmtMoney(p.pay)}
+                                </span>
+                              ) : (
+                                // วันทำงานปกติ — รวมอยู่ในเงินเดือนแล้ว (ไม่มีส่วนเพิ่ม).
+                                <span className="text-[10px] font-sans text-slate-400">อยู่ในเงินเดือน</span>
+                              )
+                            ) : (
+                              p.pay > 0 ? fmtMoney(p.pay) : <span className="text-slate-300">—</span>
+                            )}
                           </td>
                         )}
                       </tr>
@@ -2004,13 +2031,39 @@ function LineEditModal({
                       <td className="px-2 py-1.5 text-right font-mono">{tot.otPay > 0 ? fmtMoney(tot.otPay) : "—"}</td>
                     )}
                     {showMoney && (
-                      <td className="px-2 py-1.5 text-right font-mono">{fmtMoney(tot.pay)}</td>
+                      <td className="px-2 py-1.5 text-right font-mono">
+                        {ftMonthly ? fmtMoney(salaryBase + tot.pay) : fmtMoney(tot.pay)}
+                      </td>
                     )}
                   </tr>
                 </tbody>
               </table>
             </div>
-            {showMoney && (
+            {showMoney && (ftMonthly ? (
+              // FT ประจำ — กระทบยอด: เงินเดือน (รวมวันหยุด/วัน off) + ส่วนเพิ่ม = ยอดจ่ายจริง.
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs bg-rose-50/60 rounded-lg px-3 py-2 border border-rose-100">
+                <span className="text-slate-600">
+                  คำนวณชั่วโมงทำงานรวม: <b className="text-slate-800">{fmtMin(tot.work)}</b>
+                  {tot.ot > 0 && <> + ล่วงเวลา <b className="text-slate-800">{fmtMin(tot.ot)}</b></>}
+                </span>
+                <span className="text-slate-600">
+                  เงินเดือน (รวมวันหยุด/วัน off{(Number(line.unpaid_leave_days) || 0) > 0 ? " หลังหักลาแล้ว" : ""}): <b className="text-slate-800">{fmtMoney(salaryBase)}</b>
+                </span>
+                {doublePremium > 0 && (
+                  <span className="text-slate-600">
+                    จ่าย 2 เท่า: <b className="text-slate-800">+{fmtMoney(doublePremium)}</b>
+                  </span>
+                )}
+                {actualOt > 0 && (
+                  <span className="text-slate-600">
+                    ล่วงเวลา: <b className="text-slate-800">+{fmtMoney(actualOt)}</b>
+                  </span>
+                )}
+                <span className="text-slate-600">
+                  ยอดจ่ายจริงรอบนี้: <b className="text-brand">{fmtMoney(actualTotal)}</b>
+                </span>
+              </div>
+            ) : (
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs bg-rose-50/60 rounded-lg px-3 py-2 border border-rose-100">
                 <span className="text-slate-600">
                   คำนวณชั่วโมงทำงานรวม: <b className="text-slate-800">{fmtMin(tot.work)}</b>
@@ -2020,13 +2073,15 @@ function LineEditModal({
                   คำนวณค่าตอบแทนรวม: <b className="text-brand">{fmtMoney(tot.pay)}</b>
                 </span>
               </div>
-            )}
+            ))}
             </>
             );
           })()}
           <p className="text-[10px] text-slate-400 leading-relaxed">
             {line.employment_type === "pt"
               ? <>&quot;ชั่วโมงทำงาน&quot; = เวลาหลังปัดเข้ากรอบกะ (เข้าก่อน/สายไม่เกิน 5 นาที = เริ่มตามกะ · ออกหลัง/ก่อนเลิกไม่เกิน 5 นาที = เลิกตามกะ) แล้วหักเวลาพักตามกะ. ส่วนเกิน 8 ชม./วัน นับเป็นทำงานล่วงเวลา</>
+              : ftMonthly
+              ? <>พนักงานประจำได้เงินเดือนเต็ม (รวมวันหยุด) — ตารางนี้แสดงเฉพาะส่วนที่เพิ่ม/หักจากเงินเดือน (วันจ่าย 2 เท่า +ต่อวัน, ลาไม่รับค่าจ้าง −ต่อวัน, ล่วงเวลา) ยอดล่างคือยอดจ่ายจริงรอบนี้</>
               : <>พนักงานประจำได้ค่าตอบแทนเป็นเงินเดือน (ก้อนเดียว) — ยอด &quot;ค่าตอบแทน&quot; รายวันในตารางนี้เป็นค่าอ้างอิงต่อวัน (เงินเดือน ÷ 30) เพื่อให้เห็นว่าวันคูณสอง (×2) ได้เพิ่มเท่าไหร่ ไม่ใช่ยอดที่จ่ายเพิ่มตรงๆ</>}
           </p>
         </div>

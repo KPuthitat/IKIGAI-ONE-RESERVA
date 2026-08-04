@@ -163,6 +163,19 @@ export async function GET(
   // is visible per day. rateForPay drives both the displayed base and OT.
   const ftHourlyEquiv = emp?.monthly_salary ? emp.monthly_salary / 30 / 8 : 0;
   const rateForPay = isPt ? ptRate : ftHourlyEquiv;
+  // FT ประจำ (เงินเดือน) — ครอบคลุมประจำเดือน + เดือนเปลี่ยนผ่าน (weekly) + exec.
+  // สำหรับกลุ่มนี้ modal per-day แสดงเป็น "ส่วนเพิ่ม/หัก" จากเงินเดือน (ไม่ใช่ยอดเต็ม
+  // ต่อวัน) เพื่อให้กระทบยอดตรงกับยอดจ่ายจริงใน payroll_lines (owner 2026-08-04). PT
+  // ไม่แตะ. round2 helper สำหรับปัดสองตำแหน่ง (route นี้ยังไม่มี helper กลาง).
+  const round2 = (x: number) => Math.round(x * 100) / 100;
+  const ftMonthly = emp?.employment_type === "ft" && !!emp?.monthly_salary;
+  // ยอดจ่ายจริงที่บันทึกไว้สำหรับรอบ+คนนี้ — base_pay = salary − ลาไม่รับค่าจ้าง +
+  // ftDoubleBonus, ot_pay = ค่าล่วงเวลารวม (payroll-compute.ts). ไม่มีแถว → 0.
+  const lineRow = db.prepare(
+    `SELECT base_pay, ot_pay FROM payroll_lines WHERE period_id = ? AND user_id = ?`
+  ).get(periodId, userId) as { base_pay: number; ot_pay: number } | undefined;
+  const actualBase = lineRow?.base_pay ?? 0;
+  const actualOt = lineRow?.ot_pay ?? 0;
   const branchNameById = new Map<number, string>(
     (db.prepare("SELECT id, name FROM branches").all() as Array<{ id: number; name: string }>).map((b) => [b.id, b.name])
   );
@@ -596,6 +609,29 @@ export async function GET(
 
   const sortedDays = [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
 
+  // ── FT ประจำ: แปลง pay รายวันเป็น "ส่วนเพิ่ม/หัก" จากเงินเดือน ──────────────
+  // FT ประจำได้เงินเดือนก้อนเดียว (รวมวันหยุด/วัน off) — ตารางจึงไม่ควรบวกยอดเต็ม
+  // ต่อวัน (ได้ผลรวมน้อยกว่ายอดจริง). แทนที่ pay ของแต่ละวันด้วย DELTA:
+  //   - วันทำงานที่เป็นวันจ่าย 2 เท่า → พรีเมียม +1 เท่า = (regMin/60) × ftHourlyEquiv
+  //     (ตรงกับ ftDoubleBonus ที่ถูกฝังใน base_pay: payroll-compute.ts บรรทัด 957)
+  //   - วันปกติ/วันหยุด/วัน off/ลา → 0 (รวมอยู่ในเงินเดือนแล้ว)
+  //   - ล่วงเวลา (otPay) บวกเพิ่มเสมอ
+  // ผลรวม delta = doublePremium + ล่วงเวลา → บวกกลับ salaryBase ได้ยอดจ่ายจริง.
+  let doublePremiumTotal = 0;
+  if (ftMonthly) {
+    for (const day of sortedDays) {
+      let dayPay = 0;
+      for (const p of day.pairs) {
+        const regularDelta = p.double ? round2((p.effectiveMinutes / 60) * ftHourlyEquiv) : 0;
+        doublePremiumTotal += regularDelta;
+        p.pay = round2(regularDelta + p.otPay);
+        dayPay += p.pay;
+      }
+      day.pay = round2(dayPay);
+    }
+    doublePremiumTotal = round2(doublePremiumTotal);
+  }
+
   // Selfies captured at clock-in/out (owner 2026-07-14) — flat list keyed by
   // entry id so the admin can spot-check "who actually punched" per day. Only
   // punches that carry a selfie are returned.
@@ -612,6 +648,14 @@ export async function GET(
     // Sibling branches the day can be reattributed to (incl. this one). Empty /
     // single-entry → the client hides the branch picker.
     branch_options: branchOptions,
+    // FT ประจำ (เงินเดือน) — client ใช้ธงนี้เปิดโหมดกระทบยอด "เงินเดือน + ส่วนเพิ่ม/หัก".
+    // salaryBase = base_pay − doublePremium = เงินเดือน (หลังหักลาถ้ามี, รวมวันหยุด).
+    ftMonthly,
+    salaryBase: round2(actualBase - doublePremiumTotal),
+    doublePremium: round2(doublePremiumTotal),
+    actualBase,
+    actualOt,
+    actualTotal: round2(actualBase + actualOt),
     days: sortedDays,
     selfies
   });
