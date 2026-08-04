@@ -78,4 +78,30 @@ const user1UseDays = new Set(
 const user1Double = new Set([...globalDouble, ...user1UseDays]);
 assert(user1Double.size === 3, "user1 double set = 2 trad 'use' + 1 global Songkran");
 
+// 'use' requires worked evidence (owner 2026-08-04) — the day route rejects a
+// 'use' choice on a non-worked holiday so a quota day is never burned for zero
+// pay. Mirror that predicate: worked = a punch OR a worked day-override.
+db.exec(`
+  CREATE TABLE time_entries (user_id INTEGER, type TEXT, ts TEXT);
+  CREATE TABLE payroll_line_days (period_id INTEGER, user_id INTEGER, work_date TEXT,
+    clock_in TEXT, clock_out TEXT, worked_min INTEGER);
+`);
+// User 1 worked 2026-08-12 (a punch); User 2 has only a cleared override (no work).
+db.prepare("INSERT INTO time_entries VALUES (1, 'in', '2026-08-12T04:00:00Z')").run();
+db.prepare("INSERT INTO payroll_line_days VALUES (5, 2, '2026-08-12', NULL, NULL, 0)").run();
+const workedOn = (uid: number, date: string, clockInReq = false): boolean => {
+  if (clockInReq) return true;
+  const punch = db.prepare(
+    "SELECT 1 FROM time_entries WHERE user_id = ? AND type = 'in' AND ts >= ? AND ts <= ? LIMIT 1"
+  ).get(uid, `${date}T00:00:00Z`, `${date}T23:59:59Z`);
+  if (punch) return true;
+  const ov = db.prepare(
+    "SELECT 1 FROM payroll_line_days WHERE user_id = ? AND work_date = ? AND ((clock_in IS NOT NULL AND clock_out IS NOT NULL) OR COALESCE(worked_min,0) > 0) LIMIT 1"
+  ).get(uid, date);
+  return !!ov;
+};
+assert(workedOn(1, "2026-08-12"), "user1 worked (punch) → 'use' allowed");
+assert(!workedOn(2, "2026-08-12"), "user2 no work (cleared override) → 'use' rejected");
+assert(workedOn(2, "2026-08-12", true), "user2 with clock times in same request → 'use' allowed");
+
 console.log("\nholiday choice: all checks passed ✓");

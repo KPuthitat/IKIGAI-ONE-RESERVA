@@ -1490,7 +1490,8 @@ function LineEditModal({
           target_not_draft: `ย้ายไม่ได้ — รอบจ่ายของ ${brName} ปิดไปแล้ว (ต้องเป็นฉบับร่าง)`,
           source_not_draft: `ย้ายไม่ได้ — รอบจ่ายของ ${brName} ปิดไปแล้ว (ต้องเป็นฉบับร่าง)`,
           target_branch_not_generated: `ย้ายไม่ได้ — ยังไม่ได้สร้างรอบจ่ายของสาขาปลายทางสำหรับงวดนี้`,
-          branch_move_unsupported: "ย้ายสาขาไม่ได้ในรอบแบบเก่า (ไม่ผูกสาขา)"
+          branch_move_unsupported: "ย้ายสาขาไม่ได้ในรอบแบบเก่า (ไม่ผูกสาขา)",
+          holiday_use_needs_work: "เลือก “ใช้สิทธิ์” ได้เฉพาะวันที่มาทำงานจริง — กรอกเวลาทำงานของวันนี้ก่อน แล้วค่อยเลือกใช้สิทธิ์"
         };
         setDayMsg(map[j?.error] ?? j?.error ?? t(lang, "common.error"));
       }

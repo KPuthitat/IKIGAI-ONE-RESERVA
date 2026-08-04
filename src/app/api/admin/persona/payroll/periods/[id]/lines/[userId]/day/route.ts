@@ -196,6 +196,28 @@ export async function PATCH(
     return NextResponse.json({ error: "need_both_times" }, { status: 400 });
   }
 
+  // 'use' (ใช้สิทธิ์) only makes sense when the employee actually WORKED the
+  // holiday — the 2× pay is credited per worked shift, so allowing 'use' on a
+  // non-worked day would burn a holiday-quota day for zero compensation. Require
+  // worked evidence: clock times in THIS request, an existing punch, or a worked
+  // day-override. 'defer'/null are unrestricted (owner 2026-08-04).
+  if (d.holiday_choice === "use") {
+    const hasClockThisReq = !!clockIn && !!clockOut;
+    const dayStartIso = new Date(`${d.work_date}T00:00:00+07:00`).toISOString();
+    const dayEndIso = new Date(`${d.work_date}T23:59:59+07:00`).toISOString();
+    const hasPunch = hasClockThisReq || !!db.prepare(
+      "SELECT 1 FROM time_entries WHERE user_id = ? AND type = 'in' AND ts >= ? AND ts <= ? LIMIT 1"
+    ).get(userId, dayStartIso, dayEndIso);
+    const hasWorkedOv = hasPunch || !!db.prepare(
+      `SELECT 1 FROM payroll_line_days
+       WHERE period_id = ? AND user_id = ? AND work_date = ?
+         AND ((clock_in IS NOT NULL AND clock_out IS NOT NULL) OR COALESCE(worked_min, 0) > 0) LIMIT 1`
+    ).get(periodId, userId, d.work_date);
+    if (!hasWorkedOv) {
+      return NextResponse.json({ error: "holiday_use_needs_work" }, { status: 400 });
+    }
+  }
+
   const line = db.prepare(`
     SELECT regular_minutes, ot_minutes, holiday_minutes, days_worked,
            base_pay, ot_pay, gross_pay, net_pay
