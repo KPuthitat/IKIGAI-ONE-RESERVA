@@ -2,7 +2,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, userCanAdminBranch } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getMeeting, listActionItems } from "@/lib/meetings";
 import MeetingDetailClient, { type StaffOption } from "./MeetingDetailClient";
@@ -18,6 +18,9 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
   if (!Number.isInteger(id) || id <= 0) notFound();
   const meeting = getMeeting(db, id);
   if (!meeting) notFound();
+  // Branch-scope: an admin can only open meetings of a branch they administer
+  // (company-wide, branch_id NULL, open to any admin) — matches the route guards.
+  if (meeting.branch_id != null && !userCanAdminBranch(user, meeting.branch_id)) notFound();
   const items = listActionItems(db, id);
 
   const staff = (user.activeBranchId

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, userCanAdminBranch } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
 
 // PATCH /api/persona/meeting-items/[id] — mark an action item done / reopen it.
@@ -24,13 +24,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   const db = getDb();
-  const item = db.prepare(
-    "SELECT id, assignee_user_id FROM meeting_action_items WHERE id = ?"
-  ).get(id) as { id: number; assignee_user_id: number | null } | undefined;
+  const item = db.prepare(`
+    SELECT ai.id, ai.assignee_user_id, m.branch_id
+    FROM meeting_action_items ai
+    JOIN meetings m ON m.id = ai.meeting_id
+    WHERE ai.id = ?
+  `).get(id) as { id: number; assignee_user_id: number | null; branch_id: number | null } | undefined;
   if (!item) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  const isAdmin = user.role === "admin" || user.role === "super_admin";
+  // The item's assignee may always close/reopen their own task. An admin may too,
+  // but only for a branch they administer (company-wide meetings open to any admin).
   const isAssignee = item.assignee_user_id === user.id;
+  const isAdmin = (user.role === "admin" || user.role === "super_admin")
+    && (item.branch_id == null || userCanAdminBranch(user, item.branch_id));
   if (!isAdmin && !isAssignee) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
@@ -60,6 +66,16 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });
   }
   const db = getDb();
+  const item = db.prepare(`
+    SELECT ai.id, m.branch_id
+    FROM meeting_action_items ai
+    JOIN meetings m ON m.id = ai.meeting_id
+    WHERE ai.id = ?
+  `).get(id) as { id: number; branch_id: number | null } | undefined;
+  if (!item) return NextResponse.json({ ok: true, deleted: 0 });
+  if (item.branch_id != null && !userCanAdminBranch(user, item.branch_id)) {
+    return NextResponse.json({ error: "branch_forbidden" }, { status: 403 });
+  }
   const r = db.prepare("DELETE FROM meeting_action_items WHERE id = ?").run(id);
   if (r.changes > 0) logPersonaAction(user.id, "meeting.item_delete", id);
   return NextResponse.json({ ok: true, deleted: r.changes });

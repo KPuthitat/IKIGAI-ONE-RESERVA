@@ -37,9 +37,30 @@ export async function POST(req: Request) {
   }
   const { title, meeting_date, summary, company_wide, items } = parsed.data;
 
-  const branchId = company_wide ? null : (user.activeBranchId ?? null);
+  // A branch-scoped meeting needs a branch. Without an active branch and without
+  // company_wide, refuse rather than silently storing NULL (= visible to every
+  // branch), which would be the opposite of intent.
+  if (!company_wide && user.activeBranchId == null) {
+    return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
+  }
+  const branchId = company_wide ? null : user.activeBranchId;
   const db = getDb();
   const now = new Date().toISOString();
+
+  // Guard assignees: every referenced user must be an active employee, else the
+  // FK insert throws a 500. (The picker is already scoped; this stops crafted bodies.)
+  if (items && items.length) {
+    const ids = [...new Set(items.map((it) => it.assignee_user_id).filter((v): v is number => v != null))];
+    if (ids.length) {
+      const found = db.prepare(
+        `SELECT COUNT(*) AS c FROM users WHERE id IN (${ids.map(() => "?").join(",")})
+           AND status NOT IN ('disabled','resigned','terminated')`
+      ).get(...ids) as { c: number };
+      if (found.c !== ids.length) {
+        return NextResponse.json({ error: "invalid_assignee" }, { status: 400 });
+      }
+    }
+  }
 
   const tx = db.transaction(() => {
     const res = db.prepare(`
