@@ -516,10 +516,12 @@ function EditModal({
               currentUserRole === "super_admin" && primaryBranch != null && branchSel.has(primaryBranch)
                 ? primaryBranch
                 : undefined,
-            // Per-branch PT rate overrides (super_admin only). Only send for
-            // selected branches; "" clears the override (→ default rate). A
-            // non-numeric value is skipped so a typo can't zero someone's pay.
-            rates: currentUserRole === "super_admin"
+            // Per-branch PT rate overrides — only when the rate UI is actually
+            // shown (super_admin + payroll access + PT). Sending nothing for FT
+            // avoids wiping rates on an unrelated branch-membership save. "" clears
+            // the override (→ default); a non-numeric value is skipped so a typo
+            // can't zero someone's pay.
+            rates: currentUserRole === "super_admin" && canViewPayroll && employmentType === "pt"
               ? [...branchSel].map((bid) => {
                   const raw = (branchRates.get(bid) ?? "").trim();
                   if (raw === "") return { branch_id: bid, hourly_rate: null };
@@ -1644,7 +1646,7 @@ function EditModal({
           {/* Per-branch PT rate (owner 2026-08-04) — a staffer who works several
               branches can earn a different rate at each (พรนภา). super_admin +
               payroll access only. Blank = the employee's default rate is used. */}
-          {currentUserRole === "super_admin" && canViewPayroll && branchSel.size >= 1 && (
+          {currentUserRole === "super_admin" && canViewPayroll && employmentType === "pt" && branchSel.size >= 1 && (
             <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
               <div className="text-sm font-medium text-slate-700 mb-1">ค่าตอบแทนรายสาขา (รายชั่วโมง)</div>
               <p className="text-[11px] text-slate-500 mb-2">
