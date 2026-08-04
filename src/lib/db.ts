@@ -6939,6 +6939,41 @@ function runMigrations(db: Database.Database): void {
       .forEach((name, i) => seedIc.run(name, (i + 1) * 10));
   }
 
+  // ── การประชุม + เชคลิสต์หลังประชุม (owner 2026-08-04) ─────────────
+  // สรุปการประชุม (บันทึก/มติที่ตกลง) + รายการงานที่ต้องทำต่อ (action items)
+  // มอบหมายรายคน + ติดตามสถานะ open/done เพื่อให้ "มีคนทำ" ไม่ใช่แค่คุยแล้วจบ.
+  // meeting.branch_id NULL = ประชุมระดับบริษัท (ทุกสาขา). action item ผูกกับผู้รับ
+  // ผิดชอบ (assignee) — ผู้รับผิดชอบหรือแอดมินกดปิดงานได้.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS meetings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER REFERENCES branches(id) ON DELETE CASCADE,  -- NULL = ทั้งบริษัท
+      title TEXT NOT NULL,
+      meeting_date TEXT NOT NULL,          -- YYYY-MM-DD (BKK)
+      summary TEXT NOT NULL DEFAULT '',    -- สรุป/มติที่ประชุม
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_meetings_date ON meetings(meeting_date);
+    CREATE INDEX IF NOT EXISTS idx_meetings_branch ON meetings(branch_id, meeting_date);
+
+    CREATE TABLE IF NOT EXISTS meeting_action_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      meeting_id INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,                 -- สิ่งที่ต้องทำ
+      assignee_user_id INTEGER REFERENCES users(id),  -- ผู้รับผิดชอบ (NULL = ยังไม่มอบหมาย)
+      due_date TEXT,                       -- YYYY-MM-DD (BKK), nullable
+      status TEXT NOT NULL DEFAULT 'open'
+        CHECK (status IN ('open','done')),
+      done_at TEXT,
+      done_by INTEGER REFERENCES users(id),
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_meeting_items_meeting ON meeting_action_items(meeting_id, sort_order);
+    CREATE INDEX IF NOT EXISTS idx_meeting_items_assignee ON meeting_action_items(assignee_user_id, status);
+  `);
+
   // ── INSIGNA PII lint (spec section 6.1, NON-NEGOTIABLE) ─────
   // Walk every column of every `insigna_*` table and refuse to
   // proceed if any column name looks like personal data. This

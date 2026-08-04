@@ -7,6 +7,7 @@ import { bkkDateIso } from "@/lib/time";
 import { userHasWorkShiftOn, resolveClockBranchId, scheduledWorkBranchesWithNames } from "@/lib/roster";
 import { listUserCouponsForDate } from "@/lib/meal-coupons";
 import { resolveDrinkPartner } from "@/lib/partner-drink-orders";
+import { myOpenActionItemCount } from "@/lib/meetings";
 import TimeClockClient from "./TimeClockClient";
 import BranchSwitchPrompt from "./BranchSwitchPrompt";
 
@@ -123,6 +124,9 @@ export default function StaffPersonaPage() {
   // จ้อจี้ partner accounts get a shortcut to the drink-redemption scanner.
   const canRedeemDrinks = userCan(user, "partner.drink.redeem");
 
+  // งานที่ได้รับมอบหมายจากการประชุม (owner 2026-08-04) — โชว์การ์ดพร้อมจำนวนงานค้าง.
+  const openTaskCount = myOpenActionItemCount(db, user.id);
+
   // Cross-branch clock-in helper (owner 2026-07-31): if the ACTIVE branch has no
   // shift today but the staff IS rostered at another branch, offer a one-tap
   // switch pop-up so they don't get stuck at "ไม่มีกะ" / wrong-branch gates.
@@ -178,6 +182,14 @@ export default function StaffPersonaPage() {
           className="block rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 hover:bg-amber-100 transition"
         >
           คูปอง / เบิกเครื่องดื่ม{redeemableCoupons > 0 ? ` · ${redeemableCoupons} ใบพร้อมใช้` : ""} →
+        </Link>
+      )}
+      {openTaskCount > 0 && (
+        <Link
+          href="/staff/persona/tasks"
+          className="block rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900 hover:bg-sky-100 transition"
+        >
+          งานที่ได้รับมอบหมาย · {openTaskCount} งานค้าง →
         </Link>
       )}
       <TimeClockClient
