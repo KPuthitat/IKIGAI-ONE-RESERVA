@@ -62,15 +62,18 @@ export async function POST(req: Request) {
     const d = new Date(early.ts);
     d.setUTCHours(d.getUTCHours() + 7); // → Asia/Bangkok
     const fromHHMM = d.toISOString().slice(11, 16);
+    // Only touch the EARLY segment (owner 2026-08-04): setting early_status back
+    // to pending must NOT disturb any late-OT (requested_until) request/decision
+    // already on the same-day row. status/decided_* are left untouched on
+    // conflict; a brand-new row starts with no late request (requested_until='').
     db.prepare(`
-      INSERT INTO ot_requests (user_id, branch_id, work_date, requested_until, requested_from, status, created_at)
-      VALUES (?, ?, ?, '', ?, 'pending', ?)
+      INSERT INTO ot_requests
+        (user_id, branch_id, work_date, requested_until, requested_from, status, early_status, created_at)
+      VALUES (?, ?, ?, '', ?, 'pending', 'pending', ?)
       ON CONFLICT (user_id, work_date) DO UPDATE SET
         requested_from = excluded.requested_from,
-        branch_id = excluded.branch_id,
-        status = 'pending',
-        decided_by = NULL,
-        decided_at = NULL
+        early_status = 'pending',
+        branch_id = excluded.branch_id
     `).run(user.id, branchId, work_date, fromHHMM, nowIso);
     logPersonaAction(user.id, "attendance.early_ot_request", null);
     return NextResponse.json({ ok: true, resolution, requested_from: fromHHMM });

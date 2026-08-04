@@ -255,18 +255,22 @@ export async function GET(
     fieldOvByDate.set(r.work_date, r);
   }
 
-  // Approved OT for this user → date → requested_until.
+  // Approved OT for this user → date. Late/early gated independently
+  // (owner 2026-08-04): late by `status`, early by `early_status`.
   const otApprovedRows = db.prepare(`
-    SELECT work_date, requested_until, requested_from FROM ot_requests
-    WHERE user_id = ? AND status = 'approved' AND work_date >= ? AND work_date <= ?
+    SELECT work_date, requested_until, requested_from, status, early_status
+    FROM ot_requests
+    WHERE user_id = ? AND (status = 'approved' OR early_status = 'approved')
+      AND work_date >= ? AND work_date <= ?
   `).all(userId, period.period_start, period.period_end) as Array<{
     work_date: string; requested_until: string; requested_from: string | null;
+    status: string; early_status: string | null;
   }>;
   const approvedOtByDate = new Map<string, string>();
   const approvedEarlyByDate = new Map<string, string>();
   for (const r of otApprovedRows) {
-    approvedOtByDate.set(r.work_date, r.requested_until);
-    if (r.requested_from) approvedEarlyByDate.set(r.work_date, r.requested_from);
+    if (r.status === "approved" && r.requested_until) approvedOtByDate.set(r.work_date, r.requested_until);
+    if (r.early_status === "approved" && r.requested_from) approvedEarlyByDate.set(r.work_date, r.requested_from);
   }
 
   // Build a fully-populated pair from a raw in/out couple — replicating

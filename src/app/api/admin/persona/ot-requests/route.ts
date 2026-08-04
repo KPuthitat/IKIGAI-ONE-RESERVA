@@ -71,23 +71,37 @@ export async function POST(req: Request) {
   const now = new Date().toISOString();
   // Merge with any existing row so granting only one side (early OR late)
   // doesn't wipe the other. requested_until is NOT NULL → default to ''.
+  // Each segment carries its OWN approval status (owner 2026-08-04): granting a
+  // side approves only that side; the untouched side keeps its prior status.
   const existing = db.prepare(
-    "SELECT requested_until, requested_from FROM ot_requests WHERE user_id = ? AND work_date = ?"
-  ).get(user_id, work_date) as { requested_until: string; requested_from: string | null } | undefined;
+    "SELECT requested_until, requested_from, status, early_status FROM ot_requests WHERE user_id = ? AND work_date = ?"
+  ).get(user_id, work_date) as
+    | { requested_until: string; requested_from: string | null; status: string; early_status: string | null }
+    | undefined;
   const finalUntil = requested_until ?? existing?.requested_until ?? "";
   const finalFrom = requested_from ?? existing?.requested_from ?? null;
+  // Late segment: approved when this call grants a late end; else keep prior
+  // (defaulting to a harmless 'pending' on a brand-new early-only grant — the
+  // empty requested_until means it credits nothing regardless).
+  const finalStatus = requested_until ? "approved" : (existing?.status ?? "pending");
+  // Early segment: approved when this call grants an early start; else keep
+  // prior (NULL when there is no early request at all).
+  const finalEarlyStatus = requested_from
+    ? "approved"
+    : (existing?.early_status ?? (finalFrom ? "pending" : null));
   db.prepare(`
     INSERT INTO ot_requests
-      (user_id, branch_id, work_date, requested_until, requested_from, status, decided_by, decided_at, created_at)
-    VALUES (?, ?, ?, ?, ?, 'approved', ?, ?, ?)
+      (user_id, branch_id, work_date, requested_until, requested_from, status, early_status, decided_by, decided_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (user_id, work_date) DO UPDATE SET
       requested_until = excluded.requested_until,
       requested_from = excluded.requested_from,
       branch_id = excluded.branch_id,
-      status = 'approved',
+      status = excluded.status,
+      early_status = excluded.early_status,
       decided_by = excluded.decided_by,
       decided_at = excluded.decided_at
-  `).run(user_id, branchId, work_date, finalUntil, finalFrom, user.id, now, now);
+  `).run(user_id, branchId, work_date, finalUntil, finalFrom, finalStatus, finalEarlyStatus, user.id, now, now);
 
   logPersonaAction(user.id, "ot.admin_add", user_id);
 

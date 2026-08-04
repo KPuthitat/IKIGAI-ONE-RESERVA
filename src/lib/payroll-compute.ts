@@ -1550,20 +1550,28 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   }
 
   // Approved OT requests in the period — keyed user → date → requested_until
-  // (late end) + requested_from (early start; nullable).
+  // (late end) + requested_from (early start; nullable). The two segments are
+  // gated independently (owner 2026-08-04): late credited only when
+  // status='approved', early only when early_status='approved'. A row is loaded
+  // if EITHER segment is approved.
   const otRows = db.prepare(`
-    SELECT user_id, work_date, requested_until, requested_from FROM ot_requests
-    WHERE status = 'approved' AND work_date >= ? AND work_date <= ?
+    SELECT user_id, work_date, requested_until, requested_from, status, early_status
+    FROM ot_requests
+    WHERE (status = 'approved' OR early_status = 'approved')
+      AND work_date >= ? AND work_date <= ?
   `).all(period.period_start, period.period_end) as Array<{
     user_id: number; work_date: string; requested_until: string; requested_from: string | null;
+    status: string; early_status: string | null;
   }>;
   const approvedOtByUser = new Map<number, Map<string, string>>();
   const approvedEarlyByUser = new Map<number, Map<string, string>>();
   for (const r of otRows) {
-    let m = approvedOtByUser.get(r.user_id);
-    if (!m) { m = new Map(); approvedOtByUser.set(r.user_id, m); }
-    m.set(r.work_date, r.requested_until);
-    if (r.requested_from) {
+    if (r.status === "approved" && r.requested_until) {
+      let m = approvedOtByUser.get(r.user_id);
+      if (!m) { m = new Map(); approvedOtByUser.set(r.user_id, m); }
+      m.set(r.work_date, r.requested_until);
+    }
+    if (r.early_status === "approved" && r.requested_from) {
       let e2 = approvedEarlyByUser.get(r.user_id);
       if (!e2) { e2 = new Map(); approvedEarlyByUser.set(r.user_id, e2); }
       e2.set(r.work_date, r.requested_from);
@@ -1910,18 +1918,23 @@ export function recomputeLine(
     });
   }
 
-  // Approved OT for this user in the period (late end + early start).
+  // Approved OT for this user in the period (late end + early start). Each
+  // segment is gated by its own status (owner 2026-08-04): late by `status`,
+  // early by `early_status`.
   const otRows = db.prepare(`
-    SELECT work_date, requested_until, requested_from FROM ot_requests
-    WHERE user_id = ? AND status = 'approved' AND work_date >= ? AND work_date <= ?
+    SELECT work_date, requested_until, requested_from, status, early_status
+    FROM ot_requests
+    WHERE user_id = ? AND (status = 'approved' OR early_status = 'approved')
+      AND work_date >= ? AND work_date <= ?
   `).all(userId, period.period_start, period.period_end) as Array<{
     work_date: string; requested_until: string; requested_from: string | null;
+    status: string; early_status: string | null;
   }>;
   const approvedOtByDate = new Map<string, string>();
   const approvedEarlyByDate = new Map<string, string>();
   for (const r of otRows) {
-    approvedOtByDate.set(r.work_date, r.requested_until);
-    if (r.requested_from) approvedEarlyByDate.set(r.work_date, r.requested_from);
+    if (r.status === "approved" && r.requested_until) approvedOtByDate.set(r.work_date, r.requested_until);
+    if (r.early_status === "approved" && r.requested_from) approvedEarlyByDate.set(r.work_date, r.requested_from);
   }
 
   // Home-branch check for FT salary (owner 2026-07-14) — same rule as the full

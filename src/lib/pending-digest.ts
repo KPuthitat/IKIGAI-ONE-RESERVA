@@ -92,16 +92,24 @@ export function buildPendingDigest(branchId: number): PendingDigest {
   `).all(branchId) as LeaveRow[];
 
   // OT requests pending approval (owner 2026-06-08) — folded into this
-  // daily digest instead of a per-request push to save LINE quota.
+  // daily digest instead of a per-request push to save LINE quota. The late-end
+  // (requested_until/status) and early-start (requested_from/early_status)
+  // segments are independent (owner 2026-08-04); surface whichever is pending,
+  // guarding on the segment actually existing so an early-only row doesn't show
+  // an empty "ถึง — น." late line.
   type OtRow = {
-    work_date: string; requested_until: string;
+    work_date: string; requested_until: string; requested_from: string | null;
+    status: string; early_status: string | null;
     display_name: string; title_prefix: string | null;
   };
   const otRows = db.prepare(`
-    SELECT o.work_date, o.requested_until, u.display_name, u.title_prefix
+    SELECT o.work_date, o.requested_until, o.requested_from, o.status, o.early_status,
+           u.display_name, u.title_prefix
     FROM ot_requests o
     JOIN users u ON u.id = o.user_id
-    WHERE o.branch_id = ? AND o.status = 'pending'
+    WHERE o.branch_id = ?
+      AND ((o.status = 'pending' AND o.requested_until != '')
+           OR (o.early_status = 'pending' AND o.requested_from IS NOT NULL))
     ORDER BY o.created_at ASC
   `).all(branchId) as OtRow[];
 
@@ -139,11 +147,17 @@ export function buildPendingDigest(branchId: number): PendingDigest {
         ref: r.ref_no
       };
     }),
-    ot: otRows.map((r) => ({
-      name: nameWithPrefix(r.title_prefix, r.display_name),
-      detail: `ทำงานล่วงเวลาถึง ${r.requested_until} น. · ${r.work_date}`,
-      ref: null
-    })),
+    ot: otRows.flatMap((r) => {
+      const name = nameWithPrefix(r.title_prefix, r.display_name);
+      const out: Array<{ name: string; detail: string; ref: null }> = [];
+      if (r.early_status === "pending" && r.requested_from) {
+        out.push({ name, detail: `เข้าก่อนเวลา ${r.requested_from} น. (OT) · ${r.work_date}`, ref: null });
+      }
+      if (r.status === "pending" && r.requested_until) {
+        out.push({ name, detail: `ทำงานล่วงเวลาถึง ${r.requested_until} น. · ${r.work_date}`, ref: null });
+      }
+      return out;
+    }),
     accountaDraft: draftRows.map((r) => ({
       name: r.vendor_name?.trim() || "เอกสารสแกน (ยังไม่ระบุผู้ขาย)",
       detail: `รอตรวจสอบ · ${r.amount_total.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท${r.bill_date ? ` · ${r.bill_date}` : ""}`,
