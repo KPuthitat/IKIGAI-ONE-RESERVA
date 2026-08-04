@@ -27,7 +27,8 @@ export default function OtApprovalsPage() {
     : []) as OtStaff[];
 
   const rows = db.prepare(`
-    SELECT o.id, o.user_id, o.work_date, o.requested_until, o.requested_from, o.status,
+    SELECT o.id, o.user_id, o.work_date, o.requested_until, o.requested_from,
+           o.status, o.early_status,
            o.created_at, o.decided_at,
            u.display_name, u.title_prefix,
            b.name AS branch_name,
@@ -36,7 +37,9 @@ export default function OtApprovalsPage() {
     JOIN users u ON u.id = o.user_id
     LEFT JOIN branches b ON b.id = o.branch_id
     LEFT JOIN users du ON du.id = o.decided_by
-    ORDER BY CASE WHEN o.status = 'pending' THEN 0 ELSE 1 END,
+    ORDER BY CASE WHEN (o.status = 'pending' AND o.requested_until != '')
+                    OR (o.early_status = 'pending' AND o.requested_from IS NOT NULL)
+                  THEN 0 ELSE 1 END,
              o.work_date DESC, o.id DESC
     LIMIT 400
   `).all() as OtRow[];

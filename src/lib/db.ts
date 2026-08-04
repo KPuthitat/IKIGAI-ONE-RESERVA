@@ -785,14 +785,31 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_ot_requests_user_date ON ot_requests(user_id, work_date);
   `);
   // requested_from (owner 2026-07-28): symmetric early-start OT — the HH:MM the
-  // staff clocked in BEFORE their scheduled start. When the row is approved, the
-  // payroll engine lets those pre-shift minutes count so the day's over-8h
-  // becomes OT. Nullable; a plain late-OT-only row leaves it NULL. Shares the
-  // row's single status with requested_until (one approval covers the day).
+  // staff clocked in BEFORE their scheduled start. When approved, the payroll
+  // engine lets those pre-shift minutes count so the day's over-8h becomes OT.
+  // Nullable; a plain late-OT-only row leaves it NULL.
+  //
+  // early_status (owner 2026-08-04): the early-start segment now has its OWN
+  // approval status, decoupled from `status` (which governs the late-end
+  // requested_until). Before this, both segments shared one `status`, so
+  // filing/deciding one silently un-approved the other (e.g. an approved
+  // early-in was reset to pending the moment a late-OT request was filed for
+  // the same day). Now: `status` → requested_until, `early_status` →
+  // requested_from; the engine gates each independently. NULL when there is no
+  // early request. Backfill inherits the row's current `status` so existing
+  // approved early-ins stay approved across the migration.
   {
     const cols = db.prepare("PRAGMA table_info(ot_requests)").all() as Array<{ name: string }>;
     if (!cols.some((c) => c.name === "requested_from")) {
       db.exec("ALTER TABLE ot_requests ADD COLUMN requested_from TEXT");
+    }
+    if (!cols.some((c) => c.name === "early_status")) {
+      db.exec("ALTER TABLE ot_requests ADD COLUMN early_status TEXT");
+      // Existing early requests inherit their old (shared) decision so nobody
+      // loses an already-granted early-in when this column appears.
+      db.exec(
+        "UPDATE ot_requests SET early_status = status WHERE requested_from IS NOT NULL AND early_status IS NULL"
+      );
     }
   }
 

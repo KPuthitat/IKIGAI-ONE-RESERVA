@@ -7,13 +7,16 @@ import { nameWithPrefix } from "@/lib/name";
 import { thMonthLabel, thDayLabel, groupByMonthDay } from "@/lib/th-month";
 import PinPromptModal from "@/app/components/PinPromptModal";
 
+type SegStatus = "pending" | "approved" | "rejected";
+
 export type OtRow = {
   id: number;
   user_id: number;
   work_date: string;
   requested_until: string;
-  requested_from: string | null;  // early-start OT (HH:MM); null = late-OT only
-  status: "pending" | "approved" | "rejected";
+  requested_from: string | null;  // early-start OT (HH:MM); null = no early request
+  status: SegStatus;              // governs the late-end segment (requested_until)
+  early_status: SegStatus | null; // governs the early-start segment (requested_from)
   created_at: string;
   decided_at: string | null;
   display_name: string;
@@ -29,19 +32,27 @@ export type OtStaff = {
   employment_type: "pt" | "ft" | null;
 };
 
-const STATUS_META: Record<OtRow["status"], { label: string; cls: string }> = {
+const STATUS_META: Record<SegStatus, { label: string; cls: string }> = {
   pending: { label: "รออนุมัติ", cls: "bg-amber-100 text-amber-700" },
   approved: { label: "อนุมัติแล้ว", cls: "bg-emerald-100 text-emerald-700" },
   rejected: { label: "ไม่อนุมัติ", cls: "bg-rose-100 text-rose-600" }
 };
+
+// Late/early are independent segments (owner 2026-08-04). A row is "actionable"
+// (needs an admin decision) when a segment exists and is still pending.
+const hasLate = (r: OtRow) => !!r.requested_until && r.requested_until.length > 0;
+const hasEarly = (r: OtRow) => !!r.requested_from;
+const lateActionable = (r: OtRow) => hasLate(r) && r.status === "pending";
+const earlyActionable = (r: OtRow) => hasEarly(r) && r.early_status === "pending";
+const isActionable = (r: OtRow) => lateActionable(r) || earlyActionable(r);
 
 export default function OtApprovalsClient({ rows, staff }: { rows: OtRow[]; staff: OtStaff[] }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const refresh = () => startTransition(() => router.refresh());
 
-  const pending = rows.filter((r) => r.status === "pending");
-  const decided = rows.filter((r) => r.status !== "pending");
+  const pending = rows.filter(isActionable);
+  const decided = rows.filter((r) => !isActionable(r));
 
   return (
     <div className="space-y-4">
@@ -76,11 +87,18 @@ export default function OtApprovalsClient({ rows, staff }: { rows: OtRow[]; staf
                     {rs.map((r) => (
                       <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                         <span className="font-medium text-slate-700">{nameWithPrefix(r.title_prefix, r.display_name)}</span>
-                        {r.requested_from && <span className="text-xs text-emerald-600">เข้าก่อน {r.requested_from} น.</span>}
-                        {r.requested_until && <span className="text-xs text-slate-500">ถึง {r.requested_until} น.</span>}
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_META[r.status].cls}`}>
-                          {STATUS_META[r.status].label}
-                        </span>
+                        {hasEarly(r) && (
+                          <span className="flex items-center gap-1 text-xs text-emerald-600">
+                            เข้าก่อน {r.requested_from} น.
+                            <SegBadge status={r.early_status ?? "pending"} />
+                          </span>
+                        )}
+                        {hasLate(r) && (
+                          <span className="flex items-center gap-1 text-xs text-slate-500">
+                            ถึง {r.requested_until} น.
+                            <SegBadge status={r.status} />
+                          </span>
+                        )}
                         {r.decided_by_name && (
                           <span className="text-[11px] text-slate-400 ml-auto">โดย {r.decided_by_name}</span>
                         )}
@@ -94,6 +112,13 @@ export default function OtApprovalsClient({ rows, staff }: { rows: OtRow[]; staf
         ))}
       </div>
     </div>
+  );
+}
+
+function SegBadge({ status }: { status: SegStatus }) {
+  const m = STATUS_META[status];
+  return (
+    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${m.cls}`}>{m.label}</span>
   );
 }
 
@@ -214,18 +239,49 @@ function AddOtForm({ staff, onAdded }: { staff: OtStaff[]; onAdded: () => void }
 }
 
 function PendingRow({ row, onChanged }: { row: OtRow; onChanged: () => void }) {
-  const [until, setUntil] = useState(row.requested_until);
+  return (
+    <div className="border-t border-slate-100 pt-3 space-y-2 first:border-t-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="font-bold text-slate-800 text-sm">{nameWithPrefix(row.title_prefix, row.display_name)}</span>
+        <span className="text-xs text-slate-500">{row.branch_name ?? "—"} · วันที่ {row.work_date}</span>
+        {/* If one segment is already decided, show it for context. */}
+        {hasEarly(row) && !earlyActionable(row) && (
+          <span className="flex items-center gap-1 text-[11px] text-slate-400">เข้าก่อน {row.requested_from} น. <SegBadge status={row.early_status ?? "pending"} /></span>
+        )}
+        {hasLate(row) && !lateActionable(row) && (
+          <span className="flex items-center gap-1 text-[11px] text-slate-400">ถึง {row.requested_until} น. <SegBadge status={row.status} /></span>
+        )}
+      </div>
+      {earlyActionable(row) && (
+        <SegmentEditor row={row} segment="early" onChanged={onChanged} />
+      )}
+      {lateActionable(row) && (
+        <SegmentEditor row={row} segment="late" onChanged={onChanged} />
+      )}
+    </div>
+  );
+}
+
+// One approve/reject control for a single OT segment (early-start or late-end).
+// Editing the time is a pay change → PIN. Only this segment's status is touched.
+function SegmentEditor({
+  row, segment, onChanged
+}: { row: OtRow; segment: "late" | "early"; onChanged: () => void }) {
+  const initial = segment === "late" ? row.requested_until : (row.requested_from ?? "");
+  const [time, setTime] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [pinOpen, setPinOpen] = useState(false);
-  const changed = until !== row.requested_until;
+  const changed = time !== initial;
+  const label = segment === "late" ? "ขอทำถึง" : "เข้าก่อนเวลา";
+  const timeField = segment === "late" ? "requested_until" : "requested_from";
 
   async function patch(action: "approve" | "reject", pin?: string): Promise<{ ok: true } | { ok: false; message: string }> {
     setBusy(true);
     setErr(null);
     try {
-      const body: Record<string, unknown> = { action };
-      if (action === "approve" && changed) { body.requested_until = until; if (pin) body.pin = pin; }
+      const body: Record<string, unknown> = { action, segment };
+      if (action === "approve" && changed) { body[timeField] = time; if (pin) body.pin = pin; }
       const res = await fetch(apiUrl(`/api/admin/persona/ot-requests/${row.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -247,20 +303,16 @@ function PendingRow({ row, onChanged }: { row: OtRow; onChanged: () => void }) {
   }
 
   return (
-    <div className="border-t border-slate-100 pt-3 space-y-2 first:border-t-0">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="font-bold text-slate-800 text-sm">{nameWithPrefix(row.title_prefix, row.display_name)}</span>
-        <span className="text-xs text-slate-500">{row.branch_name ?? "—"} · วันที่ {row.work_date}</span>
-        {row.requested_from && (
-          <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-            เข้าก่อนเวลา {row.requested_from} น. (ขอ OT)
-          </span>
-        )}
-      </div>
+    <div className="space-y-1">
       <div className="flex flex-wrap items-center gap-2">
-        <label className="text-xs text-slate-500">ขอทำถึง</label>
-        <input type="time" className="input !w-auto !py-1 text-sm" value={until}
-          onChange={(e) => setUntil(e.target.value)} />
+        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+          segment === "early" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-slate-100 text-slate-600"
+        }`}>
+          {segment === "early" ? "เข้าก่อนเวลา (OT)" : "อยู่เกินเวลา (OT)"}
+        </span>
+        <label className="text-xs text-slate-500">{label}</label>
+        <input type="time" className="input !w-auto !py-1 text-sm" value={time}
+          onChange={(e) => setTime(e.target.value)} />
         {changed && <span className="text-[11px] text-amber-700">แก้เวลา — ต้องใส่ PIN</span>}
         <div className="flex gap-2 ml-auto">
           <button type="button" disabled={busy} onClick={() => void patch("reject")}
@@ -277,7 +329,7 @@ function PendingRow({ row, onChanged }: { row: OtRow; onChanged: () => void }) {
       {pinOpen && (
         <PinPromptModal
           title="ยืนยันแก้เวลา OT"
-          description={<>แก้เวลาที่อนุมัติเป็น <b>{until}</b> น. แล้วอนุมัติ — ต้องใส่ PIN</>}
+          description={<>แก้เวลาเป็น <b>{time}</b> น. แล้วอนุมัติ — ต้องใส่ PIN</>}
           submitLabel="อนุมัติ"
           onSubmit={(pin) => patch("approve", pin)}
           onClose={() => setPinOpen(false)}
