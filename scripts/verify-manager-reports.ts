@@ -65,7 +65,12 @@ upsertManagerReport(db, { branchId: 1, reportDate: "2026-07-01", authorUserId: 9
 const win = listManagerReports(db, { branchId: 1, from: "2026-08-01", to: "2026-08-31" });
 assert(!win.some((r) => r.report_date === "2026-07-01"), "date window excludes out-of-range report");
 
-// (5) delete
+// (5) authorUserId filter — staff เห็นเฉพาะรายงานของตัวเอง
+const mineOnly = listManagerReports(db, { branchId: 1, authorUserId: 10 });
+assert(mineOnly.length > 0 && mineOnly.every((r) => r.author_user_id === 10),
+  "authorUserId filter returns only that author's rows");
+
+// (6) delete
 deleteManagerReport(db, a);
 assert(getManagerReport(db, a) === undefined, "delete removes the row");
 

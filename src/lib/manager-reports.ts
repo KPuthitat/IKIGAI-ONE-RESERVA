@@ -34,7 +34,7 @@ const SELECT = `
  *  รายการและตอนรวมส่งให้ AI สรุป. ถ้าไม่ส่ง branchId → ทุกสาขา. */
 export function listManagerReports(
   db: Database.Database,
-  opts: { branchId?: number | null; from?: string; to?: string; limit?: number } = {}
+  opts: { branchId?: number | null; from?: string; to?: string; limit?: number; authorUserId?: number } = {}
 ): ManagerReportRow[] {
   const clauses: string[] = [];
   const params: unknown[] = [];
@@ -42,6 +42,7 @@ export function listManagerReports(
     clauses.push("(r.branch_id = ? OR r.branch_id IS NULL)");
     params.push(opts.branchId);
   }
+  if (opts.authorUserId != null) { clauses.push("r.author_user_id = ?"); params.push(opts.authorUserId); }
   if (opts.from) { clauses.push("r.report_date >= ?"); params.push(opts.from); }
   if (opts.to) { clauses.push("r.report_date <= ?"); params.push(opts.to); }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
