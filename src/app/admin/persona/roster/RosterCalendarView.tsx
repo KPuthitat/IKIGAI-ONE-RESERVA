@@ -68,7 +68,8 @@ export default function RosterCalendarView({
   birthdays,
   currentUserId,
   dayDetailAllAssignments,
-  selfFocusMode = false
+  selfFocusMode = false,
+  holidayMap = {}
 }: {
   month: string;             // YYYY-MM
   daysInMonth: number;
@@ -90,6 +91,9 @@ export default function RosterCalendarView({
    *  days, headline copy implies single-person view". Cosmetic only;
    *  data filtering is the caller's job. */
   selfFocusMode?: boolean;
+  /** วันหยุดประเพณีของเดือน — "YYYY-MM-DD" -> ชื่อ. ไฮไลต์ cell ให้เห็นชัด
+   *  (แสดงผลอย่างเดียว). ไม่ส่ง = ไม่แสดง (backward-compatible กับ caller เดิม). */
+  holidayMap?: Record<string, string>;
 }) {
   const [yyyy, mm] = month.split("-").map(Number);
   // JS Date getDay(): 0 = Sunday, 6 = Saturday. Bangkok week starts
@@ -265,27 +269,35 @@ export default function RosterCalendarView({
           // staff's day off — show "OFF" subtly top-right so the
           // calendar reads at a glance, matching the iOS reference.
           const isOff = selfFocusMode && rows.length === 0;
+          const holiday = holidayMap[cell.date];
           return (
             <button
               key={cell.date}
               type="button"
+              title={holiday || undefined}
               onClick={() => openDayPanel(cell.date)}
               className={`min-h-[88px] text-left p-1.5 border-r border-b border-slate-100 transition relative
-                ${rows.length === 0
-                  ? (isOff ? "bg-slate-50/60" : "bg-white")
-                  : "bg-rose-50/30"}
+                ${holiday
+                  ? "bg-amber-50 ring-1 ring-amber-300 ring-inset"
+                  : rows.length === 0
+                    ? (isOff ? "bg-slate-50/60" : "bg-white")
+                    : "bg-rose-50/30"}
                 ${isToday ? "ring-2 ring-brand ring-inset z-[1]" : ""}
                 hover:bg-rose-50/60`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className={`text-[11px] font-bold ${
-                  isOff ? "text-slate-400"
+                  holiday ? "text-amber-700"
+                  : isOff ? "text-slate-400"
                   : isWeekend ? "text-rose-500"
                   : "text-slate-700"
                 }`}>
                   {cell.day}
                 </span>
                 <div className="flex items-center gap-1">
+                  {holiday && (
+                    <span className="text-[10px]" title={holiday}>🎌</span>
+                  )}
                   {isOff && (
                     <span className="text-[8px] uppercase tracking-wider font-bold text-slate-400">
                       OFF
@@ -303,6 +315,11 @@ export default function RosterCalendarView({
                   )}
                 </div>
               </div>
+              {holiday && (
+                <div className="text-[8px] leading-tight font-bold text-amber-700 truncate mb-0.5" title={holiday}>
+                  {holiday}
+                </div>
+              )}
               <div className="space-y-0.5">
                 {visible.map((a) => (
                   <div
