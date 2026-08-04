@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
-  computeLineFromMinutes, earliestDate, resolveHomeCompanyFlag,
+  computeLineFromMinutes, earliestDate, resolveHomeCompanyFlag, branchHourlyRateSelect,
   type EmployeePayrollSnapshot, type PayrollSettings
 } from "@/lib/payroll-compute";
 import { sumRedeemedDrinksForUser } from "@/lib/partner-drink-orders";
@@ -48,7 +48,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // Target must be a staff user (employment_type can be null — e.g. contractor)
   const target = db.prepare(`
     SELECT id, display_name, employment_type, employee_code,
-           hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
+           ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
            hire_date, ft_started_at,
            (SELECT MAX(proposed_last_day) FROM resignation_requests
               WHERE user_id = users.id AND status = 'approved') AS resign_last_day,

@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
   applyPtGrace, pickScheduled, deductBreak, splitRegularOt, computeOtPay,
-  overlaySwapShifts,
+  overlaySwapShifts, branchHourlyRateSelect,
   type ScheduledShift, type PayrollSettings
 } from "@/lib/payroll-compute";
 import { resolveSiblingPeriods } from "@/lib/payroll-cycle";
@@ -138,7 +138,7 @@ export async function GET(
   // raw clocked minutes. Load type + rate so the per-day money columns
   // match what the pay engine stored.
   const emp = db.prepare(`
-    SELECT employment_type, hourly_rate, monthly_salary, track_attendance FROM users WHERE id = ?
+    SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, track_attendance FROM users WHERE id = ?
   `).get(userId) as { employment_type: "pt" | "ft" | null; hourly_rate: number | null; monthly_salary: number | null; track_attendance: number | null } | undefined;
   const isPt = emp?.employment_type === "pt";
   // Salaried execs (track_attendance=0) never get OT — same as the pay engine.

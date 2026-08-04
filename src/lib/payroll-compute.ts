@@ -116,6 +116,21 @@ type StaffRawRow = Omit<EmployeePayrollSnapshot, "last_working_day"> & {
 // PT premium multiplier on public holidays (per company rule)
 export const PT_HOLIDAY_MULTIPLIER = 1.5;
 
+// Per-branch PT rate (owner 2026-08-04): a staffer who works several branches can
+// earn a different hourly rate at each. When a period is scoped to a branch, use
+// that branch's user_branches.hourly_rate if set, else fall back to the
+// employee's default users.hourly_rate. Returns a SQL fragment that selects the
+// resolved rate AS hourly_rate. branchId must be a trusted integer (a periods
+// row's branch_id), inlined because the loaders bind positionally. Company-wide
+// / legacy NULL-branch periods (branchId == null) just use the default rate.
+export function branchHourlyRateSelect(branchId: number | null): string {
+  return branchId != null
+    ? `COALESCE((SELECT ub.hourly_rate FROM user_branches ub
+                 WHERE ub.user_id = users.id AND ub.branch_id = ${branchId}
+                   AND ub.hourly_rate IS NOT NULL), hourly_rate) AS hourly_rate`
+    : "hourly_rate";
+}
+
 export type ComputedLine = {
   user_id: number;
   // snapshots
@@ -1416,7 +1431,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     : "";
   const staffSql = `
     SELECT id AS user_id, display_name, employment_type, employee_code,
-           hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
+           ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
            hire_date, ft_started_at,
            ${LAST_WORKING_DAY_SELECT},
            ${primaryExpr},
@@ -1741,7 +1756,7 @@ export function recomputeLine(
   if (!existing) {
     const u = db.prepare(`
       SELECT display_name, employee_code, employment_type,
-             hourly_rate, monthly_salary, pay_cycle, salary_tax_mode
+             ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode
       FROM users
       WHERE id = ? AND role IN ('staff', 'admin') AND employment_type IS NOT NULL
         AND is_test_account = 0
@@ -1778,7 +1793,7 @@ export function recomputeLine(
   }
 
   const fresh = db.prepare(`
-    SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
+    SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
            hire_date, ft_started_at,
            ${LAST_WORKING_DAY_SELECT}
     FROM users WHERE id = ?

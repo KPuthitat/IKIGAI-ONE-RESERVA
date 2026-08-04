@@ -93,7 +93,7 @@ export default function EmployeesClient({
 }: {
   employees: EmployeeRow[];
   allBranches: BranchLite[];
-  grants: Array<{ user_id: number; branch_id: number; is_primary?: number }>;
+  grants: Array<{ user_id: number; branch_id: number; is_primary?: number; hourly_rate?: number | null }>;
   editableBranchIds: number[];
   currentUserRole: "super_admin" | "admin" | "staff";
   /** PDPA (2026-05-30) — when false, hide salary inputs in the edit
@@ -177,11 +177,19 @@ export default function EmployeesClient({
   const branchIdsByUser = new Map<number, number[]>();
   // userId → the branch flagged as their home/primary (FT salary lands there).
   const primaryByUser = new Map<number, number>();
+  // userId → (branchId → per-branch PT rate). Only branches with a rate set
+  // appear; absent = the employee's default hourly_rate is used (owner 2026-08-04).
+  const branchRatesByUser = new Map<number, Map<number, number>>();
   for (const g of grants) {
     const arr = branchIdsByUser.get(g.user_id) ?? [];
     arr.push(g.branch_id);
     branchIdsByUser.set(g.user_id, arr);
     if (g.is_primary === 1) primaryByUser.set(g.user_id, g.branch_id);
+    if (g.hourly_rate != null) {
+      const m = branchRatesByUser.get(g.user_id) ?? new Map<number, number>();
+      m.set(g.branch_id, g.hourly_rate);
+      branchRatesByUser.set(g.user_id, m);
+    }
   }
   const editableSet = new Set(editableBranchIds);
 
@@ -410,6 +418,7 @@ export default function EmployeesClient({
           allBranches={allBranches}
           currentBranchIds={branchIdsByUser.get(editTarget.id) ?? []}
           currentPrimary={primaryByUser.get(editTarget.id) ?? null}
+          currentBranchRates={branchRatesByUser.get(editTarget.id) ?? new Map()}
           editableSet={editableSet}
           onClose={() => setEditTarget(null)}
           onSaved={() => {
@@ -428,7 +437,7 @@ export default function EmployeesClient({
 }
 
 function EditModal({
-  employee, allEmployees, allBranches, currentBranchIds, currentPrimary, editableSet,
+  employee, allEmployees, allBranches, currentBranchIds, currentPrimary, currentBranchRates, editableSet,
   onClose, onSaved, onRefresh, canViewPayroll, currentUserRole,
   allRoles, assignedRoleIds
 }: {
@@ -442,6 +451,9 @@ function EditModal({
   /** The employee's current home/primary branch (FT salary lands there), or
    *  null if unset. Only editable by super_admin. */
   currentPrimary: number | null;
+  /** branchId → per-branch PT hourly rate override (owner 2026-08-04). Absent
+   *  branch = uses the employee's default hourly_rate. super_admin edits it. */
+  currentBranchRates: Map<number, number>;
   editableSet: Set<number>;
   onClose: () => void;
   onSaved: () => void;
@@ -468,6 +480,13 @@ function EditModal({
   );
   // Home/primary branch (super_admin only) — FT salary is paid here.
   const [primaryBranch, setPrimaryBranch] = useState<number | null>(currentPrimary);
+  // Per-branch PT rate override (super_admin) — branchId → rate string ("" = use
+  // default). Seeded from the current overrides (owner 2026-08-04).
+  const [branchRates, setBranchRates] = useState<Map<number, string>>(
+    new Map([...currentBranchRates].map(([b, r]) => [b, String(r)]))
+  );
+  const setBranchRate = (bid: number, val: string) =>
+    setBranchRates((prev) => { const n = new Map(prev); n.set(bid, val); return n; });
   const [branchBusy, setBranchBusy] = useState(false);
   const [branchMsg, setBranchMsg] = useState<string | null>(null);
   function toggleBranch(bid: number) {
@@ -496,7 +515,20 @@ function EditModal({
             primary_branch_id:
               currentUserRole === "super_admin" && primaryBranch != null && branchSel.has(primaryBranch)
                 ? primaryBranch
-                : undefined
+                : undefined,
+            // Per-branch PT rate overrides — only when the rate UI is actually
+            // shown (super_admin + payroll access + PT). Sending nothing for FT
+            // avoids wiping rates on an unrelated branch-membership save. "" clears
+            // the override (→ default); a non-numeric value is skipped so a typo
+            // can't zero someone's pay.
+            rates: currentUserRole === "super_admin" && canViewPayroll && employmentType === "pt"
+              ? [...branchSel].map((bid) => {
+                  const raw = (branchRates.get(bid) ?? "").trim();
+                  if (raw === "") return { branch_id: bid, hourly_rate: null };
+                  const n = Number(raw);
+                  return Number.isFinite(n) && n >= 0 ? { branch_id: bid, hourly_rate: n } : null;
+                }).filter((x): x is { branch_id: number; hourly_rate: number | null } => x !== null)
+              : undefined
           })
         }
       );
@@ -1609,6 +1641,33 @@ function EditModal({
                   ยังไม่ได้เลือกสาขาหลัก — ระบบจะใช้สาขาแรกเป็นค่าเริ่มต้น
                 </p>
               )}
+            </div>
+          )}
+          {/* Per-branch PT rate (owner 2026-08-04) — a staffer who works several
+              branches can earn a different rate at each (พรนภา). super_admin +
+              payroll access only. Blank = the employee's default rate is used. */}
+          {currentUserRole === "super_admin" && canViewPayroll && employmentType === "pt" && branchSel.size >= 1 && (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+              <div className="text-sm font-medium text-slate-700 mb-1">ค่าตอบแทนรายสาขา (รายชั่วโมง)</div>
+              <p className="text-[11px] text-slate-500 mb-2">
+                ตั้งเรตต่อชั่วโมงแยกตามสาขา เฉพาะกรณีค่าตอบแทนแต่ละที่ไม่เท่ากัน · เว้นว่าง =
+                ใช้เรตปกติของพนักงาน{employee.hourly_rate != null ? ` (${employee.hourly_rate}/ชม.)` : ""}
+              </p>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                {allBranches.filter((b) => branchSel.has(b.id)).map((b) => (
+                  <label key={b.id} className="flex items-center gap-2 text-sm text-slate-700">
+                    <span className="flex-1 truncate">{b.name}</span>
+                    <input
+                      type="number" min="0" step="0.01" inputMode="decimal"
+                      className="input !w-24 !py-1 text-sm text-right"
+                      placeholder={employee.hourly_rate != null ? String(employee.hourly_rate) : "ปกติ"}
+                      value={branchRates.get(b.id) ?? ""}
+                      disabled={branchBusy}
+                      onChange={(e) => setBranchRate(b.id, e.target.value)}
+                    />
+                  </label>
+                ))}
+              </div>
             </div>
           )}
           <div className="flex items-center gap-3 mt-3">

@@ -5,6 +5,7 @@ import { getDb, logPersonaAction } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import {
   computeLineFromMinutes, computeSso, computeWht, earliestDate, resolveHomeCompanyFlag,
+  branchHourlyRateSelect,
   type EmployeePayrollSnapshot, type PayrollSettings
 } from "@/lib/payroll-compute";
 import { sumRedeemedDrinksForUser } from "@/lib/partner-drink-orders";
@@ -150,7 +151,7 @@ export async function PATCH(
     `).get() as PayrollSettings;
 
     const fresh = db.prepare(`
-      SELECT employment_type, hourly_rate, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
+      SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
              hire_date, ft_started_at,
              (SELECT MAX(proposed_last_day) FROM resignation_requests
                 WHERE user_id = users.id AND status = 'approved') AS resign_last_day,
