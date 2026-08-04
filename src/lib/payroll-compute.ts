@@ -794,8 +794,12 @@ export function computeLineForEmployee(args: {
   // Per-day FIELD overrides (admin typed a value in the breakdown). Any
   // present field wins over the computed one.
   fieldOverridesByDate?: Map<string, DayFieldOverride>;
+  // Approved-leave DATES for this employee in the period (owner 2026-08-03,
+  // Phase B). Used to spot no-shows: a scheduled WORK day with no clock-in AND
+  // not on this set = ขาดงานไม่ลา → หักเป็นลาไม่รับค่าจ้าง (daily FT groups only).
+  leaveDates?: Set<string>;
 }): ComputedLine {
-  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate } = args;
+  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates } = args;
   // Extra FT base for double-pay days: FT base is salary (not per-day) so the 2×
   // is credited as one extra day-equivalent (ftHourlyEquivalent × regular hours)
   // per double day worked — added to basePay below (owner 2026-07-21).
@@ -939,6 +943,23 @@ export function computeLineForEmployee(args: {
     }
   }
 
+  // No-show detection (owner 2026-08-03, Phase B) — DAILY FT groups only. A
+  // scheduled WORK day (key in scheduledByDate) within the employed range that
+  // wasn't clocked (not in daysSet) and isn't covered by approved leave =
+  // ขาดงานไม่ลา → หักเป็นลาไม่รับค่าจ้าง (salary/30/day, folded into the unpaid
+  // deduction below). Established full-month FT + PT are untouched.
+  let noShowDays = 0;
+  const countNoShow = (startBound: string | null, endBound: string | null): number => {
+    if (!scheduledByDate) return 0;
+    const lo = startBound && startBound > periodStart ? startBound : periodStart;
+    const hi = endBound && endBound < periodEnd ? endBound : periodEnd;
+    let n = 0;
+    for (const d of scheduledByDate.keys()) {
+      if (d >= lo && d <= hi && !daysSet.has(d) && !leaveDates?.has(d)) n++;
+    }
+    return n;
+  };
+
   // Base pay
   let basePay = 0;
   if (e.employment_type === "pt") {
@@ -958,6 +979,7 @@ export function computeLineForEmployee(args: {
         if (isFtPartialMonth(e.hire_date, e.last_working_day, periodStart, periodEnd)) {
           const empDays = employedCalendarDays(e.hire_date, e.last_working_day, periodStart, periodEnd);
           basePay = Math.min(e.monthly_salary, round2((e.monthly_salary / 30) * empDays));
+          noShowDays = countNoShow(e.hire_date, e.last_working_day);
         }
       } else {
         // Weekly transition month (owner 2026-08-03): daily rate salary/30 × calendar
@@ -967,13 +989,15 @@ export function computeLineForEmployee(args: {
         const ftStart = e.ft_started_at ?? e.hire_date;
         const empDays = employedCalendarDays(ftStart, e.last_working_day, periodStart, periodEnd);
         basePay = round2((e.monthly_salary / 30) * empDays);
+        noShowDays = countNoShow(ftStart, e.last_working_day);
       }
     }
     // Else: different pay_cycle than this period, or not the primary branch — exclude
   }
 
-  // ลาไม่รับค่าจ้าง — reduce FT base by salary/30 per unpaid day. Default 0.
-  const ulDeduction = unpaidLeaveDeduction(e, unpaidLeaveDays, basePay);
+  // ลาไม่รับค่าจ้าง (+ ขาดงานไม่ลา, Phase B) — reduce FT base by salary/30 per day.
+  const totalUnpaidDays = unpaidLeaveDays + noShowDays;
+  const ulDeduction = unpaidLeaveDeduction(e, totalUnpaidDays, basePay);
   // FT double-pay bonus is on top of salary (ftDoubleBonus is 0 for PT — its 2×
   // is already baked into ptBasePay via the multiplier).
   basePay = round2(basePay - ulDeduction + ftDoubleBonus);
@@ -1032,7 +1056,7 @@ export function computeLineForEmployee(args: {
     holiday_minutes: Math.round(holidayMin),
     days_worked: daysSet.size,
     leave_days: leaveDays,
-    unpaid_leave_days: unpaidLeaveDays,
+    unpaid_leave_days: totalUnpaidDays,
     unpaid_leave_deduction: round2(ulDeduction),
     unpaired_clockins: unpaired,
     base_pay: round2(basePay),
@@ -1488,14 +1512,19 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     user_id: number; date_from: string; date_to: string; days: number;
   }>;
   const leaveDaysByUser = new Map<number, number>();
+  // Per-user set of approved-leave DATES in the period (Phase B no-show detection).
+  const leaveDatesByUser = new Map<number, Set<string>>();
   for (const lv of leaves) {
     // Pro-rate days within the period if the leave spans outside
     const start = lv.date_from < period.period_start ? period.period_start : lv.date_from;
     const end = lv.date_to > period.period_end ? period.period_end : lv.date_to;
     let d = 0;
     let cur = start;
+    let lvSet = leaveDatesByUser.get(lv.user_id);
+    if (!lvSet) { lvSet = new Set<string>(); leaveDatesByUser.set(lv.user_id, lvSet); }
     while (cur <= end) {
       d++;
+      lvSet.add(cur);
       const nd = new Date(`${cur}T00:00:00Z`);
       nd.setUTCDate(nd.getUTCDate() + 1);
       cur = nd.toISOString().slice(0, 10);
@@ -1614,7 +1643,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         scheduledByDate: scheduledByUser.get(emp.user_id),
         approvedOtByDate: approvedOtByUser.get(emp.user_id),
         approvedEarlyByDate: approvedEarlyByUser.get(emp.user_id),
-        fieldOverridesByDate: fieldOverridesByUser.get(emp.user_id)
+        fieldOverridesByDate: fieldOverridesByUser.get(emp.user_id),
+        leaveDates: leaveDatesByUser.get(emp.user_id)
       });
 
       // Staff drink-welfare purchases (จ้อจี้) redeemed in this period at this
@@ -1819,6 +1849,22 @@ export function recomputeLine(
   // Shift-swap overlay (owner 2026-06-08).
   overlaySwapShifts(db, userId, period.period_start, period.period_end, scheduledByDate);
 
+  // Approved-leave DATES in the period (Phase B no-show detection) — the initial
+  // compute has this per-user; the recompute path must re-query it here.
+  const leaveDates = new Set<string>();
+  for (const lv of db.prepare(`
+    SELECT date_from, date_to FROM leave_requests
+    WHERE user_id = ? AND status = 'approved' AND NOT (date_to < ? OR date_from > ?)
+  `).all(userId, period.period_start, period.period_end) as Array<{ date_from: string; date_to: string }>) {
+    let cur = lv.date_from < period.period_start ? period.period_start : lv.date_from;
+    const end = lv.date_to > period.period_end ? period.period_end : lv.date_to;
+    while (cur <= end) {
+      leaveDates.add(cur);
+      const nd = new Date(`${cur}T00:00:00Z`); nd.setUTCDate(nd.getUTCDate() + 1);
+      cur = nd.toISOString().slice(0, 10);
+    }
+  }
+
   // Scope to the period's branch by EFFECTIVE branch (owner 2026-07-31): load
   // all of this user's punches in the window, keep those whose effective branch
   // (per-day reattribution ?? punched branch) matches this period — so a day
@@ -1915,7 +1961,7 @@ export function recomputeLine(
     employee, shifts, unpaired: auto.unpaired,
     leaveDays: existing.leave_days,
     cycle: period.cycle, periodStart: period.period_start, periodEnd: period.period_end, payDate: period.pay_date,
-    settings, holidaySet, doubleSet, scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate
+    settings, holidaySet, doubleSet, scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates
   });
 
   // Preserve admin money extras; recompute gross/SSO/tax/net to include them.

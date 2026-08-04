@@ -381,6 +381,35 @@ console.log("\nลงเวลาวันหยุดแทนพนักง�
   eq("ไม่มีทั้งเวลาจริงและเวลากะ → ไม่มีกะ (null)", nothing === null ? 1 : 0, 1);
 }
 
+// 11f. Phase B — ขาดงานมีกะแต่ไม่มา+ไม่ลา → หัก salary/30 (owner 2026-08-03),
+//      เฉพาะกลุ่มรายวัน (เข้าใหม่/เปลี่ยนผ่าน) ไม่กระทบกลุ่ม 4 / PT.
+console.log("\nPhase B: ขาดงานมีกะไม่ลา → หัก salary/30 (owner 2026-08-03):");
+{
+  const emp = (): EmployeePayrollSnapshot => ({ ...ftMonthly(30000), hire_date: "2026-08-01", ft_started_at: null });
+  const iso = (d: string, hhmm: string) => new Date(`${d}T${hhmm}:00+07:00`).toISOString();
+  const sched = (d: string): ScheduledShift => ({ startTs: iso(d, "11:00"), endTs: iso(d, "19:00"), breakStartTs: null, breakEndTs: null });
+  const scheduledByDate = new Map<string, ScheduledShift[]>([
+    ["2026-08-05", [sched("2026-08-05")]],
+    ["2026-08-06", [sched("2026-08-06")]]   // มีกะ work ทั้งคู่
+  ]);
+  const workedShift = { startTs: iso("2026-08-05", "11:00"), endTs: iso("2026-08-05", "19:00"), durationMinutes: 480 };
+  const base = {
+    employee: emp(), shifts: [workedShift], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+    cycle: "monthly" as const, periodStart: "2026-08-01", periodEnd: "2026-08-31",
+    settings: SETTINGS, holidaySet: new Set<string>(), doubleSet: new Set<string>(), scheduledByDate
+  };
+  // 08-05 มาทำ, 08-06 มีกะแต่ไม่มา+ไม่ลา → ขาด 1 วัน
+  const noShow = computeLineForEmployee({ ...base });
+  eq("ขาดงาน 08-06 → นับเป็นวันหัก 1 (unpaid_leave_days)", noShow.unpaid_leave_days, 1);
+  // 08-06 มีใบลา → ไม่นับขาด
+  const onLeave = computeLineForEmployee({ ...base, leaveDates: new Set<string>(["2026-08-06"]) });
+  eq("08-06 ลาแล้ว → ไม่หักขาดงาน", onLeave.unpaid_leave_days, 0);
+  eq("ผลต่างฐาน (ขาด vs ลา) = 30000/30 = 1000", Math.round((onLeave.base_pay - noShow.base_pay) * 100) / 100, 1000);
+  // กลุ่ม 4 (ประจำเต็มเดือน, hire null) → Phase B ไม่แตะ
+  const g4 = computeLineForEmployee({ ...base, employee: ftMonthly(30000) });
+  eq("ประจำเต็มเดือน (กลุ่ม 4) → ไม่หักขาดงาน", g4.unpaid_leave_days, 0);
+}
+
 // N. วันจ่ายสองเท่า (owner 2026-07-21) — พนักงานทุกคนที่ทำงานวันที่ตั้งไว้ ได้ฐาน+OT ×2.
 console.log("\nวันจ่ายสองเท่า (owner 2026-07-21):");
 {
