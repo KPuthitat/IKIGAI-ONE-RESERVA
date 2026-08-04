@@ -53,6 +53,13 @@ export async function POST(req: Request) {
   const ub = db.prepare("SELECT 1 AS ok FROM user_branches WHERE user_id = ? AND branch_id = ?").get(d.user_id, user.activeBranchId) as { ok: 1 } | undefined;
   if (!ub) return NextResponse.json({ error: "user_not_in_branch" }, { status: 400 });
 
+  // กัน 1 คนลงหลายตำแหน่งในวันเดียว (owner 2026-08-04) — ถ้าถูกลงตำแหน่งอื่นของวันนั้น
+  // ไว้แล้ว ปฏิเสธ (ตัวเลือกฝั่งหน้าเว็บก็ตัดชื่อออกอยู่แล้ว อันนี้เป็น backstop).
+  const clash = db.prepare(
+    "SELECT position_id FROM roster_assignments WHERE branch_id = ? AND assignment_date = ? AND user_id = ? AND position_id != ? LIMIT 1"
+  ).get(user.activeBranchId, d.date, d.user_id, d.position_id) as { position_id: number } | undefined;
+  if (clash) return NextResponse.json({ error: "user_already_assigned_today" }, { status: 409 });
+
   const r = upsertAssignment({
     branchId: user.activeBranchId,
     date: d.date,

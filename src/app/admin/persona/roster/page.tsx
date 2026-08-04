@@ -42,6 +42,7 @@ type StaffOption = {
   title_prefix: string | null;
   first_name_th: string | null;
   last_name_th: string | null;
+  nickname_th: string | null;
   employment_type: string | null;
 };
 
@@ -110,7 +111,7 @@ export default function AdminRosterPage({
   // settings-only top role and isn't rosterable.
   const staff = db.prepare(`
     SELECT u.id, u.display_name, u.title_prefix, u.first_name_th, u.last_name_th,
-           u.employment_type
+           u.nickname_th, u.employment_type
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
     WHERE ub.branch_id = ?
@@ -276,6 +277,7 @@ export default function AdminRosterPage({
               user_display_name: a.user_display_name,
               user_first_name: a.user_first_name,
               user_last_name: a.user_last_name,
+              user_nickname: a.user_nickname,
               shift_code_id: a.shift_code_id,
               shift_code: a.shift_code,
               shift_color: a.shift_color,

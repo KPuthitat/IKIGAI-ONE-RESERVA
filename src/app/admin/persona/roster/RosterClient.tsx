@@ -22,6 +22,7 @@ type Staff = {
   title_prefix: string | null;
   first_name_th: string | null;
   last_name_th: string | null;
+  nickname_th: string | null;
   employment_type: string | null;
 };
 type Assignment = {
@@ -32,6 +33,7 @@ type Assignment = {
   user_display_name: string;
   user_first_name: string | null;
   user_last_name: string | null;
+  user_nickname: string | null;
   shift_code_id: number;
   shift_code: string;
   shift_color: string | null;
@@ -424,7 +426,7 @@ export default function RosterClient({
                                 + shift code is enough to identify
                                 everyone without overflowing. */}
                             <div className={`font-bold leading-tight ${onLeave ? "text-slate-400 line-through" : "text-slate-800"}`}>
-                              {splitName(a.user_display_name, a.user_first_name, a.user_last_name).first}
+                              {a.user_nickname?.trim() || splitName(a.user_display_name, a.user_first_name, a.user_last_name).first}
                             </div>
                             {onLeave ? (
                               <div className="text-[9px] font-bold text-rose-600 leading-tight mt-0.5">{leaveLabel(onLeave)}</div>
@@ -547,6 +549,11 @@ export default function RosterClient({
           leaveForDate={Object.fromEntries(
             staff.map((s) => [s.id, leaveMap[`${s.id}:${editing.date}`]]).filter(([, ty]) => ty)
           ) as Record<number, string>}
+          assignedUserIds={new Set(
+            Array.from(byCell.get(editing.date)?.values() ?? [])
+              .filter((a) => a.position_id !== editing.positionId)
+              .map((a) => a.user_id)
+          )}
           busy={busy}
           onClose={() => setEditing(null)}
           onSave={saveAssignment}
@@ -574,7 +581,7 @@ export default function RosterClient({
 // ── Assign modal ─────────────────────────────────────────────────
 
 function AssignModal({
-  date, positionId, position, existing, shiftCodes, staff, leaveForDate, busy,
+  date, positionId, position, existing, shiftCodes, staff, leaveForDate, assignedUserIds, busy,
   onClose, onSave, onClear, t
 }: {
   date: string; positionId: number;
@@ -583,6 +590,9 @@ function AssignModal({
   shiftCodes: ShiftCode[];
   staff: Staff[];
   leaveForDate: Record<number, string>;   // userId -> leave type (for THIS date)
+  // user_ids already assigned to ANOTHER position on this date (owner 2026-08-04:
+  // กันคนเดียวลงหลายตำแหน่งในวันเดียว) — เลือกไม่ได้.
+  assignedUserIds: Set<number>;
   busy: boolean;
   onClose: () => void;
   onSave: (a: { date: string; positionId: number; userId: number; shiftCodeId: number }) => void;
@@ -629,13 +639,21 @@ function AssignModal({
             <option value="">— {t("admin.persona.roster.modal.pickStaff")} —</option>
             {staff.map((s) => {
               const ty = leaveForDate[s.id];
+              const dupElsewhere = assignedUserIds.has(s.id) && s.id !== existing?.user_id;
+              // ชื่อเล่นก่อน (ถ้ามี) — ระบุตัวง่ายกว่า (owner 2026-08-04)
+              const label = s.nickname_th?.trim() || nameWithPrefix(s.title_prefix, s.display_name);
+              const note = ty ? ` · ${leaveLabel(ty)}` : dupElsewhere ? " · ลงตำแหน่งอื่นแล้ว" : "";
               return (
-                <option key={s.id} value={s.id} disabled={!!ty && s.id !== existing?.user_id}>
-                  {nameWithPrefix(s.title_prefix, s.display_name)} {s.employment_type ? `(${s.employment_type.toUpperCase()})` : ""}{ty ? ` · ${leaveLabel(ty)}` : ""}
+                <option key={s.id} value={s.id} disabled={(!!ty || dupElsewhere) && s.id !== existing?.user_id}>
+                  {label} {s.employment_type ? `(${s.employment_type.toUpperCase()})` : ""}{note}
                 </option>
               );
             })}
           </select>
+          {staff.some((s) => assignedUserIds.has(s.id)) && (
+            <p className="text-[11px] text-slate-400 mt-1">
+              คนที่ลงตำแหน่งอื่นในวันนี้แล้วเลือกไม่ได้ — 1 คนลงได้ตำแหน่งเดียวต่อวัน</p>
+          )}
           {staff.some((s) => leaveForDate[s.id]) && (
             <p className="text-[11px] text-slate-400 mt-1">
               คนที่ติดลาวันนี้เลือกไม่ได้ — ถ้าจะให้มาทำงาน ยกเลิกการลาที่หน้า “จัดการลา” ก่อน แล้วค่อยลงกะ

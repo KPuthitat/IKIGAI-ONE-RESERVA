@@ -29,6 +29,7 @@ export type AssignmentWithJoins = RosterAssignment & {
   user_display_name: string;
   user_first_name: string | null;
   user_last_name: string | null;
+  user_nickname: string | null;
   user_id_normal: number;
   shift_code: string;
   shift_color: string | null;
@@ -89,6 +90,7 @@ export function listAssignmentsForMonth(
            p.display_order AS position_display_order,
            u.id AS user_id_normal,
            u.display_name AS user_display_name,
+           u.nickname_th AS user_nickname,
            u.first_name_th AS user_first_name,
            u.last_name_th AS user_last_name,
            s.code AS shift_code,
@@ -122,6 +124,7 @@ export function listAssignmentsForUserMonth(
            p.title AS position_title,
            u.id AS user_id_normal,
            u.display_name AS user_display_name,
+           u.nickname_th AS user_nickname,
            u.first_name_th AS user_first_name,
            u.last_name_th AS user_last_name,
            s.code AS shift_code,
