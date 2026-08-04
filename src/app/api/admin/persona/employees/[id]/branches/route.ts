@@ -22,7 +22,14 @@ const Body = z.object({
   // Home/primary branch (super_admin only) — FT monthly salary is paid at this
   // branch only (owner 2026-07-14). Must be one of the resulting memberships;
   // ignored for non-super_admin. Omit to leave the current primary as-is.
-  primary_branch_id: z.number().int().positive().nullable().optional()
+  primary_branch_id: z.number().int().positive().nullable().optional(),
+  // Per-branch PT hourly rate (super_admin only, owner 2026-08-04). Each entry
+  // sets/clears user_branches.hourly_rate for one branch (null → default rate).
+  // Only applied to branches in the resulting membership + caller's scope.
+  rates: z.array(z.object({
+    branch_id: z.number().int().positive(),
+    hourly_rate: z.number().min(0).max(100000).nullable()
+  })).max(100).optional()
 });
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -76,7 +83,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     ? parsed.data.primary_branch_id
     : null;
 
-  if (toAdd.length === 0 && toRemove.length === 0 && wantsPrimary == null) {
+  // Per-branch rate is super_admin-only (pay-sensitive) and only for branches
+  // both in the caller's scope AND in the resulting membership. Everything else
+  // is dropped so a sub-admin (rates ignored) or an out-of-scope/unassigned
+  // branch can never have a rate written.
+  const rateUpdates = me.role === "super_admin"
+    ? (parsed.data.rates ?? []).filter((r) => editable.has(r.branch_id) && desired.has(r.branch_id))
+    : [];
+
+  if (toAdd.length === 0 && toRemove.length === 0 && wantsPrimary == null && rateUpdates.length === 0) {
     return NextResponse.json({ ok: true, added: 0, removed: 0 });
   }
 
@@ -107,6 +122,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       db.prepare(
         "UPDATE user_branches SET is_primary = CASE WHEN branch_id = ? THEN 1 ELSE 0 END WHERE user_id = ?"
       ).run(primary, id);
+    }
+
+    // Per-branch PT rate overrides (super_admin). null clears → default rate.
+    // Runs after membership changes so a just-added branch row exists to update.
+    if (rateUpdates.length > 0) {
+      const setRate = db.prepare(
+        "UPDATE user_branches SET hourly_rate = ? WHERE user_id = ? AND branch_id = ?"
+      );
+      for (const r of rateUpdates) setRate.run(r.hourly_rate, id, r.branch_id);
     }
   });
   txn();

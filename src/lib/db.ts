@@ -3824,6 +3824,14 @@ function runMigrations(db: Database.Database): void {
     )
   `);
 
+  // user_branches.hourly_rate — per-branch PT pay rate (owner 2026-08-04).
+  // พรนภาทำงานหลายสาขา ค่าตอบแทนแต่ละที่ไม่เท่ากัน (ขึ้นกับสถานที่ลงเวลา). NULL =
+  // ใช้เรตปกติของพนักงาน (users.hourly_rate). รอบเงินเดือนของสาขาไหน ใช้เรตของ
+  // สาขานั้นถ้าตั้งไว้ ไม่งั้น fallback เรตปกติ. FT (เงินเดือน) ไม่ใช้ — จ่ายที่สาขาหลัก.
+  if (!ubCols.some((c) => c.name === "hourly_rate")) {
+    db.exec("ALTER TABLE user_branches ADD COLUMN hourly_rate REAL");
+  }
+
   // users — Phase A profile columns. All nullable (existing rows
   // keep working). Idempotent per-column ALTER.
   const phaseAUserCols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
