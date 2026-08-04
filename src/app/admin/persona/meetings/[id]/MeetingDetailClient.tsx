@@ -50,21 +50,29 @@ export default function MeetingDetailClient({
     const chosen = suggested.filter((s) => s.include && s.title.trim());
     if (chosen.length === 0) { setSuggested(null); return; }
     setSavingAll(true); setAiErr(null);
-    try {
-      for (const s of chosen) {
-        await fetch(apiUrl(`/api/admin/persona/meetings/${meeting.id}/items`), {
+    // เก็บเฉพาะรายการที่บันทึก "ไม่สำเร็จ" ไว้ให้ผู้ใช้ลองใหม่ — รายการที่สำเร็จแล้ว
+    // ถูกลบออกจากลิสต์ กันกดซ้ำแล้วเพิ่มซ้ำ (dup). เช็ค res.ok เพราะ fetch ไม่ reject
+    // ตอน HTTP error.
+    const failed: Array<{ title: string; include: boolean }> = [];
+    let anyOk = false;
+    for (const s of chosen) {
+      let ok = false;
+      try {
+        const res = await fetch(apiUrl(`/api/admin/persona/meetings/${meeting.id}/items`), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: s.title.trim(), assignee_user_id: null, due_date: null })
         });
-      }
-      setSuggested(null);
-      refresh();
-    } catch {
-      setAiErr("บันทึกบางรายการไม่สำเร็จ ลองใหม่");
-    } finally {
-      setSavingAll(false);
+        ok = res.ok;
+      } catch { ok = false; }
+      if (ok) anyOk = true; else failed.push(s);
     }
+    // คงเฉพาะที่ยังไม่ถูกเลือก (include=false) + ที่บันทึกไม่สำเร็จ
+    const remaining = [...suggested.filter((s) => !(s.include && s.title.trim())), ...failed];
+    setSuggested(remaining.length ? remaining : null);
+    if (failed.length) setAiErr(`บันทึกไม่สำเร็จ ${failed.length} รายการ — ลองใหม่อีกครั้ง`);
+    if (anyOk) refresh();
+    setSavingAll(false);
   }
 
   async function toggle(item: ActionItemRow) {

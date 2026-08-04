@@ -39,6 +39,11 @@ export async function POST(req: Request) {
   }
   const { report_date, shift_summary, situation, meeting_topics, company_wide } = parsed.data;
 
+  // รายงานระดับบริษัท (branch_id NULL) เห็นได้ทุกสาขา — จำกัดการเขียนเฉพาะ super_admin
+  // กันแอดมินสาขาสร้างรายงานที่รั่วข้ามสาขา (สอดคล้องกับ gate ฝั่งสรุป AI).
+  if (company_wide && user.role !== "super_admin") {
+    return NextResponse.json({ error: "company_forbidden" }, { status: 403 });
+  }
   if (!company_wide && user.activeBranchId == null) {
     return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
   }

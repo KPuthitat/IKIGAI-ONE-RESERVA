@@ -32,6 +32,16 @@ export async function POST(req: Request) {
   }
   const { from, to, company_wide } = parsed.data;
   if (from > to) return NextResponse.json({ error: "range_invalid", message: "ช่วงวันที่ไม่ถูกต้อง" }, { status: 400 });
+  // ป้องกันข้อมูลข้ามสาขา: สรุประดับบริษัท (branch_id NULL = ไม่กรองสาขา = เห็นทุก
+  // สาขา) จำกัดเฉพาะ super_admin. แอดมินสาขาสรุปได้เฉพาะสาขาที่ตัวเองใช้งานอยู่.
+  if (company_wide && user.role !== "super_admin") {
+    return NextResponse.json({ error: "company_forbidden", message: "สรุประดับบริษัทได้เฉพาะผู้ดูแลระบบสูงสุด" }, { status: 403 });
+  }
+  // ช่วงกว้างเกินไป (สรุป "รายสัปดาห์") — กันคำขอที่ดึงรายงานจำนวนมหาศาลไปให้ AI
+  const spanDays = Math.floor((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+  if (spanDays > 62) {
+    return NextResponse.json({ error: "range_too_wide", message: "ช่วงกว้างเกินไป — เลือกไม่เกิน ~2 เดือน" }, { status: 400 });
+  }
 
   if (!company_wide && user.activeBranchId == null) {
     return NextResponse.json({ error: "no_active_branch", message: "กรุณาเลือกสาขาก่อน" }, { status: 400 });

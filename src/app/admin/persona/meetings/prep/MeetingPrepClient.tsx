@@ -13,13 +13,14 @@ const fmtDateTime = (iso: string) => {
 };
 
 export default function MeetingPrepClient({
-  initialFrom, initialTo, reports: initialReports, latest, aiEnabled
+  initialFrom, initialTo, reports: initialReports, latest, aiEnabled, canCompanyWide = false
 }: {
   initialFrom: string;
   initialTo: string;
   reports: ManagerReportRow[];
   latest: PrepSummaryRow | null;
   aiEnabled: boolean;
+  canCompanyWide?: boolean;
 }) {
   const router = useRouter();
   const [from, setFrom] = useState(initialFrom);
@@ -98,11 +99,13 @@ export default function MeetingPrepClient({
           <input type="date" value={to} min={from}
             onChange={(e) => { setTo(e.target.value); reloadReports(from, e.target.value); }}
             className="border border-slate-300 rounded px-2 py-1 text-xs" />
-          <label className="text-xs text-slate-600 flex items-center gap-1.5 ml-1">
-            <input type="checkbox" checked={companyWide}
-              onChange={(e) => setCompanyWide(e.target.checked)} />
-            ระดับบริษัท
-          </label>
+          {canCompanyWide && (
+            <label className="text-xs text-slate-600 flex items-center gap-1.5 ml-1">
+              <input type="checkbox" checked={companyWide}
+                onChange={(e) => setCompanyWide(e.target.checked)} />
+              ระดับบริษัท
+            </label>
+          )}
           <span className="flex-1" />
           <button type="button" disabled={busy || !aiEnabled || reports.length === 0} onClick={summarize}
             className="text-sm px-4 py-1.5 rounded-md bg-brand text-white font-bold hover:opacity-90 disabled:opacity-40">

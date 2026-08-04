@@ -47,6 +47,7 @@ export default function MeetingPrepPage() {
         reports={reports}
         latest={latest ?? null}
         aiEnabled={meetingPrepEnabled()}
+        canCompanyWide={user.role === "super_admin"}
       />
     </div>
   );

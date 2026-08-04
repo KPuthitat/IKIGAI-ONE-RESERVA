@@ -36,6 +36,10 @@ export async function callClaude(opts: {
   if (!apiKey) throw new MeetingPrepError("no_key", "ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY บนเซิร์ฟเวอร์");
   const model = opts.model ?? PREP_MODEL;
 
+  // ตัดที่ 55s — ต่ำกว่า Nginx proxy_read_timeout 60s เพื่อให้ตอบ error สะอาดแทนที่
+  // จะค้างจน 504 (การเรียกแบบ non-streaming ไม่มี byte ไหลระหว่างรอ).
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 55_000);
   let res: Response;
   try {
     res = await fetch(API_URL, {
@@ -47,13 +51,19 @@ export async function callClaude(opts: {
       },
       body: JSON.stringify({
         model,
-        max_tokens: opts.maxTokens ?? 2500,
+        max_tokens: opts.maxTokens ?? 2000,
         system: opts.system,
         messages: [{ role: "user", content: opts.user }]
-      })
+      }),
+      signal: ac.signal
     });
-  } catch {
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new MeetingPrepError("timeout", "AI ใช้เวลานานเกินไป ลองใหม่ หรือลดช่วงวันที่ลง");
+    }
     throw new MeetingPrepError("network", "เชื่อมต่อบริการ AI ไม่ได้ ลองใหม่อีกครั้ง");
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!res.ok) {
@@ -177,7 +187,9 @@ export async function suggestActionItems(
     maxTokens: 1200
   });
   const items = out.text.split("\n")
-    .map((s) => s.replace(/^[\s\-•*•\d.)]+/, "").trim())  // ตัด bullet/เลขลำดับนำหน้า
+    // ตัดเฉพาะ bullet (- • *) หรือเลขลำดับรูปแบบ "1." / "12)" ที่ตามด้วยช่องว่าง —
+    // ไม่ตัดเลขที่เป็นเนื้อหาจริง เช่น "24 ชม." (ไม่มีจุด/วงเล็บตามหลัง)
+    .map((s) => s.replace(/^\s*(?:[-•*]\s*|\d{1,2}[.)]\s+)/, "").trim())
     .filter((s) => s && s !== "(ไม่มี)")
     .slice(0, 30);
 

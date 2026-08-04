@@ -14,12 +14,13 @@ const ERR_TH: Record<string, string> = {
 };
 
 export default function ManagerReportsClient({
-  reports, todayReport, currentUserId, today
+  reports, todayReport, currentUserId, today, canCompanyWide = false
 }: {
   reports: ManagerReportRow[];
   todayReport: ManagerReportRow | null;
   currentUserId: number;
   today: string;
+  canCompanyWide?: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -95,10 +96,12 @@ export default function ManagerReportsClient({
           placeholder="เช่น ขอเพิ่มคนช่วงเสาร์-อาทิตย์ · เสนอปรับเมนู · ปัญหาคิวครัวช้า" />
 
         <div className="flex items-center gap-3 flex-wrap">
-          <label className="text-xs text-slate-600 flex items-center gap-1.5">
-            <input type="checkbox" checked={companyWide} onChange={(e) => setCompanyWide(e.target.checked)} />
-            รายงานระดับบริษัท (ทุกสาขาเห็น)
-          </label>
+          {canCompanyWide && (
+            <label className="text-xs text-slate-600 flex items-center gap-1.5">
+              <input type="checkbox" checked={companyWide} onChange={(e) => setCompanyWide(e.target.checked)} />
+              รายงานระดับบริษัท (ทุกสาขาเห็น)
+            </label>
+          )}
           <span className="flex-1" />
           {err && <span className="text-xs text-rose-600">{err}</span>}
           {saved && !err && <span className="text-xs text-emerald-600">✓ บันทึกแล้ว</span>}

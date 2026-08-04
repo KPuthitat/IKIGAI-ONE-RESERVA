@@ -3,8 +3,8 @@ import { getSessionUser, userCanAdminBranch } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
 import { getManagerReport, deleteManagerReport } from "@/lib/manager-reports";
 
-// DELETE /api/admin/persona/manager-reports/[id] — ลบรายงาน. ผู้เขียนเอง หรือ
-// แอดมินของสาขานั้นลบได้ (รายงานระดับบริษัทให้ผู้เขียน/super_admin เท่านั้น).
+// DELETE /api/admin/persona/manager-reports/[id] — ลบรายงาน. ผู้เขียนเอง, แอดมิน
+// ของสาขานั้น, หรือ super_admin ลบได้ (รายงานระดับบริษัทให้ผู้เขียน/super_admin).
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const user = getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
@@ -21,7 +21,8 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
 
   const isAuthor = row.author_user_id === user.id;
   const canBranch = row.branch_id != null && userCanAdminBranch(user, row.branch_id);
-  if (!isAuthor && !canBranch) {
+  const isSuper = user.role === "super_admin";
+  if (!isAuthor && !canBranch && !isSuper) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

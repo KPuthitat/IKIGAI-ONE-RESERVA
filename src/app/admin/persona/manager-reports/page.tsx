@@ -42,6 +42,7 @@ export default function ManagerReportsPage() {
         todayReport={todayReport ?? null}
         currentUserId={user.id}
         today={todayBkk}
+        canCompanyWide={user.role === "super_admin"}
       />
     </div>
   );
