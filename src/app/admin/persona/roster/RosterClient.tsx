@@ -80,7 +80,7 @@ function splitName(
 }
 
 export default function RosterClient({
-  month, daysInMonth, positions, shiftCodes, staff, assignments, leaveMap
+  month, daysInMonth, positions, shiftCodes, staff, assignments, leaveMap, holidayMap = {}
 }: {
   month: string;          // YYYY-MM
   daysInMonth: number;
@@ -89,6 +89,7 @@ export default function RosterClient({
   staff: Staff[];
   assignments: Assignment[];
   leaveMap: Record<string, string>;   // "${userId}:${date}" -> leave type
+  holidayMap?: Record<string, string>; // "YYYY-MM-DD" -> ชื่อวันหยุดประเพณี
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -353,6 +354,13 @@ export default function RosterClient({
         )}
       </div>
 
+      {Object.keys(holidayMap).length > 0 && (
+        <div className="flex items-center gap-1.5 text-[11px] text-amber-700 mb-1">
+          <span className="inline-block w-3 h-3 rounded-sm bg-amber-100 border border-amber-400" />
+          🎌 = วันหยุดประเพณี (คอลัมน์สีเหลือง) — จัด OFF หรือให้มาทำงาน (เข้าโฟลว์ 2×/ใช้สิทธิ์)
+        </div>
+      )}
+
       <div className="card overflow-x-auto">
         <table className="text-xs border-collapse min-w-full">
           <thead>
@@ -364,13 +372,21 @@ export default function RosterClient({
                 const day = d.slice(8);
                 const dow = dowOf(d);
                 const isWeekend = dow === 0 || dow === 6;
+                const holiday = holidayMap[d];
                 return (
                   <th key={d}
+                    title={holiday || undefined}
                     className={`p-1 border border-slate-200 min-w-[70px] text-center font-medium ${
-                      isWeekend ? "bg-rose-50 text-rose-700" : ""
+                      holiday ? "bg-amber-100 text-amber-800 border-t-2 border-t-amber-400"
+                        : isWeekend ? "bg-rose-50 text-rose-700" : ""
                     }`}>
                     <div className="text-[10px] text-slate-500">{DOW_TH[dow]}</div>
                     <div className="text-sm font-bold">{Number(day)}</div>
+                    {holiday && (
+                      <div className="text-[8px] leading-tight text-amber-700 font-bold truncate max-w-[64px] mx-auto">
+                        🎌 {holiday}
+                      </div>
+                    )}
                   </th>
                 );
               })}
@@ -394,6 +410,7 @@ export default function RosterClient({
                   const a = byCell.get(d)?.get(p.id);
                   const focused = inFocus(a);
                   const onLeave = a ? leaveMap[`${a.user_id}:${d}`] : undefined;
+                  const holiday = holidayMap[d];
                   return (
                     <td key={d}
                       className={`border border-slate-200 p-0 align-middle transition-opacity ${
@@ -415,7 +432,7 @@ export default function RosterClient({
                         }`}
                         // On-leave cells get a rose wash so the slot reads as
                         // "needs a substitute" regardless of the shift colour.
-                        style={onLeave ? { backgroundColor: "#fff1f2" } : (a?.shift_color ? { backgroundColor: a.shift_color } : undefined)}
+                        style={onLeave ? { backgroundColor: "#fff1f2" } : (a?.shift_color ? { backgroundColor: a.shift_color } : (holiday ? { backgroundColor: "#fffbeb" } : undefined))}
                       >
                         {a ? (
                           <>

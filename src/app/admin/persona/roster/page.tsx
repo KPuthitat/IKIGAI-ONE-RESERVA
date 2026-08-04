@@ -82,6 +82,17 @@ export default function AdminRosterPage({
   const leaveMap: Record<string, string> = {};
   for (const l of approvedLeaveDaysForBranchMonth(branch.id, month)) leaveMap[`${l.user_id}:${l.date}`] = l.type;
 
+  // วันหยุดประเพณีเป็น default ในตาราง (owner 2026-08-04) — ดึงวันหยุดจริงของเดือน
+  // นี้จาก public_holidays (is_workday=0 = วันหยุดจริง) มาไฮไลต์ในตาราง/ปฏิทิน ให้
+  // แอดมินวางเวรโดยเห็นวันหยุดชัด (จัด OFF หรือให้มาทำงาน = เข้าโฟลว์ 2×/ใช้สิทธิ์).
+  // แสดงผลอย่างเดียว — ไม่เขียน roster_assignments อัตโนมัติ.
+  const holidayMap: Record<string, string> = {};
+  for (const h of db.prepare(
+    "SELECT date, name_th FROM public_holidays WHERE date >= ? AND date <= ? AND is_workday = 0"
+  ).all(`${month}-01`, `${month}-31`) as Array<{ date: string; name_th: string }>) {
+    holidayMap[h.date] = h.name_th;
+  }
+
   // Birthday layer (2026-05-30) — every staff in this branch with a
   // dob on file. We pre-extract MM-DD so the calendar can match by
   // month-day across years without exposing the year of birth (also
@@ -255,6 +266,7 @@ export default function AdminRosterPage({
               is_self: b.user_id === user.id
             }))}
             currentUserId={user.id}
+            holidayMap={holidayMap}
           />
         ) : (
           <RosterClient
@@ -285,6 +297,7 @@ export default function AdminRosterPage({
               shift_kind: a.shift_kind
             }))}
             leaveMap={leaveMap}
+            holidayMap={holidayMap}
           />
         )
       )}
