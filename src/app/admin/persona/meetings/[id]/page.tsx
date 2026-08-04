@@ -5,6 +5,7 @@ import Link from "next/link";
 import { requireAdmin, userCanAdminBranch } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getMeeting, listActionItems } from "@/lib/meetings";
+import { meetingPrepEnabled } from "@/lib/meeting-prep";
 import MeetingDetailClient, { type StaffOption } from "./MeetingDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +39,7 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
   return (
     <div className="space-y-4">
       <Link href="/admin/persona/meetings" className="text-sm text-brand hover:underline">← กลับรายการประชุม</Link>
-      <MeetingDetailClient meeting={meeting} items={items} staff={staff} />
+      <MeetingDetailClient meeting={meeting} items={items} staff={staff} aiEnabled={meetingPrepEnabled()} />
     </div>
   );
 }

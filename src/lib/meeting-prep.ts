@@ -152,6 +152,44 @@ export async function summarizeWeeklyReports(db: Database.Database, opts: {
   return { id: Number(res.lastInsertRowid), summary: out.text, reportCount: reports.length, model: out.model };
 }
 
+const CHECKLIST_SYSTEM = `คุณคือผู้ช่วยแปลง "สรุป/มติการประชุม" เป็นรายการงานที่ต้องทำต่อ (action items)
+
+หน้าที่: อ่านสรุปการประชุม แล้วดึงเฉพาะ "สิ่งที่ต้องลงมือทำต่อ" ออกมาเป็นข้อๆ
+
+กติกา:
+- ตอบเป็นภาษาไทย
+- แต่ละงานสั้น กระชับ เป็นประโยคสั่งการที่ทำได้จริง เริ่มด้วยคำกริยา (เช่น "สั่งซื้อ…", "นัดช่างซ่อม…", "จัดตารางเวร…")
+- เอาเฉพาะสิ่งที่ต้อง "ทำ" — ข้ามข้อมูลทั่วไป/บริบทที่ไม่ใช่งาน
+- ตอบเป็น "รายการเท่านั้น" หนึ่งงานต่อหนึ่งบรรทัด ห้ามใส่เลขลำดับ เครื่องหมาย bullet หัวข้อ หรือคำอธิบายเพิ่มเติม
+- ถ้าไม่มีงานที่ต้องทำชัดเจน ให้ตอบบรรทัดเดียวว่า: (ไม่มี)`;
+
+/** ให้ AI เสนอ action item จากสรุป/มติการประชุม — คืนเฉพาะข้อความงาน (ยังไม่บันทึก
+ *  ให้ผู้ใช้ตรวจ/เลือกก่อน). log ค่าใช้จ่ายทันที. */
+export async function suggestActionItems(
+  summary: string, userId: number, branchId: number | null
+): Promise<{ items: string[]; model: string }> {
+  const text = summary.trim();
+  if (!text) throw new MeetingPrepError("empty_summary", "การประชุมนี้ยังไม่มีสรุป/มติ — กรอกสรุปก่อนให้ AI สร้างเช็กลิสต์");
+
+  const out = await callClaude({
+    system: CHECKLIST_SYSTEM,
+    user: `สรุป/มติการประชุม:\n\n${text}`,
+    maxTokens: 1200
+  });
+  const items = out.text.split("\n")
+    .map((s) => s.replace(/^[\s\-•*•\d.)]+/, "").trim())  // ตัด bullet/เลขลำดับนำหน้า
+    .filter((s) => s && s !== "(ไม่มี)")
+    .slice(0, 30);
+
+  try {
+    logFinAnalysisUsage({
+      model: out.model, inputTokens: out.inputTokens, outputTokens: out.outputTokens, branchId, userId
+    });
+  } catch { /* never fail over a usage-log write */ }
+
+  return { items, model: out.model };
+}
+
 export type PrepSummaryRow = {
   id: number;
   branch_id: number | null;
