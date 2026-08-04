@@ -16,12 +16,64 @@ export type StaffOption = {
 const staffLabel = (s: StaffOption) => s.nickname_th?.trim() || nameWithPrefix(s.title_prefix, s.display_name);
 
 export default function MeetingDetailClient({
-  meeting, items, staff
-}: { meeting: MeetingRow; items: ActionItemRow[]; staff: StaffOption[] }) {
+  meeting, items, staff, aiEnabled = false
+}: { meeting: MeetingRow; items: ActionItemRow[]; staff: StaffOption[]; aiEnabled?: boolean }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const refresh = () => startTransition(() => router.refresh());
   const [busyId, setBusyId] = useState<number | null>(null);
+
+  // ── AI: สร้างเช็กลิสต์จากสรุปการประชุม ──
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggested, setSuggested] = useState<Array<{ title: string; include: boolean }> | null>(null);
+  const [aiErr, setAiErr] = useState<string | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
+
+  async function suggestAI() {
+    setSuggesting(true); setAiErr(null); setSuggested(null);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/meetings/${meeting.id}/suggest-items`), { method: "POST" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setAiErr(j.message ?? j.error ?? "สร้างเช็กลิสต์ไม่สำเร็จ"); return; }
+      const items: string[] = j.items ?? [];
+      if (items.length === 0) { setAiErr("AI ไม่พบงานที่ต้องทำจากสรุปนี้"); return; }
+      setSuggested(items.map((t) => ({ title: t, include: true })));
+    } catch {
+      setAiErr("เกิดข้อผิดพลาด ลองใหม่อีกครั้ง");
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
+  async function addSelected() {
+    if (!suggested) return;
+    const chosen = suggested.filter((s) => s.include && s.title.trim());
+    if (chosen.length === 0) { setSuggested(null); return; }
+    setSavingAll(true); setAiErr(null);
+    // เก็บเฉพาะรายการที่บันทึก "ไม่สำเร็จ" ไว้ให้ผู้ใช้ลองใหม่ — รายการที่สำเร็จแล้ว
+    // ถูกลบออกจากลิสต์ กันกดซ้ำแล้วเพิ่มซ้ำ (dup). เช็ค res.ok เพราะ fetch ไม่ reject
+    // ตอน HTTP error.
+    const failed: Array<{ title: string; include: boolean }> = [];
+    let anyOk = false;
+    for (const s of chosen) {
+      let ok = false;
+      try {
+        const res = await fetch(apiUrl(`/api/admin/persona/meetings/${meeting.id}/items`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: s.title.trim(), assignee_user_id: null, due_date: null })
+        });
+        ok = res.ok;
+      } catch { ok = false; }
+      if (ok) anyOk = true; else failed.push(s);
+    }
+    // คงเฉพาะที่ยังไม่ถูกเลือก (include=false) + ที่บันทึกไม่สำเร็จ
+    const remaining = [...suggested.filter((s) => !(s.include && s.title.trim())), ...failed];
+    setSuggested(remaining.length ? remaining : null);
+    if (failed.length) setAiErr(`บันทึกไม่สำเร็จ ${failed.length} รายการ — ลองใหม่อีกครั้ง`);
+    if (anyOk) refresh();
+    setSavingAll(false);
+  }
 
   async function toggle(item: ActionItemRow) {
     setBusyId(item.id);
@@ -78,7 +130,7 @@ export default function MeetingDetailClient({
       </div>
 
       <div className="card space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <h2 className="font-bold text-slate-800 text-sm">
             เชคลิสต์งานหลังประชุม
             {items.length > 0 && (
@@ -87,7 +139,50 @@ export default function MeetingDetailClient({
               </span>
             )}
           </h2>
+          {aiEnabled && meeting.summary?.trim() && (
+            <button type="button" disabled={suggesting} onClick={suggestAI}
+              className="text-xs px-3 py-1.5 rounded-md border border-brand text-brand font-bold hover:bg-brand/5 disabled:opacity-50">
+              {suggesting ? "AI กำลังคิด…" : "✨ สร้างเช็กลิสต์ด้วย AI"}
+            </button>
+          )}
         </div>
+
+        {aiErr && <p className="text-xs text-rose-600">{aiErr}</p>}
+
+        {suggested && (
+          <div className="rounded-lg border border-brand/30 bg-brand/5 p-3 space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-slate-700">
+                AI เสนอ {suggested.length} งาน — เลือก/แก้ไขก่อนเพิ่ม
+              </span>
+              <span className="flex-1" />
+              <button type="button" onClick={() => setSuggested(null)}
+                className="text-[11px] text-slate-400 hover:text-slate-600">ยกเลิก</button>
+            </div>
+            <div className="space-y-1.5">
+              {suggested.map((s, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input type="checkbox" checked={s.include}
+                    onChange={(e) => setSuggested((arr) =>
+                      arr!.map((x, idx) => idx === i ? { ...x, include: e.target.checked } : x))} />
+                  <input className="input flex-1 !py-1 text-sm" value={s.title}
+                    onChange={(e) => setSuggested((arr) =>
+                      arr!.map((x, idx) => idx === i ? { ...x, title: e.target.value } : x))} />
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <button type="button" disabled={savingAll || !suggested.some((s) => s.include && s.title.trim())}
+                onClick={addSelected}
+                className="text-xs px-4 py-1.5 rounded-md bg-brand text-white font-bold hover:opacity-90 disabled:opacity-40">
+                {savingAll ? "กำลังเพิ่ม…" : `＋ เพิ่มที่เลือก (${suggested.filter((s) => s.include && s.title.trim()).length})`}
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400">
+              * AI ช่วยร่างจากสรุปการประชุม โปรดตรวจทานก่อนเพิ่ม — มอบหมายผู้รับผิดชอบ/กำหนดส่งได้ที่รายการด้านล่างหลังเพิ่ม
+            </p>
+          </div>
+        )}
 
         {items.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีงานมอบหมาย</p>}
 
