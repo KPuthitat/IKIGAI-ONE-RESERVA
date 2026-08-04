@@ -11,7 +11,9 @@ import { upsertManagerReport } from "@/lib/manager-reports";
 
 const HDATE = /^\d{4}-\d{2}-\d{2}$/;
 const EMPLOYEE_ROLES = ["staff", "admin", "super_admin"];
-const BACKDATE_WINDOW_DAYS = 7; // เท่ากับหน้าปิดกะ (shift_close)
+// ย้อนหลังได้สูงสุด 6 วัน = 7 วันรวมวันนี้ ให้ตรงกับหน้าปิดกะ (shift_close ใช้
+// minDate = today − 6 → ช่วง [today−6, today])
+const BACKDATE_WINDOW_DAYS = 6;
 
 const Body = z.object({
   report_date: z.string().regex(HDATE),
