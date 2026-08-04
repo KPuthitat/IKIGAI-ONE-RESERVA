@@ -6982,6 +6982,40 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_meeting_items_assignee ON meeting_action_items(assignee_user_id, status);
   `);
 
+  // ── รายงานผู้จัดการ → เตรียมประชุมประจำสัปดาห์ (owner 2026-08-04) ──────
+  // ผู้จัดการสาขา (role=admin) ส่งรายงานปิดกะ + สถานการณ์ประจำวัน + เรื่องที่อยาก
+  // ยกเข้าประชุมประจำสัปดาห์. ทุกวันพุธ AI ช่วยสรุปรายงานทั้งสัปดาห์ (เก็บใน
+  // meeting_prep_summaries) เพื่อใช้ตั้งวาระประชุม แล้วต่อยอดเป็น meetings +
+  // meeting_action_items. branch_id NULL = ระดับบริษัท.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS manager_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER REFERENCES branches(id) ON DELETE CASCADE,  -- NULL = ระดับบริษัท
+      report_date TEXT NOT NULL,                 -- YYYY-MM-DD (BKK)
+      author_user_id INTEGER REFERENCES users(id),
+      shift_summary TEXT NOT NULL DEFAULT '',    -- สรุปปิดกะ (ยอด/สถานการณ์การขาย)
+      situation TEXT NOT NULL DEFAULT '',        -- สถานการณ์/ปัญหา/เหตุการณ์ประจำวัน
+      meeting_topics TEXT NOT NULL DEFAULT '',   -- เรื่องที่อยากเสนอเข้าประชุมประจำสัปดาห์
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_manager_reports_branch_date ON manager_reports(branch_id, report_date);
+    CREATE INDEX IF NOT EXISTS idx_manager_reports_date ON manager_reports(report_date);
+
+    CREATE TABLE IF NOT EXISTS meeting_prep_summaries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER REFERENCES branches(id) ON DELETE CASCADE,  -- NULL = ระดับบริษัท
+      period_from TEXT NOT NULL,                 -- YYYY-MM-DD
+      period_to TEXT NOT NULL,                   -- YYYY-MM-DD
+      summary TEXT NOT NULL,                     -- ผลสรุปจาก AI (ภาษาไทย)
+      report_count INTEGER NOT NULL DEFAULT 0,   -- จำนวนรายงานที่นำมาสรุป
+      model TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_meeting_prep_branch ON meeting_prep_summaries(branch_id, period_to);
+  `);
+
   // ── ทำงานในวันหยุดประเพณี: เลื่อน / ใช้สิทธิ์ (owner 2026-08-04) ──────
   // เมื่อพนักงานทำงานในวันหยุดประเพณี แอดมินเลือกให้รายคนต่อวัน:
   //   • 'defer' (เลื่อน)   → ทำงานวันนั้นได้ค่าจ้างปกติ ไม่ได้ 2 เท่า, ยกวันหยุด

@@ -150,6 +150,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/meal-coupons", label: "คูปองอาหารพนักงาน" },
         { href: "/admin/persona/ot-approvals", label: "อนุมัติการทำงานล่วงเวลา" },
         { href: "/admin/persona/shift-requests", label: "คำขอเปลี่ยนเวลางาน" },
+        { href: "/admin/persona/manager-reports", label: "รายงานผู้จัดการ" },
         { href: "/admin/persona/meetings", label: "การประชุม" },
         { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
