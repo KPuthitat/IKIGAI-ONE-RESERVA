@@ -6,7 +6,7 @@ import { notifyLeaveEvent, notifyHrLeaveRequest } from "@/lib/approval-notify";
 import {
   ALL_LEAVE_TYPES, getEligibleLeaveTypesForUser, saveLeaveAttachment,
   analyzeLongLeave, detectWeekendExtension, getPublicHolidaySet, generateRefNo,
-  getQuotaInfo,
+  holidayQuotaRemainingForLeave,
   type LeaveType
 } from "@/lib/leave";
 
@@ -113,10 +113,12 @@ export async function POST(req: Request) {
   // เป็นเพดานจริงและเป็นวันหยุด "ได้เงิน" ในโควตา. getQuotaInfo.used นับทั้งใบลา
   // holiday (pending/approved) + วันที่ "ใช้สิทธิ์" มาทำงานวันหยุดของปีนี้ไว้แล้ว.
   if (type === "holiday") {
-    const info = getQuotaInfo(user.id, matchedType);
-    if (info.remaining != null && days > info.remaining + 1e-6) {
+    // Measure against the quota of the YEAR the leave falls in (date_from), so a
+    // backdated cross-year holiday draws on its own year (owner 2026-08-04).
+    const remaining = holidayQuotaRemainingForLeave(user.id, matchedType, date_from);
+    if (remaining != null && days > remaining + 1e-6) {
       return NextResponse.json(
-        { error: "holiday_quota_exceeded", remaining: info.remaining },
+        { error: "holiday_quota_exceeded", remaining },
         { status: 400 }
       );
     }

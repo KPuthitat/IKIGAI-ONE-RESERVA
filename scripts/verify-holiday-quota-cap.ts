@@ -59,4 +59,22 @@ db.prepare("INSERT INTO holiday_work_choices VALUES (3,'2026-04-01','defer')").r
 assert(usedDays(3) === 0, "user3 'defer' → quota not consumed");
 assert(!wouldReject(3, 13), "user3 can still take full 13 despite a defer");
 
+// ── Year selection (mirror holidayQuotaRemainingForLeave's asOf rule) ──────
+// A leave in a COMPLETED year is measured at that year's Dec 31 (fully accrued);
+// a current-year leave at "today". This is Finding A: a cross-year backdated
+// holiday must draw on ITS year, not always the current year.
+const accruedForLeave = (hireDate: string | null, leaveYear: number, nowYear: number, nowBkk: string) => {
+  const asOf = leaveYear === nowYear ? nowBkk : `${leaveYear}-12-31`;
+  return traditionalHolidayAccruedDays(hireDate, leaveYear, asOf);
+};
+// Filed in 2026 for a 2025 date → 2025 is complete → full 13 (hired before 2025).
+assert(Math.abs(accruedForLeave("2024-01-01", 2025, 2026, "2026-03-10") - 13) < 1e-6,
+  "backdated 2025 leave (filed 2026) → measured against full 2025 quota (13)");
+// Same person's 2026 leave as of mid-March → partial accrual (~3.25), not 13.
+const midCur = accruedForLeave("2024-01-01", 2026, 2026, "2026-03-10");
+assert(midCur > 3 && midCur < 4, `current-year 2026 leave as of Mar → ~3.25 accrued (got ${midCur})`);
+// Hired mid-2025: a 2025 leave uses 2025's prorated accrual (Jul→Dec ≈ 6.5), not 2026's.
+const hiredMid = accruedForLeave("2025-07-01", 2025, 2026, "2026-03-10");
+assert(hiredMid > 6 && hiredMid < 7, `hired Jul 2025, 2025 leave → ~6.5 accrued for 2025 (got ${hiredMid})`);
+
 console.log("\nholiday quota cap: all checks passed ✓");

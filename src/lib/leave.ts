@@ -51,9 +51,10 @@ export function getEligibleLeaveTypesForUser(user: {
   });
 }
 
-/** ชั่วโมงที่ใช้ไปแล้วในปีนี้ — แปลง days → hours (1 day = 8h) */
-export function getLeaveHoursUsedThisYear(userId: number, type: LeaveType): number {
-  const year = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 4);
+/** ชั่วโมงที่ใช้ไปแล้วในปีนี้ — แปลง days → hours (1 day = 8h). yearOverride
+ *  (YYYY) วัดปีอื่นได้ (เช่น ตรวจโควตาของใบลาย้อนปี) — default = ปีปัจจุบัน BKK. */
+export function getLeaveHoursUsedThisYear(userId: number, type: LeaveType, yearOverride?: string): number {
+  const year = yearOverride ?? new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 4);
   const row = getDb().prepare(`
     SELECT COALESCE(SUM(
       CASE WHEN hours IS NOT NULL THEN hours ELSE days * 8 END
@@ -104,7 +105,9 @@ export function traditionalHolidayAccruedDays(
 
 /** Quota override ของ user (ถ้ามี) มิฉะนั้นคืน default จาก leave_types.
  *  พิเศษ: 'holiday' (วันหยุดประเพณีสะสม) คิดตามอายุงาน ไม่ใช่ก้อนคงที่ (owner 2026-08-03). */
-export function getEffectiveQuotaDays(userId: number, type: LeaveTypeRow): number | null {
+export function getEffectiveQuotaDays(
+  userId: number, type: LeaveTypeRow, opts?: { year?: number; asOf?: string }
+): number | null {
   const row = getDb().prepare(
     "SELECT quota_days FROM user_leave_quotas WHERE user_id = ? AND type = ?"
   ).get(userId, type.code) as { quota_days: number } | undefined;
@@ -113,9 +116,31 @@ export function getEffectiveQuotaDays(userId: number, type: LeaveTypeRow): numbe
     const u = getDb().prepare("SELECT hire_date FROM users WHERE id = ?")
       .get(userId) as { hire_date: string | null } | undefined;
     const nowBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    return traditionalHolidayAccruedDays(u?.hire_date ?? null, Number(nowBkk.slice(0, 4)), nowBkk);
+    // Accrual is year-scoped (owner 2026-08-04). opts lets a caller measure a
+    // DIFFERENT year — e.g. a backdated leave draws on ITS year's quota, and a
+    // completed past year has fully accrued (asOf = its Dec 31).
+    const year = opts?.year ?? Number(nowBkk.slice(0, 4));
+    const asOf = opts?.asOf ?? nowBkk;
+    return traditionalHolidayAccruedDays(u?.hire_date ?? null, year, asOf);
   }
   return type.default_quota_days;
+}
+
+/** โควตาวันหยุดประเพณีคงเหลือ "สำหรับปีของใบลานั้น" (owner 2026-08-04). ใช้ตอน
+ *  ตรวจตอนขอลา — ใบลาย้อนปี/ข้ามปีต้องวัดกับโควตา+ยอดใช้ของปีที่ลาจริง ไม่ใช่ปี
+ *  ปัจจุบันเสมอ. ปีที่จบไปแล้ว/ปีอนาคต = สะสมครบทั้งปี (asOf = 31 ธ.ค.); ปีนี้ =
+ *  สะสม ณ วันนี้. คืน null ถ้าไม่มีเพดาน. */
+export function holidayQuotaRemainingForLeave(
+  userId: number, type: LeaveTypeRow, dateFrom: string
+): number | null {
+  const nowBkk = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const nowYear = Number(nowBkk.slice(0, 4));
+  const leaveYear = Number(dateFrom.slice(0, 4));
+  const asOf = leaveYear === nowYear ? nowBkk : `${leaveYear}-12-31`;
+  const quota = getEffectiveQuotaDays(userId, type, { year: leaveYear, asOf });
+  if (quota == null) return null;
+  const usedDays = getLeaveHoursUsedThisYear(userId, "holiday", String(leaveYear)) / 8;
+  return Math.max(0, quota - usedDays);
 }
 
 /** สิทธิ์คงเหลือ — แสดงเป็น "X วัน Y ชั่วโมง" (1 วัน = 8 ชม.) */
