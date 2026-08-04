@@ -6,6 +6,7 @@ import { notifyLeaveEvent, notifyHrLeaveRequest } from "@/lib/approval-notify";
 import {
   ALL_LEAVE_TYPES, getEligibleLeaveTypesForUser, saveLeaveAttachment,
   analyzeLongLeave, detectWeekendExtension, getPublicHolidaySet, generateRefNo,
+  getQuotaInfo,
   type LeaveType
 } from "@/lib/leave";
 
@@ -105,6 +106,20 @@ export async function POST(req: Request) {
   const hasFile = file instanceof File && file.size > 0;
   if (matchedType.requires_evidence && !hasFile) {
     return NextResponse.json({ error: "evidence_required" }, { status: 400 });
+  }
+
+  // วันหยุดประเพณี — เพดานตามสิทธิ์ที่สะสม (owner 2026-08-04). ลาวันหยุดได้ไม่เกิน
+  // จำนวนที่สะสมมา (13/ปี ~1/เดือน); เกินโควตาต้องใช้ลาประเภทอื่น เพื่อให้ 13 วัน
+  // เป็นเพดานจริงและเป็นวันหยุด "ได้เงิน" ในโควตา. getQuotaInfo.used นับทั้งใบลา
+  // holiday (pending/approved) + วันที่ "ใช้สิทธิ์" มาทำงานวันหยุดของปีนี้ไว้แล้ว.
+  if (type === "holiday") {
+    const info = getQuotaInfo(user.id, matchedType);
+    if (info.remaining != null && days > info.remaining + 1e-6) {
+      return NextResponse.json(
+        { error: "holiday_quota_exceeded", remaining: info.remaining },
+        { status: 400 }
+      );
+    }
   }
 
   // Long-leave / consecutive-stretch check (เฉพาะ personal & annual)
