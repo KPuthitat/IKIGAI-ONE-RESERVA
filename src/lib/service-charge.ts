@@ -839,23 +839,24 @@ export function computeMonthlySvcSummary(
     }
   }
 
-  // 6b. Food-credit clawback (owner 2026-07-30). A staffer who redeemed the free
-  //     lunch (a food coupon with a credit_value) but whose CLAMPED worked
-  //     minutes that day fell below FOOD_CLAWBACK_MIN_MINUTES (480−30) — i.e.
-  //     left the ≥8h shift early — forfeits that day's credit from their SVC,
-  //     UNLESS they have an approved early-leave for the day. We only claw back
-  //     on days we can actually measure (present in workedByDay); a day with no
-  //     computable minutes (abnormal/uncertified — already SVC-excluded) is
-  //     skipped so we never double-penalise or penalise missing data. Scoped to
-  //     coupons ISSUED at this branch (the shift they clocked into = this SVC
-  //     branch's day).
+  // 6b. Food-credit clawback (owner 2026-07-30; MEALPASS 2.0 source 2026-08-09).
+  //     A staffer who took an in-house MEALPASS meal (a confirmed order that
+  //     burned credits) but whose CLAMPED worked minutes that day fell below
+  //     FOOD_CLAWBACK_MIN_MINUTES (480−30) — i.e. left the ≥8h shift early —
+  //     forfeits that meal's credit value from their SVC, UNLESS they have an
+  //     approved early-leave for the day. We only claw back on days we can
+  //     actually measure (present in workedByDay); an abnormal/uncertified day
+  //     (already SVC-excluded) is skipped so we never double-penalise. Cash
+  //     meals (credits = 0) carry nothing to claw. Scoped to the selling branch
+  //     = the shift they worked = this SVC branch's day. (Old meal_coupons
+  //     source retired — the coupon module was replaced by MEALPASS 2.0.)
   const earlyLeaveKeys = approvedEarlyLeaveKeys(db, yearMonth);
   const redeemedFood = db.prepare(`
-    SELECT user_id AS uid, coupon_date AS d, credit_value AS credit
-      FROM meal_coupons
-     WHERE type = 'food' AND status = 'redeemed' AND issued_branch_id = ?
-       AND coupon_date >= ? AND coupon_date <= ?
-       AND credit_value IS NOT NULL AND credit_value > 0
+    SELECT user_id AS uid, order_date AS d, credits AS credit
+      FROM mealpass_orders
+     WHERE kind = 'meal' AND status = 'confirmed' AND branch_id = ?
+       AND order_date >= ? AND order_date <= ?
+       AND credits > 0
   `).all(branchId, start, end) as Array<{ uid: number; d: string; credit: number }>;
   const clawbackByUser = computeFoodClawbacks(
     redeemedFood, workedByDay, earlyLeaveKeys, (uid) => acc.has(uid)

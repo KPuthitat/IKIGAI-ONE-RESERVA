@@ -12,6 +12,7 @@
     "check:risks": "node scripts/scan-build-risks.mjs",
     "check:types": "npx tsc --noEmit -p tsconfig.json",
     "test:mounjaro": "node --import tsx scripts/test-mounjaro.ts",
+    "test:mealpass": "node --import tsx scripts/test-mealpass.ts",
     "test:rbac": "node --import tsx scripts/test-rbac.ts",
     "test:payroll": "node --import tsx scripts/test-payroll.ts",
     "test:clock": "node --import tsx scripts/test-clock-code.ts",

@@ -75,8 +75,8 @@ export function createDrinkOrder(
   const now = new Date().toISOString();
   const info = db.prepare(
     `INSERT INTO partner_drink_orders
-       (user_id, branch_id, partner_id, coupon_id, order_date, amount, token, status, expires_at, created_at)
-     VALUES (?, ?, ?, NULL, ?, 0, ?, 'pending', ?, ?)`
+       (user_id, branch_id, partner_id, order_date, amount, token, status, expires_at, created_at)
+     VALUES (?, ?, ?, ?, 0, ?, 'pending', ?, ?)`
   ).run(userId, branchId, partner.id, today, token, dayEndIso, now);
 
   return { ok: true, orderId: Number(info.lastInsertRowid), token, expiresAt: dayEndIso, partnerName: partner.name };
@@ -106,14 +106,14 @@ export function redeemDrinkOrder(
   if (!isDrinkTier(amount)) return { ok: false, error: "bad_amount" };
   if (!isPaymentMethod(paymentMethod)) return { ok: false, error: "bad_method" };
   const order = db.prepare(
-    `SELECT o.id, o.user_id, o.branch_id, o.amount, o.status, o.expires_at, o.coupon_id, o.order_date,
+    `SELECT o.id, o.user_id, o.branch_id, o.amount, o.status, o.expires_at, o.order_date,
             COALESCE(u.nickname_th, u.display_name) AS staff_name
        FROM partner_drink_orders o
        JOIN users u ON u.id = o.user_id
       WHERE o.token = ?`
   ).get(token) as
     | { id: number; user_id: number; branch_id: number; amount: number; status: string;
-        expires_at: string; coupon_id: number | null; order_date: string; staff_name: string }
+        expires_at: string; order_date: string; staff_name: string }
     | undefined;
   if (!order) return { ok: false, error: "not_found" };
   if (order.status === "redeemed") return { ok: false, error: "already" };
@@ -128,7 +128,6 @@ export function redeemDrinkOrder(
   }
 
   const now = new Date().toISOString();
-  const label = `เครื่องดื่มจ้อจี้ ฿${amount}${paymentMethod === "cash" ? " (จ่ายเอง)" : ""}`;
   const changed = db.transaction(() => {
     // Set the จ้อจี้-chosen amount + payment method as the order is redeemed.
     const info = db.prepare(
@@ -137,15 +136,6 @@ export function redeemDrinkOrder(
         WHERE id = ? AND status = 'pending'`
     ).run(amount, paymentMethod, now, redeemerUserId, order.id);
     if (info.changes === 0) return false; // lost a race — someone redeemed first
-    // Consume the daily drink coupon so it can't be re-ordered or menu-redeemed.
-    if (order.coupon_id != null) {
-      db.prepare(
-        `UPDATE meal_coupons
-            SET status = 'redeemed', redeemed_at = ?, redeemed_branch_id = ?,
-                redeemed_menu_item_id = NULL, redeemed_menu_name = ?
-          WHERE id = ? AND status = 'issued'`
-      ).run(now, order.branch_id, label, order.coupon_id);
-    }
     return true;
   })();
   if (!changed) return { ok: false, error: "already" };

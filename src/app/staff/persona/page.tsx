@@ -5,7 +5,6 @@ import { getDb, type Branch } from "@/lib/db";
 import { nameWithPrefix } from "@/lib/name";
 import { bkkDateIso } from "@/lib/time";
 import { userHasWorkShiftOn, resolveClockBranchId, scheduledWorkBranchesWithNames } from "@/lib/roster";
-import { listUserCouponsForDate } from "@/lib/meal-coupons";
 import { resolveDrinkPartner } from "@/lib/partner-drink-orders";
 import { myOpenActionItemCount } from "@/lib/meetings";
 import TimeClockClient from "./TimeClockClient";
@@ -113,12 +112,8 @@ export default function StaffPersonaPage() {
     scheduledEnd = sc?.end_time ?? null;
   }
 
-  // Meal coupons for today — surface an entry link to the redeem screen so the
-  // staff can find their coupons even after dismissing the clock-in pop-up.
-  const coupons = listUserCouponsForDate(user.id, todayBkk);
-  const redeemableCoupons = coupons.filter((c) => c.effectiveStatus === "issued").length;
-  // Drinks have no coupon now (owner 2026-07-31) — still surface the เบิก link when
-  // the branch has a จ้อจี้ partner so staff can order a drink.
+  // Drinks: surface the เบิก link when the branch has a จ้อจี้ partner (meal
+  // coupons retired 2026-08-09 — meals are on the MEALPASS screen now).
   const hasDrinkPartner = user.activeBranchId != null && resolveDrinkPartner(user.activeBranchId) != null;
 
   // จ้อจี้ partner accounts get a shortcut to the drink-redemption scanner.
@@ -176,12 +171,21 @@ export default function StaffPersonaPage() {
           สแกนรับเครื่องดื่ม (จ้อจี้) →
         </Link>
       )}
-      {(coupons.length > 0 || hasDrinkPartner) && (
+      {user.activeBranchId != null && (
+        <Link
+          href="/staff/persona/mealpass"
+          className="block rounded-xl px-4 py-3 text-sm font-semibold text-white hover:opacity-90 transition"
+          style={{ background: "#0B1F3A" }}
+        >
+          🦉 MEALPASS · เครดิตมื้ออาหารของฉัน →
+        </Link>
+      )}
+      {hasDrinkPartner && (
         <Link
           href="/staff/persona/coupons"
           className="block rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 hover:bg-amber-100 transition"
         >
-          คูปอง / เบิกเครื่องดื่ม{redeemableCoupons > 0 ? ` · ${redeemableCoupons} ใบพร้อมใช้` : ""} →
+          เบิกเครื่องดื่ม (จ้อจี้) →
         </Link>
       )}
       {openTaskCount > 0 && (
