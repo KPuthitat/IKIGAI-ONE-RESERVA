@@ -10,6 +10,7 @@
 // food cost/COG. This module returns numbers only; the UI phrases them as
 // "N เครดิต ใช้ได้เมื่อลงเวลาเข้าทำงาน".
 
+import { randomBytes } from "crypto";
 import Database from "better-sqlite3";
 import { getDb } from "./db";
 import { scheduledShiftMinutesForUserDate } from "./roster";
@@ -282,4 +283,189 @@ export function expireMonth(ym: string, db: Database.Database = getDb()): number
   });
   tx();
   return n;
+}
+
+// ── Burn flow (in-house meal redemption) ──────────────────────────────────
+// Staff pick a menu item → order (MP-xxxx, pending) → manager confirms → one
+// ledger burn row + status confirmed. Cash meals (balance short) burn 0 credits
+// (money collected at the counter) but still post a row for audit. The DB
+// unique index (kind='meal', live status) is the real 1-meal/day guard; we
+// pre-check for a friendly error.
+
+/** True when the current HH:MM is past the branch redeem cutoff. String
+ *  compare is safe for zero-padded HH:MM. */
+export function isAfterCutoff(nowHhmm: string, cutoff: string): boolean {
+  return nowHhmm > cutoff;
+}
+
+/** Coded error so routes can map to HTTP status. */
+export class MealpassError extends Error {
+  constructor(public code: string) { super(code); this.name = "MealpassError"; }
+}
+
+function genCode(prefix: string): string {
+  return `${prefix}-${randomBytes(3).toString("hex").toUpperCase()}`;
+}
+function endOfBkkDay(dateBkk: string): string {
+  return new Date(`${dateBkk}T23:59:59+07:00`).toISOString();
+}
+
+type MenuRow = {
+  id: number; branch_id: number; name_th: string; price: number;
+  is_available: number; is_standard_meal: number; credit_cost: number;
+};
+
+export type MealOrderResult = {
+  id: number; code: string; mealClass: MealClass;
+  credits: number; baht: number; menuName: string; balanceAfter: number;
+};
+
+/** Create a pending in-house meal order. Validates: feature enabled, dine-in
+ *  acknowledged, menu item available at the branch, ≤1 meal/day. Charge is
+ *  balance-aware (standard → credit_cost; special → 50% price; falls back to
+ *  cash −10% when credits are short). Being past the cutoff does NOT block
+ *  creation — it forces a manager override at confirm time. */
+export function createMealOrder(args: {
+  userId: number;
+  branchId: number;
+  menuItemId: number;
+  dineInAck: boolean;
+  dateBkk: string;
+  db?: Database.Database;
+}): MealOrderResult {
+  const db = args.db ?? getDb();
+  const cfg = getMealpassConfig(args.branchId, db);
+  if (!cfg.enabled) throw new MealpassError("mealpass_disabled");
+  if (!args.dineInAck) throw new MealpassError("dine_in_required");
+
+  const menu = db.prepare(
+    "SELECT id, branch_id, name_th, price, is_available, is_standard_meal, credit_cost FROM delivera_menu_items WHERE id = ?"
+  ).get(args.menuItemId) as MenuRow | undefined;
+  if (!menu || menu.branch_id !== args.branchId) throw new MealpassError("menu_invalid");
+  if (!menu.is_available) throw new MealpassError("menu_unavailable");
+
+  // ≤1 in-house meal / day (friendly pre-check; unique index is the guard).
+  const existing = db.prepare(
+    "SELECT 1 FROM mealpass_orders WHERE user_id = ? AND order_date = ? AND kind = 'meal' AND status IN ('pending','confirmed')"
+  ).get(args.userId, args.dateBkk);
+  if (existing) throw new MealpassError("already_today");
+
+  const ym = ymOf(args.dateBkk);
+  const balance = balanceForUser(args.userId, ym, db);
+  const quote = resolveMealCharge({
+    isStandard: menu.is_standard_meal === 1,
+    creditCost: menu.credit_cost,
+    price: menu.price,
+    balance,
+    cfg,
+  });
+
+  // Insert with a unique code (retry on the rare code collision).
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = genCode("MP");
+    const token = randomBytes(24).toString("hex");
+    try {
+      const info = db.prepare(`
+        INSERT INTO mealpass_orders
+          (user_id, code, kind, order_date, branch_id, menu_item_id, menu_name_snap,
+           price_snap, meal_class, credits, baht, status, dine_in_ack, token, expires_at)
+        VALUES (?, ?, 'meal', ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?)
+      `).run(args.userId, code, args.dateBkk, args.branchId, menu.id, menu.name_th,
+        menu.price, quote.mealClass, quote.credits, quote.baht, token, endOfBkkDay(args.dateBkk));
+      return {
+        id: Number(info.lastInsertRowid), code, mealClass: quote.mealClass,
+        credits: quote.credits, baht: quote.baht, menuName: menu.name_th,
+        balanceAfter: balance - quote.credits,
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      // Unique meal-per-day index → someone raced us.
+      if (/idx_mealpass_meal_once_per_day/.test(msg)) throw new MealpassError("already_today");
+      if (/UNIQUE/.test(msg) && attempt < 4) continue; // code/token clash — retry
+      throw e;
+    }
+  }
+  throw new MealpassError("code_generation_failed");
+}
+
+/** Manager confirms a pending meal order → burns credits (or records the cash
+ *  meal) and flips to confirmed. Past the cutoff, an override flag + reason are
+ *  required and logged. Re-validates the live balance for credit meals. */
+export function confirmMealOrder(args: {
+  code: string;
+  confirmerUserId: number;
+  nowHhmm: string;
+  override?: boolean;
+  overrideReason?: string | null;
+  db?: Database.Database;
+}): { ok: true; mealClass: MealClass; credits: number; baht: number } {
+  const db = args.db ?? getDb();
+  const order = db.prepare(
+    "SELECT * FROM mealpass_orders WHERE code = ?"
+  ).get(args.code) as {
+    id: number; user_id: number; kind: string; order_date: string; branch_id: number;
+    menu_item_id: number | null; menu_name_snap: string | null; price_snap: number | null;
+    meal_class: MealClass; credits: number; baht: number; status: string;
+  } | undefined;
+  if (!order) throw new MealpassError("not_found");
+  if (order.status === "confirmed") throw new MealpassError("already_confirmed");
+  if (order.status !== "pending") throw new MealpassError("not_pending");
+
+  const cfg = getMealpassConfig(order.branch_id, db);
+  if (isAfterCutoff(args.nowHhmm, cfg.redeem_cutoff)) {
+    if (!args.override) throw new MealpassError("override_required");
+    if (!args.overrideReason || !args.overrideReason.trim()) throw new MealpassError("override_reason_required");
+  }
+
+  const ym = ymOf(order.order_date);
+  // Credit meals: re-check the live balance still covers it.
+  if (order.meal_class !== "cash" && order.credits > 0) {
+    if (balanceForUser(order.user_id, ym, db) < order.credits) throw new MealpassError("insufficient");
+  }
+
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO mealpass_ledger
+        (user_id, ym, entry_type, credits, baht, order_id, menu_item_id, menu_name_snap,
+         price_snap, attendance_branch_id, created_by, notes)
+      VALUES (?, ?, 'burn', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      order.user_id, ym,
+      order.meal_class === "cash" ? 0 : -order.credits,
+      order.baht,
+      order.id, order.menu_item_id, order.menu_name_snap, order.price_snap,
+      order.branch_id, args.confirmerUserId,
+      order.meal_class === "cash" ? "จ่ายเงินสด" : (order.meal_class === "special" ? "เมนูพิเศษ" : "เมนูมาตรฐาน")
+    );
+    db.prepare(`
+      UPDATE mealpass_orders
+      SET status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP, confirmed_by = ?,
+          override_by = ?, override_reason = ?
+      WHERE id = ? AND status = 'pending'
+    `).run(
+      args.confirmerUserId,
+      args.override ? args.confirmerUserId : null,
+      args.override ? (args.overrideReason ?? null) : null,
+      order.id
+    );
+  });
+  tx();
+  return { ok: true, mealClass: order.meal_class, credits: order.credits, baht: order.baht };
+}
+
+/** Cancel a still-pending order (staff changed their mind / manager rejected).
+ *  No ledger movement — nothing was burned yet. */
+export function cancelMealOrder(code: string, db: Database.Database = getDb()): void {
+  const r = db.prepare(
+    "UPDATE mealpass_orders SET status = 'cancelled' WHERE code = ? AND status = 'pending'"
+  ).run(code);
+  if (r.changes === 0) throw new MealpassError("not_pending");
+}
+
+/** Expire pending orders whose day has passed (cron). No ledger movement. */
+export function expireStaleMealpassOrders(nowIso: string, db: Database.Database = getDb()): number {
+  const r = db.prepare(
+    "UPDATE mealpass_orders SET status = 'expired' WHERE status = 'pending' AND expires_at < ?"
+  ).run(nowIso);
+  return r.changes;
 }

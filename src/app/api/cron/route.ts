@@ -25,7 +25,7 @@ import {
 } from "@/lib/line";
 import { bookingTablesLabel } from "@/lib/booking-tables";
 import { buildMealCouponDaySummary } from "@/lib/meal-coupons";
-import { accrueForDate as mealpassAccrueForDate, expireMonth as mealpassExpireMonth } from "@/lib/mealpass";
+import { accrueForDate as mealpassAccrueForDate, expireMonth as mealpassExpireMonth, expireStaleMealpassOrders } from "@/lib/mealpass";
 import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
 import {
   sweepResignationsToTake,
@@ -281,6 +281,8 @@ async function runCron(): Promise<NextResponse> {
       mealpassExpired = mealpassExpireMonth(prevYm, db);
       db.prepare("UPDATE system_settings SET mealpass_expired_ym = ? WHERE id = 1").run(prevYm);
     }
+    // Expire pending meal orders whose day has passed (no ledger movement).
+    expireStaleMealpassOrders(new Date().toISOString(), db);
   } catch (e) {
     console.error("mealpass accrual/expiry error", e);
     reportError(e, "cron mealpass", { date: todayBkk });
