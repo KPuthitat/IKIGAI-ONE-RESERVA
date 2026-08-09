@@ -132,6 +132,60 @@ function eq(name: string, got: unknown, want: unknown): void {
   eq("int: override confirms", o3row.status, "confirmed");
   eq("int: override reason logged", o3row.override_reason, "ลูกค้าแน่นช่วงเที่ยง");
 
+  // ── Cross-company (ศาลาชิลล์) ──
+  const {
+    withinCrossCompanyCap, hasMealpassConsent, recordMealpassConsent,
+    createCrossCompanyOrder, confirmCrossCompanyOrder, crossCompanyChargedThisMonth,
+  } = await import("../src/lib/mealpass");
+
+  eq("xcap: room", withinCrossCompanyCap(1000, 400, 1500), true);
+  eq("xcap: exact", withinCrossCompanyCap(1100, 400, 1500), true);
+  eq("xcap: over", withinCrossCompanyCap(1200, 400, 1500), false);
+
+  // company 1 seeded by migration; add company 2 + a home branch (co 1) + a
+  // selling branch (co 2) + map the buyer to the home branch.
+  db.prepare("INSERT OR IGNORE INTO companies (id, name_th) VALUES (2, 'บริษัท B')").run();
+  db.prepare("INSERT INTO branches (id, slug, name, company_id) VALUES (99010,'hb','HomeBranch',1)").run();
+  db.prepare("INSERT INTO branches (id, slug, name, company_id) VALUES (99011,'sb','SalaBranch',2)").run();
+  db.prepare("INSERT INTO user_branches (user_id, branch_id, is_primary) VALUES (?,?,1)").run(U, 99010);
+  const crossItem = Number(db.prepare(`INSERT INTO delivera_menu_items
+    (branch_id, name_th, price, is_available, is_standard_meal, credit_cost) VALUES (99011,'ชาเขียว',120,1,0,60)`).run().lastInsertRowid);
+  const sameCoItem = Number(db.prepare(`INSERT INTO delivera_menu_items
+    (branch_id, name_th, price, is_available, is_standard_meal, credit_cost) VALUES (99010,'กาแฟ',60,1,0,60)`).run().lastInsertRowid);
+
+  // consent gate
+  let needConsent = false;
+  try { createCrossCompanyOrder({ buyerUserId: U, sellingBranchId: 99011, menuItemId: crossItem, dateBkk: "2026-08-14", db }); }
+  catch (e) { needConsent = e instanceof MealpassError && e.code === "consent_required"; }
+  eq("xc: consent required first", needConsent, true);
+  eq("xc: no consent yet", hasMealpassConsent(U, db), false);
+  recordMealpassConsent(U, db);
+  eq("xc: consent recorded", hasMealpassConsent(U, db), true);
+
+  // cap: set home-branch cap low → reject
+  db.prepare(`INSERT INTO mealpass_config (branch_id, enabled, cross_company_cap_baht) VALUES (99010, 1, 100)`).run();
+  let capped = false;
+  try { createCrossCompanyOrder({ buyerUserId: U, sellingBranchId: 99011, menuItemId: crossItem, dateBkk: "2026-08-14", db }); }
+  catch (e) { capped = e instanceof MealpassError && e.code === "cap_exceeded"; }
+  eq("xc: over cap rejected", capped, true);
+
+  // raise cap → success → confirm → payroll_charge ledger
+  db.prepare("UPDATE mealpass_config SET cross_company_cap_baht = 1500 WHERE branch_id = 99010").run();
+  const sc = createCrossCompanyOrder({ buyerUserId: U, sellingBranchId: 99011, menuItemId: crossItem, dateBkk: "2026-08-14", db });
+  eq("xc: SC code prefix", sc.code.slice(0, 3), "SC-");
+  eq("xc: charge = employee price 120", sc.baht, 120);
+  eq("xc: selling company 2", sc.sellingCompanyId, 2);
+  eq("xc: home company 1", sc.homeCompanyId, 1);
+  confirmCrossCompanyOrder({ code: sc.code, confirmerUserId: 1, db });
+  eq("xc: charged this month = 120", crossCompanyChargedThisMonth(U, "2026-08", db), 120);
+  eq("xc: does NOT touch credit balance", balanceForUser(U, YM, db), 40);
+
+  // same-company purchase → rejected (use the meal flow instead)
+  let notCross = false;
+  try { createCrossCompanyOrder({ buyerUserId: U, sellingBranchId: 99010, menuItemId: sameCoItem, dateBkk: "2026-08-14", db }); }
+  catch (e) { notCross = e instanceof MealpassError && e.code === "not_cross_company"; }
+  eq("xc: same-company rejected", notCross, true);
+
   db.close();
   for (const f of [TMP, `${TMP}-wal`, `${TMP}-shm`]) { try { fs.rmSync(f, { force: true }); } catch { /* */ } }
 

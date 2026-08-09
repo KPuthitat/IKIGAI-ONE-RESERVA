@@ -495,3 +495,152 @@ export function expireStaleMealpassOrders(nowIso: string, db: Database.Database 
   ).run(nowIso);
   return r.changes;
 }
+
+// ── Cross-company (ศาลาชิลล์) — buy at a partner company's shop on payroll ──
+// An employee of company A buys at company B's in-house shop (e.g. เวลล์เทรด
+// staff at ศาลาชิลล์ by จ้อจี้). No credits, no cash — the employee price is
+// SUSPENDED as a PAYROLL_CHARGE and deducted from their NEXT payslip at their
+// HOME company, then settled B←A between companies. Labour-law: needs written
+// consent + a per-person monthly cap (deductions ≤ 1/5 of wage; owner sets the
+// baht cap). Not counted against the 1-meal/day rule.
+
+export const MEALPASS_CONSENT_VERSION = "1.0";
+
+/** Has this employee signed the current cross-company payroll-charge consent? */
+export function hasMealpassConsent(userId: number, db: Database.Database = getDb()): boolean {
+  return !!db.prepare(
+    "SELECT 1 FROM mealpass_consent WHERE user_id = ? AND version = ?"
+  ).get(userId, MEALPASS_CONSENT_VERSION);
+}
+
+/** Record a consent signature (idempotent per user+version). */
+export function recordMealpassConsent(userId: number, db: Database.Database = getDb()): void {
+  db.prepare(
+    "INSERT OR IGNORE INTO mealpass_consent (user_id, version) VALUES (?, ?)"
+  ).run(userId, MEALPASS_CONSENT_VERSION);
+}
+
+/** Home company of an employee = the company of their primary branch (else the
+ *  lowest-id branch). Null when they have no branch. */
+export function resolveHomeCompanyId(userId: number, db: Database.Database = getDb()): number | null {
+  const row = db.prepare(`
+    SELECT b.company_id AS cid
+    FROM user_branches ub JOIN branches b ON b.id = ub.branch_id
+    WHERE ub.user_id = ?
+    ORDER BY ub.is_primary DESC, ub.branch_id ASC LIMIT 1
+  `).get(userId) as { cid: number | null } | undefined;
+  return row?.cid ?? null;
+}
+
+/** Baht already SUSPENDED (confirmed cross-company payroll charges) for a person
+ *  this month — for the monthly cap check. */
+export function crossCompanyChargedThisMonth(userId: number, ym: string, db: Database.Database = getDb()): number {
+  const r = db.prepare(
+    "SELECT COALESCE(SUM(baht),0) AS n FROM mealpass_ledger WHERE user_id = ? AND ym = ? AND entry_type = 'payroll_charge'"
+  ).get(userId, ym) as { n: number };
+  return r.n;
+}
+
+/** Pure cap check — is there room for another `addBaht` charge? */
+export function withinCrossCompanyCap(alreadyBaht: number, addBaht: number, capBaht: number): boolean {
+  return alreadyBaht + addBaht <= capBaht;
+}
+
+export type CrossOrderResult = {
+  id: number; code: string; baht: number; menuName: string;
+  sellingCompanyId: number; homeCompanyId: number;
+};
+
+/** Create a pending cross-company order (SC-xxxx). Requires: signed consent,
+ *  the item is at a DIFFERENT company's branch than the buyer's home company,
+ *  and the buyer is under their monthly suspended-charge cap. No credits/cash —
+ *  the employee price is charged to payroll on partner confirm. */
+export function createCrossCompanyOrder(args: {
+  buyerUserId: number;
+  sellingBranchId: number;
+  menuItemId: number;
+  dateBkk: string;
+  db?: Database.Database;
+}): CrossOrderResult {
+  const db = args.db ?? getDb();
+  if (!hasMealpassConsent(args.buyerUserId, db)) throw new MealpassError("consent_required");
+
+  const menu = db.prepare(
+    "SELECT id, branch_id, name_th, price, is_available FROM delivera_menu_items WHERE id = ?"
+  ).get(args.menuItemId) as { id: number; branch_id: number; name_th: string; price: number; is_available: number } | undefined;
+  if (!menu || menu.branch_id !== args.sellingBranchId) throw new MealpassError("menu_invalid");
+  if (!menu.is_available) throw new MealpassError("menu_unavailable");
+
+  const sellingCompany = (db.prepare("SELECT company_id AS cid FROM branches WHERE id = ?")
+    .get(args.sellingBranchId) as { cid: number | null } | undefined)?.cid ?? null;
+  const homeCompany = resolveHomeCompanyId(args.buyerUserId, db);
+  if (sellingCompany == null || homeCompany == null) throw new MealpassError("company_unknown");
+  if (sellingCompany === homeCompany) throw new MealpassError("not_cross_company"); // use the meal flow
+
+  // Cap from the buyer's HOME branch config (per-person monthly suspended cap).
+  const homeBranch = db.prepare(`
+    SELECT ub.branch_id AS bid FROM user_branches ub
+    WHERE ub.user_id = ? ORDER BY ub.is_primary DESC, ub.branch_id ASC LIMIT 1
+  `).get(args.buyerUserId) as { bid: number } | undefined;
+  const cap = getMealpassConfig(homeBranch?.bid ?? -1, db).cross_company_cap_baht;
+  const ym = ymOf(args.dateBkk);
+  if (!withinCrossCompanyCap(crossCompanyChargedThisMonth(args.buyerUserId, ym, db), menu.price, cap)) {
+    throw new MealpassError("cap_exceeded");
+  }
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = genCode("SC");
+    const token = randomBytes(24).toString("hex");
+    try {
+      const info = db.prepare(`
+        INSERT INTO mealpass_orders
+          (user_id, code, kind, order_date, branch_id, selling_company_id, menu_item_id,
+           menu_name_snap, price_snap, credits, baht, status, consent_at, consent_by, token, expires_at)
+        VALUES (?, ?, 'cross_company', ?, ?, ?, ?, ?, ?, 0, ?, 'pending', CURRENT_TIMESTAMP, ?, ?, ?)
+      `).run(args.buyerUserId, code, args.dateBkk, args.sellingBranchId, sellingCompany, menu.id,
+        menu.name_th, menu.price, menu.price, args.buyerUserId, token, endOfBkkDay(args.dateBkk));
+      return {
+        id: Number(info.lastInsertRowid), code, baht: menu.price, menuName: menu.name_th,
+        sellingCompanyId: sellingCompany, homeCompanyId: homeCompany,
+      };
+    } catch (e) {
+      if (e instanceof Error && /UNIQUE/.test(e.message) && attempt < 4) continue;
+      throw e;
+    }
+  }
+  throw new MealpassError("code_generation_failed");
+}
+
+/** Partner staff confirms a cross-company order → posts the PAYROLL_CHARGE
+ *  ledger row (baht only) against the buyer's home company. Re-checks the cap. */
+export function confirmCrossCompanyOrder(args: {
+  code: string; confirmerUserId: number; db?: Database.Database;
+}): { ok: true; baht: number } {
+  const db = args.db ?? getDb();
+  const order = db.prepare("SELECT * FROM mealpass_orders WHERE code = ?").get(args.code) as {
+    id: number; user_id: number; kind: string; order_date: string; branch_id: number;
+    selling_company_id: number | null; menu_item_id: number | null; menu_name_snap: string | null;
+    price_snap: number | null; baht: number; status: string;
+  } | undefined;
+  if (!order || order.kind !== "cross_company") throw new MealpassError("not_found");
+  if (order.status === "confirmed") throw new MealpassError("already_confirmed");
+  if (order.status !== "pending") throw new MealpassError("not_pending");
+
+  const ym = ymOf(order.order_date);
+  const homeCompany = resolveHomeCompanyId(order.user_id, db);
+
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO mealpass_ledger
+        (user_id, ym, entry_type, credits, baht, order_id, menu_item_id, menu_name_snap, price_snap,
+         attendance_branch_id, selling_company_id, home_company_id, created_by, notes)
+      VALUES (?, ?, 'payroll_charge', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ศาลาชิลล์ (หักเงินเดือน)')
+    `).run(order.user_id, ym, order.baht, order.id, order.menu_item_id, order.menu_name_snap,
+      order.price_snap, order.branch_id, order.selling_company_id, homeCompany, args.confirmerUserId);
+    db.prepare(
+      "UPDATE mealpass_orders SET status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP, confirmed_by = ? WHERE id = ? AND status = 'pending'"
+    ).run(args.confirmerUserId, order.id);
+  });
+  tx();
+  return { ok: true, baht: order.baht };
+}
