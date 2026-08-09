@@ -40,8 +40,8 @@ function eq(name: string, got: unknown, want: unknown): void {
   eq("full: long shift", classifyShift(600, 560), "full");
 
   // ── creditsForShift ──
-  eq("credits full = 60", creditsForShift(480, 460, cfg), 60);
-  eq("credits half = 30", creditsForShift(240, 220, cfg), 30);
+  eq("credits full (≥8h) = 60", creditsForShift(480, 460, cfg), 60);
+  eq("credits <8h = 0 (no half-day credit)", creditsForShift(240, 220, cfg), 0);
   eq("credits none = 0", creditsForShift(120, 120, cfg), 0);
 
   // ── applyMonthlyCap (cap 1500) ──
@@ -185,6 +185,34 @@ function eq(name: string, got: unknown, want: unknown): void {
   try { createCrossCompanyOrder({ buyerUserId: U, sellingBranchId: 99010, menuItemId: sameCoItem, dateBkk: "2026-08-14", db }); }
   catch (e) { notCross = e instanceof MealpassError && e.code === "not_cross_company"; }
   eq("xc: same-company rejected", notCross, true);
+
+  // ── In-store drink coupon ──
+  const { grantDrinkCoupon, chooseDrinkForCoupon, redeemDrinkCoupon, getDrinkCouponForDate } =
+    await import("../src/lib/mealpass");
+  const drink = Number(db.prepare(`INSERT INTO delivera_menu_items
+    (branch_id, name_th, price, is_available, is_standard_meal, credit_cost, is_store_drink)
+    VALUES (?, 'โค้กกระป๋อง', 20, 1, 0, 60, 1)`).run(B).lastInsertRowid);
+  const notDrink = std; // a food item (is_store_drink = 0)
+
+  const g1 = grantDrinkCoupon(U, B, "2026-08-15", db);
+  eq("drink: coupon code prefix", g1.code.slice(0, 3), "DR-");
+  const g2 = grantDrinkCoupon(U, B, "2026-08-15", db);
+  eq("drink: 1/day idempotent (same code)", g2.code, g1.code);
+  eq("drink: coupon issued", getDrinkCouponForDate(U, "2026-08-15", db)?.status, "issued");
+
+  let badDrink = false;
+  try { chooseDrinkForCoupon({ userId: U, dateBkk: "2026-08-15", menuItemId: notDrink, db }); }
+  catch (e) { badDrink = e instanceof MealpassError && e.code === "menu_invalid"; }
+  eq("drink: food item rejected as drink", badDrink, true);
+
+  const picked = chooseDrinkForCoupon({ userId: U, dateBkk: "2026-08-15", menuItemId: drink, db });
+  eq("drink: choose returns coupon code", picked.code, g1.code);
+  redeemDrinkCoupon({ code: g1.code, confirmerUserId: MGR, db });
+  eq("drink: redeemed", getDrinkCouponForDate(U, "2026-08-15", db)?.status, "redeemed");
+  let reRedeem = false;
+  try { redeemDrinkCoupon({ code: g1.code, confirmerUserId: MGR, db }); }
+  catch (e) { reRedeem = e instanceof MealpassError && e.code === "already_confirmed"; }
+  eq("drink: no double redeem", reRedeem, true);
 
   db.close();
   for (const f of [TMP, `${TMP}-wal`, `${TMP}-shm`]) { try { fs.rmSync(f, { force: true }); } catch { /* */ } }
