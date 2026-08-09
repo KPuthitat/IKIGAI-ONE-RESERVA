@@ -250,6 +250,39 @@ export function earnForDay(args: {
   return credits;
 }
 
+/** Earn on CLOCK-IN (owner 2026-08-09): the moment a staffer clocks into a
+ *  full (≥8h ROSTERED) shift they get the day's 60 credits so they can use a
+ *  meal that same day — not waiting for the nightly accrual. Rostered-based (the
+ *  shift hasn't been worked yet); the SVC food-clawback still recovers the meal
+ *  value if they eat then leave early. Idempotent per (user, day), cap-aware. */
+export function earnOnClockIn(args: {
+  userId: number; branchId: number; dateBkk: string; actorId?: number | null; db?: Database.Database;
+}): number {
+  const db = args.db ?? getDb();
+  const { userId, branchId, dateBkk } = args;
+  const dup = db.prepare(
+    "SELECT 1 FROM mealpass_ledger WHERE user_id = ? AND attendance_date = ? AND entry_type = 'earn'"
+  ).get(userId, dateBkk);
+  if (dup) return 0;
+  const cfg = getMealpassConfig(branchId, db);
+  if (!cfg.enabled) return 0;
+  if (scheduledShiftMinutesForUserDate(userId, branchId, dateBkk) < FULL_SHIFT_MIN) return 0;
+  const ym = ymOf(dateBkk);
+  const credits = applyMonthlyCap(monthlyEarned(userId, ym, db), cfg.full_day_credits, cfg.monthly_cap);
+  if (credits <= 0) return 0;
+  try {
+    db.prepare(`
+      INSERT INTO mealpass_ledger
+        (user_id, ym, entry_type, credits, attendance_date, attendance_branch_id, created_by, notes)
+      VALUES (?, ?, 'earn', ?, ?, ?, ?, 'เต็มวัน (ตอกเข้า)')
+    `).run(userId, ym, credits, dateBkk, branchId, args.actorId ?? null);
+  } catch (e) {
+    if (e instanceof Error && /UNIQUE/.test(e.message)) return 0;
+    throw e;
+  }
+  return credits;
+}
+
 /** Nightly accrual for a whole BKK date across all branches: earns for every
  *  active employee who had a work shift that day. Returns how many people
  *  earned. Idempotent — safe to re-run (e.g. after a time-cert correction). */

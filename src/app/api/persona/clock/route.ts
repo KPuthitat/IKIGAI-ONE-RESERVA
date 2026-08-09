@@ -18,6 +18,7 @@ import { verifyClockCode } from "@/lib/clock-code";
 import { saveClockSelfie } from "@/lib/clock-selfie";
 import { nowBkkMinutes } from "@/lib/time";
 import { svcWorkedMinutesForUserDate, FOOD_CLAWBACK_MIN_MINUTES } from "@/lib/service-charge";
+import { earnOnClockIn as earnMealpassOnClockIn, grantDrinkCoupon as grantMealpassDrinkCoupon } from "@/lib/mealpass";
 import { hasApprovedEarlyLeave } from "@/lib/early-leave";
 
 const Body = z.object({
@@ -536,6 +537,19 @@ export async function POST(req: Request) {
           clockInIsoTs: nowIso
         }).catch(() => { /* swallow — never block clock-in */ });
       }
+    }
+  }
+
+  // ── MEALPASS: earn + free drink coupon on clock-in (owner 2026-08-09) ──
+  // Full (≥8h ROSTERED) shift → today's 60 food credits, usable immediately.
+  // ANY clock-in → one free in-store drink coupon (1/day). Wrapped so a bug
+  // here can NEVER block the punch.
+  if (action === "in" && clockBranchId) {
+    try {
+      earnMealpassOnClockIn({ userId: user.id, branchId: clockBranchId, dateBkk: todayBkk, actorId: user.id });
+      grantMealpassDrinkCoupon(user.id, clockBranchId, todayBkk);
+    } catch (e) {
+      console.warn("[clock] mealpass earn/coupon failed:", e);
     }
   }
 
