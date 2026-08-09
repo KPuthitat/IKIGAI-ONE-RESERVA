@@ -18,6 +18,9 @@ export type MenuItem = {
   description: string | null;
   price: number; is_available: number; sort_order: number; image_url: string | null;
   inventa_item_id: number | null;
+  // MEALPASS 2.0 (owner 2026-08-09): a food item can be flagged as a standard
+  // meal choice with a per-item credit price (default 60).
+  is_standard_meal: number; credit_cost: number;
 };
 
 export function listMenu(branchId: number, opts?: { availableOnly?: boolean }): MenuItem[] {
@@ -35,23 +38,26 @@ export function getMenuItem(id: number, branchId: number): MenuItem | null {
 export function createMenuItem(branchId: number, m: {
   name_th: string; category?: string | null; description?: string | null; price: number;
   is_available?: boolean; sort_order?: number; image_url?: string | null; inventa_item_id?: number | null;
+  is_standard_meal?: boolean; credit_cost?: number;
 }): number {
   const info = getDb()
-    .prepare(`INSERT INTO delivera_menu_items (branch_id, name_th, category, description, price, is_available, sort_order, image_url, inventa_item_id)
-              VALUES (?,?,?,?,?,?,?,?,?)`)
+    .prepare(`INSERT INTO delivera_menu_items (branch_id, name_th, category, description, price, is_available, sort_order, image_url, inventa_item_id, is_standard_meal, credit_cost)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
     .run(branchId, m.name_th, m.category ?? null, m.description ?? null, m.price, m.is_available === false ? 0 : 1,
-         m.sort_order ?? 0, m.image_url ?? null, m.inventa_item_id ?? null);
+         m.sort_order ?? 0, m.image_url ?? null, m.inventa_item_id ?? null,
+         m.is_standard_meal ? 1 : 0, m.credit_cost ?? 60);
   return Number(info.lastInsertRowid);
 }
 
 export function updateMenuItem(id: number, branchId: number, patch: Partial<{
   name_th: string; category: string | null; description: string | null; price: number; is_available: boolean;
   sort_order: number; image_url: string | null; inventa_item_id: number | null;
+  is_standard_meal: boolean; credit_cost: number;
 }>): boolean {
   const cur = getDb().prepare("SELECT * FROM delivera_menu_items WHERE id = ? AND branch_id = ?").get(id, branchId) as MenuItem | undefined;
   if (!cur) return false;
   const r = getDb().prepare(
-    `UPDATE delivera_menu_items SET name_th=?, category=?, description=?, price=?, is_available=?, sort_order=?, image_url=?, inventa_item_id=?, updated_at=CURRENT_TIMESTAMP
+    `UPDATE delivera_menu_items SET name_th=?, category=?, description=?, price=?, is_available=?, sort_order=?, image_url=?, inventa_item_id=?, is_standard_meal=?, credit_cost=?, updated_at=CURRENT_TIMESTAMP
      WHERE id=? AND branch_id=?`
   ).run(
     patch.name_th ?? cur.name_th,
@@ -62,6 +68,8 @@ export function updateMenuItem(id: number, branchId: number, patch: Partial<{
     patch.sort_order ?? cur.sort_order,
     patch.image_url !== undefined ? patch.image_url : cur.image_url,
     patch.inventa_item_id !== undefined ? patch.inventa_item_id : cur.inventa_item_id,
+    patch.is_standard_meal !== undefined ? (patch.is_standard_meal ? 1 : 0) : cur.is_standard_meal,
+    patch.credit_cost !== undefined ? patch.credit_cost : cur.credit_cost,
     id, branchId
   );
   return r.changes > 0;
