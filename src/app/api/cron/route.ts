@@ -19,12 +19,10 @@ import {
   notifyInventaGroup,
   dailyAttendanceSummaryFlex,
   personaResignationTakenFlex,
-  mealCouponSummaryFlex,
   accountaDueBillsFlex,
   sendLinePush
 } from "@/lib/line";
 import { bookingTablesLabel } from "@/lib/booking-tables";
-import { buildMealCouponDaySummary } from "@/lib/meal-coupons";
 import { accrueForDate as mealpassAccrueForDate, expireMonth as mealpassExpireMonth, expireStaleMealpassOrders } from "@/lib/mealpass";
 import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
 import {
@@ -221,39 +219,6 @@ async function runCron(): Promise<NextResponse> {
         branchSlug: branch.slug, branchId: branch.id, date: todayBkk
       });
     }
-  }
-
-  // ── Meal-coupon daily summary → exec group (owner 2026-07-12) ─────
-  // Once a day, at/after the latest branch coupon cutoff (~15:00), push ONE
-  // combined rollup to the exec/HR group: who redeemed what vs who was issued
-  // a coupon but didn't use it. Dedupe via system_settings.meal_coupon_
-  // summary_sent_date so repeated cron pings don't re-send.
-  let mealCouponSummarySent = 0;
-  try {
-    const cutoffRow = db.prepare(
-      "SELECT MAX(meal_coupon_redeem_cutoff) AS c FROM branches WHERE meal_coupon_enabled = 1"
-    ).get() as { c: string | null };
-    const maxCutoff = cutoffRow?.c ?? null;
-    const sentRow = db.prepare(
-      "SELECT meal_coupon_summary_sent_date AS d FROM system_settings WHERE id = 1"
-    ).get() as { d: string | null } | undefined;
-    if (maxCutoff && nowHhmmBkk >= maxCutoff && sentRow?.d !== todayBkk) {
-      const summary = buildMealCouponDaySummary(todayBkk);
-      if (summary.hasAny) {
-        const flex = mealCouponSummaryFlex({
-          dateStr: formatLongDate(todayBkk, "th"),
-          branches: summary.branches,
-          totals: summary.totals
-        });
-        await notifyToHrGroup(flex);
-        mealCouponSummarySent = 1;
-      }
-      // Stamp even when there were no coupons today, so we check once per day.
-      db.prepare("UPDATE system_settings SET meal_coupon_summary_sent_date = ? WHERE id = 1").run(todayBkk);
-    }
-  } catch (e) {
-    console.error("meal coupon summary error", e);
-    reportError(e, "cron meal-coupon-summary", { date: todayBkk });
   }
 
   // ── MEALPASS 2.0 accrual + month-end expiry (owner 2026-08-09) ───
@@ -613,7 +578,6 @@ async function runCron(): Promise<NextResponse> {
     recurring_expenses_posted: recurringExpensesPosted,
     due_bills_reminded: dueBillsReminded,
     attendance_summaries_sent: attendanceSummariesSent,
-    meal_coupon_summary_sent: mealCouponSummarySent,
     mealpass_accrued: mealpassAccrued,
     mealpass_expired: mealpassExpired,
     shift_notifications_sent: shiftNotificationsSent,

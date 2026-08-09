@@ -1560,58 +1560,21 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN meal_coupon_late_grace_min INTEGER NOT NULL DEFAULT 15");
   }
 
-  // Which Delivera menu items are coupon-eligible, per branch, tagged food/drink.
-  // Delivera menus are per-branch, so a coupon redeemed at a branch draws from
-  // that branch's list — the coupon entitlement itself is branch-agnostic.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS meal_coupon_menu (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      branch_id     INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
-      menu_item_id  INTEGER NOT NULL REFERENCES delivera_menu_items(id) ON DELETE CASCADE,
-      type          TEXT NOT NULL CHECK (type IN ('food','drink')),
-      active        INTEGER NOT NULL DEFAULT 1,
-      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(branch_id, menu_item_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_meal_coupon_menu_branch ON meal_coupon_menu(branch_id, type, active);
-  `);
-
-  // One row per issued coupon (a clock-in issues two: food + drink). Expiry is
-  // lazy — a still-'issued' row past redeem_before is treated as expired at read
-  // time, so no cron is needed. redeemed_menu_name snapshots the item name.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS meal_coupons (
-      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id               INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      coupon_date           TEXT NOT NULL,
-      type                  TEXT NOT NULL CHECK (type IN ('food','drink')),
-      status                TEXT NOT NULL DEFAULT 'issued' CHECK (status IN ('issued','redeemed','expired')),
-      issued_branch_id      INTEGER REFERENCES branches(id),
-      redeem_before         TEXT NOT NULL,
-      redeemed_at           TEXT,
-      redeemed_branch_id    INTEGER REFERENCES branches(id),
-      redeemed_menu_item_id INTEGER REFERENCES delivera_menu_items(id),
-      redeemed_menu_name    TEXT,
-      created_at            TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_meal_coupons_user_date ON meal_coupons(user_id, coupon_date);
-  `);
-
-  // Food-credit value (owner 2026-07-30): each coupon-eligible FOOD menu item is
-  // priced as a welfare "credit" (เบื้องต้น 60/120). The value is snapshotted
-  // onto the coupon at redeem so a later menu-price edit can't change history.
-  // It also drives the SVC clawback: a staffer who redeems the free lunch but
-  // then leaves the ≥8h shift early (worked < 480−grace) forfeits this credit
-  // from their service-charge share. Drink rows keep it NULL (drinks use the
-  // partner_drink_orders tier flow). Nullable — untagged food = no credit yet.
+  // MEALPASS 2.0 retired the meal-coupon module (owner 2026-08-09) — replaced by
+  // the mealpass_* ledger. The old tables are ARCHIVED to *_legacy (renamed, NOT
+  // dropped) so historical data stays recoverable; they are no longer created or
+  // written. Guarded rename runs once. SQLite auto-updates the
+  // partner_drink_orders.coupon_id FK reference to the new name. The inert
+  // branches.meal_coupon_* config columns are left as-is (harmless; dropping
+  // columns needs a table rebuild).
   {
-    const cmCols = db.prepare("PRAGMA table_info(meal_coupon_menu)").all() as Array<{ name: string }>;
-    if (!cmCols.some((c) => c.name === "credit_value")) {
-      db.exec("ALTER TABLE meal_coupon_menu ADD COLUMN credit_value INTEGER");
+    const hasTable = (n: string) =>
+      !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(n);
+    if (hasTable("meal_coupons") && !hasTable("meal_coupons_legacy")) {
+      db.exec("ALTER TABLE meal_coupons RENAME TO meal_coupons_legacy");
     }
-    const mcCols = db.prepare("PRAGMA table_info(meal_coupons)").all() as Array<{ name: string }>;
-    if (!mcCols.some((c) => c.name === "credit_value")) {
-      db.exec("ALTER TABLE meal_coupons ADD COLUMN credit_value INTEGER");
+    if (hasTable("meal_coupon_menu") && !hasTable("meal_coupon_menu_legacy")) {
+      db.exec("ALTER TABLE meal_coupon_menu RENAME TO meal_coupon_menu_legacy");
     }
   }
 

@@ -17,7 +17,6 @@ import { userHasWorkShiftOn, effectiveShiftStartForUserDate, scheduledShiftMinut
 import { verifyClockCode } from "@/lib/clock-code";
 import { saveClockSelfie } from "@/lib/clock-selfie";
 import { nowBkkMinutes } from "@/lib/time";
-import { mealCouponConfig, isEligibleClockIn, isFoodEligible, issueDailyCoupons } from "@/lib/meal-coupons";
 import { svcWorkedMinutesForUserDate, FOOD_CLAWBACK_MIN_MINUTES } from "@/lib/service-charge";
 import { hasApprovedEarlyLeave } from "@/lib/early-leave";
 
@@ -484,52 +483,29 @@ export async function POST(req: Request) {
     }
   }
 
-  // ── Meal coupon (owner 2026-07-12, food rule tightened 2026-07-30) ──
-  // A fresh clock-IN to the eligible lunch shift (11:00/12:00, not too late)
-  // issues coupons, shown as a pop-up. The FREE lunch meal (food) additionally
-  // requires a rostered shift > 8h; the drink coupon keeps the looser gate.
-  // Idempotent per (user, date). Wrapped so a bug here can NEVER break clock-in.
-  let coupon: { food: boolean; drink: boolean; redeemBefore: string } | null = null;
-  if (action === "in" && clockBranchId) {
-    try {
-      const cfg = mealCouponConfig(clockBranchId);
-      if (cfg.enabled) {
-        const shiftStart = effectiveShiftStartForUserDate(user.id, clockBranchId, todayBkk);
-        if (isEligibleClockIn(cfg, shiftStart, nowBkkMinutes().minutes)) {
-          const scheduledMin = scheduledShiftMinutesForUserDate(user.id, clockBranchId, todayBkk);
-          const foodOk = isFoodEligible(cfg, shiftStart, nowBkkMinutes().minutes, scheduledMin);
-          // Drinks no longer use a coupon (owner 2026-07-31: สั่งได้ตลอด จ่ายเอง) —
-          // only the free lunch is coupon-gated now.
-          coupon = issueDailyCoupons(user.id, clockBranchId, todayBkk, { food: foodOk, drink: false });
-        }
-      }
-    } catch (e) {
-      console.warn("[clock] meal coupon issue failed:", e);
-    }
-  }
-
-  // ── Food-credit early-leave warning (owner 2026-07-30) ─────────────
-  // On a fresh clock-OUT, if the staffer redeemed today's free lunch (a
-  // credit-tagged food coupon) but their clamped worked minutes fall short of
-  // the ≥8h bar (480 − 30-min grace) and they have no approved early-leave, warn
-  // that the credit will be clawed back from SVC — and let the client offer to
-  // request approval. Advisory only; wrapped so it can NEVER break the punch.
+  // ── MEALPASS early-leave warning (owner 2026-08-09; replaces coupons) ──
+  // On a fresh clock-OUT, if the staffer took an in-house MEALPASS meal today (a
+  // confirmed order that burned credits) but their clamped worked minutes fall
+  // short of the ≥8h bar (480 − 30-min grace) and they have no approved
+  // early-leave, warn that the credit will be clawed back from SVC — and let the
+  // client offer to request approval. Advisory only; wrapped so it can NEVER
+  // break the punch. (Meal coupons retired — MEALPASS is the source now.)
   let foodWarning: { credit: number; workedMinutes: number; workDate: string } | null = null;
   if (action === "out" && clockBranchId) {
     try {
-      const food = db.prepare(
-        `SELECT credit_value FROM meal_coupons
-          WHERE user_id = ? AND coupon_date = ? AND type = 'food' AND status = 'redeemed'
-            AND credit_value IS NOT NULL AND credit_value > 0 LIMIT 1`
-      ).get(user.id, todayBkk) as { credit_value: number } | undefined;
-      if (food && !hasApprovedEarlyLeave(db, user.id, todayBkk)) {
+      const meal = db.prepare(
+        `SELECT credits FROM mealpass_orders
+          WHERE user_id = ? AND order_date = ? AND kind = 'meal' AND status = 'confirmed'
+            AND credits > 0 LIMIT 1`
+      ).get(user.id, todayBkk) as { credits: number } | undefined;
+      if (meal && !hasApprovedEarlyLeave(db, user.id, todayBkk)) {
         const worked = svcWorkedMinutesForUserDate(clockBranchId, user.id, todayBkk);
         if (worked < FOOD_CLAWBACK_MIN_MINUTES) {
-          foodWarning = { credit: food.credit_value, workedMinutes: worked, workDate: todayBkk };
+          foodWarning = { credit: meal.credits, workedMinutes: worked, workDate: todayBkk };
         }
       }
     } catch (e) {
-      console.warn("[clock] food clawback warning failed:", e);
+      console.warn("[clock] mealpass clawback warning failed:", e);
     }
   }
 
@@ -575,7 +551,6 @@ export async function POST(req: Request) {
     action,
     ...(owl ? { owl } : {}),
     ...(swap ? { swap } : {}),
-    ...(coupon ? { coupon } : {}),
     ...(foodWarning ? { foodWarning } : {})
   });
 }
