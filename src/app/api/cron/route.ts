@@ -25,6 +25,7 @@ import {
 } from "@/lib/line";
 import { bookingTablesLabel } from "@/lib/booking-tables";
 import { buildMealCouponDaySummary } from "@/lib/meal-coupons";
+import { accrueForDate as mealpassAccrueForDate, expireMonth as mealpassExpireMonth } from "@/lib/mealpass";
 import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
 import {
   sweepResignationsToTake,
@@ -253,6 +254,36 @@ async function runCron(): Promise<NextResponse> {
   } catch (e) {
     console.error("meal coupon summary error", e);
     reportError(e, "cron meal-coupon-summary", { date: todayBkk });
+  }
+
+  // ── MEALPASS 2.0 accrual + month-end expiry (owner 2026-08-09) ───
+  // Once/day, accrue meal credits for YESTERDAY's confirmed shifts (idempotent
+  // via the unique earn index; deduped on system_settings.mealpass_accrued_date
+  // so we don't rescan every cron ping). On the 1st of a month, expire the
+  // previous month's leftover balances — credits do NOT roll over.
+  let mealpassAccrued = 0;
+  let mealpassExpired = 0;
+  try {
+    const yesterdayBkk = new Date(Date.UTC(
+      nowBkk.getUTCFullYear(), nowBkk.getUTCMonth(), nowBkk.getUTCDate() - 1
+    )).toISOString().slice(0, 10);
+    const ss = db.prepare(
+      "SELECT mealpass_accrued_date AS ad, mealpass_expired_ym AS ey FROM system_settings WHERE id = 1"
+    ).get() as { ad: string | null; ey: string | null } | undefined;
+    if (ss?.ad !== yesterdayBkk) {
+      mealpassAccrued = mealpassAccrueForDate(yesterdayBkk, db);
+      db.prepare("UPDATE system_settings SET mealpass_accrued_date = ? WHERE id = 1").run(yesterdayBkk);
+    }
+    // Month rolled over (today's month ≠ yesterday's) → expire that finished
+    // month once. Accrual above already booked yesterday's last-day earn first.
+    const prevYm = yesterdayBkk.slice(0, 7);
+    if (prevYm !== todayBkk.slice(0, 7) && ss?.ey !== prevYm) {
+      mealpassExpired = mealpassExpireMonth(prevYm, db);
+      db.prepare("UPDATE system_settings SET mealpass_expired_ym = ? WHERE id = 1").run(prevYm);
+    }
+  } catch (e) {
+    console.error("mealpass accrual/expiry error", e);
+    reportError(e, "cron mealpass", { date: todayBkk });
   }
 
   // ── Per-shift personal LINE reminder ─────────────────────────────
@@ -581,6 +612,8 @@ async function runCron(): Promise<NextResponse> {
     due_bills_reminded: dueBillsReminded,
     attendance_summaries_sent: attendanceSummariesSent,
     meal_coupon_summary_sent: mealCouponSummarySent,
+    mealpass_accrued: mealpassAccrued,
+    mealpass_expired: mealpassExpired,
     shift_notifications_sent: shiftNotificationsSent,
     pending_digests_sent: pendingDigestsSent,
     auto_no_show: autoNoShow,

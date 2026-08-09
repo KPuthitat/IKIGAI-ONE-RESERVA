@@ -2874,6 +2874,14 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "meal_coupon_summary_sent_date")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN meal_coupon_summary_sent_date TEXT");
   }
+  // MEALPASS 2.0 cron dedupe (owner 2026-08-09): last work-day accrued (YYYY-MM-DD)
+  // and last month expired (YYYY-MM), so repeated cron pings don't re-scan.
+  if (!ssCols.some((c) => c.name === "mealpass_accrued_date")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN mealpass_accrued_date TEXT");
+  }
+  if (!ssCols.some((c) => c.name === "mealpass_expired_ym")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN mealpass_expired_ym TEXT");
+  }
   // HR group name label (owner 2026-06-06) — shown next to every
   // notification setting so admin can see "this goes to XXXX group"
   // without having to remember which group ID maps to which chat.
