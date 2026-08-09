@@ -1962,6 +1962,120 @@ function runMigrations(db: Database.Database): void {
     const mcols = db.prepare("PRAGMA table_info(delivera_menu_items)").all() as Array<{ name: string }>;
     if (!mcols.some((c) => c.name === "description")) db.exec("ALTER TABLE delivera_menu_items ADD COLUMN description TEXT");
   }
+
+  // ── MEALPASS 2.0 (owner 2026-08-09) ──────────────────────────────────────
+  // Employee meal-credit system that REPLACES the old meal-coupon module. The
+  // DELIVERA menu stays the single source of truth — a food item is flagged as
+  // a MEALPASS choice here (is_standard_meal) with a per-item credit price
+  // (credit_cost, default 60). No duplicate menu table. Additive only — the
+  // old meal_coupon_* tables are removed in a later cut-over migration once the
+  // SVC food-clawback has been re-pointed at the ledger below.
+  {
+    const mcols = db.prepare("PRAGMA table_info(delivera_menu_items)").all() as Array<{ name: string }>;
+    if (!mcols.some((c) => c.name === "is_standard_meal")) {
+      db.exec("ALTER TABLE delivera_menu_items ADD COLUMN is_standard_meal INTEGER NOT NULL DEFAULT 0");
+    }
+    if (!mcols.some((c) => c.name === "credit_cost")) {
+      db.exec("ALTER TABLE delivera_menu_items ADD COLUMN credit_cost INTEGER NOT NULL DEFAULT 60");
+    }
+  }
+  db.exec(`
+    -- Append-only ledger. Balance = SUM(credits) over a person's rows in a
+    -- month (ym, BKK). Never mutate a row's amount — corrections are new
+    -- 'adjust' rows so every baht is auditable. earn: +credits; burn / expire /
+    -- clawback: −credits; payroll_charge: money-only (baht > 0, credits 0) for
+    -- cross-company purchases charged to the buyer's next payslip.
+    CREATE TABLE IF NOT EXISTS mealpass_ledger (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id              INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      ym                   TEXT NOT NULL,                                       -- 'YYYY-MM' (BKK)
+      entry_type           TEXT NOT NULL CHECK (entry_type IN
+                             ('earn','burn','expire','payroll_charge','clawback','adjust')),
+      credits              INTEGER NOT NULL DEFAULT 0,                          -- signed
+      baht                 REAL NOT NULL DEFAULT 0,                             -- money leg
+      attendance_date      TEXT,                                               -- earn: source work day (BKK)
+      attendance_branch_id INTEGER REFERENCES branches(id),
+      order_id             INTEGER REFERENCES mealpass_orders(id) ON DELETE SET NULL,
+      menu_item_id         INTEGER REFERENCES delivera_menu_items(id),
+      menu_name_snap       TEXT,                                               -- snapshot, price-edit proof
+      price_snap           REAL,
+      selling_company_id   INTEGER REFERENCES companies(id),
+      home_company_id      INTEGER REFERENCES companies(id),
+      created_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_by           INTEGER REFERENCES users(id),
+      notes                TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_mealpass_ledger_user_ym ON mealpass_ledger(user_id, ym);
+    CREATE INDEX IF NOT EXISTS idx_mealpass_ledger_type_ym ON mealpass_ledger(entry_type, ym);
+    -- One earn per person per work day (idempotent nightly accrual).
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_mealpass_earn_once
+      ON mealpass_ledger(user_id, attendance_date) WHERE entry_type = 'earn';
+
+    -- Order lifecycle (pending → confirmed) + QR token — modelled on
+    -- partner_drink_orders. MP-xxxx = in-house meal, SC-xxxx = cross-company
+    -- (ศาลาชิลล์). Confirming an order writes exactly one ledger row.
+    CREATE TABLE IF NOT EXISTS mealpass_orders (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id            INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      code               TEXT NOT NULL UNIQUE,                                 -- MP-xxxx / SC-xxxx
+      kind               TEXT NOT NULL CHECK (kind IN ('meal','cross_company')),
+      order_date         TEXT NOT NULL,                                        -- BKK day
+      branch_id          INTEGER REFERENCES branches(id),                      -- selling branch
+      selling_company_id INTEGER REFERENCES companies(id),
+      menu_item_id       INTEGER REFERENCES delivera_menu_items(id),
+      menu_name_snap     TEXT,
+      price_snap         REAL,
+      meal_class         TEXT CHECK (meal_class IN ('standard','special','cash')),
+      credits            INTEGER NOT NULL DEFAULT 0,                           -- credits burned on confirm
+      baht               REAL NOT NULL DEFAULT 0,                              -- cash (−10%) or payroll charge
+      status             TEXT NOT NULL DEFAULT 'pending'
+                           CHECK (status IN ('pending','confirmed','expired','cancelled')),
+      dine_in_ack        INTEGER NOT NULL DEFAULT 0,                           -- staff ticked "ทานที่ร้าน"
+      consent_at         TEXT,                                                 -- cross-company payroll-charge consent
+      consent_by         INTEGER REFERENCES users(id),
+      token              TEXT UNIQUE,
+      expires_at         TEXT,
+      confirmed_at       TEXT,
+      confirmed_by       INTEGER REFERENCES users(id),
+      override_by        INTEGER REFERENCES users(id),                         -- after-cutoff manager override
+      override_reason    TEXT,
+      created_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_mealpass_orders_user_date
+      ON mealpass_orders(user_id, order_date, status);
+    CREATE INDEX IF NOT EXISTS idx_mealpass_orders_token ON mealpass_orders(token);
+    -- Max 1 in-house meal / person / day, enforced at DB level (spec). Only
+    -- 'meal' kind + live statuses count; cross_company is unlimited-by-this-rule.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_mealpass_meal_once_per_day
+      ON mealpass_orders(user_id, order_date)
+      WHERE kind = 'meal' AND status IN ('pending','confirmed');
+
+    -- Per-branch config (feature OFF by default). Rates/quotas awaiting owner
+    -- numbers live here so nothing is hard-coded.
+    CREATE TABLE IF NOT EXISTS mealpass_config (
+      branch_id              INTEGER PRIMARY KEY REFERENCES branches(id) ON DELETE CASCADE,
+      enabled                INTEGER NOT NULL DEFAULT 0,
+      redeem_cutoff          TEXT NOT NULL DEFAULT '15:00',                    -- HH:MM, after = manager override
+      monthly_cap            INTEGER NOT NULL DEFAULT 1500,                    -- credits / person / month
+      full_day_credits       INTEGER NOT NULL DEFAULT 60,                      -- 8h shift earn
+      half_day_credits       INTEGER NOT NULL DEFAULT 30,                      -- 4h shift earn
+      standard_credit_cost   INTEGER NOT NULL DEFAULT 60,                      -- default per-meal burn
+      special_rate           REAL NOT NULL DEFAULT 0.5,                        -- special meal = 50% of price
+      cash_discount          REAL NOT NULL DEFAULT 0.10,                       -- pay −10% when credit short
+      cross_company_cap_baht REAL NOT NULL DEFAULT 1500,                       -- suspended charge cap / person / month
+      updated_at             TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Written-consent capture (labour law: payroll deduction needs written
+    -- consent). One row per (user, version); presence gates cross-company use.
+    CREATE TABLE IF NOT EXISTS mealpass_consent (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      version   TEXT NOT NULL,
+      signed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, version)
+    );
+  `);
   // Seed 2 default zones for any DELIVERA-enabled branch that has none yet
   // (idempotent; runs on boot). Deferred for disabled branches so prod stays
   // clean until the owner turns the module on.
