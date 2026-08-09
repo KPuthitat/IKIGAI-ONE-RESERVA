@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
@@ -11,6 +11,15 @@ export type PendingOrder = {
   code: string; staffName: string; menuName: string | null;
   mealClass: string; credits: number; baht: number;
 };
+export type MealpassCfg = {
+  enabled: number; redeem_cutoff: string; monthly_cap: number;
+  full_day_credits: number; half_day_credits: number; standard_credit_cost: number;
+  special_rate: number; cash_discount: number; cross_company_cap_baht: number;
+};
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return <label className="block"><span className="text-xs text-slate-500">{label}</span>{children}</label>;
+}
 
 const ERR_TH: Record<string, string> = {
   not_found: "ไม่พบรหัสนี้",
@@ -20,8 +29,11 @@ const ERR_TH: Record<string, string> = {
   override_reason_required: "กรุณากรอกเหตุผล",
 };
 
-export default function MealpassConfirmClient({ pending }: { pending: PendingOrder[] }) {
+export default function MealpassConfirmClient({ pending, config }: { pending: PendingOrder[]; config: MealpassCfg }) {
   const router = useRouter();
+  const [cfg, setCfg] = useState<MealpassCfg>(config);
+  const [cfgBusy, setCfgBusy] = useState(false);
+  const [cfgSaved, setCfgSaved] = useState(false);
   const [manual, setManual] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ code: string; text: string; ok: boolean } | null>(null);
@@ -51,8 +63,57 @@ export default function MealpassConfirmClient({ pending }: { pending: PendingOrd
     setBusy(null);
   }
 
+  async function saveConfig() {
+    setCfgBusy(true); setCfgSaved(false);
+    try {
+      const res = await fetch(apiUrl("/api/admin/persona/mealpass/config"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: cfg.enabled === 1,
+          redeem_cutoff: cfg.redeem_cutoff,
+          monthly_cap: cfg.monthly_cap,
+          full_day_credits: cfg.full_day_credits,
+          half_day_credits: cfg.half_day_credits,
+          standard_credit_cost: cfg.standard_credit_cost,
+          special_rate: cfg.special_rate,
+          cash_discount: cfg.cash_discount,
+          cross_company_cap_baht: cfg.cross_company_cap_baht,
+        }),
+      });
+      if (res.ok) { setCfgSaved(true); router.refresh(); }
+    } finally { setCfgBusy(false); }
+  }
+  const num = (k: keyof MealpassCfg) => (e: ChangeEvent<HTMLInputElement>) =>
+    setCfg({ ...cfg, [k]: Number(e.target.value) });
+
   return (
     <div className="space-y-4">
+      {/* Branch config */}
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold" style={{ color: NAVY }}>ตั้งค่า MEALPASS · สาขานี้</h2>
+          <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+            <input type="checkbox" checked={cfg.enabled === 1} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked ? 1 : 0 })} />
+            {cfg.enabled === 1 ? <span className="text-emerald-600">เปิดใช้งาน</span> : <span className="text-slate-400">ปิดอยู่</span>}
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <Field label="เวลาปิดใช้สิทธิ์ (HH:MM)"><input className="input" value={cfg.redeem_cutoff} onChange={(e) => setCfg({ ...cfg, redeem_cutoff: e.target.value })} placeholder="15:00" /></Field>
+          <Field label="เพดานเครดิต/เดือน"><input type="number" className="input text-right font-mono" value={cfg.monthly_cap} onChange={num("monthly_cap")} /></Field>
+          <Field label="เต็มวันได้ (เครดิต)"><input type="number" className="input text-right font-mono" value={cfg.full_day_credits} onChange={num("full_day_credits")} /></Field>
+          <Field label="ครึ่งวันได้ (เครดิต)"><input type="number" className="input text-right font-mono" value={cfg.half_day_credits} onChange={num("half_day_credits")} /></Field>
+          <Field label="เมนูมาตรฐาน หัก (เครดิต)"><input type="number" className="input text-right font-mono" value={cfg.standard_credit_cost} onChange={num("standard_credit_cost")} /></Field>
+          <Field label="เมนูพิเศษ (% ของราคา)"><input type="number" step="1" className="input text-right font-mono" value={Math.round(cfg.special_rate * 100)} onChange={(e) => setCfg({ ...cfg, special_rate: Number(e.target.value) / 100 })} /></Field>
+          <Field label="จ่ายเงินสด ส่วนลด (%)"><input type="number" step="1" className="input text-right font-mono" value={Math.round(cfg.cash_discount * 100)} onChange={(e) => setCfg({ ...cfg, cash_discount: Number(e.target.value) / 100 })} /></Field>
+          <Field label="เพดานแขวนข้ามบริษัท/เดือน (บาท)"><input type="number" className="input text-right font-mono" value={cfg.cross_company_cap_baht} onChange={num("cross_company_cap_baht")} /></Field>
+        </div>
+        <div className="flex items-center gap-3">
+          <button className="btn-primary" disabled={cfgBusy} onClick={saveConfig}>{cfgBusy ? "กำลังบันทึก…" : "บันทึกการตั้งค่า"}</button>
+          {cfgSaved && <span className="text-sm text-emerald-600">บันทึกแล้ว ✓</span>}
+        </div>
+      </div>
+
       {/* Manual code entry */}
       <div className="card">
         <label className="label !text-xs">กรอกรหัส MP-xxxx</label>

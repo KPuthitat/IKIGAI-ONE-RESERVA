@@ -155,6 +155,32 @@ export function getMealpassConfig(branchId: number, db: Database.Database = getD
   return row ?? { branch_id: branchId, ...CONFIG_DEFAULTS };
 }
 
+/** Create or update a branch's MEALPASS config (upsert). Unknown fields fall
+ *  back to the current row (or defaults for a brand-new branch). */
+export function setMealpassConfig(
+  branchId: number,
+  patch: Partial<Omit<MealpassConfig, "branch_id">>,
+  db: Database.Database = getDb()
+): MealpassConfig {
+  const cur = getMealpassConfig(branchId, db);
+  const next: MealpassConfig = { ...cur, ...patch, branch_id: branchId };
+  db.prepare(`
+    INSERT INTO mealpass_config
+      (branch_id, enabled, redeem_cutoff, monthly_cap, full_day_credits, half_day_credits,
+       standard_credit_cost, special_rate, cash_discount, cross_company_cap_baht, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(branch_id) DO UPDATE SET
+      enabled = excluded.enabled, redeem_cutoff = excluded.redeem_cutoff,
+      monthly_cap = excluded.monthly_cap, full_day_credits = excluded.full_day_credits,
+      half_day_credits = excluded.half_day_credits, standard_credit_cost = excluded.standard_credit_cost,
+      special_rate = excluded.special_rate, cash_discount = excluded.cash_discount,
+      cross_company_cap_baht = excluded.cross_company_cap_baht, updated_at = CURRENT_TIMESTAMP
+  `).run(branchId, next.enabled ? 1 : 0, next.redeem_cutoff, next.monthly_cap,
+    next.full_day_credits, next.half_day_credits, next.standard_credit_cost,
+    next.special_rate, next.cash_discount, next.cross_company_cap_baht);
+  return next;
+}
+
 /** Credits earned so far in a month (earn rows only). */
 export function monthlyEarned(userId: number, ym: string, db: Database.Database = getDb()): number {
   const r = db.prepare(

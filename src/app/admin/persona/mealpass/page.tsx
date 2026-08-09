@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { bkkDateIso } from "@/lib/time";
+import { getMealpassConfig } from "@/lib/mealpass";
 import MealpassConfirmClient, { type PendingOrder } from "./MealpassConfirmClient";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +32,7 @@ export default function MealpassConfirmPage() {
       </div>
       {branchId == null
         ? <div className="card text-sm text-slate-500">กรุณาเลือกสาขาที่มุมบนซ้ายก่อน</div>
-        : <MealpassConfirmClient pending={pending} />}
+        : <MealpassConfirmClient pending={pending} config={getMealpassConfig(branchId)} />}
     </div>
   );
 }
