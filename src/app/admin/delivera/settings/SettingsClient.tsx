@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { apiUrl } from "@/lib/url";
 
-type MenuItem = { id: number; name_th: string; category: string | null; description: string | null; price: number; is_available: boolean; image_url: string | null; is_standard_meal: boolean; credit_cost: number };
+type MenuItem = { id: number; name_th: string; category: string | null; description: string | null; price: number; is_available: boolean; image_url: string | null; is_standard_meal: boolean; credit_cost: number; is_store_drink: boolean };
 type Zone = { id: number; name: string; max_distance_km: number; base_fee: number; per_km_fee: number; min_order_amount: number };
 type Hooks = { deduct_stock: boolean; post_income: boolean; record_insigna: boolean };
 
@@ -140,7 +140,7 @@ function MenuManager({ menu, setMenu }: { menu: MenuItem[]; setMenu: (m: MenuIte
     const body = { name_th: name.trim(), category: cat.trim() || null, description: desc.trim() || null, price: Number(price) };
     const res = await fetch(apiUrl("/api/admin/delivera/menu"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const j = await res.json().catch(() => ({}));
-    if (res.ok && j.ok) { setMenu([...menu, { id: j.id, ...body, is_available: true, image_url: null, is_standard_meal: false, credit_cost: 60 }]); setName(""); setCat(""); setPrice(""); setDesc(""); }
+    if (res.ok && j.ok) { setMenu([...menu, { id: j.id, ...body, is_available: true, image_url: null, is_standard_meal: false, credit_cost: 60, is_store_drink: false }]); setName(""); setCat(""); setPrice(""); setDesc(""); }
   }
   function setImage(it: MenuItem, url: string | null) { setMenu(menu.map((m) => m.id === it.id ? { ...m, image_url: url } : m)); }
   async function toggle(it: MenuItem) { if (await post(`/api/admin/delivera/menu/${it.id}`, { is_available: !it.is_available }, "PATCH")) setMenu(menu.map((m) => m.id === it.id ? { ...m, is_available: !m.is_available } : m)); }
@@ -149,6 +149,7 @@ function MenuManager({ menu, setMenu }: { menu: MenuItem[]; setMenu: (m: MenuIte
   // MEALPASS 2.0: flag an item as a standard meal + set its credit price.
   async function toggleStd(it: MenuItem) { if (await post(`/api/admin/delivera/menu/${it.id}`, { is_standard_meal: !it.is_standard_meal }, "PATCH")) setMenu(menu.map((m) => m.id === it.id ? { ...m, is_standard_meal: !m.is_standard_meal } : m)); }
   async function setCreditCost(it: MenuItem, c: number) { if (await post(`/api/admin/delivera/menu/${it.id}`, { credit_cost: c }, "PATCH")) setMenu(menu.map((m) => m.id === it.id ? { ...m, credit_cost: c } : m)); }
+  async function toggleDrink(it: MenuItem) { if (await post(`/api/admin/delivera/menu/${it.id}`, { is_store_drink: !it.is_store_drink }, "PATCH")) setMenu(menu.map((m) => m.id === it.id ? { ...m, is_store_drink: !m.is_store_drink } : m)); }
   async function del(it: MenuItem) { if (await post(`/api/admin/delivera/menu/${it.id}`, {}, "DELETE")) setMenu(menu.filter((m) => m.id !== it.id)); }
   return (
     <div className="card space-y-2">
@@ -170,6 +171,7 @@ function MenuManager({ menu, setMenu }: { menu: MenuItem[]; setMenu: (m: MenuIte
               <input type="number" min={0} title="เครดิตที่หัก/มื้อ" className="input !w-16 !py-1 text-right font-mono !text-[11px]" defaultValue={it.credit_cost}
                 onBlur={(e) => { const c = Number(e.target.value); if (Number.isInteger(c) && c >= 0 && c !== it.credit_cost) setCreditCost(it, c); }} />
             )}
+            <label className="flex items-center gap-1 text-[11px] text-sky-700" title="MEALPASS: เครื่องดื่มในร้าน (ใช้คูปองเครื่องดื่ม)"><input type="checkbox" checked={it.is_store_drink} onChange={() => toggleDrink(it)} />เครื่องดื่ม</label>
             <button type="button" onClick={() => del(it)} className="text-[11px] text-rose-500 hover:underline">ลบ</button>
           </div>
         ))}

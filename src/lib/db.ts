@@ -1941,6 +1941,11 @@ function runMigrations(db: Database.Database): void {
     if (!mcols.some((c) => c.name === "credit_cost")) {
       db.exec("ALTER TABLE delivera_menu_items ADD COLUMN credit_cost INTEGER NOT NULL DEFAULT 60");
     }
+    // In-store canned drink (owner 2026-08-09): redeemable with the free daily
+    // drink coupon (1/day, any shift) — separate from food credits + จ้อจี้.
+    if (!mcols.some((c) => c.name === "is_store_drink")) {
+      db.exec("ALTER TABLE delivera_menu_items ADD COLUMN is_store_drink INTEGER NOT NULL DEFAULT 0");
+    }
   }
   db.exec(`
     -- Append-only ledger. Balance = SUM(credits) over a person's rows in a
@@ -2038,6 +2043,30 @@ function runMigrations(db: Database.Database): void {
       signed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(user_id, version)
     );
+
+    -- In-store drink coupon (owner 2026-08-09): a FREE 1-per-day entitlement
+    -- granted on ANY clock-in (regardless of shift length), redeemable for one
+    -- canned in-store drink. Not credits, not จ้อจี้. issued → redeemed via a
+    -- QR/code the manager scans. Unique(user, date) enforces 1/day.
+    CREATE TABLE IF NOT EXISTS mealpass_drink_coupons (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id            INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      coupon_date        TEXT NOT NULL,                                        -- BKK day
+      branch_id          INTEGER REFERENCES branches(id),                      -- where issued
+      code               TEXT NOT NULL UNIQUE,                                 -- DR-xxxx
+      token              TEXT UNIQUE,                                          -- for QR
+      status             TEXT NOT NULL DEFAULT 'issued'
+                           CHECK (status IN ('issued','redeemed','expired')),
+      menu_item_id       INTEGER REFERENCES delivera_menu_items(id),          -- chosen drink
+      menu_name_snap     TEXT,
+      price_snap         REAL,                                                 -- for the admin cost report
+      redeemed_at        TEXT,
+      redeemed_by        INTEGER REFERENCES users(id),
+      redeemed_branch_id INTEGER REFERENCES branches(id),
+      created_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, coupon_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_mealpass_drink_coupons_user ON mealpass_drink_coupons(user_id, coupon_date, status);
   `);
   // Seed 2 default zones for any DELIVERA-enabled branch that has none yet
   // (idempotent; runs on boot). Deferred for disabled branches so prod stays

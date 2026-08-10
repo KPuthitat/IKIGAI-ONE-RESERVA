@@ -14,7 +14,8 @@ const Body = z.object({
   is_available: z.boolean().optional(),
   sort_order: z.number().int().optional(),
   is_standard_meal: z.boolean().optional(),
-  credit_cost: z.number().int().min(0).max(100000).optional()
+  credit_cost: z.number().int().min(0).max(100000).optional(),
+  is_store_drink: z.boolean().optional()
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {

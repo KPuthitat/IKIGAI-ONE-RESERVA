@@ -67,17 +67,16 @@ export function classifyShift(scheduledMin: number, workedMin: number): ShiftCla
   return "none";
 }
 
-/** Raw credits a day would earn (before the monthly cap). */
+/** Raw food credits a day would earn (before the monthly cap). Owner 2026-08-09:
+ *  ONLY a full (≥8h) shift earns food credits — a shift under 8h earns 0 (those
+ *  staff still get the free daily drink coupon, granted separately on clock-in).
+ *  half_day_credits is kept in config for flexibility but not used by the rule. */
 export function creditsForShift(
   scheduledMin: number,
   workedMin: number,
   cfg: Pick<MealpassConfig, "full_day_credits" | "half_day_credits">
 ): number {
-  switch (classifyShift(scheduledMin, workedMin)) {
-    case "full": return cfg.full_day_credits;
-    case "half": return cfg.half_day_credits;
-    default: return 0;
-  }
+  return classifyShift(scheduledMin, workedMin) === "full" ? cfg.full_day_credits : 0;
 }
 
 /** Clamp an earn to the remaining monthly headroom. Never negative. */
@@ -198,6 +197,49 @@ export function balanceForUser(userId: number, ym: string, db: Database.Database
   return r.n;
 }
 
+// ── Menu popularity report (owner 2026-08-10) ──────────────────────────────
+// "Which menu do staff pick most?" — counted by ACTUAL fulfilment, not intent:
+// confirmed meal/cross-company orders + redeemed drink coupons. Grouped by the
+// system so each channel reads on its own terms (credits vs free coupon vs
+// cross-company charge). Branch-scoped to match the rest of the admin screen.
+export type MenuPopularityRow = { menuItemId: number | null; menuName: string; count: number };
+export type MenuPopularity = {
+  meals: MenuPopularityRow[];        // อาหาร — หักเครดิต
+  drinks: MenuPopularityRow[];       // เครื่องดื่มในร้าน — คูปองฟรี
+  crossCompany: MenuPopularityRow[]; // ข้ามบริษัท (ศาลาชิลล์/จ้อจี้)
+};
+
+export function menuPopularity(
+  branchId: number,
+  ym: string,
+  db: Database.Database = getDb()
+): MenuPopularity {
+  const orderRows = (kind: "meal" | "cross_company") =>
+    db.prepare(`
+      SELECT menu_item_id AS menuItemId,
+             COALESCE(menu_name_snap, '(ไม่ระบุ)') AS menuName,
+             COUNT(*) AS count
+      FROM mealpass_orders
+      WHERE branch_id = ? AND kind = ? AND status = 'confirmed'
+        AND substr(order_date, 1, 7) = ?
+      GROUP BY menu_item_id, menu_name_snap
+      ORDER BY count DESC, menuName ASC
+    `).all(branchId, kind, ym) as MenuPopularityRow[];
+
+  const drinks = db.prepare(`
+    SELECT menu_item_id AS menuItemId,
+           COALESCE(menu_name_snap, '(ไม่ระบุ)') AS menuName,
+           COUNT(*) AS count
+    FROM mealpass_drink_coupons
+    WHERE COALESCE(redeemed_branch_id, branch_id) = ? AND status = 'redeemed'
+      AND substr(coupon_date, 1, 7) = ?
+    GROUP BY menu_item_id, menu_name_snap
+    ORDER BY count DESC, menuName ASC
+  `).all(branchId, ym) as MenuPopularityRow[];
+
+  return { meals: orderRows("meal"), drinks, crossCompany: orderRows("cross_company") };
+}
+
 /** Accrue one person's earn for one work day (idempotent via the unique index
  *  on (user_id, attendance_date) WHERE entry_type='earn'). Sums scheduled +
  *  worked minutes across every branch they were rostered at that day (transfer
@@ -245,6 +287,39 @@ export function earnForDay(args: {
       classifyShift(scheduled, worked) === "full" ? "เต็มวัน" : "ครึ่งวัน");
   } catch (e) {
     // Lost the idempotency race (unique index) — treat as already earned.
+    if (e instanceof Error && /UNIQUE/.test(e.message)) return 0;
+    throw e;
+  }
+  return credits;
+}
+
+/** Earn on CLOCK-IN (owner 2026-08-09): the moment a staffer clocks into a
+ *  full (≥8h ROSTERED) shift they get the day's 60 credits so they can use a
+ *  meal that same day — not waiting for the nightly accrual. Rostered-based (the
+ *  shift hasn't been worked yet); the SVC food-clawback still recovers the meal
+ *  value if they eat then leave early. Idempotent per (user, day), cap-aware. */
+export function earnOnClockIn(args: {
+  userId: number; branchId: number; dateBkk: string; actorId?: number | null; db?: Database.Database;
+}): number {
+  const db = args.db ?? getDb();
+  const { userId, branchId, dateBkk } = args;
+  const dup = db.prepare(
+    "SELECT 1 FROM mealpass_ledger WHERE user_id = ? AND attendance_date = ? AND entry_type = 'earn'"
+  ).get(userId, dateBkk);
+  if (dup) return 0;
+  const cfg = getMealpassConfig(branchId, db);
+  if (!cfg.enabled) return 0;
+  if (scheduledShiftMinutesForUserDate(userId, branchId, dateBkk) < FULL_SHIFT_MIN) return 0;
+  const ym = ymOf(dateBkk);
+  const credits = applyMonthlyCap(monthlyEarned(userId, ym, db), cfg.full_day_credits, cfg.monthly_cap);
+  if (credits <= 0) return 0;
+  try {
+    db.prepare(`
+      INSERT INTO mealpass_ledger
+        (user_id, ym, entry_type, credits, attendance_date, attendance_branch_id, created_by, notes)
+      VALUES (?, ?, 'earn', ?, ?, ?, ?, 'เต็มวัน (ตอกเข้า)')
+    `).run(userId, ym, credits, dateBkk, branchId, args.actorId ?? null);
+  } catch (e) {
     if (e instanceof Error && /UNIQUE/.test(e.message)) return 0;
     throw e;
   }
@@ -434,6 +509,10 @@ export function confirmMealOrder(args: {
     meal_class: MealClass; credits: number; baht: number; status: string;
   } | undefined;
   if (!order) throw new MealpassError("not_found");
+  // Guard: this path is for in-house meal orders only. A cross-company (SC-xxxx)
+  // code must go through confirmCrossCompanyOrder — never burn/confirm it here,
+  // or its payroll_charge would be lost and the ledger corrupted.
+  if (order.kind !== "meal") throw new MealpassError("not_found");
   if (order.status === "confirmed") throw new MealpassError("already_confirmed");
   if (order.status !== "pending") throw new MealpassError("not_pending");
 
@@ -494,6 +573,107 @@ export function expireStaleMealpassOrders(nowIso: string, db: Database.Database 
     "UPDATE mealpass_orders SET status = 'expired' WHERE status = 'pending' AND expires_at < ?"
   ).run(nowIso);
   return r.changes;
+}
+
+// ── In-store drink coupon — FREE 1/day, any shift ──────────────────────────
+// Granted on ANY clock-in (regardless of shift length). Redeems one canned
+// in-store drink (menu tagged is_store_drink). No credits, no cash. Staff picks
+// a drink → QR/code → manager scans/confirms.
+
+export type DrinkCoupon = {
+  id: number; user_id: number; coupon_date: string; branch_id: number | null;
+  code: string; token: string | null; status: "issued" | "redeemed" | "expired";
+  menu_item_id: number | null; menu_name_snap: string | null; price_snap: number | null;
+};
+
+/** Grant today's free drink coupon (idempotent per user+day). Returns the
+ *  coupon code (existing or new). Call on every clock-in. */
+export function grantDrinkCoupon(
+  userId: number, branchId: number, dateBkk: string, db: Database.Database = getDb()
+): { code: string } {
+  const existing = db.prepare(
+    "SELECT code FROM mealpass_drink_coupons WHERE user_id = ? AND coupon_date = ?"
+  ).get(userId, dateBkk) as { code: string } | undefined;
+  if (existing) return { code: existing.code };
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = genCode("DR");
+    const token = randomBytes(24).toString("hex");
+    try {
+      db.prepare(
+        "INSERT INTO mealpass_drink_coupons (user_id, coupon_date, branch_id, code, token, status) VALUES (?,?,?,?,?,'issued')"
+      ).run(userId, dateBkk, branchId, code, token);
+      return { code };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      // Raced on unique(user, coupon_date) → already granted; return it.
+      if (/idx_mealpass_drink_coupons|coupon_date/.test(msg)) {
+        const now = db.prepare("SELECT code FROM mealpass_drink_coupons WHERE user_id = ? AND coupon_date = ?")
+          .get(userId, dateBkk) as { code: string } | undefined;
+        if (now) return now;
+      }
+      if (/UNIQUE/.test(msg) && attempt < 4) continue; // code/token clash
+      throw e;
+    }
+  }
+  throw new MealpassError("code_generation_failed");
+}
+
+/** Today's drink coupon for a user (for the staff screen). */
+export function getDrinkCouponForDate(
+  userId: number, dateBkk: string, db: Database.Database = getDb()
+): DrinkCoupon | null {
+  return (db.prepare(
+    "SELECT * FROM mealpass_drink_coupons WHERE user_id = ? AND coupon_date = ?"
+  ).get(userId, dateBkk) as DrinkCoupon | undefined) ?? null;
+}
+
+/** Staff picks a canned in-store drink for today's coupon → returns the QR
+ *  code/token to show the manager. Validates the item is a store drink at the
+ *  coupon's branch and the coupon is still unused. */
+export function chooseDrinkForCoupon(args: {
+  userId: number; dateBkk: string; menuItemId: number; db?: Database.Database;
+}): { code: string; token: string | null } {
+  const db = args.db ?? getDb();
+  const c = getDrinkCouponForDate(args.userId, args.dateBkk, db);
+  if (!c) throw new MealpassError("no_coupon");
+  if (c.status !== "issued") throw new MealpassError("already_used");
+  const menu = db.prepare(
+    "SELECT id, branch_id, name_th, price, is_available, is_store_drink FROM delivera_menu_items WHERE id = ?"
+  ).get(args.menuItemId) as
+    { id: number; branch_id: number; name_th: string; price: number; is_available: number; is_store_drink: number } | undefined;
+  if (!menu || menu.is_store_drink !== 1) throw new MealpassError("menu_invalid");
+  if (!menu.is_available) throw new MealpassError("menu_unavailable");
+  if (c.branch_id != null && menu.branch_id !== c.branch_id) throw new MealpassError("menu_invalid");
+  db.prepare(
+    "UPDATE mealpass_drink_coupons SET menu_item_id = ?, menu_name_snap = ?, price_snap = ? WHERE id = ?"
+  ).run(menu.id, menu.name_th, menu.price, c.id);
+  return { code: c.code, token: c.token };
+}
+
+/** Manager confirms (scan/enter) a drink coupon → mark redeemed. Free — no
+ *  ledger money row (value is snapshotted on the coupon for the cost report). */
+export function redeemDrinkCoupon(args: {
+  code: string; confirmerUserId: number; db?: Database.Database;
+}): { ok: true; menuName: string | null } {
+  const db = args.db ?? getDb();
+  const c = db.prepare(
+    "SELECT * FROM mealpass_drink_coupons WHERE code = ? OR token = ?"
+  ).get(args.code, args.code) as DrinkCoupon | undefined;
+  if (!c) throw new MealpassError("not_found");
+  if (c.status === "redeemed") throw new MealpassError("already_confirmed");
+  if (c.status !== "issued") throw new MealpassError("not_pending");
+  if (c.menu_item_id == null) throw new MealpassError("no_drink_chosen");
+  db.prepare(
+    "UPDATE mealpass_drink_coupons SET status = 'redeemed', redeemed_at = CURRENT_TIMESTAMP, redeemed_by = ?, redeemed_branch_id = ? WHERE id = ? AND status = 'issued'"
+  ).run(args.confirmerUserId, c.branch_id, c.id);
+  return { ok: true, menuName: c.menu_name_snap };
+}
+
+/** Expire unredeemed drink coupons from past days (cron). */
+export function expireStaleDrinkCoupons(todayBkk: string, db: Database.Database = getDb()): number {
+  return db.prepare(
+    "UPDATE mealpass_drink_coupons SET status = 'expired' WHERE status = 'issued' AND coupon_date < ?"
+  ).run(todayBkk).changes;
 }
 
 // ── Cross-company (ศาลาชิลล์) — buy at a partner company's shop on payroll ──

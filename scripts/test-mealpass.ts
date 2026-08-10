@@ -40,8 +40,8 @@ function eq(name: string, got: unknown, want: unknown): void {
   eq("full: long shift", classifyShift(600, 560), "full");
 
   // ── creditsForShift ──
-  eq("credits full = 60", creditsForShift(480, 460, cfg), 60);
-  eq("credits half = 30", creditsForShift(240, 220, cfg), 30);
+  eq("credits full (≥8h) = 60", creditsForShift(480, 460, cfg), 60);
+  eq("credits <8h = 0 (no half-day credit)", creditsForShift(240, 220, cfg), 0);
   eq("credits none = 0", creditsForShift(120, 120, cfg), 0);
 
   // ── applyMonthlyCap (cap 1500) ──
@@ -185,6 +185,55 @@ function eq(name: string, got: unknown, want: unknown): void {
   try { createCrossCompanyOrder({ buyerUserId: U, sellingBranchId: 99010, menuItemId: sameCoItem, dateBkk: "2026-08-14", db }); }
   catch (e) { notCross = e instanceof MealpassError && e.code === "not_cross_company"; }
   eq("xc: same-company rejected", notCross, true);
+
+  // confirmMealOrder must REJECT a cross-company (SC) code — else its
+  // payroll_charge would be lost and the ledger corrupted.
+  const sc2 = createCrossCompanyOrder({ buyerUserId: U, sellingBranchId: 99011, menuItemId: crossItem, dateBkk: "2026-08-16", db });
+  let wrongPath = false;
+  try { confirmMealOrder({ code: sc2.code, confirmerUserId: MGR, nowHhmm: "12:00", db }); }
+  catch (e) { wrongPath = e instanceof MealpassError && e.code === "not_found"; }
+  eq("xc: SC code rejected by meal-confirm path", wrongPath, true);
+
+  // ── In-store drink coupon ──
+  const { grantDrinkCoupon, chooseDrinkForCoupon, redeemDrinkCoupon, getDrinkCouponForDate } =
+    await import("../src/lib/mealpass");
+  const drink = Number(db.prepare(`INSERT INTO delivera_menu_items
+    (branch_id, name_th, price, is_available, is_standard_meal, credit_cost, is_store_drink)
+    VALUES (?, 'โค้กกระป๋อง', 20, 1, 0, 60, 1)`).run(B).lastInsertRowid);
+  const notDrink = std; // a food item (is_store_drink = 0)
+
+  const g1 = grantDrinkCoupon(U, B, "2026-08-15", db);
+  eq("drink: coupon code prefix", g1.code.slice(0, 3), "DR-");
+  const g2 = grantDrinkCoupon(U, B, "2026-08-15", db);
+  eq("drink: 1/day idempotent (same code)", g2.code, g1.code);
+  eq("drink: coupon issued", getDrinkCouponForDate(U, "2026-08-15", db)?.status, "issued");
+
+  let badDrink = false;
+  try { chooseDrinkForCoupon({ userId: U, dateBkk: "2026-08-15", menuItemId: notDrink, db }); }
+  catch (e) { badDrink = e instanceof MealpassError && e.code === "menu_invalid"; }
+  eq("drink: food item rejected as drink", badDrink, true);
+
+  const picked = chooseDrinkForCoupon({ userId: U, dateBkk: "2026-08-15", menuItemId: drink, db });
+  eq("drink: choose returns coupon code", picked.code, g1.code);
+  redeemDrinkCoupon({ code: g1.code, confirmerUserId: MGR, db });
+  eq("drink: redeemed", getDrinkCouponForDate(U, "2026-08-15", db)?.status, "redeemed");
+  let reRedeem = false;
+  try { redeemDrinkCoupon({ code: g1.code, confirmerUserId: MGR, db }); }
+  catch (e) { reRedeem = e instanceof MealpassError && e.code === "already_confirmed"; }
+  eq("drink: no double redeem", reRedeem, true);
+
+  // ── Menu popularity report (E6) ──
+  const { menuPopularity } = await import("../src/lib/mealpass");
+  const popB = menuPopularity(B, YM, db);
+  // meals confirmed at B this month: ข้าวมันไก่ (o1 + o3) = 2, สเต๊ก (o2 cash) = 1
+  eq("pop: top meal ข้าวมันไก่ ×2", popB.meals[0], { menuItemId: std, menuName: "ข้าวมันไก่", count: 2 });
+  eq("pop: 2 distinct meal items", popB.meals.length, 2);
+  // redeemed drink coupon at B
+  eq("pop: drink โค้กกระป๋อง ×1", popB.drinks[0], { menuItemId: drink, menuName: "โค้กกระป๋อง", count: 1 });
+  // cross-company is keyed to the SELLING branch, not the buyer's home branch
+  eq("pop: no cross-company at B", popB.crossCompany.length, 0);
+  const popSala = menuPopularity(99011, YM, db);
+  eq("pop: cross-company ชาเขียว at selling branch", popSala.crossCompany[0], { menuItemId: crossItem, menuName: "ชาเขียว", count: 1 });
 
   db.close();
   for (const f of [TMP, `${TMP}-wal`, `${TMP}-shm`]) { try { fs.rmSync(f, { force: true }); } catch { /* */ } }
