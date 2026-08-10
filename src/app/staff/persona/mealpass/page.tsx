@@ -3,7 +3,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { bkkDateIso, formatLongDate } from "@/lib/time";
-import { getMealpassConfig, balanceForUser, monthlyEarned, ymOf } from "@/lib/mealpass";
+import { getMealpassConfig, balanceForUser, monthlyEarned, ymOf, getDrinkCouponForDate } from "@/lib/mealpass";
 import OwlMascot from "@/app/components/OwlMascot";
 import MealpassClient, { type MealpassMenuItem, type MealpassHistoryRow } from "./MealpassClient";
 
@@ -50,6 +50,20 @@ export default function MealpassPage() {
         WHERE branch_id = ? AND is_available = 1
         ORDER BY is_standard_meal DESC, sort_order ASC, id ASC`).all(branchId) as MealpassMenuItem[])
     : [];
+
+  // In-store canned drinks (is_store_drink) + today's free drink coupon.
+  const storeDrinks: MealpassMenuItem[] = branchId != null
+    ? (db.prepare(`
+        SELECT id, name_th AS name, price, is_standard_meal AS isStandard, credit_cost AS creditCost,
+               image_url AS imageUrl, category
+        FROM delivera_menu_items
+        WHERE branch_id = ? AND is_available = 1 AND is_store_drink = 1
+        ORDER BY sort_order ASC, id ASC`).all(branchId) as MealpassMenuItem[])
+    : [];
+  const dc = branchId != null ? getDrinkCouponForDate(user.id, today, db) : null;
+  const drinkCoupon = dc
+    ? { code: dc.code, status: dc.status, menuName: dc.menu_name_snap }
+    : null;
 
   const history: MealpassHistoryRow[] = branchId != null
     ? (db.prepare(`
@@ -108,6 +122,8 @@ export default function MealpassPage() {
           redeemCutoff={cfg.redeem_cutoff}
           branchName={branch?.name ?? ""}
           menu={menu}
+          storeDrinks={storeDrinks}
+          drinkCoupon={drinkCoupon}
           history={history}
           todayOrder={todayOrder ?? null}
         />

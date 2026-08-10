@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { logPersonaAction } from "@/lib/db";
-import { confirmMealOrder, cancelMealOrder, MealpassError } from "@/lib/mealpass";
+import { confirmMealOrder, cancelMealOrder, redeemDrinkCoupon, MealpassError } from "@/lib/mealpass";
 import { nowBkkMinutes } from "@/lib/time";
 
 // POST /api/admin/persona/mealpass/confirm — a manager confirms (or cancels) a
@@ -36,6 +36,13 @@ export async function POST(req: Request) {
   const { code, action, override, overrideReason } = parsed.data;
 
   try {
+    // Free in-store drink coupon (DR-xxxx) — a different table, always a plain
+    // confirm (no cutoff/override, no credits).
+    if (code.toUpperCase().startsWith("DR")) {
+      const r = redeemDrinkCoupon({ code, confirmerUserId: user.id });
+      logPersonaAction(user.id, "mealpass.drink.redeem");
+      return NextResponse.json(r);
+    }
     if (action === "cancel") {
       cancelMealOrder(code);
       logPersonaAction(user.id, "mealpass.order.cancel");

@@ -25,7 +25,7 @@ export type MealpassHistoryRow = {
   createdAt: string;
 };
 
-type Tab = "standard" | "special" | "sala" | "history";
+type Tab = "standard" | "special" | "drink" | "sala" | "history";
 const SPECIAL_RATE = 0.5;   // display only — the server is the source of truth
 
 const ERR_TH: Record<string, string> = {
@@ -35,6 +35,8 @@ const ERR_TH: Record<string, string> = {
   menu_unavailable: "เมนูนี้ปิดอยู่",
   mealpass_disabled: "สาขานี้ยังไม่เปิดใช้ MEALPASS",
   no_branch: "กรุณาเลือกสาขาก่อน",
+  no_coupon: "วันนี้ยังไม่มีคูปองเครื่องดื่ม",
+  already_used: "ใช้คูปองเครื่องดื่มวันนี้ไปแล้ว",
 };
 
 export default function MealpassClient(props: {
@@ -48,6 +50,8 @@ export default function MealpassClient(props: {
   redeemCutoff: string;
   branchName: string;
   menu: MealpassMenuItem[];
+  storeDrinks: MealpassMenuItem[];
+  drinkCoupon: { code: string; status: string; menuName: string | null } | null;
   history: MealpassHistoryRow[];
   todayOrder: { code: string; menuName: string; mealClass: string; credits: number; baht: number; status: string } | null;
 }) {
@@ -59,6 +63,25 @@ export default function MealpassClient(props: {
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<{ code: string; mealClass: string; credits: number; baht: number; menuName: string } | null>(null);
   const [demoAfterCutoff, setDemoAfterCutoff] = useState(false);
+  const [drinkBusy, setDrinkBusy] = useState(false);
+  const [drinkErr, setDrinkErr] = useState<string | null>(null);
+  const [drinkCode, setDrinkCode] = useState<string | null>(props.drinkCoupon?.status === "issued" && props.drinkCoupon?.menuName ? props.drinkCoupon.code : null);
+
+  async function chooseDrink(m: MealpassMenuItem) {
+    setDrinkBusy(true); setDrinkErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/staff/persona/mealpass/drink"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ menuItemId: m.id }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setDrinkErr(j.error || "unknown"); setDrinkBusy(false); return; }
+      setDrinkCode(j.code);
+      router.refresh();
+    } catch { setDrinkErr("unknown"); }
+    setDrinkBusy(false);
+  }
 
   const standardMenu = useMemo(() => props.menu.filter((m) => m.isStandard === 1), [props.menu]);
   const specialMenu = useMemo(() => props.menu.filter((m) => m.isStandard !== 1), [props.menu]);
@@ -141,6 +164,7 @@ export default function MealpassClient(props: {
       <div className="flex gap-2 overflow-x-auto pb-1">
         <TabBtn active={tab === "standard"} onClick={() => setTab("standard")}>🍚 เมนูมาตรฐาน</TabBtn>
         <TabBtn active={tab === "special"} onClick={() => setTab("special")}>⭐ เมนูพิเศษ</TabBtn>
+        <TabBtn active={tab === "drink"} onClick={() => setTab("drink")}>🥫 เครื่องดื่มในร้าน</TabBtn>
         <TabBtn active={tab === "sala"} onClick={() => setTab("sala")}>🥤 ศาลาชิลล์</TabBtn>
         <TabBtn active={tab === "history"} onClick={() => setTab("history")}>📜 ประวัติ</TabBtn>
       </div>
@@ -158,6 +182,43 @@ export default function MealpassClient(props: {
           items={specialMenu} branchName={props.branchName} disabled={alreadyUsed}
           displayCredits={displayCredits} onPick={(m) => { setPicked(m); setResult(null); }}
         />
+      )}
+      {tab === "drink" && (
+        <div className="space-y-2">
+          <div className="text-xs text-slate-500 px-1">คูปองเครื่องดื่มในร้าน · ฟรี 1 แก้ว/วัน · ได้เมื่อลงเวลาเข้าทำงาน</div>
+          {props.drinkCoupon == null ? (
+            <div className="card text-sm text-slate-400">วันนี้ยังไม่มีคูปอง — ตอกบัตรเข้างานเพื่อรับคูปองเครื่องดื่ม 1 แก้ว</div>
+          ) : props.drinkCoupon.status === "redeemed" ? (
+            <div className="card text-sm" style={{ color: NAVY }}>ใช้คูปองเครื่องดื่มแล้ววันนี้: <b>{props.drinkCoupon.menuName}</b> ✓</div>
+          ) : drinkCode ? (
+            <div className="card text-center">
+              <div className="text-sm text-slate-500">แสดงรหัสนี้ให้ผู้จัดการ</div>
+              <div className="my-2 text-3xl font-extrabold tracking-widest" style={{ color: GOLD }}>{drinkCode}</div>
+              <div className="text-xs text-slate-400">เครื่องดื่มในร้าน (ฟรี)</div>
+            </div>
+          ) : (
+            <>
+              {drinkErr && <div className="text-sm text-rose-600 px-1">{ERR_TH[drinkErr] ?? "ทำรายการไม่สำเร็จ"}</div>}
+              {props.storeDrinks.length === 0 && <div className="card text-sm text-slate-400">ยังไม่มีเครื่องดื่มในร้าน — แจ้งแอดมินให้ติดธงเมนู</div>}
+              {props.storeDrinks.map((m) => (
+                <div key={m.id} className="card flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {m.imageUrl ? <img src={m.imageUrl} alt="" className="w-full h-full object-cover" /> : <span>🥫</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-slate-800 truncate">{m.name}</div>
+                    <div className="text-xs text-slate-400">จากครัว {props.branchName}</div>
+                  </div>
+                  <button className="text-xs font-semibold px-3 py-1.5 rounded-full disabled:opacity-40"
+                    style={{ background: GOLD, color: NAVY }} disabled={drinkBusy} onClick={() => chooseDrink(m)}>
+                    เลือก
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
       )}
       {tab === "sala" && (
         <div className="card text-sm text-slate-500">เมนูศาลาชิลล์ (ราคาพนักงานข้ามบริษัท) — เร็วๆ นี้</div>

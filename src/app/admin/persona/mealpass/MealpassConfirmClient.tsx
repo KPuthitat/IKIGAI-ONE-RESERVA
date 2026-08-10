@@ -27,6 +27,7 @@ const ERR_TH: Record<string, string> = {
   not_pending: "รหัสนี้ใช้ไม่ได้แล้ว",
   insufficient: "เครดิตพนักงานไม่พอ (อาจถูกใช้ไปแล้ว)",
   override_reason_required: "กรุณากรอกเหตุผล",
+  no_drink_chosen: "พนักงานยังไม่ได้เลือกเครื่องดื่ม",
 };
 
 export default function MealpassConfirmClient({ pending, config }: { pending: PendingOrder[]; config: MealpassCfg }) {
