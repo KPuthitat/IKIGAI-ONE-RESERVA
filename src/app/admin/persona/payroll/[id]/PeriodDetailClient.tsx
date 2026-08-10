@@ -70,6 +70,7 @@ export type PayrollLineRow = {
   tax_amount: number;
   other_deductions: number;
   drink_deductions: number;
+  mealpass_deductions: number;
   net_pay: number;
   overridden: number;
   notes: string | null;
@@ -696,6 +697,9 @@ export default function PeriodDetailClient({
                       )}
                       {l.drink_deductions > 0 && (
                         <span className="ml-2 text-violet-700">หักเครื่องดื่ม ฿{fmtMoney(l.drink_deductions)}</span>
+                      )}
+                      {l.mealpass_deductions > 0 && (
+                        <span className="ml-2 text-violet-700">หักค่าอาหารข้ามบริษัท ฿{fmtMoney(l.mealpass_deductions)}</span>
                       )}
                       {l.overridden === 1 && (
                         <span className="ml-2 text-sky-700">{t(lang, "admin.persona.payroll.detail.overridden")}</span>
@@ -1701,6 +1705,9 @@ function LineEditModal({
           </div>
           {line.drink_deductions > 0 && (
             <div className="text-[10px] text-violet-700">หักค่าเครื่องดื่ม (จ้อจี้ · อัตโนมัติ แก้ไม่ได้): −฿{fmtMoney(line.drink_deductions)}</div>
+          )}
+          {line.mealpass_deductions > 0 && (
+            <div className="text-[10px] text-violet-700">หักค่าอาหารข้ามบริษัท (ศาลาชิลล์ · อัตโนมัติ แก้ไม่ได้): −฿{fmtMoney(line.mealpass_deductions)}</div>
           )}
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <span className="text-[10px] text-slate-500">ก่อนหัก SSO/ภาษี ≈ <span className="font-semibold text-slate-700">฿{fmtMoney(ovPreview)}</span></span>

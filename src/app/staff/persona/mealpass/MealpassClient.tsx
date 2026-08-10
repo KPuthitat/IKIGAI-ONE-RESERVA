@@ -25,6 +25,15 @@ export type MealpassHistoryRow = {
   notes: string | null;
   createdAt: string;
 };
+export type SalaMenuItem = {
+  id: number;
+  name: string;
+  price: number;
+  imageUrl: string | null;
+  branchId: number;
+  branchName: string;
+  companyName: string | null;
+};
 
 type Tab = "standard" | "special" | "drink" | "sala" | "history";
 const SPECIAL_RATE = 0.5;   // display only — the server is the source of truth
@@ -38,6 +47,10 @@ const ERR_TH: Record<string, string> = {
   no_branch: "กรุณาเลือกสาขาก่อน",
   no_coupon: "วันนี้ยังไม่มีคูปองเครื่องดื่ม",
   already_used: "ใช้คูปองเครื่องดื่มวันนี้ไปแล้ว",
+  consent_required: "กรุณายินยอมให้หักค่าตอบแทนก่อน",
+  cap_exceeded: "เกินวงเงินข้ามบริษัทของเดือนนี้แล้ว",
+  not_cross_company: "เมนูนี้เป็นของบริษัทเดียวกัน ใช้เมนูปกติได้เลย",
+  company_unknown: "ยังไม่ได้ตั้งค่าบริษัท/สาขา",
 };
 
 export default function MealpassClient(props: {
@@ -55,6 +68,9 @@ export default function MealpassClient(props: {
   drinkCoupon: { code: string; status: string; menuName: string | null } | null;
   history: MealpassHistoryRow[];
   todayOrder: { code: string; menuName: string; mealClass: string; credits: number; baht: number; status: string } | null;
+  salaMenu: SalaMenuItem[];
+  hasConsent: boolean;
+  crossOrder: { code: string; menuName: string; baht: number; status: string } | null;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("standard");
@@ -67,6 +83,33 @@ export default function MealpassClient(props: {
   const [drinkBusy, setDrinkBusy] = useState(false);
   const [drinkErr, setDrinkErr] = useState<string | null>(null);
   const [drinkCode, setDrinkCode] = useState<string | null>(props.drinkCoupon?.status === "issued" && props.drinkCoupon?.menuName ? props.drinkCoupon.code : null);
+  const [salaPicked, setSalaPicked] = useState<SalaMenuItem | null>(null);
+  const [salaAck, setSalaAck] = useState(false);
+  const [salaBusy, setSalaBusy] = useState(false);
+  const [salaErr, setSalaErr] = useState<string | null>(null);
+  const [salaCode, setSalaCode] = useState<string | null>(props.crossOrder?.code ?? null);
+
+  async function orderSala() {
+    if (!salaPicked || !salaAck) return;
+    setSalaBusy(true); setSalaErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/staff/persona/mealpass/cross-company"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sellingBranchId: salaPicked.branchId,
+          menuItemId: salaPicked.id,
+          consent: props.hasConsent ? undefined : true,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setSalaErr(j.error || "unknown"); setSalaBusy(false); return; }
+      setSalaCode(j.order.code);
+      setSalaPicked(null); setSalaAck(false);
+      router.refresh();
+    } catch { setSalaErr("unknown"); }
+    setSalaBusy(false);
+  }
 
   async function chooseDrink(m: MealpassMenuItem) {
     setDrinkBusy(true); setDrinkErr(null);
@@ -229,7 +272,55 @@ export default function MealpassClient(props: {
         </div>
       )}
       {tab === "sala" && (
-        <div className="card text-sm text-slate-500">เมนูศาลาชิลล์ (ราคาพนักงานข้ามบริษัท) — เร็วๆ นี้</div>
+        <div className="space-y-2">
+          <div className="text-xs text-slate-500 px-1">ศาลาชิลล์ · เมนูข้ามบริษัท · หักจากค่าตอบแทน (บริษัทชำระให้ตามรอบสัปดาห์)</div>
+          {props.crossOrder != null ? (
+            <div className="card text-center">
+              <div className="text-sm font-semibold" style={{ color: NAVY }}>
+                รายการวันนี้: {props.crossOrder.menuName} · {props.crossOrder.status === "confirmed" ? "ยืนยันแล้ว ✓" : "รอฝั่งศาลาชิลล์สแกน"}
+              </div>
+              {props.crossOrder.status !== "confirmed" && salaCode && (
+                <>
+                  <div className="mt-2 text-xs text-slate-500">ให้พนักงานศาลาชิลล์สแกน QR นี้</div>
+                  <div className="my-2"><QrCode value={salaCode} /></div>
+                  <div className="text-2xl font-extrabold tracking-widest" style={{ color: GOLD }}>{salaCode}</div>
+                </>
+              )}
+              <div className="mt-1 text-sm text-slate-600">หักจากค่าตอบแทน {props.crossOrder.baht.toLocaleString()} บาท</div>
+            </div>
+          ) : (
+            <>
+              {!props.hasConsent && (
+                <div className="text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2">
+                  การสั่งข้ามบริษัทจะ<b>หักจากค่าตอบแทน</b>ของคุณ (บริษัทเป็นผู้ชำระให้ศาลาชิลล์)
+                  — ครั้งแรกต้องกดยินยอมก่อน
+                </div>
+              )}
+              {salaErr && <div className="text-sm text-rose-600 px-1">{ERR_TH[salaErr] ?? "ทำรายการไม่สำเร็จ"}</div>}
+              {props.salaMenu.length === 0 && <div className="card text-sm text-slate-400">ยังไม่มีเมนูข้ามบริษัท</div>}
+              {props.salaMenu.map((m) => (
+                <div key={m.id} className="card flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {m.imageUrl ? <img src={m.imageUrl} alt="" className="w-full h-full object-cover" /> : <span>🥤</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-slate-800 truncate">{m.name}</div>
+                    <div className="text-xs text-slate-400">{[m.companyName, m.branchName].filter(Boolean).join(" · ")}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-bold" style={{ color: NAVY }}>{m.price.toLocaleString()} บาท</div>
+                    <div className="text-[10px] text-slate-400">หักค่าตอบแทน</div>
+                    <button className="mt-1 text-xs font-semibold px-3 py-1 rounded-full"
+                      style={{ background: GOLD, color: NAVY }} onClick={() => { setSalaPicked(m); setSalaAck(false); setSalaErr(null); }}>
+                      สั่ง
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
       )}
       {tab === "history" && (
         <div className="card">
@@ -284,6 +375,31 @@ export default function MealpassClient(props: {
           {err && <div className="mt-3 text-sm text-rose-600">{ERR_TH[err] ?? "ทำรายการไม่สำเร็จ ลองใหม่อีกครั้ง"}</div>}
           <button className="btn-primary mt-4 w-full disabled:opacity-50" disabled={!ack || busy} onClick={submit}>
             {busy ? "กำลังทำรายการ…" : "ยืนยันใช้สิทธิ์"}
+          </button>
+        </Modal>
+      )}
+
+      {/* ศาลาชิลล์ (cross-company) confirm modal — payroll charge + consent */}
+      {salaPicked && (
+        <Modal onClose={() => { setSalaPicked(null); setSalaAck(false); setSalaErr(null); }}>
+          <div className="text-base font-semibold" style={{ color: NAVY }}>{salaPicked.name}</div>
+          <div className="mt-1 text-sm text-slate-600">
+            {[salaPicked.companyName, salaPicked.branchName].filter(Boolean).join(" · ")}
+          </div>
+          <div className="mt-2 text-sm">
+            หักจากค่าตอบแทน <b>{salaPicked.price.toLocaleString()} บาท</b> · บริษัทชำระให้ศาลาชิลล์ตามรอบสัปดาห์
+          </div>
+          <label className="mt-4 flex items-start gap-2 text-sm cursor-pointer">
+            <input type="checkbox" className="mt-0.5" checked={salaAck} onChange={(e) => setSalaAck(e.target.checked)} />
+            <span>
+              {props.hasConsent
+                ? <>ยืนยันสั่งอาหารข้ามบริษัท และ<b>ยินยอมให้หักจากค่าตอบแทน</b></>
+                : <>ข้าพเจ้า<b>ยินยอมให้หักค่าอาหารข้ามบริษัทจากค่าตอบแทน</b> (ยินยอมครั้งเดียว ใช้กับครั้งต่อไปด้วย)</>}
+            </span>
+          </label>
+          {salaErr && <div className="mt-3 text-sm text-rose-600">{ERR_TH[salaErr] ?? "ทำรายการไม่สำเร็จ ลองใหม่อีกครั้ง"}</div>}
+          <button className="btn-primary mt-4 w-full disabled:opacity-50" disabled={!salaAck || salaBusy} onClick={orderSala}>
+            {salaBusy ? "กำลังทำรายการ…" : "ยืนยันสั่ง"}
           </button>
         </Modal>
       )}

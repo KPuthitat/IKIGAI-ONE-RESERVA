@@ -118,6 +118,8 @@ export default function StaffPersonaPage() {
 
   // จ้อจี้ partner accounts get a shortcut to the drink-redemption scanner.
   const canRedeemDrinks = userCan(user, "partner.drink.redeem");
+  // ศาลาชิลล์ partner accounts get a shortcut to the cross-company meal scanner.
+  const canConfirmMealpass = userCan(user, "partner.mealpass.confirm");
 
   // งานที่ได้รับมอบหมายจากการประชุม (owner 2026-08-04) — โชว์การ์ดพร้อมจำนวนงานค้าง.
   const openTaskCount = myOpenActionItemCount(db, user.id);
@@ -169,6 +171,14 @@ export default function StaffPersonaPage() {
           className="block rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-bold text-violet-900 hover:bg-violet-100 transition"
         >
           สแกนรับเครื่องดื่ม (จ้อจี้) →
+        </Link>
+      )}
+      {canConfirmMealpass && (
+        <Link
+          href="/staff/persona/mealpass-scan"
+          className="block rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-bold text-violet-900 hover:bg-violet-100 transition"
+        >
+          สแกนยืนยันอาหารข้ามบริษัท (ศาลาชิลล์) →
         </Link>
       )}
       {user.activeBranchId != null && (

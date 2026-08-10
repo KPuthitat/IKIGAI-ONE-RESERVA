@@ -52,6 +52,7 @@ type Line = {
   gross_pay: number;
   sso_amount: number;
   drink_deductions: number;
+  mealpass_deductions: number;
   tax_amount: number;
   other_deductions: number;
   net_pay: number;
@@ -115,7 +116,7 @@ export default function PayslipPage({
            holiday_minutes,
            days_worked, leave_days, unpaid_leave_days, unpaired_clockins,
            base_pay, ot_pay, service_charge, other_additions, gross_pay,
-           sso_amount, tax_amount, other_deductions, drink_deductions, net_pay
+           sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay
     FROM payroll_lines WHERE period_id = ? AND user_id = ?
   `).get(periodId, userId) as Line | undefined;
   if (!line) notFound();
@@ -165,7 +166,7 @@ export default function PayslipPage({
   const svcGiRound = usesMonthlySvc ? (svcRow?.groupInsurance ?? 0) : 0;
   const incomeTotalRound = wageComp + svcGrossRound;
   const whtTotalRound = line.tax_amount + svcWhtRound;
-  const dedTotalRound = line.sso_amount + whtTotalRound + line.drink_deductions + line.other_deductions + svcGiRound;
+  const dedTotalRound = line.sso_amount + whtTotalRound + line.drink_deductions + line.mealpass_deductions + line.other_deductions + svcGiRound;
   const netTotalRound = incomeTotalRound - dedTotalRound;
   const payslipBranchName = period.branch_id
     ? (db.prepare("SELECT name FROM branches WHERE id = ?").get(period.branch_id) as { name: string } | undefined)?.name ?? null
@@ -337,14 +338,17 @@ export default function PayslipPage({
           {line.drink_deductions > 0 && (
             <Money label={t(lang, "admin.persona.payroll.col.drinkDed")} value={line.drink_deductions} />
           )}
-          {line.sso_amount === 0 && line.tax_amount === 0 && line.other_deductions === 0 && line.drink_deductions === 0 && (
+          {line.mealpass_deductions > 0 && (
+            <Money label={t(lang, "admin.persona.payroll.col.mealpassDed")} value={line.mealpass_deductions} />
+          )}
+          {line.sso_amount === 0 && line.tax_amount === 0 && line.other_deductions === 0 && line.drink_deductions === 0 && line.mealpass_deductions === 0 && (
             <div className="text-sm text-slate-400 italic py-1">
               {t(lang, "admin.persona.payroll.payslip.noDeductions")}
             </div>
           )}
           <Money
             label={t(lang, "admin.persona.payroll.payslip.totalDeductions")}
-            value={line.sso_amount + line.tax_amount + line.other_deductions + line.drink_deductions}
+            value={line.sso_amount + line.tax_amount + line.other_deductions + line.drink_deductions + line.mealpass_deductions}
             bold
           />
         </Section>
@@ -412,6 +416,12 @@ export default function PayslipPage({
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-slate-600">{t(lang, "admin.persona.payroll.col.drinkDed")}</span>
                   <span className="tabular-nums font-medium text-slate-700">{fmtMoney(line.drink_deductions)}</span>
+                </div>
+              )}
+              {line.mealpass_deductions > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">{t(lang, "admin.persona.payroll.col.mealpassDed")}</span>
+                  <span className="tabular-nums font-medium text-slate-700">{fmtMoney(line.mealpass_deductions)}</span>
                 </div>
               )}
               {line.other_deductions > 0 && (

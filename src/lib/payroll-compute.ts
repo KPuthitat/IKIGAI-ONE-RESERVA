@@ -25,6 +25,7 @@
 
 import type Database from "better-sqlite3";
 import { sumRedeemedDrinksForUser } from "./partner-drink-orders";
+import { sumCrossCompanyChargesForUser } from "./mealpass-payroll";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -1622,8 +1623,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         holiday_minutes,
         days_worked, leave_days, unpaired_clockins,
         base_pay, ot_pay, service_charge, other_additions, gross_pay,
-        sso_amount, tax_amount, other_deductions, drink_deductions, net_pay
-      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?, ?,?,?,?,?, ?,?,?,?,?)
+        sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay
+      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?, ?,?,?,?,?, ?,?,?,?,?,?)
     `);
 
     let computed = 0;
@@ -1691,6 +1692,11 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
       const drinkDed = sumRedeemedDrinksForUser(
         db, line.user_id, period.period_start, period.period_end, period.branch_id
       );
+      // Cross-company MEALPASS (ศาลาชิลล์) charges — deducted once, in the
+      // buyer's home-branch round, by order date (owner 2026-08-10).
+      const mealpassDed = sumCrossCompanyChargesForUser(
+        line.user_id, period.period_start, period.period_end, period.branch_id, db
+      );
       insertLine.run(
         periodId, line.user_id,
         line.employee_code, line.display_name, line.employment_type,
@@ -1701,7 +1707,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         line.days_worked, line.leave_days, line.unpaired_clockins,
         line.base_pay, line.ot_pay, line.service_charge, line.other_additions, line.gross_pay,
         line.sso_amount, line.tax_amount, line.other_deductions, round2(drinkDed),
-        round2(line.net_pay - drinkDed)
+        round2(mealpassDed),
+        round2(line.net_pay - drinkDed - mealpassDed)
       );
       computed++;
     }
@@ -2033,7 +2040,10 @@ export function recomputeLine(
   // a separate column, refreshed from the ledger on every recompute (owner
   // 2026-07-30). net stored after it.
   const drinkDed = sumRedeemedDrinksForUser(db, userId, period.period_start, period.period_end, period.branch_id);
-  const net = gross - sso - tax - ded - drinkDed;
+  // Cross-company MEALPASS (ศาลาชิลล์) — deducted once, in the home-branch round,
+  // by order date. Refreshed from the ledger on every recompute (owner 2026-08-10).
+  const mealpassDed = sumCrossCompanyChargesForUser(userId, period.period_start, period.period_end, period.branch_id, db);
+  const net = gross - sso - tax - ded - drinkDed - mealpassDed;
 
   if (lineExists) {
     db.prepare(`
@@ -2042,7 +2052,7 @@ export function recomputeLine(
           regular_minutes = ?, ot_minutes = ?, holiday_minutes = ?,
           days_worked = ?, unpaired_clockins = ?,
           base_pay = ?, ot_pay = ?, gross_pay = ?,
-          sso_amount = ?, tax_amount = ?, drink_deductions = ?, net_pay = ?,
+          sso_amount = ?, tax_amount = ?, drink_deductions = ?, mealpass_deductions = ?, net_pay = ?,
           hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
           pay_cycle_snapshot = ?, salary_tax_mode_snapshot = ?,
           overridden = 1, reviewed_at = NULL, reviewed_by = NULL,
@@ -2053,7 +2063,7 @@ export function recomputeLine(
       computed.regular_minutes, computed.ot_minutes, computed.holiday_minutes,
       computed.days_worked, computed.unpaired_clockins,
       round2(computed.base_pay), round2(computed.ot_pay), round2(gross),
-      round2(sso), round2(tax), round2(drinkDed), round2(net),
+      round2(sso), round2(tax), round2(drinkDed), round2(mealpassDed), round2(net),
       employee.hourly_rate, employee.monthly_salary,
       employee.pay_cycle, taxMode,
       periodId, userId
@@ -2070,8 +2080,8 @@ export function recomputeLine(
         shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
         holiday_minutes, days_worked, leave_days, unpaired_clockins,
         base_pay, ot_pay, service_charge, other_additions, gross_pay,
-        sso_amount, tax_amount, other_deductions, drink_deductions, net_pay
-      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?)
+        sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay
+      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?)
     `).run(
       periodId, userId, existing.employee_code, existing.display_name, employee.employment_type,
       employee.pay_cycle, employee.hourly_rate, employee.monthly_salary,
@@ -2079,7 +2089,7 @@ export function recomputeLine(
       computed.shift_minutes, computed.break_deducted_minutes, computed.regular_minutes, computed.ot_minutes,
       computed.holiday_minutes, computed.days_worked, existing.leave_days, computed.unpaired_clockins,
       round2(computed.base_pay), round2(computed.ot_pay), round2(svc), round2(add), round2(gross),
-      round2(sso), round2(tax), round2(ded), round2(drinkDed), round2(net)
+      round2(sso), round2(tax), round2(ded), round2(drinkDed), round2(mealpassDed), round2(net)
     );
   }
 }

@@ -81,6 +81,7 @@ type WeekLine = {
   tax_amount: number;
   other_deductions: number;
   drink_deductions: number;
+  mealpass_deductions: number;
   net_pay: number;
   days_worked: number;
 };
@@ -127,7 +128,7 @@ export default function MonthlyPayslipPage({
            pp.pay_date, pp.status, pp.branch_id,
            pl.employment_type, pl.salary_tax_mode_snapshot,
            pl.base_pay, pl.ot_pay, pl.service_charge, pl.other_additions,
-           pl.sso_amount, pl.tax_amount, pl.other_deductions, pl.drink_deductions,
+           pl.sso_amount, pl.tax_amount, pl.other_deductions, pl.drink_deductions, pl.mealpass_deductions,
            pl.net_pay, pl.days_worked
     FROM payroll_lines pl
     JOIN payroll_periods pp ON pp.id = pl.period_id
@@ -148,7 +149,7 @@ export default function MonthlyPayslipPage({
   // if that would leave nothing (shouldn't happen — weeks.length was checked).
   const displayWeeks = weeks.filter((w) =>
     w.base_pay || w.ot_pay || w.service_charge || w.other_additions ||
-    w.sso_amount || w.tax_amount || w.other_deductions || w.drink_deductions || w.net_pay
+    w.sso_amount || w.tax_amount || w.other_deductions || w.drink_deductions || w.mealpass_deductions || w.net_pay
   );
   const rows = displayWeeks.length > 0 ? displayWeeks : weeks;
 
@@ -214,7 +215,7 @@ export default function MonthlyPayslipPage({
     (a, w) => ({
       comp: a.comp + w.base_pay + w.ot_pay,
       other: a.other + w.other_additions + w.service_charge,
-      ded: a.ded + w.sso_amount + w.tax_amount + w.other_deductions + w.drink_deductions,
+      ded: a.ded + w.sso_amount + w.tax_amount + w.other_deductions + w.drink_deductions + w.mealpass_deductions,
       net: a.net + w.net_pay
     }),
     { comp: 0, other: 0, ded: 0, net: 0 }
@@ -250,9 +251,10 @@ export default function MonthlyPayslipPage({
       sso: a.sso + w.sso_amount,
       tax: a.tax + w.tax_amount,
       drink: a.drink + w.drink_deductions,
+      mealpass: a.mealpass + w.mealpass_deductions,
       other: a.other + w.other_deductions
     }),
-    { sso: 0, tax: 0, drink: 0, other: 0 }
+    { sso: 0, tax: 0, drink: 0, mealpass: 0, other: 0 }
   );
   // SVC income line = the monthly pool (gross) + any legacy in-round SVC.
   const svcIncome = svcGross + svcInRound;
@@ -264,7 +266,7 @@ export default function MonthlyPayslipPage({
   // SVC WHT; the amounts self-select by employment type (FT has SSO, no WHT; PT
   // has WHT on SVC, no SSO), so we just show whatever is non-zero.
   const whtTotal = dedBreak.tax + svcWht;
-  const dedTotal = dedBreak.sso + whtTotal + dedBreak.drink + dedBreak.other + svcGroupInsurance;
+  const dedTotal = dedBreak.sso + whtTotal + dedBreak.drink + dedBreak.mealpass + dedBreak.other + svcGroupInsurance;
   const netTotal = incomeTotal - dedTotal; // = wages net + SVC net-of-(WHT+insurance)
 
   const first = rows[0];
@@ -281,6 +283,7 @@ export default function MonthlyPayslipPage({
     if (w.sso_amount > 0) parts.push(`${t(lang, "admin.persona.payroll.col.sso")} ฿${fmtMoney(w.sso_amount)}`);
     if (w.tax_amount > 0) parts.push(`${t(lang, "admin.persona.payroll.col.tax")} ฿${fmtMoney(w.tax_amount)}`);
     if (w.drink_deductions > 0) parts.push(`${t(lang, "admin.persona.payroll.col.drinkDed")} ฿${fmtMoney(w.drink_deductions)}`);
+    if (w.mealpass_deductions > 0) parts.push(`${t(lang, "admin.persona.payroll.col.mealpassDed")} ฿${fmtMoney(w.mealpass_deductions)}`);
     if (w.other_deductions > 0) parts.push(`${t(lang, "admin.persona.payroll.col.otherDed")} ฿${fmtMoney(w.other_deductions)}`);
     return parts.join(" · ");
   };
@@ -345,7 +348,7 @@ export default function MonthlyPayslipPage({
                 {rows.map((w) => {
                   const comp = w.base_pay + w.ot_pay;
                   const other = w.other_additions + w.service_charge;
-                  const ded = w.sso_amount + w.tax_amount + w.other_deductions + w.drink_deductions;
+                  const ded = w.sso_amount + w.tax_amount + w.other_deductions + w.drink_deductions + w.mealpass_deductions;
                   const parts = dedParts(w);
                   return (
                     <tr key={w.period_id} className="border-b border-slate-100 align-top">
@@ -460,6 +463,9 @@ export default function MonthlyPayslipPage({
               )}
               {dedBreak.drink > 0 && (
                 <DedRow label={t(lang, "admin.persona.payroll.col.drinkDed")} value={dedBreak.drink} />
+              )}
+              {dedBreak.mealpass > 0 && (
+                <DedRow label={t(lang, "admin.persona.payroll.col.mealpassDed")} value={dedBreak.mealpass} />
               )}
               {dedBreak.other > 0 && (
                 <DedRow label={t(lang, "admin.persona.payroll.col.otherDed")} value={dedBreak.other} />

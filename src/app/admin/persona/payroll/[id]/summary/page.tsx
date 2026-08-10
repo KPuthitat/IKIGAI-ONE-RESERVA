@@ -44,6 +44,8 @@ type Line = {
   sso_amount: number;
   tax_amount: number;
   other_deductions: number;
+  drink_deductions: number;
+  mealpass_deductions: number;
   net_pay: number;
 };
 
@@ -76,7 +78,8 @@ export default function PayrollSummaryPage({ params }: { params: { id: string } 
     SELECT pl.user_id, pl.employee_code, pl.display_name, u.title_prefix, pl.employment_type,
            u.bank_name, u.bank_account,
            pl.days_worked, pl.base_pay, pl.ot_pay, pl.service_charge, pl.other_additions,
-           pl.gross_pay, pl.sso_amount, pl.tax_amount, pl.other_deductions, pl.net_pay
+           pl.gross_pay, pl.sso_amount, pl.tax_amount, pl.other_deductions,
+           pl.drink_deductions, pl.mealpass_deductions, pl.net_pay
     FROM payroll_lines pl
     LEFT JOIN users u ON u.id = pl.user_id
     WHERE pl.period_id = ?
@@ -147,9 +150,12 @@ export default function PayrollSummaryPage({ params }: { params: { id: string } 
     base: a.base + l.base_pay, ot: a.ot + l.ot_pay, svc: a.svc + l.service_charge,
     add: a.add + l.other_additions, gross: a.gross + l.gross_pay,
     sso: a.sso + l.sso_amount, tax: a.tax + l.tax_amount, ded: a.ded + l.other_deductions,
+    welfare: a.welfare + l.drink_deductions + l.mealpass_deductions,
     net: a.net + l.net_pay
-  }), { base: 0, ot: 0, svc: 0, add: 0, gross: 0, sso: 0, tax: 0, ded: 0, net: 0 });
-  const totalDeductions = tot.sso + tot.tax + tot.ded;
+  }), { base: 0, ot: 0, svc: 0, add: 0, gross: 0, sso: 0, tax: 0, ded: 0, welfare: 0, net: 0 });
+  // Include welfare deductions (drink + cross-company meal) so the footer ties
+  // out exactly to net_pay (net = gross − sso − tax − other − welfare).
+  const totalDeductions = tot.sso + tot.tax + tot.ded + tot.welfare;
 
   return (
     <>
@@ -270,7 +276,7 @@ export default function PayrollSummaryPage({ params }: { params: { id: string } 
         <div className="flex flex-wrap justify-between items-end gap-6 mt-5">
           <div className="text-xs text-slate-600 space-y-0.5">
             <div>รวมรายได้ (Gross): <b>฿{fmtMoney(tot.gross)}</b></div>
-            <div>รวมรายการหัก: <b>฿{fmtMoney(totalDeductions)}</b> (ประกันสังคม ฿{fmtMoney(tot.sso)} · ภาษี ฿{fmtMoney(tot.tax)} · อื่นๆ ฿{fmtMoney(tot.ded)})</div>
+            <div>รวมรายการหัก: <b>฿{fmtMoney(totalDeductions)}</b> (ประกันสังคม ฿{fmtMoney(tot.sso)} · ภาษี ฿{fmtMoney(tot.tax)} · อื่นๆ ฿{fmtMoney(tot.ded)}{tot.welfare > 0 ? ` · สวัสดิการ ฿${fmtMoney(tot.welfare)}` : ""})</div>
             <div className="text-sm">ยอดจ่ายสุทธิทั้งรอบ: <b>฿{fmtMoney(tot.net)}</b></div>
           </div>
           <div className="grid grid-cols-2 gap-10 text-xs">

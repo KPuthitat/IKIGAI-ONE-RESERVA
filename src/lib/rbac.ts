@@ -21,7 +21,8 @@ export type RbacPermissionKey =
   | "ascenda.view"
   | "accounta.manage"
   | "delivera.manage"
-  | "partner.drink.redeem";
+  | "partner.drink.redeem"
+  | "partner.mealpass.confirm";
 
 export type RbacPermissionDef = {
   key: RbacPermissionKey;
@@ -80,6 +81,12 @@ export const RBAC_PERMISSIONS: RbacPermissionDef[] = [
     module: "PARTNER",
     labelTh: "จ้อจี้ — สแกนรับเครื่องดื่ม",
     descTh: "สแกน QR ของพนักงานเพื่อจ่ายเครื่องดื่มสวัสดิการ (สำหรับบัญชีพาร์ทเนอร์ เช่น จ้อจี้)"
+  },
+  {
+    key: "partner.mealpass.confirm",
+    module: "PARTNER",
+    labelTh: "ศาลาชิลล์ — สแกนยืนยันอาหารข้ามบริษัท",
+    descTh: "สแกน QR ของพนักงานเพื่อยืนยันอาหารข้ามบริษัท (หักค่าตอบแทน บริษัทชำระให้ตามรอบสัปดาห์)"
   }
 ];
 

@@ -194,6 +194,23 @@ function eq(name: string, got: unknown, want: unknown): void {
   catch (e) { wrongPath = e instanceof MealpassError && e.code === "not_found"; }
   eq("xc: SC code rejected by meal-confirm path", wrongPath, true);
 
+  // ── E5-B: payroll deduction of cross-company charges ──
+  // Only the confirmed sc (order_date 2026-08-14, ฿120) counts; sc2 is pending.
+  const { sumCrossCompanyChargesForUser, resolveHomeBranchId } = await import("../src/lib/mealpass");
+  eq("pay: U home branch = 99010", resolveHomeBranchId(U, db), 99010);
+  // Deduct in the HOME-branch round, windowed by order date.
+  eq("pay: deduct ฿120 in home-branch round",
+    sumCrossCompanyChargesForUser(U, "2026-08-01", "2026-08-31", 99010, db), 120);
+  // NOT deducted in a non-home-branch round (deduct once).
+  eq("pay: not deducted in non-home round",
+    sumCrossCompanyChargesForUser(U, "2026-08-01", "2026-08-31", 99011, db), 0);
+  // Date window excludes the order → 0.
+  eq("pay: window before order = 0",
+    sumCrossCompanyChargesForUser(U, "2026-08-01", "2026-08-13", 99010, db), 0);
+  // Combined / company-wide round (null branch) → deducted once, no home gate.
+  eq("pay: combined (null-branch) round deducts",
+    sumCrossCompanyChargesForUser(U, "2026-08-01", "2026-08-31", null, db), 120);
+
   // ── In-store drink coupon ──
   const { grantDrinkCoupon, chooseDrinkForCoupon, redeemDrinkCoupon, getDrinkCouponForDate } =
     await import("../src/lib/mealpass");
@@ -234,6 +251,42 @@ function eq(name: string, got: unknown, want: unknown): void {
   eq("pop: no cross-company at B", popB.crossCompany.length, 0);
   const popSala = menuPopularity(99011, YM, db);
   eq("pop: cross-company ชาเขียว at selling branch", popSala.crossCompany[0], { menuItemId: crossItem, menuName: "ชาเขียว", count: 1 });
+
+  // ── E5-A: partner confirm scoping (selling company 2 owns branch 99011) ──
+  // (Runs last — confirming sc2 adds a payroll_charge, so keep it after the
+  // popularity + payroll asserts that expect only the first sc confirmed.)
+  const { partnerConfirmCrossCompanyOrder } = await import("../src/lib/mealpass");
+  let wrongPartner = false;
+  try { partnerConfirmCrossCompanyOrder({ code: sc2.code, confirmerUserId: MGR, confirmerBranchIds: [99010], db }); } // co 1 — not seller
+  catch (e) { wrongPartner = e instanceof MealpassError && e.code === "wrong_partner"; }
+  eq("xc: partner from wrong company rejected", wrongPartner, true);
+  const pc = partnerConfirmCrossCompanyOrder({ code: sc2.code, confirmerUserId: MGR, confirmerBranchIds: [99011], db }); // co 2 — seller
+  eq("xc: partner in selling company confirms", pc.baht, 120);
+  eq("xc: sc2 now confirmed", (db.prepare("SELECT status FROM mealpass_orders WHERE code = ?").get(sc2.code) as { status: string }).status, "confirmed");
+
+  // ── E5-C: weekly inter-company settlement ──
+  // Two confirmed cross-company charges for selling company 2: sc (฿120) + sc2 (฿120).
+  const { crossCompanySettlementByMonth } = await import("../src/lib/mealpass");
+  const settle = crossCompanySettlementByMonth("2026-08", db);
+  eq("settle: one selling company owed", settle.length, 1);
+  eq("settle: company 2 owed ฿240 (2 meals)",
+    { cid: settle[0].sellingCompanyId, total: settle[0].monthTotal, count: settle[0].monthCount },
+    { cid: 2, total: 240, count: 2 });
+
+  // ── Cap is RE-checked at confirm (not just create) ──
+  // Fresh buyer, cap ฿200. Two pending ฿120 orders each pass create (create
+  // only counts CONFIRMED). First confirm ok; second must be blocked at confirm.
+  const U2 = 88002;
+  db.prepare("INSERT INTO user_branches (user_id, branch_id, is_primary) VALUES (?,?,1)").run(U2, 99010);
+  recordMealpassConsent(U2, db);
+  db.prepare("UPDATE mealpass_config SET cross_company_cap_baht = 200 WHERE branch_id = 99010").run();
+  const oa = createCrossCompanyOrder({ buyerUserId: U2, sellingBranchId: 99011, menuItemId: crossItem, dateBkk: "2026-08-20", db });
+  const ob = createCrossCompanyOrder({ buyerUserId: U2, sellingBranchId: 99011, menuItemId: crossItem, dateBkk: "2026-08-21", db });
+  confirmCrossCompanyOrder({ code: oa.code, confirmerUserId: 1, db }); // 0 + 120 <= 200 → ok
+  let capAtConfirm = false;
+  try { confirmCrossCompanyOrder({ code: ob.code, confirmerUserId: 1, db }); } // 120 + 120 = 240 > 200
+  catch (e) { capAtConfirm = e instanceof MealpassError && e.code === "cap_exceeded"; }
+  eq("xc: cap re-checked at confirm (blocks 2nd)", capAtConfirm, true);
 
   db.close();
   for (const f of [TMP, `${TMP}-wal`, `${TMP}-shm`]) { try { fs.rmSync(f, { force: true }); } catch { /* */ } }

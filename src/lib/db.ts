@@ -3599,6 +3599,15 @@ function runMigrations(db: Database.Database): void {
   if (!plNames.has("drink_deductions")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN drink_deductions REAL NOT NULL DEFAULT 0");
   }
+  // mealpass_deductions (owner 2026-08-10): cross-company MEALPASS purchases
+  // (ศาลาชิลล์) charged to the buyer via payroll. A SEPARATE deduction column
+  // (like drink_deductions) so it never collides with other_deductions;
+  // recomputed from the mealpass_ledger 'payroll_charge' rows at each line
+  // build/recompute, and only in the buyer's HOME-branch round. net_pay stores
+  // the amount AFTER this deduction.
+  if (!plNames.has("mealpass_deductions")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN mealpass_deductions REAL NOT NULL DEFAULT 0");
+  }
   // "ตรวจแล้ว" review sign-off (owner 2026-08-03) — auto-cleared on any line change.
   if (!plNames.has("reviewed_at")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN reviewed_at TEXT");
