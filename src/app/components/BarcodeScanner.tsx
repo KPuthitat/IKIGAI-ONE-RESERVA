@@ -130,7 +130,7 @@ export default function BarcodeScanner({
         )}
         {status === "scanning" && (
           <p className="text-xs text-slate-500 text-center">
-            หันกล้องไปที่บาร์โค้ด/QR ของยา — ระบบจะอ่านอัตโนมัติ
+            หันกล้องไปที่บาร์โค้ด/QR — ระบบจะอ่านอัตโนมัติ
           </p>
         )}
         {status === "error" && (

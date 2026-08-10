@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import QrCode from "@/app/components/QrCode";
 
 const NAVY = "#0B1F3A";
 const GOLD = "#C9A227";
@@ -152,10 +153,16 @@ export default function MealpassClient(props: {
 
       {/* Today's order banner */}
       {alreadyUsed && (
-        <div className="card" style={{ borderColor: GOLD, borderWidth: 1 }}>
+        <div className="card text-center" style={{ borderColor: GOLD, borderWidth: 1 }}>
           <div className="text-sm font-semibold" style={{ color: NAVY }}>
             มื้อวันนี้: {props.todayOrder!.menuName} · {props.todayOrder!.status === "confirmed" ? "ยืนยันแล้ว ✓" : "รอผู้จัดการยืนยัน"}
           </div>
+          {props.todayOrder!.status !== "confirmed" && (
+            <>
+              <div className="mt-2 text-xs text-slate-500">ให้ผู้จัดการสแกน QR นี้</div>
+              <div className="my-2"><QrCode value={props.todayOrder!.code} /></div>
+            </>
+          )}
           <div className="mt-1 text-2xl font-extrabold tracking-widest" style={{ color: GOLD }}>{props.todayOrder!.code}</div>
         </div>
       )}
@@ -192,8 +199,9 @@ export default function MealpassClient(props: {
             <div className="card text-sm" style={{ color: NAVY }}>ใช้คูปองเครื่องดื่มแล้ววันนี้: <b>{props.drinkCoupon.menuName}</b> ✓</div>
           ) : drinkCode ? (
             <div className="card text-center">
-              <div className="text-sm text-slate-500">แสดงรหัสนี้ให้ผู้จัดการ</div>
-              <div className="my-2 text-3xl font-extrabold tracking-widest" style={{ color: GOLD }}>{drinkCode}</div>
+              <div className="text-sm text-slate-500">ให้ผู้จัดการสแกน QR นี้</div>
+              <div className="my-2"><QrCode value={drinkCode} /></div>
+              <div className="text-2xl font-extrabold tracking-widest" style={{ color: GOLD }}>{drinkCode}</div>
               <div className="text-xs text-slate-400">เครื่องดื่มในร้าน (ฟรี)</div>
             </div>
           ) : (
@@ -247,9 +255,10 @@ export default function MealpassClient(props: {
       {result && (
         <Modal onClose={() => setResult(null)}>
           <div className="text-center">
-            <div className="text-sm text-slate-500">แสดงรหัสนี้ให้ผู้จัดการเพื่อยืนยัน</div>
-            <div className="my-3 text-4xl font-extrabold tracking-widest" style={{ color: GOLD }}>{result.code}</div>
-            <div className="text-sm font-semibold" style={{ color: NAVY }}>{result.menuName}</div>
+            <div className="text-sm text-slate-500">ให้ผู้จัดการสแกน QR นี้เพื่อยืนยัน</div>
+            <div className="my-3"><QrCode value={result.code} /></div>
+            <div className="text-3xl font-extrabold tracking-widest" style={{ color: GOLD }}>{result.code}</div>
+            <div className="mt-1 text-sm font-semibold" style={{ color: NAVY }}>{result.menuName}</div>
             <div className="mt-1 text-sm text-slate-600">
               {result.mealClass === "cash"
                 ? `ชำระเงินสด ${result.baht.toLocaleString()} บาท (ราคาปกติ ลด 10%)`

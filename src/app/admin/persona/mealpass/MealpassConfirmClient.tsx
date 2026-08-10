@@ -3,6 +3,7 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import BarcodeScanner from "@/app/components/BarcodeScanner";
 
 const NAVY = "#0B1F3A";
 const GOLD = "#C9A227";
@@ -40,6 +41,15 @@ export default function MealpassConfirmClient({ pending, config }: { pending: Pe
   const [msg, setMsg] = useState<{ code: string; text: string; ok: boolean } | null>(null);
   const [overrideFor, setOverrideFor] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  const [scanning, setScanning] = useState(false);
+
+  // Pull an MP-/DR- code out of a scanned QR string (the QR encodes the code
+  // verbatim, but tolerate stray whitespace / a wrapping URL just in case).
+  function extractCode(raw: string): string {
+    const s = raw.trim().toUpperCase();   // match manual entry, which always uppercases
+    const m = s.match(/\b(?:MP|DR)-[A-Z0-9]+/);
+    return m ? m[0] : s;
+  }
 
   async function confirm(code: string, override = false) {
     if (!code.trim()) return;
@@ -90,6 +100,14 @@ export default function MealpassConfirmClient({ pending, config }: { pending: Pe
 
   return (
     <div className="space-y-4">
+      {scanning && (
+        <BarcodeScanner
+          title="สแกน QR ของพนักงาน (อาหาร MP / เครื่องดื่ม DR)"
+          onResult={(text) => { setScanning(false); confirm(extractCode(text)); }}
+          onClose={() => setScanning(false)}
+        />
+      )}
+
       {/* Branch config */}
       <div className="card space-y-3">
         <div className="flex items-center justify-between">
@@ -115,8 +133,13 @@ export default function MealpassConfirmClient({ pending, config }: { pending: Pe
         </div>
       </div>
 
-      {/* Manual code entry */}
-      <div className="card">
+      {/* Scan / manual code entry */}
+      <div className="card space-y-2">
+        <button className="w-full py-3 rounded-xl text-base font-bold text-white active:scale-95 transition"
+          style={{ background: NAVY }} onClick={() => { setMsg(null); setScanning(true); }}>
+          📷 สแกน QR ของพนักงาน
+        </button>
+        <div className="text-center text-xs text-slate-400">— หรือพิมพ์รหัสเอง (กล้องมีปัญหา) —</div>
         <label className="label !text-xs">กรอกรหัส MP-xxxx (อาหาร) หรือ DR-xxxx (เครื่องดื่ม)</label>
         <div className="flex gap-2">
           <input className="input flex-1 font-mono uppercase" value={manual}
