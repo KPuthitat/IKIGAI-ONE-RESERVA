@@ -3,7 +3,7 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { bkkDateIso } from "@/lib/time";
-import { getMealpassConfig, menuPopularity, ymOf, type MenuPopularityRow } from "@/lib/mealpass";
+import { getMealpassConfig, menuPopularity, ymOf, crossCompanySettlementByMonth, type MenuPopularityRow, type CompanySettlement } from "@/lib/mealpass";
 import MealpassConfirmClient, { type PendingOrder } from "./MealpassConfirmClient";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +61,8 @@ export default function MealpassConfirmPage() {
 
   const ym = ymOf(today);
   const popular = branchId != null ? menuPopularity(branchId, ym) : null;
+  const settlement: CompanySettlement[] = crossCompanySettlementByMonth(ym);
+  const fmtDay = (iso: string) => new Date(`${iso}T00:00:00`).getDate();
   // Build the พ.ศ. label from ym directly (no ICU dependency, matches the filter).
   const TH_MONTHS = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
     "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
@@ -85,6 +87,32 @@ export default function MealpassConfirmPage() {
             <PopularityCard title="อาหาร" hint="มื้อที่ยืนยันแล้ว (รวมจ่ายเงินสด)" rows={popular.meals} />
             <PopularityCard title="เครื่องดื่มในร้าน" hint="นับจากคูปองที่ใช้แล้ว" rows={popular.drinks} />
             <PopularityCard title="ข้ามบริษัท (ศาลาชิลล์)" hint="นับจากรายการที่ยืนยันแล้ว" rows={popular.crossCompany} />
+          </div>
+        </div>
+      )}
+
+      {settlement.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-sm font-semibold" style={{ color: NAVY }}>ยอดค้างจ่ายข้ามบริษัท · {monthLabel}</div>
+          <div className="text-xs text-slate-400">บริษัทต้องชำระให้ผู้ขายตามรอบสัปดาห์ (นับจากมื้อที่ยืนยันแล้ว)</div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {settlement.map((s) => (
+              <div key={s.sellingCompanyId} className="card space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold" style={{ color: NAVY }}>{s.sellingCompanyName ?? `บริษัท #${s.sellingCompanyId}`}</div>
+                  <div className="font-mono font-bold" style={{ color: GOLD }}>฿{s.monthTotal.toLocaleString()}</div>
+                </div>
+                <ul className="space-y-1 text-sm">
+                  {s.weeks.map((w) => (
+                    <li key={w.weekStart} className="flex items-center justify-between text-slate-600">
+                      <span>สัปดาห์ {fmtDay(w.start)}–{fmtDay(w.end)} · {w.count} มื้อ</span>
+                      <span className="font-mono">฿{w.total.toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="text-xs text-slate-400 pt-1">รวมทั้งเดือน {s.monthCount} มื้อ</div>
+              </div>
+            ))}
           </div>
         </div>
       )}

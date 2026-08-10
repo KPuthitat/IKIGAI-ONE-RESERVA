@@ -3,9 +3,9 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { bkkDateIso, formatLongDate } from "@/lib/time";
-import { getMealpassConfig, balanceForUser, monthlyEarned, ymOf, getDrinkCouponForDate } from "@/lib/mealpass";
+import { getMealpassConfig, balanceForUser, monthlyEarned, ymOf, getDrinkCouponForDate, resolveHomeCompanyId, hasMealpassConsent } from "@/lib/mealpass";
 import OwlMascot from "@/app/components/OwlMascot";
-import MealpassClient, { type MealpassMenuItem, type MealpassHistoryRow } from "./MealpassClient";
+import MealpassClient, { type MealpassMenuItem, type MealpassHistoryRow, type SalaMenuItem } from "./MealpassClient";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "PERSONA · MEALPASS" };
@@ -81,6 +81,29 @@ export default function MealpassPage() {
         { code: string; menuName: string; mealClass: string; credits: number; baht: number; status: string } | undefined)
     : undefined;
 
+  // ── ศาลาชิลล์ (cross-company): menus at OTHER companies' branches. Buying one
+  // charges the buyer's payroll; the company settles with the seller weekly. ──
+  const homeCompanyId = branchId != null ? resolveHomeCompanyId(user.id, db) : null;
+  const salaMenu: SalaMenuItem[] = homeCompanyId != null
+    ? (db.prepare(`
+        SELECT m.id, m.name_th AS name, m.price, m.image_url AS imageUrl,
+               b.id AS branchId, b.name AS branchName, c.name_th AS companyName
+        FROM delivera_menu_items m
+        JOIN branches b ON b.id = m.branch_id
+        LEFT JOIN companies c ON c.id = b.company_id
+        WHERE m.is_available = 1 AND b.company_id IS NOT NULL AND b.company_id <> ?
+        ORDER BY b.id ASC, m.sort_order ASC, m.id ASC`).all(homeCompanyId) as SalaMenuItem[])
+    : [];
+  const hasConsent = branchId != null ? hasMealpassConsent(user.id, db) : false;
+  const crossOrderRow = branchId != null
+    ? (db.prepare(`
+        SELECT code, menu_name_snap AS menuName, baht, status
+        FROM mealpass_orders
+        WHERE user_id = ? AND order_date = ? AND kind = 'cross_company' AND status IN ('pending','confirmed')
+        ORDER BY id DESC LIMIT 1`).get(user.id, today) as
+        { code: string; menuName: string; baht: number; status: string } | undefined)
+    : undefined;
+
   const dateLabel = `วันที่ ${formatLongDate(today, "th")}`;
 
   return (
@@ -126,6 +149,9 @@ export default function MealpassPage() {
           drinkCoupon={drinkCoupon}
           history={history}
           todayOrder={todayOrder ?? null}
+          salaMenu={salaMenu}
+          hasConsent={hasConsent}
+          crossOrder={crossOrderRow ?? null}
         />
       )}
     </div>

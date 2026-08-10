@@ -15,6 +15,7 @@ import Database from "better-sqlite3";
 import { getDb } from "./db";
 import { scheduledShiftMinutesForUserDate } from "./roster";
 import { svcWorkedMinutesForUserDate, FOOD_CLAWBACK_MIN_MINUTES } from "./service-charge";
+import { resolveHomeBranchId } from "./mealpass-payroll";
 
 // ── Shift thresholds ─────────────────────────────────────────────────────
 // A "full day" mirrors the existing full-shift bar used by the SVC food
@@ -712,6 +713,72 @@ export function resolveHomeCompanyId(userId: number, db: Database.Database = get
   return row?.cid ?? null;
 }
 
+// ── Weekly inter-company settlement (owner 2026-08-10) ─────────────────────
+// What each HOME company owes a SELLING company (ศาลาชิลล์) for confirmed
+// cross-company meals — grouped into ISO weeks (Mon start), the weekly transfer
+// cadence. Read straight from the confirmed payroll_charge ledger rows.
+export type SettlementWeek = { weekStart: string; start: string; end: string; count: number; total: number };
+export type CompanySettlement = {
+  sellingCompanyId: number;
+  sellingCompanyName: string | null;
+  weeks: SettlementWeek[];
+  monthTotal: number;
+  monthCount: number;
+};
+
+function mondayOf(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  const dow = d.getUTCDay();                 // 0=Sun..6=Sat
+  d.setUTCDate(d.getUTCDate() + (dow === 0 ? -6 : 1 - dow));
+  return d.toISOString().slice(0, 10);
+}
+
+/** Month's confirmed cross-company charges, grouped by selling company → ISO
+ *  week. `ym` is 'YYYY-MM' (BKK). Only weeks with charges appear. */
+export function crossCompanySettlementByMonth(
+  ym: string,
+  db: Database.Database = getDb()
+): CompanySettlement[] {
+  const rows = db.prepare(`
+    SELECT l.selling_company_id AS cid, c.name_th AS cname, o.order_date AS d, l.baht AS baht
+    FROM mealpass_ledger l
+    JOIN mealpass_orders o ON o.id = l.order_id
+    LEFT JOIN companies c ON c.id = l.selling_company_id
+    WHERE l.entry_type = 'payroll_charge' AND substr(o.order_date, 1, 7) = ?
+    ORDER BY l.selling_company_id ASC, o.order_date ASC
+  `).all(ym) as Array<{ cid: number | null; cname: string | null; d: string; baht: number }>;
+
+  const byCompany = new Map<number, { name: string | null; weeks: Map<string, { start: string; end: string; count: number; total: number }> }>();
+  for (const r of rows) {
+    if (r.cid == null) continue;
+    const co = byCompany.get(r.cid) ?? { name: r.cname, weeks: new Map() };
+    const wk = mondayOf(r.d);
+    const g = co.weeks.get(wk);
+    if (!g) co.weeks.set(wk, { start: r.d, end: r.d, count: 1, total: r.baht });
+    else { g.count += 1; g.total += r.baht; if (r.d < g.start) g.start = r.d; if (r.d > g.end) g.end = r.d; }
+    byCompany.set(r.cid, co);
+  }
+
+  return [...byCompany.entries()].map(([cid, co]) => {
+    const weeks = [...co.weeks.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([weekStart, g]) => ({ weekStart, start: g.start, end: g.end, count: g.count, total: Math.round(g.total * 100) / 100 }));
+    return {
+      sellingCompanyId: cid,
+      sellingCompanyName: co.name,
+      weeks,
+      monthTotal: Math.round(weeks.reduce((s, w) => s + w.total, 0) * 100) / 100,
+      monthCount: weeks.reduce((s, w) => s + w.count, 0),
+    };
+  });
+}
+
+// Payroll-facing helpers (resolveHomeBranchId, sumCrossCompanyChargesForUser)
+// live in ./mealpass-payroll — self-contained (imports only ./db) to avoid an
+// import cycle via service-charge → payroll-compute. Re-exported here so callers
+// keep importing them from "@/lib/mealpass".
+export { resolveHomeBranchId, sumCrossCompanyChargesForUser } from "./mealpass-payroll";
+
 /** Baht already SUSPENDED (confirmed cross-company payroll charges) for a person
  *  this month — for the monthly cap check. */
 export function crossCompanyChargedThisMonth(userId: number, ym: string, db: Database.Database = getDb()): number {
@@ -758,11 +825,8 @@ export function createCrossCompanyOrder(args: {
   if (sellingCompany === homeCompany) throw new MealpassError("not_cross_company"); // use the meal flow
 
   // Cap from the buyer's HOME branch config (per-person monthly suspended cap).
-  const homeBranch = db.prepare(`
-    SELECT ub.branch_id AS bid FROM user_branches ub
-    WHERE ub.user_id = ? ORDER BY ub.is_primary DESC, ub.branch_id ASC LIMIT 1
-  `).get(args.buyerUserId) as { bid: number } | undefined;
-  const cap = getMealpassConfig(homeBranch?.bid ?? -1, db).cross_company_cap_baht;
+  const homeBranch = resolveHomeBranchId(args.buyerUserId, db);
+  const cap = getMealpassConfig(homeBranch ?? -1, db).cross_company_cap_baht;
   const ym = ymOf(args.dateBkk);
   if (!withinCrossCompanyCap(crossCompanyChargedThisMonth(args.buyerUserId, ym, db), menu.price, cap)) {
     throw new MealpassError("cap_exceeded");
@@ -809,6 +873,14 @@ export function confirmCrossCompanyOrder(args: {
   const ym = ymOf(order.order_date);
   const homeCompany = resolveHomeCompanyId(order.user_id, db);
 
+  // Re-check the monthly cap at confirm time: the create-time check only counts
+  // CONFIRMED charges, so several pending orders could each pass then all
+  // confirm and blow past the cap. Guard here on the buyer's home-branch cap.
+  const cap = getMealpassConfig(resolveHomeBranchId(order.user_id, db) ?? -1, db).cross_company_cap_baht;
+  if (!withinCrossCompanyCap(crossCompanyChargedThisMonth(order.user_id, ym, db), order.baht, cap)) {
+    throw new MealpassError("cap_exceeded");
+  }
+
   const tx = db.transaction(() => {
     db.prepare(`
       INSERT INTO mealpass_ledger
@@ -823,4 +895,28 @@ export function confirmCrossCompanyOrder(args: {
   });
   tx();
   return { ok: true, baht: order.baht };
+}
+
+/** Partner-side confirm: the ศาลาชิลล์ (selling-company) staff scans the buyer's
+ *  SC-xxxx code. Enforces that the confirmer actually belongs to the SELLING
+ *  company before charging the buyer's payroll — a partner from another company
+ *  must not be able to confirm someone else's cross-company order. */
+export function partnerConfirmCrossCompanyOrder(args: {
+  code: string; confirmerUserId: number; confirmerBranchIds: number[]; db?: Database.Database;
+}): { ok: true; baht: number } {
+  const db = args.db ?? getDb();
+  const order = db.prepare(
+    "SELECT selling_company_id, kind FROM mealpass_orders WHERE code = ?"
+  ).get(args.code) as { selling_company_id: number | null; kind: string } | undefined;
+  if (!order || order.kind !== "cross_company") throw new MealpassError("not_found");
+
+  const companies = args.confirmerBranchIds.length
+    ? (db.prepare(
+        `SELECT DISTINCT company_id AS cid FROM branches WHERE id IN (${args.confirmerBranchIds.map(() => "?").join(",")})`
+      ).all(...args.confirmerBranchIds) as Array<{ cid: number | null }>).map((r) => r.cid)
+    : [];
+  if (order.selling_company_id == null || !companies.includes(order.selling_company_id)) {
+    throw new MealpassError("wrong_partner");
+  }
+  return confirmCrossCompanyOrder({ code: args.code, confirmerUserId: args.confirmerUserId, db });
 }
