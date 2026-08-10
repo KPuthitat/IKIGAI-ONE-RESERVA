@@ -197,6 +197,49 @@ export function balanceForUser(userId: number, ym: string, db: Database.Database
   return r.n;
 }
 
+// ── Menu popularity report (owner 2026-08-10) ──────────────────────────────
+// "Which menu do staff pick most?" — counted by ACTUAL fulfilment, not intent:
+// confirmed meal/cross-company orders + redeemed drink coupons. Grouped by the
+// system so each channel reads on its own terms (credits vs free coupon vs
+// cross-company charge). Branch-scoped to match the rest of the admin screen.
+export type MenuPopularityRow = { menuItemId: number | null; menuName: string; count: number };
+export type MenuPopularity = {
+  meals: MenuPopularityRow[];        // อาหาร — หักเครดิต
+  drinks: MenuPopularityRow[];       // เครื่องดื่มในร้าน — คูปองฟรี
+  crossCompany: MenuPopularityRow[]; // ข้ามบริษัท (ศาลาชิลล์/จ้อจี้)
+};
+
+export function menuPopularity(
+  branchId: number,
+  ym: string,
+  db: Database.Database = getDb()
+): MenuPopularity {
+  const orderRows = (kind: "meal" | "cross_company") =>
+    db.prepare(`
+      SELECT menu_item_id AS menuItemId,
+             COALESCE(menu_name_snap, '(ไม่ระบุ)') AS menuName,
+             COUNT(*) AS count
+      FROM mealpass_orders
+      WHERE branch_id = ? AND kind = ? AND status = 'confirmed'
+        AND substr(order_date, 1, 7) = ?
+      GROUP BY menu_item_id, menu_name_snap
+      ORDER BY count DESC, menuName ASC
+    `).all(branchId, kind, ym) as MenuPopularityRow[];
+
+  const drinks = db.prepare(`
+    SELECT menu_item_id AS menuItemId,
+           COALESCE(menu_name_snap, '(ไม่ระบุ)') AS menuName,
+           COUNT(*) AS count
+    FROM mealpass_drink_coupons
+    WHERE COALESCE(redeemed_branch_id, branch_id) = ? AND status = 'redeemed'
+      AND substr(coupon_date, 1, 7) = ?
+    GROUP BY menu_item_id, menu_name_snap
+    ORDER BY count DESC, menuName ASC
+  `).all(branchId, ym) as MenuPopularityRow[];
+
+  return { meals: orderRows("meal"), drinks, crossCompany: orderRows("cross_company") };
+}
+
 /** Accrue one person's earn for one work day (idempotent via the unique index
  *  on (user_id, attendance_date) WHERE entry_type='earn'). Sums scheduled +
  *  worked minutes across every branch they were rostered at that day (transfer
@@ -466,6 +509,10 @@ export function confirmMealOrder(args: {
     meal_class: MealClass; credits: number; baht: number; status: string;
   } | undefined;
   if (!order) throw new MealpassError("not_found");
+  // Guard: this path is for in-house meal orders only. A cross-company (SC-xxxx)
+  // code must go through confirmCrossCompanyOrder — never burn/confirm it here,
+  // or its payroll_charge would be lost and the ledger corrupted.
+  if (order.kind !== "meal") throw new MealpassError("not_found");
   if (order.status === "confirmed") throw new MealpassError("already_confirmed");
   if (order.status !== "pending") throw new MealpassError("not_pending");
 

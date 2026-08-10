@@ -186,6 +186,14 @@ function eq(name: string, got: unknown, want: unknown): void {
   catch (e) { notCross = e instanceof MealpassError && e.code === "not_cross_company"; }
   eq("xc: same-company rejected", notCross, true);
 
+  // confirmMealOrder must REJECT a cross-company (SC) code — else its
+  // payroll_charge would be lost and the ledger corrupted.
+  const sc2 = createCrossCompanyOrder({ buyerUserId: U, sellingBranchId: 99011, menuItemId: crossItem, dateBkk: "2026-08-16", db });
+  let wrongPath = false;
+  try { confirmMealOrder({ code: sc2.code, confirmerUserId: MGR, nowHhmm: "12:00", db }); }
+  catch (e) { wrongPath = e instanceof MealpassError && e.code === "not_found"; }
+  eq("xc: SC code rejected by meal-confirm path", wrongPath, true);
+
   // ── In-store drink coupon ──
   const { grantDrinkCoupon, chooseDrinkForCoupon, redeemDrinkCoupon, getDrinkCouponForDate } =
     await import("../src/lib/mealpass");
@@ -213,6 +221,19 @@ function eq(name: string, got: unknown, want: unknown): void {
   try { redeemDrinkCoupon({ code: g1.code, confirmerUserId: MGR, db }); }
   catch (e) { reRedeem = e instanceof MealpassError && e.code === "already_confirmed"; }
   eq("drink: no double redeem", reRedeem, true);
+
+  // ── Menu popularity report (E6) ──
+  const { menuPopularity } = await import("../src/lib/mealpass");
+  const popB = menuPopularity(B, YM, db);
+  // meals confirmed at B this month: ข้าวมันไก่ (o1 + o3) = 2, สเต๊ก (o2 cash) = 1
+  eq("pop: top meal ข้าวมันไก่ ×2", popB.meals[0], { menuItemId: std, menuName: "ข้าวมันไก่", count: 2 });
+  eq("pop: 2 distinct meal items", popB.meals.length, 2);
+  // redeemed drink coupon at B
+  eq("pop: drink โค้กกระป๋อง ×1", popB.drinks[0], { menuItemId: drink, menuName: "โค้กกระป๋อง", count: 1 });
+  // cross-company is keyed to the SELLING branch, not the buyer's home branch
+  eq("pop: no cross-company at B", popB.crossCompany.length, 0);
+  const popSala = menuPopularity(99011, YM, db);
+  eq("pop: cross-company ชาเขียว at selling branch", popSala.crossCompany[0], { menuItemId: crossItem, menuName: "ชาเขียว", count: 1 });
 
   db.close();
   for (const f of [TMP, `${TMP}-wal`, `${TMP}-shm`]) { try { fs.rmSync(f, { force: true }); } catch { /* */ } }

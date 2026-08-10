@@ -117,10 +117,10 @@ export default function MealpassConfirmClient({ pending, config }: { pending: Pe
 
       {/* Manual code entry */}
       <div className="card">
-        <label className="label !text-xs">กรอกรหัส MP-xxxx</label>
+        <label className="label !text-xs">กรอกรหัส MP-xxxx (อาหาร) หรือ DR-xxxx (เครื่องดื่ม)</label>
         <div className="flex gap-2">
           <input className="input flex-1 font-mono uppercase" value={manual}
-            onChange={(e) => setManual(e.target.value.toUpperCase())} placeholder="MP-XXXXXX" />
+            onChange={(e) => setManual(e.target.value.toUpperCase())} placeholder="MP-XXXXXX / DR-XXXXXX" />
           <button className="btn-primary" disabled={!manual.trim() || busy === manual} onClick={() => confirm(manual)}>ยืนยัน</button>
         </div>
         {msg && !pending.some((p) => p.code === msg.code) && (
