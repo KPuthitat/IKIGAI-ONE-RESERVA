@@ -108,34 +108,9 @@ export default function MealpassConfirmClient({ pending, config }: { pending: Pe
         />
       )}
 
-      {/* Branch config */}
-      <div className="card space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-bold" style={{ color: NAVY }}>ตั้งค่า MEALPASS · สาขานี้</h2>
-          <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-            <input type="checkbox" checked={cfg.enabled === 1} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked ? 1 : 0 })} />
-            {cfg.enabled === 1 ? <span className="text-emerald-600">เปิดใช้งาน</span> : <span className="text-slate-400">ปิดอยู่</span>}
-          </label>
-        </div>
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <Field label="เวลาปิดใช้สิทธิ์ (HH:MM)"><input className="input" value={cfg.redeem_cutoff} onChange={(e) => setCfg({ ...cfg, redeem_cutoff: e.target.value })} placeholder="15:00" /></Field>
-          <Field label="เพดานเครดิต/เดือน"><input type="number" className="input text-right font-mono" value={cfg.monthly_cap} onChange={num("monthly_cap")} /></Field>
-          <Field label="เต็มวันได้ (เครดิต)"><input type="number" className="input text-right font-mono" value={cfg.full_day_credits} onChange={num("full_day_credits")} /></Field>
-          <Field label="ครึ่งวันได้ (เครดิต)"><input type="number" className="input text-right font-mono" value={cfg.half_day_credits} onChange={num("half_day_credits")} /></Field>
-          <Field label="เมนูมาตรฐาน หัก (เครดิต)"><input type="number" className="input text-right font-mono" value={cfg.standard_credit_cost} onChange={num("standard_credit_cost")} /></Field>
-          <Field label="เมนูพิเศษ (% ของราคา)"><input type="number" step="1" className="input text-right font-mono" value={Math.round(cfg.special_rate * 100)} onChange={(e) => setCfg({ ...cfg, special_rate: Number(e.target.value) / 100 })} /></Field>
-          <Field label="จ่ายเงินสด ส่วนลด (%)"><input type="number" step="1" className="input text-right font-mono" value={Math.round(cfg.cash_discount * 100)} onChange={(e) => setCfg({ ...cfg, cash_discount: Number(e.target.value) / 100 })} /></Field>
-          <Field label="เพดานแขวนข้ามบริษัท/เดือน (บาท)"><input type="number" className="input text-right font-mono" value={cfg.cross_company_cap_baht} onChange={num("cross_company_cap_baht")} /></Field>
-        </div>
-        <div className="flex items-center gap-3">
-          <button className="btn-primary" disabled={cfgBusy} onClick={saveConfig}>{cfgBusy ? "กำลังบันทึก…" : "บันทึกการตั้งค่า"}</button>
-          {cfgSaved && <span className="text-sm text-emerald-600">บันทึกแล้ว ✓</span>}
-        </div>
-      </div>
-
-      {/* Scan / manual code entry */}
+      {/* Scan / manual code entry — the primary action, kept at the very top */}
       <div className="card space-y-2">
-        <button className="w-full py-3 rounded-xl text-base font-bold text-white active:scale-95 transition"
+        <button className="w-full py-4 rounded-xl text-lg font-bold text-white active:scale-95 transition"
           style={{ background: NAVY }} onClick={() => { setMsg(null); setScanning(true); }}>
           📷 สแกน QR ของพนักงาน
         </button>
@@ -190,6 +165,37 @@ export default function MealpassConfirmClient({ pending, config }: { pending: Pe
           </div>
         )}
       </div>
+
+      {/* Branch config — collapsed by default so the scanner stays the focus.
+          Admins rarely change settings mid-shift; scanning is the daily job. */}
+      <details className="card [&::-webkit-details-marker]:hidden">
+        <summary className="flex items-center justify-between cursor-pointer list-none">
+          <span className="font-bold" style={{ color: NAVY }}>⚙️ ตั้งค่า MEALPASS · สาขานี้</span>
+          <span className={`text-xs font-medium ${cfg.enabled === 1 ? "text-emerald-600" : "text-slate-400"}`}>
+            {cfg.enabled === 1 ? "เปิดใช้งาน" : "ปิดอยู่"} · แตะเพื่อแก้
+          </span>
+        </summary>
+        <div className="space-y-3 mt-3 border-t border-slate-100 pt-3">
+          <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+            <input type="checkbox" checked={cfg.enabled === 1} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked ? 1 : 0 })} />
+            {cfg.enabled === 1 ? <span className="text-emerald-600">เปิดใช้งาน</span> : <span className="text-slate-400">ปิดอยู่</span>}
+          </label>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <Field label="เวลาปิดใช้สิทธิ์ (HH:MM)"><input className="input" value={cfg.redeem_cutoff} onChange={(e) => setCfg({ ...cfg, redeem_cutoff: e.target.value })} placeholder="15:00" /></Field>
+            <Field label="เพดานเครดิต/เดือน"><input type="number" className="input text-right font-mono" value={cfg.monthly_cap} onChange={num("monthly_cap")} /></Field>
+            <Field label="เต็มวันได้ (เครดิต)"><input type="number" className="input text-right font-mono" value={cfg.full_day_credits} onChange={num("full_day_credits")} /></Field>
+            <Field label="ครึ่งวันได้ (เครดิต)"><input type="number" className="input text-right font-mono" value={cfg.half_day_credits} onChange={num("half_day_credits")} /></Field>
+            <Field label="เมนูมาตรฐาน หัก (เครดิต)"><input type="number" className="input text-right font-mono" value={cfg.standard_credit_cost} onChange={num("standard_credit_cost")} /></Field>
+            <Field label="เมนูพิเศษ (% ของราคา)"><input type="number" step="1" className="input text-right font-mono" value={Math.round(cfg.special_rate * 100)} onChange={(e) => setCfg({ ...cfg, special_rate: Number(e.target.value) / 100 })} /></Field>
+            <Field label="จ่ายเงินสด ส่วนลด (%)"><input type="number" step="1" className="input text-right font-mono" value={Math.round(cfg.cash_discount * 100)} onChange={(e) => setCfg({ ...cfg, cash_discount: Number(e.target.value) / 100 })} /></Field>
+            <Field label="เพดานแขวนข้ามบริษัท/เดือน (บาท)"><input type="number" className="input text-right font-mono" value={cfg.cross_company_cap_baht} onChange={num("cross_company_cap_baht")} /></Field>
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="btn-primary" disabled={cfgBusy} onClick={saveConfig}>{cfgBusy ? "กำลังบันทึก…" : "บันทึกการตั้งค่า"}</button>
+            {cfgSaved && <span className="text-sm text-emerald-600">บันทึกแล้ว ✓</span>}
+          </div>
+        </div>
+      </details>
     </div>
   );
 }
