@@ -73,8 +73,8 @@ export default function MealpassConfirmPage() {
     <div className="space-y-4">
       <div>
         <Link href="/admin/persona" className="text-sm text-slate-500 hover:text-brand">← กลับ PERSONA</Link>
-        <h1 className="text-2xl font-bold text-slate-800 mt-2">ยืนยันมื้ออาหาร (MEALPASS)</h1>
-        <p className="text-sm text-slate-500 mt-1">พนักงานแสดงรหัส MP-xxxx — กดยืนยันเพื่อตัดเครดิต</p>
+        <h1 className="text-2xl font-bold text-slate-800 mt-2">ยืนยันสิทธิ์ MEALPASS</h1>
+        <p className="text-sm text-slate-500 mt-1">สแกน QR หรือกรอกรหัสของพนักงาน — อาหาร (MP) / เครื่องดื่มในร้าน (DR)</p>
       </div>
       {branchId == null
         ? <div className="card text-sm text-slate-500">กรุณาเลือกสาขาที่มุมบนซ้ายก่อน</div>
