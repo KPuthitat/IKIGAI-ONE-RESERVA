@@ -112,7 +112,7 @@ export default function MealpassConfirmClient({ pending, config }: { pending: Pe
       <div className="card space-y-2">
         <button className="w-full py-4 rounded-xl text-lg font-bold text-white active:scale-95 transition"
           style={{ background: NAVY }} onClick={() => { setMsg(null); setScanning(true); }}>
-          📷 สแกน QR ของพนักงาน
+          สแกน QR ของพนักงาน
         </button>
         <div className="text-center text-xs text-slate-400">— หรือพิมพ์รหัสเอง (กล้องมีปัญหา) —</div>
         <label className="label !text-xs">กรอกรหัส MP-xxxx (อาหาร) หรือ DR-xxxx (เครื่องดื่ม)</label>
@@ -170,7 +170,7 @@ export default function MealpassConfirmClient({ pending, config }: { pending: Pe
           Admins rarely change settings mid-shift; scanning is the daily job. */}
       <details className="card [&::-webkit-details-marker]:hidden">
         <summary className="flex items-center justify-between cursor-pointer list-none">
-          <span className="font-bold" style={{ color: NAVY }}>⚙️ ตั้งค่า MEALPASS · สาขานี้</span>
+          <span className="font-bold" style={{ color: NAVY }}>ตั้งค่า MEALPASS · สาขานี้</span>
           <span className={`text-xs font-medium ${cfg.enabled === 1 ? "text-emerald-600" : "text-slate-400"}`}>
             {cfg.enabled === 1 ? "เปิดใช้งาน" : "ปิดอยู่"} · แตะเพื่อแก้
           </span>
