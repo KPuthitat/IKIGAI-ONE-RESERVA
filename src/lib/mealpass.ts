@@ -13,7 +13,7 @@
 import { randomBytes } from "crypto";
 import Database from "better-sqlite3";
 import { getDb } from "./db";
-import { scheduledShiftMinutesForUserDate } from "./roster";
+import { scheduledShiftMinutesForUserDate, scheduledWorkMinutesByDateForUserRange } from "./roster";
 import { svcWorkedMinutesForUserDate, FOOD_CLAWBACK_MIN_MINUTES } from "./service-charge";
 import { resolveHomeBranchId } from "./mealpass-payroll";
 
@@ -196,6 +196,24 @@ export function balanceForUser(userId: number, ym: string, db: Database.Database
     "SELECT COALESCE(SUM(credits),0) AS n FROM mealpass_ledger WHERE user_id = ? AND ym = ?"
   ).get(userId, ym) as { n: number };
   return r.n;
+}
+
+/** Roster FORECAST (owner 2026-08-11): the credits a person could earn this
+ *  whole month if they work every currently-rostered FULL (≥8h) shift. Counts
+ *  distinct full-shift work days × full_day_credits, capped at monthly_cap. A
+ *  day rostered across two branches (transfer) is summed, so it counts once.
+ *  Pure projection from the schedule — real credits still accrue per-day via
+ *  earnOnClockIn/accrueForDate; this just lets staff see "ลงเวร 25 วัน → ~1500"
+ *  the moment the roster is set. Returns 0 when MEALPASS is off at the branch. */
+export function projectedMonthlyCredits(
+  userId: number, ym: string, branchId: number, db: Database.Database = getDb()
+): number {
+  const cfg = getMealpassConfig(branchId, db);
+  if (!cfg.enabled) return 0;
+  const byDate = scheduledWorkMinutesByDateForUserRange(userId, `${ym}-01`, `${ym}-31`);
+  let fullDays = 0;
+  for (const mins of byDate.values()) if (mins >= FULL_SHIFT_MIN) fullDays++;
+  return applyMonthlyCap(0, fullDays * cfg.full_day_credits, cfg.monthly_cap);
 }
 
 // ── Menu popularity report (owner 2026-08-10) ──────────────────────────────
@@ -726,7 +744,7 @@ export type CompanySettlement = {
   monthCount: number;
 };
 
-function mondayOf(iso: string): string {
+export function mondayOf(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
   const dow = d.getUTCDay();                 // 0=Sun..6=Sat
   d.setUTCDate(d.getUTCDate() + (dow === 0 ? -6 : 1 - dow));
@@ -793,6 +811,76 @@ export function withinCrossCompanyCap(alreadyBaht: number, addBaht: number, capB
   return alreadyBaht + addBaht <= capBaht;
 }
 
+// ── Weekly deduction guard (owner 2026-08-11) ──────────────────────────────
+// On top of the fixed monthly ฿ cap, a person's confirmed ศาลาชิลล์ charges in
+// any Mon–Sun week must not exceed this share of THAT WEEK'S income — so a
+// low-paid part-timer (e.g. ฿2,400/wk) never has their payslip eaten by meal
+// charges. It's a protective ceiling to help staff save, not an accounting rule.
+export const CROSS_COMPANY_WEEKLY_PCT = 0.20;
+
+function addDaysIso(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function ptDefaultHourlyRate(db: Database.Database): number {
+  const r = db.prepare("SELECT pt_default_hourly_rate AS n FROM payroll_settings WHERE id = 1").get() as { n: number } | undefined;
+  return r?.n ?? 50;
+}
+
+/** Estimate a person's income for the Mon–Sun week starting `weekStartMon`.
+ *  FT: monthly_salary / 30 × 7 (a flat weekly slice of salary). PT / hourly:
+ *  resolved hourly rate × GROSS scheduled work-hours rostered that week across
+ *  all their branches. SCHEDULED (not clocked) on purpose — the cap is applied
+ *  at order time, before the week is worked, so it's a protective estimate, not
+ *  the payslip figure. Returns 0 when it can't be estimated (no salary/roster);
+ *  callers then fall back to the monthly cap only. */
+export function weeklyIncomeEstimate(userId: number, weekStartMon: string, db: Database.Database = getDb()): number {
+  const emp = db.prepare(
+    "SELECT employment_type AS et, monthly_salary AS ms, hourly_rate AS hr FROM users WHERE id = ?"
+  ).get(userId) as { et: string | null; ms: number | null; hr: number | null } | undefined;
+  if (!emp) return 0;
+  if (emp.et === "ft") return emp.ms ? (emp.ms / 30) * 7 : 0;
+  // Only genuine PT staff get an hourly estimate. A NULL/unknown employment_type
+  // is paid 0 base by payroll-compute, so fabricating income from a default rate
+  // would enforce a cap on money the person isn't paid → return 0 (guard skips).
+  if (emp.et !== "pt") return 0;
+  const rate = emp.hr ?? ptDefaultHourlyRate(db);
+  if (!rate) return 0;
+  const byDate = scheduledWorkMinutesByDateForUserRange(userId, weekStartMon, addDaysIso(weekStartMon, 6));
+  let mins = 0;
+  for (const m of byDate.values()) mins += m;
+  return (mins / 60) * rate;
+}
+
+/** Confirmed cross-company charges for a person within the Mon–Sun week that
+ *  contains `weekStartMon` (windowed by order_date). Mirrors the monthly sum. */
+export function crossCompanyChargedThisWeek(userId: number, weekStartMon: string, db: Database.Database = getDb()): number {
+  const r = db.prepare(`
+    SELECT COALESCE(SUM(l.baht),0) AS n
+    FROM mealpass_ledger l JOIN mealpass_orders o ON o.id = l.order_id
+    WHERE l.user_id = ? AND l.entry_type = 'payroll_charge'
+      AND o.order_date >= ? AND o.order_date <= ?
+  `).get(userId, weekStartMon, addDaysIso(weekStartMon, 6)) as { n: number };
+  return r.n;
+}
+
+/** Weekly guard: after adding `addBaht`, the buyer's charges in the order's week
+ *  must stay within CROSS_COMPANY_WEEKLY_PCT of that week's income. When the
+ *  weekly income can't be estimated (0 — no roster/salary), the weekly guard is
+ *  SKIPPED (returns true) so we never hard-block on a missing estimate; the fixed
+ *  monthly cap still applies independently. */
+export function withinCrossCompanyWeeklyCap(
+  userId: number, orderDateBkk: string, addBaht: number, db: Database.Database = getDb()
+): boolean {
+  const weekStart = mondayOf(orderDateBkk);
+  const income = weeklyIncomeEstimate(userId, weekStart, db);
+  if (income <= 0) return true;
+  const limit = income * CROSS_COMPANY_WEEKLY_PCT;
+  return crossCompanyChargedThisWeek(userId, weekStart, db) + addBaht <= limit;
+}
+
 export type CrossOrderResult = {
   id: number; code: string; baht: number; menuName: string;
   sellingCompanyId: number; homeCompanyId: number;
@@ -830,6 +918,10 @@ export function createCrossCompanyOrder(args: {
   const ym = ymOf(args.dateBkk);
   if (!withinCrossCompanyCap(crossCompanyChargedThisMonth(args.buyerUserId, ym, db), menu.price, cap)) {
     throw new MealpassError("cap_exceeded");
+  }
+  // Weekly guard: don't let this week's charges exceed 20% of the week's income.
+  if (!withinCrossCompanyWeeklyCap(args.buyerUserId, args.dateBkk, menu.price, db)) {
+    throw new MealpassError("weekly_cap_exceeded");
   }
 
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -879,6 +971,10 @@ export function confirmCrossCompanyOrder(args: {
   const cap = getMealpassConfig(resolveHomeBranchId(order.user_id, db) ?? -1, db).cross_company_cap_baht;
   if (!withinCrossCompanyCap(crossCompanyChargedThisMonth(order.user_id, ym, db), order.baht, cap)) {
     throw new MealpassError("cap_exceeded");
+  }
+  // Weekly guard (mirror of create-time): keep the week's charges ≤ 20% of income.
+  if (!withinCrossCompanyWeeklyCap(order.user_id, order.order_date, order.baht, db)) {
+    throw new MealpassError("weekly_cap_exceeded");
   }
 
   const tx = db.transaction(() => {

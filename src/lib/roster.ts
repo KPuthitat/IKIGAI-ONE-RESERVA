@@ -297,6 +297,40 @@ export function workShiftDatesForUserMonth(
   `).all(userId, branchId, start, end) as Array<{ d: string }>).map((r) => r.d);
 }
 
+/** Gross scheduled WORK minutes PER DATE for a user across ALL their branches,
+ *  over [startDate, endDate] inclusive (BKK dates, 'YYYY-MM-DD'). Overnight
+ *  shifts count +24h; breaks are NOT subtracted (gross span). Limited to WORK
+ *  shifts (kind='work'), matching the branch selection in accrueForDate — the
+ *  authoritative monthly accrual this projection mirrors. Multiple assignments
+ *  on the same date (e.g.
+ *  a transfer day) sum into that date. Used by MEALPASS for the monthly-credit
+ *  projection (count of ≥8h days) and the weekly-income estimate (sum of hours).
+ *  Returns a Map keyed by date; absent dates simply have no key. */
+export function scheduledWorkMinutesByDateForUserRange(
+  userId: number,
+  startDate: string,
+  endDate: string
+): Map<string, number> {
+  const rows = getDb().prepare(`
+    SELECT a.assignment_date AS d, s.start_time AS st, s.end_time AS et
+    FROM roster_assignments a
+    JOIN shift_codes s ON s.id = a.shift_code_id
+    WHERE a.user_id = ?
+      AND a.assignment_date >= ? AND a.assignment_date <= ?
+      AND s.kind = 'work'
+      AND s.start_time IS NOT NULL AND s.end_time IS NOT NULL
+  `).all(userId, startDate, endDate) as Array<{ d: string; st: string; et: string }>;
+  const byDate = new Map<string, number>();
+  for (const r of rows) {
+    const start = timeToMinutes(r.st);
+    const end = timeToMinutes(r.et);
+    if (Number.isNaN(start) || Number.isNaN(end)) continue;
+    const mins = end > start ? end - start : end + 1440 - start; // overnight → +24h
+    byDate.set(r.d, (byDate.get(r.d) ?? 0) + mins);
+  }
+  return byDate;
+}
+
 /** Branches where the user has a WORK shift rostered on the given date
  *  (across ALL their branches). Drives clock-in branch auto-selection for
  *  cross-branch rotation (owner 2026-07-14): if a NAMA-home staffer is

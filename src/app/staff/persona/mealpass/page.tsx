@@ -3,8 +3,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { bkkDateIso, formatLongDate } from "@/lib/time";
-import { getMealpassConfig, balanceForUser, monthlyEarned, ymOf, getDrinkCouponForDate, resolveHomeCompanyId, hasMealpassConsent } from "@/lib/mealpass";
-import OwlMascot from "@/app/components/OwlMascot";
+import { getMealpassConfig, balanceForUser, monthlyEarned, projectedMonthlyCredits, ymOf, getDrinkCouponForDate, resolveHomeCompanyId, hasMealpassConsent } from "@/lib/mealpass";
 import MealpassClient, { type MealpassMenuItem, type MealpassHistoryRow, type SalaMenuItem } from "./MealpassClient";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +28,8 @@ export default function MealpassPage() {
   const cfg = getMealpassConfig(branchId ?? -1, db);
   const balance = branchId != null ? balanceForUser(user.id, ym, db) : 0;
   const earned = branchId != null ? monthlyEarned(user.id, ym, db) : 0;
+  // Roster forecast: credits this month if every rostered ≥8h shift is worked.
+  const projected = branchId != null ? projectedMonthlyCredits(user.id, ym, branchId, db) : 0;
   const meals = cfg.standard_credit_cost > 0 ? Math.floor(balance / cfg.standard_credit_cost) : 0;
 
   // Chip counts — full vs half earn days this month (notes stamped by the engine).
@@ -110,23 +111,18 @@ export default function MealpassPage() {
     <div className="space-y-4">
       <Link href="/staff/persona" className="text-sm text-slate-500 hover:text-brand">← กลับหน้าลงเวลา</Link>
 
-      {/* Navy header — น้องฮูก greeting */}
+      {/* Navy header */}
       <div className="rounded-2xl p-5 text-white" style={{ background: "#0B1F3A" }}>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-extrabold tracking-wide">MEALPASS</span>
-              <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: "#C9A227", color: "#0B1F3A" }}>2.0</span>
-            </div>
-            <div className="mt-2 text-base font-semibold">สวัสดีครับ คุณ{user.display_name}</div>
-            <div className="mt-1 text-xs text-white/70">
-              {[me?.employee_code, branch?.name, branch?.company ? `สังกัด ${branch.company}` : null]
-                .filter(Boolean).join(" · ") || "—"}
-            </div>
-            <div className="mt-0.5 text-xs text-white/50">{dateLabel}</div>
-          </div>
-          <OwlMascot size={56} ariaLabel="น้องฮูก" />
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-extrabold tracking-wide">MEALPASS</span>
+          <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: "#C9A227", color: "#0B1F3A" }}>2.0</span>
         </div>
+        <div className="mt-2 text-base font-semibold">สวัสดีครับ คุณ{user.display_name}</div>
+        <div className="mt-1 text-xs text-white/70">
+          {[me?.employee_code, branch?.name, branch?.company ? `สังกัด ${branch.company}` : null]
+            .filter(Boolean).join(" · ") || "—"}
+        </div>
+        <div className="mt-0.5 text-xs text-white/50">{dateLabel}</div>
       </div>
 
       {branchId == null ? (
@@ -138,6 +134,7 @@ export default function MealpassPage() {
           balance={balance}
           meals={meals}
           earned={earned}
+          projected={projected}
           cap={cfg.monthly_cap}
           standardCost={cfg.standard_credit_cost}
           fullDays={fullDays}

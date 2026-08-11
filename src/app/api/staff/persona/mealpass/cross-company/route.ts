@@ -21,7 +21,7 @@ const Body = z.object({
 
 function statusFor(code: string): number {
   if (code === "consent_required") return 403;
-  if (code === "cap_exceeded") return 409;
+  if (code === "cap_exceeded" || code === "weekly_cap_exceeded") return 409;
   if (code === "not_cross_company" || code === "menu_invalid" || code === "menu_unavailable"
     || code === "company_unknown") return 400;
   return 400;

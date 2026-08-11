@@ -49,6 +49,7 @@ const ERR_TH: Record<string, string> = {
   already_used: "ใช้คูปองเครื่องดื่มวันนี้ไปแล้ว",
   consent_required: "กรุณายินยอมให้หักค่าตอบแทนก่อน",
   cap_exceeded: "เกินวงเงินข้ามบริษัทของเดือนนี้แล้ว",
+  weekly_cap_exceeded: "เกินเพดานหักข้ามบริษัทของสัปดาห์นี้แล้ว (ไม่เกิน 20% ของรายได้สัปดาห์ — ช่วยให้เหลือค่าตอบแทน)",
   not_cross_company: "เมนูนี้เป็นของบริษัทเดียวกัน ใช้เมนูปกติได้เลย",
   company_unknown: "ยังไม่ได้ตั้งค่าบริษัท/สาขา",
 };
@@ -57,6 +58,7 @@ export default function MealpassClient(props: {
   balance: number;
   meals: number;
   earned: number;
+  projected: number;
   cap: number;
   standardCost: number;
   fullDays: number;
@@ -175,6 +177,12 @@ export default function MealpassClient(props: {
           <span>ได้รับ {props.earned.toLocaleString()} จากการลงเวลาเข้าทำงาน</span>
           <span>เพดาน {props.cap.toLocaleString()}</span>
         </div>
+        {props.projected > 0 && (
+          <div className="mt-1 text-xs text-slate-400">
+            ตามตารางเดือนนี้ คาดได้ทั้งเดือน ~{Math.max(props.projected, props.earned).toLocaleString()} เครดิต
+            {props.projected > props.earned && ` · อีก ${(props.projected - props.earned).toLocaleString()} จากเวรที่เหลือ`}
+          </div>
+        )}
         <div className="mt-3 flex flex-wrap gap-1.5">
           {props.fullDays > 0 && <Chip>ลงเวลาเต็มวัน {props.fullDays} × 60</Chip>}
           {props.halfDays > 0 && <Chip>ครึ่งวัน {props.halfDays} × 30</Chip>}

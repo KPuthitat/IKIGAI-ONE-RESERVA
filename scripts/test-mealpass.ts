@@ -288,6 +288,72 @@ function eq(name: string, got: unknown, want: unknown): void {
   catch (e) { capAtConfirm = e instanceof MealpassError && e.code === "cap_exceeded"; }
   eq("xc: cap re-checked at confirm (blocks 2nd)", capAtConfirm, true);
 
+  // ── Feature A: projected monthly credits from the roster (owner 2026-08-11) ──
+  const { projectedMonthlyCredits } = await import("../src/lib/mealpass");
+  const roster = (uid: number, date: string, sc: number, branch: number) => db.prepare(
+    "INSERT INTO roster_assignments (branch_id, assignment_date, position_id, user_id, shift_code_id) VALUES (?,?,1,?,?)"
+  ).run(branch, date, uid, sc);
+  const BA = 99020, UA = 88010, YMA = "2026-09";
+  db.prepare("INSERT INTO branches (id, slug, name, company_id) VALUES (99020,'ba','BranchA',1)").run();
+  db.prepare("INSERT INTO mealpass_config (branch_id, enabled, monthly_cap, full_day_credits) VALUES (99020,1,1500,60)").run();
+  const scFull = Number(db.prepare("INSERT INTO shift_codes (branch_id, code, start_time, end_time) VALUES (99020,'F','08:00','17:00')").run().lastInsertRowid);  // 540m ≥ 8h
+  const scShort = Number(db.prepare("INSERT INTO shift_codes (branch_id, code, start_time, end_time) VALUES (99020,'S','08:00','12:00')").run().lastInsertRowid); // 240m < 8h
+  roster(UA, "2026-09-01", scFull, BA); roster(UA, "2026-09-02", scFull, BA); roster(UA, "2026-09-03", scFull, BA);
+  roster(UA, "2026-09-04", scShort, BA);   // under 8h → earns nothing
+  eq("projA: 3 full days × 60 = 180", projectedMonthlyCredits(UA, YMA, BA, db), 180);
+  roster(UA, "2026-09-01", scFull, 99011);  // transfer day: 2nd assignment same date
+  eq("projA: transfer day counts once (still 180)", projectedMonthlyCredits(UA, YMA, BA, db), 180);
+  // cap: branch cap 100, 3 full days (raw 180) → clamped to 100
+  const BB = 99021, UB = 88011;
+  db.prepare("INSERT INTO branches (id, slug, name, company_id) VALUES (99021,'bb','BranchB',1)").run();
+  db.prepare("INSERT INTO mealpass_config (branch_id, enabled, monthly_cap, full_day_credits) VALUES (99021,1,100,60)").run();
+  const scFullB = Number(db.prepare("INSERT INTO shift_codes (branch_id, code, start_time, end_time) VALUES (99021,'F','08:00','17:00')").run().lastInsertRowid);
+  roster(UB, "2026-09-01", scFullB, BB); roster(UB, "2026-09-02", scFullB, BB); roster(UB, "2026-09-03", scFullB, BB);
+  eq("projA: clamped to monthly_cap 100", projectedMonthlyCredits(UB, YMA, BB, db), 100);
+  db.prepare("INSERT INTO branches (id, slug, name, company_id) VALUES (99022,'bc','BranchC',1)").run();
+  db.prepare("INSERT INTO mealpass_config (branch_id, enabled, monthly_cap, full_day_credits) VALUES (99022,0,1500,60)").run();
+  eq("projA: disabled branch → 0", projectedMonthlyCredits(88012, YMA, 99022, db), 0);
+
+  // ── Feature B: weekly cross-company cap = 20% of the week's income ──
+  const { weeklyIncomeEstimate, crossCompanyChargedThisWeek, withinCrossCompanyWeeklyCap, mondayOf } =
+    await import("../src/lib/mealpass");
+  const seedUser = (id: number, f: { et?: string; hr?: number; ms?: number }) =>
+    db.prepare(`INSERT INTO users (id, username, password_hash, display_name, role, employment_type, hourly_rate, monthly_salary)
+                VALUES (?,?,?,?, 'staff', ?, ?, ?)`)
+      .run(id, `u${id}`, "x", `User ${id}`, f.et ?? null, f.hr ?? null, f.ms ?? null);
+
+  // FT: monthly_salary / 30 × 7 (roster-independent)
+  const UF = 88030; seedUser(UF, { et: "ft", ms: 30000 });
+  eq("wk: FT weekly income = salary/30×7 = 7000", weeklyIncomeEstimate(UF, "2026-09-07", db), 7000);
+  // PT: rate × scheduled weekly hours. Roster 8h on one day → 100 × 8 = 800/wk.
+  const UPt = 88031; seedUser(UPt, { et: "pt", hr: 100 });
+  const sc8 = Number(db.prepare("INSERT INTO shift_codes (branch_id, code, start_time, end_time) VALUES (99020,'E','08:00','16:00')").run().lastInsertRowid); // 480m
+  const D = "2026-09-15";
+  roster(UPt, D, sc8, 99020);
+  const wk = mondayOf(D);
+  eq("wk: PT weekly income = rate×hours = 800", weeklyIncomeEstimate(UPt, wk, db), 800);
+  eq("wk: charged this week starts 0", crossCompanyChargedThisWeek(UPt, wk, db), 0);
+  eq("wk: within cap at exactly 160 (20% of 800)", withinCrossCompanyWeeklyCap(UPt, D, 160, db), true);
+  eq("wk: over cap at 161", withinCrossCompanyWeeklyCap(UPt, D, 161, db), false);
+  eq("wk: no user row → income 0", weeklyIncomeEstimate(7654321, wk, db), 0);
+  eq("wk: no income estimate → guard skipped (true)", withinCrossCompanyWeeklyCap(7654321, D, 999999, db), true);
+
+  // Integration: home branch (co 1, huge monthly cap) + selling branch 99011 (co 2).
+  // Weekly limit 160 → a ฿150 order confirms, a second in the same week is blocked.
+  db.prepare("INSERT INTO branches (id, slug, name, company_id) VALUES (99030,'hb2','Home2',1)").run();
+  db.prepare("INSERT INTO mealpass_config (branch_id, enabled, cross_company_cap_baht) VALUES (99030,1,100000)").run();
+  db.prepare("INSERT INTO user_branches (user_id, branch_id, is_primary) VALUES (?,99030,1)").run(UPt);
+  recordMealpassConsent(UPt, db);
+  const cross150 = Number(db.prepare("INSERT INTO delivera_menu_items (branch_id, name_th, price, is_available, is_standard_meal, credit_cost) VALUES (99011,'ต้มยำ',150,1,0,60)").run().lastInsertRowid);
+  const w1 = createCrossCompanyOrder({ buyerUserId: UPt, sellingBranchId: 99011, menuItemId: cross150, dateBkk: D, db });
+  eq("wk-int: first ฿150 order ok (≤160)", w1.baht, 150);
+  confirmCrossCompanyOrder({ code: w1.code, confirmerUserId: 1, db });
+  eq("wk-int: charged this week = 150", crossCompanyChargedThisWeek(UPt, wk, db), 150);
+  let wkBlocked = false;
+  try { createCrossCompanyOrder({ buyerUserId: UPt, sellingBranchId: 99011, menuItemId: cross150, dateBkk: D, db }); }
+  catch (e) { wkBlocked = e instanceof MealpassError && e.code === "weekly_cap_exceeded"; }
+  eq("wk-int: 2nd order over weekly cap blocked (150+150 > 160)", wkBlocked, true);
+
   db.close();
   for (const f of [TMP, `${TMP}-wal`, `${TMP}-shm`]) { try { fs.rmSync(f, { force: true }); } catch { /* */ } }
 

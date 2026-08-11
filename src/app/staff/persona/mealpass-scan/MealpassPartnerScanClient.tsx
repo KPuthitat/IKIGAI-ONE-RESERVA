@@ -13,6 +13,8 @@ const ERR_MSG: Record<string, string> = {
   wrong_partner: "รหัสนี้เป็นของบริษัทอื่น",
   forbidden: "บัญชีนี้ไม่มีสิทธิ์สแกนยืนยัน",
   invalid_body: "รหัสไม่ถูกต้อง",
+  cap_exceeded: "พนักงานเกินวงเงินข้ามบริษัทของเดือนนี้แล้ว",
+  weekly_cap_exceeded: "พนักงานเกินเพดานหักของสัปดาห์นี้ (ไม่เกิน 20% ของรายได้สัปดาห์)",
 };
 
 // Pull an SC-xxxx code out of a scanned QR string (tolerate stray whitespace).
