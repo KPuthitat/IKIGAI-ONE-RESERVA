@@ -169,17 +169,38 @@ export default function MealpassConfirmClient({ pending, config }: { pending: Pe
       {/* Branch config — collapsed by default so the scanner stays the focus.
           Admins rarely change settings mid-shift; scanning is the daily job. */}
       <details className="card [&::-webkit-details-marker]:hidden">
-        <summary className="flex items-center justify-between cursor-pointer list-none">
-          <span className="font-bold" style={{ color: NAVY }}>ตั้งค่า MEALPASS · สาขานี้</span>
-          <span className={`text-xs font-medium ${cfg.enabled === 1 ? "text-emerald-600" : "text-slate-400"}`}>
-            {cfg.enabled === 1 ? "เปิดใช้งาน" : "ปิดอยู่"} · แตะเพื่อแก้
+        <summary className="flex items-center justify-between cursor-pointer list-none gap-3">
+          <div className="min-w-0">
+            <div className="font-bold" style={{ color: NAVY }}>ตั้งค่าระบบ MEALPASS · ประจำสาขา</div>
+            <div className="text-xs text-slate-400 mt-0.5">แตะเพื่อขยายและจัดการการตั้งค่า</div>
+          </div>
+          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${cfg.enabled === 1 ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+            {cfg.enabled === 1 ? "เปิดใช้งาน" : "ปิดใช้งาน"}
           </span>
         </summary>
         <div className="space-y-3 mt-3 border-t border-slate-100 pt-3">
-          <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-            <input type="checkbox" checked={cfg.enabled === 1} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked ? 1 : 0 })} />
-            {cfg.enabled === 1 ? <span className="text-emerald-600">เปิดใช้งาน</span> : <span className="text-slate-400">ปิดอยู่</span>}
-          </label>
+          {/* Primary control: an explicit on/off switch for the branch. */}
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold" style={{ color: NAVY }}>สถานะการให้บริการ MEALPASS</div>
+              <div className={`text-xs mt-0.5 ${cfg.enabled === 1 ? "text-emerald-600" : "text-slate-500"}`}>
+                {cfg.enabled === 1
+                  ? "เปิดใช้งานอยู่ — พนักงานของสาขานี้สามารถใช้สิทธิ์ได้"
+                  : "ปิดใช้งานอยู่ — พนักงานจะยังไม่เห็นเมนู MEALPASS"}
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={cfg.enabled === 1}
+              aria-label="เปิดหรือปิดการให้บริการ MEALPASS ประจำสาขา"
+              onClick={() => setCfg({ ...cfg, enabled: cfg.enabled === 1 ? 0 : 1 })}
+              className="relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors"
+              style={{ background: cfg.enabled === 1 ? "#059669" : "#cbd5e1" }}
+            >
+              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${cfg.enabled === 1 ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <Field label="เวลาปิดใช้สิทธิ์ (HH:MM)"><input className="input" value={cfg.redeem_cutoff} onChange={(e) => setCfg({ ...cfg, redeem_cutoff: e.target.value })} placeholder="15:00" /></Field>
             <Field label="เพดานเครดิต/เดือน"><input type="number" className="input text-right font-mono" value={cfg.monthly_cap} onChange={num("monthly_cap")} /></Field>
@@ -192,7 +213,9 @@ export default function MealpassConfirmClient({ pending, config }: { pending: Pe
           </div>
           <div className="flex items-center gap-3">
             <button className="btn-primary" disabled={cfgBusy} onClick={saveConfig}>{cfgBusy ? "กำลังบันทึก…" : "บันทึกการตั้งค่า"}</button>
-            {cfgSaved && <span className="text-sm text-emerald-600">บันทึกแล้ว ✓</span>}
+            {cfgSaved
+              ? <span className="text-sm text-emerald-600">บันทึกแล้ว ✓</span>
+              : <span className="text-xs text-slate-400">การเปลี่ยนสถานะจะมีผลเมื่อกดบันทึก</span>}
           </div>
         </div>
       </details>
