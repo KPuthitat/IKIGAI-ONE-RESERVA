@@ -187,7 +187,7 @@ export default function StaffPersonaPage() {
           className="block rounded-xl px-4 py-3 text-sm font-semibold text-white hover:opacity-90 transition"
           style={{ background: "#0B1F3A" }}
         >
-          🦉 MEALPASS · เครดิตมื้ออาหารของฉัน →
+          MEALPASS · เครดิตมื้ออาหารของฉัน →
         </Link>
       )}
       {hasDrinkPartner && (
