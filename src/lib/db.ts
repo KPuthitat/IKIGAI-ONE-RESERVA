@@ -258,6 +258,15 @@ function runMigrations(db: Database.Database): void {
       arr.forEach((t, i) => upd.run((i + 1) * 10, t.id));
     }
   }
+  // tables.mergeable — whether this table may be pushed together with adjacent
+  // tables in the same zone to seat a larger party (owner 2026-08-11). Default
+  // ON. Turn OFF for fixed furniture that can't move — a wall booth, a bar
+  // counter. A non-mergeable table can still be booked on its OWN; it just never
+  // joins a merge and breaks a zone's adjacency run (same effect as an occupied
+  // table), so tables on either side of it never merge across it.
+  if (!tcols.some((c) => c.name === "mergeable")) {
+    db.exec("ALTER TABLE tables ADD COLUMN mergeable INTEGER NOT NULL DEFAULT 1");
+  }
   // booking_tables — a booking can occupy several merged tables (owner
   // 2026-07-26). bookings.table_id stays the PRIMARY/anchor table (unchanged for
   // every single-label display); the extra tables live here. The anchor is also
@@ -7968,6 +7977,7 @@ export type TableRow = {
   height: number;
   active: number;
   sort_order: number;
+  mergeable: number;
 };
 
 export type Zone = {

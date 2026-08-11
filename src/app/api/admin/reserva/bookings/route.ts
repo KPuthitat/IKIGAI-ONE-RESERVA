@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, OCCASION_KINDS, type Branch, type Booking } from "@/lib/db";
 import { isTableFree } from "@/lib/table-allocator";
-import { bookingTablesLabel } from "@/lib/booking-tables";
+import { bookingTablesLabel, setBookingTables } from "@/lib/booking-tables";
 import { notifyStaff, notifyCustomer } from "@/lib/line";
 import { generateBookingRef } from "@/lib/reserva-ref";
 import { assignRedemptionForNewRow, normalisePhone } from "@/lib/redemption";
@@ -46,6 +46,10 @@ const Body = z.object({
   // analytics counts these consistently with the customer-driven ones.
   occasion: z.enum(OCCASION_KINDS).optional(),
   table_id: z.number().int().nullable().optional(),
+  // A merged set of tables for a large party (owner 2026-08-11). When present
+  // it wins over table_id; the first id becomes the anchor. Each table must be
+  // free at the slot. Empty/absent → unassigned, same as before.
+  table_ids: z.array(z.number().int().positive()).max(20).optional(),
   line_user_id: z.string().max(64).optional().default(""),
   booking_channel: z.enum(["walkin", "phone", "line"])
 });
@@ -76,11 +80,21 @@ export async function POST(req: Request) {
     }
   }
 
-  // Same race-condition check as the customer endpoint
-  if (data.table_id) {
+  // Resolve the requested table set: table_ids (merged, dedup) wins, else the
+  // single table_id, else none. The first id is the anchor (bookings.table_id).
+  const tableSet = data.table_ids?.length
+    ? [...new Set(data.table_ids)]
+    : data.table_id
+      ? [data.table_id]
+      : [];
+  const anchorTableId = tableSet[0] ?? null;
+
+  // Same race-condition check as the customer endpoint — every table in the
+  // merged set must be free at this slot, not just the anchor.
+  for (const tid of tableSet) {
     const free = isTableFree({
       branchId: branch.id,
-      tableId: data.table_id,
+      tableId: tid,
       date: data.booking_date,
       time: data.booking_time,
       durationMinutes: branch.default_duration_minutes
@@ -97,7 +111,7 @@ export async function POST(req: Request) {
   let initialStatus: "seated" | "confirmed" | "pending_review";
   if (data.booking_channel === "walkin") {
     initialStatus = "seated";
-  } else if (data.table_id) {
+  } else if (anchorTableId) {
     initialStatus = "confirmed";
   } else {
     initialStatus = "pending_review";
@@ -131,7 +145,7 @@ export async function POST(req: Request) {
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     branch.id,
-    data.table_id ?? null,
+    anchorTableId,
     data.customer_name,
     normalisedPhone,
     data.party_size,
@@ -154,6 +168,10 @@ export async function POST(req: Request) {
     redemptionStatus
   );
   const id = result.lastInsertRowid as number;
+
+  // Persist the full merged set (anchor + extras) so booking_tables is in sync
+  // and the staff card / timetable show "C1+C2". No-op for the unassigned case.
+  if (tableSet.length) setBookingTables(id, tableSet);
 
   const booking = db.prepare("SELECT * FROM bookings WHERE id = ?").get(id) as Booking;
   const tableLabel = booking.table_id ? (bookingTablesLabel(booking.id) || null) : null;

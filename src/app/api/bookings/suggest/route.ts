@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb, type Branch } from "@/lib/db";
-import { suggestTables } from "@/lib/table-allocator";
+import { suggestCombos } from "@/lib/table-allocator";
 
 const Body = z.object({
   branch_slug: z.string(),
@@ -27,22 +27,36 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "ไม่สามารถจองย้อนหลังได้" }, { status: 400 });
   }
 
-  const suggestions = suggestTables({
+  // Combos, not just single tables — a party bigger than any one table gets
+  // adjacent same-zone merges too (owner 2026-08-11), so staff can seat a
+  // large group in one step instead of hitting "no table available".
+  const combos = suggestCombos({
     branchId: branch.id,
     date: booking_date,
     time: booking_time,
     durationMinutes: branch.default_duration_minutes,
     partySize: party_size,
-    limit: 5
+    limit: 6
   });
 
   return NextResponse.json({
-    suggestions: suggestions.map((s) => ({
-      id: s.table.id,
-      label: s.table.label,
-      capacity: s.table.capacity,
-      shape: s.table.shape,
-      fitScore: s.fitScore
-    }))
+    combos: combos.map((c) => ({
+      table_ids: c.tables.map((tbl) => tbl.id),
+      labels: c.tables.map((tbl) => tbl.label),
+      totalCapacity: c.totalCapacity,
+      waste: c.waste,
+      crossZone: c.crossZone
+    })),
+    // Back-compat: the first table of each combo, so older single-table
+    // callers still see a flat suggestions list.
+    suggestions: combos
+      .filter((c) => c.tables.length === 1)
+      .map((c) => ({
+        id: c.tables[0].id,
+        label: c.tables[0].label,
+        capacity: c.tables[0].capacity,
+        shape: c.tables[0].shape,
+        fitScore: c.waste
+      }))
   });
 }
