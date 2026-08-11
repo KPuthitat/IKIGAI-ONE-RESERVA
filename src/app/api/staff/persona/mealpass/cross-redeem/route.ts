@@ -14,7 +14,7 @@ const Body = z.object({ code: z.string().min(3).max(32) });
 
 function statusFor(code: string): number {
   if (code === "not_found") return 404;
-  if (code === "already_confirmed" || code === "not_pending" || code === "cap_exceeded") return 409;
+  if (code === "already_confirmed" || code === "not_pending" || code === "cap_exceeded" || code === "weekly_cap_exceeded") return 409;
   if (code === "wrong_partner") return 403;
   return 400;
 }

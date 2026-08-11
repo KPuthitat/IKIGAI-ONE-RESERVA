@@ -1708,7 +1708,9 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         line.base_pay, line.ot_pay, line.service_charge, line.other_additions, line.gross_pay,
         line.sso_amount, line.tax_amount, line.other_deductions, round2(drinkDed),
         round2(mealpassDed),
-        round2(line.net_pay - drinkDed - mealpassDed)
+        // Safety floor (owner 2026-08-11): welfare deductions must never push net
+        // pay below 0. The weekly ศาลาชิลล์ cap is the primary guard; this backstops it.
+        round2(Math.max(0, line.net_pay - drinkDed - mealpassDed))
       );
       computed++;
     }
@@ -2043,7 +2045,8 @@ export function recomputeLine(
   // Cross-company MEALPASS (ศาลาชิลล์) — deducted once, in the home-branch round,
   // by order date. Refreshed from the ledger on every recompute (owner 2026-08-10).
   const mealpassDed = sumCrossCompanyChargesForUser(userId, period.period_start, period.period_end, period.branch_id, db);
-  const net = gross - sso - tax - ded - drinkDed - mealpassDed;
+  // Safety floor (owner 2026-08-11): welfare deductions never push net below 0.
+  const net = Math.max(0, gross - sso - tax - ded - drinkDed - mealpassDed);
 
   if (lineExists) {
     db.prepare(`
