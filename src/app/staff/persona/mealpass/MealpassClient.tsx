@@ -185,7 +185,7 @@ export default function MealpassClient(props: {
 
       {/* Demo toggle (mockup) — preview after-cutoff behaviour */}
       <label className="card flex items-center justify-between text-sm cursor-pointer">
-        <span className="text-slate-600">🕒 Demo: จำลองเวลาเป็นหลัง {props.redeemCutoff} น.</span>
+        <span className="text-slate-600">Demo: จำลองเวลาเป็นหลัง {props.redeemCutoff} น.</span>
         <input type="checkbox" checked={demoAfterCutoff} onChange={(e) => setDemoAfterCutoff(e.target.checked)} />
       </label>
       {demoAfterCutoff && (
@@ -212,11 +212,11 @@ export default function MealpassClient(props: {
 
       {/* Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-1">
-        <TabBtn active={tab === "standard"} onClick={() => setTab("standard")}>🍚 เมนูมาตรฐาน</TabBtn>
-        <TabBtn active={tab === "special"} onClick={() => setTab("special")}>⭐ เมนูพิเศษ</TabBtn>
-        <TabBtn active={tab === "drink"} onClick={() => setTab("drink")}>🥫 เครื่องดื่มในร้าน</TabBtn>
-        <TabBtn active={tab === "sala"} onClick={() => setTab("sala")}>🥤 ศาลาชิลล์</TabBtn>
-        <TabBtn active={tab === "history"} onClick={() => setTab("history")}>📜 ประวัติ</TabBtn>
+        <TabBtn active={tab === "standard"} onClick={() => setTab("standard")}>เมนูมาตรฐาน</TabBtn>
+        <TabBtn active={tab === "special"} onClick={() => setTab("special")}>เมนูพิเศษ</TabBtn>
+        <TabBtn active={tab === "drink"} onClick={() => setTab("drink")}>เครื่องดื่มในร้าน</TabBtn>
+        <TabBtn active={tab === "sala"} onClick={() => setTab("sala")}>ศาลาชิลล์</TabBtn>
+        <TabBtn active={tab === "history"} onClick={() => setTab("history")}>ประวัติ</TabBtn>
       </div>
 
       {tab === "standard" && (
@@ -255,7 +255,7 @@ export default function MealpassClient(props: {
                 <div key={m.id} className="card flex items-center gap-3">
                   <div className="w-11 h-11 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {m.imageUrl ? <img src={m.imageUrl} alt="" className="w-full h-full object-cover" /> : <span>🥫</span>}
+                    {m.imageUrl ? <img src={m.imageUrl} alt="" className="w-full h-full object-cover" /> : null}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-slate-800 truncate">{m.name}</div>
@@ -302,7 +302,7 @@ export default function MealpassClient(props: {
                 <div key={m.id} className="card flex items-center gap-3">
                   <div className="w-11 h-11 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {m.imageUrl ? <img src={m.imageUrl} alt="" className="w-full h-full object-cover" /> : <span>🥤</span>}
+                    {m.imageUrl ? <img src={m.imageUrl} alt="" className="w-full h-full object-cover" /> : null}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-slate-800 truncate">{m.name}</div>
@@ -434,7 +434,7 @@ function MenuList(props: {
         <div key={m.id} className="card flex items-center gap-3">
           <div className="w-11 h-11 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            {m.imageUrl ? <img src={m.imageUrl} alt="" className="w-full h-full object-cover" /> : <span>🍽️</span>}
+            {m.imageUrl ? <img src={m.imageUrl} alt="" className="w-full h-full object-cover" /> : null}
           </div>
           <div className="flex-1 min-w-0">
             <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "#F3ECD6", color: "#8A6D1B" }}>

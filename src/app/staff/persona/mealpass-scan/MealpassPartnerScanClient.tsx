@@ -77,7 +77,7 @@ export default function MealpassPartnerScanClient() {
         disabled={busy}
         className="w-full py-4 rounded-2xl bg-emerald-600 text-white text-lg font-bold active:scale-95 transition disabled:opacity-50"
       >
-        {busy ? "กำลังตรวจสอบ…" : "📷 สแกน QR ของพนักงาน"}
+        {busy ? "กำลังตรวจสอบ…" : "สแกน QR ของพนักงาน"}
       </button>
 
       <div className="card space-y-2">

@@ -118,7 +118,7 @@ export default function MealpassPage() {
               <span className="text-lg font-extrabold tracking-wide">MEALPASS</span>
               <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: "#C9A227", color: "#0B1F3A" }}>2.0</span>
             </div>
-            <div className="mt-2 text-base font-semibold">สวัสดีครับ คุณ{user.display_name} 🦉</div>
+            <div className="mt-2 text-base font-semibold">สวัสดีครับ คุณ{user.display_name}</div>
             <div className="mt-1 text-xs text-white/70">
               {[me?.employee_code, branch?.name, branch?.company ? `สังกัด ${branch.company}` : null]
                 .filter(Boolean).join(" · ") || "—"}
