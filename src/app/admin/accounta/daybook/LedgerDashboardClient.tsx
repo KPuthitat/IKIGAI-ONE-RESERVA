@@ -1205,7 +1205,29 @@ export default function LedgerDashboardClient({
       )}
       {/* Material-purchase quota — moved up (owner 2026-07-12) to sit directly
           under the ยอดขายเทียบเป้าเดือนนี้ card (rendered in page.tsx), above the
-          period controls. Hidden when the branch has the feature off. */}
+          period controls. When the branch has the feature off we now show a
+          muted prompt instead of hiding it (owner 2026-08-13 — every branch
+          should see the feature and how to turn it on). */}
+      {!materialQuota && (
+        <div className="relative overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-4 sm:p-5">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-200 text-slate-500">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" /><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6" />
+              </svg>
+            </span>
+            <div className="min-w-0">
+              <h2 className="font-bold text-slate-700">โควตาสั่งซื้อวัตถุดิบวันนี้</h2>
+              <p className="mt-1 text-[13px] text-slate-500">
+                โควตาสั่งซื้อวัตถุดิบยังปิดอยู่สำหรับสาขานี้ — เปิดใช้งานและตั้ง % งบวัตถุดิบ/วันสั่งของ เพื่อให้ระบบคำนวณโควตารายวันแบบเดียวกับสาขาอื่น
+              </p>
+              <a href="/admin/persona/settings" className="mt-2 inline-flex items-center gap-1 rounded-lg border border-brand/40 bg-brand/5 px-3 py-1.5 text-[13px] font-medium text-brand hover:bg-brand/10">
+                เปิด/ตั้งค่าโควตาของสาขานี้ →
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
       {materialQuota && (() => {
         const q = materialQuota;
         const usedPct = q.monthBudget > 0 ? Math.min(100, Math.max(0, (q.spentThisMonth / q.monthBudget) * 100)) : 0;
