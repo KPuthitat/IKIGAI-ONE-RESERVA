@@ -96,6 +96,45 @@ function SalesTargetCard({ st }: { st: SalesTargetProgress }) {
   );
 }
 
+// Empty-state placeholder shown in place of a metric card when the branch
+// hasn't been configured / lacks the data for it yet (owner 2026-08-13 —
+// "ฟีเจอร์ต้องเห็นทุกสาขา"). Every branch sees the card slot; a branch that
+// hasn't set it up gets a muted prompt + a CTA instead of a silently missing
+// card. Keeps the feature discoverable for every branch and company.
+function MetricEmptyCard({
+  title, message, ctaHref, ctaLabel, icon
+}: {
+  title: string; message: string; ctaHref?: string; ctaLabel?: string;
+  icon: "target" | "scale";
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-4 sm:p-5">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-200 text-slate-500">
+          {icon === "target" ? (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+              <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3v18M4 21h16M6 8l-2.5 5h5L6 8zM18 8l-2.5 5h5L18 8z" />
+            </svg>
+          )}
+        </span>
+        <div className="min-w-0">
+          <h2 className="font-bold text-slate-700">{title}</h2>
+          <p className="mt-1 text-[13px] text-slate-500">{message}</p>
+          {ctaHref && ctaLabel && (
+            <Link href={ctaHref} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-brand/40 bg-brand/5 px-3 py-1.5 text-[13px] font-medium text-brand hover:bg-brand/10">
+              {ctaLabel} →
+            </Link>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // จุดคุ้มทุน (break-even) เดือนนี้ (owner 2026-07-19) — "ขายเท่าไหร่จึงเริ่มกำไร".
 // เป้า = ต้นทุนคงที่เฉลี่ย/เดือน ÷ (1 − อัตราต้นทุนผันแปร) จากค่าเฉลี่ยตั้งแต่ต้นปี.
 // แดง/อำพัน = ยังไม่คุ้มทุน → เขียว = คุ้มทุนแล้ว เริ่มกำไร. Full class-name literals
@@ -303,8 +342,26 @@ export default function DaybookPage({
           การลงบันทึกนี้ใช้ติดตามภายในเท่านั้น ไม่ได้อ้างอิงหลักการบัญชี/ไม่ใช้แทนเอกสารทางภาษีอย่างเป็นทางการ
         </p>
       </div>
-      {salesTarget.hasTarget && <SalesTargetCard st={salesTarget} />}
-      {breakEven.hasData && <BreakEvenCard be={breakEven} />}
+      {salesTarget.hasTarget ? (
+        <SalesTargetCard st={salesTarget} />
+      ) : (
+        <MetricEmptyCard
+          icon="target"
+          title="ยอดขายเทียบเป้าเดือนนี้"
+          message="ยังไม่ได้ตั้งเป้ายอดขายรายเดือนของสาขานี้ — ตั้งเป้าเพื่อดูความคืบหน้าเทียบเป้าแบบเดียวกับสาขาอื่น"
+          ctaHref="/admin/persona/settings"
+          ctaLabel="ตั้งเป้ายอดขายของสาขานี้"
+        />
+      )}
+      {breakEven.hasData ? (
+        <BreakEvenCard be={breakEven} />
+      ) : (
+        <MetricEmptyCard
+          icon="scale"
+          title="จุดคุ้มทุนเดือนนี้"
+          message="ยังคำนวณจุดคุ้มทุนไม่ได้ — ต้องมีข้อมูลรายรับ/รายจ่ายสะสมของสาขานี้ก่อน (อย่างน้อย 1 เดือนที่มียอดขาย และมีต้นทุนคงที่ในบัญชี) แล้วการ์ดจะขึ้นเอง"
+        />
+      )}
       <LedgerDashboardClient dash={dash} expenses={expenses} period={period} anchor={anchor}
         monthly={monthly} trendYear={trendYear} payables={payables}
         cashAccounts={cashAccounts} cashTotal={cashTotal}

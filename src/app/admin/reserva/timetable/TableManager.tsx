@@ -6,7 +6,7 @@
 // against live bookings). All ops hit /api/admin/reserva/tables and
 // router.refresh() to re-pull the grid.
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Branch, TableRow, Zone } from "@/lib/db";
 import { apiUrl } from "@/lib/url";
@@ -73,6 +73,30 @@ export default function TableManager({ branch, tables, zones }: Props) {
     if (ok) { setNLabel(""); setNCap("2"); setNZone(""); }
   }
 
+  // Order tables by zone (display_order) then their in-zone sort_order, so the
+  // list mirrors physical adjacency. Tag each with whether it can move up/down
+  // within its zone (edges can't) to enable/disable the ↑/↓ reorder buttons.
+  const zoneOrder = new Map(zones.map((z) => [z.id, z.display_order]));
+  const ordered = [...tables].sort((a, b) => {
+    const za = a.zone_id == null ? Infinity : (zoneOrder.get(a.zone_id) ?? 9999);
+    const zb = b.zone_id == null ? Infinity : (zoneOrder.get(b.zone_id) ?? 9999);
+    if (za !== zb) return za - zb;
+    const zid = (a.zone_id ?? 0) - (b.zone_id ?? 0);
+    if (zid !== 0) return zid;
+    return (a.sort_order - b.sort_order) || a.label.localeCompare(b.label, undefined, { numeric: true });
+  });
+  const posInfo = new Map<number, { canUp: boolean; canDown: boolean }>();
+  {
+    const groups = new Map<string, TableRow[]>();
+    for (const tbl of ordered) {
+      const k = tbl.zone_id == null ? "none" : String(tbl.zone_id);
+      (groups.get(k) ?? groups.set(k, []).get(k)!).push(tbl);
+    }
+    for (const arr of groups.values()) {
+      arr.forEach((tbl, i) => posInfo.set(tbl.id, { canUp: i > 0, canDown: i < arr.length - 1 }));
+    }
+  }
+
   return (
     <div className="card !p-0 overflow-hidden">
       {ConfirmDialog}
@@ -93,23 +117,42 @@ export default function TableManager({ branch, tables, zones }: Props) {
             </div>
           )}
 
-          {/* Existing tables */}
+          {/* Existing tables — grouped by zone and shown in the order that
+              defines adjacency (which tables can be pushed together). */}
           <div className="space-y-2">
             {tables.length === 0 && (
               <p className="text-sm text-slate-400">{t("admin.reserva.tableMgr.empty")}</p>
             )}
-            {tables.map((tbl) => (
-              <TableEditRow
-                key={tbl.id}
-                table={tbl}
-                zones={zones}
-                busy={busy}
-                onSave={(label, capacity, zoneId) =>
-                  call("PATCH", "/api/admin/reserva/tables", {
-                    id: tbl.id, label, capacity, zone_id: zoneId
-                  })
-                }
-                onDelete={async () => {
+            {tables.length > 0 && (
+              <p className="text-xs text-slate-400">{t("admin.reserva.tableMgr.orderHint")}</p>
+            )}
+            {ordered.map((tbl, i) => {
+              const prev = ordered[i - 1];
+              const showHeader = i === 0 || (prev.zone_id ?? null) !== (tbl.zone_id ?? null);
+              const zoneName = tbl.zone_id == null
+                ? t("admin.reserva.tableMgr.noZone")
+                : (zones.find((z) => z.id === tbl.zone_id)?.name ?? "");
+              const pos = posInfo.get(tbl.id) ?? { canUp: false, canDown: false };
+              return (
+              <Fragment key={tbl.id}>
+                {showHeader && (
+                  <div className="text-xs font-semibold text-slate-500 pt-1">{zoneName}</div>
+                )}
+                <TableEditRow
+                  table={tbl}
+                  zones={zones}
+                  busy={busy}
+                  canUp={pos.canUp}
+                  canDown={pos.canDown}
+                  onMove={(dir) =>
+                    call("PATCH", "/api/admin/reserva/tables", { id: tbl.id, move: dir })
+                  }
+                  onSave={(label, capacity, zoneId, mergeable) =>
+                    call("PATCH", "/api/admin/reserva/tables", {
+                      id: tbl.id, label, capacity, zone_id: zoneId, mergeable
+                    })
+                  }
+                  onDelete={async () => {
                   const ok = await confirm({
                     title: "ยืนยันการลบ",
                     body: t("admin.reserva.tableMgr.deleteConfirm", { label: tbl.label }),
@@ -118,8 +161,10 @@ export default function TableManager({ branch, tables, zones }: Props) {
                   if (ok === null) return;
                   void call("DELETE", `/api/admin/reserva/tables?id=${tbl.id}`);
                 }}
-              />
-            ))}
+                />
+              </Fragment>
+              );
+            })}
           </div>
 
           {/* Add new */}
@@ -157,25 +202,39 @@ export default function TableManager({ branch, tables, zones }: Props) {
 }
 
 function TableEditRow({
-  table, zones, busy, onSave, onDelete
+  table, zones, busy, canUp, canDown, onMove, onSave, onDelete
 }: {
   table: TableRow;
   zones: Zone[];
   busy: boolean;
-  onSave: (label: string, capacity: number, zoneId: number | null) => void;
+  canUp: boolean;
+  canDown: boolean;
+  onMove: (dir: "up" | "down") => void;
+  onSave: (label: string, capacity: number, zoneId: number | null, mergeable: 0 | 1) => void;
   onDelete: () => void;
 }) {
   const { t } = useLang();
   const [label, setLabel] = useState(table.label);
   const [cap, setCap] = useState(String(table.capacity));
   const [zone, setZone] = useState<string>(table.zone_id ? String(table.zone_id) : "");
+  const [merge, setMerge] = useState<boolean>(table.mergeable !== 0);
   const dirty =
     label.trim() !== table.label ||
     Number(cap) !== table.capacity ||
-    (zone ? Number(zone) : null) !== (table.zone_id ?? null);
+    (zone ? Number(zone) : null) !== (table.zone_id ?? null) ||
+    merge !== (table.mergeable !== 0);
 
   return (
     <div className="flex flex-wrap items-end gap-2 border border-slate-100 rounded-lg p-2">
+      {/* ↑/↓ reorder — swaps in-zone order, which defines adjacency. */}
+      <div className="flex flex-col gap-0.5">
+        <button type="button" onClick={() => onMove("up")} disabled={busy || !canUp}
+          title={t("admin.reserva.tableMgr.moveUp")}
+          className="px-2 py-0.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 text-xs leading-none">▲</button>
+        <button type="button" onClick={() => onMove("down")} disabled={busy || !canDown}
+          title={t("admin.reserva.tableMgr.moveDown")}
+          className="px-2 py-0.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 text-xs leading-none">▼</button>
+      </div>
       <div>
         <label className="label">{t("admin.reserva.tableMgr.label")}</label>
         <input className="input w-28" value={label} maxLength={20}
@@ -196,11 +255,17 @@ function TableEditRow({
           ))}
         </select>
       </div>
+      <label className="flex items-center gap-1.5 text-sm text-slate-700 pb-2"
+        title={t("admin.reserva.tableMgr.mergeableHint")}>
+        <input type="checkbox" className="w-4 h-4" checked={merge}
+          onChange={(e) => setMerge(e.target.checked)} />
+        {t("admin.reserva.tableMgr.mergeable")}
+      </label>
       <button type="button"
         onClick={() => {
           const c = Number(cap);
           if (!label.trim() || !Number.isInteger(c) || c < 1) return;
-          onSave(label.trim(), c, zone ? Number(zone) : null);
+          onSave(label.trim(), c, zone ? Number(zone) : null, merge ? 1 : 0);
         }}
         disabled={busy || !dirty}
         className="btn-secondary text-sm disabled:opacity-40">

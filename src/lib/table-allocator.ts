@@ -66,11 +66,16 @@ export function suggestTables(opts: {
   return ranked.slice(0, opts.limit ?? 5);
 }
 
-// ── Table combining (owner 2026-07-26) ──────────────────────────────────
+// ── Table combining (owner 2026-07-26; mergeable flag 2026-08-11) ─────────
 // When no single table seats the party, merge ADJACENT tables — consecutive
 // sort_order within the same zone (C1+C2 ok, C1+C3 skipping C2 is not). Ranked:
 // a single table that fits wins; else the same-zone combo with the least wasted
 // seats (fewest tables to break ties); cross-zone is a last resort.
+//
+// mergeable (owner 2026-08-11): a table with mergeable=0 (fixed booth, bar
+// counter) never joins a multi-table combo — it can only be booked on its own,
+// and it breaks a zone's adjacency run exactly like an occupied table, so the
+// tables on either side of it never merge across it.
 
 export type TableCombo = {
   tables: TableRow[];
@@ -102,6 +107,9 @@ export function buildCombos(ordered: Array<TableRow & { free: boolean }>, partyS
       if (!list[i].free) continue;
       let cap = 0; const run: TableRow[] = [];
       for (let j = i; j < list.length && list[j].free; j++) {
+        // Extending past the anchor requires BOTH the anchor and this table to
+        // be mergeable — a non-mergeable table can only stand on its own.
+        if (j > i && (!list[i].mergeable || !list[j].mergeable)) break;
         cap += list[j].capacity; run.push(list[j]);
         if (cap >= partySize) { combos.push({ tables: [...run], totalCapacity: cap, waste: cap - partySize, crossZone: false }); break; }
       }
@@ -115,9 +123,11 @@ export function buildCombos(ordered: Array<TableRow & { free: boolean }>, partyS
     for (const list of byZone.values()) {
       let best: TableRow[] = [], bestCap = 0;
       for (let i = 0; i < list.length; ) {
-        if (!list[i].free) { i++; continue; }
+        // Non-mergeable tables can't cross-zone merge either — treat them like
+        // occupied tables so they neither join a block nor bridge one.
+        if (!list[i].free || !list[i].mergeable) { i++; continue; }
         let cap = 0; const run: TableRow[] = [];
-        while (i < list.length && list[i].free) { cap += list[i].capacity; run.push(list[i]); i++; }
+        while (i < list.length && list[i].free && list[i].mergeable) { cap += list[i].capacity; run.push(list[i]); i++; }
         if (cap > bestCap) { bestCap = cap; best = run; }
       }
       if (best.length) blocks.push(best);

@@ -15,12 +15,14 @@ import BookingSocialProof from "./BookingSocialProof";
 // runtime.
 import "@/lib/liff-types";
 
-type TableOption = {
-  id: number;
-  label: string;
-  capacity: number;
-  shape: string;
-  fitScore: number;
+// A seating option offered to staff at the "choose" step — either a single
+// table or an adjacent same-zone merge for a large party (owner 2026-08-11).
+type Combo = {
+  table_ids: number[];
+  labels: string[];
+  totalCapacity: number;
+  waste: number;
+  crossZone: boolean;
 };
 
 // Source values (เก็บใน DB ใช้ key คงที่) + i18n key สำหรับ display
@@ -168,12 +170,12 @@ export default function BookingForm({
     line_user_id: ""
   });
   const [step, setStep] = useState<"form" | "choose" | "done">("form");
-  const [suggestions, setSuggestions] = useState<TableOption[]>([]);
-  // Pre-select the table when caller passed an initial id — saves the
-  // staff a click since they already chose the cell in the timetable.
-  const [chosenTable, setChosenTable] = useState<number | "auto" | null>(
-    initialTableId ?? null
-  );
+  const [combos, setCombos] = useState<Combo[]>([]);
+  // Which combo (index into `combos`) the staff picked at the choose step.
+  // Pre-selected to the top-ranked option; when the caller passed an initial
+  // table id (staff clicked a timetable cell) we prefer the combo that is
+  // exactly that single table.
+  const [chosenComboIdx, setChosenComboIdx] = useState<number>(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultId, setResultId] = useState<number | null>(null);
@@ -403,12 +405,18 @@ export default function BookingForm({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || t("common.error"));
-      if (data.suggestions.length === 0) {
+      const list: Combo[] = data.combos ?? [];
+      if (list.length === 0) {
         setError(t("booking.error.noTable", { n: form.party_size }));
         return;
       }
-      setSuggestions(data.suggestions);
-      setChosenTable("auto");
+      setCombos(list);
+      // Prefer the single-table combo the staff already clicked in the
+      // timetable, if it's among the offered options; else the top rank.
+      const preIdx = initialTableId
+        ? list.findIndex((c) => c.table_ids.length === 1 && c.table_ids[0] === initialTableId)
+        : -1;
+      setChosenComboIdx(preIdx >= 0 ? preIdx : 0);
       setStep("choose");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t("common.error"));
@@ -463,7 +471,13 @@ export default function BookingForm({
     setSubmitting(true);
     setError(null);
     try {
-      const tableId = chosenTable === "auto" ? suggestions[0].id : chosenTable;
+      // The chosen seating option — one table or a merged set. table_ids
+      // drives the admin endpoint; table_id (the anchor) is kept for the
+      // customer branch below, which never actually runs (customer mode
+      // skips this function) but keeps the payload well-formed.
+      const chosenCombo = combos[chosenComboIdx];
+      const tableIds = chosenCombo?.table_ids ?? [];
+      const tableId = tableIds[0] ?? null;
       // All admin modes (walkin / phone / line) hit the admin endpoint and
       // pass booking_channel. Customer mode bypasses this function entirely
       // (handleSubmit goes straight to submitPendingRequest).
@@ -487,7 +501,7 @@ export default function BookingForm({
             notes: form.notes,
             food_allergy: form.food_allergy,
             ...(form.occasion ? { occasion: form.occasion } : {}),
-            table_id: tableId,
+            table_ids: tableIds,
             booking_channel: mode,
             // 'line' mode: staff may have pasted the customer's LINE userId
             // from chat — pass it through so the confirm Flex card can be
@@ -606,35 +620,33 @@ export default function BookingForm({
         <h2 className="text-lg font-bold mb-3 text-slate-800">{t("booking.choose.title")}</h2>
         <p className="text-sm text-slate-500 mb-4">{t("booking.choose.subtitle")}</p>
 
-        <label className="border-[1.5px] border-brand bg-brand/5 rounded-xl p-3.5 mb-2 flex items-center cursor-pointer">
-          <input
-            type="radio" name="table" className="mr-3 w-5 h-5"
-            checked={chosenTable === "auto"}
-            onChange={() => setChosenTable("auto")}
-          />
-          <div>
-            <div className="font-bold">{t("booking.choose.auto")}</div>
-            <div className="text-sm text-slate-500">
-              {t("booking.choose.tableX", { label: suggestions[0].label })} · {t("booking.choose.seats", { n: suggestions[0].capacity })}
-            </div>
-          </div>
-        </label>
-
-        {suggestions.map((s) => (
-          <label key={s.id} className="border-[1.5px] border-slate-200 rounded-xl p-3.5 mb-2 flex items-center cursor-pointer hover:border-brand">
-            <input
-              type="radio" name="table" className="mr-3 w-5 h-5"
-              checked={chosenTable === s.id}
-              onChange={() => setChosenTable(s.id)}
-            />
-            <div>
-              <div className="font-bold">{t("booking.choose.tableX", { label: s.label })}</div>
-              <div className="text-sm text-slate-500">
-                {t("booking.choose.seats", { n: s.capacity })} {s.shape === "round" ? t("booking.choose.round") : ""}
+        {combos.map((c, idx) => {
+          const merged = c.table_ids.length > 1;
+          const selected = chosenComboIdx === idx;
+          return (
+            <label key={c.table_ids.join("-")}
+              className={`border-[1.5px] rounded-xl p-3.5 mb-2 flex items-center cursor-pointer ${
+                selected ? "border-brand bg-brand/5" : "border-slate-200 hover:border-brand"
+              }`}>
+              <input
+                type="radio" name="table" className="mr-3 w-5 h-5"
+                checked={selected}
+                onChange={() => setChosenComboIdx(idx)}
+              />
+              <div>
+                <div className="font-bold">
+                  {merged ? "🔗 " : ""}{t("booking.choose.tableX", { label: c.labels.join("+") })}
+                  {idx === 0 && <span className="ml-2 text-[11px] font-medium text-brand">{t("booking.choose.recommended")}</span>}
+                </div>
+                <div className="text-sm text-slate-500">
+                  {t("booking.choose.seats", { n: c.totalCapacity })}
+                  {merged ? ` · ${t("booking.choose.mergedTables", { n: c.table_ids.length })}` : ""}
+                  {c.crossZone ? ` · ${t("booking.choose.crossZone")}` : ""}
+                </div>
               </div>
-            </div>
-          </label>
-        ))}
+            </label>
+          );
+        })}
 
         {error && <div className="text-red-600 text-sm mt-2">{error}</div>}
 
@@ -642,7 +654,7 @@ export default function BookingForm({
           <button onClick={() => setStep("form")} className="btn-secondary">{t("common.back")}</button>
           <button
             onClick={confirmBooking}
-            disabled={submitting || chosenTable === null}
+            disabled={submitting || combos.length === 0}
             className="btn-primary"
           >
             {submitting ? t("booking.cta.confirming") : t("booking.cta.confirm")}

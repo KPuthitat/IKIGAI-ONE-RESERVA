@@ -11,9 +11,9 @@ function assert(cond: boolean, msg: string) {
   console.log("✓ " + msg);
 }
 let id = 0;
-function t(label: string, zone: number | null, cap: number, free = true): TableRow & { free: boolean } {
+function t(label: string, zone: number | null, cap: number, free = true, mergeable = true): TableRow & { free: boolean } {
   return { id: ++id, branch_id: 1, zone_id: zone, label, capacity: cap, shape: "rect",
-    x: 0, y: 0, width: 80, height: 80, active: 1, sort_order: id * 10, free };
+    x: 0, y: 0, width: 80, height: 80, active: 1, sort_order: id * 10, mergeable: mergeable ? 1 : 0, free };
 }
 const labels = (c: TableCombo) => c.tables.map((x) => x.label).join("+");
 
@@ -74,6 +74,29 @@ function center() { return [t("C1", 1, 4), t("C2", 1, 4), t("C3", 1, 4)]; }
   const combos = buildCombos(rows, 6);
   assert(combos.length === 1 && combos[0].crossZone === true, "cross-zone merge used when no zone fits");
   assert(combos[0].totalCapacity === 8, "cross-zone combo capacity");
+}
+
+// A non-mergeable table stands alone: C2 mergeable=0 → C1 and C3 can't merge
+// across it (it acts like an occupied middle table), so 6 ppl can't be seated.
+{
+  const rows = [t("C1", 1, 4), t("C2", 1, 4, true, false), t("C3", 1, 4)];
+  const combos = buildCombos(rows, 6);
+  assert(combos.length === 0, "non-mergeable C2 breaks the run → C1+C3 never merges across it");
+}
+
+// A non-mergeable table can still be booked on its own when it fits the party.
+{
+  const rows = [t("C1", 1, 4), t("BAR", 1, 6, true, false)];
+  const combos = buildCombos(rows, 5);
+  assert(labels(combos[0]) === "BAR", "a non-mergeable table is still offered as a single that fits");
+}
+
+// A non-mergeable anchor never starts a merge: two 4-seaters, the first
+// non-mergeable → no pair for a party of 6.
+{
+  const rows = [t("C1", 1, 4, true, false), t("C2", 1, 4)];
+  const combos = buildCombos(rows, 6);
+  assert(combos.length === 0, "non-mergeable anchor C1 can't pair with C2");
 }
 
 console.log("\nALL TABLE-COMBO FIXTURES PASSED");
