@@ -67,6 +67,9 @@ export function buildDailyAttendanceRoster(
   //    - include admin role (admins are employees too)
   //    - skip status != 'active' (disabled / pending invites)
   //    - skip test accounts (username starting with 'test')
+  //    - skip track_attendance = 0 (owner 2026-08-17): salaried
+  //      exec/admin who don't clock in must not appear in the roll-call
+  //      at all — no notification, never counted absent.
   //    - include title_prefix so the LINE card shows e.g.
   //      "คุณ A" instead of bare "A"
   type RosterRow = {
@@ -86,6 +89,7 @@ export function buildDailyAttendanceRoster(
       AND u.role IN ('staff', 'admin')
       AND u.status = 'active'
       AND u.is_test_account = 0
+      AND u.track_attendance = 1
     ORDER BY u.display_name COLLATE NOCASE ASC
   `).all(branchId) as RosterRow[];
   if (staff.length === 0) return [];
