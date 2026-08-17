@@ -93,7 +93,7 @@ export default function EmployeesClient({
 }: {
   employees: EmployeeRow[];
   allBranches: BranchLite[];
-  grants: Array<{ user_id: number; branch_id: number; is_primary?: number; hourly_rate?: number | null }>;
+  grants: Array<{ user_id: number; branch_id: number; is_primary?: number; hourly_rate?: number | null; daily_rate?: number | null }>;
   editableBranchIds: number[];
   currentUserRole: "super_admin" | "admin" | "staff";
   /** PDPA (2026-05-30) — when false, hide salary inputs in the edit
@@ -180,6 +180,8 @@ export default function EmployeesClient({
   // userId → (branchId → per-branch PT rate). Only branches with a rate set
   // appear; absent = the employee's default hourly_rate is used (owner 2026-08-04).
   const branchRatesByUser = new Map<number, Map<number, number>>();
+  // userId → (branchId → cross-company/branch helper day rate) (owner 2026-08-17).
+  const branchDailyRatesByUser = new Map<number, Map<number, number>>();
   for (const g of grants) {
     const arr = branchIdsByUser.get(g.user_id) ?? [];
     arr.push(g.branch_id);
@@ -189,6 +191,11 @@ export default function EmployeesClient({
       const m = branchRatesByUser.get(g.user_id) ?? new Map<number, number>();
       m.set(g.branch_id, g.hourly_rate);
       branchRatesByUser.set(g.user_id, m);
+    }
+    if (g.daily_rate != null) {
+      const m = branchDailyRatesByUser.get(g.user_id) ?? new Map<number, number>();
+      m.set(g.branch_id, g.daily_rate);
+      branchDailyRatesByUser.set(g.user_id, m);
     }
   }
   const editableSet = new Set(editableBranchIds);
@@ -419,6 +426,7 @@ export default function EmployeesClient({
           currentBranchIds={branchIdsByUser.get(editTarget.id) ?? []}
           currentPrimary={primaryByUser.get(editTarget.id) ?? null}
           currentBranchRates={branchRatesByUser.get(editTarget.id) ?? new Map()}
+          currentBranchDailyRates={branchDailyRatesByUser.get(editTarget.id) ?? new Map()}
           editableSet={editableSet}
           onClose={() => setEditTarget(null)}
           onSaved={() => {
@@ -437,7 +445,8 @@ export default function EmployeesClient({
 }
 
 function EditModal({
-  employee, allEmployees, allBranches, currentBranchIds, currentPrimary, currentBranchRates, editableSet,
+  employee, allEmployees, allBranches, currentBranchIds, currentPrimary, currentBranchRates,
+  currentBranchDailyRates, editableSet,
   onClose, onSaved, onRefresh, canViewPayroll, currentUserRole,
   allRoles, assignedRoleIds
 }: {
@@ -454,6 +463,9 @@ function EditModal({
   /** branchId → per-branch PT hourly rate override (owner 2026-08-04). Absent
    *  branch = uses the employee's default hourly_rate. super_admin edits it. */
   currentBranchRates: Map<number, number>;
+  /** branchId → cross-company/branch helper day rate (owner 2026-08-17). Set on a
+   *  branch of another company the person goes to help; absent = not a helper there. */
+  currentBranchDailyRates: Map<number, number>;
   editableSet: Set<number>;
   onClose: () => void;
   onSaved: () => void;
@@ -487,6 +499,13 @@ function EditModal({
   );
   const setBranchRate = (bid: number, val: string) =>
     setBranchRates((prev) => { const n = new Map(prev); n.set(bid, val); return n; });
+  // Per-branch cross-company/branch helper day rate (super_admin) — branchId →
+  // rate string ("" = not a helper at this branch). Seeded from current (owner 2026-08-17).
+  const [branchDailyRates, setBranchDailyRates] = useState<Map<number, string>>(
+    new Map([...currentBranchDailyRates].map(([b, r]) => [b, String(r)]))
+  );
+  const setBranchDailyRate = (bid: number, val: string) =>
+    setBranchDailyRates((prev) => { const n = new Map(prev); n.set(bid, val); return n; });
   const [branchBusy, setBranchBusy] = useState(false);
   const [branchMsg, setBranchMsg] = useState<string | null>(null);
   function toggleBranch(bid: number) {
@@ -516,18 +535,27 @@ function EditModal({
               currentUserRole === "super_admin" && primaryBranch != null && branchSel.has(primaryBranch)
                 ? primaryBranch
                 : undefined,
-            // Per-branch PT rate overrides — only when the rate UI is actually
-            // shown (super_admin + payroll access + PT). Sending nothing for FT
-            // avoids wiping rates on an unrelated branch-membership save. "" clears
-            // the override (→ default); a non-numeric value is skipped so a typo
-            // can't zero someone's pay.
-            rates: currentUserRole === "super_admin" && canViewPayroll && employmentType === "pt"
+            // Per-branch rate overrides — for super_admin + payroll access. Each
+            // entry carries hourly_rate (PT only) and/or the helper daily_rate
+            // (owner 2026-08-17, any employment type). "" clears that field (→
+            // default / not-a-helper); a non-numeric value is skipped so a typo
+            // can't zero someone's pay. The server writes only the fields present,
+            // so sending daily_rate never wipes hourly_rate and vice-versa.
+            rates: currentUserRole === "super_admin" && canViewPayroll
               ? [...branchSel].map((bid) => {
-                  const raw = (branchRates.get(bid) ?? "").trim();
-                  if (raw === "") return { branch_id: bid, hourly_rate: null };
-                  const n = Number(raw);
-                  return Number.isFinite(n) && n >= 0 ? { branch_id: bid, hourly_rate: n } : null;
-                }).filter((x): x is { branch_id: number; hourly_rate: number | null } => x !== null)
+                  const entry: { branch_id: number; hourly_rate?: number | null; daily_rate?: number | null } = { branch_id: bid };
+                  if (employmentType === "pt") {
+                    const raw = (branchRates.get(bid) ?? "").trim();
+                    if (raw === "") entry.hourly_rate = null;
+                    else { const n = Number(raw); if (Number.isFinite(n) && n >= 0) entry.hourly_rate = n; }
+                  }
+                  const draw = (branchDailyRates.get(bid) ?? "").trim();
+                  // blank / 0 / invalid → clear (not a helper here); only a positive
+                  // rate marks a day-rate helper (owner 2026-08-17).
+                  if (draw === "") entry.daily_rate = null;
+                  else { const dn = Number(draw); entry.daily_rate = (Number.isFinite(dn) && dn > 0) ? dn : null; }
+                  return entry;
+                })
               : undefined
           })
         }
@@ -1668,6 +1696,39 @@ function EditModal({
                   </label>
                 ))}
               </div>
+            </div>
+          )}
+          {/* Cross-company/branch helper day rate (owner 2026-08-17) — a person who
+              comes to help at a branch of ANOTHER company (พรนภา สังกัด AT HOME ไปช่วย)
+              is paid a flat daily fee there, computed automatically from their clock-ins
+              in that branch's weekly round (WHT 3%, no ประกันสังคม). super_admin +
+              payroll access; shown for any employment type. Blank = not a helper there. */}
+          {currentUserRole === "super_admin" && canViewPayroll && branchSel.size >= 1 && (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+              <div className="text-sm font-medium text-slate-700 mb-1">ค่าจ้างช่วยงานรายวัน (ข้ามสาขา/บริษัท)</div>
+              <p className="text-[11px] text-slate-500 mb-2">
+                ตั้งเฉพาะสาขาที่พนักงานคนนี้ไป<b>ช่วยงาน</b> (คนละบริษัท/สาขา) · ระบบจะคิด
+                ให้อัตโนมัติ = เรตรายวัน × จำนวนวันที่มีลงเวลาที่สาขานั้น · หัก ณ ที่จ่าย 3%
+                โดยบริษัทผู้จ่าย ไม่หักประกันสังคม · เว้นว่าง = ไม่ใช่ผู้ช่วยรายวันที่สาขานี้
+              </p>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                {allBranches.filter((b) => branchSel.has(b.id) && b.id !== primaryBranch).map((b) => (
+                  <label key={b.id} className="flex items-center gap-2 text-sm text-slate-700">
+                    <span className="flex-1 truncate">{b.name}</span>
+                    <input
+                      type="number" min="0" step="0.01" inputMode="decimal"
+                      className="input !w-24 !py-1 text-sm text-right"
+                      placeholder="บาท/วัน"
+                      value={branchDailyRates.get(b.id) ?? ""}
+                      disabled={branchBusy}
+                      onChange={(e) => setBranchDailyRate(b.id, e.target.value)}
+                    />
+                  </label>
+                ))}
+              </div>
+              {allBranches.filter((b) => branchSel.has(b.id) && b.id !== primaryBranch).length === 0 && (
+                <p className="text-[11px] text-slate-400">— เลือกสาขาที่ไปช่วย (ที่ไม่ใช่สาขาหลัก) ก่อน</p>
+              )}
             </div>
           )}
           <div className="flex items-center gap-3 mt-3">

@@ -3624,6 +3624,13 @@ function runMigrations(db: Database.Database): void {
   if (!plNames.has("reviewed_by")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN reviewed_by INTEGER REFERENCES users(id)");
   }
+  // is_helper (owner 2026-08-17): this line is a CROSS-COMPANY/BRANCH HELPER paid a
+  // flat day rate (user_branches.daily_rate) rather than their own hourly/salary.
+  // base_pay = daily_rate × วันที่มีลงเวลา, WHT 3% by the paying company, no SSO.
+  // Drives the "ช่วยงานรายวัน" badge + payslip line. 0 = normal payroll line.
+  if (!plNames.has("is_helper")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN is_helper INTEGER NOT NULL DEFAULT 0");
+  }
 
   // Phase 1D v3 — payroll_periods.target ('pt' | 'ft' | 'all')
   // 'pt' = พนักงานพาร์ทไทม์เท่านั้น (รายชั่วโมง)
@@ -3962,6 +3969,14 @@ function runMigrations(db: Database.Database): void {
   // สาขานั้นถ้าตั้งไว้ ไม่งั้น fallback เรตปกติ. FT (เงินเดือน) ไม่ใช้ — จ่ายที่สาขาหลัก.
   if (!ubCols.some((c) => c.name === "hourly_rate")) {
     db.exec("ALTER TABLE user_branches ADD COLUMN hourly_rate REAL");
+  }
+  // user_branches.daily_rate — per-branch CROSS-COMPANY/BRANCH HELPER day rate
+  // (owner 2026-08-17). พรนภา สังกัด AT HOME CLINIC ไปช่วยงานอีกบริษัท 350 บาท/วัน:
+  // ตั้งค่านี้ตรงสิทธิ์สาขาที่ไปช่วย → รอบรายสัปดาห์ของสาขานั้นดึงเธอเข้ามาแล้วคิด
+  // rate × จำนวนวันที่มีลงเวลา (ไม่สนชั่วโมง), หัก ณ ที่จ่าย 3% โดยบริษัทผู้จ่าย,
+  // ไม่หักประกันสังคม (ข้ามบริษัท). NULL = ไม่ใช่ผู้ช่วยรายวันที่สาขานี้ (พฤติกรรมเดิม).
+  if (!ubCols.some((c) => c.name === "daily_rate")) {
+    db.exec("ALTER TABLE user_branches ADD COLUMN daily_rate REAL");
   }
 
   // users — Phase A profile columns. All nullable (existing rows

@@ -103,12 +103,12 @@ export default function AdminEmployeesPage({
   const grants =
     empIds.length > 0
       ? (db.prepare(
-          `SELECT user_id, branch_id, is_primary, hourly_rate FROM user_branches
+          `SELECT user_id, branch_id, is_primary, hourly_rate, daily_rate FROM user_branches
            WHERE user_id IN (${empIds.map(() => "?").join(",")})`
-        ).all(...empIds) as Array<{ user_id: number; branch_id: number; is_primary: number; hourly_rate: number | null }>)
+        ).all(...empIds) as Array<{ user_id: number; branch_id: number; is_primary: number; hourly_rate: number | null; daily_rate: number | null }>)
           // PDPA: per-branch rate is pay data — blank it for admins without
           // payroll access, same as the salary fields on the employee rows.
-          .map((g) => canSeePayroll ? g : { ...g, hourly_rate: null })
+          .map((g) => canSeePayroll ? g : { ...g, hourly_rate: null, daily_rate: null })
       : [];
 
   const editableBranchIds =
