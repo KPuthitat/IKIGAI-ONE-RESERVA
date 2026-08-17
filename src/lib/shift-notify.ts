@@ -80,7 +80,7 @@ export function buildShiftRecipients(
   //    displayName when nickname is blank.
   const staffRows = db.prepare(`
     SELECT u.id AS user_id, u.display_name, u.title_prefix, u.nickname_th,
-           u.line_user_id
+           u.line_user_id, u.track_attendance
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
     WHERE ub.branch_id = ?
@@ -92,7 +92,7 @@ export function buildShiftRecipients(
   `).all(branchId) as Array<{
     user_id: number; display_name: string;
     title_prefix: string | null; nickname_th: string | null;
-    line_user_id: string;
+    line_user_id: string; track_attendance: number;
   }>;
   if (staffRows.length === 0) return [];
 
@@ -189,6 +189,11 @@ export function buildShiftRecipients(
       });
       continue;
     }
+    // Staff who don't clock in (track_attendance = 0 — salaried exec/admin)
+    // have no shifts and no weekly day-off, so the "วันนี้เป็นวันหยุดของพี่"
+    // card is noise for them. Skip the day-off notification entirely (owner
+    // 2026-08-14). They still get a work / on_leave card if one ever applies.
+    if (s.track_attendance === 0) continue;
     // Owner direction 2026-05: an empty roster cell = "วันหยุด
     // ประจำสัปดาห์" by default. Sends the warm day-off card
     // ("วันนี้เป็นวันของพี่") to every active staff who isn't
