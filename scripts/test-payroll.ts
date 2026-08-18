@@ -4,7 +4,7 @@
 // Guarantees: salary/30 per unpaid day, FT only, default 0 = no change,
 // and the deduction never drives base pay negative.
 
-import { computeLineFromMinutes, computeLineForEmployee, computeSso, applyPtGrace, keepEntryForBranch, overridesToShiftMap, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift, type EntryWithBranch } from "../src/lib/payroll-compute";
+import { computeLineFromMinutes, computeLineForEmployee, computeSso, computeHelperLine, countClockInDays, applyPtGrace, keepEntryForBranch, overridesToShiftMap, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift, type EntryWithBranch } from "../src/lib/payroll-compute";
 
 const SETTINGS: PayrollSettings = {
   ot_mode: "flat", ot_flat_per_15min: 0,
@@ -609,6 +609,89 @@ console.log("\nการย้ายสาขารายวัน (per-day bran
 
   // Legacy all-branches period (branchId null) keeps everything.
   ok("รอบเก่าไม่ผูกสาขา: เก็บทุก punch", keepEntryForBranch(punchAtA, null, reassToB, noCerts), true);
+}
+
+// ── Cross-company/branch day-rate helper (owner 2026-08-17) ────────────
+// พรนภา สังกัด AT HOME (FT) ไปช่วยอีกบริษัท 350/วัน × 3 วัน = 1,050; หัก ณ ที่จ่าย
+// 3% โดยบริษัทผู้จ่าย (31.50), ไม่หักประกันสังคม → net 1,018.50.
+console.log("\nผู้ช่วยข้ามบริษัท (จ่ายรายวัน):");
+{
+  // FT at another company, set as a day-rate helper at THIS branch.
+  const helper: EmployeePayrollSnapshot = {
+    user_id: 9, display_name: "พรนภา", employment_type: "ft", employee_code: "AH01",
+    hourly_rate: null, monthly_salary: 25000, pay_cycle: "monthly", salary_tax_mode: "sso",
+    track_attendance: 1, is_primary_branch: 0, is_home_company: 0,
+    hire_date: null, last_working_day: null, ft_started_at: null, daily_rate: 350
+  };
+  const h = computeHelperLine({ employee: helper, clockInDays: 3, settings: SETTINGS });
+  eq("helper 350×3 → base 1050", h.base_pay, 1050);
+  eq("helper → WHT 3% = 31.5", h.tax_amount, 31.5);
+  eq("helper → SSO 0 (ข้ามบริษัท)", h.sso_amount, 0);
+  eq("helper → net 1018.5", h.net_pay, 1018.5);
+  eq("helper → days_worked 3", h.days_worked, 3);
+  eq("helper → is_helper flag 1", h.is_helper ?? 0, 1);
+  eq("helper → no OT", h.ot_pay, 0);
+
+  // 0 days → 0 pay (skipped in the full compute, but the fn must be safe).
+  const h0 = computeHelperLine({ employee: helper, clockInDays: 0, settings: SETTINGS });
+  eq("helper 0 วัน → base 0", h0.base_pay, 0);
+  eq("helper 0 วัน → tax 0", h0.tax_amount, 0);
+
+  // computeLineFromMinutes must route a daily_rate employee to the helper path,
+  // ignoring hours entirely (flat daily). daysWorked drives the count.
+  const viaMinutes = computeLineFromMinutes({
+    employee: helper, regularMinutes: 999, otMinutes: 480, holidayMinutes: 0,
+    leaveDays: 0, daysWorked: 3, unpaired: 0,
+    cycle: "weekly", periodStart: "2026-08-03", periodEnd: "2026-08-09", settings: SETTINGS
+  });
+  eq("helper via minutes → base 1050 (ignores hours)", viaMinutes.base_pay, 1050);
+  eq("helper via minutes → no OT", viaMinutes.ot_pay, 0);
+  eq("helper via minutes → is_helper 1", viaMinutes.is_helper ?? 0, 1);
+
+  // A normal FT (no daily_rate) is unaffected — regression guard.
+  const normalFt = computeLineFromMinutes({
+    employee: ftMonthly(30000), regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, daysWorked: 0, unpaired: 0,
+    cycle: "monthly", periodStart: "2026-08-01", periodEnd: "2026-08-31", settings: SETTINGS
+  });
+  eq("normal FT unaffected → base 30000", normalFt.base_pay, 30000);
+  eq("normal FT unaffected → is_helper 0", normalFt.is_helper ?? 0, 0);
+
+  // daily_rate = 0 must NOT be treated as a helper (a mistaken 0 shouldn't zero
+  // someone's real pay). Falls through to the normal FT engine.
+  const zeroRate = computeLineFromMinutes({
+    employee: { ...helper, daily_rate: 0 }, regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, daysWorked: 3, unpaired: 0,
+    cycle: "weekly", periodStart: "2026-08-03", periodEnd: "2026-08-09", settings: SETTINGS
+  });
+  eq("daily_rate 0 → not a helper", zeroRate.is_helper ?? 0, 0);
+
+  // Admin money extras on a helper's hours-PATCH are preserved (not discarded).
+  // base 1050 + additions 200 = gross 1250; WHT 3% = 37.5; − deduction 50 = 1162.5.
+  const withExtras = computeLineFromMinutes({
+    employee: helper, regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, daysWorked: 3, unpaired: 0,
+    cycle: "weekly", periodStart: "2026-08-03", periodEnd: "2026-08-09", settings: SETTINGS,
+    otherAdditions: 200, otherDeductions: 50
+  });
+  eq("helper + extras → gross 1250", withExtras.gross_pay, 1250);
+  eq("helper + extras → WHT 37.5", withExtras.tax_amount, 37.5);
+  eq("helper + extras → net 1162.5", withExtras.net_pay, 1162.5);
+  eq("helper + extras → additions kept", withExtras.other_additions, 200);
+}
+
+// countClockInDays — distinct Bangkok dates with a clock-IN (owner 2026-08-17).
+console.log("\nนับวันที่มีลงเวลา (helper):");
+{
+  const entries = [
+    { ts: "2026-08-03T02:00:00.000Z", type: "in" },   // 09:00 BKK, 3 Aug
+    { ts: "2026-08-03T10:00:00.000Z", type: "out" },  // out same day
+    { ts: "2026-08-04T02:00:00.000Z", type: "in" },   // 4 Aug
+    { ts: "2026-08-04T03:00:00.000Z", type: "in" },   // 2nd in same day — still 1 day
+    { ts: "2026-08-05T18:30:00.000Z", type: "in" }    // 01:30 BKK 6 Aug (crosses UTC midnight)
+  ];
+  eq("3 วันแยกกัน (นับ in, ข้าม out, ดีดัพวัน)", countClockInDays(entries), 3);
+  eq("ไม่มี in → 0 วัน", countClockInDays([{ ts: "2026-08-03T10:00:00.000Z", type: "out" }]), 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

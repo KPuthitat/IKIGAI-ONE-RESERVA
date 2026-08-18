@@ -50,20 +50,23 @@ export default function PeriodDetailPage({
            pl.days_worked, pl.leave_days, pl.unpaid_leave_days, pl.unpaired_clockins,
            pl.base_pay, pl.ot_pay, pl.service_charge, pl.other_additions, pl.gross_pay,
            pl.sso_amount, pl.tax_amount, pl.other_deductions, pl.drink_deductions, pl.mealpass_deductions, pl.net_pay,
-           pl.overridden, pl.notes, pl.reviewed_at,
+           pl.overridden, pl.notes, pl.reviewed_at, pl.is_helper,
            (SELECT display_name FROM users WHERE id = pl.reviewed_by) AS reviewed_by_name
     FROM payroll_lines pl
     LEFT JOIN users u ON u.id = pl.user_id
     WHERE pl.period_id = @pid
       -- Hide FT rows with no salary set (owner 2026-07-12: e.g. accounts that
-      -- haven't been configured shouldn't clutter the payroll table).
-      AND NOT (pl.employment_type = 'ft' AND COALESCE(pl.monthly_salary_snapshot, 0) = 0)
+      -- haven't been configured shouldn't clutter the payroll table). A
+      -- cross-company helper (is_helper=1) is FT with no salary snapshot but is
+      -- paid a day rate — never hide it (owner 2026-08-17).
+      AND NOT (pl.employment_type = 'ft' AND COALESCE(pl.monthly_salary_snapshot, 0) = 0 AND COALESCE(pl.is_helper, 0) = 0)
       -- Hide an FT's all-zero line at a branch that ISN'T their home branch
       -- (owner 2026-07-27: ธนโชติ ผู้บริหารโผล่สองสาขา). FT salary pays only at
       -- the home branch, so a non-home line with no OT/service charge (gross 0)
       -- is pure noise. Kept when it carries real money earned at that branch.
+      -- Helper lines are exempt (they carry a real day-rate fee at that branch).
       AND NOT (
-        pl.employment_type = 'ft' AND COALESCE(pl.gross_pay, 0) = 0
+        pl.employment_type = 'ft' AND COALESCE(pl.gross_pay, 0) = 0 AND COALESCE(pl.is_helper, 0) = 0
         AND @pbranch IS NOT NULL
         AND @pbranch != COALESCE(
           (SELECT branch_id FROM user_branches WHERE user_id = pl.user_id AND is_primary = 1 LIMIT 1),

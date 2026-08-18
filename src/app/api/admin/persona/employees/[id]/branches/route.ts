@@ -26,9 +26,14 @@ const Body = z.object({
   // Per-branch PT hourly rate (super_admin only, owner 2026-08-04). Each entry
   // sets/clears user_branches.hourly_rate for one branch (null → default rate).
   // Only applied to branches in the resulting membership + caller's scope.
+  // daily_rate (owner 2026-08-17): per-branch CROSS-COMPANY/BRANCH helper day rate
+  // — set on a branch of another company the person goes to help; that branch's
+  // weekly round then pays rate × วันที่ลงเวลา (WHT 3%, no SSO). null → not a helper
+  // there. Only sent for a field the client actually edited.
   rates: z.array(z.object({
     branch_id: z.number().int().positive(),
-    hourly_rate: z.number().min(0).max(100000).nullable()
+    hourly_rate: z.number().min(0).max(100000).nullable().optional(),
+    daily_rate: z.number().min(0).max(100000).nullable().optional()
   })).max(100).optional()
 });
 
@@ -124,13 +129,21 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       ).run(primary, id);
     }
 
-    // Per-branch PT rate overrides (super_admin). null clears → default rate.
+    // Per-branch rate overrides (super_admin). null clears → default rate.
     // Runs after membership changes so a just-added branch row exists to update.
+    // Each field is written only when the client actually sent it (partial edits),
+    // so setting a helper daily_rate never wipes an existing hourly_rate.
     if (rateUpdates.length > 0) {
-      const setRate = db.prepare(
+      const setHourly = db.prepare(
         "UPDATE user_branches SET hourly_rate = ? WHERE user_id = ? AND branch_id = ?"
       );
-      for (const r of rateUpdates) setRate.run(r.hourly_rate, id, r.branch_id);
+      const setDaily = db.prepare(
+        "UPDATE user_branches SET daily_rate = ? WHERE user_id = ? AND branch_id = ?"
+      );
+      for (const r of rateUpdates) {
+        if ("hourly_rate" in r) setHourly.run(r.hourly_rate ?? null, id, r.branch_id);
+        if ("daily_rate" in r) setDaily.run(r.daily_rate ?? null, id, r.branch_id);
+      }
     }
   });
   txn();

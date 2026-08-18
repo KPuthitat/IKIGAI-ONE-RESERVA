@@ -4,6 +4,7 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
   computeLineFromMinutes, earliestDate, resolveHomeCompanyFlag, branchHourlyRateSelect,
+  branchDailyRateSelect,
   type EmployeePayrollSnapshot, type PayrollSettings
 } from "@/lib/payroll-compute";
 import { sumRedeemedDrinksForUser } from "@/lib/partner-drink-orders";
@@ -51,6 +52,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     SELECT id, display_name, employment_type, employee_code,
            ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
            hire_date, ft_started_at,
+           ${branchDailyRateSelect(period.branch_id)},
            (SELECT MAX(proposed_last_day) FROM resignation_requests
               WHERE user_id = users.id AND status = 'approved') AS resign_last_day,
            (SELECT MAX(effective_date) FROM termination_records
@@ -68,6 +70,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     track_attendance: number | null;
     hire_date: string | null;
     ft_started_at: string | null;
+    daily_rate: number | null;
     resign_last_day: string | null;
     term_last_day: string | null;
   } | undefined;
@@ -114,7 +117,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     is_home_company: resolveHomeCompanyFlag(db, target.id, period.branch_id),
     hire_date: target.hire_date ?? null,
     last_working_day: earliestDate(target.resign_last_day, target.term_last_day),
-    ft_started_at: target.ft_started_at ?? null
+    ft_started_at: target.ft_started_at ?? null,
+    daily_rate: target.daily_rate ?? null
   };
 
   // Zero-row — admin will fill in hours/days afterward
@@ -148,8 +152,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       holiday_minutes,
       days_worked, leave_days, unpaid_leave_days, unpaired_clockins,
       base_pay, ot_pay, service_charge, other_additions, gross_pay,
-      sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay
-    ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?)
+      sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay,
+      is_helper
+    ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?)
   `).run(
     periodId, computed.user_id,
     computed.employee_code, computed.display_name, computed.employment_type,
@@ -162,7 +167,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     computed.base_pay, computed.ot_pay, computed.service_charge,
     computed.other_additions, computed.gross_pay,
     computed.sso_amount, computed.tax_amount, computed.other_deductions, drinkDed, mealpassDed,
-    computed.net_pay - drinkDed - mealpassDed
+    // Safety floor (owner 2026-08-11): welfare deductions never push net below 0,
+    // matching computePayrollPeriod / recomputeLine.
+    Math.round(Math.max(0, computed.net_pay - drinkDed - mealpassDed) * 100) / 100,
+    computed.is_helper ?? 0
   );
 
   return NextResponse.json({ ok: true });
