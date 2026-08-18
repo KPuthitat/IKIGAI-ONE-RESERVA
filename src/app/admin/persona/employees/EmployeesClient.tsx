@@ -1716,11 +1716,11 @@ function EditModal({
               accessible (ticked) non-home branches, one row each. Blank = not a helper. */}
           {currentUserRole === "super_admin" && canViewPayroll && employmentType === "ft" && branchSel.size >= 1 && (
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
-              <div className="text-sm font-medium text-slate-700 mb-1">ค่าตอบแทนทำงานต่างสาขา (ข้ามบริษัท)</div>
+              <div className="text-sm font-medium text-slate-700 mb-1">ค่าตอบแทนทำงานข้ามบริษัท</div>
               <p className="text-[11px] text-slate-500 mb-2">
-                ตั้งเฉพาะสาขาที่พนักงานคนนี้ไป<b>ทำงานต่างสาขา/บริษัท</b> · เลือกจ่าย <b>รายวัน</b> (คิดต่อวันที่มา)
+                ตั้งเฉพาะสาขาที่พนักงานคนนี้ไป<b>ทำงานข้ามบริษัท</b> · เลือกจ่าย <b>รายวัน</b> (คิดต่อวันที่มา)
                 หรือ <b>รายชั่วโมง</b> (คิดตามชั่วโมง + OT + วันพิเศษ×1.5) · ระบบคิดให้อัตโนมัติจาก
-                การลงเวลา · หัก ณ ที่จ่าย 3% โดยบริษัทผู้จ่าย ไม่หักประกันสังคม · เว้นว่าง = ไม่คิดค่าตอบแทนต่างสาขาที่นี่
+                การลงเวลา · หัก ณ ที่จ่าย 3% โดยบริษัทผู้จ่าย ไม่หักประกันสังคม · เว้นว่าง = ไม่คิดค่าตอบแทนข้ามบริษัทที่นี่
               </p>
               <div className="flex flex-col gap-1.5">
                 {allBranches.filter((b) => branchSel.has(b.id) && b.id !== primaryBranch).map((b) => {
