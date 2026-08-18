@@ -3101,6 +3101,13 @@ function runMigrations(db: Database.Database): void {
   // fix-rate (monthly_salary ÷ #Mondays) with WHT 3%; from the next month they
   // become a normal monthly FT. NULL = not in / past transition.
   if (!unames3.has("ft_started_at")) db.exec("ALTER TABLE users ADD COLUMN ft_started_at TEXT");
+  // ft_salary_paid_through (owner 2026-08-18) — YYYY-MM-DD. For a PT→FT transition
+  // employee whose transition-month salary was already settled by the RETIRED weekly
+  // (÷weeks) method, a later weekly round must NOT re-pay the base for transition-
+  // month days on/before this date (OT + double-pay premium still pay). Also, a
+  // weekly round never pays for days past the transition month — those defer to that
+  // month's monthly round (see computeLineForEmployee). NULL = normal salary/30×days.
+  if (!unames3.has("ft_salary_paid_through")) db.exec("ALTER TABLE users ADD COLUMN ft_salary_paid_through TEXT");
   // Month-aware flip (replaces the old blanket flip above): move FT-weekly →
   // monthly once their transition month has passed. FT converted THIS month stay
   // weekly; legacy FT-weekly with no ft_started_at flip immediately (old rule).

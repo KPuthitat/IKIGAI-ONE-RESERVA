@@ -40,6 +40,8 @@ export type EmployeeRow = {
   // วันที่เริ่มเป็นประจำ (PT→FT transition date). Drives which payroll table the
   // transition month lands in. NULL on legacy FT converted before this existed.
   ft_started_at: string | null;
+  // จ่ายเงินเดือนช่วงเปลี่ยนผ่านครบถึงวันที่ (owner 2026-08-18). NULL = คิดปกติ.
+  ft_salary_paid_through?: string | null;
   // 0 = ผู้บริหาร/ไม่ลงเวลา → เงินเดือน fix ไม่มี OT (owner 2026-07-12).
   track_attendance?: number;
   // 0 = ไม่รับส่วนแบ่งเซอร์วิสชาร์จ (แยกจาก track_attendance, owner 2026-07-21).
@@ -599,6 +601,9 @@ function EditModal({
   const [ftEffectiveDate, setFtEffectiveDate] = useState<string>(
     employee.ft_started_at ?? new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)
   );
+  // จ่ายเงินเดือนช่วงเปลี่ยนผ่านครบถึงวันที่ (owner 2026-08-18) — รอบรายสัปดาห์ที่คร่อม
+  // เดือนจะไม่คิดฐานเงินเดือนของวันเปลี่ยนผ่านที่ ≤ วันนี้ (จ่ายด้วยวิธีเก่าแล้ว).
+  const [ftSalaryPaidThrough, setFtSalaryPaidThrough] = useState<string>(employee.ft_salary_paid_through ?? "");
   // "วันเริ่มเป็นประจำ" is only meaningful for staff converted FROM part-time
   // (owner 2026-07-21). Born-FT staff (ft_started_at NULL) don't set it — the
   // field stays hidden unless the admin ticks this reveal toggle to backfill a
@@ -1306,6 +1311,21 @@ function EditModal({
                       รายเดือน — ยกเว้นเดือนแรกที่เพิ่งเปลี่ยนจากพาร์ทไทม์ จ่ายรายสัปดาห์ก่อน (ระบบสลับให้อัตโนมัติ)
                     </p>
                   </div>
+                  {/* จ่ายเงินเดือนช่วงเปลี่ยนผ่านครบถึงวันที่ (owner 2026-08-18) — เฉพาะคนที่
+                      ย้าย PT→ประจำ (มี ft_started_at) และแอดมินที่ดูเงินเดือนได้. ใช้กรณีเดือน
+                      เปลี่ยนผ่านจ่ายด้วยวิธีเก่า (÷สัปดาห์) ครบแล้ว → รอบคร่อมเดือนถัดไปจะไม่คิดฐานซ้ำ. */}
+                  {canViewPayroll && employee.ft_started_at && (
+                    <div className="col-span-2">
+                      <label className="label">จ่ายเงินเดือนช่วงเปลี่ยนผ่านครบถึงวันที่ (ถ้ามี)</label>
+                      <input className="input" type="date"
+                        value={ftSalaryPaidThrough}
+                        onChange={(e) => setFtSalaryPaidThrough(e.target.value)} />
+                      <p className="text-xs text-slate-500 mt-1">
+                        กรอกเฉพาะถ้าเดือนเปลี่ยนผ่านจ่ายด้วยวิธีเก่า (เงินเดือน÷สัปดาห์) ครบแล้ว · รอบรายสัปดาห์จะ
+                        ไม่คิดฐานเงินเดือนของวันเปลี่ยนผ่านที่ ≤ วันนี้ (OT + วันจ่ายสองเท่ายังจ่าย) · เว้นว่าง = คิดปกติ
+                      </p>
+                    </div>
+                  )}
                   <label className="col-span-2 flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:bg-slate-50">
                     <input type="checkbox" className="mt-0.5" checked={noClock}
                       onChange={(e) => setNoClock(e.target.checked)} />
