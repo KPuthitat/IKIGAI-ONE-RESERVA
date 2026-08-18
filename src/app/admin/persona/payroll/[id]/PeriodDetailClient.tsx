@@ -546,7 +546,7 @@ export default function PeriodDetailClient({
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <SummaryCard label={t(lang, "admin.persona.payroll.col.staff")}
           value={`${lines.length}`}
-          sub={`${t(lang, "admin.persona.employees.employment.pt")} ${totals.ptCount} · ${t(lang, "admin.persona.employees.employment.ft")} ${totals.ftCount}${totals.helperCount > 0 ? ` · ต่างสาขา ${totals.helperCount}` : ""}`} />
+          sub={`${t(lang, "admin.persona.employees.employment.pt")} ${totals.ptCount} · ${t(lang, "admin.persona.employees.employment.ft")} ${totals.ftCount}${totals.helperCount > 0 ? ` · ข้ามบริษัท ${totals.helperCount}` : ""}`} />
         <SummaryCard label={t(lang, "admin.persona.payroll.col.gross")}
           value={fmtMoney(totals.gross)} />
         <SummaryCard label={t(lang, "admin.persona.payroll.col.ot")}
@@ -671,14 +671,14 @@ export default function PeriodDetailClient({
                           (รายวัน=1 flat/day, รายชั่วโมง=2 like PT), not their own salary. */}
                       {l.is_helper === 1 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700"
-                          title="ทำงานต่างสาขา/บริษัท — จ่ายรายวัน หัก ณ ที่จ่าย 3% ไม่หักประกันสังคม">
-                          ต่างสาขา (รายวัน)
+                          title="ทำงานข้ามบริษัท — จ่ายรายวัน หัก ณ ที่จ่าย 3% ไม่หักประกันสังคม">
+                          ข้ามบริษัท (รายวัน)
                         </span>
                       )}
                       {l.is_helper === 2 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700"
-                          title="ทำงานต่างสาขา/บริษัท — จ่ายรายชั่วโมง (มี OT/วันพิเศษ) หัก ณ ที่จ่าย 3% ไม่หักประกันสังคม">
-                          ต่างสาขา (รายชั่วโมง)
+                          title="ทำงานข้ามบริษัท — จ่ายรายชั่วโมง (มี OT/วันพิเศษ) หัก ณ ที่จ่าย 3% ไม่หักประกันสังคม">
+                          ข้ามบริษัท (รายชั่วโมง)
                         </span>
                       )}
                       {(l.is_helper ?? 0) === 0 && l.employment_type === "pt" && (
@@ -705,7 +705,7 @@ export default function PeriodDetailClient({
                         </span>
                       )}
                       {l.is_helper === 2 && l.hourly_rate_snapshot != null && (
-                        <span>{fmtMoney(l.hourly_rate_snapshot)} {t(lang, "admin.persona.employees.bahtPerHour")} (ต่างสาขา)</span>
+                        <span>{fmtMoney(l.hourly_rate_snapshot)} {t(lang, "admin.persona.employees.bahtPerHour")} (ข้ามบริษัท)</span>
                       )}
                       {(l.is_helper ?? 0) === 0 && l.employment_type === "pt" && l.hourly_rate_snapshot != null && (
                         <span>{fmtMoney(l.hourly_rate_snapshot)} {t(lang, "admin.persona.employees.bahtPerHour")}</span>
