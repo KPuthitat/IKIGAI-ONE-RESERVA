@@ -1716,11 +1716,11 @@ function EditModal({
               accessible (ticked) non-home branches, one row each. Blank = not a helper. */}
           {currentUserRole === "super_admin" && canViewPayroll && employmentType === "ft" && branchSel.size >= 1 && (
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
-              <div className="text-sm font-medium text-slate-700 mb-1">ค่าจ้างช่วยงาน (ข้ามสาขา/บริษัท)</div>
+              <div className="text-sm font-medium text-slate-700 mb-1">ค่าตอบแทนทำงานต่างสาขา (ข้ามบริษัท)</div>
               <p className="text-[11px] text-slate-500 mb-2">
-                ตั้งเฉพาะสาขาที่พนักงานคนนี้ไป<b>ช่วยงาน</b> · เลือกจ่าย <b>รายวัน</b> (คิดต่อวันที่มา)
+                ตั้งเฉพาะสาขาที่พนักงานคนนี้ไป<b>ทำงานต่างสาขา/บริษัท</b> · เลือกจ่าย <b>รายวัน</b> (คิดต่อวันที่มา)
                 หรือ <b>รายชั่วโมง</b> (คิดตามชั่วโมง + OT + วันพิเศษ×1.5) · ระบบคิดให้อัตโนมัติจาก
-                การลงเวลา · หัก ณ ที่จ่าย 3% โดยบริษัทผู้จ่าย ไม่หักประกันสังคม · เว้นว่าง = ไม่ใช่ผู้ช่วย
+                การลงเวลา · หัก ณ ที่จ่าย 3% โดยบริษัทผู้จ่าย ไม่หักประกันสังคม · เว้นว่าง = ไม่คิดค่าตอบแทนต่างสาขาที่นี่
               </p>
               <div className="flex flex-col gap-1.5">
                 {allBranches.filter((b) => branchSel.has(b.id) && b.id !== primaryBranch).map((b) => {
@@ -1750,7 +1750,7 @@ function EditModal({
                 })}
               </div>
               {allBranches.filter((b) => branchSel.has(b.id) && b.id !== primaryBranch).length === 0 && (
-                <p className="text-[11px] text-slate-400">— เลือกสาขาที่ไปช่วย (ที่ไม่ใช่สาขาหลัก) ก่อน</p>
+                <p className="text-[11px] text-slate-400">— ติ๊กสาขาที่ไปทำงาน (ที่ไม่ใช่สาขาหลัก) ก่อน</p>
               )}
             </div>
           )}
