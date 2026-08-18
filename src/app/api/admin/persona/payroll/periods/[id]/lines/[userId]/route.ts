@@ -5,7 +5,7 @@ import { getDb, logPersonaAction } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import {
   computeLineFromMinutes, computeSso, computeWht, earliestDate, resolveHomeCompanyFlag,
-  branchHourlyRateSelect, branchDailyRateSelect,
+  branchHourlyRateSelect, branchDailyRateSelect, branchOnlyHourlyRateSelect,
   type EmployeePayrollSnapshot, type PayrollSettings
 } from "@/lib/payroll-compute";
 import { sumRedeemedDrinksForUser } from "@/lib/partner-drink-orders";
@@ -159,6 +159,7 @@ export async function PATCH(
       SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
              hire_date, ft_started_at,
              ${branchDailyRateSelect(period.branch_id)},
+             ${branchOnlyHourlyRateSelect(period.branch_id)},
              (SELECT MAX(proposed_last_day) FROM resignation_requests
                 WHERE user_id = users.id AND status = 'approved') AS resign_last_day,
              (SELECT MAX(effective_date) FROM termination_records
@@ -174,6 +175,7 @@ export async function PATCH(
       hire_date: string | null;
       ft_started_at: string | null;
       daily_rate: number | null;
+      branch_hourly_rate: number | null;
       resign_last_day: string | null;
       term_last_day: string | null;
     } | undefined;
@@ -204,7 +206,8 @@ export async function PATCH(
       hire_date: fresh?.hire_date ?? null,
       last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null,
       ft_started_at: fresh?.ft_started_at ?? null,
-      daily_rate: fresh?.daily_rate ?? null
+      daily_rate: fresh?.daily_rate ?? null,
+      branch_hourly_rate: fresh?.branch_hourly_rate ?? null
     };
 
     const computed = computeLineFromMinutes({
@@ -248,7 +251,10 @@ export async function PATCH(
       computed.base_pay, computed.ot_pay, computed.service_charge,
       computed.other_additions, computed.other_deductions,
       computed.gross_pay, computed.sso_amount, computed.tax_amount,
-      drinkDed, mealpassDed, Math.round((computed.net_pay - drinkDed - mealpassDed) * 100) / 100,
+      drinkDed, mealpassDed,
+      // Safety floor (owner 2026-08-11): welfare deductions never push net below 0,
+      // matching the other write paths.
+      Math.round(Math.max(0, computed.net_pay - drinkDed - mealpassDed) * 100) / 100,
       computed.salary_tax_mode_snapshot,
       computed.hourly_rate_snapshot, computed.monthly_salary_snapshot,
       computed.pay_cycle_snapshot,
@@ -285,9 +291,9 @@ export async function PATCH(
     // Cross-company helper (สังกัดคนละบริษัท) → no ประกันสังคม here; their home
     // employer withholds it (owner 2026-07-29). WHT is unaffected.
     const isHomeCompany = resolveHomeCompanyFlag(db, userId, period.branch_id);
-    // A day-rate helper line (owner 2026-08-17) is always WHT 3% by the paying
-    // company, never SSO — regardless of the person's home salary_tax_mode.
-    const isHelperLine = line.is_helper === 1;
+    // A helper line (owner 2026-08-17) — day-rate (1) or hourly (2) — is always WHT
+    // 3% by the paying company, never SSO, regardless of the home salary_tax_mode.
+    const isHelperLine = line.is_helper >= 1;
     let ssoAmount = 0;
     let taxAmount = 0;
     if (gross > 0) {

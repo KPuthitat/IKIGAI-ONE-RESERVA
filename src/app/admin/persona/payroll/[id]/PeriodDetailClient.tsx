@@ -361,10 +361,11 @@ export default function PeriodDetailClient({
       tax: acc.tax + l.tax_amount,
       net: acc.net + l.net_pay,
       ot: acc.ot + l.ot_pay,
-      // Helpers are counted on their own line, not as pt/ft (owner 2026-08-17).
-      ptCount: acc.ptCount + (l.is_helper !== 1 && l.employment_type === "pt" ? 1 : 0),
-      ftCount: acc.ftCount + (l.is_helper !== 1 && l.employment_type === "ft" ? 1 : 0),
-      helperCount: acc.helperCount + (l.is_helper === 1 ? 1 : 0),
+      // Helpers (day-rate=1 or hourly=2) are counted on their own line, not as pt/ft
+      // (owner 2026-08-18).
+      ptCount: acc.ptCount + ((l.is_helper ?? 0) === 0 && l.employment_type === "pt" ? 1 : 0),
+      ftCount: acc.ftCount + ((l.is_helper ?? 0) === 0 && l.employment_type === "ft" ? 1 : 0),
+      helperCount: acc.helperCount + ((l.is_helper ?? 0) > 0 ? 1 : 0),
       ssoCount: acc.ssoCount + (l.salary_tax_mode_snapshot === "sso" ? 1 : 0),
       whtCount: acc.whtCount + (l.salary_tax_mode_snapshot === "wht" ? 1 : 0),
       holidayMin: acc.holidayMin + l.holiday_minutes
@@ -665,21 +666,27 @@ export default function PeriodDetailClient({
                   <td className="py-2 pr-3">
                     <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
                       <span>{nameWithPrefix(l.title_prefix, l.display_name)}</span>
-                      {/* Cross-company/branch day-rate helper (owner 2026-08-17) —
-                          shown instead of the pt/ft badge; this branch's round pays
-                          a flat daily fee, not their own salary/hourly. */}
+                      {/* Cross-company/branch helper (owner 2026-08-18) — shown instead
+                          of the pt/ft badge; this branch's round pays a helper fee
+                          (รายวัน=1 flat/day, รายชั่วโมง=2 like PT), not their own salary. */}
                       {l.is_helper === 1 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700"
                           title="ช่วยงานข้ามสาขา/บริษัท — จ่ายรายวัน หัก ณ ที่จ่าย 3% ไม่หักประกันสังคม">
                           ช่วยงานรายวัน
                         </span>
                       )}
-                      {l.is_helper !== 1 && l.employment_type === "pt" && (
+                      {l.is_helper === 2 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700"
+                          title="ช่วยงานข้ามสาขา/บริษัท — จ่ายรายชั่วโมง (มี OT/วันพิเศษ) หัก ณ ที่จ่าย 3% ไม่หักประกันสังคม">
+                          ช่วยงานรายชั่วโมง
+                        </span>
+                      )}
+                      {(l.is_helper ?? 0) === 0 && l.employment_type === "pt" && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
                           {t(lang, "admin.persona.employees.employment.pt")}
                         </span>
                       )}
-                      {l.is_helper !== 1 && l.employment_type === "ft" && (
+                      {(l.is_helper ?? 0) === 0 && l.employment_type === "ft" && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
                           {t(lang, "admin.persona.employees.employment.ft")}
                         </span>
@@ -697,10 +704,13 @@ export default function PeriodDetailClient({
                           {fmtMoney(l.days_worked > 0 ? l.base_pay / l.days_worked : 0)} ฿/วัน × {l.days_worked} วัน
                         </span>
                       )}
-                      {l.is_helper !== 1 && l.employment_type === "pt" && l.hourly_rate_snapshot != null && (
+                      {l.is_helper === 2 && l.hourly_rate_snapshot != null && (
+                        <span>{fmtMoney(l.hourly_rate_snapshot)} {t(lang, "admin.persona.employees.bahtPerHour")} (ช่วยงาน)</span>
+                      )}
+                      {(l.is_helper ?? 0) === 0 && l.employment_type === "pt" && l.hourly_rate_snapshot != null && (
                         <span>{fmtMoney(l.hourly_rate_snapshot)} {t(lang, "admin.persona.employees.bahtPerHour")}</span>
                       )}
-                      {l.is_helper !== 1 && l.employment_type === "ft" && l.monthly_salary_snapshot != null && (
+                      {(l.is_helper ?? 0) === 0 && l.employment_type === "ft" && l.monthly_salary_snapshot != null && (
                         <span>
                           {fmtMoney(l.monthly_salary_snapshot)} ฿ /
                           {l.pay_cycle_snapshot === "weekly"

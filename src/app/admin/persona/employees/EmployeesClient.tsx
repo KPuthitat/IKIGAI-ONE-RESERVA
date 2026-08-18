@@ -499,13 +499,20 @@ function EditModal({
   );
   const setBranchRate = (bid: number, val: string) =>
     setBranchRates((prev) => { const n = new Map(prev); n.set(bid, val); return n; });
-  // Per-branch cross-company/branch helper day rate (super_admin) — branchId →
-  // rate string ("" = not a helper at this branch). Seeded from current (owner 2026-08-17).
-  const [branchDailyRates, setBranchDailyRates] = useState<Map<number, string>>(
-    new Map([...currentBranchDailyRates].map(([b, r]) => [b, String(r)]))
-  );
-  const setBranchDailyRate = (bid: number, val: string) =>
-    setBranchDailyRates((prev) => { const n = new Map(prev); n.set(bid, val); return n; });
+  // Per-branch cross-company/branch HELPER pay (super_admin) — branchId → { mode,
+  // value } where mode is 'daily' (บาท/วัน) or 'hourly' (บาท/ชม.). Seeded from the
+  // current daily_rate (→ daily) or per-branch hourly_rate (→ hourly). "" value =
+  // not a helper at this branch (owner 2026-08-18).
+  type HelperRow = { mode: "daily" | "hourly"; value: string };
+  const [helperRows, setHelperRows] = useState<Map<number, HelperRow>>(() => {
+    const m = new Map<number, HelperRow>();
+    for (const [b, r] of currentBranchDailyRates) m.set(b, { mode: "daily", value: String(r) });
+    for (const [b, r] of currentBranchRates) if (!m.has(b)) m.set(b, { mode: "hourly", value: String(r) });
+    return m;
+  });
+  const getHelperRow = (bid: number): HelperRow => helperRows.get(bid) ?? { mode: "daily", value: "" };
+  const setHelperRow = (bid: number, patch: Partial<HelperRow>) =>
+    setHelperRows((prev) => { const n = new Map(prev); n.set(bid, { ...getHelperRow(bid), ...patch }); return n; });
   const [branchBusy, setBranchBusy] = useState(false);
   const [branchMsg, setBranchMsg] = useState<string | null>(null);
   function toggleBranch(bid: number) {
@@ -535,12 +542,13 @@ function EditModal({
               currentUserRole === "super_admin" && primaryBranch != null && branchSel.has(primaryBranch)
                 ? primaryBranch
                 : undefined,
-            // Per-branch rate overrides — for super_admin + payroll access. Each
-            // entry carries hourly_rate (PT only) and/or the helper daily_rate
-            // (owner 2026-08-17, any employment type). "" clears that field (→
-            // default / not-a-helper); a non-numeric value is skipped so a typo
-            // can't zero someone's pay. The server writes only the fields present,
-            // so sending daily_rate never wipes hourly_rate and vice-versa.
+            // Per-branch rate overrides — for super_admin + payroll access. The
+            // server writes only the fields present, so we send exactly what each
+            // employment type controls (owner 2026-08-18):
+            //   PT  → per-branch hourly_rate (the existing รายชั่วโมง section).
+            //   FT  → the helper box: each non-home branch is รายวัน (daily_rate) or
+            //         รายชั่วโมง (hourly_rate); the OTHER field is cleared so switching
+            //         mode never leaves a stale rate. blank/0/invalid → not a helper.
             rates: currentUserRole === "super_admin" && canViewPayroll
               ? [...branchSel].map((bid) => {
                   const entry: { branch_id: number; hourly_rate?: number | null; daily_rate?: number | null } = { branch_id: bid };
@@ -548,12 +556,13 @@ function EditModal({
                     const raw = (branchRates.get(bid) ?? "").trim();
                     if (raw === "") entry.hourly_rate = null;
                     else { const n = Number(raw); if (Number.isFinite(n) && n >= 0) entry.hourly_rate = n; }
+                  } else if (employmentType === "ft" && bid !== primaryBranch) {
+                    const row = getHelperRow(bid);
+                    const n = Number(row.value.trim());
+                    const val = (row.value.trim() !== "" && Number.isFinite(n) && n > 0) ? n : null;
+                    if (row.mode === "daily") { entry.daily_rate = val; entry.hourly_rate = null; }
+                    else { entry.hourly_rate = val; entry.daily_rate = null; }
                   }
-                  const draw = (branchDailyRates.get(bid) ?? "").trim();
-                  // blank / 0 / invalid → clear (not a helper here); only a positive
-                  // rate marks a day-rate helper (owner 2026-08-17).
-                  if (draw === "") entry.daily_rate = null;
-                  else { const dn = Number(draw); entry.daily_rate = (Number.isFinite(dn) && dn > 0) ? dn : null; }
                   return entry;
                 })
               : undefined
@@ -1698,33 +1707,47 @@ function EditModal({
               </div>
             </div>
           )}
-          {/* Cross-company/branch helper day rate (owner 2026-08-17) — a person who
-              comes to help at a branch of ANOTHER company (พรนภา สังกัด AT HOME ไปช่วย)
-              is paid a flat daily fee there, computed automatically from their clock-ins
-              in that branch's weekly round (WHT 3%, no ประกันสังคม). super_admin +
-              payroll access; shown for any employment type. Blank = not a helper there. */}
-          {currentUserRole === "super_admin" && canViewPayroll && branchSel.size >= 1 && (
+          {/* Cross-company/branch helper pay (owner 2026-08-18) — an FT who comes to
+              help at another company's branch (พรนภา สังกัด AT HOME ไปช่วย) is paid
+              there either รายวัน (flat/day) or รายชั่วโมง (like a PT: OT + วันพิเศษ×1.5),
+              computed automatically from their clock-ins in that branch's weekly round
+              (WHT 3%, no ประกันสังคม). super_admin + payroll access, FT only; the
+              per-branch รายชั่วโมง for PT is handled by the section above. Only
+              accessible (ticked) non-home branches, one row each. Blank = not a helper. */}
+          {currentUserRole === "super_admin" && canViewPayroll && employmentType === "ft" && branchSel.size >= 1 && (
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
-              <div className="text-sm font-medium text-slate-700 mb-1">ค่าจ้างช่วยงานรายวัน (ข้ามสาขา/บริษัท)</div>
+              <div className="text-sm font-medium text-slate-700 mb-1">ค่าจ้างช่วยงาน (ข้ามสาขา/บริษัท)</div>
               <p className="text-[11px] text-slate-500 mb-2">
-                ตั้งเฉพาะสาขาที่พนักงานคนนี้ไป<b>ช่วยงาน</b> (คนละบริษัท/สาขา) · ระบบจะคิด
-                ให้อัตโนมัติ = เรตรายวัน × จำนวนวันที่มีลงเวลาที่สาขานั้น · หัก ณ ที่จ่าย 3%
-                โดยบริษัทผู้จ่าย ไม่หักประกันสังคม · เว้นว่าง = ไม่ใช่ผู้ช่วยรายวันที่สาขานี้
+                ตั้งเฉพาะสาขาที่พนักงานคนนี้ไป<b>ช่วยงาน</b> · เลือกจ่าย <b>รายวัน</b> (คิดต่อวันที่มา)
+                หรือ <b>รายชั่วโมง</b> (คิดตามชั่วโมง + OT + วันพิเศษ×1.5) · ระบบคิดให้อัตโนมัติจาก
+                การลงเวลา · หัก ณ ที่จ่าย 3% โดยบริษัทผู้จ่าย ไม่หักประกันสังคม · เว้นว่าง = ไม่ใช่ผู้ช่วย
               </p>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                {allBranches.filter((b) => branchSel.has(b.id) && b.id !== primaryBranch).map((b) => (
-                  <label key={b.id} className="flex items-center gap-2 text-sm text-slate-700">
-                    <span className="flex-1 truncate">{b.name}</span>
-                    <input
-                      type="number" min="0" step="0.01" inputMode="decimal"
-                      className="input !w-24 !py-1 text-sm text-right"
-                      placeholder="บาท/วัน"
-                      value={branchDailyRates.get(b.id) ?? ""}
-                      disabled={branchBusy}
-                      onChange={(e) => setBranchDailyRate(b.id, e.target.value)}
-                    />
-                  </label>
-                ))}
+              <div className="flex flex-col gap-1.5">
+                {allBranches.filter((b) => branchSel.has(b.id) && b.id !== primaryBranch).map((b) => {
+                  const row = getHelperRow(b.id);
+                  return (
+                    <div key={b.id} className="flex items-center gap-2 text-sm text-slate-700">
+                      <span className="flex-1 truncate">{b.name}</span>
+                      <input
+                        type="number" min="0" step="0.01" inputMode="decimal"
+                        className="input !w-24 !py-1 text-sm text-right"
+                        placeholder={row.mode === "daily" ? "บาท/วัน" : "บาท/ชม."}
+                        value={row.value}
+                        disabled={branchBusy}
+                        onChange={(e) => setHelperRow(b.id, { value: e.target.value })}
+                      />
+                      <select
+                        className="input !w-28 !py-1 text-sm"
+                        value={row.mode}
+                        disabled={branchBusy}
+                        onChange={(e) => setHelperRow(b.id, { mode: e.target.value as "daily" | "hourly" })}
+                      >
+                        <option value="daily">รายวัน</option>
+                        <option value="hourly">รายชั่วโมง</option>
+                      </select>
+                    </div>
+                  );
+                })}
               </div>
               {allBranches.filter((b) => branchSel.has(b.id) && b.id !== primaryBranch).length === 0 && (
                 <p className="text-[11px] text-slate-400">— เลือกสาขาที่ไปช่วย (ที่ไม่ใช่สาขาหลัก) ก่อน</p>

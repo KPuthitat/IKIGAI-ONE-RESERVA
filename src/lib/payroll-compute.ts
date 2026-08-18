@@ -89,6 +89,10 @@ export type EmployeePayrollSnapshot = {
    *  by the paying company, no SSO — overriding their own hourly/salary for this
    *  branch's round. null/undefined (the default) = not a helper here → unchanged. */
   daily_rate?: number | null;
+  /** RAW per-branch hourly rate at THIS branch (no fallback to the default rate) —
+   *  owner 2026-08-18. Set on an FT's non-home branch, it marks an "hourly helper":
+   *  paid by the hour like a PT there. null/undefined = not set. */
+  branch_hourly_rate?: number | null;
 };
 
 /** Which cycle an FT employee is paid on FOR A GIVEN PERIOD (owner 2026-07-16).
@@ -149,6 +153,55 @@ export function branchDailyRateSelect(branchId: number | null): string {
     ? `(SELECT ub.daily_rate FROM user_branches ub
          WHERE ub.user_id = users.id AND ub.branch_id = ${branchId}) AS daily_rate`
     : "NULL AS daily_rate";
+}
+
+// RAW per-branch hourly rate — NO fallback to users.hourly_rate (owner 2026-08-18).
+// Distinct from branchHourlyRateSelect (which COALESCEs to the default) because
+// the presence of a per-branch hourly rate on an FT is the signal "pay this
+// cross-company helper by the hour here", and a default rate must not trip it.
+export function branchOnlyHourlyRateSelect(branchId: number | null): string {
+  return branchId != null
+    ? `(SELECT ub.hourly_rate FROM user_branches ub
+         WHERE ub.user_id = users.id AND ub.branch_id = ${branchId}) AS branch_hourly_rate`
+    : "NULL AS branch_hourly_rate";
+}
+
+/** is_helper column values (owner 2026-08-18): 0 = normal line, 1 = day-rate
+ *  helper (flat/day), 2 = hourly helper (paid by the hour via the PT engine). */
+export const HELPER_DAILY = 1;
+export const HELPER_HOURLY = 2;
+
+/** How a person is paid at THIS period's branch, if they're a cross-company/branch
+ *  helper there (owner 2026-08-18):
+ *   - 'daily'  : a positive daily_rate → flat fee per day-with-a-clock-in.
+ *   - 'hourly' : an FT (paid elsewhere) with a per-branch hourly rate at a
+ *                NON-home branch → paid by the hour like a PT (OT + วันพิเศษ×1.5),
+ *                WHT 3% by the paying company, no SSO. (A real PT is already in the
+ *                weekly round and paid hourly by the normal path — not a helper.)
+ *   - null     : not a helper here → normal salary/hourly engine. */
+export function helperMode(emp: EmployeePayrollSnapshot): "daily" | "hourly" | null {
+  if (emp.daily_rate != null && emp.daily_rate > 0) return "daily";
+  if (emp.employment_type === "ft" && emp.is_primary_branch === 0 &&
+      emp.branch_hourly_rate != null && emp.branch_hourly_rate > 0) return "hourly";
+  return null;
+}
+
+/** Cast an hourly helper's snapshot so the PT hourly engine computes them: paid
+ *  by the hour at the per-branch rate, weekly cycle. PT semantics already give
+ *  WHT 3% + no SSO, so no tax special-casing is needed downstream. */
+export function asHourlyHelper(emp: EmployeePayrollSnapshot): EmployeePayrollSnapshot {
+  return {
+    ...emp,
+    employment_type: "pt",
+    hourly_rate: emp.branch_hourly_rate ?? null,
+    monthly_salary: null,
+    pay_cycle: "weekly",
+    daily_rate: null,
+    // WHT 3% by the paying company, never SSO here — set explicitly so callers that
+    // derive tax from the snapshot (recomputeLine) agree with the PT engine.
+    salary_tax_mode: "wht",
+    is_home_company: 0
+  };
 }
 
 // Distinct Bangkok-local dates on which the worker has at least one clock-IN
@@ -1219,6 +1272,14 @@ export function computeLineFromMinutes(args: {
     serviceCharge = 0, otherAdditions = 0, otherDeductions = 0
   } = args;
 
+  const hMode = helperMode(e);
+  // Hourly helper (owner 2026-08-18): pay by the hour like a PT (OT + วันพิเศษ×1.5,
+  // WHT 3%, no SSO) — recompute on a PT-cast snapshot, then flag the line.
+  if (hMode === "hourly") {
+    const pt = computeLineFromMinutes({ ...args, employee: asHourlyHelper(e) });
+    // Keep the REAL employment_type; is_helper carries the helper distinction.
+    return { ...pt, is_helper: HELPER_HOURLY, employment_type: e.employment_type };
+  }
   // Cross-company/branch day-rate helper (owner 2026-08-17): pay daily_rate ×
   // days (the admin-entered day count on the manual/add paths), WHT 3%, no SSO.
   // Short-circuits the hourly/salary engine entirely — same rule as the full
@@ -1226,7 +1287,7 @@ export function computeLineFromMinutes(args: {
   // (service charge / additions / deductions) are preserved and folded into gross,
   // matching the normal path's WHT-on-gross treatment. rate must be > 0 (0/blank =
   // not a helper) so a mistaken 0 never zeroes a real employee's pay.
-  if (e.daily_rate != null && e.daily_rate > 0) {
+  if (hMode === "daily") {
     const h = computeHelperLine({ employee: e, clockInDays: daysWorked, settings });
     if (serviceCharge === 0 && otherAdditions === 0 && otherDeductions === 0) return h;
     const gross = round2(h.base_pay + serviceCharge + otherAdditions);
@@ -1505,8 +1566,14 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   // in and paid rate × วันที่ลงเวลา. Only when the period is branch-stamped and the
   // rate is > 0 (a 0/blank rate = not a helper). "0" keeps NULL-branch periods
   // valid SQL (the guard below de-references it).
+  // A helper is either: a positive daily_rate at this branch (any employment type),
+  // OR an FT (paid elsewhere) with a per-branch hourly rate at a NON-home branch
+  // (owner 2026-08-18 — paid by the hour like a PT). Real PTs are already selected
+  // by the PT clause, so the hourly arm is FT-only.
   const helperExists = period.branch_id != null
-    ? "EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = users.id AND ub.branch_id = @bid AND ub.daily_rate IS NOT NULL AND ub.daily_rate > 0)"
+    ? `EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = users.id AND ub.branch_id = @bid
+                AND ((ub.daily_rate IS NOT NULL AND ub.daily_rate > 0)
+                     OR (users.employment_type = 'ft' AND ub.is_primary = 0 AND ub.hourly_rate IS NOT NULL AND ub.hourly_rate > 0)))`
     : "0";
   const helperClause = period.branch_id != null ? " OR " + helperExists : "";
   let staffWhere: string;
@@ -1571,6 +1638,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
            ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
            hire_date, ft_started_at,
            ${branchDailyRateSelect(period.branch_id)},
+           ${branchOnlyHourlyRateSelect(period.branch_id)},
            ${LAST_WORKING_DAY_SELECT},
            ${primaryExpr},
            ${homeCompanyExpr}
@@ -1759,7 +1827,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
       // here (WHT 3% by the paying company, no SSO), instead of their own
       // hourly/salary. Handled before the normal path and short-circuited so the
       // salary/hourly engine never runs for them. No clock-in here → not this round.
-      if (emp.daily_rate != null && emp.daily_rate > 0) {
+      const mode = helperMode(emp);
+      if (mode === "daily") {
         const hEntries = period.data_source === "manual" ? [] : entriesByUser.get(emp.user_id) ?? [];
         const hDays = countClockInDays(hEntries);
         if (hDays === 0) { skipped++; continue; }
@@ -1797,7 +1866,10 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
       const hasOverride = (overridesByUser.get(emp.user_id)?.length ?? 0) > 0;
       const hasLeave = (leaveDaysByUser.get(emp.user_id) ?? 0) > 0;
       const hasOt = (approvedOtByUser.get(emp.user_id)?.size ?? 0) > 0;
-      const isSalaried = (emp.monthly_salary ?? 0) > 0;
+      // An hourly helper is paid by the hour here, NOT salaried — so a no-footprint
+      // hourly helper is skipped just like a PT (owner 2026-08-18), not kept as a
+      // 0-baht salaried line.
+      const isSalaried = (emp.monthly_salary ?? 0) > 0 && mode !== "hourly";
       if (!isSalaried && !hasRoster && !hasEntries && !hasOverride && !hasLeave && !hasOt) {
         skipped++;
         continue;
@@ -1819,8 +1891,12 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         ? 0
         : leaveDaysByUser.get(emp.user_id) ?? 0;
 
+      // Hourly helper (owner 2026-08-18): compute via the PT engine (OT + วันพิเศษ
+      // ×1.5, WHT 3%, no SSO all fall out of PT semantics) on a cast snapshot, then
+      // flag the line so the UI shows it as a helper.
+      const empForCompute = mode === "hourly" ? asHourlyHelper(emp) : emp;
       const line = computeLineForEmployee({
-        employee: emp,
+        employee: empForCompute,
         shifts,
         unpaired,
         leaveDays,
@@ -1839,6 +1915,10 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         fieldOverridesByDate: fieldOverridesByUser.get(emp.user_id),
         leaveDates: leaveDatesByUser.get(emp.user_id)
       });
+      // Flag the helper line but store the person's REAL employment_type (the PT
+      // cast was only to borrow the hourly math), so every write path agrees and
+      // non-UI consumers still see the true type — same as the day-rate helper.
+      if (mode === "hourly") { line.is_helper = HELPER_HOURLY; line.employment_type = emp.employment_type; }
 
       // Staff drink-welfare purchases (จ้อจี้) redeemed in this period at this
       // branch → a separate deduction, net_pay stored after it (owner 2026-07-30).
@@ -1975,6 +2055,7 @@ export function recomputeLine(
     SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
            hire_date, ft_started_at,
            ${branchDailyRateSelect(period.branch_id)},
+           ${branchOnlyHourlyRateSelect(period.branch_id)},
            ${LAST_WORKING_DAY_SELECT}
     FROM users WHERE id = ?
   `).get(userId) as {
@@ -1982,7 +2063,7 @@ export function recomputeLine(
     monthly_salary: number | null; pay_cycle: "weekly" | "monthly" | null;
     salary_tax_mode: "sso" | "wht" | null; track_attendance: number | null;
     hire_date: string | null; ft_started_at: string | null;
-    daily_rate: number | null;
+    daily_rate: number | null; branch_hourly_rate: number | null;
     resign_last_day: string | null; term_last_day: string | null;
   } | undefined;
 
@@ -2172,14 +2253,17 @@ export function recomputeLine(
     hire_date: fresh?.hire_date ?? null,
     last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null,
     ft_started_at: fresh?.ft_started_at ?? null,
-    daily_rate: fresh?.daily_rate ?? null
+    daily_rate: fresh?.daily_rate ?? null,
+    branch_hourly_rate: fresh?.branch_hourly_rate ?? null
   };
 
-  // Cross-company/branch day-rate HELPER (owner 2026-08-17): recompute as a flat
+  const rlMode = helperMode(employee);
+
+  // Cross-company/branch DAY-RATE helper (owner 2026-08-17): recompute as a flat
   // daily fee — days-with-a-clock-in × daily_rate, WHT 3% by the paying company,
   // no SSO — matching computePayrollPeriod's helper branch so every entry point
   // agrees. Short-circuits the hourly/salary engine (no OT, leave, or extras).
-  if (employee.daily_rate != null && employee.daily_rate > 0) {
+  if (rlMode === "daily") {
     const hDays = countClockInDays(userEntries);
     // No clock-in here → not a helper this round. Match computePayrollPeriod, which
     // skips a 0-day helper entirely: never INSERT a phantom 0-baht helper line.
@@ -2233,26 +2317,34 @@ export function recomputeLine(
     return;
   }
 
+  // Hourly helper (owner 2026-08-18): compute via the PT engine on a cast snapshot
+  // (OT + วันพิเศษ×1.5, WHT 3%, no SSO all fall out of PT semantics), then flag the
+  // line. Normal lines use the employee snapshot unchanged.
+  const rlEmp = rlMode === "hourly" ? asHourlyHelper(employee) : employee;
   const computed = computeLineForEmployee({
-    employee, shifts, unpaired: auto.unpaired,
+    employee: rlEmp, shifts, unpaired: auto.unpaired,
     leaveDays: existing.leave_days,
     cycle: period.cycle, periodStart: period.period_start, periodEnd: period.period_end, payDate: period.pay_date,
     settings, holidaySet, doubleSet, scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates
   });
+  // No worked time and no existing line → don't create a phantom 0-baht hourly-helper
+  // line (matches computePayrollPeriod's skip).
+  if (rlMode === "hourly" && !lineExists && computed.regular_minutes === 0 && computed.ot_minutes === 0) return;
 
   // Preserve admin money extras; recompute gross/SSO/tax/net to include them.
   const svc = existing.service_charge;
   const add = existing.other_additions;
   const ded = existing.other_deductions;
   const gross = computed.base_pay + computed.ot_pay + svc + add;
-  const taxMode = employee.salary_tax_mode ?? "sso";
+  const taxMode = rlEmp.salary_tax_mode ?? "sso";
   let sso = 0;
   let tax = 0;
   if (gross > 0) {
     if (taxMode === "wht") tax = computeWht(gross, settings);
     // Cross-company helper (is_home_company=0) → no SSO here; home employer sends it.
-    else if (employee.is_home_company !== 0) sso = computeSso(computed.base_pay, period.cycle, settings); // SSO on base salary only
+    else if (rlEmp.is_home_company !== 0) sso = computeSso(computed.base_pay, period.cycle, settings); // SSO on base salary only
   }
+  const rlHelperFlag = rlMode === "hourly" ? HELPER_HOURLY : 0;
   // Staff drink-welfare (จ้อจี้) deductions redeemed in this period+branch —
   // a separate column, refreshed from the ledger on every recompute (owner
   // 2026-07-30). net stored after it.
@@ -2273,7 +2365,7 @@ export function recomputeLine(
           sso_amount = ?, tax_amount = ?, drink_deductions = ?, mealpass_deductions = ?, net_pay = ?,
           hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
           pay_cycle_snapshot = ?, salary_tax_mode_snapshot = ?,
-          is_helper = 0,
+          employment_type = ?, is_helper = ?,
           overridden = 1, reviewed_at = NULL, reviewed_by = NULL,
           updated_at = CURRENT_TIMESTAMP
       WHERE period_id = ? AND user_id = ?
@@ -2283,8 +2375,11 @@ export function recomputeLine(
       computed.days_worked, computed.unpaired_clockins,
       round2(computed.base_pay), round2(computed.ot_pay), round2(gross),
       round2(sso), round2(tax), round2(drinkDed), round2(mealpassDed), round2(net),
-      employee.hourly_rate, employee.monthly_salary,
-      employee.pay_cycle, taxMode,
+      rlEmp.hourly_rate, rlEmp.monthly_salary,
+      rlEmp.pay_cycle, taxMode,
+      // Store the REAL employment_type (an hourly helper is cast to PT only for the
+      // math); is_helper carries the helper distinction. Keeps all paths consistent.
+      employee.employment_type, rlHelperFlag,
       periodId, userId
     );
   } else {
@@ -2299,16 +2394,18 @@ export function recomputeLine(
         shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
         holiday_minutes, days_worked, leave_days, unpaired_clockins,
         base_pay, ot_pay, service_charge, other_additions, gross_pay,
-        sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay
-      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?)
+        sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay,
+        is_helper
+      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?)
     `).run(
       periodId, userId, existing.employee_code, existing.display_name, employee.employment_type,
-      employee.pay_cycle, employee.hourly_rate, employee.monthly_salary,
+      rlEmp.pay_cycle, rlEmp.hourly_rate, rlEmp.monthly_salary,
       taxMode,
       computed.shift_minutes, computed.break_deducted_minutes, computed.regular_minutes, computed.ot_minutes,
       computed.holiday_minutes, computed.days_worked, existing.leave_days, computed.unpaired_clockins,
       round2(computed.base_pay), round2(computed.ot_pay), round2(svc), round2(add), round2(gross),
-      round2(sso), round2(tax), round2(ded), round2(drinkDed), round2(mealpassDed), round2(net)
+      round2(sso), round2(tax), round2(ded), round2(drinkDed), round2(mealpassDed), round2(net),
+      rlHelperFlag
     );
   }
 }

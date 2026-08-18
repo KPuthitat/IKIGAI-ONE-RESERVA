@@ -4,7 +4,7 @@
 // Guarantees: salary/30 per unpaid day, FT only, default 0 = no change,
 // and the deduction never drives base pay negative.
 
-import { computeLineFromMinutes, computeLineForEmployee, computeSso, computeHelperLine, countClockInDays, applyPtGrace, keepEntryForBranch, overridesToShiftMap, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift, type EntryWithBranch } from "../src/lib/payroll-compute";
+import { computeLineFromMinutes, computeLineForEmployee, computeSso, computeHelperLine, countClockInDays, helperMode, applyPtGrace, keepEntryForBranch, overridesToShiftMap, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift, type EntryWithBranch } from "../src/lib/payroll-compute";
 
 const SETTINGS: PayrollSettings = {
   ot_mode: "flat", ot_flat_per_15min: 0,
@@ -35,6 +35,12 @@ function eq(name: string, got: number, want: number) {
   const ok = Math.abs(got - want) < 0.005;
   if (ok) { pass++; console.log(`  ✓ ${name}`); }
   else { fail++; console.log(`  ✗ ${name}: got ${got}, want ${want}`); }
+}
+// Strict-equality assert for non-numbers (strings, null) — module-level so it's in
+// scope everywhere (the branch-test block has its own local `ok`).
+function okv(name: string, got: unknown, want: unknown) {
+  if (got === want) { pass++; console.log(`  ✓ ${name}`); }
+  else { fail++; console.log(`  ✗ ${name}: got ${String(got)}, want ${String(want)}`); }
 }
 
 function line(emp: EmployeePayrollSnapshot, unpaidLeaveDays: number) {
@@ -678,6 +684,48 @@ console.log("\nผู้ช่วยข้ามบริษัท (จ่าย
   eq("helper + extras → WHT 37.5", withExtras.tax_amount, 37.5);
   eq("helper + extras → net 1162.5", withExtras.net_pay, 1162.5);
   eq("helper + extras → additions kept", withExtras.other_additions, 200);
+}
+
+// ── Hourly helper (owner 2026-08-18) — FT ข้ามบริษัทที่จ่ายรายชั่วโมง ────────
+// คิดเหมือน PT: ชั่วโมงจริง × เรต (+OT/วันพิเศษ×1.5), WHT 3%, ไม่หัก SSO.
+console.log("\nผู้ช่วยข้ามบริษัท (จ่ายรายชั่วโมง):");
+{
+  const hourlyHelper: EmployeePayrollSnapshot = {
+    user_id: 10, display_name: "อรุณ", employment_type: "ft", employee_code: "AH02",
+    hourly_rate: null, monthly_salary: 25000, pay_cycle: "monthly", salary_tax_mode: "sso",
+    track_attendance: 1, is_primary_branch: 0, is_home_company: 0,
+    hire_date: null, last_working_day: null, ft_started_at: null,
+    daily_rate: null, branch_hourly_rate: 60
+  };
+  // helperMode gating
+  okv("helperMode: FT + เรตรายชั่วโมงต่อสาขา + ไม่ใช่สาขาหลัก → hourly", helperMode(hourlyHelper), "hourly");
+  okv("helperMode: daily_rate ชนะ (→ daily)", helperMode({ ...hourlyHelper, daily_rate: 350 }), "daily");
+  okv("helperMode: สาขาหลัก → ไม่ใช่ helper (null)", helperMode({ ...hourlyHelper, is_primary_branch: 1 }), null);
+  okv("helperMode: PT ปกติ → null", helperMode(ptHourly(60)), null);
+
+  // 8 ชม. × 60 = 480; WHT 3% = 14.4; SSO 0; net 465.6.
+  const hh = computeLineFromMinutes({
+    employee: hourlyHelper, regularMinutes: 480, otMinutes: 0, holidayMinutes: 0,
+    leaveDays: 0, daysWorked: 1, unpaired: 0,
+    cycle: "weekly", periodStart: "2026-08-03", periodEnd: "2026-08-09", settings: SETTINGS
+  });
+  eq("hourly helper 8ชม.×60 → base 480", hh.base_pay, 480);
+  eq("hourly helper → WHT 3% = 14.4", hh.tax_amount, 14.4);
+  eq("hourly helper → SSO 0 (ข้ามบริษัท)", hh.sso_amount, 0);
+  eq("hourly helper → net 465.6", hh.net_pay, 465.6);
+  eq("hourly helper → is_helper 2", hh.is_helper ?? 0, 2);
+  // Computed with PT math but stores the REAL employment_type (ft) — is_helper
+  // carries the distinction, so reports still see the true type.
+  okv("hourly helper → เก็บ employment_type เดิม (ft)", hh.employment_type, "ft");
+
+  // OT: with flat OT 25/15min, 60 OT min = 4×25 = 100 on top of base.
+  const otHH = computeLineFromMinutes({
+    employee: hourlyHelper, regularMinutes: 480, otMinutes: 60, holidayMinutes: 0,
+    leaveDays: 0, daysWorked: 1, unpaired: 0,
+    cycle: "weekly", periodStart: "2026-08-03", periodEnd: "2026-08-09",
+    settings: { ...SETTINGS, ot_mode: "flat", ot_flat_per_15min: 25 }
+  });
+  eq("hourly helper → มี OT (flat 25/15น. × 4 = 100)", otHH.ot_pay, 100);
 }
 
 // countClockInDays — distinct Bangkok dates with a clock-IN (owner 2026-08-17).
