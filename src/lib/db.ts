@@ -2528,6 +2528,20 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_svc_manual_branch_month
     ON svc_manual_allocations(branch_id, year_month);
   `);
+  // svc_shared_pool (owner 2026-08-18) — a (company, month) flagged here pools SVC
+  // across ALL the company's branches for that month: every branch's daily amount
+  // goes into one pool split among everyone who worked that day (any branch), so a
+  // worker at a branch that hasn't entered SVC (e.g. a newly-opened HYPO) still
+  // gets a share. Presence of the row = shared ON; absence = per-branch (default).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS svc_shared_pool (
+      company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      year_month TEXT NOT NULL,
+      enabled_by_user_id INTEGER REFERENCES users(id),
+      enabled_at TEXT,
+      PRIMARY KEY(company_id, year_month)
+    );
+  `);
 
   // ── Roster (TC-R, 2026-05) ─────────────────────────────────────
   //
