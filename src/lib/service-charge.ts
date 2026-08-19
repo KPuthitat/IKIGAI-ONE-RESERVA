@@ -1111,10 +1111,482 @@ export function setSharedSvcMonth(args: {
   }
 }
 
-/** Company-wide SVC summary for a month (owner 2026-08-18). Non-shared mode:
- *  reuse computeMonthlySvcSummary per branch (tested), then roll up per user at
- *  company level. Shared mode is handled by computeCompanySvcSummaryShared. */
+// ── Per-branch SVC context (worked minutes + eligibility) ─────────────────
+// The pool-INDEPENDENT half of a branch's monthly SVC: who is SVC-eligible here
+// (members + mid-day transfer visitors), how many CLAMPED minutes each worked per
+// day, their lateness, resignation-forfeit and food-clawback inputs. This mirrors
+// steps 2–8 of computeMonthlySvcSummary — reusing the SAME minute helpers
+// (buildScheduledByUser / computeSvcClampedMinutesByDay / netScheduledMinutes /
+// computeFoodClawbacks) so the clamping is identical — and returns the
+// intermediates. The company shared-pool mode ("รวมกอง") layers a POOLED daily
+// amount across every branch on top of these (owner 2026-08-18).
+//
+// IMPORTANT: the branch page (computeMonthlySvcSummary) is untouched and remains
+// the source of truth for a single branch. This context is used ONLY by the
+// company shared-pool view, where the distribution is INTENTIONALLY different
+// (one pool split across all branches). Keep the minute logic below in sync with
+// computeMonthlySvcSummary if that engine's clamping rules change.
+type BranchSvcContext = {
+  totalCollected: number;
+  amountByDate: Map<string, number>;
+  staff: StaffMeta[];
+  memberIds: Set<number>;
+  visitorIds: Set<number>;
+  workedByDay: Map<string, Map<number, number>>;      // clamped + capped + exec-credit
+  otUserDates: Set<string>;                           // "uid:date" with approved OT (skip 480 cap)
+  redeemedFood: Array<{ uid: number; d: string; credit: number }>;  // confirmed meals w/ credit
+  lateByUser: Map<number, { lateMinutes: number; anyComputable: boolean }>;
+  rosterScheduledByUser: Map<number, number>;         // real roster minutes (0 if none)
+  forfeitedFromResign: Set<number>;
+};
+
+function computeBranchSvcContext(branchId: number, yearMonth: string): BranchSvcContext {
+  const db = getDb();
+  const start = `${yearMonth}-01`;
+  const end = `${yearMonth}-31`;
+  const [yyyy, mm] = yearMonth.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(yyyy, mm, 0)).getUTCDate();
+  const monthStartIso = new Date(`${start}T00:00:00+07:00`).toISOString();
+  const monthEndIso = new Date(`${yearMonth}-${String(daysInMonth).padStart(2, "0")}T23:59:59+07:00`).toISOString();
+
+  // 1. Daily SVC amounts
+  const dailyRows = db.prepare(`
+    SELECT date, amount_baht FROM daily_service_charge
+    WHERE branch_id = ? AND date >= ? AND date <= ?
+  `).all(branchId, start, end) as Array<{ date: string; amount_baht: number }>;
+  const amountByDate = new Map<string, number>();
+  for (const r of dailyRows) amountByDate.set(r.date, r.amount_baht);
+  const totalCollected = dailyRows.reduce((s, r) => s + r.amount_baht, 0);
+
+  // 2. Branch roster (members) — same eligibility filters as computeMonthlySvcSummary.
+  const staff = db.prepare(`
+    SELECT u.id AS userId, u.display_name AS displayName,
+           u.employment_type AS employmentType,
+           u.shift_start_time AS shiftStartTime,
+           u.weekly_off_days AS weeklyOffDays,
+           COALESCE(u.track_attendance, 1) AS trackAttendance,
+           u.salary_tax_mode AS taxMode,
+           u.title_prefix AS titlePrefix,
+           u.employee_code AS employeeCode,
+           u.hire_date AS hireDate,
+           u.group_insurance_start_month AS groupInsuranceStartMonth
+    FROM users u
+    JOIN user_branches ub ON ub.user_id = u.id
+    WHERE ub.branch_id = ? AND u.role IN ('staff', 'admin')
+      AND u.receives_service_charge = 1
+      AND u.is_test_account = 0
+      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
+      AND (u.hire_date IS NULL OR u.hire_date <= ?)
+    ORDER BY (u.employee_code IS NULL), u.employee_code COLLATE NOCASE ASC
+  `).all(branchId, end) as StaffMeta[];
+
+  // 2b. Mid-day transfer visitors — clocked here but members elsewhere.
+  const memberIds = new Set(staff.map((s) => s.userId));
+  const visitorIds = new Set<number>();
+  const visitorRows = db.prepare(`
+    SELECT u.id AS userId, u.display_name AS displayName,
+           u.employment_type AS employmentType,
+           u.shift_start_time AS shiftStartTime,
+           u.weekly_off_days AS weeklyOffDays,
+           COALESCE(u.track_attendance, 1) AS trackAttendance,
+           u.salary_tax_mode AS taxMode,
+           u.title_prefix AS titlePrefix,
+           u.employee_code AS employeeCode,
+           u.hire_date AS hireDate,
+           u.group_insurance_start_month AS groupInsuranceStartMonth
+    FROM users u
+    WHERE u.role IN ('staff', 'admin')
+      AND u.receives_service_charge = 1
+      AND u.is_test_account = 0
+      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
+      AND (u.hire_date IS NULL OR u.hire_date <= ?)
+      AND u.id IN (
+        SELECT DISTINCT user_id FROM time_entries
+        WHERE branch_id = ? AND ts >= ? AND ts <= ?
+      )
+  `).all(end, branchId, monthStartIso, monthEndIso) as StaffMeta[];
+  for (const v of visitorRows) {
+    if (memberIds.has(v.userId)) continue;
+    visitorIds.add(v.userId);
+    staff.push(v);
+  }
+
+  // 3. Time entries + roster windows + OT + break settings.
+  const entries = db.prepare(`
+    SELECT user_id, ts, type FROM time_entries
+    WHERE branch_id = ? AND ts >= ? AND ts <= ?
+  `).all(branchId, monthStartIso, monthEndIso) as
+    Array<{ user_id: number; ts: string; type: "in" | "out" }>;
+  const scheduledByUser = buildScheduledByUser(branchId, start, end);
+  const otByUser = new Map<number, Map<string, string>>();
+  for (const r of db.prepare(`
+    SELECT user_id, work_date, requested_until FROM ot_requests
+    WHERE status = 'approved' AND work_date >= ? AND work_date <= ?
+  `).all(start, end) as Array<{ user_id: number; work_date: string; requested_until: string }>) {
+    let m = otByUser.get(r.user_id);
+    if (!m) { m = new Map(); otByUser.set(r.user_id, m); }
+    m.set(r.work_date, r.requested_until);
+  }
+  const brk = (db.prepare(`
+    SELECT break_threshold_minutes, break_deduction_minutes,
+           long_shift_threshold_minutes, long_shift_break_minutes
+    FROM payroll_settings LIMIT 1
+  `).get() as BreakSettings | undefined) ?? {
+    break_threshold_minutes: 300, break_deduction_minutes: 30,
+    long_shift_threshold_minutes: 480, long_shift_break_minutes: 60
+  };
+
+  // 4. Clamped worked minutes per (date, user) — same gates as the branch engine.
+  const excludeAbnormal = yearMonth >= SVC_SYSTEM_START_MONTH;
+  const excludeNoSchedule = yearMonth >= "2026-07";
+  const capNormalMinutes = yearMonth >= "2026-07";
+  const excludedByUser = new Map<number, Array<{ date: string; reason: string }>>();
+  const rosteredSomewhere = new Set<string>();
+  {
+    const ids = staff.map((s) => s.userId);
+    if (ids.length > 0) {
+      const ph = ids.map(() => "?").join(",");
+      for (const r of db.prepare(`
+        SELECT DISTINCT ra.user_id AS uid, ra.assignment_date AS d
+        FROM roster_assignments ra
+        JOIN shift_codes sc ON sc.id = ra.shift_code_id
+        WHERE sc.kind = 'work' AND ra.assignment_date >= ? AND ra.assignment_date <= ?
+          AND ra.user_id IN (${ph})
+      `).all(start, end, ...ids) as Array<{ uid: number; d: string }>) {
+        rosteredSomewhere.add(`${r.uid}:${r.d}`);
+      }
+    }
+  }
+  const ftUserIds = new Set<number>(
+    staff.filter((s) => s.employmentType === "ft").map((s) => s.userId)
+  );
+  const workedByDay = computeSvcClampedMinutesByDay(
+    entries, scheduledByUser, otByUser, brk, excludeAbnormal, excludeNoSchedule,
+    rosteredSomewhere, ftUserIds, excludedByUser
+  );
+  // 4b. Execs (track_attendance=0) accrue from the roster.
+  for (const s of staff) {
+    if (s.trackAttendance !== 0) continue;
+    const byDate = scheduledByUser.get(s.userId);
+    if (!byDate) continue;
+    for (const [d, windows] of byDate) {
+      const net = windows.reduce((sum, w) => sum + netScheduledMinutes(w), 0);
+      if (net <= 0) continue;
+      let dayMap = workedByDay.get(d);
+      if (!dayMap) { dayMap = new Map<number, number>(); workedByDay.set(d, dayMap); }
+      dayMap.set(s.userId, Math.round(net));
+    }
+  }
+  // 4c. Cap a normal day at 480 (OT excepted).
+  if (capNormalMinutes) {
+    for (const [d, dayMap] of workedByDay) {
+      for (const [userId, mins] of dayMap) {
+        if (mins > SVC_MAX_NORMAL_MINUTES && !otByUser.get(userId)?.has(d)) {
+          dayMap.set(userId, SVC_MAX_NORMAL_MINUTES);
+        }
+      }
+    }
+  }
+
+  // 4d. Days each user had approved OT here (skip the 480 cap on a combined day).
+  const otUserDates = new Set<string>();
+  for (const [uid, dates] of otByUser) for (const d of dates.keys()) otUserDates.add(`${uid}:${d}`);
+
+  // 5. Food-credit redemptions at this branch (raw — the clawback decision is made
+  //    at the company level so a mid-day-transfer full day isn't wrongly clawed).
+  const redeemedFood = db.prepare(`
+    SELECT user_id AS uid, order_date AS d, credits AS credit
+      FROM mealpass_orders
+     WHERE kind = 'meal' AND status = 'confirmed' AND branch_id = ?
+       AND order_date >= ? AND order_date <= ?
+       AND credits > 0
+  `).all(branchId, start, end) as Array<{ uid: number; d: string; credit: number }>;
+
+  // 6. Lateness per user (for the >20% forfeiture at company roll-up). Visitors'
+  //    punches here are transfer-ins, not their own shift — skip (judged at home).
+  const inEntries = entries.filter((e) => e.type === "in");
+  const insByUser = new Map<number, Array<{ ts: string }>>();
+  for (const e of inEntries) {
+    if (!insByUser.has(e.user_id)) insByUser.set(e.user_id, []);
+    insByUser.get(e.user_id)!.push({ ts: e.ts });
+  }
+  const userIds = staff.map((s) => s.userId);
+  const rosterScheduledByUser = scheduledMinutesByUserForMonth(branchId, yearMonth, userIds);
+  const lateByUser = new Map<number, { lateMinutes: number; anyComputable: boolean }>();
+  for (const s of staff) {
+    const isVisitor = visitorIds.has(s.userId);
+    const rosterShiftByDate = shiftStartByDateForUserMonth(branchId, s.userId, yearMonth);
+    let lateMinutes = 0;
+    let anyComputable = false;
+    for (const ev of (isVisitor ? [] : (insByUser.get(s.userId) ?? []))) {
+      const bkk = new Date(new Date(ev.ts).getTime() + 7 * 60 * 60 * 1000);
+      const dateBkk = bkk.toISOString().slice(0, 10);
+      const effStart = rosterShiftByDate.get(dateBkk) ?? s.shiftStartTime;
+      if (!effStart) continue;
+      anyComputable = true;
+      const startMin = hhmmToMin(effStart);
+      if (startMin == null) continue;
+      const actualMin = bkk.getUTCHours() * 60 + bkk.getUTCMinutes();
+      const diff = actualMin - startMin;
+      if (diff > LATE_GRACE_MINUTES) lateMinutes += diff;
+    }
+    lateByUser.set(s.userId, { lateMinutes, anyComputable });
+  }
+
+  // 7. Resignation forfeits (company-wide query — same for every branch).
+  const forfeitedFromResign = new Set<number>();
+  for (const r of db.prepare(`
+    SELECT user_id FROM resignation_requests
+    WHERE status = 'approved' AND forfeit_svc = 1
+      AND decided_at >= ? AND decided_at <= ?
+  `).all(monthStartIso, monthEndIso) as Array<{ user_id: number }>) {
+    forfeitedFromResign.add(r.user_id);
+  }
+
+  return {
+    totalCollected, amountByDate, staff, memberIds, visitorIds, workedByDay,
+    otUserDates, redeemedFood, lateByUser, rosterScheduledByUser, forfeitedFromResign
+  };
+}
+
+/** Final per-user arithmetic shared by both company modes (owner 2026-08-18):
+ *  forfeiture (late >20% OR resignation), food clawback, WHT, group insurance.
+ *  Pool-DEPENDENT inputs (gross / byBranch / breakdown) are computed by the
+ *  caller; the pool-independent late/schedule/resign/clawback/meta come from the
+ *  branch contexts. skipGroupInsurance is set for a person who is a member of NO
+ *  branch in this company (a cross-company visitor — their ฿350 is taken at home). */
+function rollupCompanyRow(input: {
+  userId: number; displayName: string; employmentType: string | null;
+  byBranch: CompanySvcBranchShare[]; breakdown: CompanySvcRow["dailyBreakdown"];
+  grossRaw: number; lateMinutes: number; anyComputable: boolean;
+  realScheduledMinutes: number; fallbackScheduled: number;
+  resignForfeit: boolean; rawFoodClawback: number;
+  taxMode: "sso" | "wht"; giStartMonth: string | null; skipGroupInsurance: boolean;
+  yearMonth: string; whtRate: number;
+}): CompanySvcRow {
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const gross = round2(input.grossRaw);
+  const scheduledMinutes = input.realScheduledMinutes > 0 ? input.realScheduledMinutes : input.fallbackScheduled;
+  const lateRatio = scheduledMinutes > 0 ? input.lateMinutes / scheduledMinutes : 0;
+  const lateForfeit = input.anyComputable && lateRatio > SC_INELIGIBILITY_THRESHOLD;
+  const forfeited = lateForfeit || input.resignForfeit;
+  const foodClawback = forfeited ? 0 : Math.min(round2(input.rawFoodClawback), gross);
+  const netAllocation = forfeited ? 0 : round2(gross - foodClawback);
+  const whtAmount = input.taxMode === "wht" ? round2(netAllocation * input.whtRate) : 0;
+  const groupInsurance = input.skipGroupInsurance ? 0 : groupInsuranceDeduction({
+    employmentType: input.employmentType,
+    startMonth: input.giStartMonth,
+    yearMonth: input.yearMonth,
+    availablePayout: round2(netAllocation - whtAmount)
+  });
+  const netPayout = round2(netAllocation - whtAmount - groupInsurance);
+  return {
+    userId: input.userId, displayName: input.displayName, employmentType: input.employmentType,
+    byBranch: input.byBranch,
+    grossAllocation: gross, lateMinutes: input.lateMinutes, scheduledMinutes, lateRatio,
+    forfeited,
+    forfeitReason: (forfeited ? (input.resignForfeit ? "resignation" : "late_20pct") : null) as CompanySvcRow["forfeitReason"],
+    foodClawback, netAllocation, taxMode: input.taxMode, whtAmount, groupInsurance, netPayout,
+    dailyBreakdown: input.breakdown.slice().sort((x, y) => x.date.localeCompare(y.date))
+  };
+}
+
+/** "รวมกอง" shared-pool company summary (owner 2026-08-18). Each DAY, every branch's
+ *  SVC amount is POOLED and the 60% staff share is split across everyone who worked
+ *  at ANY branch that day, weighted by their clamped worked minutes (ตามชั่วโมง
+ *  ทำงานจริง). A worker at a branch that entered no SVC (e.g. a new HYPO) still gets
+ *  a share of the pooled amount. Each person's share is attributed to the branch(es)
+ *  they actually worked at ("ได้จากสาขาไหนเท่าไหร่"). Roll-up (forfeit / clawback /
+ *  WHT / group insurance) is judged ONCE at company level. */
+export function computeCompanySvcSummaryShared(companyId: number, yearMonth: string): CompanySvcSummary {
+  const db = getDb();
+  const branches = db.prepare(
+    "SELECT id, name FROM branches WHERE company_id = ? ORDER BY display_order, name"
+  ).all(companyId) as Array<{ id: number; name: string }>;
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const whtRate = (db.prepare("SELECT wht_rate FROM payroll_settings LIMIT 1")
+    .get() as { wht_rate: number } | undefined)?.wht_rate ?? 0.03;
+
+  const contexts = branches.map((b) => ({ branch: b, ctx: computeBranchSvcContext(b.id, yearMonth) }));
+  const branchNameById = new Map(branches.map((b) => [b.id, b.name]));
+
+  // Company roster + membership (member of ANY branch → not a cross-company visitor).
+  const memberIdsCompany = new Set<number>();
+  const metaByUser = new Map<number, StaffMeta>();
+  for (const { ctx } of contexts) {
+    for (const id of ctx.memberIds) memberIdsCompany.add(id);
+    for (const s of ctx.staff) if (!metaByUser.has(s.userId)) metaByUser.set(s.userId, s);
+  }
+
+  // Union of every day that either has a pooled amount OR someone worked.
+  const allDates = new Set<string>();
+  for (const { ctx } of contexts) {
+    for (const d of ctx.amountByDate.keys()) allDates.add(d);
+    for (const d of ctx.workedByDay.keys()) allDates.add(d);
+  }
+
+  type Acc = {
+    byBranch: Map<number, CompanySvcBranchShare>;
+    gross: number;
+    breakdown: CompanySvcRow["dailyBreakdown"];
+  };
+  const accByUser = new Map<number, Acc>();
+  const ensureAcc = (uid: number): Acc => {
+    let a = accByUser.get(uid);
+    if (!a) { a = { byBranch: new Map(), gross: 0, breakdown: [] }; accByUser.set(uid, a); }
+    return a;
+  };
+
+  // A person's approved-OT lets a combined day exceed the 480-min cap.
+  const hasOt = (userId: number, date: string) =>
+    contexts.some(({ ctx }) => ctx.otUserDates.has(`${userId}:${date}`));
+
+  // Combined clamped minutes per (date, user) across all branches — the basis for
+  // the company-level food-clawback so a full 8h split across two branches
+  // (240+240) is NOT wrongly clawed (owner 2026-08-18). Per-branch minutes are
+  // already 480-capped in each context, so the sum reflects real worked time.
+  const combinedWorkedByDay = new Map<string, Map<number, number>>();
+  for (const { ctx } of contexts) {
+    for (const [date, dayMap] of ctx.workedByDay) {
+      let m = combinedWorkedByDay.get(date);
+      if (!m) { m = new Map(); combinedWorkedByDay.set(date, m); }
+      for (const [uid, mins] of dayMap) m.set(uid, (m.get(uid) ?? 0) + mins);
+    }
+  }
+
+  for (const date of allDates) {
+    // Pooled amount = Σ every branch's SVC that day.
+    let pooled = 0;
+    for (const { ctx } of contexts) pooled += ctx.amountByDate.get(date) ?? 0;
+    if (pooled <= 0) continue;
+    // Flat participant list: (userId, branchId, minutes) across all branches, for
+    // company-roster staff only. The divisor is the sum of ALL these minutes so a
+    // person's share follows their real hours regardless of which branch's pool it
+    // came from.
+    const rawUnits: Array<{ userId: number; branchId: number; minutes: number }> = [];
+    const combinedByUser = new Map<number, number>();
+    for (const { branch, ctx } of contexts) {
+      const dayMap = ctx.workedByDay.get(date);
+      if (!dayMap) continue;
+      for (const [userId, mins] of dayMap) {
+        if (mins <= 0) continue;
+        if (!memberIdsCompany.has(userId) && !ctx.visitorIds.has(userId)) continue;
+        rawUnits.push({ userId, branchId: branch.id, minutes: mins });
+        combinedByUser.set(userId, (combinedByUser.get(userId) ?? 0) + mins);
+      }
+    }
+    // Cap each person's COMBINED day at 480 min (OT-exempt) so a cross-branch
+    // worker (e.g. 300+300) doesn't out-weight a single-branch full day — scale
+    // their branch units down proportionally to preserve the per-branch split.
+    const scaleByUser = new Map<number, number>();
+    for (const [userId, combined] of combinedByUser) {
+      scaleByUser.set(userId,
+        combined > SVC_MAX_NORMAL_MINUTES && !hasOt(userId, date)
+          ? SVC_MAX_NORMAL_MINUTES / combined : 1);
+    }
+    const units = rawUnits.map((u) => ({ ...u, minutes: u.minutes * (scaleByUser.get(u.userId) ?? 1) }));
+    let totalMin = 0;
+    for (const u of units) totalMin += u.minutes;
+    if (totalMin <= 0) continue;
+    const staffPool = pooled * SVC_STAFF_SHARE_RATIO;
+    for (const u of units) {
+      const share = staffPool * (u.minutes / totalMin);
+      const a = ensureAcc(u.userId);
+      a.gross += share;
+      const bn = branchNameById.get(u.branchId) ?? "";
+      let bb = a.byBranch.get(u.branchId);
+      if (!bb) {
+        bb = { branchId: u.branchId, branchName: bn, grossAllocation: 0, daysWorked: 0, minutesWorked: 0 };
+        a.byBranch.set(u.branchId, bb);
+      }
+      bb.grossAllocation += share;
+      bb.daysWorked += 1;
+      bb.minutesWorked += u.minutes;
+      a.breakdown.push({
+        date, branchId: u.branchId, branchName: bn,
+        dayAmount: pooled, staffPool, userMinutes: u.minutes, totalMinutes: totalMin, share
+      });
+    }
+  }
+
+  // Company-level food-credit clawback (owner 2026-08-18): judged against the
+  // COMBINED daily minutes above, so a mid-day transfer that adds up to a full
+  // shift is not clawed. Early-leave approvals are company-wide per month.
+  const earlyLeaveKeys = approvedEarlyLeaveKeys(db, yearMonth);
+  const allRedeemedFood = contexts.flatMap(({ ctx }) => ctx.redeemedFood);
+  const staffIdsCompany = new Set([...metaByUser.keys()]);
+  const clawbackByUser = computeFoodClawbacks(
+    allRedeemedFood, combinedWorkedByDay, earlyLeaveKeys, (uid) => staffIdsCompany.has(uid)
+  );
+
+  const [yyyy, mm] = yearMonth.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(yyyy, mm, 0)).getUTCDate();
+  const fallbackScheduled = daysInMonth * 8 * 60;
+
+  const rows: CompanySvcRow[] = [...accByUser.keys()].map((userId) => {
+    const a = accByUser.get(userId)!;
+    const meta = metaByUser.get(userId);
+    // Sum pool-independent inputs across the branches this person touched.
+    let lateMinutes = 0, anyComputable = false, realScheduled = 0, resignForfeit = false;
+    for (const { ctx } of contexts) {
+      const lt = ctx.lateByUser.get(userId);
+      if (lt) { lateMinutes += lt.lateMinutes; anyComputable = anyComputable || lt.anyComputable; }
+      realScheduled += ctx.rosterScheduledByUser.get(userId) ?? 0;
+      if (ctx.forfeitedFromResign.has(userId)) resignForfeit = true;
+    }
+    const rawFoodClawback = (clawbackByUser.get(userId) ?? []).reduce((s, cd) => s + cd.credit, 0);
+    return rollupCompanyRow({
+      userId,
+      displayName: nameWithPrefix(meta?.titlePrefix ?? null, meta?.displayName ?? String(userId)),
+      employmentType: meta?.employmentType ?? null,
+      byBranch: [...a.byBranch.values()].sort((x, y) => branchOrder(branches, x.branchId) - branchOrder(branches, y.branchId)),
+      breakdown: a.breakdown,
+      grossRaw: a.gross, lateMinutes, anyComputable,
+      realScheduledMinutes: realScheduled, fallbackScheduled,
+      resignForfeit, rawFoodClawback,
+      taxMode: meta?.taxMode === "wht" ? "wht" : "sso",
+      giStartMonth: meta?.groupInsuranceStartMonth ?? null,
+      skipGroupInsurance: !memberIdsCompany.has(userId),
+      yearMonth, whtRate
+    });
+  }).sort((x, y) => y.netPayout - x.netPayout);
+
+  const branchTotals = contexts.map(({ branch, ctx }) => ({
+    branchId: branch.id, branchName: branch.name, totalCollected: ctx.totalCollected
+  }));
+  const totalCollected = branchTotals.reduce((s, b) => s + b.totalCollected, 0);
+  return {
+    companyId, yearMonth, shared: true,
+    branches: branchTotals,
+    totalCollected,
+    staffPoolTotal: round2(totalCollected * SVC_STAFF_SHARE_RATIO),
+    companyPoolTotal: round2(
+      totalCollected * SVC_COMPANY_SHARE_RATIO
+      + rows.reduce((s, r) => s + (r.forfeited ? r.grossAllocation : 0), 0)
+      + rows.reduce((s, r) => s + r.foodClawback, 0)
+    ),
+    totalWht: round2(rows.reduce((s, r) => s + r.whtAmount, 0)),
+    totalGroupInsurance: round2(rows.reduce((s, r) => s + r.groupInsurance, 0)),
+    totalNetPayout: round2(rows.reduce((s, r) => s + r.netPayout, 0)),
+    rows,
+    payoutDate: computePayoutDate(yearMonth)
+  };
+}
+
+/** display_order rank of a branch id (for stable byBranch ordering). */
+function branchOrder(branches: Array<{ id: number }>, branchId: number): number {
+  const i = branches.findIndex((b) => b.id === branchId);
+  return i < 0 ? branches.length : i;
+}
+
+/** Company-wide SVC summary for a month (owner 2026-08-18). Dispatches to the
+ *  "รวมกอง" shared-pool mode when the (company, month) is toggled on; otherwise the
+ *  per-branch view (each branch's pool → its own workers, aggregated). Non-shared
+ *  mode reuses the tested computeMonthlySvcSummary per branch. */
 export function computeCompanySvcSummary(companyId: number, yearMonth: string): CompanySvcSummary {
+  if (isSharedSvcMonth(companyId, yearMonth) && !isManualSvcMonth(yearMonth)) {
+    return computeCompanySvcSummaryShared(companyId, yearMonth);
+  }
   const db = getDb();
   const branches = db.prepare(
     "SELECT id, name FROM branches WHERE company_id = ? ORDER BY display_order, name"
@@ -1172,46 +1644,42 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
     const m = scheduledMinutesByUserForMonth(b.id, yearMonth, userIds);
     for (const [uid, mins] of m) rosterMinByUser.set(uid, (rosterMinByUser.get(uid) ?? 0) + mins);
   }
-  // Meta for the single group-insurance recompute.
-  const metaByUser = new Map<number, { employmentType: string | null; startMonth: string | null }>();
+  // Meta for the single group-insurance recompute + company membership. A person
+  // who is a member of NO branch in this company (a cross-company visitor whose
+  // punches only appear as transfer-ins) must NOT have the ฿350 GI withheld here —
+  // it is taken once at their home company (owner 2026-08-02, mirrored to the
+  // company view 2026-08-18).
+  const metaByUser = new Map<number, { startMonth: string | null }>();
+  const companyMemberIds = new Set<number>();
   if (userIds.length > 0) {
     const ph = userIds.map(() => "?").join(",");
     for (const r of db.prepare(
-      `SELECT id, employment_type AS et, group_insurance_start_month AS sm FROM users WHERE id IN (${ph})`
-    ).all(...userIds) as Array<{ id: number; et: string | null; sm: string | null }>) {
-      metaByUser.set(r.id, { employmentType: r.et, startMonth: r.sm });
+      `SELECT id, group_insurance_start_month AS sm FROM users WHERE id IN (${ph})`
+    ).all(...userIds) as Array<{ id: number; sm: string | null }>) {
+      metaByUser.set(r.id, { startMonth: r.sm });
+    }
+    for (const r of db.prepare(
+      `SELECT DISTINCT ub.user_id AS uid FROM user_branches ub
+        JOIN branches b ON b.id = ub.branch_id
+       WHERE b.company_id = ? AND ub.user_id IN (${ph})`
+    ).all(companyId, ...userIds) as Array<{ uid: number }>) {
+      companyMemberIds.add(r.uid);
     }
   }
 
   const rows: CompanySvcRow[] = userIds.map((userId) => {
     const a = accByUser.get(userId)!;
-    const gross = round2(a.gross);
-    const scheduledMinutes = (rosterMinByUser.get(userId) ?? 0) > 0
-      ? (rosterMinByUser.get(userId) as number) : fallbackScheduled;
-    const lateRatio = scheduledMinutes > 0 ? a.lateMinutes / scheduledMinutes : 0;
-    const lateForfeit = a.lateMinutes > 0 && lateRatio > SC_INELIGIBILITY_THRESHOLD;
-    const forfeited = lateForfeit || a.resignForfeit;
-    const foodClawback = forfeited ? 0 : Math.min(round2(a.foodClawback), gross);
-    const netAllocation = forfeited ? 0 : round2(gross - foodClawback);
-    const taxMode = a.taxMode;
-    const whtAmount = taxMode === "wht" ? round2(netAllocation * whtRate) : 0;
-    const meta = metaByUser.get(userId);
-    const groupInsurance = groupInsuranceDeduction({
-      employmentType: meta?.employmentType ?? a.employmentType,
-      startMonth: meta?.startMonth ?? null,
-      yearMonth,
-      availablePayout: round2(netAllocation - whtAmount)
-    });
-    const netPayout = round2(netAllocation - whtAmount - groupInsurance);
-    return {
+    return rollupCompanyRow({
       userId, displayName: a.displayName, employmentType: a.employmentType,
-      byBranch: a.byBranch,
-      grossAllocation: gross, lateMinutes: a.lateMinutes, scheduledMinutes, lateRatio,
-      forfeited,
-      forfeitReason: (forfeited ? (a.resignForfeit ? "resignation" : "late_20pct") : null) as CompanySvcRow["forfeitReason"],
-      foodClawback, netAllocation, taxMode, whtAmount, groupInsurance, netPayout,
-      dailyBreakdown: a.breakdown.slice().sort((x, y) => x.date.localeCompare(y.date))
-    };
+      byBranch: a.byBranch, breakdown: a.breakdown,
+      grossRaw: a.gross, lateMinutes: a.lateMinutes, anyComputable: a.lateMinutes > 0,
+      realScheduledMinutes: rosterMinByUser.get(userId) ?? 0, fallbackScheduled,
+      resignForfeit: a.resignForfeit, rawFoodClawback: a.foodClawback,
+      taxMode: a.taxMode,
+      giStartMonth: metaByUser.get(userId)?.startMonth ?? null,
+      skipGroupInsurance: !companyMemberIds.has(userId),
+      yearMonth, whtRate
+    });
   }).sort((x, y) => y.netPayout - x.netPayout);
 
   const branchTotals = perBranch.map(({ branch, summary }) => ({
