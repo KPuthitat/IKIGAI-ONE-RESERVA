@@ -1024,6 +1024,218 @@ export function computeMonthlySvcSummary(
   };
 }
 
+// ── Company-wide SVC summary (owner 2026-08-18) ───────────────────────────
+// The owner wants SVC viewed for the WHOLE company on one page (branches pay out
+// together the same day), with a per-branch split for people who worked more than
+// one branch ("ได้จากสาขาไหนเท่าไหร่"). This reuses the tested per-branch engine
+// for the hard daily distribution, then RE-DOES the monthly roll-up (late
+// forfeiture, food clawback, WHT, group insurance) ONCE at the company level so a
+// cross-branch worker isn't judged/charged twice.
+//
+// A second mode — "รวมกอง" (shared pool, per (company, month) toggle) — pools every
+// branch's daily amount and splits it across everyone who worked that day so a
+// worker at a branch that hasn't entered SVC (e.g. a new HYPO) still gets a share.
+// That mode is layered on top separately.
+
+export type CompanySvcBranchShare = {
+  branchId: number;
+  branchName: string;
+  grossAllocation: number;   // pre-forfeit accrual earned at THIS branch
+  daysWorked: number;
+  minutesWorked: number;
+};
+
+export type CompanySvcRow = {
+  userId: number;
+  displayName: string;
+  employmentType: string | null;
+  // แยกให้เห็นว่าได้จากสาขาไหนเท่าไหร่ (owner 2026-08-18)
+  byBranch: CompanySvcBranchShare[];
+  // Company-level roll-up (judged once across all branches)
+  grossAllocation: number;   // Σ byBranch (pre-forfeit)
+  lateMinutes: number;
+  scheduledMinutes: number;  // real roster minutes across branches (fallback once)
+  lateRatio: number;
+  forfeited: boolean;
+  forfeitReason: "late_20pct" | "resignation" | null;
+  foodClawback: number;
+  netAllocation: number;
+  taxMode: "sso" | "wht";
+  whtAmount: number;
+  groupInsurance: number;
+  netPayout: number;
+  dailyBreakdown: Array<{
+    date: string; branchId: number; branchName: string;
+    dayAmount: number; staffPool: number; userMinutes: number; totalMinutes: number; share: number;
+  }>;
+};
+
+export type CompanySvcSummary = {
+  companyId: number;
+  yearMonth: string;
+  shared: boolean;           // true = รวมกอง SVC ทั้งบริษัท เดือนนี้
+  branches: Array<{ branchId: number; branchName: string; totalCollected: number }>;
+  totalCollected: number;
+  staffPoolTotal: number;
+  companyPoolTotal: number;
+  totalWht: number;
+  totalGroupInsurance: number;
+  totalNetPayout: number;
+  rows: CompanySvcRow[];
+  payoutDate: string;
+};
+
+/** Is the (company, month) flagged to pool SVC across all its branches? (owner
+ *  2026-08-18). A row in svc_shared_pool = shared ON for that month. */
+export function isSharedSvcMonth(companyId: number, yearMonth: string): boolean {
+  return !!getDb().prepare(
+    "SELECT 1 FROM svc_shared_pool WHERE company_id = ? AND year_month = ?"
+  ).get(companyId, yearMonth);
+}
+
+/** Turn the company-wide shared-pool toggle on/off for a (company, month). */
+export function setSharedSvcMonth(args: {
+  companyId: number; yearMonth: string; shared: boolean; userId: number;
+}): void {
+  const db = getDb();
+  if (args.shared) {
+    db.prepare(`
+      INSERT INTO svc_shared_pool (company_id, year_month, enabled_by_user_id, enabled_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(company_id, year_month) DO UPDATE SET
+        enabled_by_user_id = excluded.enabled_by_user_id, enabled_at = excluded.enabled_at
+    `).run(args.companyId, args.yearMonth, args.userId, new Date().toISOString());
+  } else {
+    db.prepare("DELETE FROM svc_shared_pool WHERE company_id = ? AND year_month = ?")
+      .run(args.companyId, args.yearMonth);
+  }
+}
+
+/** Company-wide SVC summary for a month (owner 2026-08-18). Non-shared mode:
+ *  reuse computeMonthlySvcSummary per branch (tested), then roll up per user at
+ *  company level. Shared mode is handled by computeCompanySvcSummaryShared. */
+export function computeCompanySvcSummary(companyId: number, yearMonth: string): CompanySvcSummary {
+  const db = getDb();
+  const branches = db.prepare(
+    "SELECT id, name FROM branches WHERE company_id = ? ORDER BY display_order, name"
+  ).all(companyId) as Array<{ id: number; name: string }>;
+  // NOTE (owner 2026-08-18): the "รวมกอง SVC ทั้งบริษัท" shared-pool mode
+  // (isSharedSvcMonth) is layered on top as a follow-up. This function is the
+  // per-branch company view (each branch's pool → its own workers, aggregated).
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const whtRate = (db.prepare("SELECT wht_rate FROM payroll_settings LIMIT 1")
+    .get() as { wht_rate: number } | undefined)?.wht_rate ?? 0.03;
+
+  // Per-branch summaries (reuse the tested engine — the hard daily distribution).
+  const perBranch = branches.map((b) => ({ branch: b, summary: computeMonthlySvcSummary(b.id, yearMonth) }));
+
+  type Acc = {
+    displayName: string; employmentType: string | null;
+    byBranch: CompanySvcBranchShare[];
+    gross: number; lateMinutes: number; resignForfeit: boolean; foodClawback: number;
+    taxMode: "sso" | "wht";
+    breakdown: CompanySvcRow["dailyBreakdown"];
+  };
+  const accByUser = new Map<number, Acc>();
+  for (const { branch, summary } of perBranch) {
+    for (const r of summary.rows) {
+      let a = accByUser.get(r.userId);
+      if (!a) {
+        a = { displayName: r.displayName, employmentType: r.employmentType,
+              byBranch: [], gross: 0, lateMinutes: 0, resignForfeit: false,
+              foodClawback: 0, taxMode: r.taxMode, breakdown: [] };
+        accByUser.set(r.userId, a);
+      }
+      a.byBranch.push({ branchId: branch.id, branchName: branch.name,
+        grossAllocation: r.grossAllocation, daysWorked: r.daysWorked, minutesWorked: r.totalMinutesWorked });
+      a.gross += r.grossAllocation;
+      a.lateMinutes += r.lateMinutes;
+      if (r.forfeitReason === "resignation") a.resignForfeit = true;
+      a.foodClawback += r.foodClawback;
+      for (const bd of r.dailyBreakdown) {
+        a.breakdown.push({ ...bd, branchId: branch.id, branchName: branch.name });
+      }
+    }
+  }
+
+  // Real roster minutes across all company branches (owner 2026-08-18): sum each
+  // branch's rostered minutes so the late-ratio denominator isn't inflated by a
+  // per-branch fallback. Fallback (daysInMonth × 8h) applies ONCE, only if the
+  // person has no roster anywhere.
+  const [yyyy, mm] = yearMonth.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(yyyy, mm, 0)).getUTCDate();
+  const fallbackScheduled = daysInMonth * 8 * 60;
+  const userIds = [...accByUser.keys()];
+  const rosterMinByUser = new Map<number, number>();
+  for (const b of branches) {
+    const m = scheduledMinutesByUserForMonth(b.id, yearMonth, userIds);
+    for (const [uid, mins] of m) rosterMinByUser.set(uid, (rosterMinByUser.get(uid) ?? 0) + mins);
+  }
+  // Meta for the single group-insurance recompute.
+  const metaByUser = new Map<number, { employmentType: string | null; startMonth: string | null }>();
+  if (userIds.length > 0) {
+    const ph = userIds.map(() => "?").join(",");
+    for (const r of db.prepare(
+      `SELECT id, employment_type AS et, group_insurance_start_month AS sm FROM users WHERE id IN (${ph})`
+    ).all(...userIds) as Array<{ id: number; et: string | null; sm: string | null }>) {
+      metaByUser.set(r.id, { employmentType: r.et, startMonth: r.sm });
+    }
+  }
+
+  const rows: CompanySvcRow[] = userIds.map((userId) => {
+    const a = accByUser.get(userId)!;
+    const gross = round2(a.gross);
+    const scheduledMinutes = (rosterMinByUser.get(userId) ?? 0) > 0
+      ? (rosterMinByUser.get(userId) as number) : fallbackScheduled;
+    const lateRatio = scheduledMinutes > 0 ? a.lateMinutes / scheduledMinutes : 0;
+    const lateForfeit = a.lateMinutes > 0 && lateRatio > SC_INELIGIBILITY_THRESHOLD;
+    const forfeited = lateForfeit || a.resignForfeit;
+    const foodClawback = forfeited ? 0 : Math.min(round2(a.foodClawback), gross);
+    const netAllocation = forfeited ? 0 : round2(gross - foodClawback);
+    const taxMode = a.taxMode;
+    const whtAmount = taxMode === "wht" ? round2(netAllocation * whtRate) : 0;
+    const meta = metaByUser.get(userId);
+    const groupInsurance = groupInsuranceDeduction({
+      employmentType: meta?.employmentType ?? a.employmentType,
+      startMonth: meta?.startMonth ?? null,
+      yearMonth,
+      availablePayout: round2(netAllocation - whtAmount)
+    });
+    const netPayout = round2(netAllocation - whtAmount - groupInsurance);
+    return {
+      userId, displayName: a.displayName, employmentType: a.employmentType,
+      byBranch: a.byBranch,
+      grossAllocation: gross, lateMinutes: a.lateMinutes, scheduledMinutes, lateRatio,
+      forfeited,
+      forfeitReason: (forfeited ? (a.resignForfeit ? "resignation" : "late_20pct") : null) as CompanySvcRow["forfeitReason"],
+      foodClawback, netAllocation, taxMode, whtAmount, groupInsurance, netPayout,
+      dailyBreakdown: a.breakdown.slice().sort((x, y) => x.date.localeCompare(y.date))
+    };
+  }).sort((x, y) => y.netPayout - x.netPayout);
+
+  const branchTotals = perBranch.map(({ branch, summary }) => ({
+    branchId: branch.id, branchName: branch.name, totalCollected: summary.totalCollected
+  }));
+  const totalCollected = branchTotals.reduce((s, b) => s + b.totalCollected, 0);
+  return {
+    companyId, yearMonth, shared: false,
+    branches: branchTotals,
+    totalCollected,
+    staffPoolTotal: round2(totalCollected * SVC_STAFF_SHARE_RATIO),
+    companyPoolTotal: round2(
+      totalCollected * SVC_COMPANY_SHARE_RATIO
+      + rows.reduce((s, r) => s + (r.forfeited ? r.grossAllocation : 0), 0)
+      + rows.reduce((s, r) => s + r.foodClawback, 0)
+    ),
+    totalWht: round2(rows.reduce((s, r) => s + r.whtAmount, 0)),
+    totalGroupInsurance: round2(rows.reduce((s, r) => s + r.groupInsurance, 0)),
+    totalNetPayout: round2(rows.reduce((s, r) => s + r.netPayout, 0)),
+    rows,
+    payoutDate: computePayoutDate(yearMonth)
+  };
+}
+
 /** Clamped worked minutes for ONE user on ONE day at a branch — the exact same
  *  engine the monthly SVC roll-up uses (pairShifts → roster-clamp → break-deduct
  *  → approved-OT extend). The clock-out food-credit warning calls this so the
