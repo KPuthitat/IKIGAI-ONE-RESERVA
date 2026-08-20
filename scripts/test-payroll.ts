@@ -317,9 +317,10 @@ console.log("\nPT→ประจำ เดือนเปลี่ยนผ่�
   eq("legacy FT รอบ monthly → base 30000", legacy.base_pay, 30000);
 }
 
-// 11c. เดือนเปลี่ยนผ่าน weekly: ทุกสัปดาห์จ่ายฐานรายวัน salary/30 × วันในสถานะ —
-//      รอบคร่อมเดือนก็จ่ายเต็ม (ไม่มีการเลื่อน/ตัดเป็น 0 อีกแล้ว) (owner 2026-08-03).
-console.log("\nเดือนเปลี่ยนผ่าน weekly: ทุกสัปดาห์จ่ายฐานรายวัน (owner 2026-08-03):");
+// 11c. เดือนเปลี่ยนผ่าน weekly: ทุกสัปดาห์จ่ายฐานรายวัน salary/30 × วันในสถานะ.
+//      รอบคร่อมเดือน — กฎ A (owner 2026-08-18): วันของเดือนถัดไปไม่จ่ายในรอบสัปดาห์
+//      (ยกไปรอบเดือนนั้น) → จ่ายเฉพาะวันของเดือนเปลี่ยนผ่าน.
+console.log("\nเดือนเปลี่ยนผ่าน weekly: จ่ายฐานรายวัน + กฎคร่อมเดือน (owner 2026-08-18):");
 {
   const conv = (salary: number): EmployeePayrollSnapshot => ({ ...ftMonthly(salary), ft_started_at: "2026-07-10" });
   const runRound = (pStart: string, pEnd: string, doubleDate: string | null) => {
@@ -338,14 +339,40 @@ console.log("\nเดือนเปลี่ยนผ่าน weekly: ทุ�
   const daily = 16000 / 30;
   const base7 = Math.round(daily * 7 * 100) / 100;   // อยู่ในสถานะ 7 วัน
   const plain = runRound("2026-07-20", "2026-07-26", null);
-  eq("รอบ weekly 7 วัน → ฐาน 16000/30×7", plain.base_pay, base7);
-  // รอบคร่อมเดือน 27/07–02/08 (7 วัน) → ยังจ่ายฐานรายวันเต็ม ไม่ถูกตัดเป็น 0
+  eq("รอบ weekly 7 วัน (ในเดือน) → ฐาน 16000/30×7", plain.base_pay, base7);
+  // กฎ A — รอบคร่อมเดือน 27/07–02/08: จ่ายเฉพาะวัน ก.ค. (27–31 = 5 วัน) · ส.ค. ยกไปรอบเดือน
+  const base5July = Math.round(daily * 5 * 100) / 100;
   const spill = runRound("2026-07-27", "2026-08-02", null);
-  eq("รอบคร่อมเดือน → ยังจ่ายฐานรายวัน (ไม่ตัดเป็น 0)", spill.base_pay, base7);
+  eq("กฎ A: รอบคร่อมเดือน → จ่ายเฉพาะวันเดือนเปลี่ยนผ่าน (ก.ค. 5 วัน)", spill.base_pay, base5July);
   // วันคูณสอง: ฐานรายวัน 7 วัน + ส่วนเกินคูณสองอีก 1 วัน (8ชม.)
   const dbl = runRound("2026-07-20", "2026-07-26", "2026-07-22");
   eq("รอบมีวันคูณสอง → ฐานรายวัน + คูณสองส่วนเกิน", dbl.base_pay, Math.round((base7 + daily) * 100) / 100);
   eq("เปลี่ยนผ่าน weekly → หัก WHT ไม่ใช่ SSO", dbl.sso_amount === 0 && dbl.tax_amount > 0 ? 1 : 0, 1);
+
+  // กฎ B (owner 2026-08-18) — ft_salary_paid_through: เดือนเปลี่ยนผ่านจ่ายครบด้วยวิธีเก่า
+  // แล้ว → รอบคร่อมเดือนถัดไปไม่คิดฐานของวัน ≤ วันนั้น (OT + คูณสองยังจ่าย). ตั้ง 31 ก.ค.
+  // → รอบ 27/07–02/08 ฐาน = 0 (ก.ค.จ่ายครบ · ส.ค.ยกไปรอบเดือน).
+  const paidThrough = (salary: number): EmployeePayrollSnapshot =>
+    ({ ...ftMonthly(salary), ft_started_at: "2026-07-10", ft_salary_paid_through: "2026-07-31" });
+  const runPT = (pStart: string, pEnd: string, doubleDate: string | null) => {
+    const dd = doubleDate ?? "2026-07-28";
+    const iso = (hhmm: string) => new Date(`${dd}T${hhmm}:00+07:00`).toISOString();
+    const sched: ScheduledShift = { startTs: iso("11:00"), endTs: iso("19:00"), breakStartTs: null, breakEndTs: null };
+    const shift = { startTs: iso("11:00"), endTs: iso("19:00"), durationMinutes: 480 };
+    return computeLineForEmployee({
+      employee: paidThrough(16000), shifts: doubleDate ? [shift] : [], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+      cycle: "weekly", periodStart: pStart, periodEnd: pEnd,
+      settings: SETTINGS, holidaySet: new Set<string>(),
+      doubleSet: doubleDate ? new Set<string>([doubleDate]) : new Set<string>(),
+      scheduledByDate: doubleDate ? new Map<string, ScheduledShift[]>([[doubleDate, [sched]]]) : new Map<string, ScheduledShift[]>()
+    });
+  };
+  // ไม่มีวันคูณสอง → ฐาน 0 ล้วน (ก.ค.จ่ายครบ, ส.ค.ยกไป)
+  const ptSpill = runPT("2026-07-27", "2026-08-02", null);
+  eq("กฎ B: จ่ายครบถึง 31 ก.ค. → ฐานรอบคร่อมเดือน = 0", ptSpill.base_pay, 0);
+  // มีวันคูณสอง 28 ก.ค. (≤ paid_through) → ฐานปกติ = 0 แต่พรีเมียมคูณสอง 1 วัน (8ชม.) ยังจ่าย
+  const ptDbl = runPT("2026-07-27", "2026-08-02", "2026-07-28");
+  eq("กฎ B: วันคูณสอง ≤ จ่ายครบ → ยังได้พรีเมียม 1 วัน (ฐาน=0)", ptDbl.base_pay, Math.round(daily * 100) / 100);
 }
 
 // 11e. เข้าใหม่เป็นประจำ เดือนแรก: รายวัน salary/30 × วันในสถานะ, จ่ายวันที่ 5, WHT (owner 2026-08-03)

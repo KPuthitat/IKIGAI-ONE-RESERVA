@@ -157,7 +157,7 @@ export async function PATCH(
 
     const fresh = db.prepare(`
       SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
-             hire_date, ft_started_at,
+             hire_date, ft_started_at, ft_salary_paid_through,
              ${branchDailyRateSelect(period.branch_id)},
              ${branchOnlyHourlyRateSelect(period.branch_id)},
              (SELECT MAX(proposed_last_day) FROM resignation_requests
@@ -174,6 +174,7 @@ export async function PATCH(
       track_attendance: number | null;
       hire_date: string | null;
       ft_started_at: string | null;
+      ft_salary_paid_through: string | null;
       daily_rate: number | null;
       branch_hourly_rate: number | null;
       resign_last_day: string | null;
@@ -207,7 +208,8 @@ export async function PATCH(
       last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null,
       ft_started_at: fresh?.ft_started_at ?? null,
       daily_rate: fresh?.daily_rate ?? null,
-      branch_hourly_rate: fresh?.branch_hourly_rate ?? null
+      branch_hourly_rate: fresh?.branch_hourly_rate ?? null,
+      ft_salary_paid_through: fresh?.ft_salary_paid_through ?? null
     };
 
     const computed = computeLineFromMinutes({

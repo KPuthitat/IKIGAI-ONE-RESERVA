@@ -36,6 +36,9 @@ const Body = z.object({
   group_insurance_start_month: z.string().regex(/^\d{4}-\d{2}$/).or(z.literal("")).nullable().optional(),
   // วันที่มีผลของการเปลี่ยน PT→FT (owner 2026-07-13) — ใช้เป็น ft_started_at
   ft_effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // จ่ายเงินเดือนช่วงเปลี่ยนผ่านครบแล้วถึงวันที่ (owner 2026-08-18) — YYYY-MM-DD; ""/null
+  // = ล้าง. รอบรายสัปดาห์จะไม่คิดฐานเงินเดือนของวันเปลี่ยนผ่านที่ ≤ วันนี้ (จ่ายด้วยวิธีเก่าแล้ว).
+  ft_salary_paid_through: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.literal("")).nullable().optional(),
   // Correct a born-FT that was wrongly stamped as a PT→FT weekly transition
   // (owner 2026-07-30): clears ft_started_at + forces pay_cycle monthly so the
   // person lands in the FT-monthly table and the first partial month prorates by
@@ -148,6 +151,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     delete parsed.data.pay_cycle;
     delete parsed.data.salary_tax_mode;
     delete parsed.data.group_insurance_start_month;
+    delete parsed.data.ft_salary_paid_through;
   }
   // Only super_admin can grant / revoke payroll-access on another
   // account. A regular admin trying to flip this for themselves or
@@ -274,6 +278,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("monthly_salary");
   addField("pay_cycle");
   addField("salary_tax_mode");
+  // จ่ายเงินเดือนช่วงเปลี่ยนผ่านครบถึงวันที่ (owner 2026-08-18) — normalise "" → NULL.
+  if ("ft_salary_paid_through" in data) {
+    fields.push("ft_salary_paid_through = ?");
+    vals.push(data.ft_salary_paid_through ? data.ft_salary_paid_through : null);
+  }
   // Group-insurance enrolment month — "" from the form clears to NULL.
   if ("group_insurance_start_month" in data) {
     fields.push("group_insurance_start_month = ?");

@@ -93,6 +93,12 @@ export type EmployeePayrollSnapshot = {
    *  owner 2026-08-18. Set on an FT's non-home branch, it marks an "hourly helper":
    *  paid by the hour like a PT there. null/undefined = not set. */
   branch_hourly_rate?: number | null;
+  /** วันที่จ่ายเงินเดือนช่วงเปลี่ยนผ่านครบแล้วถึง (YYYY-MM-DD) — owner 2026-08-18. For a
+   *  PT→FT transition employee whose transition-month salary was already settled by
+   *  the retired weekly (÷weeks) method, a later weekly round must NOT re-pay the
+   *  base for transition-month days on/before this date (OT + double-pay premium
+   *  still pay). null = no already-paid days → normal salary/30 × days. */
+  ft_salary_paid_through?: string | null;
 };
 
 /** Which cycle an FT employee is paid on FOR A GIVEN PERIOD (owner 2026-07-16).
@@ -337,6 +343,16 @@ function addDayYmd(ymd: string): string {
   const d = new Date(`${ymd}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString().slice(0, 10);
+}
+
+// Last calendar day of the month containing `ymd` (YYYY-MM-DD). Used to keep a
+// weekly transition round from paying an FT for days that fall in the NEXT month
+// (owner 2026-08-18) — those defer to that month's monthly round.
+function endOfMonthYmd(ymd: string): string {
+  const [y, m] = ymd.split("-").map(Number);
+  // Date.UTC month is 0-indexed, so month index `m` = the month AFTER; day 0 of it
+  // is the last day of month `m` (1-indexed).
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
 }
 
 // ── Per-day branch reattribution (payroll_day_branch) ─────────────────
@@ -964,6 +980,20 @@ export function computeLineForEmployee(args: {
   // drives both the base and the forced-WHT tax mode (owner 2026-07-16).
   const ftCycle = ftEffectiveCycle(e.ft_started_at, e.pay_cycle, periodStart.slice(0, 7));
 
+  // Weekly TRANSITION round (owner 2026-08-18): an FT in their PT→FT transition
+  // month is paid weekly by day. If this weekly period spills into the NEXT month
+  // (where they're already on the monthly cycle), those next-month days must NOT
+  // pay here — they belong to that month's monthly round. Drop them from the whole
+  // line so base, OT, minutes and days_worked all reflect only the transition-month
+  // part. Only for real transition FTs (ft_started_at set) — legacy weekly FTs and
+  // full-month FTs are untouched.
+  const isTransitionWeekly = e.employment_type === "ft" && e.ft_started_at != null
+    && ftCycle === "weekly" && cycle === "weekly";
+  const transMonthEnd = isTransitionWeekly ? endOfMonthYmd(periodStart) : null;
+  const effShifts = transMonthEnd
+    ? shifts.filter((s) => bkkDate(s.startTs) <= transMonthEnd)
+    : shifts;
+
   // Determine effective hourly rate (used for legal OT mode + display)
   const ptRate = e.hourly_rate ?? settings.pt_default_hourly_rate;
   const ftHourlyEquivalent = e.monthly_salary ? e.monthly_salary / 30 / 8 : 0;
@@ -982,7 +1012,7 @@ export function computeLineForEmployee(args: {
   let ftOtPay = 0;        // FT also gets OT but no holiday premium
   const daysSet = new Set<string>();
 
-  for (const s of shifts) {
+  for (const s of effShifts) {
     const shiftDate = bkkDate(s.startTs);
 
     // PT: clamp the worked window to the scheduled shift box ±5-min
@@ -1138,13 +1168,24 @@ export function computeLineForEmployee(args: {
         }
       } else {
         // Weekly transition month (owner 2026-08-03): daily rate salary/30 × calendar
-        // days in FT status this round (from ft_started_at). Replaces the salary/#Mondays
-        // split + next-month deferral — each Monday pays for its own days, so double/OT
-        // settle cleanly and nothing is deferred.
+        // days in FT status this round (from ft_started_at). Two boundary rules
+        // (owner 2026-08-18):
+        //   A) don't pay for days in the NEXT month — cap the window at the
+        //      transition-month end; those days defer to that month's monthly round.
+        //   B) don't re-pay transition-month days already settled by the retired
+        //      weekly (÷weeks) method — start the base window after
+        //      ft_salary_paid_through. OT + double-pay premium for those days still
+        //      pay (they're computed per-shift above, not from this base window).
         const ftStart = e.ft_started_at ?? e.hire_date;
-        const empDays = employedCalendarDays(ftStart, e.last_working_day, periodStart, periodEnd);
+        const baseEnd = transMonthEnd && periodEnd > transMonthEnd ? transMonthEnd : periodEnd; // Rule A
+        let baseStart = ftStart;                                                                 // Rule B
+        if (e.ft_salary_paid_through) {
+          const after = addDayYmd(e.ft_salary_paid_through);
+          if (!baseStart || after > baseStart) baseStart = after;
+        }
+        const empDays = employedCalendarDays(baseStart, e.last_working_day, periodStart, baseEnd);
         basePay = round2((e.monthly_salary / 30) * empDays);
-        noShowDays = countNoShow(ftStart, e.last_working_day);
+        noShowDays = countNoShow(baseStart, earliestDate(e.last_working_day, baseEnd));
       }
     }
     // Else: different pay_cycle than this period, or not the primary branch — exclude
@@ -1636,7 +1677,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   const staffSql = `
     SELECT id AS user_id, display_name, employment_type, employee_code,
            ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
-           hire_date, ft_started_at,
+           hire_date, ft_started_at, ft_salary_paid_through,
            ${branchDailyRateSelect(period.branch_id)},
            ${branchOnlyHourlyRateSelect(period.branch_id)},
            ${LAST_WORKING_DAY_SELECT},
@@ -2053,7 +2094,7 @@ export function recomputeLine(
 
   const fresh = db.prepare(`
     SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
-           hire_date, ft_started_at,
+           hire_date, ft_started_at, ft_salary_paid_through,
            ${branchDailyRateSelect(period.branch_id)},
            ${branchOnlyHourlyRateSelect(period.branch_id)},
            ${LAST_WORKING_DAY_SELECT}
@@ -2062,7 +2103,7 @@ export function recomputeLine(
     employment_type: "pt" | "ft" | null; hourly_rate: number | null;
     monthly_salary: number | null; pay_cycle: "weekly" | "monthly" | null;
     salary_tax_mode: "sso" | "wht" | null; track_attendance: number | null;
-    hire_date: string | null; ft_started_at: string | null;
+    hire_date: string | null; ft_started_at: string | null; ft_salary_paid_through: string | null;
     daily_rate: number | null; branch_hourly_rate: number | null;
     resign_last_day: string | null; term_last_day: string | null;
   } | undefined;
@@ -2254,7 +2295,8 @@ export function recomputeLine(
     last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null,
     ft_started_at: fresh?.ft_started_at ?? null,
     daily_rate: fresh?.daily_rate ?? null,
-    branch_hourly_rate: fresh?.branch_hourly_rate ?? null
+    branch_hourly_rate: fresh?.branch_hourly_rate ?? null,
+    ft_salary_paid_through: fresh?.ft_salary_paid_through ?? null
   };
 
   const rlMode = helperMode(employee);
