@@ -297,4 +297,36 @@ assert(near(rE.out["A"], 300) && near(rE.out["TIP"], 300),
 assert(near(rE.undistributed, 300),
   "no-worker HYPO 300 stays company-retained even with an unrelated orphan present");
 
+// ── ACCOUNTA per-branch payout split (owner 2026-08-20) ──────────
+// In combined mode a person's net/WHT/GI is split across the branches they earned
+// at, in proportion to gross — so a ฿1000 NAMA + ฿500 HYPO earner books 2:1, and
+// the sum across branches equals their total. Mirrors computeBranchSvcPayout.
+// Cumulative (prefix-sum) rounding — mirrors computeBranchSvcPayout so the split
+// across branches reconciles EXACTLY to the total (no satang drift).
+function splitByBranch(
+  byBranch: Array<{ branch: string; gross: number }>, net: number, wht: number, gins: number
+) {
+  const totalGross = byBranch.reduce((s, b) => s + b.gross, 0);
+  const out: Array<{ branch: string; net: number; wht: number; gins: number }> = [];
+  let prior = 0;
+  for (const b of byBranch) {
+    const alloc = (v: number) =>
+      round2(v * (prior + b.gross) / totalGross) - round2(v * prior / totalGross);
+    out.push({ branch: b.branch, net: alloc(net), wht: alloc(wht), gins: alloc(gins) });
+    prior += b.gross;
+  }
+  return out;
+}
+const split = splitByBranch([{ branch: "NAMA", gross: 1000 }, { branch: "HYPO", gross: 500 }], 1455, 45, 0);
+assert(near(split[0].net, 970) && near(split[1].net, 485), `net split 2:1 → NAMA 970 / HYPO 485 (got ${split[0].net}/${split[1].net})`);
+assert(near(split[0].net + split[1].net, 1455), "branch net sums to the person's total net");
+assert(near(split[0].wht, 30) && near(split[1].wht, 15), "WHT split 2:1 → 30 / 15");
+
+// Even 3-way split of 100.00 must reconcile to EXACTLY 100.00 (33.33/33.33/33.34),
+// which naïve independent rounding (33.33×3 = 99.99) would miss.
+const split3 = splitByBranch(
+  [{ branch: "A", gross: 100 }, { branch: "B", gross: 100 }, { branch: "C", gross: 100 }], 100, 0, 350);
+assert(near(split3.reduce((s, b) => s + b.net, 0), 100), `3-way net reconciles to exactly 100 (got ${split3.map((b) => b.net).join("+")})`);
+assert(near(split3.reduce((s, b) => s + b.gins, 0), 350), "3-way group-insurance reconciles to exactly 350");
+
 console.log("\nALL SHARED-POOL SVC FIXTURES PASSED");

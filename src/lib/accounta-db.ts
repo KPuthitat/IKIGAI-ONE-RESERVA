@@ -11,7 +11,7 @@ import {
 } from "./accounta";
 import { owlAiCostBaht } from "./owl-ai-models";
 import { smeIncomeTax, type SmeIncomeTax } from "./income-tax";
-import { computeMonthlySvcSummary, computePayoutDate } from "./service-charge";
+import { computeBranchSvcPayout, computePayoutDate } from "./service-charge";
 
 export type VendorRow = {
   id: number;
@@ -606,7 +606,11 @@ export function postSvcToAccounta(batchId: number, userId: number): { staff: num
   const companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
     .get(batch.branch_id) as { company_id: number | null } | undefined)?.company_id ?? null;
 
-  const summary = computeMonthlySvcSummary(batch.branch_id, batch.year_month);
+  // Per-person amounts for THIS branch. When the month is on "คำนวณรวมทั้งบริษัท",
+  // this returns each person's share of the combined pool attributed to this branch
+  // (owner 2026-08-20) — so a worker who earned at NAMA + HYPO is booked to each
+  // branch separately; otherwise it's the plain per-branch payout.
+  const payoutRows = computeBranchSvcPayout(batch.branch_id, batch.year_month);
   ensureExpenseCategory("เซอร์วิสชาร์จพนักงาน", "LB");
   ensureExpenseCategory("ภาษีหัก ณ ที่จ่าย", "WHT");
   ensureExpenseCategory("ประกันกลุ่มพนักงาน", "GINS");
@@ -624,9 +628,9 @@ export function postSvcToAccounta(batchId: number, userId: number): { staff: num
   const run = db.transaction(() => {
     db.prepare("DELETE FROM accounta_expenses WHERE svc_payout_batch_id = ?").run(batchId);
     let staff = 0, totalNet = 0, totalWht = 0, totalGins = 0;
-    for (const r of summary.rows) {
-      const net = round2(r.netPayout || 0);
-      const wht = round2(r.whtAmount || 0);
+    for (const r of payoutRows) {
+      const net = round2(r.net || 0);
+      const wht = round2(r.wht || 0);
       const gins = round2(r.groupInsurance || 0);
       if (net > 0) {
         ins.run(batch.branch_id, companyId, payDate, r.displayName,

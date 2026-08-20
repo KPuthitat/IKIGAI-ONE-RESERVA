@@ -1913,6 +1913,57 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
   };
 }
 
+export type BranchSvcPayoutRow = {
+  userId: number; displayName: string; taxMode: "sso" | "wht";
+  gross: number; net: number; wht: number; groupInsurance: number;
+};
+
+/** Per-person SVC payout for ONE branch — the authoritative amounts to pay and to
+ *  post to ACCOUNTA (owner 2026-08-20). When the (company, month) is on the
+ *  "คำนวณรวมทั้งบริษัท" (shared) mode, each person's net / WHT / group-insurance is
+ *  split across the branches they earned at, in proportion to the gross they earned
+ *  at each — so a worker who earned ฿1000 at NAMA and ฿500 at HYPO is booked
+ *  2:1 across those two branches, and the sum across branches equals their total.
+ *  Otherwise it's the plain per-branch summary (each branch's pool → its workers). */
+export function computeBranchSvcPayout(branchId: number, yearMonth: string): BranchSvcPayoutRow[] {
+  const db = getDb();
+  const companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
+    .get(branchId) as { company_id: number | null } | undefined)?.company_id ?? null;
+  const shared = companyId != null && !isManualSvcMonth(yearMonth) && isSharedSvcMonth(companyId, yearMonth);
+
+  if (!shared) {
+    return computeMonthlySvcSummary(branchId, yearMonth).rows.map((r) => ({
+      userId: r.userId, displayName: r.displayName, taxMode: r.taxMode,
+      gross: r.grossAllocation, net: r.netPayout, wht: r.whtAmount, groupInsurance: r.groupInsurance
+    }));
+  }
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const out: BranchSvcPayoutRow[] = [];
+  for (const r of computeCompanySvcSummary(companyId!, yearMonth).rows) {
+    const tg = r.grossAllocation;
+    if (tg <= 0) continue;
+    // Cumulative (prefix-sum) rounding by the person's branch order so the split of
+    // net / WHT / group-insurance across their branches reconciles EXACTLY to their
+    // total (no satang drift): each branch gets round2(v·cumGross) − round2(v·priorGross).
+    let prior = 0, thisGross = 0, found = false;
+    for (const b of r.byBranch) {
+      if (b.branchId === branchId) { thisGross = b.grossAllocation; found = true; break; }
+      prior += b.grossAllocation;
+    }
+    if (!found || thisGross <= 0) continue;
+    const alloc = (v: number) => round2(v * (prior + thisGross) / tg) - round2(v * prior / tg);
+    out.push({
+      userId: r.userId, displayName: r.displayName, taxMode: r.taxMode,
+      gross: round2(thisGross),
+      net: alloc(r.netPayout),
+      wht: alloc(r.whtAmount),
+      groupInsurance: alloc(r.groupInsurance)
+    });
+  }
+  return out;
+}
+
 /** Clamped worked minutes for ONE user on ONE day at a branch — the exact same
  *  engine the monthly SVC roll-up uses (pairShifts → roster-clamp → break-deduct
  *  → approved-OT extend). The clock-out food-credit warning calls this so the

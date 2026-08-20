@@ -29,6 +29,8 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import {
   computeMonthlySvcSummary,
+  computeBranchSvcPayout,
+  isSharedSvcMonth,
   listDailyForMonth,
   isManualSvcMonth,
   SVC_STAFF_SHARE_RATIO,
@@ -71,6 +73,16 @@ export default function AdminServiceChargePage({
 
   const dailyRows = listDailyForMonth(branch.id, month);
   const summary = computeMonthlySvcSummary(branch.id, month);
+
+  // When the month is on "คำนวณรวมทั้งบริษัท", the actual payout + ACCOUNTA posting
+  // uses the combined-pool amounts attributed to THIS branch (owner 2026-08-20), so
+  // the payout preview must reflect that — not the plain per-branch total below.
+  const combinedMode = branch.company_id != null && !isManualSvcMonth(month)
+    && isSharedSvcMonth(branch.company_id, month);
+  const branchPayout = combinedMode ? computeBranchSvcPayout(branch.id, month) : null;
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const payoutPreviewNet = branchPayout ? round2(branchPayout.reduce((s, r) => s + r.net, 0)) : summary.totalNetPayout;
+  const payoutPreviewWht = branchPayout ? round2(branchPayout.reduce((s, r) => s + r.wht, 0)) : summary.totalWht;
 
   // Payout batch state for the "ทำจ่ายแล้ว" action (owner 2026-07-21).
   const payoutBatch = db.prepare(
@@ -213,9 +225,11 @@ export default function AdminServiceChargePage({
             />
             <SummaryCard
               label="ยอดจ่ายจริง (สุทธิ)"
-              value={fmtMoney(summary.totalNetPayout)}
+              value={fmtMoney(payoutPreviewNet)}
               accent="emerald"
-              sub={summary.totalWht > 0 ? `หัก ณ ที่จ่ายรวม ${fmtMoney(summary.totalWht)}` : undefined}
+              sub={combinedMode
+                ? "ตัวเลขรวมทั้งบริษัท (ปันมาสาขานี้)"
+                : (summary.totalWht > 0 ? `หัก ณ ที่จ่ายรวม ${fmtMoney(payoutPreviewWht)}` : undefined)}
             />
             <SummaryCard
               label={t(lang, "admin.persona.svc.tile.payoutDate")}
@@ -241,6 +255,19 @@ export default function AdminServiceChargePage({
         </>
       )}
 
+      {/* Combined-calc notice — payout/accounting for this month uses the
+          company-wide numbers attributed to this branch (owner 2026-08-20). */}
+      {combinedMode && (
+        <div className="card border-brand/40 bg-brand/5 text-xs text-slate-700">
+          เดือนนี้เปิด <b>คำนวณเซอร์วิสชาร์จรวมทั้งบริษัท</b> — ยอดทำจ่าย/ลงบัญชีของสาขานี้
+          อิงตัวเลข<b>รวมทั้งบริษัท</b> (ส่วนที่ปันมาให้สาขานี้) ตารางด้านล่างแสดงตัวเลขรายสาขาไว้อ้างอิง
+          · ดูรายคนแบบเต็มได้ที่{" "}
+          <Link href={`/admin/persona/service-charge/company?month=${month}`} className="text-brand underline font-medium">
+            หน้ารวมทั้งบริษัท
+          </Link>
+        </div>
+      )}
+
       {/* Payout / ACCOUNTA posting (owner 2026-07-21) */}
       {canManagePayout && summary.rows.length > 0 && (
         <SvcPayoutActions
@@ -249,7 +276,7 @@ export default function AdminServiceChargePage({
           totalNet={payoutBatch?.total_net ?? 0}
           totalWht={payoutBatch?.total_wht ?? 0}
           postedAt={payoutBatch?.posted_at ?? null}
-          netPayoutPreview={summary.totalNetPayout}
+          netPayoutPreview={payoutPreviewNet}
         />
       )}
 
