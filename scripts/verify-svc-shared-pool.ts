@@ -203,72 +203,98 @@ const exNoop = rollup({ grossRaw: 240, lateMinutes: 0, anyComputable: true,
 assert(!exNoop.forfeited && !exNoop.exempted && exNoop.netPayout === 240,
   "exemption on a NON-forfeited person is a no-op (exempted=false, still paid 240)");
 
-// ── รวมกอง two-tier: cross-company visitor gets ONLY their branch (owner 2026-08-20) ──
-// Company members pool across branches by hours; a cross-company visitor (member of
-// no branch in this company) keeps only their per-branch share and does NOT draw
-// from the cross-branch pool. Mirrors computeCompanySvcSummaryShared's day loop.
+// ── คำนวณรวมทั้งบริษัท: amount-branch workers get ONLY their branch; only workers
+// sent to a NO-amount branch are folded into the amount pools (owner 2026-08-20) ──
+// Mirrors computeCompanySvcSummaryShared's day loop. "orphan" = a company member
+// whose branch had no amount that day; a cross-company visitor at a no-amount
+// branch is dropped (gets only their own branch, i.e. nothing).
 type Worker = { id: string; branch: string; min: number; member: boolean };
 function distributeDay(amountByBranch: Record<string, number>, workers: Worker[]) {
   const out: Record<string, number> = {};
   const add = (id: string, s: number) => { out[id] = (out[id] ?? 0) + s; };
-  // stage 1: per-branch split; members → pool, visitors → final. A branch with an
-  // amount but NO workers folds its whole staff share into the pool (no leak).
-  let dayMemberPool = 0;
-  for (const [branch, amount] of Object.entries(amountByBranch)) {
-    if (amount <= 0) continue;
-    const staffPoolB = amount * SVC_STAFF_SHARE_RATIO;
-    const bw = workers.filter((w) => w.branch === branch);
-    const totalB = bw.reduce((s, w) => s + w.min, 0);
-    if (totalB <= 0) { dayMemberPool += staffPoolB; continue; }
-    for (const w of bw) {
-      const shareB = staffPoolB * (w.min / totalB);
-      if (w.member) dayMemberPool += shareB; else add(w.id, shareB);
-    }
+  let undistributed = 0;   // no-worker amount branch → company retains
+  const amountBranches = Object.keys(amountByBranch).filter((b) => amountByBranch[b] > 0);
+  const orphans = workers.filter((w) => w.member && !(amountByBranch[w.branch] > 0));
+  const orphanMin = orphans.reduce((s, w) => s + w.min, 0);
+  for (const b of amountBranches) {
+    const placed = workers.filter((w) => w.branch === b);
+    const placedMin = placed.reduce((s, w) => s + w.min, 0);
+    const divisor = placedMin > 0 ? placedMin + orphanMin : 0;
+    const staffPoolB = amountByBranch[b] * SVC_STAFF_SHARE_RATIO;
+    if (divisor <= 0) { undistributed += staffPoolB; continue; }
+    for (const w of placed) add(w.id, staffPoolB * (w.min / divisor));
+    for (const w of orphans) add(w.id, staffPoolB * (w.min / divisor));  // orphan floats in
   }
-  // stage 2: re-split pool among members by total hours (any branch)
-  const members = workers.filter((w) => w.member);
-  const totalMemberMin = members.reduce((s, w) => s + w.min, 0);
-  if (dayMemberPool > 0 && totalMemberMin > 0)
-    for (const w of members) add(w.id, dayMemberPool * (w.min / totalMemberMin));
-  return out;
+  return { out, undistributed };
 }
 
-// Scenario A: HYPO has NO amount that day. NAMA=1000. Member A at NAMA, member
-// ทิพวรรณ at HYPO, Sala-Chill visitor at HYPO.
-const dayA = distributeDay(
+// Scenario A: HYPO has NO amount. NAMA pool 600. A,B at NAMA; ทิพวรรณ (member) sent
+// to HYPO → orphan, folded into NAMA; Sala-Chill (cross-company) at HYPO → 0.
+const { out: dayA } = distributeDay(
   { NAMA: 1000, HYPO: 0 },
   [
     { id: "A", branch: "NAMA", min: 480, member: true },
+    { id: "B", branch: "NAMA", min: 480, member: true },
     { id: "TIP", branch: "HYPO", min: 480, member: true },
     { id: "SALA", branch: "HYPO", min: 480, member: false }
   ]
 );
-assert(near(dayA["TIP"], 300), `member ทิพวรรณ at no-amount HYPO STILL shares NAMA's pool = 300 (got ${dayA["TIP"]})`);
-assert(near(dayA["A"], 300), `member A at NAMA pooled with HYPO member = 300 (got ${dayA["A"]})`);
-assert((dayA["SALA"] ?? 0) === 0, "cross-company visitor at no-amount HYPO gets 0 (no cross-branch pool)");
-assert(near((dayA["A"] ?? 0) + (dayA["TIP"] ?? 0) + (dayA["SALA"] ?? 0), 600), "day A reconciles to staff pool 600");
+assert(near(dayA["TIP"], 200), `orphan ทิพวรรณ (no-amount HYPO) folded into NAMA pool = 200 (got ${dayA["TIP"]})`);
+assert(near(dayA["A"], 200) && near(dayA["B"], 200), "NAMA workers diluted only by the orphan = 200 each");
+assert((dayA["SALA"] ?? 0) === 0, "cross-company visitor at no-amount branch gets 0");
+assert(near((dayA["A"] ?? 0) + (dayA["B"] ?? 0) + (dayA["TIP"] ?? 0), 600), "day A reconciles to 600");
 
-// Scenario B: HYPO=500 too. Sala-Chill must get ONLY its hour-share of HYPO (150),
-// never NAMA's pool.
-const dayB = distributeDay(
+// Scenario B (THE fix): both NAMA=1000 & HYPO=500 have amounts. A NAMA worker must
+// get ONLY NAMA's pool — never a slice of HYPO's amount.
+const { out: dayB } = distributeDay(
   { NAMA: 1000, HYPO: 500 },
   [
     { id: "A", branch: "NAMA", min: 480, member: true },
-    { id: "TIP", branch: "HYPO", min: 480, member: true },
+    { id: "B", branch: "NAMA", min: 480, member: true },
+    { id: "C", branch: "HYPO", min: 480, member: true },
     { id: "SALA", branch: "HYPO", min: 480, member: false }
   ]
 );
-assert(near(dayB["SALA"], 150), `Sala-Chill visitor gets ONLY HYPO's share = 300×480/960 = 150 (got ${dayB["SALA"]})`);
-assert(near(dayB["A"], 375) && near(dayB["TIP"], 375), "members pool NAMA+HYPO-member portions → 375 each");
-assert(near(dayB["A"] + dayB["TIP"] + dayB["SALA"], 900), "day B reconciles to staff pool 900 (1500×0.6)");
+assert(near(dayB["A"], 300) && near(dayB["B"], 300), `NAMA workers get ONLY NAMA (300 each), NOT HYPO's money (got A=${dayB["A"]})`);
+assert(near(dayB["C"], 150) && near(dayB["SALA"], 150), "HYPO's 300 pool split by its own workers = 150 each (incl cross-company)");
+assert(near(dayB["A"] + dayB["B"] + dayB["C"] + dayB["SALA"], 900), "day B reconciles to 900");
 
-// Scenario C: HYPO=500 recorded but NOBODY worked HYPO that day (all at NAMA).
-// HYPO's 300 staff share must NOT leak — it folds into the pool and is paid to the
-// members who worked, so the day reconciles to the full 60% (900).
-const dayC = distributeDay(
+// Scenario C: orphan sent to a THIRD no-amount branch floats across BOTH amount pools.
+const { out: dayC } = distributeDay(
+  { NAMA: 1000, HYPO: 500, SALAB: 0 },
+  [
+    { id: "A", branch: "NAMA", min: 480, member: true },
+    { id: "C", branch: "HYPO", min: 480, member: true },
+    { id: "TIP", branch: "SALAB", min: 480, member: true }
+  ]
+);
+assert(near(dayC["A"], 300), `A (NAMA) = 300 (got ${dayC["A"]})`);
+assert(near(dayC["C"], 150), `C (HYPO) = 150 (got ${dayC["C"]})`);
+assert(near(dayC["TIP"], 450), `orphan draws from BOTH amount branches = 300+150 = 450 (got ${dayC["TIP"]})`);
+assert(near(dayC["A"] + dayC["C"] + dayC["TIP"], 900), "day C reconciles to 900");
+
+// Scenario D: HYPO=500 recorded but no HYPO worker and no orphan → HYPO's share is
+// NOT leaked to the NAMA worker (company retains it). A gets ONLY NAMA's 600.
+const rD = distributeDay(
   { NAMA: 1000, HYPO: 500 },
   [{ id: "A", branch: "NAMA", min: 480, member: true }]
 );
-assert(near(dayC["A"], 900), `no-worker HYPO amount folds into pool → A gets full 900 (got ${dayC["A"]})`);
+assert(near(rD.out["A"], 600), `A gets ONLY NAMA's 600 — HYPO's 300 does not leak (got ${rD.out["A"]})`);
+assert(near(rD.undistributed, 300), `HYPO's 300 (no worker) retained by company (got ${rD.undistributed})`);
+
+// Scenario E (the review fix): HYPO=500 has no worker, but an UNRELATED orphan TIP
+// works a third no-amount branch SALAB. HYPO's 300 must still be company-retained —
+// NOT handed to TIP who never worked HYPO. TIP draws only from NAMA.
+const rE = distributeDay(
+  { NAMA: 1000, HYPO: 500, SALAB: 0 },
+  [
+    { id: "A", branch: "NAMA", min: 480, member: true },
+    { id: "TIP", branch: "SALAB", min: 480, member: true }
+  ]
+);
+assert(near(rE.out["A"], 300) && near(rE.out["TIP"], 300),
+  `NAMA pool (600) split A+TIP = 300 each (got A=${rE.out["A"]}, TIP=${rE.out["TIP"]})`);
+assert(near(rE.undistributed, 300),
+  "no-worker HYPO 300 stays company-retained even with an unrelated orphan present");
 
 console.log("\nALL SHARED-POOL SVC FIXTURES PASSED");
