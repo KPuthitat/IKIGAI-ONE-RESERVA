@@ -311,6 +311,7 @@ export default function CompanyServiceChargePage({
                               forfeited={r.forfeited}
                               forfeitReason={r.forfeitReason}
                               dailyBreakdown={r.dailyBreakdown}
+                              dayLedger={r.dayLedger}
                               taxMode={r.taxMode}
                               whtAmount={r.whtAmount}
                               groupInsurance={r.groupInsurance}

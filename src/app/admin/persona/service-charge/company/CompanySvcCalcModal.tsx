@@ -18,7 +18,7 @@ const fmtMin = (min: number) => Math.round(min).toLocaleString();
 
 export default function CompanySvcCalcModal({
   displayName, shared, byBranch, grossAllocation, netAllocation, forfeited,
-  forfeitReason, dailyBreakdown, taxMode, whtAmount, groupInsurance, netPayout
+  forfeitReason, dailyBreakdown, dayLedger, taxMode, whtAmount, groupInsurance, netPayout
 }: {
   displayName: string;
   shared: boolean;
@@ -28,6 +28,7 @@ export default function CompanySvcCalcModal({
   forfeited: boolean;
   forfeitReason: "late_20pct" | "resignation" | null;
   dailyBreakdown: BreakdownItem[];
+  dayLedger?: Array<{ date: string; share: number; remark: string }>;
   taxMode: "sso" | "wht";
   whtAmount: number;
   groupInsurance: number;
@@ -93,8 +94,8 @@ export default function CompanySvcCalcModal({
               </table>
             </div>
 
-            {/* รายวัน */}
-            {dailyBreakdown.length === 0 ? (
+            {/* รายวัน — ครบทุกวันของเดือน (วันไม่มีข้อมูลลง 0 + หมายเหตุ) */}
+            {(!dayLedger?.length && dailyBreakdown.length === 0) ? (
               <p className="text-sm text-slate-500 py-4 text-center">ไม่มีวันที่ได้ส่วนแบ่งในเดือนนี้</p>
             ) : (
               <div className="overflow-x-auto">
@@ -113,17 +114,42 @@ export default function CompanySvcCalcModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {dailyBreakdown.map((d, i) => (
-                      <tr key={`${d.date}-${d.branchId}-${i}`} className="border-b border-slate-50 text-slate-700">
-                        <td className="py-1.5 pr-2">{d.date}</td>
-                        <td className="py-1.5 px-2 text-slate-500">{d.branchName}</td>
-                        <td className="py-1.5 px-2 text-right">{fmtMoney(d.dayAmount)}</td>
-                        <td className="py-1.5 px-2 text-right">{fmtMoney(d.staffPool)}</td>
-                        <td className="py-1.5 px-2 text-right">{fmtMin(d.userMinutes)}</td>
-                        <td className="py-1.5 px-2 text-right text-slate-500">{fmtMin(d.totalMinutes)}</td>
-                        <td className="py-1.5 pl-2 text-right font-semibold text-emerald-700">{fmtMoney(d.share)}</td>
-                      </tr>
-                    ))}
+                    {(dayLedger && dayLedger.length > 0
+                      ? dayLedger.flatMap((ld) => {
+                          const rows = dailyBreakdown.filter((b) => b.date === ld.date);
+                          if (rows.length === 0) {
+                            // Empty day — show 0 + the remark (ยังไม่เริ่มงาน/วันลา/วันหยุด/ไม่มียอด).
+                            return [(
+                              <tr key={ld.date} className="border-b border-slate-50 text-slate-400">
+                                <td className="py-1.5 pr-2">{ld.date}</td>
+                                <td className="py-1.5 px-2 italic" colSpan={5}>{ld.remark || "—"}</td>
+                                <td className="py-1.5 pl-2 text-right">{fmtMoney(0)}</td>
+                              </tr>
+                            )];
+                          }
+                          return rows.map((d, i) => (
+                            <tr key={`${d.date}-${d.branchId}-${i}`} className="border-b border-slate-50 text-slate-700">
+                              <td className="py-1.5 pr-2">{i === 0 ? d.date : ""}</td>
+                              <td className="py-1.5 px-2 text-slate-500">{d.branchName}</td>
+                              <td className="py-1.5 px-2 text-right">{fmtMoney(d.dayAmount)}</td>
+                              <td className="py-1.5 px-2 text-right">{fmtMoney(d.staffPool)}</td>
+                              <td className="py-1.5 px-2 text-right">{fmtMin(d.userMinutes)}</td>
+                              <td className="py-1.5 px-2 text-right text-slate-500">{fmtMin(d.totalMinutes)}</td>
+                              <td className="py-1.5 pl-2 text-right font-semibold text-emerald-700">{fmtMoney(d.share)}</td>
+                            </tr>
+                          ));
+                        })
+                      : dailyBreakdown.map((d, i) => (
+                          <tr key={`${d.date}-${d.branchId}-${i}`} className="border-b border-slate-50 text-slate-700">
+                            <td className="py-1.5 pr-2">{d.date}</td>
+                            <td className="py-1.5 px-2 text-slate-500">{d.branchName}</td>
+                            <td className="py-1.5 px-2 text-right">{fmtMoney(d.dayAmount)}</td>
+                            <td className="py-1.5 px-2 text-right">{fmtMoney(d.staffPool)}</td>
+                            <td className="py-1.5 px-2 text-right">{fmtMin(d.userMinutes)}</td>
+                            <td className="py-1.5 px-2 text-right text-slate-500">{fmtMin(d.totalMinutes)}</td>
+                            <td className="py-1.5 pl-2 text-right font-semibold text-emerald-700">{fmtMoney(d.share)}</td>
+                          </tr>
+                        )))}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-slate-200 font-bold text-slate-800">

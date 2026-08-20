@@ -1086,6 +1086,10 @@ export type CompanySvcRow = {
     date: string; branchId: number; branchName: string;
     dayAmount: number; staffPool: number; userMinutes: number; totalMinutes: number; share: number;
   }>;
+  // Every day of the month for the "วิธีคำนวณ" view (owner 2026-08-20): days with a
+  // share carry it; empty days carry 0 + a remark (ยังไม่เริ่มงาน / วันลา / วันหยุด /
+  // ไม่มียอด) so the owner can see the whole month at a glance.
+  dayLedger?: Array<{ date: string; share: number; remark: string }>;
 };
 
 export type CompanySvcSummary = {
@@ -1445,6 +1449,73 @@ function rollupCompanyRow(input: {
   };
 }
 
+/** Fill each row's dayLedger: one entry per calendar day (owner 2026-08-20). A day
+ *  with a share carries it; an empty day carries 0 + a remark explaining why —
+ *  ยังไม่เริ่มงาน (before hire), วันลา (approved leave), วันหยุด (not rostered), or
+ *  ไม่มียอด (rostered but earned nothing). Roster/leave are read across the company's
+ *  branches. Mutates rows in place. */
+function attachDayLedgers(rows: CompanySvcRow[], branchIds: number[], yearMonth: string): void {
+  if (rows.length === 0) return;
+  const db = getDb();
+  const ids = rows.map((r) => r.userId);
+  const ph = ids.map(() => "?").join(",");
+  const start = `${yearMonth}-01`;
+  const end = `${yearMonth}-31`;
+  const [yy, mm] = yearMonth.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+
+  const hire = new Map<number, string | null>();
+  for (const r of db.prepare(`SELECT id, hire_date AS h FROM users WHERE id IN (${ph})`)
+    .all(...ids) as Array<{ id: number; h: string | null }>) hire.set(r.id, r.h);
+
+  const workByUser = new Map<number, Set<string>>();
+  const bClause = branchIds.length ? `AND ra.branch_id IN (${branchIds.map(() => "?").join(",")})` : "";
+  for (const r of db.prepare(`
+    SELECT DISTINCT ra.user_id AS uid, ra.assignment_date AS d
+    FROM roster_assignments ra JOIN shift_codes sc ON sc.id = ra.shift_code_id
+    WHERE sc.kind = 'work' AND ra.assignment_date >= ? AND ra.assignment_date <= ?
+      AND ra.user_id IN (${ph}) ${bClause}
+  `).all(start, end, ...ids, ...branchIds) as Array<{ uid: number; d: string }>) {
+    let s = workByUser.get(r.uid); if (!s) { s = new Set(); workByUser.set(r.uid, s); } s.add(r.d);
+  }
+
+  const leaveByUser = new Map<number, Set<string>>();
+  for (const r of db.prepare(`
+    SELECT user_id AS uid, date_from AS df, date_to AS dt
+    FROM leave_requests WHERE status = 'approved' AND user_id IN (${ph})
+      AND date_to >= ? AND date_from <= ?
+  `).all(...ids, start, end) as Array<{ uid: number; df: string; dt: string }>) {
+    let s = leaveByUser.get(r.uid); if (!s) { s = new Set(); leaveByUser.set(r.uid, s); }
+    const df = r.df.slice(0, 10), dt = r.dt.slice(0, 10);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = `${yearMonth}-${String(d).padStart(2, "0")}`;
+      if (date >= df && date <= dt) s.add(date);
+    }
+  }
+
+  for (const row of rows) {
+    const shareByDate = new Map<string, number>();
+    for (const b of row.dailyBreakdown) shareByDate.set(b.date, (shareByDate.get(b.date) ?? 0) + b.share);
+    const hd = hire.get(row.userId) ?? null;
+    const work = workByUser.get(row.userId) ?? new Set<string>();
+    const leave = leaveByUser.get(row.userId) ?? new Set<string>();
+    const ledger: NonNullable<CompanySvcRow["dayLedger"]> = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = `${yearMonth}-${String(d).padStart(2, "0")}`;
+      const share = shareByDate.get(date) ?? 0;
+      let remark = "";
+      if (share <= 0) {
+        remark = hd && date < hd.slice(0, 10) ? "ยังไม่เริ่มงาน"
+          : leave.has(date) ? "วันลา"
+          : !work.has(date) ? "วันหยุด"
+          : "ไม่มียอด";
+      }
+      ledger.push({ date, share, remark });
+    }
+    row.dayLedger = ledger;
+  }
+}
+
 /** "รวมกอง" shared-pool company summary (owner 2026-08-18). Each DAY, every branch's
  *  SVC amount is POOLED and the 60% staff share is split across everyone who worked
  *  at ANY branch that day, weighted by their clamped worked minutes (ตามชั่วโมง
@@ -1682,6 +1753,8 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
     });
   }).sort((x, y) => y.netPayout - x.netPayout);
 
+  attachDayLedgers(rows, branches.map((b) => b.id), yearMonth);
+
   const branchTotals = contexts.map(({ branch, ctx }) => ({
     branchId: branch.id, branchName: branch.name, totalCollected: ctx.totalCollected
   }));
@@ -1815,6 +1888,8 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
       yearMonth, whtRate
     });
   }).sort((x, y) => y.netPayout - x.netPayout);
+
+  attachDayLedgers(rows, branches.map((b) => b.id), yearMonth);
 
   const branchTotals = perBranch.map(({ branch, summary }) => ({
     branchId: branch.id, branchName: branch.name, totalCollected: summary.totalCollected
