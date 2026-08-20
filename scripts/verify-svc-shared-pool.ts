@@ -74,6 +74,7 @@ function rollup(input: {
   resignForfeit: boolean; rawFoodClawback: number;
   taxMode: "sso" | "wht"; giEmploymentType: string | null; giStartMonth: string | null;
   skipGroupInsurance: boolean; exempted?: boolean; yearMonth: string; whtRate: number;
+  otherDeductionItems?: Array<{ amount: number }>;
 }) {
   const gross = round2(input.grossRaw);
   const scheduledMinutes = input.realScheduledMinutes > 0 ? input.realScheduledMinutes : input.fallbackScheduled;
@@ -82,15 +83,22 @@ function rollup(input: {
   const wouldForfeit = lateForfeit || input.resignForfeit;
   const exempted = wouldForfeit && !!input.exempted;
   const forfeited = wouldForfeit && !exempted;
+  // Order (owner 2026-08-20): food → other → group insurance → THEN tax. netAllocation
+  // stays pre-GI (payslip/summary subtract GI separately); WHT is on netAllocation−GI;
+  // GI is 0 when forfeited.
   const foodClawback = forfeited ? 0 : Math.min(round2(input.rawFoodClawback), gross);
-  const netAllocation = forfeited ? 0 : round2(gross - foodClawback);
-  const whtAmount = input.taxMode === "wht" ? round2(netAllocation * input.whtRate) : 0;
-  const groupInsurance = input.skipGroupInsurance ? 0 : groupInsuranceDeduction({
+  const afterFood = round2(gross - foodClawback);
+  const rawOther = round2((input.otherDeductionItems ?? []).reduce((s, x) => s + x.amount, 0));
+  const otherDeductions = forfeited ? 0 : Math.min(rawOther, Math.max(0, afterFood));
+  const afterOther = round2(afterFood - otherDeductions);
+  const groupInsurance = (input.skipGroupInsurance || forfeited) ? 0 : groupInsuranceDeduction({
     employmentType: input.giEmploymentType, startMonth: input.giStartMonth,
-    yearMonth: input.yearMonth, availablePayout: round2(netAllocation - whtAmount)
+    yearMonth: input.yearMonth, availablePayout: afterOther
   });
-  const netPayout = round2(netAllocation - whtAmount - groupInsurance);
-  return { gross, forfeited, exempted, foodClawback, netAllocation, whtAmount, groupInsurance, netPayout };
+  const netAllocation = forfeited ? 0 : afterOther;
+  const whtAmount = input.taxMode === "wht" ? round2(Math.max(0, round2(netAllocation - groupInsurance)) * input.whtRate) : 0;
+  const netPayout = round2(netAllocation - groupInsurance - whtAmount);
+  return { gross, forfeited, exempted, foodClawback, otherDeductions, netAllocation, whtAmount, groupInsurance, netPayout };
 }
 
 // sso, no lateness → full net, no WHT, no GI (not enrolled)
@@ -144,6 +152,23 @@ const r7 = rollup({ grossRaw: 300, lateMinutes: 0, anyComputable: false,
   skipGroupInsurance: false, yearMonth: "2026-08", whtRate: 0.03 });
 assert(r7.forfeited && r7.foodClawback === 0 && r7.netPayout === 0,
   "resignation-forfeited → clawback 0, net 0");
+
+// GI is deducted BEFORE tax (owner 2026-08-20): WHT on gross−GI, not gross.
+const r8 = rollup({ grossRaw: 1000, lateMinutes: 0, anyComputable: true,
+  realScheduledMinutes: 9600, fallbackScheduled: 14400, resignForfeit: false,
+  rawFoodClawback: 0, taxMode: "wht", giEmploymentType: "ft", giStartMonth: "2026-08",
+  skipGroupInsurance: false, yearMonth: "2026-08", whtRate: 0.03 });
+assert(r8.groupInsurance === 350 && r8.whtAmount === 19.5 && r8.netPayout === 630.5,
+  `GI before tax: WHT on 1000−350=650 → 19.5, net 1000−350−19.5 = 630.5 (got GI=${r8.groupInsurance} wht=${r8.whtAmount} net=${r8.netPayout})`);
+
+// Forfeited + GI-enrolled → groupInsurance MUST be 0 (nothing withheld, so the
+// company doesn't owe the insurer for it).
+const r9 = rollup({ grossRaw: 1000, lateMinutes: 5000, anyComputable: true,
+  realScheduledMinutes: 9600, fallbackScheduled: 14400, resignForfeit: false,
+  rawFoodClawback: 0, taxMode: "sso", giEmploymentType: "ft", giStartMonth: "2026-08",
+  skipGroupInsurance: false, yearMonth: "2026-08", whtRate: 0.03 });
+assert(r9.forfeited && r9.groupInsurance === 0 && r9.netPayout === 0,
+  "forfeited + GI-enrolled → GI 0 (not owed to insurer), net 0");
 
 // ── combined 480-cap across branches (owner 2026-08-18) ──────────
 // A cross-branch worker doing 300 min NAMA + 300 min HYPO on one day (no OT) must
@@ -330,24 +355,32 @@ assert(near(split3.reduce((s, b) => s + b.net, 0), 100), `3-way net reconciles t
 assert(near(split3.reduce((s, b) => s + b.gins, 0), 350), "3-way group-insurance reconciles to exactly 350");
 
 // ── ad-hoc SVC deductions (owner 2026-08-20) ─────────────────────
-// Order: gross → food clawback → OTHER deductions → WHT → group insurance → net.
-// Clamped so SVC never goes negative.
+// Order: gross → food clawback → OTHER deductions → group insurance → WHT → net
+// (everything is deducted BEFORE tax; owner 2026-08-20). Each step is clamped so
+// the SVC never goes negative; netAllocation is the pre-tax amount after all
+// deductions and WHT is charged on it.
 function svcNet(gross: number, food: number, other: number, taxMode: "sso" | "wht", whtRate: number, gi: number) {
   const afterFood = round2(gross - food);
   const otherApplied = Math.min(round2(other), Math.max(0, afterFood));
-  const netAllocation = round2(afterFood - otherApplied);
+  const afterOther = round2(afterFood - otherApplied);
+  const giApplied = Math.min(round2(gi), Math.max(0, afterOther));
+  const netAllocation = round2(afterOther - giApplied);
   const wht = taxMode === "wht" ? round2(netAllocation * whtRate) : 0;
-  const netPayout = round2(netAllocation - wht - gi);
-  return { otherApplied, netAllocation, wht, netPayout };
+  const netPayout = round2(netAllocation - wht);
+  return { otherApplied, giApplied, netAllocation, wht, netPayout };
 }
 const d1 = svcNet(1000, 100, 200, "sso", 0.03, 0);
 assert(d1.otherApplied === 200 && d1.netAllocation === 700 && d1.netPayout === 700,
   "gross1000 − food100 − other200 = 700 (sso, no GI)");
 const d2 = svcNet(1000, 0, 200, "wht", 0.03, 350);
-assert(d2.netAllocation === 800 && d2.wht === 24 && d2.netPayout === 426,
-  "other before WHT: base 800 → WHT 24, − GI 350 = 426");
+assert(d2.netAllocation === 450 && d2.wht === 13.5 && d2.netPayout === 436.5,
+  `everything before tax: 1000−200−350=450 pre-tax → WHT 13.5 → net 436.5 (got ${d2.netAllocation}/${d2.wht}/${d2.netPayout})`);
 const d3 = svcNet(100, 0, 500, "sso", 0.03, 0);
 assert(d3.otherApplied === 100 && d3.netAllocation === 0 && d3.netPayout === 0,
   "deduction clamped to SVC — never negative (other 500 on 100 → 100 applied, net 0)");
+// GI clamped when little is left after other deductions.
+const d4 = svcNet(500, 0, 300, "sso", 0.03, 350);
+assert(d4.otherApplied === 300 && d4.giApplied === 200 && d4.netPayout === 0,
+  "GI clamped to what's left after other (500−300=200 → GI 200 → net 0)");
 
 console.log("\nALL SHARED-POOL SVC FIXTURES PASSED");

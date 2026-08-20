@@ -59,7 +59,8 @@ export async function GET(req: Request) {
     gross: r.grossAllocation,
     foodClawback: r.foodClawback,
     otherDeductions: r.otherDeductions,
-    preTax: r.netAllocation,
+    // netAllocation is pre-GI; the tax base ("ก่อนภาษี") is after group insurance.
+    preTax: round2(Math.max(0, r.netAllocation - r.groupInsurance)),
     wht: r.whtAmount,
     groupInsurance: r.groupInsurance,
     net: r.netPayout,

@@ -276,8 +276,15 @@ export default function CompanyServiceChargePage({
                             r.forfeited ? "text-rose-500 line-through" : "text-emerald-700"
                           }`}>
                             {fmtMoney(r.netPayout)}
-                            {!r.forfeited && r.taxMode === "wht" && (
-                              <span className="block text-[9px] font-normal text-rose-500">หัก ณ ที่จ่าย 3%</span>
+                            {!r.forfeited && (r.foodClawback > 0 || r.otherDeductions > 0 || r.groupInsurance > 0 || r.taxMode === "wht") && (
+                              <span className="block text-[9px] font-normal text-rose-500 leading-tight">
+                                {[
+                                  r.foodClawback > 0 ? `ค่าอาหาร ${fmtMoney(r.foodClawback)}` : null,
+                                  r.otherDeductions > 0 ? `อื่นๆ ${fmtMoney(r.otherDeductions)}` : null,
+                                  r.groupInsurance > 0 ? `ประกันกลุ่ม ${fmtMoney(r.groupInsurance)}` : null,
+                                  r.taxMode === "wht" ? "ภาษี 3%" : null
+                                ].filter(Boolean).join(" · ")}
+                              </span>
                             )}
                           </td>
                           <td className="py-2 pr-3">

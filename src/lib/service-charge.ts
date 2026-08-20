@@ -104,11 +104,13 @@ export function calendarMonthsBetween(fromMonth: string, toMonth: string): numbe
   return (ty * 12 + tm) - (fy * 12 + fm);
 }
 
-/** Pure group-insurance decision — the ฿ to withhold from ONE person's SVC for
- *  `yearMonth`. Returns 0 when not enrolled (no start month), employment type
- *  unknown, before the start month, or the window has passed. `availablePayout`
- *  (the SVC left after forfeit + WHT) caps the amount so a payout never goes
- *  negative. */
+/** Pure group-insurance decision — the ฿ to withhold from ONE person's SVC for the
+ *  payout round `yearMonth`. Returns 0 when not enrolled (no start month), employment
+ *  type unknown, before the start month, or the window has passed. `availablePayout`
+ *  is the SVC left BEFORE tax (after food + other deductions) — GI is taken before
+ *  WHT (owner 2026-08-20) — and caps the premium so a payout never goes negative.
+ *  Callers pass 0 (or skip) for a forfeited person and pass the PAYOUT month, not the
+ *  accrual month. */
 export function groupInsuranceDeduction(args: {
   employmentType: string | null;
   startMonth: string | null;   // YYYY-MM chosen by the owner; null = not enrolled → 0
@@ -982,19 +984,26 @@ export function computeMonthlySvcSummary(
     // WHT: 'wht' staff have 3% withheld from their SVC payout; 'sso' staff get
     // the full net (owner 2026-07-21). Applied after forfeiture (forfeited = 0),
     // the food clawback, and the ad-hoc deductions.
-    const netAllocation = forfeited ? 0 : round2(afterFood - otherDeductions);
-    const taxMode: "sso" | "wht" = s.taxMode === "wht" ? "wht" : "sso";
-    const whtAmount = taxMode === "wht" ? round2(netAllocation * whtRate) : 0;
-    // Group-insurance premium (owner 2026-08-02) — withheld from the SVC left
-    // after forfeit + WHT, during the new-hire window (FT 3mo / PT 12mo). Skipped
-    // for visitors so the ฿350/month isn't double-charged (it's taken at home).
-    const groupInsurance = isVisitor ? 0 : groupInsuranceDeduction({
+    const afterOther = round2(afterFood - otherDeductions);
+    // Group-insurance premium (owner 2026-08-02) — taken BEFORE tax (owner 2026-08-20:
+    // หักทุกอย่างก่อนภาษี), capped at what's left, during the new-hire window (FT 3mo /
+    // PT 12mo). 0 when forfeited (nothing to withhold) or for a visitor (taken once at
+    // home). The start month is a PAYOUT round, not the accrual month (owner 2026-08-20:
+    // "เริ่มหักเดือนสิงหาคม" = the August payout = July's SVC), so compare against this
+    // accrual month's payout month.
+    const groupInsurance = (isVisitor || forfeited) ? 0 : groupInsuranceDeduction({
       employmentType: s.employmentType,
       startMonth: s.groupInsuranceStartMonth,
-      yearMonth,
-      availablePayout: round2(netAllocation - whtAmount)
+      yearMonth: computePayoutDate(yearMonth).slice(0, 7),
+      availablePayout: afterOther
     });
-    const netPayout = round2(netAllocation - whtAmount - groupInsurance);
+    // netAllocation stays the SVC after food + other, BEFORE group insurance & tax —
+    // downstream (payslip / payroll summary) subtracts GI + WHT separately, so this
+    // must remain pre-GI. WHT is charged on the amount AFTER group insurance.
+    const netAllocation = forfeited ? 0 : afterOther;
+    const taxMode: "sso" | "wht" = s.taxMode === "wht" ? "wht" : "sso";
+    const whtAmount = taxMode === "wht" ? round2(Math.max(0, round2(netAllocation - groupInsurance)) * whtRate) : 0;
+    const netPayout = round2(netAllocation - groupInsurance - whtAmount);
     return {
       userId: s.userId,
       displayName,
@@ -1489,15 +1498,20 @@ function rollupCompanyRow(input: {
   const afterFood = round2(gross - foodClawback);
   const rawOther = round2(input.otherDeductionItems.reduce((s, x) => s + x.amount, 0));
   const otherDeductions = forfeited ? 0 : Math.min(rawOther, Math.max(0, afterFood));
-  const netAllocation = forfeited ? 0 : round2(afterFood - otherDeductions);
-  const whtAmount = input.taxMode === "wht" ? round2(netAllocation * input.whtRate) : 0;
-  const groupInsurance = input.skipGroupInsurance ? 0 : groupInsuranceDeduction({
+  const afterOther = round2(afterFood - otherDeductions);
+  // Deduction order (owner 2026-08-20): food → other → group insurance → THEN tax.
+  // GI is 0 when forfeited or for a cross-company visitor; the start month is a
+  // PAYOUT round (compared against this accrual month's payout month).
+  const groupInsurance = (input.skipGroupInsurance || forfeited) ? 0 : groupInsuranceDeduction({
     employmentType: input.employmentType,
     startMonth: input.giStartMonth,
-    yearMonth: input.yearMonth,
-    availablePayout: round2(netAllocation - whtAmount)
+    yearMonth: computePayoutDate(input.yearMonth).slice(0, 7),
+    availablePayout: afterOther
   });
-  const netPayout = round2(netAllocation - whtAmount - groupInsurance);
+  // Pre-GI, pre-tax (kept so payslip/summary consumers subtract GI separately).
+  const netAllocation = forfeited ? 0 : afterOther;
+  const whtAmount = input.taxMode === "wht" ? round2(Math.max(0, round2(netAllocation - groupInsurance)) * input.whtRate) : 0;
+  const netPayout = round2(netAllocation - groupInsurance - whtAmount);
   return {
     userId: input.userId, displayName: input.displayName, employmentType: input.employmentType,
     byBranch: input.byBranch,
