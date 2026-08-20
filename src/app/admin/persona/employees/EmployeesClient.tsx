@@ -1413,15 +1413,17 @@ function EditModal({
                 >
                   <option value="">— ไม่หัก —</option>
                   {(() => {
-                    const opts: string[] = [];
+                    const TH_MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+                      "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+                    const opts: Array<{ v: string; label: string }> = [];
                     const now = new Date(Date.now() + 7 * 3600 * 1000);
-                    for (let off = 3; off >= -17; off--) {
+                    for (let off = 3; off >= -3; off--) {
                       const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + off, 1));
-                      opts.push(d.toISOString().slice(0, 7));
+                      opts.push({ v: d.toISOString().slice(0, 7), label: `${TH_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}` });
                     }
                     // Keep an out-of-range stored value visible so a bad entry can be corrected.
-                    if (giStartMonth && !opts.includes(giStartMonth)) opts.unshift(giStartMonth);
-                    return opts.map((m) => <option key={m} value={m}>{m}</option>);
+                    if (giStartMonth && !opts.some((o) => o.v === giStartMonth)) opts.unshift({ v: giStartMonth, label: giStartMonth });
+                    return opts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>);
                   })()}
                 </select>
                 <p className="text-xs text-slate-500 mt-1">
