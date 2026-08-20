@@ -228,6 +228,11 @@ export type MonthlySvcRow = {
   grossAllocation: number;   // pre-forfeit accrual from daily splits
   forfeited: boolean;
   forfeitReason: "late_20pct" | "resignation" | null;
+  // Executive override (owner 2026-08-20): when set, the automatic forfeiture was
+  // WAIVED for this person this month — forfeited flips back to false and they are
+  // paid. exemptReason records what was waived (for the "ยกเว้นให้ · เดิม: …" badge).
+  exempted: boolean;
+  exemptReason: "late_20pct" | "resignation" | null;
   netAllocation: number;     // 0 if forfeited; else grossAllocation (pre-WHT)
   // Withholding tax on the SVC payout, mirroring payroll (owner 2026-07-21):
   // 'wht' staff have 3% withheld, 'sso' staff receive the full net.
@@ -882,6 +887,9 @@ export function computeMonthlySvcSummary(
   `).all(monthStartIso, monthEndIso) as Array<{ user_id: number }>;
   for (const r of resignRows) forfeitedFromResign.add(r.user_id);
 
+  // 8b. Executive forfeiture exemptions for the month (owner 2026-08-20).
+  const exemptedSet = listSvcForfeitExemptions(yearMonth);
+
   // 9. Roll up per-staff rows + forfeiture
   //
   // Lateness here uses the per-day roster shift start when assigned,
@@ -936,7 +944,15 @@ export function computeMonthlySvcSummary(
     const lateRatio = scheduledMinutes > 0 ? lateMinutes / scheduledMinutes : 0;
     const lateForfeit = anyComputable && lateRatio > SC_INELIGIBILITY_THRESHOLD;
     const resignForfeit = forfeitedFromResign.has(s.userId);
-    const forfeited = lateForfeit || resignForfeit;
+    // Executive exemption (owner 2026-08-20): the automatic rule still decides the
+    // reason, but if this (user, month) is exempted the forfeiture is waived and
+    // they are paid. isVisitor's exemption is judged at their home branch, but the
+    // exemption set is company-wide (per user+month) so it applies here too.
+    const wouldForfeit = lateForfeit || resignForfeit;
+    const wouldReason: "late_20pct" | "resignation" | null =
+      wouldForfeit ? (resignForfeit ? "resignation" : "late_20pct") : null;
+    const exempted = wouldForfeit && exemptedSet.has(s.userId);
+    const forfeited = wouldForfeit && !exempted;
     // Name: mirror payroll — carry display_name + title_prefix and compose with
     // nameWithPrefix (owner 2026-07-21: ใช้วิธีเดียวกับหน้าค่าตอบแทน). Staff with a
     // title_prefix show it; staff with none show display_name as-is (owner fills
@@ -976,9 +992,9 @@ export function computeMonthlySvcSummary(
       lateRatio,
       grossAllocation: a.grossAllocation,
       forfeited,
-      forfeitReason: forfeited
-        ? (resignForfeit ? "resignation" : "late_20pct")
-        : null,
+      forfeitReason: forfeited ? wouldReason : null,
+      exempted,
+      exemptReason: exempted ? wouldReason : null,
       netAllocation,
       taxMode,
       whtAmount,
@@ -1058,6 +1074,8 @@ export type CompanySvcRow = {
   lateRatio: number;
   forfeited: boolean;
   forfeitReason: "late_20pct" | "resignation" | null;
+  exempted: boolean;
+  exemptReason: "late_20pct" | "resignation" | null;
   foodClawback: number;
   netAllocation: number;
   taxMode: "sso" | "wht";
@@ -1084,6 +1102,35 @@ export type CompanySvcSummary = {
   rows: CompanySvcRow[];
   payoutDate: string;
 };
+
+/** Users whose SVC forfeiture is WAIVED for a month (owner 2026-08-20) — an
+ *  executive override. The forfeiture rule still computes the reason; presence
+ *  here just flips `forfeited` back to false so they are paid. Keyed per user. */
+export function listSvcForfeitExemptions(yearMonth: string): Set<number> {
+  const rows = getDb().prepare(
+    "SELECT user_id FROM svc_forfeit_exemptions WHERE year_month = ?"
+  ).all(yearMonth) as Array<{ user_id: number }>;
+  return new Set(rows.map((r) => r.user_id));
+}
+
+/** Turn a (user, month) SVC-forfeiture exemption on/off (owner 2026-08-20). */
+export function setSvcForfeitExemption(args: {
+  userId: number; yearMonth: string; exempted: boolean; byUserId: number; note?: string | null;
+}): void {
+  const db = getDb();
+  if (args.exempted) {
+    db.prepare(`
+      INSERT INTO svc_forfeit_exemptions (user_id, year_month, exempted_by_user_id, exempted_at, note)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, year_month) DO UPDATE SET
+        exempted_by_user_id = excluded.exempted_by_user_id,
+        exempted_at = excluded.exempted_at, note = excluded.note
+    `).run(args.userId, args.yearMonth, args.byUserId, new Date().toISOString(), args.note ?? null);
+  } else {
+    db.prepare("DELETE FROM svc_forfeit_exemptions WHERE user_id = ? AND year_month = ?")
+      .run(args.userId, args.yearMonth);
+  }
+}
 
 /** Is the (company, month) flagged to pool SVC across all its branches? (owner
  *  2026-08-18). A row in svc_shared_pool = shared ON for that month. */
@@ -1362,6 +1409,7 @@ function rollupCompanyRow(input: {
   realScheduledMinutes: number; fallbackScheduled: number;
   resignForfeit: boolean; rawFoodClawback: number;
   taxMode: "sso" | "wht"; giStartMonth: string | null; skipGroupInsurance: boolean;
+  exempted: boolean;   // executive override — waive the automatic forfeiture (owner 2026-08-20)
   yearMonth: string; whtRate: number;
 }): CompanySvcRow {
   const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -1369,7 +1417,11 @@ function rollupCompanyRow(input: {
   const scheduledMinutes = input.realScheduledMinutes > 0 ? input.realScheduledMinutes : input.fallbackScheduled;
   const lateRatio = scheduledMinutes > 0 ? input.lateMinutes / scheduledMinutes : 0;
   const lateForfeit = input.anyComputable && lateRatio > SC_INELIGIBILITY_THRESHOLD;
-  const forfeited = lateForfeit || input.resignForfeit;
+  const wouldForfeit = lateForfeit || input.resignForfeit;
+  const wouldReason: "late_20pct" | "resignation" | null =
+    wouldForfeit ? (input.resignForfeit ? "resignation" : "late_20pct") : null;
+  const exempted = wouldForfeit && input.exempted;
+  const forfeited = wouldForfeit && !exempted;
   const foodClawback = forfeited ? 0 : Math.min(round2(input.rawFoodClawback), gross);
   const netAllocation = forfeited ? 0 : round2(gross - foodClawback);
   const whtAmount = input.taxMode === "wht" ? round2(netAllocation * input.whtRate) : 0;
@@ -1385,7 +1437,9 @@ function rollupCompanyRow(input: {
     byBranch: input.byBranch,
     grossAllocation: gross, lateMinutes: input.lateMinutes, scheduledMinutes, lateRatio,
     forfeited,
-    forfeitReason: (forfeited ? (input.resignForfeit ? "resignation" : "late_20pct") : null) as CompanySvcRow["forfeitReason"],
+    forfeitReason: forfeited ? wouldReason : null,
+    exempted,
+    exemptReason: exempted ? wouldReason : null,
     foodClawback, netAllocation, taxMode: input.taxMode, whtAmount, groupInsurance, netPayout,
     dailyBreakdown: input.breakdown.slice().sort((x, y) => x.date.localeCompare(y.date))
   };
@@ -1523,6 +1577,7 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
   const daysInMonth = new Date(Date.UTC(yyyy, mm, 0)).getUTCDate();
   const fallbackScheduled = daysInMonth * 8 * 60;
 
+  const exemptedSet = listSvcForfeitExemptions(yearMonth);
   const rows: CompanySvcRow[] = [...accByUser.keys()].map((userId) => {
     const a = accByUser.get(userId)!;
     const meta = metaByUser.get(userId);
@@ -1547,6 +1602,7 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
       taxMode: meta?.taxMode === "wht" ? "wht" : "sso",
       giStartMonth: meta?.groupInsuranceStartMonth ?? null,
       skipGroupInsurance: !memberIdsCompany.has(userId),
+      exempted: exemptedSet.has(userId),
       yearMonth, whtRate
     });
   }).sort((x, y) => y.netPayout - x.netPayout);
@@ -1667,6 +1723,7 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
     }
   }
 
+  const exemptedSet = listSvcForfeitExemptions(yearMonth);
   const rows: CompanySvcRow[] = userIds.map((userId) => {
     const a = accByUser.get(userId)!;
     return rollupCompanyRow({
@@ -1678,6 +1735,7 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
       taxMode: a.taxMode,
       giStartMonth: metaByUser.get(userId)?.startMonth ?? null,
       skipGroupInsurance: !companyMemberIds.has(userId),
+      exempted: exemptedSet.has(userId),
       yearMonth, whtRate
     });
   }).sort((x, y) => y.netPayout - x.netPayout);
@@ -1843,6 +1901,8 @@ function computeManualSvcSummary(branchId: number, yearMonth: string): MonthlySv
       grossAllocation: g,
       forfeited: false,
       forfeitReason: null,
+      exempted: false,
+      exemptReason: null,
       netAllocation: g,
       taxMode,
       whtAmount,

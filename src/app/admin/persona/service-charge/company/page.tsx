@@ -22,6 +22,7 @@ import {
 } from "@/lib/service-charge";
 import SharedPoolToggle from "./SharedPoolToggle";
 import CompanySvcCalcModal from "./CompanySvcCalcModal";
+import SvcForfeitExemptButton from "../SvcForfeitExemptButton";
 import OwlMascot from "../../../../components/OwlMascot";
 
 export const dynamic = "force-dynamic";
@@ -267,17 +268,24 @@ export default function CompanyServiceChargePage({
                             )}
                           </td>
                           <td className="py-2 pr-3">
-                            {!r.forfeited ? (
+                            {r.exempted ? (
+                              <SvcForfeitExemptButton userId={r.userId} yearMonth={month}
+                                forfeited={false} exempted reason={r.exemptReason}
+                                canEdit={canManagePayout} />
+                            ) : r.forfeited ? (
+                              <div className="flex flex-col items-start gap-1">
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                  r.forfeitReason === "late_20pct" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"
+                                }`}>
+                                  ✗ {r.forfeitReason === "late_20pct" ? "สายเกิน 20%" : "ลาออก"}
+                                </span>
+                                <SvcForfeitExemptButton userId={r.userId} yearMonth={month}
+                                  forfeited exempted={false} reason={r.forfeitReason}
+                                  canEdit={canManagePayout} />
+                              </div>
+                            ) : (
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">
                                 ✓ ได้รับ
-                              </span>
-                            ) : r.forfeitReason === "late_20pct" ? (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">
-                                ✗ สายเกิน 20%
-                              </span>
-                            ) : (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">
-                                ✗ ลาออก
                               </span>
                             )}
                           </td>

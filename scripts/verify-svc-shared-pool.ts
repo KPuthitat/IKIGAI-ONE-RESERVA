@@ -73,13 +73,15 @@ function rollup(input: {
   realScheduledMinutes: number; fallbackScheduled: number;
   resignForfeit: boolean; rawFoodClawback: number;
   taxMode: "sso" | "wht"; giEmploymentType: string | null; giStartMonth: string | null;
-  skipGroupInsurance: boolean; yearMonth: string; whtRate: number;
+  skipGroupInsurance: boolean; exempted?: boolean; yearMonth: string; whtRate: number;
 }) {
   const gross = round2(input.grossRaw);
   const scheduledMinutes = input.realScheduledMinutes > 0 ? input.realScheduledMinutes : input.fallbackScheduled;
   const lateRatio = scheduledMinutes > 0 ? input.lateMinutes / scheduledMinutes : 0;
   const lateForfeit = input.anyComputable && lateRatio > SC_INELIGIBILITY_THRESHOLD;
-  const forfeited = lateForfeit || input.resignForfeit;
+  const wouldForfeit = lateForfeit || input.resignForfeit;
+  const exempted = wouldForfeit && !!input.exempted;
+  const forfeited = wouldForfeit && !exempted;
   const foodClawback = forfeited ? 0 : Math.min(round2(input.rawFoodClawback), gross);
   const netAllocation = forfeited ? 0 : round2(gross - foodClawback);
   const whtAmount = input.taxMode === "wht" ? round2(netAllocation * input.whtRate) : 0;
@@ -88,7 +90,7 @@ function rollup(input: {
     yearMonth: input.yearMonth, availablePayout: round2(netAllocation - whtAmount)
   });
   const netPayout = round2(netAllocation - whtAmount - groupInsurance);
-  return { gross, forfeited, foodClawback, netAllocation, whtAmount, groupInsurance, netPayout };
+  return { gross, forfeited, exempted, foodClawback, netAllocation, whtAmount, groupInsurance, netPayout };
 }
 
 // sso, no lateness → full net, no WHT, no GI (not enrolled)
@@ -175,5 +177,30 @@ const clawbackOnCombined = (branchMins: number[], approvedEarlyLeave: boolean) =
 assert(!clawbackOnCombined([240, 240], false), "240+240 combined = 480 ≥ 450 → NO clawback (transfer full day)");
 assert(clawbackOnCombined([240], false), "single-branch 240 < 450 → clawed (left early)");
 assert(!clawbackOnCombined([240], true), "240 but approved early-leave → NO clawback");
+
+// ── executive forfeiture exemption (owner 2026-08-20) ────────────
+// The automatic rule still fires, but an exec can WAIVE it for one person/month →
+// forfeited flips to false and they are paid (WHT/GI still apply). The flag only
+// matters when the person WOULD have been forfeited.
+const exLate = rollup({ grossRaw: 500, lateMinutes: 2500, anyComputable: true,
+  realScheduledMinutes: 9600, fallbackScheduled: 14400, resignForfeit: false,
+  rawFoodClawback: 0, taxMode: "sso", giEmploymentType: "pt", giStartMonth: null,
+  skipGroupInsurance: false, exempted: true, yearMonth: "2026-08", whtRate: 0.03 });
+assert(!exLate.forfeited && exLate.exempted && exLate.netPayout === 500,
+  "exempt a late-20% forfeiture → paid full 500");
+
+const exResign = rollup({ grossRaw: 300, lateMinutes: 0, anyComputable: false,
+  realScheduledMinutes: 0, fallbackScheduled: 14400, resignForfeit: true,
+  rawFoodClawback: 0, taxMode: "wht", giEmploymentType: "pt", giStartMonth: null,
+  skipGroupInsurance: false, exempted: true, yearMonth: "2026-08", whtRate: 0.03 });
+assert(!exResign.forfeited && exResign.exempted && exResign.whtAmount === 9 && exResign.netPayout === 291,
+  "exempt a resignation forfeiture → paid, WHT still applies (300−9=291)");
+
+const exNoop = rollup({ grossRaw: 240, lateMinutes: 0, anyComputable: true,
+  realScheduledMinutes: 9600, fallbackScheduled: 14400, resignForfeit: false,
+  rawFoodClawback: 0, taxMode: "sso", giEmploymentType: "pt", giStartMonth: null,
+  skipGroupInsurance: false, exempted: true, yearMonth: "2026-08", whtRate: 0.03 });
+assert(!exNoop.forfeited && !exNoop.exempted && exNoop.netPayout === 240,
+  "exemption on a NON-forfeited person is a no-op (exempted=false, still paid 240)");
 
 console.log("\nALL SHARED-POOL SVC FIXTURES PASSED");
