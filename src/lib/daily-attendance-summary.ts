@@ -86,6 +86,8 @@ export function buildDailyAttendanceRoster(
       AND u.role IN ('staff', 'admin')
       AND u.status = 'active'
       AND u.is_test_account = 0
+      -- ผู้บริหาร/ไม่ต้องลงเวลา (track_attendance = 0) ไม่นับในสรุปการลงเวลา HR
+      AND COALESCE(u.track_attendance, 1) = 1
     ORDER BY u.display_name COLLATE NOCASE ASC
   `).all(branchId) as RosterRow[];
   if (staff.length === 0) return [];
