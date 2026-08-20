@@ -329,4 +329,25 @@ const split3 = splitByBranch(
 assert(near(split3.reduce((s, b) => s + b.net, 0), 100), `3-way net reconciles to exactly 100 (got ${split3.map((b) => b.net).join("+")})`);
 assert(near(split3.reduce((s, b) => s + b.gins, 0), 350), "3-way group-insurance reconciles to exactly 350");
 
+// ── ad-hoc SVC deductions (owner 2026-08-20) ─────────────────────
+// Order: gross → food clawback → OTHER deductions → WHT → group insurance → net.
+// Clamped so SVC never goes negative.
+function svcNet(gross: number, food: number, other: number, taxMode: "sso" | "wht", whtRate: number, gi: number) {
+  const afterFood = round2(gross - food);
+  const otherApplied = Math.min(round2(other), Math.max(0, afterFood));
+  const netAllocation = round2(afterFood - otherApplied);
+  const wht = taxMode === "wht" ? round2(netAllocation * whtRate) : 0;
+  const netPayout = round2(netAllocation - wht - gi);
+  return { otherApplied, netAllocation, wht, netPayout };
+}
+const d1 = svcNet(1000, 100, 200, "sso", 0.03, 0);
+assert(d1.otherApplied === 200 && d1.netAllocation === 700 && d1.netPayout === 700,
+  "gross1000 − food100 − other200 = 700 (sso, no GI)");
+const d2 = svcNet(1000, 0, 200, "wht", 0.03, 350);
+assert(d2.netAllocation === 800 && d2.wht === 24 && d2.netPayout === 426,
+  "other before WHT: base 800 → WHT 24, − GI 350 = 426");
+const d3 = svcNet(100, 0, 500, "sso", 0.03, 0);
+assert(d3.otherApplied === 100 && d3.netAllocation === 0 && d3.netPayout === 0,
+  "deduction clamped to SVC — never negative (other 500 on 100 → 100 applied, net 0)");
+
 console.log("\nALL SHARED-POOL SVC FIXTURES PASSED");

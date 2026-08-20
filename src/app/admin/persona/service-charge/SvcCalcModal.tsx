@@ -16,7 +16,8 @@ const fmtMin = (min: number) => Math.round(min).toLocaleString();
 export default function SvcCalcModal({
   displayName, grossAllocation, netAllocation, forfeited, forfeitReason,
   dailyBreakdown, taxMode, whtAmount, netPayout, excludedDays,
-  foodClawback = 0, foodClawbackDays = []
+  foodClawback = 0, foodClawbackDays = [],
+  otherDeductions = 0, otherDeductionItems = []
 }: {
   displayName: string;
   grossAllocation: number;
@@ -30,6 +31,8 @@ export default function SvcCalcModal({
   excludedDays: Array<{ date: string; reason: string }>;
   foodClawback?: number;
   foodClawbackDays?: Array<{ date: string; credit: number }>;
+  otherDeductions?: number;
+  otherDeductionItems?: Array<{ id: number; amount: number; reason: string | null }>;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -140,6 +143,21 @@ export default function SvcCalcModal({
                   <div className="flex justify-between text-rose-600">
                     <span>หักค่าอาหารกลางวัน (กลับก่อนครบกะ)</span><span>−฿{fmtMoney(foodClawback)}</span>
                   </div>
+                )}
+                {otherDeductions > 0 && (
+                  <>
+                    <div className="flex justify-between text-rose-600">
+                      <span>หักรายการอื่นๆ</span><span>−฿{fmtMoney(otherDeductions)}</span>
+                    </div>
+                    {otherDeductionItems.map((it) => (
+                      <div key={it.id} className="flex justify-between text-[10px] text-slate-400 pl-3">
+                        <span>· {it.reason || "ไม่ระบุเหตุผล"}</span><span>−฿{fmtMoney(it.amount)}</span>
+                      </div>
+                    ))}
+                    {otherDeductionItems.reduce((s, x) => s + x.amount, 0) > otherDeductions + 0.001 && (
+                      <div className="text-[10px] text-amber-600 pl-3">* หักได้เท่าที่มี SVC (ส่วนเกินยกไป/ไม่หัก)</div>
+                    )}
+                  </>
                 )}
                 <div className="flex justify-between text-slate-600">
                   <span>ยอดก่อนหักภาษี</span><span>฿{fmtMoney(netAllocation)}</span>
