@@ -380,7 +380,7 @@ export default function AdminServiceChargePage({
                           }`}>
                             {fmtMoney(r.netPayout)}
                             {!r.forfeited && (r.foodClawback > 0 || r.otherDeductions > 0 || r.groupInsurance > 0 || r.taxMode === "wht") && (
-                              <span className="block text-[9px] font-normal text-rose-500 leading-tight">
+                              <span className="block whitespace-nowrap text-[9px] font-normal text-rose-500 leading-tight">
                                 {[
                                   r.foodClawback > 0 ? `ค่าอาหาร ${fmtMoney(r.foodClawback)}` : null,
                                   r.otherDeductions > 0 ? `อื่นๆ ${fmtMoney(r.otherDeductions)}` : null,
