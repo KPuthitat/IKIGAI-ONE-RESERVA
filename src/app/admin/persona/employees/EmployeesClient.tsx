@@ -824,9 +824,9 @@ function EditModal({
         salary_tax_mode: taxMode,
         // ประกันกลุ่ม: เดือนเริ่มหัก (YYYY-MM) — "" = ยังไม่หัก (ส่ง "" ให้ API เคลียร์เป็น NULL).
         group_insurance_start_month: giStartMonth,
-        // ผู้บริหาร/ไม่ลงเวลา (FT เท่านั้น); PT/ยังไม่กำหนดประเภท = ลงเวลาปกติ.
-        // API รับเป็น boolean: true = ลงเวลาปกติ, false = ไม่ลงเวลา (exec).
-        track_attendance: employmentType === "ft" ? !noClock : true,
+        // ผู้บริหาร/ไม่ลงเวลา — ตั้งได้ทุกประเภทงาน (owner 2026-08-20: PT นอกสถานที่ก็ปิดได้).
+        // API รับเป็น boolean: true = ลงเวลาปกติ, false = ไม่ลงเวลา → ปิดแจ้งเตือนเข้ากะ + ไม่ขึ้นสรุป HR.
+        track_attendance: !noClock,
         line_user_id: lineUserId.trim() || null,
         // shift_start_time + escalation_hours UI removed 2026-05;
         // the API still accepts them so older clients keep working,
@@ -1326,18 +1326,22 @@ function EditModal({
                       </p>
                     </div>
                   )}
-                  <label className="col-span-2 flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:bg-slate-50">
-                    <input type="checkbox" className="mt-0.5" checked={noClock}
-                      onChange={(e) => setNoClock(e.target.checked)} />
-                    <span className="text-sm text-slate-700">
-                      ผู้บริหาร/หัวหน้า — ไม่ต้องลงเวลา
-                      <span className="block text-xs text-slate-500">
-                        คิดเงินเดือนแบบ fix เต็มจำนวน ไม่มีค่าล่วงเวลา (OT)
-                      </span>
-                    </span>
-                  </label>
                 </div>
               )}
+              {/* ไม่ต้องลงเวลา (ผู้บริหาร/นอกสถานที่) — แสดงทุกประเภทงาน (owner 2026-08-20).
+                  ปิด = ไม่รับ DM เตือนเข้ากะ + ไม่ขึ้นในสรุปการลงเวลาของ HR. สำหรับ FT ยังหมายถึง
+                  คิดเงินเดือน fix เต็มจำนวน ไม่มี OT ด้วย. */}
+              <label className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:bg-slate-50">
+                <input type="checkbox" className="mt-0.5" checked={noClock}
+                  onChange={(e) => setNoClock(e.target.checked)} />
+                <span className="text-sm text-slate-700">
+                  ไม่ต้องลงเวลา (ผู้บริหาร/นอกสถานที่)
+                  <span className="block text-xs text-slate-500">
+                    ปิดแจ้งเตือนเข้ากะทาง LINE และไม่นับในสรุปการลงเวลาของ HR
+                    {employmentType === "ft" ? " · คิดเงินเดือนแบบ fix เต็มจำนวน ไม่มีค่าล่วงเวลา (OT)" : ""}
+                  </span>
+                </span>
+              </label>
               {/* ไม่รับส่วนแบ่งเซอร์วิสชาร์จ — แยกจาก "ไม่ต้องลงเวลา" (owner 2026-07-21).
                   ค่าเริ่มต้นทุกคนในสาขารับ SVC; ติ๊กเพื่อตัดออกจากกองกลาง. แสดงทุกประเภทงาน. */}
               <label className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:bg-slate-50">
