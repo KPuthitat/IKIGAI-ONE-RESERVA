@@ -44,7 +44,7 @@ export default function CompanySvcCalcModal({
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onClick={() => setOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-4 sm:p-5"
+          <div className="bg-white rounded-2xl shadow-xl max-w-5xl w-full max-h-[85vh] overflow-y-auto p-4 sm:p-5"
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-2 mb-1">
               <h3 className="font-bold text-slate-800">
@@ -121,7 +121,7 @@ export default function CompanySvcCalcModal({
                             // Empty day — show 0 + the remark (ยังไม่เริ่มงาน/วันลา/วันหยุด/ไม่มียอด).
                             return [(
                               <tr key={ld.date} className="border-b border-slate-50 text-slate-400">
-                                <td className="py-1.5 pr-2">{ld.date}</td>
+                                <td className="py-1.5 pr-2 whitespace-nowrap">{ld.date}</td>
                                 <td className="py-1.5 px-2 italic" colSpan={5}>{ld.remark || "—"}</td>
                                 <td className="py-1.5 pl-2 text-right">{fmtMoney(0)}</td>
                               </tr>
@@ -129,8 +129,8 @@ export default function CompanySvcCalcModal({
                           }
                           return rows.map((d, i) => (
                             <tr key={`${d.date}-${d.branchId}-${i}`} className="border-b border-slate-50 text-slate-700">
-                              <td className="py-1.5 pr-2">{i === 0 ? d.date : ""}</td>
-                              <td className="py-1.5 px-2 text-slate-500">{d.branchName}</td>
+                              <td className="py-1.5 pr-2 whitespace-nowrap">{i === 0 ? d.date : ""}</td>
+                              <td className="py-1.5 px-2 text-slate-500 whitespace-nowrap">{d.branchName}</td>
                               <td className="py-1.5 px-2 text-right">{fmtMoney(d.dayAmount)}</td>
                               <td className="py-1.5 px-2 text-right">{fmtMoney(d.staffPool)}</td>
                               <td className="py-1.5 px-2 text-right">{fmtMin(d.userMinutes)}</td>

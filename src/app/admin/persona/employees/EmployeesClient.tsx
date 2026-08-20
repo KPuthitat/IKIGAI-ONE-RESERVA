@@ -1406,12 +1406,24 @@ function EditModal({
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   {t("admin.persona.employees.groupInsurance.label")}
                 </label>
-                <input
-                  type="month"
+                <select
                   value={giStartMonth}
                   onChange={(e) => setGiStartMonth(e.target.value)}
                   className="input max-w-[220px]"
-                />
+                >
+                  <option value="">— ไม่หัก —</option>
+                  {(() => {
+                    const opts: string[] = [];
+                    const now = new Date(Date.now() + 7 * 3600 * 1000);
+                    for (let off = 3; off >= -17; off--) {
+                      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + off, 1));
+                      opts.push(d.toISOString().slice(0, 7));
+                    }
+                    // Keep an out-of-range stored value visible so a bad entry can be corrected.
+                    if (giStartMonth && !opts.includes(giStartMonth)) opts.unshift(giStartMonth);
+                    return opts.map((m) => <option key={m} value={m}>{m}</option>);
+                  })()}
+                </select>
                 <p className="text-xs text-slate-500 mt-1">
                   {giStartMonth
                     ? t("admin.persona.employees.groupInsurance.hintSet")
