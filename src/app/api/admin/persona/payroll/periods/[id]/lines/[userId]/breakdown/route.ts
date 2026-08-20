@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
   applyPtGrace, pickScheduled, deductBreak, splitRegularOt, computeOtPay,
-  overlaySwapShifts, branchHourlyRateSelect,
+  overlaySwapShifts, branchHourlyRateSelect, keepEntryForBranch, loadDayBranchMap,
   type ScheduledShift, type PayrollSettings
 } from "@/lib/payroll-compute";
 import { resolveSiblingPeriods } from "@/lib/payroll-cycle";
@@ -464,11 +464,35 @@ export async function GET(
   // safe because ISO sorts correctly.
   const fromIso = `${period.period_start}T00:00:00`;
   const toIso = `${period.period_end}T23:59:59`;
-  const entries = db.prepare(`
+  const rawEntries = db.prepare(`
     SELECT id, ts, type, selfie_path, branch_id FROM time_entries
     WHERE user_id = ? AND ts >= ? AND ts <= ?
     ORDER BY ts ASC
   `).all(userId, fromIso, toIso) as EntryRow[];
+  // Scope to THIS period's branch by EFFECTIVE branch — EXACTLY as the pay engine
+  // does (owner 2026-08-18): a cross-branch worker (ศรุตา นามะ+ไฮโป) must see only
+  // the days booked to THIS branch here, so the modal total ties out to the line
+  // and doesn't look like two branches lumped together. Reattribution (moved day)
+  // pulls a day in / pushes it out; an approved NULL-branch cert is always kept.
+  // Legacy NULL-branch periods stay unfiltered (whole pay period across branches).
+  const dayBranch = period.branch_id != null
+    ? loadDayBranchMap(db, period.period_start, period.period_end)
+    : new Map<string, number>();
+  const certIds = period.branch_id != null
+    ? new Set((db.prepare(
+        "SELECT entry_id FROM time_certifications WHERE status = 'approved' AND entry_id IS NOT NULL"
+      ).all() as Array<{ entry_id: number }>).map((r) => r.entry_id))
+    : new Set<number>();
+  const entries = rawEntries.filter((e) =>
+    keepEntryForBranch({ id: e.id, user_id: userId, ts: e.ts, type: e.type, branch_id: e.branch_id },
+      period.branch_id, dayBranch, certIds));
+  // Dates the person clocked in at ANOTHER branch this period (dropped by the
+  // filter above). Those days belong to that branch's round — don't surface them
+  // here as a "ขาดงาน"/"วันหยุด" status row, which would wrongly read as absent.
+  const keptIds = new Set(entries.map((e) => e.id));
+  const workedElsewhereDates = new Set(
+    rawEntries.filter((e) => e.type === "in" && !keptIds.has(e.id)).map((e) => bkkDate(e.ts))
+  );
 
   // Pair entries: each "in" looks for the next "out" before the next "in".
   // Output groups by BKK calendar date.
@@ -594,6 +618,8 @@ export async function GET(
   // they WERE scheduled to work but didn't clock in (and no leave) = ขาดงาน.
   for (let d = period.period_start; d <= period.period_end; d = addDayYmd(d)) {
     if (days.has(d)) continue;
+    // Worked at another branch that day → its own round shows it; skip here.
+    if (workedElsewhereDates.has(d)) continue;
     const label = leaveByDate.get(d)
       ?? ((dayOffSet.has(d) || publicHolidaySet.has(d) || !shiftByDate.has(d)) ? "วันหยุด" : "ขาดงาน");
     const day = ensureDay(d);

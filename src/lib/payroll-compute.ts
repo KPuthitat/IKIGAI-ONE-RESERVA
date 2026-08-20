@@ -349,7 +349,7 @@ function addDayYmd(ymd: string): string {
 export type EntryWithBranch = Entry & { id: number; branch_id: number | null };
 
 // (user_id|work_date) → chosen branch_id. Loaded once per compute.
-function loadDayBranchMap(
+export function loadDayBranchMap(
   db: Database.Database, fromDate: string, toDate: string
 ): Map<string, number> {
   const rows = db.prepare(
