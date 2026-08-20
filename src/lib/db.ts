@@ -2542,6 +2542,23 @@ function runMigrations(db: Database.Database): void {
       PRIMARY KEY(company_id, year_month)
     );
   `);
+  // svc_forfeit_exemptions (owner 2026-08-20) — SVC forfeiture (late >20% or a
+  // forfeit-flagged resignation) is automatic, but an executive can WAIVE it for
+  // one person for one month ("ยกเว้นให้"). A row here = that (user, month)'s SVC is
+  // paid despite the automatic forfeiture; absence = the automatic rule stands.
+  // Keyed per user+month because forfeiture flips the whole month's accrual.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS svc_forfeit_exemptions (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      year_month TEXT NOT NULL,
+      exempted_by_user_id INTEGER REFERENCES users(id),
+      exempted_at TEXT,
+      note TEXT,
+      PRIMARY KEY(user_id, year_month)
+    );
+    CREATE INDEX IF NOT EXISTS idx_svc_forfeit_exempt_month
+    ON svc_forfeit_exemptions(year_month);
+  `);
 
   // ── Roster (TC-R, 2026-05) ─────────────────────────────────────
   //
