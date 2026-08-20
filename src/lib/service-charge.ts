@@ -258,6 +258,10 @@ export type MonthlySvcRow = {
   // apply (no redemption / stayed full / approved).
   foodClawback: number;
   foodClawbackDays: Array<{ date: string; credit: number }>;
+  // Ad-hoc deductions taken from this person's SVC this month (owner 2026-08-20) —
+  // e.g. ค่าเครื่องดื่มที่ไม่ใช่คูปอง. Applied after food clawback, before WHT.
+  otherDeductions: number;
+  otherDeductionItems: SvcDeductionItem[];
 };
 
 export type MonthlySvcSummary = {
@@ -887,8 +891,9 @@ export function computeMonthlySvcSummary(
   `).all(monthStartIso, monthEndIso) as Array<{ user_id: number }>;
   for (const r of resignRows) forfeitedFromResign.add(r.user_id);
 
-  // 8b. Executive forfeiture exemptions for the month (owner 2026-08-20).
+  // 8b. Executive forfeiture exemptions + ad-hoc deductions for the month (owner 2026-08-20).
   const exemptedSet = listSvcForfeitExemptions(yearMonth);
+  const deductionsByUser = listSvcDeductionsByUser(yearMonth);
 
   // 9. Roll up per-staff rows + forfeiture
   //
@@ -964,10 +969,20 @@ export function computeMonthlySvcSummary(
     const clawDays = clawbackByUser.get(s.userId) ?? [];
     const rawClawback = clawDays.reduce((sum, x) => sum + x.credit, 0);
     const foodClawback = forfeited ? 0 : Math.min(rawClawback, round2(a.grossAllocation));
+    // Ad-hoc deductions (owner 2026-08-20) — e.g. ค่าเครื่องดื่มที่ไม่ใช่คูปอง. Applied
+    // AFTER the food clawback and BEFORE WHT (owner's order), clamped so the SVC
+    // never goes negative. Skipped for a VISITOR (a transfer-in from another
+    // branch) — the deduction is a personal per-month figure and is taken at the
+    // person's own branch, so applying it here too would double it (same guard as
+    // group insurance).
+    const otherItems = isVisitor ? [] : (deductionsByUser.get(s.userId) ?? []);
+    const rawOther = round2(otherItems.reduce((sum, x) => sum + x.amount, 0));
+    const afterFood = round2(a.grossAllocation - foodClawback);
+    const otherDeductions = forfeited ? 0 : Math.min(rawOther, Math.max(0, afterFood));
     // WHT: 'wht' staff have 3% withheld from their SVC payout; 'sso' staff get
-    // the full net (owner 2026-07-21). Applied after forfeiture (forfeited = 0)
-    // and after the food clawback.
-    const netAllocation = forfeited ? 0 : round2(a.grossAllocation - foodClawback);
+    // the full net (owner 2026-07-21). Applied after forfeiture (forfeited = 0),
+    // the food clawback, and the ad-hoc deductions.
+    const netAllocation = forfeited ? 0 : round2(afterFood - otherDeductions);
     const taxMode: "sso" | "wht" = s.taxMode === "wht" ? "wht" : "sso";
     const whtAmount = taxMode === "wht" ? round2(netAllocation * whtRate) : 0;
     // Group-insurance premium (owner 2026-08-02) — withheld from the SVC left
@@ -1003,7 +1018,9 @@ export function computeMonthlySvcSummary(
       dailyBreakdown: breakdownByUser.get(s.userId) ?? [],
       excludedDays: (excludedByUser.get(s.userId) ?? []).slice().sort((a, b) => a.date.localeCompare(b.date)),
       foodClawback,
-      foodClawbackDays: foodClawback > 0 ? clawDays.slice().sort((a, b) => a.date.localeCompare(b.date)) : []
+      foodClawbackDays: foodClawback > 0 ? clawDays.slice().sort((a, b) => a.date.localeCompare(b.date)) : [],
+      otherDeductions,
+      otherDeductionItems: otherItems
     };
   });
 
@@ -1016,6 +1033,8 @@ export function computeMonthlySvcSummary(
   // Food-credit clawbacks recovered from staff shares also flow to the company
   // pool (owner 2026-07-30).
   const companyFromClawback = round2(rows.reduce((s, r) => s + r.foodClawback, 0));
+  // Ad-hoc deductions recovered from staff SVC also stay with the company (owner 2026-08-20).
+  const companyFromOther = round2(rows.reduce((s, r) => s + r.otherDeductions, 0));
   const totalWht = rows.reduce((s, r) => s + r.whtAmount, 0);
   const totalGroupInsurance = round2(rows.reduce((s, r) => s + r.groupInsurance, 0));
   const totalNetPayout = rows.reduce((s, r) => s + r.netPayout, 0);
@@ -1028,7 +1047,7 @@ export function computeMonthlySvcSummary(
     companyPoolFromSplit: companyFromSplit,
     companyPoolFromForfeit: companyFromForfeit,
     companyPoolFromClawback: companyFromClawback,
-    companyPoolTotal: companyFromSplit + companyFromForfeit + companyFromClawback,
+    companyPoolTotal: companyFromSplit + companyFromForfeit + companyFromClawback + companyFromOther,
     totalWht,
     totalGroupInsurance,
     totalNetPayout,
@@ -1077,6 +1096,8 @@ export type CompanySvcRow = {
   exempted: boolean;
   exemptReason: "late_20pct" | "resignation" | null;
   foodClawback: number;
+  otherDeductions: number;
+  otherDeductionItems: SvcDeductionItem[];
   netAllocation: number;
   taxMode: "sso" | "wht";
   whtAmount: number;
@@ -1134,6 +1155,43 @@ export function setSvcForfeitExemption(args: {
     db.prepare("DELETE FROM svc_forfeit_exemptions WHERE user_id = ? AND year_month = ?")
       .run(args.userId, args.yearMonth);
   }
+}
+
+export type SvcDeductionItem = { id: number; amount: number; reason: string | null };
+
+/** All ad-hoc SVC deductions for a month, grouped by user (owner 2026-08-20). */
+export function listSvcDeductionsByUser(yearMonth: string): Map<number, SvcDeductionItem[]> {
+  const rows = getDb().prepare(
+    "SELECT id, user_id, amount, reason FROM svc_deductions WHERE year_month = ? ORDER BY id"
+  ).all(yearMonth) as Array<{ id: number; user_id: number; amount: number; reason: string | null }>;
+  const m = new Map<number, SvcDeductionItem[]>();
+  for (const r of rows) {
+    let arr = m.get(r.user_id); if (!arr) { arr = []; m.set(r.user_id, arr); }
+    arr.push({ id: r.id, amount: r.amount, reason: r.reason });
+  }
+  return m;
+}
+
+/** One person's SVC deduction line items for a month (for the editor). */
+export function listSvcDeductionsForUser(userId: number, yearMonth: string): SvcDeductionItem[] {
+  return getDb().prepare(
+    "SELECT id, amount, reason FROM svc_deductions WHERE user_id = ? AND year_month = ? ORDER BY id"
+  ).all(userId, yearMonth) as SvcDeductionItem[];
+}
+
+/** Add one SVC deduction line item; returns its id (owner 2026-08-20). */
+export function addSvcDeduction(args: {
+  userId: number; yearMonth: string; amount: number; reason: string | null; byUserId: number;
+}): number {
+  const info = getDb().prepare(
+    "INSERT INTO svc_deductions (user_id, year_month, amount, reason, created_by_user_id, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(args.userId, args.yearMonth, args.amount, args.reason, args.byUserId, new Date().toISOString());
+  return Number(info.lastInsertRowid);
+}
+
+/** Delete one SVC deduction line item by id. */
+export function deleteSvcDeduction(id: number): void {
+  getDb().prepare("DELETE FROM svc_deductions WHERE id = ?").run(id);
 }
 
 /** Is the (company, month) flagged to pool SVC across all its branches? (owner
@@ -1414,6 +1472,7 @@ function rollupCompanyRow(input: {
   resignForfeit: boolean; rawFoodClawback: number;
   taxMode: "sso" | "wht"; giStartMonth: string | null; skipGroupInsurance: boolean;
   exempted: boolean;   // executive override — waive the automatic forfeiture (owner 2026-08-20)
+  otherDeductionItems: SvcDeductionItem[];   // ad-hoc deductions (drinks etc.), before WHT
   yearMonth: string; whtRate: number;
 }): CompanySvcRow {
   const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -1427,7 +1486,10 @@ function rollupCompanyRow(input: {
   const exempted = wouldForfeit && input.exempted;
   const forfeited = wouldForfeit && !exempted;
   const foodClawback = forfeited ? 0 : Math.min(round2(input.rawFoodClawback), gross);
-  const netAllocation = forfeited ? 0 : round2(gross - foodClawback);
+  const afterFood = round2(gross - foodClawback);
+  const rawOther = round2(input.otherDeductionItems.reduce((s, x) => s + x.amount, 0));
+  const otherDeductions = forfeited ? 0 : Math.min(rawOther, Math.max(0, afterFood));
+  const netAllocation = forfeited ? 0 : round2(afterFood - otherDeductions);
   const whtAmount = input.taxMode === "wht" ? round2(netAllocation * input.whtRate) : 0;
   const groupInsurance = input.skipGroupInsurance ? 0 : groupInsuranceDeduction({
     employmentType: input.employmentType,
@@ -1444,7 +1506,10 @@ function rollupCompanyRow(input: {
     forfeitReason: forfeited ? wouldReason : null,
     exempted,
     exemptReason: exempted ? wouldReason : null,
-    foodClawback, netAllocation, taxMode: input.taxMode, whtAmount, groupInsurance, netPayout,
+    foodClawback,
+    otherDeductions,
+    otherDeductionItems: input.otherDeductionItems,
+    netAllocation, taxMode: input.taxMode, whtAmount, groupInsurance, netPayout,
     dailyBreakdown: input.breakdown.slice().sort((x, y) => x.date.localeCompare(y.date))
   };
 }
@@ -1724,6 +1789,7 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
   const fallbackScheduled = daysInMonth * 8 * 60;
 
   const exemptedSet = listSvcForfeitExemptions(yearMonth);
+  const deductionsByUser = listSvcDeductionsByUser(yearMonth);
   const rows: CompanySvcRow[] = [...accByUser.keys()].map((userId) => {
     const a = accByUser.get(userId)!;
     const meta = metaByUser.get(userId);
@@ -1749,6 +1815,7 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
       giStartMonth: meta?.groupInsuranceStartMonth ?? null,
       skipGroupInsurance: !memberIdsCompany.has(userId),
       exempted: exemptedSet.has(userId),
+      otherDeductionItems: deductionsByUser.get(userId) ?? [],
       yearMonth, whtRate
     });
   }).sort((x, y) => y.netPayout - x.netPayout);
@@ -1768,6 +1835,7 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
       totalCollected * SVC_COMPANY_SHARE_RATIO
       + rows.reduce((s, r) => s + (r.forfeited ? r.grossAllocation : 0), 0)
       + rows.reduce((s, r) => s + r.foodClawback, 0)
+      + rows.reduce((s, r) => s + r.otherDeductions, 0)
       + undistributedStaff
     ),
     totalWht: round2(rows.reduce((s, r) => s + r.whtAmount, 0)),
@@ -1873,6 +1941,7 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
   }
 
   const exemptedSet = listSvcForfeitExemptions(yearMonth);
+  const deductionsByUser = listSvcDeductionsByUser(yearMonth);
   const rows: CompanySvcRow[] = userIds.map((userId) => {
     const a = accByUser.get(userId)!;
     return rollupCompanyRow({
@@ -1885,6 +1954,7 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
       giStartMonth: metaByUser.get(userId)?.startMonth ?? null,
       skipGroupInsurance: !companyMemberIds.has(userId),
       exempted: exemptedSet.has(userId),
+      otherDeductionItems: deductionsByUser.get(userId) ?? [],
       yearMonth, whtRate
     });
   }).sort((x, y) => y.netPayout - x.netPayout);
@@ -1904,6 +1974,7 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
       totalCollected * SVC_COMPANY_SHARE_RATIO
       + rows.reduce((s, r) => s + (r.forfeited ? r.grossAllocation : 0), 0)
       + rows.reduce((s, r) => s + r.foodClawback, 0)
+      + rows.reduce((s, r) => s + r.otherDeductions, 0)
     ),
     totalWht: round2(rows.reduce((s, r) => s + r.whtAmount, 0)),
     totalGroupInsurance: round2(rows.reduce((s, r) => s + r.groupInsurance, 0)),
@@ -2113,7 +2184,9 @@ function computeManualSvcSummary(branchId: number, yearMonth: string): MonthlySv
       dailyBreakdown: [],
       excludedDays: [],
       foodClawback: 0,
-      foodClawbackDays: []
+      foodClawbackDays: [],
+      otherDeductions: 0,
+      otherDeductionItems: []
     };
   });
 

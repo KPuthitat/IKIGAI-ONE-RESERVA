@@ -18,7 +18,8 @@ const fmtMin = (min: number) => Math.round(min).toLocaleString();
 
 export default function CompanySvcCalcModal({
   displayName, shared, byBranch, grossAllocation, netAllocation, forfeited,
-  forfeitReason, dailyBreakdown, dayLedger, taxMode, whtAmount, groupInsurance, netPayout
+  forfeitReason, dailyBreakdown, dayLedger, taxMode, whtAmount, groupInsurance, netPayout,
+  foodClawback = 0, otherDeductions = 0, otherDeductionItems = []
 }: {
   displayName: string;
   shared: boolean;
@@ -33,6 +34,9 @@ export default function CompanySvcCalcModal({
   whtAmount: number;
   groupInsurance: number;
   netPayout: number;
+  foodClawback?: number;
+  otherDeductions?: number;
+  otherDeductionItems?: Array<{ id: number; amount: number; reason: string | null }>;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -170,6 +174,26 @@ export default function CompanySvcCalcModal({
                 <div className="flex justify-between text-slate-600">
                   <span>รวมส่วนแบ่ง</span><span>฿{fmtMoney(grossAllocation)}</span>
                 </div>
+                {foodClawback > 0 && (
+                  <div className="flex justify-between text-rose-600">
+                    <span>หักค่าอาหาร (กลับก่อนครบกะ)</span><span>−฿{fmtMoney(foodClawback)}</span>
+                  </div>
+                )}
+                {otherDeductions > 0 && (
+                  <>
+                    <div className="flex justify-between text-rose-600">
+                      <span>หักรายการอื่นๆ</span><span>−฿{fmtMoney(otherDeductions)}</span>
+                    </div>
+                    {otherDeductionItems.map((it) => (
+                      <div key={it.id} className="flex justify-between text-[10px] text-slate-400 pl-3">
+                        <span>· {it.reason || "ไม่ระบุเหตุผล"}</span><span>−฿{fmtMoney(it.amount)}</span>
+                      </div>
+                    ))}
+                    {otherDeductionItems.reduce((s, x) => s + x.amount, 0) > otherDeductions + 0.001 && (
+                      <div className="text-[10px] text-amber-600 pl-3">* หักได้เท่าที่มี SVC (ส่วนเกินไม่หัก)</div>
+                    )}
+                  </>
+                )}
                 <div className="flex justify-between text-slate-600">
                   <span>ยอดก่อนหักภาษี</span><span>฿{fmtMoney(netAllocation)}</span>
                 </div>

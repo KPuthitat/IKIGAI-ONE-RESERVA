@@ -2559,6 +2559,23 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_svc_forfeit_exempt_month
     ON svc_forfeit_exemptions(year_month);
   `);
+  // svc_deductions (owner 2026-08-20) — ad-hoc deductions taken from a person's
+  // SVC for a month (e.g. ค่าเครื่องดื่มที่ไม่ใช่คูปอง / other staff debts). One row
+  // per line item; an admin enters reason + amount. Applied in the SVC math AFTER
+  // the food clawback and BEFORE withholding tax (owner's order 2026-08-20).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS svc_deductions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      year_month TEXT NOT NULL,
+      amount REAL NOT NULL,
+      reason TEXT,
+      created_by_user_id INTEGER REFERENCES users(id),
+      created_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_svc_deductions_month ON svc_deductions(year_month);
+    CREATE INDEX IF NOT EXISTS idx_svc_deductions_user_month ON svc_deductions(user_id, year_month);
+  `);
 
   // ── Roster (TC-R, 2026-05) ─────────────────────────────────────
   //

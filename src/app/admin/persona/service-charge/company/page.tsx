@@ -23,6 +23,7 @@ import {
 import SharedPoolToggle from "./SharedPoolToggle";
 import CompanySvcCalcModal from "./CompanySvcCalcModal";
 import SvcForfeitExemptButton from "../SvcForfeitExemptButton";
+import SvcDeductionEditor from "../SvcDeductionEditor";
 import OwlMascot from "../../../../components/OwlMascot";
 
 export const dynamic = "force-dynamic";
@@ -302,21 +303,33 @@ export default function CompanyServiceChargePage({
                             )}
                           </td>
                           <td className="py-2 pr-3 text-right">
-                            <CompanySvcCalcModal
-                              displayName={r.displayName}
-                              shared={summary.shared}
-                              byBranch={r.byBranch}
-                              grossAllocation={r.grossAllocation}
-                              netAllocation={r.netAllocation}
-                              forfeited={r.forfeited}
-                              forfeitReason={r.forfeitReason}
-                              dailyBreakdown={r.dailyBreakdown}
-                              dayLedger={r.dayLedger}
-                              taxMode={r.taxMode}
-                              whtAmount={r.whtAmount}
-                              groupInsurance={r.groupInsurance}
-                              netPayout={r.netPayout}
-                            />
+                            <div className="flex items-center justify-end gap-1.5">
+                              <SvcDeductionEditor
+                                userId={r.userId}
+                                yearMonth={month}
+                                displayName={r.displayName}
+                                items={r.otherDeductionItems}
+                                canEdit={canManagePayout}
+                              />
+                              <CompanySvcCalcModal
+                                displayName={r.displayName}
+                                shared={summary.shared}
+                                byBranch={r.byBranch}
+                                grossAllocation={r.grossAllocation}
+                                netAllocation={r.netAllocation}
+                                forfeited={r.forfeited}
+                                forfeitReason={r.forfeitReason}
+                                dailyBreakdown={r.dailyBreakdown}
+                                dayLedger={r.dayLedger}
+                                taxMode={r.taxMode}
+                                whtAmount={r.whtAmount}
+                                groupInsurance={r.groupInsurance}
+                                netPayout={r.netPayout}
+                                foodClawback={r.foodClawback}
+                                otherDeductions={r.otherDeductions}
+                                otherDeductionItems={r.otherDeductionItems}
+                              />
+                            </div>
                           </td>
                         </tr>
                       );

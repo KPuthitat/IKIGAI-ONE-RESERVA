@@ -22,6 +22,7 @@ import SvcCalcModal from "./SvcCalcModal";
 import SvcPayoutActions from "./SvcPayoutActions";
 import SvcManualEntry from "./SvcManualEntry";
 import SvcForfeitExemptButton from "./SvcForfeitExemptButton";
+import SvcDeductionEditor from "./SvcDeductionEditor";
 import { requireAdmin, userCanViewPayroll } from "@/lib/auth";
 import { getDb, type Branch } from "@/lib/db";
 import { fmtMoney } from "@/lib/format";
@@ -407,20 +408,31 @@ export default function AdminServiceChargePage({
                             )}
                           </td>
                           <td className="py-2 pr-3 text-right">
-                            <SvcCalcModal
-                              displayName={r.displayName}
-                              grossAllocation={r.grossAllocation}
-                              netAllocation={r.netAllocation}
-                              forfeited={r.forfeited}
-                              forfeitReason={r.forfeitReason}
-                              dailyBreakdown={r.dailyBreakdown}
-                              taxMode={r.taxMode}
-                              whtAmount={r.whtAmount}
-                              netPayout={r.netPayout}
-                              excludedDays={r.excludedDays}
-                              foodClawback={r.foodClawback}
-                              foodClawbackDays={r.foodClawbackDays}
-                            />
+                            <div className="flex items-center justify-end gap-1.5">
+                              <SvcDeductionEditor
+                                userId={r.userId}
+                                yearMonth={month}
+                                displayName={r.displayName}
+                                items={r.otherDeductionItems}
+                                canEdit={canExempt}
+                              />
+                              <SvcCalcModal
+                                displayName={r.displayName}
+                                grossAllocation={r.grossAllocation}
+                                netAllocation={r.netAllocation}
+                                forfeited={r.forfeited}
+                                forfeitReason={r.forfeitReason}
+                                dailyBreakdown={r.dailyBreakdown}
+                                taxMode={r.taxMode}
+                                whtAmount={r.whtAmount}
+                                netPayout={r.netPayout}
+                                excludedDays={r.excludedDays}
+                                foodClawback={r.foodClawback}
+                                foodClawbackDays={r.foodClawbackDays}
+                                otherDeductions={r.otherDeductions}
+                                otherDeductionItems={r.otherDeductionItems}
+                              />
+                            </div>
                           </td>
                         </tr>
                       );
